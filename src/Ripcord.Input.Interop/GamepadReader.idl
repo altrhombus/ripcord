@@ -1,0 +1,26 @@
+namespace Ripcord.Input.Interop
+{
+    // Phase 0: polls the first connected GameInput gamepad (Xbox-class controllers, including
+    // the ROG Xbox Ally X's embedded pad). DualSense/DualShock advanced features are a separate,
+    // later raw-HID engine per the plan - GameInput does not expose them.
+    struct GamepadState
+    {
+        Boolean IsConnected;
+        UInt64 Buttons;
+        Single LeftTrigger;
+        Single RightTrigger;
+        Single LeftThumbstickX;
+        Single LeftThumbstickY;
+        Single RightThumbstickX;
+        Single RightThumbstickY;
+        UInt64 TimestampTicks;
+    };
+
+    [default_interface]
+    runtimeclass GamepadReader
+    {
+        GamepadReader();
+
+        GamepadState GetLatestState();
+    }
+}

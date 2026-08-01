@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Platform-neutral input logic: device HID report parsers (report bytes -> neutral ControllerStateFrame)
+    that are pure and unit-testable off-device. The Windows-only Ripcord.Input hosts the native HID transport
+    and feeds raw reports through these parsers. Mirrors the protocol's Common/Tests split.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Ripcord.Core\Ripcord.Core.csproj" />
+  </ItemGroup>
+
+</Project>
