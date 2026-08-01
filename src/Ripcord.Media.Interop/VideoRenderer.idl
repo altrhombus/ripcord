@@ -1,0 +1,100 @@
+// GpuSelection is declared in VideoCapabilities.idl. Each .idl in this project is compiled independently, so
+// referencing a type from another one requires an explicit import even within the same namespace.
+import "VideoCapabilities.idl";
+
+namespace Ripcord.Media.Interop
+{
+    // Layer 1 of the decode pipeline: a D3D12 swap-chain-for-composition present surface. The
+    // managed side associates SwapChainPointer with a XAML SwapChainPanel (via ISwapChainPanelNative),
+    // which keeps this component free of any WinUI dependency. Clear-color present now; synthetic
+    // frame upload and real decode layer on top later.
+    [default_interface]
+    runtimeclass VideoRenderer
+    {
+        VideoRenderer();
+
+        // Create the D3D12 device, command queue, and composition swap chain at the given size, on the adapter
+        // implied by gpuSelection. specificLuid is used only when gpuSelection is Specific (0 otherwise).
+        void Initialize(UInt32 width, UInt32 height, GpuSelection gpuSelection, UInt64 specificLuid);
+
+        // Description of the adapter actually chosen, for the diagnostics overlay and settings UI. Empty until
+        // Initialize succeeds.
+        String ActiveAdapterDescription{ get; };
+
+        // True when the graphics device has been lost (driver update, TDR, eGPU unplug). Nothing will render
+        // again until the renderer is recreated; previously such a failure threw into the decode worker on
+        // every frame and the user just saw a frozen picture forever.
+        Boolean IsDeviceLost{ get; };
+
+        // The HRESULT from GetDeviceRemovedReason, or 0 if the device is healthy.
+        Int32 DeviceRemovedReason{ get; };
+
+        // Raw IDXGISwapChain* as an integer, for the managed side to hand to ISwapChainPanelNative.
+        UInt64 SwapChainPointer{ get; };
+
+        // Layer 1 verification: clear the current back buffer to a color and present.
+        void RenderClear(Single red, Single green, Single blue);
+
+        // Layer 2+: upload a BGRA frame to a texture and draw it (scaled) to fill the surface, then
+        // present. This is the reusable frame sink - decode (Layer 3) converts to BGRA and calls it.
+        void PresentBgra(UInt8[] bgra, UInt32 width, UInt32 height);
+
+        // Layer 3: decode one H.264 Annex-B access unit (software Media Foundation), convert to
+        // BGRA, and present any frames it produced. Convenience = DecodeH264 + PresentLatestFrame.
+        void SubmitH264(UInt8[] annexB);
+
+        // Decode one H.264 Annex-B access unit WITHOUT presenting. The most-recently decoded frame is
+        // retained for PresentLatestFrame. This lets the caller decode every frame (keeping the H.264
+        // reference chain intact) while presenting only the newest, so a slow present never forces a
+        // frame drop that would corrupt the stream.
+        // byteCount is how many leading bytes of the array are valid, so the caller can pass a pooled
+        // buffer larger than the access unit (0 = the whole array). Feeding the unused tail to the
+        // decoder would corrupt the bitstream.
+        void DecodeH264(UInt8[] annexB, UInt32 byteCount);
+
+        // Codec the decoder is built for. Must be set BEFORE the first decode call, because the MFT is created
+        // lazily on first use and its input type is fixed at that point. Defaults to H264.
+        void SetCodec(VideoCodecKind codec);
+
+        // Which decoder MFT was actually selected, e.g. "Microsoft H264 Video Decoder MFT (DXVA)". Surfaced
+        // because "HEVC requested" and "HEVC decoding" are different claims.
+        String DecoderDescription{ get; };
+
+        /// Raw decode-loop counters: samples produced, last ProcessOutput HRESULT, current output subtype, coded
+        /// size, and how far geometry recovery got. For diagnosing "counters healthy but nothing on screen".
+        String DecoderDiagnostic{ get; };
+
+        // Present the most-recently decoded frame (GPU NV12->RGB). No-op if nothing has decoded yet.
+        void PresentLatestFrame();
+
+        // Active decode path: 0 = software, 1 = hardware/DXVA with CPU readback, 2 = hardware/DXVA zero-copy.
+        Int32 DecodeMode{ get; };
+
+        // The resolution the decoder is actually producing, as negotiated from the incoming bitstream. This is
+        // not necessarily what we asked for in the launchSpec — the console decides — so it is the only honest
+        // answer to "what am I actually watching". 0 until the first frame has been decoded.
+        UInt32 DecodedWidth{ get; };
+        UInt32 DecodedHeight{ get; };
+
+        /// Colour matrix in use, and whether the stream signalled it or we fell back. Surfaced so a colour
+        /// problem is diagnosable from the overlay instead of guessed at.
+        String ColorMatrixDescription{ get; };
+
+        // Human-readable reason zero-copy fell back (failing stage + HRESULT), or "none".
+        String ZeroCopyDiagnostic();
+
+        // True once at least one frame has been decoded + retained (past the decoder's startup latency).
+        Boolean HasDecodedFrame{ get; };
+
+        // Resize the swap-chain buffers to match the panel's render size.
+        void Resize(UInt32 width, UInt32 height);
+
+        // Spatial upscale filter for the final present: 0 = bilinear, 1 = bicubic (sharper).
+        void SetUpscaleMode(Int32 mode);
+
+        // Counter the SwapChainPanel's DPI composition scale so a physical-pixel back buffer maps 1:1.
+        void SetCompositionScale(Single scaleX, Single scaleY);
+
+        void Shutdown();
+    }
+}
