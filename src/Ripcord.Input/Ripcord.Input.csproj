@@ -1,0 +1,52 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>
+    <TargetPlatformMinVersion>10.0.19041.0</TargetPlatformMinVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <UseWinRT>true</UseWinRT>
+    <RootNamespace>Ripcord.Input</RootNamespace>
+    <!-- Tells CsWinRT which namespace(s) from the referenced winmd to source-generate C#
+         projections for; without it, the winmd reference resolves but no usable types appear. -->
+    <CsWinRTIncludes>Ripcord.Input.Interop</CsWinRTIncludes>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Ripcord.Core\Ripcord.Core.csproj" />
+    <ProjectReference Include="..\Ripcord.Input.Common\Ripcord.Input.Common.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      Microsoft.GameInput ships headers + a native .lib only - there is no C# projection, so a
+      PackageReference here does nothing useful. Real GameInput consumption happens in the native
+      Ripcord.Input.Interop project (same pattern as Ripcord.Media.Interop). A C# ProjectReference
+      to a vcxproj fails NuGet restore (NU1201: incompatible target framework "native"), so build
+      ordering and the WinRT projection are wired separately: ReferenceOutputAssembly=false gets
+      us ordering without restore trying to treat it as a managed dependency, and the Reference
+      below points CsWinRT at the actual generated metadata. .NET 5+ blocks raw winmd references
+      (NETSDK1130) unless Microsoft.Windows.CsWinRT is referenced, which re-enables it via
+      source-generated projections instead of the old built-in WinRT activation.
+    -->
+    <PackageReference Include="Microsoft.Windows.CsWinRT" Version="2.2.0" />
+    <ProjectReference Include="..\Ripcord.Input.Interop\Ripcord.Input.Interop.vcxproj">
+      <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
+    </ProjectReference>
+    <Reference Include="Ripcord.Input.Interop">
+      <HintPath>$(SolutionDir)x64\$(Configuration)\Ripcord.Input.Interop\Ripcord.winmd</HintPath>
+      <IsWinMDFile>true</IsWinMDFile>
+    </Reference>
+  </ItemGroup>
+
+  <!-- See the matching target in Ripcord.Media.csproj for why this is a post-build Copy target
+       rather than a <None CopyToOutputDirectory> item, and why it also needs a matching target in
+       Ripcord.App.csproj (this one only reaches Ripcord.Input's own output folder). -->
+  <Target Name="CopyInputInteropNativeDll" AfterTargets="Build">
+    <Copy
+      SourceFiles="$(SolutionDir)x64\$(Configuration)\Ripcord.Input.Interop\Ripcord.Input.Interop.dll"
+      DestinationFolder="$(OutDir)"
+      SkipUnchangedFiles="true" />
+  </Target>
+
+</Project>
