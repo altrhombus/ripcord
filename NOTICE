@@ -1,0 +1,61 @@
+Ripcord
+Copyright 2026 altrhombus
+
+This product includes software developed as an independent, clean-room
+implementation of the PlayStation 5 Remote Play network protocols.
+
+--------------------------------------------------------------------------------
+Interoperability and non-affiliation statement
+--------------------------------------------------------------------------------
+
+Ripcord is an independent interoperable client. It is NOT affiliated with,
+authorised by, endorsed by, or sponsored by Sony Interactive Entertainment Inc.
+or any of its affiliates.
+
+"PlayStation", "PS5", "PS4", "DualSense", "DualShock" and "Remote Play" are
+trademarks or registered trademarks of Sony Interactive Entertainment Inc.
+Ripcord uses these names only where necessary to describe compatibility
+truthfully (nominative use). No Sony trademark, logo, or other brand asset is
+included in this repository or in any build produced from it.
+
+Ripcord's protocol specification was derived independently, by static analysis
+of the publicly distributed vendor client running on hardware the authors own,
+and by capturing the authors' own network traffic between their own client and
+their own console under their own account. It reproduces interface facts
+required for interoperability -- protocol field numbers, byte offsets, enum
+values, JSON keys and HTTP header names -- and does not reproduce vendor source
+code or other authored expression. Vendor code is referenced only by relative
+virtual address.
+
+Interoperability constants
+--------------------------
+
+Ripcord includes a small set of constants (approximately 2 KB: two key-derivation
+tables, four field context keys, one key table, one transform table, and a byte
+offset) that the console itself computes against. A client cannot speak this
+protocol without them, and they cannot be altered without breaking
+interoperability, so they are interface facts rather than authored expression.
+They are included as data, read at runtime through the same configuration seam
+that accepts a local override, and are not compiled into program logic.
+
+These values are generic to the protocol. They are identical for every user and
+every console. Ripcord includes NO key material, credential, or identifier tied
+to any particular console, user, or account: no registration key, no pairing
+record, no session key, no device or account identifier. Those are generated or
+captured per user and stay on the user's own machine.
+
+A build that omits the constants entirely can be produced with
+-p:BundleInteropConstants=false; the result is inert and reports the constants as
+unavailable rather than failing at run time.
+
+No vendor source code is included in any form. See docs/protocol/README.md for
+the full provenance writeup.
+
+--------------------------------------------------------------------------------
+Third-party components
+--------------------------------------------------------------------------------
+
+Ripcord depends on third-party packages resolved at build time (NuGet) and on
+Microsoft platform components (the Windows App SDK, Media Foundation, Direct3D
+12, WASAPI, GameInput). Those components are governed by their own licences;
+none of their source is vendored into this repository.
