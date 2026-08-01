@@ -1,0 +1,12 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <!-- DpapiCredentialProtector pins buffers to hand DPAPI raw addresses. Scoped to that one file; the rest
+         of Core is safe managed code, and the TFM stays neutral (net10.0) so the core still builds on Linux. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+</Project>

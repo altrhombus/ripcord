@@ -1,0 +1,127 @@
+using Ripcord.Core.Input;
+using Ripcord.Core.Sessions;
+
+namespace Ripcord.Core.Settings;
+
+/// <summary>Which GPU to run decode/present on. Mirrors the native GpuSelection so Core stays host-neutral.</summary>
+public enum GpuPreference
+{
+    /// <summary>A decode-capable adapter that drives a display, lowest-power first. Usually the right answer:
+    /// on a hybrid laptop the panel hangs off the integrated GPU, so anything else adds a per-frame
+    /// cross-adapter copy for a workload that is one decode plus one fullscreen triangle.</summary>
+    Auto = 0,
+    PreferEfficiency = 1,
+    PreferPerformance = 2,
+    Specific = 3,
+}
+
+/// <summary>How the player leaves a running stream with a controller.</summary>
+public enum ExitGesture
+{
+    /// <summary>Start + Select + L1 + R1 together. Effectively impossible to hit by accident, and it does not
+    /// collide with any button the console needs — notably not the PS/Guide button, which must keep reaching
+    /// the console to open its own menu.</summary>
+    StartSelectShoulders = 0,
+
+    /// <summary>Both sticks clicked together. Quicker, but some games bind L3+R3.</summary>
+    BothSticksClicked = 1,
+
+    /// <summary>No controller gesture; keyboard/pointer only.</summary>
+    None = 2,
+}
+
+/// <summary>
+/// Everything the user can tune. One immutable record so it can be handed around, compared, and persisted
+/// atomically — and so "what is the current configuration" has exactly one answer.
+///
+/// <para>
+/// Every value here was previously a hardcoded constant somewhere in the app (resolution and bitrate in
+/// SessionPage, upscale mode in a floating ComboBox, deadzone in MainWindow, HUD visibility in XAML), which is
+/// why none of it was adjustable and the Settings page said "This is the Settings page".
+/// </para>
+/// </summary>
+public sealed record RipcordSettings
+{
+    // ---- video ----
+
+    /// <summary>Requested stream width. 1280x720 is the verified-good default; 1080p is selectable.</summary>
+    public int Width { get; init; } = 1280;
+
+    public int Height { get; init; } = 720;
+
+    public int TargetFps { get; init; } = 60;
+
+    /// <summary>Requested bitrate. The adaptive controller may reduce this at runtime.</summary>
+    public int BitrateKbps { get; init; } = 10_000;
+
+    public VideoCodec Codec { get; init; } = VideoCodec.H264;
+
+    /// <summary>
+    /// Request HDR. Only meaningful with <see cref="VideoCodec.Hevc"/>, since HDR needs a 10-bit stream and the
+    /// AVC path the console offers is 8-bit. Off by default: unproven on the wire, and an SDR display would need
+    /// tone mapping to show it correctly.
+    /// </summary>
+    public bool RequestHdr { get; init; }
+
+    public LatencyMode LatencyMode { get; init; } = LatencyMode.Balanced;
+
+    public UpscaleMode UpscaleMode { get; init; } = UpscaleMode.None;
+
+    /// <summary>Let the bandwidth controller reduce quality on loss/thermals. Off pins the requested rate.</summary>
+    public bool AdaptiveQuality { get; init; } = true;
+
+    /// <summary>
+    /// Send our measured link quality and desired bitrate to the console (CONNECTION_QUALITY). Experimental and
+    /// off by default: the message's bitrate units are not wire-confirmed, so it is opt-in until validated
+    /// against real hardware.
+    /// </summary>
+    public bool ReportConnectionQuality { get; init; }
+
+    // ---- device ----
+
+    public GpuPreference GpuPreference { get; init; } = GpuPreference.Auto;
+
+    /// <summary>Adapter LUID, used only when <see cref="GpuPreference"/> is <see cref="GpuPreference.Specific"/>.</summary>
+    public ulong GpuLuid { get; init; }
+
+    // ---- input ----
+
+    public ExitGesture ExitGesture { get; init; } = ExitGesture.StartSelectShoulders;
+
+    /// <summary>
+    /// Keyboard bindings and gamepad button remap. Persisted so a remap for exotic hardware survives a restart,
+    /// which is the entire point of having one — the alternative was a code change per device.
+    /// </summary>
+    public InputBindings InputBindings { get; init; } = new();
+
+    /// <summary>Stick deflection that counts as a direction when navigating the app's own UI.</summary>
+    public double UiStickDeadzone { get; init; } = 0.5;
+
+    // ---- presentation / diagnostics ----
+
+    /// <summary>Enter fullscreen automatically when a stream starts.</summary>
+    public bool FullScreenOnConnect { get; init; } = true;
+
+    /// <summary>
+    /// Show the diagnostics overlay from the start. Default false — it used to be visible by default, printing
+    /// live stick coordinates over the game.
+    /// </summary>
+    public bool ShowDiagnosticsOverlay { get; init; }
+
+    /// <summary>Larger text and controls, for handhelds and TV viewing distances.</summary>
+    public bool LargeUiScale { get; init; }
+
+    /// <summary>Build the session configuration these settings describe.</summary>
+    public SessionConfig ToSessionConfig()
+        => new(
+            Width,
+            Height,
+            TargetFps,
+            BitrateKbps,
+            Codec,
+            LatencyMode,
+            ReportConnectionQuality,
+            // HDR is gated on HEVC rather than trusted from settings: an 8-bit AVC stream cannot carry it, and
+            // asking for a combination the console cannot serve risks it declining the whole launchSpec.
+            RequestHdr && Codec == VideoCodec.Hevc ? DynamicRange.Hdr : DynamicRange.Sdr);
+}
