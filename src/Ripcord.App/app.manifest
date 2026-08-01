@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<assembly manifestVersion="1.0" xmlns="urn:schemas-microsoft-com:asm.v1">
+  <assemblyIdentity version="1.0.0.0" name="Ripcord.App.app"/>
+
+  <compatibility xmlns="urn:schemas-microsoft-com:compatibility.v1">
+    <application>
+      <!-- The ID below informs the system that this application is compatible with OS features first introduced in Windows 10. 
+      It is necessary to support features in unpackaged applications, for example the custom titlebar implementation.
+      For more info see https://docs.microsoft.com/windows/apps/windows-app-sdk/use-windows-app-sdk-run-time#declare-os-compatibility-in-your-application-manifest -->
+      <supportedOS Id="{8e0f7a12-bfb3-4fe8-b9a5-48fd50a15a9a}" />
+    </application>
+  </compatibility>
+  
+  <application xmlns="urn:schemas-microsoft-com:asm.v3">
+    <windowsSettings>
+      <dpiAwareness xmlns="http://schemas.microsoft.com/SMI/2016/WindowsSettings">PerMonitorV2</dpiAwareness>
+    </windowsSettings>
+  </application>
+
+  <!--
+    Registration-free WinRT activation for our own native C++/WinRT components
+    (Ripcord.Media.Interop, Ripcord.Input.Interop). An MSIX-packaged app gets this
+    automatically generated from the referenced winmd; going unpackaged (see
+    Ripcord.App.csproj) loses that, so it's declared explicitly here instead. Each
+    runtimeclass needs its own <activatableClass> entry.
+  -->
+  <file name="Ripcord.Media.Interop.dll">
+    <activatableClass
+      name="Ripcord.Media.Interop.VideoCapabilities"
+      threadingModel="both"
+      xmlns="urn:schemas-microsoft-com:winrt.v1" />
+    <activatableClass
+      name="Ripcord.Media.Interop.VideoRenderer"
+      threadingModel="both"
+      xmlns="urn:schemas-microsoft-com:winrt.v1" />
+    <activatableClass
+      name="Ripcord.Media.Interop.AudioRenderer"
+      threadingModel="both"
+      xmlns="urn:schemas-microsoft-com:winrt.v1" />
+  </file>
+  <file name="Ripcord.Input.Interop.dll">
+    <activatableClass
+      name="Ripcord.Input.Interop.GamepadReader"
+      threadingModel="both"
+      xmlns="urn:schemas-microsoft-com:winrt.v1" />
+  </file>
+</assembly>

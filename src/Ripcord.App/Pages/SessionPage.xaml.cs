@@ -1,0 +1,1418 @@
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.IO;
+using System.Linq;
+using System.Net;
+using System.Runtime.InteropServices;
+using System.Text;
+using System.Threading.Tasks;
+using Microsoft.UI.Dispatching;
+using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Input;
+using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Navigation;
+using Microsoft.UI.Xaml.Shapes;
+using Ripcord.Client;
+using Ripcord.Core.Input;
+using Ripcord.Core.Platform;
+using Ripcord.Core.Power;
+using Ripcord.Core.Sessions;
+using Ripcord.Core.Settings;
+using Ripcord.Diagnostics;
+using Ripcord.Input;
+using Ripcord.Media;
+using Ripcord.Protocol.Halyard.Session;
+using Ripcord_App.Services;
+using WinRT;
+
+namespace Ripcord_App.Pages;
+
+/// <summary>
+/// The streaming surface. Its job is now presentation only: <see cref="SessionController"/> owns the session
+/// lifecycle (connect, degrade, reconnect, tear down), so this page renders status, routes controller input,
+/// and handles the immersive-mode concerns a Page is actually responsible for.
+/// </summary>
+public sealed partial class SessionPage : Page
+{
+    private readonly DispatcherQueue _dispatcherQueue = DispatcherQueue.GetForCurrentThread();
+    private readonly ISettingsStore _settingsStore = new SettingsStore();
+
+    private RipcordSettings _settings = new();
+    private IControllerSource? _controllerSource;
+
+    // Pad frames and keyboard frames merged into the single stream the session consumes. Frames are absolute
+    // state, so the two sources have to be combined rather than interleaved — see MergedInputSource.
+    private MergedInputSource? _inputSource;
+
+    // The element the key handlers are attached to: the window root, so delivery does not depend on which element
+    // holds focus. Held so it can be unsubscribed from exactly what was subscribed to.
+    private UIElement? _keyRoot;
+
+    // On-screen controls: idle timer plus which console buttons the user is currently holding, so the bar never
+    // hides out from under a finger.
+    private DispatcherTimer? _touchControlsTimer;
+    private ControllerButtons _virtualButtonsHeld;
+
+    /// <summary>How long the on-screen controls linger after the last pointer activity.</summary>
+    private static readonly TimeSpan TouchControlsIdleTimeout = TimeSpan.FromSeconds(4);
+    private IDisposable? _connectionsSubscription;
+    private IDisposable? _stateSubscription;
+
+    private D3D12VideoDecodePipeline? _pipeline;
+    private SessionController? _controller;
+    private IDisposable? _statusSubscription;
+    private DispatcherTimer? _statsTimer;
+
+    private PairedConsole? _console;
+    private IPowerThermalMonitor? _powerMonitor;
+    private ExitGestureDetector? _exitDetector;
+    private bool _leaving;
+
+    // Sampled diagnostics state.
+    private long _prevDecodedFrames;
+    private long _prevPresentedFrames;
+    private long _prevStatsTicks;
+    private long _prevAudioFrames;
+
+    // Signature of the pills currently shown, so the row is rebuilt only when the SET changes rather than twice a
+    // second — recreating the elements every tick would churn layout for no visible difference.
+    private string _pillSignature = string.Empty;
+
+    // Every currently-attached controller, keyed by id. A dictionary rather than a "last event wins" string,
+    // because several pads can be attached at once and each may be seen by a different engine.
+    private readonly Dictionary<string, string> _connectedControllers = [];
+
+    // Rolling history for the diagnostics graph. 60 samples at the 500 ms stats cadence = 30 seconds.
+    private readonly MetricHistory _fpsHistory = new(60);
+    private readonly MetricHistory _lossHistory = new(60);
+    private readonly MetricHistory _rttHistory = new(60);
+    private readonly MetricHistory _bitrateHistory = new(60);
+
+    // Full-scale values for each series. Fixed rather than auto-scaled so the shape means the same thing from
+    // one glance to the next — an auto-scaled axis makes a calm stream and a broken one look identical.
+    // Full scale for the loss plot: the health assessor's WARN threshold, so the line touching the top means
+    // exactly "loss is now a problem" — the same principle already used for latency below. It was 20%, against
+    // which a real 0.4% blip drew as 2% of the row height, i.e. invisible: the row could not distinguish "no
+    // loss" from "a little loss", which is the distinction that matters most on a wireless link.
+    /// <summary>
+    /// Shortest sampling interval that yields a meaningful rate. The stats timer nominally fires every 500 ms, so
+    /// anything under half that is a bunched tick after a delay rather than a real observation window — dividing a
+    /// burst of frames by a ~37 ms gap reported 1610 fps, which is impossible, and it poisoned the 30-second peak
+    /// permanently because a maximum never decays.
+    /// </summary>
+    private const double MinimumSampleSeconds = 0.25;
+
+    private static readonly double LossFullScalePercent = StreamHealthAssessor.LossWarnRatio * 100.0;
+    // Full scale for the RTT plot. Set to the health assessor's warn threshold so the line reaching the top
+    // means exactly "network delay is now high" rather than an arbitrary fraction. At the old 200 ms even a
+    // bad Wi-Fi link drew as a flat line along the bottom, which made the series useless.
+    private const double RttFullScaleMs = StreamHealthAssessor.RttWarnMs;
+    // Bitrate has no fixed sensible ceiling, so it is scaled to the session's own cap with headroom rather than a
+    // constant. The old fixed 25 Mbps silently CLIPPED: a 40 Mbps cap peaking at 30.5 Mbps drew flat along the top
+    // and the shape was lost exactly when it was most interesting. The cap is stable for the session, so this
+    // keeps the "shape means the same thing each glance" property that motivated a fixed scale.
+    private double BitrateFullScaleMbps => Math.Max(1, _settings.BitrateKbps / 1000.0 * 1.2);
+
+    // Whether we switched the window to fullscreen, so we only restore what we changed.
+    private bool _enteredFullScreen;
+
+    public SessionPage()
+    {
+        InitializeComponent();
+    }
+
+    /// <summary>
+    /// True while controller input is being routed to the console. MainWindow's gamepad UI-navigation checks
+    /// this so it does not consume the same pad — otherwise B would navigate back instead of reaching the
+    /// console. The exit gesture (below) is what keeps that from making the stream inescapable.
+    /// </summary>
+    public bool IsCapturingInput => _controller?.CurrentStatus.IsLive == true;
+
+    protected override void OnNavigatedTo(NavigationEventArgs e)
+    {
+        base.OnNavigatedTo(e);
+        _console = e.Parameter as PairedConsole;
+    }
+
+    private void Page_Loaded(object sender, RoutedEventArgs e)
+    {
+        _settings = _settingsStore.Current;
+        _exitDetector = new ExitGestureDetector(_settings.ExitGesture);
+
+        DiagnosticsPanel.Visibility = _settings.ShowDiagnosticsOverlay ? Visibility.Visible : Visibility.Collapsed;
+
+        // Input set-up is ISOLATED and non-fatal. It reaches native code (GameInput via Ripcord.Input.Interop), and
+        // a stream is perfectly watchable without a controller — so a failure here must degrade to "no input", never
+        // prevent connecting. It previously ran unguarded ahead of the first status message, so any failure left the
+        // static "Starting…" on screen with nothing reported anywhere.
+        try
+        {
+            _controllerSource = ControllerSourceFactory.Create();
+            ControllerConnectedText.Text = "none attached";
+            InputEnginesText.Text = $"engines: {_controllerSource.SourceName}";
+
+            _connectionsSubscription = _controllerSource.Connections.Subscribe(
+                new AnonymousObserver<ControllerConnectionEvent>(OnConnectionChanged));
+            _stateSubscription = _controllerSource.StateChanges(string.Empty).Subscribe(
+                new AnonymousObserver<ControllerStateFrame>(OnStateChanged));
+
+            // Keyboard support and the gamepad remap both live here. Built even when keyboard input is disabled, so
+            // the remap still applies to pad frames.
+            _inputSource = new MergedInputSource(
+                _controllerSource.StateChanges(string.Empty), _settings.InputBindings);
+        }
+        catch (Exception ex)
+        {
+            _controllerSource = null;
+            _inputSource = null;
+            ControllerConnectedText.Text = "unavailable";
+            InputEnginesText.Text = $"input failed to start: {ex.Message}";
+            Debug.WriteLine($"[Ripcord] input initialisation failed: {ex}");
+        }
+
+        // Keyboard routing, on the WINDOW ROOT rather than this page: bubbling key events start at the FOCUSED
+        // element (so a focused button consumed Space), and SwapChainPanel is not focusable, so clicking the video
+        // moves focus out of this page's subtree entirely. Subscribing at the root makes delivery focus-independent.
+        WireConsoleButtons();
+
+        // Show the controls once on entry so they are discoverable, then let them time out.
+        ShowTouchControls();
+
+        _keyRoot = App.MainWindow?.Content as UIElement ?? this;
+        _keyRoot.PreviewKeyDown += OnPageKeyDown;
+        _keyRoot.PreviewKeyUp += OnPageKeyUp;
+
+        // Focus loss stops key-up delivery, so anything held at that moment would stay held indefinitely.
+        if (App.MainWindow is { } window)
+        {
+            window.Activated += OnWindowActivated;
+        }
+
+        SizeChanged += Page_SizeChanged;
+        ApplyDiagnosticsHeightLimit();
+
+        FocusStreamSurface();
+
+        // async void is confined to this one launcher, and it cannot throw: StartSessionAsync handles its own
+        // failures and reports them through the status overlay.
+        _ = StartSessionAsync();
+    }
+
+    private async Task StartSessionAsync()
+    {
+        if (_console is null)
+        {
+            ShowStatus("No console selected", "Choose a console from the Consoles page to start streaming.", terminal: true);
+            return;
+        }
+
+        if (!IPAddress.TryParse(_console.Host, out IPAddress? address))
+        {
+            ShowStatus("Can't reach that console", $"'{_console.Host}' is not a valid IP address.", terminal: true);
+            return;
+        }
+
+        SessionConfig config = _settings.ToSessionConfig();
+
+        // Each phase announces itself BEFORE it runs, so if one hangs the last message on screen names it. Video
+        // device creation in particular is a plausible place to stall on unfamiliar hardware, and it used to be
+        // indistinguishable from a network problem because the overlay said "Connecting…" throughout.
+        ShowStatus("Preparing video…", "Creating the graphics device and decoder.", terminal: false);
+
+        try
+        {
+            await InitVideoPipelineAsync(config);
+        }
+        catch (Exception ex)
+        {
+            ShowStatus("Video setup failed", ex.Message, terminal: true);
+            return;
+        }
+
+        ShowStatus("Checking credentials…", "Loading control secrets and pairing.", terminal: false);
+        // Diagnostics run from here on, before the session exists: an empty panel is least useful precisely while
+        // something is failing to connect, and the GPU/adapter rows are already meaningful at this point.
+        _statsTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
+        _statsTimer.Tick += StatsTick;
+        _statsTimer.Start();
+
+        var secrets = HalyardControlSecretsLoader.Load(out string cryptoSource);
+        var factory = new HalyardSessionFactory(secrets, new PairedConsoleCredentialStore(new PairedConsoleStore()));
+        if (!factory.HasRealCrypto)
+        {
+            // FATAL, and it must say so. Without the control secrets the session crypto is a passthrough stub, so
+            // the handshake can never complete — this used to be noted in the diagnostics panel and then the connect
+            // was attempted anyway, leaving "Connecting…" on screen indefinitely with no stated cause. On a machine
+            // with no debugger that is close to undiagnosable, so the message names the file AND the directory.
+            // Normal builds bundle these constants, so reaching here means either this build omitted them
+            // (-p:BundleInteropConstants=false) or an override path was set and is broken. Say both, because
+            // on a machine with no debugger a wrong hint here is expensive.
+            D3D12StatusText.Text = $"Control constants NOT loaded — {cryptoSource}";
+            ShowStatus(
+                "Missing control constants",
+                "Streaming needs the protocol's control-plane constants, which are normally bundled with the "
+                + "build. This build either omitted them (BundleInteropConstants=false) or has a broken "
+                + $"override. To supply them explicitly, put control_crypto_vectors.json in "
+                + $"{new DefaultPlatformPaths().ConfigDirectory} or point RIPCORD_CONTROL_FIXTURE at it, then "
+                + $"reconnect.\n\nDetail: {cryptoSource}",
+                terminal: true);
+            return;
+        }
+
+        // A real power monitor, so the adaptive controller's battery / energy-saver / critical-battery caps can
+        // actually engage. Without one injected, SessionController falls back to UnknownPowerThermalMonitor,
+        // which always claims external power — meaning a handheld on battery streamed at full desktop quality.
+        _powerMonitor = PowerThermalMonitor.ForCurrentPlatform();
+
+        ShowStatus("Connecting to your console…", "Control setup and stream negotiation.", terminal: false);
+
+        // The controller owns everything from here: handshake, media/input routing, stall detection, reconnect.
+        _controller = new SessionController(
+            () => factory.Create(_console!.Id, address),
+            _pipeline!,
+            _inputSource,
+            _powerMonitor);
+
+        _statusSubscription = _controller.Status.Subscribe(
+            new AnonymousObserver<SessionStatus>(OnStatusChanged));
+
+        OnStatusChanged(_controller.CurrentStatus);
+        await _controller.StartAsync(config);
+    }
+
+    /// <summary>Stand up the D3D12 decode pipeline and bind its swap chain to the panel.</summary>
+    private async Task InitVideoPipelineAsync(SessionConfig config)
+    {
+        // Adapter selection must be set before StartAsync (it decides which device to create); the upscale mode
+        // is applied after, because its setter reaches into the renderer.
+        _pipeline = new D3D12VideoDecodePipeline
+        {
+            GpuSelection = ToNativeGpuSelection(_settings.GpuPreference),
+            SpecificAdapterLuid = _settings.GpuLuid,
+        };
+
+        _pipeline.DeviceLost += OnDeviceLost;
+        await _pipeline.StartAsync(config, default);
+        _pipeline.UpscaleMode = _settings.UpscaleMode;
+
+        var panelNative = VideoPanel.As<ISwapChainPanelNative>();
+        Marshal.ThrowExceptionForHR(panelNative.SetSwapChain(new IntPtr((long)_pipeline.SwapChainPointer)));
+
+        AdapterText.Text = $"GPU: {_pipeline.ActiveAdapterDescription}";
+
+        // Keep the swap chain sized to the panel in physical pixels. These now only publish values for the
+        // decode worker to pick up, so they never block this (UI) thread on GPU work.
+        VideoPanel.SizeChanged += OnVideoPanelSizeChanged;
+        VideoPanel.CompositionScaleChanged += OnVideoPanelScaleChanged;
+        UpdateSwapChainSize();
+    }
+
+    private static Ripcord.Media.Interop.GpuSelection ToNativeGpuSelection(GpuPreference preference)
+        => preference switch
+        {
+            GpuPreference.PreferEfficiency => Ripcord.Media.Interop.GpuSelection.PreferEfficiency,
+            GpuPreference.PreferPerformance => Ripcord.Media.Interop.GpuSelection.PreferPerformance,
+            GpuPreference.Specific => Ripcord.Media.Interop.GpuSelection.Specific,
+            _ => Ripcord.Media.Interop.GpuSelection.Auto,
+        };
+
+    // ---- status ----
+
+    private void OnStatusChanged(SessionStatus status)
+    {
+        // Published from the controller's background loop, so marshal before touching XAML.
+        _dispatcherQueue.TryEnqueue(() =>
+        {
+            switch (status.Lifecycle)
+            {
+                case SessionLifecycle.Streaming:
+                    HideStatus();
+                    EnterImmersiveMode();
+                    _ = ShowExitHintBriefly();
+                    break;
+
+                case SessionLifecycle.Degraded:
+                    // Deliberately quiet: most stalls recover in under a second, and flashing a scary overlay
+                    // over a picture that is about to come back is worse than saying nothing.
+                    ShowStatus("Reconnecting the video…", status.Detail, terminal: false);
+                    break;
+
+                case SessionLifecycle.Connecting:
+                case SessionLifecycle.Reconnecting:
+                    ShowStatus(
+                        status.Lifecycle == SessionLifecycle.Connecting ? "Connecting…" : "Reconnecting…",
+                        status.Detail,
+                        terminal: false);
+                    break;
+
+                case SessionLifecycle.Failed:
+                    ShowStatus("Couldn't connect", status.Detail, terminal: true);
+                    LeaveImmersiveMode();
+                    break;
+
+                case SessionLifecycle.Closed:
+                    HideStatus();
+                    break;
+            }
+        });
+    }
+
+    private void ShowStatus(string headline, string detail, bool terminal)
+    {
+        StatusHeadline.Text = headline;
+        StatusDetail.Text = detail;
+        StatusRing.IsActive = !terminal;
+        StatusActions.Visibility = terminal ? Visibility.Visible : Visibility.Collapsed;
+        StatusOverlay.Visibility = Visibility.Visible;
+    }
+
+    private void HideStatus()
+    {
+        StatusOverlay.Visibility = Visibility.Collapsed;
+        StatusRing.IsActive = false;
+    }
+
+    private void OnDeviceLost(int reason)
+    {
+        _dispatcherQueue.TryEnqueue(() => ShowStatus(
+            "Graphics device was reset",
+            "The display driver restarted (this can happen after a driver update or if an external GPU was "
+            + $"unplugged). Go back and reconnect to resume. [0x{reason:X8}]",
+            terminal: true));
+    }
+
+    // ---- immersive mode ----
+
+    /// <summary>The hosting window, which owns presenter and chrome decisions a Page cannot make.</summary>
+    private static MainWindow? Host => App.MainWindow as MainWindow;
+
+    /// <summary>
+    /// Fullscreen with the chrome out of the way, and the display kept awake. A remote play stream is the whole
+    /// point of the window while it is running; it previously rendered inside a nav pane and title bar, and
+    /// nothing stopped the screen blanking mid-game because a gamepad is not "user activity" to Windows.
+    /// </summary>
+    private void EnterImmersiveMode()
+    {
+        KeepDisplayAwake(true);
+
+        if (_settings.FullScreenOnConnect && !_enteredFullScreen)
+        {
+            Host?.SetFullScreen(true);
+            _enteredFullScreen = true;
+        }
+    }
+
+    private void LeaveImmersiveMode()
+    {
+        KeepDisplayAwake(false);
+
+        if (_enteredFullScreen)
+        {
+            Host?.SetFullScreen(false);
+            _enteredFullScreen = false;
+        }
+    }
+
+    /// <summary>Toggle fullscreen without disturbing the session. Bound to F11.</summary>
+    private void ToggleFullScreen()
+    {
+        if (Host is not { } host)
+        {
+            return;
+        }
+
+        bool goingFullScreen = !host.IsFullScreen;
+        host.SetFullScreen(goingFullScreen);
+        _enteredFullScreen = goingFullScreen;
+    }
+
+    private static void KeepDisplayAwake(bool keepAwake)
+    {
+        // ES_CONTINUOUS resets the idle timers; dropping the flags restores normal power behaviour. P/Invoked
+        // rather than using DisplayRequest, which is unreliable in a WinUI 3 desktop app.
+        const uint EsContinuous = 0x80000000;
+        const uint EsDisplayRequired = 0x00000002;
+        const uint EsSystemRequired = 0x00000001;
+
+        _ = SetThreadExecutionState(keepAwake
+            ? EsContinuous | EsDisplayRequired | EsSystemRequired
+            : EsContinuous);
+    }
+
+    // DllImport rather than the source-generated LibraryImport: the latter emits unsafe marshalling code and so
+    // requires AllowUnsafeBlocks for the entire project, which is a poor trade for a single call taking and
+    // returning a uint. There is nothing to marshal here.
+    [DllImport("kernel32.dll")]
+    private static extern uint SetThreadExecutionState(uint esFlags);
+
+    private Task ShowExitHintBriefly()
+    {
+        if (_settings.ExitGesture == ExitGesture.None)
+        {
+            ExitHintText.Text = "Press Esc to leave the stream";
+        }
+        else
+        {
+            ExitHintText.Text =
+                $"{ExitGestureDetector.Describe(_settings.ExitGesture)} to leave · Esc for windowed";
+        }
+
+        ExitHint.Visibility = Visibility.Visible;
+        return HideExitHintAfterDelay();
+    }
+
+    /// <summary>
+    /// Fade the hint out after a few seconds. Guarded because the page can be torn down while this is pending,
+    /// and touching XAML after unload would throw on a thread nobody is watching.
+    /// </summary>
+    private async Task HideExitHintAfterDelay()
+    {
+        long token = ++_hintToken;
+
+        try
+        {
+            await Task.Delay(TimeSpan.FromSeconds(6));
+        }
+        catch (Exception)
+        {
+            return;
+        }
+
+        // A newer hint superseded this one, or the page is going away.
+        if (token != _hintToken || _leaving)
+        {
+            return;
+        }
+
+        ExitHint.Visibility = Visibility.Collapsed;
+    }
+
+    /// <summary>Distinguishes successive hints so an older timer cannot hide a newer message.</summary>
+    private long _hintToken;
+
+    // ---- leaving ----
+
+    /// <summary>
+    /// Escape steps back one level rather than ending everything at once: fullscreen → windowed → leave the
+    /// session. Dropping straight out of a live session on a single Escape is a lot of destruction for one
+    /// keypress, and "let me see the desktop for a moment without disconnecting" is the more common intent.
+    /// </summary>
+    private void ExitAccelerator_Invoked(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
+    {
+        args.Handled = true;
+
+        if (Host is { IsFullScreen: true })
+        {
+            LeaveImmersiveMode();
+            ShowWindowedHintBriefly();
+            return;
+        }
+
+        LeaveSession();
+    }
+
+    private void FullScreenAccelerator_Invoked(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
+    {
+        args.Handled = true;
+        ToggleFullScreen();
+    }
+
+    /// <summary>Tell the user Escape again will disconnect, so the two-step behaviour is discoverable.</summary>
+    private void ShowWindowedHintBriefly()
+    {
+        ExitHintText.Text = "Windowed — press F11 for full screen, or Esc again to disconnect";
+        ExitHint.Visibility = Visibility.Visible;
+        _ = HideExitHintAfterDelay();
+    }
+
+    private void LeaveButton_Click(object sender, RoutedEventArgs e) => LeaveSession();
+
+    private void RetryButton_Click(object sender, RoutedEventArgs e)
+    {
+        // A fresh controller: the previous one reached a terminal state and will not restart.
+        _ = RestartSessionAsync();
+    }
+
+    private async Task RestartSessionAsync()
+    {
+        ShowStatus("Connecting…", "Starting a new session.", terminal: false);
+        await TeardownControllerAsync();
+        await StartSessionAsync();
+    }
+
+    /// <summary>
+    /// Dismiss the stream layer. That unloads this page, which triggers Page_Unloaded and the async teardown.
+    /// </summary>
+    private void LeaveSession()
+    {
+        if (_leaving)
+        {
+            return;
+        }
+
+        _leaving = true;
+        LeaveImmersiveMode();
+        Host?.CloseStream();
+    }
+
+    // ---- input ----
+
+    private void OnConnectionChanged(ControllerConnectionEvent evt)
+    {
+        _dispatcherQueue.TryEnqueue(() =>
+        {
+            // Report the ENGINE, the transport and the device id, not just "connected" — the event carries all
+            // three and they were being discarded, which made a hardware test inconclusive. Tracked as a SET,
+            // because every engine now runs at once and more than one pad can be attached.
+            if (evt.Connected)
+            {
+                string transport = evt.Transport switch
+                {
+                    ControllerTransport.Usb => "USB",
+                    ControllerTransport.Bluetooth => "Bluetooth",
+                    _ => "transport n/a",
+                };
+
+                string engine = string.IsNullOrEmpty(evt.Source) ? "?" : evt.Source;
+                _connectedControllers[evt.ControllerId] = $"{evt.ControllerId} · {transport} · {engine}";
+            }
+            else
+            {
+                _connectedControllers.Remove(evt.ControllerId);
+            }
+
+            ControllerConnectedText.Text = _connectedControllers.Count switch
+            {
+                0 => "none attached",
+                1 => _connectedControllers.Values.First(),
+
+                // All of them, one per line: with several pads merged into one virtual controller, which devices
+                // are contributing is exactly the thing that is otherwise invisible.
+                _ => string.Join("\n", _connectedControllers.Values.Order()),
+            };
+        });
+    }
+
+    private void OnStateChanged(ControllerStateFrame frame)
+    {
+        // Runs on the input thread. The exit gesture is evaluated here rather than in MainWindow because
+        // MainWindow deliberately ignores the pad while a stream is capturing it.
+        bool exit = _exitDetector?.Update(frame, DateTimeOffset.UtcNow) == true;
+        double progress = _exitDetector?.Progress ?? 0;
+
+        _dispatcherQueue.TryEnqueue(() =>
+        {
+            if (exit)
+            {
+                LeaveSession();
+                return;
+            }
+
+            ExitProgressBar.Value = progress;
+            ExitProgressPanel.Visibility = progress is > 0 and < 1 ? Visibility.Visible : Visibility.Collapsed;
+
+            if (DiagnosticsPanel.Visibility == Visibility.Visible)
+            {
+                ControllerButtonsText.Text = $"Buttons: {frame.Buttons}";
+                ControllerSticksText.Text =
+                    $"L: ({frame.LeftStickX:F2}, {frame.LeftStickY:F2})  R: ({frame.RightStickX:F2}, {frame.RightStickY:F2})";
+                ControllerTriggersText.Text = $"LT: {frame.LeftTrigger:F2}  RT: {frame.RightTrigger:F2}";
+            }
+        });
+    }
+
+    // ---- panel geometry ----
+
+    private void OnVideoPanelSizeChanged(object sender, SizeChangedEventArgs e) => UpdateSwapChainSize();
+
+    private void OnVideoPanelScaleChanged(SwapChainPanel sender, object args) => UpdateSwapChainSize();
+
+    private void UpdateSwapChainSize()
+    {
+        if (_pipeline is null)
+        {
+            return;
+        }
+
+        float scaleX = VideoPanel.CompositionScaleX;
+        float scaleY = VideoPanel.CompositionScaleY;
+        int width = Math.Max(1, (int)Math.Round(VideoPanel.ActualWidth * scaleX));
+        int height = Math.Max(1, (int)Math.Round(VideoPanel.ActualHeight * scaleY));
+
+        _pipeline.Resize(width, height);
+        _pipeline.SetCompositionScale(scaleX, scaleY);
+    }
+
+    // ---- diagnostics ----
+
+    /// <summary>
+    /// Move focus off the on-screen chrome after it is used.
+    ///
+    /// <para>
+    /// No longer required for key delivery — that is handled at the window root, independent of focus — but it
+    /// still stops a button keeping a visible focus ring and being re-triggered by Enter. Only when keyboard input
+    /// is enabled: stealing focus otherwise would break Tab access to those buttons for someone who never wanted
+    /// keys sent to the console.
+    /// </para>
+    /// </summary>
+    private void FocusStreamSurface()
+    {
+        if (_settings.InputBindings.KeyboardEnabled)
+        {
+            Focus(FocusState.Programmatic);
+        }
+    }
+
+    private void StreamSurface_PointerPressed(object sender, PointerRoutedEventArgs e)
+    {
+        FocusStreamSurface();
+        ShowTouchControls();
+    }
+
+    private void StreamSurface_PointerMoved(object sender, PointerRoutedEventArgs e) => ShowTouchControls();
+
+    /// <summary>
+    /// Reveal the on-screen controls and restart their idle timer.
+    ///
+    /// <para>
+    /// Summoned rather than permanent: the bar carries the only route to the PS button on hardware that has none,
+    /// so it has to be reachable — but it sits over the game, so it must not stay. Any pointer or touch activity
+    /// brings it back.
+    /// </para>
+    /// </summary>
+    private void ShowTouchControls()
+    {
+        TouchControls.Visibility = Visibility.Visible;
+
+        _touchControlsTimer ??= new DispatcherTimer { Interval = TouchControlsIdleTimeout };
+        _touchControlsTimer.Tick -= TouchControlsTimer_Tick;
+        _touchControlsTimer.Tick += TouchControlsTimer_Tick;
+        _touchControlsTimer.Stop();
+        _touchControlsTimer.Start();
+    }
+
+    private void TouchControlsTimer_Tick(object? sender, object e)
+    {
+        _touchControlsTimer?.Stop();
+
+        // Never hide mid-press: releasing a button the user is still holding would send a phantom release, and
+        // hiding the control they are touching is its own small betrayal.
+        if (_virtualButtonsHeld != ControllerButtons.None)
+        {
+            ShowTouchControls();
+            return;
+        }
+
+        TouchControls.Visibility = Visibility.Collapsed;
+    }
+
+    /// <summary>
+    /// Press a console button from the bar. Pointer events rather than Click, because a hold must read as a hold —
+    /// holding PS opens the console's power menu, and a Click handler can only ever express a tap.
+    /// </summary>
+    /// <summary>
+    /// Wire the console buttons' pointer events.
+    ///
+    /// <para>
+    /// Registered in code with <c>handledEventsToo: true</c>, which is the whole reason this method exists: WinUI's
+    /// ButtonBase handles PointerPressed and PointerReleased itself to drive its visual states, and marks them
+    /// handled before any XAML-declared handler runs. Wiring them as XAML attributes therefore looked correct and
+    /// silently never fired — the buttons appeared and did nothing. XAML attribute syntax has no way to opt into
+    /// handled events, so this cannot be expressed in markup.
+    /// </para>
+    ///
+    /// <para>
+    /// Click would have worked, but only as a tap: holding PS opens the console's power menu, and press/release must
+    /// stay distinct for that.
+    /// </para>
+    /// </summary>
+    private void WireConsoleButtons()
+    {
+        foreach (Button button in new[] { PsButton, CreateButton, OptionsButton, TouchpadButton })
+        {
+            button.AddHandler(
+                PointerPressedEvent, new PointerEventHandler(ConsoleButton_PointerPressed), handledEventsToo: true);
+            button.AddHandler(
+                PointerReleasedEvent, new PointerEventHandler(ConsoleButton_PointerReleased), handledEventsToo: true);
+
+            // A drag off the button must release it, or it stays asserted for the rest of the session.
+            button.AddHandler(
+                PointerCaptureLostEvent, new PointerEventHandler(ConsoleButton_PointerReleased), handledEventsToo: true);
+
+            // Nothing can be sent without an input source, so say so rather than offering a dead control.
+            button.IsEnabled = _inputSource is not null;
+        }
+    }
+
+    private void ConsoleButton_PointerPressed(object sender, PointerRoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { Tag: string name } || !Enum.TryParse(name, out ControllerButtons button))
+        {
+            return;
+        }
+
+        _virtualButtonsHeld |= button;
+        _inputSource?.SetVirtualButton(button, pressed: true);
+        ShowTouchControls();
+    }
+
+    private void ConsoleButton_PointerReleased(object sender, PointerRoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { Tag: string name } || !Enum.TryParse(name, out ControllerButtons button))
+        {
+            return;
+        }
+
+        // PointerCaptureLost is wired to this too: a drag off the button must release it, or it stays held forever.
+        _virtualButtonsHeld &= ~button;
+        _inputSource?.SetVirtualButton(button, pressed: false);
+        ShowTouchControls();
+    }
+
+
+
+    /// <summary>
+    /// Bound the diagnostics panel to the window so its body scrolls instead of overflowing.
+    ///
+    /// <para>
+    /// Applied from code because the panel is top-aligned: without a ceiling it simply grows past the bottom of the
+    /// window and the last rows are unreachable, which is what happened at 7 inches (the power row was cut in half).
+    /// Stretching it instead would make it full height even when nearly empty.
+    /// </para>
+    /// </summary>
+    private void Page_SizeChanged(object sender, SizeChangedEventArgs e) => ApplyDiagnosticsHeightLimit();
+
+    private void ApplyDiagnosticsHeightLimit()
+    {
+        // The panel's own 16px margins top and bottom, plus a little room so it never touches the edge.
+        double available = ActualHeight - 48;
+        DiagnosticsPanel.MaxHeight = available > 120 ? available : 120;
+    }
+
+    private void SaveDiagnosticsAccelerator_Invoked(
+        KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
+    {
+        args.Handled = true;
+        SaveDiagnostics();
+    }
+
+    private void SaveDiagnosticsButton_Click(object sender, RoutedEventArgs e)
+    {
+        SaveDiagnostics();
+        FocusStreamSurface();
+    }
+
+    /// <summary>
+    /// Write a plain-text snapshot of everything the overlay knows to the state directory.
+    ///
+    /// <para>
+    /// This exists for machines with no development environment — a handheld, in practice — where the overlay can
+    /// be photographed but nothing can be attached to the process, ETW is impractical to collect, and
+    /// Debug.WriteLine goes nowhere. The report is deliberately plain text and self-contained so it can be read
+    /// anywhere and pasted whole.
+    /// </para>
+    /// </summary>
+    private void SaveDiagnostics()
+    {
+        try
+        {
+            string directory = new DefaultPlatformPaths().StateDirectory;
+
+            // Timestamped rather than overwritten: comparing two runs is the usual reason to capture one, and a
+            // single rolling file makes that impossible.
+            string path = System.IO.Path.Combine(
+                directory,
+                $"diagnostics-{DateTime.Now:yyyyMMdd-HHmmss}.txt");
+
+            File.WriteAllText(path, BuildDiagnosticsReport());
+
+            // Show WHERE it went. On a handheld there is no other way to find out.
+            DiagnosticsSavedText.Text = $"saved: {path}";
+        }
+        catch (Exception ex)
+        {
+            // Never let a diagnostics action be the thing that kills a live session.
+            DiagnosticsSavedText.Text = $"could not save: {ex.Message}";
+            Debug.WriteLine($"[Ripcord] diagnostics save failed: {ex}");
+        }
+    }
+
+    private string BuildDiagnosticsReport()
+    {
+        var report = new StringBuilder();
+        report.AppendLine("Ripcord diagnostics");
+        report.AppendLine($"captured           {DateTimeOffset.Now:u}");
+        report.AppendLine($"app version        {typeof(SessionPage).Assembly.GetName().Version}");
+        report.AppendLine($"os                 {Environment.OSVersion} ({RuntimeInformation.OSArchitecture})");
+        report.AppendLine();
+
+        report.AppendLine("[requested]");
+        report.AppendLine($"resolution         {_settings.Width}x{_settings.Height} @ {_settings.TargetFps}");
+        report.AppendLine($"bitrate cap        {_settings.BitrateKbps} kbps");
+        report.AppendLine($"codec              {_settings.Codec}   hdr={_settings.RequestHdr}");
+        report.AppendLine($"adaptive quality   {_settings.AdaptiveQuality}   report quality={_settings.ReportConnectionQuality}");
+        report.AppendLine($"gpu preference     {_settings.GpuPreference} (luid {_settings.GpuLuid:X})");
+        report.AppendLine($"upscale            {_settings.UpscaleMode}");
+        report.AppendLine();
+
+        report.AppendLine("[input]");
+        report.AppendLine($"source             {_controllerSource?.SourceName ?? "none"}");
+        report.AppendLine($"controller         {ControllerConnectedText.Text}");
+        report.AppendLine($"keyboard enabled   {_settings.InputBindings.KeyboardEnabled}");
+        report.AppendLine($"keys bound         {_settings.InputBindings.Keyboard.Count}");
+        report.AppendLine($"gamepad remaps     {_settings.InputBindings.GamepadRemap.Count}");
+        report.AppendLine($"exit gesture       {_settings.ExitGesture}");
+        report.AppendLine();
+
+        if (_controller is { } controller && _pipeline is { } pipeline)
+        {
+            PipelineStats s = pipeline.GetStats();
+            SessionStatistics stats = controller.LastStatistics ?? new SessionStatistics(0, 0, 0, 0, 0);
+
+            report.AppendLine("[session]");
+            report.AppendLine($"lifecycle          {controller.CurrentStatus.Lifecycle} — {controller.CurrentStatus.Detail}");
+            report.AppendLine($"reconnect attempt  {controller.CurrentStatus.ReconnectAttempt}");
+            report.AppendLine($"health             {HealthText.Text} — {HealthTipText.Text}");
+            report.AppendLine($"decoded            {s.DecodedWidth}x{s.DecodedHeight}");
+            report.AppendLine($"decoder            {s.Decoder}");
+            report.AppendLine($"decoder diagnostic {s.DecoderDiagnostic}");
+            report.AppendLine($"colour matrix      {s.ColorMatrix}");
+            report.AppendLine($"decode path        {s.DecodeMode} (2=zero-copy, 1=readback, 0=software)");
+            report.AppendLine($"audio              {s.AudioFormat}");
+            report.AppendLine($"audio frames       {s.AudioFramesDecoded} decoded, {s.AudioFramesSkipped} skipped");
+            report.AppendLine($"frames             {s.DecodedFrames} decoded, {s.PresentedFrames} presented");
+            report.AppendLine($"queues             decode {s.QueueDepth}, receive {stats.ReceiveQueueDepth}");
+            report.AppendLine($"pipeline latency   {s.PipelineLatencyMs:F1} ms");
+            report.AppendLine($"bitrate            {stats.BitrateKbps} kbps");
+            report.AppendLine($"rtt                {stats.RoundTripTimeMs:F2} ms   loss {stats.PacketLossRatio * 100:F2}%");
+            report.AppendLine($"declared link      mtu {stats.DeclaredMtu}, rtt {stats.DeclaredRttMs?.ToString("F2") ?? "not measured"}");
+            report.AppendLine($"adapter            {pipeline.ActiveAdapterDescription}");
+            report.AppendLine($"quality reason     {controller.QualityReason}");
+            report.AppendLine();
+
+            report.AppendLine("[last 30 seconds: latest / peak]");
+            report.AppendLine($"fps                {_fpsHistory.Latest:F0} / {_fpsHistory.Max():F0}");
+            report.AppendLine($"loss %             {_lossHistory.Latest:F2} / {_lossHistory.Max():F2}");
+            report.AppendLine($"rtt ms             {_rttHistory.Latest:F2} / {_rttHistory.Max():F2}");
+            report.AppendLine($"bitrate Mbps       {_bitrateHistory.Latest:F1} / {_bitrateHistory.Max():F1}");
+            report.AppendLine();
+        }
+        else
+        {
+            report.AppendLine("[session]  no live session");
+            report.AppendLine();
+        }
+
+        if (_powerMonitor?.Current is { } power)
+        {
+            report.AppendLine("[power]");
+            report.AppendLine($"source             {power.Source}   battery {power.BatteryPercent?.ToString() ?? "n/a"}");
+            report.AppendLine($"energy saver       {power.EnergySaverActive}   critical {power.BatteryCritical}");
+            report.AppendLine();
+        }
+
+        return report.ToString();
+    }
+
+
+    /// <summary>
+    /// Route a key press to the console. Marked handled only when the key is actually bound, so unbound keys still
+    /// reach the window's own shortcuts.
+    /// </summary>
+    private void OnPageKeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        if (_inputSource is null || TypingSomewhere())
+        {
+            return;
+        }
+
+        // e.Handled suppresses further routing, which is what stops a bound key from ALSO triggering a menu
+        // mnemonic or the XAML focus engine while the stream has it.
+        e.Handled = _inputSource.KeyDown((int)e.Key);
+    }
+
+    /// <summary>
+    /// Show a pill for each notable capability actually in use.
+    ///
+    /// <para>
+    /// Only for things that are ACTIVE and not already legible elsewhere, and never for the absence of one — an
+    /// "SDR" or "H.264" pill would turn a highlight into a scolding, and the codec is already named on the decoder
+    /// line. HDR takes the accent fill as the headline capability; the rest stay subtle so the row reads calmly.
+    /// </para>
+    ///
+    /// <para>
+    /// The flags are inferred from the decoder description string, which is assembled in the native renderer. That
+    /// coupling is deliberate but not ideal: a missed pill is cosmetic, never a correctness problem, and it avoids a
+    /// native rebuild for presentation. Promote to real booleans on <see cref="PipelineStats"/> next time the
+    /// renderer is touched.
+    /// </para>
+    /// </summary>
+    private void UpdateCapabilityPills(PipelineStats s)
+    {
+        string decoder = s.Decoder ?? string.Empty;
+        bool hdr = decoder.Contains("PQ", StringComparison.OrdinalIgnoreCase);
+        bool tenBit = decoder.Contains("10-bit", StringComparison.OrdinalIgnoreCase);
+        bool hevc = decoder.Contains("HEVC", StringComparison.OrdinalIgnoreCase);
+        bool zeroCopy = s.DecodeMode == 2;
+
+        var pills = new List<(string Label, bool Accent)>();
+        if (hdr)
+        {
+            pills.Add(("HDR", true));
+        }
+        else if (tenBit)
+        {
+            // 10-bit without PQ is still worth surfacing: it is the gradient-precision win on its own.
+            pills.Add(("10-bit", false));
+        }
+
+        if (hevc)
+        {
+            pills.Add(("HEVC", false));
+        }
+
+        if (zeroCopy)
+        {
+            pills.Add(("Zero-copy", false));
+        }
+
+        string signature = string.Join("|", pills.Select(p => p.Label + (p.Accent ? "*" : string.Empty)));
+        if (signature == _pillSignature)
+        {
+            return;
+        }
+
+        _pillSignature = signature;
+        CapabilityPills.Items.Clear();
+
+        foreach ((string label, bool accent) in pills)
+        {
+            CapabilityPills.Items.Add(new Border
+            {
+                Style = (Style)Resources[accent ? "AccentCapabilityPillStyle" : "CapabilityPillStyle"],
+                Margin = new Thickness(0, 0, 6, 0),
+                Child = new TextBlock
+                {
+                    Text = label,
+                    Style = (Style)Resources[accent ? "AccentCapabilityPillTextStyle" : "CapabilityPillTextStyle"],
+                },
+            });
+        }
+    }
+
+    /// <summary>
+    /// Whether a text-entry control currently has focus.
+    ///
+    /// <para>
+    /// The key handlers sit on the window root so that delivery does not depend on focus, but that breadth cuts
+    /// both ways: without this check, a bound key such as W would be swallowed before a text box could see it, and
+    /// anything typed elsewhere in the window while a session page exists would silently go to the console instead
+    /// of into the field.
+    /// </para>
+    /// </summary>
+    private bool TypingSomewhere()
+        => FocusManager.GetFocusedElement(XamlRoot) is TextBox or PasswordBox or RichEditBox or AutoSuggestBox;
+
+    private void OnPageKeyUp(object sender, KeyRoutedEventArgs e)
+    {
+        // No typing guard on release: if a key went to the console on press, its release must reach the console
+        // too, or focus moving to a text box mid-press would leave that key held forever.
+        if (_inputSource is null)
+        {
+            return;
+        }
+
+        e.Handled = _inputSource.KeyUp((int)e.Key);
+    }
+
+    /// <summary>Release every held key when the window is deactivated (see the subscription for why).</summary>
+    private void OnWindowActivated(object sender, WindowActivatedEventArgs e)
+    {
+        if (e.WindowActivationState == WindowActivationState.Deactivated)
+        {
+            _inputSource?.ReleaseAllKeys();
+
+            // Same reasoning as the keys: a virtual button held when focus left would stay asserted indefinitely.
+            _virtualButtonsHeld = ControllerButtons.None;
+            _inputSource?.ReleaseVirtualButtons();
+        }
+    }
+
+    private void ToggleDiagnostics(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
+    {
+        ToggleDiagnosticsPanel();
+        args.Handled = true;
+    }
+
+    private void DiagnosticsToggleButton_Click(object sender, RoutedEventArgs e)
+    {
+        ToggleDiagnosticsPanel();
+
+        // Hand focus back, or the button keeps it and every subsequent Space re-toggles the panel instead of
+        // reaching the console.
+        FocusStreamSurface();
+    }
+
+    private void ToggleDiagnosticsPanel()
+        => DiagnosticsPanel.Visibility = DiagnosticsPanel.Visibility == Visibility.Visible
+            ? Visibility.Collapsed
+            : Visibility.Visible;
+
+    private void StatsTick(object? sender, object e)
+    {
+        D3D12VideoDecodePipeline? pipeline = _pipeline;
+        SessionController? controller = _controller;
+        // Deliberately does NOT require a controller. The panel is least useful when it is empty, which is exactly
+        // while something is failing to connect — and the GPU, decoder and decode-path rows are already meaningful
+        // before any session exists.
+        if (pipeline is null || DiagnosticsPanel.Visibility != Visibility.Visible)
+        {
+            return;
+        }
+
+        PipelineStats s = pipeline.GetStats();
+        long nowTicks = DateTime.UtcNow.Ticks;
+        double seconds = _prevStatsTicks == 0 ? 0 : (nowTicks - _prevStatsTicks) / (double)TimeSpan.TicksPerSecond;
+
+        // Discard degenerate sampling intervals. A DispatcherTimer that has been delayed fires again almost
+        // immediately afterwards, and dividing a burst of frames by a ~37 ms gap reported 1610 fps — a figure that
+        // is not merely wrong but impossible, and it poisoned the 30-second PEAK permanently, since peak is a
+        // maximum and never decays. Skipping the sample entirely (rather than clamping it) keeps the next interval
+        // measured from the last GOOD sample, so the frames are still counted, just over an honest window.
+        if (_prevStatsTicks != 0 && seconds < MinimumSampleSeconds)
+        {
+            return;
+        }
+        double decodeFps = seconds > 0 ? (s.DecodedFrames - _prevDecodedFrames) / seconds : 0;
+        double presentFps = seconds > 0 ? (s.PresentedFrames - _prevPresentedFrames) / seconds : 0;
+        _prevDecodedFrames = s.DecodedFrames;
+        _prevPresentedFrames = s.PresentedFrames;
+        _prevStatsTicks = nowTicks;
+
+        SessionStatistics stats = controller?.LastStatistics ?? new SessionStatistics(0, 0, 0, 0, 0);
+
+        // Headline: what is actually arriving. Resolution comes from the decoder (the console chooses it and
+        // need not honour our request), frame rate from presented frames, bitrate from bytes on the wire.
+        // "pending" and "the decoder never told us" are different problems: the second one renders a black
+        // screen while every counter looks healthy, so it must not hide behind a word that means "wait a moment".
+        string resolution = (s.DecodedWidth, s.DecodedHeight, s.DecodedFrames) switch
+        {
+            ( > 0, > 0, _) => $"{s.DecodedWidth}×{s.DecodedHeight}",
+            (_, _, > 0) => "resolution unknown",
+            _ => "resolution pending",
+        };
+        string measuredRate = stats.BitrateKbps > 0 ? $"{stats.BitrateKbps / 1000.0:F1} Mbps" : "—";
+        string resolutionShort = resolution.StartsWith("resolution", StringComparison.Ordinal) ? "—" : resolution;
+
+        // Colour matrix belongs on the GPU line: it is a property of how we convert, and "(assumed)" is the
+        // tell that the stream never signalled one — the only way to tell a real colour bug from a guess.
+        // The already-null-checked local, not the field: teardown nulls _pipeline, so reading the field again
+        // here would be both a nullable warning and a real race against leaving the session.
+        // Two facts, two rows: the adapter is a host property, the matrix is a property of the stream.
+        AdapterText.Text = pipeline.ActiveAdapterDescription;
+        ColourText.Text = string.IsNullOrEmpty(s.ColorMatrix) ? "—" : s.ColorMatrix;
+        HeroResolutionText.Text = resolutionShort;
+        HeroFpsText.Text = $"{presentFps:F0}";
+        HeroBitrateText.Text = stats.BitrateKbps > 0 ? $"{stats.BitrateKbps / 1000.0:F1}" : "—";
+        UpdateCapabilityPills(s);
+        // The raw counters are shown only while the decoded size is unknown — i.e. exactly when nothing is
+        // reaching the screen and the ordinary readouts all look healthy. Noise the rest of the time.
+        bool geometryUnknown = s.DecodedWidth == 0 || s.DecodedHeight == 0;
+        DecoderText.Text = string.IsNullOrEmpty(s.Decoder)
+            ? "—"
+            : geometryUnknown && !string.IsNullOrEmpty(s.DecoderDiagnostic)
+                ? $"{s.Decoder}\n{s.DecoderDiagnostic}"
+                : s.Decoder;
+
+        // Second line: what was asked for, and what the adaptive controller now wants. Showing the request
+        // alongside the measurement is what makes a shortfall legible ("I asked for 1080p and I'm getting 720p").
+        // TARGET rows. Each fact gets its own row, and the optional rows hide when they have nothing to say —
+        // the previous single paragraph concatenated request, cap, adaptive target, disposition and reason into
+        // two wrapping sentences at uniform weight.
+        RequestedText.Text = $"{_settings.Width}×{_settings.Height} @ {_settings.TargetFps}";
+
+        BitrateDecision? target = controller?.RecommendedQuality;
+        bool adaptiveDiffers = _settings.AdaptiveQuality && target is { } tq && tq.BitrateKbps != _settings.BitrateKbps;
+        if (adaptiveDiffers && target is { } t)
+        {
+            // Say what is actually transmitted. CONNECTION_QUALITY carries the target BITRATE only — it has no
+            // resolution field, and resolution is fixed by the launchSpec at session start — so a preferred
+            // resolution is reported separately as needing a reconnect rather than implied to be in effect.
+            string disposition = _settings.ReportConnectionQuality ? "sent to console" : "not sent (reporting off)";
+            string line = $"{t.BitrateKbps / 1000.0:F1} Mbps · {disposition}";
+            if (t.Width != _settings.Width || t.Height != _settings.Height || t.Fps != _settings.TargetFps)
+            {
+                line += $"\nprefers {t.Width}×{t.Height}@{t.Fps} — needs a reconnect";
+            }
+
+            AdaptiveText.Text = line;
+        }
+
+        AdaptiveLabel.Visibility = adaptiveDiffers ? Visibility.Visible : Visibility.Collapsed;
+        AdaptiveText.Visibility = AdaptiveLabel.Visibility;
+
+        // "why" covers both the controller's own reason and the console choosing a lower rung to fit the budget.
+        string why = adaptiveDiffers ? controller?.QualityReason ?? string.Empty : string.Empty;
+        if (s.DecodedHeight > 0 && s.DecodedHeight < _settings.Height)
+        {
+            string chose = $"console chose {s.DecodedWidth}×{s.DecodedHeight} to fit the "
+                           + $"{_settings.BitrateKbps / 1000.0:F0} Mbps cap — raise it for more";
+            why = string.IsNullOrWhiteSpace(why) ? chose : $"{why}\n{chose}";
+        }
+
+        if (s.DecodedWidth == 0 && s.DecodedFrames > 0)
+        {
+            why = "decoder reported no frame size — see the video row below";
+        }
+
+        ReasonText.Text = why;
+        ReasonLabel.Visibility = string.IsNullOrWhiteSpace(why) ? Visibility.Collapsed : Visibility.Visible;
+        ReasonText.Visibility = ReasonLabel.Visibility;
+
+        // What the senkusha bring-up measured and declared. Shown because both values used to be asserted rather
+        // than measured (mtu 1454, rtt 0), so seeing the real ones is how you know the probe ran.
+        string declaredRtt = stats.DeclaredRttMs is double d ? $"{d:F1} ms" : "not measured";
+        // "probed" vs "assumed" is the whole point of the senkusha work: one is a measurement of the real path in
+        // both directions, the other is the local interface's MTU minus an allowance.
+        LinkText.Text = stats.DeclaredMtu > 0
+            ? $"MTU {stats.DeclaredMtu} ({(stats.MtuConfirmed ? "probed" : "assumed")}) · handshake {declaredRtt}"
+            : "—";
+
+        // Headroom against the cap, which is the question two bare numbers never answered.
+        double capMbps = Math.Max(0.1, _settings.BitrateKbps / 1000.0);
+        double usedMbps = stats.BitrateKbps / 1000.0;
+        double usedFraction = Math.Clamp(usedMbps / capMbps, 0, 1);
+        HeadroomUsedColumn.Width = new GridLength(usedFraction, GridUnitType.Star);
+        HeadroomFreeColumn.Width = new GridLength(1 - usedFraction, GridUnitType.Star);
+        HeadroomText.Text = $"{usedFraction * 100:F0}% of {capMbps:F0} Mbps";
+
+        // Power state: report what the monitor actually sees, so a device cap is visibly attributable rather
+        // than looking like an unexplained quality drop.
+        PowerState? power = _powerMonitor?.Current;
+        PowerText.Text = power is null
+            ? string.Empty
+            : $"{(power.Source == PowerSource.Battery ? "battery" : "mains")}"
+              + (power.BatteryPercent is int pct ? $" {pct}%" : string.Empty)
+              + (power.EnergySaverActive ? " · energy saver" : string.Empty)
+              + (power.BatteryCritical ? " · critical" : string.Empty)
+              + (power.ThermalThrottling ? " · throttling" : string.Empty);
+
+        // Audio. The frame rate is the useful part: 480 samples at 48 kHz means ~100/s, so a figure well below
+        // that is audio falling behind, and zero is audio stopped — neither of which is audible as such.
+        double audioFps = seconds > 0 ? (s.AudioFramesDecoded - _prevAudioFrames) / seconds : 0;
+        _prevAudioFrames = s.AudioFramesDecoded;
+
+        AudioText.Text = s.AudioFramesDecoded == 0 && s.AudioFramesSkipped == 0
+            ? s.AudioFormat
+            : $"{s.AudioFormat} · {audioFps:F0}/s"
+              + (s.AudioFramesSkipped > 0 ? $" · {s.AudioFramesSkipped} skipped" : string.Empty);
+
+        string path = s.DecodeMode switch { 2 => "zero-copy", 1 => "readback", _ => "software" };
+        // PIPELINE rows. rtt and loss are deliberately absent: each has its own labelled sparkline row with a
+        // value and a peak, and repeating them here is what made this a wall of text.
+        DecodeText.Text = $"{decodeFps:F0} fps · {s.PipelineLatencyMs:F0} ms end to end";
+        QueuesText.Text = $"decode {s.QueueDepth} · receive {stats.ReceiveQueueDepth}";
+        PathText.Text = path;
+
+        if (controller is null)
+        {
+            // No session yet: the assessor's inputs are all zero, and "frame rate is below target" is a misleading
+            // thing to say about a stream that has not started.
+            HealthText.Text = "Not connected yet";
+            HealthTipText.Text = "Waiting for the session to start.";
+            return;
+        }
+
+        StreamHealthVerdict verdict = StreamHealthAssessor.Assess(new StreamHealthSignals(
+            DecodeFps: decodeFps,
+            PresentFps: presentFps,
+            TargetFps: _settings.TargetFps,
+            ReceiveQueueDepth: stats.ReceiveQueueDepth,
+            DecodeQueueDepth: s.QueueDepth,
+            PipelineLatencyMs: s.PipelineLatencyMs,
+            DecodeMode: s.DecodeMode,
+            PacketLossRatio: stats.PacketLossRatio,
+            HasReceivedFrames: controller.MillisecondsSinceLastFrame is not null,
+            MillisecondsSinceConnect: controller.MillisecondsSinceConnect,
+            MillisecondsSinceLastFrame: controller.MillisecondsSinceLastFrame ?? 0,
+            RoundTripTimeMs: stats.RoundTripTimeMs));
+
+        // Record the history *before* rendering so the newest sample is included.
+        _fpsHistory.Add(presentFps);
+        _lossHistory.Add(stats.PacketLossRatio * 100.0);
+        _rttHistory.Add(stats.RoundTripTimeMs);
+        _bitrateHistory.Add(stats.BitrateKbps / 1000.0);
+        RenderGraph();
+
+        HealthText.Text = verdict.Headline;
+        HealthTipText.Text = verdict.Tip;
+
+        // Theme brushes, not hardcoded colours: the previous LimeGreen/Orange were wrong in light theme and
+        // invisible in high contrast. Looked up defensively so a missing key can never crash the overlay.
+        string brushKey = verdict.Level switch
+        {
+            StreamHealthLevel.Healthy => "SystemFillColorSuccessBrush",
+            StreamHealthLevel.Warning => "SystemFillColorCautionBrush",
+            StreamHealthLevel.Critical => "SystemFillColorCriticalBrush",
+            _ => "TextFillColorSecondaryBrush",
+        };
+
+        // The DOT carries the colour, not the headline. Coloured body text fails contrast in some themes and
+        // reads as an error even when the verdict is "healthy"; a dot is unambiguous and always legible.
+        if (Application.Current.Resources.TryGetValue(brushKey, out object? brush) && brush is Brush themed)
+        {
+            HealthDot.Fill = themed;
+        }
+    }
+
+    /// <summary>
+    /// Plot the four series into the canvas. Each has its own full scale (they share no units), so the graph is
+    /// about shape over time rather than comparing absolute heights between lines — which is exactly the
+    /// question "is this steady or is it oscillating?".
+    /// </summary>
+    private void RenderGraph()
+    {
+        if (_fpsHistory.Count < 2)
+        {
+            return;
+        }
+
+        // Frame rate is scaled against the requested rate with headroom, so "at target" sits high but not
+        // clipped and a shortfall is immediately visible as a drop.
+        double fpsFullScale = Math.Max(1, _settings.TargetFps * 1.2);
+
+        PlotSpark(FpsLine, FpsSpark, _fpsHistory, fpsFullScale);
+        PlotSpark(RttLine, RttSpark, _rttHistory, RttFullScaleMs);
+        PlotSpark(LossLine, LossSpark, _lossHistory, LossFullScalePercent);
+        PlotSpark(BitrateLine, BitrateSpark, _bitrateHistory, BitrateFullScaleMbps);
+
+        // Value and peak beside each line, because a sparkline shows shape and says nothing about magnitude.
+        FpsValueText.Text = $"{_fpsHistory.Latest:F0}";
+        FpsPeakText.Text = $"{_fpsHistory.Max():F0}";
+        RttValueText.Text = $"{_rttHistory.Latest:F1} ms";
+        RttPeakText.Text = $"{_rttHistory.Max():F1}";
+        LossValueText.Text = $"{_lossHistory.Latest:F1}%";
+        LossPeakText.Text = $"{_lossHistory.Max():F1}%";
+        BitrateValueText.Text = $"{_bitrateHistory.Latest:F1}";
+        BitratePeakText.Text = $"{_bitrateHistory.Max():F1}";
+    }
+
+    /// <summary>
+    /// Draw one series into its own small canvas.
+    ///
+    /// <para>
+    /// One canvas per metric rather than four series sharing one box. They have no common unit, so overlaying them
+    /// invited exactly the wrong comparison — a tall loss line looked worse than a tall frame-rate line — and no
+    /// line was identifiable. Each is now labelled, scaled independently, and sits beside its own value and peak.
+    /// </para>
+    /// </summary>
+    private static void PlotSpark(Polyline line, Canvas host, MetricHistory history, double fullScale)
+    {
+        // ActualWidth is 0 until the first layout pass, and these canvases are star-sized so there is no declared
+        // Width to fall back on — skip rather than draw a degenerate line at x=0.
+        double width = host.ActualWidth;
+        double height = host.ActualHeight > 0 ? host.ActualHeight : host.Height;
+        if (width <= 0 || double.IsNaN(height) || height <= 0)
+        {
+            return;
+        }
+
+        var points = new PointCollection();
+        double step = width / (history.Capacity - 1);
+
+        // Right-align the series so the newest sample is always at the right edge and the plot fills in
+        // leftwards as history accumulates, instead of the line sliding across the canvas as it fills.
+        int offset = history.Capacity - history.Count;
+
+        for (int i = 0; i < history.Count; i++)
+        {
+            double x = (offset + i) * step;
+            double y = height - (history.NormalisedAt(i, fullScale) * height);
+            points.Add(new Windows.Foundation.Point(x, y));
+        }
+
+        line.Points = points;
+    }
+
+    // ---- teardown ----
+
+    private void Page_Unloaded(object sender, RoutedEventArgs e)
+    {
+        VideoPanel.SizeChanged -= OnVideoPanelSizeChanged;
+        VideoPanel.CompositionScaleChanged -= OnVideoPanelScaleChanged;
+
+        _statsTimer?.Stop();
+        _statsTimer = null;
+
+        _connectionsSubscription?.Dispose();
+        _stateSubscription?.Dispose();
+        if (_keyRoot is not null)
+        {
+            _keyRoot.PreviewKeyDown -= OnPageKeyDown;
+            _keyRoot.PreviewKeyUp -= OnPageKeyUp;
+            _keyRoot = null;
+        }
+        if (App.MainWindow is { } window)
+        {
+            window.Activated -= OnWindowActivated;
+        }
+
+        _inputSource?.Dispose();
+        _inputSource = null;
+        (_controllerSource as IDisposable)?.Dispose();
+        _controllerSource = null;
+
+        LeaveImmersiveMode();
+
+        // Fire-and-forget the async teardown. The previous version blocked the UI thread on
+        // DisposeAsync().AsTask().Wait() twice, which froze the window on exit and risked a deadlock: session
+        // disposal awaits the control keep-alive task and joins the decode worker.
+        _ = TeardownAsync();
+    }
+
+    private async Task TeardownAsync()
+    {
+        await TeardownControllerAsync();
+
+        D3D12VideoDecodePipeline? pipeline = _pipeline;
+        _pipeline = null;
+        if (pipeline is not null)
+        {
+            pipeline.DeviceLost -= OnDeviceLost;
+            try { await pipeline.DisposeAsync(); } catch (Exception) { /* teardown races */ }
+        }
+    }
+
+    private async Task TeardownControllerAsync()
+    {
+        _statusSubscription?.Dispose();
+        _statusSubscription = null;
+
+        SessionController? controller = _controller;
+        _controller = null;
+        if (controller is not null)
+        {
+            try { await controller.DisposeAsync(); } catch (Exception) { /* teardown races */ }
+        }
+
+        // The monitor owns a polling timer.
+        _powerMonitor?.Dispose();
+        _powerMonitor = null;
+    }
+}
+
+/// <summary>
+/// WinUI 3 SwapChainPanel native interop: associates a DXGI swap chain (created by the native D3D12 renderer)
+/// with the XAML panel. Declared here because CsWinRT does not project this COM interface from
+/// microsoft.ui.xaml.media.dxinterop.h.
+/// </summary>
+[ComImport]
+[Guid("63aad0b8-7c24-40ff-85a8-640d944cc325")]
+[InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+internal interface ISwapChainPanelNative
+{
+    [PreserveSig]
+    int SetSwapChain(IntPtr swapChain);
+}

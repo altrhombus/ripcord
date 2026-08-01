@@ -1,0 +1,717 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Page
+    x:Class="Ripcord_App.Pages.SessionPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:local="using:Ripcord_App.Pages"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    Loaded="Page_Loaded"
+    Unloaded="Page_Unloaded"
+    IsTabStop="True"
+    mc:Ignorable="d">
+
+    <Page.Resources>
+        <!--
+            Capability pills. Deliberately shown only for what is ACTIVELY IN USE and not already legible
+            elsewhere — never for the absence of something, which would read as a scolding rather than a
+            highlight. HDR gets the accent fill because it is the headline capability; the rest are subtle so a
+            row of them stays calm.
+        -->
+        <!--  Label column of a label/value row: dim, fixed width, so values line up down the panel.  -->
+        <Style x:Key="RowLabelStyle" TargetType="TextBlock" BasedOn="{StaticResource CaptionTextBlockStyle}">
+            <Setter Property="Foreground" Value="{ThemeResource TextFillColorTertiaryBrush}" />
+            <Setter Property="VerticalAlignment" Value="Top" />
+        </Style>
+
+        <Style x:Key="RowValueStyle" TargetType="TextBlock" BasedOn="{StaticResource CaptionTextBlockStyle}">
+            <Setter Property="Foreground" Value="{ThemeResource TextFillColorPrimaryBrush}" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+        </Style>
+
+        <Style x:Key="SectionHeaderStyle" TargetType="TextBlock" BasedOn="{StaticResource CaptionTextBlockStyle}">
+            <Setter Property="Foreground" Value="{ThemeResource TextFillColorTertiaryBrush}" />
+            <Setter Property="CharacterSpacing" Value="80" />
+            <Setter Property="Margin" Value="0,2,0,2" />
+        </Style>
+
+        <Style x:Key="CapabilityPillStyle" TargetType="Border">
+            <Setter Property="Background" Value="{ThemeResource ControlFillColorSecondaryBrush}" />
+            <Setter Property="BorderBrush" Value="{ThemeResource ControlStrokeColorDefaultBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="10" />
+            <Setter Property="Padding" Value="8,2" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+
+        <Style x:Key="AccentCapabilityPillStyle" TargetType="Border" BasedOn="{StaticResource CapabilityPillStyle}">
+            <Setter Property="Background" Value="{ThemeResource AccentFillColorDefaultBrush}" />
+            <Setter Property="BorderBrush" Value="{ThemeResource AccentFillColorDefaultBrush}" />
+        </Style>
+
+        <Style x:Key="CapabilityPillTextStyle" TargetType="TextBlock" BasedOn="{StaticResource CaptionTextBlockStyle}">
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="CharacterSpacing" Value="40" />
+            <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
+        </Style>
+
+        <Style x:Key="AccentCapabilityPillTextStyle" TargetType="TextBlock" BasedOn="{StaticResource CapabilityPillTextStyle}">
+            <Setter Property="Foreground" Value="{ThemeResource TextOnAccentFillColorPrimaryBrush}" />
+        </Style>
+    </Page.Resources>
+
+    <Page.KeyboardAccelerators>
+        <!--
+            F3 toggles the diagnostics overlay. F11 toggles fullscreen. Escape steps back one level —
+            fullscreen → windowed → leave the session — so a stream is never inescapable, but a single keypress
+            also never destroys a live session outright.
+        -->
+        <KeyboardAccelerator Key="F3" Invoked="ToggleDiagnostics" />
+        <KeyboardAccelerator Key="F11" Invoked="FullScreenAccelerator_Invoked" />
+        <KeyboardAccelerator Key="Escape" Invoked="ExitAccelerator_Invoked" />
+        <KeyboardAccelerator Key="F8" Invoked="SaveDiagnosticsAccelerator_Invoked" />
+    </Page.KeyboardAccelerators>
+
+    <!--
+        PointerPressed on the root, not the SwapChainPanel: the panel is not hit-testable for focus purposes, so
+        clicking it otherwise leaves focus on whatever was last focused (or nowhere at all), and key events stop
+        reaching the page entirely.
+    -->
+    <Grid
+        Background="Black"
+        PointerMoved="StreamSurface_PointerMoved"
+        PointerPressed="StreamSurface_PointerPressed">
+        <!--
+            The D3D12-backed present surface (native VideoRenderer, associated via ISwapChainPanelNative).
+            The panel composites the swap chain to fill its bounds and applies the DPI scale itself, so the
+            swap chain stays at video resolution and the panel stretches it.
+        -->
+        <SwapChainPanel x:Name="VideoPanel" />
+
+        <!--
+            Connection status. This is the user-facing surface for connecting / reconnecting / failure — those
+            states used to be reported only as small grey text inside the debug overlay, with no way to retry.
+        -->
+        <Border
+            x:Name="StatusOverlay"
+            MaxWidth="460"
+            Padding="28,24"
+            HorizontalAlignment="Center"
+            VerticalAlignment="Center"
+            Background="{ThemeResource AcrylicInAppFillColorDefaultBrush}"
+            BorderBrush="{ThemeResource SurfaceStrokeColorDefaultBrush}"
+            BorderThickness="1"
+            CornerRadius="12">
+            <StackPanel Spacing="14">
+                <ProgressRing
+                    x:Name="StatusRing"
+                    Width="36"
+                    Height="36"
+                    HorizontalAlignment="Center"
+                    IsActive="True" />
+                <!--
+                    Default is "Starting…", deliberately NOT "Connecting…": that is a real state the controller
+                    reports, and having it as the static default made a hang ANYWHERE before the network — video
+                    device creation, for instance — indistinguishable from one during the handshake. Every phase
+                    now sets its own text.
+                -->
+                <TextBlock
+                    x:Name="StatusHeadline"
+                    HorizontalAlignment="Center"
+                    Style="{StaticResource SubtitleTextBlockStyle}"
+                    Text="Starting…"
+                    TextAlignment="Center"
+                    TextWrapping="Wrap" />
+                <TextBlock
+                    x:Name="StatusDetail"
+                    HorizontalAlignment="Center"
+                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                    Style="{StaticResource BodyTextBlockStyle}"
+                    TextAlignment="Center"
+                    TextWrapping="Wrap" />
+                <StackPanel
+                    x:Name="StatusActions"
+                    HorizontalAlignment="Center"
+                    Orientation="Horizontal"
+                    Spacing="8"
+                    Visibility="Collapsed">
+                    <Button
+                        x:Name="RetryButton"
+                        Click="RetryButton_Click"
+                        Content="Try again"
+                        Style="{StaticResource AccentButtonStyle}" />
+                    <Button
+                        x:Name="LeaveButton"
+                        Click="LeaveButton_Click"
+                        Content="Back to consoles" />
+                </StackPanel>
+            </StackPanel>
+        </Border>
+
+        <!--
+            How to leave the stream. Shown on entry and then faded out: without it the exit gesture is
+            undiscoverable, which is what made a running stream feel like a trap on a handheld.
+        -->
+        <Border
+            x:Name="ExitHint"
+            Margin="0,24,0,0"
+            Padding="14,8"
+            HorizontalAlignment="Center"
+            VerticalAlignment="Top"
+            Background="{ThemeResource AcrylicInAppFillColorDefaultBrush}"
+            CornerRadius="16"
+            Visibility="Collapsed">
+            <TextBlock
+                x:Name="ExitHintText"
+                Style="{StaticResource CaptionTextBlockStyle}"
+                Text="Hold Options + Create + L1 + R1 to leave the stream" />
+        </Border>
+
+        <!--  Feedback while the exit gesture is being held, so a partial hold is visible rather than silent.  -->
+        <Border
+            x:Name="ExitProgressPanel"
+            Margin="0,0,0,104"
+            Padding="18,12"
+            HorizontalAlignment="Center"
+            VerticalAlignment="Bottom"
+            Background="{ThemeResource AcrylicInAppFillColorDefaultBrush}"
+            CornerRadius="12"
+            Visibility="Collapsed">
+            <StackPanel Spacing="8">
+                <TextBlock
+                    HorizontalAlignment="Center"
+                    Style="{StaticResource CaptionTextBlockStyle}"
+                    Text="Leaving the stream…" />
+                <ProgressBar x:Name="ExitProgressBar" Width="180" Maximum="1" />
+            </StackPanel>
+        </Border>
+
+        <!--
+            Diagnostics overlay. Collapsed unless enabled in Settings; F3 or the on-screen button toggles it.
+
+            Structured as status → headline metrics → grouped cards, because the previous flat stack of caption
+            text made every number look equally important: "is it healthy" and "which GPU" had the same weight.
+            Each metric now owns its sparkline with its own label, current value and peak — the old shared plot
+            drew four unlabelled lines at four different scales in one anonymous box, so it could show that
+            *something* was oscillating but never which.
+        -->
+        <Border
+            x:Name="DiagnosticsPanel"
+            Margin="16"
+            MaxWidth="400"
+            Padding="0"
+            HorizontalAlignment="Left"
+            VerticalAlignment="Top"
+            Background="{ThemeResource AcrylicInAppFillColorDefaultBrush}"
+            BorderBrush="{ThemeResource SurfaceStrokeColorDefaultBrush}"
+            BorderThickness="1"
+            CornerRadius="12"
+            Visibility="Collapsed">
+            <!--
+                A Grid, NOT a StackPanel. A vertical StackPanel measures its children with infinite available
+                height, so a ScrollViewer inside one is given unlimited space and never scrolls however the Border
+                is bounded. Auto row for the pinned header, star row for the scrolling body.
+            -->
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <!--  Header. Names itself and how to dismiss it, so the panel is self-explaining.  -->
+                <Grid Grid.Row="0" Padding="16,12,16,10" Background="{ThemeResource SubtleFillColorSecondaryBrush}">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock
+                        VerticalAlignment="Center"
+                        CharacterSpacing="60"
+                        Style="{StaticResource BodyStrongTextBlockStyle}"
+                        Text="Stream diagnostics" />
+                    <Border
+                        Grid.Column="1"
+                        Padding="6,1"
+                        VerticalAlignment="Center"
+                        Background="{ThemeResource ControlFillColorSecondaryBrush}"
+                        CornerRadius="4">
+                        <TextBlock
+                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                            Style="{StaticResource CaptionTextBlockStyle}"
+                            Text="F3" />
+                    </Border>
+                </Grid>
+
+                <!--
+                    The body scrolls; the header above stays pinned. At 7 inches the content is taller than the
+                    screen — it was being cut off midway through the power row — and a ScrollViewer also gives
+                    touch panning for free, which is the only way to reach the bottom on a handheld with no
+                    keyboard. MaxHeight is applied from code on size change, because the panel is top-aligned and
+                    would otherwise grow past the window rather than scroll inside it.
+                -->
+                <ScrollViewer
+                    x:Name="DiagnosticsScroll"
+                    Grid.Row="1"
+                    HorizontalScrollMode="Disabled"
+                    HorizontalScrollBarVisibility="Disabled"
+                    VerticalScrollBarVisibility="Auto"
+                    VerticalScrollMode="Auto">
+                <StackPanel Padding="16,14,16,16" Spacing="14">
+
+                    <!--  Status. The dot carries the semantic colour so the verdict reads at a glance.  -->
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                        <Ellipse
+                            x:Name="HealthDot"
+                            Width="10"
+                            Height="10"
+                            VerticalAlignment="Top"
+                            Margin="0,5,0,0"
+                            Fill="{ThemeResource SystemFillColorSuccessBrush}" />
+                        <StackPanel Spacing="2">
+                            <TextBlock x:Name="HealthText" Style="{StaticResource BodyStrongTextBlockStyle}" TextWrapping="Wrap" />
+                            <TextBlock
+                                x:Name="HealthTipText"
+                                MaxWidth="320"
+                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                Style="{StaticResource CaptionTextBlockStyle}"
+                                TextWrapping="Wrap" />
+                        </StackPanel>
+                    </StackPanel>
+
+                    <!--
+                        What you are actually receiving. Three columns so the value dominates and the unit
+                        recedes; fixed column widths keep the digits from shifting as the numbers change, which
+                        is what made the old single-line readout twitch.
+                    -->
+                    <!--
+                        Units live in the LABEL row, not the value. "60" beside "17.8 Mbps" with the unit inside
+                        the value read as a single number ("6017.8 Mbps"), so the unit is demoted and the columns
+                        are separated by real spacing plus a hairline divider — unambiguous at a glance.
+                    -->
+                    <Grid ColumnSpacing="14">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="1" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="1" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel>
+                            <TextBlock x:Name="HeroResolutionText" Style="{StaticResource SubtitleTextBlockStyle}" />
+                            <TextBlock
+                                Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                                Style="{StaticResource CaptionTextBlockStyle}"
+                                Text="resolution" />
+                        </StackPanel>
+
+                        <Rectangle
+                            Grid.Column="1"
+                            Width="1"
+                            Margin="0,2"
+                            Fill="{ThemeResource DividerStrokeColorDefaultBrush}" />
+
+                        <StackPanel Grid.Column="2" MinWidth="46">
+                            <TextBlock x:Name="HeroFpsText" Style="{StaticResource SubtitleTextBlockStyle}" TextAlignment="Right" />
+                            <TextBlock
+                                Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                                Style="{StaticResource CaptionTextBlockStyle}"
+                                Text="frames/s"
+                                TextAlignment="Right" />
+                        </StackPanel>
+
+                        <Rectangle
+                            Grid.Column="3"
+                            Width="1"
+                            Margin="0,2"
+                            Fill="{ThemeResource DividerStrokeColorDefaultBrush}" />
+
+                        <StackPanel Grid.Column="4" MinWidth="58">
+                            <TextBlock x:Name="HeroBitrateText" Style="{StaticResource SubtitleTextBlockStyle}" TextAlignment="Right" />
+                            <TextBlock
+                                Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                                Style="{StaticResource CaptionTextBlockStyle}"
+                                Text="Mbps"
+                                TextAlignment="Right" />
+                        </StackPanel>
+                    </Grid>
+
+                    <!--  Capability pills: what is actually in use, and worth knowing.  -->
+                    <ItemsControl x:Name="CapabilityPills">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <!--
+                                    A plain horizontal StackPanel, because it sizes each pill to its CONTENT.
+                                    VariableSizedWrapGrid was tried and is wrong for this: it lays out uniform
+                                    cells, so every pill got an equal share of the width and "HEVC" and
+                                    "Zero-copy" were ellipsised to "HE..." and "Ze...". Pills are short and few,
+                                    so overflow is not a practical concern at this panel width; if enough are
+                                    added to threaten it, shorten the labels rather than reaching for a wrap panel.
+                                -->
+                                <StackPanel Orientation="Horizontal" />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                    </ItemsControl>
+
+                    <!--
+                        What was asked for, versus what is allowed. This was one wrapping paragraph that ran
+                        "requested … · cap … · adaptive target … (bitrate sent to console)" and then a second
+                        sentence explaining why — everything at equal weight, so nothing could be found. Now one
+                        row per fact, with the optional rows hidden when they have nothing to say.
+                    -->
+                    <StackPanel Spacing="6">
+                        <TextBlock Style="{StaticResource SectionHeaderStyle}" Text="TARGET" />
+
+                        <Grid ColumnSpacing="10" RowSpacing="4">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="62" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+
+                            <TextBlock Grid.Row="0" Style="{StaticResource RowLabelStyle}" Text="requested" />
+                            <TextBlock x:Name="RequestedText" Grid.Row="0" Grid.Column="1" Style="{StaticResource RowValueStyle}" />
+
+                            <!--  Only when the adaptive controller wants something other than the request.  -->
+                            <TextBlock x:Name="AdaptiveLabel" Grid.Row="1" Style="{StaticResource RowLabelStyle}" Text="adaptive" Visibility="Collapsed" />
+                            <TextBlock x:Name="AdaptiveText" Grid.Row="1" Grid.Column="1" Style="{StaticResource RowValueStyle}" Visibility="Collapsed" />
+
+                            <!--  Why quality moved. The controller always knows; it just was not shown.  -->
+                            <TextBlock x:Name="ReasonLabel" Grid.Row="2" Style="{StaticResource RowLabelStyle}" Text="why" Visibility="Collapsed" />
+                            <TextBlock x:Name="ReasonText" Grid.Row="2" Grid.Column="1" Style="{StaticResource RowValueStyle}" Visibility="Collapsed" />
+
+                            <!--  What the bring-up measured and declared to the console, rather than assumed.  -->
+                            <TextBlock Grid.Row="3" Style="{StaticResource RowLabelStyle}" Text="link" />
+                            <TextBlock x:Name="LinkText" Grid.Row="3" Grid.Column="1" Style="{StaticResource RowValueStyle}" />
+                        </Grid>
+
+                        <!--
+                            Headroom. Two bare numbers ("3.9" and "cap 40 Mbps") never answered the actual
+                            question, which is how much of the budget is in use — a ratio reads instantly where
+                            arithmetic does not. This is measured throughput, NOT available bandwidth: nothing
+                            measures the latter yet (that is the senkusha probe work).
+                        -->
+                        <Grid ColumnSpacing="10">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="62" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Style="{StaticResource RowLabelStyle}" Text="of cap" VerticalAlignment="Center" />
+
+                            <!--
+                                Drawn as two star-weighted columns rather than a ProgressBar. ProgressBar animates
+                                toward a new Value, so a drop from 22 to 10 Mbps read as the bar *sliding* rather
+                                than falling — misleading on a diagnostic. Star weights are applied instantly, need
+                                no ActualWidth, and honour the corner radius the ProgressBar template ignored.
+                            -->
+                            <Grid
+                                Grid.Column="1"
+                                Height="4"
+                                VerticalAlignment="Center"
+                                Background="{ThemeResource ControlStrongFillColorDisabledBrush}"
+                                CornerRadius="2">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition x:Name="HeadroomUsedColumn" Width="0*" />
+                                    <ColumnDefinition x:Name="HeadroomFreeColumn" Width="1*" />
+                                </Grid.ColumnDefinitions>
+                                <Rectangle
+                                    Fill="{ThemeResource AccentFillColorDefaultBrush}"
+                                    RadiusX="2"
+                                    RadiusY="2" />
+                            </Grid>
+
+                            <!--
+                                Percentage only. The measured figure already appears in the hero AND in the bitrate
+                                sparkline row, so repeating it here made three copies of one number; the ratio and
+                                the cap are the only things this row adds.
+                            -->
+                            <TextBlock
+                                x:Name="HeadroomText"
+                                Grid.Column="2"
+                                VerticalAlignment="Center"
+                                Style="{StaticResource RowLabelStyle}" />
+                        </Grid>
+                    </StackPanel>
+
+                    <!--  Last 30 seconds, one row per metric: label, current value, shape, peak.  -->
+                    <Border
+                        Padding="12,10"
+                        Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                        BorderThickness="1"
+                        CornerRadius="8">
+                        <StackPanel Spacing="8">
+                            <!--
+                                No sample counter here. It was added to prove the RTT metric was being fed at all
+                                when RTT read 0 ms, which is long settled; it counted since CONNECT while sitting
+                                inside a box labelled "last 30 seconds"; and it grew without bound in a
+                                fixed-width column, so a long session pushed the layout. The count is still on
+                                SessionController.StatisticsSampleCount and in the ETW trace if ever needed again.
+                            -->
+                            <Grid ColumnSpacing="8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="50" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock
+                                    CharacterSpacing="80"
+                                    Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                                    Style="{StaticResource CaptionTextBlockStyle}"
+                                    Text="LAST 30 SECONDS" />
+                                <TextBlock
+                                    Grid.Column="1"
+                                    Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                                    Style="{StaticResource CaptionTextBlockStyle}"
+                                    Text="peak"
+                                    TextAlignment="Right" />
+                            </Grid>
+
+                            <Grid ColumnSpacing="8" RowSpacing="6">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="62" />
+                                    <ColumnDefinition Width="58" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="50" />
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+
+                                <!--  Frame rate  -->
+                                <TextBlock Grid.Row="0" VerticalAlignment="Center" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Style="{StaticResource CaptionTextBlockStyle}" Text="frames" />
+                                <TextBlock x:Name="FpsValueText" Grid.Row="0" Grid.Column="1" VerticalAlignment="Center" Style="{StaticResource CaptionTextBlockStyle}" TextAlignment="Right" />
+                                <Canvas x:Name="FpsSpark" Grid.Row="0" Grid.Column="2" Height="18">
+                                    <Polyline x:Name="FpsLine" Stroke="{ThemeResource SystemFillColorSuccessBrush}" StrokeThickness="1.5" StrokeLineJoin="Round" />
+                                </Canvas>
+                                <TextBlock x:Name="FpsPeakText" Grid.Row="0" Grid.Column="3" VerticalAlignment="Center" Foreground="{ThemeResource TextFillColorTertiaryBrush}" Style="{StaticResource CaptionTextBlockStyle}" TextAlignment="Right" />
+
+                                <!--  Latency  -->
+                                <TextBlock Grid.Row="1" VerticalAlignment="Center" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Style="{StaticResource CaptionTextBlockStyle}" Text="latency" />
+                                <TextBlock x:Name="RttValueText" Grid.Row="1" Grid.Column="1" VerticalAlignment="Center" Style="{StaticResource CaptionTextBlockStyle}" TextAlignment="Right" />
+                                <Canvas x:Name="RttSpark" Grid.Row="1" Grid.Column="2" Height="18">
+                                    <Polyline x:Name="RttLine" Stroke="{ThemeResource SystemFillColorCautionBrush}" StrokeThickness="1.5" StrokeLineJoin="Round" />
+                                </Canvas>
+                                <TextBlock x:Name="RttPeakText" Grid.Row="1" Grid.Column="3" VerticalAlignment="Center" Foreground="{ThemeResource TextFillColorTertiaryBrush}" Style="{StaticResource CaptionTextBlockStyle}" TextAlignment="Right" />
+
+                                <!--  Loss  -->
+                                <TextBlock Grid.Row="2" VerticalAlignment="Center" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Style="{StaticResource CaptionTextBlockStyle}" Text="loss" />
+                                <TextBlock x:Name="LossValueText" Grid.Row="2" Grid.Column="1" VerticalAlignment="Center" Style="{StaticResource CaptionTextBlockStyle}" TextAlignment="Right" />
+                                <Canvas x:Name="LossSpark" Grid.Row="2" Grid.Column="2" Height="18">
+                                    <Polyline x:Name="LossLine" Stroke="{ThemeResource SystemFillColorCriticalBrush}" StrokeThickness="1.5" StrokeLineJoin="Round" />
+                                </Canvas>
+                                <TextBlock x:Name="LossPeakText" Grid.Row="2" Grid.Column="3" VerticalAlignment="Center" Foreground="{ThemeResource TextFillColorTertiaryBrush}" Style="{StaticResource CaptionTextBlockStyle}" TextAlignment="Right" />
+
+                                <!--  Bitrate  -->
+                                <TextBlock Grid.Row="3" VerticalAlignment="Center" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Style="{StaticResource CaptionTextBlockStyle}" Text="bitrate" />
+                                <TextBlock x:Name="BitrateValueText" Grid.Row="3" Grid.Column="1" VerticalAlignment="Center" Style="{StaticResource CaptionTextBlockStyle}" TextAlignment="Right" />
+                                <Canvas x:Name="BitrateSpark" Grid.Row="3" Grid.Column="2" Height="18">
+                                    <Polyline x:Name="BitrateLine" Stroke="{ThemeResource AccentTextFillColorPrimaryBrush}" StrokeThickness="1.5" StrokeLineJoin="Round" />
+                                </Canvas>
+                                <TextBlock x:Name="BitratePeakText" Grid.Row="3" Grid.Column="3" VerticalAlignment="Center" Foreground="{ThemeResource TextFillColorTertiaryBrush}" Style="{StaticResource CaptionTextBlockStyle}" TextAlignment="Right" />
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <!--  How the picture and sound are getting here.  -->
+                    <StackPanel Spacing="6">
+                        <TextBlock Style="{StaticResource SectionHeaderStyle}" Text="PIPELINE" />
+                        <Grid ColumnSpacing="10" RowSpacing="4">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="62" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+
+                            <TextBlock Grid.Row="0" Style="{StaticResource RowLabelStyle}" Text="decode" />
+                            <TextBlock x:Name="DecodeText" Grid.Row="0" Grid.Column="1" Style="{StaticResource RowValueStyle}" />
+
+                            <TextBlock Grid.Row="1" Style="{StaticResource RowLabelStyle}" Text="queues" />
+                            <TextBlock x:Name="QueuesText" Grid.Row="1" Grid.Column="1" Style="{StaticResource RowValueStyle}" />
+
+                            <TextBlock Grid.Row="2" Style="{StaticResource RowLabelStyle}" Text="path" />
+                            <TextBlock x:Name="PathText" Grid.Row="2" Grid.Column="1" Style="{StaticResource RowValueStyle}" />
+
+                            <TextBlock Grid.Row="3" Style="{StaticResource RowLabelStyle}" Text="video" />
+                            <TextBlock x:Name="DecoderText" Grid.Row="3" Grid.Column="1" Style="{StaticResource RowValueStyle}" />
+
+                            <TextBlock Grid.Row="4" Style="{StaticResource RowLabelStyle}" Text="audio" />
+                            <TextBlock x:Name="AudioText" Grid.Row="4" Grid.Column="1" Style="{StaticResource RowValueStyle}" />
+                        </Grid>
+                    </StackPanel>
+
+                    <!--  Host state. Lowest priority: it changes least and is rarely the answer.  -->
+                    <StackPanel Spacing="6">
+                        <TextBlock Style="{StaticResource SectionHeaderStyle}" Text="DEVICE" />
+                        <Grid ColumnSpacing="10" RowSpacing="4">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="62" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+
+                            <TextBlock Grid.Row="0" Style="{StaticResource RowLabelStyle}" Text="GPU" />
+                            <TextBlock x:Name="AdapterText" Grid.Row="0" Grid.Column="1" Style="{StaticResource RowValueStyle}" />
+
+                            <!--  Split out of the GPU line: which matrix is in use is a stream fact, not a host one.  -->
+                            <TextBlock Grid.Row="1" Style="{StaticResource RowLabelStyle}" Text="colour" />
+                            <TextBlock x:Name="ColourText" Grid.Row="1" Grid.Column="1" Style="{StaticResource RowValueStyle}" />
+
+                            <TextBlock Grid.Row="2" Style="{StaticResource RowLabelStyle}" Text="power" />
+                            <TextBlock x:Name="PowerText" Grid.Row="2" Grid.Column="1" Style="{StaticResource RowValueStyle}" />
+
+                            <TextBlock Grid.Row="3" Style="{StaticResource RowLabelStyle}" Text="input" />
+                            <StackPanel Grid.Row="3" Grid.Column="1">
+                                <TextBlock x:Name="ControllerConnectedText" Style="{StaticResource RowValueStyle}" />
+                                <!--  Which engines are running. A property of the app, not of any one device.  -->
+                                <TextBlock
+                                    x:Name="InputEnginesText"
+                                    Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                                    Style="{StaticResource CaptionTextBlockStyle}"
+                                    TextWrapping="Wrap" />
+                                <!--  Live pad state: only populated while a controller is actually reporting.  -->
+                                <TextBlock x:Name="ControllerButtonsText" Foreground="{ThemeResource TextFillColorTertiaryBrush}" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap" />
+                                <TextBlock x:Name="ControllerSticksText" Foreground="{ThemeResource TextFillColorTertiaryBrush}" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap" />
+                                <TextBlock x:Name="ControllerTriggersText" Foreground="{ThemeResource TextFillColorTertiaryBrush}" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap" />
+                            </StackPanel>
+                        </Grid>
+
+                        <!--  Path of the last saved report. Shown in the panel because on a handheld there is no
+                              other way to find out where the file went.  -->
+                        <TextBlock
+                            x:Name="DiagnosticsSavedText"
+                            Foreground="{ThemeResource SystemFillColorSuccessBrush}"
+                            Style="{StaticResource CaptionTextBlockStyle}"
+                            TextWrapping="Wrap" />
+
+                        <!--  Only non-empty when control secrets are missing.  -->
+                        <TextBlock
+                            x:Name="D3D12StatusText"
+                            Foreground="{ThemeResource SystemFillColorCriticalBrush}"
+                            Style="{StaticResource CaptionTextBlockStyle}"
+                            TextWrapping="Wrap" />
+                    </StackPanel>
+                </StackPanel>
+                </ScrollViewer>
+            </Grid>
+        </Border>
+
+
+        <!--
+            On-screen controls, summoned by touch or pointer movement and hidden again after a few seconds.
+
+            Two jobs in one bar. First, the buttons the current input CANNOT send: an Xbox pad has no PS button and
+            Windows claims its Guide button for the shell before we ever see it, so on an Xbox pad or the Ally's
+            built-in controller there is otherwise no way to open the PS5 UI at all. Second, the diagnostics and
+            exit affordances, which used to sit over the game permanently.
+
+            Bottom-centred for thumb reach on a handheld, and sized as touch targets rather than 16px icons — the
+            Ally X has no mouse and no F-row, so this is the only way to reach any of it there.
+
+            Labelled with TEXT, deliberately: the PlayStation face-button glyph set is a registered mark, unlike the
+            product name, so no Sony glyph designs or symbol fonts are reproduced here.
+        -->
+        <Border
+            x:Name="TouchControls"
+            Margin="0,0,0,20"
+            Padding="8"
+            HorizontalAlignment="Center"
+            VerticalAlignment="Bottom"
+            Background="{ThemeResource AcrylicInAppFillColorDefaultBrush}"
+            BorderBrush="{ThemeResource SurfaceStrokeColorDefaultBrush}"
+            BorderThickness="1"
+            CornerRadius="14"
+            Visibility="Collapsed">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+
+                <!--
+                    Console buttons. PointerPressed/Released rather than Click, so a HOLD is a hold — holding PS
+                    opens the console's power menu, and Click would only ever send a tap.
+                -->
+                <Button
+                    x:Name="PsButton"
+                    MinWidth="64"
+                    MinHeight="52"
+                    AutomationProperties.Name="PS button"
+                    Content="PS"
+                    Style="{StaticResource AccentButtonStyle}"
+                    Tag="Guide"
+                    ToolTipService.ToolTip="PS button — hold for the power menu" />
+                <Button
+                    x:Name="CreateButton"
+                    MinWidth="72"
+                    MinHeight="52"
+                    AutomationProperties.Name="Create button"
+                    Content="Create"
+                    Tag="Select" />
+                <Button
+                    x:Name="OptionsButton"
+                    MinWidth="76"
+                    MinHeight="52"
+                    AutomationProperties.Name="Options button"
+                    Content="Options"
+                    Tag="Start" />
+                <Button
+                    x:Name="TouchpadButton"
+                    MinWidth="88"
+                    MinHeight="52"
+                    AutomationProperties.Name="Touchpad click"
+                    Content="Touchpad"
+                    Tag="TouchpadClick" />
+
+                <Rectangle
+                    Width="1"
+                    Margin="4,6"
+                    Fill="{ThemeResource DividerStrokeColorDefaultBrush}" />
+
+                <!--  App affordances. Click is correct here: these are not sent to the console.  -->
+                <Button
+                    x:Name="DiagnosticsToggleButton"
+                    MinWidth="56"
+                    MinHeight="52"
+                    AutomationProperties.Name="Toggle connection diagnostics"
+                    Click="DiagnosticsToggleButton_Click"
+                    ToolTipService.ToolTip="Connection diagnostics (F3)">
+                    <FontIcon FontSize="18" Glyph="&#xE9D9;" />
+                </Button>
+                <Button
+                    x:Name="SaveDiagnosticsButton"
+                    MinWidth="56"
+                    MinHeight="52"
+                    AutomationProperties.Name="Save diagnostics to a file"
+                    Click="SaveDiagnosticsButton_Click"
+                    ToolTipService.ToolTip="Save diagnostics (F8)">
+                    <FontIcon FontSize="18" Glyph="&#xE74E;" />
+                </Button>
+                <Button
+                    x:Name="ExitButton"
+                    MinWidth="56"
+                    MinHeight="52"
+                    AutomationProperties.Name="Leave the stream"
+                    Click="LeaveButton_Click"
+                    ToolTipService.ToolTip="Leave the stream (Esc)">
+                    <FontIcon FontSize="18" Glyph="&#xE711;" />
+                </Button>
+            </StackPanel>
+        </Border>
+
+    </Grid>
+</Page>
