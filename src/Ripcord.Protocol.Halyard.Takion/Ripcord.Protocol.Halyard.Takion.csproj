@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <!-- Matches the sibling protocol assemblies: lets the tests verify internals such as the senkusha echo packet
+       layout against the captured vendor bytes, without widening the public API for testability. -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="Ripcord.Protocol.Halyard.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Google.Protobuf" Version="3.28.3" />
+    <PackageReference Include="Grpc.Tools" Version="2.67.0" PrivateAssets="All" />
+  </ItemGroup>
+
+  <!-- Control-plane schema. The .proto files are the committed clean-room wire contract; codegen reads them
+       in place from docs/protocol (ProtoRoot resolves the bandwidth_probe import). Message-only, no gRPC. -->
+  <ItemGroup>
+    <Protobuf Include="..\..\docs\protocol\stream_control.proto" ProtoRoot="..\..\docs\protocol" GrpcServices="None" />
+    <Protobuf Include="..\..\docs\protocol\bandwidth_probe.proto" ProtoRoot="..\..\docs\protocol" GrpcServices="None" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Ripcord.Core.Net\Ripcord.Core.Net.csproj" />
+    <ProjectReference Include="..\Ripcord.Protocol.Halyard.Common\Ripcord.Protocol.Halyard.Common.csproj" />
+  </ItemGroup>
+
+</Project>
