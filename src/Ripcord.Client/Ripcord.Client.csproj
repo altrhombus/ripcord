@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <!--
+    The headless application layer: the session lifecycle state machine, reconnect policy, and the telemetry a
+    UI renders. Deliberately platform-neutral (net10.0, no UI or render dependencies) for two reasons:
+
+      1. This logic used to live in SessionPage.xaml.cs, so it could only ever be exercised by launching the
+         app against a real console. Here it is unit-testable with fakes.
+      2. It is what a second front end would otherwise have to reimplement from scratch.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\Ripcord.Core\Ripcord.Core.csproj" />
+    <ProjectReference Include="..\Ripcord.Diagnostics\Ripcord.Diagnostics.csproj" />
+  </ItemGroup>
+
+</Project>
