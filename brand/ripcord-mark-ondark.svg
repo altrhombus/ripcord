@@ -1,0 +1,9 @@
+<!--
+  Ripcord mark, no tile — for dark grounds. Identical geometry to ripcord-mark.svg with a white wedge.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <path d="M29 17L53 32L29 47Z" fill="#FFFFFF" stroke="#FFFFFF" stroke-width="6" stroke-linejoin="round" />
+  <rect x="12" y="18" width="9" height="7" rx="3.5" fill="#2FBF5B" />
+  <rect x="5" y="28.5" width="16" height="7" rx="3.5" fill="#2D7DF6" />
+  <rect x="9" y="39" width="12" height="7" rx="3.5" fill="#F0433A" />
+</svg>
