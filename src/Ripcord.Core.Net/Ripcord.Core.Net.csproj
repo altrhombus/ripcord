@@ -1,0 +1,14 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The hardware GF(2^128) multiply is differentially tested against the portable bit-serial reference. -->
+    <InternalsVisibleTo Include="Ripcord.Protocol.Halyard.Tests" />
+  </ItemGroup>
+
+</Project>
