@@ -1,0 +1,136 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{7A5F5E4B-0F9C-4B7A-9D2C-4E8F2E6F1A9D}</ProjectGuid>
+    <Keyword>Win32Proj</Keyword>
+    <RootNamespace>RipcordInputInterop</RootNamespace>
+    <ProjectName>Ripcord.Input.Interop</ProjectName>
+    <DefaultLanguage>en-US</DefaultLanguage>
+    <MinimumVisualStudioVersion>17.0</MinimumVisualStudioVersion>
+    <WindowsTargetPlatformVersion>10.0.26100.0</WindowsTargetPlatformVersion>
+    <WindowsTargetPlatformMinVersion>10.0.19041.0</WindowsTargetPlatformMinVersion>
+  </PropertyGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+
+  <PropertyGroup Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <PlatformToolset>v145</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+    <UseOfMfc>false</UseOfMfc>
+    <RestoreProjectStyle>PackageReference</RestoreProjectStyle>
+    <!-- Own output folder: without this, every DynamicLibrary project in the solution defaults
+         to the same $(SolutionDir)$(Platform)\$(Configuration)\ folder, and since CppWinRT's
+         merged winmd is named after the shared "Ripcord" namespace root in every native project,
+         they would silently overwrite each other's merged metadata. -->
+    <OutDir>$(SolutionDir)$(Platform)\$(Configuration)\$(ProjectName)\</OutDir>
+    <!-- See Ripcord.Media.Interop.vcxproj for why this is needed: registration-free WinRT
+         activation from an unpackaged .NET consumer requires opting in explicitly. -->
+    <WindowsDesktopCompatible>true</WindowsDesktopCompatible>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)'=='Debug'" Label="Configuration">
+    <UseDebugLibraries>true</UseDebugLibraries>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)'=='Release'" Label="Configuration">
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+  </PropertyGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+
+  <PropertyGroup>
+    <LanguageStandard>stdcpp20</LanguageStandard>
+    <CppWinRTOptimized>true</CppWinRTOptimized>
+    <CppWinRTRootNamespaceAutoMerge>true</CppWinRTRootNamespaceAutoMerge>
+    <CppWinRTGenerateWindowsMetadata>true</CppWinRTGenerateWindowsMetadata>
+    <GenerateManifest>false</GenerateManifest>
+  </PropertyGroup>
+
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <PrecompiledHeader>Use</PrecompiledHeader>
+      <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
+      <SDLCheck>true</SDLCheck>
+      <ConformanceMode>true</ConformanceMode>
+      <WarningLevel>Level4</WarningLevel>
+      <!--
+        The Windows 11 SDK also ships its own (older, unnamespaced) um\GameInput.h, which can
+        shadow the NuGet package's versioned header depending on include-path evaluation order.
+        The package's top-level native\include\GameInput.h is the v3 header (there is no v3
+        subfolder - only v0/v1/v2 are broken out; v3 lives at the include root). Pin it explicitly
+        so <GameInput.h> always resolves to GameInput::v3, not the SDK's copy.
+      -->
+      <AdditionalIncludeDirectories>$(NuGetPackageRoot)microsoft.gameinput\3.4.218\native\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <!--
+        The package's build\native\targets\Microsoft.GameInput.targets (note the extra "targets"
+        subfolder) doesn't match NuGet's native auto-import convention of build\native\<id>.targets,
+        so it never gets imported automatically. Link GameInput.lib explicitly instead of relying
+        on it.
+      -->
+      <AdditionalLibraryDirectories>$(NuGetPackageRoot)microsoft.gameinput\3.4.218\native\lib\x64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>GameInput.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <ModuleDefinitionFile>dllmain.def</ModuleDefinitionFile>
+    </Link>
+  </ItemDefinitionGroup>
+
+  <ItemGroup>
+    <ClInclude Include="pch.h" />
+    <ClInclude Include="GamepadReader.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="pch.cpp">
+      <PrecompiledHeader>Create</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="GamepadReader.cpp" />
+    <ClCompile Include="dllmain.cpp" />
+    <!-- module.g.cpp is added at build time by the AddCppWinRTComponentModule target below (see
+         Ripcord.Media.Interop.vcxproj for why dllmain.cpp + module.g.cpp are both needed). -->
+  </ItemGroup>
+  <ItemGroup>
+    <Midl Include="GamepadReader.idl" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Windows.CppWinRT">
+      <Version>3.0.260520.1</Version>
+    </PackageReference>
+    <PackageReference Include="Microsoft.GameInput">
+      <Version>3.4.218</Version>
+    </PackageReference>
+  </ItemGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+
+  <!--
+    module.g.cpp (C++/WinRT-generated) defines WINRT_GetActivationFactory / WINRT_CanUnloadNow, which
+    dllmain.cpp bridges to the exported DllGetActivationFactory / DllCanUnloadNow. cppwinrt.exe generates
+    it *during* the build, so it must NOT be a static <ClCompile> gated on Exists(...): that condition is
+    evaluated at project-load time, before generation, so on any clean build the file is absent, silently
+    dropped, and never compiled -> LNK2019 on both WINRT_* symbols (and a second build "fixes" it only
+    because the file now exists from the first attempt). Instead add it in a target that DependsOn the
+    projection generation (guaranteeing the file exists) and runs before the compile via the same
+    FixupCLCompileOptions hook CppWinRT itself uses for generated ClCompile items. It inherits the PCH
+    "Use" default from the ItemDefinitionGroup, matching its own #include "pch.h".
+  -->
+  <Target Name="AddCppWinRTComponentModule"
+          DependsOnTargets="CppWinRTMakeProjections"
+          BeforeTargets="FixupCLCompileOptions">
+    <ItemGroup>
+      <ClCompile Include="$(GeneratedFilesDir)module.g.cpp" />
+    </ItemGroup>
+  </Target>
+</Project>
