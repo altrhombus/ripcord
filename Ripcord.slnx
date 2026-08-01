@@ -1,0 +1,28 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Ripcord.App/Ripcord.App.csproj">
+      <Platform Project="x64" />
+    </Project>
+    <Project Path="src/Ripcord.Client/Ripcord.Client.csproj" />
+    <Project Path="src/Ripcord.Core.Net/Ripcord.Core.Net.csproj" />
+    <Project Path="src/Ripcord.Core/Ripcord.Core.csproj" />
+    <Project Path="src/Ripcord.Diagnostics/Ripcord.Diagnostics.csproj" />
+    <Project Path="src/Ripcord.Input/Ripcord.Input.csproj" />
+    <Project Path="src/Ripcord.Input.Common/Ripcord.Input.Common.csproj" />
+    <Project Path="src/Ripcord.Input.Interop/Ripcord.Input.Interop.vcxproj" Id="7a5f5e4b-0f9c-4b7a-9d2c-4e8f2e6f1a9d" />
+    <Project Path="src/Ripcord.Media/Ripcord.Media.csproj" />
+    <Project Path="src/Ripcord.Media.Audio/Ripcord.Media.Audio.csproj" />
+    <Project Path="src/Ripcord.Media.Interop/Ripcord.Media.Interop.vcxproj" Id="2d6c7c3e-7c0d-4c55-9f6b-9c7b6c2f6b31" />
+    <Project Path="src/Ripcord.Cloud.Halyard/Ripcord.Cloud.Halyard.csproj" />
+    <Project Path="src/Ripcord.Protocol.Halyard.Common/Ripcord.Protocol.Halyard.Common.csproj" />
+    <Project Path="src/Ripcord.Protocol.Halyard/Ripcord.Protocol.Halyard.csproj" />
+    <Project Path="src/Ripcord.Protocol.Halyard.Takion/Ripcord.Protocol.Halyard.Takion.csproj" />
+  </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/Ripcord.ProtocolLab/Ripcord.ProtocolLab.csproj" />
+    <Project Path="tools/Ripcord.HidCapture/Ripcord.HidCapture.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Ripcord.Protocol.Halyard.Tests/Ripcord.Protocol.Halyard.Tests.csproj" />
+  </Folder>
+</Solution>
