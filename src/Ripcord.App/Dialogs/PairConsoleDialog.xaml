@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentDialog
+    x:Class="Ripcord_App.Dialogs.PairConsoleDialog"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    Title="Add a console"
+    CloseButtonText="Cancel"
+    DefaultButton="Primary"
+    PrimaryButtonClick="OnPairClick"
+    PrimaryButtonText="Pair"
+    mc:Ignorable="d">
+
+    <StackPanel MinWidth="380" Spacing="12">
+        <TextBlock
+            Style="{StaticResource BodyTextBlockStyle}"
+            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+            TextWrapping="Wrap"
+            Text="On the console open Settings → System → Remote Play → Link Device to show an 8-digit code, then enter it below. The code expires quickly." />
+
+        <Grid ColumnSpacing="8">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <TextBox
+                x:Name="HostBox"
+                Header="Console IP address"
+                PlaceholderText="192.168.1.20" />
+            <Button
+                x:Name="ScanButton"
+                Grid.Column="1"
+                VerticalAlignment="Bottom"
+                Click="OnScanClick"
+                Content="Scan LAN" />
+        </Grid>
+
+        <ComboBox
+            x:Name="DiscoveredBox"
+            HorizontalAlignment="Stretch"
+            Header="Discovered consoles"
+            PlaceholderText="Scan to populate"
+            SelectionChanged="OnDiscoveredSelected"
+            Visibility="Collapsed" />
+
+        <TextBox
+            x:Name="AccountBox"
+            Header="PSN account ID"
+            PlaceholderText="numeric account id" />
+
+        <TextBox
+            x:Name="PasscodeBox"
+            Header="Link code (8 digits)"
+            MaxLength="8"
+            PlaceholderText="12345678" />
+
+        <ComboBox x:Name="PlatformBox" Header="Console" SelectedIndex="0">
+            <ComboBoxItem Content="PlayStation 5" />
+            <ComboBoxItem Content="PlayStation 4" />
+        </ComboBox>
+
+        <InfoBar
+            x:Name="StatusBar"
+            IsClosable="False"
+            IsOpen="False" />
+
+        <ProgressRing
+            x:Name="Busy"
+            HorizontalAlignment="Left"
+            IsActive="False" />
+    </StackPanel>
+</ContentDialog>

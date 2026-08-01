@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "Ripcord.App (Package)": {
+      "commandName": "MsixPackage"
+    },
+    "Ripcord.App (Unpackaged)": {
+      "commandName": "Project"
+    }
+  }
+}

@@ -1,0 +1,153 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>
+    <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
+    <RootNamespace>Ripcord_App</RootNamespace>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- Stamps the icon into the exe's Win32 resources. Running unpackaged, this is where the taskbar and
+         Explorer get the app icon from — the MSIX assets below are not consulted. Generated, like every
+         other asset here, by brand/generate-assets.ps1. -->
+    <ApplicationIcon>Assets\AppIcon.ico</ApplicationIcon>
+    <Platforms>x86;x64;ARM64</Platforms>
+    <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == ''">win-$([System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture.ToString().ToLowerInvariant())</RuntimeIdentifier>
+    <PublishProfile Condition="Exists('Properties\PublishProfiles\win-$(Platform).pubxml')">win-$(Platform).pubxml</PublishProfile>
+    <UseWinUI>true</UseWinUI>
+    <WinUISDKReferences>false</WinUISDKReferences>
+    <EnableMsixTooling>true</EnableMsixTooling>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <!--
+      Phase 0: run unpackaged for fast local dev iteration (dotnet run / launching the exe
+      directly) instead of requiring an MSIX deploy for every test. WindowsAppSDK's auto-
+      initializer (Microsoft.WindowsAppSDK.Foundation) only self-bootstraps correctly when the
+      project is explicitly marked unpackaged - without this, launching the raw exe crashes with
+      REGDB_E_CLASSNOTREG because the initializer assumes package-identity activation. Revisit
+      when actual MSIX packaging/distribution work happens (see the plan's Phase 6).
+    -->
+    <WindowsPackageType>None</WindowsPackageType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Content Include="Assets\SplashScreen.scale-200.png" />
+    <Content Include="Assets\LockScreenLogo.scale-200.png" />
+    <Content Include="Assets\Square150x150Logo.scale-200.png" />
+    <Content Include="Assets\Square44x44Logo.scale-200.png" />
+    <Content Include="Assets\Square44x44Logo.targetsize-24_altform-unplated.png" />
+    <Content Include="Assets\Square44x44Logo.targetsize-48_altform-lightunplated.png" />
+    <Content Include="Assets\StoreLogo.png" />
+    <Content Include="Assets\AppIcon.ico" />
+    <Content Include="Assets\Wide310x150Logo.scale-200.png" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Manifest Include="$(ApplicationManifest)" />
+  </ItemGroup>
+
+  <!--
+    Defining the "Msix" ProjectCapability here allows the Single-project MSIX Packaging
+    Tools extension to be activated for this project even if the Windows App SDK Nuget
+    package has not yet been restored.
+  -->
+  <ItemGroup Condition="'$(DisableMsixProjectCapabilityAddedByProject)'!='true' and '$(EnableMsixTooling)'=='true'">
+    <ProjectCapability Include="Msix" />
+  </ItemGroup>
+
+  <!--
+    Microsoft.Windows.SDK.BuildTools.WinApp adds first-class support for
+    `dotnet run` on packaged WinUI apps: it hooks the .NET CLI Run target to
+    register a debug identity via the winapp CLI and launch the app with
+    package identity (AUMID).
+    Set <EnableWinAppRunSupport>false</EnableWinAppRunSupport> in a
+    <PropertyGroup> above to opt out.
+  -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.28000.2270" />
+    <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.2.0" />
+    <PackageReference Include="Microsoft.Windows.SDK.BuildTools.WinApp" Version="0.4.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Ripcord.Client\Ripcord.Client.csproj" />
+    <ProjectReference Include="..\Ripcord.Core\Ripcord.Core.csproj" />
+    <!-- Used directly (MetricHistory for the diagnostics graph, RipcordEventSource for tracing), so referenced
+         directly rather than relying on it arriving transitively through Core. -->
+    <ProjectReference Include="..\Ripcord.Diagnostics\Ripcord.Diagnostics.csproj" />
+    <ProjectReference Include="..\Ripcord.Core.Net\Ripcord.Core.Net.csproj" />
+    <ProjectReference Include="..\Ripcord.Input\Ripcord.Input.csproj" />
+    <ProjectReference Include="..\Ripcord.Media\Ripcord.Media.csproj" />
+    <ProjectReference Include="..\Ripcord.Protocol.Halyard.Common\Ripcord.Protocol.Halyard.Common.csproj" />
+    <ProjectReference Include="..\Ripcord.Protocol.Halyard\Ripcord.Protocol.Halyard.csproj" />
+  </ItemGroup>
+
+  <!--
+    Defining the "HasPackageAndPublishMenuAddedByProject" property here allows the Solution
+    Explorer "Package and Publish" context menu entry to be enabled for this project even if
+    the Windows App SDK Nuget package has not yet been restored.
+  -->
+  <PropertyGroup Condition="'$(DisableHasPackageAndPublishMenuAddedByProject)'!='true' and '$(EnableMsixTooling)'=='true'">
+    <HasPackageAndPublishMenu>true</HasPackageAndPublishMenu>
+  </PropertyGroup>
+
+  <!-- Publish Properties -->
+  <PropertyGroup>
+    <PublishReadyToRun Condition="'$(Configuration)' == 'Debug'">False</PublishReadyToRun>
+    <PublishReadyToRun Condition="'$(Configuration)' != 'Debug'">True</PublishReadyToRun>
+    <!--
+      Trimming is OFF in every configuration, overriding the WinUI template default of enabling it for Release.
+
+      It was not merely unhelpful, it was actively breaking Release builds: setting PublishTrimmed in the project
+      makes the SDK bake in the feature switch System.Text.Json.JsonSerializer.IsReflectionEnabledByDefault=false
+      even for a plain build, so the app threw "Reflection-based serialization has been disabled" while reading
+      settings.json before the window ever appeared. There are ~10 reflection-based JsonSerializer call sites
+      (settings, paired consoles, both fixture loaders, the cloud client), and the trimmer would also have to
+      contend with XAML type activation, CsWinRT projections and two C++/WinRT components — all reflection-heavy
+      and poorly served by trimming today.
+
+      The failure mode matters as much as the cause: a trimmed member does not error, it silently deserialises to
+      a default, so the alternative to a crash here is quiet data loss. Making this trim-safe means source-generated
+      JSON contexts for every serialised type, which is a real piece of work and is tracked separately; until then
+      the correct setting is off. ReadyToRun stays on — it is precompilation only and carries no trimming risk.
+    -->
+    <PublishTrimmed>False</PublishTrimmed>
+  </PropertyGroup>
+
+  <!-- The native C++/WinRT components (Media.Interop, Input.Interop) are referenced by their
+       winmd only, which carries type metadata but not the implementation DLL - see the matching
+       targets in Ripcord.Media.csproj/Ripcord.Input.csproj for why this is a post-build Copy
+       rather than a <None CopyToOutputDirectory> item. This is the target that actually matters:
+       it's Ripcord.App's own output folder, next to the exe, that activation looks in at runtime. -->
+  <PropertyGroup>
+    <NativeInteropDlls>$(SolutionDir)x64\$(Configuration)\Ripcord.Media.Interop\Ripcord.Media.Interop.dll;$(SolutionDir)x64\$(Configuration)\Ripcord.Input.Interop\Ripcord.Input.Interop.dll</NativeInteropDlls>
+  </PropertyGroup>
+
+  <Target Name="CopyNativeInteropDlls" AfterTargets="Build">
+    <Copy
+      SourceFiles="$(NativeInteropDlls)"
+      DestinationFolder="$(OutDir)"
+      SkipUnchangedFiles="true" />
+  </Target>
+
+  <!-- Publish needs its own copy: the Build target above writes to $(OutDir), which publish does not sweep for
+       loose native DLLs. Without this, `dotnet publish` produces a folder that launches and then dies the moment
+       activation looks for Ripcord.Media.Interop.dll — a broken deployment that looks fine until it is run on a
+       machine with no dev tools, which is precisely where it would be discovered. -->
+  <Target Name="CopyNativeInteropDllsOnPublish" AfterTargets="Publish">
+    <ItemGroup>
+      <NativeInteropDll Include="$(NativeInteropDlls)" />
+    </ItemGroup>
+
+    <!-- Fail loudly rather than shipping a folder that cannot activate. These come from the C++ projects, so a
+         publish attempted without building them first is a mistake worth stopping. -->
+    <Error
+      Condition="!Exists('%(NativeInteropDll.FullPath)')"
+      Text="Native interop DLL missing: %(NativeInteropDll.FullPath). Build the C++ projects (x64/$(Configuration)) before publishing, or the published app will fail at video/input initialisation." />
+
+    <Copy
+      SourceFiles="@(NativeInteropDll)"
+      DestinationFolder="$(PublishDir)"
+      SkipUnchangedFiles="true" />
+
+    <Message Importance="high" Text="Staged native interop DLLs into $(PublishDir)" />
+  </Target>
+</Project>
