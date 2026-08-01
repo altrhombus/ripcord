@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Standalone HID input-report capture tool. Windows-only at runtime (P/Invoke to setupapi.dll/hid.dll),
+    but targets plain net10.0 so it builds/verifies on any host; the DllImports resolve at run time on
+    Windows. Publish self-contained + single-file so it runs on machines with no dev environment (e.g. the
+    ROG Ally X). See Program.cs for the exact publish command.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Ripcord.HidCapture</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+</Project>
