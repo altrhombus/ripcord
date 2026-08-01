@@ -1,0 +1,11 @@
+<!--
+  Ripcord mark, no tile — for light grounds. The wedge is graphite so it reads on paper; the dashes keep
+  their colours. Use ripcord-mark-ondark.svg on dark grounds and ripcord-mono.svg where only one colour
+  is available (tray, menu bar, stencil contexts).
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <path d="M29 17L53 32L29 47Z" fill="#17191D" stroke="#17191D" stroke-width="6" stroke-linejoin="round" />
+  <rect x="12" y="18" width="9" height="7" rx="3.5" fill="#2FBF5B" />
+  <rect x="5" y="28.5" width="16" height="7" rx="3.5" fill="#2D7DF6" />
+  <rect x="9" y="39" width="12" height="7" rx="3.5" fill="#F0433A" />
+</svg>
