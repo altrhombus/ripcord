@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <!-- Microsoft.Win32.Registry removed: the only consumer was HalyardDeviceIdentity's MachineGuid read, which
+       now goes through Ripcord.Core's IDeviceIdentity seam. That keeps this protocol assembly free of
+       Windows-specific dependencies (and silences NU1510, which flagged the package as redundant). -->
+
+  <!-- Matches Ripcord.Core.Net and Ripcord.Protocol.Halyard.Common: lets the tests reach internals such as the
+       launchSpec builders without widening the public API for the sake of testability. -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="Ripcord.Protocol.Halyard.Tests" />
+  </ItemGroup>
+
+  <!-- The v1 interoperability constants, bundled as data and read by HalyardInteropConstants as the
+       last-resort source (explicit override / config dir / dev tree all take precedence).
+       Build with -p:BundleInteropConstants=false to omit them entirely: the resource is then absent, the
+       provider reports IsBundled=false, and the session falls back to the passthrough stub. No code change
+       required, which is the point — see HalyardInteropConstants for the full rationale. -->
+  <PropertyGroup>
+    <BundleInteropConstants Condition="'$(BundleInteropConstants)' == ''">true</BundleInteropConstants>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(BundleInteropConstants)' != 'false'">
+    <EmbeddedResource Include="Data\halyard-v1-constants.json" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Ripcord.Core\Ripcord.Core.csproj" />
+    <ProjectReference Include="..\Ripcord.Core.Net\Ripcord.Core.Net.csproj" />
+    <ProjectReference Include="..\Ripcord.Cloud.Halyard\Ripcord.Cloud.Halyard.csproj" />
+    <ProjectReference Include="..\Ripcord.Protocol.Halyard.Common\Ripcord.Protocol.Halyard.Common.csproj" />
+    <ProjectReference Include="..\Ripcord.Protocol.Halyard.Takion\Ripcord.Protocol.Halyard.Takion.csproj" />
+  </ItemGroup>
+
+</Project>
