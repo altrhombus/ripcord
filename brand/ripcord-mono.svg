@@ -1,0 +1,12 @@
+<!--
+  Ripcord mark, one colour — tray, menu bar, and any stencil context. The dashes are shortened and the gaps
+  opened relative to the master: without colour to separate them, they need air instead.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <g fill="currentColor">
+    <path d="M30 16L54 32L30 48Z" stroke="currentColor" stroke-width="6" stroke-linejoin="round" />
+    <rect x="14" y="17" width="8" height="7" rx="3.5" />
+    <rect x="8" y="28.5" width="14" height="7" rx="3.5" />
+    <rect x="12" y="40" width="10" height="7" rx="3.5" />
+  </g>
+</svg>
