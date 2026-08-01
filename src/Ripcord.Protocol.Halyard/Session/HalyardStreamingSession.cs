@@ -1,0 +1,765 @@
+using System.Net;
+using System.Security.Cryptography;
+using System.Text;
+using System.Threading.Channels;
+using Ripcord.Core.Discovery;
+using Ripcord.Core.Net.Udp;
+using Ripcord.Core.Reactive;
+using Ripcord.Core.Sessions;
+using Ripcord.Protocol.Halyard.Discovery;
+using Ripcord.Protocol.Halyard.Common.Control;
+using Ripcord.Protocol.Halyard.Common.Crypto;
+using Ripcord.Protocol.Halyard.Common.Input;
+using Ripcord.Protocol.Halyard.Common.Streaming;
+using Ripcord.Protocol.Halyard.Takion;
+using Ripcord.Protocol.Halyard.Transport;
+
+namespace Ripcord.Protocol.Halyard.Session;
+
+/// <summary>Where and how to reach a specific console for a direct session.</summary>
+/// <param name="DeviceId">This client's device id (the hex-decoded Windows MachineGuid) for the RP-Did
+/// field; empty until threaded from the platform layer.</param>
+public sealed record HalyardConnectionParameters(
+    string ConsoleId,
+    IPEndPoint ControlEndpoint,
+    IPEndPoint StreamEndpoint,
+    ReadOnlyMemory<byte> DeviceId = default);
+
+/// <summary>
+/// The direct-console session: runs the /sess handshake over the control channel, establishes the
+/// crypto seam, then opens the stream socket and demuxes video/audio into the neutral observables
+/// while sending controller input. With the passthrough crypto the handshake is well-formed but a
+/// real console rejects it at the MAC check (expected until Stage 5); against replayed captures the
+/// stream path runs fully.
+/// </summary>
+public sealed class HalyardStreamingSession : IStreamingSession
+{
+    private readonly HalyardConnectionParameters _parameters;
+    private readonly IHalyardControlChannel _control;
+    private readonly IHalyardSessionCrypto _crypto;
+    private readonly IConsoleCredentialStore _credentials;
+
+    private readonly Subject<EncodedVideoFrame> _video = new();
+    private readonly Subject<EncodedAudioFrame> _audio = new();
+    private readonly Subject<SessionStatistics> _stats = new();
+    private readonly HalyardStreamDemuxer _demuxer;
+    private readonly CancellationTokenSource _sessionCts = new();
+
+    private UdpChannel? _streamSocket;
+    private HalyardTakionStream? _takionStream;
+    private HalyardSessionInputSink? _inputSink;
+
+    // Input packets are handed to a single-writer/single-reader queue and sent by one drain loop, in order.
+    // Previously each packet was fire-and-forget (`_ = SendAsync(...)`), so N concurrent sends raced: the
+    // writer assigns sequence numbers synchronously but the datagrams could reach the wire out of order, and
+    // any send failure became an unobserved task exception. Bounded + DropOldest because stale controller
+    // input is worthless — under backpressure the newest state is the only one worth delivering.
+    private Channel<byte[]>? _inputQueue;
+    private Task? _inputSendLoop;
+    private const int InputQueueCapacity = 256;
+    private AdaptiveBandwidthController? _bandwidth;
+
+    /// <summary>Decides when a CONNECTION_QUALITY report is worth sending (see its own docs for the cadence).</summary>
+    private readonly ConnectionQualityReporter _qualityReporter = new();
+    private HalyardPairingRecord? _pairing;
+    private SessionConfig? _config;
+    private Task? _ctrlKeepAlive;
+
+    public HalyardStreamingSession(
+        HalyardConnectionParameters parameters,
+        IHalyardControlChannel control,
+        IHalyardSessionCrypto crypto,
+        IConsoleCredentialStore credentials)
+    {
+        _parameters = parameters;
+        _control = control;
+        _crypto = crypto;
+        _credentials = credentials;
+        _demuxer = new HalyardStreamDemuxer(crypto);
+        _demuxer.VideoFrameReady += frame => _video.OnNext(frame);
+        _demuxer.AudioFrameReady += frame => _audio.OnNext(frame);
+    }
+
+    public SessionState State { get; private set; } = SessionState.Connecting;
+    public IObservable<EncodedVideoFrame> VideoFrames => _video;
+    public IObservable<EncodedAudioFrame> AudioFrames => _audio;
+    public IObservable<SessionStatistics> Statistics => _stats;
+
+    /// <inheritdoc />
+    public double? MillisecondsSinceConsoleActivity => _takionStream?.MillisecondsSinceConsoleActivity;
+
+    /// <summary>
+    /// Turn each congestion-window (received, lost) A/V unit sample into a <see cref="SessionStatistics"/> so
+    /// consumers (the on-screen readout) can show the wire loss ratio. Only loss + the requested bitrate are
+    /// known here; frame rate / decode time come from the decode pipeline on the app side.
+    /// </summary>
+    private void OnPacketStatsSampled(long received, long lost)
+    {
+        long total = received + lost;
+        double lossRatio = total > 0 ? (double)lost / total : 0.0;
+        double rttMs = _takionStream?.RoundTripTimeMs ?? 0;
+
+        // Feed the adaptive controller. This is the loop that was missing entirely: the samples were computed
+        // and reported to the UI, but nothing ever acted on them, so quality never responded to the link.
+        // total is passed so the controller can tell a real loss rate from one lost unit in a tiny startup window.
+        _bandwidth?.ReportNetworkSample(new NetworkSample(rttMs, lossRatio, JitterMs: 0, ObservedUnits: total));
+
+        // …and now act on its decision. Deciding without telling the console was the remaining gap: the ladder
+        // moved but nothing on the wire changed. CONNECTION_QUALITY also carries our measured RTT and loss, so
+        // the console's own rate controller works from what we actually see rather than inferring it.
+        if (_config?.ReportConnectionQuality == true && _bandwidth is not null && _takionStream is not null)
+        {
+            BitrateDecision decision = _bandwidth.RecommendBitrate();
+            ConnectionQualityReport? report = _qualityReporter.Next(
+                decision.BitrateKbps, rttMs, lossRatio * 100.0, DateTimeOffset.UtcNow);
+
+            if (report is { } toSend)
+            {
+                _takionStream.ReportConnectionQuality(toSend);
+            }
+        }
+
+        _stats.OnNext(new SessionStatistics(
+            RoundTripTimeMs: rttMs,
+            // The measured wire rate, not the rate we asked for. Echoing the request back looked like telemetry
+            // but told the user nothing they had not already chosen.
+            BitrateKbps: _takionStream?.MeasuredBitrateKbps ?? 0,
+            Fps: 0,
+            PacketLossRatio: lossRatio,
+            DecodeTimeMs: 0,
+            // What the bring-up measured and the launchSpec declared, so the overlay can show measurements rather
+            // than leaving the reader to assume the old hardcoded 1454/0.
+            DeclaredMtu: _confirmedMtu ?? LinkMetrics.MtuToDeclare(_measuredMtu),
+            DeclaredRttMs: _measuredRttMs,
+            MtuConfirmed: _confirmedMtu is not null,
+            ReceiveQueueDepth: _takionStream?.AvQueueDepth ?? 0));
+    }
+    /// <summary>
+    /// Ask the console for a fresh IDR. Safe to call before the stream is up (a no-op) and rate-limited inside
+    /// the Takion stream, so callers can fire it on every detected corruption.
+    /// </summary>
+    public void RequestKeyFrame() => _takionStream?.RequestKeyFrame();
+
+    public ISessionInputSink InputSink => _inputSink ?? throw new InvalidOperationException("Connect before using InputSink.");
+    public IBandwidthController BandwidthController => _bandwidth ?? throw new InvalidOperationException("Connect before using BandwidthController.");
+
+    /// <summary>
+    /// Longest the CONTROL PLANE may take (pairing load through /sess/ctrl) before the handshake is reported as a
+    /// failure.
+    ///
+    /// <para>
+    /// Scoped to the control plane deliberately. The senkusha and stream phases already bound themselves (8s and
+    /// 12s), so extending this deadline over them would mean a control plane that legitimately took 20s left the
+    /// stream phase 5s — turning a slow-but-working link into a failure, i.e. inventing a new problem while fixing
+    /// another. Only the /sess/init and /sess/ctrl response reads were unbounded, and only they are covered.
+    /// </para>
+    /// </summary>
+    private static readonly TimeSpan ControlPlaneDeadline = TimeSpan.FromSeconds(20);
+
+    /// <summary>
+    /// Which handshake step is in flight, so a timeout can name it. Set as the handshake advances and read only on
+    /// failure; a torn read would at worst misname a step in a message.
+    /// </summary>
+    private volatile string _connectStep = "starting";
+
+    public async Task<SessionHandshakeResult> ConnectAsync(SessionConfig config, CancellationToken cancellationToken)
+    {
+        _bandwidth = new AdaptiveBandwidthController(config);
+
+        // A DEADLINE over the whole handshake. The senkusha and stream phases already bound themselves, but the
+        // control plane did not: /sess/init and /sess/ctrl awaited a response with only a cancellation token, so a
+        // console that accepts the TCP connection and then never answers left the app on "Connecting…" indefinitely
+        // with nothing to report. Observed on a fresh machine, where it is the least diagnosable outcome possible.
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        deadline.CancelAfter(ControlPlaneDeadline);
+        CancellationToken token = deadline.Token;
+
+        try
+        {
+            _connectStep = "loading pairing";
+            _pairing = await LoadPairingAsync(token).ConfigureAwait(false);
+            byte[]? registrationKey = _pairing?.RegistrationKey;
+            _config = config;
+
+            // Arm the console's control TCP listener before connecting: the PS5 opens :9295 only after
+            // hearing the UDP search probe (SRC3); a cold TCP connect is refused with a RST. (The same
+            // probe the registration path uses — wire-confirmed a single probe arms init + ctrl.)
+            _connectStep = "probing the console's control listener";
+            await HalyardControlSearch.ProbeAsync(
+                _parameters.ControlEndpoint.Address.ToString(), ps5: true, token).ConfigureAwait(false);
+
+            _connectStep = "opening the control connection";
+            await _control.ConnectAsync(_parameters.ControlEndpoint, token).ConfigureAwait(false);
+
+            // The ephemeral ECDH keypair is generated later, inside the Takion SESSION_REQUEST/REPLY exchange
+            // (the negotiator picks the curve from the negotiated protocol version).
+
+            _connectStep = "/sess/init";
+            SessResponse initResponse = await SendInitAsync(registrationKey, token).ConfigureAwait(false);
+            if (!initResponse.IsSuccess)
+            {
+                return Fail($"/sess/init rejected ({initResponse.StatusCode}).");
+            }
+
+            // v1 control-plane key establishment: KDF over (RP-Nonce || companion). Establish the control
+            // key when the pairing record supplies the companion. (The codec/version selectors below are the
+            // values our captured sessions resolve to; pinning the RP-KeyType -> selector mapping is a
+            // refinement, tracked in the spec.)
+            byte[] nonce = DecodeBase64Header(initResponse, SessProtocol.HeaderNonce);
+            if (nonce.Length == 16 && _pairing?.Companion is { Length: 16 } companion)
+            {
+                _crypto.EstablishControl(new HalyardControlKeyMaterial(
+                    nonce, companion, CodecSelector: 2, VersionSelector: 1));
+            }
+
+            // /sess/init was served with Connection: close, so the console closed that socket. Open a fresh
+            // connection for /sess/ctrl (keep-alive), which becomes the persistent control channel. The single
+            // SRC3 probe already armed the listener for this whole window, so no re-probe is needed.
+            _connectStep = "reopening the control connection";
+            await _control.ConnectAsync(_parameters.ControlEndpoint, token).ConfigureAwait(false);
+
+            _connectStep = "/sess/ctrl";
+            SessResponse ctrlResponse = await SendControlAsync(token).ConfigureAwait(false);
+            if (!ctrlResponse.IsSuccess)
+            {
+                return Fail($"/sess/ctrl rejected ({ctrlResponse.StatusCode}).");
+            }
+
+            // The /sess/ctrl HTTP response is immediately followed, on the SAME TCP connection, by a
+            // persistent binary control channel. The console sends HEARTBEAT_REQ every few seconds and tears
+            // the whole session down (RST) if the client stops answering — wire-confirmed: without this loop
+            // the console drops us ~15-30s in, right after A/V starts. Run the keep-alive for the session.
+            _ctrlKeepAlive = Task.Run(() => RunCtrlKeepAliveAsync(_sessionCts.Token));
+
+            // Senkusha bring-up on UDP 9297 — the console requires it between /sess/ctrl and the stream, or
+            // it never answers the stream's SESSION exchange. Non-fatal (the vendor tolerates failures here).
+            // Past the control plane: back to the caller's token so these phases keep their own budgets.
+            _connectStep = "senkusha bring-up";
+            await RunSenkushaAsync(cancellationToken).ConfigureAwait(false);
+
+            _connectStep = "stream key agreement";
+            TakionSessionResult streaming = await StartStreamingAsync(cancellationToken).ConfigureAwait(false);
+            if (!streaming.Success)
+            {
+                return Fail($"Stream key agreement did not complete (Takion/SESSION): {streaming.FailureReason}");
+            }
+
+            State = SessionState.Streaming;
+            return new SessionHandshakeResult(true, null);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            // Our own deadline fired, not the caller's cancellation. Name the step: "Connecting…" forever with no
+            // stated cause is the single least diagnosable failure this app can produce, and on a machine with no
+            // debugger it is the only information available.
+            return Fail($"Control setup timed out after {ControlPlaneDeadline.TotalSeconds:F0}s at: {_connectStep}. "
+                        + "The console did not answer. Check that no other device is streaming from it, and that "
+                        + "inbound UDP is allowed for this app.");
+        }
+        catch (Exception ex)
+        {
+            return Fail($"{_connectStep}: {ex.Message}");
+        }
+    }
+
+    private Task<SessResponse> SendInitAsync(byte[]? registrationKey, CancellationToken cancellationToken)
+    {
+        // v1 /sess/init presents the RP-Registkey as the HEX encoding of the stored registration-key bytes
+        // (wire-confirmed: header value "3161326233633464" = hex of the 8 bytes "1a2b3c4d") and receives the
+        // RP-Nonce for the control KDF. (The modern RP-Pubkey/RP-Hmac headers belong to the deferred v2 protocol.)
+        // Match the vendor's /sess/init exactly (wire-confirmed, cap22): HTTP/1.1, and ONLY the registkey +
+        // version headers — it does NOT send RP-SupportCmd/RP-Feature on the init request (those are in the
+        // *response*). RP-Registkey is the hex of the raw registration-key bytes.
+        string registKey = registrationKey is null ? string.Empty : Convert.ToHexString(registrationKey).ToLowerInvariant();
+        var request = new SessRequest(SessHttpMethod.Get, SessProtocol.PathInit, "HTTP/1.1")
+            .Header("Host", _parameters.ControlEndpoint.ToString())
+            .Header("User-Agent", "remoteplay Windows")
+            .Header("Connection", "close")
+            .Header(SessProtocol.HeaderRegistKey, registKey)
+            .Header(SessProtocol.HeaderVersion, SessProtocol.ProtocolVersion);
+
+        return _control.SendRequestAsync(request, cancellationToken);
+    }
+
+    private Task<SessResponse> SendControlAsync(CancellationToken cancellationToken)
+    {
+        var request = new SessRequest(SessHttpMethod.Get, SessProtocol.PathControl)
+            .Header("Host", _parameters.ControlEndpoint.ToString())
+            .Header("User-Agent", "remoteplay Windows")
+            .Header("Connection", "keep-alive")
+            // Fixed plaintext fields the console requires alongside the encrypted ones (wire-confirmed, cap22).
+            .Header(SessProtocol.HeaderVersion, SessProtocol.ProtocolVersion)
+            .Header(SessProtocol.HeaderControllerType, "0")
+            .Header(SessProtocol.HeaderClientType, "11")
+            .Header(SessProtocol.HeaderConPath, "1")
+            .Header(SessProtocol.HeaderPadProcNo, "2")
+            .Header(SessProtocol.HeaderSupportCmd, "060000");
+
+        // With the control key established, /sess/ctrl carries the encrypted RP-Auth/RP-Did/RP-OSType/
+        // RP-StartBitrate/RP-StreamingType fields (spec §2.1). Without it (no pairing companion yet), the
+        // request goes out unauthenticated and the console rejects - the boundary the pairing record removes.
+        if (_crypto.IsControlEstablished && _pairing is not null)
+        {
+            Version os = Environment.OSVersion.Version;
+            int bitrate = _config?.InitialBitrateKbps ?? 10_000;
+            // Use the injected device id, or fall back to this machine's real MachineGuid.
+            ReadOnlySpan<byte> deviceId = _parameters.DeviceId.IsEmpty
+                ? HalyardDeviceIdentity.Current().Span
+                : _parameters.DeviceId.Span;
+            var fields = HalyardSessCtrlFields.Build(
+                _crypto,
+                _pairing.RegistrationKey,
+                deviceId,
+                os.Major, os.Minor,
+                startBitrate: bitrate,
+                streamingType: 0);
+
+            foreach (var (name, value) in fields)
+            {
+                request.Header(name, value);
+            }
+        }
+
+        return _control.SendRequestAsync(request, cancellationToken);
+    }
+
+    /// <summary>
+    /// Drain the persistent /sess/ctrl binary channel for the life of the session and answer the console's
+    /// HEARTBEAT_REQ with HEARTBEAT_REP. Missing these is what makes the console disconnect shortly after A/V
+    /// begins. Other message types (session id, login, features) are functional refinements and ignored for
+    /// now — the heartbeat reply is the keep-alive. Empty-payload messages need no rpcrypt, so this stays
+    /// simple. A closed connection or cancellation ends the loop quietly.
+    /// </summary>
+    private async Task RunCtrlKeepAliveAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                HalyardCtrlMessage? message = await _control.ReadCtrlMessageAsync(cancellationToken).ConfigureAwait(false);
+                if (message is null)
+                {
+                    return; // control connection closed
+                }
+
+                if (message.Value.Type == HalyardCtrlMessage.TypeHeartbeatReq)
+                {
+                    await _control.SendCtrlMessageAsync(
+                        new HalyardCtrlMessage(HalyardCtrlMessage.TypeHeartbeatRep), cancellationToken).ConfigureAwait(false);
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // session shutting down
+        }
+        catch (Exception)
+        {
+            // control channel faulted (e.g. socket closed under us) — the session teardown will observe it
+        }
+    }
+
+    /// <summary>
+    /// Drain the input queue, awaiting each send so packets reach the wire in the order their sequence numbers
+    /// were assigned. A send failure is logged-and-swallowed per packet: input is an unreliable channel by
+    /// design (the writer re-sends recent history events), so one lost datagram must not end the session.
+    /// </summary>
+    private async Task RunInputSendLoopAsync(CancellationToken cancellationToken)
+    {
+        ChannelReader<byte[]>? reader = _inputQueue?.Reader;
+        if (reader is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await foreach (byte[] packet in reader.ReadAllAsync(cancellationToken).ConfigureAwait(false))
+            {
+                try
+                {
+                    HalyardTakionStream? stream = _takionStream;
+                    if (stream is not null)
+                    {
+                        await stream.SendAsync(packet, cancellationToken).ConfigureAwait(false);
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                    return;
+                }
+                catch (Exception)
+                {
+                    // Single-packet send failure; keep draining.
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // session shutting down
+        }
+    }
+
+    private async Task<HalyardPairingRecord?> LoadPairingAsync(CancellationToken cancellationToken)
+    {
+        byte[]? blob = await _credentials.LoadAsync(_parameters.ConsoleId, cancellationToken).ConfigureAwait(false);
+        if (blob is null)
+        {
+            return null;
+        }
+
+        // The store persists a serialized pairing record; a legacy blob (a bare registration key with no
+        // companion) is tolerated so older stores still drive /sess/init.
+        return HalyardPairingRecord.TryDeserialize(blob, out HalyardPairingRecord? record)
+            ? record
+            : new HalyardPairingRecord(blob, Companion: [], KeyType: 0);
+    }
+
+    /// <summary>The senkusha bring-up port (UDP), one above the A/V stream port (wire-confirmed 9297).</summary>
+    private const int SenkushaPort = 9297;
+
+    // What the bring-up measured, for the launchSpec. Null means "not measured", which is why the launchSpec falls
+    // back to the vendor defaults rather than declaring 0.
+    private double? _measuredRttMs;
+    private int? _measuredMtu;
+
+    // Set only when the senkusha probe verified the path in both directions; null means "declare the estimate".
+    private int? _confirmedMtu;
+
+    /// <summary>
+    /// Run the senkusha bring-up on its own UDP connection to :9297 before the stream. Best-effort: a
+    /// timeout or error is swallowed so the stream attempt still proceeds (matching the vendor).
+    /// </summary>
+    private async Task RunSenkushaAsync(CancellationToken cancellationToken)
+    {
+        var endpoint = new IPEndPoint(_parameters.ControlEndpoint.Address, SenkushaPort);
+        using var socket = new UdpChannel();
+        await using var senkusha = new HalyardSenkusha(socket, endpoint);
+        using var senkushaCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        senkushaCts.CancelAfter(TimeSpan.FromSeconds(8));
+        // Measured on the way past: the interface that routes to the console bounds the datagram size, and this
+        // costs no traffic.
+        _measuredMtu = LinkMetrics.InterfaceMtuTowards(endpoint.Address);
+
+        try
+        {
+            // The candidate handed to the probe is the interface-derived estimate; senkusha either confirms it on the
+            // real path or declines to, and only a CONFIRMED value replaces it.
+            int candidateMtu = LinkMetrics.MtuToDeclare(_measuredMtu);
+
+            SenkushaResult result = await senkusha
+                .RunAsync(TimeSpan.FromSeconds(2), handshakeAttempts: 3, candidateMtu, senkushaCts.Token)
+                .ConfigureAwait(false);
+
+            if (result.Succeeded)
+            {
+                _measuredRttMs = result.RoundTripTimeMs;
+
+                // Measured beats inferred: the interface MTU bounds the first hop, whereas the probe exercised the
+                // whole path in both directions. An unconfirmed probe leaves the estimate alone rather than
+                // downgrading a link that is probably fine.
+                if (result.ConfirmedMtu is int confirmed)
+                {
+                    _confirmedMtu = confirmed;
+                }
+            }
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            // senkusha timed out — non-fatal, proceed to the stream
+        }
+        catch (Exception)
+        {
+            // non-fatal — the stream attempt continues either way
+        }
+    }
+
+    private async Task<TakionSessionResult> StartStreamingAsync(CancellationToken cancellationToken)
+    {
+        // The stream rides Takion over a dedicated UDP socket to the negotiated stream port. The demuxer
+        // (already wired to the video/audio subjects) authenticates + decrypts A/V through the crypto seam.
+        // Give the socket a large receive buffer: the A/V stream is bursty and the default (~64 KB) drops
+        // datagrams on any brief receive-loop stall (→ slice corruption + choppy audio), especially at higher
+        // bitrates/resolutions.
+        _streamSocket = new UdpChannel(receiveBufferBytes: 4 * 1024 * 1024);
+        _takionStream = new HalyardTakionStream(_streamSocket, _parameters.StreamEndpoint, _crypto, _demuxer);
+        _takionStream.PacketStatsSampled += OnPacketStatsSampled;
+
+        // Controller input goes up the same socket, sealed by the crypto seam. Enqueue rather than send
+        // directly: the drain loop below preserves the order the writer stamped sequence numbers in.
+        var writer = new HalyardInputPacketWriter(_crypto);
+        _inputQueue = Channel.CreateBounded<byte[]>(new BoundedChannelOptions(InputQueueCapacity)
+        {
+            FullMode = BoundedChannelFullMode.DropOldest,
+            SingleReader = true,
+            SingleWriter = true,
+        });
+        _inputSendLoop = Task.Run(() => RunInputSendLoopAsync(_sessionCts.Token));
+        _inputSink = new HalyardSessionInputSink(writer, packet => _inputQueue.Writer.TryWrite(packet));
+
+        var request = BuildSessionRequest();
+
+        // Bound the whole stream bring-up so a stalled SESSION exchange fails cleanly instead of hanging
+        // forever (the negotiator otherwise waits on the reply with no deadline).
+        using var streamCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        streamCts.CancelAfter(TimeSpan.FromSeconds(12));
+        try
+        {
+            return await _takionStream
+                .StartAsync(request, handshakeTimeout: TimeSpan.FromSeconds(2), handshakeAttempts: 3, streamCts.Token)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return TakionSessionResult.Fail("timed out waiting for SESSION_REPLY (no reply routed within 12s)");
+        }
+        catch (TimeoutException)
+        {
+            return TakionSessionResult.Fail("Takion handshake: no INIT_ACK from the console (stream service not listening — is a user logged in?)");
+        }
+    }
+
+    /// <summary>
+    /// Assemble the SESSION_REQUEST inputs. From a wire-parsed real SESSION_REQUEST: <c>sessionKey</c> is the
+    /// literal "InvalidSessionId", <c>encryptedKey</c> is unused (left empty by the negotiator), and
+    /// <c>clientVersion</c> is 17 (0x11). The launchSpec is built from the spec §4.3 fields (the template
+    /// corroborated against our own client's memory + wire keystream) carrying a fresh handshakeKey,
+    /// out1-encrypted when the control key is available.
+    /// </summary>
+    private TakionSessionRequest BuildSessionRequest()
+    {
+        byte[] handshakeKey = RandomNumberGenerator.GetBytes(16);
+        string launchSpecPlain = BuildLaunchSpecJson(handshakeKey);
+
+        byte[] launchBytes = System.Text.Encoding.UTF8.GetBytes(launchSpecPlain);
+        // out1-encrypt the launchSpec when control is established; otherwise send it as-is (stub/passthrough).
+        byte[] launchWire = _crypto.IsControlEstablished ? _crypto.CryptStreaminfo(0, launchBytes) : launchBytes;
+
+        return new TakionSessionRequest(
+            ClientVersion: 17,
+            SessionKey: "InvalidSessionId",
+            LaunchSpecJson: Convert.ToBase64String(launchWire),
+            HandshakeKey: handshakeKey);
+    }
+
+    /// <summary>
+    /// Build the launchSpec JSON. This mirrors the reference client's exact template (the console parses the
+    /// decrypted JSON and rejects an incomplete one — silently, with no SESSION_REPLY), so the field set and
+    /// order are reproduced verbatim; only width/height/fps/bitrate and the handshakeKey are parameterised.
+    /// The bandwidth/MTU/RTT values fall back to defaults until the full senkusha probe supplies measured ones.
+    /// </summary>
+    private string BuildLaunchSpecJson(byte[] handshakeKey) => BuildLaunchSpecJson(
+        handshakeKey,
+        _config?.Width ?? 1280,
+        _config?.Height ?? 720,
+        _config?.TargetFps ?? 60,
+        _config?.InitialBitrateKbps ?? 10_000,
+        _config?.CodecPreference ?? Ripcord.Core.Sessions.VideoCodec.H264,
+        _config?.RequestedDynamicRange ?? Ripcord.Core.Sessions.DynamicRange.Sdr,
+        // Resolved here, not inside the builder: a confirmed MTU is already in declared form, and passing it
+        // through MtuToDeclare again would subtract the overhead a SECOND time (1454 -> 1408).
+        _confirmedMtu ?? LinkMetrics.MtuToDeclare(_measuredMtu),
+        _measuredRttMs);
+
+    /// <inheritdoc cref="BuildLaunchSpecJson(byte[])"/>
+    internal static string BuildLaunchSpecJson(
+        byte[] handshakeKey,
+        int w,
+        int h,
+        int fps,
+        int bitrate,
+        Ripcord.Core.Sessions.VideoCodec codec,
+        Ripcord.Core.Sessions.DynamicRange dynamicRange = Ripcord.Core.Sessions.DynamicRange.Sdr,
+        int? declaredMtu = null,
+        double? measuredRttMs = null)
+    {
+        // Measured where possible, vendor defaults otherwise. Both were previously hardcoded — mtu 1454 and
+        // rtt 0 — which declared a measurement that had never been taken. The console reads these, and rtt 0 in
+        // particular told it the link was instantaneous.
+        //
+        // declaredMtu arrives ALREADY in declared form (senkusha-confirmed, or the interface estimate converted by
+        // the caller). Converting again here would subtract the IP/UDP allowance twice.
+        int mtu = declaredMtu is int value && value > 0 ? value : LinkMetrics.VendorMtu;
+        int rtt = (int)Math.Round(Math.Clamp(measuredRttMs ?? 0, 0, 1000));
+        string handshakeKeyB64 = Convert.ToBase64String(handshakeKey);
+
+        return "{"
+            + "\"sessionId\":\"sessionId4321\","
+            + "\"streamResolutions\":[" + BuildStreamResolutions(w, h, fps) + "],"
+            + "\"network\":{\"bwKbpsSent\":" + bitrate + ",\"bwLoss\":0.001000,\"mtu\":" + mtu + ",\"rtt\":" + rtt + ",\"ports\":[53,2053]},"
+            + "\"slotId\":1,"
+            + "\"appSpecification\":{\"minFps\":" + fps + ",\"minBandwidth\":0,\"extTitleId\":\"ps3\",\"version\":1,\"timeLimit\":1,\"startTimeout\":100,\"afkTimeout\":100,\"afkTimeoutDisconnect\":100},"
+            + "\"konan\":{\"ps3AccessToken\":\"accessToken\",\"ps3RefreshToken\":\"refreshToken\"},"
+            + "\"requestGameSpecification\":{\"model\":\"bravia_tv\",\"platform\":\"android\",\"audioChannels\":\"5.1\",\"language\":\"sp\",\"acceptButton\":\"X\",\"connectedControllers\":[\"xinput\",\"ds3\",\"ds4\"],\"yuvCoefficient\":\"bt601\",\"videoEncoderProfile\":\"hw4.1\",\"audioEncoderProfile\":\"audio1\"},"
+            + "\"userProfile\":{\"onlineId\":\"psnId\",\"npId\":\"npId\",\"region\":\"US\",\"languagesUsed\":[\"en\",\"jp\"]},"
+            + "\"videoCodec\":\"" + VideoCodecName(codec) + "\","
+            + "\"dynamicRange\":\"" + DynamicRangeName(dynamicRange) + "\","
+            + "\"handshakeKey\":\"" + handshakeKeyB64 + "\","
+            + AudioChannelsJson
+            + "}";
+    }
+
+    /// <summary>
+    /// The <c>audioChannels</c> declaration, reproduced verbatim from a captured vendor launchSpec.
+    ///
+    /// <para>
+    /// It is a fixed template rather than derived from our own audio settings, deliberately: every value here
+    /// already matches what the decode path handles (48 kHz, stereo, 16-bit — <c>sampleSize</c> is bytes per
+    /// sample — and 480 samples per frame, so <c>maxFrameDataSize</c> 1920 = 480 x 2 x 2), and where the template
+    /// says something surprising the safe move is to match the vendor rather than to reason about it.
+    /// <c>isSigned: false</c> is the notable example: Opus decodes to signed PCM, so the field either means
+    /// something other than the obvious or is vestigial. Either way, deviating from a wire-confirmed template is
+    /// the risk, not matching it.
+    /// </para>
+    ///
+    /// <para>
+    /// This was the last vendor key we omitted. It was added separately from the video-side launchSpec fixes
+    /// because audio already worked on the console's defaults, so a regression here had to be attributable to this
+    /// change alone.
+    /// </para>
+    /// </summary>
+    internal const string AudioChannelsJson =
+        "\"audioChannels\":{\"name\":\"default\",\"encoderType\":\"opus\",\"audioChannelSettings\":["
+        + "{\"audioChannelType\":0,\"isSigned\":false,\"sampleRate\":48000,\"sampleSize\":2,\"channels\":2,"
+        + "\"maxFrameDataSize\":1920,\"samplesPerFrame\":480,\"bitrate\":64,\"isRawPcm\":false,\"fecMode\":2}]}";
+
+    /// <summary>
+    /// The launchSpec spelling of a dynamic range. Only <c>"SDR"</c> has been seen on the wire — from a captured
+    /// vendor launchSpec — so <c>"HDR"</c> is an inference from the field existing with a value at all. If the
+    /// console declines a launchSpec containing it, the token is the first thing to vary (<c>"HDR10"</c> and
+    /// <c>"PQ"</c> being the plausible alternatives) before concluding HDR is unsupported.
+    /// </summary>
+    internal static string DynamicRangeName(Ripcord.Core.Sessions.DynamicRange range) => range switch
+    {
+        Ripcord.Core.Sessions.DynamicRange.Hdr => "HDR",
+        _ => "SDR",
+    };
+
+    /// <summary>
+    /// The launchSpec spelling of a codec. Plumbed from <see cref="SessionConfig.CodecPreference"/> rather than
+    /// hardcoded so requesting HEVC is a configuration change; the decoder side must be able to honour whatever
+    /// this asks for, so do not offer "hevc" until an HEVC MFT is actually selected.
+    /// </summary>
+    internal static string VideoCodecName(Ripcord.Core.Sessions.VideoCodec codec) => codec switch
+    {
+        Ripcord.Core.Sessions.VideoCodec.Hevc => "hevc",
+        _ => "avc",
+    };
+
+    /// <summary>
+    /// The resolution rungs a real client offers. Taken from a captured vendor launchSpec, which advertises all
+    /// four — 640x360, 960x540, 1280x720, 1920x1080, every one at score 1..4 ascending — rather than a single
+    /// pinned entry.
+    /// </summary>
+    internal static readonly (int Width, int Height)[] StandardLadder =
+    [
+        (640, 360),
+        (960, 540),
+        (1280, 720),
+        (1920, 1080),
+    ];
+
+    /// <summary>
+    /// Build the <c>streamResolutions</c> array: every standard rung up to and including the requested one, with
+    /// ascending <c>score</c> so the requested resolution is the most preferred.
+    ///
+    /// <para>
+    /// We used to send exactly one entry at score 10. The vendor client sends the whole ladder, and the reason
+    /// matters: with a single entry the console has nothing to fall back to if it cannot or will not serve that
+    /// resolution, and the field is our only means of expressing an ordered preference. Scores ascend and the
+    /// requested resolution always holds the highest, which is the vendor's own arrangement (1080p at score 4) —
+    /// so offering the lower rungs adds fallbacks without inviting a downgrade.
+    /// </para>
+    /// </summary>
+    internal static string BuildStreamResolutions(int width, int height, int fps)
+    {
+        var rungs = new List<(int Width, int Height)>();
+        foreach ((int rw, int rh) in StandardLadder)
+        {
+            // Strictly below the request; the request itself is appended last so it scores highest even when it
+            // is not one of the standard rungs (a custom size still gets its fallbacks).
+            if (rh < height)
+            {
+                rungs.Add((rw, rh));
+            }
+        }
+
+        rungs.Add((width, height));
+
+        var sb = new StringBuilder();
+        for (int i = 0; i < rungs.Count; i++)
+        {
+            if (i > 0)
+            {
+                sb.Append(',');
+            }
+
+            sb.Append("{\"resolution\":{\"width\":").Append(rungs[i].Width)
+              .Append(",\"height\":").Append(rungs[i].Height)
+              .Append("},\"maxFps\":").Append(fps)
+              .Append(",\"score\":").Append(i + 1).Append('}');
+        }
+
+        return sb.ToString();
+    }
+
+    private SessionHandshakeResult Fail(string reason)
+    {
+        State = SessionState.Closed;
+        return new SessionHandshakeResult(false, reason);
+    }
+
+    private static byte[] DecodeBase64Header(SessResponse response, string name)
+    {
+        string? value = response.Header(name);
+        if (string.IsNullOrEmpty(value))
+        {
+            return [];
+        }
+
+        try
+        {
+            return Convert.FromBase64String(value);
+        }
+        catch (FormatException)
+        {
+            return [];
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        State = SessionState.Closed;
+        await _sessionCts.CancelAsync().ConfigureAwait(false);
+
+        if (_ctrlKeepAlive is not null)
+        {
+            try { await _ctrlKeepAlive.ConfigureAwait(false); } catch { /* ignore shutdown races */ }
+        }
+
+        _inputQueue?.Writer.TryComplete();
+        if (_inputSendLoop is not null)
+        {
+            try { await _inputSendLoop.ConfigureAwait(false); } catch { /* ignore shutdown races */ }
+        }
+
+        if (_takionStream is not null)
+        {
+            _takionStream.PacketStatsSampled -= OnPacketStatsSampled;
+            await _takionStream.DisposeAsync().ConfigureAwait(false);
+        }
+
+        _streamSocket?.Dispose();
+
+        // The crypto seam is not itself IDisposable — keeping the interface free of a lifetime concern most
+        // implementations don't have — but the v1 implementation holds an ephemeral ECDH key and a cached AES
+        // block cipher per direction, so release them when the concrete type does have them.
+        (_crypto as IDisposable)?.Dispose();
+
+        await _control.DisposeAsync().ConfigureAwait(false);
+        _video.OnCompleted();
+        _audio.OnCompleted();
+        _stats.OnCompleted();
+        _sessionCts.Dispose();
+    }
+}
