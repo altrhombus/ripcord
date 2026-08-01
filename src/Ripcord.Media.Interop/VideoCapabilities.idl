@@ -1,0 +1,66 @@
+namespace Ripcord.Media.Interop
+{
+    // Which GPU the render/decode device should be created on. The default is deliberately NOT
+    // "highest performance": this workload is one hardware decode plus a fullscreen triangle, and on a
+    // hybrid laptop the panel is usually wired to the integrated GPU. Creating the device on the discrete
+    // GPU then forces DWM to cross-adapter copy every frame — more latency AND more power, for no gain.
+    enum GpuSelection
+    {
+        // Prefer a decode-capable adapter that actually drives a display, in lowest-power-first order.
+        // On a hybrid laptop that resolves to the iGPU, which is both the presenting adapter and the
+        // efficient one; on a desktop with one GPU it resolves to that GPU.
+        Auto = 0,
+
+        // Explicitly lowest power (DXGI_GPU_PREFERENCE_MINIMUM_POWER).
+        PreferEfficiency = 1,
+
+        // Explicitly highest performance (DXGI_GPU_PREFERENCE_HIGH_PERFORMANCE). Opt-in, because for this
+        // workload it is frequently the slower and hungrier choice.
+        PreferPerformance = 2,
+
+        // Pin a specific adapter by LUID (from VideoCapabilities.EnumerateAdapters).
+        Specific = 3,
+    };
+
+    // Which video codec the console is asked for and the decoder is built around. Kept here rather than in
+    // VideoRenderer.idl so VideoCapabilities can answer "is this codec decodable at all" without a renderer.
+    enum VideoCodecKind
+    {
+        H264 = 0,
+        Hevc = 1,
+    };
+
+    // One installed graphics adapter, for a settings picker. DrivesADisplay and SupportsHardwareDecode let
+    // the UI grey out adapters that would either force a cross-adapter present or fail to decode at all,
+    // instead of letting the user pick one that mysteriously does not work.
+    struct VideoAdapterInfo
+    {
+        String Description;
+        UInt64 Luid;                     // LUID packed into 64 bits; matches GpuSelection.Specific
+        UInt64 DedicatedVideoMemory;
+        Boolean SupportsHardwareDecode;  // real CheckFeatureSupport for H.264 decode, not just "has the interface"
+        Boolean DrivesADisplay;          // has at least one attached output
+    };
+
+    [default_interface]
+    runtimeclass VideoCapabilities
+    {
+        VideoCapabilities();
+
+        // Whether D3D12 video decode is usable for H.264 at a typical streaming resolution on the default
+        // adapter. This now performs a real CheckFeatureSupport(D3D12_FEATURE_VIDEO_DECODE_SUPPORT) query;
+        // it previously only checked that ID3D12VideoDevice could be QI'd, which reports true on hardware
+        // that cannot actually decode the profile we need.
+        static Boolean IsD3D12VideoDecodeSupported();
+
+        // Every installed adapter, in DXGI enumeration order.
+        static Windows.Foundation.Collections.IVectorView<VideoAdapterInfo> EnumerateAdapters();
+
+        // Whether a SYNCHRONOUS decoder MFT exists for this codec. Synchronous specifically: the decode loop
+        // drives ProcessInput/ProcessOutput directly, so an async (vendor "hardware category") MFT would need
+        // the event-driven model and cannot simply be substituted. HEVC decode is not universally present —
+        // it depends on the GPU and on the HEVC Video Extension — so the UI must be able to ask before
+        // offering it, rather than letting a session fail at connect.
+        static Boolean IsCodecDecodeAvailable(VideoCodecKind codec);
+    }
+}

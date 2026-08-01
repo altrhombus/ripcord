@@ -1,0 +1,25 @@
+namespace Ripcord.Media.Interop
+{
+    // Shared-mode WASAPI audio output. The session's audio path decodes to interleaved float PCM at
+    // the device mix format and pushes it via SubmitFloatPcm; a render thread drains it to the
+    // endpoint. Verified first with a synthetic tone (the audio analog of the video test pattern).
+    [default_interface]
+    runtimeclass AudioRenderer
+    {
+        AudioRenderer();
+
+        // Open the default render endpoint in shared mode; exposes the mix format to submit at.
+        void Initialize();
+
+        UInt32 SampleRate{ get; };
+        UInt32 Channels{ get; };
+
+        // Interleaved float samples at SampleRate/Channels. Non-blocking; buffered for the render thread.
+        // sampleCount is how many leading entries of the array are valid, so callers can hand over a reused
+        // buffer without slicing (which would allocate on the audio path every frame). Pass 0 to mean "all".
+        void SubmitFloatPcm(Single[] interleaved, UInt32 sampleCount);
+
+        void Start();
+        void Stop();
+    }
+}
