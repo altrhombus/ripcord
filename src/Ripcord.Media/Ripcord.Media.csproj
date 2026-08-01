@@ -1,0 +1,50 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>
+    <TargetPlatformMinVersion>10.0.19041.0</TargetPlatformMinVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <UseWinRT>true</UseWinRT>
+    <RootNamespace>Ripcord.Media</RootNamespace>
+    <CsWinRTIncludes>Ripcord.Media.Interop</CsWinRTIncludes>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Ripcord.Core\Ripcord.Core.csproj" />
+    <ProjectReference Include="..\Ripcord.Diagnostics\Ripcord.Diagnostics.csproj" />
+    <ProjectReference Include="..\Ripcord.Media.Audio\Ripcord.Media.Audio.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- See Ripcord.Input.csproj for why this three-part pattern (PackageReference +
+         ProjectReference with ReferenceOutputAssembly=false + explicit winmd Reference) is
+         needed to consume a native C++/WinRT component from a modern .NET SDK-style project. -->
+    <PackageReference Include="Microsoft.Windows.CsWinRT" Version="2.2.0" />
+    <ProjectReference Include="..\Ripcord.Media.Interop\Ripcord.Media.Interop.vcxproj">
+      <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
+    </ProjectReference>
+    <Reference Include="Ripcord.Media.Interop">
+      <HintPath>$(SolutionDir)x64\$(Configuration)\Ripcord.Media.Interop\Ripcord.winmd</HintPath>
+      <IsWinMDFile>true</IsWinMDFile>
+    </Reference>
+  </ItemGroup>
+
+  <!--
+    The winmd Reference above only carries type metadata for the compiler - the native
+    implementation DLL still needs to end up next to the final app's exe, or activation fails at
+    runtime. A <None CopyToOutputDirectory=...> item was tried first, but ResolveAssemblyReferences
+    scans None/Content items for candidate assemblies and tried to load the native DLL as managed
+    metadata (MSB3246 "bad image"), which also broke CsWinRT's own codegen. A post-build Copy
+    target avoids the item pipeline entirely. This only reaches Ripcord.Media's own output folder,
+    not transitively into consumers - see the matching target in Ripcord.App.csproj, which is
+    where it actually needs to land.
+  -->
+  <Target Name="CopyMediaInteropNativeDll" AfterTargets="Build">
+    <Copy
+      SourceFiles="$(SolutionDir)x64\$(Configuration)\Ripcord.Media.Interop\Ripcord.Media.Interop.dll"
+      DestinationFolder="$(OutDir)"
+      SkipUnchangedFiles="true" />
+  </Target>
+
+</Project>

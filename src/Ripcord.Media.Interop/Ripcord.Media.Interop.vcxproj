@@ -1,0 +1,133 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{2D6C7C3E-7C0D-4C55-9F6B-9C7B6C2F6B31}</ProjectGuid>
+    <Keyword>Win32Proj</Keyword>
+    <RootNamespace>RipcordMediaInterop</RootNamespace>
+    <ProjectName>Ripcord.Media.Interop</ProjectName>
+    <DefaultLanguage>en-US</DefaultLanguage>
+    <MinimumVisualStudioVersion>17.0</MinimumVisualStudioVersion>
+    <WindowsTargetPlatformVersion>10.0.26100.0</WindowsTargetPlatformVersion>
+    <WindowsTargetPlatformMinVersion>10.0.19041.0</WindowsTargetPlatformMinVersion>
+  </PropertyGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+
+  <PropertyGroup Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <PlatformToolset>v145</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+    <UseOfMfc>false</UseOfMfc>
+    <RestoreProjectStyle>PackageReference</RestoreProjectStyle>
+    <!-- Own output folder: see Ripcord.Input.Interop.vcxproj for why this matters. -->
+    <OutDir>$(SolutionDir)$(Platform)\$(Configuration)\$(ProjectName)\</OutDir>
+    <!-- Without this, activating this component's WinRT classes from an unpackaged .NET consumer
+         fails with REGDB_E_CLASSNOTREG - registration-free WinRT activation for desktop apps
+         needs to be opted into explicitly. -->
+    <WindowsDesktopCompatible>true</WindowsDesktopCompatible>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)'=='Debug'" Label="Configuration">
+    <UseDebugLibraries>true</UseDebugLibraries>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)'=='Release'" Label="Configuration">
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+  </PropertyGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+
+  <PropertyGroup>
+    <LanguageStandard>stdcpp20</LanguageStandard>
+    <CppWinRTOptimized>true</CppWinRTOptimized>
+    <CppWinRTRootNamespaceAutoMerge>true</CppWinRTRootNamespaceAutoMerge>
+    <CppWinRTGenerateWindowsMetadata>true</CppWinRTGenerateWindowsMetadata>
+    <GenerateManifest>false</GenerateManifest>
+  </PropertyGroup>
+
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <PrecompiledHeader>Use</PrecompiledHeader>
+      <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
+      <SDLCheck>true</SDLCheck>
+      <ConformanceMode>true</ConformanceMode>
+      <WarningLevel>Level4</WarningLevel>
+    </ClCompile>
+    <Link>
+      <!-- dxguid.lib supplies the *definitions* of the D3D/DXGI GUID symbols that d3d12video.h only declares
+           extern (D3D12_VIDEO_DECODE_PROFILE_H264 and friends). It is the D3D counterpart to mfuuid.lib /
+           wmcodecdspuuid.lib below, which are here for the same reason on the Media Foundation side. -->
+      <AdditionalDependencies>d3d12.lib;d3d11.lib;dxgi.lib;dxguid.lib;d3dcompiler.lib;mfplat.lib;mfuuid.lib;mf.lib;wmcodecdspuuid.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <SubSystem>Console</SubSystem>
+      <ModuleDefinitionFile>dllmain.def</ModuleDefinitionFile>
+    </Link>
+  </ItemDefinitionGroup>
+
+  <ItemGroup>
+    <ClInclude Include="pch.h" />
+    <ClInclude Include="CodecSubtypes.h" />
+    <ClInclude Include="VideoCapabilities.h" />
+    <ClInclude Include="VideoRenderer.h" />
+    <ClInclude Include="AudioRenderer.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="pch.cpp">
+      <PrecompiledHeader>Create</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="VideoCapabilities.cpp" />
+    <ClCompile Include="VideoRenderer.cpp" />
+    <ClCompile Include="AudioRenderer.cpp" />
+    <ClCompile Include="dllmain.cpp" />
+    <!--
+      module.g.cpp defines the activation logic (WINRT_GetActivationFactory/WINRT_CanUnloadNow)
+      but exports nothing itself - dllmain.cpp bridges those to the actual exported
+      DllGetActivationFactory/DllCanUnloadNow entry points that WinRT activation looks up via
+      GetProcAddress. Without compiling module.g.cpp, WinRT activation fails with
+      CO_E_ERRORINDLL: LoadLibrary succeeds (found via the reg-free manifest entry) but the
+      activation factory lookup finds nothing. The VS "Windows Runtime Component (C++/WinRT)"
+      wizard scaffolds both files as part of project creation; CppWinRT's NuGet targets don't
+      inject either automatically for a hand-authored project. cppwinrt.exe generates module.g.cpp
+      during the build, so it is added by the AddCppWinRTComponentModule target below (a static
+      Exists()-gated ClCompile is evaluated before generation and silently dropped on clean builds).
+    -->
+  </ItemGroup>
+  <ItemGroup>
+    <Midl Include="VideoCapabilities.idl" />
+    <Midl Include="VideoRenderer.idl" />
+    <Midl Include="AudioRenderer.idl" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Windows.CppWinRT">
+      <Version>3.0.260520.1</Version>
+    </PackageReference>
+  </ItemGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+
+  <!--
+    Add the C++/WinRT-generated module.g.cpp (WINRT_GetActivationFactory / WINRT_CanUnloadNow) to the
+    compile set. It is generated during the build, so it is injected in a target that DependsOn the
+    projection generation (guaranteeing it exists) and runs before the compile via FixupCLCompileOptions
+    (the same hook CppWinRT uses for its own generated ClCompile items). A static Exists()-gated ClCompile
+    is evaluated at project-load time, before generation, so on a clean build it is dropped and never
+    compiled -> LNK2019 on both WINRT_* symbols. It inherits the PCH "Use" default, matching its #include.
+  -->
+  <Target Name="AddCppWinRTComponentModule"
+          DependsOnTargets="CppWinRTMakeProjections"
+          BeforeTargets="FixupCLCompileOptions">
+    <ItemGroup>
+      <ClCompile Include="$(GeneratedFilesDir)module.g.cpp" />
+    </ItemGroup>
+  </Target>
+</Project>
