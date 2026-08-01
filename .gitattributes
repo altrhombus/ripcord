@@ -1,0 +1,41 @@
+# Normalise line endings on commit so the working tree never shows phantom whole-file
+# diffs. Without this, core.autocrlf alone leaves the stored form dependent on whoever
+# happened to commit first.
+* text=auto
+
+# Source and project files: stored LF, checked out native.
+*.cs        text diff=csharp
+*.csproj    text
+*.slnx      text
+*.props     text
+*.targets   text
+*.json      text
+*.xml       text
+*.xaml      text
+*.md        text
+*.svg       text
+*.manifest  text
+*.rsp       text
+
+# Native C++/WinRT half.
+*.h         text
+*.cpp       text
+*.idl       text
+*.vcxproj   text
+*.filters   text
+
+# Windows-only tooling that breaks on LF.
+*.ps1       text eol=crlf
+*.cmd       text eol=crlf
+*.bat       text eol=crlf
+
+# Binary: never touch, never diff.
+*.png       binary
+*.ico       binary
+*.jpg       binary
+*.gz        binary
+*.pcapng    binary
+*.bin       binary
+*.dll       binary
+*.pkl       binary
+*.saz       binary
