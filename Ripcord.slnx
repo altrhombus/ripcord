@@ -1,7 +1,21 @@
 <Solution>
+  <!-- Declared explicitly rather than inferred. The inference is driven by the C++ projects, and leaving
+       it implicit means the set of solution platforms silently tracks whatever those two happen to
+       declare — which is how ARM64 went missing. -->
+  <Configurations>
+    <BuildType Name="Debug" />
+    <BuildType Name="Release" />
+    <Platform Name="x64" />
+    <Platform Name="ARM64" />
+  </Configurations>
+
   <Folder Name="/src/">
+    <!-- Ripcord.App declares <Platforms>x86;x64;ARM64</Platforms>, so its platform has to be mapped
+         explicitly rather than defaulted to AnyCPU. The mapping is identity: an ARM64 solution build
+         must produce an ARM64 app, or it picks up the wrong native interop DLLs. -->
     <Project Path="src/Ripcord.App/Ripcord.App.csproj">
-      <Platform Project="x64" />
+      <Platform Solution="*|x64" Project="x64" />
+      <Platform Solution="*|ARM64" Project="ARM64" />
     </Project>
     <Project Path="src/Ripcord.Client/Ripcord.Client.csproj" />
     <Project Path="src/Ripcord.Core.Net/Ripcord.Core.Net.csproj" />

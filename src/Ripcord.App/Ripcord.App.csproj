@@ -11,6 +11,11 @@
     <ApplicationIcon>Assets\AppIcon.ico</ApplicationIcon>
     <Platforms>x86;x64;ARM64</Platforms>
     <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == ''">win-$([System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture.ToString().ToLowerInvariant())</RuntimeIdentifier>
+    <!-- Restore for every architecture we build, not just the one this build selected. Restore writes a
+         single obj/project.assets.json keyed by RID, so without this, switching Platform between x64 and
+         ARM64 fails with NETSDK1047 until an explicit restore is run again — which makes the platform
+         dropdown in VS look broken and turns a plain `msbuild -p:Platform=...` into a two-step dance. -->
+    <RuntimeIdentifiers>win-x64;win-arm64</RuntimeIdentifiers>
     <PublishProfile Condition="Exists('Properties\PublishProfiles\win-$(Platform).pubxml')">win-$(Platform).pubxml</PublishProfile>
     <UseWinUI>true</UseWinUI>
     <WinUISDKReferences>false</WinUISDKReferences>
@@ -118,7 +123,7 @@
        rather than a <None CopyToOutputDirectory> item. This is the target that actually matters:
        it's Ripcord.App's own output folder, next to the exe, that activation looks in at runtime. -->
   <PropertyGroup>
-    <NativeInteropDlls>$(SolutionDir)x64\$(Configuration)\Ripcord.Media.Interop\Ripcord.Media.Interop.dll;$(SolutionDir)x64\$(Configuration)\Ripcord.Input.Interop\Ripcord.Input.Interop.dll</NativeInteropDlls>
+    <NativeInteropDlls>$(RipcordNativeInteropDir)Ripcord.Media.Interop\Ripcord.Media.Interop.dll;$(RipcordNativeInteropDir)Ripcord.Input.Interop\Ripcord.Input.Interop.dll</NativeInteropDlls>
   </PropertyGroup>
 
   <Target Name="CopyNativeInteropDlls" AfterTargets="Build">
@@ -141,7 +146,7 @@
          publish attempted without building them first is a mistake worth stopping. -->
     <Error
       Condition="!Exists('%(NativeInteropDll.FullPath)')"
-      Text="Native interop DLL missing: %(NativeInteropDll.FullPath). Build the C++ projects (x64/$(Configuration)) before publishing, or the published app will fail at video/input initialisation." />
+      Text="Native interop DLL missing: %(NativeInteropDll.FullPath). Build the C++ projects ($(RipcordNativePlatform)/$(Configuration)) before publishing, or the published app will fail at video/input initialisation." />
 
     <Copy
       SourceFiles="@(NativeInteropDll)"

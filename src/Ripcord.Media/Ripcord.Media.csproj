@@ -21,14 +21,36 @@
          ProjectReference with ReferenceOutputAssembly=false + explicit winmd Reference) is
          needed to consume a native C++/WinRT component from a modern .NET SDK-style project. -->
     <PackageReference Include="Microsoft.Windows.CsWinRT" Version="2.2.0" />
-    <ProjectReference Include="..\Ripcord.Media.Interop\Ripcord.Media.Interop.vcxproj">
+    <!--
+      Only under MSBuild.exe. The C++ build tasks are full-framework (GetOutOfDateItems wants
+      Microsoft.Build.Utilities.CanonicalTrackedOutputFiles), so the dotnet CLI cannot execute a vcxproj at
+      all - keeping the reference unconditional makes `dotnet build`/`dotnet run` of the app fail outright
+      rather than reuse the native DLLs an earlier msbuild produced. Dropping it on Core costs build
+      ordering, which is exactly the trade the documented workflow already assumes ("once the native interop
+      DLLs exist"); the target below turns the resulting failure mode into a readable error.
+    -->
+    <ProjectReference Include="..\Ripcord.Media.Interop\Ripcord.Media.Interop.vcxproj"
+                      Condition="'$(MSBuildRuntimeType)' != 'Core'">
       <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
+      <!-- This project is AnyCPU, so without SetPlatform the C++ reference inherits nothing usable and
+           MSBuild falls back to the vcxproj's first configuration - Win32, which the project does not
+           define (MSB8013). Pin it to the architecture this build resolved. -->
+      <SetPlatform>Platform=$(RipcordNativePlatform)</SetPlatform>
     </ProjectReference>
     <Reference Include="Ripcord.Media.Interop">
-      <HintPath>$(SolutionDir)x64\$(Configuration)\Ripcord.Media.Interop\Ripcord.winmd</HintPath>
+      <HintPath>$(RipcordNativeInteropDir)Ripcord.Media.Interop\Ripcord.winmd</HintPath>
       <IsWinMDFile>true</IsWinMDFile>
     </Reference>
   </ItemGroup>
+
+  <!-- Under the dotnet CLI nothing builds the C++ project first (see the ProjectReference above), so a
+       missing winmd would otherwise surface as a wall of CS0246 "type or namespace not found" errors on the
+       generated projections rather than the one fact that matters. -->
+  <Target Name="EnsureMediaInteropBuilt" BeforeTargets="ResolveAssemblyReferences"
+          Condition="'$(MSBuildRuntimeType)' == 'Core'">
+    <Error Condition="!Exists('$(RipcordNativeInteropDir)Ripcord.Media.Interop\Ripcord.winmd')"
+           Text="Native interop metadata missing: $(RipcordNativeInteropDir)Ripcord.Media.Interop\Ripcord.winmd. The dotnet CLI cannot build C++ projects — run `msbuild Ripcord.slnx -p:Platform=$(RipcordNativePlatform) -p:Configuration=$(Configuration)` once first." />
+  </Target>
 
   <!--
     The winmd Reference above only carries type metadata for the compiler - the native
@@ -42,7 +64,7 @@
   -->
   <Target Name="CopyMediaInteropNativeDll" AfterTargets="Build">
     <Copy
-      SourceFiles="$(SolutionDir)x64\$(Configuration)\Ripcord.Media.Interop\Ripcord.Media.Interop.dll"
+      SourceFiles="$(RipcordNativeInteropDir)Ripcord.Media.Interop\Ripcord.Media.Interop.dll"
       DestinationFolder="$(OutDir)"
       SkipUnchangedFiles="true" />
   </Target>
