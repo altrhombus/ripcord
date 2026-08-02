@@ -46,9 +46,14 @@ public sealed class HalyardTakionStream : IAsyncDisposable
     // The previous comment claimed "~0.5 s of 720p60 headroom", which was both a guess and stated in units that no
     // longer apply (we run 1080p, and a datagram is not a frame — one frame spans many). What the number actually
     // guarantees is a bound: at most this many datagrams are held, so a processing stall costs bounded memory and
-    // bounded added latency rather than unbounded growth. It has never been observed near capacity since the crypto
-    // hot path was fixed — depth now sits at 0 in normal operation, and it was pegged at 511 before — so this is a
-    // safety valve, not a tuning knob. Raise it only with evidence that shedding is happening.
+    // bounded added latency rather than unbounded growth. In normal operation depth sits at 0, so this is a safety
+    // valve, not a tuning knob. Raise it only with evidence that shedding is happening.
+    //
+    // A depth AT capacity is therefore a diagnosis, not a tuning signal: it means the A/V processing loop is slower
+    // than the wire, and the "packet loss" the demuxer then reports is ours, not the network's. It has read that way
+    // twice, both times from per-packet crypto cost — pegged at 511 before the x86 GHASH fix, and again at 512 on
+    // the ARM64 first run, which had no carry-less GHASH path at all (see AesGcmCore.GfMul). Check the crypto hot
+    // path before believing the link.
     private const int AvQueueCapacity = 512;
     private Channel<byte[]>? _avQueue;
 

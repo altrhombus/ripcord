@@ -9,6 +9,14 @@
       <Configuration>Release</Configuration>
       <Platform>x64</Platform>
     </ProjectConfiguration>
+    <ProjectConfiguration Include="Debug|ARM64">
+      <Configuration>Debug</Configuration>
+      <Platform>ARM64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|ARM64">
+      <Configuration>Release</Configuration>
+      <Platform>ARM64</Platform>
+    </ProjectConfiguration>
   </ItemGroup>
 
   <PropertyGroup Label="Globals">
@@ -30,8 +38,10 @@
     <CharacterSet>Unicode</CharacterSet>
     <UseOfMfc>false</UseOfMfc>
     <RestoreProjectStyle>PackageReference</RestoreProjectStyle>
-    <!-- Own output folder: see Ripcord.Input.Interop.vcxproj for why this matters. -->
-    <OutDir>$(SolutionDir)$(Platform)\$(Configuration)\$(ProjectName)\</OutDir>
+    <!-- Own output folder: see Ripcord.Input.Interop.vcxproj for why this matters. $(RipcordRepoRoot)
+         rather than $(SolutionDir) so that building this project on its own still lands in the same
+         place the managed consumers look — see Directory.Build.props. -->
+    <OutDir>$(RipcordRepoRoot)$(Platform)\$(Configuration)\$(ProjectName)\</OutDir>
     <!-- Without this, activating this component's WinRT classes from an unpackaged .NET consumer
          fails with REGDB_E_CLASSNOTREG - registration-free WinRT activation for desktop apps
          needs to be opted into explicitly. -->
