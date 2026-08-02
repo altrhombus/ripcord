@@ -1,0 +1,68 @@
+<Project>
+
+  <!--
+    Imported automatically by every project in the repo, managed and native alike. It exists to answer
+    two questions that the native-interop wiring kept getting wrong, and that ARM64 support made sharp:
+
+      1. Where is the repo root?  $(SolutionDir) is only defined when MSBuild is driving a solution, so
+         every path built from it silently collapsed to a relative one under
+         `dotnet build src/Ripcord.App/Ripcord.App.csproj` — a documented workflow. $(RipcordRepoRoot) is
+         derived from this file's own location and is therefore always correct.
+
+      2. Which architecture's native interop output does this build consume?  The C++ projects write to
+         $(RipcordRepoRoot)$(Platform)\$(Configuration)\..., but their managed consumers
+         (Ripcord.Media, Ripcord.Input) are AnyCPU projects — $(Platform) there is the literal string
+         "AnyCPU", not an architecture. They resolve $(RipcordNativePlatform) instead.
+  -->
+
+  <PropertyGroup>
+    <RipcordRepoRoot>$(MSBuildThisFileDirectory)</RipcordRepoRoot>
+  </PropertyGroup>
+
+  <!--
+    Normally the SDK's own default, but this file is imported by Microsoft.Common.props *before* that
+    default is applied, so $(Configuration) is empty here unless it arrived as a global property (which is
+    to say: it is set for `msbuild -p:Configuration=...` and empty for a bare `dotnet build`). Since
+    $(RipcordNativeInteropDir) below bakes it into a path, leaving it empty silently produces
+    "<root>\ARM64\\Ripcord.Media.Interop\..." rather than failing. Match the SDK's value explicitly.
+  -->
+  <PropertyGroup>
+    <Configuration Condition="'$(Configuration)' == ''">Debug</Configuration>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <!--
+      Resolved most-explicit-first. Any link in the chain can be pre-empted by passing
+      -p:RipcordNativePlatform=<arch> directly, which is the escape hatch for cross-architecture builds
+      that none of the signals below describe correctly.
+    -->
+
+    <!-- 1. An explicitly selected architecture, i.e. the C++ projects and Ripcord.App, which declare
+            <Platforms> and so receive a real architecture here. -->
+    <RipcordNativePlatform Condition="'$(RipcordNativePlatform)' == '' and ('$(Platform)' == 'x64' or '$(Platform)' == 'ARM64' or '$(Platform)' == 'arm64' or '$(Platform)' == 'x86')">$(Platform)</RipcordNativePlatform>
+
+    <!-- 2. Failing that, the runtime identifier, which is how the architecture reaches an AnyCPU project
+            referenced by an architecture-specific one (Ripcord.App -> Ripcord.Media / Ripcord.Input). -->
+    <RipcordNativePlatform Condition="'$(RipcordNativePlatform)' == '' and $(RuntimeIdentifier.StartsWith('win-'))">$(RuntimeIdentifier.Substring(4))</RipcordNativePlatform>
+
+    <!-- 3. Otherwise build for the machine we are standing on. This is the case that makes a plain
+            `dotnet build` of a single managed project work on an ARM64 dev box without any ceremony. -->
+    <RipcordNativePlatform Condition="'$(RipcordNativePlatform)' == ''">$([System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture.ToString())</RipcordNativePlatform>
+
+    <!-- Normalise casing to the folder names the C++ projects actually produce. NTFS would not care, but
+         these strings show up in build logs and error messages, and "Arm64\Debug" next to "ARM64\Debug"
+         reads like two different folders. -->
+    <RipcordNativePlatform Condition="'$(RipcordNativePlatform.ToLowerInvariant())' == 'arm64'">ARM64</RipcordNativePlatform>
+    <RipcordNativePlatform Condition="'$(RipcordNativePlatform.ToLowerInvariant())' == 'x64'">x64</RipcordNativePlatform>
+    <RipcordNativePlatform Condition="'$(RipcordNativePlatform.ToLowerInvariant())' == 'x86'">x86</RipcordNativePlatform>
+  </PropertyGroup>
+
+  <!--
+    The directory a native interop component's build products land in. Both C++ projects set their OutDir
+    to their own $(Platform) flavour of this, and every managed consumer reads from it.
+  -->
+  <PropertyGroup>
+    <RipcordNativeInteropDir>$(RipcordRepoRoot)$(RipcordNativePlatform)\$(Configuration)\</RipcordNativeInteropDir>
+  </PropertyGroup>
+
+</Project>

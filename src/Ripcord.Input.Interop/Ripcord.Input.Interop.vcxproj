@@ -9,6 +9,14 @@
       <Configuration>Release</Configuration>
       <Platform>x64</Platform>
     </ProjectConfiguration>
+    <ProjectConfiguration Include="Debug|ARM64">
+      <Configuration>Debug</Configuration>
+      <Platform>ARM64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|ARM64">
+      <Configuration>Release</Configuration>
+      <Platform>ARM64</Platform>
+    </ProjectConfiguration>
   </ItemGroup>
 
   <PropertyGroup Label="Globals">
@@ -34,7 +42,7 @@
          to the same $(SolutionDir)$(Platform)\$(Configuration)\ folder, and since CppWinRT's
          merged winmd is named after the shared "Ripcord" namespace root in every native project,
          they would silently overwrite each other's merged metadata. -->
-    <OutDir>$(SolutionDir)$(Platform)\$(Configuration)\$(ProjectName)\</OutDir>
+    <OutDir>$(RipcordRepoRoot)$(Platform)\$(Configuration)\$(ProjectName)\</OutDir>
     <!-- See Ripcord.Media.Interop.vcxproj for why this is needed: registration-free WinRT
          activation from an unpackaged .NET consumer requires opting in explicitly. -->
     <WindowsDesktopCompatible>true</WindowsDesktopCompatible>
@@ -80,8 +88,12 @@
         subfolder) doesn't match NuGet's native auto-import convention of build\native\<id>.targets,
         so it never gets imported automatically. Link GameInput.lib explicitly instead of relying
         on it.
+
+        The package ships native\lib\x64 and native\lib\arm64 (lowercase, hence ToLowerInvariant on
+        the "ARM64" platform name) and nothing else — which is the real reason this project declares
+        no x86 configuration even though Ripcord.App lists x86 in its <Platforms>.
       -->
-      <AdditionalLibraryDirectories>$(NuGetPackageRoot)microsoft.gameinput\3.4.218\native\lib\x64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>$(NuGetPackageRoot)microsoft.gameinput\3.4.218\native\lib\$(Platform.ToLowerInvariant());%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalDependencies>GameInput.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <ModuleDefinitionFile>dllmain.def</ModuleDefinitionFile>
     </Link>
