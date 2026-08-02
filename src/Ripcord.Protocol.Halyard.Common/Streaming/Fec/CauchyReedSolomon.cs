@@ -10,10 +10,17 @@ namespace Ripcord.Protocol.Halyard.Common.Streaming.Fec;
 /// <c>unitSize</c> bytes (any tail up to <c>stride</c> is ignored). All coding is per-byte and independent
 /// across byte positions.
 ///
-/// <para><b>Provisional.</b> The linear algebra (Gauss-Jordan inverse, encode/decode) is ours, but the
-/// <em>choice</em> of a Cauchy matrix over the alternatives is an assumption our own analysis has not settled
-/// against the console. If FEC recovery ever misbehaves, this is a prime suspect — along with the per-unit
-/// stride in the demuxer. See the roadmap's provisional-values list.</para>
+/// <para>The linear algebra (Gauss-Jordan inverse, encode/decode) is ours. The Cauchy matrix <em>form</em>
+/// was an adopted assumption until 2026-08-01, and is now <b>[C] confirmed from our own decompilation</b>:
+/// the console builds each element as <c>table[((m + j) XOR i) | 0x100]</c>, and that table is the field
+/// inverse, so <c>matrix[i][j] = inverse(i XOR (m + j))</c> — what <see cref="BuildCodingMatrix"/> computes.
+/// Vandermonde is ruled out: a power sequence would need index products through the multiply table, and the
+/// construction never touches it. See spec §6.2 for the derivation and the RVAs.</para>
+///
+/// <para>Still provisional nearby, so don't read this as the whole area being settled: the GF primitive
+/// polynomial (<see cref="GaloisField256"/> assumes 0x11d — the console's table is runtime-generated and
+/// resisted static search, so it needs a dynamic capture) and the per-unit stride in the demuxer. If FEC
+/// recovery misbehaves, those are the suspects now, not the matrix form.</para>
 /// </summary>
 internal static class CauchyReedSolomon
 {
