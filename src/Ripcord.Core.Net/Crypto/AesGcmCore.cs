@@ -1,8 +1,9 @@
 using System.Buffers.Binary;
 using System.Runtime.Intrinsics;
-// Aliased, not imported: System.Runtime.Intrinsics.X86 also declares an `Aes` class, which would
+// Aliased, not imported: System.Runtime.Intrinsics.X86 and .Arm both declare an `Aes` class, which would
 // collide with System.Security.Cryptography.Aes used throughout this file.
 using X86 = System.Runtime.Intrinsics.X86;
+using Arm = System.Runtime.Intrinsics.Arm;
 using System.Security.Cryptography;
 
 namespace Ripcord.Core.Net.Crypto;
@@ -202,26 +203,30 @@ public static class AesGcmCore
     /// R = 0xE1 || 0^120). Operates in place: <paramref name="x"/> := x · y.
     ///
     /// <para>
-    /// Dispatches to a carry-less-multiply implementation where the hardware has it. This is the single
-    /// dominant cost in the A/V receive path: GHASH calls this once per 16-byte block (~90 times for a full
-    /// packet), and the portable bit-serial form below runs 128 iterations of byte-wise XOR and shift per call
-    /// — measured at ~1.7 us each, i.e. ~150 us per packet, which alone capped the receive path near 60 Mbps.
-    /// The PCLMULQDQ path is ~60x faster.
+    /// Dispatches to a carry-less-multiply implementation where the hardware has it: PCLMULQDQ on x86,
+    /// PMULL on ARM64. This is the single dominant cost in the A/V receive path: GHASH calls this once per
+    /// 16-byte block (~90 times for a full packet), and the portable bit-serial form below runs 128 iterations
+    /// of byte-wise XOR and shift per call — measured at ~1.7-1.9 us each, i.e. ~150-175 us per packet, which
+    /// alone capped the receive path near 60 Mbps on both architectures. The PCLMULQDQ path is ~60x faster;
+    /// PMULL took measured per-packet A/V crypto from ~200 us to ~12-15 us on a Snapdragon X2.
+    /// </para>
+    ///
+    /// <para>
+    /// Both hardware paths are held to the bit-serial oracle in <c>GfMulHardwareTests</c>, which skips the
+    /// paths the running host cannot execute — so a green run on one architecture never implies the other.
     /// </para>
     /// </summary>
     internal static void GfMul(Span<byte> x, ReadOnlySpan<byte> y)
     {
-        // No ARM64 path, deliberately. The equivalent primitive exists
-        // (System.Runtime.Intrinsics.Arm.Aes.PolynomialMultiplyWideningLower/Upper), and Windows-on-ARM or an ARM
-        // handheld would otherwise take the bit-serial fallback that WAS the 1080p60 bottleneck (~63x slower).
-        // It is still not written, because the x86 version here was wrong for essentially every input on the first
-        // attempt — a missing 256-bit shift before reduction, 0 of 3000 vectors passing — and that was caught only
-        // by executing it against the bit-serial oracle. Nothing in this environment can execute ARM64, so an ARM
-        // implementation would ship unverified. Slow-and-correct beats fast-and-unverified for stream crypto.
-        // GfMulHardwareTests would validate it the moment anyone runs the suite on ARM64; write it there.
         if (X86.Pclmulqdq.IsSupported && X86.Ssse3.IsSupported)
         {
             GfMulCarryless(x, y);
+            return;
+        }
+
+        if (Arm.Aes.IsSupported && Arm.AdvSimd.Arm64.IsSupported)
+        {
+            GfMulCarrylessArm(x, y);
             return;
         }
 
@@ -299,6 +304,92 @@ public static class AesGcmCore
         shiftedHigh = X86.Sse2.Or(
             shiftedHigh,
             X86.Sse2.ShiftRightLogical128BitLane(lowCarry.AsByte(), 8).AsUInt64());
+
+        return (shiftedHigh, shiftedLow);
+    }
+
+    // ---- ARM64 (NEON PMULL) ---------------------------------------------------------------------
+    //
+    // A deliberate near-duplicate of the x86 path above rather than a shared generic implementation. The
+    // reduction sequence is the delicate part — the x86 version was wrong for essentially every input on the
+    // first attempt (a missing 256-bit shift; 0 of 3000 vectors passed) — and the x64 path is the shipping,
+    // validated one. Refactoring both onto one generic body would put that validated code at risk from a host
+    // that cannot execute the other architecture's tests, so each path keeps its own copy and each is held to
+    // the same bit-serial oracle in GfMulHardwareTests. Keep the two in step if the algorithm ever changes.
+
+    /// <summary>
+    /// Hardware GF(2^128) multiply on ARM64, using NEON polynomial multiply (PMULL/PMULL2 via
+    /// <see cref="Arm.Aes.PolynomialMultiplyWideningLower"/>). Structurally identical to
+    /// <see cref="GfMulCarryless"/>: reflect, 128x128 -> 256 carry-less product, shift left one, reduce, reflect
+    /// back. See that method for why each step is there.
+    /// </summary>
+    internal static void GfMulCarrylessArm(Span<byte> x, ReadOnlySpan<byte> y)
+    {
+        Vector128<ulong> a = ReflectArm(Vector128.Create(x)).AsUInt64();
+        Vector128<ulong> b = ReflectArm(Vector128.Create(y)).AsUInt64();
+
+        // 128x128 -> 256 carry-less product, schoolbook with the cross terms folded. PMULL takes the low halves,
+        // PMULL2 the high ones, so the two cross terms are PMULL over the opposite halves of each operand.
+        Vector128<ulong> low = Arm.Aes.PolynomialMultiplyWideningLower(a.GetLower(), b.GetLower());
+        Vector128<ulong> high = Arm.Aes.PolynomialMultiplyWideningUpper(a, b);
+        Vector128<ulong> mid = Arm.AdvSimd.Xor(
+            Arm.Aes.PolynomialMultiplyWideningLower(a.GetUpper(), b.GetLower()),
+            Arm.Aes.PolynomialMultiplyWideningLower(a.GetLower(), b.GetUpper()));
+
+        low = Arm.AdvSimd.Xor(low, ShiftLeft8BytesArm(mid));
+        high = Arm.AdvSimd.Xor(high, ShiftRight8BytesArm(mid));
+
+        // Not optional — see the note in GfMulCarryless.
+        (high, low) = ShiftLeft256By1Arm(high, low);
+
+        Vector128<ulong> poly = Vector128.Create(0xC200000000000000UL, 0UL);
+        Vector128<ulong> fold = Arm.Aes.PolynomialMultiplyWideningLower(low.GetLower(), poly.GetLower());
+        low = Arm.AdvSimd.Xor(SwapHalvesArm(low), fold);
+        fold = Arm.Aes.PolynomialMultiplyWideningLower(low.GetLower(), poly.GetLower());
+        low = Arm.AdvSimd.Xor(SwapHalvesArm(low), fold);
+
+        ReflectArm(Arm.AdvSimd.Xor(high, low).AsByte()).CopyTo(x);
+    }
+
+    /// <summary>Byte-reverse a 128-bit block (one TBL), the ARM64 counterpart of the SSSE3 shuffle.</summary>
+    private static Vector128<byte> ReflectArm(Vector128<byte> value) => Arm.AdvSimd.Arm64.VectorTableLookup(
+        value,
+        Vector128.Create((byte)15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0));
+
+    /// <summary>Exchange the two 64-bit halves of a 128-bit vector.</summary>
+    private static Vector128<ulong> SwapHalvesArm(Vector128<ulong> value) =>
+        Arm.AdvSimd.ExtractVector128(value.AsByte(), value.AsByte(), 8).AsUInt64();
+
+    /// <summary>
+    /// Shift a whole 128-bit vector left by 8 bytes (toward the most significant end), i.e. the ARM64
+    /// counterpart of <c>ShiftLeftLogical128BitLane(v, 8)</c>. EXT concatenates its two operands and takes 16
+    /// bytes starting at the given index, so pulling from (zero, value) at byte 8 yields (0, value.Low).
+    /// </summary>
+    private static Vector128<ulong> ShiftLeft8BytesArm(Vector128<ulong> value) =>
+        Arm.AdvSimd.ExtractVector128(Vector128<byte>.Zero, value.AsByte(), 8).AsUInt64();
+
+    /// <summary>Shift a whole 128-bit vector right by 8 bytes; yields (value.High, 0).</summary>
+    private static Vector128<ulong> ShiftRight8BytesArm(Vector128<ulong> value) =>
+        Arm.AdvSimd.ExtractVector128(value.AsByte(), Vector128<byte>.Zero, 8).AsUInt64();
+
+    /// <summary>ARM64 counterpart of <see cref="ShiftLeft256By1"/>; same carry structure.</summary>
+    private static (Vector128<ulong> High, Vector128<ulong> Low) ShiftLeft256By1Arm(
+        Vector128<ulong> high, Vector128<ulong> low)
+    {
+        Vector128<ulong> lowCarry = Arm.AdvSimd.ShiftRightLogical(low, 63);
+        Vector128<ulong> highCarry = Arm.AdvSimd.ShiftRightLogical(high, 63);
+
+        // Within each half, lane 0's carry moves up into lane 1.
+        Vector128<ulong> shiftedLow = Arm.AdvSimd.Or(
+            Arm.AdvSimd.ShiftLeftLogical(low, 1),
+            ShiftLeft8BytesArm(lowCarry));
+
+        Vector128<ulong> shiftedHigh = Arm.AdvSimd.Or(
+            Arm.AdvSimd.ShiftLeftLogical(high, 1),
+            ShiftLeft8BytesArm(highCarry));
+
+        // And the low half's top bit carries across into the high half's lane 0.
+        shiftedHigh = Arm.AdvSimd.Or(shiftedHigh, ShiftRight8BytesArm(lowCarry));
 
         return (shiftedHigh, shiftedLow);
     }

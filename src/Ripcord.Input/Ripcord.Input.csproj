@@ -30,21 +30,32 @@
       source-generated projections instead of the old built-in WinRT activation.
     -->
     <PackageReference Include="Microsoft.Windows.CsWinRT" Version="2.2.0" />
-    <ProjectReference Include="..\Ripcord.Input.Interop\Ripcord.Input.Interop.vcxproj">
+    <!-- See Ripcord.Media.csproj for why this is conditioned on MSBuildRuntimeType and why the platform
+         has to be pinned explicitly. -->
+    <ProjectReference Include="..\Ripcord.Input.Interop\Ripcord.Input.Interop.vcxproj"
+                      Condition="'$(MSBuildRuntimeType)' != 'Core'">
       <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
+      <SetPlatform>Platform=$(RipcordNativePlatform)</SetPlatform>
     </ProjectReference>
     <Reference Include="Ripcord.Input.Interop">
-      <HintPath>$(SolutionDir)x64\$(Configuration)\Ripcord.Input.Interop\Ripcord.winmd</HintPath>
+      <HintPath>$(RipcordNativeInteropDir)Ripcord.Input.Interop\Ripcord.winmd</HintPath>
       <IsWinMDFile>true</IsWinMDFile>
     </Reference>
   </ItemGroup>
+
+  <!-- See the matching guard in Ripcord.Media.csproj. -->
+  <Target Name="EnsureInputInteropBuilt" BeforeTargets="ResolveAssemblyReferences"
+          Condition="'$(MSBuildRuntimeType)' == 'Core'">
+    <Error Condition="!Exists('$(RipcordNativeInteropDir)Ripcord.Input.Interop\Ripcord.winmd')"
+           Text="Native interop metadata missing: $(RipcordNativeInteropDir)Ripcord.Input.Interop\Ripcord.winmd. The dotnet CLI cannot build C++ projects — run `msbuild Ripcord.slnx -p:Platform=$(RipcordNativePlatform) -p:Configuration=$(Configuration)` once first." />
+  </Target>
 
   <!-- See the matching target in Ripcord.Media.csproj for why this is a post-build Copy target
        rather than a <None CopyToOutputDirectory> item, and why it also needs a matching target in
        Ripcord.App.csproj (this one only reaches Ripcord.Input's own output folder). -->
   <Target Name="CopyInputInteropNativeDll" AfterTargets="Build">
     <Copy
-      SourceFiles="$(SolutionDir)x64\$(Configuration)\Ripcord.Input.Interop\Ripcord.Input.Interop.dll"
+      SourceFiles="$(RipcordNativeInteropDir)Ripcord.Input.Interop\Ripcord.Input.Interop.dll"
       DestinationFolder="$(OutDir)"
       SkipUnchangedFiles="true" />
   </Target>

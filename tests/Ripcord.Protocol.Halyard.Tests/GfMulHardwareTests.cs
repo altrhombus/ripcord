@@ -1,3 +1,4 @@
+using System.Runtime.Intrinsics.Arm;
 using System.Runtime.Intrinsics.X86;
 using System.Security.Cryptography;
 using Ripcord.Core.Net.Crypto;
@@ -6,7 +7,7 @@ using Xunit;
 namespace Ripcord.Protocol.Halyard.Tests;
 
 /// <summary>
-/// Differential tests for the hardware GF(2^128) multiply against the portable bit-serial reference.
+/// Differential tests for the hardware GF(2^128) multiplies against the portable bit-serial reference.
 ///
 /// <para>
 /// This matters more than a normal optimisation test. The carry-less multiply plus reflected-domain reduction
@@ -15,10 +16,30 @@ namespace Ripcord.Protocol.Halyard.Tests;
 /// show up as sporadic authentication failures on real traffic and be nearly impossible to attribute. The
 /// bit-serial form is the implementation the SP 800-38D vectors validate directly, so it is the oracle here.
 /// </para>
+///
+/// <para>
+/// Every case runs against each hardware path (<see cref="HardwarePath"/>) and skips the ones this host cannot
+/// execute, so an x64 box validates PCLMULQDQ, an ARM64 box validates PMULL, and neither silently reports green
+/// for a path it never ran. That skip is the whole point: the ARM64 implementation existed only as a comment
+/// until the suite could actually be run on ARM64 hardware.
+/// </para>
 /// </summary>
 public class GfMulHardwareTests
 {
-    private static bool HardwareAvailable => Pclmulqdq.IsSupported && Ssse3.IsSupported;
+    public enum HardwarePath
+    {
+        X86Pclmulqdq,
+        ArmPmull,
+    }
+
+    public static TheoryData<HardwarePath> Paths => new(Enum.GetValues<HardwarePath>());
+
+    private static bool IsAvailable(HardwarePath path) => path switch
+    {
+        HardwarePath.X86Pclmulqdq => Pclmulqdq.IsSupported && Ssse3.IsSupported,
+        HardwarePath.ArmPmull => System.Runtime.Intrinsics.Arm.Aes.IsSupported && AdvSimd.Arm64.IsSupported,
+        _ => false,
+    };
 
     private static byte[] MultiplyBitSerial(byte[] x, byte[] y)
     {
@@ -27,35 +48,48 @@ public class GfMulHardwareTests
         return result;
     }
 
-    private static byte[] MultiplyCarryless(byte[] x, byte[] y)
+    private static byte[] MultiplyHardware(HardwarePath path, byte[] x, byte[] y)
     {
         byte[] result = x.ToArray();
-        AesGcmCore.GfMulCarryless(result, y);
+        switch (path)
+        {
+            case HardwarePath.X86Pclmulqdq:
+                AesGcmCore.GfMulCarryless(result, y);
+                break;
+            case HardwarePath.ArmPmull:
+                AesGcmCore.GfMulCarrylessArm(result, y);
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(path));
+        }
+
         return result;
     }
 
-    private static void AssertAgree(byte[] x, byte[] y)
+    private static void AssertAgree(HardwarePath path, byte[] x, byte[] y)
     {
         Assert.Equal(
             Convert.ToHexString(MultiplyBitSerial(x, y)),
-            Convert.ToHexString(MultiplyCarryless(x, y)));
+            Convert.ToHexString(MultiplyHardware(path, x, y)));
     }
 
-    [SkippableFact]
-    public void AgreesOnRandomInputs()
+    [SkippableTheory]
+    [MemberData(nameof(Paths))]
+    public void AgreesOnRandomInputs(HardwarePath path)
     {
-        Skip.IfNot(HardwareAvailable, "No PCLMULQDQ/SSSE3 on this host.");
+        Skip.IfNot(IsAvailable(path), $"{path} is not available on this host.");
 
         for (int i = 0; i < 5_000; i++)
         {
-            AssertAgree(RandomNumberGenerator.GetBytes(16), RandomNumberGenerator.GetBytes(16));
+            AssertAgree(path, RandomNumberGenerator.GetBytes(16), RandomNumberGenerator.GetBytes(16));
         }
     }
 
-    [SkippableFact]
-    public void AgreesOnStructuredEdgeCases()
+    [SkippableTheory]
+    [MemberData(nameof(Paths))]
+    public void AgreesOnStructuredEdgeCases(HardwarePath path)
     {
-        Skip.IfNot(HardwareAvailable, "No PCLMULQDQ/SSSE3 on this host.");
+        Skip.IfNot(IsAvailable(path), $"{path} is not available on this host.");
 
         byte[] zero = new byte[16];
         byte[] one = new byte[16];
@@ -72,17 +106,18 @@ public class GfMulHardwareTests
         {
             foreach (byte[] b in cases)
             {
-                AssertAgree(a, b);
+                AssertAgree(path, a, b);
             }
         }
     }
 
-    [SkippableFact]
-    public void AgreesWhenEverySingleBitIsSetInTurn()
+    [SkippableTheory]
+    [MemberData(nameof(Paths))]
+    public void AgreesWhenEverySingleBitIsSetInTurn(HardwarePath path)
     {
         // Walks all 128 basis elements against a fixed operand, so a reduction error confined to one bit
         // position cannot hide.
-        Skip.IfNot(HardwareAvailable, "No PCLMULQDQ/SSSE3 on this host.");
+        Skip.IfNot(IsAvailable(path), $"{path} is not available on this host.");
 
         byte[] h = RandomNumberGenerator.GetBytes(16);
 
@@ -90,15 +125,16 @@ public class GfMulHardwareTests
         {
             byte[] x = new byte[16];
             x[bit >> 3] = (byte)(1 << (7 - (bit & 7)));
-            AssertAgree(x, h);
-            AssertAgree(h, x);
+            AssertAgree(path, x, h);
+            AssertAgree(path, h, x);
         }
     }
 
-    [SkippableFact]
-    public void IdentityAndZeroBehaveAlgebraically()
+    [SkippableTheory]
+    [MemberData(nameof(Paths))]
+    public void IdentityAndZeroBehaveAlgebraically(HardwarePath path)
     {
-        Skip.IfNot(HardwareAvailable, "No PCLMULQDQ/SSSE3 on this host.");
+        Skip.IfNot(IsAvailable(path), $"{path} is not available on this host.");
 
         byte[] identity = new byte[16];
         identity[0] = 0x80;
@@ -108,18 +144,19 @@ public class GfMulHardwareTests
             byte[] a = RandomNumberGenerator.GetBytes(16);
 
             // a * 1 == a
-            Assert.Equal(Convert.ToHexString(a), Convert.ToHexString(MultiplyCarryless(a, identity)));
+            Assert.Equal(Convert.ToHexString(a), Convert.ToHexString(MultiplyHardware(path, a, identity)));
 
             // a * 0 == 0
-            Assert.Equal(new string('0', 32), Convert.ToHexString(MultiplyCarryless(a, new byte[16])));
+            Assert.Equal(new string('0', 32), Convert.ToHexString(MultiplyHardware(path, a, new byte[16])));
         }
     }
 
-    [SkippableFact]
-    public void IsCommutative()
+    [SkippableTheory]
+    [MemberData(nameof(Paths))]
+    public void IsCommutative(HardwarePath path)
     {
         // Field multiplication commutes; an asymmetric bug in the cross-term folding would break this.
-        Skip.IfNot(HardwareAvailable, "No PCLMULQDQ/SSSE3 on this host.");
+        Skip.IfNot(IsAvailable(path), $"{path} is not available on this host.");
 
         for (int i = 0; i < 500; i++)
         {
@@ -127,8 +164,8 @@ public class GfMulHardwareTests
             byte[] b = RandomNumberGenerator.GetBytes(16);
 
             Assert.Equal(
-                Convert.ToHexString(MultiplyCarryless(a, b)),
-                Convert.ToHexString(MultiplyCarryless(b, a)));
+                Convert.ToHexString(MultiplyHardware(path, a, b)),
+                Convert.ToHexString(MultiplyHardware(path, b, a)));
         }
     }
 
@@ -137,7 +174,9 @@ public class GfMulHardwareTests
     {
         // End-to-end through Mac(): the dispatching GfMul must produce the same tag the bit-serial path did,
         // at every AAD length including partial trailing blocks.
-        Skip.IfNot(HardwareAvailable, "No PCLMULQDQ/SSSE3 on this host.");
+        Skip.IfNot(
+            IsAvailable(HardwarePath.X86Pclmulqdq) || IsAvailable(HardwarePath.ArmPmull),
+            "No hardware carry-less multiply on this host.");
 
         byte[] key = RandomNumberGenerator.GetBytes(16);
         byte[] iv = RandomNumberGenerator.GetBytes(16);
