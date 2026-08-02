@@ -53,8 +53,22 @@ public sealed class HalyardStreamDemuxer(IHalyardSessionCrypto crypto)
     // via TakePacketStats from the congestion loop, so guarded with Interlocked.
     private long _statUnitsReceived;
     private long _statUnitsLost;
-    private int _unitPaddedSize; // the common padded unit size all units share for FEC
-    private int _unitStride;     // _unitPaddedSize rounded up to 16
+    // The frame's coded unit length — the number of bytes FEC actually codes over, shared by every unit. This
+    // is the wire-bearing value of the two: it must equal what the console coded over or recovery reconstructs
+    // garbage. Confirmed [C]/[W]: the console's length is the longest source unit rounded UP TO A MULTIPLE OF
+    // 4, constant within a frame. Verified on the wire across 5,961 frames of cap47 (parity length constant
+    // per frame, never exceeded by any source unit, and parity_len - max(source_len) only ever 0..3) and in
+    // our binary, where FUN_101035e0 rejects any fragment length with (len & 3) != 0.
+    private int _unitPaddedSize;
+
+    // Slot spacing in _slotBuf. NOT a protocol value — the console lays its units out at a stride equal to the
+    // coded length itself, with no 16-alignment anywhere. This is purely our own buffer layout, and any value
+    // >= _unitPaddedSize is equally correct: all coding reads and writes [slot, slot + _unitPaddedSize), the
+    // buffer is zero-cleared per frame, and the tail between the two is never read. Rounding to 16 buys
+    // alignment for the copies; 4 (the console's own granularity) would be just as correct and no faster.
+    // Recorded because this was long carried as a suspected live FEC bug on the theory that 16 was a mis-derived
+    // wire constant — it is not a wire constant at all, and the value that IS one is _unitPaddedSize above.
+    private int _unitStride;
     private byte[] _slotBuf = [];
     private bool[] _slotPresent = [];
     private int[] _slotDataSize = [];
@@ -263,7 +277,8 @@ public sealed class HalyardStreamDemuxer(IHalyardSessionCrypto crypto)
         }
 
         // Source units carry a 2-byte size-extension that is ADDED to the transmitted size to get the common
-        // padded unit size all units share for FEC; parity units are already exactly that size.
+        // coded unit length all units share for FEC; parity units are already exactly that length. Both arrival
+        // orders therefore land on the same value, which is why this can key off whichever unit comes first.
         int padded = dataSize;
         if (header.UnitIndex < source && payload.Length >= VideoUnitPrefixLength)
         {
