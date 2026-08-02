@@ -27,7 +27,12 @@ public readonly struct HalyardStreamHeader
 
     public const byte TypeVideo = 0x02;
     public const byte TypeAudio = 0x03;
-    public const byte TypeFec = 0x12;
+
+    // There is deliberately no TypeFec. A raw byte-0 of 0x12 is often described as "the FEC type", but 0x12 is
+    // low-nibble 2 (video) with bit 4 (extended header) set — and since Type is masked to the low nibble, a
+    // `Type == 0x12` comparison is unconditionally false. A `TypeFec = 0x12` constant did sit here unused,
+    // which is a silently-always-false check waiting to be written. Parity units are not a packet type at all:
+    // they are video packets whose unit index falls at or above SourceUnits. Use IsParityUnit.
 
     public const int TagOffset = 10;
     public const int KeyPositionOffset = 14;
@@ -62,6 +67,13 @@ public readonly struct HalyardStreamHeader
 
     /// <summary>Number of source units in the frame (total minus FEC units).</summary>
     public int SourceUnits => TotalUnits - ParityUnits;
+
+    /// <summary>
+    /// True when this unit is one of the frame's Reed-Solomon parity units rather than a source unit — which
+    /// is a function of the unit index, not of the packet type. Parity units carry no 2-byte size extension:
+    /// they are already exactly the frame's coded unit length.
+    /// </summary>
+    public bool IsParityUnit => UnitIndex >= SourceUnits;
 
     /// <summary>
     /// Where the (encrypted) payload begins: the 18-byte base, then a type-specific prefix, then the optional
