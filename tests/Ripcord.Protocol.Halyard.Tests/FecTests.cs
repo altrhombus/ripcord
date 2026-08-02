@@ -5,9 +5,19 @@ using Xunit;
 namespace Ripcord.Protocol.Halyard.Tests;
 
 /// <summary>
-/// The video FEC math: GF(2^8) field laws and systematic Cauchy Reed-Solomon round-trips. These validate that
-/// our decoder reconstructs exactly what the console's encoder produced (same field, same Cauchy matrix), so a
-/// lost source unit is recovered rather than showing as a corrupt slice.
+/// The video FEC math: GF(2^8) field laws and systematic Cauchy Reed-Solomon round-trips.
+///
+/// <para><b>Scope — these are self-consistency tests, not ground truth.</b> They prove our decoder inverts
+/// our encoder. They cannot prove either matches the console, because no capture in the dirty room pairs A/V
+/// traffic with usable stream keys (the one session with keys never reached streaming), so there is no
+/// console-produced parity unit to compare against. The earlier version of this comment claimed these
+/// validated "exactly what the console's encoder produced" — they never did, and that wording is the reason
+/// the matrix form went unexamined for so long.</para>
+///
+/// <para>What backs the console-agreement claim instead is decompilation: the matrix form is [C]-confirmed
+/// (see <see cref="CauchyReedSolomon"/>). The GF primitive polynomial underneath it is still assumed, so
+/// even now "same field" is not established — a matching matrix over the wrong field still reconstructs
+/// garbage.</para>
 /// </summary>
 public class FecTests
 {
