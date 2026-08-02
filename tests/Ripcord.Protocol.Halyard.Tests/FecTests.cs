@@ -128,6 +128,70 @@ public class FecTests
             Convert.ToHexString(frame.AsSpan(1 * stride, unitSize)));
     }
 
+    /// <summary>
+    /// The slot stride is layout, not protocol: recovery must produce byte-identical results at any stride
+    /// that is at least the coded unit length. This is the claim that closed the long-running "is the 0x10
+    /// stride a mis-derived wire constant?" question — the console's own stride equals its coded length (a
+    /// multiple of 4), and ours is free precisely because coding never touches the tail between the two. If a
+    /// future change makes the stride observable in the output, this fails and that reasoning needs revisiting.
+    /// </summary>
+    [Theory]
+    [InlineData(6, 3, 1004)]  // a real cap47 coded length: 4-aligned, not 16-aligned
+    [InlineData(6, 3, 1012)]
+    [InlineData(4, 2, 999)]   // deliberately not even 4-aligned, to prove the decoder does not care
+    public void ReedSolomon_RecoveryIsIndependentOfSlotStride(int k, int m, int unitSize)
+    {
+        int total = k + m;
+        var source = new byte[total][];
+        var rng = new Random(unitSize);
+        for (int u = 0; u < k; u++)
+        {
+            source[u] = new byte[unitSize];
+            rng.NextBytes(source[u]);
+        }
+
+        // Same logical frame, laid out at two different strides.
+        byte[] Build(int stride)
+        {
+            var frame = new byte[total * stride];
+            for (int u = 0; u < k; u++)
+            {
+                source[u].CopyTo(frame.AsSpan(u * stride));
+            }
+            CauchyReedSolomon.Encode(frame, unitSize, stride, k, m);
+            return frame;
+        }
+
+        int tight = unitSize;                          // no slack at all
+        int aligned16 = (unitSize + 0xf) & ~0xf;       // what the demuxer uses
+        byte[] a = Build(tight), b = Build(aligned16);
+
+        var present = new bool[total];
+        Array.Fill(present, true);
+        foreach (int e in new[] { 0, k - 1 })
+        {
+            present[e] = false;
+        }
+        Array.Clear(a, 0, tight);
+        Array.Clear(a, (k - 1) * tight, tight);
+        Array.Clear(b, 0, aligned16);
+        Array.Clear(b, (k - 1) * aligned16, aligned16);
+
+        Assert.True(CauchyReedSolomon.Decode(a, unitSize, tight, k, m, present));
+        Assert.True(CauchyReedSolomon.Decode(b, unitSize, aligned16, k, m, present));
+
+        // Both strides must reconstruct the original bytes — and so agree with each other.
+        for (int u = 0; u < k; u++)
+        {
+            Assert.Equal(
+                Convert.ToHexString(source[u]),
+                Convert.ToHexString(a.AsSpan(u * tight, unitSize)));
+            Assert.Equal(
+                Convert.ToHexString(source[u]),
+                Convert.ToHexString(b.AsSpan(u * aligned16, unitSize)));
+        }
+    }
+
     [Fact]
     public void ReedSolomon_TooManyErasures_Fails()
     {
