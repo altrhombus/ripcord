@@ -763,7 +763,7 @@ namespace winrt::Ripcord::Media::Interop::implementation
     static std::wstring SubtypeName(const GUID& subtype)
     {
         if (subtype == MFVideoFormat_NV12) return L"NV12";
-        if (subtype == MFVideoFormat_P010) return L"P010";  // 10-bit — NOT handled by the NV12 present path
+        if (subtype == MFVideoFormat_P010) return L"P010";  // 10-bit \u2014 NOT handled by the NV12 present path
         if (subtype == MFVideoFormat_YUY2) return L"YUY2";
         if (subtype == GUID_NULL)          return L"none";
 
@@ -835,15 +835,15 @@ namespace winrt::Ripcord::Media::Interop::implementation
 
         if (m_tenBitUnrenderable)
         {
-            desc += L" — 10-bit needs the zero-copy path, which is unavailable here";
+            desc += L" \u2014 10-bit needs the zero-copy path, which is unavailable here";
         }
         if (m_codecMismatch)
         {
             // The console did not send what was requested. Say so plainly: silently substituting the decoder
             // would leave a "HEVC" setting that visibly does nothing.
             desc += m_codec == VideoCodecKind::Hevc
-                ? L" — stream is HEVC, overriding the H.264 request"
-                : L" — console ignored the HEVC request and sent H.264";
+                ? L" \u2014 stream is HEVC, overriding the H.264 request"
+                : L" \u2014 console ignored the HEVC request and sent H.264";
         }
 
         return hstring{ desc };
@@ -855,7 +855,7 @@ namespace winrt::Ripcord::Media::Interop::implementation
     {
         if (m_decoderName.empty())
         {
-            return hstring{ L"—" };
+            return hstring{ L"\u2014" };
         }
         return hstring{ m_tenBitOutput ? L"10-bit P010" : L"8-bit NV12" };
     }
@@ -876,7 +876,7 @@ namespace winrt::Ripcord::Media::Interop::implementation
                 // "claims" is doing real work: this driver reports MaxLuminance inversely to the brightness
                 // slider, up to physically impossible values. Shown because the volatility is a useful red
                 // flag, labelled because it is not a fact.
-                s += L" · panel claims " + std::to_wstring(static_cast<int>(m_displayMaxNits)) + L" nits";
+                s += L" \u00B7 panel claims " + std::to_wstring(static_cast<int>(m_displayMaxNits)) + L" nits";
             }
             return hstring{ s };
         }
@@ -884,8 +884,8 @@ namespace winrt::Ripcord::Media::Interop::implementation
         // Distinguish "the panel cannot take it" from "it could and we failed to send it" - the first is the
         // tone-map working as designed, the second means SetColorSpace1 was refused.
         return hstring{ m_displayHdrCapable
-            ? L"tone-mapped to SDR — display is HDR-capable, colour space refused"
-            : L"tone-mapped to SDR — display is SDR" };
+            ? L"tone-mapped to SDR \u2014 display is HDR-capable, colour space refused"
+            : L"tone-mapped to SDR \u2014 display is SDR" };
     }
 
 
@@ -1748,21 +1748,32 @@ namespace winrt::Ripcord::Media::Interop::implementation
         std::wstring desc = m_yuvMatrix == 1 ? L"BT.709" : L"BT.601";
         if (!m_yuvMatrixSignalled)
         {
-            desc += m_yuvMatrix == 1 ? L" (assumed: HD default)" : L" (assumed: SD default)";
+            // Just "assumed". The rule behind the default (HD implies BT.709) is documented where the default
+            // is chosen; repeating it on every frame of the overlay explains our implementation to someone who
+            // is trying to read the stream's properties.
+            desc += L" (assumed)";
         }
 
         // Transfer and primaries belong on the colour row too. They used to be appended to the decoder
         // string, so the overlay reported colour in two places at once - matrix here, transfer over there -
         // and neither line was the whole answer.
-        desc += L" · ";
+        desc += L" \u00B7 ";
         if (m_transferFunctionSignalled)
         {
             switch (m_transferFunction)
             {
+            // The full SDR set, not just the HDR ones. A real session signalled MFVideoTransFunc_22 and the
+            // row read "transfer 4", which is a number the reader then has to go and look up.
             case MFVideoTransFunc_2084: desc += L"PQ"; break;
             case MFVideoTransFunc_HLG:  desc += L"HLG"; break;
             case MFVideoTransFunc_709:  desc += L"BT.709 gamma"; break;
             case MFVideoTransFunc_sRGB: desc += L"sRGB gamma"; break;
+            case MFVideoTransFunc_10:   desc += L"linear"; break;
+            case MFVideoTransFunc_18:   desc += L"gamma 1.8"; break;
+            case MFVideoTransFunc_20:   desc += L"gamma 2.0"; break;
+            case MFVideoTransFunc_22:   desc += L"gamma 2.2"; break;
+            case MFVideoTransFunc_28:   desc += L"gamma 2.8"; break;
+            case MFVideoTransFunc_240M: desc += L"SMPTE 240M"; break;
             default:
                 desc += L"transfer " + std::to_wstring(m_transferFunction);
                 break;
@@ -1773,16 +1784,19 @@ namespace winrt::Ripcord::Media::Interop::implementation
             desc += m_tenBitOutput ? L"transfer assumed PQ" : L"transfer unsignalled";
         }
 
-        if (m_videoPrimariesSignalled)
+        // Primaries only when they are the notable ones. BT.709 primaries alongside a BT.709 matrix rendered
+        // as "BT.709 ... BT.709", which reads like a repetition rather than two facts; wide gamut is the case
+        // worth calling out, and it is the one that accompanies HDR.
+        if (m_videoPrimariesSignalled && m_videoPrimaries == MFVideoPrimaries_BT2020)
         {
-            desc += m_videoPrimaries == MFVideoPrimaries_BT2020 ? L" BT.2020" : L" BT.709";
+            desc += L" BT.2020";
         }
 
         // Only the anomaly is worth a line: the encoder sending no static metadata is normal for real-time
         // content, but the bitstream having it while the decoder drops it means our read is the limitation.
         if (!m_hdrMetadataPresent && (m_seiMasteringDisplay || m_seiContentLightLevel))
         {
-            desc += L" · HDR SEI present but not surfaced by the decoder";
+            desc += L" \u00B7 HDR SEI present but not surfaced by the decoder";
         }
 
         return hstring{ desc };
