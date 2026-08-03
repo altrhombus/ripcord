@@ -755,9 +755,40 @@ namespace winrt::Ripcord::Media::Interop::implementation
 
         std::wstring desc = m_decoderName;
         desc += m_hardwareDecode ? L" (DXVA)" : L" (software)";
-        if (m_tenBitOutput)
+        // Always say what the pixel format is, not only in the 10-bit case. An SDR session used to add nothing
+        // at all here, so "HEVC (DXVA)" alone left you unable to tell a working SDR stream from one where the
+        // format probe had silently not run - and made A/B-ing an HDR toggle needlessly hard.
+        desc += m_tenBitOutput ? L" \u00B7 10-bit P010" : L" \u00B7 8-bit NV12";
+
+        // What the STREAM signalled, which is not always what we asked for - the console ignores
+        // yuvCoefficient outright, so treat dynamicRange the same way and report the measurement.
+        desc += L" \u00B7 ";
+        if (m_transferFunctionSignalled)
         {
-            desc += m_toneMappedByDriver ? L" \u00B7 10-bit P010, PQ tone-mapped" : L" \u00B7 10-bit P010";
+            switch (m_transferFunction)
+            {
+            case MFVideoTransFunc_2084: desc += L"PQ"; break;
+            case MFVideoTransFunc_HLG:  desc += L"HLG"; break;
+            case MFVideoTransFunc_709:  desc += L"BT.709 gamma"; break;
+            case MFVideoTransFunc_sRGB: desc += L"sRGB gamma"; break;
+            default:
+                desc += L"transfer " + std::to_wstring(m_transferFunction);
+                break;
+            }
+        }
+        else
+        {
+            desc += m_tenBitOutput ? L"transfer unsignalled (assuming PQ)" : L"transfer unsignalled";
+        }
+
+        if (m_videoPrimariesSignalled)
+        {
+            desc += m_videoPrimaries == MFVideoPrimaries_BT2020 ? L" BT.2020" : L" BT.709";
+        }
+
+        if (m_toneMappedByDriver)
+        {
+            desc += L" \u00B7 tone-mapped to SDR";
         }
         if (m_tenBitUnrenderable)
         {
@@ -1119,6 +1150,27 @@ namespace winrt::Ripcord::Media::Interop::implementation
             // MFVideoTransferMatrix: 1 = BT.709, 2 = BT.601, 3 = SMPTE240M.
             m_yuvMatrix = signalledMatrix == MFVideoTransferMatrix_BT709 ? 1 : 0;
             m_yuvMatrixSignalled = true;
+        }
+
+        // Transfer function and primaries, read for the same reason and from the same place. The renderer used
+        // to infer "PQ" from 10-bit output alone, which is not sound - HEVC Main10 is a bit depth, not a
+        // transfer function, and a 10-bit BT.709 stream declared as PQ gets tone-mapped when it should be left
+        // alone. Reading also settles what the console actually does with a dynamicRange:"HDR" request, which
+        // until now was only ever inferred.
+        UINT32 signalledTransfer = 0;
+        if (SUCCEEDED(type->GetUINT32(MF_MT_TRANSFER_FUNCTION, &signalledTransfer))
+            && signalledTransfer != MFVideoTransFunc_Unknown)
+        {
+            m_transferFunction = signalledTransfer;
+            m_transferFunctionSignalled = true;
+        }
+
+        UINT32 signalledPrimaries = 0;
+        if (SUCCEEDED(type->GetUINT32(MF_MT_VIDEO_PRIMARIES, &signalledPrimaries))
+            && signalledPrimaries != MFVideoPrimaries_Unknown)
+        {
+            m_videoPrimaries = signalledPrimaries;
+            m_videoPrimariesSignalled = true;
         }
         else
         {
@@ -1723,12 +1775,38 @@ namespace winrt::Ripcord::Media::Interop::implementation
             ComPtr<ID3D11VideoContext1> videoContext1;
             if (SUCCEEDED(m_videoContext.As(&videoContext1)) && videoContext1)
             {
-                videoContext1->VideoProcessorSetStreamColorSpace1(
-                    m_videoProcessor.Get(), 0, DXGI_COLOR_SPACE_YCBCR_STUDIO_G2084_LEFT_P2020);
+                // Pick the INPUT space from what the stream signalled, not from its bit depth. 10-bit is a bit
+                // depth; PQ is a transfer function; they are independent. Declaring PQ over a 10-bit BT.709
+                // stream would tone-map a picture that needs none, flattening it.
+                //
+                // Absent signalling we keep the previous behaviour (assume PQ for 10-bit), so this cannot
+                // regress a working picture - same conservative rule the YUV-matrix read above uses.
+                const bool wideGamut = !m_videoPrimariesSignalled || m_videoPrimaries == MFVideoPrimaries_BT2020;
+                DXGI_COLOR_SPACE_TYPE inputSpace;
+                if (m_transferFunctionSignalled && m_transferFunction == MFVideoTransFunc_HLG)
+                {
+                    inputSpace = DXGI_COLOR_SPACE_YCBCR_STUDIO_GHLG_TOPLEFT_P2020;
+                    m_hdrTransfer = true;
+                }
+                else if (!m_transferFunctionSignalled || m_transferFunction == MFVideoTransFunc_2084)
+                {
+                    inputSpace = DXGI_COLOR_SPACE_YCBCR_STUDIO_G2084_LEFT_P2020;
+                    m_hdrTransfer = true;
+                }
+                else
+                {
+                    inputSpace = wideGamut ? DXGI_COLOR_SPACE_YCBCR_STUDIO_G22_LEFT_P2020
+                                           : DXGI_COLOR_SPACE_YCBCR_STUDIO_G22_LEFT_P709;
+                    m_hdrTransfer = false;
+                }
+
+                videoContext1->VideoProcessorSetStreamColorSpace1(m_videoProcessor.Get(), 0, inputSpace);
                 videoContext1->VideoProcessorSetOutputColorSpace1(
                     m_videoProcessor.Get(), DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709);
                 colorSpaceSet = true;
-                m_toneMappedByDriver = true;
+
+                // Only genuinely HDR sources are being tone-mapped; a 10-bit SDR source passes through.
+                m_toneMappedByDriver = m_hdrTransfer;
             }
         }
 

@@ -90,8 +90,8 @@
         on it.
 
         The package ships native\lib\x64 and native\lib\arm64 (lowercase, hence ToLowerInvariant on
-        the "ARM64" platform name) and nothing else — which is the real reason this project declares
-        no x86 configuration even though Ripcord.App lists x86 in its <Platforms>.
+        the "ARM64" platform name) and nothing else — which is the underlying reason x86 is not a target
+        anywhere in this repo. Ripcord.App used to list it in <Platforms> regardless; that was removed.
       -->
       <AdditionalLibraryDirectories>$(NuGetPackageRoot)microsoft.gameinput\3.4.218\native\lib\$(Platform.ToLowerInvariant());%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalDependencies>GameInput.lib;%(AdditionalDependencies)</AdditionalDependencies>

@@ -39,23 +39,43 @@
 
     <!-- 1. An explicitly selected architecture, i.e. the C++ projects and Ripcord.App, which declare
             <Platforms> and so receive a real architecture here. -->
-    <RipcordNativePlatform Condition="'$(RipcordNativePlatform)' == '' and ('$(Platform)' == 'x64' or '$(Platform)' == 'ARM64' or '$(Platform)' == 'arm64' or '$(Platform)' == 'x86')">$(Platform)</RipcordNativePlatform>
+    <RipcordNativePlatform Condition="'$(RipcordNativePlatform)' == '' and ('$(Platform)' == 'x64' or '$(Platform)' == 'ARM64' or '$(Platform)' == 'arm64')">$(Platform)</RipcordNativePlatform>
 
     <!-- 2. Failing that, the runtime identifier, which is how the architecture reaches an AnyCPU project
             referenced by an architecture-specific one (Ripcord.App -> Ripcord.Media / Ripcord.Input). -->
     <RipcordNativePlatform Condition="'$(RipcordNativePlatform)' == '' and $(RuntimeIdentifier.StartsWith('win-'))">$(RuntimeIdentifier.Substring(4))</RipcordNativePlatform>
 
     <!-- 3. Otherwise build for the machine we are standing on. This is the case that makes a plain
-            `dotnet build` of a single managed project work on an ARM64 dev box without any ceremony. -->
-    <RipcordNativePlatform Condition="'$(RipcordNativePlatform)' == ''">$([System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture.ToString())</RipcordNativePlatform>
+            `dotnet build` of a single managed project work on an ARM64 dev box without any ceremony.
+
+            OSArchitecture, NOT ProcessArchitecture: the latter is the architecture of the *MSBuild process*,
+            which is not the same question. Visual Studio ships MSBuild.exe three times over (Bin\ is 32-bit,
+            plus Bin\amd64 and Bin\arm64), and driving a solution build with the default 32-bit one on an
+            ARM64 box made this resolve to x86 — after which the C++ projects correctly built ARM64 while the
+            managed projects looked for their output under x86\Debug and failed with a copy error naming a
+            directory nobody asked for. OSArchitecture describes the machine; that is what this rule means.
+            Anyone genuinely cross-building still has $(Platform) and the -p:RipcordNativePlatform escape
+            hatch above, both of which take precedence. -->
+    <RipcordNativePlatform Condition="'$(RipcordNativePlatform)' == ''">$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString())</RipcordNativePlatform>
 
     <!-- Normalise casing to the folder names the C++ projects actually produce. NTFS would not care, but
          these strings show up in build logs and error messages, and "Arm64\Debug" next to "ARM64\Debug"
          reads like two different folders. -->
     <RipcordNativePlatform Condition="'$(RipcordNativePlatform.ToLowerInvariant())' == 'arm64'">ARM64</RipcordNativePlatform>
     <RipcordNativePlatform Condition="'$(RipcordNativePlatform.ToLowerInvariant())' == 'x64'">x64</RipcordNativePlatform>
-    <RipcordNativePlatform Condition="'$(RipcordNativePlatform.ToLowerInvariant())' == 'x86'">x86</RipcordNativePlatform>
   </PropertyGroup>
+
+  <!--
+    Guard. Every signal above is a heuristic, and a heuristic that guesses wrong used to fail late and
+    obscurely: the C++ projects would build the right architecture while the managed ones looked for the
+    output under a directory nobody had asked for, reporting a missing-file copy error several projects
+    downstream of the actual mistake. Windows targets here are x64 and ARM64 only, so anything else is a
+    resolution bug - say so immediately, naming the value and the override.
+  -->
+  <Target Name="RipcordValidateNativePlatform" BeforeTargets="PrepareForBuild;Build">
+    <Error Condition="'$(RipcordNativePlatform)' != 'x64' and '$(RipcordNativePlatform)' != 'ARM64'"
+           Text="RipcordNativePlatform resolved to '$(RipcordNativePlatform)', which is not a supported target (x64 or ARM64). Most often this means the wrong MSBuild: Visual Studio ships a 32-bit MSBuild.exe in MSBuild\Current\Bin, alongside arm64\ and amd64\ copies - use the one matching the machine. Override with -p:RipcordNativePlatform=x64 or ARM64 if you are deliberately cross-building." />
+  </Target>
 
   <!--
     The directory a native interop component's build products land in. Both C++ projects set their OutDir
