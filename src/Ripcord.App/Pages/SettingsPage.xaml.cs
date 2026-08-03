@@ -81,6 +81,7 @@ public sealed partial class SettingsPage : Page
             AdaptiveToggle.IsOn = s.AdaptiveQuality;
             ConnectionQualityToggle.IsOn = s.ReportConnectionQuality;
             FullScreenToggle.IsOn = s.FullScreenOnConnect;
+            ConfirmOnDisconnectToggle.IsOn = s.ConfirmOnDisconnect;
             RestOnDisconnectToggle.IsOn = s.RestConsoleOnDisconnect;
             DiagnosticsToggle.IsOn = s.ShowDiagnosticsOverlay;
             LargeUiToggle.IsOn = s.LargeUiScale;
@@ -594,6 +595,7 @@ public sealed partial class SettingsPage : Page
             ExitGesture = (ExitGesture)Math.Clamp(ExitGestureCombo.SelectedIndex, 0, 2),
             UiStickDeadzone = DeadzoneSlider.Value,
             FullScreenOnConnect = FullScreenToggle.IsOn,
+            ConfirmOnDisconnect = ConfirmOnDisconnectToggle.IsOn,
             RestConsoleOnDisconnect = RestOnDisconnectToggle.IsOn,
             ShowDiagnosticsOverlay = DiagnosticsToggle.IsOn,
             LargeUiScale = LargeUiToggle.IsOn,
