@@ -9,18 +9,30 @@ namespace Ripcord.Protocol.Halyard.Tests;
 /// </summary>
 public class WakeCoordinatorTests
 {
-    private static HalyardWakeCoordinator Build(Queue<bool?> probeResults, Action onWake)
-        => new(
-            probeAwake: _ => Task.FromResult(probeResults.Count > 0 ? probeResults.Dequeue() : (bool?)true),
+    // The probe repeats its LAST scripted value once the queue drains, rather than defaulting to a fixed
+    // answer. The timeout test cannot enumerate every poll a fast machine fits into the budget, so a queue
+    // that runs out to "awake" made the test flaky — it would report Woke under load. Repeating the last
+    // value keeps the intended sequence stable however many times the coordinator polls.
+    private static HalyardWakeCoordinator Build(IReadOnlyList<bool?> script, Action onWake)
+    {
+        int i = 0;
+        return new(
+            probeAwake: _ =>
+            {
+                bool? value = script[Math.Min(i, script.Count - 1)];
+                i++;
+                return Task.FromResult(value);
+            },
             sendWake: _ => { onWake(); return Task.CompletedTask; },
             pollInterval: TimeSpan.FromMilliseconds(1),
             wakeBudget: TimeSpan.FromMilliseconds(50));
+    }
 
     [Fact]
     public async Task AlreadyAwake_SendsNoWake()
     {
         int wakes = 0;
-        var c = Build(new Queue<bool?>([true]), () => wakes++);
+        var c = Build(new bool?[] { true }, () => wakes++);
 
         WakeOutcome outcome = await c.EnsureAwakeAsync(progress: null, CancellationToken.None);
 
@@ -33,7 +45,7 @@ public class WakeCoordinatorTests
     {
         // A console we cannot see must not be woken blind — the address may be wrong, and connect will say so.
         int wakes = 0;
-        var c = Build(new Queue<bool?>([null]), () => wakes++);
+        var c = Build(new bool?[] { null }, () => wakes++);
 
         WakeOutcome outcome = await c.EnsureAwakeAsync(progress: null, CancellationToken.None);
 
@@ -46,7 +58,7 @@ public class WakeCoordinatorTests
     {
         // First probe: standby. Then the wake lands and a later poll sees it awake.
         int wakes = 0;
-        var c = Build(new Queue<bool?>([false, false, true]), () => wakes++);
+        var c = Build(new bool?[] { false, false, true }, () => wakes++);
 
         WakeOutcome outcome = await c.EnsureAwakeAsync(progress: null, CancellationToken.None);
 
@@ -58,7 +70,7 @@ public class WakeCoordinatorTests
     public async Task Standby_ThatNeverWakes_TimesOut()
     {
         int wakes = 0;
-        var c = Build(new Queue<bool?>([false, false, false, false, false, false, false, false, false, false]),
+        var c = Build(new bool?[] { false },
                       () => wakes++);
 
         WakeOutcome outcome = await c.EnsureAwakeAsync(progress: null, CancellationToken.None);
@@ -72,7 +84,7 @@ public class WakeCoordinatorTests
     {
         var reports = new List<string>();
         var progress = new Progress<string>(reports.Add);
-        var c = Build(new Queue<bool?>([false, true]), () => { });
+        var c = Build(new bool?[] { false, true }, () => { });
 
         // Progress<T> posts callbacks to the captured context; without a sync context they still run, but on
         // the thread pool, so give them a beat to arrive before asserting.
