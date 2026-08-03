@@ -881,6 +881,23 @@ namespace winrt::Ripcord::Media::Interop::implementation
                 }
                 desc += L" nits";
             }
+            else if (m_seiMasteringDisplay || m_seiContentLightLevel)
+            {
+                // The bitstream has it and the decoder did not pass it on. Our read was the limitation, not
+                // the stream - so this says nothing about whether the content is graded.
+                desc += L" \u00B7 HDR SEI in bitstream, not surfaced by the decoder (";
+                desc += m_seiMasteringDisplay ? L"ST2086" : L"";
+                desc += (m_seiMasteringDisplay && m_seiContentLightLevel) ? L"+" : L"";
+                desc += m_seiContentLightLevel ? L"MaxCLL" : L"";
+                desc += L")";
+            }
+            else if (m_hdrSeiScanAttempts > 0)
+            {
+                // Asked both ways and got nothing either way: the encoder genuinely sends no static
+                // metadata. Common for a real-time game encoder, which has no mastering display to describe,
+                // so this still does not prove the content lacks HDR range.
+                desc += L" \u00B7 no HDR metadata in stream or bitstream";
+            }
             else
             {
                 desc += L" \u00B7 no HDR metadata (may be SDR in a PQ container)";
@@ -1372,6 +1389,86 @@ namespace winrt::Ripcord::Media::Interop::implementation
     ///   HEVC  — 2 bytes, nal_unit_type = (b0 >> 1) & 0x3F -> 32 = VPS, 33 = SPS, 34 = PPS
     /// Types 32-34 cannot occur in H.264 (its field is 5 bits, max 31), so finding one settles it. Frames alone
     /// are ambiguous, so an access unit with no parameter set yields no verdict rather than a guess.
+    // Is HDR static metadata present in the BITSTREAM, as opposed to on the decoder's output media type?
+    //
+    // Media Foundation decoders do not reliably surface ST 2086 / CTA-861.3 metadata as media-type
+    // attributes, so "the output type carries none" cannot distinguish a stream that genuinely has none from
+    // a decoder that simply did not forward it. Reading the SEI ourselves separates those two, and the
+    // demuxer already hands us the decrypted Annex-B before it reaches the decoder.
+    //
+    // HEVC NAL header is 2 bytes; type = (byte0 >> 1) & 0x3F. 39 = PREFIX_SEI, 40 = SUFFIX_SEI. Within an SEI
+    // RBSP the messages are (type, size, payload) triplets, each of type and size being a run of 0xFF bytes
+    // plus a final byte. 137 = mastering_display_colour_volume, 144 = content_light_level_info.
+    static void ScanHevcHdrSei(const uint8_t* data, size_t length, bool& sawMastering, bool& sawCll)
+    {
+        auto nextStartCode = [&](size_t from) -> size_t
+        {
+            for (size_t i = from; i + 2 < length; ++i)
+            {
+                if (data[i] == 0 && data[i + 1] == 0 && data[i + 2] == 1)
+                {
+                    return i;
+                }
+            }
+            return length;
+        };
+
+        for (size_t i = nextStartCode(0); i < length; i = nextStartCode(i + 3))
+        {
+            const size_t nal = i + 3;
+            if (nal + 1 >= length)
+            {
+                break;
+            }
+
+            const uint8_t type = static_cast<uint8_t>((data[nal] >> 1) & 0x3F);
+            if (type != 39 && type != 40)
+            {
+                continue;
+            }
+
+            const size_t end = nextStartCode(nal + 2);
+
+            // Strip emulation-prevention bytes before parsing: a 0x03 inserted inside a payload length would
+            // otherwise desynchronise the whole message walk.
+            std::vector<uint8_t> rbsp;
+            rbsp.reserve(end - (nal + 2));
+            for (size_t k = nal + 2; k < end; ++k)
+            {
+                if (k + 2 < end && data[k] == 0 && data[k + 1] == 0 && data[k + 2] == 3)
+                {
+                    rbsp.push_back(0);
+                    rbsp.push_back(0);
+                    k += 2;
+                }
+                else
+                {
+                    rbsp.push_back(data[k]);
+                }
+            }
+
+            size_t p = 0;
+            while (p < rbsp.size())
+            {
+                uint32_t payloadType = 0;
+                while (p < rbsp.size() && rbsp[p] == 0xFF) { payloadType += 255; ++p; }
+                if (p >= rbsp.size()) { break; }
+                payloadType += rbsp[p++];
+
+                uint32_t payloadSize = 0;
+                while (p < rbsp.size() && rbsp[p] == 0xFF) { payloadSize += 255; ++p; }
+                if (p >= rbsp.size()) { break; }
+                payloadSize += rbsp[p++];
+
+                if (payloadType == 137) { sawMastering = true; }
+                if (payloadType == 144) { sawCll = true; }
+
+                if (payloadSize > rbsp.size() - p) { break; }
+                p += payloadSize;
+            }
+        }
+    }
+
     static bool DetectAnnexBCodec(
         const uint8_t* data, size_t length, VideoCodecKind& detected, uint8_t& firstNal0, uint8_t& firstNal1)
     {
@@ -1459,6 +1556,16 @@ namespace winrt::Ripcord::Media::Interop::implementation
         // NOT only on the first: an access unit carries no parameter sets unless it is a keyframe, so the first
         // one to arrive is frequently unclassifiable. Getting one attempt meant a single inconclusive frame
         // locked in whatever codec was configured.
+        // Bounded: SEI accompanies IRAP frames, so a few hundred access units either finds it or establishes
+        // that the encoder does not send it. Unbounded scanning would walk every byte of every frame forever.
+        if (m_codec == VideoCodecKind::Hevc
+            && m_hdrSeiScanAttempts < 300
+            && !(m_seiMasteringDisplay && m_seiContentLightLevel))
+        {
+            ++m_hdrSeiScanAttempts;
+            ScanHevcHdrSei(annexB.data(), length, m_seiMasteringDisplay, m_seiContentLightLevel);
+        }
+
         if (!m_codecDetected)
         {
             ++m_detectAttempts;
