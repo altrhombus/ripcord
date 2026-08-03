@@ -87,11 +87,19 @@ public sealed class HalyardSenkusha : IAsyncDisposable
     /// regardless (matching the vendor client, which tolerates senkusha failures).
     ///
     /// <para>
-    /// RTT comes from the two request/reply round trips this bring-up already performs, so it costs no extra wire
-    /// traffic and cannot disturb a handshake the console is known to accept. That matters more than it sounds: the
-    /// full vendor probe suite (ECHO to enable echoing, then MTU and BANDWIDTH commands on channel 0x08) would have
-    /// to be written blind against a working handshake, and getting it wrong breaks the one thing that must succeed
-    /// for the stream to start at all. Bandwidth measurement is therefore still outstanding — see the class remarks.
+    /// A handshake-derived RTT is the floor this returns when the echo probe declines to produce one: it costs no
+    /// extra wire traffic and cannot disturb a handshake the console is known to accept.
+    ///
+    /// <para><b>Superseded in part.</b> This paragraph used to say the ECHO and MTU probes "would have to be written
+    /// blind" and were therefore outstanding. Both are implemented below (<see cref="RunEchoProbeAsync"/>,
+    /// <see cref="RunMtuProbeAsync"/>) and byte-verified against two of our own captures. Only the <b>BANDWIDTH</b>
+    /// leg remains outstanding, and for a different reason — it has never been observed on any capture we hold, so
+    /// there is nothing to write it against.</para>
+    ///
+    /// <para>Note the consequence for callers, which is easy to misread: because the handshake RTT is used as a
+    /// fallback, a non-null round-trip time does <b>not</b> mean the echo probe succeeded. Distinguishing the two
+    /// needs a separate signal; <see cref="SenkushaResult.ConfirmedMtu"/> has no such ambiguity, being null exactly
+    /// when the MTU probe did not confirm.</para>
     /// </para>
     /// </summary>
     /// <param name="candidateMtu">
@@ -360,24 +368,44 @@ public sealed class HalyardSenkusha : IAsyncDisposable
         }
 
         await SendProbeAsync(ClientMtu(id: 1, mtu, state: true), cancellationToken).ConfigureAwait(false);
-        await ReceiveProbeReplyAsync(
-            Avstream.Bandwidth.BandwidthProbePayload.Types.Command.ClientMtuCommand, cancellationToken)
-            .ConfigureAwait(false);
 
-        // Sequence 0: this is a fresh single-packet test, not a continuation of the ping run.
-        long micros = Stopwatch.GetTimestamp() / (Stopwatch.Frequency / 1_000_000);
-        // Padded with the vendor's fill byte, not zeros: a zero-filled payload is compressible, and a link that
-        // compresses it would let this test pass at a size the path cannot really carry.
-        byte[] probe = SenkushaEchoProbe.Build(
-            0, micros, payloadLength, SenkushaEchoProbe.MtuPaddingByte);
+        // Past this point the console IS in client-MTU mode and must be taken back out of it on every exit
+        // path — hence the finally. This used to be a plain sequential send after the echo wait, with a
+        // comment claiming it closed "either way"; it did not. `RunMtuProbeAsync` wraps this call in a
+        // catch-all, so a timeout anywhere below unwound past the close and was then silently swallowed,
+        // leaving the console in a state we have no way to clear.
+        try
+        {
+            await ReceiveProbeReplyAsync(
+                Avstream.Bandwidth.BandwidthProbePayload.Types.Command.ClientMtuCommand, cancellationToken)
+                .ConfigureAwait(false);
 
-        await _socket.SendAsync(probe, _console, cancellationToken).ConfigureAwait(false);
+            // Sequence 0: this is a fresh single-packet test, not a continuation of the ping run.
+            long micros = Stopwatch.GetTimestamp() / (Stopwatch.Frequency / 1_000_000);
+            // Padded with the vendor's fill byte, not zeros: a zero-filled payload is compressible, and a link that
+            // compresses it would let this test pass at a size the path cannot really carry.
+            byte[] probe = SenkushaEchoProbe.Build(
+                0, micros, payloadLength, SenkushaEchoProbe.MtuPaddingByte);
 
-        bool echoed = await WaitForEchoAsync(0, cancellationToken).ConfigureAwait(false);
+            await _socket.SendAsync(probe, _console, cancellationToken).ConfigureAwait(false);
 
-        // Close the test either way: leaving the console in client-MTU mode is a state we have no way to clear later.
-        await SendProbeAsync(ClientMtu(id: 2, mtu, state: false), cancellationToken).ConfigureAwait(false);
-        return echoed;
+            return await WaitForEchoAsync(0, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            // Deliberately NOT the caller's token. Timeout is the main reason this path unwinds, so by the
+            // time we reach here that token is usually already cancelled — awaiting on it would skip the one
+            // send whose entire purpose is to clear the state. An independent short budget instead.
+            using var closeCts = new CancellationTokenSource(TimeSpan.FromMilliseconds(500));
+            try
+            {
+                await SendProbeAsync(ClientMtu(id: 2, mtu, state: false), closeCts.Token).ConfigureAwait(false);
+            }
+            catch (Exception)
+            {
+                // Best effort — if even this cannot be delivered there is nothing further we can do from here.
+            }
+        }
     }
 
     private static Avstream.Bandwidth.BandwidthProbePayload ClientMtu(uint id, int mtu, bool state)
