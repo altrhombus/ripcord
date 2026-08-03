@@ -1,5 +1,6 @@
 using System.Reflection;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Ripcord.Protocol.Halyard.Common.Crypto.V1;
 
 namespace Ripcord.Protocol.Halyard.Session;
@@ -33,7 +34,7 @@ namespace Ripcord.Protocol.Halyard.Session;
 /// than a crash. No code change is needed to produce that build.
 /// </para>
 /// </summary>
-public static class HalyardInteropConstants
+public static partial class HalyardInteropConstants
 {
     private const string ResourceName = "Ripcord.Protocol.Halyard.Data.halyard-v1-constants.json";
 
@@ -83,8 +84,7 @@ public static class HalyardInteropConstants
             if (s is null)
                 return null; // built with -p:BundleInteropConstants=false
 
-            return JsonSerializer.Deserialize<Bundle>(s,
-                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            return JsonSerializer.Deserialize(s, BundleContext.Default.Bundle);
         }
         catch (Exception ex) when (ex is JsonException or FormatException or ArgumentException)
         {
@@ -93,6 +93,17 @@ public static class HalyardInteropConstants
     }
 
     private static byte[] Hex(string value) => Convert.FromHexString(value);
+
+    // Source-generated rather than reflection-based, and this is the one that matters most. Under
+    // PublishTrimmed the reflection serializer throws NotSupportedException; this loader would then return
+    // null, HalyardControlSecrets would be absent, IsControlEstablished would be false, and the launchSpec
+    // would go out UNENCRYPTED. A trimmed build failing open on encryption is not an acceptable degradation,
+    // so the bundle read must not depend on reflection at all.
+    //
+    // Nested so it can see the private DTOs below without widening them to satisfy the generator.
+    [JsonSourceGenerationOptions(PropertyNameCaseInsensitive = true)]
+    [JsonSerializable(typeof(Bundle))]
+    private partial class BundleContext : JsonSerializerContext;
 
     private sealed class Bundle
     {

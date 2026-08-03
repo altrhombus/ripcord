@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Ripcord.Protocol.Halyard.Common.Crypto;
 using Ripcord.Protocol.Halyard.Common.Crypto.V1;
 
@@ -19,7 +20,7 @@ namespace Ripcord_App.Services;
 /// with a clear message rather than crashing. <paramref name="source"/> always reports which path won.
 /// </para>
 /// </summary>
-internal static class AppRegistrationCipher
+internal static partial class AppRegistrationCipher
 {
     public static IHalyardRegistrationCipher Load(out string source)
     {
@@ -42,8 +43,7 @@ internal static class AppRegistrationCipher
 
         try
         {
-            var fx = JsonSerializer.Deserialize<Fixture>(File.ReadAllText(path),
-                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            var fx = JsonSerializer.Deserialize(File.ReadAllText(path), FixtureContext.Default.Fixture);
             if (fx?.RegistrationTable is null || fx.ContextKey is null)
             {
                 source = $"fixture malformed ({path})";
@@ -88,6 +88,10 @@ internal static class AppRegistrationCipher
         }
         return null;
     }
+
+    [JsonSourceGenerationOptions(PropertyNameCaseInsensitive = true)]
+    [JsonSerializable(typeof(Fixture))]
+    private partial class FixtureContext : JsonSerializerContext;
 
     private sealed class Fixture
     {
