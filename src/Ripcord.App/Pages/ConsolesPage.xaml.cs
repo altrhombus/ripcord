@@ -1,8 +1,12 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
+using System.Net;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Ripcord.Protocol.Halyard.Common.Discovery;
 using Ripcord_App.Dialogs;
 using Ripcord_App.Services;
 
@@ -12,20 +16,79 @@ public sealed partial class ConsolesPage : Page
 {
     private readonly PairedConsoleStore _store = new();
 
+    // Cancels the in-flight status probes when the list is rebuilt or the page goes away, so a probe cannot
+    // resolve onto a row that has since been replaced.
+    private CancellationTokenSource? _probeCts;
+
     public ConsolesPage()
     {
         InitializeComponent();
         Loaded += (_, _) => Refresh();
+        Unloaded += (_, _) => CancelProbes();
     }
 
     private void Refresh()
     {
-        List<PairedConsole> consoles = _store.Load();
+        CancelProbes();
+
+        List<ConsoleListItem> consoles = _store.Load().Select(c => new ConsoleListItem(c)).ToList();
         ConsoleList.ItemsSource = consoles;
 
         bool any = consoles.Count > 0;
         ConsoleList.Visibility = any ? Visibility.Visible : Visibility.Collapsed;
         EmptyState.Visibility = any ? Visibility.Collapsed : Visibility.Visible;
+
+        if (any)
+        {
+            _probeCts = new CancellationTokenSource();
+            _ = ProbeStatusesAsync(consoles, _probeCts.Token);
+        }
+    }
+
+    /// <summary>
+    /// Probe each console's reachability once and update its row. A snapshot on open, not a poll: this runs
+    /// on Refresh (page load, add, remove) and nowhere else. Probes run concurrently so one offline console's
+    /// timeout does not delay the others, and each row shows "Checking…" until its own probe resolves.
+    /// </summary>
+    private static async Task ProbeStatusesAsync(IReadOnlyList<ConsoleListItem> consoles, CancellationToken cancellationToken)
+    {
+        var search = new HalyardSearchClient();
+
+        await Task.WhenAll(consoles.Select(async item =>
+        {
+            // A stored host that will not parse is not something to probe — show it as offline rather than
+            // throw. A blank/DNS host is not expected here (pairing stores an IP), but be defensive.
+            if (!IPAddress.TryParse(item.Host, out IPAddress? address))
+            {
+                item.Status = ConsoleReachability.Offline;
+                return;
+            }
+
+            try
+            {
+                var result = await search.ProbeAsync(address, TimeSpan.FromSeconds(1), cancellationToken).ConfigureAwait(true);
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    return;
+                }
+
+                // null = no reply (offline); otherwise 200 (online) vs 620 (resting).
+                item.Status = result is null
+                    ? ConsoleReachability.Offline
+                    : result.IsAwake ? ConsoleReachability.Online : ConsoleReachability.Resting;
+            }
+            catch (OperationCanceledException)
+            {
+                // page left / list rebuilt — the row is gone, nothing to update
+            }
+        }));
+    }
+
+    private void CancelProbes()
+    {
+        _probeCts?.Cancel();
+        _probeCts?.Dispose();
+        _probeCts = null;
     }
 
     private async void OnAddConsoleClick(object sender, RoutedEventArgs e)
