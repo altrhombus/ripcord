@@ -179,7 +179,6 @@ public sealed partial class SettingsPage : Page
         bool hdrSelectable = hevcAvailable && CodecCombo.SelectedIndex == 1;
         HdrToggle.IsOn = s.RequestHdr && hdrSelectable;
         HdrToggle.IsEnabled = hdrSelectable;
-        HdrHelpText.Text = HdrHelpFor(hdrSelectable);
         RebuildHdrChecklist(CodecCombo.SelectedIndex == 1, hevcAvailable);
 
         CodecHelpText.Text = hevcAvailable
@@ -385,7 +384,6 @@ public sealed partial class SettingsPage : Page
         }
 
         HdrToggle.IsEnabled = hdrSelectable;
-        HdrHelpText.Text = HdrHelpFor(hdrSelectable);
 
         // Rebuilt here too, not only on load: the codec row is one of the checks, so switching to H.264 has
         // to flip it immediately. A checklist that only refreshes on page open would show a stale tick against
@@ -395,10 +393,6 @@ public sealed partial class SettingsPage : Page
         Save();
     }
 
-    /// <summary>Shared so the initial population and the codec-change path cannot drift apart.</summary>
-    private static string HdrHelpFor(bool selectable) => selectable
-        ? "Tone-mapped to SDR if any of the above is missing, which still looks correct, just flatter."
-        : "HDR requires HEVC — select it above first.";
 
     /// <summary>
     /// Rebuild the HDR readiness checklist. Four prerequisites, of which this app controls one, so a user
@@ -426,22 +420,32 @@ public sealed partial class SettingsPage : Page
             displayHdr = false;
         }
 
+        // Labels name the REQUIREMENT and stay constant; the glyph carries whether it is met. Phrasing them as
+        // findings instead ("Display is not in HDR mode") meant the text and the icon restated each other, and
+        // read oddly against a tick — a row cannot both assert a state and be marked true or false.
         AddHdrCheck(
             hevcAvailable && hevcSelected ? HdrCheckState.Met : HdrCheckState.Unmet,
-            hevcAvailable
-                ? "HEVC selected above"
-                : "HEVC decoder not available on this PC",
-            hevcAvailable && !hevcSelected ? "Choose HEVC in the codec picker." : null);
+            "HEVC codec",
+            !hevcAvailable
+                ? "No HEVC decoder on this PC."
+                : hevcSelected ? null : "Choose HEVC in the codec picker above.");
 
         AddHdrCheck(
             displayHdr ? HdrCheckState.Met : HdrCheckState.Unmet,
-            displayHdr ? "Display is in HDR mode" : "Display is not in HDR mode",
+            "Display in HDR mode",
             displayHdr ? null : "Turn on Use HDR in Windows display settings.");
 
         AddHdrCheck(
             HdrCheckState.Unknown,
             "Console sends HDR",
             "Checked once you connect — the diagnostics overlay (F3) reports what arrived.");
+
+        // Say so when the machine is ready. Three ticks and a sentence about what happens if something is
+        // missing leaves the reader to work out that nothing is; an affirmative line is both shorter and the
+        // answer they came for.
+        HdrHelpText.Text = hevcAvailable && hevcSelected && displayHdr
+            ? "This PC is ready for HDR. Whether a given game streams in HDR is up to the console."
+            : "Tone-mapped to SDR if any of the above is missing, which still looks correct, just flatter.";
     }
 
     private enum HdrCheckState { Met, Unmet, Unknown }
