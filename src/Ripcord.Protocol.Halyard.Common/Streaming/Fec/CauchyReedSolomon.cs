@@ -17,10 +17,16 @@ namespace Ripcord.Protocol.Halyard.Common.Streaming.Fec;
 /// Vandermonde is ruled out: a power sequence would need index products through the multiply table, and the
 /// construction never touches it. See spec §6.2 for the derivation and the RVAs.</para>
 ///
-/// <para>Still provisional nearby, so don't read this as the whole area being settled: the GF primitive
-/// polynomial (<see cref="GaloisField256"/> assumes 0x11d — the console's table is runtime-generated and
-/// resisted static search, so it needs a dynamic capture) and the per-unit stride in the demuxer. If FEC
-/// recovery misbehaves, those are the suspects now, not the matrix form.</para>
+/// <para>The field underneath is settled too, as of 2026-08-02: the GF primitive polynomial is
+/// <b>[V] confirmed 0x11d</b> from a runtime dump of the vendor client's own inverse table (see
+/// <see cref="GaloisField256"/>). Matrix form and field were only ever safe together — a right matrix over
+/// the wrong field still reconstructs garbage — so this is the point at which FEC recovery can be trusted to
+/// agree with the console. With the coded unit length settled the day before, nothing in this path is
+/// assumed any more: matrix form [C], coded length [C][W], field [V].</para>
+///
+/// <para>Note the coding matrix never asks for <c>Inverse(0)</c>: <c>i &lt; m &lt;= m + j</c> for all valid
+/// <c>i, j</c>, so <c>i XOR (m + j)</c> is never zero. That is exactly why a Cauchy matrix is well-defined
+/// here, and it is why the divide-by-zero 0xff sentinel in the console's table is unreachable.</para>
 /// </summary>
 internal static class CauchyReedSolomon
 {
