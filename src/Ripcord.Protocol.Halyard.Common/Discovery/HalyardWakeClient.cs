@@ -30,6 +30,13 @@ public sealed class HalyardWakeClient
     public const int DiscoveryPort = HalyardSearchClient.DiscoveryPort;
 
     /// <summary>
+    /// The source port the vendor sends SRCH and WAKEUP from (cap49). A sleeping console may only honour a
+    /// wake that originates here, so we match it. Best-effort: if the port is already bound, we fall back to
+    /// an ephemeral one rather than fail the wake.
+    /// </summary>
+    public const int SourcePort = 9303;
+
+    /// <summary>
     /// Build the exact WAKEUP payload for a console. Kept public and pure so it can be asserted against the
     /// captured bytes in a test without opening a socket.
     ///
@@ -63,7 +70,21 @@ public sealed class HalyardWakeClient
         byte[] payload = BuildWakePayload(record.WakeCredential());
         var endpoint = new IPEndPoint(consoleAddress, DiscoveryPort);
 
-        using var udp = new UdpChannel(localPort: 0, enableBroadcast: false);
+        // Bind the vendor's source port when we can; fall back to ephemeral if it is taken, since a wake from
+        // any port is better than none.
+        using UdpChannel udp = OpenWakeSocket();
         await udp.SendAsync(payload, endpoint, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static UdpChannel OpenWakeSocket()
+    {
+        try
+        {
+            return new UdpChannel(SourcePort, enableBroadcast: false);
+        }
+        catch (System.Net.Sockets.SocketException)
+        {
+            return new UdpChannel(localPort: 0, enableBroadcast: false);
+        }
     }
 }

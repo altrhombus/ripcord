@@ -29,17 +29,26 @@ public sealed class HalyardSearchClient
         $"SRCH * HTTP/1.1\r\ndevice-discovery-protocol-version:{ProtocolVersion}\r\n\r\n");
 
     /// <summary>
-    /// Probe one known console by address and return its reply, or null if it does not answer within
-    /// <paramref name="window"/>. Sent as a unicast SRCH to <paramref name="console"/> rather than a
-    /// broadcast: the caller already knows the address (a paired console), wants only that console's state,
-    /// and must be able to tell "in standby" (a reply with <see cref="HalyardSearchResult.IsAwake"/> false)
-    /// apart from "not answering" (null) — a distinction the wake flow depends on and a broadcast that
-    /// happened to hear other consoles would blur.
+    /// Probe for one known console by address and return its reply, or null if it does not answer within
+    /// <paramref name="window"/>. Distinguishes "in standby" (a reply with
+    /// <see cref="HalyardSearchResult.IsAwake"/> false) from "not answering" (null), which the wake flow
+    /// depends on.
+    ///
+    /// <para>The SRCH is <b>broadcast</b>, then filtered to <paramref name="console"/>, because that is what
+    /// the vendor client does and — the reason this was changed — a <b>resting</b> console answered the
+    /// broadcast SRCH in cap49 but an earlier unicast version of this method got no reply from a sleeping
+    /// console, so the wake was never even attempted. Filtering by address keeps the single-console semantics
+    /// on a LAN with several consoles.</para>
+    ///
+    /// <para><paramref name="localPort"/> sets the UDP source port. The wake path passes 9303 to match the
+    /// vendor exactly (a sleeping console may be particular about it); the always-on status probe leaves it 0
+    /// (ephemeral) so several rows can probe at once without fighting over one port.</para>
     /// </summary>
-    public async Task<HalyardSearchResult?> ProbeAsync(IPAddress console, TimeSpan window, CancellationToken cancellationToken)
+    public async Task<HalyardSearchResult?> ProbeAsync(
+        IPAddress console, TimeSpan window, CancellationToken cancellationToken, int localPort = 0)
     {
-        using var udp = new UdpChannel(localPort: 0, enableBroadcast: false);
-        await udp.SendAsync(SearchProbe, new IPEndPoint(console, DiscoveryPort), cancellationToken).ConfigureAwait(false);
+        using var udp = OpenProbeSocket(localPort);
+        await udp.SendBroadcastAsync(SearchProbe, DiscoveryPort, cancellationToken).ConfigureAwait(false);
 
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         cts.CancelAfter(window);
@@ -49,8 +58,8 @@ public sealed class HalyardSearchClient
             while (!cts.IsCancellationRequested)
             {
                 var received = await udp.ReceiveAsync(cts.Token).ConfigureAwait(false);
-                // Ignore anything not from the console we asked about — on a busy LAN a stray reply to some
-                // other probe could otherwise be mistaken for ours.
+                // Only the console we asked about — a broadcast hears every console's reply, and on a busy LAN
+                // another one's could otherwise be mistaken for ours.
                 if (received.RemoteEndPoint.Address.Equals(console)
                     && TryParse(received.Buffer, received.RemoteEndPoint.Address, out HalyardSearchResult? result))
                 {
@@ -64,6 +73,28 @@ public sealed class HalyardSearchClient
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// A broadcast-capable socket on <paramref name="localPort"/>, falling back to an ephemeral port if that
+    /// one is already taken — binding a fixed source port is best-effort fidelity, not a hard requirement, and
+    /// must never make a probe throw.
+    /// </summary>
+    private static UdpChannel OpenProbeSocket(int localPort)
+    {
+        if (localPort == 0)
+        {
+            return new UdpChannel(localPort: 0, enableBroadcast: true);
+        }
+
+        try
+        {
+            return new UdpChannel(localPort, enableBroadcast: true);
+        }
+        catch (System.Net.Sockets.SocketException)
+        {
+            return new UdpChannel(localPort: 0, enableBroadcast: true);
+        }
     }
 
     /// <summary>Broadcast a SRCH probe and collect console replies for <paramref name="window"/>.</summary>
