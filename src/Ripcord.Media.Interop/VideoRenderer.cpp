@@ -279,6 +279,8 @@ namespace winrt::Ripcord::Media::Interop::implementation
             }
         }
 
+        ProbeDisplayHdr(factory.Get(), adapter.Get());
+
         D3D12_COMMAND_QUEUE_DESC queueDesc = {};
         queueDesc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
         ThrowIfFailed(m_device->CreateCommandQueue(&queueDesc, IID_PPV_ARGS(&m_commandQueue)));
@@ -409,6 +411,67 @@ namespace winrt::Ripcord::Media::Interop::implementation
         srvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
         srvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
         ThrowIfFailed(m_device->CreateDescriptorHeap(&srvHeapDesc, IID_PPV_ARGS(&m_srvHeap)));
+    }
+
+    // Does the display we present to accept HDR10? Two things have to be true and they are easy to conflate:
+    // the stream must carry HDR (m_hdrTransfer, read from the decoder) and the panel must accept it (here).
+    //
+    // DXGI reports G2084 only when Windows' "Use HDR" is actually ON for that display, so this doubles as a
+    // check of the OS setting - a panel with HDR hardware but the toggle off correctly reports SDR, which is
+    // what we want, since presenting HDR10 to a display in SDR mode looks worse than tone-mapping.
+    void VideoRenderer::ProbeDisplayHdr(IDXGIFactory1* factory, IDXGIAdapter1* renderAdapter)
+    {
+        m_displayHdrCapable = false;
+        m_displayMaxNits = 0.0f;
+
+        auto scan = [this](IDXGIAdapter1* candidate) -> bool
+        {
+            if (!candidate)
+            {
+                return false;
+            }
+
+            ComPtr<IDXGIOutput> output;
+            for (UINT i = 0; SUCCEEDED(candidate->EnumOutputs(i, &output)); i++)
+            {
+                ComPtr<IDXGIOutput6> output6;
+                if (SUCCEEDED(output.As(&output6)) && output6)
+                {
+                    DXGI_OUTPUT_DESC1 desc{};
+                    if (SUCCEEDED(output6->GetDesc1(&desc))
+                        && desc.ColorSpace == DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020)
+                    {
+                        m_displayHdrCapable = true;
+                        m_displayMaxNits = desc.MaxLuminance;
+                        return true;
+                    }
+                }
+                output.Reset();
+            }
+            return false;
+        };
+
+        if (scan(renderAdapter))
+        {
+            return;
+        }
+
+        // The render adapter having no HDR output is not the same as there being none. On a hybrid laptop the
+        // discrete GPU we chose to decode on frequently drives no display at all - the panel hangs off the
+        // integrated one - so EnumOutputs returns nothing and a single-adapter probe would conclude "SDR" on a
+        // machine with an HDR screen. Widen to every adapter before believing that.
+        if (factory)
+        {
+            ComPtr<IDXGIAdapter1> other;
+            for (UINT i = 0; SUCCEEDED(factory->EnumAdapters1(i, &other)); i++)
+            {
+                if (scan(other.Get()))
+                {
+                    return;
+                }
+                other.Reset();
+            }
+        }
     }
 
     void VideoRenderer::CreateRenderTargets()
@@ -789,6 +852,24 @@ namespace winrt::Ripcord::Media::Interop::implementation
         if (m_toneMappedByDriver)
         {
             desc += L" \u00B7 tone-mapped to SDR";
+        }
+
+        // Report the display's side of it too. Tone-mapping an HDR stream is the right call on an SDR panel
+        // and a waste on an HDR one, so both halves need to be visible to tell those cases apart.
+        if (m_hdrTransfer)
+        {
+            if (m_displayHdrCapable)
+            {
+                desc += L" \u00B7 display HDR10";
+                if (m_displayMaxNits > 0.0f)
+                {
+                    desc += L" (" + std::to_wstring(static_cast<int>(m_displayMaxNits)) + L" nits)";
+                }
+            }
+            else
+            {
+                desc += L" \u00B7 display SDR";
+            }
         }
         if (m_tenBitUnrenderable)
         {
