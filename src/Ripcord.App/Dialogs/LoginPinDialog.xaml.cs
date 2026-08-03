@@ -12,9 +12,13 @@ public sealed partial class LoginPinDialog : ContentDialog
     /// <summary>Below this the Sign in button stays disabled — a passcode is at least four digits.</summary>
     private const int MinPasscodeLength = 4;
 
-    public LoginPinDialog()
+    public LoginPinDialog(bool isRetry = false)
     {
         InitializeComponent();
+        if (isRetry)
+        {
+            RetryNotice.Visibility = Microsoft.UI.Xaml.Visibility.Visible;
+        }
     }
 
     /// <summary>The entered passcode, valid only when the dialog returned <c>Primary</c>.</summary>

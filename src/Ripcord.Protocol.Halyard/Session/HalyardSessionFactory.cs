@@ -51,7 +51,7 @@ public sealed class HalyardSessionFactory
     /// <summary>Create a session from fully-specified connection parameters.</summary>
     public IStreamingSession Create(
         HalyardConnectionParameters parameters,
-        Func<CancellationToken, Task<string?>>? loginPinProvider = null)
+        Func<bool, CancellationToken, Task<string?>>? loginPinProvider = null)
     {
         ArgumentNullException.ThrowIfNull(parameters);
         IHalyardSessionCrypto crypto = _controlSecrets is null
@@ -69,7 +69,7 @@ public sealed class HalyardSessionFactory
         ReadOnlyMemory<byte> deviceId = default,
         int controlPort = DefaultControlPort,
         int streamPort = DefaultStreamPort,
-        Func<CancellationToken, Task<string?>>? loginPinProvider = null)
+        Func<bool, CancellationToken, Task<string?>>? loginPinProvider = null)
     {
         ArgumentException.ThrowIfNullOrEmpty(consoleId);
         ArgumentNullException.ThrowIfNull(address);
