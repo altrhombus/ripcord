@@ -49,23 +49,27 @@ public sealed class HalyardSessionFactory
     }
 
     /// <summary>Create a session from fully-specified connection parameters.</summary>
-    public IStreamingSession Create(HalyardConnectionParameters parameters)
+    public IStreamingSession Create(
+        HalyardConnectionParameters parameters,
+        Func<CancellationToken, Task<string?>>? loginPinProvider = null)
     {
         ArgumentNullException.ThrowIfNull(parameters);
         IHalyardSessionCrypto crypto = _controlSecrets is null
             ? new PassthroughHalyardSessionCrypto()
             : new HalyardV1SessionCrypto(_controlSecrets);
-        return new HalyardStreamingSession(parameters, new HalyardTcpControlChannel(), crypto, _credentials);
+        return new HalyardStreamingSession(parameters, new HalyardTcpControlChannel(), crypto, _credentials, loginPinProvider);
     }
 
     /// <summary>Convenience overload: build the parameters for a console reached at <paramref name="address"/>,
-    /// using the standard control/stream ports. <paramref name="consoleId"/> keys the credential store.</summary>
+    /// using the standard control/stream ports. <paramref name="consoleId"/> keys the credential store.
+    /// <paramref name="loginPinProvider"/> supplies the console login passcode if the console is locked.</summary>
     public IStreamingSession Create(
         string consoleId,
         IPAddress address,
         ReadOnlyMemory<byte> deviceId = default,
         int controlPort = DefaultControlPort,
-        int streamPort = DefaultStreamPort)
+        int streamPort = DefaultStreamPort,
+        Func<CancellationToken, Task<string?>>? loginPinProvider = null)
     {
         ArgumentException.ThrowIfNullOrEmpty(consoleId);
         ArgumentNullException.ThrowIfNull(address);
@@ -74,6 +78,6 @@ public sealed class HalyardSessionFactory
             new IPEndPoint(address, controlPort),
             new IPEndPoint(address, streamPort),
             deviceId);
-        return Create(parameters);
+        return Create(parameters, loginPinProvider);
     }
 }

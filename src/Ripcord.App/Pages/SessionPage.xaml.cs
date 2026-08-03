@@ -27,6 +27,7 @@ using Ripcord.Core.Security;
 using Ripcord.Protocol.Halyard.Common.Crypto;
 using Ripcord.Protocol.Halyard.Common.Discovery;
 using Ripcord.Protocol.Halyard.Session;
+using Ripcord_App.Dialogs;
 using Ripcord_App.Services;
 using WinRT;
 
@@ -285,7 +286,7 @@ public sealed partial class SessionPage : Page
 
         // The controller owns everything from here: handshake, media/input routing, stall detection, reconnect.
         _controller = new SessionController(
-            () => factory.Create(_console!.Id, address),
+            () => factory.Create(_console!.Id, address, loginPinProvider: RequestLoginPinAsync),
             _pipeline!,
             _inputSource,
             _powerMonitor);
@@ -345,6 +346,40 @@ public sealed partial class SessionPage : Page
         }
 
         return true;
+    }
+
+    /// <summary>
+    /// The session's login-passcode provider: show the PIN dialog on the UI thread and return the digits, or
+    /// null if the user cancelled. Called from the session's connect thread, so it marshals onto the
+    /// dispatcher; the session's own cancellation closes the dialog if the user leaves mid-prompt.
+    /// </summary>
+    private Task<string?> RequestLoginPinAsync(CancellationToken cancellationToken)
+    {
+        var tcs = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        bool queued = _dispatcherQueue.TryEnqueue(async () =>
+        {
+            try
+            {
+                var dialog = new LoginPinDialog { XamlRoot = XamlRoot };
+                using CancellationTokenRegistration reg = cancellationToken.Register(() => dialog.Hide());
+                ContentDialogResult result = await dialog.ShowAsync();
+                tcs.TrySetResult(result == ContentDialogResult.Primary ? dialog.Pin : null);
+            }
+            catch (Exception)
+            {
+                // A dialog failure (e.g. no XamlRoot during teardown) must not hang the connect — treat as
+                // cancelled so the session fails with its own clear "no passcode entered" message.
+                tcs.TrySetResult(null);
+            }
+        });
+
+        if (!queued)
+        {
+            tcs.TrySetResult(null);
+        }
+
+        return tcs.Task;
     }
 
     /// <summary>Stand up the D3D12 decode pipeline and bind its swap chain to the panel.</summary>

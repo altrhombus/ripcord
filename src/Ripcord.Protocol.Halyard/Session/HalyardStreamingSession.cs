@@ -65,16 +65,29 @@ public sealed class HalyardStreamingSession : IStreamingSession
     private SessionConfig? _config;
     private Task? _ctrlKeepAlive;
 
+    // Supplies the console login passcode when the console reports its user is locked. Null for headless
+    // callers (they simply cannot sign a locked console in). Set at construction.
+    private readonly Func<CancellationToken, Task<string?>>? _loginPinProvider;
+
+    // Set by the ctrl reader when the console pushes its sign-in prompt / session-ready frames, awaited by the
+    // sign-in gate. TrySetResult because a message may arrive more than once (retries) and the first wins.
+    private readonly TaskCompletionSource _loginPromptReceived =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly TaskCompletionSource _sessionReady =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
+
     public HalyardStreamingSession(
         HalyardConnectionParameters parameters,
         IHalyardControlChannel control,
         IHalyardSessionCrypto crypto,
-        IConsoleCredentialStore credentials)
+        IConsoleCredentialStore credentials,
+        Func<CancellationToken, Task<string?>>? loginPinProvider = null)
     {
         _parameters = parameters;
         _control = control;
         _crypto = crypto;
         _credentials = credentials;
+        _loginPinProvider = loginPinProvider;
         _demuxer = new HalyardStreamDemuxer(crypto);
         _demuxer.VideoFrameReady += frame => _video.OnNext(frame);
         _demuxer.AudioFrameReady += frame => _audio.OnNext(frame);
@@ -231,6 +244,16 @@ public sealed class HalyardStreamingSession : IStreamingSession
             // the console drops us ~15-30s in, right after A/V starts. Run the keep-alive for the session.
             _ctrlKeepAlive = Task.Run(() => RunCtrlKeepAliveAsync(_sessionCts.Token));
 
+            // Sign-in gate. A locked console pushes a login prompt on the channel just opened and then
+            // silently drops every Takion INIT until the passcode is submitted — so this must complete before
+            // senkusha/Takion, not race them. An unlocked console sends no prompt and this returns at once.
+            _connectStep = "sign-in";
+            SessionHandshakeResult? signIn = await EnsureSignedInAsync(cancellationToken).ConfigureAwait(false);
+            if (signIn is not null)
+            {
+                return signIn;
+            }
+
             // Senkusha bring-up on UDP 9297 — the console requires it between /sess/ctrl and the stream, or
             // it never answers the stream's SESSION exchange. Non-fatal (the vendor tolerates failures here).
             // Past the control plane: back to the caller's token so these phases keep their own budgets.
@@ -330,6 +353,77 @@ public sealed class HalyardStreamingSession : IStreamingSession
     /// now — the heartbeat reply is the keep-alive. Empty-payload messages need no rpcrypt, so this stays
     /// simple. A closed connection or cancellation ends the loop quietly.
     /// </summary>
+    /// <summary>How long to watch for a login prompt before assuming the console is unlocked. In cap50 the
+    /// prompt arrived ~60 ms after /sess/ctrl; a second is generous and bounds the added latency on the common
+    /// (unlocked) path.</summary>
+    private static readonly TimeSpan LoginPromptWindow = TimeSpan.FromSeconds(1);
+
+    /// <summary>How long to wait for the console to confirm the session after a passcode is submitted, before
+    /// giving up (most likely a wrong passcode).</summary>
+    private static readonly TimeSpan SignInCompletionTimeout = TimeSpan.FromSeconds(20);
+
+    /// <summary>
+    /// If the console's user is locked, complete the login before the stream is attempted; a locked console
+    /// silently drops every Takion INIT until the passcode is submitted (cap50). Returns null to proceed, or a
+    /// failure result to abort. An unlocked console sends no prompt and this returns null after the short
+    /// watch window.
+    /// </summary>
+    private async Task<SessionHandshakeResult?> EnsureSignedInAsync(CancellationToken cancellationToken)
+    {
+        // Wait briefly for the console to say "this user is locked". No prompt → unlocked → nothing to do.
+        if (await CompletesWithin(_loginPromptReceived.Task, LoginPromptWindow, cancellationToken).ConfigureAwait(false) is false)
+        {
+            return null;
+        }
+
+        if (_loginPinProvider is null)
+        {
+            return Fail("This console requires a login passcode, but no passcode entry is available here.");
+        }
+        if (!_crypto.IsControlEstablished)
+        {
+            return Fail("This console requires a login passcode, but the control-plane crypto is not established.");
+        }
+
+        string? pin = await _loginPinProvider(cancellationToken).ConfigureAwait(false);
+        if (string.IsNullOrEmpty(pin))
+        {
+            return Fail("Sign-in cancelled: no login passcode entered.");
+        }
+
+        byte[] plaintext = HalyardSessCtrlFields.BuildLoginPinPlaintext(pin);
+        byte[] ciphertext = _crypto.EncryptControlField(HalyardSessCtrlFields.CounterLoginPin, plaintext);
+        await _control.SendCtrlMessageAsync(
+            new HalyardCtrlMessage(HalyardCtrlMessage.TypeLoginSubmit, ciphertext), cancellationToken).ConfigureAwait(false);
+
+        // The console confirms with a session-ready frame; its absence within the budget means the passcode was
+        // not accepted (there is no distinct "wrong passcode" reply we can rely on, so a timeout stands in).
+        if (await CompletesWithin(_sessionReady.Task, SignInCompletionTimeout, cancellationToken).ConfigureAwait(false) is false)
+        {
+            return Fail("Sign-in did not complete — the login passcode may be incorrect.");
+        }
+
+        return null;
+    }
+
+    /// <summary>True if <paramref name="task"/> completes within <paramref name="timeout"/>; false on timeout.
+    /// Cancellation propagates. Does not fault on the awaited task's own exceptions — callers only care that it
+    /// signalled.</summary>
+    private static async Task<bool> CompletesWithin(Task task, TimeSpan timeout, CancellationToken cancellationToken)
+    {
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        Task delay = Task.Delay(timeout, timeoutCts.Token);
+        Task winner = await Task.WhenAny(task, delay).ConfigureAwait(false);
+        if (winner == delay)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return false;
+        }
+
+        timeoutCts.Cancel(); // stop the delay timer
+        return true;
+    }
+
     private async Task RunCtrlKeepAliveAsync(CancellationToken cancellationToken)
     {
         try
@@ -342,10 +436,22 @@ public sealed class HalyardStreamingSession : IStreamingSession
                     return; // control connection closed
                 }
 
-                if (message.Value.Type == HalyardCtrlMessage.TypeHeartbeatReq)
+                switch (message.Value.Type)
                 {
-                    await _control.SendCtrlMessageAsync(
-                        new HalyardCtrlMessage(HalyardCtrlMessage.TypeHeartbeatRep), cancellationToken).ConfigureAwait(false);
+                    case HalyardCtrlMessage.TypeHeartbeatReq:
+                        await _control.SendCtrlMessageAsync(
+                            new HalyardCtrlMessage(HalyardCtrlMessage.TypeHeartbeatRep), cancellationToken).ConfigureAwait(false);
+                        break;
+
+                    case HalyardCtrlMessage.TypeLoginPrompt:
+                        // Console: this user is locked, send the passcode. The sign-in gate is waiting on this.
+                        _loginPromptReceived.TrySetResult();
+                        break;
+
+                    case HalyardCtrlMessage.TypeSessionId:
+                        // Console: session ready. After a login this is the "you may open the stream" signal.
+                        _sessionReady.TrySetResult();
+                        break;
                 }
             }
         }
