@@ -230,6 +230,21 @@ namespace winrt::Ripcord::Media::Interop::implementation
         bool m_displayHdrCapable = false;
         float m_displayMaxNits = 0.0f;
 
+        // The back-buffer format, chosen once at device creation and then used everywhere a render target has
+        // to agree with it. It is a field rather than a literal because five sites have to move together -
+        // swap chain, three pipeline RTVs, the zero-copy intermediate and ResizeBuffers - and a mismatch
+        // between any two is a device-removed or a silently wrong picture.
+        //
+        // R10G10B10A2 whenever the display is HDR-capable, even for SDR content: measured on this hardware,
+        // that format presents happily in both G22_P709 and G2084_P2020, so choosing it up front avoids
+        // rebuilding the swap chain mid-stream when the transfer function turns out to be PQ. 10-bit SDR is
+        // not a downside either - it is strictly less banding than 8-bit.
+        DXGI_FORMAT m_swapChainFormat = DXGI_FORMAT_B8G8R8A8_UNORM;
+
+        // Both halves true: the stream carries HDR and the display accepts it. Drives the swap chain colour
+        // space and whether the video processor tone-maps.
+        bool m_presentingHdr = false;
+
         uint32_t m_displayWidth = 0;
         uint32_t m_displayHeight = 0;
         uint32_t m_displayOffsetX = 0;
