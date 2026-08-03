@@ -14,10 +14,12 @@ namespace Ripcord.Protocol.Halyard.Tests;
 /// validated "exactly what the console's encoder produced" — they never did, and that wording is the reason
 /// the matrix form went unexamined for so long.</para>
 ///
-/// <para>What backs the console-agreement claim instead is decompilation: the matrix form is [C]-confirmed
-/// (see <see cref="CauchyReedSolomon"/>). The GF primitive polynomial underneath it is still assumed, so
-/// even now "same field" is not established — a matching matrix over the wrong field still reconstructs
-/// garbage.</para>
+/// <para>What backs the console-agreement claim instead is first-party analysis of our own client, on both
+/// halves that had to agree: the matrix form is [C]-confirmed by decompilation (see
+/// <see cref="CauchyReedSolomon"/>), and as of 2026-08-02 the field it is built over is [V]-confirmed by a
+/// runtime dump of the client's inverse table (<see cref="GaloisField256_MatchesConsoleInverseTable"/>).
+/// Those were only ever safe as a pair. Round-trip coverage below is still self-consistency, but it now runs
+/// over a field and a matrix that are both pinned to the console.</para>
 /// </summary>
 public class FecTests
 {
@@ -44,6 +46,37 @@ public class FecTests
         Assert.Equal(0, GaloisField256.Multiply(0, 123));
         Assert.Equal(0, GaloisField256.Multiply(123, 0));
         Assert.Equal(123, GaloisField256.Multiply(1, 123));
+    }
+
+    /// <summary>
+    /// Ground truth: the vendor client's own GF(2^8) division table, dumped from its live field object on
+    /// 2026-08-02 (breakpoint at `0x101036db` in the coding-matrix builder `FUN_101035e0`, where the table
+    /// base is already in a register). The dumped 0x200 bytes are the first two rows of a 64 KB
+    /// `[a &lt;&lt; 8 | b]` divide table; row `a = 1` is `1 / b`, which is the inverse table the matrix
+    /// construction indexes as `table[value | 0x100]`. Pinned here as the head and tail of that row — those
+    /// bytes are unique to polynomial 0x11d across all 16 primitive degree-8 polynomials, so this fails
+    /// loudly if the field is ever changed.
+    ///
+    /// <para>Index 0 is deliberately excluded: the console stores a 0xff sentinel for the undefined inverse
+    /// of zero, where <see cref="GaloisField256.Inverse"/> throws. Nothing indexes it (see
+    /// <see cref="CauchyReedSolomon"/>), so the two conventions never diverge in practice.</para>
+    /// </summary>
+    [Fact]
+    public void GaloisField256_MatchesConsoleInverseTable()
+    {
+        byte[] head = [0x01, 0x8e, 0xf4, 0x47, 0xa7, 0x7a, 0xba, 0xad, 0x9d, 0xdd, 0x98, 0x3d, 0xaa, 0x5d, 0x96];
+        for (int a = 1; a <= head.Length; a++)
+        {
+            Assert.Equal(head[a - 1], GaloisField256.Inverse((byte)a));
+        }
+
+        byte[] tail = [0x42, 0xd4, 0xe8, 0x75, 0x7f, 0xff, 0x7e, 0xfd];
+        for (int i = 0; i < tail.Length; i++)
+        {
+            Assert.Equal(tail[i], GaloisField256.Inverse((byte)(248 + i)));
+        }
+
+        Assert.Throws<DivideByZeroException>(() => GaloisField256.Inverse(0));
     }
 
     [Fact]
