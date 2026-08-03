@@ -62,5 +62,14 @@ namespace Ripcord.Media.Interop
         // it depends on the GPU and on the HEVC Video Extension — so the UI must be able to ask before
         // offering it, rather than letting a session fail at connect.
         static Boolean IsCodecDecodeAvailable(VideoCodecKind codec);
+
+        // Whether ANY attached display currently accepts HDR10. Reports true only when Windows' "Use HDR" is
+        // actually on for that display, because DXGI reports the G2084 colour space only in that state -- so
+        // this answers "is this machine ready to show HDR right now", not "does the panel have the hardware".
+        // That is the question a settings page needs: a readiness check the user can act on.
+        //
+        // Scans every adapter, not just the default one. On a hybrid laptop the panel often hangs off the
+        // integrated GPU while the decode adapter drives no display at all.
+        static Boolean IsHdrDisplayAvailable();
     }
 }
