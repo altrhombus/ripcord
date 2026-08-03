@@ -18,7 +18,8 @@ namespace Ripcord.Protocol.Halyard.Takion;
 /// pings, each returned by the console <em>byte-identically</em>:
 /// </para>
 /// <list type="bullet">
-///   <item><description>548-byte payload (556 on the wire, less the 8-byte UDP header).</description></item>
+///   <item><description>548-byte payload — 556 as a UDP datagram, 576 as an IP datagram (see
+///   <see cref="SenkushaEchoProbe.PayloadLength"/>; 576 is the classic figure, not 556).</description></item>
 ///   <item><description>Byte 0: base type <c>0x03</c>.</description></item>
 ///   <item><description>Byte 5: sequence, 0..9 across the ten pings.</description></item>
 ///   <item><description>Bytes 6 and 9: <c>0xFF</c>, constant across every ping and both sizes observed.</description></item>
@@ -38,8 +39,18 @@ namespace Ripcord.Protocol.Halyard.Takion;
 /// </summary>
 internal static class SenkushaEchoProbe
 {
-    /// <summary>Payload size the vendor uses for the RTT pings. 556 on the wire, i.e. the classic IPv4
-    /// minimum-MTU-safe datagram, which is presumably why a probe that must survive any path uses it.</summary>
+    /// <summary>
+    /// Payload size the vendor uses for the RTT pings. Three different numbers describe the same packet and
+    /// it is worth keeping them straight, because an earlier version of this comment attached the wrong label
+    /// to the wrong one: <b>548</b> payload, <b>556</b> UDP datagram (548 + 8), <b>576</b> IP datagram
+    /// (548 + <see cref="IpAndUdpOverhead"/>).
+    ///
+    /// <para><b>576</b> is the classic figure — RFC 791's minimum reassembly buffer, and the reason a probe
+    /// that must survive any path picks this size. It denotes the whole IP datagram, so it is 576 that carries
+    /// the meaning, not the 556 previously labelled with it. Consistent with
+    /// <c>LinkMetrics.MinimumMtu</c> and with this file's own rule that an <c>mtuReq</c> denotes the whole IP
+    /// datagram: 548 + 28 = 576, i.e. these pings are an <c>mtuReq</c> of exactly the classic minimum.</para>
+    /// </summary>
     public const int PayloadLength = 548;
 
     /// <summary>
