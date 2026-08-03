@@ -10,7 +10,7 @@
   </Configurations>
 
   <Folder Name="/src/">
-    <!-- Ripcord.App declares <Platforms>x86;x64;ARM64</Platforms>, so its platform has to be mapped
+    <!-- Ripcord.App declares explicit <Platforms>, so its platform has to be mapped
          explicitly rather than defaulted to AnyCPU. The mapping is identity: an ARM64 solution build
          must produce an ARM64 app, or it picks up the wrong native interop DLLs. -->
     <Project Path="src/Ripcord.App/Ripcord.App.csproj">

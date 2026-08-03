@@ -9,7 +9,11 @@
          Explorer get the app icon from — the MSIX assets below are not consulted. Generated, like every
          other asset here, by brand/generate-assets.ps1. -->
     <ApplicationIcon>Assets\AppIcon.ico</ApplicationIcon>
-    <Platforms>x86;x64;ARM64</Platforms>
+    <!-- x64 and ARM64 only. x86 was listed here but never buildable: neither native interop project has an
+         x86 configuration, and the GameInput package ships only native/lib/x64 and native/lib/arm64. A
+         platform the app advertises but cannot produce is worse than one it omits - it let a mis-resolved
+         $(RipcordNativePlatform) look plausible instead of failing loudly. -->
+    <Platforms>x64;ARM64</Platforms>
     <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == ''">win-$([System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture.ToString().ToLowerInvariant())</RuntimeIdentifier>
     <!-- Restore for every architecture we build, not just the one this build selected. Restore writes a
          single obj/project.assets.json keyed by RID, so without this, switching Platform between x64 and
