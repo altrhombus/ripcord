@@ -65,9 +65,10 @@ public sealed class HalyardStreamingSession : IStreamingSession
     private SessionConfig? _config;
     private Task? _ctrlKeepAlive;
 
-    // Supplies the console login passcode when the console reports its user is locked. Null for headless
-    // callers (they simply cannot sign a locked console in). Set at construction.
-    private readonly Func<CancellationToken, Task<string?>>? _loginPinProvider;
+    // Supplies the console login passcode when the console reports its user is locked. The bool is true on a
+    // re-prompt after a rejected passcode, so the UI can say so. Null for headless callers (they simply cannot
+    // sign a locked console in). Set at construction.
+    private readonly Func<bool, CancellationToken, Task<string?>>? _loginPinProvider;
 
     // Set by the ctrl reader when the console pushes its sign-in prompt / session-ready frames, awaited by the
     // sign-in gate. TrySetResult because a message may arrive more than once (retries) and the first wins.
@@ -81,7 +82,7 @@ public sealed class HalyardStreamingSession : IStreamingSession
         IHalyardControlChannel control,
         IHalyardSessionCrypto crypto,
         IConsoleCredentialStore credentials,
-        Func<CancellationToken, Task<string?>>? loginPinProvider = null)
+        Func<bool, CancellationToken, Task<string?>>? loginPinProvider = null)
     {
         _parameters = parameters;
         _control = control;
@@ -358,15 +359,27 @@ public sealed class HalyardStreamingSession : IStreamingSession
     /// (unlocked) path.</summary>
     private static readonly TimeSpan LoginPromptWindow = TimeSpan.FromSeconds(1);
 
-    /// <summary>How long to wait for the console to confirm the session after a passcode is submitted, before
-    /// giving up (most likely a wrong passcode).</summary>
-    private static readonly TimeSpan SignInCompletionTimeout = TimeSpan.FromSeconds(20);
+    /// <summary>How long to wait for the console's session-ready after a passcode is submitted. The console
+    /// accepts or rejects fast — in cap50 the session-ready arrived ~2.3 s after submit — so a few seconds
+    /// with no session-ready means the passcode was wrong (cap51: the console just waits for the next
+    /// attempt). Short so a wrong passcode re-prompts quickly rather than hanging.</summary>
+    private static readonly TimeSpan SignInAttemptTimeout = TimeSpan.FromSeconds(6);
+
+    /// <summary>Passcode attempts before giving up. The console tolerated at least six on one connection
+    /// (cap51); this bound is our own, to end the loop if the user keeps mistyping rather than cancelling.</summary>
+    private const int MaxSignInAttempts = 5;
 
     /// <summary>
     /// If the console's user is locked, complete the login before the stream is attempted; a locked console
-    /// silently drops every Takion INIT until the passcode is submitted (cap50). Returns null to proceed, or a
+    /// silently drops every Takion INIT until the passcode is accepted (cap50). Returns null to proceed, or a
     /// failure result to abort. An unlocked console sends no prompt and this returns null after the short
     /// watch window.
+    ///
+    /// <para>Success is the console's session-ready frame, and only that: a wrong passcode draws an immediate
+    /// login-result frame whose byte is opaque and different every time (cap51), so it cannot be read as
+    /// pass/fail — the reliable signal is that session-ready follows on success and does not on failure. On a
+    /// rejection the console waits for another attempt on the same connection, so we re-prompt rather than
+    /// fail the session.</para>
     /// </summary>
     private async Task<SessionHandshakeResult?> EnsureSignedInAsync(CancellationToken cancellationToken)
     {
@@ -385,25 +398,32 @@ public sealed class HalyardStreamingSession : IStreamingSession
             return Fail("This console requires a login passcode, but the control-plane crypto is not established.");
         }
 
-        string? pin = await _loginPinProvider(cancellationToken).ConfigureAwait(false);
-        if (string.IsNullOrEmpty(pin))
+        // The field counter is a single per-connection value; the passcode continues it past the five
+        // /sess/ctrl fields (so the first attempt is 5), and each retry MUST advance it — a fresh IV per
+        // submit, never reused (cap51's attempts each had distinct ciphertext).
+        ulong counter = HalyardSessCtrlFields.CounterLoginPin;
+
+        for (int attempt = 1; attempt <= MaxSignInAttempts; attempt++)
         {
-            return Fail("Sign-in cancelled: no login passcode entered.");
+            string? pin = await _loginPinProvider(attempt > 1, cancellationToken).ConfigureAwait(false);
+            if (string.IsNullOrEmpty(pin))
+            {
+                return Fail("Sign-in cancelled: no login passcode entered.");
+            }
+
+            byte[] plaintext = HalyardSessCtrlFields.BuildLoginPinPlaintext(pin);
+            byte[] ciphertext = _crypto.EncryptControlField(counter++, plaintext);
+            await _control.SendCtrlMessageAsync(
+                new HalyardCtrlMessage(HalyardCtrlMessage.TypeLoginSubmit, ciphertext), cancellationToken).ConfigureAwait(false);
+
+            if (await CompletesWithin(_sessionReady.Task, SignInAttemptTimeout, cancellationToken).ConfigureAwait(false))
+            {
+                return null; // accepted
+            }
+            // No session-ready: the passcode was rejected. Loop and re-prompt (attempt > 1 tells the UI to say so).
         }
 
-        byte[] plaintext = HalyardSessCtrlFields.BuildLoginPinPlaintext(pin);
-        byte[] ciphertext = _crypto.EncryptControlField(HalyardSessCtrlFields.CounterLoginPin, plaintext);
-        await _control.SendCtrlMessageAsync(
-            new HalyardCtrlMessage(HalyardCtrlMessage.TypeLoginSubmit, ciphertext), cancellationToken).ConfigureAwait(false);
-
-        // The console confirms with a session-ready frame; its absence within the budget means the passcode was
-        // not accepted (there is no distinct "wrong passcode" reply we can rely on, so a timeout stands in).
-        if (await CompletesWithin(_sessionReady.Task, SignInCompletionTimeout, cancellationToken).ConfigureAwait(false) is false)
-        {
-            return Fail("Sign-in did not complete — the login passcode may be incorrect.");
-        }
-
-        return null;
+        return Fail($"Sign-in failed: the login passcode was rejected {MaxSignInAttempts} times.");
     }
 
     /// <summary>True if <paramref name="task"/> completes within <paramref name="timeout"/>; false on timeout.
