@@ -814,9 +814,15 @@ namespace winrt::Ripcord::Media::Interop::implementation
         return hstring{ buffer };
     }
 
+    // Decoder identity only: which MFT, hardware or software, and anything actively wrong. Format, colour and
+    // HDR state each get their own accessor below.
+    //
+    // This used to be one string carrying all four, which made the diagnostics overlay's "video" row a
+    // paragraph and pushed the app into substring-matching it for capability pills. One row per fact reads
+    // better and, more importantly, lets the UI ask for a value instead of parsing prose.
     hstring VideoRenderer::DecoderDescription()
     {
-        // Non-ASCII in these literals MUST use universal character names (\u00B7, \u2014), not raw UTF-8 bytes:
+        // Non-ASCII in these literals MUST use universal character names (·, —), not raw UTF-8 bytes:
         // MSVC decodes narrow and wide literals with the system codepage unless /utf-8 is on the command line, so
         // a literal middle dot rendered on screen as "Ã‚Â·". Escapes are codepage-independent.
         if (m_decoderName.empty())
@@ -826,116 +832,62 @@ namespace winrt::Ripcord::Media::Interop::implementation
 
         std::wstring desc = m_decoderName;
         desc += m_hardwareDecode ? L" (DXVA)" : L" (software)";
-        // Always say what the pixel format is, not only in the 10-bit case. An SDR session used to add nothing
-        // at all here, so "HEVC (DXVA)" alone left you unable to tell a working SDR stream from one where the
-        // format probe had silently not run - and made A/B-ing an HDR toggle needlessly hard.
-        desc += m_tenBitOutput ? L" \u00B7 10-bit P010" : L" \u00B7 8-bit NV12";
 
-        // What the STREAM signalled, which is not always what we asked for - the console ignores
-        // yuvCoefficient outright, so treat dynamicRange the same way and report the measurement.
-        desc += L" \u00B7 ";
-        if (m_transferFunctionSignalled)
-        {
-            switch (m_transferFunction)
-            {
-            case MFVideoTransFunc_2084: desc += L"PQ"; break;
-            case MFVideoTransFunc_HLG:  desc += L"HLG"; break;
-            case MFVideoTransFunc_709:  desc += L"BT.709 gamma"; break;
-            case MFVideoTransFunc_sRGB: desc += L"sRGB gamma"; break;
-            default:
-                desc += L"transfer " + std::to_wstring(m_transferFunction);
-                break;
-            }
-        }
-        else
-        {
-            desc += m_tenBitOutput ? L"transfer unsignalled (assuming PQ)" : L"transfer unsignalled";
-        }
-
-        if (m_videoPrimariesSignalled)
-        {
-            desc += m_videoPrimaries == MFVideoPrimaries_BT2020 ? L" BT.2020" : L" BT.709";
-        }
-
-        if (m_toneMappedByDriver)
-        {
-            desc += L" \u00B7 tone-mapped to SDR";
-        }
-
-        // Report the display's side of it too. Tone-mapping an HDR stream is the right call on an SDR panel
-        // and a waste on an HDR one, so both halves need to be visible to tell those cases apart.
-        if (m_hdrTransfer)
-        {
-            // Does the stream actually contain HDR, or is it SDR in a PQ wrapper? Say which, because the two
-            // look identical in every other field here and only one of them should look impressive.
-            if (m_hdrMetadataPresent)
-            {
-                desc += L" \u00B7 graded";
-                if (m_maxCll != 0)
-                {
-                    desc += L" MaxCLL " + std::to_wstring(m_maxCll);
-                }
-                if (m_maxMasteringLuminance != 0)
-                {
-                    desc += L" master " + std::to_wstring(m_maxMasteringLuminance);
-                }
-                desc += L" nits";
-            }
-            else if (m_seiMasteringDisplay || m_seiContentLightLevel)
-            {
-                // The bitstream has it and the decoder did not pass it on. Worth saying, because it means
-                // our read is the limitation and a future tone-mapping feature would need the SEI path.
-                desc += L" \u00B7 HDR SEI not surfaced by decoder (";
-                desc += m_seiMasteringDisplay ? L"ST2086" : L"";
-                desc += (m_seiMasteringDisplay && m_seiContentLightLevel) ? L"+" : L"";
-                desc += m_seiContentLightLevel ? L"MaxCLL" : L"";
-                desc += L")";
-            }
-
-            // Deliberately silent when there is no static metadata anywhere. That was worth reporting while
-            // it was an open question; it was settled on 2026-08-02 - the console's encoder sends none, in
-            // neither the media type nor the bitstream, which is normal for real-time content with no
-            // mastering display to describe. Reporting the expected case every frame is noise, and "no HDR
-            // metadata" reads like a fault when it is not one.
-
-            if (m_presentingHdr)
-            {
-                desc += L" \u00B7 HDR10 output";
-                if (m_displayMaxNits > 0.0f)
-                {
-                    // "claims" is doing real work: this driver reports MaxLuminance inversely to the
-                    // brightness slider, up to physically impossible values. Shown because it is a useful
-                    // red flag, labelled because it is not a fact.
-                    desc += L" (panel claims " + std::to_wstring(static_cast<int>(m_displayMaxNits)) + L" nits)";
-                }
-            }
-            else if (m_displayHdrCapable)
-            {
-                // Panel could take it but we are not sending it - a refused SetColorSpace1. Worth
-                // distinguishing from an SDR panel, because it means something went wrong rather than
-                // the tone-map being the correct choice.
-                desc += L" \u00B7 display HDR-capable, presenting SDR";
-            }
-            else
-            {
-                desc += L" \u00B7 display SDR";
-            }
-        }
         if (m_tenBitUnrenderable)
         {
-            desc += L" \u2014 10-bit needs the zero-copy path, which is unavailable here";
+            desc += L" — 10-bit needs the zero-copy path, which is unavailable here";
         }
         if (m_codecMismatch)
         {
             // The console did not send what was requested. Say so plainly: silently substituting the decoder
             // would leave a "HEVC" setting that visibly does nothing.
             desc += m_codec == VideoCodecKind::Hevc
-                ? L" \u2014 stream is HEVC, overriding the H.264 request"
-                : L" \u2014 console ignored the HEVC request and sent H.264";
+                ? L" — stream is HEVC, overriding the H.264 request"
+                : L" — console ignored the HEVC request and sent H.264";
         }
 
         return hstring{ desc };
     }
+
+    // Pixel format. Reported for SDR too: an 8-bit session used to say nothing here, so the row could not
+    // distinguish a working stream from a format probe that had not run.
+    hstring VideoRenderer::VideoFormatDescription()
+    {
+        if (m_decoderName.empty())
+        {
+            return hstring{ L"—" };
+        }
+        return hstring{ m_tenBitOutput ? L"10-bit P010" : L"8-bit NV12" };
+    }
+
+    // What the display is actually being given, which is not the same question as what the stream carries.
+    hstring VideoRenderer::HdrOutputDescription()
+    {
+        if (!m_hdrTransfer)
+        {
+            return hstring{ L"SDR" };
+        }
+
+        if (m_presentingHdr)
+        {
+            std::wstring s = L"HDR10";
+            if (m_displayMaxNits > 0.0f)
+            {
+                // "claims" is doing real work: this driver reports MaxLuminance inversely to the brightness
+                // slider, up to physically impossible values. Shown because the volatility is a useful red
+                // flag, labelled because it is not a fact.
+                s += L" · panel claims " + std::to_wstring(static_cast<int>(m_displayMaxNits)) + L" nits";
+            }
+            return hstring{ s };
+        }
+
+        // Distinguish "the panel cannot take it" from "it could and we failed to send it" - the first is the
+        // tone-map working as designed, the second means SetColorSpace1 was refused.
+        return hstring{ m_displayHdrCapable
+            ? L"tone-mapped to SDR — display is HDR-capable, colour space refused"
+            : L"tone-mapped to SDR — display is SDR" };
+    }
+
 
     void VideoRenderer::EnsureDecoder()
     {
@@ -1793,16 +1745,47 @@ namespace winrt::Ripcord::Media::Interop::implementation
         // an unsignalled HEVC stream now reports BT.709 because HD content from this console is BT.709, which is
         // not something the earlier "matches vendor request" wording could express (the console ignores that
         // request outright).
-        if (m_yuvMatrix == 1)
+        std::wstring desc = m_yuvMatrix == 1 ? L"BT.709" : L"BT.601";
+        if (!m_yuvMatrixSignalled)
         {
-            return m_yuvMatrixSignalled
-                ? hstring{ L"BT.709 (signalled by stream)" }
-                : hstring{ L"BT.709 (assumed: HD default, stream signalled none)" };
+            desc += m_yuvMatrix == 1 ? L" (assumed: HD default)" : L" (assumed: SD default)";
         }
 
-        return m_yuvMatrixSignalled
-            ? hstring{ L"BT.601 (signalled by stream)" }
-            : hstring{ L"BT.601 (assumed: SD default, stream signalled none)" };
+        // Transfer and primaries belong on the colour row too. They used to be appended to the decoder
+        // string, so the overlay reported colour in two places at once - matrix here, transfer over there -
+        // and neither line was the whole answer.
+        desc += L" · ";
+        if (m_transferFunctionSignalled)
+        {
+            switch (m_transferFunction)
+            {
+            case MFVideoTransFunc_2084: desc += L"PQ"; break;
+            case MFVideoTransFunc_HLG:  desc += L"HLG"; break;
+            case MFVideoTransFunc_709:  desc += L"BT.709 gamma"; break;
+            case MFVideoTransFunc_sRGB: desc += L"sRGB gamma"; break;
+            default:
+                desc += L"transfer " + std::to_wstring(m_transferFunction);
+                break;
+            }
+        }
+        else
+        {
+            desc += m_tenBitOutput ? L"transfer assumed PQ" : L"transfer unsignalled";
+        }
+
+        if (m_videoPrimariesSignalled)
+        {
+            desc += m_videoPrimaries == MFVideoPrimaries_BT2020 ? L" BT.2020" : L" BT.709";
+        }
+
+        // Only the anomaly is worth a line: the encoder sending no static metadata is normal for real-time
+        // content, but the bitstream having it while the decoder drops it means our read is the limitation.
+        if (!m_hdrMetadataPresent && (m_seiMasteringDisplay || m_seiContentLightLevel))
+        {
+            desc += L" · HDR SEI present but not surfaced by the decoder";
+        }
+
+        return hstring{ desc };
     }
 
     bool VideoRenderer::HasDecodedFrame()

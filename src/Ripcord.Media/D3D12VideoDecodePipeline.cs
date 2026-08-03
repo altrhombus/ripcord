@@ -47,6 +47,12 @@ public readonly record struct PipelineStats(
     bool IsHdrOutput = false,
     /// <summary>10-bit decode (P010). Independent of HDR — a stream can be 10-bit and SDR.</summary>
     bool IsTenBit = false,
+    /// <summary>Pixel format in words, e.g. "10-bit P010". Its own field so the video row does not have to be a
+    /// sentence.</summary>
+    string VideoFormat = "",
+    /// <summary>What the display is actually being given — "HDR10", "SDR", or which of the two reasons we are
+    /// tone-mapping. Distinct from the stream's transfer function, which belongs on the colour row.</summary>
+    string HdrOutput = "",
     /// <summary>Audio frames successfully decoded and submitted, cumulative. At 480 samples per frame and 48 kHz
     /// this should advance at ~100/s, which makes it a far better liveness signal than "can I hear it".</summary>
     long AudioFramesDecoded = 0,
@@ -116,6 +122,8 @@ public sealed class D3D12VideoDecodePipeline : IVideoDecodePipeline
         IsDisplayHdr: _initialized && _renderer.IsDisplayHdr,
         IsHdrOutput: _initialized && _renderer.IsHdrOutput,
         IsTenBit: _initialized && _renderer.IsTenBit,
+        VideoFormat: _initialized ? _renderer.VideoFormatDescription : string.Empty,
+        HdrOutput: _initialized ? _renderer.HdrOutputDescription : string.Empty,
         AudioFramesDecoded: Interlocked.Read(ref _audioFramesDecoded),
         AudioFramesSkipped: Interlocked.Read(ref _audioFramesSkipped),
         AudioFormat: AudioFormatDescription);
