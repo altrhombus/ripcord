@@ -23,6 +23,9 @@ using Ripcord.Core.Settings;
 using Ripcord.Diagnostics;
 using Ripcord.Input;
 using Ripcord.Media;
+using Ripcord.Core.Security;
+using Ripcord.Protocol.Halyard.Common.Crypto;
+using Ripcord.Protocol.Halyard.Common.Discovery;
 using Ripcord.Protocol.Halyard.Session;
 using Ripcord_App.Services;
 using WinRT;
@@ -69,6 +72,9 @@ public sealed partial class SessionPage : Page
     private IPowerThermalMonitor? _powerMonitor;
     private ExitGestureDetector? _exitDetector;
     private bool _leaving;
+
+    // Cancels the pre-connect work (currently the wake poll) when the user leaves before the session is up.
+    private CancellationTokenSource? _connectCts;
 
     // Sampled diagnostics state.
     private long _prevDecodedFrames;
@@ -202,6 +208,7 @@ public sealed partial class SessionPage : Page
 
     private async Task StartSessionAsync()
     {
+        _connectCts = new CancellationTokenSource();
         if (_console is null)
         {
             ShowStatus("No console selected", "Choose a console from the Consoles page to start streaming.", terminal: true);
@@ -261,6 +268,14 @@ public sealed partial class SessionPage : Page
             return;
         }
 
+        // Wake the console if it is in standby, before attempting to connect. A connect to a sleeping console
+        // cannot succeed, and without this it just hung on "Connecting…" until timeout with no cause given.
+        // Non-fatal except for the one case that genuinely blocks streaming (asked to wake, did not).
+        if (!await EnsureConsoleAwakeAsync(address))
+        {
+            return;
+        }
+
         // A real power monitor, so the adaptive controller's battery / energy-saver / critical-battery caps can
         // actually engage. Without one injected, SessionController falls back to UnknownPowerThermalMonitor,
         // which always claims external power — meaning a handheld on battery streamed at full desktop quality.
@@ -280,6 +295,54 @@ public sealed partial class SessionPage : Page
 
         OnStatusChanged(_controller.CurrentStatus);
         await _controller.StartAsync(config);
+    }
+
+    /// <summary>
+    /// Make sure the console is awake before connecting. Returns false only when we sent a wake and the
+    /// console never came up — the one outcome that genuinely cannot lead to a stream, so the connect stops
+    /// with a stated reason. Everything else (already awake, woke, or not answering discovery) proceeds:
+    /// a console that does not answer SRCH may still be reachable, and letting the connect surface that is
+    /// more useful than refusing to try.
+    /// </summary>
+    private async Task<bool> EnsureConsoleAwakeAsync(IPAddress address)
+    {
+        HalyardPairingRecord? record = _console!.ToRecord(CredentialProtection.ForCurrentPlatform());
+        if (record is null)
+        {
+            // No usable pairing record means no wake credential. Not fatal here — connect will fail with its
+            // own clearer "not paired / bad credential" message than anything we could invent.
+            return true;
+        }
+
+        var search = new HalyardSearchClient();
+        var wake = new HalyardWakeClient();
+        var coordinator = new HalyardWakeCoordinator(
+            probeAwake: async ct => (await search.ProbeAsync(address, TimeSpan.FromSeconds(1), ct))?.IsAwake,
+            sendWake: ct => wake.WakeAsync(address, record, ct));
+
+        var progress = new Progress<string>(line => ShowStatus(line, "The console was in standby.", terminal: false));
+
+        WakeOutcome outcome;
+        try
+        {
+            outcome = await coordinator.EnsureAwakeAsync(progress, _connectCts!.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            return false; // the user left the page mid-wake
+        }
+
+        if (outcome == WakeOutcome.TimedOut)
+        {
+            ShowStatus(
+                "Console didn't wake",
+                "The console reported standby and did not wake within 30 seconds. Turn it on manually, or "
+                + "check it is set to allow being woken from rest mode, then reconnect.",
+                terminal: true);
+            return false;
+        }
+
+        return true;
     }
 
     /// <summary>Stand up the D3D12 decode pipeline and bind its swap chain to the panel.</summary>
@@ -553,6 +616,7 @@ public sealed partial class SessionPage : Page
         }
 
         _leaving = true;
+        _connectCts?.Cancel();
         LeaveImmersiveMode();
         Host?.CloseStream();
     }
