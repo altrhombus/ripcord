@@ -27,14 +27,16 @@ public interface ISettingsStore
 /// bad settings must never prevent the app from starting.
 /// </para>
 /// </summary>
-public sealed class SettingsStore : ISettingsStore
+public sealed partial class SettingsStore : ISettingsStore
 {
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        WriteIndented = true,
-        // Persist enums by name: a reordered or extended enum must not silently change what a saved file means.
-        Converters = { new JsonStringEnumConverter() },
-    };
+    // Source-generated. Settings failing to load under a trimmed build would silently reset every preference
+    // to its default on launch, which looks like data loss and gives no clue why.
+    //
+    // UseStringEnumConverter carries over the reason the reflection options set JsonStringEnumConverter:
+    // enums persist BY NAME, so reordering or extending one cannot silently change what a saved file means.
+    [JsonSourceGenerationOptions(WriteIndented = true, UseStringEnumConverter = true, GenerationMode = JsonSourceGenerationMode.Metadata)]
+    [JsonSerializable(typeof(RipcordSettings))]
+    private partial class SettingsContext : JsonSerializerContext;
 
     private readonly string _path;
     private readonly Lock _gate = new();
@@ -61,7 +63,7 @@ public sealed class SettingsStore : ISettingsStore
         lock (_gate)
         {
             string tmp = _path + ".tmp";
-            File.WriteAllText(tmp, JsonSerializer.Serialize(settings, JsonOptions));
+            File.WriteAllText(tmp, JsonSerializer.Serialize(settings, SettingsContext.Default.RipcordSettings));
             File.Move(tmp, _path, overwrite: true);
             _current = settings;
         }
@@ -78,7 +80,7 @@ public sealed class SettingsStore : ISettingsStore
 
         try
         {
-            return JsonSerializer.Deserialize<RipcordSettings>(File.ReadAllText(_path), JsonOptions)
+            return JsonSerializer.Deserialize(File.ReadAllText(_path), SettingsContext.Default.RipcordSettings)
                    ?? new RipcordSettings();
         }
         catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)

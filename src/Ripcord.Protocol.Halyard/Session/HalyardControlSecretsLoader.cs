@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Ripcord.Core.Platform;
 using Ripcord.Protocol.Halyard.Common.Crypto.V1;
 
@@ -18,7 +19,7 @@ namespace Ripcord.Protocol.Halyard.Session;
 /// the diagnostics overlay, so read it instead of assuming.
 /// </para>
 /// </summary>
-public static class HalyardControlSecretsLoader
+public static partial class HalyardControlSecretsLoader
 {
     public static HalyardControlSecrets? Load(out string source)
     {
@@ -40,8 +41,7 @@ public static class HalyardControlSecretsLoader
 
         try
         {
-            var fx = JsonSerializer.Deserialize<Fixture>(File.ReadAllText(path),
-                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            var fx = JsonSerializer.Deserialize(File.ReadAllText(path), FixtureContext.Default.Fixture);
             if (fx?.KdfTable1 is null || fx.KdfTable2 is null || fx.ContextKeys is null)
             {
                 source = $"control fixture malformed ({path})";
@@ -96,6 +96,13 @@ public static class HalyardControlSecretsLoader
         }
         return null;
     }
+
+    // Source-generated: this loader sits on the same critical path as the bundle. Under PublishTrimmed the
+    // reflection serializer throws, the dev-tree fixture would silently stop being found, and a developer's
+    // build would fall back to the bundle - or to the stub - without saying why.
+    [JsonSourceGenerationOptions(PropertyNameCaseInsensitive = true)]
+    [JsonSerializable(typeof(Fixture))]
+    private partial class FixtureContext : JsonSerializerContext;
 
     private sealed class Fixture
     {

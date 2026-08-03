@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Ripcord.Core.Discovery;
 using Ripcord.Core.Platform;
 using Ripcord.Core.Security;
@@ -23,12 +24,17 @@ namespace Ripcord.Protocol.Halyard.Session;
 /// (<c>credentials.json</c> under <see cref="IPlatformPaths.ConfigDirectory"/>).
 /// </para>
 /// </summary>
-public sealed class HalyardPairingCredentialStore : IConsoleCredentialStore
+public sealed partial class HalyardPairingCredentialStore : IConsoleCredentialStore
 {
     private readonly string _path;
     private readonly ICredentialProtector _protector;
     private readonly SemaphoreSlim _gate = new(1, 1);
-    private static readonly JsonSerializerOptions JsonOpts = new() { WriteIndented = true };
+    // Source-generated. The pairing store is how a paired console is remembered, so a trimmed build that
+    // could not read it would present a working install as unpaired and send the user back through
+    // registration - data loss from the user's point of view, even though the file is still on disk.
+    [JsonSourceGenerationOptions(WriteIndented = true)]
+    [JsonSerializable(typeof(Dictionary<string, string>))]
+    private partial class CredentialMapContext : JsonSerializerContext;
 
     /// <summary>Marks an entry as ciphertext, so a legacy plaintext-hex entry is still distinguishable.</summary>
     private const string ProtectedPrefix = "dpapi:";
@@ -134,7 +140,7 @@ public sealed class HalyardPairingCredentialStore : IConsoleCredentialStore
         try
         {
             await using FileStream fs = File.OpenRead(_path);
-            var map = await JsonSerializer.DeserializeAsync<Dictionary<string, string>>(fs, cancellationToken: cancellationToken).ConfigureAwait(false);
+            var map = await JsonSerializer.DeserializeAsync(fs, CredentialMapContext.Default.DictionaryStringString, cancellationToken).ConfigureAwait(false);
             return map ?? new(StringComparer.Ordinal);
         }
         catch (JsonException)
@@ -150,7 +156,7 @@ public sealed class HalyardPairingCredentialStore : IConsoleCredentialStore
         string tmp = _path + ".tmp";
         await using (FileStream fs = File.Create(tmp))
         {
-            await JsonSerializer.SerializeAsync(fs, map, JsonOpts, cancellationToken).ConfigureAwait(false);
+            await JsonSerializer.SerializeAsync(fs, map, CredentialMapContext.Default.DictionaryStringString, cancellationToken).ConfigureAwait(false);
         }
         File.Move(tmp, _path, overwrite: true);
     }
