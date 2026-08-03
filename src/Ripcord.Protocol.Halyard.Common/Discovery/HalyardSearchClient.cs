@@ -67,7 +67,17 @@ public sealed class HalyardSearchClient
             return false;
         }
 
-        // Status line distinguishes power state: 200 = awake, 620 = standby.
+        // Power state comes from the status line. **Only `200` (awake) is confirmed** — every capture we
+        // hold was taken against an already-awake console, so no standby reply has ever been observed and
+        // we do not know what code one carries. An earlier comment here asserted "620 = standby"; that
+        // value is traceable to no capture, doc, or binary analysis of ours, so it has been removed rather
+        // than left to read as a finding [X].
+        //
+        // The logic deliberately does not name a standby code: anything that is not 200 is treated as
+        // not-awake. That is the conservative reading (a console we cannot confirm is awake should not be
+        // reported as awake) and it stays correct whatever the real code turns out to be. Resolve it with a
+        // rest-mode SRCH capture — the same one that would settle the `host-request-port` 997-vs-987
+        // question and whether a LAN wake request exists at all (docs/protocol/ps5-local-discovery.md).
         string[] statusParts = lines[0].Split(' ', 3);
         bool isAwake = statusParts.Length >= 2 && statusParts[1] == "200";
 
