@@ -244,6 +244,17 @@
                         x:Name="HdrToggle"
                         Header="Request HDR"
                         Toggled="OnSettingChanged" />
+                    <!--
+                        Readiness checklist rather than a paragraph of prose. HDR needs four things and only
+                        one of them is this toggle, so a user whose picture stays SDR has no way to tell WHICH
+                        prerequisite is missing from a sentence that lists them all. Each row reports its own
+                        state and, when unmet, says what to do about it.
+
+                        The console row is deliberately neutral rather than a tick or a cross: whether the PS5
+                        sends HDR cannot be known until a session is running, and showing a cross for
+                        "unknown" would read as a fault the user should go and fix.
+                    -->
+                    <StackPanel x:Name="HdrChecklist" Margin="0,2,0,0" Spacing="3" />
                     <TextBlock
                         x:Name="HdrHelpText"
                         Foreground="{ThemeResource TextFillColorSecondaryBrush}"

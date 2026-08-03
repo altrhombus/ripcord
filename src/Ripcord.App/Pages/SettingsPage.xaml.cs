@@ -4,6 +4,8 @@ using System.Linq;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
+using Microsoft.UI.Xaml.Documents;
+using Microsoft.UI.Xaml.Media;
 using System.Diagnostics;
 using Ripcord.Core.Input;
 using Ripcord.Core.Sessions;
@@ -178,6 +180,7 @@ public sealed partial class SettingsPage : Page
         HdrToggle.IsOn = s.RequestHdr && hdrSelectable;
         HdrToggle.IsEnabled = hdrSelectable;
         HdrHelpText.Text = HdrHelpFor(hdrSelectable);
+        RebuildHdrChecklist(CodecCombo.SelectedIndex == 1, hevcAvailable);
 
         CodecHelpText.Text = hevcAvailable
             ? "HEVC uses the available bandwidth more efficiently, so the picture can look cleaner at the same "
@@ -384,16 +387,111 @@ public sealed partial class SettingsPage : Page
         HdrToggle.IsEnabled = hdrSelectable;
         HdrHelpText.Text = HdrHelpFor(hdrSelectable);
 
+        // Rebuilt here too, not only on load: the codec row is one of the checks, so switching to H.264 has
+        // to flip it immediately. A checklist that only refreshes on page open would show a stale tick against
+        // the setting the user just changed, which is worse than showing nothing.
+        RebuildHdrChecklist(hdrSelectable, hevcAvailable: CodecCombo.Items.Count > 1);
+
         Save();
     }
 
     /// <summary>Shared so the initial population and the codec-change path cannot drift apart.</summary>
     private static string HdrHelpFor(bool selectable) => selectable
-        ? "The console streams HDR (PQ, BT.2020) when asked. Three things outside this app also have to be true: "
-          + "HDR enabled on the PS5, an HDR display, and Use HDR turned on in Windows display settings. "
-          + "Without all three the picture is tone-mapped to SDR, which still looks correct, just flatter. "
-          + "The diagnostics overlay (F3) reports which one you are getting."
+        ? "Tone-mapped to SDR if any of the above is missing, which still looks correct, just flatter."
         : "HDR requires HEVC — select it above first.";
+
+    /// <summary>
+    /// Rebuild the HDR readiness checklist. Four prerequisites, of which this app controls one, so a user
+    /// whose picture stays SDR needs to see WHICH is missing rather than a sentence listing all of them.
+    ///
+    /// <para>Two are answerable here and now. HEVC availability is a decoder query, and display HDR is a DXGI
+    /// query that reports true only while Windows' "Use HDR" is actually on — so it doubles as a check of the
+    /// OS setting, which is the part users most often miss. The console's own HDR output cannot be known
+    /// until a session runs, so that row stays neutral rather than showing a cross for "unknown".</para>
+    /// </summary>
+    private void RebuildHdrChecklist(bool hevcSelected, bool hevcAvailable)
+    {
+        HdrChecklist.Children.Clear();
+
+        bool displayHdr;
+        try
+        {
+            displayHdr = VideoCapabilities.IsHdrDisplayAvailable();
+        }
+        catch (Exception ex)
+        {
+            // Native capability query. A failure here must not take the settings page down — the checklist is
+            // advisory, and the same probe failing at session time simply means we tone-map.
+            Debug.WriteLine($"[Ripcord] HDR display query failed: {ex.Message}");
+            displayHdr = false;
+        }
+
+        AddHdrCheck(
+            hevcAvailable && hevcSelected ? HdrCheckState.Met : HdrCheckState.Unmet,
+            hevcAvailable
+                ? "HEVC selected above"
+                : "HEVC decoder not available on this PC",
+            hevcAvailable && !hevcSelected ? "Choose HEVC in the codec picker." : null);
+
+        AddHdrCheck(
+            displayHdr ? HdrCheckState.Met : HdrCheckState.Unmet,
+            displayHdr ? "Display is in HDR mode" : "Display is not in HDR mode",
+            displayHdr ? null : "Turn on Use HDR in Windows display settings.");
+
+        AddHdrCheck(
+            HdrCheckState.Unknown,
+            "Console sends HDR",
+            "Checked once you connect — the diagnostics overlay (F3) reports what arrived.");
+    }
+
+    private enum HdrCheckState { Met, Unmet, Unknown }
+
+    private void AddHdrCheck(HdrCheckState state, string label, string? hint)
+    {
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+
+        // Glyph carries the state, colour reinforces it. Not colour alone: this has to stay legible to a
+        // colour-blind user and in high contrast, where the theme brushes collapse toward the same value.
+        row.Children.Add(new FontIcon
+        {
+            FontSize = 12,
+            VerticalAlignment = VerticalAlignment.Center,
+            Glyph = state switch
+            {
+                HdrCheckState.Met => "",     // CheckMark
+                HdrCheckState.Unmet => "",   // Cancel
+                _ => "",                     // Info
+            },
+            Foreground = state switch
+            {
+                HdrCheckState.Met => (Brush)Application.Current.Resources["SystemFillColorSuccessBrush"],
+                HdrCheckState.Unmet => (Brush)Application.Current.Resources["SystemFillColorCautionBrush"],
+                _ => (Brush)Application.Current.Resources["TextFillColorTertiaryBrush"],
+            },
+        });
+
+        var text = new TextBlock
+        {
+            Style = (Style)Application.Current.Resources["CaptionTextBlockStyle"],
+            TextWrapping = TextWrapping.Wrap,
+            VerticalAlignment = VerticalAlignment.Center,
+            Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
+        };
+        text.Inlines.Add(new Run { Text = label });
+        if (!string.IsNullOrEmpty(hint))
+        {
+            // The remedy sits on the same line, dimmer: it is only wanted when the check is unmet, and a
+            // separate line per hint would double the height of a list that is meant to be glanceable.
+            text.Inlines.Add(new Run
+            {
+                Text = "  " + hint,
+                Foreground = (Brush)Application.Current.Resources["TextFillColorTertiaryBrush"],
+            });
+        }
+
+        row.Children.Add(text);
+        HdrChecklist.Children.Add(row);
+    }
 
     private void OnGpuPreferenceChanged(object sender, SelectionChangedEventArgs e)
     {
