@@ -13,6 +13,7 @@ namespace winrt::Ripcord::Media::Interop::implementation
 
         static bool IsD3D12VideoDecodeSupported();
         static bool IsCodecDecodeAvailable(VideoCodecKind codec);
+        static bool IsHdrDisplayAvailable();
 
         static Windows::Foundation::Collections::IVectorView<Ripcord::Media::Interop::VideoAdapterInfo>
             EnumerateAdapters();

@@ -151,6 +151,42 @@ namespace winrt::Ripcord::Media::Interop::implementation
         return found;
     }
 
+    // Deliberately "is this machine ready to show HDR right now" rather than "does the panel support HDR".
+    // DXGI reports DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020 only while Windows' "Use HDR" is on for the
+    // display, so a capable panel with the toggle off correctly answers false - which is what a readiness
+    // check should say, because that is a thing the user can go and fix.
+    bool VideoCapabilities::IsHdrDisplayAvailable()
+    {
+        ComPtr<IDXGIFactory1> factory;
+        if (FAILED(CreateDXGIFactory1(IID_PPV_ARGS(&factory))))
+        {
+            return false;
+        }
+
+        // Every adapter, not just the default: on a hybrid laptop the display frequently hangs off the
+        // integrated GPU while the adapter we would decode on drives no output at all.
+        ComPtr<IDXGIAdapter1> adapter;
+        for (UINT a = 0; SUCCEEDED(factory->EnumAdapters1(a, &adapter)); a++)
+        {
+            ComPtr<IDXGIOutput> output;
+            for (UINT o = 0; SUCCEEDED(adapter->EnumOutputs(o, &output)); o++)
+            {
+                ComPtr<IDXGIOutput6> output6;
+                DXGI_OUTPUT_DESC1 desc{};
+                if (SUCCEEDED(output.As(&output6)) && output6
+                    && SUCCEEDED(output6->GetDesc1(&desc))
+                    && desc.ColorSpace == DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020)
+                {
+                    return true;
+                }
+                output.Reset();
+            }
+            adapter.Reset();
+        }
+
+        return false;
+    }
+
     bool VideoCapabilities::IsD3D12VideoDecodeSupported()
     {
         ComPtr<ID3D12Device> device = TryCreateDevice(nullptr);
