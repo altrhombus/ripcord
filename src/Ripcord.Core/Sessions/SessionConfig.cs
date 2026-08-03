@@ -41,4 +41,7 @@ public sealed record SessionConfig(
     VideoCodec CodecPreference,
     LatencyMode LatencyMode,
     bool ReportConnectionQuality = false,
-    DynamicRange RequestedDynamicRange = DynamicRange.Sdr);
+    DynamicRange RequestedDynamicRange = DynamicRange.Sdr,
+    /// <summary>Put the console into rest mode when the session ends, rather than leaving it awake. The
+    /// vendor exposes this as a checkbox at disconnect; here it is a preference applied at teardown.</summary>
+    bool RestConsoleOnDisconnect = false);

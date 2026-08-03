@@ -336,6 +336,38 @@ public sealed class HalyardTakionStream : IAsyncDisposable
     public void ReportConnectionQuality(ConnectionQualityReport report)
         => _ = SendConnectionQualityAsync(report, _loopCts?.Token ?? CancellationToken.None);
 
+    /// <summary>
+    /// Send a graceful DISCONNECT on the session channel before teardown. The vendor sends this at session end
+    /// (cap48: <c>DISCONNECT</c> with an empty reason) and it is the difference between the vendor's clean
+    /// disconnect and our previous abrupt drop — the console needs the message to act on the disconnect (e.g.
+    /// enter rest mode) rather than wait out its AFK timeout. Best-effort: a send failure must not block
+    /// teardown, and this runs on its own short budget because the session token is about to be cancelled.
+    /// </summary>
+    public async Task SendDisconnectAsync(string reason, CancellationToken cancellationToken)
+    {
+        TakionReliableChannel? reliable = _reliable;
+        if (reliable is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await reliable.SendMessageAsync(
+                TakionDataChunk.ChannelSession,
+                new ControlMessage
+                {
+                    Type = ControlMessage.Types.MessageType.Disconnect,
+                    DisconnectPayload = new DisconnectPayload { Reason = reason },
+                },
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+            // Best-effort: if the disconnect cannot be delivered, teardown proceeds regardless.
+        }
+    }
+
     private async Task SendConnectionQualityAsync(ConnectionQualityReport report, CancellationToken cancellationToken)
     {
         TakionReliableChannel? reliable = _reliable;
