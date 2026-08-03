@@ -72,6 +72,18 @@
       <SDLCheck>true</SDLCheck>
       <ConformanceMode>true</ConformanceMode>
       <WarningLevel>Level4</WarningLevel>
+      <!--
+        Code analysis is on for every build of this project. It is affordable here (a handful of
+        translation units) and the codebase currently comes back clean, so the signal-to-noise is the
+        best it will ever be - turning it on later, against a backlog of findings, is how static
+        analysis ends up permanently disabled.
+
+        Know what it does NOT cover. It was enabled after a dangling-else bug shipped in three
+        commits, and it would not have caught that one: binding an else to the wrong if is valid C++
+        and MSVC has no misleading-indentation check. It catches a different and still worthwhile
+        class - uninitialised reads, null dereferences, buffer arithmetic, annotation mismatches.
+      -->
+      <EnableMicrosoftCodeAnalysis>true</EnableMicrosoftCodeAnalysis>
     </ClCompile>
     <Link>
       <!-- dxguid.lib supplies the *definitions* of the D3D/DXGI GUID symbols that d3d12video.h only declares

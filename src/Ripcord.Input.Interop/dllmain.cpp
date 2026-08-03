@@ -10,6 +10,10 @@ extern "C" HRESULT __stdcall DllGetActivationFactory(void* classId, void** facto
     return static_cast<HRESULT>(WINRT_GetActivationFactory(classId, factory));
 }
 
+// _Use_decl_annotations_ adopts the SAL contract combaseapi.h already declares for this export.
+// Without it code analysis reports C28251 (inconsistent annotation) - a real mismatch, if a harmless
+// one, and worth silencing at the source rather than by suppressing the check.
+_Use_decl_annotations_
 extern "C" HRESULT __stdcall DllCanUnloadNow()
 {
     return static_cast<HRESULT>(WINRT_CanUnloadNow());
