@@ -36,6 +36,17 @@ public readonly record struct PipelineStats(
     string Decoder = "",
     /// <summary>Raw decode-loop counters. Only worth reading when frames are not appearing.</summary>
     string DecoderDiagnostic = "",
+    /// <summary>The stream signals an HDR transfer function (PQ or HLG). Says nothing about what we output.</summary>
+    bool IsHdrTransfer = false,
+    /// <summary>The display accepts HDR10. Says nothing about what the stream carries.</summary>
+    bool IsDisplayHdr = false,
+    /// <summary>Both of the above, and the swap chain accepted the colour space — the only one of the three that
+    /// means "you are looking at HDR". When this is false while <see cref="IsHdrTransfer"/> is true, the driver
+    /// is tone-mapping to SDR. These are separate booleans rather than one because the UI previously inferred
+    /// HDR by substring-matching <see cref="Decoder"/>, which lit an HDR pill while tone-mapping to SDR.</summary>
+    bool IsHdrOutput = false,
+    /// <summary>10-bit decode (P010). Independent of HDR — a stream can be 10-bit and SDR.</summary>
+    bool IsTenBit = false,
     /// <summary>Audio frames successfully decoded and submitted, cumulative. At 480 samples per frame and 48 kHz
     /// this should advance at ~100/s, which makes it a far better liveness signal than "can I hear it".</summary>
     long AudioFramesDecoded = 0,
@@ -101,6 +112,10 @@ public sealed class D3D12VideoDecodePipeline : IVideoDecodePipeline
         ColorMatrix: _initialized ? _renderer.ColorMatrixDescription : string.Empty,
         Decoder: _initialized ? _renderer.DecoderDescription : string.Empty,
         DecoderDiagnostic: _initialized ? _renderer.DecoderDiagnostic : string.Empty,
+        IsHdrTransfer: _initialized && _renderer.IsHdrTransfer,
+        IsDisplayHdr: _initialized && _renderer.IsDisplayHdr,
+        IsHdrOutput: _initialized && _renderer.IsHdrOutput,
+        IsTenBit: _initialized && _renderer.IsTenBit,
         AudioFramesDecoded: Interlocked.Read(ref _audioFramesDecoded),
         AudioFramesSkipped: Interlocked.Read(ref _audioFramesSkipped),
         AudioFormat: AudioFormatDescription);

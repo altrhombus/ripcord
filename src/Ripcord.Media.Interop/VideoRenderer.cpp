@@ -883,25 +883,20 @@ namespace winrt::Ripcord::Media::Interop::implementation
             }
             else if (m_seiMasteringDisplay || m_seiContentLightLevel)
             {
-                // The bitstream has it and the decoder did not pass it on. Our read was the limitation, not
-                // the stream - so this says nothing about whether the content is graded.
-                desc += L" \u00B7 HDR SEI in bitstream, not surfaced by the decoder (";
+                // The bitstream has it and the decoder did not pass it on. Worth saying, because it means
+                // our read is the limitation and a future tone-mapping feature would need the SEI path.
+                desc += L" \u00B7 HDR SEI not surfaced by decoder (";
                 desc += m_seiMasteringDisplay ? L"ST2086" : L"";
                 desc += (m_seiMasteringDisplay && m_seiContentLightLevel) ? L"+" : L"";
                 desc += m_seiContentLightLevel ? L"MaxCLL" : L"";
                 desc += L")";
             }
-            else if (m_hdrSeiScanAttempts > 0)
-            {
-                // Asked both ways and got nothing either way: the encoder genuinely sends no static
-                // metadata. Common for a real-time game encoder, which has no mastering display to describe,
-                // so this still does not prove the content lacks HDR range.
-                desc += L" \u00B7 no HDR metadata in stream or bitstream";
-            }
-            else
-            {
-                desc += L" \u00B7 no HDR metadata (may be SDR in a PQ container)";
-            }
+
+            // Deliberately silent when there is no static metadata anywhere. That was worth reporting while
+            // it was an open question; it was settled on 2026-08-02 - the console's encoder sends none, in
+            // neither the media type nor the bitstream, which is normal for real-time content with no
+            // mastering display to describe. Reporting the expected case every frame is noise, and "no HDR
+            // metadata" reads like a fault when it is not one.
 
             if (m_presentingHdr)
             {

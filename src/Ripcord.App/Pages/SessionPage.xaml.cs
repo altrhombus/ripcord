@@ -943,17 +943,24 @@ public sealed partial class SessionPage : Page
     /// </para>
     ///
     /// <para>
-    /// The flags are inferred from the decoder description string, which is assembled in the native renderer. That
-    /// coupling is deliberate but not ideal: a missed pill is cosmetic, never a correctness problem, and it avoids a
-    /// native rebuild for presentation. Promote to real booleans on <see cref="PipelineStats"/> next time the
-    /// renderer is touched.
+    /// The flags used to be inferred by substring-matching the decoder description. That was promoted to real
+    /// booleans on <see cref="PipelineStats"/> on 2026-08-02, as this comment previously said it should be — and
+    /// it turned out not to be merely cosmetic. "PQ" appears in the description whenever the *stream* carries a
+    /// PQ transfer function, which is true even when the display is SDR and the driver is tone-mapping, so the
+    /// HDR pill lit while HDR was not in effect. Presentation inferred from prose is guessing; if the UI needs a
+    /// fact, the renderer should expose it.
     /// </para>
     /// </summary>
     private void UpdateCapabilityPills(PipelineStats s)
     {
         string decoder = s.Decoder ?? string.Empty;
-        bool hdr = decoder.Contains("PQ", StringComparison.OrdinalIgnoreCase);
-        bool tenBit = decoder.Contains("10-bit", StringComparison.OrdinalIgnoreCase);
+
+        // Real flags, not substring matches. The previous version tested the description for "PQ", which is
+        // present whenever the *stream* is PQ — so the HDR pill lit even while the driver was tone-mapping to
+        // SDR on an SDR display, claiming a capability that was not in effect. IsHdrOutput is the only value
+        // that means the picture on screen is HDR.
+        bool hdr = s.IsHdrOutput;
+        bool tenBit = s.IsTenBit;
         bool hevc = decoder.Contains("HEVC", StringComparison.OrdinalIgnoreCase);
         bool zeroCopy = s.DecodeMode == 2;
 
