@@ -19,6 +19,15 @@
             TextWrapping="Wrap"
             Text="Your console is signed out and needs its login passcode — the one set under Settings → Users and Accounts → Login Settings. This is not the pairing code." />
 
+        <!--  Shown only on a re-prompt, after the console rejected the previous passcode.  -->
+        <TextBlock
+            x:Name="RetryNotice"
+            Visibility="Collapsed"
+            Style="{StaticResource BodyStrongTextBlockStyle}"
+            Foreground="{ThemeResource SystemFillColorCautionBrush}"
+            TextWrapping="Wrap"
+            Text="That passcode wasn't accepted. Try again." />
+
         <!--  Digits only, submits on the last one. MaxLength is not fixed to 4 because the passcode length is
               user-configured on the console (4 is the common case); the Sign in button enables at >= 4.  -->
         <TextBox

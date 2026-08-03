@@ -353,7 +353,7 @@ public sealed partial class SessionPage : Page
     /// null if the user cancelled. Called from the session's connect thread, so it marshals onto the
     /// dispatcher; the session's own cancellation closes the dialog if the user leaves mid-prompt.
     /// </summary>
-    private Task<string?> RequestLoginPinAsync(CancellationToken cancellationToken)
+    private Task<string?> RequestLoginPinAsync(bool isRetry, CancellationToken cancellationToken)
     {
         var tcs = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -361,7 +361,7 @@ public sealed partial class SessionPage : Page
         {
             try
             {
-                var dialog = new LoginPinDialog { XamlRoot = XamlRoot };
+                var dialog = new LoginPinDialog(isRetry) { XamlRoot = XamlRoot };
                 using CancellationTokenRegistration reg = cancellationToken.Register(() => dialog.Hide());
                 ContentDialogResult result = await dialog.ShowAsync();
                 tcs.TrySetResult(result == ContentDialogResult.Primary ? dialog.Pin : null);
