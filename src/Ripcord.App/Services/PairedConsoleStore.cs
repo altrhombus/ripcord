@@ -53,12 +53,16 @@ public sealed record PairedConsole(string Id, string Name, string Host, string P
 /// <see cref="IPlatformPaths"/> rather than a hardcoded <c>%LocalAppData%</c>.
 /// </para>
 /// </summary>
-internal sealed class PairedConsoleStore
+internal sealed partial class PairedConsoleStore
 {
     /// <summary>Marks a blob as ciphertext, distinguishing it from a pre-encryption plaintext hex blob.</summary>
     internal const string ProtectedPrefix = "dpapi:";
 
-    private static readonly JsonSerializerOptions JsonOpts = new() { WriteIndented = true };
+    // Source-generated: the list of paired consoles. Unreadable under trimming, the app would present a
+    // paired install as having no consoles at all.
+    [JsonSourceGenerationOptions(WriteIndented = true)]
+    [JsonSerializable(typeof(List<PairedConsole>))]
+    private partial class PairedConsoleContext : JsonSerializerContext;
 
     private readonly string _path;
     private readonly ICredentialProtector _protector;
@@ -110,7 +114,7 @@ internal sealed class PairedConsoleStore
             return [];
         try
         {
-            return JsonSerializer.Deserialize<List<PairedConsole>>(File.ReadAllText(_path)) ?? [];
+            return JsonSerializer.Deserialize(File.ReadAllText(_path), PairedConsoleContext.Default.ListPairedConsole) ?? [];
         }
         catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)
         {
@@ -123,7 +127,7 @@ internal sealed class PairedConsoleStore
     {
         // Temp file + move, so an interrupted write cannot destroy the existing pairings.
         string tmp = _path + ".tmp";
-        File.WriteAllText(tmp, JsonSerializer.Serialize(consoles, JsonOpts));
+        File.WriteAllText(tmp, JsonSerializer.Serialize(consoles, PairedConsoleContext.Default.ListPairedConsole));
         File.Move(tmp, _path, overwrite: true);
     }
 
