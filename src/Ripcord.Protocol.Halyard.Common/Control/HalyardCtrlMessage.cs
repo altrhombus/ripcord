@@ -26,7 +26,25 @@ public readonly struct HalyardCtrlMessage
 
     // Message types observed on the wire / from the authorized cross-reference. Only the heartbeat pair is
     // required to keep a session alive; the rest are functional (session id, login, features, keyboard, mic).
+    /// <summary>
+    /// Console → client: the user's account is locked and a login passcode is required before the stream can
+    /// open. Wire-confirmed in cap50 (empty payload). Until this is answered with <see cref="TypeLoginSubmit"/>
+    /// the console silently drops every Takion <c>INIT</c>, so the whole stream hangs.
+    /// </summary>
+    public const ushort TypeLoginPrompt = 0x0004;
+
+    /// <summary>
+    /// Client → console: the entered login passcode, as the 4 ASCII digits encrypted with the §2.1
+    /// control-field cipher at <see cref="Control.HalyardSessCtrlFields.CounterLoginPin"/>. The high bit of the
+    /// type (0x8000) marks it as the client's answer to <see cref="TypeLoginPrompt"/>.
+    /// </summary>
+    public const ushort TypeLoginSubmit = 0x8004;
+
+    /// <summary>Console → client: login result (cap50 carried a single byte). Informational; the reliable
+    /// "you may stream now" signal is <see cref="TypeSessionId"/>.</summary>
     public const ushort TypeLogin = 0x0005;
+
+    /// <summary>Console → client: session-ready. After a login it is what gates the Takion bring-up.</summary>
     public const ushort TypeSessionId = 0x0033;
     public const ushort TypeHeartbeatReq = 0x00fe;
     public const ushort TypeHeartbeatRep = 0x01fe;
