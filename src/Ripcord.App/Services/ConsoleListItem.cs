@@ -18,6 +18,10 @@ public enum ConsoleReachability
 
     /// <summary>Did not answer SRCH. Powered off, off the LAN, or its stored address has changed.</summary>
     Offline,
+
+    /// <summary>We asked the console to rest as we disconnected and it has not settled yet. Transitional: a
+    /// bounded re-check watches it until it reaches <see cref="Resting"/> or <see cref="Offline"/>.</summary>
+    PreparingForRest,
 }
 
 /// <summary>
@@ -68,6 +72,7 @@ public sealed class ConsoleListItem(PairedConsole console) : INotifyPropertyChan
         ConsoleReachability.Online => "Online",
         ConsoleReachability.Resting => "Resting",
         ConsoleReachability.Offline => "Offline",
+        ConsoleReachability.PreparingForRest => "Preparing for rest…",
         _ => "Checking…",
     };
 
@@ -80,6 +85,8 @@ public sealed class ConsoleListItem(PairedConsole console) : INotifyPropertyChan
         ConsoleReachability.Online => "SystemFillColorSuccessBrush",
         ConsoleReachability.Resting => "SystemFillColorCautionBrush",
         ConsoleReachability.Offline => "TextFillColorDisabledBrush",
+        // In transit — the same caution colour rest settles into, so the dot doesn't jump hue when it lands.
+        ConsoleReachability.PreparingForRest => "SystemFillColorCautionBrush",
         _ => "TextFillColorTertiaryBrush",
     }];
 

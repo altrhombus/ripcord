@@ -112,8 +112,13 @@ public sealed partial class MainWindow : Window
         ApplyStreamChrome();
     }
 
-    /// <summary>Tear the stream layer down and restore normal navigation.</summary>
-    public void CloseStream()
+    /// <summary>
+    /// Tear the stream layer down and restore normal navigation. <paramref name="closedConsoleHost"/> and
+    /// <paramref name="restRequested"/> carry the just-ended session's console and whether it was asked to rest,
+    /// so the consoles list can re-probe on return (its own <c>Loaded</c> only fires once) and show a
+    /// rest-requested console settling.
+    /// </summary>
+    public void CloseStream(string? closedConsoleHost = null, bool restRequested = false)
     {
         SetFullScreen(false);
 
@@ -129,6 +134,14 @@ public sealed partial class MainWindow : Window
         NavView.Visibility = Visibility.Visible;
         TitleBarRow.Height = new GridLength(48);
         AppTitleBar.Visibility = Visibility.Visible;
+
+        // The consoles list is the page revealed underneath after a stream (nothing else navigates during one),
+        // and returning to it never re-fired Loaded — so a just-rested console kept its stale "Online" dot.
+        // Nudge it to re-probe now, handing over the rest intent so it can watch that console settle.
+        if (NavFrame.Content is ConsolesPage consolesPage)
+        {
+            consolesPage.OnReturnedFromStream(closedConsoleHost, restRequested);
+        }
     }
 
     /// <summary>
