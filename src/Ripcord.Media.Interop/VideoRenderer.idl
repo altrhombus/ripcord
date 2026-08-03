@@ -76,9 +76,18 @@ namespace Ripcord.Media.Interop
         UInt32 DecodedWidth{ get; };
         UInt32 DecodedHeight{ get; };
 
-        /// Colour matrix in use, and whether the stream signalled it or we fell back. Surfaced so a colour
-        /// problem is diagnosable from the overlay instead of guessed at.
+        /// The complete colour answer in one place: matrix, transfer function and primaries, each marked
+        /// as signalled or assumed. Previously the matrix lived here and the transfer was appended to
+        /// DecoderDescription, so the overlay reported colour in two rows and neither was the whole story.
         String ColorMatrixDescription{ get; };
+
+        /// Pixel format, e.g. "10-bit P010" or "8-bit NV12". Reported for SDR too, so the row cannot be
+        /// confused with a format probe that never ran.
+        String VideoFormatDescription{ get; };
+
+        /// What the display is actually being given - "HDR10", "SDR", or which of the two reasons we are
+        /// tone-mapping. Distinct from the stream's transfer function, which is a colour fact.
+        String HdrOutputDescription{ get; };
 
         // The HDR state as three separate facts, because they are independent and the UI needs to tell them
         // apart. These exist because the app used to infer them by substring-matching DecoderDescription,
