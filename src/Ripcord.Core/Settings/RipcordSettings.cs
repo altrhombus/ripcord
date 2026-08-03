@@ -90,9 +90,15 @@ public sealed record RipcordSettings
     /// </summary>
     public bool ReportConnectionQuality { get; set; }
 
-    /// <summary>Put the console into rest mode when a session ends, rather than leaving it awake. Off by
-    /// default, matching the vendor's disconnect checkbox defaulting to "keep on".</summary>
+    /// <summary>The <em>default</em> answer for the disconnect prompt's rest-mode checkbox — and, when
+    /// <see cref="ConfirmOnDisconnect"/> is off, the choice applied outright. Off by default, matching the
+    /// vendor's disconnect checkbox defaulting to "keep on".</summary>
     public bool RestConsoleOnDisconnect { get; set; }
+
+    /// <summary>Ask before ending a stream, with a rest-mode choice, rather than disconnecting immediately.
+    /// On by default: a disconnect is destructive of a live session and the rest choice is worth surfacing.
+    /// Turn off to leave instantly using <see cref="RestConsoleOnDisconnect"/> as the standing answer.</summary>
+    public bool ConfirmOnDisconnect { get; set; } = true;
 
     // ---- device ----
 

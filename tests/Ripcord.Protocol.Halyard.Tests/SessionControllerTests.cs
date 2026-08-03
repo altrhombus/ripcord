@@ -42,7 +42,11 @@ public class SessionControllerTests
         public IObservable<EncodedVideoFrame> VideoFrames => _video;
         public IObservable<EncodedAudioFrame> AudioFrames => _audio;
         public IObservable<SessionStatistics> Statistics => _stats;
+        public bool RestConsoleOnDisconnect { get; set; }
         public ISessionInputSink InputSink { get; } = new CountingSink();
+
+        /// <summary>How many controller frames the session has been handed.</summary>
+        public int InputFrames => ((CountingSink)InputSink).Count;
         public IBandwidthController BandwidthController { get; } = new RecordingBandwidth();
 
         public Task<SessionHandshakeResult> ConnectAsync(SessionConfig config, CancellationToken cancellationToken)
@@ -193,6 +197,58 @@ public class SessionControllerTests
         session.EmitFrame();
 
         Assert.Equal(2, pipeline.VideoFrames);
+    }
+
+    [Fact]
+    public async Task RestConsoleOnDisconnect_SetAtDisconnect_ReachesTheLiveSession()
+    {
+        // The rest choice is made at the disconnect prompt, not at connect, so setting it on the controller must
+        // land on the session that DisposeAsync reads — otherwise the checkbox would silently do nothing.
+        var time = new VirtualTime();
+        var session = new FakeSession();
+
+        await using var controller = new SessionController(
+            () => session, new FakePipeline(), clock: time.Now, delay: time.Delay);
+        await controller.StartAsync(Config);
+        await WaitFor(() => controller.Lifecycle == SessionLifecycle.Streaming, "should connect");
+
+        // Config default is off, and the getter should reflect the live session.
+        Assert.False(controller.RestConsoleOnDisconnect);
+        Assert.False(session.RestConsoleOnDisconnect);
+
+        controller.RestConsoleOnDisconnect = true;
+
+        Assert.True(session.RestConsoleOnDisconnect);
+        Assert.True(controller.RestConsoleOnDisconnect);
+    }
+
+    [Fact]
+    public async Task SuspendInputForwarding_DropsFramesAndNeutralisesTheConsole()
+    {
+        // While an overlay (the disconnect prompt) owns the pad, frames must not leak into the game — and the
+        // console must be released once, so a held gesture is not stuck down behind the dialog.
+        var time = new VirtualTime();
+        var session = new FakeSession();
+        var input = new Subject<ControllerStateFrame>();
+
+        await using var controller = new SessionController(
+            () => session, new FakePipeline(), controllerInput: input, clock: time.Now, delay: time.Delay);
+        await controller.StartAsync(Config);
+        await WaitFor(() => controller.Lifecycle == SessionLifecycle.Streaming, "should connect");
+
+        input.OnNext(default);
+        Assert.Equal(1, session.InputFrames); // forwarded normally
+
+        controller.SuspendInputForwarding = true;
+        Assert.Equal(2, session.InputFrames); // the one neutral release frame
+
+        input.OnNext(default);
+        input.OnNext(default);
+        Assert.Equal(2, session.InputFrames); // dropped while suspended
+
+        controller.SuspendInputForwarding = false;
+        input.OnNext(default);
+        Assert.Equal(3, session.InputFrames); // forwarding resumes
     }
 
     [Fact]

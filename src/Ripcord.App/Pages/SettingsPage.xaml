@@ -365,11 +365,34 @@
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
                     <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="Ask before disconnecting" />
+                        <TextBlock
+                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                            Style="{StaticResource CaptionTextBlockStyle}"
+                            Text="Confirms when you end a stream, and lets you choose rest mode for that disconnect. Off leaves instantly, using the default below."
+                            TextWrapping="Wrap" />
+                    </StackPanel>
+                    <ToggleSwitch
+                        x:Name="ConfirmOnDisconnectToggle"
+                        Grid.Column="1"
+                        VerticalAlignment="Center"
+                        AutomationProperties.Name="Ask before disconnecting"
+                        Toggled="OnSettingChanged" />
+                </Grid>
+            </Border>
+
+            <Border Style="{StaticResource SettingsCardStyle}">
+                <Grid ColumnSpacing="16">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel VerticalAlignment="Center">
                         <TextBlock Text="Rest console when I disconnect" />
                         <TextBlock
                             Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                             Style="{StaticResource CaptionTextBlockStyle}"
-                            Text="Puts the console into rest mode when you end the stream, instead of leaving it awake."
+                            Text="The default answer for rest mode: puts the console into rest when you end the stream, instead of leaving it awake."
                             TextWrapping="Wrap" />
                     </StackPanel>
                     <ToggleSwitch
