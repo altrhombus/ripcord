@@ -281,6 +281,14 @@ namespace winrt::Ripcord::Media::Interop::implementation
 
         ProbeDisplayHdr(factory.Get(), adapter.Get());
 
+        // Choose the back-buffer format before anything that has to agree with it. Committing to 10-bit
+        // whenever the panel is HDR-capable - rather than waiting to discover the stream is PQ - is what lets
+        // the HDR decision be a SetColorSpace1 call later instead of a mid-stream swap chain rebuild.
+        if (m_displayHdrCapable)
+        {
+            m_swapChainFormat = DXGI_FORMAT_R10G10B10A2_UNORM;
+        }
+
         D3D12_COMMAND_QUEUE_DESC queueDesc = {};
         queueDesc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
         ThrowIfFailed(m_device->CreateCommandQueue(&queueDesc, IID_PPV_ARGS(&m_commandQueue)));
@@ -288,7 +296,7 @@ namespace winrt::Ripcord::Media::Interop::implementation
         DXGI_SWAP_CHAIN_DESC1 swapChainDesc = {};
         swapChainDesc.Width = m_width;
         swapChainDesc.Height = m_height;
-        swapChainDesc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+        swapChainDesc.Format = m_swapChainFormat;
         swapChainDesc.SampleDesc.Count = 1;
         swapChainDesc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
         swapChainDesc.BufferCount = FrameCount;
@@ -402,7 +410,7 @@ namespace winrt::Ripcord::Media::Interop::implementation
         psoDesc.SampleMask = UINT_MAX;
         psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
         psoDesc.NumRenderTargets = 1;
-        psoDesc.RTVFormats[0] = DXGI_FORMAT_B8G8R8A8_UNORM;
+        psoDesc.RTVFormats[0] = m_swapChainFormat;
         psoDesc.SampleDesc.Count = 1;
         ThrowIfFailed(m_device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&m_pipelineState)));
 
@@ -858,13 +866,20 @@ namespace winrt::Ripcord::Media::Interop::implementation
         // and a waste on an HDR one, so both halves need to be visible to tell those cases apart.
         if (m_hdrTransfer)
         {
-            if (m_displayHdrCapable)
+            if (m_presentingHdr)
             {
-                desc += L" \u00B7 display HDR10";
+                desc += L" \u00B7 HDR10 output";
                 if (m_displayMaxNits > 0.0f)
                 {
                     desc += L" (" + std::to_wstring(static_cast<int>(m_displayMaxNits)) + L" nits)";
                 }
+            }
+            else if (m_displayHdrCapable)
+            {
+                // Panel could take it but we are not sending it - a refused SetColorSpace1. Worth
+                // distinguishing from an SDR panel, because it means something went wrong rather than
+                // the tone-map being the correct choice.
+                desc += L" \u00B7 display HDR-capable, presenting SDR";
             }
             else
             {
@@ -1792,7 +1807,7 @@ namespace winrt::Ripcord::Media::Interop::implementation
         td.Height = targetHeight;
         td.DepthOrArraySize = 1;
         td.MipLevels = 1;
-        td.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+        td.Format = m_swapChainFormat;
         td.SampleDesc.Count = 1;
         td.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
         td.Flags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
@@ -1881,13 +1896,47 @@ namespace winrt::Ripcord::Media::Interop::implementation
                     m_hdrTransfer = false;
                 }
 
+                // Present HDR natively only when both halves hold. Otherwise ask the driver to tone-map into
+                // SDR sRGB, which is the right answer on an SDR panel and the reason this path existed.
+                m_presentingHdr = m_hdrTransfer && m_displayHdrCapable;
+
+                const DXGI_COLOR_SPACE_TYPE outputSpace =
+                    m_presentingHdr ? DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020
+                                    : DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709;
+
                 videoContext1->VideoProcessorSetStreamColorSpace1(m_videoProcessor.Get(), 0, inputSpace);
-                videoContext1->VideoProcessorSetOutputColorSpace1(
-                    m_videoProcessor.Get(), DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709);
+                videoContext1->VideoProcessorSetOutputColorSpace1(m_videoProcessor.Get(), outputSpace);
                 colorSpaceSet = true;
 
-                // Only genuinely HDR sources are being tone-mapped; a 10-bit SDR source passes through.
-                m_toneMappedByDriver = m_hdrTransfer;
+                // Tell the swap chain what it is now carrying. Both sides must agree: the video processor is
+                // writing PQ into the shared texture, so the presentation engine has to be told to read it as
+                // PQ, or the panel applies an sRGB curve to PQ values and the picture comes out very dark.
+                if (m_swapChain)
+                {
+                    UINT support = 0;
+                    if (SUCCEEDED(m_swapChain->CheckColorSpaceSupport(outputSpace, &support))
+                        && (support & DXGI_SWAP_CHAIN_COLOR_SPACE_SUPPORT_FLAG_PRESENT))
+                    {
+                        if (FAILED(m_swapChain->SetColorSpace1(outputSpace)) && m_presentingHdr)
+                        {
+                            // Refused after claiming support: fall back rather than present mismatched data.
+                            m_presentingHdr = false;
+                            videoContext1->VideoProcessorSetOutputColorSpace1(
+                                m_videoProcessor.Get(), DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709);
+                            m_swapChain->SetColorSpace1(DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709);
+                        }
+                    }
+                    else if (m_presentingHdr)
+                    {
+                        m_presentingHdr = false;
+                        videoContext1->VideoProcessorSetOutputColorSpace1(
+                            m_videoProcessor.Get(), DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709);
+                    }
+                }
+
+                // Only a source being squeezed into SDR is "tone-mapped"; presenting PQ to a PQ panel is not,
+                // and neither is a 10-bit SDR source passing straight through.
+                m_toneMappedByDriver = m_hdrTransfer && !m_presentingHdr;
             }
         }
 
@@ -2160,7 +2209,7 @@ namespace winrt::Ripcord::Media::Interop::implementation
         psoDesc.SampleMask = UINT_MAX;
         psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
         psoDesc.NumRenderTargets = 1;
-        psoDesc.RTVFormats[0] = DXGI_FORMAT_B8G8R8A8_UNORM;
+        psoDesc.RTVFormats[0] = m_swapChainFormat;
         psoDesc.SampleDesc.Count = 1;
         ThrowIfFailed(m_device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&m_nv12Pipeline)));
 
@@ -2259,7 +2308,7 @@ namespace winrt::Ripcord::Media::Interop::implementation
         psoDesc.SampleMask = UINT_MAX;
         psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
         psoDesc.NumRenderTargets = 1;
-        psoDesc.RTVFormats[0] = DXGI_FORMAT_B8G8R8A8_UNORM;
+        psoDesc.RTVFormats[0] = m_swapChainFormat;
         psoDesc.SampleDesc.Count = 1;
         ThrowIfFailed(m_device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&m_upscalePipeline)));
     }
@@ -2619,7 +2668,7 @@ namespace winrt::Ripcord::Media::Interop::implementation
         // Preserve the creation flags: dropping FRAME_LATENCY_WAITABLE_OBJECT here would leave
         // m_frameLatencyWaitable dangling and silently break the pacing in BeginFrame.
         ThrowIfFailed(m_swapChain->ResizeBuffers(
-            FrameCount, m_width, m_height, DXGI_FORMAT_B8G8R8A8_UNORM, m_swapChainFlags));
+            FrameCount, m_width, m_height, m_swapChainFormat, m_swapChainFlags));
         CreateRenderTargets();
     }
 
