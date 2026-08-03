@@ -163,11 +163,15 @@ public sealed class HalyardV1SessionCrypto : IHalyardSessionCrypto, IDisposable
     // Congestion packet (base-type 0x05): 4-byte GMAC tag at [7..10], key position at [0xb..0xe]. Because the
     // key position immediately follows the tag, zeroing tag+key_pos (zeroKeyPos: true) covers offsets [7..15).
     //
-    // NOTE the provenance gap, and do not let the control result above be read as covering this: the control
-    // AAD rule is [V] (verified over 727 real packets), but congestion is [X] — applied here by analogy with
-    // control, not measured. cap3 is the only capture pairing traffic with dumped keys and it is 100% type-0,
-    // so it carries no congestion packet to test. Settling this needs a capture that reaches streaming with
-    // correlated keys; the offsets themselves are [V] (474 packets in cap47), only the AAD rule is assumed.
+    // The AAD rule here is [V] as of 2026-08-02, measured rather than assumed by analogy with control:
+    // recomputed over cap48 (a full gameplay session whose stream keys were dumped in the same run), 300/300
+    // congestion packets reproduce their on-wire tag with tag+key_pos zeroed, and the tag-only A/V rule
+    // matches none of them. So control and congestion share a rule, and feedback is the odd one out.
+    //
+    // Worth keeping, because it cost a planned console trip: this was recorded as needing "a capture that
+    // reaches streaming with correlated keys", which cap48 had *already* been for days. The claim descended
+    // from a capture inventory written before cap48 existed and never revisited. Check the dirty room against
+    // the claim before believing a capture-blocked note.
     private const int CongestionTagOffset = 7;
     private const int CongestionKeyPosOffset = 0xb;
     private const int CongestionPacketLength = 15;
