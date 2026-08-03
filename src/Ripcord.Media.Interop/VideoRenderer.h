@@ -207,6 +207,21 @@ namespace winrt::Ripcord::Media::Interop::implementation
         int32_t m_yuvMatrix = 0;
         bool m_yuvMatrixSignalled = false;
 
+        // Transfer function and primaries the stream actually signals, read rather than inferred. Bit depth is
+        // NOT a transfer function: a 10-bit stream can be plain BT.709, and declaring it PQ would tone-map a
+        // picture that needs no tone-mapping. This is the same trap the yuvCoefficient work already hit once -
+        // the console ignores what we ask for and signals what it likes, so read the decoder output type.
+        // MFVideoTransFunc_Unknown / MFVideoPrimaries_Unknown mean "nothing signalled"; callers then fall back
+        // to the previous behaviour rather than guessing something new.
+        uint32_t m_transferFunction = 0;   // MFVideoTransferFunction
+        uint32_t m_videoPrimaries = 0;     // MFVideoPrimaries
+        bool m_transferFunctionSignalled = false;
+        bool m_videoPrimariesSignalled = false;
+
+        // True when the stream's transfer function is genuinely an HDR one (PQ or HLG) rather than merely
+        // 10-bit. This, not m_tenBitOutput, is what an HDR swap chain should be gated on.
+        bool m_hdrTransfer = false;
+
         uint32_t m_displayWidth = 0;
         uint32_t m_displayHeight = 0;
         uint32_t m_displayOffsetX = 0;
