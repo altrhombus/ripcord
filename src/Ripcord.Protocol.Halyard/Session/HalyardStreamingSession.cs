@@ -856,6 +856,45 @@ public sealed class HalyardStreamingSession : IStreamingSession
     public async ValueTask DisposeAsync()
     {
         State = SessionState.Closed;
+
+        // A clean goodbye before tearing anything down, sent while the connections are still up and on its own
+        // short budget. Best-effort throughout: a console that never sees any of this is no worse off than
+        // before these existed.
+        using (var goodbyeCts = new CancellationTokenSource(TimeSpan.FromSeconds(2)))
+        {
+            // Rest-on-disconnect, if requested. Isolated in cap52 by diffing a rest-off vs a rest-on
+            // disconnect: the ONLY difference was an empty 0x0050 frame on the binary control channel — the
+            // Takion DISCONNECT below is byte-identical either way and does NOT carry the rest bit. So this
+            // frame is what actually rests the console; without it the console stays awake.
+            if (_config?.RestConsoleOnDisconnect == true)
+            {
+                try
+                {
+                    await _control.SendCtrlMessageAsync(
+                        new HalyardCtrlMessage(HalyardCtrlMessage.TypeRestMode), goodbyeCts.Token).ConfigureAwait(false);
+                }
+                catch (Exception)
+                {
+                    // best-effort; teardown proceeds whether or not the console rests
+                }
+            }
+
+            // The graceful Takion DISCONNECT the vendor sends at session end (cap48/cap52). Both rest and
+            // no-rest disconnects send it, so it is the polite close, not the rest trigger. We previously just
+            // dropped the socket.
+            if (_takionStream is not null)
+            {
+                try
+                {
+                    await _takionStream.SendDisconnectAsync(string.Empty, goodbyeCts.Token).ConfigureAwait(false);
+                }
+                catch (Exception)
+                {
+                    // never let the goodbye hold up teardown
+                }
+            }
+        }
+
         await _sessionCts.CancelAsync().ConfigureAwait(false);
 
         if (_ctrlKeepAlive is not null)

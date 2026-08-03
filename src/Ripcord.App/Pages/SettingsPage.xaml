@@ -365,6 +365,29 @@
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
                     <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="Rest console when I disconnect" />
+                        <TextBlock
+                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                            Style="{StaticResource CaptionTextBlockStyle}"
+                            Text="Puts the console into rest mode when you end the stream, instead of leaving it awake."
+                            TextWrapping="Wrap" />
+                    </StackPanel>
+                    <ToggleSwitch
+                        x:Name="RestOnDisconnectToggle"
+                        Grid.Column="1"
+                        VerticalAlignment="Center"
+                        AutomationProperties.Name="Rest console when I disconnect"
+                        Toggled="OnSettingChanged" />
+                </Grid>
+            </Border>
+
+            <Border Style="{StaticResource SettingsCardStyle}">
+                <Grid ColumnSpacing="16">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel VerticalAlignment="Center">
                         <TextBlock Text="Show connection diagnostics" />
                         <TextBlock
                             Foreground="{ThemeResource TextFillColorSecondaryBrush}"
