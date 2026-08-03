@@ -866,12 +866,35 @@ namespace winrt::Ripcord::Media::Interop::implementation
         // and a waste on an HDR one, so both halves need to be visible to tell those cases apart.
         if (m_hdrTransfer)
         {
+            // Does the stream actually contain HDR, or is it SDR in a PQ wrapper? Say which, because the two
+            // look identical in every other field here and only one of them should look impressive.
+            if (m_hdrMetadataPresent)
+            {
+                desc += L" \u00B7 graded";
+                if (m_maxCll != 0)
+                {
+                    desc += L" MaxCLL " + std::to_wstring(m_maxCll);
+                }
+                if (m_maxMasteringLuminance != 0)
+                {
+                    desc += L" master " + std::to_wstring(m_maxMasteringLuminance);
+                }
+                desc += L" nits";
+            }
+            else
+            {
+                desc += L" \u00B7 no HDR metadata (may be SDR in a PQ container)";
+            }
+
             if (m_presentingHdr)
             {
                 desc += L" \u00B7 HDR10 output";
                 if (m_displayMaxNits > 0.0f)
                 {
-                    desc += L" (" + std::to_wstring(static_cast<int>(m_displayMaxNits)) + L" nits)";
+                    // "claims" is doing real work: this driver reports MaxLuminance inversely to the
+                    // brightness slider, up to physically impossible values. Shown because it is a useful
+                    // red flag, labelled because it is not a fact.
+                    desc += L" (panel claims " + std::to_wstring(static_cast<int>(m_displayMaxNits)) + L" nits)";
                 }
             }
             else if (m_displayHdrCapable)
@@ -1247,6 +1270,16 @@ namespace winrt::Ripcord::Media::Interop::implementation
             m_yuvMatrix = signalledMatrix == MFVideoTransferMatrix_BT709 ? 1 : 0;
             m_yuvMatrixSignalled = true;
         }
+        else
+        {
+            // Nothing signalled. Default by resolution rather than always BT.601, because this console
+            // demonstrably encodes BT.709 — its H.264 stream says so explicitly at 1080p — while its HEVC stream
+            // signals no matrix at all. Defaulting HD to 601 therefore mis-converted the HEVC path in exactly the
+            // way that was just fixed for H.264: same encoder, same colours, no signalling. SD keeps BT.601,
+            // which is the correct default there.
+            m_yuvMatrix = m_displayHeight >= 720 ? 1 : 0;
+            m_yuvMatrixSignalled = false;
+        }
 
         // Transfer function and primaries, read for the same reason and from the same place. The renderer used
         // to infer "PQ" from 10-bit output alone, which is not sound - HEVC Main10 is a bit depth, not a
@@ -1268,16 +1301,29 @@ namespace winrt::Ripcord::Media::Interop::implementation
             m_videoPrimaries = signalledPrimaries;
             m_videoPrimariesSignalled = true;
         }
-        else
-        {
-            // Nothing signalled. Default by resolution rather than always BT.601, because this console
-            // demonstrably encodes BT.709 — its H.264 stream says so explicitly at 1080p — while its HEVC stream
-            // signals no matrix at all. Defaulting HD to 601 therefore mis-converted the HEVC path in exactly the
-            // way that was just fixed for H.264: same encoder, same colours, no signalling. SD keeps BT.601,
-            // which is the correct default there.
-            m_yuvMatrix = m_displayHeight >= 720 ? 1 : 0;
-            m_yuvMatrixSignalled = false;
-        }
+
+        // HDR static metadata. This answers a question the transfer function cannot: PQ tells us how the
+        // samples are encoded, not whether anything in them actually exceeds SDR range. A console streaming
+        // an SDR title with HDR enabled sends PQ-wrapped SDR, which is correctly presented and still looks
+        // flat - and without this you cannot tell that apart from a fault in the present path.
+        //
+        // Read individually rather than as a block: these arrive from the bitstream's SEI messages and a
+        // stream may carry the mastering-display volume without MaxCLL/MaxFALL or vice versa.
+        m_maxCll = 0;
+        m_maxFall = 0;
+        m_maxMasteringLuminance = 0;
+        m_minMasteringLuminance = 0;
+
+        UINT32 v = 0;
+        if (SUCCEEDED(type->GetUINT32(MF_MT_MAX_LUMINANCE_LEVEL, &v))) { m_maxCll = v; }
+        if (SUCCEEDED(type->GetUINT32(MF_MT_MAX_FRAME_AVERAGE_LUMINANCE_LEVEL, &v))) { m_maxFall = v; }
+        if (SUCCEEDED(type->GetUINT32(MF_MT_MAX_MASTERING_LUMINANCE, &v))) { m_maxMasteringLuminance = v; }
+        if (SUCCEEDED(type->GetUINT32(MF_MT_MIN_MASTERING_LUMINANCE, &v))) { m_minMasteringLuminance = v; }
+
+        // Any non-zero value counts. An attribute present but zero is the codec saying "unspecified", which
+        // is not evidence of grading.
+        m_hdrMetadataPresent =
+            m_maxCll != 0 || m_maxFall != 0 || m_maxMasteringLuminance != 0 || m_minMasteringLuminance != 0;
 
         // NV12 chroma is subsampled 2x vertically and horizontally, so the visible region has to land on even
         // boundaries or the planes disagree about which pixel is which.
