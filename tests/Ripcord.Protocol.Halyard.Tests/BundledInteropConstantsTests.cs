@@ -113,10 +113,15 @@ public class BundledInteropConstantsTests
         Assert.NotNull(stream);
         string json = new StreamReader(stream!).ReadToEnd();
 
+        // Per-console / per-account material. The list is deliberately wider than the vector-file field names:
+        // it also covers the identifiers a future regeneration could plausibly sweep in (registkey, session and
+        // device ids, duid). Those four were named in ROADMAP as being enforced here when they were not — the
+        // guard was narrower than the promise made for it, which is the failure mode this test exists to prevent.
         foreach (string forbidden in new[]
                  {
                      "companion", "nonce", "passcode", "responseBody", "plaintext", "ciphertext",
                      "ctrlHandshake", "kdfVectors", "fieldVectors", "keyVectors", "Np-Account", "RP-Did", "RP-Auth",
+                     "registkey", "registrationKey", "sessionKey", "deviceId", "duid", "accountId", "handshakeKey",
                  })
         {
             Assert.DoesNotContain(forbidden, json, StringComparison.OrdinalIgnoreCase);
