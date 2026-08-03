@@ -242,6 +242,15 @@ namespace winrt::Ripcord::Media::Interop::implementation
         // merely wrapped in a PQ container - the console will happily send the latter, and it looks flat
         // through a correctly-configured HDR path, which is otherwise indistinguishable from a bug in ours.
         bool m_hdrMetadataPresent = false;
+
+        // The same question asked of the bitstream rather than the decoder's output type, because a Media
+        // Foundation decoder may simply not forward SEI metadata. Only a disagreement between these and
+        // m_hdrMetadataPresent is informative: bitstream-yes / type-no means the decoder dropped it.
+        // Scanning stops once both are found or the attempt budget runs out - SEI rides with IRAP frames, so
+        // a handful of access units is enough, and this walks every byte of one.
+        bool m_seiMasteringDisplay = false;
+        bool m_seiContentLightLevel = false;
+        int32_t m_hdrSeiScanAttempts = 0;
         uint32_t m_maxCll = 0;                  // nits, max content light level
         uint32_t m_maxFall = 0;                 // nits, max frame-average light level
         uint32_t m_maxMasteringLuminance = 0;   // nits
