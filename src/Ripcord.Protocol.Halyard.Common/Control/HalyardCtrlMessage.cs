@@ -46,6 +46,18 @@ public readonly struct HalyardCtrlMessage
 
     /// <summary>Console → client: session-ready. After a login it is what gates the Takion bring-up.</summary>
     public const ushort TypeSessionId = 0x0033;
+
+    /// <summary>
+    /// Client → console: put the console into rest mode on this disconnect. Empty payload. Isolated in cap52
+    /// by diffing a rest-on disconnect against a rest-off one — the only difference was this frame (the console
+    /// acks with <see cref="TypeRestModeAck"/>). Send it before tearing the session down; omit it to leave the
+    /// console awake.
+    /// </summary>
+    public const ushort TypeRestMode = 0x0050;
+
+    /// <summary>Console → client: acknowledges <see cref="TypeRestMode"/> (carries an opaque token we ignore).</summary>
+    public const ushort TypeRestModeAck = 0x8050;
+
     public const ushort TypeHeartbeatReq = 0x00fe;
     public const ushort TypeHeartbeatRep = 0x01fe;
 

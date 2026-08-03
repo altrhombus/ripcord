@@ -90,6 +90,10 @@ public sealed record RipcordSettings
     /// </summary>
     public bool ReportConnectionQuality { get; set; }
 
+    /// <summary>Put the console into rest mode when a session ends, rather than leaving it awake. Off by
+    /// default, matching the vendor's disconnect checkbox defaulting to "keep on".</summary>
+    public bool RestConsoleOnDisconnect { get; set; }
+
     // ---- device ----
 
     public GpuPreference GpuPreference { get; set; } = GpuPreference.Auto;
@@ -136,5 +140,6 @@ public sealed record RipcordSettings
             ReportConnectionQuality,
             // HDR is gated on HEVC rather than trusted from settings: an 8-bit AVC stream cannot carry it, and
             // asking for a combination the console cannot serve risks it declining the whole launchSpec.
-            RequestHdr && Codec == VideoCodec.Hevc ? DynamicRange.Hdr : DynamicRange.Sdr);
+            RequestHdr && Codec == VideoCodec.Hevc ? DynamicRange.Hdr : DynamicRange.Sdr,
+            RestConsoleOnDisconnect);
 }
