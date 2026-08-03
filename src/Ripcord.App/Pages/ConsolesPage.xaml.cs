@@ -20,11 +20,26 @@ public sealed partial class ConsolesPage : Page
     // resolve onto a row that has since been replaced.
     private CancellationTokenSource? _probeCts;
 
+    // The console (by host) we asked to rest as we left the last session, so the next Refresh shows it
+    // "Preparing for rest…" and watches it settle. Null when the last disconnect did not request rest.
+    private string? _restRequestedHost;
+
     public ConsolesPage()
     {
         InitializeComponent();
         Loaded += (_, _) => Refresh();
         Unloaded += (_, _) => CancelProbes();
+    }
+
+    /// <summary>
+    /// Called by the window when a stream closes and this page becomes visible again. Fixes the stale-list
+    /// problem (the page's own <c>Loaded</c> only fires once, so returning from a stream never re-probed), and
+    /// carries the rest-on-disconnect intent so the just-left console can be shown transitioning to rest.
+    /// </summary>
+    public void OnReturnedFromStream(string? consoleHost, bool restRequested)
+    {
+        _restRequestedHost = restRequested ? consoleHost : null;
+        Refresh();
     }
 
     private void Refresh()
@@ -40,17 +55,34 @@ public sealed partial class ConsolesPage : Page
 
         if (any)
         {
+            // Consume the rest intent for this pass only; a later plain Refresh must not re-arm the watch.
+            string? restHost = _restRequestedHost;
+            _restRequestedHost = null;
+
             _probeCts = new CancellationTokenSource();
-            _ = ProbeStatusesAsync(consoles, _probeCts.Token);
+            _ = ProbeStatusesAsync(consoles, restHost, _probeCts.Token);
         }
     }
+
+    // How long, and how often, to watch a rest-requested console settle. Deliberately bounded: this is not a
+    // status poll, it is a one-shot transition watch that gives up after the budget so it can never become a
+    // background loop. Rest/reboot is a very visible physical action, so a handful of checks is worth it.
+    private static readonly TimeSpan RestSettleInterval = TimeSpan.FromSeconds(10);
+    private const int RestSettleMaxChecks = 6; // 6 × 10s = 60s
 
     /// <summary>
     /// Probe each console's reachability once and update its row. A snapshot on open, not a poll: this runs
     /// on Refresh (page load, add, remove) and nowhere else. Probes run concurrently so one offline console's
     /// timeout does not delay the others, and each row shows "Checking…" until its own probe resolves.
+    ///
+    /// <para>
+    /// The one exception is <paramref name="restRequestedHost"/>: the console we just asked to rest is shown
+    /// "Preparing for rest…" and watched by a bounded re-check (<see cref="WatchRestSettleAsync"/>) instead of
+    /// a single probe, because a console that got the rest command is still awake for a few seconds after.
+    /// </para>
     /// </summary>
-    private static async Task ProbeStatusesAsync(IReadOnlyList<ConsoleListItem> consoles, CancellationToken cancellationToken)
+    private static async Task ProbeStatusesAsync(
+        IReadOnlyList<ConsoleListItem> consoles, string? restRequestedHost, CancellationToken cancellationToken)
     {
         var search = new HalyardSearchClient();
 
@@ -66,6 +98,12 @@ public sealed partial class ConsolesPage : Page
 
             try
             {
+                if (restRequestedHost is not null && item.Host == restRequestedHost)
+                {
+                    await WatchRestSettleAsync(search, item, address, cancellationToken).ConfigureAwait(true);
+                    return;
+                }
+
                 var result = await search.ProbeAsync(address, TimeSpan.FromSeconds(1), cancellationToken).ConfigureAwait(true);
                 if (cancellationToken.IsCancellationRequested)
                 {
@@ -82,6 +120,48 @@ public sealed partial class ConsolesPage : Page
                 // page left / list rebuilt — the row is gone, nothing to update
             }
         }));
+    }
+
+    /// <summary>
+    /// Watch a console we asked to rest until it settles. Shows "Preparing for rest…" and re-checks on a bounded
+    /// schedule, ending early the moment it answers 620 (rest). If the budget runs out — the console never
+    /// rested, or fully powered off and stopped answering — the row shows whatever the last probe saw. Any probe
+    /// error or cancellation just stops the watch; a transition indicator is not worth surfacing failures over.
+    /// </summary>
+    private static async Task WatchRestSettleAsync(
+        HalyardSearchClient search, ConsoleListItem item, IPAddress address, CancellationToken cancellationToken)
+    {
+        item.Status = ConsoleReachability.PreparingForRest;
+
+        for (int check = 0; check < RestSettleMaxChecks; check++)
+        {
+            await Task.Delay(RestSettleInterval, cancellationToken).ConfigureAwait(true);
+
+            var result = await search.ProbeAsync(address, TimeSpan.FromSeconds(1), cancellationToken).ConfigureAwait(true);
+            if (cancellationToken.IsCancellationRequested)
+            {
+                return;
+            }
+
+            ConsoleReachability reach = result is null
+                ? ConsoleReachability.Offline
+                : result.IsAwake ? ConsoleReachability.Online : ConsoleReachability.Resting;
+
+            // 620 is the clean end state of a rest transition — settle and stop early. Online means it hasn't
+            // gone down yet, and a bare Offline can be a momentary gap mid-transition, so keep showing
+            // "Preparing…" for both and let the budget decide.
+            if (reach == ConsoleReachability.Resting)
+            {
+                item.Status = ConsoleReachability.Resting;
+                return;
+            }
+
+            if (check == RestSettleMaxChecks - 1)
+            {
+                // Gave up: report the ground truth we last saw rather than leaving it stuck on "Preparing…".
+                item.Status = reach;
+            }
+        }
     }
 
     private void CancelProbes()
