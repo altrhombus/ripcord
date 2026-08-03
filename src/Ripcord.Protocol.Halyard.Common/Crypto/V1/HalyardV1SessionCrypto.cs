@@ -148,16 +148,26 @@ public sealed class HalyardV1SessionCrypto : IHalyardSessionCrypto, IDisposable
         //  * The field OFFSETS are [V] as of 2026-07-29: control tag@5 / key_pos@9 confirmed across 2528
         //    type-0 packets in cap47 (bytes 5-8 random, 2516/2528 distinct; bytes 9-12 all multiples of 16,
         //    2508 distinct). Congestion tag@7 / key_pos@11 confirmed the same way over 474 packets.
-        //  * The AAD RULE — that control zeroes the key_pos field as well as the tag — is still [X], i.e. an
-        //    assumption. Packet structure cannot show it; confirming it needs a MAC recomputed against a
-        //    captured packet with that session's keys. It works against real hardware, which is evidence but
-        //    not proof. Do not describe this specific rule as wire-confirmed.
+        //  * The AAD RULE — that control zeroes the key_pos field as well as the tag — is [V] as of
+        //    2026-08-02. Recomputed offline over cap3 (the session whose stream keys were dumped from the
+        //    same connection attempt): of 727 authenticated type-0 packets, 364 client->server and 363
+        //    server->client, zeroing tag+key_pos reproduces the on-wire tag on 727/727. Zeroing the tag
+        //    alone matches only the 2 packets (one per direction) whose key_pos is 0, where the two rules
+        //    are byte-identical and so prove nothing. A wrong AAD cannot coincidentally match a 32-bit tag
+        //    727 times. The remaining 67 type-0 packets carry an all-zero tag — pre-key INIT/COOKIE
+        //    handshake, unauthenticated — and are excluded rather than counted as failures.
         byte[] tag = send.ComputeTag(keyPos, packet, ControlTagOffset, zeroKeyPos: true);
         tag.CopyTo(packet.Slice(ControlTagOffset, HalyardPacketCrypto.TagLength));
     }
 
     // Congestion packet (base-type 0x05): 4-byte GMAC tag at [7..10], key position at [0xb..0xe]. Because the
     // key position immediately follows the tag, zeroing tag+key_pos (zeroKeyPos: true) covers offsets [7..15).
+    //
+    // NOTE the provenance gap, and do not let the control result above be read as covering this: the control
+    // AAD rule is [V] (verified over 727 real packets), but congestion is [X] — applied here by analogy with
+    // control, not measured. cap3 is the only capture pairing traffic with dumped keys and it is 100% type-0,
+    // so it carries no congestion packet to test. Settling this needs a capture that reaches streaming with
+    // correlated keys; the offsets themselves are [V] (474 packets in cap47), only the AAD rule is assumed.
     private const int CongestionTagOffset = 7;
     private const int CongestionKeyPosOffset = 0xb;
     private const int CongestionPacketLength = 15;
