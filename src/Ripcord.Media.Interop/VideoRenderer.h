@@ -227,8 +227,25 @@ namespace winrt::Ripcord::Media::Interop::implementation
         bool m_hdrTransfer = false;
 
         // What the display can accept, as opposed to what the stream carries. Presenting HDR needs both.
+        //
+        // m_displayMaxNits is DXGI's MaxLuminance and is reported for diagnostics ONLY - deliberately
+        // nothing keys off it. Measured on this hardware it is not trustworthy: the Adreno driver ties it to
+        // the brightness slider and inverts the relationship, reporting 160 nits at full brightness and
+        // 48000 (physically impossible) at minimum. A standalone DXGI probe returns the same values, so this
+        // is the driver, not our read. If a future tone-mapping decision ever needs real peak luminance, it
+        // will need a source other than this one.
         bool m_displayHdrCapable = false;
         float m_displayMaxNits = 0.0f;
+
+        // HDR static metadata carried by the stream (SMPTE ST 2086 mastering display + CTA-861.3 MaxCLL /
+        // MaxFALL). Its presence is the discriminator between genuinely HDR-graded content and SDR content
+        // merely wrapped in a PQ container - the console will happily send the latter, and it looks flat
+        // through a correctly-configured HDR path, which is otherwise indistinguishable from a bug in ours.
+        bool m_hdrMetadataPresent = false;
+        uint32_t m_maxCll = 0;                  // nits, max content light level
+        uint32_t m_maxFall = 0;                 // nits, max frame-average light level
+        uint32_t m_maxMasteringLuminance = 0;   // nits
+        uint32_t m_minMasteringLuminance = 0;   // 0.0001 nit units, per the MF attribute
 
         // The back-buffer format, chosen once at device creation and then used everywhere a render target has
         // to agree with it. It is a field rather than a literal because five sites have to move together -
