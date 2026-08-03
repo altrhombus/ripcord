@@ -28,6 +28,44 @@ public sealed class HalyardSearchClient
     private static readonly byte[] SearchProbe = Encoding.ASCII.GetBytes(
         $"SRCH * HTTP/1.1\r\ndevice-discovery-protocol-version:{ProtocolVersion}\r\n\r\n");
 
+    /// <summary>
+    /// Probe one known console by address and return its reply, or null if it does not answer within
+    /// <paramref name="window"/>. Sent as a unicast SRCH to <paramref name="console"/> rather than a
+    /// broadcast: the caller already knows the address (a paired console), wants only that console's state,
+    /// and must be able to tell "in standby" (a reply with <see cref="HalyardSearchResult.IsAwake"/> false)
+    /// apart from "not answering" (null) — a distinction the wake flow depends on and a broadcast that
+    /// happened to hear other consoles would blur.
+    /// </summary>
+    public async Task<HalyardSearchResult?> ProbeAsync(IPAddress console, TimeSpan window, CancellationToken cancellationToken)
+    {
+        using var udp = new UdpChannel(localPort: 0, enableBroadcast: false);
+        await udp.SendAsync(SearchProbe, new IPEndPoint(console, DiscoveryPort), cancellationToken).ConfigureAwait(false);
+
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        cts.CancelAfter(window);
+
+        try
+        {
+            while (!cts.IsCancellationRequested)
+            {
+                var received = await udp.ReceiveAsync(cts.Token).ConfigureAwait(false);
+                // Ignore anything not from the console we asked about — on a busy LAN a stray reply to some
+                // other probe could otherwise be mistaken for ours.
+                if (received.RemoteEndPoint.Address.Equals(console)
+                    && TryParse(received.Buffer, received.RemoteEndPoint.Address, out HalyardSearchResult? result))
+                {
+                    return result;
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // window elapsed with no reply from this console
+        }
+
+        return null;
+    }
+
     /// <summary>Broadcast a SRCH probe and collect console replies for <paramref name="window"/>.</summary>
     public async Task<IReadOnlyList<HalyardSearchResult>> SearchAsync(TimeSpan window, CancellationToken cancellationToken)
     {
