@@ -22,6 +22,33 @@ public static class HalyardSessCtrlFields
     public const ulong CounterStartBitrate = 3;
     public const ulong CounterStreamingType = 4;
 
+    /// <summary>
+    /// The login-passcode field counter. It is <b>5</b> because the per-connection field counter is a single
+    /// running value shared across the whole /sess/ctrl TCP connection, and the passcode — sent on the binary
+    /// control channel that connection becomes — is the sixth field-encrypt after the five request headers
+    /// above. Derived from cap50: the payload decrypts to the typed digits only at counter 5.
+    /// </summary>
+    public const ulong CounterLoginPin = 5;
+
+    /// <summary>
+    /// Login-passcode plaintext: the digits as their ASCII characters, nothing more. A 4-digit PIN is 4 bytes
+    /// (e.g. "1234" → <c>31 32 33 34</c>); the field cipher is a stream mode so the ciphertext is the same
+    /// length. Rejects non-digits rather than encrypt something the console will never accept.
+    /// </summary>
+    public static byte[] BuildLoginPinPlaintext(string pin)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(pin);
+        foreach (char c in pin)
+        {
+            if (c is < '0' or > '9')
+            {
+                throw new ArgumentException("Login passcode must be digits only.", nameof(pin));
+            }
+        }
+
+        return System.Text.Encoding.ASCII.GetBytes(pin);
+    }
+
     /// <summary>RP-Auth plaintext: the raw registration key (8 bytes) zero-padded to 16 bytes.</summary>
     public static byte[] BuildAuthPlaintext(ReadOnlySpan<byte> registrationKey)
     {

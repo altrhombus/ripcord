@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentDialog
+    x:Class="Ripcord_App.Dialogs.LoginPinDialog"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    Title="Enter your console login passcode"
+    CloseButtonText="Cancel"
+    DefaultButton="Primary"
+    PrimaryButtonText="Sign in"
+    IsPrimaryButtonEnabled="False"
+    mc:Ignorable="d">
+
+    <StackPanel MinWidth="360" Spacing="12">
+        <TextBlock
+            Style="{StaticResource BodyTextBlockStyle}"
+            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+            TextWrapping="Wrap"
+            Text="Your console is signed out and needs its login passcode — the one set under Settings → Users and Accounts → Login Settings. This is not the pairing code." />
+
+        <!--  Digits only, submits on the last one. MaxLength is not fixed to 4 because the passcode length is
+              user-configured on the console (4 is the common case); the Sign in button enables at >= 4.  -->
+        <TextBox
+            x:Name="PinBox"
+            Header="Login passcode"
+            PlaceholderText="••••"
+            InputScope="NumericPin"
+            MaxLength="16"
+            TextChanged="OnPinChanged" />
+    </StackPanel>
+</ContentDialog>
