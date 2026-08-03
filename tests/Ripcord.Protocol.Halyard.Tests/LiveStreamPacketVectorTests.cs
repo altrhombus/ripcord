@@ -73,6 +73,42 @@ public class LiveStreamPacketVectorTests
         Assert.True(discriminating > 0, "Fixture contained no discriminating packets.");
     }
 
+    /// <summary>
+    /// Congestion (base type 0x05, tag @7, key_pos @0xb) follows the SAME rule as control — measured, not
+    /// assumed by analogy. Vectors come from a different session than the control ones above (congestion
+    /// packets only exist in a capture that reached streaming), hence their own keys in the fixture.
+    ///
+    /// <para>Both directions asserted for the same reason as control: reproducing under tag+key_pos proves
+    /// little on its own unless the tag-only rule is also shown to fail.</para>
+    /// </summary>
+    [SkippableFact]
+    public void CongestionGmac_ReproducesCapturedTags_AndTagOnlyDoesNot()
+    {
+        var fx = LoadOrSkip();
+        Skip.If(fx.Congestion is null, "Fixture has no congestion section (regenerate to run).");
+        var c = fx.Congestion!;
+        int checkedPackets = 0;
+
+        foreach (var dir in c.Directions!.Values)
+        {
+            var crypto = new HalyardPacketCrypto(Hex.Bytes(dir.AesKey!), Hex.Bytes(dir.BaseIv!));
+            foreach (var v in dir.Packets!)
+            {
+                Assert.NotEqual(0u, v.KeyPos); // else the two rules coincide and nothing is proven
+                byte[] packet = Hex.Bytes(v.Packet!);
+
+                byte[] both = crypto.ComputeTag(v.KeyPos, packet, c.TagOffset, zeroKeyPos: true);
+                Assert.Equal(v.Tag, Hex.String(both));
+
+                byte[] tagOnly = crypto.ComputeTag(v.KeyPos, packet, c.TagOffset, zeroKeyPos: false);
+                Assert.NotEqual(v.Tag, Hex.String(tagOnly));
+                checkedPackets++;
+            }
+        }
+
+        Assert.True(checkedPackets > 0, "Fixture congestion section contained no packets.");
+    }
+
     private static Fixture LoadOrSkip()
     {
         Skip.IfNot(File.Exists(FixturePath),
@@ -107,6 +143,7 @@ public class LiveStreamPacketVectorTests
         public int ControlTagOffset { get; set; } = 5;
         public int ControlKeyPosOffset { get; set; } = 9;
         public Dictionary<string, DirectionVectors>? Directions { get; set; }
+        public CongestionVectors? Congestion { get; set; }
 
         public IEnumerable<(string Name, DirectionVectors Vectors)> EnumerateDirections()
         {
@@ -116,6 +153,13 @@ public class LiveStreamPacketVectorTests
                     yield return (kv.Key, kv.Value);
             }
         }
+    }
+
+    private sealed class CongestionVectors
+    {
+        public int TagOffset { get; set; } = 7;
+        public int KeyPosOffset { get; set; } = 0xB;
+        public Dictionary<string, DirectionVectors>? Directions { get; set; }
     }
 
     private sealed class DirectionVectors
