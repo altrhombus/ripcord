@@ -83,6 +83,72 @@ public sealed class SessionController : IAsyncDisposable
     public SessionStatistics? LastStatistics => _lastStats;
 
     /// <summary>
+    /// Whether the session should ask the console to rest when it ends. The app sets this from the disconnect
+    /// prompt just before tearing down; it forwards to the live session and is remembered so a later session
+    /// (reconnect) inherits the choice rather than reverting to the connect-time default.
+    /// </summary>
+    public bool RestConsoleOnDisconnect
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _session?.RestConsoleOnDisconnect ?? _restConsoleOnDisconnect;
+            }
+        }
+        set
+        {
+            lock (_gate)
+            {
+                _restConsoleOnDisconnect = value;
+                if (_session is not null)
+                {
+                    _session.RestConsoleOnDisconnect = value;
+                }
+            }
+        }
+    }
+
+    private bool _restConsoleOnDisconnect;
+
+    /// <summary>
+    /// While true, controller frames are dropped instead of forwarded to the console. Used when an in-app
+    /// overlay — the disconnect prompt — takes the pad, so button presses drive the dialog rather than leaking
+    /// into the game behind it. Setting it true also sends one neutral frame, so a gesture that was being held
+    /// when the overlay opened (the exit combo) is released on the console rather than left stuck down.
+    /// </summary>
+    public bool SuspendInputForwarding
+    {
+        get => Volatile.Read(ref _inputSuspended) != 0;
+        set
+        {
+            Volatile.Write(ref _inputSuspended, value ? 1 : 0);
+
+            if (!value)
+            {
+                return;
+            }
+
+            IStreamingSession? session;
+            lock (_gate)
+            {
+                session = _session;
+            }
+
+            try
+            {
+                session?.InputSink.SubmitControllerState(default);
+            }
+            catch (Exception)
+            {
+                // best-effort neutralization; a dropped release frame self-corrects on the next real one
+            }
+        }
+    }
+
+    private int _inputSuspended;
+
+    /// <summary>
     /// How many statistics samples have arrived this session. Lets the UI distinguish "RTT is genuinely near
     /// zero" from "the RTT metric is not being fed", which an integer millisecond reading could not.
     /// </summary>
@@ -178,6 +244,7 @@ public sealed class SessionController : IAsyncDisposable
             }
 
             _config = config;
+            _restConsoleOnDisconnect = config.RestConsoleOnDisconnect;
             _cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             _runLoop = Task.Run(() => RunAsync(_cts.Token), CancellationToken.None);
         }
@@ -401,8 +468,14 @@ public sealed class SessionController : IAsyncDisposable
 
         if (_controllerInput is not null)
         {
-            _inputSub = _controllerInput.Subscribe(
-                new Sink<ControllerStateFrame>(session.InputSink.SubmitControllerState));
+            _inputSub = _controllerInput.Subscribe(new Sink<ControllerStateFrame>(frame =>
+            {
+                // Dropped, not queued, while an overlay owns the pad — see SuspendInputForwarding.
+                if (Volatile.Read(ref _inputSuspended) == 0)
+                {
+                    session.InputSink.SubmitControllerState(frame);
+                }
+            }));
         }
 
         // Hand the session's rate controller the device's power/thermal state, and keep it current. Nothing

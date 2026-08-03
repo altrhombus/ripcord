@@ -74,6 +74,10 @@ public sealed partial class SessionPage : Page
     private ExitGestureDetector? _exitDetector;
     private bool _leaving;
 
+    // True while the disconnect confirmation dialog is open. Guards the await gap in LeaveSession so a second
+    // exit trigger (another Esc, the exit gesture) cannot stack a second dialog on top of the first.
+    private bool _confirmingLeave;
+
     // Cancels the pre-connect work (currently the wake poll) when the user leaves before the session is up.
     private CancellationTokenSource? _connectCts;
 
@@ -644,18 +648,82 @@ public sealed partial class SessionPage : Page
 
     /// <summary>
     /// Dismiss the stream layer. That unloads this page, which triggers Page_Unloaded and the async teardown.
+    ///
+    /// <para>
+    /// For a live session this first confirms (unless the user turned that off), letting them pick rest-vs-awake
+    /// for this disconnect. A non-live session — still connecting, or already failed — skips the prompt: there is
+    /// nothing to rest, and a second dialog on the way out of a failed connect is just friction.
+    /// </para>
     /// </summary>
-    private void LeaveSession()
+    private async void LeaveSession()
     {
-        if (_leaving)
+        if (_leaving || _confirmingLeave)
         {
             return;
         }
 
+        bool isLive = _controller?.CurrentStatus.IsLive == true;
+        bool restMode = isLive && _settings.RestConsoleOnDisconnect;
+
+        if (isLive && _settings.ConfirmOnDisconnect)
+        {
+            _confirmingLeave = true;
+
+            // The prompt owns the pad while it is up: suspend forwarding so button presses drive the dialog
+            // (Disconnect / Stay connected) instead of leaking into the game behind it. Restored on every exit
+            // path below — including "Stay connected", where the session keeps running.
+            if (_controller is not null)
+            {
+                _controller.SuspendInputForwarding = true;
+            }
+
+            try
+            {
+                var dialog = new DisconnectDialog(_settings.RestConsoleOnDisconnect) { XamlRoot = XamlRoot };
+                if (await dialog.ShowAsync() != ContentDialogResult.Primary)
+                {
+                    return; // "Stay connected" — the session keeps running
+                }
+
+                restMode = dialog.RestConsole;
+            }
+            catch (Exception)
+            {
+                // A dialog that cannot show (e.g. torn-down XamlRoot) must not trap the user in the session.
+                // Fall through and leave using the standing default.
+            }
+            finally
+            {
+                _confirmingLeave = false;
+
+                // Resume forwarding whenever the session survives the prompt. When we go on to leave, teardown
+                // stops the pad anyway, so resuming here is harmless in that case too.
+                if (_controller is not null)
+                {
+                    _controller.SuspendInputForwarding = false;
+                }
+            }
+        }
+
+        if (_leaving)
+        {
+            return; // teardown began while the dialog was up
+        }
+
         _leaving = true;
         _connectCts?.Cancel();
+
+        // The rest choice is made here, at disconnect, not frozen at connect — so push it to the live session
+        // before teardown reads it.
+        if (_controller is not null)
+        {
+            _controller.RestConsoleOnDisconnect = restMode;
+        }
+
         LeaveImmersiveMode();
-        Host?.CloseStream();
+        // Hand the console and the rest-on-disconnect intent to the window so the consoles list can re-probe
+        // and, if we asked this console to rest, watch it settle.
+        Host?.CloseStream(_console?.Host, restMode);
     }
 
     // ---- input ----

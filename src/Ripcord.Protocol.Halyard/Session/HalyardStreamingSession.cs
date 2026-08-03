@@ -100,6 +100,11 @@ public sealed class HalyardStreamingSession : IStreamingSession
     public IObservable<SessionStatistics> Statistics => _stats;
 
     /// <inheritdoc />
+    /// <remarks>Seeded from the config in <c>ConnectAsync</c>; the app overrides it from the disconnect prompt
+    /// just before teardown, so this — not the frozen config value — is what <c>DisposeAsync</c> honours.</remarks>
+    public bool RestConsoleOnDisconnect { get; set; }
+
+    /// <inheritdoc />
     public double? MillisecondsSinceConsoleActivity => _takionStream?.MillisecondsSinceConsoleActivity;
 
     /// <summary>
@@ -194,6 +199,7 @@ public sealed class HalyardStreamingSession : IStreamingSession
             _pairing = await LoadPairingAsync(token).ConfigureAwait(false);
             byte[]? registrationKey = _pairing?.RegistrationKey;
             _config = config;
+            RestConsoleOnDisconnect = config.RestConsoleOnDisconnect;
 
             // Arm the console's control TCP listener before connecting: the PS5 opens :9295 only after
             // hearing the UDP search probe (SRC3); a cold TCP connect is refused with a RST. (The same
@@ -866,7 +872,7 @@ public sealed class HalyardStreamingSession : IStreamingSession
             // disconnect: the ONLY difference was an empty 0x0050 frame on the binary control channel — the
             // Takion DISCONNECT below is byte-identical either way and does NOT carry the rest bit. So this
             // frame is what actually rests the console; without it the console stays awake.
-            if (_config?.RestConsoleOnDisconnect == true)
+            if (RestConsoleOnDisconnect)
             {
                 try
                 {
