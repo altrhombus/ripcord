@@ -234,10 +234,15 @@
                     </StackPanel>
 
                     <!--  HDR. Enabled only with HEVC selected, because HDR needs a 10-bit stream and the AVC the
-                          console offers is 8-bit — the two settings together would be incoherent.  -->
+                          console offers is 8-bit — the two settings together would be incoherent.
+
+                          No longer "(experimental)": the console's response was verified on hardware
+                          (2026-08-02) and true HDR output is implemented, so the label would now be warning
+                          about a risk that no longer exists. What the request depends on is external setup,
+                          which is what the help text below covers.  -->
                     <ToggleSwitch
                         x:Name="HdrToggle"
-                        Header="Request HDR (experimental)"
+                        Header="Request HDR"
                         Toggled="OnSettingChanged" />
                     <TextBlock
                         x:Name="HdrHelpText"

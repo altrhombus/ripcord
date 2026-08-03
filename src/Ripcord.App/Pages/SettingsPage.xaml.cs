@@ -140,6 +140,13 @@ public sealed partial class SettingsPage : Page
     /// resolution rather than as savings. So this is a quality option, not a way to get a higher resolution on a
     /// limited connection, and the help text must not promise the latter.
     /// </para>
+    ///
+    /// <para>
+    /// It gained a second, concrete reason on 2026-08-02: <b>HEVC is the prerequisite for HDR</b>. The console
+    /// answers a <c>dynamicRange: "HDR"</c> request with HEVC Main10 signalling PQ and BT.2020 — verified on
+    /// hardware — and the AVC it offers is 8-bit, so the HDR toggle is gated on this picker. That is a real
+    /// difference a user can see, unlike the efficiency argument above, which the console declines to pass on.
+    /// </para>
     /// </summary>
     private void PopulateCodec(RipcordSettings s)
     {
@@ -382,9 +389,10 @@ public sealed partial class SettingsPage : Page
 
     /// <summary>Shared so the initial population and the codec-change path cannot drift apart.</summary>
     private static string HdrHelpFor(bool selectable) => selectable
-        ? "Unproven: only SDR has been observed from the console, so it may decline or simply ignore the request. "
-          + "If HDR does arrive it is tone-mapped for an SDR display — true HDR output is not implemented yet. "
-          + "Check the diagnostics overlay (F3) to see what actually arrived."
+        ? "The console streams HDR (PQ, BT.2020) when asked. Three things outside this app also have to be true: "
+          + "HDR enabled on the PS5, an HDR display, and Use HDR turned on in Windows display settings. "
+          + "Without all three the picture is tone-mapped to SDR, which still looks correct, just flatter. "
+          + "The diagnostics overlay (F3) reports which one you are getting."
         : "HDR requires HEVC — select it above first.";
 
     private void OnGpuPreferenceChanged(object sender, SelectionChangedEventArgs e)
