@@ -317,7 +317,9 @@ public sealed partial class SessionPage : Page
         var search = new HalyardSearchClient();
         var wake = new HalyardWakeClient();
         var coordinator = new HalyardWakeCoordinator(
-            probeAwake: async ct => (await search.ProbeAsync(address, TimeSpan.FromSeconds(1), ct))?.IsAwake,
+            // Probe from the vendor's source port (9303) so the whole exchange matches cap49; this path is
+            // sequential, so there is no contention for the fixed port the way the console list has.
+            probeAwake: async ct => (await search.ProbeAsync(address, TimeSpan.FromSeconds(1), ct, HalyardWakeClient.SourcePort))?.IsAwake,
             sendWake: ct => wake.WakeAsync(address, record, ct));
 
         var progress = new Progress<string>(line => ShowStatus(line, "The console was in standby.", terminal: false));
