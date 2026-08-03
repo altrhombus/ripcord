@@ -47,6 +47,8 @@ namespace winrt::Ripcord::Media::Interop::implementation
         uint32_t DecodedWidth();
         uint32_t DecodedHeight();
         hstring ColorMatrixDescription();
+        hstring VideoFormatDescription();
+        hstring HdrOutputDescription();
 
         // See the IDL: three independent facts, deliberately not one. IsHdrOutput is the only one that means
         // "you are looking at HDR" — the others describe the stream and the display separately.
