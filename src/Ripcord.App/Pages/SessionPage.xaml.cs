@@ -1117,9 +1117,14 @@ public sealed partial class SessionPage : Page
         // tell that the stream never signalled one — the only way to tell a real colour bug from a guess.
         // The already-null-checked local, not the field: teardown nulls _pipeline, so reading the field again
         // here would be both a nullable warning and a real race against leaving the session.
-        // Two facts, two rows: the adapter is a host property, the matrix is a property of the stream.
+        // The adapter is a host property and lives under DEVICE. Everything about the picture itself moved to
+        // its own VIDEO group: colour used to sit under DEVICE (its own comment admitted it was a stream fact,
+        // not a host one) while the decoder row separately carried format and colour, so the same information
+        // appeared twice and neither place had all of it.
         AdapterText.Text = pipeline.ActiveAdapterDescription;
         ColourText.Text = string.IsNullOrEmpty(s.ColorMatrix) ? "—" : s.ColorMatrix;
+        VideoFormatText.Text = string.IsNullOrEmpty(s.VideoFormat) ? "—" : s.VideoFormat;
+        HdrOutputText.Text = string.IsNullOrEmpty(s.HdrOutput) ? "—" : s.HdrOutput;
         HeroResolutionText.Text = resolutionShort;
         HeroFpsText.Text = $"{presentFps:F0}";
         HeroBitrateText.Text = stats.BitrateKbps > 0 ? $"{stats.BitrateKbps / 1000.0:F1}" : "—";

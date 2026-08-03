@@ -533,7 +533,6 @@
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
                             </Grid.RowDefinitions>
 
                             <TextBlock Grid.Row="0" Style="{StaticResource RowLabelStyle}" Text="decode" />
@@ -545,11 +544,43 @@
                             <TextBlock Grid.Row="2" Style="{StaticResource RowLabelStyle}" Text="path" />
                             <TextBlock x:Name="PathText" Grid.Row="2" Grid.Column="1" Style="{StaticResource RowValueStyle}" />
 
-                            <TextBlock Grid.Row="3" Style="{StaticResource RowLabelStyle}" Text="video" />
-                            <TextBlock x:Name="DecoderText" Grid.Row="3" Grid.Column="1" Style="{StaticResource RowValueStyle}" />
+                            <TextBlock Grid.Row="3" Style="{StaticResource RowLabelStyle}" Text="audio" />
+                            <TextBlock x:Name="AudioText" Grid.Row="3" Grid.Column="1" Style="{StaticResource RowValueStyle}" />
+                        </Grid>
+                    </StackPanel>
 
-                            <TextBlock Grid.Row="4" Style="{StaticResource RowLabelStyle}" Text="audio" />
-                            <TextBlock x:Name="AudioText" Grid.Row="4" Grid.Column="1" Style="{StaticResource RowValueStyle}" />
+                    <!--
+                        What you are actually watching, as opposed to how fast it is arriving. Split out of
+                        PIPELINE and DEVICE, which between them reported video identity in one overloaded row
+                        and colour in two different sections. One fact per row, in the order you would ask
+                        them: who decoded it, what shape the pixels are, what the colours mean, what the
+                        display is being given.
+                    -->
+                    <StackPanel Spacing="6">
+                        <TextBlock Style="{StaticResource SectionHeaderStyle}" Text="VIDEO" />
+                        <Grid ColumnSpacing="10" RowSpacing="4">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="62" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+
+                            <TextBlock Grid.Row="0" Style="{StaticResource RowLabelStyle}" Text="decoder" />
+                            <TextBlock x:Name="DecoderText" Grid.Row="0" Grid.Column="1" Style="{StaticResource RowValueStyle}" />
+
+                            <TextBlock Grid.Row="1" Style="{StaticResource RowLabelStyle}" Text="format" />
+                            <TextBlock x:Name="VideoFormatText" Grid.Row="1" Grid.Column="1" Style="{StaticResource RowValueStyle}" />
+
+                            <TextBlock Grid.Row="2" Style="{StaticResource RowLabelStyle}" Text="colour" />
+                            <TextBlock x:Name="ColourText" Grid.Row="2" Grid.Column="1" Style="{StaticResource RowValueStyle}" />
+
+                            <TextBlock Grid.Row="3" Style="{StaticResource RowLabelStyle}" Text="output" />
+                            <TextBlock x:Name="HdrOutputText" Grid.Row="3" Grid.Column="1" Style="{StaticResource RowValueStyle}" />
                         </Grid>
                     </StackPanel>
 
@@ -565,21 +596,16 @@
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
                             </Grid.RowDefinitions>
 
                             <TextBlock Grid.Row="0" Style="{StaticResource RowLabelStyle}" Text="GPU" />
                             <TextBlock x:Name="AdapterText" Grid.Row="0" Grid.Column="1" Style="{StaticResource RowValueStyle}" />
 
-                            <!--  Split out of the GPU line: which matrix is in use is a stream fact, not a host one.  -->
-                            <TextBlock Grid.Row="1" Style="{StaticResource RowLabelStyle}" Text="colour" />
-                            <TextBlock x:Name="ColourText" Grid.Row="1" Grid.Column="1" Style="{StaticResource RowValueStyle}" />
+                            <TextBlock Grid.Row="1" Style="{StaticResource RowLabelStyle}" Text="power" />
+                            <TextBlock x:Name="PowerText" Grid.Row="1" Grid.Column="1" Style="{StaticResource RowValueStyle}" />
 
-                            <TextBlock Grid.Row="2" Style="{StaticResource RowLabelStyle}" Text="power" />
-                            <TextBlock x:Name="PowerText" Grid.Row="2" Grid.Column="1" Style="{StaticResource RowValueStyle}" />
-
-                            <TextBlock Grid.Row="3" Style="{StaticResource RowLabelStyle}" Text="input" />
-                            <StackPanel Grid.Row="3" Grid.Column="1">
+                            <TextBlock Grid.Row="2" Style="{StaticResource RowLabelStyle}" Text="input" />
+                            <StackPanel Grid.Row="2" Grid.Column="1">
                                 <TextBlock x:Name="ControllerConnectedText" Style="{StaticResource RowValueStyle}" />
                                 <!--  Which engines are running. A property of the app, not of any one device.  -->
                                 <TextBlock
