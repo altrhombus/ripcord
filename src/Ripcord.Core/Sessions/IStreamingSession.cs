@@ -66,6 +66,14 @@ public interface IStreamingSession : IAsyncDisposable
     IObservable<SessionStatistics> Statistics { get; }
 
     /// <summary>
+    /// Whether to ask the console to enter rest mode when this session ends. Seeded from
+    /// <see cref="SessionConfig.RestConsoleOnDisconnect"/> at connect, but settable right up until teardown —
+    /// the user makes this choice at the disconnect prompt, not at connect — and read once, during disposal.
+    /// A backend with no rest concept may leave this a no-op.
+    /// </summary>
+    bool RestConsoleOnDisconnect { get; set; }
+
+    /// <summary>
     /// Ask the console for a fresh key frame (IDR). Used to resynchronise after frames have been dropped: the
     /// reference chain is broken at that point, so a clean restart point is the fastest route back to a correct
     /// picture. Best-effort and expected to be rate-limited by the implementation — callers may invoke it

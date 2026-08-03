@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentDialog
+    x:Class="Ripcord_App.Dialogs.DisconnectDialog"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    Title="Disconnect from your console?"
+    CloseButtonText="Stay connected"
+    DefaultButton="Primary"
+    PrimaryButtonText="Disconnect"
+    mc:Ignorable="d">
+
+    <StackPanel MinWidth="360" Spacing="16">
+        <TextBlock
+            Style="{StaticResource BodyTextBlockStyle}"
+            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+            TextWrapping="Wrap"
+            Text="Your game keeps running on the console after you disconnect." />
+
+        <!--  Default follows the "Rest console when I disconnect" setting; the checkbox lets this one
+              disconnect differ without changing the standing preference.  -->
+        <CheckBox
+            x:Name="RestCheckBox"
+            Content="Put the console into rest mode"
+            AutomationProperties.Name="Put the console into rest mode" />
+    </StackPanel>
+</ContentDialog>
