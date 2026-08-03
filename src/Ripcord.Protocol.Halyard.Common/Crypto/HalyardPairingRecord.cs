@@ -40,6 +40,24 @@ public sealed record HalyardPairingRecord(
         return blob;
     }
 
+    /// <summary>
+    /// The LAN wake credential: the value the <c>WAKEUP</c> datagram carries as <c>user-credential</c>.
+    ///
+    /// <para>Derived from the registration key, wire-confirmed against <c>cap49</c>: the RegistKey is 8 ASCII
+    /// hex characters (e.g. <c>"1a2b3c4d"</c>), and the credential is that string read as a base-16 integer and
+    /// rendered in decimal (<c>439041101</c>). We already hold the raw ASCII bytes in
+    /// <see cref="RegistrationKey"/>, so no extra pairing state is needed to wake a console. Parsed as unsigned
+    /// because the full 32-bit range is valid and <c>0x80000000</c>+ would overflow a signed int.</para>
+    /// </summary>
+    public string WakeCredential()
+    {
+        // The registration key IS the ASCII hex string on the wire; interpret those bytes as text, not as a
+        // number already. Any non-hex content is a corrupt record, not something to paper over with a guess.
+        string hex = System.Text.Encoding.ASCII.GetString(RegistrationKey);
+        uint value = uint.Parse(hex, System.Globalization.NumberStyles.HexNumber, System.Globalization.CultureInfo.InvariantCulture);
+        return value.ToString(System.Globalization.CultureInfo.InvariantCulture);
+    }
+
     /// <summary>Deserialize a blob produced by <see cref="Serialize"/>. Returns false on a malformed blob.</summary>
     public static bool TryDeserialize(ReadOnlySpan<byte> blob, out HalyardPairingRecord? record)
     {
