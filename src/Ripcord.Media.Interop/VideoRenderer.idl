@@ -80,6 +80,24 @@ namespace Ripcord.Media.Interop
         /// problem is diagnosable from the overlay instead of guessed at.
         String ColorMatrixDescription{ get; };
 
+        // The HDR state as three separate facts, because they are independent and the UI needs to tell them
+        // apart. These exist because the app used to infer them by substring-matching DecoderDescription,
+        // which was wrong in a way that mattered: the description says "PQ" whenever the *stream* is PQ, so
+        // an HDR pill lit even while we were tone-mapping to SDR on an SDR display. Prose is for humans;
+        // decisions get their own booleans.
+        //
+        // IsHdrTransfer   - the stream signals an HDR transfer function (PQ or HLG). Says nothing about output.
+        // IsDisplayHdr    - the display accepts HDR10. Says nothing about the stream.
+        // IsHdrOutput     - both of the above, and the swap chain accepted the colour space. This is the only
+        //                   one that means "you are looking at HDR"; when it is false and IsHdrTransfer is
+        //                   true, the driver is tone-mapping to SDR.
+        Boolean IsHdrTransfer{ get; };
+        Boolean IsDisplayHdr{ get; };
+        Boolean IsHdrOutput{ get; };
+
+        // 10-bit decode (P010). Independent of HDR: a stream can be 10-bit and SDR.
+        Boolean IsTenBit{ get; };
+
         // Human-readable reason zero-copy fell back (failing stage + HRESULT), or "none".
         String ZeroCopyDiagnostic();
 

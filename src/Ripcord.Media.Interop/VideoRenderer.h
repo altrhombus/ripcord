@@ -47,6 +47,13 @@ namespace winrt::Ripcord::Media::Interop::implementation
         uint32_t DecodedWidth();
         uint32_t DecodedHeight();
         hstring ColorMatrixDescription();
+
+        // See the IDL: three independent facts, deliberately not one. IsHdrOutput is the only one that means
+        // "you are looking at HDR" — the others describe the stream and the display separately.
+        bool IsHdrTransfer() const noexcept { return m_hdrTransfer; }
+        bool IsDisplayHdr() const noexcept { return m_displayHdrCapable; }
+        bool IsHdrOutput() const noexcept { return m_presentingHdr; }
+        bool IsTenBit() const noexcept { return m_tenBitOutput; }
         void SetCodec(VideoCodecKind codec);
         hstring DecoderDescription();
         hstring DecoderDiagnostic();
