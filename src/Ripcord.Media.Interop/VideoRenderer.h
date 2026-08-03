@@ -66,6 +66,10 @@ namespace winrt::Ripcord::Media::Interop::implementation
 
         void CreateRenderTargets();
         void CreatePipeline();
+
+        // Whether the display we are presenting to can accept HDR10. Probed once at device creation; a user
+        // toggling "Use HDR" or dragging the window to another monitor mid-session will not be noticed yet.
+        void ProbeDisplayHdr(IDXGIFactory1* factory, IDXGIAdapter1* renderAdapter);
         void EnsureFrameTexture(uint32_t width, uint32_t height);
         void UploadFrameTexture(const uint8_t* bgra, uint32_t width, uint32_t height);
         void PresentBgraInternal(const uint8_t* bgra, uint32_t width, uint32_t height);
@@ -221,6 +225,10 @@ namespace winrt::Ripcord::Media::Interop::implementation
         // True when the stream's transfer function is genuinely an HDR one (PQ or HLG) rather than merely
         // 10-bit. This, not m_tenBitOutput, is what an HDR swap chain should be gated on.
         bool m_hdrTransfer = false;
+
+        // What the display can accept, as opposed to what the stream carries. Presenting HDR needs both.
+        bool m_displayHdrCapable = false;
+        float m_displayMaxNits = 0.0f;
 
         uint32_t m_displayWidth = 0;
         uint32_t m_displayHeight = 0;
