@@ -222,14 +222,16 @@ public sealed class HalyardStreamingSession : IStreamingSession
             }
 
             // v1 control-plane key establishment: KDF over (RP-Nonce || companion). Establish the control
-            // key when the pairing record supplies the companion. (The codec/version selectors below are the
-            // values our captured sessions resolve to; pinning the RP-KeyType -> selector mapping is a
-            // refinement, tracked in the spec.)
+            // key when the pairing record supplies the companion. The version selector is the KDF-variant /
+            // context-key discriminator: PS4 (older protocol) resolves to mode 0, PS5 to mode 1 — wire-derived
+            // from each console's own /sess/ctrl RP-Auth. The codec selector is the value our captures resolve
+            // to; pinning the full RP-KeyType -> selector mapping is a refinement tracked in the spec.
             byte[] nonce = DecodeBase64Header(initResponse, SessProtocol.HeaderNonce);
             if (nonce.Length == 16 && _pairing?.Companion is { Length: 16 } companion)
             {
+                int versionSelector = _pairing.Platform == HalyardConsolePlatform.Ps4 ? 0 : 1;
                 _crypto.EstablishControl(new HalyardControlKeyMaterial(
-                    nonce, companion, CodecSelector: 2, VersionSelector: 1));
+                    nonce, companion, CodecSelector: 2, VersionSelector: versionSelector));
             }
 
             // /sess/init was served with Connection: close, so the console closed that socket. Open a fresh
