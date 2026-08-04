@@ -51,8 +51,25 @@ public static partial class HalyardControlSecretsLoader
             var ck = fx.ContextKeys;
             var contextKeys = new HalyardFieldContextKeys(
                 Hex(ck.CodecInHigh), Hex(ck.SelectorOne), Hex(ck.SelectorZero), Hex(ck.FallbackZero));
+
+            // PS4 (mode-0) control-KDF tables. Take them from the fixture when it carries them; otherwise fall
+            // back to the bundled interop constants — they are generic per-console constants (identical
+            // everywhere), so a dev fixture that predates PS4 support can still drive a PS4 session rather than
+            // throwing "PS4 tables not loaded" mid-connect (the failure this fallback exists to prevent).
+            ReadOnlyMemory<byte> ps4Table1 = default, ps4Table2 = default;
+            if (fx.Ps4KdfTable1 is not null && fx.Ps4KdfTable2 is not null)
+            {
+                ps4Table1 = Hex(fx.Ps4KdfTable1);
+                ps4Table2 = Hex(fx.Ps4KdfTable2);
+            }
+            else if (HalyardInteropConstants.Control() is { HasPs4Tables: true } bundled)
+            {
+                ps4Table1 = bundled.Ps4KdfTable1;
+                ps4Table2 = bundled.Ps4KdfTable2;
+            }
+
             source = path;
-            return new HalyardControlSecrets(Hex(fx.KdfTable1), Hex(fx.KdfTable2), contextKeys);
+            return new HalyardControlSecrets(Hex(fx.KdfTable1), Hex(fx.KdfTable2), contextKeys, ps4Table1, ps4Table2);
         }
         catch (Exception ex) when (ex is JsonException or FormatException or ArgumentException)
         {
@@ -108,6 +125,8 @@ public static partial class HalyardControlSecretsLoader
     {
         public string? KdfTable1 { get; set; }
         public string? KdfTable2 { get; set; }
+        public string? Ps4KdfTable1 { get; set; }
+        public string? Ps4KdfTable2 { get; set; }
         public ContextKeysDto? ContextKeys { get; set; }
     }
 
