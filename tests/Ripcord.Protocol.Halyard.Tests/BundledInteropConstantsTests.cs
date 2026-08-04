@@ -29,11 +29,18 @@ public class BundledInteropConstantsTests
         Assert.Equal(HalyardControlSecrets.KdfTableLength, secrets!.KdfTable1.Length);
         Assert.Equal(HalyardControlSecrets.KdfTableLength, secrets.KdfTable2.Length);
 
+        // The PS4 (mode-0) pair must ship too, at the same full shape, so a PS4 session can key its control crypto.
+        Assert.True(secrets.HasPs4Tables, "Bundle is missing the PS4 control-KDF tables.");
+        Assert.Equal(HalyardControlSecrets.KdfTableLength, secrets.Ps4KdfTable1.Length);
+        Assert.Equal(HalyardControlSecrets.KdfTableLength, secrets.Ps4KdfTable2.Length);
+
         // Every table entry must be addressable — a truncated bundle would throw here rather than at connect.
         for (int i = 0; i < HalyardControlSecrets.KdfTableEntryCount; i++)
         {
             Assert.Equal(HalyardControlSecrets.KdfTableEntrySize, secrets.KdfTable1Entry(i).Length);
             Assert.Equal(HalyardControlSecrets.KdfTableEntrySize, secrets.KdfTable2Entry(i).Length);
+            Assert.Equal(HalyardControlSecrets.KdfTableEntrySize, secrets.Ps4KdfTable1Entry(i).Length);
+            Assert.Equal(HalyardControlSecrets.KdfTableEntrySize, secrets.Ps4KdfTable2Entry(i).Length);
         }
 
         // All four context keys present and 16 bytes, for both selector paths.
@@ -66,6 +73,25 @@ public class BundledInteropConstantsTests
         Assert.NotEqual(key, material);
         Assert.NotEqual(companion, key);   // a table of zeros would fail this
         Assert.NotEqual(nonce, material);
+    }
+
+    [SkippableFact]
+    public void Control_BundlePs4KdfReproducesKnownVector()
+    {
+        Skip.IfNot(HalyardInteropConstants.IsBundled, "Build omitted the interop constants bundle.");
+
+        // Regression pin for the committed PS4 (mode-0) tables: fixed SYNTHETIC inputs (not captured material)
+        // must derive this exact key/material through the bundled tables. A corrupted or swapped PS4 table
+        // would change the output; the vector was produced from the reversed FUN_1fdd80 against these tables.
+        var kdf = new HalyardControlKdf(HalyardInteropConstants.Control()!);
+        byte[] nonce = new byte[16];
+        byte[] companion = new byte[16];
+        for (int i = 0; i < 16; i++) { nonce[i] = (byte)(i + 1); companion[i] = (byte)(0x40 + i); }
+
+        (byte[] key, byte[] material) = kdf.Derive(nonce, companion, versionSelector: 0);
+
+        Assert.Equal("fdd31916093feda417f6db1f4b0d8f00", Convert.ToHexString(key).ToLowerInvariant());
+        Assert.Equal("e879b99b1199286eb22514b8b4703ae1", Convert.ToHexString(material).ToLowerInvariant());
     }
 
     [SkippableFact]

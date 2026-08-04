@@ -6,9 +6,9 @@ using Ripcord.Protocol.Halyard.Common.Crypto.V1;
 namespace Ripcord.Protocol.Halyard.Session;
 
 /// <summary>
-/// The bundled default source for the v1 protocol's interoperability constants — the two control-plane KDF
-/// tables, the four field context keys, the registration key table, the material-wrap table, and the context
-/// selector offset.
+/// The bundled default source for the v1 protocol's interoperability constants — the control-plane KDF
+/// tables (a PS5 pair and a PS4 pair), the four field context keys, the registration key table, the
+/// material-wrap table, and the context selector offset.
 ///
 /// <para>
 /// <b>What these are.</b> Values the console itself computes against. They are read by every client that
@@ -54,9 +54,15 @@ public static partial class HalyardInteropConstants
         if (k.CodecInHigh is null || k.SelectorOne is null || k.SelectorZero is null || k.FallbackZero is null)
             return null;
 
+        // PS4 (mode 0) tables are optional — an older bundle without them still keys PS5 fine, so pass them
+        // only when both are present.
+        ReadOnlyMemory<byte> ps4Table1 = b.Ps4KdfTable1 is null ? default : Hex(b.Ps4KdfTable1);
+        ReadOnlyMemory<byte> ps4Table2 = b.Ps4KdfTable2 is null ? default : Hex(b.Ps4KdfTable2);
+
         return new HalyardControlSecrets(
             Hex(b.KdfTable1), Hex(b.KdfTable2),
-            new HalyardFieldContextKeys(Hex(k.CodecInHigh), Hex(k.SelectorOne), Hex(k.SelectorZero), Hex(k.FallbackZero)));
+            new HalyardFieldContextKeys(Hex(k.CodecInHigh), Hex(k.SelectorOne), Hex(k.SelectorZero), Hex(k.FallbackZero)),
+            ps4Table1, ps4Table2);
     }
 
     /// <summary>
@@ -113,6 +119,8 @@ public static partial class HalyardInteropConstants
         public string? ContextKey { get; set; }
         public string? KdfTable1 { get; set; }
         public string? KdfTable2 { get; set; }
+        public string? Ps4KdfTable1 { get; set; }
+        public string? Ps4KdfTable2 { get; set; }
         public ContextKeysDto? ContextKeys { get; set; }
     }
 
