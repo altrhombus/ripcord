@@ -51,6 +51,63 @@ public class ControlCryptoTests
     }
 
     [Fact]
+    public void Kdf_Ps4Variant_MatchesFormulaAndDiffersFromPs5()
+    {
+        // Synthetic tables (arbitrary bytes — no extracted material) so the PS4 (mode-0) arithmetic and its
+        // dispatch are exercised in isolation. Both PS5 and PS4 pairs are supplied so either mode can run.
+        byte[] ps5Table1 = Pattern(0x10), ps5Table2 = Pattern(0x40);
+        byte[] ps4Table1 = Pattern(0x80), ps4Table2 = Pattern(0xC0);
+        var secrets = new HalyardControlSecrets(
+            ps5Table1, ps5Table2,
+            new HalyardFieldContextKeys(new byte[16], new byte[16], new byte[16], new byte[16]),
+            ps4Table1, ps4Table2);
+        var kdf = new HalyardControlKdf(secrets);
+
+        byte[] nonce = Hex.Bytes("101112131415161718191a1b1c1d1e1f");
+        byte[] companion = Hex.Bytes("202122232425262728292a2b2c2d2e2f");
+
+        // Explicit re-derivation of the mode-0 formula (the vendor control DLL, FUN_1fdd80): the key is
+        // companion-derived (table1 by nonce[7]>>3), the material nonce-derived (table2 by nonce[0]>>3).
+        var t1 = secrets.Ps4KdfTable1Entry(nonce[7] >> 3);
+        var t2 = secrets.Ps4KdfTable2Entry(nonce[0] >> 3);
+        var expKey = new byte[16];
+        var expMat = new byte[16];
+        for (int i = 0; i < 16; i++)
+        {
+            expKey[i] = (byte)((((t1[i] ^ companion[i]) + 0x21 + i) & 0xFF) ^ nonce[i]);
+            expMat[i] = (byte)(((nonce[i] + 0x36 + i) & 0xFF) ^ t2[i]);
+        }
+
+        var (key, material) = kdf.Derive(nonce, companion, versionSelector: 0);
+        Assert.Equal(Hex.String(expKey), Hex.String(key));
+        Assert.Equal(Hex.String(expMat), Hex.String(material));
+
+        // The mode-0 variant must actually differ from the PS5 (mode-1) path over the same inputs.
+        var (ps5Key, ps5Mat) = kdf.Derive(nonce, companion, versionSelector: 1);
+        Assert.NotEqual(Hex.String(key), Hex.String(ps5Key));
+        Assert.NotEqual(Hex.String(material), Hex.String(ps5Mat));
+    }
+
+    [Fact]
+    public void Kdf_Ps4Variant_ThrowsWhenTablesAbsent()
+    {
+        // A PS5-only secrets object must fail loudly if asked for the PS4 variant, not silently mis-key.
+        var secrets = new HalyardControlSecrets(
+            Pattern(0x10), Pattern(0x40),
+            new HalyardFieldContextKeys(new byte[16], new byte[16], new byte[16], new byte[16]));
+        var kdf = new HalyardControlKdf(secrets);
+        Assert.False(secrets.HasPs4Tables);
+        Assert.Throws<InvalidOperationException>(() => kdf.Derive(new byte[16], new byte[16], versionSelector: 0));
+    }
+
+    private static byte[] Pattern(int seed)
+    {
+        var t = new byte[HalyardControlSecrets.KdfTableLength];
+        for (int i = 0; i < t.Length; i++) t[i] = (byte)(seed + i);
+        return t;
+    }
+
+    [Fact]
     public void FieldCipher_Cfb_RoundTripsAtDifferentCounters()
     {
         var key = Hex.Bytes("4a5b6c7d8e9f0011223344556677889a");
