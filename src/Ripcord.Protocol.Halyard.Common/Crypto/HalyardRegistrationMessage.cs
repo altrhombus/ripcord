@@ -112,8 +112,14 @@ public static class HalyardRegistrationMessage
         record = null;
         var fields = ParseFields(Encoding.ASCII.GetString(decryptedBody));
 
-        if (!fields.TryGetValue("PS5-RegistKey", out string? registKeyStr) &&
-            !fields.TryGetValue("PS4-RegistKey", out registKeyStr))
+        // The console names the registkey field by its own family, so it also tells us which control-KDF
+        // variant a later session must use (PS4 = mode 0, PS5 = mode 1).
+        HalyardConsolePlatform platform;
+        if (fields.TryGetValue("PS5-RegistKey", out string? registKeyStr))
+            platform = HalyardConsolePlatform.Ps5;
+        else if (fields.TryGetValue("PS4-RegistKey", out registKeyStr))
+            platform = HalyardConsolePlatform.Ps4;
+        else
             return false;
         if (!fields.TryGetValue("RP-Key", out string? rpKeyStr))
             return false;
@@ -136,7 +142,7 @@ public static class HalyardRegistrationMessage
         if (fields.TryGetValue("RP-KeyType", out string? keyTypeStr))
             _ = int.TryParse(keyTypeStr.Trim(), out keyType);
 
-        record = new HalyardPairingRecord(registrationKey, companion, keyType);
+        record = new HalyardPairingRecord(registrationKey, companion, keyType, platform);
         return true;
     }
 
