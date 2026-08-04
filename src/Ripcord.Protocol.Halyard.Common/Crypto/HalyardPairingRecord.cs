@@ -18,17 +18,23 @@ namespace Ripcord.Protocol.Halyard.Common.Crypto;
 /// and used, zero-padded, as the RP-Auth plaintext).</param>
 /// <param name="Companion">The 16-byte companion (the RP-Key from pairing) fed into the control KDF.</param>
 /// <param name="KeyType">The RP-KeyType selecting the KDF variant (values 1/2/3/4/6 observed).</param>
+/// <param name="Platform">The console family this pairing is for. It selects the control-KDF variant (PS4 =
+/// mode 0, PS5 = mode 1) and the discovery/wake port, so a later session must know it — RP-KeyType alone does
+/// not distinguish them (a PS4 and a PS5 can both be KeyType 2).</param>
 public sealed record HalyardPairingRecord(
     byte[] RegistrationKey,
     byte[] Companion,
-    int KeyType)
+    int KeyType,
+    HalyardConsolePlatform Platform = HalyardConsolePlatform.Ps5)
 {
-    private const byte FormatVersion = 1;
+    // v1 blobs predate the Platform field; they are all PS5 pairings and deserialize with Platform = Ps5.
+    private const byte FormatVersionLegacy = 1;
+    private const byte FormatVersion = 2;
 
     /// <summary>Serialize to the opaque blob the credential store persists.</summary>
     public byte[] Serialize()
     {
-        var blob = new byte[1 + 2 + RegistrationKey.Length + 2 + Companion.Length + 4];
+        var blob = new byte[1 + 2 + RegistrationKey.Length + 2 + Companion.Length + 4 + 1];
         var span = blob.AsSpan();
         span[0] = FormatVersion;
         int o = 1;
@@ -36,7 +42,8 @@ public sealed record HalyardPairingRecord(
         RegistrationKey.CopyTo(span[o..]); o += RegistrationKey.Length;
         BinaryPrimitives.WriteUInt16BigEndian(span[o..], (ushort)Companion.Length); o += 2;
         Companion.CopyTo(span[o..]); o += Companion.Length;
-        BinaryPrimitives.WriteInt32BigEndian(span[o..], KeyType);
+        BinaryPrimitives.WriteInt32BigEndian(span[o..], KeyType); o += 4;
+        span[o] = (byte)Platform;
         return blob;
     }
 
@@ -62,11 +69,12 @@ public sealed record HalyardPairingRecord(
     public static bool TryDeserialize(ReadOnlySpan<byte> blob, out HalyardPairingRecord? record)
     {
         record = null;
-        if (blob.Length < 1 || blob[0] != FormatVersion)
+        if (blob.Length < 1 || (blob[0] != FormatVersion && blob[0] != FormatVersionLegacy))
         {
             return false;
         }
 
+        byte version = blob[0];
         int o = 1;
         if (!TryReadLengthPrefixed(blob, ref o, out byte[] registrationKey) ||
             !TryReadLengthPrefixed(blob, ref o, out byte[] companion) ||
@@ -75,8 +83,25 @@ public sealed record HalyardPairingRecord(
             return false;
         }
 
-        int keyType = BinaryPrimitives.ReadInt32BigEndian(blob[o..]);
-        record = new HalyardPairingRecord(registrationKey, companion, keyType);
+        int keyType = BinaryPrimitives.ReadInt32BigEndian(blob[o..]); o += 4;
+
+        // v1 records carry no platform byte — they are all PS5 pairings. v2 appends it.
+        HalyardConsolePlatform platform = HalyardConsolePlatform.Ps5;
+        if (version == FormatVersion)
+        {
+            if (blob.Length - o < 1)
+            {
+                return false;
+            }
+            byte p = blob[o];
+            if (p > (byte)HalyardConsolePlatform.Ps4)
+            {
+                return false; // unknown platform tag — a corrupt or newer blob, not a guess to make
+            }
+            platform = (HalyardConsolePlatform)p;
+        }
+
+        record = new HalyardPairingRecord(registrationKey, companion, keyType, platform);
         return true;
     }
 
