@@ -552,6 +552,24 @@ public sealed class HalyardStreamingSession : IStreamingSession
     /// <summary>The senkusha bring-up port (UDP), one above the A/V stream port (wire-confirmed 9297).</summary>
     private const int SenkushaPort = 9297;
 
+    // Takion handshake retransmit, matched to the vendor on a lossy link (cap55, 2026-08-03): it retransmits
+    // each handshake chunk — notably COOKIE_ECHO — on a fixed ~300 ms timer (NOT exponential backoff) and
+    // persists ~100 tries / ~30 s before giving up silently. Our old 2 s × 3 (~6 s) retransmitted ~7x slower
+    // and gave up ~5x sooner, so under packet loss it failed exactly where the vendor recovered.
+    private static readonly TimeSpan HandshakeRetransmitInterval = TimeSpan.FromMilliseconds(300);
+
+    // The stream connection is the one whose handshake failure ends the attempt, so it gets the vendor's full
+    // patience. The bring-up cancellation below (StreamBringUpTimeout) is the real outer bound.
+    private const int StreamHandshakeAttempts = 100; // × ~300 ms ≈ 30 s per phase
+
+    // Senkusha is a non-fatal MTU/bandwidth probe; retransmit just as fast, but keep its budget inside the
+    // ~8 s box below so a marginal probe never stalls the stream that follows it.
+    private const int SenkushaHandshakeAttempts = 20; // × ~300 ms ≈ 6 s
+
+    // Whole stream bring-up (handshake + SESSION exchange). Widened from 12 s so the ~30 s handshake budget
+    // above can actually run before this cuts it — a lossy link now gets the vendor's ~30 s, not ~6 s.
+    private static readonly TimeSpan StreamBringUpTimeout = TimeSpan.FromSeconds(35);
+
     // What the bring-up measured, for the launchSpec. Null means "not measured", which is why the launchSpec falls
     // back to the vendor defaults rather than declaring 0.
     private double? _measuredRttMs;
@@ -582,7 +600,7 @@ public sealed class HalyardStreamingSession : IStreamingSession
             int candidateMtu = LinkMetrics.MtuToDeclare(_measuredMtu);
 
             SenkushaResult result = await senkusha
-                .RunAsync(TimeSpan.FromSeconds(2), handshakeAttempts: 3, candidateMtu, senkushaCts.Token)
+                .RunAsync(HandshakeRetransmitInterval, SenkushaHandshakeAttempts, candidateMtu, senkushaCts.Token)
                 .ConfigureAwait(false);
 
             if (result.Succeeded)
@@ -636,16 +654,17 @@ public sealed class HalyardStreamingSession : IStreamingSession
         // Bound the whole stream bring-up so a stalled SESSION exchange fails cleanly instead of hanging
         // forever (the negotiator otherwise waits on the reply with no deadline).
         using var streamCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        streamCts.CancelAfter(TimeSpan.FromSeconds(12));
+        streamCts.CancelAfter(StreamBringUpTimeout);
         try
         {
             return await _takionStream
-                .StartAsync(request, handshakeTimeout: TimeSpan.FromSeconds(2), handshakeAttempts: 3, streamCts.Token)
+                .StartAsync(request, HandshakeRetransmitInterval, StreamHandshakeAttempts, streamCts.Token)
                 .ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
-            return TakionSessionResult.Fail("timed out waiting for SESSION_REPLY (no reply routed within 12s)");
+            return TakionSessionResult.Fail(
+                $"stream bring-up did not complete within {StreamBringUpTimeout.TotalSeconds:F0}s (no COOKIE_ACK/SESSION_REPLY under loss)");
         }
         catch (TimeoutException)
         {
