@@ -1,4 +1,5 @@
 using System.Text;
+using Ripcord.Protocol.Halyard.Common.Crypto;
 
 namespace Ripcord.Protocol.Halyard.Common.Control;
 
@@ -17,6 +18,17 @@ public static class SessProtocol
     public const string PathRegister = "/sie/ps5/rp/sess/rgst";
     public const string PathInit = "/sie/ps5/rp/sess/init";
     public const string PathControl = "/sie/ps5/rp/sess/ctrl";
+
+    /// <summary>The <c>/sie/{family}/rp/sess/{endpoint}</c> path for a console family. The family segment is a
+    /// required on-wire token (PS4 = <c>ps4</c>, PS5 = <c>ps5</c>; wire-confirmed cap53). <paramref name="endpoint"/>
+    /// is <c>rgst</c>/<c>init</c>/<c>ctrl</c>.</summary>
+    public static string PathFor(HalyardConsolePlatform platform, string endpoint)
+        => $"/sie/{(platform == HalyardConsolePlatform.Ps4 ? "ps4" : "ps5")}/rp/sess/{endpoint}";
+
+    /// <summary>The <c>RP-Version</c> a console family expects on <c>/sess/*</c> (PS4 = 10.0, PS5 = 1.0;
+    /// wire-confirmed cap53).</summary>
+    public static string VersionFor(HalyardConsolePlatform platform)
+        => platform == HalyardConsolePlatform.Ps4 ? "10.0" : "1.0";
 
     // Header names (capitalization as observed; the console is tolerant of Rp-/RP- variance).
     public const string HeaderVersion = "RP-Version";
