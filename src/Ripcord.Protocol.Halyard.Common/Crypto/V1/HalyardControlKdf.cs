@@ -26,8 +26,11 @@ namespace Ripcord.Protocol.Halyard.Common.Crypto.V1;
 /// end-to-end vector guards against regressing that.
 /// </para>
 ///
-/// The console negotiates among several KDF variants (selected by RP-KeyType); this implements the
-/// variant our captured sessions use. Other variants slot in behind the same seam when needed.
+/// The console negotiates among several KDF variants: the dispatcher branches first on a protocol/version
+/// discriminator (our <c>versionSelector</c> — PS5 = 1, PS4 = 0) and then on RP-KeyType. The two variants a
+/// live PS5 and PS4 select differ only in their per-byte constants and their two lookup tables; the same
+/// companion-derived-key / nonce-derived-material roles and the downstream field/IV/CFB machinery are shared.
+/// This implements both; other variants slot in behind the same seam when needed.
 /// </summary>
 public sealed class HalyardControlKdf
 {
@@ -39,17 +42,24 @@ public sealed class HalyardControlKdf
         => _secrets = secrets ?? throw new ArgumentNullException(nameof(secrets));
 
     /// <summary>
-    /// Derive <c>(out1, out2)</c> from the 16-byte <paramref name="nonce"/> and 16-byte
-    /// <paramref name="companion"/>.
+    /// Derive the control AES key and IV material from the 16-byte <paramref name="nonce"/> and 16-byte
+    /// <paramref name="companion"/>. <paramref name="versionSelector"/> picks the console-family variant
+    /// (0 = PS4, anything else = the PS5 variant our captures use).
     /// </summary>
-    public (byte[] Key, byte[] Material) Derive(ReadOnlySpan<byte> nonce, ReadOnlySpan<byte> companion)
+    public (byte[] Key, byte[] Material) Derive(
+        ReadOnlySpan<byte> nonce, ReadOnlySpan<byte> companion, int versionSelector = 1)
     {
         if (nonce.Length != KeyLength)
             throw new ArgumentException("Nonce must be 16 bytes.", nameof(nonce));
         if (companion.Length != KeyLength)
             throw new ArgumentException("Companion must be 16 bytes.", nameof(companion));
 
-        // Tables are selected by the top 5 bits of two nonce bytes (>>3 => index 0..31).
+        return versionSelector == 0 ? DerivePs4(nonce, companion) : DerivePs5(nonce, companion);
+    }
+
+    // Mode 1 (PS5). Tables selected by the top 5 bits of two nonce bytes (>>3 => index 0..31).
+    private (byte[] Key, byte[] Material) DerivePs5(ReadOnlySpan<byte> nonce, ReadOnlySpan<byte> companion)
+    {
         ReadOnlySpan<byte> table1Entry = _secrets.KdfTable1Entry(nonce[7] >> 3);
         ReadOnlySpan<byte> table2Entry = _secrets.KdfTable2Entry(nonce[0] >> 3);
 
@@ -59,6 +69,28 @@ public sealed class HalyardControlKdf
         {
             key[i] = (byte)(((companion[i] + 0x18 + i) & 0xFF) ^ table1Entry[i] ^ nonce[i]);
             material[i] = (byte)(((nonce[i] - i - 0x2d) & 0xFF) ^ table2Entry[i]);
+        }
+
+        return (key, material);
+    }
+
+    // Mode 0 (PS4). Same table-index roles (table1 by nonce[7]>>3, table2 by nonce[0]>>3) and the same
+    // companion-derived-key / nonce-derived-material split as PS5; only the per-byte constants and the
+    // key path's XOR-then-add ordering differ.
+    private (byte[] Key, byte[] Material) DerivePs4(ReadOnlySpan<byte> nonce, ReadOnlySpan<byte> companion)
+    {
+        if (!_secrets.HasPs4Tables)
+            throw new InvalidOperationException("PS4 control-KDF tables are not loaded (this build/fixture omits them).");
+
+        ReadOnlySpan<byte> table1Entry = _secrets.Ps4KdfTable1Entry(nonce[7] >> 3);
+        ReadOnlySpan<byte> table2Entry = _secrets.Ps4KdfTable2Entry(nonce[0] >> 3);
+
+        var key = new byte[KeyLength];       // the AES key (companion-derived)
+        var material = new byte[KeyLength];  // the IV material (nonce-derived)
+        for (int i = 0; i < KeyLength; i++)
+        {
+            key[i] = (byte)(((((table1Entry[i] ^ companion[i]) + 0x21 + i) & 0xFF)) ^ nonce[i]);
+            material[i] = (byte)(((nonce[i] + 0x36 + i) & 0xFF) ^ table2Entry[i]);
         }
 
         return (key, material);
