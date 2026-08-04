@@ -84,8 +84,6 @@ public sealed partial class ConsolesPage : Page
     private static async Task ProbeStatusesAsync(
         IReadOnlyList<ConsoleListItem> consoles, string? restRequestedHost, CancellationToken cancellationToken)
     {
-        var search = new HalyardSearchClient();
-
         await Task.WhenAll(consoles.Select(async item =>
         {
             // A stored host that will not parse is not something to probe — show it as offline rather than
@@ -95,6 +93,10 @@ public sealed partial class ConsolesPage : Page
                 item.Status = ConsoleReachability.Offline;
                 return;
             }
+
+            // Probe on the console's own family port/version — a PS4 answers SRCH on 987/00020020, a PS5 on
+            // 9302/00030010, so a shared client would never see the other family.
+            var search = new HalyardSearchClient(HalyardDiscoveryProfile.ForPlatformName(item.Console.Platform));
 
             try
             {
