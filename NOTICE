@@ -30,11 +30,12 @@ virtual address.
 Interoperability constants
 --------------------------
 
-Ripcord includes a small set of constants (approximately 2 KB: two key-derivation
-tables, four field context keys, one key table, one transform table, and a byte
-offset) that the console itself computes against. A client cannot speak this
-protocol without them, and they cannot be altered without breaking
-interoperability, so they are interface facts rather than authored expression.
+Ripcord includes a small set of constants (approximately 3 KB: four key-derivation
+tables — a PlayStation 5 pair and a PlayStation 4 pair — four field context keys,
+one key table, one transform table, and a byte offset) that the console itself
+computes against. A client cannot speak this protocol without them, and they
+cannot be altered without breaking interoperability, so they are interface facts
+rather than authored expression.
 They are included as data, read at runtime through the same configuration seam
 that accepts a local override, and are not compiled into program logic.
 

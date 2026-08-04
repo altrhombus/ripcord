@@ -28,23 +28,45 @@ public sealed class HalyardControlSecrets
     public HalyardControlSecrets(
         ReadOnlyMemory<byte> kdfTable1,
         ReadOnlyMemory<byte> kdfTable2,
-        HalyardFieldContextKeys contextKeys)
+        HalyardFieldContextKeys contextKeys,
+        ReadOnlyMemory<byte> ps4KdfTable1 = default,
+        ReadOnlyMemory<byte> ps4KdfTable2 = default)
     {
         if (kdfTable1.Length != KdfTableLength)
             throw new ArgumentException($"KDF table 1 must be {KdfTableLength} bytes.", nameof(kdfTable1));
         if (kdfTable2.Length != KdfTableLength)
             throw new ArgumentException($"KDF table 2 must be {KdfTableLength} bytes.", nameof(kdfTable2));
 
+        // PS4 tables are optional — a build/fixture may carry only the PS5 pair. When present they must be
+        // the same full 32 x 16-byte shape, and they come as a pair (either both or neither).
+        if (ps4KdfTable1.Length != ps4KdfTable2.Length)
+            throw new ArgumentException("PS4 KDF tables must be supplied as a pair (both or neither).");
+        if (!ps4KdfTable1.IsEmpty && ps4KdfTable1.Length != KdfTableLength)
+            throw new ArgumentException($"PS4 KDF table 1 must be {KdfTableLength} bytes.", nameof(ps4KdfTable1));
+        if (!ps4KdfTable2.IsEmpty && ps4KdfTable2.Length != KdfTableLength)
+            throw new ArgumentException($"PS4 KDF table 2 must be {KdfTableLength} bytes.", nameof(ps4KdfTable2));
+
         KdfTable1 = kdfTable1;
         KdfTable2 = kdfTable2;
+        Ps4KdfTable1 = ps4KdfTable1;
+        Ps4KdfTable2 = ps4KdfTable2;
         ContextKeys = contextKeys ?? throw new ArgumentNullException(nameof(contextKeys));
     }
 
-    /// <summary>Table selected by <c>nonce[7] &gt;&gt; 3</c> (32 entries of 16 bytes).</summary>
+    /// <summary>Table selected by <c>nonce[7] &gt;&gt; 3</c> (32 entries of 16 bytes). PS5 (mode 1) variant.</summary>
     public ReadOnlyMemory<byte> KdfTable1 { get; }
 
-    /// <summary>Table selected by <c>nonce[0] &gt;&gt; 3</c> (32 entries of 16 bytes).</summary>
+    /// <summary>Table selected by <c>nonce[0] &gt;&gt; 3</c> (32 entries of 16 bytes). PS5 (mode 1) variant.</summary>
     public ReadOnlyMemory<byte> KdfTable2 { get; }
+
+    /// <summary>The PS4 (mode 0) counterpart of <see cref="KdfTable1"/>; empty when this build omits it.</summary>
+    public ReadOnlyMemory<byte> Ps4KdfTable1 { get; }
+
+    /// <summary>The PS4 (mode 0) counterpart of <see cref="KdfTable2"/>; empty when this build omits it.</summary>
+    public ReadOnlyMemory<byte> Ps4KdfTable2 { get; }
+
+    /// <summary>Whether the PS4 (mode 0) KDF tables are present, so a PS4 session can key its control crypto.</summary>
+    public bool HasPs4Tables => !Ps4KdfTable1.IsEmpty && !Ps4KdfTable2.IsEmpty;
 
     public HalyardFieldContextKeys ContextKeys { get; }
 
@@ -52,6 +74,10 @@ public sealed class HalyardControlSecrets
     public ReadOnlySpan<byte> KdfTable1Entry(int index) => Entry(KdfTable1.Span, index);
 
     public ReadOnlySpan<byte> KdfTable2Entry(int index) => Entry(KdfTable2.Span, index);
+
+    public ReadOnlySpan<byte> Ps4KdfTable1Entry(int index) => Entry(Ps4KdfTable1.Span, index);
+
+    public ReadOnlySpan<byte> Ps4KdfTable2Entry(int index) => Entry(Ps4KdfTable2.Span, index);
 
     private static ReadOnlySpan<byte> Entry(ReadOnlySpan<byte> table, int index)
     {

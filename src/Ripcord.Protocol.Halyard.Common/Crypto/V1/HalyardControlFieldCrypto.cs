@@ -42,7 +42,7 @@ public sealed class HalyardControlFieldCrypto
         int codecSelector,
         int versionSelector)
     {
-        var (key, material) = kdf.Derive(nonce, companion);
+        var (key, material) = kdf.Derive(nonce, companion, versionSelector);
         var contextKey = contextKeys.Select(codecSelector, versionSelector);
         return new HalyardControlFieldCrypto(key, material, contextKey.Span);
     }
