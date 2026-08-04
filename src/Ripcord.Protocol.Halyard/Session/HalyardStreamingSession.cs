@@ -201,12 +201,17 @@ public sealed class HalyardStreamingSession : IStreamingSession
             _config = config;
             RestConsoleOnDisconnect = config.RestConsoleOnDisconnect;
 
-            // Arm the console's control TCP listener before connecting: the PS5 opens :9295 only after
-            // hearing the UDP search probe (SRC3); a cold TCP connect is refused with a RST. (The same
-            // probe the registration path uses — wire-confirmed a single probe arms init + ctrl.)
+            // The console family drives the family-specific wire details below (the SRC2/SRC3 arming probe, the
+            // /sie/ps4|ps5/ paths, RP-Version, and the control-KDF variant). A legacy record with no platform
+            // deserializes as PS5, which is what every pre-PS4 pairing is.
+            HalyardConsolePlatform platform = _pairing?.Platform ?? HalyardConsolePlatform.Ps5;
+
+            // Arm the console's control TCP listener before connecting: the console opens :9295 only after
+            // hearing the UDP search probe (SRC3 for PS5, SRC2 for PS4); a cold TCP connect is refused with a
+            // RST. (The same probe the registration path uses — wire-confirmed a single probe arms init + ctrl.)
             _connectStep = "probing the console's control listener";
             await HalyardControlSearch.ProbeAsync(
-                _parameters.ControlEndpoint.Address.ToString(), ps5: true, token).ConfigureAwait(false);
+                _parameters.ControlEndpoint.Address.ToString(), ps5: platform == HalyardConsolePlatform.Ps5, token).ConfigureAwait(false);
 
             _connectStep = "opening the control connection";
             await _control.ConnectAsync(_parameters.ControlEndpoint, token).ConfigureAwait(false);
@@ -229,7 +234,7 @@ public sealed class HalyardStreamingSession : IStreamingSession
             byte[] nonce = DecodeBase64Header(initResponse, SessProtocol.HeaderNonce);
             if (nonce.Length == 16 && _pairing?.Companion is { Length: 16 } companion)
             {
-                int versionSelector = _pairing.Platform == HalyardConsolePlatform.Ps4 ? 0 : 1;
+                int versionSelector = platform == HalyardConsolePlatform.Ps4 ? 0 : 1;
                 _crypto.EstablishControl(new HalyardControlKeyMaterial(
                     nonce, companion, CodecSelector: 2, VersionSelector: versionSelector));
             }
@@ -302,25 +307,27 @@ public sealed class HalyardStreamingSession : IStreamingSession
         // Match the vendor's /sess/init exactly (wire-confirmed, cap22): HTTP/1.1, and ONLY the registkey +
         // version headers — it does NOT send RP-SupportCmd/RP-Feature on the init request (those are in the
         // *response*). RP-Registkey is the hex of the raw registration-key bytes.
+        HalyardConsolePlatform platform = _pairing?.Platform ?? HalyardConsolePlatform.Ps5;
         string registKey = registrationKey is null ? string.Empty : Convert.ToHexString(registrationKey).ToLowerInvariant();
-        var request = new SessRequest(SessHttpMethod.Get, SessProtocol.PathInit, "HTTP/1.1")
+        var request = new SessRequest(SessHttpMethod.Get, SessProtocol.PathFor(platform, "init"), "HTTP/1.1")
             .Header("Host", _parameters.ControlEndpoint.ToString())
             .Header("User-Agent", "remoteplay Windows")
             .Header("Connection", "close")
             .Header(SessProtocol.HeaderRegistKey, registKey)
-            .Header(SessProtocol.HeaderVersion, SessProtocol.ProtocolVersion);
+            .Header(SessProtocol.HeaderVersion, SessProtocol.VersionFor(platform));
 
         return _control.SendRequestAsync(request, cancellationToken);
     }
 
     private Task<SessResponse> SendControlAsync(CancellationToken cancellationToken)
     {
-        var request = new SessRequest(SessHttpMethod.Get, SessProtocol.PathControl)
+        HalyardConsolePlatform platform = _pairing?.Platform ?? HalyardConsolePlatform.Ps5;
+        var request = new SessRequest(SessHttpMethod.Get, SessProtocol.PathFor(platform, "ctrl"))
             .Header("Host", _parameters.ControlEndpoint.ToString())
             .Header("User-Agent", "remoteplay Windows")
             .Header("Connection", "keep-alive")
             // Fixed plaintext fields the console requires alongside the encrypted ones (wire-confirmed, cap22).
-            .Header(SessProtocol.HeaderVersion, SessProtocol.ProtocolVersion)
+            .Header(SessProtocol.HeaderVersion, SessProtocol.VersionFor(platform))
             .Header(SessProtocol.HeaderControllerType, "0")
             .Header(SessProtocol.HeaderClientType, "11")
             .Header(SessProtocol.HeaderConPath, "1")

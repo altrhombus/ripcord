@@ -22,11 +22,20 @@ public sealed record HalyardSearchResult(
 /// </summary>
 public sealed class HalyardSearchClient
 {
+    /// <summary>The PS5 discovery port and version — also the default when no profile is supplied.</summary>
     public const int DiscoveryPort = 9302;
     public const string ProtocolVersion = "00030010";
 
-    private static readonly byte[] SearchProbe = Encoding.ASCII.GetBytes(
-        $"SRCH * HTTP/1.1\r\ndevice-discovery-protocol-version:{ProtocolVersion}\r\n\r\n");
+    private readonly HalyardDiscoveryProfile _profile;
+    private readonly byte[] _searchProbe;
+
+    /// <summary>Defaults to the PS5 profile; pass a PS4 profile to probe a PS4 (port 987 / version 00020020).</summary>
+    public HalyardSearchClient(HalyardDiscoveryProfile? profile = null)
+    {
+        _profile = profile ?? HalyardDiscoveryProfile.Ps5;
+        _searchProbe = Encoding.ASCII.GetBytes(
+            $"SRCH * HTTP/1.1\r\ndevice-discovery-protocol-version:{_profile.ProtocolVersion}\r\n\r\n");
+    }
 
     /// <summary>
     /// Probe for one known console by address and return its reply, or null if it does not answer within
@@ -48,7 +57,7 @@ public sealed class HalyardSearchClient
         IPAddress console, TimeSpan window, CancellationToken cancellationToken, int localPort = 0)
     {
         using var udp = OpenProbeSocket(localPort);
-        await udp.SendBroadcastAsync(SearchProbe, DiscoveryPort, cancellationToken).ConfigureAwait(false);
+        await udp.SendBroadcastAsync(_searchProbe, _profile.DiscoveryPort, cancellationToken).ConfigureAwait(false);
 
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         cts.CancelAfter(window);
@@ -101,7 +110,7 @@ public sealed class HalyardSearchClient
     public async Task<IReadOnlyList<HalyardSearchResult>> SearchAsync(TimeSpan window, CancellationToken cancellationToken)
     {
         using var udp = new UdpChannel(localPort: 0, enableBroadcast: true);
-        await udp.SendBroadcastAsync(SearchProbe, DiscoveryPort, cancellationToken).ConfigureAwait(false);
+        await udp.SendBroadcastAsync(_searchProbe, _profile.DiscoveryPort, cancellationToken).ConfigureAwait(false);
 
         var results = new Dictionary<string, HalyardSearchResult>(StringComparer.OrdinalIgnoreCase);
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
