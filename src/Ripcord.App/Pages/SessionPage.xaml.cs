@@ -319,12 +319,15 @@ public sealed partial class SessionPage : Page
             return true;
         }
 
-        var search = new HalyardSearchClient();
-        var wake = new HalyardWakeClient();
+        // Discovery/wake is family-specific: a PS4 wakes on 987/00020020 (WAKEUP from 987, SRCH ephemeral), a
+        // PS5 on 9302/00030010 (both from 9303). The profile carries those so this one composition drives either.
+        var profile = HalyardDiscoveryProfile.ForPlatformName(_console!.Platform);
+        var search = new HalyardSearchClient(profile);
+        var wake = new HalyardWakeClient(profile);
         var coordinator = new HalyardWakeCoordinator(
-            // Probe from the vendor's source port (9303) so the whole exchange matches cap49; this path is
-            // sequential, so there is no contention for the fixed port the way the console list has.
-            probeAwake: async ct => (await search.ProbeAsync(address, TimeSpan.FromSeconds(1), ct, HalyardWakeClient.SourcePort))?.IsAwake,
+            // Probe from the family's wake-search source port so the exchange matches the vendor; this path is
+            // sequential, so there is no contention for a fixed port the way the console list has.
+            probeAwake: async ct => (await search.ProbeAsync(address, TimeSpan.FromSeconds(1), ct, profile.WakeSearchSourcePort))?.IsAwake,
             sendWake: ct => wake.WakeAsync(address, record, ct));
 
         var progress = new Progress<string>(line => ShowStatus(line, "The console was in standby.", terminal: false));

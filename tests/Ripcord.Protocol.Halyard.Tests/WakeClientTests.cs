@@ -59,4 +59,34 @@ public class WakeClientTests
         Assert.DoesNotContain((byte)'\r', payload);
         Assert.Contains((byte)'\n', payload);
     }
+
+    [Fact]
+    public void BuildWakePayload_Ps4UsesTheFamilyProtocolVersion()
+    {
+        // A PS4 WAKEUP is identical to PS5 bar the version token (cap53–cap57): 00020020, not 00030010.
+        byte[] payload = HalyardWakeClient.BuildWakePayload("439041101", HalyardDiscoveryProfile.Ps4.ProtocolVersion);
+        string text = Encoding.ASCII.GetString(payload);
+        Assert.Contains("device-discovery-protocol-version:00020020\n", text);
+        Assert.DoesNotContain("00030010", text);
+    }
+
+    [Fact]
+    public void DiscoveryProfile_PinsTheFamilyPortsAndVersions()
+    {
+        // Wire-confirmed: PS5 = 9302/00030010, both from 9303 (cap49); PS4 = 987/00020020, WAKEUP from 987,
+        // SRCH ephemeral (cap53–cap57).
+        Assert.Equal((9302, "00030010", 9303, 9303),
+            (HalyardDiscoveryProfile.Ps5.DiscoveryPort, HalyardDiscoveryProfile.Ps5.ProtocolVersion,
+             HalyardDiscoveryProfile.Ps5.WakeSourcePort, HalyardDiscoveryProfile.Ps5.WakeSearchSourcePort));
+        Assert.Equal((987, "00020020", 987, 0),
+            (HalyardDiscoveryProfile.Ps4.DiscoveryPort, HalyardDiscoveryProfile.Ps4.ProtocolVersion,
+             HalyardDiscoveryProfile.Ps4.WakeSourcePort, HalyardDiscoveryProfile.Ps4.WakeSearchSourcePort));
+
+        Assert.Same(HalyardDiscoveryProfile.Ps4, HalyardDiscoveryProfile.For(HalyardConsolePlatform.Ps4));
+        Assert.Same(HalyardDiscoveryProfile.Ps5, HalyardDiscoveryProfile.For(HalyardConsolePlatform.Ps5));
+        // Selection by the persisted platform name is case-insensitive and defaults to PS5 on anything unknown.
+        Assert.Same(HalyardDiscoveryProfile.Ps4, HalyardDiscoveryProfile.ForPlatformName("Ps4"));
+        Assert.Same(HalyardDiscoveryProfile.Ps5, HalyardDiscoveryProfile.ForPlatformName("PS5"));
+        Assert.Same(HalyardDiscoveryProfile.Ps5, HalyardDiscoveryProfile.ForPlatformName(null));
+    }
 }
