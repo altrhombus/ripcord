@@ -34,9 +34,22 @@ public sealed class HalyardRegistrationKdf
     public const int KeyLength = 16;
 
     private readonly HalyardRegistrationSecrets _secrets;
+    private readonly bool _isPs4;
 
-    public HalyardRegistrationKdf(HalyardRegistrationSecrets secrets)
-        => _secrets = secrets ?? throw new ArgumentNullException(nameof(secrets));
+    /// <summary>
+    /// <paramref name="versionSelector"/> picks the console-family variant (0 = PS4, anything else = the PS5
+    /// variant). The two variants are the SAME mechanism (table lookup + PIN fold, plus the material wrap)
+    /// and differ only in their key/wrap tables and the wrap bias — mirroring
+    /// <see cref="HalyardControlKdf"/>. The PS4 variant additionally requires the PS4 tables to be present in
+    /// <paramref name="secrets"/> (<see cref="HalyardRegistrationSecrets.HasPs4Tables"/>).
+    /// </summary>
+    public HalyardRegistrationKdf(HalyardRegistrationSecrets secrets, int versionSelector = 1)
+    {
+        _secrets = secrets ?? throw new ArgumentNullException(nameof(secrets));
+        _isPs4 = versionSelector == 0;
+        if (_isPs4 && !_secrets.HasPs4Tables)
+            throw new InvalidOperationException("PS4 registration tables are not loaded (this build/fixture omits them).");
+    }
 
     /// <summary>
     /// Derive the 16-byte registration transport key from the transmitted request <paramref name="context"/>
@@ -49,7 +62,7 @@ public sealed class HalyardRegistrationKdf
             throw new ArgumentException($"Context must be at least {offset + 1} bytes.", nameof(context));
 
         int index = context[offset] & 0x1f;
-        byte[] key = _secrets.TableEntry(index).ToArray();
+        byte[] key = (_isPs4 ? _secrets.Ps4TableEntry(index) : _secrets.TableEntry(index)).ToArray();
 
         Span<byte> fold = stackalloc byte[sizeof(uint)];
         BinaryPrimitives.WriteUInt32BigEndian(fold, passcode);
@@ -86,20 +99,28 @@ public sealed class HalyardRegistrationKdf
     /// <summary>Context offset holding wrapped-material bytes [8..16).</summary>
     public const int WrappedOffsetHigh = 0xc7;
 
-    private const int WrapBias = 0x2d; // subtracted per byte
+    // The per-byte additive bias in the wrap transform, keyed by family. Both variants compute
+    // w[i] = ((material[i] ^ table[i]) + bias + i) & 0xff; PS5 subtracts 0x2d (bias = -0x2d), PS4 adds 0x29.
+    private const int Ps5WrapBiasAdd = -0x2d;
+    private const int Ps4WrapBiasAdd = 0x29;
+    private int WrapBiasAdd => _isPs4 ? Ps4WrapBiasAdd : Ps5WrapBiasAdd;
+    private ReadOnlySpan<byte> WrapEntry(int index)
+        => _isPs4 ? _secrets.Ps4WrapTableEntry(index) : _secrets.WrapTableEntry(index);
 
     /// <summary>
     /// Wrap the 16-byte <paramref name="material"/> for transmission, using the table entry selected by
-    /// <paramref name="context"/>: <c>w[i] = ((material[i] ^ table[i]) - 0x2d + i) &amp; 0xff</c>.
+    /// <paramref name="context"/>: <c>w[i] = ((material[i] ^ table[i]) + bias + i) &amp; 0xff</c> (PS5 bias
+    /// -0x2d, PS4 bias +0x29).
     /// </summary>
     public byte[] WrapMaterial(ReadOnlySpan<byte> material, ReadOnlySpan<byte> context)
     {
         if (material.Length != KeyLength)
             throw new ArgumentException("Material must be 16 bytes.", nameof(material));
-        ReadOnlySpan<byte> table = _secrets.WrapTableEntry(context[MaterialSelectorOffset] >> 3);
+        ReadOnlySpan<byte> table = WrapEntry(context[MaterialSelectorOffset] >> 3);
+        int bias = WrapBiasAdd;
         var wrapped = new byte[KeyLength];
         for (int i = 0; i < KeyLength; i++)
-            wrapped[i] = (byte)((material[i] ^ table[i]) - WrapBias + i);
+            wrapped[i] = (byte)((material[i] ^ table[i]) + bias + i);
         return wrapped;
     }
 
@@ -109,10 +130,11 @@ public sealed class HalyardRegistrationKdf
     {
         if (wrapped.Length != KeyLength)
             throw new ArgumentException("Wrapped material must be 16 bytes.", nameof(wrapped));
-        ReadOnlySpan<byte> table = _secrets.WrapTableEntry(context[MaterialSelectorOffset] >> 3);
+        ReadOnlySpan<byte> table = WrapEntry(context[MaterialSelectorOffset] >> 3);
+        int bias = WrapBiasAdd;
         var material = new byte[KeyLength];
         for (int i = 0; i < KeyLength; i++)
-            material[i] = (byte)(((wrapped[i] - i + WrapBias) & 0xff) ^ table[i]);
+            material[i] = (byte)(((wrapped[i] - i - bias) & 0xff) ^ table[i]);
         return material;
     }
 
