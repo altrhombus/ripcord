@@ -5,6 +5,7 @@ using Ripcord.Core.Input;
 using Ripcord.Core.Sessions;
 using Ripcord.Cloud.Halyard;
 using Ripcord.Protocol.Halyard.Common.Crypto;
+using Ripcord.Protocol.Halyard.Common.Discovery;
 using Ripcord.Protocol.Halyard.Common.Input;
 using Ripcord.Protocol.Halyard.Common.Streaming;
 using Ripcord.Protocol.Halyard.Discovery;
@@ -42,11 +43,11 @@ internal static class LabCommands
         var platform = args.Any(a => a.Equals("ps4", StringComparison.OrdinalIgnoreCase))
             ? HalyardConsolePlatform.Ps4 : HalyardConsolePlatform.Ps5;
 
-        IHalyardRegistrationCipher cipher = LabRegistrationCipher.Load(out string source);
-        Console.WriteLine($"registration cipher: available={cipher.IsAvailable}  ({source})");
+        IHalyardRegistrationCipher cipher = LabRegistrationCipher.Load(platform, out string source);
+        Console.WriteLine($"registration cipher: available={cipher.IsAvailable}  family={platform}  ({source})");
         if (!cipher.IsAvailable)
         {
-            Console.Error.WriteLine("no dirty-room registration table; generate docs/protocol/captures/registration_crypto_vectors.json first.");
+            Console.Error.WriteLine($"no registration constants for {platform}; supply docs/protocol/captures/registration_crypto_vectors.json or build with the bundled constants.");
             return 1;
         }
 
@@ -81,26 +82,56 @@ internal static class LabCommands
 
     // ---- Stage 2: LAN discovery ----
 
+    /// <summary>
+    /// Probes every console family, not just PS5: the two families listen on different ports with different
+    /// protocol versions (PS5 9302/00030010, PS4 987/00020020), so one service per
+    /// <see cref="HalyardDiscoveryProfile.All"/> entry is the only way to see both. A single-profile sweep
+    /// silently omits the other family rather than reporting it as absent.
+    /// </summary>
     public static async Task<int> DiscoverAsync()
     {
-        Console.WriteLine("Broadcasting SRCH probe (2s)...");
-        var discovery = new HalyardLanDiscoveryService();
-        var found = new List<DiscoveredConsole>();
-        var done = new TaskCompletionSource();
+        string ports = string.Join(" + ", HalyardDiscoveryProfile.All.Select(p => $"{p.HostType} {p.DiscoveryPort}"));
+        Console.WriteLine($"Broadcasting SRCH probes ({ports})...");
 
-        using IDisposable subscription = discovery.Discover(CancellationToken.None)
-            .Subscribe(new Observer<DiscoveredConsole>(found.Add, done.SetResult));
-        await done.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var found = new List<(HalyardDiscoveryProfile Profile, DiscoveredConsole Console)>();
+        var subscriptions = new List<IDisposable>();
+        var completions = new List<Task>();
+
+        foreach (HalyardDiscoveryProfile profile in HalyardDiscoveryProfile.All)
+        {
+            var discovery = new HalyardLanDiscoveryService(profile: profile);
+            var done = new TaskCompletionSource();
+            HalyardDiscoveryProfile captured = profile;
+            subscriptions.Add(discovery.Discover(CancellationToken.None).Subscribe(
+                new Observer<DiscoveredConsole>(
+                    c => { lock (found) found.Add((captured, c)); },
+                    done.SetResult)));
+            completions.Add(done.Task);
+        }
+
+        try
+        {
+            await Task.WhenAll(completions).WaitAsync(TimeSpan.FromSeconds(8));
+        }
+        catch (TimeoutException)
+        {
+            Console.WriteLine("(one or more probes did not complete in time; reporting what answered)");
+        }
+        finally
+        {
+            foreach (IDisposable s in subscriptions)
+                s.Dispose();
+        }
 
         if (found.Count == 0)
         {
-            Console.WriteLine("No consoles responded.");
+            Console.WriteLine("No consoles responded on any family.");
             return 0;
         }
 
-        foreach (DiscoveredConsole console in found)
+        foreach ((HalyardDiscoveryProfile profile, DiscoveredConsole console) in found)
         {
-            Console.WriteLine($"  {console.DisplayName}  {console.IpAddress}  awake={console.IsAwake}  id={console.Id}");
+            Console.WriteLine($"  [{profile.HostType}] {console.DisplayName}  {console.IpAddress}  awake={console.IsAwake}  id={console.Id}");
         }
 
         return 0;

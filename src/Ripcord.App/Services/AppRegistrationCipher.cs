@@ -15,9 +15,12 @@ namespace Ripcord_App.Services;
 /// Resolution is most-explicit-first: <c>RIPCORD_REGIST_FIXTURE</c> → the platform config directory → a walk up
 /// to the dev-tree fixture → the constants bundled with this build
 /// (<see cref="Ripcord.Protocol.Halyard.Session.HalyardInteropConstants"/>). So a plain clone can pair, while a
-/// developer's own local fixture still wins. Returns <see cref="UnavailableRegistrationCipher"/> only if every
-/// source fails — including a build made with <c>-p:BundleInteropConstants=false</c> — so pairing fails cleanly
-/// with a clear message rather than crashing. <paramref name="source"/> always reports which path won.
+/// developer's own local fixture still wins. Resolution is per *family*: a fixture that cannot serve the
+/// requested console family (a PS5-only fixture asked for PS4) is skipped in favour of the bundle rather than
+/// failing the pairing. Returns <see cref="UnavailableRegistrationCipher"/> only if every source fails —
+/// including a build made with <c>-p:BundleInteropConstants=false</c> — so pairing fails cleanly with a clear
+/// message rather than crashing. <paramref name="source"/> always reports which path won, and why a located
+/// fixture lost.
 /// </para>
 /// </summary>
 internal static partial class AppRegistrationCipher
@@ -28,33 +31,51 @@ internal static partial class AppRegistrationCipher
     public static IHalyardRegistrationCipher Load(HalyardConsolePlatform platform, out string source)
     {
         bool ps4 = platform == HalyardConsolePlatform.Ps4;
-        string? path = Locate();
-        if (path is null)
-        {
-            // Last resort: the constants bundled with this build. Absent when built with
-            // -p:BundleInteropConstants=false, in which case pairing reports unavailable as before.
-            var bundled = Ripcord.Protocol.Halyard.Session.HalyardInteropConstants.Registration(platform);
-            if (bundled is not null)
-            {
-                source = "bundled interop constants";
-                return new HalyardRegistrationCipher(
-                    new HalyardRegistrationKdf(bundled.Value.Secrets, bundled.Value.VersionSelector),
-                    bundled.Value.ContextKey);
-            }
 
-            source = ps4
-                ? "PS4 registration constants not found (bundle omits the PS4 tables; set RIPCORD_REGIST_FIXTURE)"
-                : "registration constants not found (set RIPCORD_REGIST_FIXTURE)";
-            return new UnavailableRegistrationCipher();
+        // A fixture only wins if it can actually serve *this* family. A PS5-only fixture (every fixture
+        // predating the PS4 registration work) must not mask a bundle that does carry the PS4 tables.
+        string? path = Locate();
+        string? skipped = null;
+        if (path is not null)
+        {
+            IHalyardRegistrationCipher? fromFixture = TryLoadFixture(path, ps4, out skipped);
+            if (fromFixture is not null)
+            {
+                source = path;
+                return fromFixture;
+            }
         }
 
+        // The constants bundled with this build. Absent when built with -p:BundleInteropConstants=false,
+        // in which case pairing reports unavailable as before.
+        var bundled = Ripcord.Protocol.Halyard.Session.HalyardInteropConstants.Registration(platform);
+        if (bundled is not null)
+        {
+            source = skipped is null ? "bundled interop constants" : $"bundled interop constants ({skipped})";
+            return new HalyardRegistrationCipher(
+                new HalyardRegistrationKdf(bundled.Value.Secrets, bundled.Value.VersionSelector),
+                bundled.Value.ContextKey);
+        }
+
+        source = skipped ?? (ps4
+            ? "PS4 registration constants not found (bundle omits the PS4 tables; set RIPCORD_REGIST_FIXTURE)"
+            : "registration constants not found (set RIPCORD_REGIST_FIXTURE)");
+        return new UnavailableRegistrationCipher();
+    }
+
+    /// <summary>
+    /// Builds the cipher from <paramref name="path"/>, or returns null with <paramref name="reason"/> set when
+    /// that fixture cannot serve the requested family — the caller then falls back to the bundle.
+    /// </summary>
+    private static IHalyardRegistrationCipher? TryLoadFixture(string path, bool ps4, out string? reason)
+    {
         try
         {
             var fx = JsonSerializer.Deserialize(File.ReadAllText(path), FixtureContext.Default.Fixture);
             if (fx?.RegistrationTable is null || fx.ContextKey is null)
             {
-                source = $"fixture malformed ({path})";
-                return new UnavailableRegistrationCipher();
+                reason = $"fixture malformed ({path})";
+                return null;
             }
 
             string? ps4Table = ps4 ? fx.Ps4RegistrationTable : null;
@@ -62,8 +83,8 @@ internal static partial class AppRegistrationCipher
             string? contextKeyHex = ps4 ? fx.Ps4ContextKey : fx.ContextKey;
             if (ps4 && (ps4Table is null || ps4WrapTable is null || contextKeyHex is null))
             {
-                source = $"fixture lacks PS4 registration constants ({path})";
-                return new UnavailableRegistrationCipher();
+                reason = $"fixture lacks PS4 registration constants ({path})";
+                return null;
             }
 
             var secrets = new HalyardRegistrationSecrets(
@@ -72,14 +93,14 @@ internal static partial class AppRegistrationCipher
                 fx.MaterialWrapTable is null ? default : Convert.FromHexString(fx.MaterialWrapTable),
                 ps4Table is null ? default : Convert.FromHexString(ps4Table),
                 ps4WrapTable is null ? default : Convert.FromHexString(ps4WrapTable));
-            source = path;
+            reason = null;
             return new HalyardRegistrationCipher(
                 new HalyardRegistrationKdf(secrets, ps4 ? 0 : 1), Convert.FromHexString(contextKeyHex!));
         }
         catch (Exception ex)
         {
-            source = $"fixture load failed: {ex.Message}";
-            return new UnavailableRegistrationCipher();
+            reason = $"fixture load failed: {ex.Message}";
+            return null;
         }
     }
 
