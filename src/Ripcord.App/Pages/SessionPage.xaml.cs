@@ -12,6 +12,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Media.Animation;
 using Microsoft.UI.Xaml.Navigation;
 using Microsoft.UI.Xaml.Shapes;
 using Ripcord.Client;
@@ -147,8 +148,39 @@ public sealed partial class SessionPage : Page
         _console = e.Parameter as PairedConsole;
     }
 
+    /// <summary>
+    /// Land the console card the user pressed onto the connecting panel, so starting a stream carries the eye
+    /// across instead of cutting to black.
+    ///
+    /// <para>
+    /// Every failure here is silent and harmless: no prepared animation, an animation that has already
+    /// expired, or a user who has turned animation effects off all end with the page appearing exactly as it
+    /// did before this existed. Motion is the garnish, never the mechanism.
+    /// </para>
+    /// </summary>
+    private void TryStartConnectAnimation()
+    {
+        if (!AppMotion.Enabled)
+        {
+            return;
+        }
+
+        try
+        {
+            ConnectedAnimation? animation = ConnectedAnimationService.GetForCurrentView()
+                .GetAnimation(AppMotion.ConnectAnimationKey);
+            animation?.TryStart(StatusOverlay);
+        }
+        catch (Exception)
+        {
+            // Decorative only.
+        }
+    }
+
     private void Page_Loaded(object sender, RoutedEventArgs e)
     {
+        TryStartConnectAnimation();
+
         _settings = _settingsStore.Current;
         _exitDetector = new ExitGestureDetector(_settings.ExitGesture);
 
@@ -227,6 +259,15 @@ public sealed partial class SessionPage : Page
         }
 
         SessionConfig config = _settings.ToSessionConfig();
+
+        // PS4 Remote Play is H.264 / SDR only — HEVC and HDR are PS5 features. Requesting HEVC makes the
+        // console reject the launchSpec silently (no SESSION_REPLY, so no stream), and the decoder codec must
+        // match the launchSpec anyway. Force both for a PS4 regardless of the user's setting; the same config
+        // feeds the launchSpec and the decode pipeline below, so they stay in agreement.
+        if (string.Equals(_console?.Platform, "Ps4", StringComparison.OrdinalIgnoreCase))
+        {
+            config = config with { CodecPreference = VideoCodec.H264, RequestedDynamicRange = DynamicRange.Sdr };
+        }
 
         // Each phase announces itself BEFORE it runs, so if one hangs the last message on screen names it. Video
         // device creation in particular is a plausible place to stall on unfamiliar hardware, and it used to be

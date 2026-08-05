@@ -27,6 +27,54 @@ public sealed record PairedConsole(string Id, string Name, string Host, string P
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? LegacyCredentialBlobHex { get; init; }
 
+    // ------------------------------------------------------------------------------------------------
+    // Everything below was added when the console list learned to show consoles apart from one another.
+    //
+    // All of it is optional, and added as init properties rather than positional parameters on purpose:
+    // the primary constructor keeps its five arguments, so no existing call site changes, and an existing
+    // consoles.json deserializes with these simply absent. That is the same back-compat discipline
+    // LegacyCredentialBlobHex above demonstrates, and it is what makes the upgrade path structural rather
+    // than something anyone has to remember to test. Keep it that way — a required field here means every
+    // already-paired console silently disappears from the list on upgrade.
+    // ------------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// What the user chose to call this console. Wins over everything, including what the console calls
+    /// itself: two consoles that both ship as "PS5-8A2F" are exactly the case this exists for.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Nickname { get; init; }
+
+    /// <summary>The <c>host-name</c> the console broadcast over SRCH when it was paired.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ReportedName { get; init; }
+
+    /// <summary>
+    /// The console's own <c>host-id</c>. Stable across a DHCP lease change, unlike <see cref="Host"/> — which
+    /// is why <see cref="Id"/> is set from this when discovery supplies it.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? HostId { get; init; }
+
+    /// <summary>The system version reported at pairing time. Shown in the details flyout; never acted on.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? SystemVersion { get; init; }
+
+    /// <summary>When a stream was last started to this console, for the "played 2 hours ago" line.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public DateTimeOffset? LastConnectedUtc { get; init; }
+
+    /// <summary>
+    /// What to show as this console's name. Falls back through nickname → what the console calls itself →
+    /// <see cref="Name"/>, which for records written before this existed is the family label ("PlayStation 5").
+    /// So an upgraded install looks exactly as it did, and gets better the first time it is re-discovered.
+    /// </summary>
+    [JsonIgnore]
+    public string DisplayName =>
+        !string.IsNullOrWhiteSpace(Nickname) ? Nickname!
+        : !string.IsNullOrWhiteSpace(ReportedName) ? ReportedName!
+        : Name;
+
     /// <summary>
     /// The stored blob, preferring the current property and falling back to the pre-encryption one. Use this
     /// rather than <see cref="CredentialBlob"/> when reading, so upgrades keep working.
@@ -131,21 +179,38 @@ internal sealed partial class PairedConsoleStore
         File.Move(tmp, _path, overwrite: true);
     }
 
-    /// <summary>Add or replace a console by host and persist.</summary>
+    /// <summary>Add or replace a console and persist.</summary>
     public List<PairedConsole> Upsert(PairedConsole console)
     {
         var list = Load();
-        list.RemoveAll(c => string.Equals(c.Host, console.Host, StringComparison.OrdinalIgnoreCase));
+        list.RemoveAll(c => IsSameConsole(c, console));
         list.Add(console);
         Save(list);
         return list;
     }
 
-    public List<PairedConsole> Remove(string host)
+    /// <summary>Forget a console by its <see cref="PairedConsole.Id"/>.</summary>
+    public List<PairedConsole> Remove(string id)
     {
         var list = Load();
-        list.RemoveAll(c => string.Equals(c.Host, host, StringComparison.OrdinalIgnoreCase));
+        list.RemoveAll(c => string.Equals(c.Id, id, StringComparison.OrdinalIgnoreCase));
         Save(list);
         return list;
     }
+
+    /// <summary>
+    /// Whether two records are the same physical console. Matching on either identifier is deliberate and
+    /// covers the two ways a re-pair arrives: same box at the same address (<see cref="PairedConsole.Host"/>
+    /// matches), or same box that has since been handed a different DHCP lease (<see cref="PairedConsole.Id"/>
+    /// matches, because it is the console's own host-id once discovery has supplied one).
+    ///
+    /// <para>
+    /// Matching on host alone — which is what this did before ids were stable — silently duplicated a console
+    /// every time its address moved. Matching on id alone would have stopped recognising every record written
+    /// before host-ids were stored, since for those <c>Id == Host ==</c> the address.
+    /// </para>
+    /// </summary>
+    private static bool IsSameConsole(PairedConsole a, PairedConsole b) =>
+        string.Equals(a.Id, b.Id, StringComparison.OrdinalIgnoreCase)
+        || string.Equals(a.Host, b.Host, StringComparison.OrdinalIgnoreCase);
 }
