@@ -3,13 +3,19 @@
     Adding a console, as a page rather than a dialog.
 
     It used to be a flat six-field ContentDialog: an IP box, a Scan button, a hidden combo box of formatted
-    strings, a bare "PSN account ID" field with no explanation, a link code, and a platform dropdown. Two
-    things were wrong with that. It read as a settings form rather than as setting something up — the first
-    thing a new user meets, asking for an IP address. And directional gamepad focus cannot get inside a
-    ContentDialog (it activates, it does not move), so the flow could not be driven with a controller at all.
+    strings, a bare "PSN account ID" field with no explanation, a link code, and a platform dropdown. It read
+    as a settings form rather than as setting something up — the first thing a new user meets, asking for an
+    IP address. A page hosted in the nav frame gives the room to fix that.
 
-    A page hosted in the nav frame fixes the second for free — it inherits MainWindow's directional focus
-    handling — and gives the room to fix the first.
+    CORRECTED 2026-08-05: this comment used to give a second reason — "directional gamepad focus cannot get
+    inside a ContentDialog (it activates, it does not move)". The symptom was real; the attribution was not,
+    and it was ours. MainWindow passed FindNextElementOptions.SearchRoot = Window.Content, and a ContentDialog
+    (like a MenuFlyout, like a ComboBox dropdown) renders in the XamlRoot's popup root, which is not a
+    descendant of Window.Content — so focus could not move into it. Activation kept working because
+    FocusManager.GetFocusedElement is XamlRoot-wide, which is precisely what made it look like a platform
+    limitation of the control. MainWindow.DirectionalRoot() now prefers the topmost open popup, so dialogs and
+    flyouts are directionally navigable. Being a page is still right for the reason above — a six-field form
+    is not a dialog — but it is not a workaround for a gamepad limitation, because there wasn't one.
 -->
 <Page
     x:Class="Ripcord_App.Pages.AddConsolePage"
