@@ -187,7 +187,9 @@ public sealed partial class MainWindow : Window
 
         string? tag = e.SourcePageType.Name switch
         {
-            nameof(ConsolesPage) => "consoles",
+            // Adding a console is a step within Consoles, not a destination of its own — it has no nav item,
+            // so without this the pane would keep highlighting whatever was selected before it opened.
+            nameof(ConsolesPage) or nameof(AddConsolePage) => "consoles",
             nameof(AboutPage) => "about",
             _ => null,
         };

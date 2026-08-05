@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!--
+    The console badge: the trail of three dashes from the Ripcord mark, drawn in one vendor's accent.
+
+    Why the trail and not the whole mark — brand/README.md describes the dashes as "not just speed, it is
+    where the picture came from". That is exactly what a console badge means here, so the trail alone is the
+    right borrowing. The play wedge is left out deliberately: the wedge is the *app's* identity, and stamping
+    the full logo on every console card would say the wrong thing.
+
+    Drawing all three in a single colour is also what keeps it from being mistaken for the logo, which has
+    three different ones.
+
+    The geometry is the mark's, shifted to sit tight against its own bounds — lengths uneven and
+    right-aligned exactly as brand/README.md requires ("uneven, because a tidy trio is a fast-forward button;
+    right-aligned, so the raggedness is on the outside edge where it reads as a trail"). Do not tidy the
+    lengths. brand/*.svg is the source of truth; keep this in step with it.
+-->
+<UserControl
+    x:Class="Ripcord_App.Controls.FamilyMark"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d">
+
+    <!--
+        Decorative by default: the card that hosts this always states the family in text right beside it, so
+        announcing the mark as well would just make a screen reader say "PS5" twice.
+    -->
+    <Viewbox
+        x:Name="MarkViewbox"
+        AutomationProperties.AccessibilityView="Raw"
+        Stretch="Uniform">
+        <Canvas Width="16" Height="28">
+            <Rectangle
+                Canvas.Left="7"
+                Canvas.Top="0"
+                Width="9"
+                Height="7"
+                Fill="{x:Bind Accent, Mode=OneWay}"
+                RadiusX="3.5"
+                RadiusY="3.5" />
+            <Rectangle
+                Canvas.Left="0"
+                Canvas.Top="10.5"
+                Width="16"
+                Height="7"
+                Fill="{x:Bind Accent, Mode=OneWay}"
+                RadiusX="3.5"
+                RadiusY="3.5" />
+            <Rectangle
+                Canvas.Left="4"
+                Canvas.Top="21"
+                Width="12"
+                Height="7"
+                Fill="{x:Bind Accent, Mode=OneWay}"
+                RadiusX="3.5"
+                RadiusY="3.5" />
+        </Canvas>
+    </Viewbox>
+</UserControl>

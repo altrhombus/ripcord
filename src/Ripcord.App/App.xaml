@@ -8,9 +8,10 @@
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
                 <XamlControlsResources xmlns="using:Microsoft.UI.Xaml.Controls" />
-                <!-- Other merged dictionaries here -->
+                <!-- Ripcord's shared vocabulary: cards, chips, pills, vendor accents. Must come after
+                     XamlControlsResources, since its styles are BasedOn the stock text ramp. -->
+                <ResourceDictionary Source="ms-appx:///Styles/Ripcord.xaml" />
             </ResourceDictionary.MergedDictionaries>
-            <!-- Other app resources here -->
         </ResourceDictionary>
     </Application.Resources>
 </Application>

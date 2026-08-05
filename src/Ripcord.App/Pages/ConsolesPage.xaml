@@ -3,14 +3,251 @@
     x:Class="Ripcord_App.Pages.ConsolesPage"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="using:Ripcord_App.Controls"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:local="using:Ripcord_App.Pages"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:services="using:Ripcord_App.Services"
     mc:Ignorable="d">
 
-    <Grid Padding="24,16,24,16" RowSpacing="16">
+    <Page.Resources>
+        <!--
+            The card. Two layers: a Border for the surface, and a Rectangle inside it carrying a wash of the
+            console's vendor accent. Same trick the About page's identity card uses — kept to a low opacity so
+            it reads as a tint over Mica rather than a coloured panel, and rounded on the rectangle itself
+            rather than relying on the parent to clip.
+
+            The whole card is the primary action. That is one focus stop per console for a controller, which
+            is the entire reason it is built this way rather than as a row of buttons: a pad should reach a
+            console in one press, not tab past a Connect and a Remove to get to the next one. Secondary
+            actions live in the overflow flyout, which is also wired as the card's ContextFlyout so
+            right-click and the pad's menu button both open it.
+        -->
+        <DataTemplate x:Key="ConsoleCardTemplate" x:DataType="services:ConsoleListItem">
+            <Border
+                Padding="0"
+                AutomationProperties.Name="{x:Bind AutomationName, Mode=OneWay}"
+                Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                BorderThickness="1"
+                ContextRequested="OnCardContextRequested"
+                CornerRadius="{StaticResource RipcordCardCornerRadius}"
+                GotFocus="OnCardHighlight"
+                LostFocus="OnCardUnhighlight"
+                PointerCanceled="OnCardUnhighlight"
+                PointerEntered="OnCardHighlight"
+                PointerExited="OnCardUnhighlight">
+                <Grid>
+                    <Rectangle
+                        Opacity="{x:Bind WashOpacity, Mode=OneWay}"
+                        RadiusX="8"
+                        RadiusY="8">
+                        <Rectangle.Fill>
+                            <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                <GradientStop Offset="0" Color="{x:Bind AccentColor}" />
+                                <GradientStop Offset="0.9" Color="Transparent" />
+                            </LinearGradientBrush>
+                        </Rectangle.Fill>
+                    </Rectangle>
+
+                    <Grid Padding="16,14,12,14" RowSpacing="2">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+
+                        <!--  The vendor mark: the trail from the app mark, in this vendor's colour.  -->
+                        <controls:FamilyMark
+                            Width="13"
+                            Height="23"
+                            HorizontalAlignment="Left"
+                            Accent="{x:Bind AccentBrush, Mode=OneWay}" />
+
+                        <!--
+                            The overflow. A button nested inside a clickable item is fine — it handles the
+                            pointer first, so opening the menu does not also start a connect.
+                        -->
+                        <Button
+                            Grid.Column="1"
+                            Width="32"
+                            Height="32"
+                            Padding="0"
+                            VerticalAlignment="Top"
+                            AutomationProperties.Name="More options for this console"
+                            Background="Transparent"
+                            BorderThickness="0"
+                            Click="OnConsoleOverflowClick"
+                            Tag="{x:Bind}"
+                            ToolTipService.ToolTip="More options">
+                            <FontIcon FontSize="14" Glyph="&#xE712;" />
+                        </Button>
+
+                        <TextBlock
+                            Grid.Row="1"
+                            Grid.ColumnSpan="2"
+                            Margin="0,10,0,0"
+                            MaxLines="2"
+                            Style="{StaticResource SubtitleTextBlockStyle}"
+                            Text="{x:Bind DisplayName, Mode=OneWay}"
+                            TextTrimming="CharacterEllipsis"
+                            TextWrapping="Wrap"
+                            ToolTipService.ToolTip="{x:Bind DisplayName, Mode=OneWay}" />
+
+                        <TextBlock
+                            Grid.Row="2"
+                            Grid.ColumnSpan="2"
+                            Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                            Style="{StaticResource CaptionTextBlockStyle}"
+                            Text="{x:Bind Details, Mode=OneWay}"
+                            TextTrimming="CharacterEllipsis" />
+
+                        <TextBlock
+                            Grid.Row="3"
+                            Grid.ColumnSpan="2"
+                            Margin="0,2,0,0"
+                            VerticalAlignment="Top"
+                            Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                            Style="{StaticResource CaptionTextBlockStyle}"
+                            Text="{x:Bind LastConnectedLabel, Mode=OneWay}"
+                            Visibility="{x:Bind LastConnectedVisibility, Mode=OneWay}" />
+
+                        <!--
+                            Status and the primary action share the last row: the state, then what activating
+                            the card will do about it.
+                        -->
+                        <Grid
+                            Grid.Row="4"
+                            Grid.ColumnSpan="2"
+                            Margin="0,12,0,0"
+                            ColumnSpacing="8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+
+                            <!--
+                                A coloured dot AND the word, never colour alone. While the probe is still in
+                                flight the dot is a spinner instead — "finding out" and "found out, it's
+                                nothing" are opposite answers and must not look alike.
+                            -->
+                            <StackPanel
+                                VerticalAlignment="Center"
+                                Orientation="Horizontal"
+                                Spacing="6">
+                                <Grid Width="10" Height="10">
+                                    <Ellipse
+                                        Width="8"
+                                        Height="8"
+                                        VerticalAlignment="Center"
+                                        Fill="{x:Bind StatusBrush, Mode=OneWay}"
+                                        Visibility="{x:Bind SettledVisibility, Mode=OneWay}" />
+                                    <ProgressRing
+                                        Width="10"
+                                        Height="10"
+                                        IsActive="True"
+                                        Visibility="{x:Bind CheckingVisibility, Mode=OneWay}" />
+                                </Grid>
+                                <TextBlock
+                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                    Style="{StaticResource CaptionTextBlockStyle}"
+                                    Text="{x:Bind StatusLabel, Mode=OneWay}" />
+                            </StackPanel>
+
+                            <!--
+                                Not a Button: the card itself is the button. This is the affordance that says
+                                so, and dims when the console did not answer at all.
+                            -->
+                            <StackPanel
+                                Grid.Column="1"
+                                VerticalAlignment="Center"
+                                Opacity="{x:Bind ActionOpacity, Mode=OneWay}"
+                                Orientation="Horizontal"
+                                Spacing="6">
+                                <FontIcon
+                                    FontSize="12"
+                                    Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
+                                    Glyph="&#xE768;"
+                                    Visibility="{x:Bind PlayGlyphVisibility, Mode=OneWay}" />
+                                <FontIcon
+                                    FontSize="12"
+                                    Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
+                                    Glyph="&#xE7E8;"
+                                    Visibility="{x:Bind WakeGlyphVisibility, Mode=OneWay}" />
+                                <TextBlock
+                                    Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
+                                    Style="{StaticResource CaptionTextBlockStyle}"
+                                    Text="{x:Bind PrimaryActionLabel, Mode=OneWay}" />
+                            </StackPanel>
+                        </Grid>
+                    </Grid>
+                </Grid>
+            </Border>
+        </DataTemplate>
+
+        <!--
+            The add tile, drawn as a ghost of a console card so it reads as "one more of these" rather than as
+            a button that wandered into the grid.
+        -->
+        <DataTemplate x:Key="AddConsoleCardTemplate" x:DataType="services:AddConsolePlaceholder">
+            <Grid AutomationProperties.Name="Add a console">
+                <!--
+                    A dashed outline, which a Border cannot draw — StrokeDashArray belongs to Shape. So the
+                    outline is a Rectangle sitting over the fill, sized to the tile.
+                -->
+                <Rectangle
+                    Fill="{ThemeResource SubtleFillColorSecondaryBrush}"
+                    RadiusX="8"
+                    RadiusY="8"
+                    Stroke="{ThemeResource CardStrokeColorDefaultBrush}"
+                    StrokeDashArray="4,3"
+                    StrokeThickness="1" />
+                <StackPanel
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    Spacing="10">
+                    <FontIcon
+                        FontSize="24"
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                        Glyph="&#xE710;" />
+                    <TextBlock
+                        HorizontalAlignment="Center"
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                        Style="{StaticResource BodyStrongTextBlockStyle}"
+                        Text="Add a console" />
+                </StackPanel>
+            </Grid>
+        </DataTemplate>
+
+        <services:ConsoleCardTemplateSelector
+            x:Key="CardTemplateSelector"
+            AddTemplate="{StaticResource AddConsoleCardTemplate}"
+            ConsoleTemplate="{StaticResource ConsoleCardTemplate}" />
+
+        <!--
+            Strip the container's own chrome so the card is the whole visual, and stretch the content so every
+            card in a row is the same height whatever its text does. The corner radius has to match the card's
+            or the focus rectangle cuts its corners.
+        -->
+        <Style x:Key="ConsoleCardContainerStyle" TargetType="GridViewItem">
+            <Setter Property="Margin" Value="0,0,12,12" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="CornerRadius" Value="{StaticResource RipcordCardCornerRadius}" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="VerticalContentAlignment" Value="Stretch" />
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+    </Page.Resources>
+
+    <Grid Padding="24,16,24,0" RowSpacing="4">
         <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
@@ -24,9 +261,14 @@
                 VerticalAlignment="Center"
                 Style="{StaticResource TitleTextBlockStyle}"
                 Text="Consoles" />
+            <!--
+                Kept alongside the ghost tile in the grid. The tile is the pleasing way in; a button in the
+                header is the one people look for, and it stays reachable when the grid is scrolled.
+            -->
             <Button
                 x:Name="AddButton"
                 Grid.Column="1"
+                VerticalAlignment="Center"
                 Click="OnAddConsoleClick"
                 Style="{StaticResource AccentButtonStyle}">
                 <StackPanel Orientation="Horizontal" Spacing="8">
@@ -36,90 +278,72 @@
             </Button>
         </Grid>
 
+        <TextBlock
+            x:Name="SubtitleText"
+            Grid.Row="1"
+            Margin="0,0,0,12"
+            Style="{StaticResource RipcordSubtleCaptionStyle}"
+            Text="Pick one to start streaming. A console in rest mode will be woken for you." />
+
         <!--  Empty state — shown when no consoles are paired.  -->
         <StackPanel
             x:Name="EmptyState"
-            Grid.Row="1"
+            Grid.Row="2"
+            Margin="0,0,0,48"
             HorizontalAlignment="Center"
             VerticalAlignment="Center"
-            Spacing="8">
-            <FontIcon
-                FontSize="32"
-                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                Glyph="&#xE8B7;" />
+            MaxWidth="380"
+            Spacing="14">
+            <controls:FamilyMark
+                Width="26"
+                Height="46"
+                Accent="{ThemeResource TextFillColorTertiaryBrush}" />
             <TextBlock
                 HorizontalAlignment="Center"
-                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                Text="No consoles paired yet"
+                Style="{StaticResource SubtitleTextBlockStyle}"
+                Text="No consoles yet"
                 TextAlignment="Center" />
             <TextBlock
                 HorizontalAlignment="Center"
-                Foreground="{ThemeResource TextFillColorTertiaryBrush}"
-                Style="{StaticResource CaptionTextBlockStyle}"
-                Text="Choose “Add console” and enter the link code from your console"
-                TextAlignment="Center" />
+                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                Text="Add your console once and it stays paired. Ripcord finds it on your network, so you won't need its address."
+                TextAlignment="Center"
+                TextWrapping="Wrap" />
+            <Button
+                x:Name="EmptyStateAddButton"
+                Margin="0,4,0,0"
+                HorizontalAlignment="Center"
+                Click="OnAddConsoleClick"
+                Style="{StaticResource AccentButtonStyle}">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <FontIcon FontSize="16" Glyph="&#xE710;" />
+                    <TextBlock Text="Add a console" />
+                </StackPanel>
+            </Button>
         </StackPanel>
 
-        <!--  Paired consoles list.  -->
-        <ListView
-            x:Name="ConsoleList"
-            Grid.Row="1"
+        <!--
+            GridView rather than ItemsRepeater on purpose: it is the items control with real directional-focus
+            and gamepad behaviour built in, which is the whole point of the card-per-console layout here.
+        -->
+        <GridView
+            x:Name="ConsoleGrid"
+            Grid.Row="2"
+            Padding="0,0,0,24"
+            IsItemClickEnabled="True"
+            ItemContainerStyle="{StaticResource ConsoleCardContainerStyle}"
+            ItemClick="OnConsoleCardClick"
+            ItemTemplateSelector="{StaticResource CardTemplateSelector}"
             SelectionMode="None"
             Visibility="Collapsed">
-            <ListView.ItemTemplate>
-                <DataTemplate x:DataType="services:ConsoleListItem">
-                    <Grid Padding="4,8" ColumnSpacing="12">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-                        <FontIcon
-                            VerticalAlignment="Center"
-                            FontSize="24"
-                            Glyph="&#xE7F4;" />
-                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                            <TextBlock Style="{StaticResource BodyStrongTextBlockStyle}" Text="{x:Bind Name}" />
-                            <!--  Status line: a coloured dot AND the word, never colour alone. The dot updates
-                                  from Checking… to Online / Resting / Offline when the probe resolves.  -->
-                            <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-                                <Ellipse
-                                    Width="8"
-                                    Height="8"
-                                    VerticalAlignment="Center"
-                                    Fill="{x:Bind StatusBrush, Mode=OneWay}" />
-                                <TextBlock
-                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                    Style="{StaticResource CaptionTextBlockStyle}"
-                                    Text="{x:Bind StatusLabel, Mode=OneWay}" />
-                                <TextBlock
-                                    Foreground="{ThemeResource TextFillColorTertiaryBrush}"
-                                    Style="{StaticResource CaptionTextBlockStyle}"
-                                    Text="&#x00B7;" />
-                                <TextBlock
-                                    Foreground="{ThemeResource TextFillColorTertiaryBrush}"
-                                    Style="{StaticResource CaptionTextBlockStyle}"
-                                    Text="{x:Bind Host}" />
-                            </StackPanel>
-                        </StackPanel>
-                        <StackPanel
-                            Grid.Column="2"
-                            VerticalAlignment="Center"
-                            Orientation="Horizontal"
-                            Spacing="8">
-                            <Button
-                                Click="OnConnectConsoleClick"
-                                Content="Connect"
-                                Style="{StaticResource AccentButtonStyle}"
-                                Tag="{x:Bind Console}" />
-                            <Button
-                                Click="OnRemoveConsoleClick"
-                                Content="Remove"
-                                Tag="{x:Bind Host}" />
-                        </StackPanel>
-                    </Grid>
-                </DataTemplate>
-            </ListView.ItemTemplate>
-        </ListView>
+            <GridView.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <ItemsWrapGrid
+                        ItemHeight="176"
+                        ItemWidth="292"
+                        Orientation="Horizontal" />
+                </ItemsPanelTemplate>
+            </GridView.ItemsPanel>
+        </GridView>
     </Grid>
 </Page>
