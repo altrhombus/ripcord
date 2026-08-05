@@ -32,9 +32,32 @@ outside edge, where it reads as a trail rather than as a mistake.
 |---|---|---|
 | Tile | `#23272E` → `#12151A` | Linear, top-left to bottom-right |
 | Wedge on tile | `#FFFFFF` | `#17191D` on light grounds |
-| Dash 1 | `#2FBF5B` | |
-| Dash 2 | `#2D7DF6` | |
-| Dash 3 | `#F0433A` | |
+| Dash 1 | `#2FBF5B` | Xbox |
+| Dash 2 | `#2D7DF6` | PlayStation |
+| Dash 3 | `#F0433A` | Nintendo |
+
+### Which dash is which
+
+| Vendor | Value | Families |
+|---|---|---|
+| PlayStation | `#2D7DF6` blue | PS5, PS4 |
+| Xbox | `#2FBF5B` green | Xbox |
+| Nintendo | `#F0433A` red | none yet — reserved |
+
+**The mapping is by vendor, not by family**, and the app depends on it: every console card, family mark and
+accent wash resolves its colour this way (`ConsoleVendor` in `src/Ripcord.App/Services/ConsoleFamily.cs`,
+against the brushes in `src/Ripcord.App/Styles/Ripcord.xaml`). PS4 and PS5 deliberately share the blue —
+they are the same vendor, and a second blue invented to separate them would make the palette say something
+the mark does not. What tells those two apart in the UI is the plain-text "PS5"/"PS4" label, which is why
+that label is never optional.
+
+This table was written down after the mapping had to be guessed once and was guessed wrong. It lived only in
+the designer's head, and the palette section above named the three colours without saying which was which.
+
+**The association is nominative; the values are ours.** Colour association with a vendor is intended and is
+the same latitude the project takes with the word "PS5" (see `NOTICE`). What must not happen is anyone
+nudging `#2D7DF6` toward an official blue because it looks close — that is the line the trademark note below
+draws, and it is about the values, not the association.
 
 **The tile is deep, not warm, and that is a constraint rather than a preference.** A red dash on an
 amber-to-coral ground disappears; the colour has to live in the mark, so the ground has to stay out of its way.

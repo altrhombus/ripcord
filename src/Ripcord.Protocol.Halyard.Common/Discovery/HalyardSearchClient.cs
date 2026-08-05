@@ -106,8 +106,19 @@ public sealed class HalyardSearchClient
         }
     }
 
-    /// <summary>Broadcast a SRCH probe and collect console replies for <paramref name="window"/>.</summary>
-    public async Task<IReadOnlyList<HalyardSearchResult>> SearchAsync(TimeSpan window, CancellationToken cancellationToken)
+    /// <summary>
+    /// Broadcast a SRCH probe and collect console replies for <paramref name="window"/>.
+    ///
+    /// <para>
+    /// <paramref name="onResult"/> is invoked the moment each <em>new</em> console answers, rather than only
+    /// when the window closes. The window has to stay open for its full duration — a resting console can be
+    /// slow to reply, and cutting the wait short is how consoles get missed — but there is no reason for a UI
+    /// to sit blank while consoles that have already answered wait for it. Repeat replies from a console
+    /// already seen do not re-report; consoles answer more than once.
+    /// </para>
+    /// </summary>
+    public async Task<IReadOnlyList<HalyardSearchResult>> SearchAsync(
+        TimeSpan window, CancellationToken cancellationToken, IProgress<HalyardSearchResult>? onResult = null)
     {
         using var udp = new UdpChannel(localPort: 0, enableBroadcast: true);
         await udp.SendBroadcastAsync(_searchProbe, _profile.DiscoveryPort, cancellationToken).ConfigureAwait(false);
@@ -123,7 +134,12 @@ public sealed class HalyardSearchClient
                 var received = await udp.ReceiveAsync(cts.Token).ConfigureAwait(false);
                 if (TryParse(received.Buffer, received.RemoteEndPoint.Address, out HalyardSearchResult? result))
                 {
+                    bool isNew = !results.ContainsKey(result!.HostId);
                     results[result!.HostId] = result;
+                    if (isNew)
+                    {
+                        onResult?.Report(result);
+                    }
                 }
             }
         }

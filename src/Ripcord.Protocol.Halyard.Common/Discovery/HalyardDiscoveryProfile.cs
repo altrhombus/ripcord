@@ -16,17 +16,26 @@ namespace Ripcord.Protocol.Halyard.Common.Discovery;
 /// <param name="WakeSearchSourcePort">Source port for the SRCH poll <em>during</em> a wake; 0 = ephemeral. PS5
 /// matches the vendor's 9303; PS4 polls from an ephemeral port (cap56). The always-on status probe uses
 /// ephemeral for every console regardless, so this only affects the wake flow.</param>
+/// <param name="HostType">
+/// The <c>host-type</c> token a console of this family reports in its SRCH reply ("PS5"/"PS4"). A required
+/// on-wire value, not a display string: it is how a reply is attributed to a family when both families are
+/// being searched for at once.
+/// </param>
 public sealed record HalyardDiscoveryProfile(
     int DiscoveryPort,
     string ProtocolVersion,
     int WakeSourcePort,
-    int WakeSearchSourcePort)
+    int WakeSearchSourcePort,
+    string HostType = "PS5")
 {
     /// <summary>PS5: SRCH/WAKEUP on UDP 9302, version 00030010, both from source port 9303 (cap49).</summary>
-    public static readonly HalyardDiscoveryProfile Ps5 = new(9302, "00030010", 9303, 9303);
+    public static readonly HalyardDiscoveryProfile Ps5 = new(9302, "00030010", 9303, 9303, "PS5");
 
     /// <summary>PS4: SRCH/WAKEUP on UDP 987, version 00020020; WAKEUP from 987, SRCH ephemeral (cap53–cap57).</summary>
-    public static readonly HalyardDiscoveryProfile Ps4 = new(987, "00020020", 987, 0);
+    public static readonly HalyardDiscoveryProfile Ps4 = new(987, "00020020", 987, 0, "PS4");
+
+    /// <summary>Both families, for a search that does not yet know what it is looking for.</summary>
+    public static readonly IReadOnlyList<HalyardDiscoveryProfile> All = [Ps5, Ps4];
 
     public static HalyardDiscoveryProfile For(HalyardConsolePlatform platform)
         => platform == HalyardConsolePlatform.Ps4 ? Ps4 : Ps5;
