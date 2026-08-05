@@ -1,3 +1,4 @@
+using Ripcord.Protocol.Halyard.Common.Crypto;
 using Ripcord.Protocol.Halyard.Common.Crypto.V1;
 using Ripcord.Protocol.Halyard.Session;
 using Xunit;
@@ -102,18 +103,44 @@ public class BundledInteropConstantsTests
         var bundled = HalyardInteropConstants.Registration();
         Assert.NotNull(bundled);
 
-        var (secrets, contextKey) = bundled!.Value;
+        var (secrets, contextKey, versionSelector) = bundled!.Value;
         Assert.Equal(HalyardRegistrationSecrets.TableLength, secrets.Table.Length);
         Assert.Equal(16, contextKey.Length);
         Assert.True(secrets.SelectorOffset > 0);
+        Assert.Equal(1, versionSelector); // PS5
 
         // The send path needs the wrap table; without it BuildRequest throws. This is the check that would
         // have caught the fixture-key rename silently disabling pairing.
         Assert.False(secrets.MaterialWrapTable.IsEmpty, "Bundle is missing the material wrap table.");
 
-        // End-to-end through the console's own steps: build a request, then recover the field from the
-        // transmitted context exactly as the console would. Proves the whole bundle is self-consistent.
-        var cipher = new HalyardRegistrationCipher(new HalyardRegistrationKdf(secrets), contextKey);
+        RoundTrip(new HalyardRegistrationCipher(new HalyardRegistrationKdf(secrets, versionSelector), contextKey));
+    }
+
+    [SkippableFact]
+    public void Registration_BundleRoundTripsAPs4PairingRequest()
+    {
+        Skip.IfNot(HalyardInteropConstants.IsBundled, "Build omitted the interop constants bundle.");
+
+        var bundled = HalyardInteropConstants.Registration(HalyardConsolePlatform.Ps4);
+        Skip.If(bundled is null, "Bundle omits the PS4 registration tables.");
+
+        var (secrets, contextKey, versionSelector) = bundled!.Value;
+        Assert.Equal(0, versionSelector); // PS4
+        Assert.True(secrets.HasPs4Tables, "PS4 tables should be present when the PS4 bundle resolves.");
+        Assert.Equal(16, contextKey.Length);
+
+        // The PS4 context key is B_eq_0 (selectorZero), distinct from PS5 registration's B_eq_1.
+        var ps5 = HalyardInteropConstants.Registration()!.Value;
+        Assert.NotEqual(Convert.ToHexString(ps5.ContextKey), Convert.ToHexString(contextKey));
+
+        // Same end-to-end console round-trip, but through the PS4 tables + bias (versionSelector 0).
+        RoundTrip(new HalyardRegistrationCipher(new HalyardRegistrationKdf(secrets, versionSelector), contextKey));
+    }
+
+    // Build a request, then recover the field from the transmitted context exactly as the console would —
+    // proving the key + material wrap are self-consistent for whichever family variant the cipher carries.
+    private static void RoundTrip(HalyardRegistrationCipher cipher)
+    {
         const string passcode = "12345678";
         byte[] plaintext = System.Text.Encoding.ASCII.GetBytes("Client-Type: test\r\n");
 
