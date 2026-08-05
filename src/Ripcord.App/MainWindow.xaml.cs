@@ -1,16 +1,21 @@
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Automation.Peers;
 using Microsoft.UI.Xaml.Automation.Provider;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Input;
+using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Navigation;
+using System.Collections.Generic;
 using System.Linq;
 using Ripcord.Core.Input;
 using Ripcord.Core.Settings;
 using Ripcord.Input;
 using Ripcord_App.Pages;
+using Ripcord_App.Services;
 
 namespace Ripcord_App;
 
@@ -364,7 +369,16 @@ public sealed partial class MainWindow : Window
             _ => FocusNavigationDirection.None,
         };
 
-        if (winrtDirection == FocusNavigationDirection.None || Content is not { } searchRoot)
+        if (winrtDirection == FocusNavigationDirection.None || DirectionalRoot() is not { } searchRoot)
+        {
+            return;
+        }
+
+        // Left/Right on a range control adjusts it rather than leaving it, which is what the arrow keys
+        // already do — so a pad needs no separate "engagement" mode with its own visual state and its own way
+        // to get stuck. Up/Down still moves focus, so the control is never a trap.
+        if ((direction == NavDirection.Left || direction == NavDirection.Right)
+            && TryAdjustRange(searchRoot.XamlRoot, increase: direction == NavDirection.Right))
         {
             return;
         }
@@ -374,27 +388,140 @@ public sealed partial class MainWindow : Window
         // multiple windows, so FindNextElementOptions.SearchRoot must say which visual tree to search.
         var options = new FindNextElementOptions { SearchRoot = searchRoot };
 
+        if (FocusManager.FindNextElement(winrtDirection, options) is UIElement candidate)
+        {
+            // FocusState.Keyboard, never Programmatic: a Programmatic focus change does not draw the focus
+            // visual, so directional navigation would move an invisible caret.
+            candidate.Focus(FocusState.Keyboard);
+
+            // A candidate below the fold is useless if the list does not scroll to it.
+            candidate.StartBringIntoView(new BringIntoViewOptions { AnimationDesired = AppMotion.Enabled });
+            return;
+        }
+
         // If there is nothing in that direction, leave focus where it is. Previously this fell back to
         // FocusFirstNavItem(), so pressing against the edge of a list teleported focus to the navigation pane.
         // Only seed focus when nothing has it at all.
-        if (!FocusManager.TryMoveFocus(winrtDirection, options)
-            && FocusManager.GetFocusedElement(Content.XamlRoot) is null)
+        if (FocusManager.GetFocusedElement(searchRoot.XamlRoot) is null)
         {
             FocusFirstNavItem();
         }
     }
 
+    /// <summary>
+    /// Nudge the focused range control (a Slider) one step. Returns false when focus is not on one, so the
+    /// caller falls through to ordinary directional movement.
+    /// </summary>
+    private static bool TryAdjustRange(XamlRoot? xamlRoot, bool increase)
+    {
+        if (xamlRoot is null || FocusManager.GetFocusedElement(xamlRoot) is not FrameworkElement focused)
+        {
+            return false;
+        }
+
+        var peer = FrameworkElementAutomationPeer.FromElement(focused)
+            ?? FrameworkElementAutomationPeer.CreatePeerForElement(focused);
+
+        if (peer?.GetPattern(PatternInterface.RangeValue) is not IRangeValueProvider range || range.IsReadOnly)
+        {
+            return false;
+        }
+
+        // SmallChange is the Slider's StepFrequency, so a pad step matches an arrow-key step exactly.
+        double step = range.SmallChange > 0 ? range.SmallChange : 1;
+        double target = Math.Clamp(range.Value + (increase ? step : -step), range.Minimum, range.Maximum);
+
+        if (Math.Abs(target - range.Value) > double.Epsilon)
+        {
+            range.SetValue(target);
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// The visual tree directional focus should search: the topmost open popup if there is one, otherwise the
+    /// window content.
+    ///
+    /// <para>
+    /// A <see cref="ContentDialog"/>, a <c>MenuFlyout</c> and a <c>ComboBox</c> dropdown all render in the
+    /// XamlRoot's popup root, which is <b>not</b> a descendant of <c>Window.Content</c> — so a search root of
+    /// the window content excludes them entirely and focus cannot move inside them.
+    /// <see cref="FocusManager.GetFocusedElement(XamlRoot)"/>, which activation uses, is XamlRoot-wide and so
+    /// was never affected. That asymmetry is the whole of the "directional gamepad focus cannot get inside a
+    /// ContentDialog (it activates, it does not move)" behaviour this project recorded as a platform
+    /// limitation: it was ours, and it was this one line.
+    /// </para>
+    /// </summary>
+    private FrameworkElement? DirectionalRoot()
+    {
+        if (Content is not FrameworkElement content)
+        {
+            return null;
+        }
+
+        if (content.XamlRoot is not { } xamlRoot)
+        {
+            return content;
+        }
+
+        IReadOnlyList<Popup> popups = VisualTreeHelper.GetOpenPopupsForXamlRoot(xamlRoot);
+        if (popups.Count == 0)
+        {
+            return content;
+        }
+
+        // "Topmost is last" is not a documented guarantee, so prefer the popup that actually holds focus —
+        // which is also what keeps a soft keyboard opened over a dialog working — and only fall back to
+        // scanning from the end.
+        if (FocusManager.GetFocusedElement(xamlRoot) is DependencyObject focused)
+        {
+            for (int i = popups.Count - 1; i >= 0; i--)
+            {
+                if (popups[i] is { IsOpen: true, Child: FrameworkElement child } && IsInSubtree(child, focused))
+                {
+                    return child;
+                }
+            }
+        }
+
+        for (int i = popups.Count - 1; i >= 0; i--)
+        {
+            if (popups[i] is { IsOpen: true, Child: FrameworkElement child })
+            {
+                return child;
+            }
+        }
+
+        return content;
+    }
+
+    private static bool IsInSubtree(DependencyObject root, DependencyObject candidate)
+    {
+        for (DependencyObject? node = candidate; node is not null; node = VisualTreeHelper.GetParent(node))
+        {
+            if (ReferenceEquals(node, root))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private void FocusFirstNavItem()
     {
+        // FocusState.Keyboard, not Programmatic — see the note in MoveFocus. Seeding focus programmatically
+        // drew no focus visual, so the app's initial focus was invisible.
         if (NavView.SelectedItem is Control selected)
         {
-            selected.Focus(FocusState.Programmatic);
+            selected.Focus(FocusState.Keyboard);
             return;
         }
 
         if (NavView.MenuItems.OfType<Control>().FirstOrDefault() is { } firstItem)
         {
-            firstItem.Focus(FocusState.Programmatic);
+            firstItem.Focus(FocusState.Keyboard);
         }
     }
 
@@ -425,6 +552,20 @@ public sealed partial class MainWindow : Window
         else if (peer?.GetPattern(PatternInterface.Toggle) is IToggleProvider toggleProvider)
         {
             toggleProvider.Toggle();
+        }
+        // A ComboBox exposes ExpandCollapse and no Invoke, so without this the accept button did nothing at
+        // all on the six ComboBoxes in Settings — the page was reachable by pad but not operable by it. Once
+        // the dropdown is open it becomes the topmost popup, so DirectionalRoot() lets focus move inside it.
+        else if (peer?.GetPattern(PatternInterface.ExpandCollapse) is IExpandCollapseProvider expandProvider)
+        {
+            if (expandProvider.ExpandCollapseState == ExpandCollapseState.Expanded)
+            {
+                expandProvider.Collapse();
+            }
+            else
+            {
+                expandProvider.Expand();
+            }
         }
     }
 }
