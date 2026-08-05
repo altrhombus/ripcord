@@ -23,21 +23,28 @@ namespace Ripcord_App.Services;
 internal static partial class AppRegistrationCipher
 {
     public static IHalyardRegistrationCipher Load(out string source)
+        => Load(HalyardConsolePlatform.Ps5, out source);
+
+    public static IHalyardRegistrationCipher Load(HalyardConsolePlatform platform, out string source)
     {
+        bool ps4 = platform == HalyardConsolePlatform.Ps4;
         string? path = Locate();
         if (path is null)
         {
             // Last resort: the constants bundled with this build. Absent when built with
             // -p:BundleInteropConstants=false, in which case pairing reports unavailable as before.
-            var bundled = Ripcord.Protocol.Halyard.Session.HalyardInteropConstants.Registration();
+            var bundled = Ripcord.Protocol.Halyard.Session.HalyardInteropConstants.Registration(platform);
             if (bundled is not null)
             {
                 source = "bundled interop constants";
                 return new HalyardRegistrationCipher(
-                    new HalyardRegistrationKdf(bundled.Value.Secrets), bundled.Value.ContextKey);
+                    new HalyardRegistrationKdf(bundled.Value.Secrets, bundled.Value.VersionSelector),
+                    bundled.Value.ContextKey);
             }
 
-            source = "registration constants not found (set RIPCORD_REGIST_FIXTURE)";
+            source = ps4
+                ? "PS4 registration constants not found (bundle omits the PS4 tables; set RIPCORD_REGIST_FIXTURE)"
+                : "registration constants not found (set RIPCORD_REGIST_FIXTURE)";
             return new UnavailableRegistrationCipher();
         }
 
@@ -50,10 +57,24 @@ internal static partial class AppRegistrationCipher
                 return new UnavailableRegistrationCipher();
             }
 
-            var wrapTable = fx.MaterialWrapTable is null ? default : Convert.FromHexString(fx.MaterialWrapTable);
-            var secrets = new HalyardRegistrationSecrets(Convert.FromHexString(fx.RegistrationTable), fx.SelectorOffset, wrapTable);
+            string? ps4Table = ps4 ? fx.Ps4RegistrationTable : null;
+            string? ps4WrapTable = ps4 ? fx.Ps4MaterialWrapTable : null;
+            string? contextKeyHex = ps4 ? fx.Ps4ContextKey : fx.ContextKey;
+            if (ps4 && (ps4Table is null || ps4WrapTable is null || contextKeyHex is null))
+            {
+                source = $"fixture lacks PS4 registration constants ({path})";
+                return new UnavailableRegistrationCipher();
+            }
+
+            var secrets = new HalyardRegistrationSecrets(
+                Convert.FromHexString(fx.RegistrationTable),
+                fx.SelectorOffset,
+                fx.MaterialWrapTable is null ? default : Convert.FromHexString(fx.MaterialWrapTable),
+                ps4Table is null ? default : Convert.FromHexString(ps4Table),
+                ps4WrapTable is null ? default : Convert.FromHexString(ps4WrapTable));
             source = path;
-            return new HalyardRegistrationCipher(new HalyardRegistrationKdf(secrets), Convert.FromHexString(fx.ContextKey));
+            return new HalyardRegistrationCipher(
+                new HalyardRegistrationKdf(secrets, ps4 ? 0 : 1), Convert.FromHexString(contextKeyHex!));
         }
         catch (Exception ex)
         {
@@ -97,7 +118,10 @@ internal static partial class AppRegistrationCipher
     {
         public string? RegistrationTable { get; set; }
         public string? MaterialWrapTable { get; set; }
+        public string? Ps4RegistrationTable { get; set; }
+        public string? Ps4MaterialWrapTable { get; set; }
         public int SelectorOffset { get; set; }
         public string? ContextKey { get; set; }
+        public string? Ps4ContextKey { get; set; }
     }
 }

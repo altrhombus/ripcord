@@ -1,6 +1,7 @@
 using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Ripcord.Protocol.Halyard.Common.Crypto;
 using Ripcord.Protocol.Halyard.Common.Crypto.V1;
 
 namespace Ripcord.Protocol.Halyard.Session;
@@ -66,20 +67,38 @@ public static partial class HalyardInteropConstants
     }
 
     /// <summary>
-    /// The bundled registration secrets plus the field context key the registration cipher needs, or
-    /// <see langword="null"/> if this build omits them.
+    /// The bundled registration secrets, the field context key, and the KDF version selector the registration
+    /// cipher needs for <paramref name="platform"/> — or <see langword="null"/> if this build omits the
+    /// constants (or omits the PS4 tables when PS4 is requested).
+    ///
+    /// <para>
+    /// PS4 and PS5 registration are the same mechanism (see <see cref="HalyardRegistrationKdf"/>) differing
+    /// only in the key/wrap tables (carried together in <see cref="HalyardRegistrationSecrets"/>), the wrap
+    /// bias (selected by <c>VersionSelector</c>), and the field context key (PS5 = <c>contextKey</c>/B_eq_1,
+    /// PS4 = <c>selectorZero</c>/B_eq_0).
+    /// </para>
     /// </summary>
-    public static (HalyardRegistrationSecrets Secrets, byte[] ContextKey)? Registration()
+    public static (HalyardRegistrationSecrets Secrets, byte[] ContextKey, int VersionSelector)? Registration(
+        HalyardConsolePlatform platform = HalyardConsolePlatform.Ps5)
     {
         var b = Loaded.Value;
         if (b?.RegistrationTable is null || b.ContextKey is null)
             return null;
 
+        bool ps4 = platform == HalyardConsolePlatform.Ps4;
+        if (ps4 && (b.Ps4RegistrationTable is null || b.Ps4MaterialWrapTable is null || b.ContextKeys?.SelectorZero is null))
+            return null; // an older bundle without the PS4 registration tables can't drive PS4 pairing.
+
         var secrets = new HalyardRegistrationSecrets(
             Hex(b.RegistrationTable),
             b.SelectorOffset,
-            b.MaterialWrapTable is null ? default : Hex(b.MaterialWrapTable));
-        return (secrets, Hex(b.ContextKey));
+            b.MaterialWrapTable is null ? default : Hex(b.MaterialWrapTable),
+            b.Ps4RegistrationTable is null ? default : Hex(b.Ps4RegistrationTable),
+            b.Ps4MaterialWrapTable is null ? default : Hex(b.Ps4MaterialWrapTable));
+
+        byte[] contextKey = ps4 ? Hex(b.ContextKeys!.SelectorZero!) : Hex(b.ContextKey);
+        int versionSelector = ps4 ? 0 : 1;
+        return (secrets, contextKey, versionSelector);
     }
 
     private static Bundle? Read()
@@ -115,6 +134,8 @@ public static partial class HalyardInteropConstants
     {
         public string? RegistrationTable { get; set; }
         public string? MaterialWrapTable { get; set; }
+        public string? Ps4RegistrationTable { get; set; }
+        public string? Ps4MaterialWrapTable { get; set; }
         public int SelectorOffset { get; set; }
         public string? ContextKey { get; set; }
         public string? KdfTable1 { get; set; }

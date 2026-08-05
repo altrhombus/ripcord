@@ -24,7 +24,7 @@ public sealed class HalyardRegistrationCipher : IHalyardRegistrationCipher
     public const ulong FieldCounter = 0;
 
     private readonly HalyardRegistrationKdf _kdf;
-    private readonly byte[] _contextKey; // = the PS5 HMAC key (our "B_eq_1")
+    private readonly byte[] _contextKey; // the field-cipher HMAC key: PS5 = B_eq_1, PS4 = B_eq_0
 
     public HalyardRegistrationCipher(HalyardRegistrationKdf kdf, ReadOnlySpan<byte> contextKey)
     {
