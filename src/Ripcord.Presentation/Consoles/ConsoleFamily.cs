@@ -1,14 +1,10 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using Microsoft.UI.Xaml;
-using Microsoft.UI.Xaml.Media;
+using Ripcord.Core;
 
-namespace Ripcord_App.Services;
+namespace Ripcord.Presentation.Consoles;
 
 /// <summary>
-/// The console maker a family belongs to. Carries the accent colour, and nothing else: the three dashes of
-/// the Ripcord mark are one per vendor (blue PlayStation, green Xbox, red Nintendo — see brand/README.md).
+/// The console maker a family belongs to. The three dashes of the Ripcord mark are one per vendor (blue
+/// PlayStation, green Xbox, red Nintendo — see brand/README.md).
 ///
 /// <para>
 /// Colour identifies the <em>vendor</em>; the plain-text short name identifies the generation. PS4 and PS5
@@ -45,16 +41,21 @@ public enum ConsoleFamilySupport
 /// support actually goes.
 ///
 /// <para>
-/// This lives in the app layer rather than <c>Ripcord.Core</c> on purpose. Core knows nothing about
-/// PlayStation — that is the whole reason <c>ConsolePlatform</c> spells its members
-/// <c>Halyard</c>/<c>HalyardLegacy</c>/<c>Lanyard</c> instead of using product names. Product names are a
-/// presentation concern and belong up here, where the About page already puts them.
+/// This is the boundary between two vocabularies, which is why it is presentation rather than Core.
+/// <c>Ripcord.Core</c> knows nothing about PlayStation — that is the whole reason
+/// <see cref="ConsolePlatform"/> spells its members <c>Halyard</c>/<c>HalyardLegacy</c>/<c>Lanyard</c> instead
+/// of using product names. Product names are a presentation concern and belong here.
+/// </para>
+///
+/// <para>
+/// Carries an <see cref="AccentRole"/> rather than a brush or a colour, so this type is linkable by a front end
+/// that is not WinUI. Mapping the role to something drawable is each front end's job.
 /// </para>
 /// </summary>
 /// <param name="Key">
 /// The value persisted in <c>consoles.json</c>, matching <c>HalyardConsolePlatform.ToString()</c> for the
-/// families that have one ("Ps5"/"Ps4"). Xbox uses the <c>ConsolePlatform.Lanyard</c> codename, since it has
-/// no Halyard platform to name it with.
+/// families that have one ("Ps5"/"Ps4"). Xbox uses the <see cref="ConsolePlatform.Lanyard"/> codename, since it
+/// has no Halyard platform to name it with.
 /// </param>
 /// <param name="ShortName">The card caption — and the only thing distinguishing two families of one vendor.</param>
 /// <param name="LongName">The full product name, for the family picker where there is room for it.</param>
@@ -70,11 +71,13 @@ public sealed record ConsoleFamily(
         new("Ps5", "PS5", "PlayStation 5", ConsoleVendor.PlayStation, ConsoleFamilySupport.Full);
 
     /// <summary>
-    /// PS4 — discovery, wake, registration and session crypto are all implemented and wire-confirmed against
-    /// a real console, but no PS4 has been driven all the way to a stream. "Early", not "Full", until one has.
+    /// PS4 — full as of 2026-08-05. Promoted from "Early" that day, when the last open item was closed: a
+    /// pairing-from-scratch run against a real PS4 succeeded from the UI, and a connect test streamed it. Until
+    /// then this said "a PS4 hasn't been streamed end to end yet", which was true when written and had quietly
+    /// stopped being true — the caveat is what the user sees, so it has to track reality.
     /// </summary>
     public static readonly ConsoleFamily Ps4 =
-        new("Ps4", "PS4", "PlayStation 4", ConsoleVendor.PlayStation, ConsoleFamilySupport.Early);
+        new("Ps4", "PS4", "PlayStation 4", ConsoleVendor.PlayStation, ConsoleFamilySupport.Full);
 
     /// <summary>
     /// Xbox — present so the three-family shape of the app is visible from the first screen, but there is no
@@ -82,23 +85,35 @@ public sealed record ConsoleFamily(
     /// be worse than saying so.
     /// </summary>
     public static readonly ConsoleFamily Xbox =
-        new(nameof(Ripcord.Core.ConsolePlatform.Lanyard), "Xbox", "Xbox", ConsoleVendor.Xbox, ConsoleFamilySupport.NotYetAvailable);
+        new(nameof(ConsolePlatform.Lanyard), "Xbox", "Xbox", ConsoleVendor.Xbox, ConsoleFamilySupport.NotYetAvailable);
 
-    /// <summary>Every family the picker offers, in the order it offers them.</summary>
+    /// <summary>Every family the app knows about, in the order a picker would offer them.</summary>
     public static readonly IReadOnlyList<ConsoleFamily> All = [Ps5, Ps4, Xbox];
+
+    /// <summary>The families that can actually be paired and streamed today.</summary>
+    public static IReadOnlyList<ConsoleFamily> Selectable { get; } = [.. All.Where(f => f.IsSelectable)];
 
     /// <summary>True when this family can actually be paired and streamed today.</summary>
     public bool IsSelectable => Support != ConsoleFamilySupport.NotYetAvailable;
 
+    /// <summary>The accent slot this family draws in. Vendor identity, not generation.</summary>
+    public AccentRole Accent => Vendor switch
+    {
+        ConsoleVendor.Xbox => AccentRole.Xbox,
+        ConsoleVendor.Nintendo => AccentRole.Nintendo,
+        _ => AccentRole.PlayStation,
+    };
+
     /// <summary>
-    /// The short note shown beside a family that is not fully proven. Null for <see cref="ConsoleFamilySupport.Full"/>
-    /// — a family that just works needs no caveat, and adding one to every card would drown the two that matter.
+    /// The short note shown beside a family that is not fully proven. Null for
+    /// <see cref="ConsoleFamilySupport.Full"/> — a family that just works needs no caveat, and adding one to
+    /// every card would drown the ones that matter.
     /// </summary>
     public string? SupportNote => Support switch
     {
         ConsoleFamilySupport.Early =>
-            "Everything needed is built and confirmed against a real console, but a PS4 hasn't been streamed "
-            + "end to end yet. Expect rough edges.",
+            "Everything needed is built and confirmed against a real console, but this family hasn't been "
+            + "streamed end to end yet. Expect rough edges.",
         ConsoleFamilySupport.NotYetAvailable =>
             "Xbox isn't supported yet. It's here so you can see where Ripcord is going.",
         _ => null,
@@ -111,26 +126,6 @@ public sealed record ConsoleFamily(
         ConsoleFamilySupport.NotYetAvailable => "Not yet available",
         _ => null,
     };
-
-    /// <summary>
-    /// The vendor's accent, resolved from the app resources. Looked up by key rather than held as a
-    /// <c>Color</c> here so the palette has exactly one home — <c>Styles/Ripcord.xaml</c>, which in turn
-    /// points at brand/README.md. Same idiom as <see cref="ConsoleListItem.StatusBrush"/>.
-    /// </summary>
-    public Brush AccentBrush => (Brush)Application.Current.Resources[Vendor switch
-    {
-        ConsoleVendor.Xbox => "RipcordXboxAccentBrush",
-        ConsoleVendor.Nintendo => "RipcordNintendoAccentBrush",
-        _ => "RipcordPlayStationAccentBrush",
-    }];
-
-    /// <summary>The same accent as a bare colour, for gradient stops (which cannot take a brush).</summary>
-    public Windows.UI.Color AccentColor => (Windows.UI.Color)Application.Current.Resources[Vendor switch
-    {
-        ConsoleVendor.Xbox => "RipcordXboxAccentColor",
-        ConsoleVendor.Nintendo => "RipcordNintendoAccentColor",
-        _ => "RipcordPlayStationAccentColor",
-    }];
 
     /// <summary>
     /// Resolve a persisted platform string to its family, mirroring
@@ -152,10 +147,10 @@ public sealed record ConsoleFamily(
     /// Resolve Core's platform codename to a family. Core deliberately does not know product names, so this
     /// mapping — codename to marketing name — is the boundary between the two vocabularies, and belongs here.
     /// </summary>
-    public static ConsoleFamily ForPlatform(Ripcord.Core.ConsolePlatform platform) => platform switch
+    public static ConsoleFamily ForPlatform(ConsolePlatform platform) => platform switch
     {
-        Ripcord.Core.ConsolePlatform.HalyardLegacy => Ps4,
-        Ripcord.Core.ConsolePlatform.Lanyard => Xbox,
+        ConsolePlatform.HalyardLegacy => Ps4,
+        ConsolePlatform.Lanyard => Xbox,
         _ => Ps5,
     };
 }

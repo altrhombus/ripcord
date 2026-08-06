@@ -16,7 +16,8 @@ public sealed partial class FamilyMark : UserControl
     }
 
     /// <summary>
-    /// The colour to draw the trail in — normally <see cref="Services.ConsoleFamily.AccentBrush"/>.
+    /// The colour to draw the trail in — normally <c>AccentResources.Brush(family.Accent)</c>, which resolves a
+    /// family's portable accent role against this front end's palette.
     ///
     /// <para>
     /// There is deliberately no default. Falling back to a vendor accent would have the app imply a vendor
