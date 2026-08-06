@@ -1,6 +1,7 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Media;
 using Ripcord.Presentation.Consoles;
+using Ripcord_App.Services;
 
 namespace Ripcord_App.Accents;
 
@@ -39,10 +40,26 @@ internal static class AccentResources
         _ => "RipcordPlayStationAccentColor",
     };
 
-    /// <summary>The vendor accent as a brush.</summary>
-    public static Brush Brush(AccentRole role) => (Brush)Application.Current.Resources[BrushKey(role)];
+    /// <summary>
+    /// The vendor accent as a brush.
+    ///
+    /// <para>
+    /// In high contrast this resolves to a system brush instead. That is not a fallback for something missing —
+    /// high contrast is a contract that no colour outside the system palette appears, and these accents are
+    /// decorative by their own definition (they never carry meaning on their own, which is stated where they
+    /// are declared). A user in high contrast has often chosen it to make the screen legible at all, so an
+    /// arbitrary blue drawn over it is a straightforward regression.
+    /// </para>
+    /// </summary>
+    public static Brush Brush(AccentRole role) => AppEffects.HighContrast
+        ? (Brush)Application.Current.Resources["TextFillColorPrimaryBrush"]
+        : (Brush)Application.Current.Resources[BrushKey(role)];
 
-    /// <summary>The same accent as a bare colour, for gradient stops (which cannot take a brush).</summary>
+    /// <summary>
+    /// The same accent as a bare colour, for gradient stops (which cannot take a brush). High contrast is
+    /// handled by the wash opacity going to zero rather than here — a gradient stop has to be a colour, and a
+    /// transparent one is the honest way to say "no decoration" without inventing a substitute hue.
+    /// </summary>
     public static Windows.UI.Color Color(AccentRole role)
         => (Windows.UI.Color)Application.Current.Resources[ColorKey(role)];
 }
