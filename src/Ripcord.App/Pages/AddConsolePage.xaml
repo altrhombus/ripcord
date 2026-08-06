@@ -26,6 +26,7 @@
     xmlns:local="using:Ripcord_App.Pages"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:services="using:Ripcord_App.Services"
+    xmlns:vm="using:Ripcord.Presentation.Consoles"
     mc:Ignorable="d">
 
     <Page.Resources>
@@ -38,7 +39,7 @@
         </Style>
 
         <!--  One console found on the network.  -->
-        <DataTemplate x:Key="DiscoveredConsoleTemplate" x:DataType="services:DiscoveredConsoleItem">
+        <DataTemplate x:Key="DiscoveredConsoleTemplate" x:DataType="vm:DiscoveredConsoleCard">
             <Button
                 Margin="0,0,0,8"
                 Padding="16,12"
@@ -58,7 +59,7 @@
                         Width="11"
                         Height="19"
                         VerticalAlignment="Center"
-                        Accent="{x:Bind AccentBrush}" />
+                        Accent="{x:Bind Accent, Converter={StaticResource AccentBrush}}" />
 
                     <StackPanel Grid.Column="1" VerticalAlignment="Center">
                         <TextBlock
@@ -82,7 +83,7 @@
                             Width="8"
                             Height="8"
                             VerticalAlignment="Center"
-                            Fill="{x:Bind StatusBrush}" />
+                            Fill="{x:Bind StatusTone, Converter={StaticResource StatusBrush}}" />
                         <TextBlock
                             Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                             Style="{StaticResource CaptionTextBlockStyle}"

@@ -11,6 +11,9 @@ using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media.Animation;
 using Ripcord.Core.Consoles;
+using Ripcord.Presentation.Consoles;
+using Ripcord.Presentation.Threading;
+using Ripcord_App.Threading;
 using Ripcord.Protocol.Halyard.Common.Discovery;
 using Ripcord_App.Services;
 
@@ -19,6 +22,10 @@ namespace Ripcord_App.Pages;
 public sealed partial class ConsolesPage : Page
 {
     private readonly PairedConsoleStore _store = new();
+
+    // Marshals card mutations onto the UI thread. Constructed here for now; the composition root takes
+    // ownership of it once pages stop new-ing their own dependencies.
+    private readonly IUiDispatcher _dispatcher;
 
     /// <summary>
     /// The grid's items: every paired console, then the add tile. Observable so a rename, a removal or a
@@ -38,6 +45,7 @@ public sealed partial class ConsolesPage : Page
     public ConsolesPage()
     {
         InitializeComponent();
+        _dispatcher = new DispatcherQueueUiDispatcher(DispatcherQueue);
         ConsoleGrid.ItemsSource = _items;
         Loaded += (_, _) => Refresh();
         Unloaded += (_, _) => CancelProbes();
@@ -58,10 +66,10 @@ public sealed partial class ConsolesPage : Page
     {
         CancelProbes();
 
-        List<ConsoleListItem> consoles = _store.Load().Select(c => new ConsoleListItem(c)).ToList();
+        List<ConsoleCardViewModel> consoles = _store.Load().Select(c => new ConsoleCardViewModel(c, _dispatcher)).ToList();
 
         _items.Clear();
-        foreach (ConsoleListItem item in consoles)
+        foreach (ConsoleCardViewModel item in consoles)
         {
             _items.Add(item);
         }
@@ -108,15 +116,15 @@ public sealed partial class ConsolesPage : Page
     /// </para>
     /// </summary>
     private static async Task ProbeStatusesAsync(
-        IReadOnlyList<ConsoleListItem> consoles, string? restRequestedHost, CancellationToken cancellationToken)
+        IReadOnlyList<ConsoleCardViewModel> consoles, string? restRequestedHost, CancellationToken cancellationToken)
     {
         await Task.WhenAll(consoles.Select(async item =>
         {
             // A stored host that will not parse is not something to probe — show it as offline rather than
             // throw. A blank/DNS host is not expected here (pairing stores an IP), but be defensive.
-            if (!IPAddress.TryParse(item.Host, out IPAddress? address))
+            if (!IPAddress.TryParse(item.Console.Host, out IPAddress? address))
             {
-                item.Status = ConsoleReachability.Offline;
+                item.Reachability = ConsoleReachability.Offline;
                 return;
             }
 
@@ -126,7 +134,7 @@ public sealed partial class ConsolesPage : Page
 
             try
             {
-                if (restRequestedHost is not null && item.Host == restRequestedHost)
+                if (restRequestedHost is not null && item.Console.Host == restRequestedHost)
                 {
                     await WatchRestSettleAsync(search, item, address, cancellationToken).ConfigureAwait(true);
                     return;
@@ -139,7 +147,7 @@ public sealed partial class ConsolesPage : Page
                 }
 
                 // null = no reply (offline); otherwise 200 (online) vs 620 (resting).
-                item.Status = result is null
+                item.Reachability = result is null
                     ? ConsoleReachability.Offline
                     : result.IsAwake ? ConsoleReachability.Online : ConsoleReachability.Resting;
             }
@@ -157,9 +165,9 @@ public sealed partial class ConsolesPage : Page
     /// error or cancellation just stops the watch; a transition indicator is not worth surfacing failures over.
     /// </summary>
     private static async Task WatchRestSettleAsync(
-        HalyardSearchClient search, ConsoleListItem item, IPAddress address, CancellationToken cancellationToken)
+        HalyardSearchClient search, ConsoleCardViewModel item, IPAddress address, CancellationToken cancellationToken)
     {
-        item.Status = ConsoleReachability.PreparingForRest;
+        item.Reachability = ConsoleReachability.PreparingForRest;
 
         for (int check = 0; check < RestSettleMaxChecks; check++)
         {
@@ -180,14 +188,14 @@ public sealed partial class ConsolesPage : Page
             // "Going to sleep…" for both and let the budget decide.
             if (reach == ConsoleReachability.Resting)
             {
-                item.Status = ConsoleReachability.Resting;
+                item.Reachability = ConsoleReachability.Resting;
                 return;
             }
 
             if (check == RestSettleMaxChecks - 1)
             {
                 // Gave up: report the ground truth we last saw rather than leaving it stuck on the transition.
-                item.Status = reach;
+                item.Reachability = reach;
             }
         }
     }
@@ -216,13 +224,13 @@ public sealed partial class ConsolesPage : Page
             case AddConsolePlaceholder:
                 Frame.Navigate(typeof(AddConsolePage));
                 break;
-            case ConsoleListItem item:
+            case ConsoleCardViewModel item:
                 Connect(item);
                 break;
         }
     }
 
-    private void Connect(ConsoleListItem item)
+    private void Connect(ConsoleCardViewModel item)
     {
         if (App.MainWindow is not MainWindow main)
         {
@@ -248,7 +256,7 @@ public sealed partial class ConsolesPage : Page
     /// to black. Best-effort in every direction: if the container is not realised, or the animation is not
     /// picked up by the other page, navigation happens exactly as it did before.
     /// </summary>
-    private void PrepareConnectAnimation(ConsoleListItem item)
+    private void PrepareConnectAnimation(ConsoleCardViewModel item)
     {
         if (!AppMotion.Enabled)
         {
@@ -274,7 +282,7 @@ public sealed partial class ConsolesPage : Page
     /// right-click / menu-key path share one definition \u2014 two copies would drift the moment either grew an
     /// entry.
     /// </summary>
-    private MenuFlyout BuildConsoleFlyout(ConsoleListItem item)
+    private MenuFlyout BuildConsoleFlyout(ConsoleCardViewModel item)
     {
         var flyout = new MenuFlyout { Placement = FlyoutPlacementMode.BottomEdgeAlignedRight };
 
@@ -299,7 +307,7 @@ public sealed partial class ConsolesPage : Page
 
     private void OnConsoleOverflowClick(object sender, RoutedEventArgs e)
     {
-        if (sender is Button { Tag: ConsoleListItem item } button)
+        if (sender is Button { Tag: ConsoleCardViewModel item } button)
         {
             BuildConsoleFlyout(item).ShowAt(button);
         }
@@ -311,7 +319,7 @@ public sealed partial class ConsolesPage : Page
     /// </summary>
     private void OnCardContextRequested(UIElement sender, ContextRequestedEventArgs args)
     {
-        if (sender is not FrameworkElement { DataContext: ConsoleListItem item } element)
+        if (sender is not FrameworkElement { DataContext: ConsoleCardViewModel item } element)
         {
             return;
         }
@@ -333,7 +341,7 @@ public sealed partial class ConsolesPage : Page
     }
 
     // The card's hover/focus cue. Held as a flag on the item rather than by reaching into the template, so it
-    // survives the markup being rearranged \u2014 see ConsoleListItem.IsHighlighted.
+    // survives the markup being rearranged \u2014 see ConsoleCardViewModel.IsHighlighted.
     private void OnCardHighlight(object sender, RoutedEventArgs e) => SetHighlight(sender, true);
 
     private void OnCardUnhighlight(object sender, RoutedEventArgs e) => SetHighlight(sender, false);
@@ -344,19 +352,19 @@ public sealed partial class ConsolesPage : Page
 
     private static void SetHighlight(object sender, bool on)
     {
-        if (sender is FrameworkElement { DataContext: ConsoleListItem item })
+        if (sender is FrameworkElement { DataContext: ConsoleCardViewModel item })
         {
             item.IsHighlighted = on;
         }
     }
 
-    private async Task RenameAsync(ConsoleListItem item)
+    private async Task RenameAsync(ConsoleCardViewModel item)
     {
         var box = new TextBox
         {
-            Text = item.DisplayName,
+            Text = item.State.DisplayName,
             SelectionStart = 0,
-            SelectionLength = item.DisplayName.Length,
+            SelectionLength = item.State.DisplayName.Length,
             PlaceholderText = item.Console.ReportedName ?? item.Console.Name,
         };
 
@@ -408,17 +416,17 @@ public sealed partial class ConsolesPage : Page
         }
     }
 
-    private async Task ShowDetailsAsync(ConsoleListItem item)
+    private async Task ShowDetailsAsync(ConsoleCardViewModel item)
     {
         var panel = new StackPanel { Spacing = 8, MinWidth = 320 };
-        AddDetail(panel, "Name", item.DisplayName);
+        AddDetail(panel, "Name", item.State.DisplayName);
         AddDetail(panel, "Console", item.Family.LongName);
-        AddDetail(panel, "Address", item.Host);
-        AddDetail(panel, "Status", item.StatusLabel);
+        AddDetail(panel, "Address", item.Console.Host);
+        AddDetail(panel, "Status", item.State.StatusLabel);
 
         // Everything below is only known for consoles paired since discovery started carrying it, so each is
         // shown only when there is something to show rather than as a row of blanks.
-        if (item.Console.ReportedName is { Length: > 0 } reported && reported != item.DisplayName)
+        if (item.Console.ReportedName is { Length: > 0 } reported && reported != item.State.DisplayName)
         {
             AddDetail(panel, "Reported name", reported);
         }
@@ -433,7 +441,7 @@ public sealed partial class ConsolesPage : Page
             AddDetail(panel, "System version", version);
         }
 
-        if (item.LastConnectedLabel is { } played)
+        if (item.State.LastConnectedLabel is { } played)
         {
             AddDetail(panel, "Last played", played);
         }
@@ -443,7 +451,7 @@ public sealed partial class ConsolesPage : Page
             await new ContentDialog
             {
                 XamlRoot = XamlRoot,
-                Title = item.DisplayName,
+                Title = item.State.DisplayName,
                 Content = panel,
                 CloseButtonText = "Close",
             }.ShowAsync();
@@ -478,7 +486,7 @@ public sealed partial class ConsolesPage : Page
         panel.Children.Add(row);
     }
 
-    private async Task RemoveAsync(ConsoleListItem item)
+    private async Task RemoveAsync(ConsoleCardViewModel item)
     {
         try
         {
@@ -489,7 +497,7 @@ public sealed partial class ConsolesPage : Page
             {
                 XamlRoot = XamlRoot,
                 Title = "Remove this console?",
-                Content = $"Ripcord will forget its pairing with {item.DisplayName}. To use it again you'll need "
+                Content = $"Ripcord will forget its pairing with {item.State.DisplayName}. To use it again you'll need "
                           + "to enter a new link code from the console.",
                 PrimaryButtonText = "Remove",
                 CloseButtonText = "Cancel",

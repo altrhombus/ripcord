@@ -3,7 +3,8 @@
     x:Class="Ripcord_App.App"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    xmlns:local="using:Ripcord_App">
+    xmlns:local="using:Ripcord_App"
+    xmlns:conv="using:Ripcord_App.Converters">
     <Application.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
@@ -12,6 +13,20 @@
                      XamlControlsResources, since its styles are BasedOn the stock text ramp. -->
                 <ResourceDictionary Source="ms-appx:///Styles/Ripcord.xaml" />
             </ResourceDictionary.MergedDictionaries>
+
+            <!--
+                Translators for the portable presentation tokens. Declared app-wide rather than per page: the
+                same accent role and status tone appear on the console list and in the add flow, and a second
+                copy of a converter is a second place for the two to disagree about what "caution" looks like.
+            -->
+            <conv:AccentRoleToBrushConverter x:Key="AccentBrush" />
+            <conv:AccentRoleToColorConverter x:Key="AccentColor" />
+            <conv:StatusToneToBrushConverter x:Key="StatusBrush" />
+            <conv:BoolToVisibilityConverter x:Key="BoolToVisibility" />
+            <conv:InverseBoolToVisibilityConverter x:Key="InverseBoolToVisibility" />
+            <conv:ActionGlyphIsConverter x:Key="ActionGlyphIs" />
+            <conv:HighlightWashOpacityConverter x:Key="WashOpacity" />
+            <conv:CanConnectOpacityConverter x:Key="ActionOpacity" />
         </ResourceDictionary>
     </Application.Resources>
 </Application>
