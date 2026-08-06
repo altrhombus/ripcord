@@ -57,9 +57,24 @@ public sealed partial class SettingsPage : Page
         _viewModel.PropertyChanged += (_, _) => Render(_viewModel.State);
     }
 
-    private void Page_Loaded(object sender, RoutedEventArgs e)
+    /// <summary>
+    /// async void, confined to this one launcher and unable to throw: everything inside is either guarded by the
+    /// view-model or caught here. The load has to be asynchronous because the capability probes are native and
+    /// crash the process if run on this thread — see <see cref="IVideoCapabilitiesProbe"/>.
+    /// </summary>
+    private async void Page_Loaded(object sender, RoutedEventArgs e)
     {
-        _viewModel.Load();
+        try
+        {
+            await _viewModel.LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            // The page must stay reachable even when something it reads is broken — it is where a user goes to
+            // fix a bad configuration. Rendering still happens below, with whatever the view-model settled on.
+            Debug.WriteLine($"[Ripcord] settings load failed: {ex}");
+        }
+
         Render(_viewModel.State);
         WireHandlers();
     }
@@ -72,7 +87,23 @@ public sealed partial class SettingsPage : Page
         ResolutionCombo.SelectionChanged += (_, _) => Edit(() => _viewModel.SetResolution(ResolutionCombo.SelectedIndex));
         UpscaleCombo.SelectionChanged += (_, _) => Edit(() => _viewModel.SetUpscale(UpscaleCombo.SelectedIndex));
         CodecCombo.SelectionChanged += (_, _) => Edit(() => _viewModel.SetCodec(CodecCombo.SelectedIndex));
-        GpuCombo.SelectionChanged += (_, _) => Edit(() => _viewModel.SetGpuPreference(GpuCombo.SelectedIndex));
+        // The one handler that awaits: picking "a specific GPU" has to go and enumerate them off-thread.
+        GpuCombo.SelectionChanged += async (_, _) =>
+        {
+            if (_rendering)
+            {
+                return;
+            }
+
+            try
+            {
+                await _viewModel.SetGpuPreferenceAsync(GpuCombo.SelectedIndex);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[Ripcord] GPU preference change failed: {ex}");
+            }
+        };
         AdapterCombo.SelectionChanged += (_, _) => Edit(() => _viewModel.SetAdapter(AdapterCombo.SelectedIndex));
         ExitGestureCombo.SelectionChanged += (_, _) => Edit(() => _viewModel.SetExitGesture(ExitGestureCombo.SelectedIndex));
 
@@ -228,7 +259,10 @@ public sealed partial class SettingsPage : Page
         // colour-blind user and in high contrast, where the theme brushes collapse toward the same value.
         row.Children.Add(new FontIcon
         {
-            FontSize = 12,
+            // Caption-sized, because the glyph sits inline with caption text. Through the token, not a
+            // literal, for the same reason the XAML goes through it: a literal is a size no scale factor
+            // can reach.
+            FontSize = (double)Application.Current.Resources["RipcordIconSizeCaption"],
             VerticalAlignment = VerticalAlignment.Center,
             Glyph = check.State switch
             {

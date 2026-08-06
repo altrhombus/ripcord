@@ -46,18 +46,18 @@ public class SettingsViewModelTests
 
         public int AdapterEnumerations { get; private set; }
 
-        public bool IsHevcDecodeAvailable() => HevcFault is null ? Hevc : throw HevcFault;
+        public Task<bool> IsHevcDecodeAvailableAsync() => HevcFault is null ? Task.FromResult(Hevc) : throw HevcFault;
 
-        public bool IsHdrDisplayAvailable() => HdrDisplay;
+        public Task<bool> IsHdrDisplayAvailableAsync() => Task.FromResult(HdrDisplay);
 
-        public IReadOnlyList<VideoAdapterOption> EnumerateAdapters()
+        public Task<IReadOnlyList<VideoAdapterOption>> EnumerateAdaptersAsync()
         {
             AdapterEnumerations++;
-            return AdapterFault is null ? Adapters : throw AdapterFault;
+            return AdapterFault is null ? Task.FromResult<IReadOnlyList<VideoAdapterOption>>(Adapters) : throw AdapterFault;
         }
     }
 
-    private static (SettingsViewModel Vm, RecordingSettingsStore Store, FakeCapabilities Caps) Build(
+    private static async Task<(SettingsViewModel Vm, RecordingSettingsStore Store, FakeCapabilities Caps)> BuildAsync(
         RipcordSettings? seed = null)
     {
         var store = new RecordingSettingsStore();
@@ -70,19 +70,19 @@ public class SettingsViewModelTests
         var vm = new SettingsViewModel(
             store, new InMemoryPairedConsoleStore(), caps, new ImmediateUiDispatcher());
 
-        vm.Load();
+        await vm.LoadAsync();
         return (vm, store, caps);
     }
 
     // ---- saving on change, not on event --------------------------------------------------------
 
     [Fact]
-    public void Setting_AValueThatIsAlreadyHeld_DoesNotSave()
+    public async Task Setting_AValueThatIsAlreadyHeld_DoesNotSave()
     {
         // THE point of this class. The page's fourteen handlers used to each check a _loading bool because an
         // event firing did not imply anything had changed — during XAML parse, or when the page projected its
         // own state back onto its controls. Comparing values makes a duplicate event structurally a no-op.
-        (SettingsViewModel vm, RecordingSettingsStore store, _) = Build();
+        (SettingsViewModel vm, RecordingSettingsStore store, _) = await BuildAsync();
 
         vm.SetAdaptiveQuality(vm.State.AdaptiveQuality);
         vm.SetBitrateMbps(vm.State.BitrateMbps);
@@ -92,9 +92,9 @@ public class SettingsViewModelTests
     }
 
     [Fact]
-    public void Setting_ARealChange_SavesOnce()
+    public async Task Setting_ARealChange_SavesOnce()
     {
-        (SettingsViewModel vm, RecordingSettingsStore store, _) = Build();
+        (SettingsViewModel vm, RecordingSettingsStore store, _) = await BuildAsync();
         bool before = vm.State.AdaptiveQuality;
 
         vm.SetAdaptiveQuality(!before);
@@ -104,11 +104,11 @@ public class SettingsViewModelTests
     }
 
     [Fact]
-    public void SetResolution_MapsTheIndexToGeometry()
+    public async Task SetResolution_MapsTheIndexToGeometry()
     {
         // The label/geometry pairing lives in exactly one place, and nothing above the view-model converts
         // between an index and a width.
-        (SettingsViewModel vm, RecordingSettingsStore store, _) = Build();
+        (SettingsViewModel vm, RecordingSettingsStore store, _) = await BuildAsync();
 
         vm.SetResolution(0);
 
@@ -118,10 +118,10 @@ public class SettingsViewModelTests
     }
 
     [Fact]
-    public void ResolutionIndex_ForAGeometryNotOffered_FallsBackRatherThanShowingNothing()
+    public async Task ResolutionIndex_ForAGeometryNotOffered_FallsBackRatherThanShowingNothing()
     {
         // A settings file edited by hand, or written by an older build, must not leave the picker blank.
-        (SettingsViewModel vm, _, _) = Build(new RipcordSettings { Width = 3840, Height = 2160, TargetFps = 120 });
+        (SettingsViewModel vm, _, _) = await BuildAsync(new RipcordSettings { Width = 3840, Height = 2160, TargetFps = 120 });
 
         Assert.Equal(2, vm.State.ResolutionIndex); // 720p60, the documented fallback
     }
@@ -129,7 +129,7 @@ public class SettingsViewModelTests
     // ---- codec and HDR -------------------------------------------------------------------------
 
     [Fact]
-    public void Codec_WithoutAnHevcDecoder_IsNotOffered()
+    public async Task Codec_WithoutAnHevcDecoder_IsNotOffered()
     {
         // The codec is requested in the launchSpec at connect, so offering HEVC on a machine that cannot decode
         // it produces a stream that arrives and never displays.
@@ -138,7 +138,7 @@ public class SettingsViewModelTests
         var vm = new SettingsViewModel(
             store, new InMemoryPairedConsoleStore(), caps, new ImmediateUiDispatcher());
 
-        vm.Load();
+        await vm.LoadAsync();
 
         Assert.Single(vm.State.CodecOptions);
         Assert.False(vm.State.CodecPickerEnabled);
@@ -146,7 +146,7 @@ public class SettingsViewModelTests
     }
 
     [Fact]
-    public void Load_WithAStoredHevcRequestButNoDecoder_CorrectsTheDraft()
+    public async Task Load_WithAStoredHevcRequestButNoDecoder_CorrectsTheDraft()
     {
         // Correcting the record, not merely the toggle: leaving Codec=Hevc in the draft means the next change to
         // any other setting would write back a codec this machine cannot decode.
@@ -157,7 +157,7 @@ public class SettingsViewModelTests
         var vm = new SettingsViewModel(
             store, new InMemoryPairedConsoleStore(), caps, new ImmediateUiDispatcher());
 
-        vm.Load();
+        await vm.LoadAsync();
         vm.SetAdaptiveQuality(!vm.State.AdaptiveQuality);
 
         Assert.Equal(VideoCodec.H264, store.Current.Codec);
@@ -165,11 +165,11 @@ public class SettingsViewModelTests
     }
 
     [Fact]
-    public void SwitchingAwayFromHevc_ClearsTheHdrRequest()
+    public async Task SwitchingAwayFromHevc_ClearsTheHdrRequest()
     {
         // Not merely disabled: an HDR request left set-but-disabled would silently reappear on a later switch
         // back to HEVC, which is the sort of setting that turns itself on while the user is not looking.
-        (SettingsViewModel vm, RecordingSettingsStore store, _) = Build();
+        (SettingsViewModel vm, RecordingSettingsStore store, _) = await BuildAsync();
         vm.SetCodec(1);
         vm.SetRequestHdr(true);
         Assert.True(vm.State.RequestHdr);
@@ -181,9 +181,9 @@ public class SettingsViewModelTests
     }
 
     [Fact]
-    public void HdrToggle_CannotBeTurnedOnOverH264()
+    public async Task HdrToggle_CannotBeTurnedOnOverH264()
     {
-        (SettingsViewModel vm, _, _) = Build();
+        (SettingsViewModel vm, _, _) = await BuildAsync();
         vm.SetCodec(0);
 
         vm.SetRequestHdr(true);
@@ -192,7 +192,7 @@ public class SettingsViewModelTests
     }
 
     [Fact]
-    public void HdrChecklist_PointsAtTheOneThingThatIsMissing()
+    public async Task HdrChecklist_PointsAtTheOneThingThatIsMissing()
     {
         // Four prerequisites, of which the app controls one — so a user whose picture stays SDR needs to see
         // WHICH is missing rather than a sentence listing all of them.
@@ -201,7 +201,7 @@ public class SettingsViewModelTests
         var vm = new SettingsViewModel(
             store, new InMemoryPairedConsoleStore(), caps, new ImmediateUiDispatcher());
 
-        vm.Load();
+        await vm.LoadAsync();
         vm.SetCodec(1);
 
         HdrCheck codec = vm.State.HdrChecks[0];
@@ -218,9 +218,9 @@ public class SettingsViewModelTests
     }
 
     [Fact]
-    public void HdrHelp_WhenEverythingLocalIsReady_SaysSo()
+    public async Task HdrHelp_WhenEverythingLocalIsReady_SaysSo()
     {
-        (SettingsViewModel vm, _, _) = Build();
+        (SettingsViewModel vm, _, _) = await BuildAsync();
         vm.SetCodec(1);
 
         Assert.Contains("ready for HDR", vm.State.HdrHelp);
@@ -229,78 +229,78 @@ public class SettingsViewModelTests
     // ---- graphics adapters ---------------------------------------------------------------------
 
     [Fact]
-    public void Adapters_AreNotEnumeratedUntilSomeoneAsksForASpecificGpu()
+    public async Task Adapters_AreNotEnumeratedUntilSomeoneAsksForASpecificGpu()
     {
         // Enumerating creates and destroys a D3D12 device per adapter to test decode capability — far too much
         // work to do on every visit to a page almost nobody uses to pin a GPU.
-        (SettingsViewModel vm, _, FakeCapabilities caps) = Build();
+        (SettingsViewModel vm, _, FakeCapabilities caps) = await BuildAsync();
 
         Assert.Equal(0, caps.AdapterEnumerations);
 
-        vm.SetGpuPreference((int)GpuPreference.Specific);
+        await vm.SetGpuPreferenceAsync((int)GpuPreference.Specific);
 
         Assert.Equal(1, caps.AdapterEnumerations);
     }
 
     [Fact]
-    public void Adapters_AreEnumeratedOnlyOnce()
+    public async Task Adapters_AreEnumeratedOnlyOnce()
     {
-        (SettingsViewModel vm, _, FakeCapabilities caps) = Build();
+        (SettingsViewModel vm, _, FakeCapabilities caps) = await BuildAsync();
 
-        vm.SetGpuPreference((int)GpuPreference.Specific);
-        vm.SetGpuPreference((int)GpuPreference.PreferPerformance);
-        vm.SetGpuPreference((int)GpuPreference.Specific);
+        await vm.SetGpuPreferenceAsync((int)GpuPreference.Specific);
+        await vm.SetGpuPreferenceAsync((int)GpuPreference.PreferPerformance);
+        await vm.SetGpuPreferenceAsync((int)GpuPreference.Specific);
 
         Assert.Equal(1, caps.AdapterEnumerations);
     }
 
     [Fact]
-    public void LeavingSpecific_DropsThePinnedAdapter()
+    public async Task LeavingSpecific_DropsThePinnedAdapter()
     {
         // A stale LUID riding along in the saved record comes back if the user ever returns to Specific,
         // pointing at a GPU that may no longer be installed.
-        (SettingsViewModel vm, RecordingSettingsStore store, FakeCapabilities caps) = Build();
+        (SettingsViewModel vm, RecordingSettingsStore store, FakeCapabilities caps) = await BuildAsync();
         caps.Adapters.Add(new VideoAdapterOption("Test GPU", 0xABCD, true, true));
 
-        vm.SetGpuPreference((int)GpuPreference.Specific);
+        await vm.SetGpuPreferenceAsync((int)GpuPreference.Specific);
         vm.SetAdapter(0);
         Assert.Equal(0xABCDul, store.Current.GpuLuid);
 
-        vm.SetGpuPreference((int)GpuPreference.Auto);
+        await vm.SetGpuPreferenceAsync((int)GpuPreference.Auto);
 
         Assert.Equal(0ul, store.Current.GpuLuid);
     }
 
     [Fact]
-    public void Adapters_ThatCannotDecode_SayWhyTheyAreAPoorChoice()
+    public async Task Adapters_ThatCannotDecode_SayWhyTheyAreAPoorChoice()
     {
-        (SettingsViewModel vm, _, FakeCapabilities caps) = Build();
+        (SettingsViewModel vm, _, FakeCapabilities caps) = await BuildAsync();
         caps.Adapters.Add(new VideoAdapterOption("Slow GPU", 1, SupportsHardwareDecode: false, DrivesADisplay: true));
         caps.Adapters.Add(new VideoAdapterOption("Headless GPU", 2, SupportsHardwareDecode: true, DrivesADisplay: false));
 
-        vm.SetGpuPreference((int)GpuPreference.Specific);
+        await vm.SetGpuPreferenceAsync((int)GpuPreference.Specific);
 
         Assert.Contains("no hardware video decoding", vm.State.AdapterOptions[0]);
         Assert.Contains("adds a copy each frame", vm.State.AdapterOptions[1]);
     }
 
     [Fact]
-    public void Adapters_WhenNoneCanDecode_Warns()
+    public async Task Adapters_WhenNoneCanDecode_Warns()
     {
-        (SettingsViewModel vm, _, FakeCapabilities caps) = Build();
+        (SettingsViewModel vm, _, FakeCapabilities caps) = await BuildAsync();
         caps.Adapters.Add(new VideoAdapterOption("Slow GPU", 1, SupportsHardwareDecode: false, DrivesADisplay: true));
 
-        vm.SetGpuPreference((int)GpuPreference.Specific);
+        await vm.SetGpuPreferenceAsync((int)GpuPreference.Specific);
 
         Assert.True(vm.State.AdapterWarningVisible);
         Assert.Contains("fall back to the CPU", vm.State.AdapterWarning);
     }
 
     [Fact]
-    public void Adapters_AreNotWarnedAboutBeforeTheyAreEnumerated()
+    public async Task Adapters_AreNotWarnedAboutBeforeTheyAreEnumerated()
     {
         // An empty list means "not asked yet", which is not a finding.
-        (SettingsViewModel vm, _, _) = Build();
+        (SettingsViewModel vm, _, _) = await BuildAsync();
 
         Assert.False(vm.State.AdapterWarningVisible);
     }
@@ -308,7 +308,7 @@ public class SettingsViewModelTests
     // ---- degrading rather than failing ---------------------------------------------------------
 
     [Fact]
-    public void ACapabilityQueryThatThrows_DegradesToNotAvailable()
+    public async Task ACapabilityQueryThatThrows_DegradesToNotAvailable()
     {
         // This page is also where a user goes to fix a bad configuration, so it has to stay reachable when a
         // driver query fails — and "not available" is both honest and the answer that cannot promise something
@@ -318,19 +318,19 @@ public class SettingsViewModelTests
         var vm = new SettingsViewModel(
             store, new InMemoryPairedConsoleStore(), caps, new ImmediateUiDispatcher());
 
-        vm.Load();
+        await vm.LoadAsync();
 
         Assert.Single(vm.State.CodecOptions);
         Assert.Null(vm.State.LoadError);
     }
 
     [Fact]
-    public void AnAdapterEnumerationThatThrows_ReportsItWithoutLosingThePage()
+    public async Task AnAdapterEnumerationThatThrows_ReportsItWithoutLosingThePage()
     {
-        (SettingsViewModel vm, _, FakeCapabilities caps) = Build();
+        (SettingsViewModel vm, _, FakeCapabilities caps) = await BuildAsync();
         caps.AdapterFault = new InvalidOperationException("DXGI unavailable");
 
-        vm.SetGpuPreference((int)GpuPreference.Specific);
+        await vm.SetGpuPreferenceAsync((int)GpuPreference.Specific);
 
         Assert.True(vm.State.AdapterWarningVisible);
         Assert.Contains("DXGI unavailable", vm.State.AdapterWarning);
@@ -339,9 +339,9 @@ public class SettingsViewModelTests
     // ---- credential banner ---------------------------------------------------------------------
 
     [Fact]
-    public void CredentialBanner_NeverImpliesProtectionThatIsNotThere()
+    public async Task CredentialBanner_NeverImpliesProtectionThatIsNotThere()
     {
-        (SettingsViewModel vm, _, _) = Build();
+        (SettingsViewModel vm, _, _) = await BuildAsync();
         var consoles = new InMemoryPairedConsoleStore();
 
         // The in-memory store is by definition unencrypted, which is the case worth asserting: the banner must
