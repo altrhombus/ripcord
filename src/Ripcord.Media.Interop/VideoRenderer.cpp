@@ -1416,6 +1416,57 @@ namespace winrt::Ripcord::Media::Interop::implementation
         }
     }
 
+    /// Whether a two-byte NAL header is an HEVC VPS, SPS or PPS.
+    ///
+    /// The type alone is NOT sufficient, and assuming it was is what put an H.264 stream through an HEVC
+    /// decoder and produced a black screen with healthy audio. HEVC's header is two bytes —
+    ///
+    ///     b0 = forbidden_zero(1) | nal_unit_type(6) | nuh_layer_id high bit(1)
+    ///     b1 = nuh_layer_id low bits(5) | nuh_temporal_id_plus1(3)
+    ///
+    /// — and an H.264 slice header is ONE byte, forbidden_zero(1) | nal_ref_idc(2) | nal_unit_type(5). A
+    /// perfectly ordinary H.264 slice with nal_ref_idc = 2 is 0x41 for a non-IDR slice and 0x45 for an IDR, and
+    /// (0x41 >> 1) & 0x3F is 32 — exactly VPS_NUT. Every H.264 stream is full of those bytes, so the type test
+    /// on its own does not distinguish the codecs at all; it merely happened to be reached first.
+    ///
+    /// What does distinguish them is the rest of the header, which H.264 was never writing. Parameter sets are
+    /// base layer and TemporalId 0, so nuh_layer_id must be 0 and nuh_temporal_id_plus1 must be 1 — and
+    /// nuh_temporal_id_plus1 = 0 is forbidden outright by the spec. The 0x41,0x00 from the report decodes as
+    /// layer_id 32 and temporal_id_plus1 0: two independent violations, and now two independent rejections.
+    ///
+    /// (H.264 and HEVC parameter-set encodings are disjoint, so order no longer matters either: no HEVC
+    /// VPS/SPS/PPS first byte — 0x40, 0x42, 0x44 — reads as an H.264 SPS or PPS, whose types are 7 and 8.)
+    static bool IsHevcParameterSet(uint8_t b0, uint8_t b1)
+    {
+        if ((b0 & 0x80) != 0)
+        {
+            return false; // forbidden_zero_bit
+        }
+
+        const uint8_t type = static_cast<uint8_t>((b0 >> 1) & 0x3F);
+        if (type != 32 && type != 33 && type != 34) // VPS_NUT, SPS_NUT, PPS_NUT
+        {
+            return false;
+        }
+
+        const uint8_t layerId = static_cast<uint8_t>(((b0 & 0x01) << 5) | (b1 >> 3));
+        const uint8_t temporalIdPlus1 = static_cast<uint8_t>(b1 & 0x07);
+
+        return layerId == 0 && temporalIdPlus1 == 1;
+    }
+
+    /// Whether a NAL header byte is an H.264 SPS or PPS. One byte, and the forbidden-zero bit still has to hold.
+    static bool IsH264ParameterSet(uint8_t b0)
+    {
+        if ((b0 & 0x80) != 0)
+        {
+            return false;
+        }
+
+        const uint8_t type = static_cast<uint8_t>(b0 & 0x1F);
+        return type == 7 || type == 8;
+    }
+
     static bool DetectAnnexBCodec(
         const uint8_t* data, size_t length, VideoCodecKind& detected, uint8_t& firstNal0, uint8_t& firstNal1)
     {
@@ -1457,15 +1508,17 @@ namespace winrt::Ripcord::Media::Interop::implementation
                 sawAny = true;
             }
 
-            const uint8_t hevcType = static_cast<uint8_t>((b0 >> 1) & 0x3F);
-            if (hevcType == 32 || hevcType == 33 || hevcType == 34)
+            // Only a parameter set is allowed to decide this. A slice cannot: its header carries nothing that
+            // separates the two codecs, which is precisely how an H.264 P-slice came to be read as an HEVC VPS.
+            // An access unit with no parameter sets is simply unclassifiable, and the caller retries — which it
+            // already did, having been written for exactly that case.
+            if (IsHevcParameterSet(b0, b1))
             {
                 detected = VideoCodecKind::Hevc;
                 return true;
             }
 
-            const uint8_t h264Type = static_cast<uint8_t>(b0 & 0x1F);
-            if ((b0 & 0x80) == 0 && (h264Type == 7 || h264Type == 8))
+            if (IsH264ParameterSet(b0))
             {
                 detected = VideoCodecKind::H264;
                 return true;
