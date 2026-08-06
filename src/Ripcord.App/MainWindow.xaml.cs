@@ -16,6 +16,7 @@ using Ripcord.Core.Settings;
 using Ripcord.Input;
 using Ripcord_App.Pages;
 using Ripcord_App.Services;
+using Ripcord.Core.Reactive;
 
 namespace Ripcord_App;
 
