@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+  </ItemGroup>
+
+  <!--
+    Ripcord.Presentation ONLY. That single reference is the point of this project: it is what proves the
+    presentation layer is testable without a protocol stack, a network, or a UI framework. Resist adding
+    Ripcord.Protocol.Halyard here — backend adapter tests belong in Ripcord.Protocol.Halyard.Tests, which
+    already has those references and is the de-facto home for everything else.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Ripcord.Presentation\Ripcord.Presentation.csproj" />
+  </ItemGroup>
+
+</Project>
