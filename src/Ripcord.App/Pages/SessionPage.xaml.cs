@@ -624,6 +624,10 @@ public sealed partial class SessionPage : Page
                 onActivated: () => SetForwarding(true),
                 onDeactivated: () => SetForwarding(false));
 
+            // Deliberately no focusRoot: a session has nothing to come back to. Uncovering a stream should
+            // resume forwarding and put keys back on the video surface, not restore a caret onto whichever
+            // HUD button happened to be focused when a dialog opened over it.
+
             App.Input.Scopes.Push(_sessionScope);
             return;
         }
@@ -973,6 +977,9 @@ public sealed partial class SessionPage : Page
     {
         if (_settings.InputBindings.KeyboardEnabled)
         {
+            // The one place Programmatic is right, and the exception to the rule everywhere else that focus
+            // must be visible: this takes focus so keystrokes reach the console, not so the user can see where
+            // they are. A focus visual drawn around the video would be a rectangle over the game.
             Focus(FocusState.Programmatic);
         }
     }
