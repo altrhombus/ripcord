@@ -6,6 +6,7 @@ using Ripcord.Presentation.Consoles;
 using Ripcord.Presentation.Pairing;
 using Ripcord_App.Accents;
 using Ripcord_App.Controls;
+using Ripcord_App.Input;
 
 namespace Ripcord_App.Pages;
 
@@ -29,6 +30,9 @@ public sealed partial class AddConsolePage : Page
     // What FocusForStep last seeded, so focus moves on a step change and not on every state change.
     private AddConsoleStep? _focusedStep;
 
+    // Keeps the caret on the same discovered console when the list reorders around it.
+    private FocusAnchor? _discoveryAnchor;
+
     public AddConsolePage()
     {
         // Resolved BEFORE InitializeComponent — see ConsolesPage. This page previously named the scanner, the
@@ -44,6 +48,11 @@ public sealed partial class AddConsolePage : Page
 
         DiscoveredList.ItemsSource = _flow.Discovered;
 
+        // The discovery list inserts sorted, so a console answering late can land ABOVE the focused row and
+        // slide the caret onto a neighbour. See FocusAnchor — this is the page that motivated it.
+        _discoveryAnchor = new FocusAnchor(DiscoveredList, DispatcherQueue);
+        _discoveryAnchor.Watch(_flow.Discovered);
+
         BuildFamilyCard(Ps5Button, ConsoleFamily.Ps5);
         BuildFamilyCard(Ps4Button, ConsoleFamily.Ps4);
         BuildFamilyCard(XboxButton, ConsoleFamily.Xbox);
@@ -58,6 +67,12 @@ public sealed partial class AddConsolePage : Page
         // source was only a registration timeout, so walking out mid-pairing left the exchange running and its
         // result landing on a page that no longer existed.
         _ = _flow.DisposeAsync();
+
+        // The anchor holds handlers on the list and on the flow's collection; the flow outlives this call by
+        // however long its disposal takes, so leaving it subscribed would keep answering for a dead page.
+        _discoveryAnchor?.Dispose();
+        _discoveryAnchor = null;
+
         base.OnNavigatedFrom(e);
     }
 
@@ -142,13 +157,39 @@ public sealed partial class AddConsolePage : Page
         switch (step)
         {
             case AddConsoleStep.Family:
-                Ps5Button.Focus(FocusState.Programmatic);
+                Ps5Button.Focus(FocusState.Keyboard);
                 break;
             case AddConsoleStep.Link:
-                PasscodeBox.Focus(FocusState.Programmatic);
+                PasscodeBox.Focus(FocusState.Keyboard);
                 break;
             case AddConsoleStep.Done:
-                NameBox.Focus(FocusState.Programmatic);
+                NameBox.Focus(FocusState.Keyboard);
+                break;
+
+            case AddConsoleStep.Find:
+                // The list if it already has something in it, otherwise Rescan — which is always present, so
+                // there is always somewhere to land. Deliberately NOT re-run when results arrive later: a
+                // console answering the broadcast while the user is reading must not pull the caret across the
+                // page, and one landing under their thumb must not eat the next press. Arriving at an empty
+                // list and arrowing up into it once it fills is the predictable behaviour.
+                if (DiscoveredList.Items.Count > 0
+                    && DiscoveredList.ContainerFromIndex(0) is Control firstResult)
+                {
+                    firstResult.Focus(FocusState.Keyboard);
+                }
+                else
+                {
+                    RescanButton.Focus(FocusState.Keyboard);
+                }
+
+                break;
+
+            case AddConsoleStep.Pairing:
+                // Nothing to seed, and that is correct rather than an omission: the panel is a progress
+                // readout with no control on it, so there is genuinely nowhere for focus to go. Focus is left
+                // on the Link step's controls, which have just been collapsed — WinUI drops focus off a
+                // collapsed element, and the watchdog is what puts it somewhere sane. Named here so the next
+                // reader does not add a focus call to a step that has nothing to focus.
                 break;
         }
     }
@@ -216,7 +257,7 @@ public sealed partial class AddConsolePage : Page
     private void OnManualEntryClick(object sender, RoutedEventArgs e)
     {
         _flow.OpenManualEntry();
-        HostBox.Focus(FocusState.Programmatic);
+        HostBox.Focus(FocusState.Keyboard);
     }
 
     private void OnUseAddressClick(object sender, RoutedEventArgs e) => _flow.UseTypedAddress(HostBox.Text);
