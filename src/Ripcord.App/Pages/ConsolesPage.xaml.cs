@@ -12,6 +12,7 @@ using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media.Animation;
 using Ripcord.Core.Consoles;
 using Ripcord.Presentation.Consoles;
+using Ripcord.Presentation.Halyard.Consoles;
 using Ripcord.Presentation.Threading;
 using Ripcord_App.Threading;
 using Ripcord.Protocol.Halyard.Common.Discovery;
@@ -26,6 +27,12 @@ public sealed partial class ConsolesPage : Page
     // Marshals card mutations onto the UI thread. Constructed here for now; the composition root takes
     // ownership of it once pages stop new-ing their own dependencies.
     private readonly IUiDispatcher _dispatcher;
+
+    // Fills in each card's live reachability, and watches a rest-requested console settle. The probing policy —
+    // concurrency, the rest-settle budget, what a transient non-answer means mid-transition — lives in the
+    // monitor, where it is unit-tested; this page only decides when to ask.
+    private readonly ConsoleReachabilityMonitor _reachability =
+        new(new HalyardReachabilityProbe());
 
     /// <summary>
     /// The grid's items: every paired console, then the add tile. Observable so a rename, a removal or a
@@ -94,109 +101,7 @@ public sealed partial class ConsolesPage : Page
             _restRequestedHost = null;
 
             _probeCts = new CancellationTokenSource();
-            _ = ProbeStatusesAsync(consoles, restHost, _probeCts.Token);
-        }
-    }
-
-    // How long, and how often, to watch a rest-requested console settle. Deliberately bounded: this is not a
-    // status poll, it is a one-shot transition watch that gives up after the budget so it can never become a
-    // background loop. Rest/reboot is a very visible physical action, so a handful of checks is worth it.
-    private static readonly TimeSpan RestSettleInterval = TimeSpan.FromSeconds(10);
-    private const int RestSettleMaxChecks = 6; // 6 × 10s = 60s
-
-    /// <summary>
-    /// Probe each console's reachability once and update its row. A snapshot on open, not a poll: this runs
-    /// on Refresh (page load, add, remove) and nowhere else. Probes run concurrently so one offline console's
-    /// timeout does not delay the others, and each row shows "Checking…" until its own probe resolves.
-    ///
-    /// <para>
-    /// The one exception is <paramref name="restRequestedHost"/>: the console we just asked to rest is shown
-    /// "Going to sleep…" and watched by a bounded re-check (<see cref="WatchRestSettleAsync"/>) instead of
-    /// a single probe, because a console that got the rest command is still awake for a few seconds after.
-    /// </para>
-    /// </summary>
-    private static async Task ProbeStatusesAsync(
-        IReadOnlyList<ConsoleCardViewModel> consoles, string? restRequestedHost, CancellationToken cancellationToken)
-    {
-        await Task.WhenAll(consoles.Select(async item =>
-        {
-            // A stored host that will not parse is not something to probe — show it as offline rather than
-            // throw. A blank/DNS host is not expected here (pairing stores an IP), but be defensive.
-            if (!IPAddress.TryParse(item.Console.Host, out IPAddress? address))
-            {
-                item.Reachability = ConsoleReachability.Offline;
-                return;
-            }
-
-            // Probe on the console's own family port/version — a PS4 answers SRCH on 987/00020020, a PS5 on
-            // 9302/00030010, so a shared client would never see the other family.
-            var search = new HalyardSearchClient(HalyardDiscoveryProfile.ForPlatformName(item.Console.Platform));
-
-            try
-            {
-                if (restRequestedHost is not null && item.Console.Host == restRequestedHost)
-                {
-                    await WatchRestSettleAsync(search, item, address, cancellationToken).ConfigureAwait(true);
-                    return;
-                }
-
-                var result = await search.ProbeAsync(address, TimeSpan.FromSeconds(1), cancellationToken).ConfigureAwait(true);
-                if (cancellationToken.IsCancellationRequested)
-                {
-                    return;
-                }
-
-                // null = no reply (offline); otherwise 200 (online) vs 620 (resting).
-                item.Reachability = result is null
-                    ? ConsoleReachability.Offline
-                    : result.IsAwake ? ConsoleReachability.Online : ConsoleReachability.Resting;
-            }
-            catch (OperationCanceledException)
-            {
-                // page left / list rebuilt — the row is gone, nothing to update
-            }
-        }));
-    }
-
-    /// <summary>
-    /// Watch a console we asked to rest until it settles. Shows "Going to sleep…" and re-checks on a bounded
-    /// schedule, ending early the moment it answers 620 (rest). If the budget runs out — the console never
-    /// rested, or fully powered off and stopped answering — the row shows whatever the last probe saw. Any probe
-    /// error or cancellation just stops the watch; a transition indicator is not worth surfacing failures over.
-    /// </summary>
-    private static async Task WatchRestSettleAsync(
-        HalyardSearchClient search, ConsoleCardViewModel item, IPAddress address, CancellationToken cancellationToken)
-    {
-        item.Reachability = ConsoleReachability.PreparingForRest;
-
-        for (int check = 0; check < RestSettleMaxChecks; check++)
-        {
-            await Task.Delay(RestSettleInterval, cancellationToken).ConfigureAwait(true);
-
-            var result = await search.ProbeAsync(address, TimeSpan.FromSeconds(1), cancellationToken).ConfigureAwait(true);
-            if (cancellationToken.IsCancellationRequested)
-            {
-                return;
-            }
-
-            ConsoleReachability reach = result is null
-                ? ConsoleReachability.Offline
-                : result.IsAwake ? ConsoleReachability.Online : ConsoleReachability.Resting;
-
-            // 620 is the clean end state of a rest transition — settle and stop early. Online means it hasn't
-            // gone down yet, and a bare Offline can be a momentary gap mid-transition, so keep showing
-            // "Going to sleep…" for both and let the budget decide.
-            if (reach == ConsoleReachability.Resting)
-            {
-                item.Reachability = ConsoleReachability.Resting;
-                return;
-            }
-
-            if (check == RestSettleMaxChecks - 1)
-            {
-                // Gave up: report the ground truth we last saw rather than leaving it stuck on the transition.
-                item.Reachability = reach;
-            }
+            _ = _reachability.RefreshAsync(consoles, restHost, _probeCts.Token);
         }
     }
 
