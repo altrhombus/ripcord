@@ -50,7 +50,7 @@ public sealed partial class SettingsPage : Page
 
     public SettingsPage()
     {
-        _viewModel = App.Services.CreateSettingsViewModel(new NativeVideoCapabilitiesProbe());
+        _viewModel = App.Services.CreateSettingsViewModel();
 
         InitializeComponent();
 
