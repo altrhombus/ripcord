@@ -51,13 +51,13 @@ public sealed partial class AddConsolePage : Page
     // that a one-line change instead of an edit to PairAsync.
     private readonly IHalyardRegistrationCipherResolver _cipherResolver = new HalyardRegistrationCipherResolver();
 
-    private readonly ObservableCollection<DiscoveredConsoleItem> _discovered = [];
+    private readonly ObservableCollection<DiscoveredConsoleCard> _discovered = [];
 
     private Step _step = Step.Family;
     private ConsoleFamily _family = ConsoleFamily.Ps5;
 
     /// <summary>The console picked from the scan, if it came from there. Null when an address was typed.</summary>
-    private DiscoveredConsoleItem? _selected;
+    private DiscoveredConsoleCard? _selected;
 
     private string _host = string.Empty;
     private PairedConsole? _paired;
@@ -289,7 +289,7 @@ public sealed partial class AddConsolePage : Page
 
     private void OnDiscoveredConsoleClick(object sender, RoutedEventArgs e)
     {
-        if (sender is not Button { Tag: DiscoveredConsoleItem item })
+        if (sender is not Button { Tag: DiscoveredConsoleCard item })
         {
             return;
         }
@@ -389,7 +389,7 @@ public sealed partial class AddConsolePage : Page
 
         // The family the user picked first, then everything else — their console is almost certainly the one
         // they said it was, and it should not be below a console they were not looking for.
-        var item = new DiscoveredConsoleItem(console);
+        var item = DiscoveredConsoleCard.From(console);
         int insertAt = item.Family == _family
             ? _discovered.Count(d => d.Family == _family)
             : _discovered.Count;
