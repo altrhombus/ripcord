@@ -4,6 +4,7 @@ using Ripcord.Core.Platform;
 using Ripcord.Core.Settings;
 using Ripcord.Presentation.Consoles;
 using Ripcord.Presentation.Pairing;
+using Ripcord.Presentation.Sessions;
 using Ripcord.Presentation.Threading;
 using Xunit;
 
@@ -38,6 +39,7 @@ public class RipcordAppServicesTests
             Scanner = new StubScanner(),
             Registrar = new StubRegistrar(),
             ReachabilityProbe = new StubProbe(),
+            WakeCoordinator = new StubWakeCoordinator(),
         };
     }
 
@@ -173,6 +175,13 @@ public class RipcordAppServicesTests
     private sealed class StubProbe : IConsoleReachabilityProbe
     {
         public Task<bool?> ProbeAsync(PairedConsole console, CancellationToken cancellationToken)
+            => throw new NotSupportedException();
+    }
+
+    private sealed class StubWakeCoordinator : IConsoleWakeCoordinator
+    {
+        public Task<ConsoleWakeOutcome> EnsureAwakeAsync(
+            PairedConsole console, IProgress<string>? progress, CancellationToken cancellationToken)
             => throw new NotSupportedException();
     }
 }
