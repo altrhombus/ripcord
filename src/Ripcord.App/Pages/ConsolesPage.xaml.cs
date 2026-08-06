@@ -176,6 +176,10 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
     {
         _heroConsole = console;
         console.PropertyChanged += OnHeroChanged;
+
+        // Rebuilt per console rather than reused: the menu's items close over this particular card.
+        HeroCard.ContextFlyout = BuildConsoleFlyout(console);
+
         RenderHero(console.State);
     }
 
@@ -447,12 +451,20 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
 
     private void OnCardUnhighlight(object sender, PointerRoutedEventArgs e) => SetHighlight(sender, false);
 
-    private static void SetHighlight(object sender, bool on)
+    private void SetHighlight(object sender, bool on)
     {
-        if (sender is FrameworkElement { DataContext: ConsoleCardViewModel item })
+        if (sender is not FrameworkElement { DataContext: ConsoleCardViewModel item } element)
         {
-            item.IsHighlighted = on;
+            return;
         }
+
+        item.IsHighlighted = on;
+
+        // Attach the menu to the card the first time it is reached, so the pad's North button has something to
+        // open. Assigned here rather than in the template because the items close over the card's view-model,
+        // and lazily because a container that is never focused or hovered never needs one. Once assigned it is
+        // the same object right-click, the menu key and North all use.
+        element.ContextFlyout ??= BuildConsoleFlyout(item);
     }
 
     private async Task RenameAsync(ConsoleCardViewModel item)
