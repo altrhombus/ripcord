@@ -71,6 +71,7 @@
     <PropertyGroup> above to opt out.
   -->
   <ItemGroup>
+    <PackageReference Include="CommunityToolkit.WinUI.Controls.SettingsControls" Version="8.2.251219" />
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.28000.2270" />
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.2.0" />
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools.WinApp" Version="0.4.0" />
@@ -136,10 +137,7 @@
   </PropertyGroup>
 
   <Target Name="CopyNativeInteropDlls" AfterTargets="Build">
-    <Copy
-      SourceFiles="$(NativeInteropDlls)"
-      DestinationFolder="$(OutDir)"
-      SkipUnchangedFiles="true" />
+    <Copy SourceFiles="$(NativeInteropDlls)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
   </Target>
 
   <!-- Publish needs its own copy: the Build target above writes to $(OutDir), which publish does not sweep for
@@ -153,14 +151,9 @@
 
     <!-- Fail loudly rather than shipping a folder that cannot activate. These come from the C++ projects, so a
          publish attempted without building them first is a mistake worth stopping. -->
-    <Error
-      Condition="!Exists('%(NativeInteropDll.FullPath)')"
-      Text="Native interop DLL missing: %(NativeInteropDll.FullPath). Build the C++ projects ($(RipcordNativePlatform)/$(Configuration)) before publishing, or the published app will fail at video/input initialisation." />
+    <Error Condition="!Exists('%(NativeInteropDll.FullPath)')" Text="Native interop DLL missing: %(NativeInteropDll.FullPath). Build the C++ projects ($(RipcordNativePlatform)/$(Configuration)) before publishing, or the published app will fail at video/input initialisation." />
 
-    <Copy
-      SourceFiles="@(NativeInteropDll)"
-      DestinationFolder="$(PublishDir)"
-      SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(NativeInteropDll)" DestinationFolder="$(PublishDir)" SkipUnchangedFiles="true" />
 
     <Message Importance="high" Text="Staged native interop DLLs into $(PublishDir)" />
   </Target>
