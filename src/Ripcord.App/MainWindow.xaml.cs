@@ -33,23 +33,6 @@ namespace Ripcord_App;
 /// </summary>
 public sealed partial class MainWindow : Window, IShellNavigator
 {
-    private enum NavDirection
-    {
-        None,
-        Up,
-        Down,
-        Left,
-        Right,
-    }
-
-    /// <summary>
-    /// Directional auto-repeat. Without it, holding a stick or D-pad moved focus exactly once, so navigating a
-    /// long list meant flicking repeatedly — the single most obviously-wrong thing about gamepad navigation.
-    /// The initial pause prevents an intended single step from becoming two.
-    /// </summary>
-    private static readonly TimeSpan RepeatDelay = TimeSpan.FromMilliseconds(400);
-    private static readonly TimeSpan RepeatInterval = TimeSpan.FromMilliseconds(120);
-
     private readonly DispatcherQueue _dispatcherQueue = DispatcherQueue.GetForCurrentThread();
     private readonly ISettingsStore _settingsStore = App.Services.Settings;
 
@@ -57,12 +40,13 @@ public sealed partial class MainWindow : Window, IShellNavigator
     // activating buttons), not console input passthrough — conceptually different consumers of the same pad.
     private GameInputControllerSource? _navControllerSource;
     private IDisposable? _navControllerSubscription;
-    private ControllerButtons _previousButtons = ControllerButtons.None;
-    private NavDirection _heldDirection = NavDirection.None;
-    private DateTimeOffset _directionHeldSince;
-    private DateTimeOffset _lastRepeat;
 
-    private double _stickDeadzone;
+    /// <summary>
+    /// Turns pad frames into navigation intents — auto-repeat, deadzone and button edges. Extracted to
+    /// Ripcord.Core.Input so all of that is unit-tested against a clock rather than tried on a real pad; what
+    /// is left here is the half that genuinely needs a window, which is moving focus.
+    /// </summary>
+    private readonly NavIntentReader _navIntents = new();
 
     public MainWindow()
     {
@@ -79,8 +63,9 @@ public sealed partial class MainWindow : Window, IShellNavigator
         RestoreBackdrop();
         AppEffects.Changed += OnEffectsChanged;
 
-        _stickDeadzone = _settingsStore.Current.UiStickDeadzone;
-        _settingsStore.Changed += s => _dispatcherQueue.TryEnqueue(() => _stickDeadzone = s.UiStickDeadzone);
+        _navIntents.StickDeadzone = _settingsStore.Current.UiStickDeadzone;
+        _settingsStore.Changed += s =>
+            _dispatcherQueue.TryEnqueue(() => _navIntents.StickDeadzone = s.UiStickDeadzone);
 
         ChromeFrame.Navigate(typeof(ConsolesPage));
 
@@ -282,29 +267,33 @@ public sealed partial class MainWindow : Window, IShellNavigator
                 // A live streaming session owns the controller — SessionPage forwards input to the console.
                 // Don't let app-chrome navigation consume the same pad, or B would exit the stream instead of
                 // reaching the console. SessionPage provides its own exit gesture so this is not a trap.
-                // Keep the edge-trackers current so returning to chrome navigation later doesn't fire a stale
-                // rising edge.
+                // Reset rather than simply returning: the buttons held right now must not read as a fresh
+                // press when chrome navigation gets the pad back.
                 if (StreamFrame.Content is SessionPage { IsCapturingInput: true })
                 {
-                    _previousButtons = frame.Buttons;
-                    _heldDirection = NavDirection.None;
+                    _navIntents.Reset(frame);
                     return;
                 }
 
-                HandleDirectionalNavigation(frame);
+                NavIntent intent = _navIntents.Read(frame, DateTimeOffset.UtcNow);
+                if (intent.IsEmpty)
+                {
+                    return;
+                }
 
-                bool southPressed = IsRisingEdge(frame.Buttons, ControllerButtons.South);
-                bool eastPressed = IsRisingEdge(frame.Buttons, ControllerButtons.East);
-                _previousButtons = frame.Buttons;
+                if (intent.Direction != NavDirection.None)
+                {
+                    MoveFocus(intent.Direction);
+                }
 
-                if (southPressed)
+                if (intent.Accept)
                 {
                     ActivateFocusedElement();
                 }
 
-                if (eastPressed && ChromeFrame.CanGoBack)
+                if (intent.Back)
                 {
-                    ChromeFrame.GoBack();
+                    GoBack();
                 }
             }
             catch (Exception ex)
@@ -312,66 +301,6 @@ public sealed partial class MainWindow : Window, IShellNavigator
                 System.Diagnostics.Debug.WriteLine($"Gamepad UI navigation error: {ex}");
             }
         });
-    }
-
-    /// <summary>Move focus on a fresh press, then repeat while the direction stays held.</summary>
-    private void HandleDirectionalNavigation(in ControllerStateFrame frame)
-    {
-        NavDirection direction = GetNavDirection(frame);
-        DateTimeOffset now = DateTimeOffset.UtcNow;
-
-        if (direction == NavDirection.None)
-        {
-            _heldDirection = NavDirection.None;
-            return;
-        }
-
-        if (direction != _heldDirection)
-        {
-            _heldDirection = direction;
-            _directionHeldSince = now;
-            _lastRepeat = now;
-            MoveFocus(direction);
-            return;
-        }
-
-        if (now - _directionHeldSince < RepeatDelay || now - _lastRepeat < RepeatInterval)
-        {
-            return;
-        }
-
-        _lastRepeat = now;
-        MoveFocus(direction);
-    }
-
-    private bool IsRisingEdge(ControllerButtons current, ControllerButtons button) =>
-        (current & button) != 0 && (_previousButtons & button) == 0;
-
-    private NavDirection GetNavDirection(in ControllerStateFrame frame)
-    {
-        float deadzone = (float)_stickDeadzone;
-
-        if ((frame.Buttons & ControllerButtons.DPadUp) != 0 || frame.LeftStickY > deadzone)
-        {
-            return NavDirection.Up;
-        }
-
-        if ((frame.Buttons & ControllerButtons.DPadDown) != 0 || frame.LeftStickY < -deadzone)
-        {
-            return NavDirection.Down;
-        }
-
-        if ((frame.Buttons & ControllerButtons.DPadLeft) != 0 || frame.LeftStickX < -deadzone)
-        {
-            return NavDirection.Left;
-        }
-
-        if ((frame.Buttons & ControllerButtons.DPadRight) != 0 || frame.LeftStickX > deadzone)
-        {
-            return NavDirection.Right;
-        }
-
-        return NavDirection.None;
     }
 
     private void MoveFocus(NavDirection direction)
