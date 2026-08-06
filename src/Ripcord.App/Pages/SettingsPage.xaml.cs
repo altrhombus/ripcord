@@ -29,7 +29,11 @@ namespace Ripcord_App.Pages;
 /// </summary>
 public sealed partial class SettingsPage : Page
 {
-    private readonly ISettingsStore _store = new SettingsStore();
+    private readonly ISettingsStore _store = App.Services.Settings;
+
+    // Only for the credential-protection banner: the page reports how pairings are protected at rest, which is
+    // the store's own question to answer.
+    private readonly IPairedConsoleStore _consoles = App.Services.Consoles;
 
     /// <summary>
     /// Suppresses saves that are not user edits. Starts <c>true</c>, and that matters: XAML parsing itself
@@ -304,7 +308,7 @@ public sealed partial class SettingsPage : Page
 
     private void ShowCredentialProtectionStatus()
     {
-        var store = new PairedConsoleStore();
+        IPairedConsoleStore store = _consoles;
         if (store.CredentialsEncrypted)
         {
             CredentialProtectionBar.Severity = InfoBarSeverity.Success;

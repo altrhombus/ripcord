@@ -11,16 +11,27 @@ using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Navigation;
 using System.Collections.Generic;
 using System.Linq;
+using Ripcord.Core.Consoles;
 using Ripcord.Core.Input;
 using Ripcord.Core.Settings;
 using Ripcord.Input;
+using Ripcord.Presentation;
 using Ripcord_App.Pages;
 using Ripcord_App.Services;
 using Ripcord.Core.Reactive;
 
 namespace Ripcord_App;
 
-public sealed partial class MainWindow : Window
+/// <summary>
+/// The application shell: navigation chrome, the stream layer above it, and gamepad-driven focus movement.
+///
+/// <para>
+/// It implements <see cref="IShellNavigator"/> so that pages ask the portable seam for window-level operations
+/// rather than casting a static back to this class. The three members that satisfies were already public methods
+/// here; naming them as an interface is what lets a page stop knowing which window it is inside.
+/// </para>
+/// </summary>
+public sealed partial class MainWindow : Window, IShellNavigator
 {
     private enum NavDirection
     {
@@ -40,7 +51,7 @@ public sealed partial class MainWindow : Window
     private static readonly TimeSpan RepeatInterval = TimeSpan.FromMilliseconds(120);
 
     private readonly DispatcherQueue _dispatcherQueue = DispatcherQueue.GetForCurrentThread();
-    private readonly ISettingsStore _settingsStore = new SettingsStore();
+    private readonly ISettingsStore _settingsStore = App.Services.Settings;
 
     // Separate from SessionPage's own controller source: this one drives app-chrome navigation (focus movement,
     // activating buttons), not console input passthrough — conceptually different consumers of the same pad.
@@ -107,7 +118,7 @@ public sealed partial class MainWindow : Window
     /// Show the stream layer for <paramref name="console"/>. Navigation into it is a window-level operation
     /// rather than a Frame navigation, because the stream is a separate layer above the chrome.
     /// </summary>
-    public void ShowStream(object console)
+    public void ShowStream(PairedConsole console)
     {
         StreamFrame.Navigate(typeof(SessionPage), console);
         StreamFrame.Visibility = Visibility.Visible;

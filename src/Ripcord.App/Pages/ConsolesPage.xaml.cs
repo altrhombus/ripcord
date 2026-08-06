@@ -11,28 +11,21 @@ using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media.Animation;
 using Ripcord.Core.Consoles;
+using Ripcord.Presentation;
 using Ripcord.Presentation.Consoles;
-using Ripcord.Presentation.Halyard.Consoles;
-using Ripcord.Presentation.Threading;
-using Ripcord_App.Threading;
-using Ripcord.Protocol.Halyard.Common.Discovery;
 using Ripcord_App.Services;
 
 namespace Ripcord_App.Pages;
 
 public sealed partial class ConsolesPage : Page
 {
-    private readonly PairedConsoleStore _store = new();
-
-    // Marshals card mutations onto the UI thread. Constructed here for now; the composition root takes
-    // ownership of it once pages stop new-ing their own dependencies.
-    private readonly IUiDispatcher _dispatcher;
+    private readonly RipcordAppServices _services;
+    private readonly IPairedConsoleStore _store;
 
     // Fills in each card's live reachability, and watches a rest-requested console settle. The probing policy —
     // concurrency, the rest-settle budget, what a transient non-answer means mid-transition — lives in the
     // monitor, where it is unit-tested; this page only decides when to ask.
-    private readonly ConsoleReachabilityMonitor _reachability =
-        new(new HalyardReachabilityProbe());
+    private readonly ConsoleReachabilityMonitor _reachability;
 
     /// <summary>
     /// The grid's items: every paired console, then the add tile. Observable so a rename, a removal or a
@@ -51,8 +44,14 @@ public sealed partial class ConsolesPage : Page
 
     public ConsolesPage()
     {
+        // Resolved BEFORE InitializeComponent, so compiled bindings evaluate against live objects on their first
+        // pass rather than against fields that are still null.
+        _services = App.Services;
+        _store = _services.Consoles;
+        _reachability = _services.CreateReachabilityMonitor();
+
         InitializeComponent();
-        _dispatcher = new DispatcherQueueUiDispatcher(DispatcherQueue);
+
         ConsoleGrid.ItemsSource = _items;
         Loaded += (_, _) => Refresh();
         Unloaded += (_, _) => CancelProbes();
@@ -73,7 +72,7 @@ public sealed partial class ConsolesPage : Page
     {
         CancelProbes();
 
-        List<ConsoleCardViewModel> consoles = _store.Load().Select(c => new ConsoleCardViewModel(c, _dispatcher)).ToList();
+        List<ConsoleCardViewModel> consoles = _store.Load().Select(_services.CreateConsoleCard).ToList();
 
         _items.Clear();
         foreach (ConsoleCardViewModel item in consoles)
@@ -137,11 +136,6 @@ public sealed partial class ConsolesPage : Page
 
     private void Connect(ConsoleCardViewModel item)
     {
-        if (App.MainWindow is not MainWindow main)
-        {
-            return;
-        }
-
         // Remember when, so the card can say "played 2 hours ago" next time. Stamped on the attempt rather
         // than on a successful stream: this is a recency hint for ordering the user's attention, not a record
         // of sessions, and a failed connect is still the console they were last reaching for.
@@ -153,7 +147,7 @@ public sealed partial class ConsolesPage : Page
 
         // The stream is a window-level layer above the navigation chrome, not a page inside it — see
         // MainWindow.ShowStream. SessionPage then owns a SessionController for the whole lifecycle.
-        main.ShowStream(stamped);
+        _services.Shell.ShowStream(stamped);
     }
 
     /// <summary>
