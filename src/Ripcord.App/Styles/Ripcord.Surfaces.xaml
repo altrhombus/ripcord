@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!--
+    Surfaces — the boxes.
+
+    A surface exists only when its content is independently actionable. Grouping alone is a header plus
+    spacing, not a box; a border drawn round things that merely belong together adds a line the eye has to
+    resolve and buys nothing. That rule is why this file is short and should stay short.
+
+    Elevation, four levels, one shadow:
+
+      L0  the Mica backdrop. Nothing opaque is painted over it, or the backdrop stops being visible and the
+          window stops looking like a Windows window.
+      L1  grouped content — a settings group, a section of the About page.
+      L2  an interactive card: a console tile, a discovered-console row.
+      L3  transient over content — a flyout, a dialog, a panel over the video. THE ONLY place ThemeShadow
+          appears.
+
+    L2 NEVER gets a drop shadow. Windows 11 separates cards with stroke and fill, and a shadowed card is the
+    loudest "this app came from somewhere else" tell there is. If a card is not reading as separate, the fix
+    is its fill or its stroke, never a shadow.
+
+    In-app acrylic belongs to L3 and only over content genuinely behind it — over video correct, over Mica
+    wrong, because double-blurring goes muddy. When the user has transparency off, every acrylic here must
+    fall back to a solid brush; that is decided in code, since a dictionary cannot read the setting.
+-->
+<ResourceDictionary
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!--  L1/L2 content card. From AboutPage.CardStyle / SettingsPage.SettingsCardStyle, which were identical.  -->
+    <Style x:Key="RipcordCardStyle" TargetType="Border">
+        <Setter Property="Background" Value="{ThemeResource CardBackgroundFillColorDefaultBrush}" />
+        <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="{StaticResource RipcordCardCornerRadius}" />
+    </Style>
+
+    <!--  A small rounded label for a single fact: version, licence, support level. From AboutPage.ChipStyle.  -->
+    <Style x:Key="RipcordChipStyle" TargetType="Border">
+        <Setter Property="Background" Value="{ThemeResource ControlFillColorDefaultBrush}" />
+        <Setter Property="BorderBrush" Value="{ThemeResource ControlStrokeColorDefaultBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="{StaticResource RipcordPillCornerRadius}" />
+        <Setter Property="Padding" Value="10,2" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+
+    <!--  A state pill. From SessionPage.CapabilityPillStyle — tighter padding and a dimmer fill than a chip.  -->
+    <Style x:Key="RipcordPillStyle" TargetType="Border">
+        <Setter Property="Background" Value="{ThemeResource ControlFillColorSecondaryBrush}" />
+        <Setter Property="BorderBrush" Value="{ThemeResource ControlStrokeColorDefaultBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="{StaticResource RipcordPillCornerRadius}" />
+        <Setter Property="Padding" Value="8,2" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+
+    <!--  The one capability worth the accent fill, so the row has a headline rather than four equal tokens.  -->
+    <Style
+        x:Key="RipcordAccentPillStyle"
+        BasedOn="{StaticResource RipcordPillStyle}"
+        TargetType="Border">
+        <Setter Property="Background" Value="{ThemeResource AccentFillColorDefaultBrush}" />
+        <Setter Property="BorderBrush" Value="{ThemeResource AccentFillColorDefaultBrush}" />
+    </Style>
+
+</ResourceDictionary>

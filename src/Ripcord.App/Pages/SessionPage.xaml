@@ -716,7 +716,7 @@
                     AutomationProperties.Name="Toggle connection diagnostics"
                     Click="DiagnosticsToggleButton_Click"
                     ToolTipService.ToolTip="Connection diagnostics (F3)">
-                    <FontIcon FontSize="18" Glyph="&#xE9D9;" />
+                    <FontIcon FontSize="{ThemeResource RipcordIconSizeStanding}" Glyph="&#xE9D9;" />
                 </Button>
                 <Button
                     x:Name="SaveDiagnosticsButton"
@@ -725,7 +725,7 @@
                     AutomationProperties.Name="Save diagnostics to a file"
                     Click="SaveDiagnosticsButton_Click"
                     ToolTipService.ToolTip="Save diagnostics (F8)">
-                    <FontIcon FontSize="18" Glyph="&#xE74E;" />
+                    <FontIcon FontSize="{ThemeResource RipcordIconSizeStanding}" Glyph="&#xE74E;" />
                 </Button>
                 <Button
                     x:Name="ExitButton"
@@ -734,7 +734,7 @@
                     AutomationProperties.Name="Leave the stream"
                     Click="LeaveButton_Click"
                     ToolTipService.ToolTip="Leave the stream (Esc)">
-                    <FontIcon FontSize="18" Glyph="&#xE711;" />
+                    <FontIcon FontSize="{ThemeResource RipcordIconSizeStanding}" Glyph="&#xE711;" />
                 </Button>
             </StackPanel>
         </Border>
