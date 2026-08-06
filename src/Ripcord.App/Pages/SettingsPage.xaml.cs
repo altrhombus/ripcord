@@ -316,18 +316,14 @@ public sealed partial class SettingsPage : Page
     {
         try
         {
-            var dialog = new KeyBindingsDialog(App.Services.Settings.Current.InputBindings)
-            {
-                XamlRoot = XamlRoot,
-            };
-
-            await ModalHost.ShowAsync(dialog);
-            _viewModel.SetInputBindings(dialog.Result);
+            // A page, not a dialog: rebinding by capture wants every key, and a dialog reserves Enter and
+            // Escape. It also saves as it goes, so there is nothing to read back here.
+            Frame.Navigate(typeof(KeyBindingsPage));
         }
         catch (Exception ex)
         {
             // async void: this cannot be allowed to throw into the message loop.
-            Debug.WriteLine($"[Ripcord] key bindings dialog failed: {ex.Message}");
+            Debug.WriteLine($"[Ripcord] key bindings navigation failed: {ex.Message}");
         }
     }
 
