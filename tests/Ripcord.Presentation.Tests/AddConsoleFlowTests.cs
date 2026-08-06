@@ -151,9 +151,21 @@ public class AddConsoleFlowTests
         public AddConsoleFlow Flow { get; }
         public List<AddConsoleCompletion> Completions { get; } = [];
 
-        public Harness(AddConsoleFlowOptions? options = null)
+        /// <param name="delay">
+        /// Defaults to completing instantly, so the scan's window backstop does not make every test wait five
+        /// real seconds. Tests that care about the timing pass their own recorder.
+        /// </param>
+        public Harness(
+            AddConsoleFlowOptions? options = null,
+            Func<TimeSpan, CancellationToken, Task>? delay = null)
         {
-            Flow = new AddConsoleFlow(Scanner, Registrar, Store, new ImmediateUiDispatcher(), options);
+            Flow = new AddConsoleFlow(
+                Scanner,
+                Registrar,
+                Store,
+                new ImmediateUiDispatcher(),
+                options,
+                delay ?? ((_, _) => Task.CompletedTask));
             Flow.Completed += Completions.Add;
         }
 
@@ -169,6 +181,13 @@ public class AddConsoleFlowTests
 
         public void EnterValidLinkInput() => Flow.SetLinkInput("12345678", "1234567890123456");
     }
+
+    /// <summary>
+    /// A backstop delay that never elapses by itself but still honours cancellation. For tests that need a scan
+    /// to stay genuinely in progress, rather than being ended immediately by the window backstop.
+    /// </summary>
+    private static Task NeverElapses(TimeSpan span, CancellationToken cancellationToken)
+        => Task.Delay(Timeout.Infinite, cancellationToken);
 
     // ---- family step ---------------------------------------------------------------------------
 
@@ -219,7 +238,7 @@ public class AddConsoleFlowTests
     [Fact]
     public async Task Scan_PublishesEachConsoleAsItAnswers()
     {
-        var h = new Harness();
+        var h = new Harness(delay: NeverElapses);
         h.Scanner.HoldOpen = true;
         h.Scanner.Yields(Console("10.0.0.7"));
 
@@ -350,12 +369,48 @@ public class AddConsoleFlowTests
     }
 
     [Fact]
+    public async Task Scan_ThatNeverSignalsCompletion_StillEndsAfterTheWindow()
+    {
+        // The live bug this backstop exists for. Ripcord.Core's AsyncObservable swallows
+        // OperationCanceledException and then raises NEITHER OnCompleted NOR OnError, so one discovery family
+        // going quiet meant the merged scan never appeared to finish and the progress bar stayed up forever while
+        // the user watched the list. The window has to be the authority; a terminal signal is only a fast path.
+        var h = new Harness();
+        h.Scanner.HoldOpen = true;                 // never completes, never errors
+        h.Scanner.Yields(Console("10.0.0.7"));
+
+        await h.Flow.SelectFamilyAsync(ConsoleFamily.Ps5);
+
+        Assert.False(h.Flow.State.IsScanning);
+        Assert.Single(h.Flow.Discovered);           // and whatever answered is still listed
+        Assert.Equal("Pick your console.", h.Flow.State.FindSubheading);
+    }
+
+    [Fact]
+    public async Task Scan_WaitsPastTheWindowBeforeGivingUpOnTheSignal()
+    {
+        // The backstop must not cut a well-behaved scan short, so it waits the window plus a grace.
+        var recorded = new List<TimeSpan>();
+        var h = new Harness(delay: (span, _) =>
+        {
+            recorded.Add(span);
+            return Task.CompletedTask;
+        });
+        h.Scanner.HoldOpen = true;
+
+        await h.Flow.SelectFamilyAsync(ConsoleFamily.Ps5);
+
+        Assert.Single(recorded);
+        Assert.True(recorded[0] > TimeSpan.FromSeconds(4), $"backstop was {recorded[0]}, expected > the 4s window");
+    }
+
+    [Fact]
     public async Task SelectDiscovered_MidScan_StopsShowingTheScanAsRunning()
     {
         // The scan is abandoned, not finished, so its own completion path never runs — but the user has left the
         // Find step and nothing is scanning any more. A stale IsScanning leaves the progress bar spinning and
         // Search-again disabled the moment they step back to Find.
-        var h = new Harness();
+        var h = new Harness(delay: NeverElapses);
         h.Scanner.HoldOpen = true;
         h.Scanner.Yields(Console("10.0.0.7"));
 
