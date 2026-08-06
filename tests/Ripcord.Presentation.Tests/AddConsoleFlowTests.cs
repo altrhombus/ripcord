@@ -350,6 +350,63 @@ public class AddConsoleFlowTests
     }
 
     [Fact]
+    public async Task SelectDiscovered_MidScan_StopsShowingTheScanAsRunning()
+    {
+        // The scan is abandoned, not finished, so its own completion path never runs — but the user has left the
+        // Find step and nothing is scanning any more. A stale IsScanning leaves the progress bar spinning and
+        // Search-again disabled the moment they step back to Find.
+        var h = new Harness();
+        h.Scanner.HoldOpen = true;
+        h.Scanner.Yields(Console("10.0.0.7"));
+
+        Task select = h.Flow.SelectFamilyAsync(ConsoleFamily.Ps5);
+        Assert.True(h.Flow.State.IsScanning);
+
+        h.Flow.SelectDiscovered(h.Flow.Discovered.Single());
+
+        Assert.False(h.Flow.State.IsScanning);
+
+        h.Scanner.Complete();
+        await select;
+        Assert.False(h.Flow.State.IsScanning);
+    }
+
+    [Fact]
+    public async Task Back_FromLink_LeavesTheFindStepUsable()
+    {
+        // Back no longer rescans, so whatever IsScanning was left as is what the user sees. It must be false, or
+        // Find comes back with a spinner that never stops and a disabled Search-again button.
+        var h = new Harness();
+        h.Scanner.HoldOpen = true;
+        h.Scanner.Yields(Console("10.0.0.7"));
+        Task select = h.Flow.SelectFamilyAsync(ConsoleFamily.Ps5);
+        h.Flow.SelectDiscovered(h.Flow.Discovered.Single());
+
+        Assert.True(await h.Flow.BackAsync());
+
+        Assert.Equal(AddConsoleStep.Find, h.Flow.State.Step);
+        Assert.False(h.Flow.State.IsScanning);
+
+        h.Scanner.Complete();
+        await select;
+    }
+
+    [Fact]
+    public async Task UseTypedAddress_MidScan_AlsoStopsShowingTheScanAsRunning()
+    {
+        var h = new Harness();
+        h.Scanner.HoldOpen = true;
+        Task select = h.Flow.SelectFamilyAsync(ConsoleFamily.Ps5);
+
+        h.Flow.UseTypedAddress("10.0.0.50");
+
+        Assert.False(h.Flow.State.IsScanning);
+
+        h.Scanner.Complete();
+        await select;
+    }
+
+    [Fact]
     public async Task UseTypedAddress_Blank_IsIgnored()
     {
         var h = new Harness();
