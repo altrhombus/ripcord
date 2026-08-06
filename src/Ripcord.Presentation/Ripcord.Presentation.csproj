@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <!--
+    The portable presentation layer: view-models, flow state machines, and the display logic that decides what
+    a surface says — with no UI framework anywhere in it.
+
+    Why this exists as its own assembly rather than living in Ripcord.App: Ripcord.App targets
+    net10.0-windows and pulls in WinUI, so nothing in it can be linked by the planned macOS/Linux/tvOS front
+    ends. Each of those is to get a native UI for its own OS, which only works if the layer beneath the UI is
+    genuinely UI-agnostic.
+
+    Why not fold this into Ripcord.Client: that project's charter is the session lifecycle and it references
+    only Ripcord.Core and Ripcord.Diagnostics. Everything here needs something it deliberately does not have
+    (the paired-console store, a dispatcher seam, discovery/registration seams), and merging the two would
+    drag view-model concerns into the assembly whose whole value is having none. Referencing it is the right
+    shape, and the edge points downward.
+
+    THE RULE: no UI framework types cross this boundary — no Brush, no Color, no Visibility, no
+    DispatcherQueue. Presentation concerns are expressed as portable enums and bools that each front end maps
+    to its own types. PresentationPortabilityTests enforces this, because prose alone has not held elsewhere
+    in this repo.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\Ripcord.Core\Ripcord.Core.csproj" />
+    <ProjectReference Include="..\Ripcord.Client\Ripcord.Client.csproj" />
+    <ProjectReference Include="..\Ripcord.Diagnostics\Ripcord.Diagnostics.csproj" />
+  </ItemGroup>
+
+</Project>
