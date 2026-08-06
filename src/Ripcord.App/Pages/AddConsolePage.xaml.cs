@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Navigation;
+using Ripcord.Core.Consoles;
 using Ripcord.Core.Discovery;
 using Ripcord.Input;
 using Ripcord.Protocol.Halyard.Common.Crypto;

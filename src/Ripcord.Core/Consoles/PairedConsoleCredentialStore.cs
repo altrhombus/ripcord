@@ -1,21 +1,18 @@
-using System;
-using System.Threading;
-using System.Threading.Tasks;
 using Ripcord.Core.Discovery;
 
-namespace Ripcord_App.Services;
+namespace Ripcord.Core.Consoles;
 
 /// <summary>
-/// Bridges the app's paired-console persistence (<see cref="PairedConsoleStore"/>, written by the pairing UI)
-/// to the session layer's <see cref="IConsoleCredentialStore"/> seam. The session only ever <em>loads</em>
-/// the credential blob (the serialized pairing record) for the console it is connecting to; pairing itself
-/// is what writes it, so this stays read-only for save.
+/// Bridges paired-console persistence (<see cref="IPairedConsoleStore"/>, written by the pairing flow) to the
+/// session layer's <see cref="IConsoleCredentialStore"/> seam. The session only ever <em>loads</em> the
+/// credential blob (the serialized pairing record) for the console it is connecting to; pairing itself is what
+/// writes it, so this stays read-only for save.
 /// </summary>
-internal sealed class PairedConsoleCredentialStore : IConsoleCredentialStore
+public sealed class PairedConsoleCredentialStore : IConsoleCredentialStore
 {
-    private readonly PairedConsoleStore _store;
+    private readonly IPairedConsoleStore _store;
 
-    public PairedConsoleCredentialStore(PairedConsoleStore store)
+    public PairedConsoleCredentialStore(IPairedConsoleStore store)
         => _store = store ?? throw new ArgumentNullException(nameof(store));
 
     public Task<byte[]?> LoadAsync(string consoleId, CancellationToken cancellationToken)
@@ -36,11 +33,11 @@ internal sealed class PairedConsoleCredentialStore : IConsoleCredentialStore
     }
 
     public Task SaveAsync(string consoleId, byte[] registrationKey, CancellationToken cancellationToken)
-        => throw new NotSupportedException("Credentials are persisted by the pairing flow via PairedConsoleStore.");
+        => throw new NotSupportedException("Credentials are persisted by the pairing flow via IPairedConsoleStore.");
 
     public Task RemoveAsync(string consoleId, CancellationToken cancellationToken)
     {
-        _store.Remove(consoleId); // PairedConsoleStore keys removal by host
+        _store.Remove(consoleId); // the store keys removal by host
         return Task.CompletedTask;
     }
 }
