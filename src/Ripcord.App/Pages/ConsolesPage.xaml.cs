@@ -13,6 +13,7 @@ using Microsoft.UI.Xaml.Media.Animation;
 using Ripcord.Core.Consoles;
 using Ripcord.Presentation;
 using Ripcord.Presentation.Consoles;
+using Ripcord_App.Input;
 using Ripcord_App.Accents;
 using Ripcord_App.Converters;
 using Ripcord_App.Services;
@@ -555,7 +556,7 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
 
         try
         {
-            if (await dialog.ShowAsync() != ContentDialogResult.Primary)
+            if (await ModalHost.ShowAsync(dialog) != ContentDialogResult.Primary)
             {
                 return;
             }
@@ -603,13 +604,13 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
 
         try
         {
-            await new ContentDialog
+            await ModalHost.ShowAsync(new ContentDialog
             {
                 XamlRoot = XamlRoot,
                 Title = item.State.DisplayName,
                 Content = panel,
                 CloseButtonText = "Close",
-            }.ShowAsync();
+            });
         }
         catch (Exception)
         {
@@ -659,7 +660,7 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
                 DefaultButton = ContentDialogButton.Close,
             };
 
-            if (await confirm.ShowAsync() == ContentDialogResult.Primary)
+            if (await ModalHost.ShowAsync(confirm) == ContentDialogResult.Primary)
             {
                 _store.Remove(item.Console.Id);
                 Refresh();
@@ -675,13 +676,13 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
     {
         try
         {
-            await new ContentDialog
+            await ModalHost.ShowAsync(new ContentDialog
             {
                 XamlRoot = XamlRoot,
                 Title = title,
                 Content = message,
                 CloseButtonText = "OK",
-            }.ShowAsync();
+            });
         }
         catch (Exception)
         {
