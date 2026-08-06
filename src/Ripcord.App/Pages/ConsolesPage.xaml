@@ -265,31 +265,20 @@
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <Grid>
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="Auto" />
-            </Grid.ColumnDefinitions>
-            <TextBlock
-                VerticalAlignment="Center"
-                Style="{StaticResource TitleTextBlockStyle}"
-                Text="Consoles" />
-            <!--
-                Kept alongside the ghost tile in the grid. The tile is the pleasing way in; a button in the
-                header is the one people look for, and it stays reachable when the grid is scrolled.
-            -->
-            <Button
-                x:Name="AddButton"
-                Grid.Column="1"
-                VerticalAlignment="Center"
-                Click="OnAddConsoleClick"
-                Style="{StaticResource AccentButtonStyle}">
-                <StackPanel Orientation="Horizontal" Spacing="8">
-                    <FontIcon FontSize="{ThemeResource RipcordIconSizeAction}" Glyph="&#xE710;" />
-                    <TextBlock Text="Add console" />
-                </StackPanel>
-            </Button>
-        </Grid>
+        <!--
+            No add button up here. There used to be one beside the title, kept on the reasoning that a header
+            button is what people look for and stays reachable when the grid scrolls — but it sat about two
+            hundred pixels from the ghost tile that does the same thing, and it wore AccentButtonStyle, which
+            made "Add console" the loudest element on a page whose entire point is Play. Two affordances for one
+            action, and the wrong one shouting.
+
+            The grid does not scroll at the console counts that actually occur, so the tile is always in view.
+            If a filter header ever arrives for large collections, a persistent add command belongs there.
+        -->
+        <TextBlock
+            VerticalAlignment="Center"
+            Style="{StaticResource TitleTextBlockStyle}"
+            Text="Consoles" />
 
         <TextBlock
             x:Name="SubtitleText"
