@@ -1,5 +1,6 @@
 using System;
 using System.ComponentModel;
+using Ripcord.Core.Consoles;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Media;
 
