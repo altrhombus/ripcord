@@ -1,6 +1,8 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Media;
 using Ripcord.Core.Discovery;
+using Ripcord.Presentation.Consoles;
+using Ripcord_App.Accents;
 
 namespace Ripcord_App.Services;
 
@@ -26,7 +28,7 @@ public sealed class DiscoveredConsoleItem(DiscoveredConsole console)
 
     public string Address => Console.IpAddress.ToString();
 
-    public Brush AccentBrush => Family.AccentBrush;
+    public Brush AccentBrush => AccentResources.Brush(Family.Accent);
 
     /// <summary>"PS5 · 10.0.0.7", or with the firmware appended when the console reported one.</summary>
     public string Details => Console.SystemVersion is { Length: > 0 } version

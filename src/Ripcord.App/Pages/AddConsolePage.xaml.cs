@@ -11,7 +11,10 @@ using Microsoft.UI.Xaml.Navigation;
 using Ripcord.Core.Consoles;
 using Ripcord.Core.Discovery;
 using Ripcord.Input;
+using Ripcord.Presentation.Consoles;
+using Ripcord.Presentation.Halyard.Consoles;
 using Ripcord.Presentation.Halyard.Pairing;
+using Ripcord_App.Accents;
 using Ripcord.Protocol.Halyard.Common.Crypto;
 using Ripcord.Protocol.Halyard.Common.Discovery;
 using Ripcord.Protocol.Halyard.Discovery;
@@ -197,7 +200,7 @@ public sealed partial class AddConsolePage : Page
         {
             Width = 16,
             Height = 28,
-            Accent = family.AccentBrush,
+            Accent = AccentResources.Brush(family.Accent),
             HorizontalAlignment = HorizontalAlignment.Center,
         });
 
@@ -479,9 +482,7 @@ public sealed partial class AddConsolePage : Page
         string account = AccountBox.Text.Trim();
         string passcode = PasscodeBox.Text.Trim();
 
-        HalyardConsolePlatform platform = _family == ConsoleFamily.Ps4
-            ? HalyardConsolePlatform.Ps4
-            : HalyardConsolePlatform.Ps5;
+        HalyardConsolePlatform platform = _family.ToHalyardPlatform();
 
         IHalyardRegistrationCipher cipher = _cipherResolver.Resolve(platform, out string source);
         if (!cipher.IsAvailable)
