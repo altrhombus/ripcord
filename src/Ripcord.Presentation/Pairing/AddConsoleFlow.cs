@@ -471,11 +471,29 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
         };
     }
 
+    /// <summary>
+    /// Abandon the current scan, if any.
+    ///
+    /// <para>
+    /// Clears <c>_isScanning</c> here rather than leaving it to the scan's own completion path, because an
+    /// abandoned scan never reaches that path: the flag is only ever lowered by the scan that owns it, and this
+    /// one has just been disowned. Leaving it set meant the Find step came back with a spinner that never stopped
+    /// and a disabled Search-again button — visible as soon as a user picked a console before the four-second
+    /// window closed, which is most of the time.
+    /// </para>
+    /// </summary>
     private void CancelScan()
     {
         CancellationTokenSource? cts = _scanCts;
         _scanCts = null;
-        cts?.Cancel();
+
+        if (cts is null)
+        {
+            return;
+        }
+
+        cts.Cancel();
+        Mutate(() => _isScanning = false);
     }
 
     private void CancelPairing()
