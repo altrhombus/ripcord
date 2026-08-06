@@ -131,4 +131,17 @@
         <Setter Property="IsFocusEngagementEnabled" Value="False" />
     </Style>
 
+    <!--
+        A ComboBox defaults to 32 tall, which is a mouse target. Settings is six of them in a column, and on a
+        handheld that is six chances to open the wrong one. Raised to the touch minimum here rather than on
+        each instance, so the seventh combo anyone adds is right without being told.
+
+        Filed under Surfaces alongside the Slider rule above only because implicit control defaults have no
+        better home yet — neither is a surface, and if a third arrives they should move to a dictionary of
+        their own rather than the section growing quietly.
+    -->
+    <Style TargetType="ComboBox">
+        <Setter Property="MinHeight" Value="{StaticResource RipcordTouchTarget}" />
+    </Style>
+
 </ResourceDictionary>
