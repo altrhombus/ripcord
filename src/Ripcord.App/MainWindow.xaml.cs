@@ -90,6 +90,12 @@ public sealed partial class MainWindow : Window, IShellNavigator
             onActivated: () => _dispatcherQueue.TryEnqueue(
                 DispatcherQueuePriority.Low, FocusFirstContentElement));
 
+        // Focus is seeded on every navigation, not only when the chrome scope activates. Going to the pair flow
+        // and back left nothing focused, so a pad user had to press a direction just to get the caret back onto
+        // the console list — the new page has no idea the old one's focused element went away with it.
+        ChromeFrame.Navigated += (_, _) =>
+            _dispatcherQueue.TryEnqueue(DispatcherQueuePriority.Low, FocusFirstContentElement);
+
         ChromeFrame.Navigate(typeof(ConsolesPage));
 
         // Deferred to Loaded rather than run in the constructor: creating a GameInput-backed WinRT component
