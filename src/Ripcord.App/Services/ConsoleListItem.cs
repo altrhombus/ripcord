@@ -1,6 +1,8 @@
 using System;
 using System.ComponentModel;
 using Ripcord.Core.Consoles;
+using Ripcord.Presentation.Consoles;
+using Ripcord_App.Accents;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Media;
 
@@ -59,10 +61,14 @@ public sealed class ConsoleListItem(PairedConsole console) : INotifyPropertyChan
     /// <summary>The secondary line: "PS5 · 10.0.0.7". Family first, because that is the fact being asked for.</summary>
     public string Details => $"{Family.ShortName} · {Host}";
 
-    /// <summary>The vendor accent, for the card's mark and its wash.</summary>
-    public Brush AccentBrush => Family.AccentBrush;
+    /// <summary>
+    /// The vendor accent, for the card's mark and its wash. The family carries a portable
+    /// <see cref="Ripcord.Presentation.Consoles.AccentRole"/>; turning that into something WinUI can draw is
+    /// this layer's job, which is what keeps the family type linkable by a non-WinUI front end.
+    /// </summary>
+    public Brush AccentBrush => AccentResources.Brush(Family.Accent);
 
-    public Windows.UI.Color AccentColor => Family.AccentColor;
+    public Windows.UI.Color AccentColor => AccentResources.Color(Family.Accent);
 
     private bool _highlighted;
 
