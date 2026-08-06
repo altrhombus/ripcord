@@ -195,7 +195,7 @@
                                     AutomationProperties.Name="Source code on GitHub"
                                     NavigateUri="https://github.com/altrhombus/Ripcord">
                                     <StackPanel Orientation="Horizontal" Spacing="8">
-                                        <FontIcon FontSize="14" Glyph="&#xE8A7;" />
+                                        <FontIcon FontSize="{ThemeResource RipcordIconSizeBody}" Glyph="&#xE8A7;" />
                                         <TextBlock Text="Source" />
                                     </StackPanel>
                                 </HyperlinkButton>
@@ -203,7 +203,7 @@
                                     AutomationProperties.Name="Report an issue on GitHub"
                                     NavigateUri="https://github.com/altrhombus/Ripcord/issues/new">
                                     <StackPanel Orientation="Horizontal" Spacing="8">
-                                        <FontIcon FontSize="14" Glyph="&#xEBE8;" />
+                                        <FontIcon FontSize="{ThemeResource RipcordIconSizeBody}" Glyph="&#xEBE8;" />
                                         <TextBlock Text="Report an issue" />
                                     </StackPanel>
                                 </HyperlinkButton>
@@ -211,7 +211,7 @@
                                     AutomationProperties.Name="Protocol specification"
                                     NavigateUri="https://github.com/altrhombus/Ripcord/tree/main/docs/protocol">
                                     <StackPanel Orientation="Horizontal" Spacing="8">
-                                        <FontIcon FontSize="14" Glyph="&#xE8A5;" />
+                                        <FontIcon FontSize="{ThemeResource RipcordIconSizeBody}" Glyph="&#xE8A5;" />
                                         <TextBlock Text="Protocol spec" />
                                     </StackPanel>
                                 </HyperlinkButton>
@@ -241,7 +241,7 @@
                     AutomationProperties.Name="Copy these details to the clipboard"
                     Click="OnCopyDetailsClick">
                     <StackPanel Orientation="Horizontal" Spacing="8">
-                        <FontIcon FontSize="14" Glyph="&#xE8C8;" />
+                        <FontIcon FontSize="{ThemeResource RipcordIconSizeBody}" Glyph="&#xE8C8;" />
                         <TextBlock x:Name="CopyButtonText" Text="Copy details" />
                     </StackPanel>
                 </Button>
@@ -328,7 +328,7 @@
                             <StackPanel Orientation="Horizontal" Spacing="6">
                                 <FontIcon
                                     x:Name="DecodePillIcon"
-                                    FontSize="12"
+                                    FontSize="{ThemeResource RipcordIconSizeCaption}"
                                     Glyph="&#xE72C;" />
                                 <TextBlock
                                     x:Name="DecodePillText"
@@ -365,7 +365,7 @@
                         <StackPanel Orientation="Horizontal" Spacing="6">
                             <FontIcon
                                 x:Name="HevcPillIcon"
-                                FontSize="12"
+                                FontSize="{ThemeResource RipcordIconSizeCaption}"
                                 Glyph="&#xE72C;" />
                             <TextBlock
                                 x:Name="HevcPillText"
@@ -419,7 +419,7 @@
                     </Grid.ColumnDefinitions>
                     <FontIcon
                         VerticalAlignment="Top"
-                        FontSize="18"
+                        FontSize="{ThemeResource RipcordIconSizeStanding}"
                         Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                         Glyph="&#xE946;" />
                     <StackPanel Grid.Column="1" Spacing="6">

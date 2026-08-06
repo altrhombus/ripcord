@@ -10,7 +10,7 @@ namespace Ripcord_App.Accents;
 /// <para>
 /// This is the WinUI half of the split that let <see cref="ConsoleFamily"/> become portable. The role travels
 /// through the app layer as a plain enum; the colour is looked up here, by key, from
-/// <c>Styles/Ripcord.xaml</c> — which in turn points at <c>brand/README.md</c>. Resolving by key rather than
+/// <c>Styles/Ripcord.Tokens.xaml</c> — which in turn points at <c>brand/README.md</c>. Resolving by key rather than
 /// holding literals means the palette still has exactly one home, and a native macOS or Linux front end
 /// supplies its own version of this file rather than inheriting a Windows brush.
 /// </para>
