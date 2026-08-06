@@ -156,21 +156,21 @@ public sealed partial class SettingsPage : Page
             DeadzoneValueText.Text = s.DeadzoneLabel;
 
             CodecCombo.IsEnabled = s.CodecPickerEnabled;
-            CodecHelpText.Text = s.CodecHelp;
+            CodecCard.Description = s.CodecHelp;
             HdrToggle.IsOn = s.RequestHdr;
             HdrToggle.IsEnabled = s.HdrToggleEnabled;
             HdrHelpText.Text = s.HdrHelp;
             RenderHdrChecklist(s.HdrChecks);
 
-            AdapterCombo.Visibility = Vis(s.AdapterPickerVisible);
+            AdapterCard.Visibility = Vis(s.AdapterPickerVisible);
             AdapterWarning.Message = s.AdapterWarning;
             AdapterWarning.IsOpen = s.AdapterWarningVisible;
 
             AdaptiveToggle.IsOn = s.AdaptiveQuality;
             ConnectionQualityToggle.IsOn = s.ReportConnectionQuality;
             KeyboardToggle.IsOn = s.KeyboardEnabled;
-            KeyboardSummaryText.Text = s.KeyboardSummary;
-            ExitGestureDescription.Text = s.ExitGestureDescription;
+            KeyBindingsCard.Description = s.KeyboardSummary;
+            ExitGestureCard.Description = s.ExitGestureDescription;
 
             FullScreenToggle.IsOn = s.FullScreenOnConnect;
             ConfirmOnDisconnectToggle.IsOn = s.ConfirmOnDisconnect;

@@ -1,4 +1,21 @@
 <?xml version="1.0" encoding="utf-8" ?>
+<!--
+    Settings, as SettingsCard rows.
+
+    This page was 438 lines of hand-rolled two-column grid-in-border, one copy per row, and every copy was a
+    chance for a label to sit a pixel off or an AutomationProperties.Name to be forgotten. SettingsCard is the
+    same layout with the keyboard and screen-reader behaviour supplied — Header, Description and a content slot,
+    which is exactly the shape every row here already had.
+
+    It is the project's first non-SDK package reference, and it was measured before being taken: a trimmed
+    Release publish produces the identical 37 ILLink warnings with and without it, all of them from CsWinRT's
+    ABI layer, and the published output is the same size to a tenth of a megabyte. It neither helps nor hinders
+    the standing PublishTrimmed work.
+
+    Group rhythm comes from the containers, not from margins on the headers — one StackPanel per group spacing
+    its rows, an outer one spacing the groups. That is what finally let GroupHeaderStyle go: it differed from
+    the shared section header only by the margin it carried.
+-->
 <Page
     x:Class="Ripcord_App.Pages.SettingsPage"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
@@ -6,433 +23,257 @@
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:local="using:Ripcord_App.Pages"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:tk="using:CommunityToolkit.WinUI.Controls"
     Loaded="Page_Loaded"
     mc:Ignorable="d">
 
-    <Page.Resources>
-        <!--
-            BasedOn, not a Setter for Style: setting the Style property from inside a Style is invalid XAML and
-            throws when the page is parsed — which took the whole app down on navigation rather than failing
-            visibly on this page.
-        -->
-        <Style
-            x:Key="GroupHeaderStyle"
-            BasedOn="{StaticResource BodyStrongTextBlockStyle}"
-            TargetType="TextBlock">
-            <Setter Property="Margin" Value="0,16,0,4" />
-        </Style>
-    </Page.Resources>
-
     <ScrollViewer Padding="24,16,24,24">
-        <StackPanel MaxWidth="820" Spacing="6">
+        <StackPanel MaxWidth="820" Spacing="24">
             <TextBlock Style="{StaticResource TitleTextBlockStyle}" Text="Settings" />
 
             <!--  ============ Video ============  -->
-            <TextBlock Style="{StaticResource GroupHeaderStyle}" Text="Video" />
+            <StackPanel Spacing="4">
+                <TextBlock Style="{StaticResource RipcordSectionHeaderStyle}" Text="Video" />
 
-            <Border Style="{StaticResource RipcordRowCardStyle}">
-                <Grid ColumnSpacing="16">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-                    <StackPanel VerticalAlignment="Center">
-                        <TextBlock Text="Resolution and frame rate" />
-                        <TextBlock
-                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                            Style="{StaticResource CaptionTextBlockStyle}"
-                            Text="720p60 is the verified-good default. Higher settings need a strong network."
-                            TextWrapping="Wrap" />
-                    </StackPanel>
+                <tk:SettingsCard
+                    Description="720p60 is the verified-good default. Higher settings need a strong network."
+                    Header="Resolution and frame rate">
                     <ComboBox
                         x:Name="ResolutionCombo"
-                        Grid.Column="1"
                         MinWidth="180"
-                        VerticalAlignment="Center"
                         AutomationProperties.Name="Resolution and frame rate" />
-                </Grid>
-            </Border>
+                </tk:SettingsCard>
 
-            <Border Style="{StaticResource RipcordRowCardStyle}">
-                <StackPanel Spacing="8">
-                    <Grid ColumnSpacing="16">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-                        <StackPanel VerticalAlignment="Center">
-                            <TextBlock Text="Maximum bitrate" />
-                            <TextBlock
-                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                Style="{StaticResource CaptionTextBlockStyle}"
-                                Text="The starting rate. Ripcord lowers it automatically if the network can't keep up."
-                                TextWrapping="Wrap" />
-                        </StackPanel>
+                <!--
+                    The slider sits in the content slot with its value beside it rather than under a header,
+                    because a number that moves needs to be next to the thing moving it.
+                -->
+                <tk:SettingsCard
+                    Description="The starting rate. Ripcord lowers it automatically if the network can't keep up."
+                    Header="Maximum bitrate">
+                    <StackPanel
+                        Orientation="Horizontal"
+                        Spacing="12"
+                        VerticalAlignment="Center">
+                        <Slider
+                            x:Name="BitrateSlider"
+                            MinWidth="220"
+                            VerticalAlignment="Center"
+                            AutomationProperties.Name="Maximum bitrate in megabits per second"
+                            Maximum="40"
+                            Minimum="2"
+                            StepFrequency="1" />
                         <TextBlock
                             x:Name="BitrateValueText"
-                            Grid.Column="1"
+                            MinWidth="72"
                             VerticalAlignment="Center"
                             Style="{StaticResource BodyStrongTextBlockStyle}" />
-                    </Grid>
-                    <Slider
-                        x:Name="BitrateSlider"
-                        AutomationProperties.Name="Maximum bitrate in megabits per second"
-                        Maximum="40"
-                        Minimum="2"
-                        StepFrequency="1" />
-                </StackPanel>
-            </Border>
-
-            <Border Style="{StaticResource RipcordRowCardStyle}">
-                <Grid ColumnSpacing="16">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-                    <StackPanel VerticalAlignment="Center">
-                        <TextBlock Text="Adapt quality automatically" />
-                        <TextBlock
-                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                            Style="{StaticResource CaptionTextBlockStyle}"
-                            Text="Lower the bitrate on packet loss, and on battery or when the device gets hot."
-                            TextWrapping="Wrap" />
                     </StackPanel>
+                </tk:SettingsCard>
+
+                <tk:SettingsCard
+                    Description="Lower the bitrate on packet loss, and on battery or when the device gets hot."
+                    Header="Adapt quality automatically">
                     <ToggleSwitch
                         x:Name="AdaptiveToggle"
-                        Grid.Column="1"
-                        VerticalAlignment="Center"
                         AutomationProperties.Name="Adapt quality automatically" />
-                </Grid>
-            </Border>
+                </tk:SettingsCard>
 
-            <Border Style="{StaticResource RipcordRowCardStyle}">
-                <Grid ColumnSpacing="16">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-                    <StackPanel VerticalAlignment="Center">
-                        <TextBlock Text="Image scaling" />
-                        <TextBlock
-                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                            Style="{StaticResource CaptionTextBlockStyle}"
-                            Text="How the stream is scaled up to fill the window."
-                            TextWrapping="Wrap" />
-                    </StackPanel>
+                <tk:SettingsCard Description="How the stream is scaled up to fill the window." Header="Image scaling">
                     <ComboBox
                         x:Name="UpscaleCombo"
-                        Grid.Column="1"
                         MinWidth="180"
-                        VerticalAlignment="Center"
                         AutomationProperties.Name="Image scaling" />
-                </Grid>
-            </Border>
+                </tk:SettingsCard>
 
-            <Border Style="{StaticResource RipcordRowCardStyle}">
-                <Grid ColumnSpacing="16">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-                    <StackPanel VerticalAlignment="Center">
-                        <TextBlock Text="Tell the console about your connection (experimental)" />
-                        <TextBlock
-                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                            Style="{StaticResource CaptionTextBlockStyle}"
-                            Text="Sends the measured delay and packet loss to the console, and asks it for the bitrate Ripcord thinks your connection can carry. Off by default because it is not yet verified against real hardware — turn it on and watch the diagnostics graph to see whether it helps."
-                            TextWrapping="Wrap" />
-                    </StackPanel>
+                <tk:SettingsCard
+                    Description="Sends the measured delay and packet loss to the console, and asks it for the bitrate Ripcord thinks your connection can carry. Off by default because it is not yet verified against real hardware — turn it on and watch the diagnostics graph to see whether it helps."
+                    Header="Tell the console about your connection (experimental)">
                     <ToggleSwitch
                         x:Name="ConnectionQualityToggle"
-                        Grid.Column="1"
-                        VerticalAlignment="Center"
                         AutomationProperties.Name="Tell the console about your connection" />
-                </Grid>
-            </Border>
+                </tk:SettingsCard>
+            </StackPanel>
 
             <!--  ============ Graphics device ============  -->
-            <TextBlock Style="{StaticResource GroupHeaderStyle}" Text="Graphics device" />
+            <StackPanel Spacing="4">
+                <TextBlock Style="{StaticResource RipcordSectionHeaderStyle}" Text="Graphics device" />
 
-            <Border Style="{StaticResource RipcordRowCardStyle}">
-                <StackPanel Spacing="8">
-                    <Grid ColumnSpacing="16">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-                        <StackPanel VerticalAlignment="Center">
-                            <TextBlock Text="Which GPU to use" />
-                            <TextBlock
-                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                Style="{StaticResource CaptionTextBlockStyle}"
-                                Text="Automatic picks the GPU driving your display, which is usually both the fastest and the most efficient choice for streaming. Takes effect on the next connection."
-                                TextWrapping="Wrap" />
-                        </StackPanel>
-                        <ComboBox
-                            x:Name="GpuCombo"
-                            Grid.Column="1"
-                            MinWidth="180"
-                            VerticalAlignment="Center"
-                            AutomationProperties.Name="Which GPU to use" />
-                    </Grid>
-                    <!--  Video codec. HEVC is offered only when a decoder for it actually exists on this
-                          machine (HEVC support depends on the GPU and on the HEVC Video Extension), so the
-                          option cannot be selected into a session that then fails to start.  -->
-                    <Grid ColumnSpacing="12">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-                        <StackPanel VerticalAlignment="Center">
-                            <TextBlock Text="Video codec" />
-                            <TextBlock
-                                x:Name="CodecHelpText"
-                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                Style="{StaticResource CaptionTextBlockStyle}"
-                                TextWrapping="Wrap" />
-                        </StackPanel>
-                        <ComboBox
-                            x:Name="CodecCombo"
-                            Grid.Column="1"
-                            MinWidth="180"
-                            VerticalAlignment="Center"
-                            AutomationProperties.Name="Video codec" />
-                    </Grid>
-                    <!--
-                        Keyboard input. Off by default: with a pad connected there is no reason for stray typing
-                        to reach the game, and the default layout overlaps ordinary window shortcuts.
-                    -->
-                    <ToggleSwitch
-                        x:Name="KeyboardToggle"
-                        Header="Send keyboard input to the console" />
-                    <StackPanel Orientation="Horizontal" Spacing="12">
-                        <Button
-                            x:Name="KeyBindingsButton"
-                            Click="KeyBindings_Click"
-                            Content="Configure keys and gamepad mapping…" />
-                        <TextBlock
-                            x:Name="KeyboardSummaryText"
-                            VerticalAlignment="Center"
-                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                            Style="{StaticResource CaptionTextBlockStyle}" />
-                    </StackPanel>
+                <tk:SettingsCard
+                    Description="Automatic picks the GPU driving your display, which is usually both the fastest and the most efficient choice for streaming. Takes effect on the next connection."
+                    Header="Which GPU to use">
+                    <ComboBox
+                        x:Name="GpuCombo"
+                        MinWidth="180"
+                        AutomationProperties.Name="Which GPU to use" />
+                </tk:SettingsCard>
 
-                    <!--  HDR. Enabled only with HEVC selected, because HDR needs a 10-bit stream and the AVC the
-                          console offers is 8-bit — the two settings together would be incoherent.
-
-                          No longer "(experimental)": the console's response was verified on hardware
-                          (2026-08-02) and true HDR output is implemented, so the label would now be warning
-                          about a risk that no longer exists. What the request depends on is external setup,
-                          which is what the help text below covers.  -->
-                    <ToggleSwitch
-                        x:Name="HdrToggle"
-                        Header="Request HDR" />
-                    <!--
-                        Readiness checklist rather than a paragraph of prose. HDR needs four things and only
-                        one of them is this toggle, so a user whose picture stays SDR has no way to tell WHICH
-                        prerequisite is missing from a sentence that lists them all. Each row reports its own
-                        state and, when unmet, says what to do about it.
-
-                        The console row is deliberately neutral rather than a tick or a cross: whether the PS5
-                        sends HDR cannot be known until a session is running, and showing a cross for
-                        "unknown" would read as a fault the user should go and fix.
-                    -->
-                    <StackPanel x:Name="HdrChecklist" Margin="0,2,0,0" Spacing="3" />
-                    <TextBlock
-                        x:Name="HdrHelpText"
-                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                        Style="{StaticResource CaptionTextBlockStyle}"
-                        TextWrapping="Wrap" />
+                <!--  Shown only for the "specific GPU" preference — see SettingsViewModel.AdapterPickerVisible.  -->
+                <tk:SettingsCard
+                    x:Name="AdapterCard"
+                    Header="Specific adapter"
+                    Visibility="Collapsed">
                     <ComboBox
                         x:Name="AdapterCombo"
                         MinWidth="280"
-                        AutomationProperties.Name="Specific graphics adapter"
-                        Visibility="Collapsed" />
-                    <InfoBar
-                        x:Name="AdapterWarning"
-                        IsClosable="False"
-                        IsOpen="False"
-                        Severity="Warning" />
-                </StackPanel>
-            </Border>
+                        AutomationProperties.Name="Specific graphics adapter" />
+                </tk:SettingsCard>
+
+                <InfoBar
+                    x:Name="AdapterWarning"
+                    IsClosable="False"
+                    IsOpen="False"
+                    Severity="Warning" />
+
+                <!--
+                    HEVC is offered only when a decoder for it exists on this machine, so the option cannot be
+                    selected into a session that then fails to start. The Description is written from the
+                    view-model, because what it says depends on that answer.
+                -->
+                <tk:SettingsCard x:Name="CodecCard" Header="Video codec">
+                    <ComboBox
+                        x:Name="CodecCombo"
+                        MinWidth="180"
+                        AutomationProperties.Name="Video codec" />
+                </tk:SettingsCard>
+
+                <!--
+                    HDR expands, because the readiness checklist is the reason someone opens it. Four things are
+                    needed and only one of them is this toggle, so a user whose picture stays SDR has no way to
+                    tell WHICH is missing from a sentence listing them all. Each row reports its own state and,
+                    when unmet, says what to do.
+
+                    The console row is deliberately neutral rather than a tick or a cross: whether the PS5 sends
+                    HDR cannot be known until a session runs, and a cross for "unknown" reads as a fault the
+                    user should go and fix.
+                -->
+                <tk:SettingsExpander Header="Request HDR">
+                    <ToggleSwitch x:Name="HdrToggle" AutomationProperties.Name="Request HDR" />
+
+                    <tk:SettingsExpander.Items>
+                        <tk:SettingsCard HorizontalContentAlignment="Left" ContentAlignment="Left">
+                            <StackPanel Spacing="6">
+                                <StackPanel x:Name="HdrChecklist" Spacing="3" />
+                                <TextBlock
+                                    x:Name="HdrHelpText"
+                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                    Style="{StaticResource CaptionTextBlockStyle}"
+                                    TextWrapping="Wrap" />
+                            </StackPanel>
+                        </tk:SettingsCard>
+                    </tk:SettingsExpander.Items>
+                </tk:SettingsExpander>
+            </StackPanel>
 
             <!--  ============ Controls ============  -->
-            <TextBlock Style="{StaticResource GroupHeaderStyle}" Text="Controls" />
+            <StackPanel Spacing="4">
+                <TextBlock Style="{StaticResource RipcordSectionHeaderStyle}" Text="Controls" />
 
-            <Border Style="{StaticResource RipcordRowCardStyle}">
-                <Grid ColumnSpacing="16">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-                    <StackPanel VerticalAlignment="Center">
-                        <TextBlock Text="Leave a stream with the controller" />
-                        <TextBlock
-                            x:Name="ExitGestureDescription"
-                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                            Style="{StaticResource CaptionTextBlockStyle}"
-                            TextWrapping="Wrap" />
-                    </StackPanel>
+                <!--
+                    Keyboard input is off by default: with a pad connected there is no reason for stray typing to
+                    reach the game, and the default layout overlaps ordinary window shortcuts.
+                -->
+                <tk:SettingsCard
+                    Description="Off by default — with a pad connected, stray typing has no reason to reach the game."
+                    Header="Send keyboard input to the console">
+                    <ToggleSwitch
+                        x:Name="KeyboardToggle"
+                        AutomationProperties.Name="Send keyboard input to the console" />
+                </tk:SettingsCard>
+
+                <tk:SettingsCard x:Name="KeyBindingsCard" Header="Keys and gamepad mapping">
+                    <Button
+                        x:Name="KeyBindingsButton"
+                        Click="KeyBindings_Click"
+                        Content="Configure…" />
+                </tk:SettingsCard>
+
+                <tk:SettingsCard x:Name="ExitGestureCard" Header="Leave a stream with the controller">
                     <ComboBox
                         x:Name="ExitGestureCombo"
-                        Grid.Column="1"
                         MinWidth="180"
-                        VerticalAlignment="Center"
                         AutomationProperties.Name="Leave a stream with the controller" />
-                </Grid>
-            </Border>
+                </tk:SettingsCard>
 
-            <Border Style="{StaticResource RipcordRowCardStyle}">
-                <StackPanel Spacing="8">
-                    <Grid ColumnSpacing="16">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-                        <StackPanel VerticalAlignment="Center">
-                            <TextBlock Text="Menu stick sensitivity" />
-                            <TextBlock
-                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                Style="{StaticResource CaptionTextBlockStyle}"
-                                Text="How far you must push the stick to move between items in Ripcord's own menus."
-                                TextWrapping="Wrap" />
-                        </StackPanel>
+                <tk:SettingsCard
+                    Description="How far you must push the stick to move between items in Ripcord's own menus."
+                    Header="Menu stick sensitivity">
+                    <StackPanel
+                        Orientation="Horizontal"
+                        Spacing="12"
+                        VerticalAlignment="Center">
+                        <Slider
+                            x:Name="DeadzoneSlider"
+                            MinWidth="220"
+                            VerticalAlignment="Center"
+                            AutomationProperties.Name="Menu stick sensitivity"
+                            Maximum="0.9"
+                            Minimum="0.1"
+                            StepFrequency="0.05" />
                         <TextBlock
                             x:Name="DeadzoneValueText"
-                            Grid.Column="1"
+                            MinWidth="72"
                             VerticalAlignment="Center"
                             Style="{StaticResource BodyStrongTextBlockStyle}" />
-                    </Grid>
-                    <Slider
-                        x:Name="DeadzoneSlider"
-                        AutomationProperties.Name="Menu stick sensitivity"
-                        Maximum="0.9"
-                        Minimum="0.1"
-                        StepFrequency="0.05" />
-                </StackPanel>
-            </Border>
+                    </StackPanel>
+                </tk:SettingsCard>
+            </StackPanel>
 
             <!--  ============ Display ============  -->
-            <TextBlock Style="{StaticResource GroupHeaderStyle}" Text="Display" />
+            <StackPanel Spacing="4">
+                <TextBlock Style="{StaticResource RipcordSectionHeaderStyle}" Text="Display" />
 
-            <Border Style="{StaticResource RipcordRowCardStyle}">
-                <Grid ColumnSpacing="16">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-                    <StackPanel VerticalAlignment="Center">
-                        <TextBlock Text="Full screen when a stream starts" />
-                        <TextBlock
-                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                            Style="{StaticResource CaptionTextBlockStyle}"
-                            Text="Hides the title bar and navigation while you play."
-                            TextWrapping="Wrap" />
-                    </StackPanel>
+                <tk:SettingsCard
+                    Description="Hides the title bar and navigation while you play."
+                    Header="Full screen when a stream starts">
                     <ToggleSwitch
                         x:Name="FullScreenToggle"
-                        Grid.Column="1"
-                        VerticalAlignment="Center"
                         AutomationProperties.Name="Full screen when a stream starts" />
-                </Grid>
-            </Border>
+                </tk:SettingsCard>
 
-            <Border Style="{StaticResource RipcordRowCardStyle}">
-                <Grid ColumnSpacing="16">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-                    <StackPanel VerticalAlignment="Center">
-                        <TextBlock Text="Ask before disconnecting" />
-                        <TextBlock
-                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                            Style="{StaticResource CaptionTextBlockStyle}"
-                            Text="Confirms when you end a stream, and lets you choose rest mode for that disconnect. Off leaves instantly, using the default below."
-                            TextWrapping="Wrap" />
-                    </StackPanel>
+                <tk:SettingsCard
+                    Description="Confirms when you end a stream, and lets you choose rest mode for that disconnect. Off leaves instantly, using the default below."
+                    Header="Ask before disconnecting">
                     <ToggleSwitch
                         x:Name="ConfirmOnDisconnectToggle"
-                        Grid.Column="1"
-                        VerticalAlignment="Center"
                         AutomationProperties.Name="Ask before disconnecting" />
-                </Grid>
-            </Border>
+                </tk:SettingsCard>
 
-            <Border Style="{StaticResource RipcordRowCardStyle}">
-                <Grid ColumnSpacing="16">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-                    <StackPanel VerticalAlignment="Center">
-                        <TextBlock Text="Rest console when I disconnect" />
-                        <TextBlock
-                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                            Style="{StaticResource CaptionTextBlockStyle}"
-                            Text="The default answer for rest mode: puts the console into rest when you end the stream, instead of leaving it awake."
-                            TextWrapping="Wrap" />
-                    </StackPanel>
+                <tk:SettingsCard
+                    Description="The default answer for rest mode: puts the console into rest when you end the stream, instead of leaving it awake."
+                    Header="Rest console when I disconnect">
                     <ToggleSwitch
                         x:Name="RestOnDisconnectToggle"
-                        Grid.Column="1"
-                        VerticalAlignment="Center"
                         AutomationProperties.Name="Rest console when I disconnect" />
-                </Grid>
-            </Border>
+                </tk:SettingsCard>
 
-            <Border Style="{StaticResource RipcordRowCardStyle}">
-                <Grid ColumnSpacing="16">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-                    <StackPanel VerticalAlignment="Center">
-                        <TextBlock Text="Show connection diagnostics" />
-                        <TextBlock
-                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                            Style="{StaticResource CaptionTextBlockStyle}"
-                            Text="Frame rate, latency and packet loss over the video. You can also toggle this with F3 while streaming."
-                            TextWrapping="Wrap" />
-                    </StackPanel>
+                <tk:SettingsCard
+                    Description="Frame rate, latency and packet loss over the video. You can also toggle this with F3 while streaming."
+                    Header="Show connection diagnostics">
                     <ToggleSwitch
                         x:Name="DiagnosticsToggle"
-                        Grid.Column="1"
-                        VerticalAlignment="Center"
                         AutomationProperties.Name="Show connection diagnostics" />
-                </Grid>
-            </Border>
+                </tk:SettingsCard>
 
-            <Border Style="{StaticResource RipcordRowCardStyle}">
-                <Grid ColumnSpacing="16">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-                    <StackPanel VerticalAlignment="Center">
-                        <TextBlock Text="Larger text and controls" />
-                        <TextBlock
-                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                            Style="{StaticResource CaptionTextBlockStyle}"
-                            Text="Easier to read on a handheld or from across the room."
-                            TextWrapping="Wrap" />
-                    </StackPanel>
+                <tk:SettingsCard
+                    Description="Easier to read on a handheld or from across the room."
+                    Header="Larger text and controls">
                     <ToggleSwitch
                         x:Name="LargeUiToggle"
-                        Grid.Column="1"
-                        VerticalAlignment="Center"
                         AutomationProperties.Name="Larger text and controls" />
-                </Grid>
-            </Border>
+                </tk:SettingsCard>
+            </StackPanel>
 
-            <!--  ============ Security ============  -->
-            <TextBlock Style="{StaticResource GroupHeaderStyle}" Text="Saved consoles" />
+            <!--  ============ Saved consoles ============  -->
+            <StackPanel Spacing="4">
+                <TextBlock Style="{StaticResource RipcordSectionHeaderStyle}" Text="Saved consoles" />
 
-            <InfoBar
-                x:Name="CredentialProtectionBar"
-                IsClosable="False"
-                IsOpen="True"
-                Severity="Informational" />
+                <InfoBar
+                    x:Name="CredentialProtectionBar"
+                    IsClosable="False"
+                    IsOpen="True"
+                    Severity="Informational" />
+            </StackPanel>
         </StackPanel>
     </ScrollViewer>
 </Page>
