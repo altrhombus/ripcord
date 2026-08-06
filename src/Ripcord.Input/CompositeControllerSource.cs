@@ -10,9 +10,25 @@ namespace Ripcord.Input;
 /// The previous factory picked DualSense raw HID when a DualSense was present and GameInput otherwise, decided
 /// once when the session page loaded. Two confirmed consequences: swapping from a DualSense to an Xbox pad
 /// mid-session was never noticed (the app kept reporting raw HID until the session was closed and reopened), and
-/// with a DualSense attached an Xbox pad could not be used at all, because the raw-HID engine only enumerates
-/// DualSense hardware. Neither is a bug in either engine — the raw-HID source already polls every 500 ms for its
-/// device to appear — it was the act of choosing that broke it.
+/// with a DualSense attached an Xbox pad could not be used at all. Running both engines fixes the first and the
+/// act of choosing; it does <b>not</b> fix the second, and this comment used to claim otherwise.
+/// </para>
+///
+/// <para>
+/// <b>Known limitation, measured on hardware 2026-08-06.</b> With a DualSense and an Xbox pad both attached,
+/// the Xbox pad produces no input at all — not one frame with a button set reaches this class. The cause is
+/// below us: <see cref="GameInputControllerSource"/> polls for "the first connected GameInput gamepad" via
+/// <c>GetCurrentReading(GameInputKindGamepad, nullptr, …)</c>, and <c>nullptr</c> means "most recent reading
+/// from any device" — a Bluetooth DualSense, which GameInput also enumerates, reports continuously and wins
+/// that race essentially always. Disconnecting the DualSense is not enough on its own either; the Xbox pad had
+/// to be re-plugged before GameInput would read it, so the binding is not re-evaluated when the competing
+/// device goes away.
+/// </para>
+///
+/// <para>
+/// So the merging below is correct and does what it says — it is simply never handed the second pad's frames.
+/// The fix belongs in the GameInput engine (enumerate devices and read each explicitly rather than passing
+/// <c>nullptr</c>), and is tracked in ROADMAP rather than worked around here.
 /// </para>
 ///
 /// <para>
