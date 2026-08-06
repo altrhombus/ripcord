@@ -189,6 +189,36 @@ public class AddConsoleFlowTests
     private static Task NeverElapses(TimeSpan span, CancellationToken cancellationToken)
         => Task.Delay(Timeout.Infinite, cancellationToken);
 
+    /// <summary>
+    /// A dispatcher that genuinely defers, like the real one.
+    ///
+    /// <para>
+    /// <see cref="ImmediateUiDispatcher"/> applies every mutation inline, which is what makes the other tests
+    /// synchronous — but it also means those tests cannot see a class of bug that only exists when a mutation is
+    /// POSTED: a closure that reads a field later than the code which changed it. One such bug shipped and kept
+    /// the discovery progress bar on screen, so the ordering deserves a test of its own.
+    /// </para>
+    /// </summary>
+    private sealed class DeferringDispatcher : IUiDispatcher
+    {
+        private readonly List<Action> _pending = [];
+
+        public bool IsOnUiThread => false;
+
+        public void Post(Action action) => _pending.Add(action);
+
+        public void Drain()
+        {
+            // By index: draining can queue more work, and that work must run too.
+            for (int i = 0; i < _pending.Count; i++)
+            {
+                _pending[i]();
+            }
+
+            _pending.Clear();
+        }
+    }
+
     // ---- family step ---------------------------------------------------------------------------
 
     [Fact]
@@ -366,6 +396,32 @@ public class AddConsoleFlowTests
 
         h.Scanner.Complete();
         await first;
+    }
+
+    [Fact]
+    public async Task Scan_EndingOnADeferringDispatcher_StillLowersTheSpinner()
+    {
+        // The bug this pins shipped twice, and neither of the other ~50 tests could see it: with mutations applied
+        // inline, "is this scan still current?" is evaluated before ownership is released, so the guard passes. On
+        // the real dispatcher the check is POSTED and runs afterwards, the guard fails, and _isScanning is never
+        // lowered — a progress bar that stays up forever while the user watches the list.
+        var dispatcher = new DeferringDispatcher();
+        var scanner = new FakeScanner();
+        scanner.Yields(Console("10.0.0.7"));
+
+        var flow = new AddConsoleFlow(
+            scanner,
+            new FakeRegistrar(),
+            new InMemoryPairedConsoleStore(),
+            dispatcher,
+            options: null,
+            delay: (_, _) => Task.CompletedTask);
+
+        await flow.SelectFamilyAsync(ConsoleFamily.Ps5);
+        dispatcher.Drain();
+
+        Assert.False(flow.State.IsScanning);
+        Assert.Single(flow.Discovered);
     }
 
     [Fact]

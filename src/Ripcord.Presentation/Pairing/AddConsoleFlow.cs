@@ -25,9 +25,8 @@ namespace Ripcord.Presentation.Pairing;
 /// <para>
 /// <b>2. Discovery results could land after the user had left.</b> The page marshalled each result onto the
 /// dispatcher and had nowhere to ask "is this scan still the current one?", so a console answering late mutated a
-/// collection belonging to a dead page. There is now one generation check, in the single place results are
-/// accepted — the same <c>ReferenceEquals</c> idiom the old <c>finally</c> block already used correctly, applied
-/// to the half that was missing it.
+/// collection belonging to a dead page. There is now one generation check — <see cref="IsCurrentScan"/> — and one
+/// rule about when to ask it: synchronously, as each event happens, never from inside a posted closure.
 /// </para>
 ///
 /// <para>
@@ -367,7 +366,17 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
         {
             subscription = _scanner.Scan(_options.SearchWindow, cts.Token).Subscribe(
                 new AnonymousObserver<DiscoveredConsole>(
-                    onNext: console => Mutate(() => Accept(cts, console)),
+                    // Freshness is judged when the result ARRIVES, not when the mutation drains. Same reason as
+                    // the finally below: Mutate posts, so a check written inside the closure runs later — and by
+                    // then the scan may have ended and cleared _scanCts, which would silently discard results
+                    // that were perfectly valid when they came in.
+                    onNext: console =>
+                    {
+                        if (IsCurrentScan(cts))
+                        {
+                            Mutate(() => Accept(console));
+                        }
+                    },
                     // A scanner that faults has still told us about whatever answered first; report it as an
                     // outcome rather than throwing out of a background subscription.
                     onError: _ => completion.TrySetResult(),
@@ -388,9 +397,11 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
         }
         catch (Exception ex)
         {
+            // Decided now, not inside the callback — see the note in the finally below.
+            bool faultedScanIsCurrent = ReferenceEquals(_scanCts, cts);
             Mutate(() =>
             {
-                if (ReferenceEquals(_scanCts, cts))
+                if (faultedScanIsCurrent)
                 {
                     _findSubheading = $"Couldn't search the network: {ex.Message}";
                 }
@@ -400,9 +411,24 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
         {
             subscription?.Dispose();
 
+            // "Is this scan still the current one?" is answered HERE, synchronously, and the answer is captured.
+            // Mutate only runs inline when the caller is already on the UI thread; off it — which is where this
+            // continuation always lands — it POSTS, so anything the closure reads is read later. Releasing
+            // ownership below would then have already nulled _scanCts, the closure's guard would fail, and
+            // _isScanning would never be lowered. That is exactly the bug that kept the progress bar up: the
+            // guard was correct, but it was being evaluated after the state it guarded against had changed.
+            bool isCurrent = ReferenceEquals(_scanCts, cts);
+
+            // Release ownership before disposing. Skipping this left _scanCts referencing a disposed source once a
+            // scan had run to completion, and the next CancelScan() threw ObjectDisposedException.
+            if (isCurrent)
+            {
+                _scanCts = null;
+            }
+
             Mutate(() =>
             {
-                if (!ReferenceEquals(_scanCts, cts))
+                if (!isCurrent)
                 {
                     return;
                 }
@@ -411,32 +437,24 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
                 DescribeScanOutcome();
             });
 
-            // Release ownership BEFORE disposing. The page this came from did not, so after a scan ran to
-            // completion _scanCts still referenced a disposed source — and the very next CancelScan() threw
-            // ObjectDisposedException. That was reachable on the ordinary path: let the 4-second scan finish, then
-            // click a console, and the click handler faulted. Caught by a test the moment this logic became
-            // testable.
-            if (ReferenceEquals(_scanCts, cts))
-            {
-                _scanCts = null;
-            }
-
             cts.Dispose();
         }
     }
 
     /// <summary>
-    /// Accept one discovery result — the single place results enter, and therefore the single place the
-    /// generation check belongs. A result from a superseded or cancelled scan is dropped here rather than at
-    /// each subscription, which is what the page had no way to do.
+    /// Whether <paramref name="scan"/> is still the scan the flow cares about. The one place that question is
+    /// asked, and it must always be asked synchronously with the event being judged — never from inside a posted
+    /// closure, which would evaluate it against whatever the state has become by drain time.
     /// </summary>
-    private void Accept(CancellationTokenSource scan, DiscoveredConsole console)
-    {
-        if (!ReferenceEquals(_scanCts, scan) || scan.IsCancellationRequested)
-        {
-            return;
-        }
+    private bool IsCurrentScan(CancellationTokenSource scan)
+        => ReferenceEquals(_scanCts, scan) && !scan.IsCancellationRequested;
 
+    /// <summary>
+    /// Accept one discovery result — the single place results enter the list, so deduplication and ordering have
+    /// exactly one home. Freshness has already been decided by the caller.
+    /// </summary>
+    private void Accept(DiscoveredConsole console)
+    {
         if (Discovered.Any(d => d.Console.IpAddress.Equals(console.IpAddress)))
         {
             return;
@@ -489,17 +507,6 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
     }
 
     /// <summary>
-    /// Abandon the current scan, if any.
-    ///
-    /// <para>
-    /// Clears <c>_isScanning</c> here rather than leaving it to the scan's own completion path, because an
-    /// abandoned scan never reaches that path: the flag is only ever lowered by the scan that owns it, and this
-    /// one has just been disowned. Leaving it set meant the Find step came back with a spinner that never stopped
-    /// and a disabled Search-again button — visible as soon as a user picked a console before the four-second
-    /// window closed, which is most of the time.
-    /// </para>
-    /// </summary>
-    /// <summary>
     /// A delay that ends quietly when cancelled, so it can be raced with <c>Task.WhenAny</c> without leaving a
     /// faulted task nobody observes.
     /// </summary>
@@ -514,6 +521,17 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
         }
     }
 
+    /// <summary>
+    /// Abandon the current scan, if any.
+    ///
+    /// <para>
+    /// Clears <c>_isScanning</c> here rather than leaving it to the scan's own completion path, because an
+    /// abandoned scan never reaches that path: the flag is only ever lowered by the scan that owns it, and this
+    /// one has just been disowned. Leaving it set meant the Find step came back with a spinner that never stopped
+    /// and a disabled Search-again button — visible as soon as a user picked a console before the four-second
+    /// window closed, which is most of the time.
+    /// </para>
+    /// </summary>
     private void CancelScan()
     {
         CancellationTokenSource? cts = _scanCts;
