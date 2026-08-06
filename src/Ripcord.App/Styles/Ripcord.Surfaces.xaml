@@ -64,4 +64,26 @@
         <Setter Property="BorderBrush" Value="{ThemeResource AccentFillColorDefaultBrush}" />
     </Style>
 
+    <!--
+        A card whose content is a row rather than a layout of its own, so the padding belongs to the card. The
+        settings page is all of these; the About page's cards arrange their own interiors and take the bare
+        card above instead.
+    -->
+    <Style
+        x:Key="RipcordRowCardStyle"
+        BasedOn="{StaticResource RipcordCardStyle}"
+        TargetType="Border">
+        <Setter Property="Padding" Value="16,12" />
+    </Style>
+
+    <!--
+        A hairline between rows of a table. A divider, not a surface: it exists because the rows are a single
+        Grid rather than a card each, which is what keeps the labels aligned in one column whatever their
+        length — including at the larger text sizes the Display settings offer.
+    -->
+    <Style x:Key="RipcordRowDividerStyle" TargetType="Border">
+        <Setter Property="Height" Value="1" />
+        <Setter Property="Background" Value="{ThemeResource DividerStrokeColorDefaultBrush}" />
+    </Style>
+
 </ResourceDictionary>

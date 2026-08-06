@@ -18,46 +18,7 @@
             highlight. HDR gets the accent fill because it is the headline capability; the rest are subtle so a
             row of them stays calm.
         -->
-        <!--  Label column of a label/value row: dim, fixed width, so values line up down the panel.  -->
-        <Style x:Key="RowLabelStyle" TargetType="TextBlock" BasedOn="{StaticResource CaptionTextBlockStyle}">
-            <Setter Property="Foreground" Value="{ThemeResource TextFillColorTertiaryBrush}" />
-            <Setter Property="VerticalAlignment" Value="Top" />
-        </Style>
 
-        <Style x:Key="RowValueStyle" TargetType="TextBlock" BasedOn="{StaticResource CaptionTextBlockStyle}">
-            <Setter Property="Foreground" Value="{ThemeResource TextFillColorPrimaryBrush}" />
-            <Setter Property="TextWrapping" Value="Wrap" />
-        </Style>
-
-        <Style x:Key="SectionHeaderStyle" TargetType="TextBlock" BasedOn="{StaticResource CaptionTextBlockStyle}">
-            <Setter Property="Foreground" Value="{ThemeResource TextFillColorTertiaryBrush}" />
-            <Setter Property="CharacterSpacing" Value="80" />
-            <Setter Property="Margin" Value="0,2,0,2" />
-        </Style>
-
-        <Style x:Key="CapabilityPillStyle" TargetType="Border">
-            <Setter Property="Background" Value="{ThemeResource ControlFillColorSecondaryBrush}" />
-            <Setter Property="BorderBrush" Value="{ThemeResource ControlStrokeColorDefaultBrush}" />
-            <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="CornerRadius" Value="10" />
-            <Setter Property="Padding" Value="8,2" />
-            <Setter Property="VerticalAlignment" Value="Center" />
-        </Style>
-
-        <Style x:Key="AccentCapabilityPillStyle" TargetType="Border" BasedOn="{StaticResource CapabilityPillStyle}">
-            <Setter Property="Background" Value="{ThemeResource AccentFillColorDefaultBrush}" />
-            <Setter Property="BorderBrush" Value="{ThemeResource AccentFillColorDefaultBrush}" />
-        </Style>
-
-        <Style x:Key="CapabilityPillTextStyle" TargetType="TextBlock" BasedOn="{StaticResource CaptionTextBlockStyle}">
-            <Setter Property="FontWeight" Value="SemiBold" />
-            <Setter Property="CharacterSpacing" Value="40" />
-            <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
-        </Style>
-
-        <Style x:Key="AccentCapabilityPillTextStyle" TargetType="TextBlock" BasedOn="{StaticResource CapabilityPillTextStyle}">
-            <Setter Property="Foreground" Value="{ThemeResource TextOnAccentFillColorPrimaryBrush}" />
-        </Style>
     </Page.Resources>
 
     <Page.KeyboardAccelerators>
@@ -359,7 +320,7 @@
                         row per fact, with the optional rows hidden when they have nothing to say.
                     -->
                     <StackPanel Spacing="6">
-                        <TextBlock Style="{StaticResource SectionHeaderStyle}" Text="TARGET" />
+                        <TextBlock Style="{StaticResource RipcordInstrumentGroupStyle}" Text="TARGET" />
 
                         <Grid ColumnSpacing="10" RowSpacing="4">
                             <Grid.ColumnDefinitions>
@@ -373,20 +334,20 @@
                                 <RowDefinition Height="Auto" />
                             </Grid.RowDefinitions>
 
-                            <TextBlock Grid.Row="0" Style="{StaticResource RowLabelStyle}" Text="requested" />
-                            <TextBlock x:Name="RequestedText" Grid.Row="0" Grid.Column="1" Style="{StaticResource RowValueStyle}" />
+                            <TextBlock Grid.Row="0" Style="{StaticResource RipcordInstrumentLabelStyle}" Text="requested" />
+                            <TextBlock x:Name="RequestedText" Grid.Row="0" Grid.Column="1" Style="{StaticResource RipcordInstrumentValueStyle}" />
 
                             <!--  Only when the adaptive controller wants something other than the request.  -->
-                            <TextBlock x:Name="AdaptiveLabel" Grid.Row="1" Style="{StaticResource RowLabelStyle}" Text="adaptive" Visibility="Collapsed" />
-                            <TextBlock x:Name="AdaptiveText" Grid.Row="1" Grid.Column="1" Style="{StaticResource RowValueStyle}" Visibility="Collapsed" />
+                            <TextBlock x:Name="AdaptiveLabel" Grid.Row="1" Style="{StaticResource RipcordInstrumentLabelStyle}" Text="adaptive" Visibility="Collapsed" />
+                            <TextBlock x:Name="AdaptiveText" Grid.Row="1" Grid.Column="1" Style="{StaticResource RipcordInstrumentValueStyle}" Visibility="Collapsed" />
 
                             <!--  Why quality moved. The controller always knows; it just was not shown.  -->
-                            <TextBlock x:Name="ReasonLabel" Grid.Row="2" Style="{StaticResource RowLabelStyle}" Text="why" Visibility="Collapsed" />
-                            <TextBlock x:Name="ReasonText" Grid.Row="2" Grid.Column="1" Style="{StaticResource RowValueStyle}" Visibility="Collapsed" />
+                            <TextBlock x:Name="ReasonLabel" Grid.Row="2" Style="{StaticResource RipcordInstrumentLabelStyle}" Text="why" Visibility="Collapsed" />
+                            <TextBlock x:Name="ReasonText" Grid.Row="2" Grid.Column="1" Style="{StaticResource RipcordInstrumentValueStyle}" Visibility="Collapsed" />
 
                             <!--  What the bring-up measured and declared to the console, rather than assumed.  -->
-                            <TextBlock Grid.Row="3" Style="{StaticResource RowLabelStyle}" Text="link" />
-                            <TextBlock x:Name="LinkText" Grid.Row="3" Grid.Column="1" Style="{StaticResource RowValueStyle}" />
+                            <TextBlock Grid.Row="3" Style="{StaticResource RipcordInstrumentLabelStyle}" Text="link" />
+                            <TextBlock x:Name="LinkText" Grid.Row="3" Grid.Column="1" Style="{StaticResource RipcordInstrumentValueStyle}" />
                         </Grid>
 
                         <!--
@@ -401,7 +362,7 @@
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
-                            <TextBlock Style="{StaticResource RowLabelStyle}" Text="of cap" VerticalAlignment="Center" />
+                            <TextBlock Style="{StaticResource RipcordInstrumentLabelStyle}" Text="of cap" VerticalAlignment="Center" />
 
                             <!--
                                 Drawn as two star-weighted columns rather than a ProgressBar. ProgressBar animates
@@ -434,7 +395,7 @@
                                 x:Name="HeadroomText"
                                 Grid.Column="2"
                                 VerticalAlignment="Center"
-                                Style="{StaticResource RowLabelStyle}" />
+                                Style="{StaticResource RipcordInstrumentLabelStyle}" />
                         </Grid>
                     </StackPanel>
 
@@ -522,7 +483,7 @@
 
                     <!--  How the picture and sound are getting here.  -->
                     <StackPanel Spacing="6">
-                        <TextBlock Style="{StaticResource SectionHeaderStyle}" Text="PIPELINE" />
+                        <TextBlock Style="{StaticResource RipcordInstrumentGroupStyle}" Text="PIPELINE" />
                         <Grid ColumnSpacing="10" RowSpacing="4">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="62" />
@@ -535,17 +496,17 @@
                                 <RowDefinition Height="Auto" />
                             </Grid.RowDefinitions>
 
-                            <TextBlock Grid.Row="0" Style="{StaticResource RowLabelStyle}" Text="decode" />
-                            <TextBlock x:Name="DecodeText" Grid.Row="0" Grid.Column="1" Style="{StaticResource RowValueStyle}" />
+                            <TextBlock Grid.Row="0" Style="{StaticResource RipcordInstrumentLabelStyle}" Text="decode" />
+                            <TextBlock x:Name="DecodeText" Grid.Row="0" Grid.Column="1" Style="{StaticResource RipcordInstrumentValueStyle}" />
 
-                            <TextBlock Grid.Row="1" Style="{StaticResource RowLabelStyle}" Text="queues" />
-                            <TextBlock x:Name="QueuesText" Grid.Row="1" Grid.Column="1" Style="{StaticResource RowValueStyle}" />
+                            <TextBlock Grid.Row="1" Style="{StaticResource RipcordInstrumentLabelStyle}" Text="queues" />
+                            <TextBlock x:Name="QueuesText" Grid.Row="1" Grid.Column="1" Style="{StaticResource RipcordInstrumentValueStyle}" />
 
-                            <TextBlock Grid.Row="2" Style="{StaticResource RowLabelStyle}" Text="path" />
-                            <TextBlock x:Name="PathText" Grid.Row="2" Grid.Column="1" Style="{StaticResource RowValueStyle}" />
+                            <TextBlock Grid.Row="2" Style="{StaticResource RipcordInstrumentLabelStyle}" Text="path" />
+                            <TextBlock x:Name="PathText" Grid.Row="2" Grid.Column="1" Style="{StaticResource RipcordInstrumentValueStyle}" />
 
-                            <TextBlock Grid.Row="3" Style="{StaticResource RowLabelStyle}" Text="audio" />
-                            <TextBlock x:Name="AudioText" Grid.Row="3" Grid.Column="1" Style="{StaticResource RowValueStyle}" />
+                            <TextBlock Grid.Row="3" Style="{StaticResource RipcordInstrumentLabelStyle}" Text="audio" />
+                            <TextBlock x:Name="AudioText" Grid.Row="3" Grid.Column="1" Style="{StaticResource RipcordInstrumentValueStyle}" />
                         </Grid>
                     </StackPanel>
 
@@ -557,7 +518,7 @@
                         display is being given.
                     -->
                     <StackPanel Spacing="6">
-                        <TextBlock Style="{StaticResource SectionHeaderStyle}" Text="VIDEO" />
+                        <TextBlock Style="{StaticResource RipcordInstrumentGroupStyle}" Text="VIDEO" />
                         <Grid ColumnSpacing="10" RowSpacing="4">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="62" />
@@ -570,23 +531,23 @@
                                 <RowDefinition Height="Auto" />
                             </Grid.RowDefinitions>
 
-                            <TextBlock Grid.Row="0" Style="{StaticResource RowLabelStyle}" Text="decoder" />
-                            <TextBlock x:Name="DecoderText" Grid.Row="0" Grid.Column="1" Style="{StaticResource RowValueStyle}" />
+                            <TextBlock Grid.Row="0" Style="{StaticResource RipcordInstrumentLabelStyle}" Text="decoder" />
+                            <TextBlock x:Name="DecoderText" Grid.Row="0" Grid.Column="1" Style="{StaticResource RipcordInstrumentValueStyle}" />
 
-                            <TextBlock Grid.Row="1" Style="{StaticResource RowLabelStyle}" Text="format" />
-                            <TextBlock x:Name="VideoFormatText" Grid.Row="1" Grid.Column="1" Style="{StaticResource RowValueStyle}" />
+                            <TextBlock Grid.Row="1" Style="{StaticResource RipcordInstrumentLabelStyle}" Text="format" />
+                            <TextBlock x:Name="VideoFormatText" Grid.Row="1" Grid.Column="1" Style="{StaticResource RipcordInstrumentValueStyle}" />
 
-                            <TextBlock Grid.Row="2" Style="{StaticResource RowLabelStyle}" Text="colour" />
-                            <TextBlock x:Name="ColourText" Grid.Row="2" Grid.Column="1" Style="{StaticResource RowValueStyle}" />
+                            <TextBlock Grid.Row="2" Style="{StaticResource RipcordInstrumentLabelStyle}" Text="colour" />
+                            <TextBlock x:Name="ColourText" Grid.Row="2" Grid.Column="1" Style="{StaticResource RipcordInstrumentValueStyle}" />
 
-                            <TextBlock Grid.Row="3" Style="{StaticResource RowLabelStyle}" Text="output" />
-                            <TextBlock x:Name="HdrOutputText" Grid.Row="3" Grid.Column="1" Style="{StaticResource RowValueStyle}" />
+                            <TextBlock Grid.Row="3" Style="{StaticResource RipcordInstrumentLabelStyle}" Text="output" />
+                            <TextBlock x:Name="HdrOutputText" Grid.Row="3" Grid.Column="1" Style="{StaticResource RipcordInstrumentValueStyle}" />
                         </Grid>
                     </StackPanel>
 
                     <!--  Host state. Lowest priority: it changes least and is rarely the answer.  -->
                     <StackPanel Spacing="6">
-                        <TextBlock Style="{StaticResource SectionHeaderStyle}" Text="DEVICE" />
+                        <TextBlock Style="{StaticResource RipcordInstrumentGroupStyle}" Text="DEVICE" />
                         <Grid ColumnSpacing="10" RowSpacing="4">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="62" />
@@ -598,15 +559,15 @@
                                 <RowDefinition Height="Auto" />
                             </Grid.RowDefinitions>
 
-                            <TextBlock Grid.Row="0" Style="{StaticResource RowLabelStyle}" Text="GPU" />
-                            <TextBlock x:Name="AdapterText" Grid.Row="0" Grid.Column="1" Style="{StaticResource RowValueStyle}" />
+                            <TextBlock Grid.Row="0" Style="{StaticResource RipcordInstrumentLabelStyle}" Text="GPU" />
+                            <TextBlock x:Name="AdapterText" Grid.Row="0" Grid.Column="1" Style="{StaticResource RipcordInstrumentValueStyle}" />
 
-                            <TextBlock Grid.Row="1" Style="{StaticResource RowLabelStyle}" Text="power" />
-                            <TextBlock x:Name="PowerText" Grid.Row="1" Grid.Column="1" Style="{StaticResource RowValueStyle}" />
+                            <TextBlock Grid.Row="1" Style="{StaticResource RipcordInstrumentLabelStyle}" Text="power" />
+                            <TextBlock x:Name="PowerText" Grid.Row="1" Grid.Column="1" Style="{StaticResource RipcordInstrumentValueStyle}" />
 
-                            <TextBlock Grid.Row="2" Style="{StaticResource RowLabelStyle}" Text="input" />
+                            <TextBlock Grid.Row="2" Style="{StaticResource RipcordInstrumentLabelStyle}" Text="input" />
                             <StackPanel Grid.Row="2" Grid.Column="1">
-                                <TextBlock x:Name="ControllerConnectedText" Style="{StaticResource RowValueStyle}" />
+                                <TextBlock x:Name="ControllerConnectedText" Style="{StaticResource RipcordInstrumentValueStyle}" />
                                 <!--  Which engines are running. A property of the app, not of any one device.  -->
                                 <TextBlock
                                     x:Name="InputEnginesText"

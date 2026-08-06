@@ -549,12 +549,16 @@ public sealed partial class SessionPage : Page
         {
             CapabilityPills.Items.Add(new Border
             {
-                Style = (Style)Resources[pill.Accent ? "AccentCapabilityPillStyle" : "CapabilityPillStyle"],
+                // Application.Current.Resources, not this page's: the pill styles are shared now, and a page's
+                // own dictionary does not see app-level ones.
+                Style = (Style)Application.Current.Resources[
+                    pill.Accent ? "RipcordAccentPillStyle" : "RipcordPillStyle"],
                 Margin = new Thickness(0, 0, 6, 0),
                 Child = new TextBlock
                 {
                     Text = pill.Label,
-                    Style = (Style)Resources[pill.Accent ? "AccentCapabilityPillTextStyle" : "CapabilityPillTextStyle"],
+                    Style = (Style)Application.Current.Resources[
+                        pill.Accent ? "RipcordAccentPillTextStyle" : "RipcordPillTextStyle"],
                 },
             });
         }
