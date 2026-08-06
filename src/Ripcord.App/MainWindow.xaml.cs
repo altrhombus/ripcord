@@ -63,6 +63,9 @@ public sealed partial class MainWindow : Window, IShellNavigator
     /// </summary>
     private readonly FocusPilot _focus;
 
+    /// <summary>Re-seeds focus whenever it goes missing. See <see cref="FocusWatchdog"/> for why it is central.</summary>
+    private readonly FocusWatchdog _focusWatchdog;
+
     public MainWindow()
     {
         InitializeComponent();
@@ -94,7 +97,16 @@ public sealed partial class MainWindow : Window, IShellNavigator
         _chromeScope = new ShellInputScope(
             InputScopeKind.Chrome,
             onActivated: () => _dispatcherQueue.TryEnqueue(
-                DispatcherQueuePriority.Low, FocusFirstContentElement));
+                DispatcherQueuePriority.Low, FocusFirstContentElement),
+            focusRoot: () => Content?.XamlRoot);
+
+        // The standing guarantee that something is always focused. Everything else that seeds focus — window
+        // activation, navigation, the first pad press — predates it and each was written for one situation
+        // somebody hit; this one covers the situations nobody has hit yet.
+        _focusWatchdog = new FocusWatchdog(
+            _dispatcherQueue,
+            needsSeed: () => _focus.NeedsFocusSeed(),
+            seed: FocusFirstContentElement);
 
         // Focus is seeded on every navigation, not only when the chrome scope activates. Going to the pair flow
         // and back left nothing focused, so a pad user had to press a direction just to get the caret back onto
@@ -117,6 +129,7 @@ public sealed partial class MainWindow : Window, IShellNavigator
             // and with nothing focused directional input silently does nothing. (A hardware arrow key goes
             // through a different WinUI path that picks its own initial target; this one has no such fallback.)
             _input.Scopes.Push(_chromeScope);
+            _focusWatchdog.Start();
         };
 
         // Coming back from another app, focus is often gone — WinUI does not restore it, and a pad user is then
