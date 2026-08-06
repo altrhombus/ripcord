@@ -6,9 +6,16 @@ namespace Ripcord.Input;
 /// <summary>
 /// Polls the native GamepadReader (Ripcord.Input.Interop) for the first connected GameInput
 /// gamepad and republishes it as neutral ControllerStateFrames. Phase 0 scope only: a single
-/// polled device, standard gamepad button layout. Multi-device de-duplication (advanced pads seen
-/// through both raw-HID and any gamepad-emulation layer) and advanced vendor extended features
-/// arrive with the raw-HID engine in a later phase, per the plan.
+/// polled device, standard gamepad button layout.
+///
+/// <para>
+/// <b>The single-device scope has a user-visible cost, measured 2026-08-06.</b> The native read is
+/// <c>GetCurrentReading(GameInputKindGamepad, nullptr, …)</c>, and <c>nullptr</c> asks for the most recent
+/// reading from ANY gamepad. With a DualSense attached — which GameInput also enumerates, and which reports
+/// continuously over Bluetooth — an Xbox pad is starved completely: not one of its button presses arrives.
+/// Removing the DualSense is not sufficient either, since the Xbox pad had to be re-plugged before readings
+/// resumed. Enumerating devices and reading each explicitly is the fix; it is tracked in ROADMAP.
+/// </para>
 /// </summary>
 public sealed class GameInputControllerSource : IControllerSource, IDisposable
 {
