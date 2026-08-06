@@ -11,6 +11,7 @@ using Microsoft.UI.Xaml.Navigation;
 using Ripcord.Core.Consoles;
 using Ripcord.Core.Discovery;
 using Ripcord.Input;
+using Ripcord.Presentation.Halyard.Pairing;
 using Ripcord.Protocol.Halyard.Common.Crypto;
 using Ripcord.Protocol.Halyard.Common.Discovery;
 using Ripcord.Protocol.Halyard.Discovery;
@@ -41,6 +42,12 @@ public sealed partial class AddConsolePage : Page
     }
 
     private readonly PairedConsoleStore _store = new();
+
+    // Constructed here for now. This is one of the direct `new`s that the composition root will own once the
+    // pairing flow moves onto a view-model; resolving it through a field rather than a static call is what makes
+    // that a one-line change instead of an edit to PairAsync.
+    private readonly IHalyardRegistrationCipherResolver _cipherResolver = new HalyardRegistrationCipherResolver();
+
     private readonly ObservableCollection<DiscoveredConsoleItem> _discovered = [];
 
     private Step _step = Step.Family;
@@ -476,7 +483,7 @@ public sealed partial class AddConsolePage : Page
             ? HalyardConsolePlatform.Ps4
             : HalyardConsolePlatform.Ps5;
 
-        IHalyardRegistrationCipher cipher = AppRegistrationCipher.Load(platform, out string source);
+        IHalyardRegistrationCipher cipher = _cipherResolver.Resolve(platform, out string source);
         if (!cipher.IsAvailable)
         {
             ShowLinkError($"Registration crypto unavailable: {source}");

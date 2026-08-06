@@ -4,6 +4,7 @@ using Ripcord.Core.Discovery;
 using Ripcord.Core.Input;
 using Ripcord.Core.Sessions;
 using Ripcord.Cloud.Halyard;
+using Ripcord.Presentation.Halyard.Pairing;
 using Ripcord.Protocol.Halyard.Common.Crypto;
 using Ripcord.Protocol.Halyard.Common.Discovery;
 using Ripcord.Protocol.Halyard.Common.Input;
@@ -43,7 +44,10 @@ internal static class LabCommands
         var platform = args.Any(a => a.Equals("ps4", StringComparison.OrdinalIgnoreCase))
             ? HalyardConsolePlatform.Ps4 : HalyardConsolePlatform.Ps5;
 
-        IHalyardRegistrationCipher cipher = LabRegistrationCipher.Load(platform, out string source);
+        // The same resolver the app uses. The lab used to carry its own copy, and today the identical
+        // family-keying bug had to be fixed in both — so one implementation, exercised by two callers.
+        IHalyardRegistrationCipher cipher =
+            new HalyardRegistrationCipherResolver().Resolve(platform, out string source);
         Console.WriteLine($"registration cipher: available={cipher.IsAvailable}  family={platform}  ({source})");
         if (!cipher.IsAvailable)
         {

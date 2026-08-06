@@ -85,6 +85,11 @@
     <ProjectReference Include="..\Ripcord.Core.Net\Ripcord.Core.Net.csproj" />
     <ProjectReference Include="..\Ripcord.Input\Ripcord.Input.csproj" />
     <ProjectReference Include="..\Ripcord.Media\Ripcord.Media.csproj" />
+    <!-- The portable app layer, and its PlayStation backend. As pages move onto view-models these become the
+         main things this project talks to; the protocol references below stay only for what the WinUI side
+         still touches directly. -->
+    <ProjectReference Include="..\Ripcord.Presentation\Ripcord.Presentation.csproj" />
+    <ProjectReference Include="..\Ripcord.Presentation.Halyard\Ripcord.Presentation.Halyard.csproj" />
     <ProjectReference Include="..\Ripcord.Protocol.Halyard.Common\Ripcord.Protocol.Halyard.Common.csproj" />
     <ProjectReference Include="..\Ripcord.Protocol.Halyard\Ripcord.Protocol.Halyard.csproj" />
   </ItemGroup>

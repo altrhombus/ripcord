@@ -14,6 +14,9 @@
     <ProjectReference Include="..\..\src\Ripcord.Cloud.Halyard\Ripcord.Cloud.Halyard.csproj" />
     <ProjectReference Include="..\..\src\Ripcord.Protocol.Halyard.Common\Ripcord.Protocol.Halyard.Common.csproj" />
     <ProjectReference Include="..\..\src\Ripcord.Protocol.Halyard\Ripcord.Protocol.Halyard.csproj" />
+    <!-- For the shared registration-cipher resolver, so the lab and the app cannot drift apart on which source
+         of the interop constants wins for which console family. -->
+    <ProjectReference Include="..\..\src\Ripcord.Presentation.Halyard\Ripcord.Presentation.Halyard.csproj" />
   </ItemGroup>
 
 </Project>
