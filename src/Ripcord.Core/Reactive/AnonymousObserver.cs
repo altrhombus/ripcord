@@ -1,9 +1,16 @@
-namespace Ripcord.Input;
+namespace Ripcord.Core.Reactive;
 
 /// <summary>
 /// Minimal IObserver adapter so callers can subscribe with a plain delegate instead of
 /// implementing IObserver themselves, since Ripcord.Core's IObservable-based contracts don't
 /// pull in a System.Reactive dependency.
+///
+/// <para>
+/// Lives in Core beside <see cref="Subject{T}"/> rather than in Ripcord.Input, where it started: it is the
+/// counterpart to Core's own IObservable contracts and had acquired consumers in the app, the input stack and
+/// the protocol layer. Ripcord.Input targets net10.0-windows, so leaving it there meant anything portable that
+/// wanted to subscribe with a lambda had to write its own copy.
+/// </para>
 /// </summary>
 /// <param name="onNext">Required — the whole point of the adapter.</param>
 /// <param name="onError">
