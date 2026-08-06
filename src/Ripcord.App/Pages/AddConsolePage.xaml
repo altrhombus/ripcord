@@ -349,7 +349,7 @@
                     <StackPanel Orientation="Horizontal" Spacing="12">
                         <FontIcon
                             VerticalAlignment="Center"
-                            FontSize="22"
+                            FontSize="{ThemeResource RipcordIconSizeHero}"
                             Foreground="{ThemeResource SystemFillColorSuccessBrush}"
                             Glyph="&#xE930;" />
                         <TextBlock

@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!--
+    Motion tokens.
+
+    Aliases onto WinUI's own shipped durations and easings rather than curves of our own. That is the whole
+    difference between matching the OS and approximating it: Windows already ships the timing its controls
+    use, and an invented 250 ms ease-out lands a few frames away from every stock transition on screen at the
+    same moment — close enough that it reads as wrong rather than as different.
+
+    Naming them here is what lets a call site say WHY it is animating instead of how long for. A duration
+    chosen at the call site is a value nobody can review; "this is a state change" is reviewable.
+
+    WHAT ANIMATES is a closed list, and it lives in the plan, not here — page transitions, the card/stage
+    handoff, items arriving over time, the pairing flow's single content swap, and exactly two celebrations.
+
+    WHAT NEVER ANIMATES, because each has bitten something:
+      · Numbers. A diagnostic must never appear to interpolate — the headroom bar already learned this, where
+        tweening made a 22→10 Mbps drop read as a slide rather than a drop.
+      · Anything on the path to play. Every animation is fire-and-forget and the mechanism completes whether
+        or not it ran.
+      · Focus. At the 120 ms gamepad repeat interval a follow-the-focus animation is permanently behind the
+        user.
+      · Anything on the video layer but opacity, under 150 ms. Transforms and blurs cost the decoder frames
+        on exactly the hardware where frames are scarcest.
+      · Ambient motion and launch cascades. A stagger is the generic-app tell, and it costs first-input
+        latency at the moment the user is pressing Play.
+
+    Whether motion runs at all is AppMotion's question, not this file's — XAML's own theme transitions
+    consult the system setting themselves, but anything driven from code does not.
+-->
+<ResourceDictionary
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!--
+        Durations, by intent.
+
+        Instant is not zero — it is the shortest duration Windows itself uses, for a change the eye should
+        register as having happened rather than watch happen. Actual zero belongs to the motion-off path,
+        which is code.
+    -->
+    <Duration x:Key="RipcordDurationInstant">0:0:0.083</Duration>
+    <Duration x:Key="RipcordDurationStateChange">0:0:0.15</Duration>
+    <Duration x:Key="RipcordDurationEnter">0:0:0.25</Duration>
+
+    <!--
+        Easings. Content arriving decelerates into place; content leaving accelerates out, because an exit
+        that eases out reads as hesitation.
+    -->
+    <KeySpline x:Key="RipcordEaseEnter" ControlPoint1="0.1,0.9" ControlPoint2="0.2,1" />
+    <KeySpline x:Key="RipcordEaseExit" ControlPoint1="0.7,0" ControlPoint2="1,0.5" />
+
+</ResourceDictionary>
