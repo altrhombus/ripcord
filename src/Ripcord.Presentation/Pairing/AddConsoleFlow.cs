@@ -64,18 +64,29 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
     private const string ScanningMessage =
         "Make sure the console is switched on and on the same network as this PC.";
 
+    /// <summary>
+    /// How long past the search window to keep waiting for the scanner to say it has finished. Enough that a
+    /// well-behaved scan's own completion normally wins the race, short enough that a misbehaving one is not
+    /// noticeable. Results already stream in as they arrive, so nothing is lost either way.
+    /// </summary>
+    private static readonly TimeSpan ScanGrace = TimeSpan.FromSeconds(1);
+
+    private readonly Func<TimeSpan, CancellationToken, Task> _delay;
+
     public AddConsoleFlow(
         IConsoleScanner scanner,
         IConsoleRegistrar registrar,
         IPairedConsoleStore store,
         IUiDispatcher dispatcher,
-        AddConsoleFlowOptions? options = null)
+        AddConsoleFlowOptions? options = null,
+        Func<TimeSpan, CancellationToken, Task>? delay = null)
         : base(dispatcher)
     {
         _scanner = scanner ?? throw new ArgumentNullException(nameof(scanner));
         _registrar = registrar ?? throw new ArgumentNullException(nameof(registrar));
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _options = options ?? new AddConsoleFlowOptions();
+        _delay = delay ?? Task.Delay;
     }
 
     /// <summary>
@@ -367,7 +378,13 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
             using CancellationTokenRegistration registration =
                 cts.Token.Register(() => completion.TrySetResult());
 
-            await completion.Task.ConfigureAwait(false);
+            // The window is the authority on how long a scan lasts; a terminal signal from the scanner is only a
+            // fast path. Waiting solely for the signal is what left the spinner up forever in a live run: the
+            // discovery producer swallows OperationCanceledException and then raises neither OnCompleted nor
+            // OnError, so a single family going quiet meant the scan never appeared to end. A backstop the flow
+            // owns cannot be defeated by anything a transport does.
+            await Task.WhenAny(completion.Task, DelayQuietly(_options.SearchWindow + ScanGrace, cts.Token))
+                .ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -482,6 +499,21 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
     /// window closed, which is most of the time.
     /// </para>
     /// </summary>
+    /// <summary>
+    /// A delay that ends quietly when cancelled, so it can be raced with <c>Task.WhenAny</c> without leaving a
+    /// faulted task nobody observes.
+    /// </summary>
+    private async Task DelayQuietly(TimeSpan span, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _delay(span, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
     private void CancelScan()
     {
         CancellationTokenSource? cts = _scanCts;
