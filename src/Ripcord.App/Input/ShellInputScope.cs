@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
@@ -34,7 +35,8 @@ public sealed class ShellInputScope(
     InputScopeKind kind,
     Action? onActivated = null,
     Action? onDeactivated = null,
-    Func<XamlRoot?>? focusRoot = null) : IInputScope
+    Func<XamlRoot?>? focusRoot = null,
+    IReadOnlyList<InputPrompt>? prompts = null) : IInputScope
 {
     /// <summary>
     /// Weak on purpose. A scope can outlive the page it belongs to during a fast exit, and a strong reference
@@ -43,6 +45,9 @@ public sealed class ShellInputScope(
     private WeakReference<Control>? _remembered;
 
     public InputScopeKind Kind { get; } = kind;
+
+    /// <summary>What the hint bar shows while this scope is on top. The kind's default unless told otherwise.</summary>
+    public IReadOnlyList<InputPrompt> Prompts { get; } = prompts ?? ButtonLabels.DefaultFor(kind);
 
     public void OnActivated()
     {

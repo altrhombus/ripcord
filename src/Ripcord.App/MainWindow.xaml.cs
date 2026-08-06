@@ -139,6 +139,23 @@ public sealed partial class MainWindow : Window, IShellNavigator
             // through a different WinUI path that picks its own initial target; this one has no such fallback.)
             _input.Scopes.Push(_chromeScope);
             _focusWatchdog.Start();
+
+            // The bar draws whatever the top scope declares and redraws on the two edges that can change it:
+            // a different scope taking over, and the user picking up a different input device. It is never
+            // told about pages.
+            HintBar.SetPadFamily(_input.PadFamily);
+            HintBar.SetMode(_input.Mode);
+            HintBar.Show(_input.Scopes.Top?.Prompts);
+
+            _input.Scopes.TopChanged += scope =>
+                _dispatcherQueue.TryEnqueue(() => HintBar.Show(scope?.Prompts));
+
+            _input.ModeChanged += mode =>
+                _dispatcherQueue.TryEnqueue(() => HintBar.SetMode(mode));
+
+            // Connection events arrive on a polling thread, hence the marshal — the router says so.
+            _input.PadFamilyChanged += family =>
+                _dispatcherQueue.TryEnqueue(() => HintBar.SetPadFamily(family));
         };
 
         // What the other two input methods look like, for the mode tracker. Handled events count too: a click
