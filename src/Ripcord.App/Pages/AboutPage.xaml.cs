@@ -35,6 +35,8 @@ public sealed partial class AboutPage : Page
     /// </summary>
     private readonly List<(string Label, string Value)> _details = [];
 
+    private readonly IPlatformPaths _paths = App.Services.Paths;
+
     public AboutPage()
     {
         InitializeComponent();
@@ -63,7 +65,7 @@ public sealed partial class AboutPage : Page
 
         try
         {
-            ConfigPathText.Text = new DefaultPlatformPaths().ConfigDirectory;
+            ConfigPathText.Text = _paths.ConfigDirectory;
         }
         catch (Exception ex)
         {
