@@ -82,27 +82,26 @@ public sealed partial class MainWindow : Window, IShellNavigator
         _stickDeadzone = _settingsStore.Current.UiStickDeadzone;
         _settingsStore.Changed += s => _dispatcherQueue.TryEnqueue(() => _stickDeadzone = s.UiStickDeadzone);
 
-        // NavigationView's IsSelected="True" on the Consoles item marks it selected but does not fire
-        // SelectionChanged on startup, so the frame would otherwise stay empty until the user clicks.
-        NavFrame.Navigate(typeof(ConsolesPage));
+        ChromeFrame.Navigate(typeof(ConsolesPage));
 
-        // GoBack() navigates the Frame's content directly, bypassing NavigationView's selection state, so the
-        // pane would keep highlighting whatever was selected before.
-        NavFrame.Navigated += NavFrame_Navigated;
-
-        // Deferred to NavView.Loaded rather than the constructor: creating a GameInput-backed WinRT component
+        // Deferred to Loaded rather than run in the constructor: creating a GameInput-backed WinRT component
         // before the window content is realized was implicated in an early native crash (combase.dll,
         // E_UNEXPECTED) on the first D-pad press.
-        NavView.Loaded += (_, _) =>
+        ChromeFrame.Loaded += (_, _) =>
         {
             _navControllerSource = new GameInputControllerSource();
             _navControllerSubscription = _navControllerSource.StateChanges(string.Empty).Subscribe(
                 new AnonymousObserver<ControllerStateFrame>(OnControllerState));
 
-            // FocusManager.TryMoveFocus moves focus relative to whatever already has it; with nothing focused,
-            // directional input has no anchor and silently does nothing. A hardware arrow key goes through a
-            // different WinUI path that picks an initial target itself — TryMoveFocus has no such fallback.
-            FocusFirstNavItem();
+            // FocusManager.FindNextElement moves focus relative to whatever already has it; with nothing
+            // focused, directional input has no anchor and silently does nothing. A hardware arrow key goes
+            // through a different WinUI path that picks an initial target itself — this one has no such
+            // fallback, so something has to be focused before a pad can move.
+            //
+            // Posted at low priority rather than run here: this frame's Loaded fires before its content page
+            // has populated, so asking the page what to focus now gets the answer it has before it has loaded
+            // anything — which is how the first focus stop ended up on "Add console" instead of a console.
+            _dispatcherQueue.TryEnqueue(DispatcherQueuePriority.Low, FocusFirstContentElement);
         };
 
         Closed += (_, _) =>
@@ -135,9 +134,8 @@ public sealed partial class MainWindow : Window, IShellNavigator
         // measurable in power, and this app's whole point is running on a handheld.
         SystemBackdrop = null;
 
-        // Hide the chrome underneath so nothing renders behind the video and no nav item is left looking
-        // selected while a stream — which is not a nav destination — is running.
-        NavView.Visibility = Visibility.Collapsed;
+        // Hide the chrome underneath so nothing renders behind the video.
+        ChromeFrame.Visibility = Visibility.Collapsed;
         ApplyStreamChrome();
     }
 
@@ -161,14 +159,14 @@ public sealed partial class MainWindow : Window, IShellNavigator
         StreamFrame.BackStack.Clear();
         StreamFrame.ForwardStack.Clear();
 
-        NavView.Visibility = Visibility.Visible;
+        ChromeFrame.Visibility = Visibility.Visible;
         TitleBarRow.Height = new GridLength(48);
         AppTitleBar.Visibility = Visibility.Visible;
 
         // The consoles list is the page revealed underneath after a stream (nothing else navigates during one),
         // and returning to it never re-fired Loaded — so a just-rested console kept its stale "Online" dot.
         // Nudge it to re-probe now, handing over the rest intent so it can watch that console settle.
-        if (NavFrame.Content is ConsolesPage consolesPage)
+        if (ChromeFrame.Content is ConsolesPage consolesPage)
         {
             consolesPage.OnReturnedFromStream(closedConsoleHost, restRequested);
         }
@@ -234,77 +232,43 @@ public sealed partial class MainWindow : Window, IShellNavigator
         Grid.SetRowSpan(StreamFrame, fullScreen ? 2 : 1);
     }
 
-    private void NavFrame_Navigated(object sender, NavigationEventArgs e)
+    private void TitleBar_BackRequested(TitleBar sender, object args) => GoBack();
+
+    /// <summary>
+    /// The single back route. Every gesture that means "back" — the title-bar chevron and the pad's East
+    /// button — comes through here, so they cannot disagree about what back does.
+    /// </summary>
+    private void GoBack()
     {
-        if (e.SourcePageType == typeof(SettingsPage))
+        if (ChromeFrame.CanGoBack)
         {
-            NavView.SelectedItem = NavView.SettingsItem;
-            return;
-        }
-
-        string? tag = e.SourcePageType.Name switch
-        {
-            // Adding a console is a step within Consoles, not a destination of its own — it has no nav item,
-            // so without this the pane would keep highlighting whatever was selected before it opened.
-            nameof(ConsolesPage) or nameof(AddConsolePage) => "consoles",
-            nameof(AboutPage) => "about",
-            _ => null,
-        };
-
-        if (tag is null)
-        {
-            return;
-        }
-
-        foreach (var menuItem in NavView.MenuItems)
-        {
-            if (menuItem is NavigationViewItem { Tag: string itemTag } item && itemTag == tag)
-            {
-                NavView.SelectedItem = item;
-                return;
-            }
+            ChromeFrame.GoBack();
         }
     }
 
-    private void TitleBar_PaneToggleRequested(TitleBar sender, object args)
+    private void OnSettingsClick(object sender, RoutedEventArgs e) => NavigateToUtility(typeof(SettingsPage));
+
+    private void OnAboutClick(object sender, RoutedEventArgs e) => NavigateToUtility(typeof(AboutPage));
+
+    /// <summary>
+    /// Open one of the two utilities.
+    ///
+    /// <para>
+    /// Navigation rather than a pane selection, which is the substantive difference from the NavigationView
+    /// this replaced: opening Settings now pushes onto the back stack, so the chevron and B both return you to
+    /// what you were doing. Under the pane there was no back — you had to notice which item to click.
+    /// </para>
+    ///
+    /// <para>
+    /// Re-entry is ignored so that pressing the same command twice does not stack duplicates behind you, which
+    /// would make back feel broken in exactly the way a repeated click invites.
+    /// </para>
+    /// </summary>
+    private void NavigateToUtility(Type pageType)
     {
-        NavView.IsPaneOpen = !NavView.IsPaneOpen;
-    }
-
-    private void TitleBar_BackRequested(TitleBar sender, object args)
-    {
-        if (NavFrame.CanGoBack)
+        if (ChromeFrame.Content?.GetType() != pageType)
         {
-            NavFrame.GoBack();
-        }
-    }
-
-    private void NavView_SelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
-    {
-        if (args.IsSettingsSelected)
-        {
-            NavFrame.Navigate(typeof(SettingsPage));
-            return;
-        }
-
-        if (args.SelectedItem is not NavigationViewItem item)
-        {
-            return;
-        }
-
-        switch (item.Tag)
-        {
-            case "consoles":
-                NavFrame.Navigate(typeof(ConsolesPage));
-                break;
-            case "about":
-                NavFrame.Navigate(typeof(AboutPage));
-                break;
-            default:
-                // An unknown tag is a wiring mistake, but throwing would take the whole app down over a
-                // navigation click. Ignore it; the pane simply does not move.
-                System.Diagnostics.Debug.WriteLine($"Unknown navigation item tag: {item.Tag}");
-                break;
+            ChromeFrame.Navigate(pageType);
         }
     }
 
@@ -338,9 +302,9 @@ public sealed partial class MainWindow : Window, IShellNavigator
                     ActivateFocusedElement();
                 }
 
-                if (eastPressed && NavFrame.CanGoBack)
+                if (eastPressed && ChromeFrame.CanGoBack)
                 {
-                    NavFrame.GoBack();
+                    ChromeFrame.GoBack();
                 }
             }
             catch (Exception ex)
@@ -451,12 +415,12 @@ public sealed partial class MainWindow : Window, IShellNavigator
             return;
         }
 
-        // If there is nothing in that direction, leave focus where it is. Previously this fell back to
-        // FocusFirstNavItem(), so pressing against the edge of a list teleported focus to the navigation pane.
-        // Only seed focus when nothing has it at all.
+        // If there is nothing in that direction, leave focus where it is. An earlier version re-seeded focus
+        // here, so pressing against the edge of a list teleported the caret away from where the user was
+        // pushing. Only seed when nothing has focus at all.
         if (FocusManager.GetFocusedElement(searchRoot.XamlRoot) is null)
         {
-            FocusFirstNavItem();
+            FocusFirstContentElement();
         }
     }
 
@@ -561,20 +525,47 @@ public sealed partial class MainWindow : Window, IShellNavigator
         return false;
     }
 
-    private void FocusFirstNavItem()
+    /// <summary>
+    /// Seed focus inside the page content.
+    ///
+    /// <para>
+    /// <b>Content, not chrome</b>, and that is the point of the change rather than a side effect of it. The
+    /// first focus stop used to be the navigation pane, so a player opening the app with a pad in hand had to
+    /// travel out of the furniture before reaching a console. Now the first thing focused is the first thing
+    /// on the page — which on the console list is a console.
+    /// </para>
+    /// </summary>
+    private void FocusFirstContentElement()
     {
-        // FocusState.Keyboard, not Programmatic — see the note in MoveFocus. Seeding focus programmatically
-        // drew no focus visual, so the app's initial focus was invisible.
-        if (NavView.SelectedItem is Control selected)
+        if (ChromeFrame.Content is not FrameworkElement content)
         {
-            selected.Focus(FocusState.Keyboard);
             return;
         }
 
-        if (NavView.MenuItems.OfType<Control>().FirstOrDefault() is { } firstItem)
+        // FocusState.Keyboard everywhere below, never Programmatic — see the note in MoveFocus. Seeding focus
+        // programmatically draws no focus visual, so the app's initial focus was invisible.
+
+        // The page's own answer first: it knows which element is the point of the page, and tree order does
+        // not. On the console list that is a console rather than the "Add console" button above it.
+        // Focus() reports whether it landed. A GridView that has not realised any items yet accepts the call
+        // and focuses nothing, which would otherwise leave the app with no focus at all — worse than the
+        // fallback, because directional input needs an anchor to move from.
+        if (content is IInitialFocusTarget target
+            && target.InitialFocus is { } preferred
+            && preferred.Focus(FocusState.Keyboard))
         {
-            firstItem.Focus(FocusState.Keyboard);
+            return;
         }
+
+        if (FocusManager.FindFirstFocusableElement(content) is Control first)
+        {
+            first.Focus(FocusState.Keyboard);
+            return;
+        }
+
+        // Nothing focusable on the page yet (it may still be populating). The title-bar commands are always
+        // there, so focus is at least somewhere a pad can move from.
+        SettingsButton.Focus(FocusState.Keyboard);
     }
 
     private void ActivateFocusedElement()

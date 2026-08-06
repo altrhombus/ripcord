@@ -1,4 +1,18 @@
 <?xml version="1.0" encoding="utf-8" ?>
+<!--
+    Two layers: chrome, and the stage.
+
+    There used to be a NavigationView here. It disambiguates five or more peer destinations, and Ripcord has
+    one destination and two utilities — so its steady state was a column whose only job was to highlight the
+    page you were already on. On a 1280px handheld that column is most of a fourth console card. It also cost
+    a gamer their first press: the first focus stop was the pane, not the thing they came to play.
+
+    The stage stays a separate Frame, but now for a principled reason rather than the workaround it started as.
+    It was invented because hosting the stream inside the NavigationView inherited that control's content-area
+    border and rounded corner, which drew a thin light line along the top and left of the video. The honest
+    version of the same arrangement: a running stream is not a place you navigate to inside app furniture — it
+    owns the window, it is never in a back stack, and GoBack cannot reach it.
+-->
 <Window
     x:Class="Ripcord_App.MainWindow"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
@@ -23,56 +37,42 @@
             x:Name="AppTitleBar"
             Title="Ripcord"
             BackRequested="TitleBar_BackRequested"
-            IsBackButtonVisible="{x:Bind NavFrame.CanGoBack, Mode=OneWay}"
-            IsPaneToggleButtonVisible="True"
-            PaneToggleRequested="TitleBar_PaneToggleRequested">
+            IsBackButtonVisible="{x:Bind ChromeFrame.CanGoBack, Mode=OneWay}">
             <TitleBar.IconSource>
                 <ImageIconSource ImageSource="Assets/AppIcon.ico" />
             </TitleBar.IconSource>
+
+            <!--
+                The two utilities, as commands rather than destinations — which is what they are. Each is one
+                focus stop with an access key, so they are reachable by pad, by Tab and by Alt, and neither
+                costs a permanent column of the window.
+            -->
+            <TitleBar.RightHeader>
+                <StackPanel Orientation="Horizontal" Spacing="2" VerticalAlignment="Center">
+                    <Button
+                        x:Name="SettingsButton"
+                        AccessKey="S"
+                        AutomationProperties.Name="Settings"
+                        Click="OnSettingsClick"
+                        Style="{StaticResource SubtleButtonStyle}"
+                        ToolTipService.ToolTip="Settings">
+                        <FontIcon FontSize="{ThemeResource RipcordIconSizeAction}" Glyph="&#xE713;" />
+                    </Button>
+                    <Button
+                        x:Name="AboutButton"
+                        AccessKey="A"
+                        AutomationProperties.Name="About Ripcord"
+                        Click="OnAboutClick"
+                        Style="{StaticResource SubtleButtonStyle}"
+                        ToolTipService.ToolTip="About Ripcord">
+                        <FontIcon FontSize="{ThemeResource RipcordIconSizeAction}" Glyph="&#xE946;" />
+                    </Button>
+                </StackPanel>
+            </TitleBar.RightHeader>
         </TitleBar>
 
-        <!--
-            The navigation surface is deliberately small. It previously listed Consoles / Connect / Session /
-            About, which was the developer's model rather than the product's: "Session" was clickable with no
-            console selected, and "Connect" was a placeholder while pairing actually happened in a dialog on the
-            Consoles page. A stream is something you start *from* a console, not a destination you navigate to.
-        -->
-        <NavigationView
-            x:Name="NavView"
-            Grid.Row="1"
-            IsBackButtonVisible="Collapsed"
-            IsPaneToggleButtonVisible="False"
-            IsSettingsVisible="True"
-            SelectionChanged="NavView_SelectionChanged">
-            <NavigationView.MenuItems>
-                <NavigationViewItem
-                    AutomationProperties.Name="Consoles"
-                    Content="Consoles"
-                    IsSelected="True"
-                    Tag="consoles">
-                    <NavigationViewItem.Icon>
-                        <FontIcon Glyph="&#xE7F4;" />
-                    </NavigationViewItem.Icon>
-                </NavigationViewItem>
-                <NavigationViewItem
-                    AutomationProperties.Name="About"
-                    Content="About"
-                    Tag="about">
-                    <NavigationViewItem.Icon>
-                        <FontIcon Glyph="&#xE946;" />
-                    </NavigationViewItem.Icon>
-                </NavigationViewItem>
-            </NavigationView.MenuItems>
-            <Frame x:Name="NavFrame" />
-        </NavigationView>
+        <Frame x:Name="ChromeFrame" Grid.Row="1" />
 
-        <!--
-            The stream lives in its own layer on top of the chrome rather than inside the NavigationView.
-            Hosting it as a normal navigation destination meant it inherited the NavigationView content area's
-            1px border and rounded top-left corner, which showed as a thin light line along the top and left
-            edges of the video. It is also the more honest model: a running stream is not a place you navigate
-            to inside app furniture, it takes over the window.
-        -->
         <Frame
             x:Name="StreamFrame"
             Grid.Row="1"

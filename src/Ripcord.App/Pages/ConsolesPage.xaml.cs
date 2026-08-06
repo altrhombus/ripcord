@@ -17,8 +17,21 @@ using Ripcord_App.Services;
 
 namespace Ripcord_App.Pages;
 
-public sealed partial class ConsolesPage : Page
+public sealed partial class ConsolesPage : Page, IInitialFocusTarget
 {
+    /// <summary>
+    /// A console, not the "Add console" button that happens to sit above it in tree order. Open the window,
+    /// press A, play — that is what this page is for, and the first focus stop should say so.
+    ///
+    /// <para>
+    /// The grid rather than a specific container: focusing a <see cref="GridView"/> hands focus to its own
+    /// first (or last-focused) item, which is both the right target and the one that survives the list being
+    /// rebuilt underneath. Null before anything is in it, so the shell falls back to tree order — an empty
+    /// install has no console to offer and the add button is genuinely the point.
+    /// </para>
+    /// </summary>
+    public Control? InitialFocus => ConsoleGrid.Visibility == Visibility.Visible ? ConsoleGrid : null;
+
     private readonly RipcordAppServices _services;
     private readonly IPairedConsoleStore _store;
 
@@ -90,7 +103,6 @@ public sealed partial class ConsolesPage : Page
 
         ConsoleGrid.Visibility = any ? Visibility.Visible : Visibility.Collapsed;
         SubtitleText.Visibility = any ? Visibility.Visible : Visibility.Collapsed;
-        AddButton.Visibility = any ? Visibility.Visible : Visibility.Collapsed;
         EmptyState.Visibility = any ? Visibility.Collapsed : Visibility.Visible;
 
         if (any)
