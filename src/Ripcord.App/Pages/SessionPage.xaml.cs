@@ -387,7 +387,7 @@ public sealed partial class SessionPage : Page
             {
                 var dialog = new LoginPinDialog(isRetry) { XamlRoot = XamlRoot };
                 using CancellationTokenRegistration reg = cancellationToken.Register(() => dialog.Hide());
-                ContentDialogResult result = await dialog.ShowAsync();
+                ContentDialogResult result = await ModalHost.ShowAsync(dialog);
                 tcs.TrySetResult(result == ContentDialogResult.Primary ? dialog.Pin : null);
             }
             catch (Exception)
@@ -841,18 +841,15 @@ public sealed partial class SessionPage : Page
         {
             _confirmingLeave = true;
 
-            // The prompt owns the pad while it is up, expressed as a scope over the session's. That single
-            // push is what stops presses leaking into the game behind it: the session's deactivation edge
-            // suspends forwarding and releases whatever is held. Popping it restores forwarding on every exit
-            // path — including "Stay connected", where the session keeps running — with no bookkeeping of its
-            // own to get wrong.
-            var modalScope = new ShellInputScope(InputScopeKind.Modal);
-            App.Input.Scopes.Push(modalScope);
-
+            // The prompt owns the pad while it is up. That is ModalHost's doing now rather than this
+            // method's, and it is what stops presses leaking into the game behind it: the session's
+            // deactivation edge suspends forwarding and releases whatever is held, and the matching pop
+            // restores forwarding on every exit path — including "Stay connected", where the session keeps
+            // running. This site is where that was first got right; it is now what every dialog gets.
             try
             {
                 var dialog = new DisconnectDialog(_settings.RestConsoleOnDisconnect) { XamlRoot = XamlRoot };
-                if (await dialog.ShowAsync() != ContentDialogResult.Primary)
+                if (await ModalHost.ShowAsync(dialog) != ContentDialogResult.Primary)
                 {
                     return; // "Stay connected" — the session keeps running
                 }
@@ -867,7 +864,6 @@ public sealed partial class SessionPage : Page
             finally
             {
                 _confirmingLeave = false;
-                App.Input.Scopes.Pop(modalScope);
             }
         }
 

@@ -9,6 +9,7 @@ using Microsoft.UI.Xaml.Media;
 using Ripcord.Presentation;
 using Ripcord.Presentation.Consoles;
 using Ripcord.Presentation.Settings;
+using Ripcord_App.Input;
 using Ripcord_App.Dialogs;
 using Ripcord_App.Services;
 
@@ -320,7 +321,7 @@ public sealed partial class SettingsPage : Page
                 XamlRoot = XamlRoot,
             };
 
-            await dialog.ShowAsync();
+            await ModalHost.ShowAsync(dialog);
             _viewModel.SetInputBindings(dialog.Result);
         }
         catch (Exception ex)

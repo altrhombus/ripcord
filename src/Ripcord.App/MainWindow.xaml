@@ -26,7 +26,17 @@
         <MicaBackdrop />
     </Window.SystemBackdrop>
 
-    <Grid>
+    <!--
+        XYFocusKeyboardNavigation gives the ARROW KEYS the same directional model the pad already uses, for
+        free — it only applies when the focused element does not handle the arrow itself, so text boxes,
+        sliders and scrollers keep their own behaviour untouched.
+
+        The point is not the keyboard feature. It is that the pad's Down and the keyboard's Down now land on
+        the same element by construction, because both go through the same focus engine. Two directional
+        models over one layout is how a surface ends up navigable with one input and subtly wrong with the
+        other, and nobody notices until someone puts a keyboard down and picks a controller up.
+    -->
+    <Grid XYFocusKeyboardNavigation="Enabled">
         <Grid.RowDefinitions>
             <!--  Collapsed while a stream is running, so the video is genuinely immersive.  -->
             <RowDefinition x:Name="TitleBarRow" Height="48" />
