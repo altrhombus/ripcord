@@ -98,6 +98,9 @@ public sealed class InputRouter : IDisposable
         _source = ControllerSourceFactory.Create();
         _stateSubscription = _source.StateChanges(string.Empty)
             .Subscribe(new AnonymousObserver<ControllerStateFrame>(OnFrame));
+
+        _connectionSubscription = _source.Connections
+            .Subscribe(new AnonymousObserver<ControllerConnectionEvent>(OnConnection));
     }
 
     public void Stop()
@@ -110,6 +113,12 @@ public sealed class InputRouter : IDisposable
         (_source as IDisposable)?.Dispose();
         _source = null;
     }
+
+    /// <summary>Which family of pad last connected, for prompt labelling. See <see cref="OnConnection"/>.</summary>
+    public PadFamily PadFamily { get; private set; } = PadFamily.Generic;
+
+    /// <summary>Raised off the UI thread — connection events come from the polling engines. Callers must marshal.</summary>
+    public event Action<PadFamily>? PadFamilyChanged;
 
     /// <summary>How the person is driving the app right now.</summary>
     public InputMode Mode => _modes.Mode;
@@ -135,6 +144,41 @@ public sealed class InputRouter : IDisposable
 
     /// <summary>The deadzone is a user setting and can change while the app runs.</summary>
     public void UseDeadzone(double deadzone) => _navIntents.StickDeadzone = deadzone;
+
+    /// <summary>
+    /// Which pad's button names the prompts should use.
+    ///
+    /// <para>
+    /// Decided by which engine reported the connection, not by parsing a product name: our raw-HID engine only
+    /// ever binds pads it recognises, so its presence IS the answer, and a string match on a marketing name
+    /// would go stale the moment a revision shipped.
+    /// </para>
+    ///
+    /// <para>
+    /// Never revoked on disconnect. A pad that goes to sleep should not silently relabel every prompt on
+    /// screen, and the labels are only wrong if a different family is then picked up — which reports and
+    /// corrects it.
+    /// </para>
+    /// </summary>
+    private void OnConnection(ControllerConnectionEvent evt)
+    {
+        if (!evt.Connected)
+        {
+            return;
+        }
+
+        PadFamily family = evt.Source.Contains("HID", StringComparison.OrdinalIgnoreCase)
+            ? PadFamily.Vendor
+            : PadFamily.Generic;
+
+        if (family == PadFamily)
+        {
+            return;
+        }
+
+        PadFamily = family;
+        PadFamilyChanged?.Invoke(family);
+    }
 
     private void OnFrame(ControllerStateFrame raw)
     {
