@@ -3,6 +3,7 @@ using Ripcord.Core.Platform;
 using Ripcord.Core.Settings;
 using Ripcord.Presentation.Consoles;
 using Ripcord.Presentation.Pairing;
+using Ripcord.Presentation.Sessions;
 using Ripcord.Presentation.Threading;
 
 namespace Ripcord.Presentation;
@@ -54,6 +55,8 @@ public sealed class RipcordAppServices
 
     public required IConsoleReachabilityProbe ReachabilityProbe { get; init; }
 
+    public required IConsoleWakeCoordinator WakeCoordinator { get; init; }
+
     /// <summary>
     /// The shell, once the front end has one.
     ///
@@ -97,4 +100,12 @@ public sealed class RipcordAppServices
 
     public ConsoleCardViewModel CreateConsoleCard(PairedConsole console)
         => new(console, Dispatcher);
+
+    /// <summary>
+    /// Build the streaming surface's view-model over <paramref name="pipeline"/>. The pipeline comes from the
+    /// caller rather than the graph because it is a device the surface itself creates and destroys — see
+    /// <see cref="IVideoPipelineStats"/>.
+    /// </summary>
+    public SessionViewModel CreateSessionViewModel(IVideoPipelineStats pipeline)
+        => new(pipeline, Settings.Current, Dispatcher);
 }

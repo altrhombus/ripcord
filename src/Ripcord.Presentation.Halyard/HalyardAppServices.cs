@@ -4,7 +4,9 @@ using Ripcord.Core.Settings;
 using Ripcord.Presentation.Consoles;
 using Ripcord.Presentation.Halyard.Consoles;
 using Ripcord.Presentation.Halyard.Pairing;
+using Ripcord.Presentation.Halyard.Sessions;
 using Ripcord.Presentation.Pairing;
+using Ripcord.Presentation.Sessions;
 using Ripcord.Presentation.Threading;
 
 namespace Ripcord.Presentation.Halyard;
@@ -42,7 +44,8 @@ public static class HalyardAppServices
         IPairedConsoleStore? consoles = null,
         IConsoleScanner? scanner = null,
         IConsoleRegistrar? registrar = null,
-        IConsoleReachabilityProbe? reachabilityProbe = null)
+        IConsoleReachabilityProbe? reachabilityProbe = null,
+        IConsoleWakeCoordinator? wakeCoordinator = null)
     {
         ArgumentNullException.ThrowIfNull(dispatcher);
 
@@ -63,6 +66,7 @@ public static class HalyardAppServices
             Scanner = scanner ?? new HalyardConsoleScanner(),
             Registrar = registrar ?? new HalyardConsoleRegistrar(),
             ReachabilityProbe = reachabilityProbe ?? new HalyardReachabilityProbe(),
+            WakeCoordinator = wakeCoordinator ?? new HalyardConsoleWakeCoordinator(),
         };
     }
 }

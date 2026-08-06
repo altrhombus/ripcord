@@ -26,6 +26,7 @@ using Ripcord.Diagnostics;
 using Ripcord.Input;
 using Ripcord.Media;
 using Ripcord.Presentation;
+using Ripcord.Presentation.Sessions;
 using Ripcord.Core.Security;
 using Ripcord.Protocol.Halyard.Common.Crypto;
 using Ripcord.Protocol.Halyard.Common.Discovery;
@@ -74,6 +75,15 @@ public sealed partial class SessionPage : Page
     private IDisposable? _statusSubscription;
     private DispatcherTimer? _statsTimer;
 
+    // What this surface SAYS, as opposed to what it draws. Everything the overlay and the diagnostics readout
+    // report is composed in SessionViewModel, where it is unit-tested against neither a GPU nor a console.
+    private readonly D3D12VideoPipelineStats _pipelineStats = new();
+    private readonly SessionViewModel _viewModel;
+
+    // What Render last applied, so the capability pills — the one part that builds elements rather than setting
+    // text — are rebuilt only when the SET changes and not twice a second.
+    private string _renderedPillSignature = string.Empty;
+
     private PairedConsole? _console;
     private IPowerThermalMonitor? _powerMonitor;
     private ExitGestureDetector? _exitDetector;
@@ -86,57 +96,22 @@ public sealed partial class SessionPage : Page
     // Cancels the pre-connect work (currently the wake poll) when the user leaves before the session is up.
     private CancellationTokenSource? _connectCts;
 
-    // Sampled diagnostics state.
-    private long _prevDecodedFrames;
-    private long _prevPresentedFrames;
-    private long _prevStatsTicks;
-    private long _prevAudioFrames;
-
-    // Signature of the pills currently shown, so the row is rebuilt only when the SET changes rather than twice a
-    // second — recreating the elements every tick would churn layout for no visible difference.
-    private string _pillSignature = string.Empty;
-
-    // Every currently-attached controller, keyed by id. A dictionary rather than a "last event wins" string,
-    // because several pads can be attached at once and each may be seen by a different engine.
-    private readonly Dictionary<string, string> _connectedControllers = [];
-
-    // Rolling history for the diagnostics graph. 60 samples at the 500 ms stats cadence = 30 seconds.
-    private readonly MetricHistory _fpsHistory = new(60);
-    private readonly MetricHistory _lossHistory = new(60);
-    private readonly MetricHistory _rttHistory = new(60);
-    private readonly MetricHistory _bitrateHistory = new(60);
-
-    // Full-scale values for each series. Fixed rather than auto-scaled so the shape means the same thing from
-    // one glance to the next — an auto-scaled axis makes a calm stream and a broken one look identical.
-    // Full scale for the loss plot: the health assessor's WARN threshold, so the line touching the top means
-    // exactly "loss is now a problem" — the same principle already used for latency below. It was 20%, against
-    // which a real 0.4% blip drew as 2% of the row height, i.e. invisible: the row could not distinguish "no
-    // loss" from "a little loss", which is the distinction that matters most on a wireless link.
-    /// <summary>
-    /// Shortest sampling interval that yields a meaningful rate. The stats timer nominally fires every 500 ms, so
-    /// anything under half that is a bunched tick after a delay rather than a real observation window — dividing a
-    /// burst of frames by a ~37 ms gap reported 1610 fps, which is impossible, and it poisoned the 30-second peak
-    /// permanently because a maximum never decays.
-    /// </summary>
-    private const double MinimumSampleSeconds = 0.25;
-
-    private static readonly double LossFullScalePercent = StreamHealthAssessor.LossWarnRatio * 100.0;
-    // Full scale for the RTT plot. Set to the health assessor's warn threshold so the line reaching the top
-    // means exactly "network delay is now high" rather than an arbitrary fraction. At the old 200 ms even a
-    // bad Wi-Fi link drew as a flat line along the bottom, which made the series useless.
-    private const double RttFullScaleMs = StreamHealthAssessor.RttWarnMs;
-    // Bitrate has no fixed sensible ceiling, so it is scaled to the session's own cap with headroom rather than a
-    // constant. The old fixed 25 Mbps silently CLIPPED: a 40 Mbps cap peaking at 30.5 Mbps drew flat along the top
-    // and the shape was lost exactly when it was most interesting. The cap is stable for the session, so this
-    // keeps the "shape means the same thing each glance" property that motivated a fixed scale.
-    private double BitrateFullScaleMbps => Math.Max(1, _settings.BitrateKbps / 1000.0 * 1.2);
+    // Rate sampling, pill tracking, the attached-controller set, the rolling histories and every full-scale
+    // constant used to live here. All of it is arithmetic and wording over plain numbers, so all of it moved to
+    // SessionViewModel — see the histories and the FullScale members it exposes for the sparklines below.
 
     // Whether we switched the window to fullscreen, so we only restore what we changed.
     private bool _enteredFullScreen;
 
     public SessionPage()
     {
+        // Resolved before InitializeComponent, as everywhere else, so bindings never see a null.
+        _viewModel = _services.CreateSessionViewModel(_pipelineStats);
+
         InitializeComponent();
+
+        _viewModel.PropertyChanged += (_, _) => Render(_viewModel.State);
+        Render(_viewModel.State);
     }
 
     /// <summary>
@@ -186,6 +161,11 @@ public sealed partial class SessionPage : Page
         TryStartConnectAnimation();
 
         _settings = _settingsStore.Current;
+
+        // Re-stated here rather than trusted from construction: the page is built when it is navigated to, and
+        // the user may have changed a setting between then and the frame actually loading.
+        _viewModel.UseSettings(_settings);
+
         _exitDetector = new ExitGestureDetector(_settings.ExitGesture);
 
         DiagnosticsPanel.Visibility = _settings.ShowDiagnosticsOverlay ? Visibility.Visible : Visibility.Collapsed;
@@ -197,7 +177,6 @@ public sealed partial class SessionPage : Page
         try
         {
             _controllerSource = ControllerSourceFactory.Create();
-            ControllerConnectedText.Text = "none attached";
             InputEnginesText.Text = $"engines: {_controllerSource.SourceName}";
 
             _connectionsSubscription = _controllerSource.Connections.Subscribe(
@@ -321,7 +300,7 @@ public sealed partial class SessionPage : Page
         // Wake the console if it is in standby, before attempting to connect. A connect to a sleeping console
         // cannot succeed, and without this it just hung on "Connecting…" until timeout with no cause given.
         // Non-fatal except for the one case that genuinely blocks streaming (asked to wake, did not).
-        if (!await EnsureConsoleAwakeAsync(address))
+        if (!await EnsureConsoleAwakeAsync())
         {
             return;
         }
@@ -354,40 +333,24 @@ public sealed partial class SessionPage : Page
     /// a console that does not answer SRCH may still be reachable, and letting the connect surface that is
     /// more useful than refusing to try.
     /// </summary>
-    private async Task<bool> EnsureConsoleAwakeAsync(IPAddress address)
+    private async Task<bool> EnsureConsoleAwakeAsync()
     {
-        HalyardPairingRecord? record = _console!.ToPairingRecord(CredentialProtection.ForCurrentPlatform());
-        if (record is null)
-        {
-            // No usable pairing record means no wake credential. Not fatal here — connect will fail with its
-            // own clearer "not paired / bad credential" message than anything we could invent.
-            return true;
-        }
-
-        // Discovery/wake is family-specific: a PS4 wakes on 987/00020020 (WAKEUP from 987, SRCH ephemeral), a
-        // PS5 on 9302/00030010 (both from 9303). The profile carries those so this one composition drives either.
-        var profile = HalyardDiscoveryProfile.ForPlatformName(_console!.Platform);
-        var search = new HalyardSearchClient(profile);
-        var wake = new HalyardWakeClient(profile);
-        var coordinator = new HalyardWakeCoordinator(
-            // Probe from the family's wake-search source port so the exchange matches the vendor; this path is
-            // sequential, so there is no contention for a fixed port the way the console list has.
-            probeAwake: async ct => (await search.ProbeAsync(address, TimeSpan.FromSeconds(1), ct, profile.WakeSearchSourcePort))?.IsAwake,
-            sendWake: ct => wake.WakeAsync(address, record, ct));
-
         var progress = new Progress<string>(line => ShowStatus(line, "The console was in standby.", terminal: false));
 
-        WakeOutcome outcome;
+        ConsoleWakeOutcome outcome;
         try
         {
-            outcome = await coordinator.EnsureAwakeAsync(progress, _connectCts!.Token);
+            // Everything family-specific about waking — ports, protocol versions, the pairing credential the
+            // wake has to be signed with — now lives behind IConsoleWakeCoordinator.
+            outcome = await _services.WakeCoordinator
+                .EnsureAwakeAsync(_console!, progress, _connectCts!.Token);
         }
         catch (OperationCanceledException)
         {
             return false; // the user left the page mid-wake
         }
 
-        if (outcome == WakeOutcome.TimedOut)
+        if (outcome == ConsoleWakeOutcome.TimedOut)
         {
             ShowStatus(
                 "Console didn't wake",
@@ -452,6 +415,10 @@ public sealed partial class SessionPage : Page
         var panelNative = VideoPanel.As<ISwapChainPanelNative>();
         Marshal.ThrowExceptionForHR(panelNative.SetSwapChain(new IntPtr((long)_pipeline.SwapChainPointer)));
 
+        // The view-model can read the pipeline from here on; before this, IsReady is false and the diagnostics
+        // readout reports the "nothing yet" state rather than zeroes that look like real measurements.
+        _pipelineStats.Attach(_pipeline);
+
         AdapterText.Text = $"GPU: {_pipeline.ActiveAdapterDescription}";
 
         // Keep the swap chain sized to the panel in physical pixels. These now only publish values for the
@@ -472,59 +439,144 @@ public sealed partial class SessionPage : Page
 
     // ---- status ----
 
+    /// <summary>
+    /// A lifecycle change. What the overlay <em>says</em> about each one is the view-model's; what remains here
+    /// is the device half — the presenter, keep-display-awake, and the exit hint.
+    /// </summary>
     private void OnStatusChanged(SessionStatus status)
     {
         // Published from the controller's background loop, so marshal before touching XAML.
         _dispatcherQueue.TryEnqueue(() =>
         {
+            _viewModel.ApplyLifecycle(status);
+
             switch (status.Lifecycle)
             {
                 case SessionLifecycle.Streaming:
-                    HideStatus();
                     EnterImmersiveMode();
                     _ = ShowExitHintBriefly();
                     break;
 
-                case SessionLifecycle.Degraded:
-                    // Deliberately quiet: most stalls recover in under a second, and flashing a scary overlay
-                    // over a picture that is about to come back is worse than saying nothing.
-                    ShowStatus("Reconnecting the video…", status.Detail, terminal: false);
-                    break;
-
-                case SessionLifecycle.Connecting:
-                case SessionLifecycle.Reconnecting:
-                    ShowStatus(
-                        status.Lifecycle == SessionLifecycle.Connecting ? "Connecting…" : "Reconnecting…",
-                        status.Detail,
-                        terminal: false);
-                    break;
-
                 case SessionLifecycle.Failed:
-                    ShowStatus("Couldn't connect", status.Detail, terminal: true);
                     LeaveImmersiveMode();
-                    break;
-
-                case SessionLifecycle.Closed:
-                    HideStatus();
                     break;
             }
         });
     }
 
     private void ShowStatus(string headline, string detail, bool terminal)
+        => _viewModel.ShowStatus(headline, detail, terminal);
+
+    private void HideStatus() => _viewModel.HideStatus();
+
+    /// <summary>
+    /// Project the whole view-model state onto the controls. One method rather than per-property handlers,
+    /// because the state arrives as one value and cannot be half-applied.
+    /// </summary>
+    private void Render(SessionViewState s)
     {
-        StatusHeadline.Text = headline;
-        StatusDetail.Text = detail;
-        StatusRing.IsActive = !terminal;
-        StatusActions.Visibility = terminal ? Visibility.Visible : Visibility.Collapsed;
-        StatusOverlay.Visibility = Visibility.Visible;
+        StatusOverlay.Visibility = Vis(s.StatusVisible);
+        StatusHeadline.Text = s.StatusHeadline;
+        StatusDetail.Text = s.StatusDetail;
+        StatusRing.IsActive = s.StatusBusy;
+        StatusActions.Visibility = Vis(s.StatusActionsVisible);
+
+        ControllerConnectedText.Text = s.ConnectedControllers;
+
+        RenderDiagnostics(s.Diagnostics);
     }
 
-    private void HideStatus()
+    private void RenderDiagnostics(SessionDiagnosticsState d)
     {
-        StatusOverlay.Visibility = Visibility.Collapsed;
-        StatusRing.IsActive = false;
+        AdapterText.Text = d.Adapter;
+        ColourText.Text = d.Colour;
+        VideoFormatText.Text = d.VideoFormat;
+        HdrOutputText.Text = d.HdrOutput;
+
+        HeroResolutionText.Text = d.HeroResolution;
+        HeroFpsText.Text = d.HeroFps;
+        HeroBitrateText.Text = d.HeroBitrate;
+        RenderCapabilityPills(d);
+        DecoderText.Text = d.Decoder;
+
+        RequestedText.Text = d.Requested;
+        AdaptiveText.Text = d.Adaptive;
+        AdaptiveLabel.Visibility = Vis(d.AdaptiveVisible);
+        AdaptiveText.Visibility = AdaptiveLabel.Visibility;
+
+        ReasonText.Text = d.Reason;
+        ReasonLabel.Visibility = Vis(d.ReasonVisible);
+        ReasonText.Visibility = ReasonLabel.Visibility;
+
+        LinkText.Text = d.Link;
+        HeadroomUsedColumn.Width = new GridLength(d.HeadroomUsedFraction, GridUnitType.Star);
+        HeadroomFreeColumn.Width = new GridLength(1 - d.HeadroomUsedFraction, GridUnitType.Star);
+        HeadroomText.Text = d.Headroom;
+        PowerText.Text = d.Power;
+
+        AudioText.Text = d.Audio;
+        DecodeText.Text = d.Decode;
+        QueuesText.Text = d.Queues;
+        PathText.Text = d.Path;
+
+        HealthText.Text = d.Health;
+        HealthTipText.Text = d.HealthTip;
+        RenderHealthDot(d.HealthLevel);
     }
+
+    /// <summary>
+    /// Rebuild the pill row, but only when the set has actually changed — this is the one part of the readout
+    /// that creates elements rather than assigning text, and doing it twice a second churns layout for no
+    /// visible difference. The view-model decides WHICH pills; this decides when redrawing is worth it.
+    /// </summary>
+    private void RenderCapabilityPills(SessionDiagnosticsState d)
+    {
+        if (d.CapabilityPillSignature == _renderedPillSignature)
+        {
+            return;
+        }
+
+        _renderedPillSignature = d.CapabilityPillSignature;
+        CapabilityPills.Items.Clear();
+
+        foreach (CapabilityPill pill in d.CapabilityPills)
+        {
+            CapabilityPills.Items.Add(new Border
+            {
+                Style = (Style)Resources[pill.Accent ? "AccentCapabilityPillStyle" : "CapabilityPillStyle"],
+                Margin = new Thickness(0, 0, 6, 0),
+                Child = new TextBlock
+                {
+                    Text = pill.Label,
+                    Style = (Style)Resources[pill.Accent ? "AccentCapabilityPillTextStyle" : "CapabilityPillTextStyle"],
+                },
+            });
+        }
+    }
+
+    /// <summary>
+    /// The DOT carries the verdict's colour, not the headline: coloured body text fails contrast in some themes
+    /// and reads as an error even when the verdict is "healthy". Theme brushes rather than hardcoded colours —
+    /// the previous LimeGreen/Orange were wrong in light theme and invisible in high contrast — and looked up
+    /// defensively, so a missing key can never crash the overlay.
+    /// </summary>
+    private void RenderHealthDot(StreamHealthLevel level)
+    {
+        string brushKey = level switch
+        {
+            StreamHealthLevel.Healthy => "SystemFillColorSuccessBrush",
+            StreamHealthLevel.Warning => "SystemFillColorCautionBrush",
+            StreamHealthLevel.Critical => "SystemFillColorCriticalBrush",
+            _ => "TextFillColorSecondaryBrush",
+        };
+
+        if (Application.Current.Resources.TryGetValue(brushKey, out object? brush) && brush is Brush themed)
+        {
+            HealthDot.Fill = themed;
+        }
+    }
+
+    private static Visibility Vis(bool on) => on ? Visibility.Visible : Visibility.Collapsed;
 
     private void OnDeviceLost(int reason)
     {
@@ -771,41 +823,22 @@ public sealed partial class SessionPage : Page
 
     // ---- input ----
 
+    /// <summary>
+    /// A pad was attached or detached. The transport enum is mapped onto the portable one here because it lives
+    /// in the Windows-only input assembly; everything after that — the set, and what the label reads for none,
+    /// one or several — belongs to the view-model.
+    /// </summary>
     private void OnConnectionChanged(ControllerConnectionEvent evt)
-    {
-        _dispatcherQueue.TryEnqueue(() =>
-        {
-            // Report the ENGINE, the transport and the device id, not just "connected" — the event carries all
-            // three and they were being discarded, which made a hardware test inconclusive. Tracked as a SET,
-            // because every engine now runs at once and more than one pad can be attached.
-            if (evt.Connected)
+        => _viewModel.ApplyControllerConnection(
+            evt.ControllerId,
+            evt.Connected,
+            evt.Transport switch
             {
-                string transport = evt.Transport switch
-                {
-                    ControllerTransport.Usb => "USB",
-                    ControllerTransport.Bluetooth => "Bluetooth",
-                    _ => "transport n/a",
-                };
-
-                string engine = string.IsNullOrEmpty(evt.Source) ? "?" : evt.Source;
-                _connectedControllers[evt.ControllerId] = $"{evt.ControllerId} · {transport} · {engine}";
-            }
-            else
-            {
-                _connectedControllers.Remove(evt.ControllerId);
-            }
-
-            ControllerConnectedText.Text = _connectedControllers.Count switch
-            {
-                0 => "none attached",
-                1 => _connectedControllers.Values.First(),
-
-                // All of them, one per line: with several pads merged into one virtual controller, which devices
-                // are contributing is exactly the thing that is otherwise invisible.
-                _ => string.Join("\n", _connectedControllers.Values.Order()),
-            };
-        });
-    }
+                ControllerTransport.Usb => ControllerLink.Usb,
+                ControllerTransport.Bluetooth => ControllerLink.Bluetooth,
+                _ => ControllerLink.Unknown,
+            },
+            evt.Source);
 
     private void OnStateChanged(ControllerStateFrame frame)
     {
@@ -1051,82 +1084,27 @@ public sealed partial class SessionPage : Page
         }
     }
 
-    private string BuildDiagnosticsReport()
-    {
-        var report = new StringBuilder();
-        report.AppendLine("Ripcord diagnostics");
-        report.AppendLine($"captured           {DateTimeOffset.Now:u}");
-        report.AppendLine($"app version        {typeof(SessionPage).Assembly.GetName().Version}");
-        report.AppendLine($"os                 {Environment.OSVersion} ({RuntimeInformation.OSArchitecture})");
-        report.AppendLine();
-
-        report.AppendLine("[requested]");
-        report.AppendLine($"resolution         {_settings.Width}x{_settings.Height} @ {_settings.TargetFps}");
-        report.AppendLine($"bitrate cap        {_settings.BitrateKbps} kbps");
-        report.AppendLine($"codec              {_settings.Codec}   hdr={_settings.RequestHdr}");
-        report.AppendLine($"adaptive quality   {_settings.AdaptiveQuality}   report quality={_settings.ReportConnectionQuality}");
-        report.AppendLine($"gpu preference     {_settings.GpuPreference} (luid {_settings.GpuLuid:X})");
-        report.AppendLine($"upscale            {_settings.UpscaleMode}");
-        report.AppendLine();
-
-        report.AppendLine("[input]");
-        report.AppendLine($"source             {_controllerSource?.SourceName ?? "none"}");
-        report.AppendLine($"controller         {ControllerConnectedText.Text}");
-        report.AppendLine($"keyboard enabled   {_settings.InputBindings.KeyboardEnabled}");
-        report.AppendLine($"keys bound         {_settings.InputBindings.Keyboard.Count}");
-        report.AppendLine($"gamepad remaps     {_settings.InputBindings.GamepadRemap.Count}");
-        report.AppendLine($"exit gesture       {_settings.ExitGesture}");
-        report.AppendLine();
-
-        if (_controller is { } controller && _pipeline is { } pipeline)
-        {
-            PipelineStats s = pipeline.GetStats();
-            SessionStatistics stats = controller.LastStatistics ?? new SessionStatistics(0, 0, 0, 0, 0);
-
-            report.AppendLine("[session]");
-            report.AppendLine($"lifecycle          {controller.CurrentStatus.Lifecycle} — {controller.CurrentStatus.Detail}");
-            report.AppendLine($"reconnect attempt  {controller.CurrentStatus.ReconnectAttempt}");
-            report.AppendLine($"health             {HealthText.Text} — {HealthTipText.Text}");
-            report.AppendLine($"decoded            {s.DecodedWidth}x{s.DecodedHeight}");
-            report.AppendLine($"decoder            {s.Decoder}");
-            report.AppendLine($"decoder diagnostic {s.DecoderDiagnostic}");
-            report.AppendLine($"colour matrix      {s.ColorMatrix}");
-            report.AppendLine($"decode path        {s.DecodeMode} (2=zero-copy, 1=readback, 0=software)");
-            report.AppendLine($"audio              {s.AudioFormat}");
-            report.AppendLine($"audio frames       {s.AudioFramesDecoded} decoded, {s.AudioFramesSkipped} skipped");
-            report.AppendLine($"frames             {s.DecodedFrames} decoded, {s.PresentedFrames} presented");
-            report.AppendLine($"queues             decode {s.QueueDepth}, receive {stats.ReceiveQueueDepth}");
-            report.AppendLine($"pipeline latency   {s.PipelineLatencyMs:F1} ms");
-            report.AppendLine($"bitrate            {stats.BitrateKbps} kbps");
-            report.AppendLine($"rtt                {stats.RoundTripTimeMs:F2} ms   loss {stats.PacketLossRatio * 100:F2}%");
-            report.AppendLine($"declared link      mtu {stats.DeclaredMtu}, rtt {stats.DeclaredRttMs?.ToString("F2") ?? "not measured"}");
-            report.AppendLine($"adapter            {pipeline.ActiveAdapterDescription}");
-            report.AppendLine($"quality reason     {controller.QualityReason}");
-            report.AppendLine();
-
-            report.AppendLine("[last 30 seconds: latest / peak]");
-            report.AppendLine($"fps                {_fpsHistory.Latest:F0} / {_fpsHistory.Max():F0}");
-            report.AppendLine($"loss %             {_lossHistory.Latest:F2} / {_lossHistory.Max():F2}");
-            report.AppendLine($"rtt ms             {_rttHistory.Latest:F2} / {_rttHistory.Max():F2}");
-            report.AppendLine($"bitrate Mbps       {_bitrateHistory.Latest:F1} / {_bitrateHistory.Max():F1}");
-            report.AppendLine();
-        }
-        else
-        {
-            report.AppendLine("[session]  no live session");
-            report.AppendLine();
-        }
-
-        if (_powerMonitor?.Current is { } power)
-        {
-            report.AppendLine("[power]");
-            report.AppendLine($"source             {power.Source}   battery {power.BatteryPercent?.ToString() ?? "n/a"}");
-            report.AppendLine($"energy saver       {power.EnergySaverActive}   critical {power.BatteryCritical}");
-            report.AppendLine();
-        }
-
-        return report.ToString();
-    }
+    /// <summary>
+    /// The saved diagnostics text. The report itself is composed in <see cref="SessionDiagnosticsReport"/>; what
+    /// this supplies is the handful of facts only a Windows front end can answer.
+    /// </summary>
+    private string BuildDiagnosticsReport() => SessionDiagnosticsReport.Build(
+        DateTimeOffset.Now,
+        new DiagnosticsHostInfo(
+            AppVersion: typeof(SessionPage).Assembly.GetName().Version?.ToString() ?? "unknown",
+            OperatingSystem: $"{Environment.OSVersion} ({RuntimeInformation.OSArchitecture})",
+            InputSourceName: _controllerSource?.SourceName ?? "none",
+            Lifecycle: _controller?.CurrentStatus.Lifecycle,
+            LifecycleDetail: _controller?.CurrentStatus.Detail ?? string.Empty,
+            ReconnectAttempt: _controller?.CurrentStatus.ReconnectAttempt ?? 0),
+        _settings,
+        _viewModel.State,
+        ReadTelemetry(),
+        _pipelineStats,
+        _viewModel.FpsHistory,
+        _viewModel.LossHistory,
+        _viewModel.RttHistory,
+        _viewModel.BitrateHistory);
 
 
     /// <summary>
@@ -1145,81 +1123,6 @@ public sealed partial class SessionPage : Page
         e.Handled = _inputSource.KeyDown((int)e.Key);
     }
 
-    /// <summary>
-    /// Show a pill for each notable capability actually in use.
-    ///
-    /// <para>
-    /// Only for things that are ACTIVE and not already legible elsewhere, and never for the absence of one — an
-    /// "SDR" or "H.264" pill would turn a highlight into a scolding, and the codec is already named on the decoder
-    /// line. HDR takes the accent fill as the headline capability; the rest stay subtle so the row reads calmly.
-    /// </para>
-    ///
-    /// <para>
-    /// The flags used to be inferred by substring-matching the decoder description. That was promoted to real
-    /// booleans on <see cref="PipelineStats"/> on 2026-08-02, as this comment previously said it should be — and
-    /// it turned out not to be merely cosmetic. "PQ" appears in the description whenever the *stream* carries a
-    /// PQ transfer function, which is true even when the display is SDR and the driver is tone-mapping, so the
-    /// HDR pill lit while HDR was not in effect. Presentation inferred from prose is guessing; if the UI needs a
-    /// fact, the renderer should expose it.
-    /// </para>
-    /// </summary>
-    private void UpdateCapabilityPills(PipelineStats s)
-    {
-        string decoder = s.Decoder ?? string.Empty;
-
-        // Real flags, not substring matches. The previous version tested the description for "PQ", which is
-        // present whenever the *stream* is PQ — so the HDR pill lit even while the driver was tone-mapping to
-        // SDR on an SDR display, claiming a capability that was not in effect. IsHdrOutput is the only value
-        // that means the picture on screen is HDR.
-        bool hdr = s.IsHdrOutput;
-        bool tenBit = s.IsTenBit;
-        bool hevc = decoder.Contains("HEVC", StringComparison.OrdinalIgnoreCase);
-        bool zeroCopy = s.DecodeMode == 2;
-
-        var pills = new List<(string Label, bool Accent)>();
-        if (hdr)
-        {
-            pills.Add(("HDR", true));
-        }
-        else if (tenBit)
-        {
-            // 10-bit without PQ is still worth surfacing: it is the gradient-precision win on its own.
-            pills.Add(("10-bit", false));
-        }
-
-        if (hevc)
-        {
-            pills.Add(("HEVC", false));
-        }
-
-        if (zeroCopy)
-        {
-            pills.Add(("Zero-copy", false));
-        }
-
-        string signature = string.Join("|", pills.Select(p => p.Label + (p.Accent ? "*" : string.Empty)));
-        if (signature == _pillSignature)
-        {
-            return;
-        }
-
-        _pillSignature = signature;
-        CapabilityPills.Items.Clear();
-
-        foreach ((string label, bool accent) in pills)
-        {
-            CapabilityPills.Items.Add(new Border
-            {
-                Style = (Style)Resources[accent ? "AccentCapabilityPillStyle" : "CapabilityPillStyle"],
-                Margin = new Thickness(0, 0, 6, 0),
-                Child = new TextBlock
-                {
-                    Text = label,
-                    Style = (Style)Resources[accent ? "AccentCapabilityPillTextStyle" : "CapabilityPillTextStyle"],
-                },
-            });
-        }
-    }
 
     /// <summary>
     /// Whether a text-entry control currently has focus.
@@ -1279,216 +1182,52 @@ public sealed partial class SessionPage : Page
             ? Visibility.Collapsed
             : Visibility.Visible;
 
+    /// <summary>
+    /// One diagnostics sample.
+    ///
+    /// <para>
+    /// Deliberately does NOT require a live session. The panel is least useful when it is empty, which is
+    /// exactly while something is failing to connect — and the GPU, decoder and decode-path rows are already
+    /// meaningful before any session exists.
+    /// </para>
+    ///
+    /// <para>
+    /// Everything this used to compute — rates, thresholds, wording, which rows have anything to say — moved to
+    /// <see cref="SessionViewModel.Sample"/>. What is left is reading the two live objects and redrawing the
+    /// sparklines, which are the one part of the readout that needs a canvas.
+    /// </para>
+    /// </summary>
     private void StatsTick(object? sender, object e)
     {
-        D3D12VideoDecodePipeline? pipeline = _pipeline;
-        SessionController? controller = _controller;
-        // Deliberately does NOT require a controller. The panel is least useful when it is empty, which is exactly
-        // while something is failing to connect — and the GPU, decoder and decode-path rows are already meaningful
-        // before any session exists.
-        if (pipeline is null || DiagnosticsPanel.Visibility != Visibility.Visible)
+        if (DiagnosticsPanel.Visibility != Visibility.Visible)
         {
             return;
         }
 
-        PipelineStats s = pipeline.GetStats();
-        long nowTicks = DateTime.UtcNow.Ticks;
-        double seconds = _prevStatsTicks == 0 ? 0 : (nowTicks - _prevStatsTicks) / (double)TimeSpan.TicksPerSecond;
-
-        // Discard degenerate sampling intervals. A DispatcherTimer that has been delayed fires again almost
-        // immediately afterwards, and dividing a burst of frames by a ~37 ms gap reported 1610 fps — a figure that
-        // is not merely wrong but impossible, and it poisoned the 30-second PEAK permanently, since peak is a
-        // maximum and never decays. Skipping the sample entirely (rather than clamping it) keeps the next interval
-        // measured from the last GOOD sample, so the frames are still counted, just over an honest window.
-        if (_prevStatsTicks != 0 && seconds < MinimumSampleSeconds)
+        // False means the sample was skipped — no pipeline yet, or too little time since the last one for a rate
+        // to mean anything — so there is nothing new to plot either.
+        if (_viewModel.Sample(ReadTelemetry()))
         {
-            return;
+            RenderGraph();
         }
-        double decodeFps = seconds > 0 ? (s.DecodedFrames - _prevDecodedFrames) / seconds : 0;
-        double presentFps = seconds > 0 ? (s.PresentedFrames - _prevPresentedFrames) / seconds : 0;
-        _prevDecodedFrames = s.DecodedFrames;
-        _prevPresentedFrames = s.PresentedFrames;
-        _prevStatsTicks = nowTicks;
+    }
 
-        SessionStatistics stats = controller?.LastStatistics ?? new SessionStatistics(0, 0, 0, 0, 0);
-
-        // Headline: what is actually arriving. Resolution comes from the decoder (the console chooses it and
-        // need not honour our request), frame rate from presented frames, bitrate from bytes on the wire.
-        // "pending" and "the decoder never told us" are different problems: the second one renders a black
-        // screen while every counter looks healthy, so it must not hide behind a word that means "wait a moment".
-        string resolution = (s.DecodedWidth, s.DecodedHeight, s.DecodedFrames) switch
+    /// <summary>Everything the view-model needs from the controller and the power monitor, as plain values.</summary>
+    private SessionTelemetry ReadTelemetry()
+    {
+        if (_controller is not { } controller)
         {
-            ( > 0, > 0, _) => $"{s.DecodedWidth}×{s.DecodedHeight}",
-            (_, _, > 0) => "resolution unknown",
-            _ => "resolution pending",
-        };
-        string measuredRate = stats.BitrateKbps > 0 ? $"{stats.BitrateKbps / 1000.0:F1} Mbps" : "—";
-        string resolutionShort = resolution.StartsWith("resolution", StringComparison.Ordinal) ? "—" : resolution;
-
-        // Colour matrix belongs on the GPU line: it is a property of how we convert, and "(assumed)" is the
-        // tell that the stream never signalled one — the only way to tell a real colour bug from a guess.
-        // The already-null-checked local, not the field: teardown nulls _pipeline, so reading the field again
-        // here would be both a nullable warning and a real race against leaving the session.
-        // The adapter is a host property and lives under DEVICE. Everything about the picture itself moved to
-        // its own VIDEO group: colour used to sit under DEVICE (its own comment admitted it was a stream fact,
-        // not a host one) while the decoder row separately carried format and colour, so the same information
-        // appeared twice and neither place had all of it.
-        AdapterText.Text = pipeline.ActiveAdapterDescription;
-        ColourText.Text = string.IsNullOrEmpty(s.ColorMatrix) ? "—" : s.ColorMatrix;
-        VideoFormatText.Text = string.IsNullOrEmpty(s.VideoFormat) ? "—" : s.VideoFormat;
-        HdrOutputText.Text = string.IsNullOrEmpty(s.HdrOutput) ? "—" : s.HdrOutput;
-        HeroResolutionText.Text = resolutionShort;
-        HeroFpsText.Text = $"{presentFps:F0}";
-        HeroBitrateText.Text = stats.BitrateKbps > 0 ? $"{stats.BitrateKbps / 1000.0:F1}" : "—";
-        UpdateCapabilityPills(s);
-        // The raw counters are shown only while the decoded size is unknown — i.e. exactly when nothing is
-        // reaching the screen and the ordinary readouts all look healthy. Noise the rest of the time.
-        bool geometryUnknown = s.DecodedWidth == 0 || s.DecodedHeight == 0;
-        DecoderText.Text = string.IsNullOrEmpty(s.Decoder)
-            ? "—"
-            : geometryUnknown && !string.IsNullOrEmpty(s.DecoderDiagnostic)
-                ? $"{s.Decoder}\n{s.DecoderDiagnostic}"
-                : s.Decoder;
-
-        // Second line: what was asked for, and what the adaptive controller now wants. Showing the request
-        // alongside the measurement is what makes a shortfall legible ("I asked for 1080p and I'm getting 720p").
-        // TARGET rows. Each fact gets its own row, and the optional rows hide when they have nothing to say —
-        // the previous single paragraph concatenated request, cap, adaptive target, disposition and reason into
-        // two wrapping sentences at uniform weight.
-        RequestedText.Text = $"{_settings.Width}×{_settings.Height} @ {_settings.TargetFps}";
-
-        BitrateDecision? target = controller?.RecommendedQuality;
-        bool adaptiveDiffers = _settings.AdaptiveQuality && target is { } tq && tq.BitrateKbps != _settings.BitrateKbps;
-        if (adaptiveDiffers && target is { } t)
-        {
-            // Say what is actually transmitted. CONNECTION_QUALITY carries the target BITRATE only — it has no
-            // resolution field, and resolution is fixed by the launchSpec at session start — so a preferred
-            // resolution is reported separately as needing a reconnect rather than implied to be in effect.
-            string disposition = _settings.ReportConnectionQuality ? "sent to console" : "not sent (reporting off)";
-            string line = $"{t.BitrateKbps / 1000.0:F1} Mbps · {disposition}";
-            if (t.Width != _settings.Width || t.Height != _settings.Height || t.Fps != _settings.TargetFps)
-            {
-                line += $"\nprefers {t.Width}×{t.Height}@{t.Fps} — needs a reconnect";
-            }
-
-            AdaptiveText.Text = line;
+            return SessionTelemetry.None with { Power = _powerMonitor?.Current };
         }
 
-        AdaptiveLabel.Visibility = adaptiveDiffers ? Visibility.Visible : Visibility.Collapsed;
-        AdaptiveText.Visibility = AdaptiveLabel.Visibility;
-
-        // "why" covers both the controller's own reason and the console choosing a lower rung to fit the budget.
-        string why = adaptiveDiffers ? controller?.QualityReason ?? string.Empty : string.Empty;
-        if (s.DecodedHeight > 0 && s.DecodedHeight < _settings.Height)
-        {
-            string chose = $"console chose {s.DecodedWidth}×{s.DecodedHeight} to fit the "
-                           + $"{_settings.BitrateKbps / 1000.0:F0} Mbps cap — raise it for more";
-            why = string.IsNullOrWhiteSpace(why) ? chose : $"{why}\n{chose}";
-        }
-
-        if (s.DecodedWidth == 0 && s.DecodedFrames > 0)
-        {
-            why = "decoder reported no frame size — see the video row below";
-        }
-
-        ReasonText.Text = why;
-        ReasonLabel.Visibility = string.IsNullOrWhiteSpace(why) ? Visibility.Collapsed : Visibility.Visible;
-        ReasonText.Visibility = ReasonLabel.Visibility;
-
-        // What the senkusha bring-up measured and declared. Shown because both values used to be asserted rather
-        // than measured (mtu 1454, rtt 0), so seeing the real ones is how you know the probe ran.
-        string declaredRtt = stats.DeclaredRttMs is double d ? $"{d:F1} ms" : "not measured";
-        // "probed" vs "assumed" is the whole point of the senkusha work: one is a measurement of the real path in
-        // both directions, the other is the local interface's MTU minus an allowance.
-        LinkText.Text = stats.DeclaredMtu > 0
-            ? $"MTU {stats.DeclaredMtu} ({(stats.MtuConfirmed ? "probed" : "assumed")}) · handshake {declaredRtt}"
-            : "—";
-
-        // Headroom against the cap, which is the question two bare numbers never answered.
-        double capMbps = Math.Max(0.1, _settings.BitrateKbps / 1000.0);
-        double usedMbps = stats.BitrateKbps / 1000.0;
-        double usedFraction = Math.Clamp(usedMbps / capMbps, 0, 1);
-        HeadroomUsedColumn.Width = new GridLength(usedFraction, GridUnitType.Star);
-        HeadroomFreeColumn.Width = new GridLength(1 - usedFraction, GridUnitType.Star);
-        HeadroomText.Text = $"{usedFraction * 100:F0}% of {capMbps:F0} Mbps";
-
-        // Power state: report what the monitor actually sees, so a device cap is visibly attributable rather
-        // than looking like an unexplained quality drop.
-        PowerState? power = _powerMonitor?.Current;
-        PowerText.Text = power is null
-            ? string.Empty
-            : $"{(power.Source == PowerSource.Battery ? "battery" : "mains")}"
-              + (power.BatteryPercent is int pct ? $" {pct}%" : string.Empty)
-              + (power.EnergySaverActive ? " · energy saver" : string.Empty)
-              + (power.BatteryCritical ? " · critical" : string.Empty)
-              + (power.ThermalThrottling ? " · throttling" : string.Empty);
-
-        // Audio. The frame rate is the useful part: 480 samples at 48 kHz means ~100/s, so a figure well below
-        // that is audio falling behind, and zero is audio stopped — neither of which is audible as such.
-        double audioFps = seconds > 0 ? (s.AudioFramesDecoded - _prevAudioFrames) / seconds : 0;
-        _prevAudioFrames = s.AudioFramesDecoded;
-
-        AudioText.Text = s.AudioFramesDecoded == 0 && s.AudioFramesSkipped == 0
-            ? s.AudioFormat
-            : $"{s.AudioFormat} · {audioFps:F0}/s"
-              + (s.AudioFramesSkipped > 0 ? $" · {s.AudioFramesSkipped} skipped" : string.Empty);
-
-        string path = s.DecodeMode switch { 2 => "zero-copy", 1 => "readback", _ => "software" };
-        // PIPELINE rows. rtt and loss are deliberately absent: each has its own labelled sparkline row with a
-        // value and a peak, and repeating them here is what made this a wall of text.
-        DecodeText.Text = $"{decodeFps:F0} fps · {s.PipelineLatencyMs:F0} ms end to end";
-        QueuesText.Text = $"decode {s.QueueDepth} · receive {stats.ReceiveQueueDepth}";
-        PathText.Text = path;
-
-        if (controller is null)
-        {
-            // No session yet: the assessor's inputs are all zero, and "frame rate is below target" is a misleading
-            // thing to say about a stream that has not started.
-            HealthText.Text = "Not connected yet";
-            HealthTipText.Text = "Waiting for the session to start.";
-            return;
-        }
-
-        StreamHealthVerdict verdict = StreamHealthAssessor.Assess(new StreamHealthSignals(
-            DecodeFps: decodeFps,
-            PresentFps: presentFps,
-            TargetFps: _settings.TargetFps,
-            ReceiveQueueDepth: stats.ReceiveQueueDepth,
-            DecodeQueueDepth: s.QueueDepth,
-            PipelineLatencyMs: s.PipelineLatencyMs,
-            DecodeMode: s.DecodeMode,
-            PacketLossRatio: stats.PacketLossRatio,
-            HasReceivedFrames: controller.MillisecondsSinceLastFrame is not null,
+        return new SessionTelemetry(
+            HasSession: true,
+            Statistics: controller.LastStatistics ?? new SessionStatistics(0, 0, 0, 0, 0),
+            RecommendedQuality: controller.RecommendedQuality,
+            QualityReason: controller.QualityReason,
             MillisecondsSinceConnect: controller.MillisecondsSinceConnect,
-            MillisecondsSinceLastFrame: controller.MillisecondsSinceLastFrame ?? 0,
-            RoundTripTimeMs: stats.RoundTripTimeMs));
-
-        // Record the history *before* rendering so the newest sample is included.
-        _fpsHistory.Add(presentFps);
-        _lossHistory.Add(stats.PacketLossRatio * 100.0);
-        _rttHistory.Add(stats.RoundTripTimeMs);
-        _bitrateHistory.Add(stats.BitrateKbps / 1000.0);
-        RenderGraph();
-
-        HealthText.Text = verdict.Headline;
-        HealthTipText.Text = verdict.Tip;
-
-        // Theme brushes, not hardcoded colours: the previous LimeGreen/Orange were wrong in light theme and
-        // invisible in high contrast. Looked up defensively so a missing key can never crash the overlay.
-        string brushKey = verdict.Level switch
-        {
-            StreamHealthLevel.Healthy => "SystemFillColorSuccessBrush",
-            StreamHealthLevel.Warning => "SystemFillColorCautionBrush",
-            StreamHealthLevel.Critical => "SystemFillColorCriticalBrush",
-            _ => "TextFillColorSecondaryBrush",
-        };
-
-        // The DOT carries the colour, not the headline. Coloured body text fails contrast in some themes and
-        // reads as an error even when the verdict is "healthy"; a dot is unambiguous and always legible.
-        if (Application.Current.Resources.TryGetValue(brushKey, out object? brush) && brush is Brush themed)
-        {
-            HealthDot.Fill = themed;
-        }
+            MillisecondsSinceLastFrame: controller.MillisecondsSinceLastFrame,
+            Power: _powerMonitor?.Current);
     }
 
     /// <summary>
@@ -1498,29 +1237,35 @@ public sealed partial class SessionPage : Page
     /// </summary>
     private void RenderGraph()
     {
-        if (_fpsHistory.Count < 2)
+        MetricHistory fps = _viewModel.FpsHistory;
+        MetricHistory rtt = _viewModel.RttHistory;
+        MetricHistory loss = _viewModel.LossHistory;
+        MetricHistory bitrate = _viewModel.BitrateHistory;
+
+        if (fps.Count < 2)
         {
             return;
         }
 
         // Frame rate is scaled against the requested rate with headroom, so "at target" sits high but not
-        // clipped and a shortfall is immediately visible as a drop.
+        // clipped and a shortfall is immediately visible as a drop. The other three scales belong to the
+        // view-model, because each is derived from a threshold it already reasons about.
         double fpsFullScale = Math.Max(1, _settings.TargetFps * 1.2);
 
-        PlotSpark(FpsLine, FpsSpark, _fpsHistory, fpsFullScale);
-        PlotSpark(RttLine, RttSpark, _rttHistory, RttFullScaleMs);
-        PlotSpark(LossLine, LossSpark, _lossHistory, LossFullScalePercent);
-        PlotSpark(BitrateLine, BitrateSpark, _bitrateHistory, BitrateFullScaleMbps);
+        PlotSpark(FpsLine, FpsSpark, fps, fpsFullScale);
+        PlotSpark(RttLine, RttSpark, rtt, SessionViewModel.RttFullScaleMs);
+        PlotSpark(LossLine, LossSpark, loss, SessionViewModel.LossFullScalePercent);
+        PlotSpark(BitrateLine, BitrateSpark, bitrate, _viewModel.BitrateFullScaleMbps);
 
         // Value and peak beside each line, because a sparkline shows shape and says nothing about magnitude.
-        FpsValueText.Text = $"{_fpsHistory.Latest:F0}";
-        FpsPeakText.Text = $"{_fpsHistory.Max():F0}";
-        RttValueText.Text = $"{_rttHistory.Latest:F1} ms";
-        RttPeakText.Text = $"{_rttHistory.Max():F1}";
-        LossValueText.Text = $"{_lossHistory.Latest:F1}%";
-        LossPeakText.Text = $"{_lossHistory.Max():F1}%";
-        BitrateValueText.Text = $"{_bitrateHistory.Latest:F1}";
-        BitratePeakText.Text = $"{_bitrateHistory.Max():F1}";
+        FpsValueText.Text = $"{fps.Latest:F0}";
+        FpsPeakText.Text = $"{fps.Max():F0}";
+        RttValueText.Text = $"{rtt.Latest:F1} ms";
+        RttPeakText.Text = $"{rtt.Max():F1}";
+        LossValueText.Text = $"{loss.Latest:F1}%";
+        LossPeakText.Text = $"{loss.Max():F1}%";
+        BitrateValueText.Text = $"{bitrate.Latest:F1}";
+        BitratePeakText.Text = $"{bitrate.Max():F1}";
     }
 
     /// <summary>
@@ -1602,6 +1347,10 @@ public sealed partial class SessionPage : Page
 
         D3D12VideoDecodePipeline? pipeline = _pipeline;
         _pipeline = null;
+
+        // Detach first: a stats tick that lands mid-teardown must see "not ready" rather than a disposing device.
+        _pipelineStats.Attach(null);
+
         if (pipeline is not null)
         {
             pipeline.DeviceLost -= OnDeviceLost;
