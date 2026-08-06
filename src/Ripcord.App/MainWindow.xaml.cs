@@ -16,6 +16,7 @@ using Ripcord.Core.Input;
 using Ripcord.Core.Settings;
 using Ripcord.Input;
 using Ripcord.Presentation;
+using Ripcord_App.Input;
 using Ripcord_App.Pages;
 using Ripcord_App.Services;
 using Ripcord.Core.Reactive;
@@ -36,17 +37,24 @@ public sealed partial class MainWindow : Window, IShellNavigator
     private readonly DispatcherQueue _dispatcherQueue = DispatcherQueue.GetForCurrentThread();
     private readonly ISettingsStore _settingsStore = App.Services.Settings;
 
-    // Separate from SessionPage's own controller source: this one drives app-chrome navigation (focus movement,
-    // activating buttons), not console input passthrough — conceptually different consumers of the same pad.
-    private GameInputControllerSource? _navControllerSource;
-    private IDisposable? _navControllerSubscription;
+    /// <summary>
+    /// The app's one reader of the controller. There used to be two — a GameInput-only source here for menu
+    /// navigation and a full composite in the session page — which is why a DualSense worked in a stream and
+    /// did nothing in the menus.
+    /// </summary>
+    private readonly InputRouter _input = App.Input;
 
     /// <summary>
-    /// Turns pad frames into navigation intents — auto-repeat, deadzone and button edges. Extracted to
-    /// Ripcord.Core.Input so all of that is unit-tested against a clock rather than tried on a real pad; what
-    /// is left here is the half that genuinely needs a window, which is moving focus.
+    /// The chrome's claim on the pad, pushed for the life of the window. A stream pushes a Session scope over
+    /// it; a dialog will push a Modal scope over that.
+    ///
+    /// <para>
+    /// Its activation edge re-seeds focus, which is what makes returning from a stream land somewhere. Before
+    /// the scope stack there was no edge to hang that on — the stream simply stopped claiming the pad and
+    /// whatever had focus before was long gone.
+    /// </para>
     /// </summary>
-    private readonly NavIntentReader _navIntents = new();
+    private readonly ShellInputScope _chromeScope;
 
     public MainWindow()
     {
@@ -63,9 +71,13 @@ public sealed partial class MainWindow : Window, IShellNavigator
         RestoreBackdrop();
         AppEffects.Changed += OnEffectsChanged;
 
-        _navIntents.StickDeadzone = _settingsStore.Current.UiStickDeadzone;
         _settingsStore.Changed += s =>
-            _dispatcherQueue.TryEnqueue(() => _navIntents.StickDeadzone = s.UiStickDeadzone);
+            _dispatcherQueue.TryEnqueue(() => _input.UseDeadzone(s.UiStickDeadzone));
+
+        _chromeScope = new ShellInputScope(
+            InputScopeKind.Chrome,
+            onActivated: () => _dispatcherQueue.TryEnqueue(
+                DispatcherQueuePriority.Low, FocusFirstContentElement));
 
         ChromeFrame.Navigate(typeof(ConsolesPage));
 
@@ -74,26 +86,21 @@ public sealed partial class MainWindow : Window, IShellNavigator
         // E_UNEXPECTED) on the first D-pad press.
         ChromeFrame.Loaded += (_, _) =>
         {
-            _navControllerSource = new GameInputControllerSource();
-            _navControllerSubscription = _navControllerSource.StateChanges(string.Empty).Subscribe(
-                new AnonymousObserver<ControllerStateFrame>(OnControllerState));
+            _input.IntentReceived += OnNavIntent;
+            _input.Start();
 
-            // FocusManager.FindNextElement moves focus relative to whatever already has it; with nothing
-            // focused, directional input has no anchor and silently does nothing. A hardware arrow key goes
-            // through a different WinUI path that picks an initial target itself — this one has no such
-            // fallback, so something has to be focused before a pad can move.
-            //
-            // Posted at low priority rather than run here: this frame's Loaded fires before its content page
-            // has populated, so asking the page what to focus now gets the answer it has before it has loaded
-            // anything — which is how the first focus stop ended up on "Add console" instead of a console.
-            _dispatcherQueue.TryEnqueue(DispatcherQueuePriority.Low, FocusFirstContentElement);
+            // Pushing the chrome scope is what seeds initial focus, via its activation edge. Focus has to be
+            // somewhere before a pad can move: FindNextElement works relative to whatever already has focus,
+            // and with nothing focused directional input silently does nothing. (A hardware arrow key goes
+            // through a different WinUI path that picks its own initial target; this one has no such fallback.)
+            _input.Scopes.Push(_chromeScope);
         };
 
         Closed += (_, _) =>
         {
             AppEffects.Changed -= OnEffectsChanged;
-            _navControllerSubscription?.Dispose();
-            _navControllerSource?.Dispose();
+            _input.IntentReceived -= OnNavIntent;
+            _input.Dispose();
         };
     }
 
@@ -257,30 +264,17 @@ public sealed partial class MainWindow : Window, IShellNavigator
         }
     }
 
-    private void OnControllerState(ControllerStateFrame frame)
+    /// <summary>
+    /// Act on one navigation intent. Reached only while a non-Session scope owns the pad — the router does
+    /// that arbitration, so this no longer has to know what is in the stream layer or ask a page for a bool.
+    /// </summary>
+    private void OnNavIntent(NavIntent intent)
     {
         _dispatcherQueue.TryEnqueue(() =>
         {
             // A background input-polling handler must never be able to take the whole process down.
             try
             {
-                // A live streaming session owns the controller — SessionPage forwards input to the console.
-                // Don't let app-chrome navigation consume the same pad, or B would exit the stream instead of
-                // reaching the console. SessionPage provides its own exit gesture so this is not a trap.
-                // Reset rather than simply returning: the buttons held right now must not read as a fresh
-                // press when chrome navigation gets the pad back.
-                if (StreamFrame.Content is SessionPage { IsCapturingInput: true })
-                {
-                    _navIntents.Reset(frame);
-                    return;
-                }
-
-                NavIntent intent = _navIntents.Read(frame, DateTimeOffset.UtcNow);
-                if (intent.IsEmpty)
-                {
-                    return;
-                }
-
                 if (intent.Direction != NavDirection.None)
                 {
                     MoveFocus(intent.Direction);

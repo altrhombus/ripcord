@@ -32,6 +32,7 @@ using Ripcord.Protocol.Halyard.Common.Crypto;
 using Ripcord.Protocol.Halyard.Common.Discovery;
 using Ripcord.Protocol.Halyard.Session;
 using Ripcord_App.Dialogs;
+using Ripcord_App.Input;
 using Ripcord_App.Services;
 using WinRT;
 using Ripcord.Core.Reactive;
@@ -50,7 +51,6 @@ public sealed partial class SessionPage : Page
     private readonly ISettingsStore _settingsStore = App.Services.Settings;
 
     private RipcordSettings _settings = new();
-    private IControllerSource? _controllerSource;
 
     // Pad frames and keyboard frames merged into the single stream the session consumes. Frames are absolute
     // state, so the two sources have to be combined rather than interleaved — see MergedInputSource.
@@ -87,6 +87,19 @@ public sealed partial class SessionPage : Page
     private PairedConsole? _console;
     private IPowerThermalMonitor? _powerMonitor;
     private ExitGestureDetector? _exitDetector;
+
+    /// <summary>
+    /// This page's claim on the pad. While it is on top the router stops producing navigation intents, so the
+    /// chrome cannot consume the same buttons the console is being sent — which is what used to require the
+    /// window to ask this page for a bool on every frame.
+    ///
+    /// <para>
+    /// Its deactivation edge is the mid-session-modal fix in miniature: something pushed over this scope makes
+    /// the session release what is physically held, so the combination that opened a dialog does not stay down
+    /// inside the game underneath.
+    /// </para>
+    /// </summary>
+    private ShellInputScope? _sessionScope;
     private bool _leaving;
 
     // True while the disconnect confirmation dialog is open. Guards the await gap in LeaveSession so a second
@@ -113,13 +126,6 @@ public sealed partial class SessionPage : Page
         _viewModel.PropertyChanged += (_, _) => Render(_viewModel.State);
         Render(_viewModel.State);
     }
-
-    /// <summary>
-    /// True while controller input is being routed to the console. MainWindow's gamepad UI-navigation checks
-    /// this so it does not consume the same pad — otherwise B would navigate back instead of reaching the
-    /// console. The exit gesture (below) is what keeps that from making the stream inescapable.
-    /// </summary>
-    public bool IsCapturingInput => _controller?.CurrentStatus.IsLive == true;
 
     protected override void OnNavigatedTo(NavigationEventArgs e)
     {
@@ -176,22 +182,26 @@ public sealed partial class SessionPage : Page
         // static "Starting…" on screen with nothing reported anywhere.
         try
         {
-            _controllerSource = ControllerSourceFactory.Create();
-            InputEnginesText.Text = $"engines: {_controllerSource.SourceName}";
+            InputEnginesText.Text = $"engines: {App.Input.SourceName}";
 
-            _connectionsSubscription = _controllerSource.Connections.Subscribe(
-                new AnonymousObserver<ControllerConnectionEvent>(OnConnectionChanged));
-            _stateSubscription = _controllerSource.StateChanges(string.Empty).Subscribe(
-                new AnonymousObserver<ControllerStateFrame>(OnStateChanged));
+            if (App.Input.Connections is { } connections)
+            {
+                _connectionsSubscription = connections.Subscribe(
+                    new AnonymousObserver<ControllerConnectionEvent>(OnConnectionChanged));
+            }
 
-            // Keyboard support and the gamepad remap both live here. Built even when keyboard input is disabled, so
-            // the remap still applies to pad frames.
+            App.Input.FrameReceived += OnPadFrame;
+
+            // Keyboard support only. The gamepad remap is applied ONCE, by the router, before frames reach
+            // here — so this must be constructed with an EMPTY remap. A remap is not idempotent: applying it
+            // twice swaps a button and swaps it back, or chains A→B→C. If a bound button ever behaves as
+            // though it were unbound, this is the line to look at.
             _inputSource = new MergedInputSource(
-                _controllerSource.StateChanges(string.Empty), _settings.InputBindings);
+                pad: null,
+                _settings.InputBindings with { GamepadRemap = new Dictionary<ControllerButtons, ControllerButtons>() });
         }
         catch (Exception ex)
         {
-            _controllerSource = null;
             _inputSource = null;
             ControllerConnectedText.Text = "unavailable";
             InputEnginesText.Text = $"input failed to start: {ex.Message}";
@@ -450,6 +460,10 @@ public sealed partial class SessionPage : Page
         {
             _viewModel.ApplyLifecycle(status);
 
+            // Who owns the pad follows the session being live. This is the edge that used to be a poll: the
+            // window asked this page for a bool on every frame instead.
+            UpdateSessionScope(status.IsLive);
+
             switch (status.Lifecycle)
             {
                 case SessionLifecycle.Streaming:
@@ -587,6 +601,56 @@ public sealed partial class SessionPage : Page
     }
 
     private static Visibility Vis(bool on) => on ? Visibility.Visible : Visibility.Collapsed;
+
+    /// <summary>
+    /// Claim the pad for the console, or release it.
+    ///
+    /// <para>
+    /// Tied to the session actually being live rather than to this page existing, which preserves the previous
+    /// behaviour and is the behaviour you want: while "Connecting…" is on screen the pad should still drive the
+    /// interface, so someone can back out of a console that is not answering.
+    /// </para>
+    /// </summary>
+    private void UpdateSessionScope(bool live)
+    {
+        if (live && _sessionScope is null)
+        {
+            _sessionScope = new ShellInputScope(
+                InputScopeKind.Session,
+
+                // Forwarding resumes when this scope is on top and stops when anything covers it. Setting
+                // SuspendInputForwarding also pushes one neutral frame to the console, which is what releases
+                // whatever was physically held at that moment — the combination that opened a dialog must not
+                // stay down inside the game underneath.
+                onActivated: () => SetForwarding(true),
+                onDeactivated: () => SetForwarding(false));
+
+            App.Input.Scopes.Push(_sessionScope);
+            return;
+        }
+
+        if (!live)
+        {
+            ReleaseSessionScope();
+        }
+    }
+
+    private void ReleaseSessionScope()
+    {
+        if (_sessionScope is { } scope)
+        {
+            App.Input.Scopes.Pop(scope);
+            _sessionScope = null;
+        }
+    }
+
+    private void SetForwarding(bool on)
+    {
+        if (_controller is not null)
+        {
+            _controller.SuspendInputForwarding = !on;
+        }
+    }
 
     private void OnDeviceLost(int reason)
     {
@@ -774,13 +838,13 @@ public sealed partial class SessionPage : Page
         {
             _confirmingLeave = true;
 
-            // The prompt owns the pad while it is up: suspend forwarding so button presses drive the dialog
-            // (Disconnect / Stay connected) instead of leaking into the game behind it. Restored on every exit
-            // path below — including "Stay connected", where the session keeps running.
-            if (_controller is not null)
-            {
-                _controller.SuspendInputForwarding = true;
-            }
+            // The prompt owns the pad while it is up, expressed as a scope over the session's. That single
+            // push is what stops presses leaking into the game behind it: the session's deactivation edge
+            // suspends forwarding and releases whatever is held. Popping it restores forwarding on every exit
+            // path — including "Stay connected", where the session keeps running — with no bookkeeping of its
+            // own to get wrong.
+            var modalScope = new ShellInputScope(InputScopeKind.Modal);
+            App.Input.Scopes.Push(modalScope);
 
             try
             {
@@ -800,13 +864,7 @@ public sealed partial class SessionPage : Page
             finally
             {
                 _confirmingLeave = false;
-
-                // Resume forwarding whenever the session survives the prompt. When we go on to leave, teardown
-                // stops the pad anyway, so resuming here is harmless in that case too.
-                if (_controller is not null)
-                {
-                    _controller.SuspendInputForwarding = false;
-                }
+                App.Input.Scopes.Pop(modalScope);
             }
         }
 
@@ -850,7 +908,7 @@ public sealed partial class SessionPage : Page
             },
             evt.Source);
 
-    private void OnStateChanged(ControllerStateFrame frame)
+    private void OnPadFrame(ControllerStateFrame frame)
     {
         // Runs on the input thread. The exit gesture is evaluated here rather than in MainWindow because
         // MainWindow deliberately ignores the pad while a stream is capturing it.
@@ -1103,7 +1161,7 @@ public sealed partial class SessionPage : Page
         new DiagnosticsHostInfo(
             AppVersion: typeof(SessionPage).Assembly.GetName().Version?.ToString() ?? "unknown",
             OperatingSystem: $"{Environment.OSVersion} ({RuntimeInformation.OSArchitecture})",
-            InputSourceName: _controllerSource?.SourceName ?? "none",
+            InputSourceName: App.Input.SourceName,
             Lifecycle: _controller?.CurrentStatus.Lifecycle,
             LifecycleDetail: _controller?.CurrentStatus.Detail ?? string.Empty,
             ReconnectAttempt: _controller?.CurrentStatus.ReconnectAttempt ?? 0),
@@ -1349,10 +1407,11 @@ public sealed partial class SessionPage : Page
             window.Activated -= OnWindowActivated;
         }
 
+        App.Input.FrameReceived -= OnPadFrame;
+        ReleaseSessionScope();
+
         _inputSource?.Dispose();
         _inputSource = null;
-        (_controllerSource as IDisposable)?.Dispose();
-        _controllerSource = null;
 
         LeaveImmersiveMode();
 

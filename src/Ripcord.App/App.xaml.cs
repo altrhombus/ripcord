@@ -5,6 +5,7 @@ using Microsoft.UI.Xaml;
 using Ripcord.Core.Platform;
 using Ripcord.Presentation;
 using Ripcord.Presentation.Halyard;
+using Ripcord_App.Input;
 using Ripcord_App.Services;
 using Ripcord_App.Threading;
 
@@ -18,6 +19,7 @@ public partial class App : Application
     private Window? _window;
 
     private static RipcordAppServices? _services;
+    private static InputRouter? _input;
 
     /// <summary>
     /// The main window. Kept for the two things that genuinely need the WinUI <see cref="Window"/> itself —
@@ -39,6 +41,19 @@ public partial class App : Application
     /// </summary>
     public static RipcordAppServices Services => _services ?? throw new InvalidOperationException(
         "RipcordAppServices was requested before App.OnLaunched built it.");
+
+    /// <summary>
+    /// The app's single reader of the controller, and the arbiter of which surface owns it.
+    ///
+    /// <para>
+    /// Alongside the services graph rather than inside it: the graph is portable and this is not — it reaches
+    /// GameInput and DualSense HID through Ripcord.Input, which targets Windows. Constructed here so its
+    /// lifetime matches the app's; note that it does not start reading until a window asks it to, because
+    /// building a GameInput component before window content exists has crashed natively before.
+    /// </para>
+    /// </summary>
+    public static InputRouter Input => _input ?? throw new InvalidOperationException(
+        "InputRouter was requested before App.OnLaunched built it.");
 
     /// <summary>Full text of the most recent unhandled exception, for the diagnostics UI to surface.</summary>
     public static string? LastCrashReport { get; private set; }
@@ -67,6 +82,8 @@ public partial class App : Application
         _services = HalyardAppServices.Create(
             new DispatcherQueueUiDispatcher(uiThread),
             new NativeVideoCapabilitiesProbe());
+
+        _input = new InputRouter(_services.Settings);
 
         var window = new MainWindow();
         _services.AttachShell(window);
