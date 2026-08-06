@@ -46,7 +46,11 @@ public class SettingsViewModelTests
 
         public int AdapterEnumerations { get; private set; }
 
+        public bool HardwareDecode { get; set; } = true;
+
         public Task<bool> IsHevcDecodeAvailableAsync() => HevcFault is null ? Task.FromResult(Hevc) : throw HevcFault;
+
+        public Task<bool> IsHardwareDecodeSupportedAsync() => Task.FromResult(HardwareDecode);
 
         public Task<bool> IsHdrDisplayAvailableAsync() => Task.FromResult(HdrDisplay);
 

@@ -59,6 +59,13 @@ public sealed class RipcordAppServices
     public required IConsoleWakeCoordinator WakeCoordinator { get; init; }
 
     /// <summary>
+    /// What this machine's graphics stack can do. In the graph rather than constructed per surface because two
+    /// surfaces ask (settings and about), and one of them asking differently is exactly how the UI-thread crash
+    /// happened — see <see cref="IVideoCapabilitiesProbe"/>.
+    /// </summary>
+    public required IVideoCapabilitiesProbe VideoCapabilities { get; init; }
+
+    /// <summary>
     /// The shell, once the front end has one.
     ///
     /// <para>
@@ -110,10 +117,6 @@ public sealed class RipcordAppServices
     public SessionViewModel CreateSessionViewModel(IVideoPipelineStats pipeline)
         => new(pipeline, Settings.Current, Dispatcher);
 
-    /// <summary>
-    /// Build the settings surface's view-model. Like the pipeline above, the capability probe comes from the
-    /// caller: what a machine can decode is a fact about the front end's own graphics stack.
-    /// </summary>
-    public SettingsViewModel CreateSettingsViewModel(IVideoCapabilitiesProbe capabilities)
-        => new(Settings, Consoles, capabilities, Dispatcher);
+    public SettingsViewModel CreateSettingsViewModel()
+        => new(Settings, Consoles, VideoCapabilities, Dispatcher);
 }

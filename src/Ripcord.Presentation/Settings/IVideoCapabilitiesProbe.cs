@@ -48,6 +48,12 @@ public interface IVideoCapabilitiesProbe
     Task<bool> IsHevcDecodeAvailableAsync();
 
     /// <summary>
+    /// Whether hardware video decoding is available at all. False means streaming falls back to the CPU, which
+    /// works and costs far more power — a fact to report, not a failure.
+    /// </summary>
+    Task<bool> IsHardwareDecodeSupportedAsync();
+
+    /// <summary>
     /// Whether the display is in HDR mode. True only while Windows' "Use HDR" is actually on, so this doubles
     /// as a check of the OS setting — the part users most often miss.
     /// </summary>

@@ -5,6 +5,7 @@ using Microsoft.UI.Xaml;
 using Ripcord.Core.Platform;
 using Ripcord.Presentation;
 using Ripcord.Presentation.Halyard;
+using Ripcord_App.Services;
 using Ripcord_App.Threading;
 
 namespace Ripcord_App;
@@ -58,7 +59,8 @@ public partial class App : Application
         // page it can navigate to resolves from here before its InitializeComponent runs, so there is no ordering
         // in which a partially-built graph is observable.
         _services = HalyardAppServices.Create(
-            new DispatcherQueueUiDispatcher(DispatcherQueue.GetForCurrentThread()));
+            new DispatcherQueueUiDispatcher(DispatcherQueue.GetForCurrentThread()),
+            new NativeVideoCapabilitiesProbe());
 
         var window = new MainWindow();
         _services.AttachShell(window);
