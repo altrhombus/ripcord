@@ -10,14 +10,6 @@
     mc:Ignorable="d">
 
     <Page.Resources>
-        <!--  A settings row: label + description on the left, control on the right.  -->
-        <Style x:Key="SettingsCardStyle" TargetType="Border">
-            <Setter Property="Background" Value="{ThemeResource CardBackgroundFillColorDefaultBrush}" />
-            <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}" />
-            <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="CornerRadius" Value="8" />
-            <Setter Property="Padding" Value="16,12" />
-        </Style>
         <!--
             BasedOn, not a Setter for Style: setting the Style property from inside a Style is invalid XAML and
             throws when the page is parsed — which took the whole app down on navigation rather than failing
@@ -38,7 +30,7 @@
             <!--  ============ Video ============  -->
             <TextBlock Style="{StaticResource GroupHeaderStyle}" Text="Video" />
 
-            <Border Style="{StaticResource SettingsCardStyle}">
+            <Border Style="{StaticResource RipcordRowCardStyle}">
                 <Grid ColumnSpacing="16">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
@@ -61,7 +53,7 @@
                 </Grid>
             </Border>
 
-            <Border Style="{StaticResource SettingsCardStyle}">
+            <Border Style="{StaticResource RipcordRowCardStyle}">
                 <StackPanel Spacing="8">
                     <Grid ColumnSpacing="16">
                         <Grid.ColumnDefinitions>
@@ -91,7 +83,7 @@
                 </StackPanel>
             </Border>
 
-            <Border Style="{StaticResource SettingsCardStyle}">
+            <Border Style="{StaticResource RipcordRowCardStyle}">
                 <Grid ColumnSpacing="16">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
@@ -113,7 +105,7 @@
                 </Grid>
             </Border>
 
-            <Border Style="{StaticResource SettingsCardStyle}">
+            <Border Style="{StaticResource RipcordRowCardStyle}">
                 <Grid ColumnSpacing="16">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
@@ -136,7 +128,7 @@
                 </Grid>
             </Border>
 
-            <Border Style="{StaticResource SettingsCardStyle}">
+            <Border Style="{StaticResource RipcordRowCardStyle}">
                 <Grid ColumnSpacing="16">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
@@ -161,7 +153,7 @@
             <!--  ============ Graphics device ============  -->
             <TextBlock Style="{StaticResource GroupHeaderStyle}" Text="Graphics device" />
 
-            <Border Style="{StaticResource SettingsCardStyle}">
+            <Border Style="{StaticResource RipcordRowCardStyle}">
                 <StackPanel Spacing="8">
                     <Grid ColumnSpacing="16">
                         <Grid.ColumnDefinitions>
@@ -267,7 +259,7 @@
             <!--  ============ Controls ============  -->
             <TextBlock Style="{StaticResource GroupHeaderStyle}" Text="Controls" />
 
-            <Border Style="{StaticResource SettingsCardStyle}">
+            <Border Style="{StaticResource RipcordRowCardStyle}">
                 <Grid ColumnSpacing="16">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
@@ -290,7 +282,7 @@
                 </Grid>
             </Border>
 
-            <Border Style="{StaticResource SettingsCardStyle}">
+            <Border Style="{StaticResource RipcordRowCardStyle}">
                 <StackPanel Spacing="8">
                     <Grid ColumnSpacing="16">
                         <Grid.ColumnDefinitions>
@@ -323,7 +315,7 @@
             <!--  ============ Display ============  -->
             <TextBlock Style="{StaticResource GroupHeaderStyle}" Text="Display" />
 
-            <Border Style="{StaticResource SettingsCardStyle}">
+            <Border Style="{StaticResource RipcordRowCardStyle}">
                 <Grid ColumnSpacing="16">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
@@ -345,7 +337,7 @@
                 </Grid>
             </Border>
 
-            <Border Style="{StaticResource SettingsCardStyle}">
+            <Border Style="{StaticResource RipcordRowCardStyle}">
                 <Grid ColumnSpacing="16">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
@@ -367,7 +359,7 @@
                 </Grid>
             </Border>
 
-            <Border Style="{StaticResource SettingsCardStyle}">
+            <Border Style="{StaticResource RipcordRowCardStyle}">
                 <Grid ColumnSpacing="16">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
@@ -389,7 +381,7 @@
                 </Grid>
             </Border>
 
-            <Border Style="{StaticResource SettingsCardStyle}">
+            <Border Style="{StaticResource RipcordRowCardStyle}">
                 <Grid ColumnSpacing="16">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
@@ -411,7 +403,7 @@
                 </Grid>
             </Border>
 
-            <Border Style="{StaticResource SettingsCardStyle}">
+            <Border Style="{StaticResource RipcordRowCardStyle}">
                 <Grid ColumnSpacing="16">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />

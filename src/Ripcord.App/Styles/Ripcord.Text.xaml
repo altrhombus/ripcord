@@ -67,4 +67,79 @@
         <Setter Property="Foreground" Value="{ThemeResource TextOnAccentFillColorPrimaryBrush}" />
     </Style>
 
+    <!--
+        ================================================================================================
+        Label/value rows
+
+        Two sizes, because there are two audiences and the difference is not decoration.
+
+        The DETAIL pair is body-sized, for facts a person reads once and may need to copy — the About
+        page's device table. The INSTRUMENT pair is caption-sized, for a dense readout scanned at a
+        glance while something else has the attention: the diagnostics overlay.
+
+        They were previously two page-local pairs sharing the names RowLabelStyle and RowValueStyle, in
+        AboutPage and SessionPage, with entirely different definitions. That is worse than duplication —
+        identical names for different things means neither page can be read without checking which one
+        you are in, and moving markup between them silently restyles it.
+        ================================================================================================
+    -->
+    <!--
+        These two carry a Margin, which the rhythm rule otherwise forbids, and the distinction is worth stating
+        because it decides every future case: this is CELL INSET, not spacing between siblings. A XAML Grid has
+        no per-cell padding, so a table cell's inset has literally nowhere else to live — whereas rhythm between
+        siblings always has a container that can express it, which is why it must.
+    -->
+    <Style
+        x:Key="RipcordDetailLabelStyle"
+        BasedOn="{StaticResource BodyTextBlockStyle}"
+        TargetType="TextBlock">
+        <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
+        <Setter Property="Margin" Value="16,11,16,11" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+
+    <Style
+        x:Key="RipcordDetailValueStyle"
+        BasedOn="{StaticResource BodyTextBlockStyle}"
+        TargetType="TextBlock">
+        <Setter Property="Margin" Value="0,11,16,11" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="TextWrapping" Value="Wrap" />
+
+        <!--  Selectable because the whole point of the device table is pasting it into a bug report.  -->
+        <Setter Property="IsTextSelectionEnabled" Value="True" />
+    </Style>
+
+    <Style
+        x:Key="RipcordInstrumentLabelStyle"
+        BasedOn="{StaticResource CaptionTextBlockStyle}"
+        TargetType="TextBlock">
+        <Setter Property="Foreground" Value="{ThemeResource TextFillColorTertiaryBrush}" />
+
+        <!--  Top, not centre: a wrapped value must not drag its label down the row.  -->
+        <Setter Property="VerticalAlignment" Value="Top" />
+    </Style>
+
+    <Style
+        x:Key="RipcordInstrumentValueStyle"
+        BasedOn="{StaticResource CaptionTextBlockStyle}"
+        TargetType="TextBlock">
+        <Setter Property="Foreground" Value="{ThemeResource TextFillColorPrimaryBrush}" />
+        <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+
+    <!--
+        A group label inside an instrument panel — the diagnostics overlay's DEVICE / VIDEO / LINK rules.
+        Distinct from the section header above: that one titles a page's content at body weight, this one
+        divides a dense readout and is deliberately quieter than the values it introduces, which is what the
+        wide tracking buys.
+    -->
+    <Style
+        x:Key="RipcordInstrumentGroupStyle"
+        BasedOn="{StaticResource CaptionTextBlockStyle}"
+        TargetType="TextBlock">
+        <Setter Property="Foreground" Value="{ThemeResource TextFillColorTertiaryBrush}" />
+        <Setter Property="CharacterSpacing" Value="80" />
+    </Style>
+
 </ResourceDictionary>

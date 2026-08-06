@@ -10,23 +10,6 @@
     mc:Ignorable="d">
 
     <Page.Resources>
-        <!--  A small rounded label for a single fact: version, licence.  -->
-        <Style x:Key="ChipStyle" TargetType="Border">
-            <Setter Property="Background" Value="{ThemeResource ControlFillColorDefaultBrush}" />
-            <Setter Property="BorderBrush" Value="{ThemeResource ControlStrokeColorDefaultBrush}" />
-            <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="CornerRadius" Value="10" />
-            <Setter Property="Padding" Value="10,2" />
-            <Setter Property="VerticalAlignment" Value="Center" />
-        </Style>
-
-        <Style x:Key="CardStyle" TargetType="Border">
-            <Setter Property="Background" Value="{ThemeResource CardBackgroundFillColorDefaultBrush}" />
-            <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}" />
-            <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="CornerRadius" Value="8" />
-        </Style>
-
         <Style
             x:Key="SectionHeaderStyle"
             BasedOn="{StaticResource BodyStrongTextBlockStyle}"
@@ -35,40 +18,13 @@
             <Setter Property="VerticalAlignment" Value="Center" />
         </Style>
 
-        <!--
-            The device table is one Grid rather than a card per row so the labels line up in a single column
-            whatever their length — including at the larger text size the Display settings offer.
-        -->
-        <Style
-            x:Key="RowLabelStyle"
-            BasedOn="{StaticResource BodyTextBlockStyle}"
-            TargetType="TextBlock">
-            <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
-            <Setter Property="Margin" Value="16,11,16,11" />
-            <Setter Property="VerticalAlignment" Value="Center" />
-        </Style>
-
-        <Style
-            x:Key="RowValueStyle"
-            BasedOn="{StaticResource BodyTextBlockStyle}"
-            TargetType="TextBlock">
-            <Setter Property="Margin" Value="0,11,16,11" />
-            <Setter Property="VerticalAlignment" Value="Center" />
-            <Setter Property="TextWrapping" Value="Wrap" />
-            <Setter Property="IsTextSelectionEnabled" Value="True" />
-        </Style>
-
-        <Style x:Key="RowDividerStyle" TargetType="Border">
-            <Setter Property="Height" Value="1" />
-            <Setter Property="Background" Value="{ThemeResource DividerStrokeColorDefaultBrush}" />
-        </Style>
     </Page.Resources>
 
     <ScrollViewer Padding="24,16,24,32">
         <StackPanel MaxWidth="820" Spacing="8">
 
             <!--  ============ Identity ============  -->
-            <Border Style="{StaticResource CardStyle}" CornerRadius="12">
+            <Border Style="{StaticResource RipcordCardStyle}" CornerRadius="12">
                 <Grid>
                     <!--
                         A wash of the user's accent colour, kept at low opacity so it reads as a tint over Mica
@@ -169,13 +125,13 @@
                                 Margin="0,6,0,0"
                                 Orientation="Horizontal"
                                 Spacing="8">
-                                <Border Style="{StaticResource ChipStyle}">
+                                <Border Style="{StaticResource RipcordChipStyle}">
                                     <TextBlock
                                         x:Name="VersionText"
                                         Style="{StaticResource CaptionTextBlockStyle}"
                                         Text="Version" />
                                 </Border>
-                                <Border Style="{StaticResource ChipStyle}">
+                                <Border Style="{StaticResource RipcordChipStyle}">
                                     <TextBlock
                                         Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                         Style="{StaticResource CaptionTextBlockStyle}"
@@ -247,7 +203,7 @@
                 </Button>
             </Grid>
 
-            <Border Margin="0,6,0,0" Style="{StaticResource CardStyle}">
+            <Border Margin="0,6,0,0" Style="{StaticResource RipcordCardStyle}">
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto" MinWidth="150" />
@@ -267,51 +223,51 @@
                         <RowDefinition Height="Auto" />
                     </Grid.RowDefinitions>
 
-                    <TextBlock Style="{StaticResource RowLabelStyle}" Text="Windows" />
+                    <TextBlock Style="{StaticResource RipcordDetailLabelStyle}" Text="Windows" />
                     <TextBlock
                         x:Name="WindowsText"
                         Grid.Column="1"
-                        Style="{StaticResource RowValueStyle}" />
+                        Style="{StaticResource RipcordDetailValueStyle}" />
 
                     <Border
                         Grid.Row="1"
                         Grid.ColumnSpan="2"
-                        Style="{StaticResource RowDividerStyle}" />
+                        Style="{StaticResource RipcordRowDividerStyle}" />
 
                     <TextBlock
                         Grid.Row="2"
-                        Style="{StaticResource RowLabelStyle}"
+                        Style="{StaticResource RipcordDetailLabelStyle}"
                         Text="Runtime" />
                     <TextBlock
                         x:Name="RuntimeText"
                         Grid.Row="2"
                         Grid.Column="1"
-                        Style="{StaticResource RowValueStyle}" />
+                        Style="{StaticResource RipcordDetailValueStyle}" />
 
                     <Border
                         Grid.Row="3"
                         Grid.ColumnSpan="2"
-                        Style="{StaticResource RowDividerStyle}" />
+                        Style="{StaticResource RipcordRowDividerStyle}" />
 
                     <TextBlock
                         Grid.Row="4"
-                        Style="{StaticResource RowLabelStyle}"
+                        Style="{StaticResource RipcordDetailLabelStyle}"
                         Text="Graphics" />
                     <TextBlock
                         x:Name="GraphicsText"
                         Grid.Row="4"
                         Grid.Column="1"
-                        Style="{StaticResource RowValueStyle}"
+                        Style="{StaticResource RipcordDetailValueStyle}"
                         Text="Checking…" />
 
                     <Border
                         Grid.Row="5"
                         Grid.ColumnSpan="2"
-                        Style="{StaticResource RowDividerStyle}" />
+                        Style="{StaticResource RipcordRowDividerStyle}" />
 
                     <TextBlock
                         Grid.Row="6"
-                        Style="{StaticResource RowLabelStyle}"
+                        Style="{StaticResource RipcordDetailLabelStyle}"
                         Text="Video decoding" />
                     <StackPanel
                         Grid.Row="6"
@@ -347,11 +303,11 @@
                     <Border
                         Grid.Row="7"
                         Grid.ColumnSpan="2"
-                        Style="{StaticResource RowDividerStyle}" />
+                        Style="{StaticResource RipcordRowDividerStyle}" />
 
                     <TextBlock
                         Grid.Row="8"
-                        Style="{StaticResource RowLabelStyle}"
+                        Style="{StaticResource RipcordDetailLabelStyle}"
                         Text="HEVC" />
                     <Border
                         x:Name="HevcPill"
@@ -377,11 +333,11 @@
                     <Border
                         Grid.Row="9"
                         Grid.ColumnSpan="2"
-                        Style="{StaticResource RowDividerStyle}" />
+                        Style="{StaticResource RipcordRowDividerStyle}" />
 
                     <TextBlock
                         Grid.Row="10"
-                        Style="{StaticResource RowLabelStyle}"
+                        Style="{StaticResource RipcordDetailLabelStyle}"
                         Text="Settings folder" />
                     <Grid
                         Grid.Row="10"
@@ -393,7 +349,7 @@
                         </Grid.ColumnDefinitions>
                         <TextBlock
                             x:Name="ConfigPathText"
-                            Style="{StaticResource RowValueStyle}"
+                            Style="{StaticResource RipcordDetailValueStyle}"
                             Margin="0,11,0,11" />
                         <Button
                             x:Name="OpenConfigButton"
@@ -411,7 +367,7 @@
             <!--  ============ Provenance ============  -->
             <TextBlock Style="{StaticResource SectionHeaderStyle}" Text="About this project" />
 
-            <Border Margin="0,6,0,0" Padding="16,14" Style="{StaticResource CardStyle}">
+            <Border Margin="0,6,0,0" Padding="16,14" Style="{StaticResource RipcordCardStyle}">
                 <Grid ColumnSpacing="14">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto" />
