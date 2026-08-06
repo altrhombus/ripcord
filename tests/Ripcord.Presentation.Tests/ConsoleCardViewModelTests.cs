@@ -48,7 +48,7 @@ public class ConsoleCardViewModelTests
         ConsoleCardState s = card.State;
         Assert.Equal("Ready", s.StatusLabel);
         Assert.Equal(StatusTone.Positive, s.StatusTone);
-        Assert.Equal("Connect", s.PrimaryActionLabel);
+        Assert.Equal("Play", s.PrimaryActionLabel);
         Assert.Equal(ActionGlyph.Play, s.ActionGlyph);
         Assert.True(s.CanConnect);
         Assert.False(s.IsChecking);
@@ -67,7 +67,7 @@ public class ConsoleCardViewModelTests
         ConsoleCardState s = card.State;
         Assert.Equal(label, s.StatusLabel);
         Assert.Equal(StatusTone.Caution, s.StatusTone);
-        Assert.Equal("Wake & connect", s.PrimaryActionLabel);
+        Assert.Equal("Wake & play", s.PrimaryActionLabel);
         Assert.Equal(ActionGlyph.Wake, s.ActionGlyph);
         Assert.True(s.CanConnect);
     }
@@ -77,14 +77,14 @@ public class ConsoleCardViewModelTests
     {
         // A powered-off console is a normal state, not an error: a Critical tone here would cry wolf every time
         // someone turns their console off. The glyph stays Play because the card is already dimmed and already
-        // says "Not reachable" — an error icon would add a third claim of fault to a non-fault.
+        // says "Can't reach it" — an error icon would add a third claim of fault to a non-fault.
         var card = NewCard();
         card.Reachability = ConsoleReachability.Offline;
 
         ConsoleCardState s = card.State;
         Assert.Equal("Offline", s.StatusLabel);
         Assert.Equal(StatusTone.Neutral, s.StatusTone);
-        Assert.Equal("Not reachable", s.PrimaryActionLabel);
+        Assert.Equal("Can't reach it", s.PrimaryActionLabel);
         Assert.Equal(ActionGlyph.Play, s.ActionGlyph);
         Assert.False(s.CanConnect);
     }
@@ -100,8 +100,10 @@ public class ConsoleCardViewModelTests
             card.Reachability = reachability;
             ConsoleCardState s = card.State;
 
-            bool actionOffersConnect = s.PrimaryActionLabel.Contains("connect", StringComparison.OrdinalIgnoreCase);
-            Assert.Equal(s.CanConnect, actionOffersConnect);
+            // "play" rather than "connect" since the labels took the player's verb: Play / Wake & play, against
+            // "Can't reach it" for the one state that offers nothing.
+            bool actionOffersPlay = s.PrimaryActionLabel.Contains("play", StringComparison.OrdinalIgnoreCase);
+            Assert.Equal(s.CanConnect, actionOffersPlay);
         }
     }
 
@@ -124,7 +126,7 @@ public class ConsoleCardViewModelTests
         var card = NewCard(Console(nickname: "Front room"));
         card.Reachability = ConsoleReachability.Resting;
 
-        Assert.Equal("Front room, PS5, Rest mode. Wake & connect", card.State.AutomationName);
+        Assert.Equal("Front room, PS5, Rest mode. Wake & play", card.State.AutomationName);
     }
 
     [Fact]
