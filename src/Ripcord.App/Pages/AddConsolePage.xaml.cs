@@ -1,13 +1,11 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Navigation;
-using Ripcord.Core.Consoles;
+using Ripcord.Presentation;
 using Ripcord.Presentation.Consoles;
-using Ripcord.Presentation.Halyard.Pairing;
 using Ripcord.Presentation.Pairing;
 using Ripcord_App.Accents;
 using Ripcord_App.Controls;
-using Ripcord_App.Threading;
 
 namespace Ripcord_App.Pages;
 
@@ -22,6 +20,7 @@ namespace Ripcord_App.Pages;
 /// </summary>
 public sealed partial class AddConsolePage : Page
 {
+    private readonly RipcordAppServices _services;
     private readonly AddConsoleFlow _flow;
 
     // Guards against a second navigation if Completed were ever raised twice.
@@ -32,13 +31,13 @@ public sealed partial class AddConsolePage : Page
 
     public AddConsolePage()
     {
-        InitializeComponent();
+        // Resolved BEFORE InitializeComponent — see ConsolesPage. This page previously named the scanner, the
+        // registrar and the store directly, which is why pairing could not be pointed at anything but the real
+        // network.
+        _services = App.Services;
+        _flow = _services.CreateAddConsoleFlow();
 
-        _flow = new AddConsoleFlow(
-            new HalyardConsoleScanner(),
-            new HalyardConsoleRegistrar(),
-            new PairedConsoleStore(),
-            new DispatcherQueueUiDispatcher(DispatcherQueue));
+        InitializeComponent();
 
         _flow.PropertyChanged += (_, _) => Render(_flow.State);
         _flow.Completed += OnFlowCompleted;
@@ -285,9 +284,9 @@ public sealed partial class AddConsolePage : Page
             Frame.GoBack();
         }
 
-        if (completion.ConnectNow && App.MainWindow is MainWindow main)
+        if (completion.ConnectNow)
         {
-            main.ShowStream(completion.Console);
+            _services.Shell.ShowStream(completion.Console);
         }
     }
 }

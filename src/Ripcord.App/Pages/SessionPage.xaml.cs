@@ -25,6 +25,7 @@ using Ripcord.Core.Settings;
 using Ripcord.Diagnostics;
 using Ripcord.Input;
 using Ripcord.Media;
+using Ripcord.Presentation;
 using Ripcord.Core.Security;
 using Ripcord.Protocol.Halyard.Common.Crypto;
 using Ripcord.Protocol.Halyard.Common.Discovery;
@@ -44,7 +45,8 @@ namespace Ripcord_App.Pages;
 public sealed partial class SessionPage : Page
 {
     private readonly DispatcherQueue _dispatcherQueue = DispatcherQueue.GetForCurrentThread();
-    private readonly ISettingsStore _settingsStore = new SettingsStore();
+    private readonly RipcordAppServices _services = App.Services;
+    private readonly ISettingsStore _settingsStore = App.Services.Settings;
 
     private RipcordSettings _settings = new();
     private IControllerSource? _controllerSource;
@@ -294,7 +296,7 @@ public sealed partial class SessionPage : Page
         _statsTimer.Start();
 
         var secrets = HalyardControlSecretsLoader.Load(out string cryptoSource);
-        var factory = new HalyardSessionFactory(secrets, new PairedConsoleCredentialStore(new PairedConsoleStore()));
+        var factory = new HalyardSessionFactory(secrets, new PairedConsoleCredentialStore(_services.Consoles));
         if (!factory.HasRealCrypto)
         {
             // FATAL, and it must say so. Without the control secrets the session crypto is a passthrough stub, so
@@ -310,7 +312,7 @@ public sealed partial class SessionPage : Page
                 "Streaming needs the protocol's control-plane constants, which are normally bundled with the "
                 + "build. This build either omitted them (BundleInteropConstants=false) or has a broken "
                 + $"override. To supply them explicitly, put control_crypto_vectors.json in "
-                + $"{new DefaultPlatformPaths().ConfigDirectory} or point RIPCORD_CONTROL_FIXTURE at it, then "
+                + $"{_services.Paths.ConfigDirectory} or point RIPCORD_CONTROL_FIXTURE at it, then "
                 + $"reconnect.\n\nDetail: {cryptoSource}",
                 terminal: true);
             return;
@@ -535,8 +537,8 @@ public sealed partial class SessionPage : Page
 
     // ---- immersive mode ----
 
-    /// <summary>The hosting window, which owns presenter and chrome decisions a Page cannot make.</summary>
-    private static MainWindow? Host => App.MainWindow as MainWindow;
+    /// <summary>The shell, which owns presenter and chrome decisions a Page cannot make.</summary>
+    private IShellNavigator Shell => _services.Shell;
 
     /// <summary>
     /// Fullscreen with the chrome out of the way, and the display kept awake. A remote play stream is the whole
@@ -549,7 +551,7 @@ public sealed partial class SessionPage : Page
 
         if (_settings.FullScreenOnConnect && !_enteredFullScreen)
         {
-            Host?.SetFullScreen(true);
+            Shell.SetFullScreen(true);
             _enteredFullScreen = true;
         }
     }
@@ -560,7 +562,7 @@ public sealed partial class SessionPage : Page
 
         if (_enteredFullScreen)
         {
-            Host?.SetFullScreen(false);
+            Shell.SetFullScreen(false);
             _enteredFullScreen = false;
         }
     }
@@ -568,13 +570,8 @@ public sealed partial class SessionPage : Page
     /// <summary>Toggle fullscreen without disturbing the session. Bound to F11.</summary>
     private void ToggleFullScreen()
     {
-        if (Host is not { } host)
-        {
-            return;
-        }
-
-        bool goingFullScreen = !host.IsFullScreen;
-        host.SetFullScreen(goingFullScreen);
+        bool goingFullScreen = !Shell.IsFullScreen;
+        Shell.SetFullScreen(goingFullScreen);
         _enteredFullScreen = goingFullScreen;
     }
 
@@ -653,7 +650,7 @@ public sealed partial class SessionPage : Page
     {
         args.Handled = true;
 
-        if (Host is { IsFullScreen: true })
+        if (Shell.IsFullScreen)
         {
             LeaveImmersiveMode();
             ShowWindowedHintBriefly();
@@ -769,7 +766,7 @@ public sealed partial class SessionPage : Page
         LeaveImmersiveMode();
         // Hand the console and the rest-on-disconnect intent to the window so the consoles list can re-probe
         // and, if we asked this console to rest, watch it settle.
-        Host?.CloseStream(_console?.Host, restMode);
+        Shell.CloseStream(_console?.Host, restMode);
     }
 
     // ---- input ----
@@ -1033,7 +1030,7 @@ public sealed partial class SessionPage : Page
     {
         try
         {
-            string directory = new DefaultPlatformPaths().StateDirectory;
+            string directory = _services.Paths.StateDirectory;
 
             // Timestamped rather than overwritten: comparing two runs is the usual reason to capture one, and a
             // single rolling file makes that impossible.
