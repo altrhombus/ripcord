@@ -20,13 +20,29 @@ public enum NavDirection
 /// </param>
 /// <param name="Accept">The South button was pressed this frame — activate whatever has focus.</param>
 /// <param name="Back">The East button was pressed this frame.</param>
-public readonly record struct NavIntent(NavDirection Direction, bool Accept, bool Back)
+/// <param name="Context">
+/// The North button was pressed — open the focused item's context menu. A pad has no right-click and no menu
+/// key, so without this the secondary actions on a console card are reachable only by aiming a pointer at a
+/// 32-pixel overflow button.
+/// </param>
+/// <param name="Scroll">
+/// Right-stick deflection, -1..1, positive meaning "scroll up". Analog and continuous rather than a discrete
+/// step, and deliberately NOT subject to auto-repeat: a scroll that ticked at the repeat cadence would feel
+/// like a ratchet where the hardware is offering a rate.
+/// </param>
+public readonly record struct NavIntent(
+    NavDirection Direction,
+    bool Accept,
+    bool Back,
+    bool Context = false,
+    float Scroll = 0)
 {
     /// <summary>Nothing to do this frame.</summary>
     public static NavIntent None { get; }
 
     /// <summary>True when this frame asks for anything at all, so a caller can return early.</summary>
-    public bool IsEmpty => Direction == NavDirection.None && !Accept && !Back;
+    public bool IsEmpty
+        => Direction == NavDirection.None && !Accept && !Back && !Context && Scroll == 0;
 }
 
 /// <summary>
@@ -102,7 +118,9 @@ public sealed class NavIntentReader
         NavIntent intent = new(
             ReadDirection(frame, now),
             Accept: IsRisingEdge(frame.Buttons, ControllerButtons.South),
-            Back: IsRisingEdge(frame.Buttons, ControllerButtons.East));
+            Back: IsRisingEdge(frame.Buttons, ControllerButtons.East),
+            Context: IsRisingEdge(frame.Buttons, ControllerButtons.North),
+            Scroll: ScrollOf(frame));
 
         _previousButtons = frame.Buttons;
         return intent;
@@ -184,6 +202,13 @@ public sealed class NavIntentReader
 
         return NavDirection.None;
     }
+
+    /// <summary>
+    /// Right-stick deflection past the deadzone, passed through at full resolution so a caller can scroll at a
+    /// rate rather than in steps. Zero inside the deadzone, so a resting stick never scrolls.
+    /// </summary>
+    private float ScrollOf(in ControllerStateFrame frame)
+        => Math.Abs(frame.RightStickY) > (float)StickDeadzone ? frame.RightStickY : 0;
 
     private bool IsRisingEdge(ControllerButtons current, ControllerButtons button)
         => (current & button) != 0 && (_previousButtons & button) == 0;

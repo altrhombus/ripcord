@@ -68,7 +68,6 @@ public sealed partial class SessionPage : Page
     /// <summary>How long the on-screen controls linger after the last pointer activity.</summary>
     private static readonly TimeSpan TouchControlsIdleTimeout = TimeSpan.FromSeconds(4);
     private IDisposable? _connectionsSubscription;
-    private IDisposable? _stateSubscription;
 
     private D3D12VideoDecodePipeline? _pipeline;
     private SessionController? _controller;
@@ -1395,7 +1394,6 @@ public sealed partial class SessionPage : Page
         _statsTimer = null;
 
         _connectionsSubscription?.Dispose();
-        _stateSubscription?.Dispose();
         if (_keyRoot is not null)
         {
             _keyRoot.PreviewKeyDown -= OnPageKeyDown;

@@ -56,6 +56,13 @@ public sealed partial class MainWindow : Window, IShellNavigator
     /// </summary>
     private readonly ShellInputScope _chromeScope;
 
+    /// <summary>
+    /// Turns intents into focus movement, activation, scrolling and context menus. Takes the content root as a
+    /// callback rather than the window itself, so the same pilot can later be pointed at a dialog's root
+    /// without knowing it moved.
+    /// </summary>
+    private readonly FocusPilot _focus;
+
     public MainWindow()
     {
         InitializeComponent();
@@ -73,6 +80,10 @@ public sealed partial class MainWindow : Window, IShellNavigator
 
         _settingsStore.Changed += s =>
             _dispatcherQueue.TryEnqueue(() => _input.UseDeadzone(s.UiStickDeadzone));
+
+        _focus = new FocusPilot(
+            contentRoot: () => Content as FrameworkElement,
+            seedFocus: FocusFirstContentElement);
 
         _chromeScope = new ShellInputScope(
             InputScopeKind.Chrome,
@@ -277,12 +288,22 @@ public sealed partial class MainWindow : Window, IShellNavigator
             {
                 if (intent.Direction != NavDirection.None)
                 {
-                    MoveFocus(intent.Direction);
+                    _focus.MoveFocus(intent.Direction);
+                }
+
+                if (intent.Scroll != 0)
+                {
+                    _focus.Scroll(intent.Scroll);
                 }
 
                 if (intent.Accept)
                 {
-                    ActivateFocusedElement();
+                    _focus.ActivateFocusedElement();
+                }
+
+                if (intent.Context)
+                {
+                    _focus.OpenContextMenu();
                 }
 
                 if (intent.Back)
@@ -295,157 +316,6 @@ public sealed partial class MainWindow : Window, IShellNavigator
                 System.Diagnostics.Debug.WriteLine($"Gamepad UI navigation error: {ex}");
             }
         });
-    }
-
-    private void MoveFocus(NavDirection direction)
-    {
-        var winrtDirection = direction switch
-        {
-            NavDirection.Up => FocusNavigationDirection.Up,
-            NavDirection.Down => FocusNavigationDirection.Down,
-            NavDirection.Left => FocusNavigationDirection.Left,
-            NavDirection.Right => FocusNavigationDirection.Right,
-            _ => FocusNavigationDirection.None,
-        };
-
-        if (winrtDirection == FocusNavigationDirection.None || DirectionalRoot() is not { } searchRoot)
-        {
-            return;
-        }
-
-        // Left/Right on a range control adjusts it rather than leaving it, which is what the arrow keys
-        // already do — so a pad needs no separate "engagement" mode with its own visual state and its own way
-        // to get stuck. Up/Down still moves focus, so the control is never a trap.
-        if ((direction == NavDirection.Left || direction == NavDirection.Right)
-            && TryAdjustRange(searchRoot.XamlRoot, increase: direction == NavDirection.Right))
-        {
-            return;
-        }
-
-        // The simple TryMoveFocus(direction) overload throws COMException 0x8000FFFF in a WinUI Desktop app (as
-        // opposed to UWP, where a single implicit CoreWindow root makes it valid) — a desktop app can host
-        // multiple windows, so FindNextElementOptions.SearchRoot must say which visual tree to search.
-        var options = new FindNextElementOptions { SearchRoot = searchRoot };
-
-        if (FocusManager.FindNextElement(winrtDirection, options) is UIElement candidate)
-        {
-            // FocusState.Keyboard, never Programmatic: a Programmatic focus change does not draw the focus
-            // visual, so directional navigation would move an invisible caret.
-            candidate.Focus(FocusState.Keyboard);
-
-            // A candidate below the fold is useless if the list does not scroll to it.
-            candidate.StartBringIntoView(new BringIntoViewOptions { AnimationDesired = AppMotion.Enabled });
-            return;
-        }
-
-        // If there is nothing in that direction, leave focus where it is. An earlier version re-seeded focus
-        // here, so pressing against the edge of a list teleported the caret away from where the user was
-        // pushing. Only seed when nothing has focus at all.
-        if (FocusManager.GetFocusedElement(searchRoot.XamlRoot) is null)
-        {
-            FocusFirstContentElement();
-        }
-    }
-
-    /// <summary>
-    /// Nudge the focused range control (a Slider) one step. Returns false when focus is not on one, so the
-    /// caller falls through to ordinary directional movement.
-    /// </summary>
-    private static bool TryAdjustRange(XamlRoot? xamlRoot, bool increase)
-    {
-        if (xamlRoot is null || FocusManager.GetFocusedElement(xamlRoot) is not FrameworkElement focused)
-        {
-            return false;
-        }
-
-        var peer = FrameworkElementAutomationPeer.FromElement(focused)
-            ?? FrameworkElementAutomationPeer.CreatePeerForElement(focused);
-
-        if (peer?.GetPattern(PatternInterface.RangeValue) is not IRangeValueProvider range || range.IsReadOnly)
-        {
-            return false;
-        }
-
-        // SmallChange is the Slider's StepFrequency, so a pad step matches an arrow-key step exactly.
-        double step = range.SmallChange > 0 ? range.SmallChange : 1;
-        double target = Math.Clamp(range.Value + (increase ? step : -step), range.Minimum, range.Maximum);
-
-        if (Math.Abs(target - range.Value) > double.Epsilon)
-        {
-            range.SetValue(target);
-        }
-
-        return true;
-    }
-
-    /// <summary>
-    /// The visual tree directional focus should search: the topmost open popup if there is one, otherwise the
-    /// window content.
-    ///
-    /// <para>
-    /// A <see cref="ContentDialog"/>, a <c>MenuFlyout</c> and a <c>ComboBox</c> dropdown all render in the
-    /// XamlRoot's popup root, which is <b>not</b> a descendant of <c>Window.Content</c> — so a search root of
-    /// the window content excludes them entirely and focus cannot move inside them.
-    /// <see cref="FocusManager.GetFocusedElement(XamlRoot)"/>, which activation uses, is XamlRoot-wide and so
-    /// was never affected. That asymmetry is the whole of the "directional gamepad focus cannot get inside a
-    /// ContentDialog (it activates, it does not move)" behaviour this project recorded as a platform
-    /// limitation: it was ours, and it was this one line.
-    /// </para>
-    /// </summary>
-    private FrameworkElement? DirectionalRoot()
-    {
-        if (Content is not FrameworkElement content)
-        {
-            return null;
-        }
-
-        if (content.XamlRoot is not { } xamlRoot)
-        {
-            return content;
-        }
-
-        IReadOnlyList<Popup> popups = VisualTreeHelper.GetOpenPopupsForXamlRoot(xamlRoot);
-        if (popups.Count == 0)
-        {
-            return content;
-        }
-
-        // "Topmost is last" is not a documented guarantee, so prefer the popup that actually holds focus —
-        // which is also what keeps a soft keyboard opened over a dialog working — and only fall back to
-        // scanning from the end.
-        if (FocusManager.GetFocusedElement(xamlRoot) is DependencyObject focused)
-        {
-            for (int i = popups.Count - 1; i >= 0; i--)
-            {
-                if (popups[i] is { IsOpen: true, Child: FrameworkElement child } && IsInSubtree(child, focused))
-                {
-                    return child;
-                }
-            }
-        }
-
-        for (int i = popups.Count - 1; i >= 0; i--)
-        {
-            if (popups[i] is { IsOpen: true, Child: FrameworkElement child })
-            {
-                return child;
-            }
-        }
-
-        return content;
-    }
-
-    private static bool IsInSubtree(DependencyObject root, DependencyObject candidate)
-    {
-        for (DependencyObject? node = candidate; node is not null; node = VisualTreeHelper.GetParent(node))
-        {
-            if (ReferenceEquals(node, root))
-            {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     /// <summary>
@@ -491,47 +361,4 @@ public sealed partial class MainWindow : Window, IShellNavigator
         SettingsButton.Focus(FocusState.Keyboard);
     }
 
-    private void ActivateFocusedElement()
-    {
-        var xamlRoot = Content?.XamlRoot;
-        if (xamlRoot is null)
-        {
-            return;
-        }
-
-        if (FocusManager.GetFocusedElement(xamlRoot) is not FrameworkElement focused)
-        {
-            return;
-        }
-
-        var peer = FrameworkElementAutomationPeer.FromElement(focused)
-            ?? FrameworkElementAutomationPeer.CreatePeerForElement(focused);
-
-        if (peer?.GetPattern(PatternInterface.Invoke) is IInvokeProvider invokeProvider)
-        {
-            invokeProvider.Invoke();
-        }
-        else if (peer?.GetPattern(PatternInterface.SelectionItem) is ISelectionItemProvider selectionProvider)
-        {
-            selectionProvider.Select();
-        }
-        else if (peer?.GetPattern(PatternInterface.Toggle) is IToggleProvider toggleProvider)
-        {
-            toggleProvider.Toggle();
-        }
-        // A ComboBox exposes ExpandCollapse and no Invoke, so without this the accept button did nothing at
-        // all on the six ComboBoxes in Settings — the page was reachable by pad but not operable by it. Once
-        // the dropdown is open it becomes the topmost popup, so DirectionalRoot() lets focus move inside it.
-        else if (peer?.GetPattern(PatternInterface.ExpandCollapse) is IExpandCollapseProvider expandProvider)
-        {
-            if (expandProvider.ExpandCollapseState == ExpandCollapseState.Expanded)
-            {
-                expandProvider.Collapse();
-            }
-            else
-            {
-                expandProvider.Expand();
-            }
-        }
-    }
 }
