@@ -91,14 +91,18 @@ public sealed class ConsoleCardViewModel : ObservableState<ConsoleCardState>
             _ => "Checking…",
         };
 
-        // What activating the card does, said plainly. A resting console is not a problem to be solved before
-        // connecting — connecting wakes it — so the label promises both rather than making the user wake it
-        // first and come back.
+        // What activating the card does, said plainly, in the verb the player came for. "Connect" is our word
+        // for a mechanism — it belongs in diagnostics, not on the thing someone presses to start playing. A
+        // resting console is not a problem to solve before playing, because playing wakes it, so the label
+        // promises both rather than making the user wake it first and come back.
         string actionLabel = _reachability switch
         {
-            ConsoleReachability.Resting or ConsoleReachability.PreparingForRest => "Wake & connect",
-            ConsoleReachability.Offline => "Not reachable",
-            _ => "Connect",
+            ConsoleReachability.Resting or ConsoleReachability.PreparingForRest => "Wake & play",
+
+            // Not "Not reachable": a console that is switched off is a normal state, and the card is already
+            // dimmed. Phrased as something Ripcord could not do rather than something the console is failing at.
+            ConsoleReachability.Offline => "Can't reach it",
+            _ => "Play",
         };
 
         return new ConsoleCardState(
