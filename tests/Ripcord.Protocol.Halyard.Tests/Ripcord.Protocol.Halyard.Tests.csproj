@@ -22,6 +22,9 @@
     <ProjectReference Include="..\..\src\Ripcord.Protocol.Halyard.Common\Ripcord.Protocol.Halyard.Common.csproj" />
     <ProjectReference Include="..\..\src\Ripcord.Protocol.Halyard.Takion\Ripcord.Protocol.Halyard.Takion.csproj" />
     <ProjectReference Include="..\..\src\Ripcord.Protocol.Halyard\Ripcord.Protocol.Halyard.csproj" />
+    <!-- The PlayStation backend for the portable app layer. Its adapters are tested here rather than in
+         Ripcord.Presentation.Tests, which deliberately references only Ripcord.Presentation. -->
+    <ProjectReference Include="..\..\src\Ripcord.Presentation.Halyard\Ripcord.Presentation.Halyard.csproj" />
     <ProjectReference Include="..\..\src\Ripcord.Media.Audio\Ripcord.Media.Audio.csproj" />
     <ProjectReference Include="..\..\src\Ripcord.Input.Common\Ripcord.Input.Common.csproj" />
   </ItemGroup>

@@ -1,11 +1,11 @@
-using System;
-using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Ripcord.Core.Platform;
 using Ripcord.Protocol.Halyard.Common.Crypto;
 using Ripcord.Protocol.Halyard.Common.Crypto.V1;
+using Ripcord.Protocol.Halyard.Session;
 
-namespace Ripcord_App.Services;
+namespace Ripcord.Presentation.Halyard.Pairing;
 
 /// <summary>
 /// Builds the real registration cipher from the v1 interop constants (the key table, selector offset, material
@@ -14,21 +14,40 @@ namespace Ripcord_App.Services;
 /// <para>
 /// Resolution is most-explicit-first: <c>RIPCORD_REGIST_FIXTURE</c> → the platform config directory → a walk up
 /// to the dev-tree fixture → the constants bundled with this build
-/// (<see cref="Ripcord.Protocol.Halyard.Session.HalyardInteropConstants"/>). So a plain clone can pair, while a
-/// developer's own local fixture still wins. Resolution is per *family*: a fixture that cannot serve the
-/// requested console family (a PS5-only fixture asked for PS4) is skipped in favour of the bundle rather than
-/// failing the pairing. Returns <see cref="UnavailableRegistrationCipher"/> only if every source fails —
-/// including a build made with <c>-p:BundleInteropConstants=false</c> — so pairing fails cleanly with a clear
-/// message rather than crashing. <paramref name="source"/> always reports which path won, and why a located
-/// fixture lost.
+/// (<see cref="HalyardInteropConstants"/>). So a plain clone can pair, while a developer's own local fixture
+/// still wins. Resolution is per <em>family</em>: a fixture that cannot serve the requested console family (a
+/// PS5-only fixture asked for PS4) is skipped in favour of the bundle rather than failing the pairing. Returns
+/// <see cref="UnavailableRegistrationCipher"/> only if every source fails — including a build made with
+/// <c>-p:BundleInteropConstants=false</c> — so pairing fails cleanly with a clear message rather than crashing.
+/// <c>source</c> always reports which path won, and why a located fixture lost.
+/// </para>
+///
+/// <para>
+/// Moved here from <c>Ripcord.App/Services/AppRegistrationCipher.cs</c> unchanged. The logic is deliberately
+/// carried over verbatim: the resolution order and every <c>source</c> string are user-facing text on a pairing
+/// failure, so "improving" them during a move would be an invisible behaviour change in the one place a user is
+/// already having a bad time. The only difference is static → instance, so the pairing flow can be tested
+/// against a fake.
 /// </para>
 /// </summary>
-internal static partial class AppRegistrationCipher
+public sealed partial class HalyardRegistrationCipherResolver : IHalyardRegistrationCipherResolver
 {
-    public static IHalyardRegistrationCipher Load(out string source)
-        => Load(HalyardConsolePlatform.Ps5, out source);
+    private readonly IPlatformPaths _paths;
+    private readonly string? _baseDirectory;
 
-    public static IHalyardRegistrationCipher Load(HalyardConsolePlatform platform, out string source)
+    /// <param name="baseDirectory">
+    /// Where the dev-tree walk starts. Defaults to <see cref="AppContext.BaseDirectory"/>, which is the only
+    /// value production ever uses. It is a parameter purely so the resolution *order* can be tested: with the
+    /// walk hardcoded, a machine that happens to have a dirty-room fixture and a machine that does not would
+    /// give different answers, and the test would assert whichever the author's box did.
+    /// </param>
+    public HalyardRegistrationCipherResolver(IPlatformPaths? paths = null, string? baseDirectory = null)
+    {
+        _paths = paths ?? new DefaultPlatformPaths();
+        _baseDirectory = baseDirectory;
+    }
+
+    public IHalyardRegistrationCipher Resolve(HalyardConsolePlatform platform, out string source)
     {
         bool ps4 = platform == HalyardConsolePlatform.Ps4;
 
@@ -48,7 +67,7 @@ internal static partial class AppRegistrationCipher
 
         // The constants bundled with this build. Absent when built with -p:BundleInteropConstants=false,
         // in which case pairing reports unavailable as before.
-        var bundled = Ripcord.Protocol.Halyard.Session.HalyardInteropConstants.Registration(platform);
+        var bundled = HalyardInteropConstants.Registration(platform);
         if (bundled is not null)
         {
             source = skipped is null ? "bundled interop constants" : $"bundled interop constants ({skipped})";
@@ -99,7 +118,10 @@ internal static partial class AppRegistrationCipher
         }
         catch (Exception ex)
         {
-            reason = $"fixture load failed: {ex.Message}";
+            // Names the file, like the other three reasons do. It previously did not, which made the one branch
+            // reachable by arbitrary I/O and parse failures — the least self-explanatory of the four — also the
+            // only one that did not say which file to go and look at.
+            reason = $"fixture load failed ({path}): {ex.Message}";
             return null;
         }
     }
@@ -109,18 +131,17 @@ internal static partial class AppRegistrationCipher
     /// walk up to the dev tree. The last of those was previously the only option, which is why a shipped app
     /// could never locate these constants.
     /// </summary>
-    private static string? Locate()
+    private string? Locate()
     {
         string? env = Environment.GetEnvironmentVariable("RIPCORD_REGIST_FIXTURE");
         if (!string.IsNullOrEmpty(env) && File.Exists(env))
             return env;
 
-        string installed = Path.Combine(
-            new Ripcord.Core.Platform.DefaultPlatformPaths().ConfigDirectory, "registration_crypto_vectors.json");
+        string installed = Path.Combine(_paths.ConfigDirectory, "registration_crypto_vectors.json");
         if (File.Exists(installed))
             return installed;
 
-        string? dir = AppContext.BaseDirectory;
+        string? dir = _baseDirectory ?? AppContext.BaseDirectory;
         for (int i = 0; i < 12 && dir is not null; i++)
         {
             string candidate = Path.Combine(dir, "docs", "protocol", "captures", "registration_crypto_vectors.json");
