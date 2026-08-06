@@ -51,7 +51,15 @@
                     </Rectangle>
 
                     <Grid Padding="16,14,12,14" RowSpacing="2">
+                        <!--
+                            The slack lives in an EMPTY row (4), not in a row that holds text. When it was on the
+                            last-connected line instead, any shortfall was absorbed by clipping that line rather
+                            than by closing up whitespace — which is how a 12px cell-size error turned into a
+                            visibly chopped "Played 31 min ago". Content rows are Auto so they always get the
+                            height they ask for; row 4 gives back whatever is left.
+                        -->
                         <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
@@ -112,7 +120,6 @@
                             Grid.Row="3"
                             Grid.ColumnSpan="2"
                             Margin="0,2,0,0"
-                            VerticalAlignment="Top"
                             Foreground="{ThemeResource TextFillColorTertiaryBrush}"
                             Style="{StaticResource CaptionTextBlockStyle}"
                             Text="{x:Bind LastConnectedLabel, Mode=OneWay}"
@@ -123,7 +130,7 @@
                             the card will do about it.
                         -->
                         <Grid
-                            Grid.Row="4"
+                            Grid.Row="5"
                             Grid.ColumnSpan="2"
                             Margin="0,12,0,0"
                             ColumnSpacing="8">
@@ -338,8 +345,19 @@
             Visibility="Collapsed">
             <GridView.ItemsPanel>
                 <ItemsPanelTemplate>
+                    <!--
+                        These are CELL sizes, and the cell has to contain the container's gutter margin as well
+                        as the card. ConsoleCardContainerStyle sets Margin="0,0,12,12" — ItemsWrapGrid has no
+                        spacing of its own — so the visible card is 12 smaller than each number here: 280x176
+                        inside a 292x188 cell.
+
+                        Getting this wrong is not obvious, which is why it was wrong: at ItemHeight 176 the card
+                        was 164 tall while the template's rows were sized for 176, so the "Played 31 min ago"
+                        line lost its bottom third. It clipped rather than reflowing because that row is the
+                        only Height="*" one, so it absorbed the whole 12px shortfall on its own.
+                    -->
                     <ItemsWrapGrid
-                        ItemHeight="176"
+                        ItemHeight="188"
                         ItemWidth="292"
                         Orientation="Horizontal" />
                 </ItemsPanelTemplate>
