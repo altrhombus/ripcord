@@ -432,6 +432,7 @@
             x:Name="ConsoleGrid"
             Grid.Row="2"
             Padding="0,0,0,24"
+            ContainerContentChanging="OnPrepareConsoleContainer"
             IsItemClickEnabled="True"
             ItemContainerStyle="{StaticResource ConsoleCardContainerStyle}"
             ItemClick="OnConsoleCardClick"

@@ -400,7 +400,9 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
 
         flyout.Items.Add(rename);
         flyout.Items.Add(details);
-        flyout.Items.Add(new MenuFlyoutSeparator());
+        // IsTabStop=false, or directional focus stops on it: a separator is decoration and activating it does
+        // nothing, so a pad user gets a dead step between Details and Remove.
+        flyout.Items.Add(new MenuFlyoutSeparator { IsTabStop = false });
         flyout.Items.Add(remove);
 
         return flyout;
@@ -451,20 +453,64 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
 
     private void OnCardUnhighlight(object sender, PointerRoutedEventArgs e) => SetHighlight(sender, false);
 
-    private void SetHighlight(object sender, bool on)
+    private static void SetHighlight(object sender, bool on)
     {
-        if (sender is not FrameworkElement { DataContext: ConsoleCardViewModel item } element)
+        if (sender is FrameworkElement { DataContext: ConsoleCardViewModel item })
+        {
+            item.IsHighlighted = on;
+        }
+    }
+
+    /// <summary>
+    /// Wire each realized container, which is where focus actually lands.
+    ///
+    /// <para>
+    /// <b>The container, not the card inside it.</b> The template's Border hooks GotFocus, but a
+    /// <see cref="GridView"/> focuses the <see cref="GridViewItem"/> that <em>wraps</em> the template — and
+    /// routed events bubble upward, so a descendant never learns that its own ancestor was focused. Everything
+    /// hung on the Border's focus therefore only ever fired for the mouse: the accent wash never lit for a pad,
+    /// and the context menu attached there was invisible to a search that walks up from the focused element.
+    /// The pad's North button found nothing to open, which is exactly how this was discovered.
+    /// </para>
+    ///
+    /// <para>
+    /// Containers are recycled, so both the flyout and the handlers are reassigned on every pass rather than
+    /// set once — a container that arrives carrying the previous item's menu is worse than one carrying none.
+    /// </para>
+    /// </summary>
+    private void OnPrepareConsoleContainer(ListViewBase sender, ContainerContentChangingEventArgs args)
+    {
+        if (args.ItemContainer is not GridViewItem container)
         {
             return;
         }
 
-        item.IsHighlighted = on;
+        // Detach first: recycling means this container may still carry the last item's subscriptions.
+        container.GotFocus -= OnContainerFocus;
+        container.LostFocus -= OnContainerBlur;
 
-        // Attach the menu to the card the first time it is reached, so the pad's North button has something to
-        // open. Assigned here rather than in the template because the items close over the card's view-model,
-        // and lazily because a container that is never focused or hovered never needs one. Once assigned it is
-        // the same object right-click, the menu key and North all use.
-        element.ContextFlyout ??= BuildConsoleFlyout(item);
+        if (args.Item is not ConsoleCardViewModel item)
+        {
+            // The add tile has no per-console actions.
+            container.ContextFlyout = null;
+            return;
+        }
+
+        container.ContextFlyout = BuildConsoleFlyout(item);
+        container.GotFocus += OnContainerFocus;
+        container.LostFocus += OnContainerBlur;
+    }
+
+    private static void OnContainerFocus(object sender, RoutedEventArgs e) => SetContainerHighlight(sender, true);
+
+    private static void OnContainerBlur(object sender, RoutedEventArgs e) => SetContainerHighlight(sender, false);
+
+    private static void SetContainerHighlight(object sender, bool on)
+    {
+        if (sender is GridViewItem { Content: ConsoleCardViewModel item })
+        {
+            item.IsHighlighted = on;
+        }
     }
 
     private async Task RenameAsync(ConsoleCardViewModel item)

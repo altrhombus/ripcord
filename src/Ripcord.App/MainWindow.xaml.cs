@@ -69,6 +69,12 @@ public sealed partial class MainWindow : Window, IShellNavigator
 
         ExtendsContentIntoTitleBar = true;
         SetTitleBar(AppTitleBar);
+
+        // The TitleBar must not be a focus target itself. Directional focus was picking the control rather than
+        // the Settings/About buttons inside its RightHeader, which draws no focus visual and offers nothing to
+        // activate — so pressing Up off the console grid looked like focus vanishing, and the two commands were
+        // unreachable by pad. Its children stay focusable; only the container stops volunteering.
+        AppTitleBar.IsTabStop = false;
         AppWindow.TitleBar.PreferredHeightOption = TitleBarHeightOption.Tall;
         AppWindow.SetIcon("Assets/AppIcon.ico");
 
@@ -111,6 +117,19 @@ public sealed partial class MainWindow : Window, IShellNavigator
             // and with nothing focused directional input silently does nothing. (A hardware arrow key goes
             // through a different WinUI path that picks its own initial target; this one has no such fallback.)
             _input.Scopes.Push(_chromeScope);
+        };
+
+        // Coming back from another app, focus is often gone — WinUI does not restore it, and a pad user is then
+        // looking at a window with no caret, pressing a direction that has nothing to move from. Re-seeded on
+        // activation, at low priority so the visual tree has settled first.
+        Activated += (_, e) =>
+        {
+            if (e.WindowActivationState != WindowActivationState.Deactivated)
+            {
+                _dispatcherQueue.TryEnqueue(
+                    DispatcherQueuePriority.Low,
+                    () => SeedFocusIfNothingHasIt());
+            }
         };
 
         Closed += (_, _) =>
@@ -249,6 +268,13 @@ public sealed partial class MainWindow : Window, IShellNavigator
     /// </summary>
     private void GoBack()
     {
+        // Closing what is on top comes first. Otherwise Back with a context menu open navigates the page
+        // underneath it, which is both surprising and leaves the menu on screen.
+        if (_focus.TryDismissPopup())
+        {
+            return;
+        }
+
         if (ChromeFrame.CanGoBack)
         {
             ChromeFrame.GoBack();
@@ -292,6 +318,15 @@ public sealed partial class MainWindow : Window, IShellNavigator
             // A background input-polling handler must never be able to take the whole process down.
             try
             {
+                // Nothing focused: this press establishes the caret and goes no further. Directional movement
+                // is relative to whatever has focus, so without an anchor the press was simply lost — which is
+                // why the first one or two after launch or re-activation felt like they did nothing.
+                // Consuming it is the predictable behaviour: one press to show where you are, the next to move.
+                if (SeedFocusIfNothingHasIt())
+                {
+                    return;
+                }
+
                 if (intent.Direction != NavDirection.None)
                 {
                     _focus.MoveFocus(intent.Direction);
@@ -334,6 +369,21 @@ public sealed partial class MainWindow : Window, IShellNavigator
     /// on the page — which on the console list is a console.
     /// </para>
     /// </summary>
+    /// <summary>
+    /// Put focus somewhere if it is nowhere. Returns true when it had to act, so a caller can treat the press
+    /// that prompted it as spent.
+    /// </summary>
+    private bool SeedFocusIfNothingHasIt()
+    {
+        if (!_focus.NeedsFocusSeed())
+        {
+            return false;
+        }
+
+        FocusFirstContentElement();
+        return true;
+    }
+
     private void FocusFirstContentElement()
     {
         if (ChromeFrame.Content is not FrameworkElement content)
@@ -356,10 +406,31 @@ public sealed partial class MainWindow : Window, IShellNavigator
             return;
         }
 
-        if (FocusManager.FindFirstFocusableElement(content) is Control first)
+        // Descend past containers. FindFirstFocusableElement happily returns a ScrollViewer — one is focusable
+        // whenever it can scroll — and focusing a container is a TRAP, not merely untidy: directional search
+        // starts from the focused element, and a container that ENCLOSES every candidate has nothing above,
+        // below or beside it, so every direction finds nothing and focus can never leave. That is exactly what
+        // made the settings page unusable with a pad.
+        DependencyObject scope = content;
+        for (int depth = 0; depth < 8; depth++)
         {
-            first.Focus(FocusState.Keyboard);
-            return;
+            if (FocusManager.FindFirstFocusableElement(scope) is not Control first)
+            {
+                break;
+            }
+
+            if (first is not ScrollViewer scroller)
+            {
+                first.Focus(FocusState.Keyboard);
+                return;
+            }
+
+            if (scroller.Content is not DependencyObject inner)
+            {
+                break;
+            }
+
+            scope = inner;
         }
 
         // Nothing focusable on the page yet (it may still be populating). The title-bar commands are always
