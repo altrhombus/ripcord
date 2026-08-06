@@ -9,6 +9,7 @@
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:services="using:Ripcord_App.Services"
     xmlns:vm="using:Ripcord.Presentation.Consoles"
+    SizeChanged="OnPageSizeChanged"
     mc:Ignorable="d">
 
     <Page.Resources>
@@ -258,7 +259,16 @@
         </Style>
     </Page.Resources>
 
-    <Grid Padding="24,16,24,0" RowSpacing="4">
+    <!--
+        Capped and centred rather than stretched. On an ultrawide an uncapped card row spreads a handful of
+        consoles across a metre of glass with the eye travelling between them; 1400 is about where a row stops
+        reading as a group. Below that it simply fills, so nothing changes on a handheld.
+    -->
+    <Grid
+        Padding="24,16,24,0"
+        MaxWidth="1400"
+        HorizontalAlignment="Center"
+        RowSpacing="4">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
@@ -286,6 +296,96 @@
             Margin="0,0,0,12"
             Style="{StaticResource RipcordSubtleCaptionStyle}"
             Text="Pick one to start streaming. A console in rest mode will be woken for you." />
+
+        <!--
+            The one-console layout, and the reason it exists: one or two consoles is the real case, and a grid
+            of one is a list pretending to be a choice. Here the console IS the page, and the thing you came to
+            do is a full-width accent button that holds focus on load. Open the window, press A, playing.
+
+            "Add another console" is a quiet link rather than a second button, because on this layout there is
+            exactly one thing worth pressing and it is not that.
+        -->
+        <StackPanel
+            x:Name="HeroPanel"
+            Grid.Row="2"
+            Margin="0,8,0,48"
+            HorizontalAlignment="Center"
+            VerticalAlignment="Center"
+            MaxWidth="520"
+            Spacing="16"
+            Visibility="Collapsed">
+            <Border
+                x:Name="HeroCard"
+                Padding="28,24"
+                ContextRequested="OnHeroContextRequested"
+                Style="{StaticResource RipcordCardStyle}">
+                <Grid ColumnSpacing="20">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <controls:FamilyMark
+                        x:Name="HeroMark"
+                        Width="26"
+                        Height="46"
+                        VerticalAlignment="Top" />
+
+                    <StackPanel Grid.Column="1" Spacing="2">
+                        <TextBlock
+                            x:Name="HeroName"
+                            Style="{StaticResource SubtitleTextBlockStyle}"
+                            TextTrimming="CharacterEllipsis" />
+                        <TextBlock
+                            x:Name="HeroDetails"
+                            Style="{StaticResource RipcordSubtleCaptionStyle}" />
+                        <TextBlock
+                            x:Name="HeroLastPlayed"
+                            Style="{StaticResource RipcordSubtleCaptionStyle}" />
+                        <StackPanel
+                            Margin="0,8,0,0"
+                            Orientation="Horizontal"
+                            Spacing="8">
+                            <Ellipse
+                                x:Name="HeroStatusDot"
+                                Width="8"
+                                Height="8"
+                                VerticalAlignment="Center" />
+                            <TextBlock x:Name="HeroStatus" Style="{StaticResource CaptionTextBlockStyle}" />
+                        </StackPanel>
+                    </StackPanel>
+
+                    <Button
+                        x:Name="HeroOverflowButton"
+                        Grid.Column="2"
+                        VerticalAlignment="Top"
+                        AutomationProperties.Name="More options for this console"
+                        Click="OnHeroOverflowClick"
+                        Style="{StaticResource SubtleButtonStyle}">
+                        <FontIcon FontSize="{ThemeResource RipcordIconSizeCaption}" Glyph="&#xE712;" />
+                    </Button>
+                </Grid>
+            </Border>
+
+            <Button
+                x:Name="HeroPlayButton"
+                HorizontalAlignment="Stretch"
+                HorizontalContentAlignment="Center"
+                Click="OnHeroPlayClick"
+                Style="{StaticResource AccentButtonStyle}">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <FontIcon x:Name="HeroPlayIcon" FontSize="{ThemeResource RipcordIconSizeAction}" />
+                    <TextBlock x:Name="HeroPlayLabel" />
+                </StackPanel>
+            </Button>
+
+            <HyperlinkButton
+                x:Name="HeroAddLink"
+                HorizontalAlignment="Center"
+                Click="OnAddConsoleClick"
+                Content="Add another console" />
+        </StackPanel>
 
         <!--  Empty state — shown when no consoles are paired.  -->
         <StackPanel

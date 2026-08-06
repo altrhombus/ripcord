@@ -13,6 +13,8 @@ using Microsoft.UI.Xaml.Media.Animation;
 using Ripcord.Core.Consoles;
 using Ripcord.Presentation;
 using Ripcord.Presentation.Consoles;
+using Ripcord_App.Accents;
+using Ripcord_App.Converters;
 using Ripcord_App.Services;
 
 namespace Ripcord_App.Pages;
@@ -20,17 +22,28 @@ namespace Ripcord_App.Pages;
 public sealed partial class ConsolesPage : Page, IInitialFocusTarget
 {
     /// <summary>
-    /// A console, not the "Add console" button that happens to sit above it in tree order. Open the window,
-    /// press A, play — that is what this page is for, and the first focus stop should say so.
+    /// Whatever this page's current layout says is the point of it. Open the window, press A, playing.
     ///
     /// <para>
-    /// The grid rather than a specific container: focusing a <see cref="GridView"/> hands focus to its own
-    /// first (or last-focused) item, which is both the right target and the one that survives the list being
-    /// rebuilt underneath. Null before anything is in it, so the shell falls back to tree order — an empty
-    /// install has no console to offer and the add button is genuinely the point.
+    /// On the hero that is the Play button itself — the layout exists so there is exactly one thing to press.
+    /// On the grid it is the grid, not a specific container: focusing a <see cref="GridView"/> hands focus to
+    /// its own first (or last-focused) item, which survives the list being rebuilt underneath. With nothing
+    /// paired it is null, so the shell falls back to tree order — an empty install has no console to offer and
+    /// the add button is genuinely the point.
     /// </para>
     /// </summary>
-    public Control? InitialFocus => ConsoleGrid.Visibility == Visibility.Visible ? ConsoleGrid : null;
+    public Control? InitialFocus
+    {
+        get
+        {
+            if (HeroPanel.Visibility == Visibility.Visible)
+            {
+                return HeroPlayButton;
+            }
+
+            return ConsoleGrid.Visibility == Visibility.Visible ? ConsoleGrid : null;
+        }
+    }
 
     private readonly RipcordAppServices _services;
     private readonly IPairedConsoleStore _store;
@@ -67,7 +80,14 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
 
         ConsoleGrid.ItemsSource = _items;
         Loaded += (_, _) => Refresh();
-        Unloaded += (_, _) => CancelProbes();
+        Unloaded += (_, _) =>
+        {
+            CancelProbes();
+
+            // The hero subscribes to its console for live reachability; leaving that attached would keep this
+            // page alive through the view-model for as long as the console object lives.
+            DetachHero();
+        };
     }
 
     /// <summary>
@@ -81,31 +101,55 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
         Refresh();
     }
 
+    /// <summary>
+    /// Rebuild the page for whatever is actually paired.
+    ///
+    /// <para>
+    /// Three layouts, because one or two consoles is the real case and a grid is only the right answer for one
+    /// of them. Nothing → the empty state, which is the first-run explanation. Exactly one → the hero, where
+    /// the console is the page and Play is a real button. Two or more → the card grid with the add tile after
+    /// the last card.
+    /// </para>
+    /// </summary>
     private void Refresh()
     {
         CancelProbes();
+        DetachHero();
 
         List<ConsoleCardViewModel> consoles = _store.Load().Select(_services.CreateConsoleCard).ToList();
 
         _items.Clear();
-        foreach (ConsoleCardViewModel item in consoles)
-        {
-            _items.Add(item);
-        }
 
-        bool any = consoles.Count > 0;
-        if (any)
+        // A grid of one is a list pretending to be a choice, so one console gets its own layout rather than a
+        // single card marooned in a wrapping panel.
+        bool hero = consoles.Count == 1;
+        bool grid = consoles.Count > 1;
+
+        if (grid)
         {
-            // Only when there is a grid to put it in; on an empty install the empty state carries its own
-            // add button and a lone ghost tile floating in an otherwise blank page says much less.
+            foreach (ConsoleCardViewModel item in consoles)
+            {
+                _items.Add(item);
+            }
+
+            // Only when there is a grid to put it in; the other two layouts carry their own add affordance, and
+            // a lone ghost tile floating in an otherwise blank page says much less.
             _items.Add(AddConsolePlaceholder.Instance);
         }
 
-        ConsoleGrid.Visibility = any ? Visibility.Visible : Visibility.Collapsed;
-        SubtitleText.Visibility = any ? Visibility.Visible : Visibility.Collapsed;
-        EmptyState.Visibility = any ? Visibility.Collapsed : Visibility.Visible;
+        ConsoleGrid.Visibility = Vis(grid);
+        HeroPanel.Visibility = Vis(hero);
+        EmptyState.Visibility = Vis(consoles.Count == 0);
 
-        if (any)
+        // The subtitle instructs someone to pick from several. With one console there is nothing to pick.
+        SubtitleText.Visibility = Vis(grid);
+
+        if (hero)
+        {
+            AttachHero(consoles[0]);
+        }
+
+        if (consoles.Count > 0)
         {
             // Consume the rest intent for this pass only; a later plain Refresh must not re-arm the watch.
             string? restHost = _restRequestedHost;
@@ -114,6 +158,141 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
             _probeCts = new CancellationTokenSource();
             _ = _reachability.RefreshAsync(consoles, restHost, _probeCts.Token);
         }
+
+        ApplyColumnCount();
+    }
+
+    private static Visibility Vis(bool on) => on ? Visibility.Visible : Visibility.Collapsed;
+
+    // ---- hero layout -----------------------------------------------------------------------------
+
+    /// <summary>
+    /// The single console the hero is showing, held so its live reachability keeps the panel current — the
+    /// probe resolves after this returns, and a hero stuck on "Checking…" would be worse than a card doing it.
+    /// </summary>
+    private ConsoleCardViewModel? _heroConsole;
+
+    private void AttachHero(ConsoleCardViewModel console)
+    {
+        _heroConsole = console;
+        console.PropertyChanged += OnHeroChanged;
+        RenderHero(console.State);
+    }
+
+    private void DetachHero()
+    {
+        if (_heroConsole is { } previous)
+        {
+            previous.PropertyChanged -= OnHeroChanged;
+            _heroConsole = null;
+        }
+    }
+
+    private void OnHeroChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (_heroConsole is { } console)
+        {
+            RenderHero(console.State);
+        }
+    }
+
+    private void RenderHero(ConsoleCardState s)
+    {
+        HeroMark.Accent = AccentResources.Brush(s.Accent);
+        HeroName.Text = s.DisplayName;
+        HeroDetails.Text = s.Details;
+
+        HeroLastPlayed.Text = s.LastConnectedLabel ?? string.Empty;
+        HeroLastPlayed.Visibility = Vis(s.LastConnectedLabel is { Length: > 0 });
+
+        HeroStatus.Text = s.StatusLabel;
+        HeroStatusDot.Fill = ThemeBrush.Lookup(s.StatusTone switch
+        {
+            StatusTone.Positive => "SystemFillColorSuccessBrush",
+            StatusTone.Caution => "SystemFillColorCautionBrush",
+            StatusTone.Neutral => "TextFillColorDisabledBrush",
+            _ => "TextFillColorTertiaryBrush",
+        });
+
+        HeroPlayLabel.Text = s.PrimaryActionLabel;
+        // Escaped rather than pasted, per this file's own rule: a private-use codepoint sitting raw in a
+        // C# string is invisible in a diff and quietly mangled by anything that re-encodes the file.
+        // E7E8 = PowerButton, E768 = Play.
+        HeroPlayIcon.Glyph = s.ActionGlyph == ActionGlyph.Wake ? "" : "";
+
+        // Disabled rather than hidden: an unreachable console usually just needs switching on, and the button
+        // vanishing would read as "this console is broken" rather than "it is not answering right now".
+        HeroPlayButton.IsEnabled = s.CanConnect;
+    }
+
+    private void OnHeroPlayClick(object sender, RoutedEventArgs e)
+    {
+        if (_heroConsole is { } console)
+        {
+            Connect(console);
+        }
+    }
+
+    private void OnHeroOverflowClick(object sender, RoutedEventArgs e)
+    {
+        if (_heroConsole is { } console)
+        {
+            BuildConsoleFlyout(console).ShowAt(HeroOverflowButton);
+        }
+    }
+
+    private void OnHeroContextRequested(UIElement sender, ContextRequestedEventArgs args)
+    {
+        if (_heroConsole is not { } console)
+        {
+            return;
+        }
+
+        MenuFlyout flyout = BuildConsoleFlyout(console);
+
+        if (args.TryGetPosition(HeroCard, out Windows.Foundation.Point point))
+        {
+            flyout.ShowAt(HeroCard, new FlyoutShowOptions { Position = point });
+        }
+        else
+        {
+            flyout.ShowAt(HeroCard);
+        }
+
+        args.Handled = true;
+    }
+
+    // ---- responsive columns ----------------------------------------------------------------------
+
+    private void OnPageSizeChanged(object sender, SizeChangedEventArgs e) => ApplyColumnCount();
+
+    /// <summary>
+    /// Cap the card row on the standard Windows breakpoints, in effective pixels — under 640 one column,
+    /// 640–1007 two, wider than that as many as fit.
+    ///
+    /// <para>
+    /// <c>ItemsWrapGrid</c> would otherwise fit whatever the arithmetic allows: at 292px cells a 639px window
+    /// takes two columns, which on a phone-width or split-screen window leaves cards narrower than their own
+    /// content wants. The breakpoints exist so a narrow window gets one readable card rather than two cramped
+    /// ones.
+    /// </para>
+    /// </summary>
+    private void ApplyColumnCount()
+    {
+        if (ConsoleGrid.ItemsPanelRoot is not ItemsWrapGrid panel)
+        {
+            return;
+        }
+
+        double width = ActualWidth;
+        panel.MaximumRowsOrColumns = width switch
+        {
+            > 0 and < 640 => 1,
+            >= 640 and < 1008 => 2,
+
+            // -1 is "as many as fit", which is the right answer once there is room for three.
+            _ => -1,
+        };
     }
 
     private void CancelProbes()
@@ -176,10 +355,17 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
 
         try
         {
-            if (ConsoleGrid.ContainerFromItem(item) is GridViewItem container)
+            // Whichever layout is showing owns the element the eye is travelling from. On the hero there is no
+            // grid container to ask for, so the card itself is the source — without this, the one-console
+            // layout was the only path that cut to black.
+            UIElement? source = HeroPanel.Visibility == Visibility.Visible
+                ? HeroCard
+                : ConsoleGrid.ContainerFromItem(item) as GridViewItem;
+
+            if (source is not null)
             {
                 ConnectedAnimationService.GetForCurrentView()
-                    .PrepareToAnimate(AppMotion.ConnectAnimationKey, container);
+                    .PrepareToAnimate(AppMotion.ConnectAnimationKey, source);
             }
         }
         catch (Exception)
