@@ -86,4 +86,17 @@
         <Setter Property="Background" Value="{ThemeResource DividerStrokeColorDefaultBrush}" />
     </Style>
 
+    <!--
+        One step's dash in a progress indicator: filled once reached, faded by the caller before. Shared rather
+        than owned by the pairing flow because "a short run of dashes showing how far through you are" is a
+        pattern, not a page — a first-run or account-setup flow wants the identical mark, and a second copy is
+        how two indicators end up different heights.
+    -->
+    <Style x:Key="RipcordStepDashStyle" TargetType="Rectangle">
+        <Setter Property="Height" Value="4" />
+        <Setter Property="RadiusX" Value="2" />
+        <Setter Property="RadiusY" Value="2" />
+        <Setter Property="Fill" Value="{ThemeResource AccentFillColorDefaultBrush}" />
+    </Style>
+
 </ResourceDictionary>
