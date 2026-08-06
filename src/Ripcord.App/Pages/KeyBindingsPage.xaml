@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!--
+    Keyboard controls, as a page.
+
+    This was a ContentDialog, and rebinding-by-capture fought the host it was in. A dialog reserves two keys:
+    Escape closes it, and Enter presses the default button. Both are keys a user may legitimately want to look
+    at — Enter is a DEFAULT binding here (Start) — and the second was worse than awkward. The dialog's default
+    button was "Reset to defaults", so a stray Enter while capture was not armed silently wiped every binding
+    the user had set. Capture only worked at all because it swallowed keys before the dialog saw them, which is
+    a workaround for being in the wrong container rather than a design.
+
+    A page reserves nothing. Enter and Escape behave like any other key, Back leaves in the ordinary way, and
+    there is no button that a mis-timed press can turn into a reset. Changes save as they are made, like the
+    rest of Settings — a page has no OK to press, and pretending otherwise is how a dialog's habits survive the
+    move.
+-->
+<Page
+    x:Class="Ripcord_App.Pages.KeyBindingsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:local="using:Ripcord_App.Pages"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d">
+
+    <ScrollViewer Padding="24,16,24,24">
+        <StackPanel MaxWidth="820" Spacing="16">
+            <StackPanel Spacing="4">
+                <TextBlock Style="{StaticResource TitleTextBlockStyle}" Text="Keyboard controls" />
+                <TextBlock
+                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                    Text="Press Change, then press the key you want. Backspace clears a binding. Sticks move at full deflection while a key is held."
+                    TextWrapping="Wrap" />
+            </StackPanel>
+
+            <InfoBar
+                x:Name="CaptureBar"
+                IsClosable="False"
+                IsOpen="False"
+                Severity="Informational"
+                Title="Press a key" />
+
+            <TextBlock
+                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                Style="{StaticResource CaptionTextBlockStyle}"
+                Text="Escape, F3 and F11 stay with the app — leave the stream, diagnostics, fullscreen — and cannot be bound."
+                TextWrapping="Wrap" />
+
+            <ItemsControl x:Name="BindingList">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="local:KeyBindingRow">
+                        <Grid Padding="0,4" ColumnSpacing="12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock
+                                VerticalAlignment="Center"
+                                Text="{x:Bind ActionName}"
+                                TextWrapping="Wrap" />
+                            <TextBlock
+                                Grid.Column="1"
+                                MinWidth="120"
+                                VerticalAlignment="Center"
+                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                Text="{x:Bind KeyNames, Mode=OneWay}"
+                                TextAlignment="Right" />
+                            <Button
+                                Grid.Column="2"
+                                AutomationProperties.Name="{x:Bind ChangeButtonName, Mode=OneWay}"
+                                Click="Rebind_Click"
+                                Content="Change"
+                                Tag="{x:Bind Action}" />
+                        </Grid>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <!--
+                Last, and not a default anything. Reset is the one destructive action here, so it sits at the
+                end of the list where reaching it is deliberate rather than at the top where a mis-aimed press
+                finds it first.
+            -->
+            <Button
+                x:Name="ResetButton"
+                Click="Reset_Click"
+                Content="Reset to defaults"
+                HorizontalAlignment="Left" />
+        </StackPanel>
+    </ScrollViewer>
+</Page>
