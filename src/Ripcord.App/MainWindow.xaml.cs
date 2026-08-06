@@ -6,6 +6,7 @@ using Microsoft.UI.Xaml.Automation.Peers;
 using Microsoft.UI.Xaml.Automation.Provider;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
+using Microsoft.UI.Input;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Navigation;
@@ -16,6 +17,7 @@ using Ripcord.Core.Input;
 using Ripcord.Core.Settings;
 using Ripcord.Input;
 using Ripcord.Presentation;
+using Ripcord_App.Controls;
 using Ripcord_App.Input;
 using Ripcord_App.Pages;
 using Ripcord_App.Services;
@@ -66,6 +68,12 @@ public sealed partial class MainWindow : Window, IShellNavigator
     /// <summary>Re-seeds focus whenever it goes missing. See <see cref="FocusWatchdog"/> for why it is central.</summary>
     private readonly FocusWatchdog _focusWatchdog;
 
+    /// <summary>
+    /// Controller text entry. Owned by the window rather than by each surface that has a text field: it is a
+    /// property of the input method, not of the page, and one instance is what keeps two from ever being up.
+    /// </summary>
+    private readonly SoftKeyboardOverlay _softKeyboard = new();
+
     public MainWindow()
     {
         InitializeComponent();
@@ -92,7 +100,8 @@ public sealed partial class MainWindow : Window, IShellNavigator
 
         _focus = new FocusPilot(
             contentRoot: () => Content as FrameworkElement,
-            seedFocus: FocusFirstContentElement);
+            seedFocus: FocusFirstContentElement,
+            openTextEntry: OpenSoftKeyboard);
 
         _chromeScope = new ShellInputScope(
             InputScopeKind.Chrome,
@@ -131,6 +140,34 @@ public sealed partial class MainWindow : Window, IShellNavigator
             _input.Scopes.Push(_chromeScope);
             _focusWatchdog.Start();
         };
+
+        // What the other two input methods look like, for the mode tracker. Handled events count too: a click
+        // that a button consumes is still the user reaching for a mouse, and a mode that ignored consumed input
+        // would only ever notice presses that hit nothing. Pointer MOVEMENT is deliberately not reported — a
+        // window appearing under a stationary cursor generates it, which is the least intentional signal there
+        // is.
+        if (Content is UIElement contentRoot)
+        {
+            contentRoot.AddHandler(
+                UIElement.PointerPressedEvent,
+                new PointerEventHandler((_, e) =>
+                {
+                    if (e.Pointer.PointerDeviceType == PointerDeviceType.Touch)
+                    {
+                        _input.ReportTouchActivity();
+                    }
+                    else
+                    {
+                        _input.ReportPointerActivity();
+                    }
+                }),
+                handledEventsToo: true);
+
+            contentRoot.AddHandler(
+                UIElement.KeyDownEvent,
+                new KeyEventHandler((_, _) => _input.ReportKeyboardActivity()),
+                handledEventsToo: true);
+        }
 
         // Coming back from another app, focus is often gone — WinUI does not restore it, and a pad user is then
         // looking at a window with no caret, pressing a direction that has nothing to move from. Re-seeded on
@@ -331,6 +368,10 @@ public sealed partial class MainWindow : Window, IShellNavigator
             // A background input-polling handler must never be able to take the whole process down.
             try
             {
+                // Reported here rather than from the router's frame handler so the tracker stays on one
+                // thread — and an intent is precisely the "deliberate activity" its contract asks for.
+                _input.ReportControllerActivity();
+
                 // Nothing focused: this press establishes the caret and goes no further. Directional movement
                 // is relative to whatever has focus, so without an anchor the press was simply lost — which is
                 // why the first one or two after launch or re-activation felt like they did nothing.
@@ -370,6 +411,26 @@ public sealed partial class MainWindow : Window, IShellNavigator
                 System.Diagnostics.Debug.WriteLine($"Gamepad UI navigation error: {ex}");
             }
         });
+    }
+
+    /// <summary>
+    /// Put the soft keyboard up for a text field, and report whether it went.
+    ///
+    /// <para>
+    /// Only in Controller mode. With a keyboard or a mouse in hand the user has a better way to type than
+    /// aiming at glyphs, and an overlay covering the form they are filling in would be an obstruction rather
+    /// than a help — the same reason the hint bar hides outside Controller mode.
+    /// </para>
+    /// </summary>
+    private bool OpenSoftKeyboard(Control target)
+    {
+        if (_input.Mode != InputMode.Controller)
+        {
+            return false;
+        }
+
+        _ = _softKeyboard.ShowAsync(target);
+        return true;
     }
 
     /// <summary>
