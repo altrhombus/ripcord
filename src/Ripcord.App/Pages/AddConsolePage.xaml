@@ -30,14 +30,6 @@
     mc:Ignorable="d">
 
     <Page.Resources>
-        <!--  A step's dash in the progress indicator. Filled once reached, faint before.  -->
-        <Style x:Key="StepDashStyle" TargetType="Rectangle">
-            <Setter Property="Height" Value="4" />
-            <Setter Property="RadiusX" Value="2" />
-            <Setter Property="RadiusY" Value="2" />
-            <Setter Property="Fill" Value="{ThemeResource AccentFillColorDefaultBrush}" />
-        </Style>
-
         <!--  One console found on the network.  -->
         <DataTemplate x:Key="DiscoveredConsoleTemplate" x:DataType="vm:DiscoveredConsoleCard">
             <Button
@@ -111,19 +103,19 @@
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
-                <Rectangle x:Name="StepDash1" Style="{StaticResource StepDashStyle}" />
+                <Rectangle x:Name="StepDash1" Style="{StaticResource RipcordStepDashStyle}" />
                 <Rectangle
                     x:Name="StepDash2"
                     Grid.Column="1"
-                    Style="{StaticResource StepDashStyle}" />
+                    Style="{StaticResource RipcordStepDashStyle}" />
                 <Rectangle
                     x:Name="StepDash3"
                     Grid.Column="2"
-                    Style="{StaticResource StepDashStyle}" />
+                    Style="{StaticResource RipcordStepDashStyle}" />
                 <Rectangle
                     x:Name="StepDash4"
                     Grid.Column="3"
-                    Style="{StaticResource StepDashStyle}" />
+                    Style="{StaticResource RipcordStepDashStyle}" />
             </Grid>
         </StackPanel>
 
