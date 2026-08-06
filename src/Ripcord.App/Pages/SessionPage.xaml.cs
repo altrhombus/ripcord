@@ -32,6 +32,7 @@ using Ripcord.Protocol.Halyard.Session;
 using Ripcord_App.Dialogs;
 using Ripcord_App.Services;
 using WinRT;
+using Ripcord.Core.Reactive;
 
 namespace Ripcord_App.Pages;
 
