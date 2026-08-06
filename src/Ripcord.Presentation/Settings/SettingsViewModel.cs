@@ -115,36 +115,49 @@ public sealed class SettingsViewModel : ObservableState<SettingsViewState>
     /// something.
     /// </para>
     /// </summary>
-    public void Load() => Mutate(() =>
+    public async Task LoadAsync()
     {
-        _loadError = null;
-
-        try
+        // The stored settings first and synchronously, so the page has something real to render immediately
+        // rather than flashing defaults while a driver is questioned.
+        Mutate(() =>
         {
-            _draft = _store.Current;
-        }
-        catch (Exception ex)
-        {
-            _loadError = ex.Message;
-            _draft = new RipcordSettings();
-        }
+            _loadError = null;
 
-        _hevcAvailable = Probe(_capabilities.IsHevcDecodeAvailable);
-        _displayHdr = Probe(_capabilities.IsHdrDisplayAvailable);
+            try
+            {
+                _draft = _store.Current;
+            }
+            catch (Exception ex)
+            {
+                _loadError = ex.Message;
+                _draft = new RipcordSettings();
+            }
+        });
 
-        // HDR rides on HEVC, so a machine that cannot decode HEVC cannot honour a stored HDR request. Correcting
-        // the draft rather than only the toggle keeps the saved record from claiming something untrue the moment
-        // anything else on the page is changed.
-        if (!_hevcAvailable && (_draft.Codec == VideoCodec.Hevc || _draft.RequestHdr))
+        // Then the capabilities, which are native and must not run on the UI thread — see
+        // IVideoCapabilitiesProbe, where that is a correctness requirement rather than a preference.
+        bool hevc = await ProbeAsync(_capabilities.IsHevcDecodeAvailableAsync).ConfigureAwait(false);
+        bool hdr = await ProbeAsync(_capabilities.IsHdrDisplayAvailableAsync).ConfigureAwait(false);
+
+        Mutate(() =>
         {
-            _draft = _draft with { Codec = VideoCodec.H264, RequestHdr = false };
-        }
+            _hevcAvailable = hevc;
+            _displayHdr = hdr;
+
+            // HDR rides on HEVC, so a machine that cannot decode HEVC cannot honour a stored HDR request.
+            // Correcting the draft rather than only the toggle keeps the saved record from claiming something
+            // untrue the moment anything else on the page is changed.
+            if (!_hevcAvailable && (_draft.Codec == VideoCodec.Hevc || _draft.RequestHdr))
+            {
+                _draft = _draft with { Codec = VideoCodec.H264, RequestHdr = false };
+            }
+        });
 
         if (_draft.GpuPreference == GpuPreference.Specific)
         {
-            EnsureAdapters();
+            await EnsureAdaptersAsync().ConfigureAwait(false);
         }
-    });
+    }
 
     // ---- setters -------------------------------------------------------------------------------
     //
@@ -189,24 +202,33 @@ public sealed class SettingsViewModel : ObservableState<SettingsViewState>
 
     public void SetRequestHdr(bool on) => Apply(() => _draft with { RequestHdr = on && HdrSelectable });
 
-    public void SetGpuPreference(int index) => Apply(() =>
+    /// <summary>
+    /// Choose how the GPU is picked.
+    ///
+    /// <para>
+    /// Returns a Task because choosing "a specific GPU" is the one setting whose consequences have to be
+    /// fetched: the adapter list is a native walk that cannot run on the UI thread. The preference itself
+    /// applies immediately, so the picker responds at once and the options fill in behind it.
+    /// </para>
+    /// </summary>
+    public async Task SetGpuPreferenceAsync(int index)
     {
         var preference = (GpuPreference)Math.Clamp(index, 0, GpuOptions.Length - 1);
-
-        if (preference == GpuPreference.Specific)
-        {
-            EnsureAdapters();
-        }
 
         // Drop a pinned LUID when the preference stops being "specific": leaving it set means a stale adapter id
         // rides along in the saved record and comes back if the user ever returns to Specific, pointing at a GPU
         // that may no longer be installed.
-        return _draft with
+        Apply(() => _draft with
         {
             GpuPreference = preference,
             GpuLuid = preference == GpuPreference.Specific ? _draft.GpuLuid : 0,
-        };
-    });
+        });
+
+        if (preference == GpuPreference.Specific)
+        {
+            await EnsureAdaptersAsync().ConfigureAwait(false);
+        }
+    }
 
     public void SetAdapter(int index) => Apply(() =>
     {
@@ -277,30 +299,39 @@ public sealed class SettingsViewModel : ObservableState<SettingsViewState>
         }
     });
 
-    private void EnsureAdapters()
+    private async Task EnsureAdaptersAsync()
     {
         if (_adapters is not null)
         {
             return;
         }
 
+        IReadOnlyList<VideoAdapterOption> adapters;
+        string? error;
+
         try
         {
-            _adapters = _capabilities.EnumerateAdapters();
-            _adapterError = null;
+            adapters = await _capabilities.EnumerateAdaptersAsync().ConfigureAwait(false);
+            error = null;
         }
         catch (Exception ex)
         {
-            _adapters = [];
-            _adapterError = $"Couldn't list the graphics adapters on this PC: {ex.Message}";
+            adapters = [];
+            error = $"Couldn't list the graphics adapters on this PC: {ex.Message}";
         }
+
+        Mutate(() =>
+        {
+            _adapters = adapters;
+            _adapterError = error;
+        });
     }
 
-    private static bool Probe(Func<bool> query)
+    private static async Task<bool> ProbeAsync(Func<Task<bool>> query)
     {
         try
         {
-            return query();
+            return await query().ConfigureAwait(false);
         }
         catch (Exception)
         {
