@@ -8,6 +8,7 @@
     xmlns:local="using:Ripcord_App.Pages"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:services="using:Ripcord_App.Services"
+    xmlns:vm="using:Ripcord.Presentation.Consoles"
     mc:Ignorable="d">
 
     <Page.Resources>
@@ -23,10 +24,15 @@
             actions live in the overflow flyout, which is also wired as the card's ContextFlyout so
             right-click and the pad's menu button both open it.
         -->
-        <DataTemplate x:Key="ConsoleCardTemplate" x:DataType="services:ConsoleListItem">
+        <!--
+            Bindings go through State, which is the view-model's single notifying property: the whole card is one
+            immutable record, recomposed on any change. So every binding here is Mode=OneWay on a State.* path,
+            and the leaf values need no notification of their own.
+        -->
+        <DataTemplate x:Key="ConsoleCardTemplate" x:DataType="vm:ConsoleCardViewModel">
             <Border
                 Padding="0"
-                AutomationProperties.Name="{x:Bind AutomationName, Mode=OneWay}"
+                AutomationProperties.Name="{x:Bind State.AutomationName, Mode=OneWay}"
                 Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
                 BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
                 BorderThickness="1"
@@ -39,12 +45,12 @@
                 PointerExited="OnCardUnhighlight">
                 <Grid>
                     <Rectangle
-                        Opacity="{x:Bind WashOpacity, Mode=OneWay}"
+                        Opacity="{x:Bind State.IsHighlighted, Mode=OneWay, Converter={StaticResource WashOpacity}}"
                         RadiusX="8"
                         RadiusY="8">
                         <Rectangle.Fill>
                             <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
-                                <GradientStop Offset="0" Color="{x:Bind AccentColor}" />
+                                <GradientStop Offset="0" Color="{x:Bind State.Accent, Mode=OneWay, Converter={StaticResource AccentColor}}" />
                                 <GradientStop Offset="0.9" Color="Transparent" />
                             </LinearGradientBrush>
                         </Rectangle.Fill>
@@ -76,7 +82,7 @@
                             Width="13"
                             Height="23"
                             HorizontalAlignment="Left"
-                            Accent="{x:Bind AccentBrush, Mode=OneWay}" />
+                            Accent="{x:Bind State.Accent, Mode=OneWay, Converter={StaticResource AccentBrush}}" />
 
                         <!--
                             The overflow. A button nested inside a clickable item is fine — it handles the
@@ -103,17 +109,17 @@
                             Margin="0,10,0,0"
                             MaxLines="2"
                             Style="{StaticResource SubtitleTextBlockStyle}"
-                            Text="{x:Bind DisplayName, Mode=OneWay}"
+                            Text="{x:Bind State.DisplayName, Mode=OneWay}"
                             TextTrimming="CharacterEllipsis"
                             TextWrapping="Wrap"
-                            ToolTipService.ToolTip="{x:Bind DisplayName, Mode=OneWay}" />
+                            ToolTipService.ToolTip="{x:Bind State.DisplayName, Mode=OneWay}" />
 
                         <TextBlock
                             Grid.Row="2"
                             Grid.ColumnSpan="2"
                             Foreground="{ThemeResource TextFillColorTertiaryBrush}"
                             Style="{StaticResource CaptionTextBlockStyle}"
-                            Text="{x:Bind Details, Mode=OneWay}"
+                            Text="{x:Bind State.Details, Mode=OneWay}"
                             TextTrimming="CharacterEllipsis" />
 
                         <TextBlock
@@ -122,8 +128,8 @@
                             Margin="0,2,0,0"
                             Foreground="{ThemeResource TextFillColorTertiaryBrush}"
                             Style="{StaticResource CaptionTextBlockStyle}"
-                            Text="{x:Bind LastConnectedLabel, Mode=OneWay}"
-                            Visibility="{x:Bind LastConnectedVisibility, Mode=OneWay}" />
+                            Text="{x:Bind State.LastConnectedLabel, Mode=OneWay}"
+                            Visibility="{x:Bind State.HasLastConnected, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
 
                         <!--
                             Status and the primary action share the last row: the state, then what activating
@@ -153,18 +159,18 @@
                                         Width="8"
                                         Height="8"
                                         VerticalAlignment="Center"
-                                        Fill="{x:Bind StatusBrush, Mode=OneWay}"
-                                        Visibility="{x:Bind SettledVisibility, Mode=OneWay}" />
+                                        Fill="{x:Bind State.StatusTone, Mode=OneWay, Converter={StaticResource StatusBrush}}"
+                                        Visibility="{x:Bind State.IsChecking, Mode=OneWay, Converter={StaticResource InverseBoolToVisibility}}" />
                                     <ProgressRing
                                         Width="10"
                                         Height="10"
                                         IsActive="True"
-                                        Visibility="{x:Bind CheckingVisibility, Mode=OneWay}" />
+                                        Visibility="{x:Bind State.IsChecking, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
                                 </Grid>
                                 <TextBlock
                                     Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                     Style="{StaticResource CaptionTextBlockStyle}"
-                                    Text="{x:Bind StatusLabel, Mode=OneWay}" />
+                                    Text="{x:Bind State.StatusLabel, Mode=OneWay}" />
                             </StackPanel>
 
                             <!--
@@ -174,23 +180,23 @@
                             <StackPanel
                                 Grid.Column="1"
                                 VerticalAlignment="Center"
-                                Opacity="{x:Bind ActionOpacity, Mode=OneWay}"
+                                Opacity="{x:Bind State.CanConnect, Mode=OneWay, Converter={StaticResource ActionOpacity}}"
                                 Orientation="Horizontal"
                                 Spacing="6">
                                 <FontIcon
                                     FontSize="12"
                                     Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
                                     Glyph="&#xE768;"
-                                    Visibility="{x:Bind PlayGlyphVisibility, Mode=OneWay}" />
+                                    Visibility="{x:Bind State.ActionGlyph, Mode=OneWay, Converter={StaticResource ActionGlyphIs}, ConverterParameter=Play}" />
                                 <FontIcon
                                     FontSize="12"
                                     Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
                                     Glyph="&#xE7E8;"
-                                    Visibility="{x:Bind WakeGlyphVisibility, Mode=OneWay}" />
+                                    Visibility="{x:Bind State.ActionGlyph, Mode=OneWay, Converter={StaticResource ActionGlyphIs}, ConverterParameter=Wake}" />
                                 <TextBlock
                                     Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
                                     Style="{StaticResource CaptionTextBlockStyle}"
-                                    Text="{x:Bind PrimaryActionLabel, Mode=OneWay}" />
+                                    Text="{x:Bind State.PrimaryActionLabel, Mode=OneWay}" />
                             </StackPanel>
                         </Grid>
                     </Grid>
