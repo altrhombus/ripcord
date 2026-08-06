@@ -4,6 +4,7 @@ using Ripcord.Core.Settings;
 using Ripcord.Presentation.Consoles;
 using Ripcord.Presentation.Pairing;
 using Ripcord.Presentation.Sessions;
+using Ripcord.Presentation.Settings;
 using Ripcord.Presentation.Threading;
 
 namespace Ripcord.Presentation;
@@ -108,4 +109,11 @@ public sealed class RipcordAppServices
     /// </summary>
     public SessionViewModel CreateSessionViewModel(IVideoPipelineStats pipeline)
         => new(pipeline, Settings.Current, Dispatcher);
+
+    /// <summary>
+    /// Build the settings surface's view-model. Like the pipeline above, the capability probe comes from the
+    /// caller: what a machine can decode is a fact about the front end's own graphics stack.
+    /// </summary>
+    public SettingsViewModel CreateSettingsViewModel(IVideoCapabilitiesProbe capabilities)
+        => new(Settings, Consoles, capabilities, Dispatcher);
 }
