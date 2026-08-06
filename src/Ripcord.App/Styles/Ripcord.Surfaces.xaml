@@ -99,4 +99,36 @@
         <Setter Property="Fill" Value="{ThemeResource AccentFillColorDefaultBrush}" />
     </Style>
 
+    <!--
+        ================================================================================================
+        Focus engagement is off, app-wide
+
+        A Slider defaults to IsFocusEngagementEnabled="True": directional focus will not leave it until the
+        control has been explicitly "engaged" and then disengaged, and both of those are defined purely in
+        terms of gamepad key events — GamepadA, GamepadB and friends arriving through KeyDown.
+
+        In a WinUI 3 DESKTOP app those events never arrive at all. There is no CoreWindow, so no gamepad
+        virtual key is ever delivered; this app reads the pad itself and calls the focus engine directly.
+        Engagement therefore can never be entered and, crucially, never exited — so the control is not merely
+        awkward with a pad, it is a one-way trap. Measured: pressing Down on the bitrate slider left focus on
+        the bitrate slider, forever, with no keyboard on a handheld to escape with.
+
+        Turned off as an implicit style rather than per instance so the next slider anyone adds inherits
+        whatever the eventual fix turns out to be. Alongside it, FocusPilot routes the axes: Left/Right adjust
+        the value, Up/Down are meant to move focus — the same split the arrow keys already use, so there is no
+        second mental model and no engaged/disengaged state to get stuck in.
+
+        DOES NOT ACTUALLY WORK YET, and this comment is the warning rather than the record of a fix. Turning
+        engagement off did not release directional focus, and neither did FocusPilot's tab-order fallback;
+        pressing Down on the bitrate slider still leaves focus on the bitrate slider. B (navigate back) is the
+        only escape today. So the real cause is NOT engagement, or not only engagement — it is still unknown,
+        and this setter is kept because it is correct in intent, not because it was observed to help. Tracked
+        in ROADMAP. Anyone picking this up: start by checking whether the Slider's own template is handling
+        the directional move before FindNextElement is ever consulted.
+        ================================================================================================
+    -->
+    <Style TargetType="Slider">
+        <Setter Property="IsFocusEngagementEnabled" Value="False" />
+    </Style>
+
 </ResourceDictionary>

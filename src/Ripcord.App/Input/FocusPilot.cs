@@ -80,12 +80,51 @@ public sealed class FocusPilot(Func<FrameworkElement?> contentRoot, Action seedF
             return;
         }
 
-        // If there is nothing in that direction, leave focus where it is. An earlier version re-seeded focus
-        // here, so pressing against the edge of a list teleported the caret away from where the user was
-        // pushing. Only seed when nothing has focus at all.
-        if (FocusManager.GetFocusedElement(searchRoot.XamlRoot) is null)
+        // Nothing in that direction. Usually that is correct and focus should stay put — pressing against the
+        // end of a row should not teleport the caret somewhere else.
+        //
+        // But a RANGE control is the exception, and it is a trap rather than an edge. WinUI will not let
+        // directional focus leave a Slider vertically: engagement is meant to govern that, and engagement is
+        // defined in terms of gamepad key events which never arrive in a desktop app, so the state can be
+        // entered and never left. Disabling IsFocusEngagementEnabled was not sufficient on its own. Rather than
+        // keep guessing at the cause, fall back to TAB ORDER — a different engine, which should have somewhere
+        // to go whatever the reason directional search did not.
+        //
+        // MEASURED, AND STILL NOT FIXED: as of this commit Up/Down on the bitrate slider does not escape it.
+        // Disabling IsFocusEngagementEnabled did not work, and neither did the first version of this fallback.
+        // B (which navigates back) is currently the only way out. Tracked in ROADMAP; do not describe the pad
+        // handling of range controls as solved until someone has watched focus actually leave one.
+        object? focused = FocusManager.GetFocusedElement(searchRoot.XamlRoot);
+
+        if (focused is null)
         {
             seedFocus();
+            return;
+        }
+
+        bool vertical = direction is NavDirection.Up or NavDirection.Down;
+        if (vertical && IsRangeControl(focused))
+        {
+            FocusNavigationDirection tabDirection = direction == NavDirection.Down
+                ? FocusNavigationDirection.Next
+                : FocusNavigationDirection.Previous;
+
+            // Deliberately the overload WITHOUT FindNextElementOptions. Next/Previous are tab order, not
+            // geometry, so SearchRoot has nothing to constrain and the options overload does not accept them —
+            // passing them was the first attempt at this and it silently found nothing.
+            try
+            {
+                if (FocusManager.FindNextElement(tabDirection) is UIElement fallback)
+                {
+                    fallback.Focus(FocusState.Keyboard);
+                    fallback.StartBringIntoView(new BringIntoViewOptions { AnimationDesired = AppMotion.Enabled });
+                }
+            }
+            catch (Exception)
+            {
+                // Several focus APIs that are valid in UWP throw in a desktop app because there is no implicit
+                // CoreWindow root. If this is one of them, the slider stays a trap and B is the way out.
+            }
         }
     }
 
@@ -318,5 +357,81 @@ public sealed class FocusPilot(Func<FrameworkElement?> contentRoot, Action seedF
         }
 
         return null;
+    }
+
+    /// <summary>Diagnostic: which ancestor, if any, carries a ContextFlyout.</summary>
+
+    /// <summary>
+    /// Close the topmost open popup, if there is one.
+    ///
+    /// <para>
+    /// Back has to mean "close this" before it means "leave this page". A pad has no Escape, so with a context
+    /// menu open and Back wired straight to frame navigation, the only pressable dismissal was gone — the menu
+    /// stayed up and Back appeared dead. Returns true when it handled the press, so the caller knows not to
+    /// navigate.
+    /// </para>
+    /// </summary>
+    public bool TryDismissPopup()
+    {
+        if (contentRoot()?.XamlRoot is not { } xamlRoot)
+        {
+            return false;
+        }
+
+        IReadOnlyList<Popup> popups = VisualTreeHelper.GetOpenPopupsForXamlRoot(xamlRoot);
+
+        for (int i = popups.Count - 1; i >= 0; i--)
+        {
+            if (popups[i] is { IsOpen: true } popup)
+            {
+                popup.IsOpen = false;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>A control whose own directional behaviour will not release focus vertically — in practice a Slider.</summary>
+    private static bool IsRangeControl(object? element)
+    {
+        if (element is not FrameworkElement fe)
+        {
+            return false;
+        }
+
+        var peer = FrameworkElementAutomationPeer.FromElement(fe)
+            ?? FrameworkElementAutomationPeer.CreatePeerForElement(fe);
+
+        return peer?.GetPattern(PatternInterface.RangeValue) is IRangeValueProvider;
+    }
+
+    /// <summary>
+    /// Whether focus is somewhere a pad can actually navigate from.
+    ///
+    /// <para>
+    /// Null is the obvious case, but not the only one. Clicking empty space in the window leaves focus on a
+    /// CONTAINER — a ScrollViewer, a panel, the page itself — and a container that encloses every candidate has
+    /// nothing above, below or beside it, so directional search finds nothing in any direction. To a user that
+    /// is indistinguishable from the pad being dead, which is exactly how it was reported.
+    /// </para>
+    /// </summary>
+    public bool NeedsFocusSeed()
+    {
+        if (contentRoot()?.XamlRoot is not { } xamlRoot)
+        {
+            return false;
+        }
+
+        object? focused = FocusManager.GetFocusedElement(xamlRoot);
+
+        return focused switch
+        {
+            null => true,
+            ScrollViewer => true,
+            Control { IsTabStop: false } => true,
+            not Control => true,
+            _ => false,
+        };
     }
 }
