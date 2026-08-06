@@ -37,7 +37,10 @@ namespace Ripcord_App.Input;
 /// would also inject arrows into the console stream and into text boxes.
 /// </para>
 /// </summary>
-public sealed class FocusPilot(Func<FrameworkElement?> contentRoot, Action seedFocus)
+public sealed class FocusPilot(
+    Func<FrameworkElement?> contentRoot,
+    Action seedFocus,
+    Func<Control, bool>? openTextEntry = null)
 {
     public void MoveFocus(NavDirection direction)
     {
@@ -247,6 +250,15 @@ public sealed class FocusPilot(Func<FrameworkElement?> contentRoot, Action seedF
             return;
         }
 
+        // A text field first, because it is the one control where activation cannot mean "press it". A TextBox
+        // exposes no Invoke pattern, so before this the accept button did nothing whatsoever on a text field —
+        // and four of them stand between a user and a paired console. Handled by the host, which owns the
+        // keyboard overlay; the pilot only knows that something answered.
+        if (focused is Control control && IsTextEntry(control) && openTextEntry?.Invoke(control) == true)
+        {
+            return;
+        }
+
         var peer = FrameworkElementAutomationPeer.FromElement(focused)
             ?? FrameworkElementAutomationPeer.CreatePeerForElement(focused);
 
@@ -391,6 +403,13 @@ public sealed class FocusPilot(Func<FrameworkElement?> contentRoot, Action seedF
 
         return false;
     }
+
+    /// <summary>
+    /// A control where typing is the point. Named types rather than "exposes a writable Value pattern",
+    /// because a ComboBox exposes one too and opening a keyboard over a list of fixed choices would be wrong.
+    /// </summary>
+    private static bool IsTextEntry(Control control)
+        => control is TextBox or PasswordBox or RichEditBox;
 
     /// <summary>A control whose own directional behaviour will not release focus vertically — in practice a Slider.</summary>
     private static bool IsRangeControl(object? element)
