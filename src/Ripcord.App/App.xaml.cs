@@ -58,8 +58,14 @@ public partial class App : Application
         // The graph first, the window second. MainWindow's own constructor reads the settings store, and every
         // page it can navigate to resolves from here before its InitializeComponent runs, so there is no ordering
         // in which a partially-built graph is observable.
+        DispatcherQueue uiThread = DispatcherQueue.GetForCurrentThread();
+
+        // Before the window: AccessibilitySettings only raises its change event for an instance created on a
+        // thread with a message pump, so the effects gate has to be established here rather than on first use.
+        AppEffects.Initialize(uiThread);
+
         _services = HalyardAppServices.Create(
-            new DispatcherQueueUiDispatcher(DispatcherQueue.GetForCurrentThread()),
+            new DispatcherQueueUiDispatcher(uiThread),
             new NativeVideoCapabilitiesProbe());
 
         var window = new MainWindow();
