@@ -57,8 +57,7 @@
                         Grid.Column="1"
                         MinWidth="180"
                         VerticalAlignment="Center"
-                        AutomationProperties.Name="Resolution and frame rate"
-                        SelectionChanged="OnSettingChanged" />
+                        AutomationProperties.Name="Resolution and frame rate" />
                 </Grid>
             </Border>
 
@@ -88,8 +87,7 @@
                         AutomationProperties.Name="Maximum bitrate in megabits per second"
                         Maximum="40"
                         Minimum="2"
-                        StepFrequency="1"
-                        ValueChanged="OnBitrateChanged" />
+                        StepFrequency="1" />
                 </StackPanel>
             </Border>
 
@@ -111,8 +109,7 @@
                         x:Name="AdaptiveToggle"
                         Grid.Column="1"
                         VerticalAlignment="Center"
-                        AutomationProperties.Name="Adapt quality automatically"
-                        Toggled="OnSettingChanged" />
+                        AutomationProperties.Name="Adapt quality automatically" />
                 </Grid>
             </Border>
 
@@ -135,8 +132,7 @@
                         Grid.Column="1"
                         MinWidth="180"
                         VerticalAlignment="Center"
-                        AutomationProperties.Name="Image scaling"
-                        SelectionChanged="OnSettingChanged" />
+                        AutomationProperties.Name="Image scaling" />
                 </Grid>
             </Border>
 
@@ -158,8 +154,7 @@
                         x:Name="ConnectionQualityToggle"
                         Grid.Column="1"
                         VerticalAlignment="Center"
-                        AutomationProperties.Name="Tell the console about your connection"
-                        Toggled="OnSettingChanged" />
+                        AutomationProperties.Name="Tell the console about your connection" />
                 </Grid>
             </Border>
 
@@ -186,8 +181,7 @@
                             Grid.Column="1"
                             MinWidth="180"
                             VerticalAlignment="Center"
-                            AutomationProperties.Name="Which GPU to use"
-                            SelectionChanged="OnGpuPreferenceChanged" />
+                            AutomationProperties.Name="Which GPU to use" />
                     </Grid>
                     <!--  Video codec. HEVC is offered only when a decoder for it actually exists on this
                           machine (HEVC support depends on the GPU and on the HEVC Video Extension), so the
@@ -210,8 +204,7 @@
                             Grid.Column="1"
                             MinWidth="180"
                             VerticalAlignment="Center"
-                            AutomationProperties.Name="Video codec"
-                            SelectionChanged="OnCodecChanged" />
+                            AutomationProperties.Name="Video codec" />
                     </Grid>
                     <!--
                         Keyboard input. Off by default: with a pad connected there is no reason for stray typing
@@ -219,8 +212,7 @@
                     -->
                     <ToggleSwitch
                         x:Name="KeyboardToggle"
-                        Header="Send keyboard input to the console"
-                        Toggled="OnSettingChanged" />
+                        Header="Send keyboard input to the console" />
                     <StackPanel Orientation="Horizontal" Spacing="12">
                         <Button
                             x:Name="KeyBindingsButton"
@@ -242,8 +234,7 @@
                           which is what the help text below covers.  -->
                     <ToggleSwitch
                         x:Name="HdrToggle"
-                        Header="Request HDR"
-                        Toggled="OnSettingChanged" />
+                        Header="Request HDR" />
                     <!--
                         Readiness checklist rather than a paragraph of prose. HDR needs four things and only
                         one of them is this toggle, so a user whose picture stays SDR has no way to tell WHICH
@@ -264,7 +255,6 @@
                         x:Name="AdapterCombo"
                         MinWidth="280"
                         AutomationProperties.Name="Specific graphics adapter"
-                        SelectionChanged="OnSettingChanged"
                         Visibility="Collapsed" />
                     <InfoBar
                         x:Name="AdapterWarning"
@@ -296,8 +286,7 @@
                         Grid.Column="1"
                         MinWidth="180"
                         VerticalAlignment="Center"
-                        AutomationProperties.Name="Leave a stream with the controller"
-                        SelectionChanged="OnExitGestureChanged" />
+                        AutomationProperties.Name="Leave a stream with the controller" />
                 </Grid>
             </Border>
 
@@ -327,8 +316,7 @@
                         AutomationProperties.Name="Menu stick sensitivity"
                         Maximum="0.9"
                         Minimum="0.1"
-                        StepFrequency="0.05"
-                        ValueChanged="OnDeadzoneChanged" />
+                        StepFrequency="0.05" />
                 </StackPanel>
             </Border>
 
@@ -353,8 +341,7 @@
                         x:Name="FullScreenToggle"
                         Grid.Column="1"
                         VerticalAlignment="Center"
-                        AutomationProperties.Name="Full screen when a stream starts"
-                        Toggled="OnSettingChanged" />
+                        AutomationProperties.Name="Full screen when a stream starts" />
                 </Grid>
             </Border>
 
@@ -376,8 +363,7 @@
                         x:Name="ConfirmOnDisconnectToggle"
                         Grid.Column="1"
                         VerticalAlignment="Center"
-                        AutomationProperties.Name="Ask before disconnecting"
-                        Toggled="OnSettingChanged" />
+                        AutomationProperties.Name="Ask before disconnecting" />
                 </Grid>
             </Border>
 
@@ -399,8 +385,7 @@
                         x:Name="RestOnDisconnectToggle"
                         Grid.Column="1"
                         VerticalAlignment="Center"
-                        AutomationProperties.Name="Rest console when I disconnect"
-                        Toggled="OnSettingChanged" />
+                        AutomationProperties.Name="Rest console when I disconnect" />
                 </Grid>
             </Border>
 
@@ -422,8 +407,7 @@
                         x:Name="DiagnosticsToggle"
                         Grid.Column="1"
                         VerticalAlignment="Center"
-                        AutomationProperties.Name="Show connection diagnostics"
-                        Toggled="OnSettingChanged" />
+                        AutomationProperties.Name="Show connection diagnostics" />
                 </Grid>
             </Border>
 
@@ -445,8 +429,7 @@
                         x:Name="LargeUiToggle"
                         Grid.Column="1"
                         VerticalAlignment="Center"
-                        AutomationProperties.Name="Larger text and controls"
-                        Toggled="OnSettingChanged" />
+                        AutomationProperties.Name="Larger text and controls" />
                 </Grid>
             </Border>
 
