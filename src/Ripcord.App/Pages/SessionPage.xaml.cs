@@ -483,7 +483,13 @@ public sealed partial class SessionPage : Page
 
         ControllerConnectedText.Text = s.ConnectedControllers;
 
-        RenderDiagnostics(s.Diagnostics);
+        // The state is kept current twice a second regardless; assigning two dozen text properties on a
+        // collapsed panel is the part worth skipping. ToggleDiagnosticsPanel renders on the way in, so opening
+        // the overlay shows the latest sample rather than whatever was there when it was last closed.
+        if (DiagnosticsPanel.Visibility == Visibility.Visible)
+        {
+            RenderDiagnostics(s.Diagnostics);
+        }
     }
 
     private void RenderDiagnostics(SessionDiagnosticsState d)
@@ -1178,9 +1184,18 @@ public sealed partial class SessionPage : Page
     }
 
     private void ToggleDiagnosticsPanel()
-        => DiagnosticsPanel.Visibility = DiagnosticsPanel.Visibility == Visibility.Visible
-            ? Visibility.Collapsed
-            : Visibility.Visible;
+    {
+        bool showing = DiagnosticsPanel.Visibility != Visibility.Visible;
+        DiagnosticsPanel.Visibility = showing ? Visibility.Visible : Visibility.Collapsed;
+
+        if (showing)
+        {
+            // Catch the panel up in one pass: rendering is skipped while it is collapsed, so without this it
+            // would show the last sample from before it was closed until the next tick.
+            RenderDiagnostics(_viewModel.State.Diagnostics);
+            RenderGraph();
+        }
+    }
 
     /// <summary>
     /// One diagnostics sample.
@@ -1199,14 +1214,16 @@ public sealed partial class SessionPage : Page
     /// </summary>
     private void StatsTick(object? sender, object e)
     {
-        if (DiagnosticsPanel.Visibility != Visibility.Visible)
-        {
-            return;
-        }
-
+        // SAMPLED whether or not the panel is showing; only the DRAWING is gated on visibility, further down in
+        // Render. Gating the sample itself cost two things, and a saved report showed both: the health verdict
+        // could read "Not connected yet" beside a lifecycle of "Streaming", because it had been composed before
+        // the session existed and nothing recomposed it; and the sparklines opened empty, so someone who
+        // reached for the overlay because something looked wrong got no history of the thirty seconds that made
+        // them reach for it.
+        //
         // False means the sample was skipped — no pipeline yet, or too little time since the last one for a rate
         // to mean anything — so there is nothing new to plot either.
-        if (_viewModel.Sample(ReadTelemetry()))
+        if (_viewModel.Sample(ReadTelemetry()) && DiagnosticsPanel.Visibility == Visibility.Visible)
         {
             RenderGraph();
         }
