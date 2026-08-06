@@ -100,7 +100,7 @@
                             Click="OnConsoleOverflowClick"
                             Tag="{x:Bind}"
                             ToolTipService.ToolTip="More options">
-                            <FontIcon FontSize="14" Glyph="&#xE712;" />
+                            <FontIcon FontSize="{ThemeResource RipcordIconSizeBody}" Glyph="&#xE712;" />
                         </Button>
 
                         <TextBlock
@@ -184,12 +184,12 @@
                                 Orientation="Horizontal"
                                 Spacing="6">
                                 <FontIcon
-                                    FontSize="12"
+                                    FontSize="{ThemeResource RipcordIconSizeCaption}"
                                     Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
                                     Glyph="&#xE768;"
                                     Visibility="{x:Bind State.ActionGlyph, Mode=OneWay, Converter={StaticResource ActionGlyphIs}, ConverterParameter=Play}" />
                                 <FontIcon
-                                    FontSize="12"
+                                    FontSize="{ThemeResource RipcordIconSizeCaption}"
                                     Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
                                     Glyph="&#xE7E8;"
                                     Visibility="{x:Bind State.ActionGlyph, Mode=OneWay, Converter={StaticResource ActionGlyphIs}, ConverterParameter=Wake}" />
@@ -226,7 +226,7 @@
                     VerticalAlignment="Center"
                     Spacing="10">
                     <FontIcon
-                        FontSize="24"
+                        FontSize="{ThemeResource RipcordIconSizeHero}"
                         Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                         Glyph="&#xE710;" />
                     <TextBlock
@@ -285,7 +285,7 @@
                 Click="OnAddConsoleClick"
                 Style="{StaticResource AccentButtonStyle}">
                 <StackPanel Orientation="Horizontal" Spacing="8">
-                    <FontIcon FontSize="16" Glyph="&#xE710;" />
+                    <FontIcon FontSize="{ThemeResource RipcordIconSizeAction}" Glyph="&#xE710;" />
                     <TextBlock Text="Add console" />
                 </StackPanel>
             </Button>
@@ -329,7 +329,7 @@
                 Click="OnAddConsoleClick"
                 Style="{StaticResource AccentButtonStyle}">
                 <StackPanel Orientation="Horizontal" Spacing="8">
-                    <FontIcon FontSize="16" Glyph="&#xE710;" />
+                    <FontIcon FontSize="{ThemeResource RipcordIconSizeAction}" Glyph="&#xE710;" />
                     <TextBlock Text="Add a console" />
                 </StackPanel>
             </Button>
