@@ -38,6 +38,19 @@ public sealed class InputRouter : IDisposable
     private readonly ISettingsStore _settings;
     private readonly NavIntentReader _navIntents = new();
 
+    /// <summary>
+    /// Which input method is driving. Fed by the shell rather than from <see cref="OnFrame"/>, deliberately:
+    /// frames arrive on a polling thread, and every consumer of the mode is a piece of interface that lives on
+    /// the UI thread. Reporting from the shell keeps the tracker single-threaded and means <c>ModeChanged</c>
+    /// is raised where a surface can act on it directly.
+    ///
+    /// <para>
+    /// Nothing is lost by not reading raw frames: the tracker's contract is <em>deliberate</em> activity, and a
+    /// navigation intent is produced on exactly that — a button edge, or a stick past its deadzone.
+    /// </para>
+    /// </summary>
+    private readonly InputModeTracker _modes = new();
+
     private IControllerSource? _source;
     private IDisposable? _stateSubscription;
     private IDisposable? _connectionSubscription;
@@ -97,6 +110,28 @@ public sealed class InputRouter : IDisposable
         (_source as IDisposable)?.Dispose();
         _source = null;
     }
+
+    /// <summary>How the person is driving the app right now.</summary>
+    public InputMode Mode => _modes.Mode;
+
+    /// <summary>Raised on the thread that reported the activity — in practice the UI thread. See <see cref="_modes"/>.</summary>
+    public event Action<InputMode>? ModeChanged
+    {
+        add => _modes.ModeChanged += value;
+        remove => _modes.ModeChanged -= value;
+    }
+
+    /// <summary>The pad did something deliberate. Called by the shell when it acts on an intent.</summary>
+    public void ReportControllerActivity() => _modes.ReportControllerActivity(DateTimeOffset.UtcNow);
+
+    /// <summary>A key was pressed.</summary>
+    public void ReportKeyboardActivity() => _modes.ReportKeyboardActivity(DateTimeOffset.UtcNow);
+
+    /// <summary>A pointer button went down or the wheel turned — never mere movement.</summary>
+    public void ReportPointerActivity() => _modes.ReportPointerActivity(DateTimeOffset.UtcNow);
+
+    /// <summary>A touch contact began.</summary>
+    public void ReportTouchActivity() => _modes.ReportTouchActivity(DateTimeOffset.UtcNow);
 
     /// <summary>The deadzone is a user setting and can change while the app runs.</summary>
     public void UseDeadzone(double deadzone) => _navIntents.StickDeadzone = deadzone;
