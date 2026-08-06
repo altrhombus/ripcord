@@ -88,11 +88,18 @@
                         <!--
                             The overflow. A button nested inside a clickable item is fine — it handles the
                             pointer first, so opening the menu does not also start a connect.
+
+                            It was 32×32, which is a comfortable mouse target and a poor finger one. Grown to
+                            the 48 minimum as a HIT AREA only: the background is transparent, so the glyph sits
+                            where it always did and the card looks unchanged. The negative margin absorbs the
+                            extra size into the card's padding rather than pushing the title down — without it,
+                            every card grows to fit a button nobody can see.
                         -->
                         <Button
                             Grid.Column="1"
-                            Width="32"
-                            Height="32"
+                            MinWidth="{StaticResource RipcordTouchTarget}"
+                            MinHeight="{StaticResource RipcordTouchTarget}"
+                            Margin="0,-8,-8,0"
                             Padding="0"
                             VerticalAlignment="Top"
                             AutomationProperties.Name="More options for this console"
@@ -104,6 +111,14 @@
                             <FontIcon FontSize="{ThemeResource RipcordIconSizeBody}" Glyph="&#xE712;" />
                         </Button>
 
+                        <!--
+                            The tooltip REPEATS the name; it is not the only place the name lives. Touch never
+                            hovers, so anything reachable by hover alone is unreachable on a handheld — and the
+                            card is a fixed height, so a long name genuinely truncates here. What makes that
+                            acceptable is Details in the overflow menu, which shows the full name and is
+                            reachable by finger, by pad and by mouse. Do not let this tooltip become the only
+                            copy.
+                        -->
                         <TextBlock
                             Grid.Row="1"
                             Grid.ColumnSpan="2"

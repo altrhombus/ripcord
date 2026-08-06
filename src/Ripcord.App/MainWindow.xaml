@@ -57,11 +57,17 @@
                 The two utilities, as commands rather than destinations — which is what they are. Each is one
                 focus stop with an access key, so they are reachable by pad, by Tab and by Alt, and neither
                 costs a permanent column of the window.
+
+                Compact touch target rather than the full 48: the bar is 48 tall, so a 48 button fills it edge
+                to edge. This is the one place the minimum is knowingly not met, which is what the separate
+                token is for.
             -->
             <TitleBar.RightHeader>
                 <StackPanel Orientation="Horizontal" Spacing="2" VerticalAlignment="Center">
                     <Button
                         x:Name="SettingsButton"
+                        MinWidth="{StaticResource RipcordTouchTargetCompact}"
+                        MinHeight="{StaticResource RipcordTouchTargetCompact}"
                         AccessKey="S"
                         AutomationProperties.Name="Settings"
                         Click="OnSettingsClick"
@@ -71,6 +77,8 @@
                     </Button>
                     <Button
                         x:Name="AboutButton"
+                        MinWidth="{StaticResource RipcordTouchTargetCompact}"
+                        MinHeight="{StaticResource RipcordTouchTargetCompact}"
                         AccessKey="A"
                         AutomationProperties.Name="About Ripcord"
                         Click="OnAboutClick"
