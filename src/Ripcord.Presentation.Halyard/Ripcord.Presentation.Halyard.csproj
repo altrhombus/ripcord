@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <!--
+    The PlayStation backend for the portable presentation layer: implementations of Ripcord.Presentation's
+    discovery, registration and reachability seams in terms of Halyard, plus the composition root that wires
+    them together. The one place a front end has to name Halyard at all.
+
+    This is the crypto-seam pattern from CLAUDE.md applied to the app layer rather than to crypto. Keeping the
+    Halyard dependency here instead of in Ripcord.Presentation buys three concrete things:
+
+      1. Ripcord.Presentation.Tests references exactly one project, so the pairing state machine — the most
+         valuable thing in this layer to test — is tested with no UDP, no ports 9302/987, no registration
+         cipher and no dirty-room fixtures.
+      2. ConsoleFamily exists to be the boundary between the vendor-codename vocabulary and the product-name
+         vocabulary. If Ripcord.Presentation referenced Halyard, HalyardConsolePlatform would leak back across
+         that boundary by convenience and the boundary would stop meaning anything.
+      3. A second console family gets added by implementing the seams here, not by editing the shared layer.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\Ripcord.Presentation\Ripcord.Presentation.csproj" />
+    <ProjectReference Include="..\Ripcord.Protocol.Halyard\Ripcord.Protocol.Halyard.csproj" />
+    <ProjectReference Include="..\Ripcord.Protocol.Halyard.Common\Ripcord.Protocol.Halyard.Common.csproj" />
+  </ItemGroup>
+
+</Project>
