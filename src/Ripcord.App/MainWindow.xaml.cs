@@ -186,6 +186,8 @@ public sealed partial class MainWindow : Window, IShellNavigator
                 handledEventsToo: true);
         }
 
+        AddAccelerators();
+
         // Coming back from another app, focus is often gone — WinUI does not restore it, and a pad user is then
         // looking at a window with no caret, pressing a direction that has nothing to move from. Re-seeded on
         // activation, at low priority so the visual tree has settled first.
@@ -333,6 +335,110 @@ public sealed partial class MainWindow : Window, IShellNavigator
     /// The single back route. Every gesture that means "back" — the title-bar chevron and the pad's East
     /// button — comes through here, so they cannot disagree about what back does.
     /// </summary>
+    /// <summary>
+    /// Window-level keyboard shortcuts.
+    ///
+    /// <para>
+    /// In code rather than markup for one unavoidable reason and one consequence of it: <c>VirtualKey</c> has
+    /// no name for the comma, so <c>Ctrl+,</c> — the shortcut every Windows app uses for settings — can only be
+    /// written as its numeric code, and once one accelerator lives here the rest are easier to read beside it
+    /// than split across two files.
+    /// </para>
+    ///
+    /// <para>
+    /// Deliberately no <c>TabIndex</c> anywhere in this app: tab order follows declaration order, so
+    /// rearranging markup cannot silently produce a wrong order that only a keyboard user discovers. Where the
+    /// order is wrong, the markup moves.
+    /// </para>
+    /// </summary>
+    private void AddAccelerators()
+    {
+        if (Content is not UIElement root)
+        {
+            return;
+        }
+
+        // Alt+Left/Right — the platform's back and forward, and what a browser-shaped muscle memory reaches for.
+        Add(Windows.System.VirtualKey.Left, Windows.System.VirtualKeyModifiers.Menu, GoBack);
+        Add(Windows.System.VirtualKey.Right, Windows.System.VirtualKeyModifiers.Menu, () =>
+        {
+            if (ChromeFrame.CanGoForward)
+            {
+                ChromeFrame.GoForward();
+            }
+        });
+
+        // Ctrl+, for settings, Ctrl+N for the thing this app is for.
+        Add((Windows.System.VirtualKey)188, Windows.System.VirtualKeyModifiers.Control, () => NavigateToUtility(typeof(SettingsPage)));
+        Add(Windows.System.VirtualKey.N, Windows.System.VirtualKeyModifiers.Control, () =>
+        {
+            if (!Shell().IsStreaming)
+            {
+                ChromeFrame.Navigate(typeof(AddConsolePage));
+            }
+        });
+
+        // F6 cycles between the window's two focus regions — the title-bar commands and the page. With the
+        // NavigationView gone there are only two, which is exactly what makes F6 worth having: there is no
+        // other key that reaches the title bar.
+        Add(Windows.System.VirtualKey.F6, Windows.System.VirtualKeyModifiers.None, CycleRegion);
+
+        void Add(Windows.System.VirtualKey key, Windows.System.VirtualKeyModifiers modifiers, Action invoke)
+        {
+            var accelerator = new KeyboardAccelerator { Key = key, Modifiers = modifiers };
+
+            accelerator.Invoked += (_, args) =>
+            {
+                args.Handled = true;
+                invoke();
+            };
+
+            root.KeyboardAccelerators.Add(accelerator);
+        }
+    }
+
+    private IShellNavigator Shell() => this;
+
+    /// <summary>
+    /// Move focus between the title bar's commands and the page content.
+    ///
+    /// <para>
+    /// Asks where focus is rather than remembering where it was put, so it stays correct when something else
+    /// moves focus — a dialog closing, the watchdog re-seeding — which a toggle field would not.
+    /// </para>
+    /// </summary>
+    private void CycleRegion()
+    {
+        if (Content?.XamlRoot is not { } xamlRoot)
+        {
+            return;
+        }
+
+        bool inTitleBar = FocusManager.GetFocusedElement(xamlRoot) is DependencyObject focused
+                          && IsDescendantOf(focused, AppTitleBar);
+
+        if (inTitleBar)
+        {
+            FocusFirstContentElement();
+            return;
+        }
+
+        SettingsButton.Focus(FocusState.Keyboard);
+    }
+
+    private static bool IsDescendantOf(DependencyObject node, DependencyObject ancestor)
+    {
+        for (DependencyObject? current = node; current is not null; current = VisualTreeHelper.GetParent(current))
+        {
+            if (ReferenceEquals(current, ancestor))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private void GoBack()
     {
         // Closing what is on top comes first. Otherwise Back with a context menu open navigates the page
