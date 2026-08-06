@@ -9,17 +9,6 @@
     Loaded="Page_Loaded"
     mc:Ignorable="d">
 
-    <Page.Resources>
-        <Style
-            x:Key="SectionHeaderStyle"
-            BasedOn="{StaticResource BodyStrongTextBlockStyle}"
-            TargetType="TextBlock">
-            <Setter Property="Margin" Value="0,16,0,0" />
-            <Setter Property="VerticalAlignment" Value="Center" />
-        </Style>
-
-    </Page.Resources>
-
     <ScrollViewer Padding="24,16,24,32">
         <StackPanel MaxWidth="820" Spacing="8">
 
@@ -184,7 +173,11 @@
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
                 <StackPanel VerticalAlignment="Bottom">
-                    <TextBlock Style="{StaticResource SectionHeaderStyle}" Text="This device" />
+                    <!--  The 16px lead-in is a section break, stated where it applies rather than hidden in a style.  -->
+                    <TextBlock
+                        Margin="0,16,0,0"
+                        Style="{StaticResource RipcordSectionHeaderStyle}"
+                        Text="This device" />
                     <TextBlock
                         Foreground="{ThemeResource TextFillColorTertiaryBrush}"
                         Style="{StaticResource CaptionTextBlockStyle}"
@@ -365,7 +358,10 @@
             </Border>
 
             <!--  ============ Provenance ============  -->
-            <TextBlock Style="{StaticResource SectionHeaderStyle}" Text="About this project" />
+            <TextBlock
+                Margin="0,16,0,0"
+                Style="{StaticResource RipcordSectionHeaderStyle}"
+                Text="About this project" />
 
             <Border Margin="0,6,0,0" Padding="16,14" Style="{StaticResource RipcordCardStyle}">
                 <Grid ColumnSpacing="14">
