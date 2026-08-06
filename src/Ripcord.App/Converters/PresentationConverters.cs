@@ -3,6 +3,7 @@ using Microsoft.UI.Xaml.Data;
 using Microsoft.UI.Xaml.Media;
 using Ripcord.Presentation.Consoles;
 using Ripcord_App.Accents;
+using Ripcord_App.Services;
 
 namespace Ripcord_App.Converters;
 
@@ -129,7 +130,7 @@ public sealed partial class ActionGlyphIsConverter : IValueConverter
 public sealed partial class HighlightWashOpacityConverter : IValueConverter
 {
     public object Convert(object value, Type targetType, object parameter, string language)
-        => value is true ? 0.22 : 0.10;
+        => AppEffects.AccentWashOpacity(value is true ? 0.22 : 0.10);
 
     public object ConvertBack(object value, Type targetType, object parameter, string language)
         => throw new NotSupportedException();

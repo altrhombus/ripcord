@@ -73,6 +73,12 @@ public sealed partial class MainWindow : Window, IShellNavigator
         AppWindow.TitleBar.PreferredHeightOption = TitleBarHeightOption.Tall;
         AppWindow.SetIcon("Assets/AppIcon.ico");
 
+        // The backdrop is declared in markup, which cannot ask whether the user permits transparency — so the
+        // first thing done with it is to re-decide it. Without this, someone who has turned transparency off
+        // still got Mica until the first time they closed a stream.
+        RestoreBackdrop();
+        AppEffects.Changed += OnEffectsChanged;
+
         _stickDeadzone = _settingsStore.Current.UiStickDeadzone;
         _settingsStore.Changed += s => _dispatcherQueue.TryEnqueue(() => _stickDeadzone = s.UiStickDeadzone);
 
@@ -101,6 +107,7 @@ public sealed partial class MainWindow : Window, IShellNavigator
 
         Closed += (_, _) =>
         {
+            AppEffects.Changed -= OnEffectsChanged;
             _navControllerSubscription?.Dispose();
             _navControllerSource?.Dispose();
         };
@@ -123,6 +130,11 @@ public sealed partial class MainWindow : Window, IShellNavigator
         StreamFrame.Navigate(typeof(SessionPage), console);
         StreamFrame.Visibility = Visibility.Visible;
 
+        // Drop the backdrop for the duration. The window is about to be covered by opaque video, so Mica would
+        // be blurring the wallpaper behind it every frame for something nobody can see — invisible on screen,
+        // measurable in power, and this app's whole point is running on a handheld.
+        SystemBackdrop = null;
+
         // Hide the chrome underneath so nothing renders behind the video and no nav item is left looking
         // selected while a stream — which is not a nav destination — is running.
         NavView.Visibility = Visibility.Collapsed;
@@ -138,6 +150,7 @@ public sealed partial class MainWindow : Window, IShellNavigator
     public void CloseStream(string? closedConsoleHost = null, bool restRequested = false)
     {
         SetFullScreen(false);
+        RestoreBackdrop();
 
         StreamFrame.Visibility = Visibility.Collapsed;
 
@@ -158,6 +171,33 @@ public sealed partial class MainWindow : Window, IShellNavigator
         if (NavFrame.Content is ConsolesPage consolesPage)
         {
             consolesPage.OnReturnedFromStream(closedConsoleHost, restRequested);
+        }
+    }
+
+    /// <summary>
+    /// Put the backdrop back after a stream, honouring the transparency setting.
+    ///
+    /// <para>
+    /// Mica is a transparency effect, so a user who has turned those off should not get one — that setting is
+    /// frequently chosen because the effect makes text harder to read, and the chrome is perfectly legible on a
+    /// solid surface. Re-read rather than remembered, because it can change while a stream is running.
+    /// </para>
+    /// </summary>
+    private void RestoreBackdrop()
+        => SystemBackdrop = AppEffects.TransparencyEnabled ? new MicaBackdrop() : null;
+
+    /// <summary>
+    /// Transparency or high contrast changed while running. Only the backdrop needs acting on here — the accent
+    /// wash and the family marks resolve through <c>AccentResources</c> on each binding pass, so they follow on
+    /// the next render without anything being told.
+    /// </summary>
+    private void OnEffectsChanged()
+    {
+        // Not while streaming: the backdrop is deliberately off for the duration, and putting one back under
+        // opaque video would undo the reason it was dropped.
+        if (!IsStreaming)
+        {
+            RestoreBackdrop();
         }
     }
 
