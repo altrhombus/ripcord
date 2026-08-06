@@ -16,6 +16,7 @@ using Microsoft.UI.Xaml.Media.Animation;
 using Microsoft.UI.Xaml.Navigation;
 using Microsoft.UI.Xaml.Shapes;
 using Ripcord.Client;
+using Ripcord.Core.Consoles;
 using Ripcord.Core.Input;
 using Ripcord.Core.Platform;
 using Ripcord.Core.Power;
@@ -352,7 +353,7 @@ public sealed partial class SessionPage : Page
     /// </summary>
     private async Task<bool> EnsureConsoleAwakeAsync(IPAddress address)
     {
-        HalyardPairingRecord? record = _console!.ToRecord(CredentialProtection.ForCurrentPlatform());
+        HalyardPairingRecord? record = _console!.ToPairingRecord(CredentialProtection.ForCurrentPlatform());
         if (record is null)
         {
             // No usable pairing record means no wake credential. Not fatal here — connect will fail with its

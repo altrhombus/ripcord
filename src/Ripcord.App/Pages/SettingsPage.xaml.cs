@@ -7,6 +7,7 @@ using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Documents;
 using Microsoft.UI.Xaml.Media;
 using System.Diagnostics;
+using Ripcord.Core.Consoles;
 using Ripcord.Core.Input;
 using Ripcord.Core.Sessions;
 using Ripcord.Core.Settings;
