@@ -7,6 +7,7 @@ using Ripcord.Presentation.Halyard.Pairing;
 using Ripcord.Presentation.Halyard.Sessions;
 using Ripcord.Presentation.Pairing;
 using Ripcord.Presentation.Sessions;
+using Ripcord.Presentation.Settings;
 using Ripcord.Presentation.Threading;
 
 namespace Ripcord.Presentation.Halyard;
@@ -37,8 +38,14 @@ public static class HalyardAppServices
     /// guessing it (a synchronization context that may not exist yet) is how a view-model ends up mutating from
     /// the wrong thread in exactly one host.
     /// </param>
+    /// <param name="videoCapabilities">
+    /// What the front end's graphics stack can do. Like the dispatcher, only the front end can answer this, and
+    /// on Windows the implementation must marshal off the UI thread or the process dies — which is precisely why
+    /// it is one object in the graph rather than something each surface builds for itself.
+    /// </param>
     public static RipcordAppServices Create(
         IUiDispatcher dispatcher,
+        IVideoCapabilitiesProbe videoCapabilities,
         IPlatformPaths? paths = null,
         ISettingsStore? settings = null,
         IPairedConsoleStore? consoles = null,
@@ -48,12 +55,14 @@ public static class HalyardAppServices
         IConsoleWakeCoordinator? wakeCoordinator = null)
     {
         ArgumentNullException.ThrowIfNull(dispatcher);
+        ArgumentNullException.ThrowIfNull(videoCapabilities);
 
         IPlatformPaths resolvedPaths = paths ?? new DefaultPlatformPaths();
 
         return new RipcordAppServices
         {
             Dispatcher = dispatcher,
+            VideoCapabilities = videoCapabilities,
             Paths = resolvedPaths,
 
             // Both stores are handed the SAME paths instance, which was not true when each surface built its

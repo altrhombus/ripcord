@@ -29,11 +29,20 @@ namespace Ripcord_App.Services;
 /// <see cref="SettingsViewModel"/>, where a failure becomes a specific degraded answer ("no HEVC decoder",
 /// "couldn't list the adapters") that is written once and tested.
 /// </para>
+///
+/// <para>
+/// <b>This is the only place in the app permitted to name <c>VideoCapabilities</c></b>, and
+/// <c>NativeCapabilityAccessTests</c> enforces it. One call site is what makes the marshalling rule above
+/// checkable at all — with two, the second was correct only because whoever wrote it happened to know.
+/// </para>
 /// </summary>
 public sealed class NativeVideoCapabilitiesProbe : IVideoCapabilitiesProbe
 {
     public Task<bool> IsHevcDecodeAvailableAsync()
         => Task.Run(() => VideoCapabilities.IsCodecDecodeAvailable(VideoCodecKind.Hevc));
+
+    public Task<bool> IsHardwareDecodeSupportedAsync()
+        => Task.Run(VideoCapabilities.IsD3D12VideoDecodeSupported);
 
     public Task<bool> IsHdrDisplayAvailableAsync()
         => Task.Run(VideoCapabilities.IsHdrDisplayAvailable);

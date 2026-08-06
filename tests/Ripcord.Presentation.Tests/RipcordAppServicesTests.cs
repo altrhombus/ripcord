@@ -5,6 +5,7 @@ using Ripcord.Core.Settings;
 using Ripcord.Presentation.Consoles;
 using Ripcord.Presentation.Pairing;
 using Ripcord.Presentation.Sessions;
+using Ripcord.Presentation.Settings;
 using Ripcord.Presentation.Threading;
 using Xunit;
 
@@ -39,6 +40,7 @@ public class RipcordAppServicesTests
             Scanner = new StubScanner(),
             Registrar = new StubRegistrar(),
             ReachabilityProbe = new StubProbe(),
+            VideoCapabilities = new StubCapabilities(),
             WakeCoordinator = new StubWakeCoordinator(),
         };
     }
@@ -176,6 +178,17 @@ public class RipcordAppServicesTests
     {
         public Task<bool?> ProbeAsync(PairedConsole console, CancellationToken cancellationToken)
             => throw new NotSupportedException();
+    }
+
+    private sealed class StubCapabilities : IVideoCapabilitiesProbe
+    {
+        public Task<bool> IsHevcDecodeAvailableAsync() => throw new NotSupportedException();
+
+        public Task<bool> IsHardwareDecodeSupportedAsync() => throw new NotSupportedException();
+
+        public Task<bool> IsHdrDisplayAvailableAsync() => throw new NotSupportedException();
+
+        public Task<IReadOnlyList<VideoAdapterOption>> EnumerateAdaptersAsync() => throw new NotSupportedException();
     }
 
     private sealed class StubWakeCoordinator : IConsoleWakeCoordinator

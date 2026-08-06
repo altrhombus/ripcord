@@ -11,7 +11,7 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.Win32;
 using Ripcord.Core.Platform;
-using Ripcord.Media.Interop;
+using Ripcord.Presentation.Settings;
 using Windows.ApplicationModel.DataTransfer;
 
 namespace Ripcord_App.Pages;
@@ -87,7 +87,7 @@ public sealed partial class AboutPage : Page
     /// </summary>
     private async Task ProbeGraphicsAsync()
     {
-        GraphicsProbe probe = await Task.Run(RunGraphicsProbe);
+        GraphicsProbe probe = await RunGraphicsProbeAsync();
 
         GraphicsText.Text = probe.Graphics;
         Record("Graphics", probe.Graphics);
@@ -133,15 +133,24 @@ public sealed partial class AboutPage : Page
 
     private readonly record struct GraphicsProbe(string Graphics, bool HardwareDecode, bool Hevc, string? Failure);
 
-    private static GraphicsProbe RunGraphicsProbe()
+    /// <summary>
+    /// Ask the shared capability probe, which is the only thing in the app allowed to touch the native queries
+    /// — and which marshals them off this thread, because doing otherwise kills the process outright. This page
+    /// used to call them directly and got away with it only because it wrapped them in <c>Task.Run</c> itself;
+    /// the settings page made the same calls without that and crashed on every open.
+    /// </summary>
+    private static async Task<GraphicsProbe> RunGraphicsProbeAsync()
     {
+        IVideoCapabilitiesProbe capabilities = App.Services.VideoCapabilities;
+
         try
         {
-            IReadOnlyList<VideoAdapterInfo> adapters = VideoCapabilities.EnumerateAdapters();
+            IReadOnlyList<VideoAdapterOption> adapters = await capabilities.EnumerateAdaptersAsync();
+
             return new GraphicsProbe(
                 DescribeAdapters(adapters),
-                VideoCapabilities.IsD3D12VideoDecodeSupported(),
-                VideoCapabilities.IsCodecDecodeAvailable(VideoCodecKind.Hevc),
+                await capabilities.IsHardwareDecodeSupportedAsync(),
+                await capabilities.IsHevcDecodeAvailableAsync(),
                 Failure: null);
         }
         catch (Exception ex)
@@ -155,7 +164,7 @@ public sealed partial class AboutPage : Page
     /// Name the adapter a stream would actually run on — the decode-capable one driving a display, which is what
     /// the Automatic GPU preference resolves to — and count the others rather than listing every adapter equally.
     /// </summary>
-    private static string DescribeAdapters(IReadOnlyList<VideoAdapterInfo> adapters)
+    private static string DescribeAdapters(IReadOnlyList<VideoAdapterOption> adapters)
     {
         if (adapters.Count == 0)
         {
@@ -168,7 +177,7 @@ public sealed partial class AboutPage : Page
             chosen = IndexOfFirst(adapters, a => a.DrivesADisplay);
         }
 
-        VideoAdapterInfo adapter = adapters[chosen < 0 ? 0 : chosen];
+        VideoAdapterOption adapter = adapters[chosen < 0 ? 0 : chosen];
 
         // Deliberately not reporting DedicatedVideoMemory: on the integrated GPU most of these machines stream
         // from, it is a carve-out of system RAM and reads as "this GPU has half a gigabyte", which is both
@@ -184,7 +193,7 @@ public sealed partial class AboutPage : Page
         return text.ToString();
     }
 
-    private static int IndexOfFirst(IReadOnlyList<VideoAdapterInfo> adapters, Func<VideoAdapterInfo, bool> match)
+    private static int IndexOfFirst(IReadOnlyList<VideoAdapterOption> adapters, Func<VideoAdapterOption, bool> match)
     {
         for (int i = 0; i < adapters.Count; i++)
         {
