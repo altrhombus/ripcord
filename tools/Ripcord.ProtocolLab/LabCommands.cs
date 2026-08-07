@@ -353,7 +353,7 @@ internal static class LabCommands
         packet[0] = HalyardStreamHeader.TypeVideo;
         BinaryPrimitives.WriteUInt16BigEndian(packet.AsSpan(1), (ushort)seq);   // packet_index
         BinaryPrimitives.WriteUInt16BigEndian(packet.AsSpan(3), frameIndex);    // frame_index
-        uint packed = ((uint)unitIndex << 21) | ((uint)(unitsTotal - 1) << 10); // units_in_frame_fec = 0
+        uint packed = ((uint)unitIndex << 21) | ((uint)(unitsTotal - 1) << 10); // parity_units = 0
         BinaryPrimitives.WriteUInt32BigEndian(packet.AsSpan(5), packed);
         BinaryPrimitives.WriteUInt32BigEndian(packet.AsSpan(HalyardStreamHeader.KeyPositionOffset), seq * 0x400u);
         payload.CopyTo(packet.AsSpan(payloadOffset));

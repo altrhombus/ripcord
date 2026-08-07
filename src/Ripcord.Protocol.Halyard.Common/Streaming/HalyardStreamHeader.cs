@@ -97,7 +97,7 @@ public readonly struct HalyardStreamHeader
         ushort packetIndex = BinaryPrimitives.ReadUInt16BigEndian(packet[1..]);
         ushort frameIndex = BinaryPrimitives.ReadUInt16BigEndian(packet[3..]);
         // The bytes-5..8 packed field is laid out differently for video and audio. Video packs three
-        // 11/11/10-bit fields; audio packs byte-wide fields (unit_index in the top byte, units_total-1 in the
+        // 11/11/10-bit fields; audio packs byte-wide fields (unit_index in the top byte, total_units-1 in the
         // next). Parsing audio with the video layout yields nonsense unit counts (e.g. 137), which is why the
         // audio unit structure went unnoticed until now.
         uint packed = BinaryPrimitives.ReadUInt32BigEndian(packet[5..]);

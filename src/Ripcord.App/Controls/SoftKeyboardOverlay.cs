@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Threading.Tasks;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Automation.Peers;
@@ -51,7 +50,6 @@ public sealed class SoftKeyboardOverlay
     private const double KeyGap = 8;
 
     private Popup? _popup;
-    private TaskCompletionSource<bool>? _closed;
     private ShellInputScope? _scope;
     private readonly List<Button> _letterKeys = [];
     private bool _shifted;
@@ -59,26 +57,33 @@ public sealed class SoftKeyboardOverlay
     public bool IsOpen => _popup is { IsOpen: true };
 
     /// <summary>
-    /// Put the keyboard up for <paramref name="target"/> and complete when it is dismissed.
+    /// Put the keyboard up for <paramref name="target"/>. Returns whether it went up.
     ///
     /// <para>
-    /// Returns false when there is nothing to do — no XamlRoot, a target that exposes no writable value, or a
-    /// keyboard already up. Those are all ordinary races rather than bugs, and the caller's answer to each is
-    /// the same: carry on as if the press did nothing.
+    /// <b>Synchronous, and that is a correction.</b> This was <c>Task&lt;bool&gt; ShowAsync</c> completing on
+    /// dismissal, and every caller discarded the task — so a failure to open, including a thrown exception,
+    /// vanished into an unobserved Task while the caller still reported the press as handled. The button did
+    /// nothing and said nothing. Opening a popup was never asynchronous work; only waiting for it to close
+    /// was, and nobody was waiting.
+    /// </para>
+    ///
+    /// <para>
+    /// False means there was nothing to do — no XamlRoot, a target exposing no writable value, or a keyboard
+    /// already up. The caller should treat the press as unhandled and let it fall through.
     /// </para>
     /// </summary>
-    public Task<bool> ShowAsync(Control target)
+    public bool TryOpen(Control target)
     {
         ArgumentNullException.ThrowIfNull(target);
 
         if (IsOpen || target.XamlRoot is not { } root)
         {
-            return Task.FromResult(false);
+            return false;
         }
 
         if (ValueProviderOf(target) is not { IsReadOnly: false } value)
         {
-            return Task.FromResult(false);
+            return false;
         }
 
         _shifted = false;
@@ -96,7 +101,6 @@ public sealed class SoftKeyboardOverlay
             Child = surface,
         };
 
-        _closed = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         _popup.Closed += OnPopupClosed;
         root.Changed += OnXamlRootChanged;
 
@@ -118,7 +122,7 @@ public sealed class SoftKeyboardOverlay
                 }
             });
 
-        return _closed.Task;
+        return true;
     }
 
     /// <summary>Close it, if it is up. Safe to call when it is not.</summary>
@@ -398,8 +402,6 @@ public sealed class SoftKeyboardOverlay
 
         _popup = null;
         _letterKeys.Clear();
-        _closed?.TrySetResult(true);
-        _closed = null;
     }
 
     private static IValueProvider? ValueProviderOf(Control target)
