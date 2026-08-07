@@ -81,7 +81,7 @@ public sealed class SoftKeyboardOverlay
             return false;
         }
 
-        if (ValueProviderOf(target) is not { IsReadOnly: false } value)
+        if (TargetFor(target) is not { } value)
         {
             return false;
         }
@@ -175,7 +175,7 @@ public sealed class SoftKeyboardOverlay
         return false;
     }
 
-    private FrameworkElement BuildSurface(XamlRoot root, Control target, IValueProvider value)
+    private FrameworkElement BuildSurface(XamlRoot root, Control target, TextTarget value)
     {
         var keys = new StackPanel { Spacing = KeyGap, HorizontalAlignment = HorizontalAlignment.Center };
 
@@ -211,7 +211,7 @@ public sealed class SoftKeyboardOverlay
         return host;
     }
 
-    private StackPanel BuildRow(string[] row, IValueProvider value)
+    private StackPanel BuildRow(string[] row, TextTarget value)
     {
         var panel = new StackPanel
         {
@@ -228,7 +228,7 @@ public sealed class SoftKeyboardOverlay
         return panel;
     }
 
-    private Button BuildKey(string key, IValueProvider value)
+    private Button BuildKey(string key, TextTarget value)
     {
         var button = new Button
         {
@@ -286,7 +286,7 @@ public sealed class SoftKeyboardOverlay
         [KeyShift, KeySpace, KeyBackspace, KeyDone],
     ];
 
-    private void OnKey(string key, IValueProvider value)
+    private void OnKey(string key, TextTarget value)
     {
         switch (key)
         {
@@ -308,7 +308,7 @@ public sealed class SoftKeyboardOverlay
 
             case KeyBackspace:
             {
-                string current = value.Value ?? string.Empty;
+                string current = value.Read();
                 if (current.Length > 0)
                 {
                     Write(value, current[..^1]);
@@ -320,7 +320,7 @@ public sealed class SoftKeyboardOverlay
             default:
             {
                 string typed = _shifted && key.Length == 1 ? key.ToUpperInvariant() : key;
-                Write(value, (value.Value ?? string.Empty) + typed);
+                Write(value, value.Read() + typed);
 
                 // Shift is one-shot, as it is on every phone keyboard: holding a modifier down with a thumb
                 // while aiming at a key with the same thumb is not possible.
@@ -334,11 +334,11 @@ public sealed class SoftKeyboardOverlay
         }
     }
 
-    private static void Write(IValueProvider value, string text)
+    private static void Write(TextTarget value, string text)
     {
         try
         {
-            value.SetValue(text);
+            value.Write(text);
         }
         catch (Exception ex)
         {
@@ -404,12 +404,43 @@ public sealed class SoftKeyboardOverlay
         _letterKeys.Clear();
     }
 
-    private static IValueProvider? ValueProviderOf(Control target)
-    {
-        var peer = FrameworkElementAutomationPeer.FromElement(target)
-            ?? FrameworkElementAutomationPeer.CreatePeerForElement(target);
+    /// <summary>Where the keys write, and what they read back.</summary>
+    private sealed record TextTarget(Func<string> Read, Action<string> Write);
 
-        return peer?.GetPattern(PatternInterface.Value) as IValueProvider;
+    /// <summary>
+    /// How to edit a control's text, preferring the automation pattern and falling back to the property.
+    ///
+    /// <para>
+    /// <b>The fallback is the point.</b> This used to require <see cref="IValueProvider"/> and return false
+    /// without it, which made an automation-peer detail into a gate on the keyboard appearing at all — and on
+    /// hardware the keyboard did not appear, silently, with the peer as the only suspect I could not rule out
+    /// by reading. Writing to <c>TextBox.Text</c> raises <c>TextChanged</c> exactly as the pattern does, so
+    /// the validation the pairing flow hangs off keeps working either way. The pattern stays preferred because
+    /// it is the general path a non-TextBox target would need; it is no longer allowed to be a veto.
+    /// </para>
+    /// </summary>
+    private static TextTarget? TargetFor(Control control)
+    {
+        var peer = FrameworkElementAutomationPeer.FromElement(control)
+            ?? FrameworkElementAutomationPeer.CreatePeerForElement(control);
+
+        if (peer?.GetPattern(PatternInterface.Value) is IValueProvider { IsReadOnly: false } value)
+        {
+            return new TextTarget(() => value.Value ?? string.Empty, value.SetValue);
+        }
+
+        return control switch
+        {
+            TextBox { IsReadOnly: false } box => new TextTarget(
+                () => box.Text ?? string.Empty,
+                text => box.Text = text),
+
+            PasswordBox box => new TextTarget(
+                () => box.Password ?? string.Empty,
+                text => box.Password = text),
+
+            _ => null,
+        };
     }
 
     /// <summary>
