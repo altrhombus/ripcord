@@ -190,7 +190,7 @@ public sealed class FocusPilot(
             return content;
         }
 
-        IReadOnlyList<Popup> popups = VisualTreeHelper.GetOpenPopupsForXamlRoot(xamlRoot);
+        IReadOnlyList<Popup> popups = NavigablePopups(xamlRoot);
         if (popups.Count == 0)
         {
             return content;
@@ -390,15 +390,12 @@ public sealed class FocusPilot(
             return false;
         }
 
-        IReadOnlyList<Popup> popups = VisualTreeHelper.GetOpenPopupsForXamlRoot(xamlRoot);
+        IReadOnlyList<Popup> popups = NavigablePopups(xamlRoot);
 
         for (int i = popups.Count - 1; i >= 0; i--)
         {
-            if (popups[i] is { IsOpen: true } popup)
-            {
-                popup.IsOpen = false;
-                return true;
-            }
+            popups[i].IsOpen = false;
+            return true;
         }
 
         return false;
@@ -410,6 +407,46 @@ public sealed class FocusPilot(
     /// </summary>
     private static bool IsTextEntry(Control control)
         => control is TextBox or PasswordBox or RichEditBox;
+
+    /// <summary>
+    /// The open popups that are actually places a user can be — the ones holding something focusable.
+    ///
+    /// <para>
+    /// <b>Found on hardware, and it made the pad look dead.</b> A TOOLTIP is a popup. So is the dimmed smoke
+    /// layer behind a ContentDialog. Neither contains anything focusable, and both are frequently the topmost
+    /// popup on the XamlRoot. Treating them as the search root meant directional focus searched a tooltip,
+    /// found nothing, and did nothing — so hovering the mouse over a button with a tooltip silently killed
+    /// controller navigation until the tooltip faded. Reported as "sometimes the controller stops responding
+    /// and there's a tooltip on screen", which is exactly what it was.
+    /// </para>
+    ///
+    /// <para>
+    /// The same list drives dismissal, and the same bug was there in a second costume: Back closed the smoke
+    /// layer rather than the dialog, so the first press removed the dimming and left the prompt sitting there.
+    /// One filter fixes both, because both are the same mistake — assuming every popup is a surface.
+    /// </para>
+    ///
+    /// <para>
+    /// "Holds something focusable" rather than a type check on ToolTip: it is the property actually being
+    /// relied on, it needs no list of popup types to keep current, and any future decoration rendered in a
+    /// popup is excluded without anyone having to remember to add it.
+    /// </para>
+    /// </summary>
+    private static IReadOnlyList<Popup> NavigablePopups(XamlRoot xamlRoot)
+    {
+        List<Popup> navigable = [];
+
+        foreach (Popup popup in VisualTreeHelper.GetOpenPopupsForXamlRoot(xamlRoot))
+        {
+            if (popup is { IsOpen: true, Child: DependencyObject child }
+                && FocusManager.FindFirstFocusableElement(child) is not null)
+            {
+                navigable.Add(popup);
+            }
+        }
+
+        return navigable;
+    }
 
     /// <summary>A control whose own directional behaviour will not release focus vertically — in practice a Slider.</summary>
     private static bool IsRangeControl(object? element)

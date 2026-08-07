@@ -534,7 +534,7 @@ public sealed class HalyardStreamDemuxer(IHalyardSessionCrypto crypto)
         // The audio payload packs TotalUnits equal-size units back to back. The first unit is the source
         // Opus frame; the remaining units are redundant copies of the same 10 ms for loss concealment (each
         // decodes to the same audio). The frame index advances by one per packet, so there is exactly one
-        // source frame per packet. unit_size is derived as payload / units_total — the header's low-16 unit-size
+        // source frame per packet. unit_size is derived as payload / total_units — the header's low-16 unit-size
         // field is packed differently on this v12 firmware and reads as 32 (which would imply a 96-byte payload,
         // not the observed 240). Feeding the whole payload to the decoder is the bug that made audio sound
         // "underwater": Opus/CELT sizes its per-band bit budget from the packet length, so the two extra units
