@@ -259,6 +259,8 @@ public sealed partial class MainWindow : Window, IShellNavigator
         ChromeFrame.Visibility = Visibility.Visible;
         TitleBarRow.Height = new GridLength(48);
         AppTitleBar.Visibility = Visibility.Visible;
+        TitleBarCommands.Visibility = Visibility.Visible;
+        AppTitleBar.IsBackButtonVisible = ChromeFrame.CanGoBack;
 
         // The consoles list is the page revealed underneath after a stream (nothing else navigates during one),
         // and returning to it never re-fired Loaded — so a just-rested console kept its stale "Online" dot.
@@ -324,6 +326,13 @@ public sealed partial class MainWindow : Window, IShellNavigator
 
         TitleBarRow.Height = fullScreen ? new GridLength(0) : new GridLength(48);
         AppTitleBar.Visibility = fullScreen ? Visibility.Collapsed : Visibility.Visible;
+
+        // The title bar itself stays in windowed mode — it carries the window controls and the drag region, and
+        // taking those away would trap the user in a window they cannot move or close. Its COMMANDS go, because
+        // they navigate the chrome frame, which is collapsed behind opaque video: they were visible, clickable
+        // and completely inert, which is worse than absent. Reported from hardware.
+        TitleBarCommands.Visibility = Visibility.Collapsed;
+        AppTitleBar.IsBackButtonVisible = false;
 
         Grid.SetRow(StreamFrame, fullScreen ? 0 : 1);
         Grid.SetRowSpan(StreamFrame, fullScreen ? 2 : 1);
