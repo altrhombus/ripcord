@@ -1,3 +1,4 @@
+using Windows.Foundation;
 using System;
 using System.Collections.Generic;
 using Microsoft.UI.Xaml;
@@ -86,17 +87,15 @@ public sealed class FocusPilot(
         // Nothing in that direction. Usually that is correct and focus should stay put — pressing against the
         // end of a row should not teleport the caret somewhere else.
         //
-        // But a RANGE control is the exception, and it is a trap rather than an edge. WinUI will not let
-        // directional focus leave a Slider vertically: engagement is meant to govern that, and engagement is
-        // defined in terms of gamepad key events which never arrive in a desktop app, so the state can be
-        // entered and never left. Disabling IsFocusEngagementEnabled was not sufficient on its own. Rather than
-        // keep guessing at the cause, fall back to TAB ORDER — a different engine, which should have somewhere
-        // to go whatever the reason directional search did not.
+        // A range control is the exception, and the history here is worth keeping because it was a
+        // misdiagnosis rather than a hard problem. Up/Down would not leave the bitrate slider, and that was
+        // read as WinUI's focus engagement — a state defined in gamepad key events that never arrive in a
+        // desktop app, so it looked un-exitable by construction. It was not that at all: DirectionalRoot was
+        // handing the search a TOOLTIP as its root (see NavigablePopups), so the search found nothing from
+        // anywhere, and the slider was merely where it was noticed. Two fixes were written against the wrong
+        // cause and neither worked, which in hindsight was the evidence.
         //
-        // MEASURED, AND STILL NOT FIXED: as of this commit Up/Down on the bitrate slider does not escape it.
-        // Disabling IsFocusEngagementEnabled did not work, and neither did the first version of this fallback.
-        // B (which navigates back) is currently the only way out. Tracked in ROADMAP; do not describe the pad
-        // handling of range controls as solved until someone has watched focus actually leave one.
+        // What remains after that is genuine but small, and is handled below.
         object? focused = FocusManager.GetFocusedElement(searchRoot.XamlRoot);
 
         if (focused is null)
@@ -106,27 +105,35 @@ public sealed class FocusPilot(
         }
 
         bool vertical = direction is NavDirection.Up or NavDirection.Down;
-        if (vertical && IsRangeControl(focused))
+        if (!vertical || focused is not FrameworkElement element || !IsRangeControl(element))
         {
-            FocusNavigationDirection tabDirection = direction == NavDirection.Down
-                ? FocusNavigationDirection.Next
-                : FocusNavigationDirection.Previous;
+            return;
+        }
 
-            // Deliberately the overload WITHOUT FindNextElementOptions. Next/Previous are tab order, not
-            // geometry, so SearchRoot has nothing to constrain and the options overload does not accept them —
-            // passing them was the first attempt at this and it silently found nothing.
-            try
+        // Search again FROM THE ROW, not from the control.
+        //
+        // A Slider sits in a layout of its own inside a settings row — a horizontal panel holding the slider
+        // and its value readout. Directional search starts from the focused element's rectangle, and from
+        // inside that panel the rows above and below do not project onto it cleanly, so the search finds
+        // nothing and focus stays put. HintRect is the supported way to say "search as if you were here":
+        // point it at the whole row and the neighbouring rows are found normally.
+        //
+        // This replaces a tab-order fallback that moved focus by a different engine entirely. It did get the
+        // user out, but tab order and layout order are not the same thing, so it SKIPPED the next row — which
+        // is how a workaround announces that it is not the fix.
+        if (RowOf(element) is { } row)
+        {
+            var fromRow = new FindNextElementOptions
             {
-                if (FocusManager.FindNextElement(tabDirection) is UIElement fallback)
-                {
-                    fallback.Focus(FocusState.Keyboard);
-                    fallback.StartBringIntoView(new BringIntoViewOptions { AnimationDesired = AppMotion.Enabled });
-                }
-            }
-            catch (Exception)
+                SearchRoot = searchRoot,
+                HintRect = BoundsIn(row, searchRoot),
+                ExclusionRect = BoundsIn(element, searchRoot),
+            };
+
+            if (FocusManager.FindNextElement(winrtDirection, fromRow) is UIElement neighbour)
             {
-                // Several focus APIs that are valid in UWP throw in a desktop app because there is no implicit
-                // CoreWindow root. If this is one of them, the slider stays a trap and B is the way out.
+                neighbour.Focus(FocusState.Keyboard);
+                neighbour.StartBringIntoView(new BringIntoViewOptions { AnimationDesired = AppMotion.Enabled });
             }
         }
     }
@@ -446,6 +453,43 @@ public sealed class FocusPilot(
         }
 
         return navigable;
+    }
+
+    /// <summary>
+    /// The row a control belongs to: the nearest ancestor materially wider than the control itself, which is
+    /// what "the thing above" and "the thing below" are actually neighbours of. Bounded rather than walking to
+    /// the page root, since the page root is a neighbour of nothing.
+    /// </summary>
+    private static FrameworkElement? RowOf(FrameworkElement element)
+    {
+        DependencyObject? node = VisualTreeHelper.GetParent(element);
+
+        for (int depth = 0; depth < 6 && node is not null; depth++, node = VisualTreeHelper.GetParent(node))
+        {
+            if (node is FrameworkElement candidate
+                && candidate.ActualWidth > element.ActualWidth + 1
+                && candidate.ActualHeight > 0)
+            {
+                return candidate;
+            }
+        }
+
+        return null;
+    }
+
+    private static Rect BoundsIn(FrameworkElement element, UIElement reference)
+    {
+        try
+        {
+            return element.TransformToVisual(reference)
+                .TransformBounds(new Rect(0, 0, element.ActualWidth, element.ActualHeight));
+        }
+        catch (Exception)
+        {
+            // TransformToVisual throws when the two are not in the same tree, which a mid-teardown race can
+            // produce. An empty rect simply means the retry finds nothing, which is the pre-existing behaviour.
+            return default;
+        }
     }
 
     /// <summary>A control whose own directional behaviour will not release focus vertically — in practice a Slider.</summary>
