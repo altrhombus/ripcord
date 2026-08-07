@@ -366,7 +366,7 @@ public sealed class HalyardStreamingSession : IStreamingSession
     /// Drain the persistent /sess/ctrl binary channel for the life of the session and answer the console's
     /// HEARTBEAT_REQ with HEARTBEAT_REP. Missing these is what makes the console disconnect shortly after A/V
     /// begins. Other message types (session id, login, features) are functional refinements and ignored for
-    /// now — the heartbeat reply is the keep-alive. Empty-payload messages need no rpcrypt, so this stays
+    /// now — the heartbeat reply is the keep-alive. Empty-payload messages need no control-plane crypto, so this stays
     /// simple. A closed connection or cancellation ends the loop quietly.
     /// </summary>
     /// <summary>How long to watch for a login prompt before assuming the console is unlocked. In cap50 the

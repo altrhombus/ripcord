@@ -378,6 +378,17 @@ public sealed partial class MainWindow : Window, IShellNavigator
             }
         });
 
+        // Escape goes back, which it did not — reported as "Esc in Settings does nothing, so the page felt
+        // stuck". Only outside a stream: in a session Escape belongs to the session (leave the stream), and
+        // that reservation is why it is not a bindable key.
+        Add(Windows.System.VirtualKey.Escape, Windows.System.VirtualKeyModifiers.None, () =>
+        {
+            if (!Shell().IsStreaming)
+            {
+                GoBack();
+            }
+        });
+
         // F6 cycles between the window's two focus regions — the title-bar commands and the page. With the
         // NavigationView gone there are only two, which is exactly what makes F6 worth having: there is no
         // other key that reaches the title bar.
@@ -552,8 +563,10 @@ public sealed partial class MainWindow : Window, IShellNavigator
             return false;
         }
 
-        _ = _softKeyboard.ShowAsync(target);
-        return true;
+        // Returns what actually happened. It used to fire and forget, which meant any reason the keyboard
+        // did not open — including an exception — was swallowed AND the press was still reported as handled,
+        // so the button did nothing and said nothing. Reported as "press A on a text box: no keyboard".
+        return _softKeyboard.TryOpen(target);
     }
 
     /// <summary>

@@ -5,10 +5,10 @@ using Xunit;
 namespace Ripcord.Protocol.Halyard.Tests;
 
 /// <summary>
-/// Audio demux: an audio packet packs <c>total_units</c> equal-size units back to back — the first
+/// Audio demux: an audio packet packs <c>TotalUnits</c> equal-size units back to back — the first
 /// is the source Opus frame, the rest are redundant copies of the same 10 ms for loss concealment. The frame
 /// index advances by one per packet, so there is exactly one source frame per packet; the demuxer emits only
-/// that first unit (unit_size = payload / units_total). Feeding the whole payload (source + redundant copies)
+/// that first unit (unit_size = payload / TotalUnits). Feeding the whole payload (source + redundant copies)
 /// to the decoder corrupts the high CELT bands ("underwater" audio) because Opus sizes its bit budget from the
 /// packet length. Audio's payload starts at base(18) + 2 (unknown + haptics prefix bytes).
 /// </summary>
@@ -19,7 +19,7 @@ public class HalyardStreamDemuxerAudioTests
 
     /// <summary>
     /// Build an audio packet whose payload is <paramref name="units"/> copies of <paramref name="unit"/>. The
-    /// bytes-5..8 field encodes units_total-1 in byte 6 (audio's byte-packed layout).
+    /// bytes-5..8 field encodes total_units-1 in byte 6 (audio's byte-packed layout).
     /// </summary>
     private static byte[] AudioPacket(byte[] unit, int units = 1, byte codec = OpusCodec)
     {
