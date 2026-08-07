@@ -63,7 +63,11 @@
                 token is for.
             -->
             <TitleBar.RightHeader>
-                <StackPanel Orientation="Horizontal" Spacing="2" VerticalAlignment="Center">
+                <StackPanel
+                    x:Name="TitleBarCommands"
+                    Orientation="Horizontal"
+                    Spacing="2"
+                    VerticalAlignment="Center">
                     <Button
                         x:Name="SettingsButton"
                         MinWidth="{StaticResource RipcordTouchTargetCompact}"
