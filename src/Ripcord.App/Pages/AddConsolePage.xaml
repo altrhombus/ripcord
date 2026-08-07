@@ -86,7 +86,19 @@
         </DataTemplate>
     </Page.Resources>
 
-    <Grid Padding="24,16,24,20" RowSpacing="16">
+    <!--
+        Same XY focus strategy as the settings page, for the same measured reason. The controls on this page
+        are different widths and alignments — a full-width results list, a pair of small left-aligned buttons,
+        a text box and its confirm button — and the default rule only considers candidates that OVERLAP the
+        focused element on the perpendicular axis. Where they do not overlap, focus skips them and lands
+        somewhere that looks arbitrary, which is how this page was reported: "a pretty random tab index".
+        RectilinearDistance ranks by distance instead, which is what "the next thing down" means to a person.
+    -->
+    <Grid
+        Padding="24,16,24,20"
+        RowSpacing="16"
+        XYFocusDownNavigationStrategy="RectilinearDistance"
+        XYFocusUpNavigationStrategy="RectilinearDistance">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />

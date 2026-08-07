@@ -333,6 +333,29 @@ public sealed class FocusPilot(
             if (node is FrameworkElement { ContextFlyout: { } flyout } anchor)
             {
                 anchor.StartBringIntoView();
+
+                // Seed focus onto the first item once the menu is up. Without this the menu opens with nothing
+                // selected and the first Down is spent relative to the CARD underneath — which is outside the
+                // popup and above it, so the search lands on the menu's SECOND item and the first press reads
+                // as having been eaten. Reported from hardware exactly that way.
+                void SeedFirstItem(object? sender, object args)
+                {
+                    flyout.Opened -= SeedFirstItem;
+
+                    if (flyout is MenuFlyout { Items: { Count: > 0 } items })
+                    {
+                        foreach (MenuFlyoutItemBase item in items)
+                        {
+                            if (item is Control { IsTabStop: true, IsEnabled: true } control)
+                            {
+                                control.Focus(FocusState.Keyboard);
+                                return;
+                            }
+                        }
+                    }
+                }
+
+                flyout.Opened += SeedFirstItem;
                 flyout.ShowAt(anchor);
                 return;
             }
