@@ -83,4 +83,22 @@ public sealed record SessionControllerOptions
     /// instead of spinning indefinitely while the user waits for something that is never coming back.
     /// </summary>
     public int MaxReconnectAttempts { get; init; } = 6;
+
+    /// <summary>
+    /// How long a session must last before it counts as a real one and earns a fresh retry budget.
+    ///
+    /// <para>
+    /// Without this, <see cref="MaxReconnectAttempts"/> can never be reached in the case that needs it most.
+    /// A console on its way into rest mode still completes a handshake and then drops it immediately — so
+    /// every attempt "succeeds", the budget resets every time, and the client reconnects forever. Observed on
+    /// hardware: a console asked to stream while going to sleep left the app looping with no way out but
+    /// killing it.
+    /// </para>
+    ///
+    /// <para>
+    /// Ten seconds is well below any session a person would call a session, and well above the sub-second
+    /// connect-and-drop that characterises the failure.
+    /// </para>
+    /// </summary>
+    public TimeSpan MinimumHealthySession { get; init; } = TimeSpan.FromSeconds(10);
 }
