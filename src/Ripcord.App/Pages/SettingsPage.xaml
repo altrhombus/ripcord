@@ -28,24 +28,30 @@
     mc:Ignorable="d">
 
     <!--
-        Projection, not the default overlap rule.
+        RectilinearDistance, not the default overlap rule. MEASURED, not reasoned about — three earlier
+        attempts at this were guesses and all three were wrong.
 
-        By default XY focus looks for a candidate that geometrically OVERLAPS the focused element's own
-        rectangle. A Slider sits in a row beside its value readout, so it is narrow and off to one side, and
-        the settings rows above and below do not overlap it — directional focus found nothing and the control
-        read as a trap. Projection instead projects the element's edge across the axis, which is what a person
-        means by "the thing below this".
+        By default XY focus only considers a candidate that geometrically OVERLAPS the focused element on the
+        perpendicular axis. On this page the controls do not line up: the sliders occupy x 776-996, because
+        their value readout sits to their right and pushes them left, while every ToggleSwitch occupies
+        x 1008-1080. A twelve-pixel gap, so a slider and a toggle have no overlap at all and are invisible to
+        each other. Pressing Down on the bitrate slider stepped straight over the adaptive-bitrate toggle to
+        the next ComboBox, which is wide enough to overlap.
 
-        Set on the page rather than on the two sliders: the next narrow control in a wide row would have the
-        identical problem, and the plan's rule is to prefer a strategy on a container over hardcoded
-        XYFocusUp/Down element references, which break silently when markup is rearranged.
+        Projection was tried first and could not have worked: it projects the focused element's bounds along
+        the direction of travel, which still requires perpendicular overlap. RectilinearDistance ranks
+        candidates by distance instead and needs no overlap, which is what "the next control down" means to a
+        person reading a settings list.
+
+        On the container, not as XYFocusUp/Down element references — the plan's rule, and the reason is
+        visible right here: the exact alignment that broke this is the kind of thing markup changes silently.
     -->
     <ScrollViewer Padding="24,16,24,24">
         <StackPanel
             MaxWidth="820"
             Spacing="24"
-            XYFocusDownNavigationStrategy="Projection"
-            XYFocusUpNavigationStrategy="Projection">
+            XYFocusDownNavigationStrategy="RectilinearDistance"
+            XYFocusUpNavigationStrategy="RectilinearDistance">
             <TextBlock Style="{StaticResource TitleTextBlockStyle}" Text="Settings" />
 
             <!--  ============ Video ============  -->
