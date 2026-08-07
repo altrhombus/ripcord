@@ -300,8 +300,8 @@ public sealed class SessionController : IAsyncDisposable
 
                 if (outcome.Connected)
                 {
-                    attempt = 0; // a success resets the budget: later trouble gets a full set of retries
                     Transition(SessionLifecycle.Streaming, "Connected.");
+                    DateTimeOffset streamingSince = _clock();
 
                     // Returns when the session ends or stalls past the reconnect threshold.
                     await WatchSessionAsync(cancellationToken).ConfigureAwait(false);
@@ -312,7 +312,47 @@ public sealed class SessionController : IAsyncDisposable
                         break;
                     }
 
-                    attempt = 1;
+                    // Only a session that LASTED resets the budget.
+                    //
+                    // This used to reset on connect, which made MaxReconnectAttempts unreachable in the one
+                    // case that needs it. A console on its way into rest mode completes the handshake and
+                    // drops it immediately, so every attempt counted as a success, the budget reset every
+                    // time, and the loop ran forever. Observed on hardware: the console went back to sleep and
+                    // the app reconnected indefinitely, with no way out but killing it.
+                    if (_clock() - streamingSince >= _options.MinimumHealthySession)
+                    {
+                        attempt = 1;
+                        continue;
+                    }
+
+                    attempt++;
+                    if (attempt > _options.MaxReconnectAttempts)
+                    {
+                        Transition(
+                            SessionLifecycle.Failed,
+                            $"The console accepted {_options.MaxReconnectAttempts} connections and dropped each "
+                            + "one immediately. It may be going into rest mode — wake it and try again.");
+                        return;
+                    }
+
+                    // Backoff on a flap too. Reconnecting instantly into a console that is shutting down is
+                    // what turned this into a tight loop rather than a slow one.
+                    TimeSpan flapBackoff = BackoffFor(attempt);
+                    Transition(
+                        SessionLifecycle.Reconnecting,
+                        $"The stream dropped straight away. Retrying in {Math.Ceiling(flapBackoff.TotalSeconds)}s…",
+                        attempt,
+                        flapBackoff);
+
+                    try
+                    {
+                        await _delay(flapBackoff, cancellationToken).ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        break;
+                    }
+
                     continue;
                 }
 

@@ -475,10 +475,15 @@ public class SessionControllerTests
     }
 
     [Fact]
-    public async Task ASuccessfulConnectResetsTheRetryBudget()
+    public async Task ASessionThatLastsResetsTheRetryBudget()
     {
-        // Otherwise a long session with occasional blips would slowly exhaust its retries and then refuse to
-        // reconnect for a reason that has nothing to do with the current problem.
+        // The original intent, which still holds: a long session with occasional blips must not slowly exhaust
+        // its retries and then refuse to reconnect for a reason that has nothing to do with the current
+        // problem.
+        //
+        // What changed is the test for "successful". This assertion used to be made about a session that
+        // merely CONNECTED, and that is what made the reconnect loop unbounded on hardware — see
+        // AConsoleThatConnectsAndDropsImmediately_EventuallyGivesUp below. Duration is the honest measure.
         var time = new VirtualTime();
         var sessions = new List<FakeSession>();
         var options = new SessionControllerOptions
@@ -487,6 +492,7 @@ public class SessionControllerTests
             ReconnectAfterStall = TimeSpan.FromSeconds(6),
             WatchdogInterval = TimeSpan.FromMilliseconds(1),
             MaxReconnectAttempts = 2,
+            MinimumHealthySession = TimeSpan.FromSeconds(5),
         };
 
         await using var controller = new SessionController(
@@ -498,9 +504,9 @@ public class SessionControllerTests
 
         await controller.StartAsync(Config);
 
-        // Every session connects fine but delivers nothing, so each gets replaced in turn. With the budget
-        // resetting on each success, this continues well past MaxReconnectAttempts (2) rather than reaching
-        // Failed — otherwise a long session with occasional blips would eventually refuse to reconnect.
+        // Each session lives ~7s before the stall watchdog replaces it — comfortably past the 5s that counts
+        // as a real session, so every replacement restores a full budget and this continues well past
+        // MaxReconnectAttempts (2) rather than reaching Failed.
         for (int i = 0; i < 20 && sessions.Count < 5; i++)
         {
             time.Advance(TimeSpan.FromSeconds(7));
@@ -509,6 +515,49 @@ public class SessionControllerTests
 
         Assert.True(sessions.Count >= 5, $"expected repeated reconnects, got {sessions.Count}");
         Assert.NotEqual(SessionLifecycle.Failed, controller.Lifecycle);
+    }
+
+    [Fact]
+    public async Task AConsoleThatConnectsAndDropsImmediately_EventuallyGivesUp()
+    {
+        // The hardware failure this exists for: a console on its way into rest mode completes the handshake
+        // and drops it straight away. Every attempt looked like a success, so the retry budget reset every
+        // time and the client reconnected forever — the user's only way out was killing the app.
+        //
+        // Identical setup to the test above except that MinimumHealthySession is longer than the sessions
+        // actually last, which is precisely the distinction the fix turns on.
+        var time = new VirtualTime();
+        var sessions = new List<FakeSession>();
+        var options = new SessionControllerOptions
+        {
+            StallTimeout = TimeSpan.FromSeconds(2),
+            ReconnectAfterStall = TimeSpan.FromSeconds(6),
+            WatchdogInterval = TimeSpan.FromMilliseconds(1),
+            MaxReconnectAttempts = 2,
+            MinimumHealthySession = TimeSpan.FromSeconds(30),
+            InitialBackoff = TimeSpan.FromSeconds(1),
+        };
+
+        await using var controller = new SessionController(
+            () => { var s = new FakeSession(); sessions.Add(s); return s; },
+            new FakePipeline(),
+            options: options,
+            clock: time.Now,
+            delay: time.Delay);
+
+        await controller.StartAsync(Config);
+
+        for (int i = 0; i < 40 && controller.Lifecycle != SessionLifecycle.Failed; i++)
+        {
+            time.Advance(TimeSpan.FromSeconds(7));
+            await Task.Delay(20);
+        }
+
+        Assert.Equal(SessionLifecycle.Failed, controller.Lifecycle);
+
+        // Bounded, and the message names the likely cause rather than a generic timeout.
+        Assert.True(sessions.Count <= options.MaxReconnectAttempts + 2, $"unbounded retries: {sessions.Count}");
+        Assert.Contains("rest mode", controller.CurrentStatus.Detail);
     }
 
     [Fact]
