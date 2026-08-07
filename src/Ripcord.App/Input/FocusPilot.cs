@@ -110,31 +110,39 @@ public sealed class FocusPilot(
             return;
         }
 
-        // Search again FROM THE ROW, not from the control.
+        // Search again from a FULL-WIDTH BAND at the focused control's height, rather than from the control.
         //
-        // A Slider sits in a layout of its own inside a settings row — a horizontal panel holding the slider
-        // and its value readout. Directional search starts from the focused element's rectangle, and from
-        // inside that panel the rows above and below do not project onto it cleanly, so the search finds
-        // nothing and focus stays put. HintRect is the supported way to say "search as if you were here":
-        // point it at the whole row and the neighbouring rows are found normally.
+        // Directional search wants a candidate that geometrically overlaps the focused rectangle. A Slider is
+        // narrow and sits off to one side of its row, so the rows above and below may not overlap it at all.
+        // Widening the hint to the whole search root at the same vertical extent is what "the thing below
+        // this" actually means to a person.
         //
-        // This replaces a tab-order fallback that moved focus by a different engine entirely. It did get the
-        // user out, but tab order and layout order are not the same thing, so it SKIPPED the next row — which
-        // is how a workaround announces that it is not the fix.
-        if (RowOf(element) is { } row)
-        {
-            var fromRow = new FindNextElementOptions
-            {
-                SearchRoot = searchRoot,
-                HintRect = BoundsIn(row, searchRoot),
-                ExclusionRect = BoundsIn(element, searchRoot),
-            };
+        // Deterministic on purpose. The first version walked up for "the nearest ancestor materially wider
+        // than the control", and on hardware the two sliders in Settings — structurally identical — behaved
+        // differently, one skipping downward and the other upward. A heuristic that picks a different ancestor
+        // depending on measured widths produces exactly that asymmetry, and it is not debuggable from a bug
+        // report.
+        //
+        // Belt and braces with XYFocusDownNavigationStrategy="Projection" on the settings page, which is the
+        // supported declarative form of the same idea and should mean this retry never fires there.
+        Rect band = BoundsIn(element, searchRoot);
 
-            if (FocusManager.FindNextElement(winrtDirection, fromRow) is UIElement neighbour)
-            {
-                neighbour.Focus(FocusState.Keyboard);
-                neighbour.StartBringIntoView(new BringIntoViewOptions { AnimationDesired = AppMotion.Enabled });
-            }
+        if (band.Height <= 0)
+        {
+            return;
+        }
+
+        var widened = new FindNextElementOptions
+        {
+            SearchRoot = searchRoot,
+            HintRect = new Rect(0, band.Top, Math.Max(searchRoot.ActualWidth, band.Width), band.Height),
+            ExclusionRect = band,
+        };
+
+        if (FocusManager.FindNextElement(winrtDirection, widened) is UIElement neighbour)
+        {
+            neighbour.Focus(FocusState.Keyboard);
+            neighbour.StartBringIntoView(new BringIntoViewOptions { AnimationDesired = AppMotion.Enabled });
         }
     }
 
@@ -453,28 +461,6 @@ public sealed class FocusPilot(
         }
 
         return navigable;
-    }
-
-    /// <summary>
-    /// The row a control belongs to: the nearest ancestor materially wider than the control itself, which is
-    /// what "the thing above" and "the thing below" are actually neighbours of. Bounded rather than walking to
-    /// the page root, since the page root is a neighbour of nothing.
-    /// </summary>
-    private static FrameworkElement? RowOf(FrameworkElement element)
-    {
-        DependencyObject? node = VisualTreeHelper.GetParent(element);
-
-        for (int depth = 0; depth < 6 && node is not null; depth++, node = VisualTreeHelper.GetParent(node))
-        {
-            if (node is FrameworkElement candidate
-                && candidate.ActualWidth > element.ActualWidth + 1
-                && candidate.ActualHeight > 0)
-            {
-                return candidate;
-            }
-        }
-
-        return null;
     }
 
     private static Rect BoundsIn(FrameworkElement element, UIElement reference)

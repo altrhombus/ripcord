@@ -27,8 +27,25 @@
     Loaded="Page_Loaded"
     mc:Ignorable="d">
 
+    <!--
+        Projection, not the default overlap rule.
+
+        By default XY focus looks for a candidate that geometrically OVERLAPS the focused element's own
+        rectangle. A Slider sits in a row beside its value readout, so it is narrow and off to one side, and
+        the settings rows above and below do not overlap it — directional focus found nothing and the control
+        read as a trap. Projection instead projects the element's edge across the axis, which is what a person
+        means by "the thing below this".
+
+        Set on the page rather than on the two sliders: the next narrow control in a wide row would have the
+        identical problem, and the plan's rule is to prefer a strategy on a container over hardcoded
+        XYFocusUp/Down element references, which break silently when markup is rearranged.
+    -->
     <ScrollViewer Padding="24,16,24,24">
-        <StackPanel MaxWidth="820" Spacing="24">
+        <StackPanel
+            MaxWidth="820"
+            Spacing="24"
+            XYFocusDownNavigationStrategy="Projection"
+            XYFocusUpNavigationStrategy="Projection">
             <TextBlock Style="{StaticResource TitleTextBlockStyle}" Text="Settings" />
 
             <!--  ============ Video ============  -->
