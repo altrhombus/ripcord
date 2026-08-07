@@ -510,7 +510,17 @@ public sealed partial class MainWindow : Window, IShellNavigator
                 // is relative to whatever has focus, so without an anchor the press was simply lost — which is
                 // why the first one or two after launch or re-activation felt like they did nothing.
                 // Consuming it is the predictable behaviour: one press to show where you are, the next to move.
-                if (SeedFocusIfNothingHasIt())
+                // Seeding no longer swallows the press outright.
+                //
+                // It used to: "one press to show where you are, the next to move". That reads well on a cold
+                // start and badly everywhere else — a tooltip appearing under the mouse is enough to disturb
+                // focus, and the user then has to press twice to do one thing. Reported from hardware as "it
+                // still takes two controller actions to break out".
+                //
+                // A DIRECTION after seeding is safe and is what was asked for, so it runs. An ACTIVATION is
+                // not: pressing Select would act on whatever the seed happened to land on, which the user has
+                // not seen yet. So those, and only those, still cost a press.
+                if (SeedFocusIfNothingHasIt() && (intent.Accept || intent.Context || intent.Back))
                 {
                     return;
                 }
