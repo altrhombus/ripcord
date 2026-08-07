@@ -10,13 +10,13 @@ namespace Ripcord.Protocol.Halyard.Common.Control;
 ///   offset 0: u32  payload length (bytes after the 8-byte header)
 ///   offset 4: u16  message type
 ///   offset 6: u16  reserved (always 0)
-///   offset 8: payload (length bytes; rpcrypt-encrypted when non-empty)
+///   offset 8: payload (length bytes; control-plane-encrypted when non-empty)
 /// </code>
 ///
 /// The console drives this channel — most importantly it sends <see cref="TypeHeartbeatReq"/> every few
 /// seconds and disconnects the whole session if the client does not answer with
 /// <see cref="TypeHeartbeatRep"/> (both empty-payload). Heartbeats carry no payload, so they need no
-/// crypto; only message types that carry a payload are rpcrypt-encrypted (a later refinement for the
+/// crypto; only message types that carry a payload are control-plane-encrypted (a later refinement for the
 /// feature/keyboard/login messages). The earlier "RPCS"-magic framing was a documentation error — no such
 /// magic appears on the wire.
 /// </summary>
