@@ -104,48 +104,21 @@ public sealed class FocusPilot(
             return;
         }
 
-        bool vertical = direction is NavDirection.Up or NavDirection.Down;
-        if (!vertical || focused is not FrameworkElement element || !IsRangeControl(element))
-        {
-            return;
-        }
-
-        // Search again from a FULL-WIDTH BAND at the focused control's height, rather than from the control.
+        // Nothing in that direction, and that is almost always correct: pressing against the end of a row
+        // should leave focus where the user is pushing.
         //
-        // Directional search wants a candidate that geometrically overlaps the focused rectangle. A Slider is
-        // narrow and sits off to one side of its row, so the rows above and below may not overlap it at all.
-        // Widening the hint to the whole search root at the same vertical extent is what "the thing below
-        // this" actually means to a person.
-        //
-        // Deterministic on purpose. The first version walked up for "the nearest ancestor materially wider
-        // than the control", and on hardware the two sliders in Settings — structurally identical — behaved
-        // differently, one skipping downward and the other upward. A heuristic that picks a different ancestor
-        // depending on measured widths produces exactly that asymmetry, and it is not debuggable from a bug
-        // report.
-        //
-        // Belt and braces with XYFocusDownNavigationStrategy="Projection" on the settings page, which is the
-        // supported declarative form of the same idea and should mean this retry never fires there.
-        Rect band = BoundsIn(element, searchRoot);
-
-        if (band.Height <= 0)
+        // There used to be a special case here for range controls, on the theory that a Slider would not
+        // release focus vertically. It was wrong twice over. The original symptom was the tooltip bug (see
+        // NavigablePopups), and what remained was the settings page's own geometry — its sliders end at x=996
+        // and its toggles begin at x=1008, so they never overlap and the default XY rule cannot see one from
+        // the other. That is fixed where it belongs, with an XY focus strategy on the page. The special case
+        // never once fired against real markup: measured, the primary search always returned a candidate.
+        // Removed rather than left as insurance for a cause that does not exist.
+        if (FocusManager.GetFocusedElement(searchRoot.XamlRoot) is null)
         {
-            return;
-        }
-
-        var widened = new FindNextElementOptions
-        {
-            SearchRoot = searchRoot,
-            HintRect = new Rect(0, band.Top, Math.Max(searchRoot.ActualWidth, band.Width), band.Height),
-            ExclusionRect = band,
-        };
-
-        if (FocusManager.FindNextElement(winrtDirection, widened) is UIElement neighbour)
-        {
-            neighbour.Focus(FocusState.Keyboard);
-            neighbour.StartBringIntoView(new BringIntoViewOptions { AnimationDesired = AppMotion.Enabled });
+            seedFocus();
         }
     }
-
 
     /// <summary>
     /// Nudge the focused range control (a Slider) one step. Returns false when focus is not on one, so the
@@ -463,34 +436,6 @@ public sealed class FocusPilot(
         return navigable;
     }
 
-    private static Rect BoundsIn(FrameworkElement element, UIElement reference)
-    {
-        try
-        {
-            return element.TransformToVisual(reference)
-                .TransformBounds(new Rect(0, 0, element.ActualWidth, element.ActualHeight));
-        }
-        catch (Exception)
-        {
-            // TransformToVisual throws when the two are not in the same tree, which a mid-teardown race can
-            // produce. An empty rect simply means the retry finds nothing, which is the pre-existing behaviour.
-            return default;
-        }
-    }
-
-    /// <summary>A control whose own directional behaviour will not release focus vertically — in practice a Slider.</summary>
-    private static bool IsRangeControl(object? element)
-    {
-        if (element is not FrameworkElement fe)
-        {
-            return false;
-        }
-
-        var peer = FrameworkElementAutomationPeer.FromElement(fe)
-            ?? FrameworkElementAutomationPeer.CreatePeerForElement(fe);
-
-        return peer?.GetPattern(PatternInterface.RangeValue) is IRangeValueProvider;
-    }
 
     /// <summary>
     /// Whether focus is somewhere a pad can actually navigate from.
