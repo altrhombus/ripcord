@@ -236,8 +236,52 @@ resting console answers slowly. Builds and links clean, but has never been run a
 that is the next thing this phase needs, the same way Phases 1 and 2 each needed a first real run before
 their numbers meant anything.
 
-**Phase 4 — `/sess/ctrl`.** The first exchange that talks to a real console, and the first end-to-end use
-of the crypto from Phase 0.
+**Phase 4 — `/sess/init` -> `/sess/ctrl`. Implemented, not yet run against a real console.** The first
+exchange that talks to a real console, and the first end-to-end use of the crypto from Phase 0.
+Re-derived from `Ripcord.Protocol.Halyard.Common.Control` (`SessProtocol`, `HalyardSessCtrlFields`,
+`HalyardCtrlMessage`) and `HalyardControlSearch`/`HalyardTcpControlChannel`, checked against them, not
+translated from them.
+
+**A real doc correction surfaced during this phase.** `docs/protocol/ps5-session-transport.md` (and every
+doc file that repeats it) describes the persistent binary control channel as `RPCS`-magic framing. That
+was superseded on 2026-08-03 (`docs/protocol-research-log.md`) and `HalyardCtrlMessage.cs`'s own doc
+comment says so directly: no `RPCS` magic appears on the wire. The real, tested format is an 8-byte
+header - `u32` BE payload length, `u16` BE type, `u16` BE reserved(0) - with no magic at all.
+`source/session/halyard_ctrl_message.c` implements the corrected format and cites both sources; treat
+`HalyardCtrlMessage.cs` and the research log as authoritative over the stale doc file if the two ever
+seem to disagree again.
+
+**What's implemented**, all with host-side tests in `tests/session_test.c` (53 cases) that need no
+hardware and no .NET vector file:
+
+- **The control-listener arm probe** (`source/session/halyard_control_arm.c`) — the console does not keep
+  its TCP control port (9295) open continuously; a 4-byte UDP `SRC3`/`SRC2` probe opens it briefly, and
+  one probe covers both `/sess/init` and the `/sess/ctrl` reconnect that follows.
+- **The `/sess/init`/`/sess/ctrl` HTTP-like request builder and response parser**
+  (`source/session/halyard_sess_request.c`) — GET, header-only, hand-built rather than real HTTP (no
+  headers section beyond the trailing blank line). `/sess/init` presents `RP-Registkey` as plaintext hex
+  and gets `RP-Nonce` back; `/sess/ctrl` is served `Connection: keep-alive` and becomes the persistent
+  binary channel below.
+- **The five encrypted `/sess/ctrl` fields** (`source/session/halyard_sess_fields.c`) — `RP-Auth`,
+  `RP-Did`, `RP-OSType`, `RP-StartBitrate`, `RP-StreamingType`, at counters 0-4 of the *same running
+  per-connection counter* the control-field cipher tracks (a later login-passcode submission on the
+  binary channel continues at counter 5 - never restart it per message type, or an IV gets reused).
+  `RP-Auth`/`RP-Did`/`RP-OSType`'s plaintext shapes are wire-confirmed `[V]`; `RP-StartBitrate`/
+  `RP-StreamingType`'s 4-byte-little-endian encoding is `[X]` - it appears in neither this port's nor the
+  .NET side's verified vectors, only in shipped (untested) behaviour.
+- **The binary control-channel frame** (`source/session/halyard_ctrl_message.c`) — see the doc-correction
+  note above. Test vectors transcribed byte-for-byte from `HalyardCtrlMessageTests.cs`.
+- **The on-device orchestrator** (`source/session/main.c`, build with `make -C ports/ripcord-3ds session`)
+  — arm, connect, `/sess/init`, derive the control key via `halyard_control_field_init` (codec selector 2,
+  matching the .NET side's own comment that the full `RP-KeyType` -> selector mapping is still a tracked
+  refinement, not something this port resolves), reconnect, `/sess/ctrl`, then answer `HEARTBEAT_REQ` on
+  the binary channel - missing that is what makes a real console RST the session ~15-30s in. Reads a
+  provisional `pairing.txt` (key=value text, documented in the file's own header comment) since this port
+  does not pair; **this is not the "Pairing-record import" backlog item**, which is a separate, still
+  unstarted piece of work.
+- Compiles and links clean as a fourth `.3dsx`. **No timeout on the initial connect/response wait** - a
+  console that never answers hangs the program. Accepted for a first, exploratory version, the same call
+  Phase 2's synthetic CPU load and Phase 3's fixed search window each made in their own first drafts.
 
 **Phase 5 — Takion.** Handshake, reliable delivery, reassembly.
 
@@ -248,9 +292,9 @@ Pairing is not on this list: pair with desktop Ripcord and copy the record acros
 ## 6. Gotchas worth knowing before you hit them
 
 - **`osSetSpeedupEnable(true)`** — without it a New 3DS runs at the old clock. Any performance number taken
-  without it describes a machine you are not targeting. `source/app/main.c`, `source/linktest/main.c` and
-  `source/discovery/main.c` all call this first thing in `main()`; a new on-device entry point needs its
-  own call.
+  without it describes a machine you are not targeting. `source/app/main.c`, `source/linktest/main.c`,
+  `source/discovery/main.c` and `source/session/main.c` all call this first thing in `main()`; a new
+  on-device entry point needs its own call.
 - **`socInit` buffer size** — 0x100000, aligned to 0x1000. Undersizing it produces drops that look exactly
   like a Wi-Fi ceiling. `rc_soc_init()` (`source/net/rc_soc.c`) owns this; use it rather than calling
   `socInit` directly.
@@ -260,6 +304,13 @@ Pairing is not on this list: pair with desktop Ripcord and copy the record acros
 - **The constants are generated, never copied.** `tools/gen_constants.py` reads the one committed bundle at
   build time and writes into `build/`, which is gitignored. If you ever find yourself checking a generated
   constants file in, stop and read that script's header.
+- **The binary control-channel frame has no "RPCS" magic**, despite what
+  `docs/protocol/ps5-session-transport.md` (and every doc file that repeats it) says. That description was
+  superseded 2026-08-03; the real format is an 8-byte header with no magic at all. See Phase 4 above and
+  `source/session/halyard_ctrl_message.c`'s own header comment before trusting that doc file on this point.
+- **The control-field counter is one running per-connection value, not per-message-type.** The five
+  `/sess/ctrl` fields use counters 0-4; a later login-passcode submission on the binary channel continues
+  at 5. Resetting it back to 0 for a later message on an already-established connection reuses an IV.
 - **`SO_BROADCAST` before `sendto()` to a broadcast address.** Without it the OS refuses the send outright;
   `source/discovery/main.c` sets it once at socket setup.
 - **`host-request-port` is a documented red herring.** The LAN wake exchange goes to the discovery port

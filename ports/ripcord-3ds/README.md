@@ -69,21 +69,28 @@ them.
 ```
 source/crypto/      AES-128, SHA-256, HMAC, cipher modes   <- mirrors Ripcord.Core.Net.Crypto
 source/halyard/     control KDF, field IV, field ciphers   <- mirrors Protocol.Halyard.Common/Crypto/V1
-source/net/         SOC service lifecycle                  <- mirrors Ripcord.Core.Net's transport primitives
-source/util/        dual console/SD-card logging, shared by both on-device programs below
+source/net/         SOC service lifecycle + a minimal TCP client (rc_tcp.c, Phase 4)
+source/util/        shared seams: SD-card logging, base64/hex, trim/header-parsing, program-dir resolution
 source/app/         on-device crypto smoke test (ripcord-3ds.3dsx)
 source/linktest/    Phase 2 UDP link test (ripcord-3ds-linktest.3dsx)
 source/discovery/   Phase 3 LAN discovery: SRCH probe/parse + on-device app (ripcord-3ds-discovery.3dsx)
-tests/              host-side known-answer runner, discovery parser self-test
+source/session/     Phase 4 /sess/init -> /sess/ctrl exchange + on-device app (ripcord-3ds-session.3dsx)
+tests/              host-side known-answer runner, discovery + session self-tests
 tools/              constants generator, UDP link-test sender (host-side)
 ```
 
 The dependency direction is the same one the .NET side enforces: `halyard/` depends on `crypto/`, never
 the reverse, and `crypto/` knows nothing about PlayStation. `net/`, `linktest/` and `discovery/` are a
 separate, parallel branch of that graph — they answer network questions, not protocol ones, and depend on
-neither `crypto/` nor `halyard/`. Within `discovery/` itself, `halyard_discovery.c` (the SRCH wire format)
-has no socket dependency of its own — see its header for why — so it is checked on the host in
-`tests/discovery_test.c` without any of `net/`'s hardware seam involved.
+neither `crypto/` nor `halyard/`. `session/` is where the two branches finally meet: it is the first code
+in this port to use `halyard/`'s control-field cipher against something an actual console sent back
+(`/sess/init`'s `RP-Nonce`), which is the whole reason Phase 4 exists. Within `discovery/` and `session/`,
+the wire-format parsers (`halyard_discovery.c`, `halyard_sess_request.c`, `halyard_ctrl_message.c`,
+`halyard_sess_fields.c`, `halyard_control_arm.c`) have no socket dependency of their own — see their
+headers for why — so they are checked on the host in `tests/discovery_test.c` / `tests/session_test.c`
+without any of `net/`'s hardware seam involved. `rc_text.c` (trim / case-insensitive header-name match) is
+shared by both `halyard_discovery.c` and `halyard_sess_request.c`, factored out once the second module
+needed the exact logic the first already had as private statics.
 
 ## Building
 
@@ -108,23 +115,27 @@ run it from the devkitPro MSYS2 shell — that is where `make` and the ARM toolc
 make -C ports/ripcord-3ds
 ```
 
-Produces three Homebrew Launcher binaries: `ripcord-3ds.3dsx`, the on-device smoke test in
+Produces four Homebrew Launcher binaries: `ripcord-3ds.3dsx`, the on-device smoke test in
 `source/app/main.c` (round-trips the ciphers on real hardware and reports how long a field encryption
 actually costs on an ARM11); `ripcord-3ds-linktest.3dsx`, the Phase 2 UDP link test in
 `source/linktest/main.c` (see [`SETUP.md`](SETUP.md) for how to run it against
-`tools/udp_link_test_sender.py`); and `ripcord-3ds-discovery.3dsx`, the Phase 3 LAN discovery probe in
+`tools/udp_link_test_sender.py`); `ripcord-3ds-discovery.3dsx`, the Phase 3 LAN discovery probe in
 `source/discovery/main.c` — broadcasts the SRCH probe for both console families and lists every distinct
-console that answers within a four-second window. `make -C ports/ripcord-3ds linktest` or `... discovery`
-builds just one of the three.
+console that answers within a four-second window; and `ripcord-3ds-session.3dsx`, the Phase 4 session
+probe in `source/session/main.c` — arms the console's control listener, runs `/sess/init` -> `/sess/ctrl`
+against a provisional `pairing.txt` on the SD card (see that file's own header comment for the format;
+this is not the real pairing-import feature, which remains unstarted), and answers heartbeats on the
+binary control channel that follows. `make -C ports/ripcord-3ds linktest`/`discovery`/`session` builds
+just one of the four.
 
-All three (`source/util/rc_log.c`) write everything they print to the top screen into a log file next to
-whichever copy of the `.3dsx` produced it — `smoke-test.log` / `linktest.log` / `discovery.log` on the SD
-card — so a run's results can be copied off the card afterward instead of retyped from a photo of the
-screen.
+All four (`source/util/rc_log.c`) write everything they print to the top screen into a log file next to
+whichever copy of the `.3dsx` produced it — `smoke-test.log` / `linktest.log` / `discovery.log` /
+`session.log` on the SD card — so a run's results can be copied off the card afterward instead of retyped
+from a photo of the screen.
 
-All three have been built against a real devkitPro installation and produce valid `.3dsx` files. The
+All four have been built against a real devkitPro installation and produce valid `.3dsx` files. The
 crypto smoke test and the link test have both been booted on real hardware (see "Where this stands"); the
-discovery probe has not yet.
+discovery and session probes have not yet.
 
 ### Not part of `Ripcord.slnx`, deliberately
 
@@ -190,18 +201,24 @@ Done:
       (2.16% / 4.33%); toggling the load roughly quadruples loss at the same rates (9.68% / 17.93%) and
       flattens busy goodput around 3–3.4 Mbps above ~5 Mbps target — see SETUP.md Phase 2 for the full
       numbers and the caveat on what the synthetic CPU load does and does not model
-- [x] Dual console/SD-card logging (`source/util/rc_log.c`) — all three on-device programs write
+- [x] Dual console/SD-card logging (`source/util/rc_log.c`) — all four on-device programs write
       everything they print to a `.log` file next to their own `.3dsx`
 - [x] LAN discovery: the SRCH probe/parse (`source/discovery/halyard_discovery.c`) and an on-device app
       (`ripcord-3ds-discovery.3dsx`) that broadcasts it for both console families and lists what answers.
       Parser checked against 24 hand-transcribed cases from `docs/protocol/ps5-local-discovery.md` in
       `tests/discovery_test.c`; compiles and links clean, not yet run against a real console
+- [x] The `/sess/init` -> `/sess/ctrl` exchange: the control-listener arm probe
+      (`source/session/halyard_control_arm.c`), the HTTP-like request/response builder and parser
+      (`halyard_sess_request.c`), the five encrypted field plaintexts (`halyard_sess_fields.c`), and the
+      persistent binary control-channel frame (`halyard_ctrl_message.c` — corrected against a stale "RPCS
+      magic" doc, see SETUP.md Phase 4). 53 cases in `tests/session_test.c`, including one end-to-end
+      chain through the already-verified control-field cipher. The on-device app
+      (`ripcord-3ds-session.3dsx`) compiles and links clean; not yet run against a real console
 
 Not started — roughly in dependency order. [`SETUP.md`](SETUP.md) has this as a phased plan with the
 toolchain steps:
 
-- [ ] Run the discovery probe against a real console, awake and resting
-- [ ] The `/sess/ctrl` HTTP exchange, which is the first thing that talks to a console
+- [ ] Run the discovery and session probes against a real console, awake and resting
 - [ ] Takion transport: handshake, reliable delivery, reassembly
 - [ ] Stream framing, demux, FEC
 - [ ] MVD H.264 decode → Y2R → PICA200 present
@@ -213,7 +230,11 @@ Both hardware questions Phases 1 and 2 existed to answer are now settled: the co
 ~25 µs per field, and the link sustains the bottom rung's target with modest loss on an idle core (2.16%
 at 2 Mbps, 4.33% at 3 Mbps) — with the caveat that a simulated CPU load roughly quadruples that loss at
 the same rates, a real signal about contention even though the synthetic load itself isn't a stand-in for
-actual decode cost. Phase 3's SRCH discovery is implemented and passes its own parser tests, so the next
-step is the same shape as Phases 1 and 2 before it: **run `ripcord-3ds-discovery.3dsx` against a real
-console** (both awake and resting) to confirm the wire format holds up outside the spec's transcribed
-examples, before moving on to the `/sess/ctrl` exchange in Phase 4.
+actual decode cost. Phases 3 and 4 are both implemented and passing their own (hardware-free) parser
+tests — SRCH discovery and now the `/sess/init` -> `/sess/ctrl` exchange, the first end-to-end use of the
+Phase 0 crypto against real console output. Note the pairing record `ripcord-3ds-session.3dsx` reads is a
+provisional `pairing.txt` for exercising this phase, not the real "Pairing-record import from a desktop
+Ripcord install" item still sitting unstarted above — those are two different things with similar-sounding
+names, and only one of them is done. The next step is the same shape as Phases 1 and 2 before it: **run
+both probes against a real console** (awake and resting) to confirm the wire formats hold up outside the
+spec's transcribed examples, before moving on to Takion in Phase 5.
