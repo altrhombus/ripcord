@@ -1,4 +1,5 @@
 #include "halyard_discovery.h"
+#include "../util/rc_text.h"
 
 #include <ctype.h>
 #include <stdio.h>
@@ -16,50 +17,6 @@ size_t halyard_discovery_build_probe(const halyard_discovery_profile *profile, c
     if (written < 0 || (size_t)written >= buf_size)
         return 0;
     return (size_t)written;
-}
-
-/* Case-insensitive, fixed-length compare - avoids depending on strncasecmp (POSIX <strings.h>, not
- * guaranteed present in every C99 environment this port might be compiled in) for one small check. */
-static int equals_ci(const char *a, const char *b, size_t length)
-{
-    size_t i;
-    for (i = 0; i < length; i++) {
-        if (tolower((unsigned char)a[i]) != tolower((unsigned char)b[i]))
-            return 0;
-    }
-    return 1;
-}
-
-static void trim_range(const char **start, const char **end)
-{
-    while (*start < *end && isspace((unsigned char)**start))
-        (*start)++;
-    while (*end > *start && isspace((unsigned char)*(*end - 1)))
-        (*end)--;
-}
-
-/* Copies the trimmed range [start, end) into dst, truncating to fit and always NUL-terminating. */
-static void copy_trimmed(const char *start, const char *end, char *dst, size_t dst_size)
-{
-    size_t length;
-
-    trim_range(&start, &end);
-    length = (size_t)(end - start);
-    if (length >= dst_size)
-        length = dst_size - 1;
-    memcpy(dst, start, length);
-    dst[length] = '\0';
-}
-
-/* True if the trimmed range [start, end) is exactly `name`, case-insensitively. */
-static int field_is(const char *start, const char *end, const char *name)
-{
-    size_t name_len = strlen(name);
-
-    trim_range(&start, &end);
-    if ((size_t)(end - start) != name_len)
-        return 0;
-    return equals_ci(start, name, name_len);
 }
 
 int halyard_discovery_parse_response(const char *data, size_t length, const char *source_address,
@@ -83,7 +40,7 @@ int halyard_discovery_parse_response(const char *data, size_t length, const char
     memset(out, 0, sizeof(*out));
     strncpy(out->host_type, "PS5", sizeof(out->host_type) - 1); /* spec's own GetValueOrDefault fallback */
     if (source_address != NULL)
-        copy_trimmed(source_address, source_address + strlen(source_address),
+        rc_text_copy_trimmed(source_address, source_address + strlen(source_address),
                      out->address, sizeof(out->address));
 
     line_start = text;
@@ -98,7 +55,7 @@ int halyard_discovery_parse_response(const char *data, size_t length, const char
 
         if (!seen_status_line) {
             seen_status_line = 1;
-            if ((size_t)(line_end - line_start) < 8 || !equals_ci(line_start, "HTTP/1.1", 8))
+            if ((size_t)(line_end - line_start) < 8 || !rc_text_equals_ci(line_start, "HTTP/1.1", 8))
                 return 0; /* not a SRCH-shaped reply at all */
 
             {
@@ -110,15 +67,15 @@ int halyard_discovery_parse_response(const char *data, size_t length, const char
         } else if (line_start < line_end) {
             const char *colon = memchr(line_start, ':', (size_t)(line_end - line_start));
             if (colon != NULL && colon > line_start) {
-                if (field_is(line_start, colon, "host-id")) {
-                    copy_trimmed(colon + 1, line_end, out->host_id, sizeof(out->host_id));
+                if (rc_text_field_is(line_start, colon, "host-id")) {
+                    rc_text_copy_trimmed(colon + 1, line_end, out->host_id, sizeof(out->host_id));
                     have_host_id = 1;
-                } else if (field_is(line_start, colon, "host-type")) {
-                    copy_trimmed(colon + 1, line_end, out->host_type, sizeof(out->host_type));
-                } else if (field_is(line_start, colon, "host-name")) {
-                    copy_trimmed(colon + 1, line_end, out->host_name, sizeof(out->host_name));
-                } else if (field_is(line_start, colon, "system-version")) {
-                    copy_trimmed(colon + 1, line_end, out->system_version, sizeof(out->system_version));
+                } else if (rc_text_field_is(line_start, colon, "host-type")) {
+                    rc_text_copy_trimmed(colon + 1, line_end, out->host_type, sizeof(out->host_type));
+                } else if (rc_text_field_is(line_start, colon, "host-name")) {
+                    rc_text_copy_trimmed(colon + 1, line_end, out->host_name, sizeof(out->host_name));
+                } else if (rc_text_field_is(line_start, colon, "system-version")) {
+                    rc_text_copy_trimmed(colon + 1, line_end, out->system_version, sizeof(out->system_version));
                 }
             }
         }
