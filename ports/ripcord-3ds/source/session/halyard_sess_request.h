@@ -1,9 +1,9 @@
 /*
  * ripcord-3ds - the /sess/init and /sess/ctrl HTTP-like exchange (spec sec 2.1).
  *
- * These requests are HTTP-shaped but hand-built rather than real HTTP - re-derived here from
- * Ripcord.Protocol.Halyard.Common.Control.SessProtocol, which this is checked against, not translated
- * from. Both requests are GET, header-only (no body this port ever sends), so the builder always emits
+ * These requests are HTTP-shaped but hand-built rather than real HTTP - ported from
+ * Ripcord.Protocol.Halyard.Common.Control.SessProtocol. Both requests are GET, header-only (no body this
+ * port ever sends), so the builder always emits
  * "Content-Length: 0" rather than taking a body parameter - if a future phase needs POST /sess/rgst
  * (registration, out of scope: see README's "Pairing happens on a PC, not here"), that is a reason to
  * widen this, not a reason to generalise ahead of it now.

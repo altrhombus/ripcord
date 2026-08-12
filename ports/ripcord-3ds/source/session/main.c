@@ -1,8 +1,8 @@
 /*
  * ripcord-3ds - Phase 4 on-device probe: the /sess/init -> /sess/ctrl exchange against a real console.
  *
- * Orchestrates, in order (re-derived from HalyardStreamingSession.ConnectAsync, checked against it, not
- * translated from it): arm the console's control listener (halyard_control_arm), connect over TCP,
+ * Orchestrates, in order, the same sequence as HalyardStreamingSession.ConnectAsync: arm the console's
+ * control listener (halyard_control_arm), connect over TCP,
  * GET /sess/init (plaintext RP-Registkey), derive the control key from the returned RP-Nonce plus the
  * pairing record's companion (halyard_control_field_init - the first end-to-end use of the crypto from
  * Phase 0), reconnect fresh, GET /sess/ctrl with the five encrypted RP-* fields, then answer the
@@ -177,24 +177,38 @@ static int recv_buffer_fill(recv_buffer *rb, int sock)
     return (int)n;
 }
 
-/* Blocks (the handshake sockets are not made non-blocking - these are quick, one-shot exchanges) until
- * a complete /sess response has arrived. Returns the bytes consumed (the caller must read whatever
- * headers it needs from rb->data BEFORE calling recv_buffer_consume(), which invalidates them), or 0 on
- * a closed connection/error before a full response arrived.
- *
- * NO TIMEOUT: a console that never answers hangs this call indefinitely. Acceptable for a first,
- * exploratory version of this program - the same simplification source/linktest/main.c's synthetic CPU
- * load and source/discovery/main.c's fixed search window each made in their own first drafts - but a
- * real client needs one before this stops being a probe.
+#define SESS_RESPONSE_TIMEOUT_MS 5000u
+
+/*
+ * Polls (the socket is non-blocking - see rc_tcp_connect() callers below) until a complete /sess
+ * response has arrived, up to SESS_RESPONSE_TIMEOUT_MS of no progress. Returns the bytes consumed (the
+ * caller must read whatever headers it needs from rb->data BEFORE calling recv_buffer_consume(), which
+ * invalidates them), or 0 on a closed connection, a real error, or the timeout - a console that never
+ * answers gets a bounded failure instead of hanging the program.
  */
 static size_t wait_for_sess_response(int sock, recv_buffer *rb, halyard_sess_response *out)
 {
+    u64 start_ms = osGetTime();
+
     for (;;) {
         size_t consumed = halyard_sess_response_parse((const char *)rb->data, rb->length, out);
+        int filled;
+
         if (consumed > 0)
             return consumed;
-        if (recv_buffer_fill(rb, sock) < 0)
+
+        filled = recv_buffer_fill(rb, sock);
+        if (filled < 0) {
+            rc_log("\x1b[31mFAIL\x1b[0m connection closed or errored while waiting for a response\n");
             return 0;
+        }
+        if (filled == 0) {
+            if (osGetTime() - start_ms > SESS_RESPONSE_TIMEOUT_MS) {
+                rc_log("\x1b[31mFAIL\x1b[0m timed out waiting for a response\n");
+                return 0;
+            }
+            svcSleepThread(20000000); /* 20 ms - the console answers at human timescale, not packet-rate */
+        }
     }
 }
 
@@ -266,6 +280,7 @@ static int run_session(const pairing_record *rec)
         rc_log("\x1b[31mFAIL\x1b[0m TCP connect for /sess/init failed: %d\n", errno);
         return 1;
     }
+    fcntl(sock, F_SETFL, O_NONBLOCK);
 
     rc_hex_encode(rec->registkey, rec->registkey_length, regist_hex);
     halyard_sess_request_init(&req, "GET", halyard_sess_path(rec->is_ps5, "init"));
@@ -319,6 +334,7 @@ static int run_session(const pairing_record *rec)
         rc_log("\x1b[31mFAIL\x1b[0m TCP connect for /sess/ctrl failed: %d\n", errno);
         return 1;
     }
+    fcntl(sock, F_SETFL, O_NONBLOCK);
 
     halyard_sess_request_init(&req, "GET", halyard_sess_path(rec->is_ps5, "ctrl"));
     halyard_sess_request_add_header(&req, "Host", rec->host);
@@ -391,7 +407,6 @@ static int run_session(const pairing_record *rec)
     recv_buffer_consume(&rb, n);
 
     rc_log("entering the binary control channel - Y requests rest mode on exit, START exits\n");
-    fcntl(sock, F_SETFL, O_NONBLOCK);
 
     {
         int rest_requested = 0;
