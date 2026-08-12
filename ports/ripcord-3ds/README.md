@@ -77,7 +77,9 @@ source/discovery/   Phase 3 LAN discovery: SRCH probe/parse + on-device app (rip
 source/session/     Phase 4 /sess/init -> /sess/ctrl exchange + on-device app (ripcord-3ds-session.3dsx)
 source/takion/      Phase 5 Takion transport: handshake, DATA/SACK, reassembly + on-device app
                     (ripcord-3ds-takion.3dsx)
-tests/              host-side known-answer runner, discovery + session + takion self-tests
+source/stream/      stream framing, FEC, demux: A/V header, GF(2^8)/Cauchy Reed-Solomon, packet crypto
+                    (GMAC + KDF), frame reassembly - no on-device app yet (see SETUP.md for why)
+tests/              host-side known-answer runner, discovery + session + takion + stream self-tests
 tools/              constants generator, UDP link-test sender (host-side)
 ```
 
@@ -234,12 +236,29 @@ Done:
       (`ripcord-3ds-takion.3dsx`) compiles and links clean; not yet run against a real console. GMAC
       sealing, FEC and the actual stream-key/SESSION_REQUEST exchange are deliberately out of scope here
       — see SETUP.md Phase 5 for exactly where the line was drawn and why
+- [x] Stream framing, demux, FEC (`source/stream/`): the 18-byte A/V packet header
+      (`stream_header.c` — video's 11/11/10-bit unit packing vs. audio's byte-wide fields), GF(2^8) field
+      arithmetic and systematic Cauchy Reed-Solomon erasure coding (`fec_galois.c`/`fec_reed_solomon.c` —
+      checked against the console's own dumped inverse table, not just a self-consistency round-trip), the
+      stream-plane packet crypto (`rc_gcm.c`'s GMAC, `stream_key_schedule.c`'s KDF,
+      `stream_packet_crypto.c`'s per-packet nonce/key rotation — all cross-checked against the .NET
+      reference via a new `tools/Ripcord.ProtocolLab -- vectors` output, the same methodology Phase 0
+      established), and the demuxer (`stream_demux.c`) that ties it together: frame reassembly by
+      frame-index, FEC recovery of dropped source units, IDR/keyframe detection with SPS/PPS
+      re-prepending, HEVC vs. H.264 classification, and audio redundant-unit stripping. 2,808 cases across
+      four host test binaries (`stream_crypto_test` 65, `fec_test` 2,654 — the field-law sweep over all
+      256 GF values dominates that count, `stream_header_test` 58, `stream_demux_test` 31), the last of
+      which exercises the whole pipeline end to end (framing → crypto seam → FEC recovery → assembly)
+      against synthetic packets via the passthrough crypto stub. No on-device app yet — deliberately:
+      there is no real ECDH/SESSION_REQUEST exchange to derive actual stream keys from, so there is nothing
+      a real console would send that this could usefully decrypt yet; see SETUP.md for the exact scope line
 
 Not started — roughly in dependency order. [`SETUP.md`](SETUP.md) has this as a phased plan with the
 toolchain steps:
 
 - [ ] Run the discovery, session and Takion probes against a real console, awake and resting
-- [ ] Stream framing, demux, FEC
+- [ ] ECDH key exchange + the `SESSION_REQUEST`/stream-key handshake (needed before the stream-plane crypto
+      above can run against a real console rather than the passthrough stub)
 - [ ] MVD H.264 decode → Y2R → PICA200 present
 - [ ] Opus audio
 - [ ] Input mapping, including touchscreen → touchpad and gyro → gyro
@@ -265,7 +284,11 @@ Phase 0 crypto against real console output), and now the Takion transport undern
 will eventually ride. Note the pairing record `ripcord-3ds-session.3dsx` reads is a provisional
 `pairing.txt` for exercising Phase 4, not the real "Pairing-record import from a desktop Ripcord install"
 item still sitting unstarted above — those are two different things with similar-sounding names, and only
-one of them is done. The next step is the same shape as Phases 1 and 2 before it: **run all three probes
-against a real console** (awake and resting) to confirm the wire formats hold up outside the spec's
-transcribed and captured-vector examples, before moving on to stream framing/demux/FEC and the actual
-media pipeline in Phase 6.
+one of them is done. Stream framing, FEC and the demuxer are now also implemented and fully self-tested
+(2,808 host cases) against the passthrough crypto stub — but, unlike Phases 3-5, that work has no on-device
+app of its own yet, because it has nothing real to decrypt without a stream key: the ECDH/`SESSION_REQUEST`
+exchange that would derive one from a real console is still unstarted. The next step is the same shape as
+Phases 1 and 2 before it: **run the discovery/session/Takion probes against a real console** (awake and
+resting) to confirm the wire formats hold up outside the spec's transcribed and captured-vector examples,
+then close the ECDH gap so the stream-plane crypto above can run against real console traffic instead of
+the passthrough stub, before Phase 6's actual media pipeline.
