@@ -16,6 +16,7 @@
  */
 #include "../halyard/halyard_v1.h"
 #include "../crypto/rc_crypto.h"
+#include "../util/rc_log.h"
 
 #include <3ds.h>
 
@@ -27,10 +28,10 @@
 static void print_hex(const char *label, const uint8_t *data, size_t length)
 {
     size_t i;
-    printf("%s", label);
+    rc_log("%s", label);
     for (i = 0; i < length; i++)
-        printf("%02x", data[i]);
-    printf("\n");
+        rc_log("%02x", data[i]);
+    rc_log("\n");
 }
 
 static int run_checks(void)
@@ -57,19 +58,19 @@ static int run_checks(void)
     size_t i;
 
     if (!halyard_v1_constants_bundled) {
-        printf("\x1b[31mFAIL\x1b[0m interop constants not compiled in\n");
+        rc_log("\x1b[31mFAIL\x1b[0m interop constants not compiled in\n");
         return 1;
     }
-    printf("constants: bundled%s\n", halyard_v1_has_ps4_tables ? ", with PS4 tables" : ", PS5 only");
+    rc_log("constants: bundled%s\n", halyard_v1_has_ps4_tables ? ", with PS4 tables" : ", PS5 only");
 
     /* 1. The KDF runs and is deterministic. */
     if (halyard_control_kdf_derive(nonce, companion, HALYARD_VERSION_SELECTOR_PS5, key, material) != 0) {
-        printf("\x1b[31mFAIL\x1b[0m kdf refused\n");
+        rc_log("\x1b[31mFAIL\x1b[0m kdf refused\n");
         return 1;
     }
     halyard_control_kdf_derive(nonce, companion, HALYARD_VERSION_SELECTOR_PS5, key_again, material_again);
     if (memcmp(key, key_again, 16) != 0 || memcmp(material, material_again, 16) != 0) {
-        printf("\x1b[31mFAIL\x1b[0m kdf is not deterministic\n");
+        rc_log("\x1b[31mFAIL\x1b[0m kdf is not deterministic\n");
         failures++;
     }
     print_hex("  key      ", key, 16);
@@ -85,7 +86,7 @@ static int run_checks(void)
         uint8_t iv_one[16];
         halyard_field_iv_derive(halyard_field_context_key(0, 1), material, 1, iv_one);
         if (memcmp(iv, iv_one, 16) == 0) {
-            printf("\x1b[31mFAIL\x1b[0m iv does not vary with the counter\n");
+            rc_log("\x1b[31mFAIL\x1b[0m iv does not vary with the counter\n");
             failures++;
         }
     }
@@ -96,7 +97,7 @@ static int run_checks(void)
         plaintext[i] = (uint8_t)(i * 7 + 1);
 
     if (halyard_control_field_init(&ctx, nonce, companion, 0, HALYARD_VERSION_SELECTOR_PS5) != 0) {
-        printf("\x1b[31mFAIL\x1b[0m field init refused\n");
+        rc_log("\x1b[31mFAIL\x1b[0m field init refused\n");
         return failures + 1;
     }
 
@@ -108,7 +109,7 @@ static int run_checks(void)
             halyard_control_field_encrypt(&ctx, 0, plaintext, ciphertext, length);
             halyard_control_field_decrypt(&ctx, 0, ciphertext, recovered, length);
             if (memcmp(plaintext, recovered, length) != 0) {
-                printf("\x1b[31mFAIL\x1b[0m cfb round-trip at %u bytes\n", (unsigned)length);
+                rc_log("\x1b[31mFAIL\x1b[0m cfb round-trip at %u bytes\n", (unsigned)length);
                 failures++;
             }
         }
@@ -118,7 +119,7 @@ static int run_checks(void)
     halyard_control_streaminfo_crypt(&ctx, 0, plaintext, ciphertext, sizeof(plaintext));
     halyard_control_streaminfo_crypt(&ctx, 0, ciphertext, recovered, sizeof(plaintext));
     if (memcmp(plaintext, recovered, sizeof(plaintext)) != 0) {
-        printf("\x1b[31mFAIL\x1b[0m ofb round-trip\n");
+        rc_log("\x1b[31mFAIL\x1b[0m ofb round-trip\n");
         failures++;
     }
 
@@ -146,17 +147,14 @@ static void run_timing(void)
         halyard_control_field_encrypt(&ctx, (uint64_t)i, plaintext, ciphertext, sizeof(plaintext));
     elapsed_ms = osGetTime() - start;
 
-    printf("\n%d field encryptions in %llu ms\n", ITERATIONS, (unsigned long long)elapsed_ms);
+    rc_log("\n%d field encryptions in %llu ms\n", ITERATIONS, (unsigned long long)elapsed_ms);
     if (elapsed_ms > 0)
-        printf("  ~%llu us each\n", (unsigned long long)(elapsed_ms * 1000 / ITERATIONS));
+        rc_log("  ~%llu us each\n", (unsigned long long)(elapsed_ms * 1000 / ITERATIONS));
 }
 
 int main(int argc, char **argv)
 {
     int failures;
-
-    (void)argc;
-    (void)argv;
 
     /* Without this a New 3DS runs at the Old 3DS clock speed - the timing number below would describe a
      * machine we are not targeting. Named directly in SETUP.md's gotcha list. */
@@ -165,16 +163,19 @@ int main(int argc, char **argv)
     gfxInitDefault();
     consoleInit(GFX_TOP, NULL);
 
-    printf("ripcord-3ds control-crypto smoke test\n");
-    printf("-------------------------------------\n");
+    rc_log_open(argc > 0 ? argv[0] : NULL, "smoke-test.log");
+
+    rc_log("ripcord-3ds control-crypto smoke test\n");
+    rc_log("-------------------------------------\n");
 
     failures = run_checks();
     run_timing();
 
-    printf("\n%s\n", failures == 0
+    rc_log("\n%s\n", failures == 0
         ? "\x1b[32mall checks passed\x1b[0m"
         : "\x1b[31mSOME CHECKS FAILED\x1b[0m");
-    printf("\nPress START to exit.\n");
+    rc_log("\nPress START to exit.\n");
+    rc_log_close();
 
     while (aptMainLoop()) {
         hidScanInput();

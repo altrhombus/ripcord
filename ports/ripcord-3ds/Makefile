@@ -60,13 +60,15 @@ SOURCES := \
 	source/crypto/rc_sha256.c \
 	source/crypto/rc_modes.c \
 	source/halyard/halyard_control_crypto.c \
+	source/util/rc_log.c \
 	source/app/main.c
 
 # Phase 2 (SETUP.md): the UDP link test. Deliberately has no dependency on source/crypto or
 # source/halyard - it answers a network question, not a protocol one, and building it standalone keeps
-# that true rather than assumed.
+# that true rather than assumed. source/util is shared with the crypto smoke test above.
 LINKTEST_SOURCES := \
 	source/net/rc_soc.c \
+	source/util/rc_log.c \
 	source/linktest/main.c
 
 .PHONY: all constants clean test linktest
