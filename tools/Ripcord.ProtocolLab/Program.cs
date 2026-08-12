@@ -23,6 +23,7 @@ try
         "cloud" => await LabCommands.CloudAsync(),
         "connect" => await LabCommands.ConnectAsync(args),
         "mediademo" => await LabCommands.MediaDemoAsync(),
+        "vectors" => LabVectors.Emit(args),
         _ => Unknown(args[0]),
     };
 }
@@ -53,5 +54,6 @@ static void PrintUsage()
           cloud                          sign in via RIPCORD_REFRESH_TOKEN and list the account's consoles
           connect <ip> [ctrlPort] [strmPort]   run the direct /sess handshake (stub crypto; MAC will be rejected)
           mediademo                      wire synthetic stream -> demux -> decode pipeline, and a controller frame -> input packet (Stage 6)
+          vectors [outPath]              emit control-crypto known-answer vectors for the ripcord-3ds port
         """);
 }
