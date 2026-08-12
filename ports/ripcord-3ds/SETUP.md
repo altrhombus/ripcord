@@ -165,29 +165,37 @@ decrypt benchmark against Phase 2/6 traffic sizes is still owed before treating 
 path as settled, but a rough extrapolation from this number lands comfortably under the bottom rung's
 budget.
 
-**Phase 2 — confirm the link properly. First run found a bug in the test, not (yet) the answer.** The
-`ftpd` result is TCP, upload direction, idle CPU. `source/linktest/main.c` (build with
-`make -C ports/ripcord-3ds linktest`) brings up libctru's SOC service and listens for 1426-byte UDP
-payloads with sequence numbers, printing goodput, sequence-gap loss, and p99 inter-arrival jitter per
-stage, paired with `tools/udp_link_test_sender.py <3ds-ip>` ramping 1→12 Mbps in five-second stages.
+**Phase 2 — confirm the link properly. Done**, with one caveat about what "busy" measures.
+`source/linktest/main.c` (build with `make -C ports/ripcord-3ds linktest`) brings up libctru's SOC
+service and listens for 1426-byte UDP payloads with sequence numbers, printing goodput, sequence-gap
+loss, and p99 inter-arrival jitter per stage, paired with `tools/udp_link_test_sender.py <3ds-ip>` ramping
+1→12 Mbps in five-second stages.
 
-The first real run (2026-08-12) surfaced a bug in the harness before it could answer the hardware
-question: p99 landed within a few hundred microseconds of either ~16,850 µs or ~33,400 µs on *every*
-stage, idle and busy alike — one and two vblank periods at 60 Hz. The receive drain lived in the same
-loop as `gspWaitForVBlank()`, so packets bunched up for up to ~16.7 ms between drains; most inter-arrival
-deltas were near-zero (same-frame packets) and the rest were exactly one or two frame periods, which is
-what the percentile was actually measuring — the loop's own cadence, not the network. Goodput also
-plateaued at ~2 Mbps regardless of target rate, with loss climbing to 82% at 12 Mbps and idle vs. busy
-runs nearly identical — the flat-ceiling-plus-scaling-loss shape and idle/busy insensitivity both point at
-a fixed local consumption limit (this same frame-quantised drain) rather than either genuine Wi-Fi
-capacity or CPU/AES contention.
+The *first* real run (2026-08-12) surfaced a bug in the harness before it could answer the hardware
+question: p99 landed within a few hundred microseconds of either ~16,850 µs or ~33,400 µs on every stage,
+idle and busy alike — one and two vblank periods at 60 Hz, because the receive drain lived in the same
+loop as `gspWaitForVBlank()`. Fixed by decoupling the drain loop from vblank entirely — it now polls
+continuously and redraws the HUD on its own ~10 Hz clock. See the commit history for the full writeup;
+what follows is the *second* run, against the fixed harness.
 
-**Fixed**, not yet re-verified against hardware: the drain loop no longer waits on vblank at all — it
-polls continuously, redraws the HUD on its own ~10 Hz clock (`svcGetSystemTick()`-based, independent of
-the socket loop), and sleeps 200 µs only on a pass where nothing arrived, so idle polling doesn't peg the
-core. `SO_RCVBUF` is also bumped to 128 KiB as cheap insurance, though it was never the actual bug. Rerun
-before trusting any goodput/loss/jitter number from this phase — the previous numbers describe the test,
-not the hardware.
+**The second run (2026-08-12) is the real answer.** Idle goodput now scales properly with target rate,
+reaching ~10.4 Mbps at the 12 Mbps stage — consistent with the `ftpd` measurement above, and confirming
+the ~2 Mbps ceiling in the first run really was the vblank bug. At the bottom rung's actual target
+(1.5–3 Mbps), idle loss is modest: 2.16% at 2 Mbps, 4.33% at 3 Mbps. **Toggling Y (simulated CPU load)
+at the same target rates roughly quadruples loss — 9.68% at 2 Mbps, 17.93% at 3 Mbps** — and above ~5
+Mbps busy goodput flatlines around 3–3.4 Mbps regardless of target, with loss past 70% at the top of the
+ramp, while idle keeps climbing toward the ~10 Mbps ceiling. This is the first real evidence that CPU
+contention on this core costs UDP receive throughput.
+
+**What this does and does not settle.** `spin_busy_work()` burns a flat ~8 ms once per outer-loop pass —
+a crude proxy for contention, not a model of real MVD H.264 decode + Y2R timing, which does not exist yet
+(Phase 6). The *direction* (busy costs real throughput) is a genuine finding; the specific ~3.3 Mbps busy
+ceiling is shaped as much by this synthetic load's duty cycle as by any hardware limit, and should not be
+read as a prediction of what real decode will cost. A smaller nuance for reading busy-stage p99 numbers:
+under high loss, a dropped run of packets shows up as one large gap between survivors, so jitter and loss
+are correlated in those stages rather than independent signals. Neither of these is a reason to distrust
+the idle numbers or the qualitative busy finding — both are worth carrying forward — but the specific busy
+ceiling should be revisited once Phase 6 has a real decode-cost number to substitute for the synthetic one.
 
 Both of the *other* traps below are and were handled already — `rc_soc_init()` (`source/net/rc_soc.c`)
 owns the 0x1000-aligned 0x100000 SOC buffer, and `main()` calls `osSetSpeedupEnable(true)` before anything
