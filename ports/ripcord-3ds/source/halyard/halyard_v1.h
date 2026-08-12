@@ -2,9 +2,10 @@
  * ripcord-3ds - the v1 Halyard control-plane crypto.
  *
  * This is the C counterpart of Ripcord.Protocol.Halyard.Common/Crypto/V1: the control-session KDF, the
- * per-field IV derivation, and the field/streaminfo ciphers built on them. It is a re-derivation from the
- * same spec (docs/protocol/ps5-session-crypto.md), not a translation of the C# - but it is checked against
- * the C# by known-answer vectors, because "we wrote it twice" is only evidence if both answers match.
+ * per-field IV derivation, and the field/streaminfo ciphers built on them - ported from that
+ * implementation (docs/protocol/ps5-session-crypto.md is the spec both read) and checked against it with
+ * known-answer vectors (tests/vector_runner.c), so a transcription slip shows up as a mismatch instead of
+ * shipping quietly.
  *
  * NOTHING HERE IS A SECRET. The lookup tables live in a generated file (halyard_v1_constants.g.c, built
  * from the committed src/Ripcord.Protocol.Halyard/Data/halyard-v1-constants.json) and are the generic

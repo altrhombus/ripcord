@@ -1,10 +1,15 @@
 #include "rc_tcp.h"
 
+#include <3ds.h>
+
 #include <arpa/inet.h>
+#include <errno.h>
 #include <netinet/in.h>
 #include <string.h>
 #include <sys/socket.h>
 #include <unistd.h>
+
+#define SEND_TIMEOUT_MS 5000u
 
 int rc_tcp_connect(const char *host, unsigned short port)
 {
@@ -33,11 +38,26 @@ int rc_tcp_send_all(int sock, const void *data, size_t length)
 {
     const unsigned char *p = (const unsigned char *)data;
     size_t sent = 0;
+    u64 start_ms = osGetTime();
 
     while (sent < length) {
         ssize_t n = send(sock, p + sent, length - sent, 0);
-        if (n <= 0)
+
+        if (n < 0) {
+            /* A non-blocking socket's send buffer can be momentarily full even for a request this
+             * small - retry rather than fail outright, bounded so a genuinely wedged connection still
+             * gives up instead of hanging the caller. */
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                if (osGetTime() - start_ms > SEND_TIMEOUT_MS)
+                    return -1;
+                svcSleepThread(5000000); /* 5 ms */
+                continue;
+            }
             return -1;
+        }
+        if (n == 0)
+            return -1;
+
         sent += (size_t)n;
     }
     return 0;

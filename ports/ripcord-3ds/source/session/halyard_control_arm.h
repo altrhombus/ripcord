@@ -1,6 +1,6 @@
 /*
- * ripcord-3ds - the control-listener arming probe (re-derived from
- * Ripcord.Protocol.Halyard.Discovery.HalyardControlSearch, checked against it, not translated from it).
+ * ripcord-3ds - the control-listener arming probe, ported from
+ * Ripcord.Protocol.Halyard.Discovery.HalyardControlSearch.
  *
  * The console does not keep its TCP control listener (port 9295) open continuously - a cold connect
  * gets a TCP RST ("connection actively refused"). It opens the listener briefly in response to a 4-byte

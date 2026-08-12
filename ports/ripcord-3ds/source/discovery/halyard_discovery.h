@@ -1,10 +1,10 @@
 /*
  * ripcord-3ds - Phase 3 LAN discovery (the SRCH broadcast/response).
  *
- * Re-derived from docs/protocol/ps5-local-discovery.md, not translated from the .NET
- * HalyardSearchClient - checked against it (see tests/discovery_test.c) the same way the crypto in
- * source/halyard is checked against the .NET control-plane KDF: two independent readings of the same
- * spec, and a disagreement is a spec defect, not a porting detail.
+ * Ported from Ripcord.Protocol.Halyard.Common.Discovery.HalyardSearchClient, and checked in
+ * tests/discovery_test.c against docs/protocol/ps5-local-discovery.md's own worked examples - if this
+ * ever disagrees with the spec text, trust the spec over the .NET code, since both were meant to
+ * implement the same document.
  *
  * WIRE FORMAT (docs/protocol/ps5-local-discovery.md, "UDP 9302 SRCH discovery broadcast"):
  *
