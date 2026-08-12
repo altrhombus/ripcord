@@ -31,6 +31,7 @@ BUILD     := build
 GENERATED := $(BUILD)/halyard_v1_constants.g.c
 TARGET    := $(BUILD)/vector_runner
 DISCOVERY_TARGET := $(BUILD)/discovery_test
+SESSION_TARGET := $(BUILD)/session_test
 
 INCLUDES  := -I$(PORT_ROOT)/source/crypto -I$(PORT_ROOT)/source/halyard
 
@@ -46,18 +47,35 @@ SOURCES := \
 # strings ARE the vectors. See its header for why that is a legitimate substitute here and would not be
 # for the crypto above.
 DISCOVERY_SOURCES := \
+	$(PORT_ROOT)/source/util/rc_text.c \
 	$(PORT_ROOT)/source/discovery/halyard_discovery.c \
 	discovery_test.c
+
+# Phase 4: the /sess/init -> /sess/ctrl exchange, minus the crypto itself (already checked above via
+# vector_runner) - see session_test.c's header for exactly what this does and does not re-verify.
+SESSION_SOURCES := \
+	$(PORT_ROOT)/source/crypto/rc_aes.c \
+	$(PORT_ROOT)/source/crypto/rc_sha256.c \
+	$(PORT_ROOT)/source/crypto/rc_modes.c \
+	$(PORT_ROOT)/source/halyard/halyard_control_crypto.c \
+	$(PORT_ROOT)/source/util/rc_base64.c \
+	$(PORT_ROOT)/source/util/rc_text.c \
+	$(PORT_ROOT)/source/session/halyard_control_arm.c \
+	$(PORT_ROOT)/source/session/halyard_ctrl_message.c \
+	$(PORT_ROOT)/source/session/halyard_sess_fields.c \
+	$(PORT_ROOT)/source/session/halyard_sess_request.c \
+	session_test.c
 
 .PHONY: all check build clean constants
 
 all: check
 
-check: $(TARGET) $(VECTORS) $(DISCOVERY_TARGET)
+check: $(TARGET) $(VECTORS) $(DISCOVERY_TARGET) $(SESSION_TARGET)
 	./$(TARGET) $(VECTORS)
 	./$(DISCOVERY_TARGET)
+	./$(SESSION_TARGET)
 
-build: $(TARGET) $(DISCOVERY_TARGET)
+build: $(TARGET) $(DISCOVERY_TARGET) $(SESSION_TARGET)
 
 constants: $(GENERATED)
 
@@ -81,6 +99,10 @@ $(TARGET): $(SOURCES) $(GENERATED)
 $(DISCOVERY_TARGET): $(DISCOVERY_SOURCES)
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) -o $@ $(DISCOVERY_SOURCES)
+
+$(SESSION_TARGET): $(SESSION_SOURCES) $(GENERATED)
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $(SESSION_SOURCES) $(GENERATED)
 
 # Not a rule that generates it: the emitter is a .NET project and quietly shelling out to `dotnet` from a
 # C makefile would be a surprising amount of machinery to hide behind `make`. Say what to run instead.

@@ -36,6 +36,7 @@ CTRULIB := $(DEVKITPRO)/libctru
 TARGET    := ripcord-3ds
 LINKTEST  := ripcord-3ds-linktest
 DISCOVERY := ripcord-3ds-discovery
+SESSION   := ripcord-3ds-session
 BUILD     := build
 
 REPO_ROOT := ../..
@@ -62,6 +63,7 @@ SOURCES := \
 	source/crypto/rc_modes.c \
 	source/halyard/halyard_control_crypto.c \
 	source/util/rc_log.c \
+	source/util/rc_program_dir.c \
 	source/app/main.c
 
 # Phase 2 (SETUP.md): the UDP link test. Deliberately has no dependency on source/crypto or
@@ -70,24 +72,51 @@ SOURCES := \
 LINKTEST_SOURCES := \
 	source/net/rc_soc.c \
 	source/util/rc_log.c \
+	source/util/rc_program_dir.c \
 	source/linktest/main.c
 
 # Phase 3 (SETUP.md): LAN discovery. source/discovery has no dependency on source/crypto or
 # source/halyard either - see halyard_discovery.h for why the parser itself has no socket dependency in
-# turn, and source/discovery/main.c for where sockets and parsing meet.
+# turn, and source/discovery/main.c for where sockets and parsing meet. source/util/rc_text.c is the
+# trim/case-insensitive-match helper shared with source/session's HTTP-like parsing below.
 DISCOVERY_SOURCES := \
 	source/net/rc_soc.c \
 	source/util/rc_log.c \
+	source/util/rc_program_dir.c \
+	source/util/rc_text.c \
 	source/discovery/halyard_discovery.c \
 	source/discovery/main.c
 
-.PHONY: all constants clean test linktest discovery
+# Phase 4 (SETUP.md): the /sess/init -> /sess/ctrl exchange. Unlike discovery/linktest, this genuinely
+# needs source/halyard (the control-field cipher, established from /sess/init's RP-Nonce) and therefore
+# source/crypto beneath it - this is that layer's first real end-to-end use outside a test harness.
+SESSION_SOURCES := \
+	source/crypto/rc_aes.c \
+	source/crypto/rc_sha256.c \
+	source/crypto/rc_modes.c \
+	source/halyard/halyard_control_crypto.c \
+	source/net/rc_soc.c \
+	source/net/rc_tcp.c \
+	source/util/rc_log.c \
+	source/util/rc_base64.c \
+	source/util/rc_hex.c \
+	source/util/rc_program_dir.c \
+	source/util/rc_text.c \
+	source/session/halyard_control_arm.c \
+	source/session/halyard_ctrl_message.c \
+	source/session/halyard_sess_fields.c \
+	source/session/halyard_sess_request.c \
+	source/session/main.c
 
-all: $(TARGET).3dsx $(LINKTEST).3dsx $(DISCOVERY).3dsx
+.PHONY: all constants clean test linktest discovery session
+
+all: $(TARGET).3dsx $(LINKTEST).3dsx $(DISCOVERY).3dsx $(SESSION).3dsx
 
 linktest: $(LINKTEST).3dsx
 
 discovery: $(DISCOVERY).3dsx
+
+session: $(SESSION).3dsx
 
 # The interop constants are generated from the single committed JSON bundle rather than duplicated into
 # this port. tools/gen_constants.py explains why that is a deliberate constraint and not just tidiness.
@@ -124,11 +153,18 @@ $(BUILD)/$(DISCOVERY).elf: $(DISCOVERY_SOURCES)
 $(DISCOVERY).3dsx: $(BUILD)/$(DISCOVERY).elf
 	3dsxtool $< $@
 
+$(BUILD)/$(SESSION).elf: $(SESSION_SOURCES) $(GENERATED)
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $(SESSION_SOURCES) $(GENERATED) $(LIBS)
+
+$(SESSION).3dsx: $(BUILD)/$(SESSION).elf
+	3dsxtool $< $@
+
 # Convenience passthrough. The host tests are the ones that actually verify the crypto, so make them easy
 # to reach from the directory people will be standing in.
 test:
 	$(MAKE) -C tests
 
 clean:
-	rm -rf $(BUILD) $(TARGET).3dsx $(LINKTEST).3dsx $(DISCOVERY).3dsx
+	rm -rf $(BUILD) $(TARGET).3dsx $(LINKTEST).3dsx $(DISCOVERY).3dsx $(SESSION).3dsx
 	$(MAKE) -C tests clean

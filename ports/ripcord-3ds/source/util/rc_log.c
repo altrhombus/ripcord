@@ -1,4 +1,5 @@
 #include "rc_log.h"
+#include "rc_program_dir.h"
 
 #include <stdarg.h>
 #include <stdio.h>
@@ -9,19 +10,8 @@ static FILE *s_log = NULL;
 void rc_log_open(const char *argv0, const char *filename)
 {
     char path[512];
-    const char *slash = (argv0 != NULL) ? strrchr(argv0, '/') : NULL;
 
-    if (slash != NULL) {
-        size_t dirlen = (size_t)(slash - argv0) + 1; /* keep the trailing slash */
-        if (dirlen >= sizeof(path))
-            dirlen = sizeof(path) - 1;
-        memcpy(path, argv0, dirlen);
-        path[dirlen] = '\0';
-    } else {
-        /* No usable argv[0] - e.g. launched over a network loader rather than from the SD card. */
-        strncpy(path, "sdmc:/", sizeof(path) - 1);
-        path[sizeof(path) - 1] = '\0';
-    }
+    rc_program_dir(argv0, path, sizeof(path));
     strncat(path, filename, sizeof(path) - strlen(path) - 1);
 
     s_log = fopen(path, "a");
