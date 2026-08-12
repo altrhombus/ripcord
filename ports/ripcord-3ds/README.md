@@ -65,6 +65,7 @@ them.
 source/crypto/      AES-128, SHA-256, HMAC, cipher modes   <- mirrors Ripcord.Core.Net.Crypto
 source/halyard/     control KDF, field IV, field ciphers   <- mirrors Protocol.Halyard.Common/Crypto/V1
 source/net/         SOC service lifecycle                  <- mirrors Ripcord.Core.Net's transport primitives
+source/util/        dual console/SD-card logging, shared by both on-device programs below
 source/app/         on-device crypto smoke test (ripcord-3ds.3dsx)
 source/linktest/    Phase 2 UDP link test (ripcord-3ds-linktest.3dsx)
 tests/              host-side known-answer runner
@@ -104,6 +105,10 @@ Produces two Homebrew Launcher binaries: `ripcord-3ds.3dsx`, the on-device smoke
 actually costs on an ARM11), and `ripcord-3ds-linktest.3dsx`, the Phase 2 UDP link test in
 `source/linktest/main.c` (see [`SETUP.md`](SETUP.md) for how to run it against
 `tools/udp_link_test_sender.py`). `make -C ports/ripcord-3ds linktest` builds just the second one.
+
+Both (`source/util/rc_log.c`) write everything they print to the top screen into a log file next to
+whichever copy of the `.3dsx` produced it — `smoke-test.log` / `linktest.log` on the SD card — so a run's
+numbers can be copied off the card afterward instead of retyped from a photo of the screen.
 
 Both have been built against a real devkitPro installation and produce valid `.3dsx` files. Neither has
 been booted on hardware yet.
