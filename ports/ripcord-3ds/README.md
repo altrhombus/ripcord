@@ -75,7 +75,9 @@ source/app/         on-device crypto smoke test (ripcord-3ds.3dsx)
 source/linktest/    Phase 2 UDP link test (ripcord-3ds-linktest.3dsx)
 source/discovery/   Phase 3 LAN discovery: SRCH probe/parse + on-device app (ripcord-3ds-discovery.3dsx)
 source/session/     Phase 4 /sess/init -> /sess/ctrl exchange + on-device app (ripcord-3ds-session.3dsx)
-tests/              host-side known-answer runner, discovery + session self-tests
+source/takion/      Phase 5 Takion transport: handshake, DATA/SACK, reassembly + on-device app
+                    (ripcord-3ds-takion.3dsx)
+tests/              host-side known-answer runner, discovery + session + takion self-tests
 tools/              constants generator, UDP link-test sender (host-side)
 ```
 
@@ -90,7 +92,13 @@ the wire-format parsers (`halyard_discovery.c`, `halyard_sess_request.c`, `halya
 headers for why — so they are checked on the host in `tests/discovery_test.c` / `tests/session_test.c`
 without any of `net/`'s hardware seam involved. `rc_text.c` (trim / case-insensitive header-name match) is
 shared by both `halyard_discovery.c` and `halyard_sess_request.c`, factored out once the second module
-needed the exact logic the first already had as private statics.
+needed the exact logic the first already had as private statics. `takion/` follows the same split one
+level further: `takion_message.c`/`takion_handshake.c`/`takion_data_chunk.c`/`takion_sack_chunk.c`/
+`takion_reassembler.c` are pure (host-tested in `tests/takion_test.c`, no vector file needed — see that
+file's header for where each known-answer packet came from), while `takion_reliable_channel.c` is the one
+file in this port's whole protocol layer that both owns a socket *and* isn't crypto — it drives the pure
+chunk codecs over UDP with retransmit/SACK timing, and like `rc_soc.c`/`rc_tcp.c` has no host test of its
+own, only the on-device app.
 
 ## Building
 
@@ -115,27 +123,29 @@ run it from the devkitPro MSYS2 shell — that is where `make` and the ARM toolc
 make -C ports/ripcord-3ds
 ```
 
-Produces four Homebrew Launcher binaries: `ripcord-3ds.3dsx`, the on-device smoke test in
+Produces five Homebrew Launcher binaries: `ripcord-3ds.3dsx`, the on-device smoke test in
 `source/app/main.c` (round-trips the ciphers on real hardware and reports how long a field encryption
 actually costs on an ARM11); `ripcord-3ds-linktest.3dsx`, the Phase 2 UDP link test in
 `source/linktest/main.c` (see [`SETUP.md`](SETUP.md) for how to run it against
 `tools/udp_link_test_sender.py`); `ripcord-3ds-discovery.3dsx`, the Phase 3 LAN discovery probe in
 `source/discovery/main.c` — broadcasts the SRCH probe for both console families and lists every distinct
-console that answers within a four-second window; and `ripcord-3ds-session.3dsx`, the Phase 4 session
-probe in `source/session/main.c` — arms the console's control listener, runs `/sess/init` -> `/sess/ctrl`
+console that answers within a four-second window; `ripcord-3ds-session.3dsx`, the Phase 4 session probe
+in `source/session/main.c` — arms the console's control listener, runs `/sess/init` -> `/sess/ctrl`
 against a provisional `pairing.txt` on the SD card (see that file's own header comment for the format;
 this is not the real pairing-import feature, which remains unstarted), and answers heartbeats on the
-binary control channel that follows. `make -C ports/ripcord-3ds linktest`/`discovery`/`session` builds
-just one of the four.
+binary control channel that follows; and `ripcord-3ds-takion.3dsx`, the Phase 5 Takion transport probe in
+`source/takion/main.c` — drives the SCTP handshake against a `takion.txt`-configured host:port and
+exchanges a synthetic message over the reliable channel once established. `make -C ports/ripcord-3ds
+linktest`/`discovery`/`session`/`takion` builds just one of the five.
 
-All four (`source/util/rc_log.c`) write everything they print to the top screen into a log file next to
+All five (`source/util/rc_log.c`) write everything they print to the top screen into a log file next to
 whichever copy of the `.3dsx` produced it — `smoke-test.log` / `linktest.log` / `discovery.log` /
-`session.log` on the SD card — so a run's results can be copied off the card afterward instead of retyped
-from a photo of the screen.
+`session.log` / `takion.log` on the SD card — so a run's results can be copied off the card afterward
+instead of retyped from a photo of the screen.
 
-All four have been built against a real devkitPro installation and produce valid `.3dsx` files. The
+All five have been built against a real devkitPro installation and produce valid `.3dsx` files. The
 crypto smoke test and the link test have both been booted on real hardware (see "Where this stands"); the
-discovery and session probes have not yet.
+discovery, session and Takion probes have not yet.
 
 ### Not part of `Ripcord.slnx`, deliberately
 
@@ -214,12 +224,21 @@ Done:
       magic" doc, see SETUP.md Phase 4). 53 cases in `tests/session_test.c`, including one end-to-end
       chain through the already-verified control-field cipher. The on-device app
       (`ripcord-3ds-session.3dsx`) compiles and links clean; not yet run against a real console
+- [x] Takion transport: the SCTP 4-way handshake, DATA/SACK chunks with fragmentation/reassembly, and a
+      minimal in-order-accept + fixed-interval-retransmit reliable channel (`source/takion/`). The pure
+      codecs are checked in `tests/takion_test.c` (61 cases) against known-answer packets lifted from the
+      .NET side's own captured-vector tests — including a real doc/implementation mismatch this phase
+      caught: `docs/protocol/ps5-session-transport.md`'s "RPCS" description does not apply to Takion at
+      all (it documents an unrelated, older transport), and Takion's own reliable channel
+      (`takion_reliable_channel.c`) has no host test, same as `rc_soc.c`/`rc_tcp.c` — the on-device app
+      (`ripcord-3ds-takion.3dsx`) compiles and links clean; not yet run against a real console. GMAC
+      sealing, FEC and the actual stream-key/SESSION_REQUEST exchange are deliberately out of scope here
+      — see SETUP.md Phase 5 for exactly where the line was drawn and why
 
 Not started — roughly in dependency order. [`SETUP.md`](SETUP.md) has this as a phased plan with the
 toolchain steps:
 
-- [ ] Run the discovery and session probes against a real console, awake and resting
-- [ ] Takion transport: handshake, reliable delivery, reassembly
+- [ ] Run the discovery, session and Takion probes against a real console, awake and resting
 - [ ] Stream framing, demux, FEC
 - [ ] MVD H.264 decode → Y2R → PICA200 present
 - [ ] Opus audio
@@ -240,11 +259,13 @@ Both hardware questions Phases 1 and 2 existed to answer are now settled: the co
 ~25 µs per field, and the link sustains the bottom rung's target with modest loss on an idle core (2.16%
 at 2 Mbps, 4.33% at 3 Mbps) — with the caveat that a simulated CPU load roughly quadruples that loss at
 the same rates, a real signal about contention even though the synthetic load itself isn't a stand-in for
-actual decode cost. Phases 3 and 4 are both implemented and passing their own (hardware-free) parser
-tests — SRCH discovery and now the `/sess/init` -> `/sess/ctrl` exchange, the first end-to-end use of the
-Phase 0 crypto against real console output. Note the pairing record `ripcord-3ds-session.3dsx` reads is a
-provisional `pairing.txt` for exercising this phase, not the real "Pairing-record import from a desktop
-Ripcord install" item still sitting unstarted above — those are two different things with similar-sounding
-names, and only one of them is done. The next step is the same shape as Phases 1 and 2 before it: **run
-both probes against a real console** (awake and resting) to confirm the wire formats hold up outside the
-spec's transcribed examples, before moving on to Takion in Phase 5.
+actual decode cost. Phases 3, 4 and 5 are all implemented and passing their own (hardware-free) parser
+tests — SRCH discovery, the `/sess/init` -> `/sess/ctrl` exchange (the first end-to-end use of the
+Phase 0 crypto against real console output), and now the Takion transport underneath where the A/V stream
+will eventually ride. Note the pairing record `ripcord-3ds-session.3dsx` reads is a provisional
+`pairing.txt` for exercising Phase 4, not the real "Pairing-record import from a desktop Ripcord install"
+item still sitting unstarted above — those are two different things with similar-sounding names, and only
+one of them is done. The next step is the same shape as Phases 1 and 2 before it: **run all three probes
+against a real console** (awake and resting) to confirm the wire formats hold up outside the spec's
+transcribed and captured-vector examples, before moving on to stream framing/demux/FEC and the actual
+media pipeline in Phase 6.

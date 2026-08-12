@@ -32,6 +32,7 @@ GENERATED := $(BUILD)/halyard_v1_constants.g.c
 TARGET    := $(BUILD)/vector_runner
 DISCOVERY_TARGET := $(BUILD)/discovery_test
 SESSION_TARGET := $(BUILD)/session_test
+TAKION_TARGET := $(BUILD)/takion_test
 
 INCLUDES  := -I$(PORT_ROOT)/source/crypto -I$(PORT_ROOT)/source/halyard
 
@@ -66,16 +67,30 @@ SESSION_SOURCES := \
 	$(PORT_ROOT)/source/session/halyard_sess_request.c \
 	session_test.c
 
+# Phase 5: the Takion transport (handshake, DATA/SACK, reassembly). No vector file and no .NET codegen
+# step - the known-answer vectors are full captured packets lifted from the .NET side's own test suite,
+# transcribed as literal hex strings in takion_test.c itself. Deliberately has no dependency on
+# source/crypto or source/halyard: Phase 5 is pure transport, with GMAC sealing (which does need the
+# stream crypto, a separate cipher from the control-plane one above) deferred to a later phase.
+TAKION_SOURCES := \
+	$(PORT_ROOT)/source/takion/takion_message.c \
+	$(PORT_ROOT)/source/takion/takion_handshake.c \
+	$(PORT_ROOT)/source/takion/takion_data_chunk.c \
+	$(PORT_ROOT)/source/takion/takion_sack_chunk.c \
+	$(PORT_ROOT)/source/takion/takion_reassembler.c \
+	takion_test.c
+
 .PHONY: all check build clean constants
 
 all: check
 
-check: $(TARGET) $(VECTORS) $(DISCOVERY_TARGET) $(SESSION_TARGET)
+check: $(TARGET) $(VECTORS) $(DISCOVERY_TARGET) $(SESSION_TARGET) $(TAKION_TARGET)
 	./$(TARGET) $(VECTORS)
 	./$(DISCOVERY_TARGET)
 	./$(SESSION_TARGET)
+	./$(TAKION_TARGET)
 
-build: $(TARGET) $(DISCOVERY_TARGET) $(SESSION_TARGET)
+build: $(TARGET) $(DISCOVERY_TARGET) $(SESSION_TARGET) $(TAKION_TARGET)
 
 constants: $(GENERATED)
 
@@ -103,6 +118,10 @@ $(DISCOVERY_TARGET): $(DISCOVERY_SOURCES)
 $(SESSION_TARGET): $(SESSION_SOURCES) $(GENERATED)
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $(SESSION_SOURCES) $(GENERATED)
+
+$(TAKION_TARGET): $(TAKION_SOURCES)
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) -o $@ $(TAKION_SOURCES)
 
 # Not a rule that generates it: the emitter is a .NET project and quietly shelling out to `dotnet` from a
 # C makefile would be a surprising amount of machinery to hide behind `make`. Say what to run instead.

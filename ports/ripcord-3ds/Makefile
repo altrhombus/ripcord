@@ -37,6 +37,7 @@ TARGET    := ripcord-3ds
 LINKTEST  := ripcord-3ds-linktest
 DISCOVERY := ripcord-3ds-discovery
 SESSION   := ripcord-3ds-session
+TAKION    := ripcord-3ds-takion
 BUILD     := build
 
 REPO_ROOT := ../..
@@ -108,15 +109,32 @@ SESSION_SOURCES := \
 	source/session/halyard_sess_request.c \
 	source/session/main.c
 
-.PHONY: all constants clean test linktest discovery session
+# Phase 5 (SETUP.md): the Takion transport (handshake, DATA/SACK, reassembly). Deliberately has no
+# dependency on source/crypto or source/halyard - GMAC sealing needs the stream cipher, a separate,
+# later phase; this is pure transport.
+TAKION_SOURCES := \
+	source/net/rc_soc.c \
+	source/util/rc_log.c \
+	source/util/rc_program_dir.c \
+	source/takion/takion_message.c \
+	source/takion/takion_handshake.c \
+	source/takion/takion_data_chunk.c \
+	source/takion/takion_sack_chunk.c \
+	source/takion/takion_reassembler.c \
+	source/takion/takion_reliable_channel.c \
+	source/takion/main.c
 
-all: $(TARGET).3dsx $(LINKTEST).3dsx $(DISCOVERY).3dsx $(SESSION).3dsx
+.PHONY: all constants clean test linktest discovery session takion
+
+all: $(TARGET).3dsx $(LINKTEST).3dsx $(DISCOVERY).3dsx $(SESSION).3dsx $(TAKION).3dsx
 
 linktest: $(LINKTEST).3dsx
 
 discovery: $(DISCOVERY).3dsx
 
 session: $(SESSION).3dsx
+
+takion: $(TAKION).3dsx
 
 # The interop constants are generated from the single committed JSON bundle rather than duplicated into
 # this port. tools/gen_constants.py explains why that is a deliberate constraint and not just tidiness.
@@ -160,11 +178,18 @@ $(BUILD)/$(SESSION).elf: $(SESSION_SOURCES) $(GENERATED)
 $(SESSION).3dsx: $(BUILD)/$(SESSION).elf
 	3dsxtool $< $@
 
+$(BUILD)/$(TAKION).elf: $(TAKION_SOURCES)
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $(TAKION_SOURCES) $(LIBS)
+
+$(TAKION).3dsx: $(BUILD)/$(TAKION).elf
+	3dsxtool $< $@
+
 # Convenience passthrough. The host tests are the ones that actually verify the crypto, so make them easy
 # to reach from the directory people will be standing in.
 test:
 	$(MAKE) -C tests
 
 clean:
-	rm -rf $(BUILD) $(TARGET).3dsx $(LINKTEST).3dsx $(DISCOVERY).3dsx $(SESSION).3dsx
+	rm -rf $(BUILD) $(TARGET).3dsx $(LINKTEST).3dsx $(DISCOVERY).3dsx $(SESSION).3dsx $(TAKION).3dsx
 	$(MAKE) -C tests clean
