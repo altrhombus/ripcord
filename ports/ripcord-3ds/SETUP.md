@@ -237,10 +237,11 @@ that is the next thing this phase needs, the same way Phases 1 and 2 each needed
 their numbers meant anything.
 
 **Phase 4 — `/sess/init` -> `/sess/ctrl`. Implemented, not yet run against a real console.** The first
-exchange that talks to a real console, and the first end-to-end use of the crypto from Phase 0.
-Re-derived from `Ripcord.Protocol.Halyard.Common.Control` (`SessProtocol`, `HalyardSessCtrlFields`,
-`HalyardCtrlMessage`) and `HalyardControlSearch`/`HalyardTcpControlChannel`, checked against them, not
-translated from them.
+exchange that talks to a real console, and the first end-to-end use of the crypto from Phase 0. Ported
+from `Ripcord.Protocol.Halyard.Common.Control` (`SessProtocol`, `HalyardSessCtrlFields`,
+`HalyardCtrlMessage`) and `HalyardControlSearch`/`HalyardTcpControlChannel` - the same project's own
+reference implementation, so there is no clean-room boundary to keep here the way there is against the
+protocol's other, unrelated implementations (CLAUDE.md's clean-room section says so explicitly).
 
 **A real doc correction surfaced during this phase.** `docs/protocol/ps5-session-transport.md` (and every
 doc file that repeats it) describes the persistent binary control channel as `RPCS`-magic framing. That
@@ -279,9 +280,10 @@ hardware and no .NET vector file:
   provisional `pairing.txt` (key=value text, documented in the file's own header comment) since this port
   does not pair; **this is not the "Pairing-record import" backlog item**, which is a separate, still
   unstarted piece of work.
-- Compiles and links clean as a fourth `.3dsx`. **No timeout on the initial connect/response wait** - a
-  console that never answers hangs the program. Accepted for a first, exploratory version, the same call
-  Phase 2's synthetic CPU load and Phase 3's fixed search window each made in their own first drafts.
+- Compiles and links clean as a fourth `.3dsx`. The `/sess/init`/`/sess/ctrl` sockets are non-blocking
+  from the moment they connect (`wait_for_sess_response()` polls with a 5-second bound, and
+  `rc_tcp_send_all()` retries `EAGAIN`/`EWOULDBLOCK` the same way) - a console that never answers gets a
+  bounded failure, not a hung program.
 
 **Phase 5 — Takion.** Handshake, reliable delivery, reassembly.
 

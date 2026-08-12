@@ -11,11 +11,13 @@
  * connection) - callers must never reset it back to 0 for a later message on an already-established
  * connection, or they reuse an IV.
  *
- * CONFIDENCE LEVELS (mirrors Ripcord.Protocol.Halyard.Common.Control.HalyardSessCtrlFields, which this
- * is checked against, not translated from): the registkey zero-padding, the RP-Did fixed-structure
- * shape and the "WinX.Y" string are wire-confirmed [V]. RP-StartBitrate/RP-StreamingType's little-endian
- * 4-byte encoding is tentative [X] - it does not appear in any verified vector on either side of this
- * port, only in the shipped (but unverified) .NET behaviour.
+ * Ported from Ripcord.Protocol.Halyard.Common.Control.HalyardSessCtrlFields.
+ *
+ * CONFIDENCE LEVELS carry over unchanged: the registkey zero-padding, the RP-Did fixed-structure shape
+ * and the "WinX.Y" string are wire-confirmed [V]. RP-StartBitrate/RP-StreamingType's little-endian 4-byte
+ * encoding is tentative [X] - it does not appear in any verified vector on either side of this port,
+ * only in shipped (but unverified) behaviour. That uncertainty is the protocol's, not a clean-room
+ * artifact - porting the .NET code directly doesn't resolve it, only a live capture would.
  */
 #ifndef HALYARD_SESS_FIELDS_H
 #define HALYARD_SESS_FIELDS_H
