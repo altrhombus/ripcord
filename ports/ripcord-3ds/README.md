@@ -36,16 +36,21 @@ same tracker as the spec.
 | Video | MVD hardware H.264 decoder (New 3DS only) | H.264 only — HEVC must be refused at negotiation |
 | Colour | Y2R hardware YUV→RGB | The established homebrew path: MVD → Y2R → PICA200 texture |
 | Screen | 400×240 | Everything downscales; quality loss is free |
-| Wi-Fi | 802.11b/g, 2.4 GHz | **Measured: ~10 Mbps sustained** (8 low, 13 peak) — not the blocker it was assumed to be |
+| Wi-Fi | 802.11b/g, 2.4 GHz | **Measured (UDP receive, idle): 2.16% loss at 2 Mbps, 4.33% at 3 Mbps** — not the blocker it was assumed to be, at the bottom rung's actual target |
 | Audio | Opus in software + DSP | Affordable |
 
-Wi-Fi was expected to be the binding constraint and is not. An `ftpd` transfer sustained around 10 Mbps,
-dipping to 8 and peaking near 13. The console's bottom rung is 640×360 @ 60, which wants roughly 1.5–3
-Mbps, so there is real headroom — enough that the interesting question moves to CPU contention and
-latency rather than raw bandwidth.
+Wi-Fi was expected to be the binding constraint and is not, on an idle core. An `ftpd` transfer (TCP,
+upload) sustained around 10 Mbps, dipping to 8 and peaking near 13; the UDP link test in
+[`SETUP.md`](SETUP.md) Phase 2 confirmed the same picture in the actual direction and protocol the A/V
+path uses, reaching ~10.4 Mbps goodput at the top of a 1→12 Mbps ramp with modest loss well past the
+bottom rung's 1.5–3 Mbps target.
 
-That measurement is TCP, upload direction, on an idle CPU, so it is an encouraging ceiling rather than a
-final answer. The UDP receive test that settles it is Phase 2 in [`SETUP.md`](SETUP.md).
+**Toggling a simulated CPU load changes the picture.** At the same 2–3 Mbps target, loss roughly
+quadruples (9.68% / 17.93%), and above ~5 Mbps target the busy-CPU goodput flatlines around 3–3.4 Mbps
+regardless of how much more the sender pushes. The load used is a crude synthetic proxy, not real MVD/Y2R
+decode timing (which doesn't exist yet), so the direction — CPU contention costs real UDP throughput — is
+the finding to keep; the specific busy ceiling is not. See Phase 2 in [`SETUP.md`](SETUP.md) for the full
+numbers and that caveat.
 
 Controls map more gracefully than expected in places and not at all in others: the touchscreen is a real
 DualSense touchpad and the gyro is a real gyro, but the C-stick is a poor right stick, ZL/ZR are digital
@@ -150,10 +155,11 @@ Plus the FIPS-197 AES vector, which is the only check here that is independent o
 Everything else tests *agreement* between two implementations, and two implementations can agree and both
 be wrong.
 
-**What is not verified:** none of this has run on real 3DS hardware yet. The host build compiles clean
-under `-Werror -Wconversion -Wsign-conversion` and passes all 171 vectors, and the cross-compile produces
-a valid `.3dsx`, but the on-device smoke test in `source/app/main.c` has never been booted, so the ARM11
-timing number does not exist yet.
+**What is verified now, and what still is not:** the host build compiles clean under `-Werror -Wconversion
+-Wsign-conversion` and passes all 171 vectors, and `source/app/main.c` has now run this same logic on a
+real New 3DS — see "Where this stands" below for the on-device numbers. What the vector file still cannot
+do is validate against anything *other* than agreement between the two implementations, short of the
+FIPS-197 vector; a shared misreading of the spec would pass both sides.
 
 ## Where this stands
 
@@ -171,14 +177,17 @@ Done:
       total crypto cost per connect is on the order of 125 µs; see SETUP.md Phase 1 for what this does and
       does not settle
 - [x] SOC service lifecycle (`source/net/rc_soc.c`) — the 0x1000-aligned 0x100000 buffer, owned in one place
-- [x] UDP link test: goodput, sequence-gap loss and p99 inter-arrival jitter, idle and under simulated CPU
-      load (`source/linktest/main.c` + `tools/udp_link_test_sender.py`) — compiles and links to a `.3dsx`;
-      not yet run against a real link
+- [x] UDP link test run over a real Wi-Fi link, idle and under simulated CPU load — idle reaches ~10.4
+      Mbps goodput at the top of a 1→12 Mbps ramp with modest loss at the bottom rung's 2–3 Mbps target
+      (2.16% / 4.33%); toggling the load roughly quadruples loss at the same rates (9.68% / 17.93%) and
+      flattens busy goodput around 3–3.4 Mbps above ~5 Mbps target — see SETUP.md Phase 2 for the full
+      numbers and the caveat on what the synthetic CPU load does and does not model
+- [x] Dual console/SD-card logging (`source/util/rc_log.c`) — both on-device programs write everything
+      they print to a `.log` file next to their own `.3dsx`
 
 Not started — roughly in dependency order. [`SETUP.md`](SETUP.md) has this as a phased plan with the
 toolchain steps:
 
-- [ ] Run the UDP link test over a real Wi-Fi link, idle and under load
 - [ ] LAN discovery
 - [ ] The `/sess/ctrl` HTTP exchange, which is the first thing that talks to a console
 - [ ] Takion transport: handshake, reliable delivery, reassembly
@@ -188,9 +197,9 @@ toolchain steps:
 - [ ] Input mapping, including touchscreen → touchpad and gyro → gyro
 - [ ] Pairing-record import from a desktop Ripcord install
 
-The Wi-Fi question that used to sit at the top of this list has been answered — ~10 Mbps sustained against
-a 1.5–3 Mbps target — so the transport work is worth doing. The crypto has cleared its first compiler and
-its first real hardware: ~25 µs per control-field encryption, which settles the control plane and leaves
-the A/V path as the only open CPU question. The next step is also hardware, but a different link this
-time: **run the UDP link test (`ripcord-3ds-linktest.3dsx` + `tools/udp_link_test_sender.py`) over a real
-Wi-Fi connection, idle and under simulated CPU load.**
+Both hardware questions Phases 1 and 2 existed to answer are now settled: the control plane's crypto costs
+~25 µs per field, and the link sustains the bottom rung's target with modest loss on an idle core (2.16%
+at 2 Mbps, 4.33% at 3 Mbps) — with the caveat that a simulated CPU load roughly quadruples that loss at
+the same rates, a real signal about contention even though the synthetic load itself isn't a stand-in for
+actual decode cost. The next step doesn't need hardware: **LAN discovery**, the UDP broadcast/response
+that finds a console on the local network, ahead of the `/sess/ctrl` exchange in Phase 4.
