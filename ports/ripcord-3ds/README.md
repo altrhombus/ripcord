@@ -225,6 +225,16 @@ toolchain steps:
 - [ ] Opus audio
 - [ ] Input mapping, including touchscreen → touchpad and gyro → gyro
 - [ ] Pairing-record import from a desktop Ripcord install
+- [ ] **For later discussion:** on-device PIN-based pairing — distinct from record-import above, this
+      would be *performing* pairing on this port rather than importing an existing record. The PIN route
+      (spec §2.0) rides the same plain-TCP 9295 connection Phase 4 already built `rc_tcp` for, and its KDF
+      is a 32-entry table XOR-folded with the on-screen PIN, sealed with the same AES-128-CFB/HMAC-SHA256
+      primitives already ported — nothing OAuth/TLS-shaped, unlike the account-based/no-PIN route. Two open
+      questions before this is buildable, not just researched: (a) the registration table isn't a bundled
+      constant yet (dirty-room only) — bundling it needs the same deliberate NOTICE/CLAUDE.md amendment
+      already made twice, a project-owner call; (b) the spec's request-body plaintext includes
+      `Np-AccountId` even on the PIN route, meaning the client may need to already know its own PSN account
+      ID from somewhere — unresolved
 
 Both hardware questions Phases 1 and 2 existed to answer are now settled: the control plane's crypto costs
 ~25 µs per field, and the link sustains the bottom rung's target with modest loss on an idle core (2.16%
