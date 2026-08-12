@@ -153,9 +153,17 @@ Mbps. That is comfortable headroom, so the transport work is worth doing.
 **Phase 0 — first green build. Done.** Step 2 (host KAT runner, 171/171) and step 3 (ARM11 cross-compile)
 both pass. This proves the control-plane crypto is correct in C, and everything else depends on it.
 
-**Phase 1 — first boot.** Get `ripcord-3ds.3dsx` running on the handheld. `source/app/main.c` round-trips
-the ciphers on real hardware and prints how long a field encryption costs on an ARM11. Record that number
-— it is the input to every later decision about whether software AES can keep up with the A/V path.
+**Phase 1 — first boot. Done.** `ripcord-3ds.3dsx` booted on a real New 3DS: all self-consistency checks
+passed, and `source/app/main.c` measured **1000 field encryptions in 25 ms — ~25 µs each** (ARM11 @ 804
+MHz, `osSetSpeedupEnable(true)` in effect). One field encryption is one HMAC-SHA256 (IV derivation) plus
+one AES-128 block, and a session uses about five of these total (RP-Auth, RP-Did, RP-OSType,
+RP-StartBitrate, RP-StreamingType) — so the control plane's total crypto cost per connect is on the order
+of 125 µs. That settles the question this phase existed to ask: the control plane is free, full stop, and
+whatever the A/V path costs is where the real budget goes. This number is *not* a direct measurement of
+the A/V stream cipher (AES-128-CTR, not CFB, and per-packet rather than per-field) — a real per-packet
+decrypt benchmark against Phase 2/6 traffic sizes is still owed before treating software AES on the A/V
+path as settled, but a rough extrapolation from this number lands comfortably under the bottom rung's
+budget.
 
 **Phase 2 — confirm the link properly. Code ready, not yet run on hardware.** The `ftpd` result is TCP,
 upload direction, idle CPU. Before committing to transport work, run the UDP receive test:
