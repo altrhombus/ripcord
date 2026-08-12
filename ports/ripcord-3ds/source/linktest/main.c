@@ -21,10 +21,12 @@
  *                        becomes the interesting question instead of jitter
  *   offset 16..1425    : filler, uninspected
  *
- * NO PER-PACKET printf(). Console output alone caps throughput well below the Wi-Fi link - SETUP.md
- * names this explicitly. Everything below is counters, sorted and printed only once per stage.
+ * NO PER-PACKET output. Console output alone caps throughput well below the Wi-Fi link - SETUP.md names
+ * this explicitly. Everything below is counters, sorted and printed only once per stage - to the top
+ * screen and, via rc_log(), to a file next to this .3dsx on the SD card.
  */
 #include "../net/rc_soc.h"
+#include "../util/rc_log.h"
 
 #include <3ds.h>
 
@@ -133,7 +135,7 @@ static void stage_record(stage_stats *s, uint64_t seq, size_t packet_len)
 static void stage_finish_and_print(const stage_stats *s)
 {
     if (!s->have_first || s->count == 0) {
-        printf("stage %2u Mbps (%s): no packets received\n",
+        rc_log("stage %2u Mbps (%s): no packets received\n",
             s->stage_mbps, s->cpu_busy ? "busy" : "idle");
         return;
     }
@@ -163,7 +165,7 @@ static void stage_finish_and_print(const stage_stats *s)
             p99_us = sorted[idx];
         }
 
-        printf("stage %2u Mbps (%s): %llu pkts, %.2f%% loss, %.2f Mbps goodput, p99 %.0f us%s\n",
+        rc_log("stage %2u Mbps (%s): %llu pkts, %.2f%% loss, %.2f Mbps goodput, p99 %.0f us%s\n",
             s->stage_mbps, s->cpu_busy ? "busy" : "idle",
             (unsigned long long)s->count, loss_pct, goodput_mbps, p99_us,
             s->delta_count >= MAX_DELTA_SAMPLES ? " (capped)" : "");
@@ -214,18 +216,18 @@ static int run_linktest(void)
     int run_done = 0;
 
     if (rc_soc_init() != 0) {
-        printf("\x1b[31mFAIL\x1b[0m SOC init failed\n");
+        rc_log("\x1b[31mFAIL\x1b[0m SOC init failed\n");
         return 1;
     }
 
     local = rc_soc_local_address();
-    printf("listening on %s:%d\n", inet_ntoa(local), LINKTEST_PORT);
-    printf("point tools/udp_link_test_sender.py at this address.\n");
-    printf("Y toggles simulated CPU load, START exits.\n\n");
+    rc_log("listening on %s:%d\n", inet_ntoa(local), LINKTEST_PORT);
+    rc_log("point tools/udp_link_test_sender.py at this address.\n");
+    rc_log("Y toggles simulated CPU load, START exits.\n\n");
 
     sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if (sock < 0) {
-        printf("\x1b[31mFAIL\x1b[0m socket() failed: %d\n", errno);
+        rc_log("\x1b[31mFAIL\x1b[0m socket() failed: %d\n", errno);
         rc_soc_exit();
         return 1;
     }
@@ -235,7 +237,7 @@ static int run_linktest(void)
     bind_addr.sin_addr.s_addr = INADDR_ANY;
     bind_addr.sin_port = htons(LINKTEST_PORT);
     if (bind(sock, (struct sockaddr *)&bind_addr, sizeof(bind_addr)) != 0) {
-        printf("\x1b[31mFAIL\x1b[0m bind() failed: %d\n", errno);
+        rc_log("\x1b[31mFAIL\x1b[0m bind() failed: %d\n", errno);
         close(sock);
         rc_soc_exit();
         return 1;
@@ -322,7 +324,7 @@ static int run_linktest(void)
     if (have_stage)
         stage_finish_and_print(&stage);
     if (run_done)
-        printf("\nrun complete - see stage lines above\n");
+        rc_log("\nrun complete - see stage lines above\n");
 
     close(sock);
     rc_soc_exit();
@@ -332,7 +334,6 @@ static int run_linktest(void)
 int main(int argc, char **argv)
 {
     (void)argc;
-    (void)argv;
 
     /* Without this a New 3DS runs at the Old 3DS clock speed - any timing number taken without it
      * describes a machine we are not targeting. Named directly in SETUP.md's gotcha list. */
@@ -341,13 +342,16 @@ int main(int argc, char **argv)
     gfxInitDefault();
     consoleInit(GFX_TOP, NULL);
 
-    printf("ripcord-3ds UDP link test (Phase 2)\n");
-    printf("------------------------------------\n");
+    rc_log_open(argc > 0 ? argv[0] : NULL, "linktest.log");
+
+    rc_log("ripcord-3ds UDP link test (Phase 2)\n");
+    rc_log("------------------------------------\n");
 
     calibrate_tick_rate();
     run_linktest();
 
-    printf("\nPress START to exit.\n");
+    rc_log("\nPress START to exit.\n");
+    rc_log_close();
     while (aptMainLoop()) {
         hidScanInput();
         if (hidKeysDown() & KEY_START)
