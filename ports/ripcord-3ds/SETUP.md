@@ -285,7 +285,55 @@ hardware and no .NET vector file:
   `rc_tcp_send_all()` retries `EAGAIN`/`EWOULDBLOCK` the same way) - a console that never answers gets a
   bounded failure, not a hung program.
 
-**Phase 5 — Takion.** Handshake, reliable delivery, reassembly.
+**Phase 5 — Takion. Implemented, not yet run against a real console.** Handshake, reliable delivery,
+reassembly. Ported from `Ripcord.Protocol.Halyard.Takion` (`TakionMessageHeader`, `TakionHandshake`,
+`TakionConnection`, `TakionDataChunk`, `TakionSackChunk`, `TakionMessageReassembler`,
+`TakionReliableChannel`) - the same project's own reference implementation (see the note on Phase 4 above
+about why that needs no clean-room distance).
+
+**A real doc mismatch surfaced here too, of a different shape than Phase 4's.**
+`docs/protocol/ps5-session-transport.md` is not a stale *description* of Takion - it documents a
+*completely different transport* (an older/other-generation RUDP framing with a `24 4F 24 4F` magic and
+`RPCS` frames, superseded by the Takion findings in `docs/protocol/ps5-remoteplay-v1-spec.md` secs 3 and
+8, which are what this phase actually implements). Ignore that doc file entirely for Takion wire format;
+it answers a question about a transport this port does not use.
+
+Takion is "essentially SCTP over UDP" (spec sec8, wire-validated against
+`captures/rudp_control_setup.pcapng`): the 13-byte message header (base type, verification tag, GMAC tag,
+key position), the SCTP 4-way handshake (INIT/INIT_ACK/COOKIE_ECHO/COOKIE_ACK, chunk types straight from
+RFC 4960), and DATA/SACK reliable delivery are all confirmed byte-for-byte against known-answer packets
+lifted from the .NET side's own test suite (`TakionTests.cs`, `TakionDataChunkTests.cs`,
+`TakionReliabilityTests.cs`) - transcribed as literal hex strings in `tests/takion_test.c` (61 cases), no
+vector file and no .NET codegen step needed, the same substitution `tests/discovery_test.c` already
+established as legitimate for a plain-text/plain-bytes wire format. INIT_ACK/COOKIE_ECHO/COOKIE_ACK and
+the DATA continuation-fragment shape have no captured vector available and are checked by round-trip
+instead - see each module's header comment for exactly what confidence level applies where.
+
+**What's in scope, and what's deliberately deferred**, per the spec's own explicit "sufficient for a
+clean-LAN first picture" framing (sec8.2) and `docs/protocol/IMPLEMENTATION.md`'s "what does NOT block a
+first picture" list:
+- In scope: the handshake (active-open only - this port never answers an INIT), DATA chunk build/parse
+  with fragmentation, SACK build/parse (cumulative-only - gap/dup blocks were never observed on a
+  clean-LAN capture, though parsing tolerates a peer sending them), a single-in-flight-message reassembler
+  (`source/takion/takion_reassembler.c`; the .NET reference uses a per-channel dictionary, but a
+  continuation fragment carries no channel id at all, so at most one message can be in flight
+  unambiguously - see that file's header for why one slot is not a simplification of the real design, it
+  models what the wire format can even distinguish), and a minimal in-order-accept +
+  fixed-interval-retransmit + cumulative-SACK reliable channel.
+- Deferred, explicitly not needed to stream: FEC (lives entirely in the A/V demux/reassembly layer, not
+  Takion's SCTP sublayer - "with no packet loss the decoder never runs. Skip"), RTT estimation/Karn's
+  algorithm/congestion-window tuning (wire format is `[V]`, only timing is unspecified - a fixed 300ms
+  retransmit interval is fine for a first pass), the keyless senkusha probe (`HalyardSenkusha`,
+  non-fatal even in the .NET reference), the `PROTOCOL_VERSION_REQUEST`/IPv6-token exchange (explicitly
+  skippable - assume a version), and GMAC sealing (needs the stream cipher - a separate KDF from the
+  control-plane one, and a separate later phase).
+- `source/takion/takion_reliable_channel.c` is the one file in this whole protocol layer, other than
+  crypto, that owns a socket - like `rc_soc.c`/`rc_tcp.c` it has no host-side test, only the on-device app
+  (`source/takion/main.c`, build with `make -C ports/ripcord-3ds takion`). That app is explicitly
+  exploratory: it drives the handshake and a synthetic test message against a `takion.txt`-configured
+  host:port, without the session-ready gating or senkusha probe a real connection sequence needs first
+  (see the file's own header comment) - it exists to test the transport in isolation, not to be the real
+  connect flow.
 
 **Phase 6 — media.** MVD H.264 decode → Y2R → PICA200, Opus audio, input mapping.
 
@@ -295,8 +343,8 @@ Pairing is not on this list: pair with desktop Ripcord and copy the record acros
 
 - **`osSetSpeedupEnable(true)`** — without it a New 3DS runs at the old clock. Any performance number taken
   without it describes a machine you are not targeting. `source/app/main.c`, `source/linktest/main.c`,
-  `source/discovery/main.c` and `source/session/main.c` all call this first thing in `main()`; a new
-  on-device entry point needs its own call.
+  `source/discovery/main.c`, `source/session/main.c` and `source/takion/main.c` all call this first thing
+  in `main()`; a new on-device entry point needs its own call.
 - **`socInit` buffer size** — 0x100000, aligned to 0x1000. Undersizing it produces drops that look exactly
   like a Wi-Fi ceiling. `rc_soc_init()` (`source/net/rc_soc.c`) owns this; use it rather than calling
   `socInit` directly.
@@ -321,3 +369,7 @@ Pairing is not on this list: pair with desktop Ripcord and copy the record acros
 - **A shared directory as an order-only prerequisite (`| $(BUILD)`) is not safe once two build products use
   it.** GNU Make can see a dependency cycle and silently drop the `mkdir` side effect - see the note in
   section 3. Every recipe in both Makefiles now runs `@mkdir -p $(@D)` itself instead.
+- **A literal `/*` inside a `/* ... */` doc comment is a hard error under `-Werror` (`-Wcomment`)**, and it
+  has bitten three times now - phrases like `*out_chunk/*out_chunk_length` or a path fragment ending in
+  `/*` read as a nested-comment start. Reword rather than lean on a slash-separated list of pointer names
+  or path-like text inside a comment.
