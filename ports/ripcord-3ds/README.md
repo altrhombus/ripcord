@@ -64,13 +64,17 @@ them.
 ```
 source/crypto/      AES-128, SHA-256, HMAC, cipher modes   <- mirrors Ripcord.Core.Net.Crypto
 source/halyard/     control KDF, field IV, field ciphers   <- mirrors Protocol.Halyard.Common/Crypto/V1
-source/app/         on-device smoke test (the current .3dsx)
+source/net/         SOC service lifecycle                  <- mirrors Ripcord.Core.Net's transport primitives
+source/app/         on-device crypto smoke test (ripcord-3ds.3dsx)
+source/linktest/    Phase 2 UDP link test (ripcord-3ds-linktest.3dsx)
 tests/              host-side known-answer runner
-tools/              constants generator
+tools/              constants generator, UDP link-test sender (host-side)
 ```
 
 The dependency direction is the same one the .NET side enforces: `halyard/` depends on `crypto/`, never
-the reverse, and `crypto/` knows nothing about PlayStation.
+the reverse, and `crypto/` knows nothing about PlayStation. `net/` and `linktest/` are a separate,
+parallel branch of that graph — they answer a network question, not a protocol one, and depend on
+neither `crypto/` nor `halyard/`.
 
 ## Building
 
@@ -95,12 +99,14 @@ run it from the devkitPro MSYS2 shell — that is where `make` and the ARM toolc
 make -C ports/ripcord-3ds
 ```
 
-Produces `ripcord-3ds.3dsx` for the Homebrew Launcher. It currently runs the on-device smoke test in
-`source/app/main.c`: round-trips the ciphers on real hardware and reports how long a field encryption
-actually costs on an ARM11. That number is the input to the "can this stream at all" question.
+Produces two Homebrew Launcher binaries: `ripcord-3ds.3dsx`, the on-device smoke test in
+`source/app/main.c` (round-trips the ciphers on real hardware and reports how long a field encryption
+actually costs on an ARM11), and `ripcord-3ds-linktest.3dsx`, the Phase 2 UDP link test in
+`source/linktest/main.c` (see [`SETUP.md`](SETUP.md) for how to run it against
+`tools/udp_link_test_sender.py`). `make -C ports/ripcord-3ds linktest` builds just the second one.
 
-**This makefile has not been run against a real devkitPro installation yet.** Treat the flags as a
-starting point.
+Both have been built against a real devkitPro installation and produce valid `.3dsx` files. Neither has
+been booted on hardware yet.
 
 ### Not part of `Ripcord.slnx`, deliberately
 
@@ -156,13 +162,16 @@ Done:
 - [x] Host-side known-answer runner
 - [x] On-device smoke test (source, compiles and links to a `.3dsx`; not yet booted)
 - [x] First green build — host KAT runner (171/171) and the 3DS cross-compile both pass
+- [x] SOC service lifecycle (`source/net/rc_soc.c`) — the 0x1000-aligned 0x100000 buffer, owned in one place
+- [x] UDP link test: goodput, sequence-gap loss and p99 inter-arrival jitter, idle and under simulated CPU
+      load (`source/linktest/main.c` + `tools/udp_link_test_sender.py`) — compiles and links to a `.3dsx`;
+      not yet run against a real link
 
 Not started — roughly in dependency order. [`SETUP.md`](SETUP.md) has this as a phased plan with the
 toolchain steps:
 
 - [ ] Boot the `.3dsx` and record the on-device timing number
-- [ ] UDP receive test: goodput, loss and p99 jitter, idle and under CPU load
-- [ ] Sockets over libctru's SOC service
+- [ ] Run the UDP link test over a real Wi-Fi link, idle and under load
 - [ ] LAN discovery
 - [ ] The `/sess/ctrl` HTTP exchange, which is the first thing that talks to a console
 - [ ] Takion transport: handshake, reliable delivery, reassembly

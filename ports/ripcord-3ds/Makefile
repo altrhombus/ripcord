@@ -33,8 +33,9 @@ OBJCOPY := $(PREFIX)objcopy
 
 CTRULIB := $(DEVKITPRO)/libctru
 
-TARGET  := ripcord-3ds
-BUILD   := build
+TARGET   := ripcord-3ds
+LINKTEST := ripcord-3ds-linktest
+BUILD    := build
 
 REPO_ROOT := ../..
 BUNDLE    := $(REPO_ROOT)/src/Ripcord.Protocol.Halyard/Data/halyard-v1-constants.json
@@ -61,9 +62,18 @@ SOURCES := \
 	source/halyard/halyard_control_crypto.c \
 	source/app/main.c
 
-.PHONY: all constants clean test
+# Phase 2 (SETUP.md): the UDP link test. Deliberately has no dependency on source/crypto or
+# source/halyard - it answers a network question, not a protocol one, and building it standalone keeps
+# that true rather than assumed.
+LINKTEST_SOURCES := \
+	source/net/rc_soc.c \
+	source/linktest/main.c
 
-all: $(TARGET).3dsx
+.PHONY: all constants clean test linktest
+
+all: $(TARGET).3dsx $(LINKTEST).3dsx
+
+linktest: $(LINKTEST).3dsx
 
 # The interop constants are generated from the single committed JSON bundle rather than duplicated into
 # this port. tools/gen_constants.py explains why that is a deliberate constraint and not just tidiness.
@@ -81,11 +91,17 @@ $(BUILD)/$(TARGET).elf: $(SOURCES) $(GENERATED) | $(BUILD)
 $(TARGET).3dsx: $(BUILD)/$(TARGET).elf
 	3dsxtool $< $@
 
+$(BUILD)/$(LINKTEST).elf: $(LINKTEST_SOURCES) | $(BUILD)
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $(LINKTEST_SOURCES) $(LIBS)
+
+$(LINKTEST).3dsx: $(BUILD)/$(LINKTEST).elf
+	3dsxtool $< $@
+
 # Convenience passthrough. The host tests are the ones that actually verify the crypto, so make them easy
 # to reach from the directory people will be standing in.
 test:
 	$(MAKE) -C tests
 
 clean:
-	rm -rf $(BUILD) $(TARGET).3dsx
+	rm -rf $(BUILD) $(TARGET).3dsx $(LINKTEST).3dsx
 	$(MAKE) -C tests clean

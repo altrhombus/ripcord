@@ -158,6 +158,10 @@ int main(int argc, char **argv)
     (void)argc;
     (void)argv;
 
+    /* Without this a New 3DS runs at the Old 3DS clock speed - the timing number below would describe a
+     * machine we are not targeting. Named directly in SETUP.md's gotcha list. */
+    osSetSpeedupEnable(true);
+
     gfxInitDefault();
     consoleInit(GFX_TOP, NULL);
 
