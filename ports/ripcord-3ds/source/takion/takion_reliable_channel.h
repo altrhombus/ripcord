@@ -36,6 +36,13 @@ typedef struct {
     uint64_t last_sent_ms;
 } takion_unacked_chunk;
 
+/*
+ * ~49.6 KB (TAKION_MAX_UNACKED x TAKION_MAX_PACKET dominates). NEVER DECLARE ONE AS A LOCAL: libctru
+ * gives a .3dsx's main thread a 32 KB stack by default, so an ordinary local overflows it in the
+ * function prologue and data-aborts before the body runs. Real crash, real hardware, 2026-08-12 - and it
+ * logged nothing at all, because the function never started. Use file scope, `static`, or the heap.
+ * The 3DS build passes -Wframe-larger-than=8192 so this fails at compile time now rather than on device.
+ */
 typedef struct {
     int sock;                      /* caller-owned, non-blocking, not connect()ed (we use sendto/recvfrom) */
     struct sockaddr_in peer;
@@ -54,9 +61,27 @@ typedef struct {
  * Drives the SCTP handshake to ESTABLISHED over `sock` (already bound/non-blocking) against `peer`,
  * retrying INIT and COOKIE_ECHO up to `max_attempts` times with `per_attempt_timeout_ms` between
  * attempts. Returns 1 on success (ch is ready for takion_channel_send/poll), 0 on failure/timeout.
+ *
+ * NOTE THAT THIS BLOCKS for up to max_attempts x per_attempt_timeout_ms. In the real connect flow that
+ * is a problem rather than a detail: the TCP control channel must keep answering HEARTBEAT_REQ the whole
+ * time or the console resets the session ~15-30 s in, and this port has no second thread to do it on.
+ * Use takion_channel_connect_ticked() there.
  */
 int takion_channel_connect(takion_reliable_channel *ch, int sock, struct sockaddr_in peer,
                            unsigned max_attempts, unsigned per_attempt_timeout_ms);
+
+/* Called on every poll iteration while the handshake waits, so a single-threaded caller can service
+ * something else - in practice the control channel's heartbeats. Must not block. */
+typedef void (*takion_tick_fn)(void *ctx);
+
+/*
+ * As above, but invokes `tick` (may be NULL) roughly every 20 ms while waiting. This is what makes a
+ * single-threaded connect flow possible: the handshake keeps its own timing while the caller keeps the
+ * control channel alive underneath it.
+ */
+int takion_channel_connect_ticked(takion_reliable_channel *ch, int sock, struct sockaddr_in peer,
+                                  unsigned max_attempts, unsigned per_attempt_timeout_ms,
+                                  takion_tick_fn tick, void *tick_ctx);
 
 /*
  * Sends `payload` reliably on `channel`, fragmenting at TAKION_MAX_PAYLOAD_PER_CHUNK if needed. Returns

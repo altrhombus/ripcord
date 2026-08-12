@@ -18,15 +18,22 @@
  *   offset 6, 3 bytes: reserved
  *   offset 9         : payload
  *
- * Chunk VALUE, continuation fragment (a message too large for one chunk) - the payload offset (8) is
- * confirmed structurally by the .NET implementation, but no continuation-fragment vector was available
- * to pin what the 4 bytes before it mean; this port neither reads nor writes them, and zero-fills them
- * when building. "Which fragment is 'first'" is NOT a wire bit - a receiver decides from its own
- * reassembly state (nothing pending for this channel yet = first), which is exactly why parsing first
- * vs. continuation fragments are two separate entry points below rather than one auto-detecting parser:
+ * Chunk VALUE, continuation fragment (a message too large for one chunk). "Which fragment is 'first'" is
+ * NOT a wire bit - a receiver decides from its own reassembly state - which is why parsing first vs.
+ * continuation fragments are two separate entry points below rather than one auto-detecting parser:
  *   offset 0, 4 bytes: sequence number (TSN), big-endian
- *   offset 4, 4 bytes: reserved (meaning unconfirmed - not this port's business either way)
+ *   offset 4, 2 bytes: channel - THE SAME FIELD AS IN A FIRST FRAGMENT, at the same offset
+ *   offset 6, 2 bytes: reserved (zero)
  *   offset 8         : payload
+ *
+ * THE CHANNEL IS PRESENT IN CONTINUATIONS, AND THIS PORT USED TO GET IT WRONG. Only the reserved region
+ * differs between the two fragment shapes - 3 bytes in a first fragment, 2 in a continuation - so the
+ * payload lands at 9 vs 8. The channel field itself is in both. This file previously described offset
+ * 4..8 of a continuation as four unconfirmed reserved bytes and zero-filled them, which sent every
+ * continuation labelled channel 0 - and 0 is the channel the CONSOLE sends on. It went unnoticed because
+ * nothing this port sent had ever exceeded one chunk until the 1716-byte SESSION_REQUEST of the connect
+ * flow, whose first two hardware runs reached Takion ESTABLISHED and then got silence. Corrected against
+ * TakionDataChunk.Build, which writes the channel unconditionally and shrinks only the reserved region.
  */
 #ifndef TAKION_DATA_CHUNK_H
 #define TAKION_DATA_CHUNK_H
@@ -52,11 +59,10 @@ size_t takion_data_build_first(uint32_t seq_num, unsigned channel, int ending,
                                uint8_t *buf, size_t buf_size);
 
 /*
- * Builds a continuation-fragment DATA chunk. See the header comment above for the confidence caveat on
- * this fragment shape - it is not yet exercised by anything this port sends (nothing built so far
- * exceeds one chunk), so treat this as unverified until a real multi-fragment send is tested.
+ * Builds a continuation-fragment DATA chunk. `channel` must be the SAME channel as the first fragment -
+ * see the header comment on why passing 0 here is a real bug rather than a harmless default.
  */
-size_t takion_data_build_continuation(uint32_t seq_num, int ending,
+size_t takion_data_build_continuation(uint32_t seq_num, unsigned channel, int ending,
                                       const uint8_t *payload, size_t payload_length,
                                       uint8_t *buf, size_t buf_size);
 
@@ -73,6 +79,7 @@ int takion_data_parse_first(const uint8_t *data, size_t length, uint32_t *out_se
  * is not a well-formed continuation-fragment DATA chunk.
  */
 int takion_data_parse_continuation(const uint8_t *data, size_t length, uint32_t *out_seq_num,
-                                   int *out_ending, const uint8_t **out_payload, size_t *out_payload_length);
+                                   unsigned *out_channel, int *out_ending,
+                                   const uint8_t **out_payload, size_t *out_payload_length);
 
 #endif /* TAKION_DATA_CHUNK_H */

@@ -693,6 +693,14 @@ public sealed class HalyardStreamingSession : IStreamingSession
 
         byte[] launchBytes = System.Text.Encoding.UTF8.GetBytes(launchSpecPlain);
         // out1-encrypt the launchSpec when control is established; otherwise send it as-is (stub/passthrough).
+        //
+        // COUNTER 0 IS NOW WIRE-CONFIRMED, and was not before. It had only ever been exercised by a synthetic
+        // vector generator, which proves two implementations agree and nothing about what the console wants —
+        // and it is a suspicious value, because RP-Auth already uses counter 0 with the CFB field cipher, so
+        // the OFB keystream's first block is identical to that field's. On 2026-08-12 ports/ripcord-3ds sent a
+        // launchSpec encrypted exactly this way to a real PS5 and got a SESSION_REPLY whose ecdhSignature
+        // verified — which is only possible if the console decrypted this document and recovered the
+        // handshakeKey inside it. Do not "fix" the counter.
         byte[] launchWire = _crypto.IsControlEstablished ? _crypto.CryptStreaminfo(0, launchBytes) : launchBytes;
 
         return new TakionSessionRequest(

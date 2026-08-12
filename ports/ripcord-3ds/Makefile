@@ -4,8 +4,9 @@
 # https://devkitpro.org/wiki/Getting_Started. On Windows that means running this from the devkitPro MSYS2
 # shell, which is where `make` and the ARM toolchain live.
 #
-#     make                build ripcord-3ds.3dsx
+#     make                build every .3dsx
 #     make constants      regenerate the interop constants only
+#     make crosscheck     compile the modules that have no .3dsx of their own yet (see CROSSCHECK_SOURCES)
 #     make clean
 #     make test           run the HOST-side known-answer tests (no 3DS involved) - see tests/Makefile
 #
@@ -14,9 +15,9 @@
 # Sharing a repository with Ripcord buys shared specs, shared constants and shared test vectors - it does
 # not and should not mean sharing a build system.
 #
-# STATUS: the host-side tests in tests/ are the verified part. This makefile has not yet been run against
-# a real devkitPro installation; treat the flags below as a starting point rather than a known-good
-# configuration, and fix them in place when they turn out to be wrong.
+# STATUS: these flags are known-good, not provisional - all five .3dsx targets build against a real
+# devkitPro installation, and two of them (ripcord-3ds, ripcord-3ds-linktest) have booted on real New 3DS
+# hardware. What each program has and has not been RUN against is tracked in README.md, not here.
 
 ifeq ($(strip $(DEVKITPRO)),)
 $(error DEVKITPRO is not set. Install devkitPro and run this from its shell - see the URL above)
@@ -38,6 +39,7 @@ LINKTEST  := ripcord-3ds-linktest
 DISCOVERY := ripcord-3ds-discovery
 SESSION   := ripcord-3ds-session
 TAKION    := ripcord-3ds-takion
+CONNECT   := ripcord-3ds-connect
 BUILD     := build
 
 REPO_ROOT := ../..
@@ -49,14 +51,45 @@ GENERATED := $(BUILD)/halyard_v1_constants.g.c
 # mismatched float ABI links cleanly and then misbehaves at runtime.
 ARCH    := -march=armv6k -mtune=mpcore -mfloat-abi=hard -mtp=soft
 
+# -Wframe-larger-than is not a style preference here, it is a crash the hardware already found.
+#
+# libctru's default __stacksize__ for a .3dsx is 0x8000 - 32 KB, for the WHOLE main thread. This port's
+# protocol state does not fit in that: takion_reliable_channel is 49.6 KB (32 unacked 1500-byte packets)
+# and stream_demux is 513 KB. Declaring either as an ordinary local overflows the stack in the function
+# PROLOGUE, before a single line of the function body runs - which on 2026-08-12 presented as a data
+# abort writing 12 bytes below SP, with a log file that stopped after the banner and gave no hint which
+# function was even entered. Diagnosing that from the dump took considerably longer than this flag.
+#
+# 8 KB per frame leaves room for a reasonable call depth inside 32 KB. Anything bigger belongs in .bss
+# (file-scope or `static`) or on the heap; with -Werror below, exceeding it fails the build instead of
+# the handheld.
 CFLAGS  := $(ARCH) -std=c99 -O2 -g \
            -Wall -Wextra -Werror -Wshadow -Wconversion -Wsign-conversion \
+           -Wframe-larger-than=8192 \
            -ffunction-sections -fdata-sections \
            -D__3DS__ \
            -isystem $(CTRULIB)/include -Isource/crypto -Isource/halyard
 
 LDFLAGS := $(ARCH) -specs=3dsx.specs -Wl,--gc-sections -L$(CTRULIB)/lib
 LIBS    := -lctru -lm
+
+# Phase 6a: the ECDH backend. The only third-party library this port links, and the only primitive it
+# does not implement itself - see source/crypto/rc_ecdh.h for that argument. Install with:
+#
+#     dkp-pacman -S 3ds-mbedtls
+#
+# Set ECDH_BACKEND=none to build without it; rc_ecdh.c then compiles to functions that fail cleanly
+# rather than to a stub that fakes a key agreement.
+PORTLIBS := $(DEVKITPRO)/portlibs/3ds
+ECDH_BACKEND ?= mbedtls
+
+ifeq ($(ECDH_BACKEND),mbedtls)
+ECDH_CFLAGS := -DRC_CRYPTO_MBEDTLS -isystem $(PORTLIBS)/include
+ECDH_LIBS   := -L$(PORTLIBS)/lib -lmbedcrypto
+else
+ECDH_CFLAGS :=
+ECDH_LIBS   :=
+endif
 
 SOURCES := \
 	source/crypto/rc_aes.c \
@@ -105,6 +138,7 @@ SESSION_SOURCES := \
 	source/util/rc_text.c \
 	source/session/halyard_control_arm.c \
 	source/session/halyard_ctrl_message.c \
+	source/session/halyard_pairing_file.c \
 	source/session/halyard_sess_fields.c \
 	source/session/halyard_sess_request.c \
 	source/session/main.c
@@ -124,9 +158,61 @@ TAKION_SOURCES := \
 	source/takion/takion_reliable_channel.c \
 	source/takion/main.c
 
-.PHONY: all constants clean test linktest discovery session takion
+# Phase 6b: the combined connect flow - the only program that carries a real control session all the way
+# to derived stream keys, and therefore the only way to test Takion or the ECDH agreement against a
+# console at all (see source/connect/main.c on why the standalone Takion probe cannot work). This is the
+# first target to link BOTH the control plane and the stream plane, and the only one needing mbedtls.
+CONNECT_SOURCES := \
+	source/crypto/rc_aes.c \
+	source/crypto/rc_sha256.c \
+	source/crypto/rc_modes.c \
+	source/crypto/rc_ecdh.c \
+	source/halyard/halyard_control_crypto.c \
+	source/net/rc_soc.c \
+	source/net/rc_tcp.c \
+	source/stream/stream_key_schedule.c \
+	source/util/rc_log.c \
+	source/util/rc_base64.c \
+	source/util/rc_hex.c \
+	source/util/rc_program_dir.c \
+	source/util/rc_random.c \
+	source/util/rc_text.c \
+	source/session/halyard_control_arm.c \
+	source/session/halyard_control_session.c \
+	source/session/halyard_ctrl_message.c \
+	source/session/halyard_launch_spec.c \
+	source/session/halyard_pairing_file.c \
+	source/session/halyard_sess_fields.c \
+	source/session/halyard_sess_request.c \
+	source/takion/takion_message.c \
+	source/takion/takion_handshake.c \
+	source/takion/takion_data_chunk.c \
+	source/takion/takion_sack_chunk.c \
+	source/takion/takion_reassembler.c \
+	source/takion/takion_reliable_channel.c \
+	source/takion/takion_control_proto.c \
+	source/takion/takion_session_negotiator.c \
+	source/connect/main.c
 
-all: $(TARGET).3dsx $(LINKTEST).3dsx $(DISCOVERY).3dsx $(SESSION).3dsx $(TAKION).3dsx
+# Modules that have no on-device app of their own yet: Phase 5.5's stream framing/FEC/demux (nothing real
+# to decrypt until a stream key exists) and Phase 6a's ECDH seam + control-plane protobuf (no connect
+# flow wired through them yet). Both phases are documented as "cross-compiles clean for ARM11", and this
+# target is what makes that claim checkable rather than remembered - it compiles each to an object and
+# links nothing, which is exactly as far as the claim goes.
+CROSSCHECK_SOURCES := \
+	source/stream/stream_header.c \
+	source/stream/fec_galois.c \
+	source/stream/fec_reed_solomon.c \
+	source/stream/stream_key_schedule.c \
+	source/stream/stream_packet_crypto.c \
+	source/stream/stream_demux.c \
+	source/crypto/rc_ecdh.c \
+	source/takion/takion_control_proto.c \
+	source/takion/takion_session_negotiator.c
+
+.PHONY: all constants clean test linktest discovery session takion connect crosscheck
+
+all: $(TARGET).3dsx $(LINKTEST).3dsx $(DISCOVERY).3dsx $(SESSION).3dsx $(TAKION).3dsx $(CONNECT).3dsx
 
 linktest: $(LINKTEST).3dsx
 
@@ -135,6 +221,8 @@ discovery: $(DISCOVERY).3dsx
 session: $(SESSION).3dsx
 
 takion: $(TAKION).3dsx
+
+connect: $(CONNECT).3dsx
 
 # The interop constants are generated from the single committed JSON bundle rather than duplicated into
 # this port. tools/gen_constants.py explains why that is a deliberate constraint and not just tidiness.
@@ -185,11 +273,26 @@ $(BUILD)/$(TAKION).elf: $(TAKION_SOURCES)
 $(TAKION).3dsx: $(BUILD)/$(TAKION).elf
 	3dsxtool $< $@
 
+$(BUILD)/$(CONNECT).elf: $(CONNECT_SOURCES) $(GENERATED)
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) $(ECDH_CFLAGS) $(LDFLAGS) -o $@ $(CONNECT_SOURCES) $(GENERATED) $(ECDH_LIBS) $(LIBS)
+
+$(CONNECT).3dsx: $(BUILD)/$(CONNECT).elf
+	3dsxtool $< $@
+
+crosscheck:
+	@mkdir -p $(BUILD)/crosscheck
+	@for src in $(CROSSCHECK_SOURCES); do \
+		echo "  CC $$src"; \
+		$(CC) $(CFLAGS) $(ECDH_CFLAGS) -c $$src -o $(BUILD)/crosscheck/`basename $$src .c`.o || exit 1; \
+	done
+	@echo "all app-less modules compile clean for ARM11"
+
 # Convenience passthrough. The host tests are the ones that actually verify the crypto, so make them easy
 # to reach from the directory people will be standing in.
 test:
 	$(MAKE) -C tests
 
 clean:
-	rm -rf $(BUILD) $(TARGET).3dsx $(LINKTEST).3dsx $(DISCOVERY).3dsx $(SESSION).3dsx $(TAKION).3dsx
+	rm -rf $(BUILD) $(TARGET).3dsx $(LINKTEST).3dsx $(DISCOVERY).3dsx $(SESSION).3dsx $(TAKION).3dsx $(CONNECT).3dsx
 	$(MAKE) -C tests clean

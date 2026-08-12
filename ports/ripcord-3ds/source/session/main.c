@@ -9,21 +9,14 @@
  * console's HEARTBEAT_REQ on the persistent binary channel that follows - missing that is what makes a
  * real console RST the session ~15-30s in.
  *
- * PAIRING RECORD: this port does not pair (see README's "Pairing happens on a PC, not here"), and the
- * real "import a pairing record from a desktop Ripcord install" feature is still a separate, unstarted
- * backlog item. Until that exists, this program reads a plain key=value text file, "pairing.txt", next
- * to its own .3dsx - a provisional format for exercising Phase 4, not the final one:
+ * PAIRING RECORD: read from "pairing.txt" beside this .3dsx - see halyard_pairing_file.h for the format,
+ * and for why that loader is shared rather than living here.
  *
- *   host=192.168.1.42        (required - the console's LAN address)
- *   platform=ps5              (optional, "ps5" or "ps4"; default ps5)
- *   registkey=1a2b3c4d5e6f0011 (required - hex of the raw registration-key bytes)
- *   companion=...32 hex chars  (required - hex of the 16-byte pairing companion)
- *   deviceid=...hex             (optional - up to 16 bytes; defaults to all-zero if absent)
- *   osmajor=10, osminor=0, bitrate=10000, streamingtype=0 (all optional, shown defaults)
- *
- * NOT YET RUN AGAINST A REAL CONSOLE. Every piece below has a host-side test (tests/session_test.c)
- * except this file itself, the same position source/linktest/main.c and source/discovery/main.c were in
- * before their own first real runs.
+ * RUN AND CONFIRMED against a real PS5 on 2026-08-12: /sess/init -> 200, /sess/ctrl -> 200, session
+ * ready (17-byte session id), and rest mode round-tripped. This program is the validated half of the
+ * connect sequence and is kept as-is for exactly that reason - it is the known-good reference for the
+ * control plane. source/connect/main.c carries the same sequence forward into the stream plane; when the
+ * two disagree about the control plane, this one is right.
  */
 #include "../net/rc_soc.h"
 #include "../net/rc_tcp.h"
@@ -33,6 +26,7 @@
 #include "../util/rc_log.h"
 #include "../util/rc_program_dir.h"
 #include "halyard_control_arm.h"
+#include "halyard_pairing_file.h"
 #include "halyard_ctrl_message.h"
 #include "halyard_sess_fields.h"
 #include "halyard_sess_request.h"
@@ -53,100 +47,6 @@
 #define RECV_BUFFER_SIZE 4096
 #define ARM_REPLY_WINDOW_MS 2000
 #define ARM_SETTLE_MS 200
-
-typedef struct {
-    char host[64];
-    int is_ps5;
-    uint8_t registkey[8];
-    size_t registkey_length;
-    uint8_t companion[16];
-    uint8_t device_id[16];
-    size_t device_id_length;
-    int os_major;
-    int os_minor;
-    int start_bitrate;
-    int streaming_type;
-} pairing_record;
-
-static void pairing_record_defaults(pairing_record *rec)
-{
-    memset(rec, 0, sizeof(*rec));
-    rec->is_ps5 = 1;
-    rec->os_major = 10;
-    rec->os_minor = 0;
-    rec->start_bitrate = 10000;
-    rec->streaming_type = 0;
-}
-
-/* Reads "pairing.txt" next to this .3dsx. Returns 1 if host/registkey/companion (the fields nothing
- * else can default) were all present and well-formed, 0 otherwise. */
-static int pairing_record_load(const char *argv0, pairing_record *rec)
-{
-    char path[512];
-    FILE *f;
-    char line[256];
-    int have_host = 0, have_registkey = 0, have_companion = 0;
-
-    pairing_record_defaults(rec);
-
-    rc_program_dir(argv0, path, sizeof(path));
-    strncat(path, "pairing.txt", sizeof(path) - strlen(path) - 1);
-
-    f = fopen(path, "r");
-    if (f == NULL) {
-        rc_log("\x1b[31mFAIL\x1b[0m could not open %s\n", path);
-        return 0;
-    }
-
-    while (fgets(line, sizeof(line), f) != NULL) {
-        char *eq = strchr(line, '=');
-        char *value;
-        char *trail;
-
-        if (eq == NULL)
-            continue;
-        *eq = '\0';
-        value = eq + 1;
-        trail = strpbrk(value, "\r\n");
-        if (trail != NULL)
-            *trail = '\0';
-
-        if (strcmp(line, "host") == 0) {
-            strncpy(rec->host, value, sizeof(rec->host) - 1);
-            have_host = (rec->host[0] != '\0');
-        } else if (strcmp(line, "platform") == 0) {
-            rec->is_ps5 = (strcmp(value, "ps4") != 0);
-        } else if (strcmp(line, "registkey") == 0) {
-            size_t n = rc_hex_decode(value, rec->registkey, sizeof(rec->registkey));
-            if (n != (size_t)-1) {
-                rec->registkey_length = n;
-                have_registkey = (n > 0);
-            }
-        } else if (strcmp(line, "companion") == 0) {
-            size_t n = rc_hex_decode(value, rec->companion, sizeof(rec->companion));
-            have_companion = (n == sizeof(rec->companion));
-        } else if (strcmp(line, "deviceid") == 0) {
-            size_t n = rc_hex_decode(value, rec->device_id, sizeof(rec->device_id));
-            if (n != (size_t)-1)
-                rec->device_id_length = n;
-        } else if (strcmp(line, "osmajor") == 0) {
-            rec->os_major = atoi(value);
-        } else if (strcmp(line, "osminor") == 0) {
-            rec->os_minor = atoi(value);
-        } else if (strcmp(line, "bitrate") == 0) {
-            rec->start_bitrate = atoi(value);
-        } else if (strcmp(line, "streamingtype") == 0) {
-            rec->streaming_type = atoi(value);
-        }
-    }
-    fclose(f);
-
-    if (!have_host || !have_registkey || !have_companion) {
-        rc_log("\x1b[31mFAIL\x1b[0m %s is missing host, registkey and/or a 16-byte companion\n", path);
-        return 0;
-    }
-    return 1;
-}
 
 typedef struct {
     uint8_t data[RECV_BUFFER_SIZE];
@@ -259,7 +159,7 @@ static void arm_control_listener(const char *host, int is_ps5)
     svcSleepThread((s64)ARM_SETTLE_MS * 1000000);
 }
 
-static int run_session(const pairing_record *rec)
+static int run_session(const halyard_pairing_record *rec)
 {
     int sock;
     recv_buffer rb;
@@ -473,7 +373,7 @@ static int run_session(const pairing_record *rec)
 
 int main(int argc, char **argv)
 {
-    pairing_record rec;
+    halyard_pairing_record rec;
 
     osSetSpeedupEnable(true);
 
@@ -487,7 +387,7 @@ int main(int argc, char **argv)
 
     if (rc_soc_init() != 0) {
         rc_log("\x1b[31mFAIL\x1b[0m SOC init failed\n");
-    } else if (pairing_record_load(argc > 0 ? argv[0] : NULL, &rec)) {
+    } else if (halyard_pairing_file_load(argc > 0 ? argv[0] : NULL, &rec)) {
         rc_log("connecting to %s (%s)\n", rec.host, rec.is_ps5 ? "PS5" : "PS4");
         run_session(&rec);
         rc_soc_exit();

@@ -28,6 +28,11 @@
 #define SEARCH_WINDOW_MS 4000u
 #define MAX_RESULTS 16
 
+/* See the bind() call in run_search() for why this is a fixed port rather than 0. Deliberately clear of
+ * every port this protocol uses (9295 control, 9296/9297 stream, 9302 PS5 discovery, 987 PS4). */
+#define DISCOVERY_LOCAL_PORT_FIRST 9310u
+#define DISCOVERY_LOCAL_PORT_TRIES 4u
+
 static const halyard_discovery_profile *const PROFILES[] = {
     &halyard_discovery_profile_ps5,
     &halyard_discovery_profile_ps4,
@@ -66,15 +71,48 @@ static int run_search(void)
         return 1;
     }
 
+    /*
+     * A FIXED local port, and NOT the ephemeral port 0 that the obvious port of this code would use.
+     *
+     * The .NET side binds IPAddress.Any:0 here (HalyardControlSearch) and is right to - on Windows and
+     * Linux the stack picks a free port and everything works. On the 3DS it does not: SOC rejects a zero
+     * port outright with EINVAL. Confirmed on real hardware 2026-08-12, where this call failed with
+     * errno 22 for both an awake and a resting console, while source/linktest/main.c's otherwise
+     * identical bind to a nonzero port had already been working on the same device since Phase 2. That
+     * differential is what identified it: same socket type, same INADDR_ANY, same addrlen - only the
+     * port differed.
+     *
+     * Any port will do, because a console answers SRCH to whatever source port the probe arrived from.
+     * "Let the stack choose" is the single option unavailable. The small range exists so that a port
+     * left occupied by a previous run is a retry rather than a second trip to the console.
+     */
     memset(&bind_addr, 0, sizeof(bind_addr));
     bind_addr.sin_family = AF_INET;
     bind_addr.sin_addr.s_addr = INADDR_ANY;
-    bind_addr.sin_port = htons(0); /* ephemeral - we only need a port to receive replies on */
-    if (bind(sock, (struct sockaddr *)&bind_addr, sizeof(bind_addr)) != 0) {
-        rc_log("\x1b[31mFAIL\x1b[0m bind() failed: %d\n", errno);
-        close(sock);
-        rc_soc_exit();
-        return 1;
+
+    {
+        unsigned attempt;
+        int bound = 0;
+
+        for (attempt = 0; attempt < DISCOVERY_LOCAL_PORT_TRIES; attempt++) {
+            unsigned short port = (unsigned short)(DISCOVERY_LOCAL_PORT_FIRST + attempt);
+
+            bind_addr.sin_port = htons(port);
+            if (bind(sock, (struct sockaddr *)&bind_addr, sizeof(bind_addr)) == 0) {
+                rc_log("bound local port %u\n", (unsigned)port);
+                bound = 1;
+                break;
+            }
+        }
+
+        if (!bound) {
+            rc_log("\x1b[31mFAIL\x1b[0m bind() failed: %d (tried ports %u-%u)\n", errno,
+                DISCOVERY_LOCAL_PORT_FIRST,
+                DISCOVERY_LOCAL_PORT_FIRST + DISCOVERY_LOCAL_PORT_TRIES - 1u);
+            close(sock);
+            rc_soc_exit();
+            return 1;
+        }
     }
 
     {
