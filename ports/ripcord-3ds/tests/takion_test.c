@@ -245,22 +245,33 @@ static void test_data_chunk_build_matches_vector(void)
 
 static void test_data_chunk_continuation_round_trip(void)
 {
-    /* No captured continuation-fragment vector exists (see the header comment) - self-consistency only. */
+    /* No captured continuation-fragment vector exists (see the header comment) - self-consistency only.
+     * The CHANNEL assertions below are not decoration: this port shipped continuations with the channel
+     * zero-filled, which put every fragment after the first on channel 0 - the console's own channel -
+     * and a round-trip test that ignored the field was exactly why nothing caught it. */
     static const uint8_t payload[5] = { 0x11, 0x22, 0x33, 0x44, 0x55 };
     uint8_t buf[32];
-    size_t n = takion_data_build_continuation(0x00004826u, 1, payload, sizeof(payload), buf, sizeof(buf));
+    size_t n = takion_data_build_continuation(0x00004826u, TAKION_CHANNEL_SESSION, 1,
+                                              payload, sizeof(payload), buf, sizeof(buf));
     uint32_t seq;
+    unsigned channel = 0xffffu;
     int ending;
     const uint8_t *out_payload;
     size_t out_length;
 
     CHECK(n > 0, "building a continuation fragment should succeed");
-    CHECK(takion_data_parse_continuation(buf, n, &seq, &ending, &out_payload, &out_length) == 1,
+    CHECK(takion_data_parse_continuation(buf, n, &seq, &channel, &ending, &out_payload, &out_length) == 1,
         "parsing our own built continuation fragment should succeed");
     CHECK(seq == 0x00004826u, "continuation seq_num did not round-trip");
+    CHECK(channel == TAKION_CHANNEL_SESSION, "continuation CHANNEL did not round-trip");
     CHECK(ending == 1, "continuation ending bit did not round-trip");
     CHECK(out_length == sizeof(payload) && memcmp(out_payload, payload, sizeof(payload)) == 0,
         "continuation payload did not round-trip");
+
+    /* The channel must land at the same offset as in a first fragment (value offset 4), which is the
+     * single fact the old layout got wrong. Chunk header is 4 bytes, so that is buf[8..9]. */
+    CHECK(buf[8] == 0x00 && buf[9] == 0x01,
+        "continuation channel is not at value offset 4 - the layout regression is back");
 }
 
 /* ---- takion_sack_chunk: two real captured SACK packets, plus a build round trip ---- */

@@ -27,6 +27,22 @@ REPO_ROOT := ../../..
 BUNDLE    := $(REPO_ROOT)/src/Ripcord.Protocol.Halyard/Data/halyard-v1-constants.json
 VECTORS   := vectors/control-crypto.kat
 STREAM_VECTORS := vectors/stream-crypto.kat
+SESSION_VECTORS := vectors/session-crypto.kat
+PROTO_VECTORS := vectors/control-proto.kat
+
+# Phase 6a: the ECDH backend. Unlike everything else here, this one is NOT self-contained - see
+# rc_ecdh.h for why the port delegates elliptic-curve arithmetic instead of implementing it. Set
+# ECDH_BACKEND=none to build the whole suite without mbedtls; ecdh_test then reports a skip and exits 0,
+# which is the property that keeps "any machine with a C compiler" true (rc_crypto.h's argument).
+ECDH_BACKEND ?= mbedtls
+
+ifeq ($(ECDH_BACKEND),mbedtls)
+ECDH_CFLAGS := -DRC_CRYPTO_MBEDTLS
+ECDH_LIBS   := -lmbedcrypto
+else
+ECDH_CFLAGS :=
+ECDH_LIBS   :=
+endif
 
 BUILD     := build
 GENERATED := $(BUILD)/halyard_v1_constants.g.c
@@ -38,6 +54,8 @@ STREAM_CRYPTO_TARGET := $(BUILD)/stream_crypto_test
 FEC_TARGET := $(BUILD)/fec_test
 STREAM_HEADER_TARGET := $(BUILD)/stream_header_test
 STREAM_DEMUX_TARGET := $(BUILD)/stream_demux_test
+ECDH_TARGET := $(BUILD)/ecdh_test
+CONTROL_PROTO_TARGET := $(BUILD)/control_proto_test
 
 INCLUDES  := -I$(PORT_ROOT)/source/crypto -I$(PORT_ROOT)/source/halyard
 
@@ -132,11 +150,32 @@ STREAM_DEMUX_SOURCES := \
 	$(PORT_ROOT)/source/stream/stream_demux.c \
 	stream_demux_test.c
 
+# Phase 6a: the stream key agreement (ECDH -> shared X -> per-direction keys). The only test target that
+# links a third-party library; see ECDH_BACKEND above and rc_ecdh.h for the argument. rc_sha256.c comes
+# along for the ecdhsig vectors (HMAC over the public key) and the stream KDF, neither of which involves
+# elliptic curves at all.
+ECDH_SOURCES := \
+	$(PORT_ROOT)/source/crypto/rc_sha256.c \
+	$(PORT_ROOT)/source/crypto/rc_ecdh.c \
+	$(PORT_ROOT)/source/stream/stream_key_schedule.c \
+	$(PORT_ROOT)/source/takion/takion_control_proto.c \
+	$(PORT_ROOT)/source/takion/takion_session_negotiator.c \
+	ecdh_test.c
+
+# Phase 6a: the SESSION_REQUEST/SESSION_REPLY protobuf envelope. No crypto and no EC backend - the
+# vectors carry public keys and signatures as literal bytes, because what is under test here is the
+# encoding, not what the values mean.
+CONTROL_PROTO_SOURCES := \
+	$(PORT_ROOT)/source/util/rc_base64.c \
+	$(PORT_ROOT)/source/session/halyard_launch_spec.c \
+	$(PORT_ROOT)/source/takion/takion_control_proto.c \
+	control_proto_test.c
+
 .PHONY: all check build clean constants
 
 all: check
 
-check: $(TARGET) $(VECTORS) $(DISCOVERY_TARGET) $(SESSION_TARGET) $(TAKION_TARGET) $(STREAM_CRYPTO_TARGET) $(STREAM_VECTORS) $(FEC_TARGET) $(STREAM_HEADER_TARGET) $(STREAM_DEMUX_TARGET)
+check: $(TARGET) $(VECTORS) $(DISCOVERY_TARGET) $(SESSION_TARGET) $(TAKION_TARGET) $(STREAM_CRYPTO_TARGET) $(STREAM_VECTORS) $(FEC_TARGET) $(STREAM_HEADER_TARGET) $(STREAM_DEMUX_TARGET) $(ECDH_TARGET) $(SESSION_VECTORS) $(CONTROL_PROTO_TARGET) $(PROTO_VECTORS)
 	./$(TARGET) $(VECTORS)
 	./$(DISCOVERY_TARGET)
 	./$(SESSION_TARGET)
@@ -145,8 +184,10 @@ check: $(TARGET) $(VECTORS) $(DISCOVERY_TARGET) $(SESSION_TARGET) $(TAKION_TARGE
 	./$(FEC_TARGET)
 	./$(STREAM_HEADER_TARGET)
 	./$(STREAM_DEMUX_TARGET)
+	./$(ECDH_TARGET) $(SESSION_VECTORS)
+	./$(CONTROL_PROTO_TARGET) $(PROTO_VECTORS)
 
-build: $(TARGET) $(DISCOVERY_TARGET) $(SESSION_TARGET) $(TAKION_TARGET) $(STREAM_CRYPTO_TARGET) $(FEC_TARGET) $(STREAM_HEADER_TARGET) $(STREAM_DEMUX_TARGET)
+build: $(TARGET) $(DISCOVERY_TARGET) $(SESSION_TARGET) $(TAKION_TARGET) $(STREAM_CRYPTO_TARGET) $(FEC_TARGET) $(STREAM_HEADER_TARGET) $(STREAM_DEMUX_TARGET) $(ECDH_TARGET) $(CONTROL_PROTO_TARGET)
 
 constants: $(GENERATED)
 
@@ -195,6 +236,14 @@ $(STREAM_DEMUX_TARGET): $(STREAM_DEMUX_SOURCES)
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) -o $@ $(STREAM_DEMUX_SOURCES)
 
+$(ECDH_TARGET): $(ECDH_SOURCES)
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) $(ECDH_CFLAGS) -o $@ $(ECDH_SOURCES) $(ECDH_LIBS)
+
+$(CONTROL_PROTO_TARGET): $(CONTROL_PROTO_SOURCES)
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) -o $@ $(CONTROL_PROTO_SOURCES)
+
 # Not a rule that generates it: the emitter is a .NET project and quietly shelling out to `dotnet` from a
 # C makefile would be a surprising amount of machinery to hide behind `make`. Say what to run instead.
 $(VECTORS):
@@ -205,6 +254,18 @@ $(VECTORS):
 
 $(STREAM_VECTORS):
 	@echo "missing $(STREAM_VECTORS)"
+	@echo "generate it from the repository root with:"
+	@echo "    dotnet run --project tools/Ripcord.ProtocolLab -- vectors"
+	@false
+
+$(SESSION_VECTORS):
+	@echo "missing $(SESSION_VECTORS)"
+	@echo "generate it from the repository root with:"
+	@echo "    dotnet run --project tools/Ripcord.ProtocolLab -- vectors"
+	@false
+
+$(PROTO_VECTORS):
+	@echo "missing $(PROTO_VECTORS)"
 	@echo "generate it from the repository root with:"
 	@echo "    dotnet run --project tools/Ripcord.ProtocolLab -- vectors"
 	@false

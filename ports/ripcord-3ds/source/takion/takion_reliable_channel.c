@@ -39,6 +39,13 @@ static void send_sack(takion_reliable_channel *ch)
 int takion_channel_connect(takion_reliable_channel *ch, int sock, struct sockaddr_in peer,
                            unsigned max_attempts, unsigned per_attempt_timeout_ms)
 {
+    return takion_channel_connect_ticked(ch, sock, peer, max_attempts, per_attempt_timeout_ms, NULL, NULL);
+}
+
+int takion_channel_connect_ticked(takion_reliable_channel *ch, int sock, struct sockaddr_in peer,
+                                  unsigned max_attempts, unsigned per_attempt_timeout_ms,
+                                  takion_tick_fn tick, void *tick_ctx)
+{
     uint8_t init_chunk[32];
     size_t init_chunk_len;
     unsigned attempt;
@@ -92,6 +99,8 @@ int takion_channel_connect(takion_reliable_channel *ch, int sock, struct sockadd
                     break;
                 }
             }
+            if (tick != NULL)
+                tick(tick_ctx);
             svcSleepThread(20000000); /* 20 ms */
         }
     }
@@ -154,6 +163,8 @@ int takion_channel_connect(takion_reliable_channel *ch, int sock, struct sockadd
                     }
                 }
             }
+            if (tick != NULL)
+                tick(tick_ctx);
             svcSleepThread(20000000);
         }
     }
@@ -182,7 +193,7 @@ int takion_channel_send(takion_reliable_channel *ch, unsigned channel,
             chunk_len = takion_data_build_first(ch->next_send_tsn, channel, ending,
                 payload + offset, take, chunk, sizeof(chunk));
         else
-            chunk_len = takion_data_build_continuation(ch->next_send_tsn, ending,
+            chunk_len = takion_data_build_continuation(ch->next_send_tsn, channel, ending,
                 payload + offset, take, chunk, sizeof(chunk));
         if (chunk_len == 0)
             return 0;
@@ -294,7 +305,8 @@ int takion_channel_poll(takion_reliable_channel *ch, unsigned *out_channel,
         size_t payload_length;
         int parsed = is_first
             ? takion_data_parse_first(chunk, chunk_length, &seq, &channel, &ending, &payload, &payload_length)
-            : takion_data_parse_continuation(chunk, chunk_length, &seq, &ending, &payload, &payload_length);
+            : takion_data_parse_continuation(chunk, chunk_length, &seq, &channel, &ending,
+                                             &payload, &payload_length);
 
         if (!parsed)
             return 0;

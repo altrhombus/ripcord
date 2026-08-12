@@ -1,0 +1,111 @@
+/*
+ * ripcord-3ds - Phase 6a: the stream key agreement (spec sec4.2/sec5.1-5.3).
+ *
+ * Ported from Ripcord.Protocol.Halyard.Takion.TakionSessionNegotiator. This is the exchange that turns a
+ * connected Takion transport into an encrypted one: each side sends an ephemeral ECDH public key
+ * authenticated by an HMAC over it, and the agreed secret becomes the per-direction AES-128 keys and
+ * base IVs that stream_packet_crypto has been waiting for since Phase 5.5.
+ *
+ * NO SOCKET, DELIBERATELY - the same split halyard_discovery.h and the Takion codecs already use. This
+ * module produces the bytes to send and consumes the bytes received; whoever owns the reliable channel
+ * moves them. That keeps the whole key agreement host-testable, which matters more here than anywhere
+ * else in the port: this is the one exchange where a bug yields a session that connects and then decodes
+ * to garbage, with nothing in between to say which side was wrong.
+ *
+ * WHERE THIS SITS in the connect sequence (HalyardTakionStream.StartAsync):
+ *   1. /sess/ctrl control plane is up (Phase 4) - it is what carries handshakeKey to the console, see
+ *      below.
+ *   2. Takion SCTP handshake completes (Phase 5).
+ *   3. The reliable channel is running, NOT yet sealed.
+ *   4. >>> this module: SESSION_REQUEST out, SESSION_REPLY in, per-direction keys out <<<
+ *   5. GMAC sealing is switched on with those keys; everything after this point is authenticated.
+ * Both messages ride TAKION_CHANNEL_SESSION (0x0001) as reliable DATA.
+ *
+ * ON handshakeKey, WHICH IS EASY TO GET WRONG. It is 16 fresh random bytes generated per session by the
+ * CLIENT, and it is NOT derived from the pairing record and NOT related to the control-plane KDF. It
+ * reaches the console inside the launch spec - AES-128-OFB-encrypted under the control plane's "out1"
+ * key and base64'd (halyard_control_streaminfo_crypt), as the JSON member "handshakeKey" - so by the
+ * time this exchange runs, both sides already know it and can each authenticate the other's public key
+ * with it. Its only job is to bind the two ECDH public keys to a session the console already agreed to;
+ * it contributes no long-term secrecy, and a caller that passes a fixed value instead of random bytes
+ * has removed the exchange's only protection against a man in the middle.
+ *
+ * WHAT THIS DOES NOT DO. It does not build the launch spec (that needs session configuration - codec,
+ * resolution, bitrate - and belongs to whoever owns the connect flow), and it does not generate the
+ * handshakeKey. Both arrive as caller-supplied inputs, the same way stream_packet_crypto takes an
+ * already-derived key rather than reaching for the layer above it.
+ */
+#ifndef TAKION_SESSION_NEGOTIATOR_H
+#define TAKION_SESSION_NEGOTIATOR_H
+
+#include "takion_control_proto.h"
+
+#include "../crypto/rc_ecdh.h"
+
+#include <stddef.h>
+#include <stdint.h>
+
+/*
+ * The negotiated client version. 17 (0x11) is what the shipped client sends and what this port claims;
+ * it also selects P-521 over P-256, since the curve is chosen by version (0x0d-0x11 -> P-521).
+ */
+#define TAKION_CLIENT_VERSION 17u
+
+/*
+ * The observed session-key string. It is a literal, not an identifier this port is failing to fill in:
+ * the vendor client sends exactly this on a direct LAN session, and the console accepts it. Treated as a
+ * protocol constant for the same reason the "PS5" platform tag is.
+ */
+#define TAKION_SESSION_KEY "InvalidSessionId"
+
+typedef struct {
+    /* Populated by takion_session_negotiator_begin(). */
+    rc_ecdh_keypair local_pair;
+    uint8_t handshake_key[16];
+    unsigned curve;
+
+    /* Populated by takion_session_negotiator_accept_reply() on success. */
+    uint8_t send_aes_key[16];
+    uint8_t send_base_iv[16];
+    uint8_t receive_aes_key[16];
+    uint8_t receive_base_iv[16];
+    int established;
+} takion_session_negotiator;
+
+/* Maps a negotiated protocol version to its curve: 0x0d-0x11 -> P-521, anything else -> P-256. */
+unsigned takion_session_curve_for_version(uint32_t protocol_version);
+
+/*
+ * Starts a negotiation: generates the ephemeral pair and builds the SESSION_REQUEST to send.
+ *
+ * `launch_spec` is the already-encrypted, already-base64 launch spec (see the header note on
+ * handshakeKey - the plaintext of that same spec is where handshakeKey travels). `handshake_key` must be
+ * the same 16 bytes embedded in it.
+ *
+ * Returns the number of bytes written to `out_request`, or 0 on failure (no ECDH backend, bad curve, RNG
+ * refused, buffer too small).
+ */
+size_t takion_session_negotiator_begin(takion_session_negotiator *ctx,
+                                       uint32_t protocol_version,
+                                       const uint8_t handshake_key[16],
+                                       const char *launch_spec, size_t launch_spec_length,
+                                       rc_rng_fn rng, void *rng_ctx,
+                                       uint8_t *out_request, size_t out_request_size);
+
+/*
+ * Consumes a SESSION_REPLY and, if it checks out, derives all four key/IV values into `ctx`.
+ *
+ * Returns 1 on success. Returns 0 - leaving ctx->established clear - if the message is not a well-formed
+ * SESSION_REPLY, if the console rejected our version, if it carried no ECDH key, if the peer key is not
+ * on our curve or not on the curve at all, or if its ecdhSignature does not verify under handshakeKey.
+ * That last check is the one that matters: without it, anything able to inject a DATA chunk on this
+ * channel could substitute its own public key and read the whole session.
+ */
+int takion_session_negotiator_accept_reply(takion_session_negotiator *ctx,
+                                           const uint8_t *reply, size_t reply_length,
+                                           rc_rng_fn rng, void *rng_ctx);
+
+/* Wipes the key material. Call when the session ends. */
+void takion_session_negotiator_reset(takion_session_negotiator *ctx);
+
+#endif /* TAKION_SESSION_NEGOTIATOR_H */

@@ -76,6 +76,13 @@ typedef struct {
         size_t length);
 } stream_demux_sink;
 
+/*
+ * ~513 KB - by far the largest object in this port (whole-frame reassembly buffers x FEC unit slots).
+ * NEVER DECLARE ONE AS A LOCAL, and do not casually put one per-session on a 3DS either: a .3dsx main
+ * thread gets a 32 KB stack, so a local is an instant data abort in the prologue with nothing logged.
+ * File scope, `static`, or the heap. See takion_reliable_channel.h - the same mistake, 10x smaller, is
+ * what actually crashed on hardware; the 3DS build's -Wframe-larger-than=8192 now catches both.
+ */
 typedef struct {
     stream_demux_crypto crypto;
     stream_demux_sink sink;
