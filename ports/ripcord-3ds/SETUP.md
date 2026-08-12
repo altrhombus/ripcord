@@ -71,11 +71,28 @@ echo "$DEVKITPRO $DEVKITARM"      # expect /opt/devkitpro /opt/devkitpro/devkitA
 `ports/ripcord-3ds/Makefile` hard-errors if either variable is unset, so a missed `source` is a clear
 message rather than a confusing compiler failure.
 
-Optional, and only when you want the faster on-device crypto backend later:
+**Required since Phase 6a** — the ECDH backend. This is the one primitive the port does not implement
+itself (see `source/crypto/rc_ecdh.h` for the argument), so without it the key agreement cannot run:
 
 ```sh
 sudo dkp-pacman -S 3ds-mbedtls
 ```
+
+The host-side test runner needs its own copy, since it builds for this machine rather than the 3DS:
+
+```sh
+sudo apt install libmbedtls-dev
+```
+
+Note the two are different majors — devkitPro ships **2.28.x**, Debian ships **3.6.x** — and 3.x moved
+several struct fields behind `MBEDTLS_PRIVATE`. `rc_ecdh.c` is written against the function-level
+`mbedtls_ecp_*` / `mbedtls_mpi_*` API only, which is stable across both, and extracts the shared X via
+`mbedtls_ecp_point_write_binary` rather than reading the point struct. If you ever need a field 3.x has
+hidden, add another write_binary-shaped detour rather than defining `MBEDTLS_ALLOW_PRIVATE_ACCESS`.
+
+Neither package is needed to build the rest of the port. `make ECDH_BACKEND=none` (either makefile) drops
+both, and the ECDH runner then reports a skip and exits 0 instead of failing — the property that keeps
+"any machine with a C compiler" true.
 
 ### .NET SDK
 
@@ -102,22 +119,29 @@ sudo apt install build-essential python3   # gcc, make, and the constants genera
 Run these in order. Each one is a real gate; do not skip ahead when one fails.
 
 ```sh
-# 1. The .NET side builds and the vector emitter runs.
+# 1. The .NET side builds and the vector emitter runs. It writes four files, not one.
 dotnet run --project tools/Ripcord.ProtocolLab -- vectors
 #    expect: wrote ports/ripcord-3ds/tests/vectors/control-crypto.kat
 #            kdf=80 ctxkey=21 iv=13 mode=33 field=14  (ps4 tables present)
+#            wrote .../stream-crypto.kat    gmac=9 streamkdf=4 packetnonce=12 packettag=12
+#            wrote .../session-crypto.kat   ecdhpub=6 ecdhshared=8 ecdhsig=4 streamkeys=8
+#            wrote .../control-proto.kat    sessionreq=5 sessionreply=5
 
-# 2. The C compiles and agrees with it - both the crypto vectors and the discovery parser self-test.
+# 2. The C compiles and agrees with it - ten runners, no hardware involved.
 make -C ports/ripcord-3ds/tests
 #    expect: self-test: AES-128 matches FIPS-197 C.1
-#            171 passed, 0 failed, 0 skipped
-#            24 passed, 0 failed
+#            171 / 24 / 53 / 61 / 65 / 2654 / 58 / 31 / 44 / 71 passed, 0 failed  (3,232 total)
+#    if ecdh_test says "skipped: built without an ECDH backend", libmbedtls-dev is missing
 
-# 3. The cross-compile produces three homebrew binaries.
+# 3. The cross-compile produces five homebrew binaries...
 make -C ports/ripcord-3ds
-#    expect: ripcord-3ds.3dsx, ripcord-3ds-linktest.3dsx, ripcord-3ds-discovery.3dsx
+#    expect: ripcord-3ds.3dsx, -linktest, -discovery, -session, -takion
 
-# 4. Optional sanity on the managed suites.
+# 4. ...and the modules that have no .3dsx of their own still compile for ARM11.
+make -C ports/ripcord-3ds crosscheck
+#    expect: all app-less modules compile clean for ARM11
+
+# 5. Optional sanity on the managed suites.
 dotnet test tests/Ripcord.Protocol.Halyard.Tests/Ripcord.Protocol.Halyard.Tests.csproj
 #    expect: all pass, with skips where the dirty room is absent
 ```
@@ -210,7 +234,23 @@ owns the 0x1000-aligned 0x100000 SOC buffer, and `main()` calls `osSetSpeedupEna
 else — noted again in the gotcha list because the next piece of code that opens a raw socket outside this
 harness will not get them for free.
 
-**Phase 3 — sockets and discovery. Implemented, not yet run against a real console.** The SOC bring-up
+**Phase 3 — sockets and discovery. RUN AND CONFIRMED on real hardware (2026-08-12).** A PS5 was found
+both awake and resting, with `host-type`, `host-name`, `host-id` and `system-version` all parsing — so the
+SRCH wire format holds up outside the spec's transcribed examples, in both console states.
+
+**The first run failed, and the bug was ours.** `bind()` returned `EINVAL` (errno 22) before a single
+packet went out. The socket bound port 0, letting the stack pick an ephemeral port — which is what the
+.NET side does (`HalyardControlSearch` binds `IPAddress.Any:0`) and is correct there, but the 3DS SOC
+service rejects a zero port outright. `source/linktest/main.c` had been binding a *nonzero* port on the
+same hardware since Phase 2, and that differential is what identified it: same socket type, same
+`INADDR_ANY`, same addrlen, only the port differed. Discovery now binds a fixed port (9310, retrying up to
+9313) and logs which it got. A console answers SRCH to whatever source port the probe came from, so any
+port works — "let the stack choose" is the one option unavailable.
+
+This is the failure mode this port is structurally prone to and host vectors can never catch: an idiom
+that is right on the reference platform and invalid on the target. No vector exercises a socket.
+
+The SOC bring-up
 needed for Phase 2 carries over (`source/net/rc_soc.h`/`.c`); what this phase adds is the SRCH
 broadcast/response that finds a console on the local network, ahead of the `/sess/ctrl` exchange in
 Phase 4.
@@ -236,7 +276,40 @@ resting console answers slowly. Builds and links clean, but has never been run a
 that is the next thing this phase needs, the same way Phases 1 and 2 each needed a first real run before
 their numbers meant anything.
 
-**Phase 4 — `/sess/init` -> `/sess/ctrl`. Implemented, not yet run against a real console.** The first
+**Phase 4 — `/sess/init` -> `/sess/ctrl`. RUN AND CONFIRMED on real hardware (2026-08-12), first try.**
+The single largest de-risking event this port has had. Against a real PS5:
+
+```
+/sess/init -> 200
+/sess/ctrl -> 200
+ctrl message type 0x0005, 1 bytes
+session ready (17-byte session id)
+ctrl message type 0x0017, 9 bytes
+ctrl message type 0x0016, 2 bytes
+requested rest mode
+rest mode acknowledged
+ctrl message type 0x0003, 4 bytes
+```
+
+`/sess/ctrl -> 200` is the line that matters: the console accepted all five encrypted `RP-*` fields, which
+means the Phase 0 control-plane crypto — the KDF, the per-field IV, the AES-128-CFB field cipher, the
+running counter, **and the hardcoded codec selector 2** — is correct against real hardware, not merely in
+agreement with our own .NET implementation. The binary control channel then framed correctly (17-byte
+session id), and a Y press round-tripped rest mode (`0x0050` -> `0x8050`) and cleanly closed the session.
+
+**Four message types arrived that this port does not model**, and they are new information:
+
+| Type | Payload | Status |
+|---|---|---|
+| `0x0005` | 1 byte | Known to the .NET side as the login/"you may stream" signal; the payload size is new, and `source/session/main.c` only special-cases `0x0004` so this fell through to the generic log |
+| `0x0016` | 2 bytes | **Unknown to both implementations** |
+| `0x0017` | 9 bytes | **Unknown to both implementations** |
+| `0x0003` | 4 bytes | **Unknown to both implementations**, arrived after the rest-mode ack |
+
+Nothing broke for not understanding them — the framing skipped each cleanly, which is itself a check on
+`halyard_ctrl_message.c`. Their meanings are open questions, not defects.
+
+The first
 exchange that talks to a real console, and the first end-to-end use of the crypto from Phase 0. Ported
 from `Ripcord.Protocol.Halyard.Common.Control` (`SessProtocol`, `HalyardSessCtrlFields`,
 `HalyardCtrlMessage`) and `HalyardControlSearch`/`HalyardTcpControlChannel` - the same project's own
@@ -285,7 +358,50 @@ hardware and no .NET vector file:
   `rc_tcp_send_all()` retries `EAGAIN`/`EWOULDBLOCK` the same way) - a console that never answers gets a
   bounded failure, not a hung program.
 
-**Phase 5 — Takion. Implemented, not yet run against a real console.** Handshake, reliable delivery,
+**Phase 5 — Takion. RUN ON HARDWARE (2026-08-12); it crashed, and the crash was a real bug.** The probe
+died with an ARM11 data abort before printing anything past its banner. The transport itself was never
+exercised, so the handshake codec remains unvalidated on hardware — but the crash was worth having.
+
+Luma's dump decoded to: data abort, **write**, translation fault, `FAR = 0x07ffb944` against
+`SP = 0x07ffb950` — a write 12 bytes *below* the stack pointer, into an unmapped guard page. A stack
+overflow, hit in the function prologue, which is why the log stopped after the banner and never named the
+function it was in.
+
+**The cause: `takion_reliable_channel` is 49.6 KB** (`TAKION_MAX_UNACKED` 32 x `TAKION_MAX_PACKET` 1500)
+**and it was an ordinary local in `run_takion()`. libctru gives a `.3dsx` main thread a 32 KB stack in
+total** (`__stacksize__` defaults to `0x8000`). The frame could never fit. Fixed by making it `static`.
+
+**The structural fix matters more than the fix.** The 3DS build now passes
+`-Wframe-larger-than=8192`, so an oversized frame fails the build instead of the handheld. It immediately
+caught a second instance nothing had noticed: `fec_reed_solomon_decode` held three 64x64 scratch matrices
+— 12.6 KB, 40% of the whole thread stack, several frames deep inside the demux flush path. Those are now
+`static` too, which makes that function non-reentrant and single-threaded-only; safe today because this
+port creates no threads anywhere, and flagged in the source for whenever the media pipeline does.
+
+A third landmine was sitting unarmed: `stream_demux` is **513 KB**, so the first `stream_demux demux;`
+local in the eventual connect flow would have died exactly the same way. Both oversized structs now carry
+the warning in their headers, and the compiler enforces it regardless.
+
+**The re-run (2026-08-12, after the fix) got past the prologue and then found the probe's real problem.**
+It reached `handshake: sending INIT to <console>:9297` — proving the stack fix — and then
+`handshake did not complete (5 attempts x 1000 ms)`. That failure is not a transport defect and not weak
+evidence; it is **structural**. Two facts, one of which had been understated:
+
+- **The console has no listener open outside a live session.** It opens its stream UDP ports only between
+  `/sess/ctrl` and the stream. This probe runs standalone, so an INIT has no possible recipient — and the
+  run that demonstrated it had already ended its session and put the console into rest mode. No port
+  value makes this program work against a console.
+- **9297 is the senkusha port, not the stream port.** The A/V stream sits on **9296**, one below
+  (`HalyardStreamingSession.SenkushaPort`, wire-confirmed). The `takion.txt` default was pointing at the
+  wrong one of the two, which mattered less than the first point but is worth correcting.
+
+So `ripcord-3ds-takion.3dsx` keeps its value only against a peer we control — a host-side responder or a
+second 3DS. **Takion still has no hardware evidence either way**, and getting it needs the connect flow
+rather than a better port number: hold the Phase 4 control channel open past session-ready, run senkusha
+on 9297, then INIT the stream on 9296, in one combined program. That is the natural home for Phase 6a's
+negotiator too, and it is the next real piece of work.
+
+Handshake, reliable delivery,
 reassembly. Ported from `Ripcord.Protocol.Halyard.Takion` (`TakionMessageHeader`, `TakionHandshake`,
 `TakionConnection`, `TakionDataChunk`, `TakionSackChunk`, `TakionMessageReassembler`,
 `TakionReliableChannel`) - the same project's own reference implementation (see the note on Phase 4 above
@@ -406,6 +522,130 @@ explicitly, same reasoning as the .NET side: hand-rolling P-256/P-521 point arit
 large and security-critical, and the pragmatic path is the `-DRC_CRYPTO_MBEDTLS` seam `rc_crypto.h` already
 anticipates (see the optional `3ds-mbedtls` package in section 2 above) — not yet decided, tracked here for
 whenever ECDH work starts.
+
+**Phase 6a — the stream key agreement. Implemented and host-tested; no on-device app yet.** The gap Phase
+5.5 explicitly left open: `stream_packet_crypto` had a complete cipher and no keys to put in it. Ported
+from `Ripcord.Protocol.Halyard.Takion.TakionSessionNegotiator` and the ECDH half of
+`Crypto/V1/HalyardStreamKeySchedule`.
+
+**The one thing this port does not implement itself.** Elliptic-curve arithmetic over a 521-bit prime
+field is not something to write twice, and the .NET side reached the same conclusion — it delegates
+entirely to `System.Security.Cryptography.ECDiffieHellman` and has no custom EC point math anywhere. So
+`source/crypto/rc_ecdh.h`/`.c` is a seam over mbedtls, in the shape `rc_crypto.h` anticipated from the
+start (`-DRC_CRYPTO_MBEDTLS`). Two properties were treated as non-negotiable:
+
+- **No fake fallback.** Built without a backend, every entry point fails and `rc_ecdh_available()` returns
+  0. A stub returning predictable "shared secrets" would let a broken build pass its own tests and then
+  negotiate a session with no confidentiality at all, so there is deliberately no such stub — the test
+  runner skips instead.
+- **The RNG is the caller's.** mbedtls's own entropy sources assume a hosted OS the 3DS does not provide,
+  so on device it has to come from libctru regardless; and known-answer vectors require a *fixed* private
+  key, which a curve implementation insisting on generating its own randomness cannot give you. The
+  callback signature matches mbedtls's `f_rng` so it passes straight through.
+
+**What's implemented:**
+
+- **`source/crypto/rc_ecdh.*`** — P-256 and P-521 keygen, public-key recovery from a fixed scalar, and
+  shared-secret derivation. Peer keys are validated as on-curve before being multiplied by our private
+  scalar (the invalid-curve attack leaks the scalar a subgroup at a time, and "it came from the console"
+  is not authentication), and a peer key whose length implies the other curve is refused rather than
+  coerced — the wire carries no curve id, so length is the only thing distinguishing them.
+- **`source/takion/takion_control_proto.*`** — a hand-rolled proto2 codec for the two messages this
+  exchange needs. The .NET side compiles all 41 messages with Google.Protobuf + Grpc.Tools, which is right
+  there and wrong here: this port needs two, has no malloc, and would pay more for a code generator in a
+  cross-compiled makefile than the ~200 lines cost. Field numbers come from
+  `docs/protocol/stream_control.proto`, which is the authority.
+- **`source/takion/takion_session_negotiator.*`** — builds `SESSION_REQUEST`, consumes `SESSION_REPLY`,
+  verifies the peer's `ecdhSignature` in constant time before touching its key, and derives all four
+  per-direction key/IV values. Socket-free by design, the same split `halyard_discovery.h` uses.
+
+**On `handshakeKey`, which is the easiest thing here to get wrong.** It is 16 fresh random bytes the
+*client* generates per session, and it is **not** derived from the pairing record and **not** related to
+the control-plane KDF. It reaches the console inside the launch spec — OFB-encrypted under the control
+plane's `out1` key and base64'd, as the JSON member `handshakeKey` — which is why the control plane has to
+be up before this exchange runs. Its only job is binding the two ECDH public keys to a session the console
+already agreed to. A caller passing a fixed value instead of random bytes has removed the exchange's only
+protection against a man in the middle.
+
+**Verification** — 115 host cases, in two runners:
+
+- `ecdh_test` (44) reads the new `tests/vectors/session-crypto.kat`. The private scalars are **fixed**,
+  because a key agreement has no known-answer vector otherwise; `rc_ecdh_keypair_from_private()` is in the
+  public header for that reason rather than as a test-only back door. Note what is and is not under test:
+  not mbedtls's curve arithmetic, but the code around it — curve selection, uncompressed-point layout,
+  full-width coordinate writes, peer validation. The `streamkeys` vectors run the whole chain (scalar →
+  shared secret → KDF → keys) with no intermediate handed over, so a port that gets ECDH wrong cannot pass
+  the half it can still do. There is also a full simulated negotiation against a hand-encoded reply,
+  checking that both sides land on the same four values *with the directions crossed*, and that a
+  one-bit-flipped `ecdhSignature` is refused.
+- `control_proto_test` (71) checks encodings byte-for-byte against Google.Protobuf's own output.
+
+**A note on the P-521 coordinate width**, since it is the one place a plausible implementation silently
+diverges: X is at most 521 bits but the field is 66 bytes, so the top seven bits are always zero and the
+first byte is always `0x00` or `0x01`. A leading zero byte therefore lands about half the time, against
+roughly 1-in-256 on P-256 — which means an implementation writing the coordinate at its trimmed natural
+length rather than the curve's fails these vectors immediately instead of intermittently in production.
+
+**What is deliberately NOT here.** The launch spec (`launchSpecJson`) is a caller-supplied input, not
+built by this phase — it needs session configuration (codec, resolution, bitrate) and belongs to whoever
+owns the connect flow, the same way `stream_packet_crypto` takes an already-derived key rather than
+reaching upward for it. There is consequently no on-device app: the negotiator has no socket attached, and
+wiring it to `takion_reliable_channel` without a launch spec to send would produce a request a console
+rejects. `make crosscheck` confirms all three new modules compile clean for ARM11 regardless.
+
+**Phase 6b — the combined connect flow. RUN ON HARDWARE (2026-08-12); got most of the way, and found a
+real wire bug.** `ripcord-3ds-connect.3dsx` carries a live control session through senkusha to the stream
+plane. Two runs against a real PS5 were identical:
+
+```
+/sess/init -> 200 ; /sess/ctrl -> 200 ; session ready
+senkusha: established / PROTOCOL_VERSION_ACK / SESSION_REPLY - bring-up complete
+stream: Takion ESTABLISHED (9296)
+stream: SESSION_REQUEST 1716 bytes (curve P-521), fragmenting
+<nothing>
+```
+
+**What this settles.** The **Takion transport is confirmed against real hardware** — twice over, on two
+independent associations (9297 and 9296), including the 4-way handshake, DATA, SACK and reassembly, since
+senkusha's PROTOCOL_VERSION and SESSION exchanges both completed. Senkusha's bring-up is confirmed. The
+stream-plane handshake on **9296** is confirmed, settling the 9296-vs-9297 ambiguity the spec left open.
+
+**The bug: continuation fragments were sent on channel 0.** The 1716-byte SESSION_REQUEST is the first
+message this port has ever fragmented, and `takion_data_chunk.c` zero-filled value offsets 4-7 of a
+continuation, having documented those four bytes as "reserved, meaning unconfirmed". They are not
+reserved: `TakionDataChunk.Build` writes the **channel** at value offset 4 in *both* fragment shapes and
+shrinks only the reserved region (3 bytes to 2), which is the whole reason the payload offset differs (9
+vs 8). So every fragment after the first went out labelled channel 0 — the channel the *console* sends
+on. Fixed; `takion_data_build_continuation` now takes the channel, and `takion_test.c` asserts both the
+round-trip and the literal byte offset, because the previous round-trip test ignored the field and that
+is precisely why nothing caught it.
+
+**A second, self-inflicted problem worth recording:** the run ended having logged nothing after
+"fragmenting", because the negotiate loop's timeout path had no message. A silent timeout is
+indistinguishable from a crash in a log file, and it cost a debugging session to rule out the latter. The
+wait now always names itself and reports how many reliable messages arrived on the stream channel — zero
+vs. non-zero being the single most useful discriminator for what to suspect next.
+
+**The run after the fix (2026-08-12) reached `STREAM KEYS DERIVED`.** The console returned a 203-byte
+SESSION_REPLY, its `ecdhSignature` verified, and both per-direction key/IV pairs came out. That single
+line confirms, against real hardware and all at once, a list of things that until then were only "agrees
+with our own .NET implementation":
+
+- **The Takion continuation-fragment layout** — the channel-0 fix was right.
+- **The hand-rolled SESSION_REQUEST protobuf**, including the fragmented encoding of a 1716-byte message.
+- **The launch spec**, byte for byte. A wrong character anywhere in that document would have left the
+  console unable to parse it.
+- **The streaminfo cipher at counter 0.** This one is worth stating on its own: the counter had *never*
+  been pinned by any captured vector on either side (the .NET call site now says so), and it is a
+  suspicious value because `RP-Auth` already uses counter 0 with the CFB field cipher, so the two share
+  an IV and their first keystream blocks are identical. It is nonetheless correct — the console
+  recovered the handshakeKey from inside that document, which is the only way the signature could verify.
+- **Omitting `adaptiveStreamMode:"resize"` is harmless**, closing the other open question about the spec.
+- **P-521 for client version 17**, the ECDH agreement itself, and `rc_random` on device.
+
+The finding about counter 0 has been written back into `HalyardStreamingSession.BuildSessionRequest` —
+this port existing to test the spec is the whole argument for it, and this is the first time it has paid
+that back as a confirmation rather than a defect.
 
 **Phase 6 — media.** MVD H.264 decode → Y2R → PICA200, Opus audio, input mapping.
 

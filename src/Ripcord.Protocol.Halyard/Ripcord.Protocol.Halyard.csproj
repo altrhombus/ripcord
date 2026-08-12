@@ -14,6 +14,13 @@
        launchSpec builders without widening the public API for the sake of testability. -->
   <ItemGroup>
     <InternalsVisibleTo Include="Ripcord.Protocol.Halyard.Tests" />
+    <!-- The lab emits the cross-language known-answer vectors that ports/ripcord-3ds checks itself
+         against, and the launch spec is one of the byte-sensitive things worth checking: it is a
+         fixed-order JSON document where a single wrong character makes a console accept /sess/ctrl and
+         then silently never answer SESSION_REQUEST. Reaching BuildLaunchSpecJson needs internal access;
+         the alternative was a second hand-maintained copy of the template in the emitter, which is the
+         thing the vector is supposed to detect. -->
+    <InternalsVisibleTo Include="Ripcord.ProtocolLab" />
   </ItemGroup>
 
   <!-- The v1 interoperability constants, bundled as data and read by HalyardInteropConstants as the

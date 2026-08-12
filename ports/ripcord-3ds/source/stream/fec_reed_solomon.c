@@ -121,9 +121,21 @@ int fec_reed_solomon_decode(uint8_t *frame_buf, size_t unit_size, size_t stride,
     int chosen[FEC_MAX_TOTAL_UNITS];
     int chosen_count = 0;
     int any_erased_source = 0;
-    uint8_t matrix[MAX_MATRIX];
-    uint8_t a[MAX_MATRIX];
-    uint8_t inv[MAX_MATRIX];
+    /*
+     * static, NOT locals. Three 64x64 matrices are 12.6 KB, and a .3dsx main thread has a 32 KB stack in
+     * total - so as locals this one function claimed 40% of it, several frames deep inside the demux
+     * flush path. That is not a theoretical concern on this target: the Takion probe's 49.6 KB local
+     * data-aborted on real hardware for the same reason (see takion_reliable_channel.h), and the 3DS
+     * build now enforces -Wframe-larger-than=8192, which is what flagged this.
+     *
+     * THE TRADE: this makes fec_reed_solomon_decode non-reentrant and single-threaded-only. That is true
+     * of nothing else in source/stream, and it is safe today only because this port has no threads at
+     * all (no threadCreate anywhere). If the media pipeline ever decodes on its own thread, these must
+     * become a caller-supplied scratch struct rather than quietly racing.
+     */
+    static uint8_t matrix[MAX_MATRIX];
+    static uint8_t a[MAX_MATRIX];
+    static uint8_t inv[MAX_MATRIX];
     int u, e, r, j;
 
     if (k <= 0 || m <= 0 || total > FEC_MAX_TOTAL_UNITS)
