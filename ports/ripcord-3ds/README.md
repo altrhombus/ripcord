@@ -32,7 +32,7 @@ same tracker as the spec.
 
 | | Budget | Assessment |
 |---|---|---|
-| CPU | ARM11 MPCore @ 804 MHz, no crypto extensions | Software AES for the A/V path is a real cost, affordable at low bitrate |
+| CPU | ARM11 MPCore @ 804 MHz, no crypto extensions | **Measured: ~25 µs per control-field encryption** (HMAC-SHA256 + one AES-128 block) — the control plane is free; the A/V path's AES-128-CTR is a real cost, extrapolated affordable at low bitrate but not yet measured directly |
 | Video | MVD hardware H.264 decoder (New 3DS only) | H.264 only — HEVC must be refused at negotiation |
 | Colour | Y2R hardware YUV→RGB | The established homebrew path: MVD → Y2R → PICA200 texture |
 | Screen | 400×240 | Everything downscales; quality loss is free |
@@ -160,8 +160,11 @@ Done:
 - [x] Field cipher and streaminfo cipher
 - [x] Constants generation from the committed bundle
 - [x] Host-side known-answer runner
-- [x] On-device smoke test (source, compiles and links to a `.3dsx`; not yet booted)
+- [x] On-device smoke test, booted on real New 3DS hardware — all self-consistency checks passed
 - [x] First green build — host KAT runner (171/171) and the 3DS cross-compile both pass
+- [x] On-device ARM11 timing: ~25 µs per control-field encryption (1000 in 25 ms) — the control plane's
+      total crypto cost per connect is on the order of 125 µs; see SETUP.md Phase 1 for what this does and
+      does not settle
 - [x] SOC service lifecycle (`source/net/rc_soc.c`) — the 0x1000-aligned 0x100000 buffer, owned in one place
 - [x] UDP link test: goodput, sequence-gap loss and p99 inter-arrival jitter, idle and under simulated CPU
       load (`source/linktest/main.c` + `tools/udp_link_test_sender.py`) — compiles and links to a `.3dsx`;
@@ -170,7 +173,6 @@ Done:
 Not started — roughly in dependency order. [`SETUP.md`](SETUP.md) has this as a phased plan with the
 toolchain steps:
 
-- [ ] Boot the `.3dsx` and record the on-device timing number
 - [ ] Run the UDP link test over a real Wi-Fi link, idle and under load
 - [ ] LAN discovery
 - [ ] The `/sess/ctrl` HTTP exchange, which is the first thing that talks to a console
@@ -182,6 +184,8 @@ toolchain steps:
 - [ ] Pairing-record import from a desktop Ripcord install
 
 The Wi-Fi question that used to sit at the top of this list has been answered — ~10 Mbps sustained against
-a 1.5–3 Mbps target — so the transport work is worth doing. The crypto has also now cleared its first
-compiler, on both the host and the ARM11 cross-compile. The next step is the one that needs hardware:
-**boot the `.3dsx` and record the on-device timing number.**
+a 1.5–3 Mbps target — so the transport work is worth doing. The crypto has cleared its first compiler and
+its first real hardware: ~25 µs per control-field encryption, which settles the control plane and leaves
+the A/V path as the only open CPU question. The next step is also hardware, but a different link this
+time: **run the UDP link test (`ripcord-3ds-linktest.3dsx` + `tools/udp_link_test_sender.py`) over a real
+Wi-Fi connection, idle and under simulated CPU load.**
