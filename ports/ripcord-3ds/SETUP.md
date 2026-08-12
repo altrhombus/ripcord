@@ -335,6 +335,78 @@ first picture" list:
   (see the file's own header comment) - it exists to test the transport in isolation, not to be the real
   connect flow.
 
+**Phase 5.5 — stream framing, demux, FEC. Implemented and fully host-tested; no on-device app yet.** Ported
+from `Ripcord.Protocol.Halyard.Common.Streaming` (`HalyardStreamHeader`, `HalyardStreamDemuxer`,
+`Fec/GaloisField256`, `Fec/CauchyReedSolomon`) and the stream half of `Crypto/V1`
+(`HalyardStreamKeySchedule`, `HalyardPacketCrypto`'s GMAC/nonce/key-rotation math) — the same project's own
+reference implementation, so no clean-room distance is needed here either (see the note on Phase 4 above).
+
+**What's implemented**, in `source/stream/`:
+
+- **The 18-byte A/V packet header** (`stream_header.c`) — bit-exact per spec sec6.1: video packs
+  `unit_index`/`total_units-1`/`parity_units` as 11/11/10-bit fields, audio packs byte-wide fields instead
+  (parsing audio with the video layout yields nonsense unit counts, a bug that bit the .NET side before it
+  was caught there). `PayloadOffset` accounts for the type-specific prefix (+3 video, +2 audio/other) and
+  the optional extended-header flag. No captured A/V vector exists in the dirty room (no capture pairs A/V
+  traffic with usable stream keys — the one session with keys never reached streaming) and the .NET
+  reference has no direct unit test for this type either, so `tests/stream_header_test.c` (58 cases) is a
+  build/parse round-trip self-test, the same substitution already used for Takion's uncaptured message
+  shapes.
+- **GF(2^8) field arithmetic and Cauchy Reed-Solomon** (`fec_galois.c`/`fec_reed_solomon.c`) — exp/log
+  tables over primitive polynomial `0x11d`, the `matrix[i][j] = 1/(i XOR (m+j))` coding matrix, and
+  Gauss-Jordan-based encode/decode. Unlike the header above, this one has genuine ground truth:
+  `tests/fec_test.c`'s `test_galois_matches_console_inverse_table` checks this port's inverse table against
+  bytes dumped live from the vendor client's own field object (see `FecTests.cs`'s equivalent — the head
+  and tail of the console's real `1/b` division-table row), which is unique to polynomial `0x11d` across
+  all 16 primitive degree-8 polynomials. Everything past the field itself (matrix construction, encode,
+  erasure recovery) is self-consistency — it proves this port's decoder inverts this port's encoder, not
+  that it matches a console-produced parity unit, for the same reason no A/V vector exists. 2,654 cases
+  (the field-law sweep over all 256 GF values dominates that count) — including the recovery-is-independent-
+  of-slot-stride case that settled the long-running "is the 0x10 stride a mis-derived wire constant"
+  question on the .NET side (it never was one; the console's own stride *is* its coded length, ours is free).
+  `FEC_MAX_TOTAL_UNITS` (64) bounds a frame's total unit count for this port's fixed-size buffers — no
+  malloc anywhere in this port — chosen because the wire's own 11-bit `unit_index` field permits far more
+  (up to 2048) than any real captured frame ever codes over.
+- **Stream-plane packet crypto** (`rc_gcm.c`'s GMAC over GF(2^128), `stream_key_schedule.c`'s SP800-108 KDF,
+  `stream_packet_crypto.c`'s per-packet nonce derivation and periodic GMAC-key rotation) — cross-checked
+  against the .NET reference the same way Phase 0's control-plane crypto was: `tools/Ripcord.ProtocolLab`
+  now also emits `tests/vectors/stream-crypto.kat` (gmac/streamkdf/packetnonce/packettag vectors, generated
+  from `AesGcmCore`/`HalyardStreamKeySchedule`/`HalyardPacketCrypto` directly), checked in
+  `tests/stream_crypto_test.c` (65 cases). Deliberately does not implement ECDH itself — same as the .NET
+  side, which delegates entirely to `System.Security.Cryptography.ECDiffieHellman` and has no custom EC
+  point arithmetic anywhere in the project. `stream_packet_crypto` therefore takes an already-derived
+  `aes_key`/`base_iv` pair; deriving those from a real console handshake is the ECDH/`SESSION_REQUEST`
+  backlog item below, still unstarted.
+- **The demuxer** (`stream_demux.c`) — splits the multiplexed stream by packet type, verifies+decrypts each
+  media packet through a crypto seam (same seam-and-stub shape as `IHalyardSessionCrypto`:
+  `stream_demux_passthrough_crypto` — identity, for testing without real keys — or
+  `stream_demux_packet_crypto` wiring the struct above), reassembles video units into whole Annex-B frames
+  keyed on frame index, triggers FEC recovery when enough units survive, detects IDR/IRAP slices to decide
+  when to re-prepend the out-of-band SPS/PPS parameter sets, classifies HEVC vs. H.264 from those parameter
+  sets (never from slice headers — an ordinary H.264 slice byte can read as a valid HEVC type), and strips
+  audio's redundant loss-concealment units down to the one real Opus frame per packet. Callback-based
+  (`stream_demux_sink`) rather than the .NET reference's C# events. `tests/stream_demux_test.c` (31 cases)
+  runs the whole pipeline end to end against the passthrough seam — including one case that builds a real
+  FEC-coded frame, drops two of four source units, and confirms the demuxer's own flush path recovers the
+  original bytes exactly, the FEC self-consistency check applied one layer up from `fec_test.c`.
+
+**Why no on-device app yet**, unlike every phase before it: this phase has nothing real to exercise without
+a live stream key. Phases 3-5 each got an on-device app because there was something real to try (a
+broadcast to send, a console to connect to, a transport to drive) even before the layer above it existed;
+this phase's crypto seam only becomes meaningful once ECDH exists to feed it real keys, so an app today
+could only wrap the passthrough stub the host tests already exercise more thoroughly. Cross-compiled clean
+against the real ARM11 toolchain regardless (`-march=armv6k -mtune=mpcore -mfloat-abi=hard -mtp=soft
+-D__3DS__`, the same flags every other phase's `.3dsx` uses) — every file in `source/stream/` compiles
+warning-free and the whole module links against libctru — confirming this phase is 3DS-buildable, just not
+yet independently demonstrable on hardware.
+
+**Backlog, uncovered by this phase**: the ECDH key exchange and the `SESSION_REQUEST`/stream-key handshake
+that would let `stream_packet_crypto` run against a real console instead of the passthrough stub. Scoped out
+explicitly, same reasoning as the .NET side: hand-rolling P-256/P-521 point arithmetic in C on ARM11 is
+large and security-critical, and the pragmatic path is the `-DRC_CRYPTO_MBEDTLS` seam `rc_crypto.h` already
+anticipates (see the optional `3ds-mbedtls` package in section 2 above) — not yet decided, tracked here for
+whenever ECDH work starts.
+
 **Phase 6 — media.** MVD H.264 decode → Y2R → PICA200, Opus audio, input mapping.
 
 Pairing is not on this list: pair with desktop Ripcord and copy the record across. See the README.
