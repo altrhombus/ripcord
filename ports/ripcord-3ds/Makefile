@@ -33,9 +33,10 @@ OBJCOPY := $(PREFIX)objcopy
 
 CTRULIB := $(DEVKITPRO)/libctru
 
-TARGET   := ripcord-3ds
-LINKTEST := ripcord-3ds-linktest
-BUILD    := build
+TARGET    := ripcord-3ds
+LINKTEST  := ripcord-3ds-linktest
+DISCOVERY := ripcord-3ds-discovery
+BUILD     := build
 
 REPO_ROOT := ../..
 BUNDLE    := $(REPO_ROOT)/src/Ripcord.Protocol.Halyard/Data/halyard-v1-constants.json
@@ -71,32 +72,56 @@ LINKTEST_SOURCES := \
 	source/util/rc_log.c \
 	source/linktest/main.c
 
-.PHONY: all constants clean test linktest
+# Phase 3 (SETUP.md): LAN discovery. source/discovery has no dependency on source/crypto or
+# source/halyard either - see halyard_discovery.h for why the parser itself has no socket dependency in
+# turn, and source/discovery/main.c for where sockets and parsing meet.
+DISCOVERY_SOURCES := \
+	source/net/rc_soc.c \
+	source/util/rc_log.c \
+	source/discovery/halyard_discovery.c \
+	source/discovery/main.c
 
-all: $(TARGET).3dsx $(LINKTEST).3dsx
+.PHONY: all constants clean test linktest discovery
+
+all: $(TARGET).3dsx $(LINKTEST).3dsx $(DISCOVERY).3dsx
 
 linktest: $(LINKTEST).3dsx
+
+discovery: $(DISCOVERY).3dsx
 
 # The interop constants are generated from the single committed JSON bundle rather than duplicated into
 # this port. tools/gen_constants.py explains why that is a deliberate constraint and not just tidiness.
 constants: $(GENERATED)
 
-$(BUILD):
-	mkdir -p $(BUILD)
+# Each recipe creates its own output directory directly rather than depending on a separate directory
+# target: with three build products under build/, an order-only prerequisite on a shared "build" target
+# makes GNU Make's dependency graph see a cycle - confirmed the hard way in tests/Makefile once it grew a
+# second target - and it silently drops the mkdir side effect instead of erroring, so the link step fails
+# for a directory that was never created. `@mkdir -p $(@D)` has no such graph to get confused about.
 
-$(GENERATED): $(BUNDLE) tools/gen_constants.py | $(BUILD)
+$(GENERATED): $(BUNDLE) tools/gen_constants.py
+	@mkdir -p $(@D)
 	$(PYTHON) tools/gen_constants.py $(BUNDLE) $@
 
-$(BUILD)/$(TARGET).elf: $(SOURCES) $(GENERATED) | $(BUILD)
+$(BUILD)/$(TARGET).elf: $(SOURCES) $(GENERATED)
+	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $(SOURCES) $(GENERATED) $(LIBS)
 
 $(TARGET).3dsx: $(BUILD)/$(TARGET).elf
 	3dsxtool $< $@
 
-$(BUILD)/$(LINKTEST).elf: $(LINKTEST_SOURCES) | $(BUILD)
+$(BUILD)/$(LINKTEST).elf: $(LINKTEST_SOURCES)
+	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $(LINKTEST_SOURCES) $(LIBS)
 
 $(LINKTEST).3dsx: $(BUILD)/$(LINKTEST).elf
+	3dsxtool $< $@
+
+$(BUILD)/$(DISCOVERY).elf: $(DISCOVERY_SOURCES)
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $(DISCOVERY_SOURCES) $(LIBS)
+
+$(DISCOVERY).3dsx: $(BUILD)/$(DISCOVERY).elf
 	3dsxtool $< $@
 
 # Convenience passthrough. The host tests are the ones that actually verify the crypto, so make them easy
@@ -105,5 +130,5 @@ test:
 	$(MAKE) -C tests
 
 clean:
-	rm -rf $(BUILD) $(TARGET).3dsx $(LINKTEST).3dsx
+	rm -rf $(BUILD) $(TARGET).3dsx $(LINKTEST).3dsx $(DISCOVERY).3dsx
 	$(MAKE) -C tests clean
