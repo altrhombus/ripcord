@@ -157,14 +157,22 @@ both pass. This proves the control-plane crypto is correct in C, and everything 
 the ciphers on real hardware and prints how long a field encryption costs on an ARM11. Record that number
 — it is the input to every later decision about whether software AES can keep up with the A/V path.
 
-**Phase 2 — confirm the link properly.** The `ftpd` result is TCP, upload direction, idle CPU. Before
-committing to transport work, run the UDP receive test: 1426-byte payloads with sequence numbers and
-timestamps, ramped 1→12 Mbps, measuring goodput, loss, and p99 inter-arrival — then repeat it with the CPU
-busy. Two traps that will invalidate the results: call `osSetSpeedupEnable(true)` or you are measuring the
-wrong clock speed entirely, and give `socInit` a 0x100000 buffer aligned to 0x1000 or you will measure your
-own buffer and see the drops during keyframe bursts, where they look plausible.
+**Phase 2 — confirm the link properly. Code ready, not yet run on hardware.** The `ftpd` result is TCP,
+upload direction, idle CPU. Before committing to transport work, run the UDP receive test:
+`source/linktest/main.c` (build with `make -C ports/ripcord-3ds linktest`, or `make -C ports/ripcord-3ds`
+builds it alongside the crypto smoke test) brings up libctru's SOC service and listens for 1426-byte UDP
+payloads with sequence numbers, printing goodput, sequence-gap loss, and p99 inter-arrival jitter per
+stage. Pair it with `tools/udp_link_test_sender.py <3ds-ip>` on a host on the same network, which ramps
+1→12 Mbps in five-second stages by default. Press Y on the 3DS to toggle a simulated CPU load between
+stages and compare a stage's idle and busy numbers directly, which is the repeat-under-load half of this
+phase. Both of the traps below are handled already — `rc_soc_init()` (`source/net/rc_soc.c`) owns the
+0x1000-aligned 0x100000 SOC buffer, and `main()` calls `osSetSpeedupEnable(true)` before anything else —
+but they are noted again in the gotcha list below because the next piece of code that opens a raw socket
+outside this harness will not get them for free.
 
-**Phase 3 — sockets and discovery.** libctru's SOC service, then LAN discovery.
+**Phase 3 — sockets and discovery.** The SOC bring-up needed for Phase 2 is done
+(`source/net/rc_soc.h`/`.c`); what remains is LAN discovery — the UDP broadcast/response that finds a
+console on the local network, ahead of the `/sess/ctrl` exchange in Phase 4.
 
 **Phase 4 — `/sess/ctrl`.** The first exchange that talks to a real console, and the first end-to-end use
 of the crypto from Phase 0.
@@ -178,10 +186,13 @@ Pairing is not on this list: pair with desktop Ripcord and copy the record acros
 ## 6. Gotchas worth knowing before you hit them
 
 - **`osSetSpeedupEnable(true)`** — without it a New 3DS runs at the old clock. Any performance number taken
-  without it describes a machine you are not targeting.
+  without it describes a machine you are not targeting. Both `source/app/main.c` and
+  `source/linktest/main.c` call this first thing in `main()`; a new on-device entry point needs its own call.
 - **`socInit` buffer size** — 0x100000, aligned to 0x1000. Undersizing it produces drops that look exactly
-  like a Wi-Fi ceiling.
+  like a Wi-Fi ceiling. `rc_soc_init()` (`source/net/rc_soc.c`) owns this; use it rather than calling
+  `socInit` directly.
 - **No per-packet `printf`** — console output alone will cap throughput well below the link. Counters only.
+  `source/linktest/main.c` only prints once per stage, for exactly this reason.
 - **HEVC must be refused at negotiation** — the MVD decoder does H.264 only.
 - **The constants are generated, never copied.** `tools/gen_constants.py` reads the one committed bundle at
   build time and writes into `build/`, which is gitignored. If you ever find yourself checking a generated
