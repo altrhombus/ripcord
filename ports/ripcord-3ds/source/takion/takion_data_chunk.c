@@ -53,7 +53,7 @@ size_t takion_data_build_first(uint32_t seq_num, unsigned channel, int ending,
     return total;
 }
 
-size_t takion_data_build_continuation(uint32_t seq_num, int ending,
+size_t takion_data_build_continuation(uint32_t seq_num, unsigned channel, int ending,
                                       const uint8_t *payload, size_t payload_length,
                                       uint8_t *buf, size_t buf_size)
 {
@@ -67,8 +67,9 @@ size_t takion_data_build_continuation(uint32_t seq_num, int ending,
     buf[1] = ending ? (uint8_t)TAKION_DATA_FLAG_ENDING : 0;
     write_be16(buf + 2, (uint16_t)total);
     write_be32(buf + 4, seq_num);
-    buf[8] = 0;  /* unconfirmed meaning - see the header comment */
-    buf[9] = 0;
+    /* The channel goes here in a continuation too - see the header. Only the RESERVED region shrinks
+     * (3 bytes to 2), not the channel field. */
+    write_be16(buf + 8, (uint16_t)channel);
     buf[10] = 0;
     buf[11] = 0;
     if (payload_length > 0)
@@ -98,7 +99,8 @@ int takion_data_parse_first(const uint8_t *data, size_t length, uint32_t *out_se
 }
 
 int takion_data_parse_continuation(const uint8_t *data, size_t length, uint32_t *out_seq_num,
-                                   int *out_ending, const uint8_t **out_payload, size_t *out_payload_length)
+                                   unsigned *out_channel, int *out_ending,
+                                   const uint8_t **out_payload, size_t *out_payload_length)
 {
     uint16_t chunk_length;
 
@@ -110,6 +112,8 @@ int takion_data_parse_continuation(const uint8_t *data, size_t length, uint32_t 
         return 0;
 
     *out_seq_num = read_be32(data + 4);
+    if (out_channel != NULL)
+        *out_channel = read_be16(data + 8);
     *out_ending = (data[1] & TAKION_DATA_FLAG_ENDING) != 0;
     *out_payload = data + CHUNK_HEADER_SIZE + CONTINUATION_VALUE_PREFIX;
     *out_payload_length = (size_t)chunk_length - CHUNK_HEADER_SIZE - CONTINUATION_VALUE_PREFIX;
