@@ -107,14 +107,15 @@ dotnet run --project tools/Ripcord.ProtocolLab -- vectors
 #    expect: wrote ports/ripcord-3ds/tests/vectors/control-crypto.kat
 #            kdf=80 ctxkey=21 iv=13 mode=33 field=14  (ps4 tables present)
 
-# 2. The C compiles and agrees with it.
+# 2. The C compiles and agrees with it - both the crypto vectors and the discovery parser self-test.
 make -C ports/ripcord-3ds/tests
 #    expect: self-test: AES-128 matches FIPS-197 C.1
-#            171 passed, 0 failed
+#            171 passed, 0 failed, 0 skipped
+#            24 passed, 0 failed
 
-# 3. The cross-compile produces a homebrew binary.
+# 3. The cross-compile produces three homebrew binaries.
 make -C ports/ripcord-3ds
-#    expect: ripcord-3ds.3dsx
+#    expect: ripcord-3ds.3dsx, ripcord-3ds-linktest.3dsx, ripcord-3ds-discovery.3dsx
 
 # 4. Optional sanity on the managed suites.
 dotnet test tests/Ripcord.Protocol.Halyard.Tests/Ripcord.Protocol.Halyard.Tests.csproj
@@ -122,11 +123,18 @@ dotnet test tests/Ripcord.Protocol.Halyard.Tests/Ripcord.Protocol.Halyard.Tests.
 ```
 
 **Steps 2 and 3 are now a known-good configuration**, not just a starting point: both have been run against
-a real devkitPro install. Two fixes were needed to get there, in case a from-scratch checkout hits the same
-class of issue again — a naming collision between the SHA-256 context typedef and the one-shot hash
-function in `source/crypto/rc_crypto.h`/`rc_sha256.c` (illegal in C; the function is now `rc_sha256_hash`),
-and libctru's own headers needing `-isystem` rather than `-I` so this project's `-Werror -Wconversion
--Wsign-conversion` policy doesn't get applied to code it doesn't own.
+a real devkitPro install. Fixes made getting there, in case a from-scratch checkout hits the same class of
+issue again:
+- A naming collision between the SHA-256 context typedef and the one-shot hash function in
+  `source/crypto/rc_crypto.h`/`rc_sha256.c` (illegal in C; the function is now `rc_sha256_hash`).
+- libctru's own headers needing `-isystem` rather than `-I` so this project's `-Werror -Wconversion
+  -Wsign-conversion` policy doesn't get applied to code it doesn't own.
+- Adding a second host-side test target (`discovery_test`, alongside `vector_runner`) tripped a genuine
+  GNU Make gotcha: two build products both using an order-only prerequisite on the same directory target
+  makes Make see a dependency cycle, and it silently drops the directory-creation side effect rather than
+  erroring - the link step then fails with "No such file or directory" for a directory that was never
+  created. Both Makefiles now have each recipe run `@mkdir -p $(@D)` directly instead of depending on a
+  separate `build:` target, which has no such graph to get confused about.
 
 ## 4. The daily loop
 
@@ -202,9 +210,31 @@ owns the 0x1000-aligned 0x100000 SOC buffer, and `main()` calls `osSetSpeedupEna
 else — noted again in the gotcha list because the next piece of code that opens a raw socket outside this
 harness will not get them for free.
 
-**Phase 3 — sockets and discovery.** The SOC bring-up needed for Phase 2 is done
-(`source/net/rc_soc.h`/`.c`); what remains is LAN discovery — the UDP broadcast/response that finds a
-console on the local network, ahead of the `/sess/ctrl` exchange in Phase 4.
+**Phase 3 — sockets and discovery. Implemented, not yet run against a real console.** The SOC bring-up
+needed for Phase 2 carries over (`source/net/rc_soc.h`/`.c`); what this phase adds is the SRCH
+broadcast/response that finds a console on the local network, ahead of the `/sess/ctrl` exchange in
+Phase 4.
+
+`source/discovery/halyard_discovery.h`/`.c` re-derives the wire format from
+`docs/protocol/ps5-local-discovery.md` — a plain-ASCII, HTTP-status-line-*like* exchange, not real HTTP:
+a `SRCH * HTTP/1.1` CRLF-terminated broadcast on UDP 9302 (PS5) or 987 (PS4), answered `HTTP/1.1 200 Ok`
+(awake) or `HTTP/1.1 620 Server Standby` (resting) with `host-id`/`host-type`/`host-name`/`system-version`
+header-like fields. `host-request-port` is deliberately not parsed — the spec calls it "a red herring":
+the LAN wake exchange (not implemented on this port yet) goes to the discovery port itself, never to that
+advertised value, on both console families.
+
+The parser has no socket knowledge of its own (see its header for why), so `tests/discovery_test.c`
+checks it on the host, with no vector file and no .NET codegen step: the wire format is plain text
+transcribed straight from the spec's own request/response/standby examples, so the test's literal strings
+*are* the vectors. 24 cases pass — the spec's worked examples, a PS4-profile response, missing/defaulted
+fields, mixed-case header names, and a datagram truncated before its trailing blank line.
+
+`source/discovery/main.c` (build with `make -C ports/ripcord-3ds discovery`) is the on-device half:
+broadcasts SRCH for both console families and lists every distinct console — deduplicated by host-id —
+that answers within a four-second window, the same generous window the .NET pairing UI settled on since a
+resting console answers slowly. Builds and links clean, but has never been run against a real console —
+that is the next thing this phase needs, the same way Phases 1 and 2 each needed a first real run before
+their numbers meant anything.
 
 **Phase 4 — `/sess/ctrl`.** The first exchange that talks to a real console, and the first end-to-end use
 of the crypto from Phase 0.
@@ -218,8 +248,9 @@ Pairing is not on this list: pair with desktop Ripcord and copy the record acros
 ## 6. Gotchas worth knowing before you hit them
 
 - **`osSetSpeedupEnable(true)`** — without it a New 3DS runs at the old clock. Any performance number taken
-  without it describes a machine you are not targeting. Both `source/app/main.c` and
-  `source/linktest/main.c` call this first thing in `main()`; a new on-device entry point needs its own call.
+  without it describes a machine you are not targeting. `source/app/main.c`, `source/linktest/main.c` and
+  `source/discovery/main.c` all call this first thing in `main()`; a new on-device entry point needs its
+  own call.
 - **`socInit` buffer size** — 0x100000, aligned to 0x1000. Undersizing it produces drops that look exactly
   like a Wi-Fi ceiling. `rc_soc_init()` (`source/net/rc_soc.c`) owns this; use it rather than calling
   `socInit` directly.
@@ -229,3 +260,11 @@ Pairing is not on this list: pair with desktop Ripcord and copy the record acros
 - **The constants are generated, never copied.** `tools/gen_constants.py` reads the one committed bundle at
   build time and writes into `build/`, which is gitignored. If you ever find yourself checking a generated
   constants file in, stop and read that script's header.
+- **`SO_BROADCAST` before `sendto()` to a broadcast address.** Without it the OS refuses the send outright;
+  `source/discovery/main.c` sets it once at socket setup.
+- **`host-request-port` is a documented red herring.** The LAN wake exchange goes to the discovery port
+  itself (9302/987), never to this advertised value, on both console families - see
+  `docs/protocol/ps5-local-discovery.md`. `halyard_discovery.c` does not parse it at all, deliberately.
+- **A shared directory as an order-only prerequisite (`| $(BUILD)`) is not safe once two build products use
+  it.** GNU Make can see a dependency cycle and silently drop the `mkdir` side effect - see the note in
+  section 3. Every recipe in both Makefiles now runs `@mkdir -p $(@D)` itself instead.
