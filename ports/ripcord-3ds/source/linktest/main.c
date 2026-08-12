@@ -242,51 +242,81 @@ static int run_linktest(void)
     }
     fcntl(sock, F_SETFL, O_NONBLOCK);
 
-    while (aptMainLoop()) {
-        u32 kdown;
+    {
+        /* Best-effort: a bigger cushion between "the packet arrived" and "we called recvfrom" is cheap
+         * insurance now that draining no longer waits on vblank, but it was never the fix for that -
+         * the frame-quantised drain below was. */
+        int rcvbuf = 131072;
+        setsockopt(sock, SOL_SOCKET, SO_RCVBUF, &rcvbuf, sizeof(rcvbuf));
+    }
 
-        hidScanInput();
-        kdown = hidKeysDown();
-        if (kdown & KEY_START)
-            break;
-        if (kdown & KEY_Y)
-            cpu_busy = !cpu_busy;
+    /* Redraw the HUD roughly 10 times a second, on its own clock, INSTEAD of once per vblank in the same
+     * loop that drains the socket. Tying both to gspWaitForVBlank() was the bug the first run of this
+     * test exposed: at 60 Hz, packets bunch up for up to ~16.7 ms between drains, so most inter-arrival
+     * deltas were near-zero (same-frame packets) and the rest were exactly one or two frame periods -
+     * which is why every stage's p99 landed within a few hundred microseconds of 16,850 or 33,400 us
+     * regardless of target rate. That was this loop's own cadence, not the network's. */
+    {
+        uint64_t last_redraw_tick = svcGetSystemTick();
+        const double redraw_interval_us = 100000.0;
 
-        for (;;) {
-            ssize_t n = recvfrom(sock, buf, sizeof(buf), 0, NULL, NULL);
-            uint64_t seq;
-            unsigned pkt_stage;
+        while (aptMainLoop()) {
+            u32 kdown;
+            int drained_any = 0;
+            uint64_t now;
 
-            if (n < 0)
-                break; /* EAGAIN/EWOULDBLOCK - drained for this frame */
+            hidScanInput();
+            kdown = hidKeysDown();
+            if (kdown & KEY_START)
+                break;
+            if (kdown & KEY_Y)
+                cpu_busy = !cpu_busy;
 
-            if (!parse_header(buf, (size_t)n, &seq, &pkt_stage))
-                continue;
+            for (;;) {
+                ssize_t n = recvfrom(sock, buf, sizeof(buf), 0, NULL, NULL);
+                uint64_t seq;
+                unsigned pkt_stage;
 
-            if (pkt_stage == END_MARKER_STAGE) {
-                if (have_stage) {
-                    stage_finish_and_print(&stage);
-                    have_stage = 0;
+                if (n < 0)
+                    break; /* EAGAIN/EWOULDBLOCK - drained for now */
+                drained_any = 1;
+
+                if (!parse_header(buf, (size_t)n, &seq, &pkt_stage))
+                    continue;
+
+                if (pkt_stage == END_MARKER_STAGE) {
+                    if (have_stage) {
+                        stage_finish_and_print(&stage);
+                        have_stage = 0;
+                    }
+                    run_done = 1;
+                    continue;
                 }
-                run_done = 1;
-                continue;
+
+                if (!have_stage || stage.stage_mbps != pkt_stage) {
+                    if (have_stage)
+                        stage_finish_and_print(&stage);
+                    stage_begin(&stage, pkt_stage, cpu_busy);
+                    have_stage = 1;
+                }
+                stage_record(&stage, seq, (size_t)n);
             }
 
-            if (!have_stage || stage.stage_mbps != pkt_stage) {
-                if (have_stage)
-                    stage_finish_and_print(&stage);
-                stage_begin(&stage, pkt_stage, cpu_busy);
-                have_stage = 1;
+            if (cpu_busy)
+                spin_busy_work();
+
+            now = svcGetSystemTick();
+            if ((double)(now - last_redraw_tick) / s_ticks_per_us >= redraw_interval_us) {
+                gfxFlushBuffers();
+                gfxSwapBuffers();
+                gspWaitForVBlank();
+                last_redraw_tick = svcGetSystemTick();
+            } else if (!drained_any) {
+                /* Nothing to do this pass - yield briefly so idle polling does not peg the core at
+                 * 100%. Short enough to stay well above the packet rates this test cares about. */
+                svcSleepThread(200000);
             }
-            stage_record(&stage, seq, (size_t)n);
         }
-
-        if (cpu_busy)
-            spin_busy_work();
-
-        gfxFlushBuffers();
-        gfxSwapBuffers();
-        gspWaitForVBlank();
     }
 
     if (have_stage)

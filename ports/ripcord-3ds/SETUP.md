@@ -165,18 +165,34 @@ decrypt benchmark against Phase 2/6 traffic sizes is still owed before treating 
 path as settled, but a rough extrapolation from this number lands comfortably under the bottom rung's
 budget.
 
-**Phase 2 — confirm the link properly. Code ready, not yet run on hardware.** The `ftpd` result is TCP,
-upload direction, idle CPU. Before committing to transport work, run the UDP receive test:
-`source/linktest/main.c` (build with `make -C ports/ripcord-3ds linktest`, or `make -C ports/ripcord-3ds`
-builds it alongside the crypto smoke test) brings up libctru's SOC service and listens for 1426-byte UDP
+**Phase 2 — confirm the link properly. First run found a bug in the test, not (yet) the answer.** The
+`ftpd` result is TCP, upload direction, idle CPU. `source/linktest/main.c` (build with
+`make -C ports/ripcord-3ds linktest`) brings up libctru's SOC service and listens for 1426-byte UDP
 payloads with sequence numbers, printing goodput, sequence-gap loss, and p99 inter-arrival jitter per
-stage. Pair it with `tools/udp_link_test_sender.py <3ds-ip>` on a host on the same network, which ramps
-1→12 Mbps in five-second stages by default. Press Y on the 3DS to toggle a simulated CPU load between
-stages and compare a stage's idle and busy numbers directly, which is the repeat-under-load half of this
-phase. Both of the traps below are handled already — `rc_soc_init()` (`source/net/rc_soc.c`) owns the
-0x1000-aligned 0x100000 SOC buffer, and `main()` calls `osSetSpeedupEnable(true)` before anything else —
-but they are noted again in the gotcha list below because the next piece of code that opens a raw socket
-outside this harness will not get them for free.
+stage, paired with `tools/udp_link_test_sender.py <3ds-ip>` ramping 1→12 Mbps in five-second stages.
+
+The first real run (2026-08-12) surfaced a bug in the harness before it could answer the hardware
+question: p99 landed within a few hundred microseconds of either ~16,850 µs or ~33,400 µs on *every*
+stage, idle and busy alike — one and two vblank periods at 60 Hz. The receive drain lived in the same
+loop as `gspWaitForVBlank()`, so packets bunched up for up to ~16.7 ms between drains; most inter-arrival
+deltas were near-zero (same-frame packets) and the rest were exactly one or two frame periods, which is
+what the percentile was actually measuring — the loop's own cadence, not the network. Goodput also
+plateaued at ~2 Mbps regardless of target rate, with loss climbing to 82% at 12 Mbps and idle vs. busy
+runs nearly identical — the flat-ceiling-plus-scaling-loss shape and idle/busy insensitivity both point at
+a fixed local consumption limit (this same frame-quantised drain) rather than either genuine Wi-Fi
+capacity or CPU/AES contention.
+
+**Fixed**, not yet re-verified against hardware: the drain loop no longer waits on vblank at all — it
+polls continuously, redraws the HUD on its own ~10 Hz clock (`svcGetSystemTick()`-based, independent of
+the socket loop), and sleeps 200 µs only on a pass where nothing arrived, so idle polling doesn't peg the
+core. `SO_RCVBUF` is also bumped to 128 KiB as cheap insurance, though it was never the actual bug. Rerun
+before trusting any goodput/loss/jitter number from this phase — the previous numbers describe the test,
+not the hardware.
+
+Both of the *other* traps below are and were handled already — `rc_soc_init()` (`source/net/rc_soc.c`)
+owns the 0x1000-aligned 0x100000 SOC buffer, and `main()` calls `osSetSpeedupEnable(true)` before anything
+else — noted again in the gotcha list because the next piece of code that opens a raw socket outside this
+harness will not get them for free.
 
 **Phase 3 — sockets and discovery.** The SOC bring-up needed for Phase 2 is done
 (`source/net/rc_soc.h`/`.c`); what remains is LAN discovery — the UDP broadcast/response that finds a
