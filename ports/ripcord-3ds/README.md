@@ -86,6 +86,7 @@ source/takion/      Phase 5 Takion transport: handshake, DATA/SACK, reassembly +
                     (ripcord-3ds-takion.3dsx)
 source/stream/      stream framing, FEC, demux: A/V header, GF(2^8)/Cauchy Reed-Solomon, packet crypto
                     (GMAC + KDF), frame reassembly - no on-device app yet (see SETUP.md for why)
+source/media/       Phase 6d MVD hardware H.264 decode (rc_mvd.c) - New 3DS only, UNVERIFIED
 source/connect/     Phase 6b THE CONNECT FLOW: control -> senkusha -> Takion -> stream keys, the only
                     program that reaches the stream plane (ripcord-3ds-connect.3dsx)
 source/crypto/rc_ecdh.*          Phase 6a ECDH seam over mbedtls - the one primitive not implemented here

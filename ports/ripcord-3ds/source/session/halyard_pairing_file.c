@@ -17,6 +17,8 @@ static void pairing_record_defaults(halyard_pairing_record *rec)
     rec->os_major = 10;
     rec->os_minor = 0;
     rec->start_bitrate = 10000;
+    rec->stream_bitrate_kbps = 2000;
+    rec->probe_resolutions = 0;
     rec->streaming_type = 0;
 }
 
@@ -78,6 +80,10 @@ int halyard_pairing_file_load(const char *argv0, halyard_pairing_record *rec)
             rec->os_minor = atoi(value);
         } else if (strcmp(line, "bitrate") == 0) {
             rec->start_bitrate = atoi(value);
+        } else if (strcmp(line, "streambitrate") == 0) {
+            rec->stream_bitrate_kbps = atoi(value);
+        } else if (strcmp(line, "proberesolutions") == 0) {
+            rec->probe_resolutions = atoi(value);
         } else if (strcmp(line, "streamingtype") == 0) {
             rec->streaming_type = atoi(value);
         }

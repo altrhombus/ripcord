@@ -43,6 +43,14 @@ typedef struct {
  * logged nothing at all, because the function never started. Use file scope, `static`, or the heap.
  * The 3DS build passes -Wframe-larger-than=8192 so this fails at compile time now rather than on device.
  */
+/*
+ * Seals one outgoing packet in place - writes its key position and GMAC tag. Supplied by the caller
+ * rather than implemented here on purpose: this layer is pure transport and knows nothing about the
+ * stream cipher (that is source/stream's business, and Phase 5 was built deliberately without it). The
+ * callback owns the key-position counter, because control DATA and SACKs share one advancing sequence.
+ */
+typedef void (*takion_seal_fn)(void *ctx, uint8_t *packet, size_t length);
+
 typedef struct {
     int sock;                      /* caller-owned, non-blocking, not connect()ed (we use sendto/recvfrom) */
     struct sockaddr_in peer;
@@ -53,6 +61,8 @@ typedef struct {
     uint32_t last_acked_tsn;       /* the cumulative_tsn_ack we most recently sent */
     int have_received_any;         /* expected_recv_tsn/last_acked_tsn are meaningless until this is set */
     int established;
+    takion_seal_fn seal;           /* NULL until the stream keys exist - see enable_sealing below */
+    void *seal_ctx;
     takion_reassembler reassembler;
     takion_unacked_chunk unacked[TAKION_MAX_UNACKED];
 } takion_reliable_channel;
@@ -82,6 +92,17 @@ typedef void (*takion_tick_fn)(void *ctx);
 int takion_channel_connect_ticked(takion_reliable_channel *ch, int sock, struct sockaddr_in peer,
                                   unsigned max_attempts, unsigned per_attempt_timeout_ms,
                                   takion_tick_fn tick, void *tick_ctx);
+
+/*
+ * Switches on GMAC sealing for everything sent from now on. Call immediately after the stream keys are
+ * derived and BEFORE sending anything else.
+ *
+ * SACKs are sealed too, and forgetting that is a specific, well-documented failure: the console never
+ * sees the acknowledgement of its STREAM_INFO and drops the session reporting "streaminfoack fail". A
+ * retransmitted DATA chunk keeps the tag it was sealed with, because the stored packet is resent
+ * verbatim - its key position was reserved once, when it was built.
+ */
+void takion_channel_enable_sealing(takion_reliable_channel *ch, takion_seal_fn seal, void *seal_ctx);
 
 /*
  * Sends `payload` reliably on `channel`, fragmenting at TAKION_MAX_PAYLOAD_PER_CHUNK if needed. Returns

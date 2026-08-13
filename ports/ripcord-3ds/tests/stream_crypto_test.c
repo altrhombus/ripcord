@@ -92,7 +92,12 @@ static void run_gmac(char **fields, int count, int line_number)
     aad_len = (strcmp(fields[3], "-") == 0) ? 0 : parse_hex(fields[3], aad, sizeof(aad));
     if (aad_len < 0) { g_failed++; return; }
 
-    rc_gmac(key, iv, sizeof(iv), aad, (size_t)aad_len, tag);
+    /* Static: rc_gmac_key carries ~4.6 KB of GHASH tables and has no business on a stack frame. */
+    {
+        static rc_gmac_key gk;
+        rc_gmac_key_init(&gk, key);
+        rc_gmac_with_key(&gk, iv, sizeof(iv), aad, (size_t)aad_len, tag);
+    }
     check_hex_equal("gmac", line_number, "tag", tag, sizeof(tag), fields[4]);
 }
 
