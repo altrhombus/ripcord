@@ -2,6 +2,7 @@
 #include "../crypto/rc_crypto.h"
 #include "../crypto/rc_gcm.h"
 
+#include <stdint.h>
 #include <string.h>
 
 static uint64_t read_le64(const uint8_t *p)
@@ -153,7 +154,20 @@ int stream_packet_crypto_compute_tag(const stream_packet_crypto *ctx, uint64_t k
     stream_packet_crypto_gmac_key(ctx, key_pos, gmac_key);
     stream_packet_crypto_gmac_nonce(ctx, key_pos, nonce);
 
-    rc_gmac(gmac_key, nonce, sizeof(nonce), aad, packet_length, full_tag);
+    /*
+     * Build the GHASH tables only when the rotation window has actually changed. The const-cast is
+     * deliberate and narrow: `prepared` is a cache of a value derived entirely from the context's own
+     * key material, so refreshing it does not change what this function computes - only how long it
+     * takes. Keeping the public signature const matters more than the purity here, because every caller
+     * treats the crypto context as read-only and should continue to.
+     */
+    {
+        stream_packet_crypto *mutable_ctx = (stream_packet_crypto *)(uintptr_t)ctx;
+
+        if (!rc_gmac_key_matches(&mutable_ctx->prepared, gmac_key))
+            rc_gmac_key_init(&mutable_ctx->prepared, gmac_key);
+        rc_gmac_with_key(&mutable_ctx->prepared, nonce, sizeof(nonce), aad, packet_length, full_tag);
+    }
     memcpy(out_tag, full_tag, STREAM_PACKET_CRYPTO_TAG_LENGTH);
     return 1;
 }

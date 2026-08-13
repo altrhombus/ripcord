@@ -647,6 +647,268 @@ The finding about counter 0 has been written back into `HalyardStreamingSession.
 this port existing to test the spec is the whole argument for it, and this is the first time it has paid
 that back as a confirmation rather than a defect.
 
+**Phase 6d — MVD decode. Two hardware bugs found and fixed; no picture yet.** Three findings worth
+keeping, because two of them were things this port *already knew* and repeated anyway:
+
+1. **MVD's input buffer needs `linearMemAlign(size, 0x40)`, not `linearAlloc`.** With plain linearAlloc
+   every single NAL unit was rejected - 1105 fed, 1105 errors. *All* units failing is the signature of
+   the block refusing the buffer; a bad bitstream fails only some.
+2. **The render target has to be a 16-bit screen the console does not own.** After the alignment fix the
+   symptom became 0 pictures with **zero** process errors and ~15 render errors per session - the
+   bitstream decoding perfectly and having nowhere to go. `gfxInitDefault()` gives the top screen 24-bit
+   BGR8 while MVD emits BGR565, and `consoleInit(GFX_TOP)` had handed that framebuffer to printf.
+3. **The receive loop drained one packet per 2 ms tick.** This is the same mistake `source/linktest`
+   made on its own first hardware run, where a vblank-coupled drain produced a fake ~2 Mbps ceiling -
+   repeated here, in a different file, three phases later. A keyframe is a burst of a dozen units, so a
+   one-packet drain guarantees overflow, and unit loss ran at ~48%.
+
+**The diagnosis of (3) is worth recording as a method note.** Loss rose sharply the moment IDR requests
+were added, and the obvious story - keyframes are large, the link is saturated, this is
+loss-amplification - was wrong. A decode-on/decode-off A/B produced *identical* loss (1799 vs 1743
+units), which ruled out both CPU contention and the amplification story in one measurement and pointed
+at the drain. The toggle existed only because the earlier guess (that decode cost would starve the
+socket) had been wrong too; keeping it paid for itself immediately.
+
+**Also confirmed in these runs:** IDR requests do work (keyframes went from 1 per session to 15-18), and
+the A/V GMAC continues to verify on essentially every packet across ~3,700 per run.
+
+## Architectural research still owed
+
+Written up after the Phase 6d decode work, because several of these are questions the port has been
+answering by accident rather than on purpose. Ordered by how much they constrain the design.
+
+**1. Per-packet A/V crypto cost on the ARM11 — owed since Phase 1, and now measurable.** Phase 1
+measured the control plane at ~25 µs per field and said explicitly that "a real per-packet decrypt
+benchmark against Phase 2/6 traffic sizes is still owed before treating software AES on the A/V path as
+settled". That benchmark still does not exist, and there is now real traffic to run it against: roughly
+4,300 video and 5,900 audio packets per 60-second window at ~1,100 bytes each. Every one costs an
+AES-128-CTR pass plus a GMAC over the whole packet. **This is the number that decides whether software
+AES can carry a higher bitrate at all**, and without it every discussion of raising resolution above the
+bottom rung is guesswork.
+
+*Already found while writing this up:* the connect probe was verifying GMAC **twice per packet** - once
+directly and once inside `stream_demux_ingest`'s crypto seam - about 10,000 redundant whole-packet GMACs
+a minute. Now sampled at 1-in-16, which keeps the corruption-vs-crypto-fault diagnostic and returns the
+rest of the time to the decoder.
+
+**1 and 2 - ANSWERED on hardware, 2026-08-12.** Both were measured in one 60-second window.
+
+**Cores: there are four, and that changes the design.** The probe tries `threadCreate` on each and
+reports what took:
+
+```
+core 0: available      core 2: available
+core 1: no             core 3: available
+core 1: available after APT_SetAppCpuTimeLimit(30%)
+```
+
+Better than libctru's documentation suggests - cores 2 and 3 need the BASE memory region, which the
+Homebrew Launcher's host application evidently has. So decode, packet crypto and the frame scale can all
+be moved off the network thread. **This is now a decision to make rather than a constraint to work
+around**, and it carries the cost already recorded in this tree: `fec_reed_solomon_decode` keeps 12.6 KB
+of scratch `static` *because* this port has no threads, and would need caller-supplied scratch.
+
+**Cost per stage, and it is worse than expected:**
+
+| stage | calls/60 s | us/call | % of one core |
+|---|---|---|---|
+| demux + decrypt (per packet) | 10,310 | **2,183** | 38% |
+| ARM11 scale (per frame) | 335 | **12,691** | 7% *as measured* |
+| MVD feed (per NAL) | 1,611 | 1,988 | 5% |
+| GMAC verify (per packet) | 645 | **1,264** | 1.4% *sampled 1-in-16* |
+| MVD render (per frame) | 1,027 | 197 | 0.3% |
+
+Two of those figures are measured under conditions that will not hold:
+
+- **The scale ran on only ~1/4 of frames**, because the geometry sweep spends most of its time on
+  candidates that skip the blit. Resampling is permanent (see item 4), so every frame will pay it:
+  1,743 frames x 12.7 ms = **37% of a core**, not 7%.
+- **GMAC was sampled at 1-in-16.** Unsampled that is 10,310 x 1,264 us = **22% of a core** - though the
+  demux figure already contains a second, unsampled GMAC of its own.
+
+**Realistic total: ~80% of one core at 640x360, before audio, input or any UI.** Single-core is not
+viable, which is the answer to the threading question: it is required, not optional.
+
+### Optimisation results, measured on hardware
+
+Both changes beat their host-benchmark projections, because the host has hardware the ARM11 lacks:
+
+| stage | before | after | change |
+|---|---|---|---|
+| GMAC verify | 1,264 us | **129 us** | **9.8x** |
+| demux + decrypt | 2,183 us | **1,070 us** | 2.0x |
+| ARM11 scale | 12,691 us | **4,687 us** | 2.7x |
+| MVD feed | 1,988 us | 2,151 us | - |
+| MVD render | 197 us | 223 us | - |
+
+GHASH was predicted at 5.4x from a host benchmark and delivered **9.8x**, because the bit-serial loop's
+cost on ARM11 was dominated by the 16-byte shift the table removes entirely. The scale was predicted at
+1.6x and delivered 2.7x, for the reason the prediction flagged: x86 has a divider and the ARM11 does not,
+so removing 96,000 `__aeabi_idiv` calls per frame is worth more here than the host could show.
+
+**Whole-pipeline budget, projecting the scale onto every frame and GMAC unsampled: ~80% of one core ->
+~41%.** With four cores available (item 2) that is comfortable rather than marginal, and it leaves real
+headroom for audio.
+
+**And the packet loss confirms the contention theory.** Unit loss fell from 1-3% to **0.7%** (29 of
+4,155) with no network change whatsoever - only CPU work removed. Phase 2 measured that CPU contention on
+this core costs UDP throughput; this is the same effect running in reverse, and it is the clearest
+evidence yet that the receive loop and the frame pipeline genuinely compete.
+
+**Memory:** the MVD work buffer sized itself at **5,868 KB** against the browser's 9,217 KB default -
+3.3 MB returned. The whole media module now reports 6,584 KB.
+
+**GHASH: DONE, 2026-08-12.** `gf128_mul` is now byte-indexed rather than bit-serial - a 256-entry table
+of `b * H` plus a 256-entry reduction table, built once per GMAC rotation window (~650 packets) and
+cached in `stream_packet_crypto` via a prepared `rc_gmac_key`. Operation count per multiply fell from
+~3,000 byte-operations to ~544, and a like-for-like host benchmark of the same work measured
+**57.6 us -> 10.7 us, a 5.4x speedup** - which projects the hardware figure from 1,264 us to roughly
+235 us per packet, and the demux stage (which contains a GMAC of its own) from 2,183 us to well under
+1,000.
+
+Two details worth keeping:
+- The reduction table stores only two bytes per entry, because multiplying a block whose only content is
+  byte 15 by x^8 leaves a result that is nonzero solely in bytes 0 and 1. That was **verified
+  exhaustively over all 256 entries** in a host prototype before being relied on, not assumed from the
+  algebra.
+- The whole change was validated by the 65 existing cross-language GMAC vectors, which pass unchanged -
+  the tags are byte-identical to .NET's `AesGcmCore`. A table-driven field multiply is exactly the kind
+  of optimisation that can be subtly wrong on a fraction of inputs, and having known-answer vectors
+  already in place is what made it a safe change rather than a risky one.
+
+**The original diagnosis, for the record.** 1,264 us to authenticate a ~1,100-byte packet is very
+slow, and the reason is in `rc_gcm.c`: `gf128_mul` is bit-serial - 128 iterations, each doing a 16-byte
+shift and a conditional 16-byte XOR, about 3,000 byte-operations per multiply, and a 1,100-byte packet
+needs ~69 of them. A nibble-indexed table (the standard approach: precompute n*H for each 4-bit value and
+process four bits at a time) is roughly 6x fewer operations. That would take GMAC from ~1,264 us to
+~210 us and the demux stage - which contains a GMAC of its own - from 2,183 us to under 1,000, moving the
+whole budget from ~80% of a core to nearer 50% **before** any threading work. It is also the safest
+change available, because `tests/stream_crypto_test.c` already checks GMAC against 65 cross-language
+known-answer vectors, so a wrong optimisation fails loudly on the host.
+
+**The scale stage: partly fixed, and the first guess was wrong.** 96,000 pixels at ~132 ns each is far
+too slow for a copy, and the cache-stride theory above turned out to be at most half the story. The
+actual inner loop computed the source row as `((y - y_offset) * src_h) / draw_h` **per pixel**, and
+**the ARM11 has no hardware divider** - that expression compiles to a `bl __aeabi_idiv` function call,
+executed 96,000 times a frame, plus a multiply and a branch.
+
+Both maps are now precomputed once (400 + 240 entries, rebuilt only if the geometry changes), with
+`map_y` holding the source row's *offset* rather than its index so the multiply disappears too, and the
+letterbox bands written as their own runs instead of tested for inside the pixel loop. A host benchmark
+of the same two loops measures 1.6x - and understates the ARM11 case badly, because x86 has a divider
+and the 3DS does not.
+
+**What is left is memory traffic, and it should be measured before it is optimised.** Reads walk a
+column of the source with a 1,280-byte stride, so nearly every pixel touches a fresh cache line;
+reordering the loops only moves that cost to the writes, since one side or the other must be strided
+when converting a row-major frame into a column-major framebuffer. Tiling would genuinely reduce both,
+and the PICA200 would remove the cost entirely - but the next hardware run will say how much of the
+12.7 ms was division and how much is memory, and that decides whether either is worth doing.
+
+**2. Which cores this port may actually use.** Everything runs on one thread today, and the receive loop
+has already been the direct cause of one large loss regression. libctru's `threadCreate` takes a core id
+and documents the constraints: processor 0 is always available, processor 1 needs
+`APT_SetAppCpuTimeLimit`, **processor 2 is New3DS-only and needs exheader kernel flag 0x2000** - which
+for a `.3dsx` means whatever the Homebrew Launcher's host application carries, so it has to be probed
+rather than assumed. A ten-line experiment (try to create a thread on cores 1 and 2, report what
+succeeds) settles what the threading design is even allowed to be.
+
+**This has a known cost, already documented elsewhere in the tree:** `fec_reed_solomon_decode` keeps 12.6
+KB of scratch matrices `static` specifically because this port has no threads. Introducing one means that
+function needs caller-supplied scratch. Deciding the threading model *before* the media pipeline grows is
+much cheaper than retrofitting it.
+
+**3. Memory budget - PARTLY ADDRESSED.** MVD's work buffer no longer takes the browser's 9.0 MB default:
+`mvdstdCalculateBufferSize` now sizes it for this stream (H.264 level 3.1 at the negotiated resolution),
+falling back to the default if the calculation fails or returns something implausible - a decoder that
+will not start is worse than one that is generous. The module reports its own total at startup, so the
+figure stops being something anyone has to reconstruct from three headers.
+
+Still fixed and unexamined: `stream_demux` at 513 KB, two Takion channels at ~50 KB each, and now ~9.6 KB
+of GHASH tables (two prepared keys at ~4.8 KB). None of those is worth attacking until the work buffer
+figure comes back from hardware, since it dominates everything else combined.
+
+**5. Frame pacing - DONE.** Frames were being swapped the instant a decode completed, at whatever rate
+they happened to arrive. That both tears and wastes work: swapping more often than the display refreshes
+is effort thrown away on a port already measured at ~80% of a core. Presentation is now rate-limited to
+the 60 Hz interval, and the run reports frames presented per second alongside frames decoded, so the two
+can be compared.
+
+**`gspWaitForVBlank` is deliberately NOT used.** It would block the receive loop for up to 16.7 ms, and a
+stalled drain is precisely what caused this port's largest packet-loss regression (see the Phase 6d note
+on the one-packet-per-tick drain). The swap is throttled while the loop keeps draining; an early frame
+waits in the back buffer rather than stalling the network.
+
+**6. Audio - scoped, not started.** The pieces are all present and the shape is clear:
+
+- **`3ds-libopus` is installed** (`dkp-pacman` package `3ds-libopus`, 1.4-1), so no new dependency
+  argument is needed - and unlike mbedtls it carries no seam question, since Opus is a pure decoder with
+  no platform entanglement.
+- **NDSP is the output path** (`ndspInit`, `ndspChnSetFormat`, `NDSP_FORMAT_STEREO_PCM16`), which is
+  what 48 kHz stereo wants.
+- **The demuxer already delivers the frames.** `audio_frame_ready` fires ~1,900-6,000 times per window
+  in real runs, with the redundant loss-concealment units already stripped down to the one real Opus
+  frame per packet. The 14-byte audio header from STREAM_INFO is the decoder configuration.
+
+So the work is: decode Opus frames to PCM16 and feed NDSP, with a small ring buffer to absorb jitter.
+**The open question is cost, and it should be measured before the threading model is settled** - Opus
+at 48 kHz on an ARM11 lands on the same core budget as the packet crypto and the frame scale, and item 2
+established there are four cores to spread across. Deciding audio's home at the same time as video's is
+much cheaper than moving it later.
+
+**3. The memory budget, which is larger than it looks.** MVD's work buffer alone is
+`MVD_DEFAULT_WORKBUF_SIZE` = **9.0 MB**. Add `stream_demux` at 513 KB, two Takion channels at ~50 KB
+each, the MVD input staging at 256 KB and its output buffer at ~460 KB, and the port is holding ~10.3 MB
+of fixed allocations before audio, input or any UI exists. `mvdstdCalculateBufferSize` can compute a
+smaller work buffer from the actual level and reference-frame count instead of using the browser's
+default - worth doing once the decoder works, and worth knowing about now.
+
+**4. Which resolutions the console will negotiate - ANSWERED on hardware, 2026-08-12.** Six candidates,
+one full connect each (`proberesolutions=1` in pairing.txt):
+
+| Asked | Result |
+|---|---|
+| 640x360 | accepted as asked |
+| 400x240 | refused |
+| 320x180 | refused - encoder error |
+| 480x270 | refused - encoder error |
+| 512x288 | refused - encoder error |
+| 960x540 | **clamped to 640x360** |
+
+**The console says why, and it is a capability limit rather than a policy one.** Every non-ladder
+resolution produced the same DISCONNECT reason:
+
+```
+Nagare did not init! AvCap failed to initialize video: [InitResult:-5]
+```
+
+That is the console's own video capture/encoder failing to initialise, so this is not something a
+different launch spec can talk it out of. Note also that 400x240 and 512x288 are both perfectly
+macroblock-aligned and still refused - alignment was never the criterion, the standard ladder is.
+
+**Consequence, and it is a permanent one: scaling on this side is mandatory.** MVD will not scale
+(established in Phase 6d) and the console will not send anything the screen can display directly. So
+every frame must be resampled by the ARM11 or the PICA200 between decode and display, forever. That
+moves a per-frame cost from "possible optimisation" into the fixed budget, which is exactly what makes
+items (1) and (2) below load-bearing rather than nice-to-have.
+
+**One thread worth pulling:** 960x540 came back as 640x360 rather than refused, and the launch spec was
+asking for only 2000 kbps at the time. The choice may be bandwidth-driven rather than purely
+request-driven, in which case a higher `streambitrate` might unlock a higher rung later - relevant for
+quality, not for the scaling question, which is settled either way. One probe run with
+`streambitrate=8000` would answer it.
+
+*(The probe also showed its own flakiness: back-to-back sessions produced `/sess/init -> 403` and
+`ECONNRESET` when the console had not finished tearing the previous one down. The inter-session gap is
+now 5 s rather than 2 s.)*
+
+**5. Frame pacing.** Frames are presented the moment a decode completes, with no relationship to vblank.
+Whether that tears, and whether the decoder should present on the display's clock instead, is unmeasured.
+
+**6. Audio, which is entirely unstarted.** Opus at 48 kHz stereo on an ARM11, with `3ds-libopus` not
+installed by default. Its decode cost lands on the same core budget as (1) and (2) and should be measured
+before the threading model is fixed, not after.
+
 **Phase 6 — media.** MVD H.264 decode → Y2R → PICA200, Opus audio, input mapping.
 
 Pairing is not on this list: pair with desktop Ripcord and copy the record across. See the README.

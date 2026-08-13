@@ -27,13 +27,48 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "rc_crypto.h"
+
 /*
- * Computes the 16-byte GMAC tag over `aad` under `key`/`iv` (empty message - this protocol never uses
- * GCM's own encrypt path, see the file header). `iv_len` may be any length except 12 - a 12-byte IV
- * needs GCM's other J0 shortcut, not implemented here since this protocol's IV is always 16 bytes.
- * Callers needing the protocol's 4-byte truncated tag take the first 4 bytes of `tag`.
+ * A GMAC key with its GHASH multiplication tables built.
+ *
+ * WHY THIS EXISTS RATHER THAN A KEY-AND-GO CALL. Measured on hardware, a GMAC over a ~1,100-byte packet
+ * cost **1,264 us** - about 22% of one ARM11 core across a real stream, with a second, unsampled GMAC
+ * inside the demux on top. The cause was the multiply: bit-serial GF(2^128), 128 iterations each doing a
+ * 16-byte shift and a conditional 16-byte XOR, roughly 3,000 byte-operations per multiply and ~69
+ * multiplies per packet.
+ *
+ * A byte-indexed table replaces that with one lookup and two XORs per input byte, about 5x fewer
+ * operations - but the tables cost ~4.6 KB to build, so rebuilding them per call would be far worse than
+ * the problem. Hence a prepared key: this protocol rotates its GMAC key roughly every 650 packets
+ * (45,000 key-position units), so one build serves hundreds of packets.
+ *
+ * DO NOT put one on the stack in the 3DS build - it is over the 8 KB frame limit the build enforces, and
+ * for good reason (see takion_reliable_channel.h for what an oversized local does on this hardware).
  */
-void rc_gmac(const uint8_t key[16], const uint8_t *iv, size_t iv_len,
-            const uint8_t *aad, size_t aad_len, uint8_t tag[16]);
+typedef struct {
+    rc_aes128 aes;
+    uint8_t h[16];
+    uint8_t table[256][16];   /* table[b] = b * H, with b's MSB as the x^0 coefficient */
+    uint16_t reduce[256];     /* the reduction produced by shifting byte 15 out, bytes 0..1 only */
+    uint8_t key[16];
+    int ready;
+} rc_gmac_key;
+
+/* Derives H from `key` and builds the tables. Cheap enough to call whenever the key rotates, and far too
+ * expensive to call per packet. */
+void rc_gmac_key_init(rc_gmac_key *gk, const uint8_t key[16]);
+
+/* 1 if `gk` is already prepared for exactly this key, so a caller can skip a rebuild. */
+int rc_gmac_key_matches(const rc_gmac_key *gk, const uint8_t key[16]);
+
+/*
+ * Computes the 16-byte GMAC tag over `aad` under a prepared key and `iv` (empty message - this protocol
+ * never uses GCM's own encrypt path, see the file header). `iv_len` may be any length except 12 - a
+ * 12-byte IV needs GCM's other J0 shortcut, not implemented here since this protocol's IV is always 16
+ * bytes. Callers needing the protocol's 4-byte truncated tag take the first 4 bytes of `tag`.
+ */
+void rc_gmac_with_key(const rc_gmac_key *gk, const uint8_t *iv, size_t iv_len,
+                      const uint8_t *aad, size_t aad_len, uint8_t tag[16]);
 
 #endif /* RC_GCM_H */

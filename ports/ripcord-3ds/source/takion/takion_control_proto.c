@@ -11,6 +11,16 @@
 #define F_MSG_TYPE            1u
 #define F_MSG_SESSION_REQUEST 2u
 #define F_MSG_SESSION_REPLY   3u
+#define F_MSG_STREAM_INFO     15u
+#define F_MSG_DISCONNECT      10u
+#define F_DISC_REASON          1u
+
+#define F_SI_RESOLUTION   1u
+#define F_SI_AUDIO_HEADER 2u
+
+#define F_RES_WIDTH        1u
+#define F_RES_HEIGHT       2u
+#define F_RES_VIDEO_HEADER 3u
 
 #define F_REQ_CLIENT_VERSION 1u
 #define F_REQ_SESSION_KEY    2u
@@ -307,6 +317,192 @@ int takion_control_peek_type(const uint8_t *data, size_t length, uint32_t *out_t
         if (!skip_value(data, length, &offset, wire_type)) {
             return 0;
         }
+    }
+    return 0;
+}
+
+/* ResolutionPayload{width=1, height=2, videoHeader=3}. */
+static int parse_resolution(const uint8_t *data, size_t length, takion_stream_info *out)
+{
+    size_t offset = 0;
+
+    while (offset < length) {
+        uint64_t tag;
+        uint32_t field;
+        unsigned wire_type;
+        uint64_t value;
+
+        if (!varint_read(data, length, &offset, &tag))
+            return 0;
+        field = (uint32_t)(tag >> 3);
+        wire_type = (unsigned)(tag & 0x07u);
+        if (field == 0u)
+            return 0;
+
+        if (field == F_RES_WIDTH && wire_type == WT_VARINT) {
+            if (!varint_read(data, length, &offset, &value))
+                return 0;
+            out->width = (uint32_t)value;
+        } else if (field == F_RES_HEIGHT && wire_type == WT_VARINT) {
+            if (!varint_read(data, length, &offset, &value))
+                return 0;
+            out->height = (uint32_t)value;
+        } else if (field == F_RES_VIDEO_HEADER && wire_type == WT_LEN) {
+            if (!read_bytes(data, length, &offset, &out->video_header, &out->video_header_length))
+                return 0;
+        } else if (!skip_value(data, length, &offset, wire_type)) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+/* StreamInfoPayload{resolution=1 (repeated), audioHeader=2, ...}. Only the first resolution is taken. */
+static int parse_stream_info_payload(const uint8_t *data, size_t length, takion_stream_info *out)
+{
+    size_t offset = 0;
+
+    while (offset < length) {
+        uint64_t tag;
+        uint32_t field;
+        unsigned wire_type;
+
+        if (!varint_read(data, length, &offset, &tag))
+            return 0;
+        field = (uint32_t)(tag >> 3);
+        wire_type = (unsigned)(tag & 0x07u);
+        if (field == 0u)
+            return 0;
+
+        if (field == F_SI_RESOLUTION && wire_type == WT_LEN) {
+            const uint8_t *nested;
+            size_t nested_length;
+
+            if (!read_bytes(data, length, &offset, &nested, &nested_length))
+                return 0;
+            /* Repeated: later entries are alternative rungs of the ladder we offered. The first is the
+             * one in force, and taking only it matches what the .NET side reads. */
+            if (!out->has_resolution) {
+                if (!parse_resolution(nested, nested_length, out))
+                    return 0;
+                out->has_resolution = 1;
+            }
+        } else if (field == F_SI_AUDIO_HEADER && wire_type == WT_LEN) {
+            if (!read_bytes(data, length, &offset, &out->audio_header, &out->audio_header_length))
+                return 0;
+        } else if (!skip_value(data, length, &offset, wire_type)) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+int takion_control_parse_stream_info(const uint8_t *data, size_t length, takion_stream_info *out_info)
+{
+    size_t offset = 0;
+    int have_type = 0;
+    const uint8_t *payload = NULL;
+    size_t payload_length = 0;
+
+    if (data == NULL || out_info == NULL)
+        return 0;
+    memset(out_info, 0, sizeof(*out_info));
+
+    while (offset < length) {
+        uint64_t tag;
+        uint32_t field;
+        unsigned wire_type;
+
+        if (!varint_read(data, length, &offset, &tag))
+            return 0;
+        field = (uint32_t)(tag >> 3);
+        wire_type = (unsigned)(tag & 0x07u);
+        if (field == 0u)
+            return 0;
+
+        if (field == F_MSG_TYPE && wire_type == WT_VARINT) {
+            uint64_t value;
+            if (!varint_read(data, length, &offset, &value))
+                return 0;
+            if (value != TAKION_CONTROL_STREAM_INFO)
+                return 0;
+            have_type = 1;
+            continue;
+        }
+        if (field == F_MSG_STREAM_INFO && wire_type == WT_LEN) {
+            if (!read_bytes(data, length, &offset, &payload, &payload_length))
+                return 0;
+            continue;
+        }
+        if (!skip_value(data, length, &offset, wire_type))
+            return 0;
+    }
+
+    if (!have_type || payload == NULL)
+        return 0;
+    return parse_stream_info_payload(payload, payload_length, out_info);
+}
+
+int takion_control_parse_disconnect(const uint8_t *data, size_t length,
+                                    const char **out_reason, size_t *out_reason_length)
+{
+    size_t offset = 0;
+    const uint8_t *payload = NULL;
+    size_t payload_length = 0;
+
+    if (data == NULL || out_reason == NULL || out_reason_length == NULL)
+        return 0;
+    *out_reason = NULL;
+    *out_reason_length = 0;
+
+    while (offset < length) {
+        uint64_t tag;
+        uint32_t field;
+        unsigned wire_type;
+
+        if (!varint_read(data, length, &offset, &tag))
+            return 0;
+        field = (uint32_t)(tag >> 3);
+        wire_type = (unsigned)(tag & 0x07u);
+        if (field == 0u)
+            return 0;
+
+        if (field == F_MSG_DISCONNECT && wire_type == WT_LEN) {
+            if (!read_bytes(data, length, &offset, &payload, &payload_length))
+                return 0;
+            continue;
+        }
+        if (!skip_value(data, length, &offset, wire_type))
+            return 0;
+    }
+
+    if (payload == NULL)
+        return 0;
+
+    offset = 0;
+    while (offset < payload_length) {
+        uint64_t tag;
+        uint32_t field;
+        unsigned wire_type;
+
+        if (!varint_read(payload, payload_length, &offset, &tag))
+            return 0;
+        field = (uint32_t)(tag >> 3);
+        wire_type = (unsigned)(tag & 0x07u);
+        if (field == 0u)
+            return 0;
+
+        if (field == F_DISC_REASON && wire_type == WT_LEN) {
+            const uint8_t *bytes;
+            size_t bytes_length;
+            if (!read_bytes(payload, payload_length, &offset, &bytes, &bytes_length))
+                return 0;
+            *out_reason = (const char *)bytes;
+            *out_reason_length = bytes_length;
+            return 1;
+        }
+        if (!skip_value(payload, payload_length, &offset, wire_type))
+            return 0;
     }
     return 0;
 }

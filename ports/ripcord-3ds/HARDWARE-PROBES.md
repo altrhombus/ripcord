@@ -233,7 +233,123 @@ The sequence, and what each line means:
 | `stream: Takion ESTABLISHED` | **New ground.** The 9296 handshake worked — this is the first hardware evidence Takion is correct |
 | `stream: SESSION_REQUEST N bytes (curve P-521), fragmenting` | Our request, >1000 bytes so it fragments |
 | `stream: SESSION_REPLY` | The console accepted the launch spec and our ECDH key |
-| `STREAM KEYS DERIVED` | **The milestone — reached 2026-08-12.** Takion, the protobuf, the launch spec and the ECDH agreement all accepted by a real PS5. A 203-byte SESSION_REPLY whose signature verified. |
+| `STREAM KEYS DERIVED` | **Reached 2026-08-12.** Takion, the protobuf, the launch spec and the ECDH agreement all accepted by a real PS5. A 203-byte SESSION_REPLY whose signature verified. |
+| `stream: GMAC sealing enabled` | Everything sent from here carries a tag — including SACKs |
+| `stream: STREAM_INFO` | The console sent the SPS/PPS parameter sets. **Proves our sealing is correct**, since it would not have got this far otherwise |
+| `stream: STREAM_INFO_ACK sent` | A/V should start within a second or two |
+| `FIRST A/V PACKET ... GMAC VERIFIED` | **The next milestone.** Real media, authenticating with the derived receive key |
+| `media window: N video, M audio, 0 GMAC verify failure(s)` | The stream-plane crypto is correct against real traffic — 2,808 host cases' worth of layer finally seeing a real packet |
+
+> **Log output is on the BOTTOM screen.** The top screen is the video output and belongs to MVD.
+
+**The decoder is OFF until you press X**, deliberately. MVD decode runs on the same thread as the
+receive loop, so if it costs more than the inter-packet gap it starves the socket — and the symptom
+(packet loss) looks like a network problem rather than a CPU one. Run the window with decode off, toggle
+it on, and compare the packet counts; Phase 2 already established that CPU contention on this core costs
+real UDP throughput, so this is a measurement, not a precaution.
+
+| Log line | Meaning |
+|---|---|
+| `MVD ready: 640x360 H.264 -> BGR565 240x400` | The decoder initialised at the resolution the **console** chose |
+| `MVD needs a New 3DS` | Expected on an original 3DS — there is no video decode block at all |
+| `FIRST DECODED PICTURE` | MVD rendered into the framebuffer. **Not yet seen** — the first hardware attempt failed with an unaligned input buffer (see below) |
+| `MVD: N picture(s), M NAL unit(s) fed, P parameter set(s)` | `P` should be small and non-zero: SPS/PPS arrive before every IDR and MVD answers `MVD_STATUS_PARAMSET`, which is success, not failure |
+
+**Where it stops in the media phase:**
+
+| Symptom | What is implicated |
+|---|---|
+| No `STREAM_INFO` within 15 s | **Sealing.** The keys are agreed by definition at that point, so suspect tag offset 5, key position 9, the tag+keypos-zeroed AAD, or the position advancing by 16-byte-aligned length rather than by 1. |
+| `STREAM_INFO_ACK sent` then no media | The keepalives (1 s Takion heartbeat, 200 ms congestion report) or their sealing. The console stops sending if they lapse. |
+| A/V arrives but `GMAC verify failure(s)` non-zero | The receive-direction key (direction 3), the per-packet nonce derivation, or the A/V AAD rule — which differs from control's: A/V zeroes **only** the tag, not the key position, and takes the key position **from the packet** rather than choosing it. **One isolated failure is not this** — 1 in 3,879 was seen once on 2026-08-12 and never again in 11,448 packets, which is a corrupted datagram, not a crypto fault. The first four failures now log their rotation window; clustering at a boundary would be the shape that *is* a bug. |
+| Frames assemble but **every** NAL unit errors | Seen 2026-08-12: 1105 fed, 1105 errors, result `0xd96170ca`. The input buffer was `linearAlloc`'d rather than `linearMemAlign(size, 0x40)` — MVD reads through physical addresses and refuses an unaligned one. *All* units failing is the signature of a rejected buffer; a bad bitstream fails *some*. Fixed. |
+| `0 picture(s)` with **0 process errors** and N render errors | Seen 2026-08-12, result `0xd961710d`. The bitstream decoded perfectly and had nowhere to go: the top screen was 24-bit BGR8 (`gfxInitDefault`) while MVD emits 16-bit BGR565, *and* `consoleInit(GFX_TOP)` had given that framebuffer to the text console. Fixed by `gfxInit(GSP_RGB565_OES, GSP_BGR8_OES, false)` with the console on the bottom screen, as the devkitPro example does. **Zero process errors with non-zero render errors is the signature** — it means the decode path is right and the output path is wrong. |
+| Frames assemble but **some** MVD units error | A raw result code with a non-zero `parameter set(s)` count means the SPS/PPS path works and the bitstream is the problem. Zero parameter sets means the units never reached the decoder at all. |
+| `MVD wants a 400x240 stream; console gave 640x360` | Expected. This is currently where the video path stops — see below. |
+| `DISCONNECT from console: <reason>` | The console hung up and said why. Asking for a non-standard 400x240 resolution reproducibly triggers this within a second of sealing. |
+
+### Where the video path stands (2026-08-12)
+
+Everything up to and including decode works: frames assemble, MVD accepts every NAL unit, and
+`mvdstdRenderVideoFrame` returns `MVD_STATUS_OK`. What does not work is getting those pixels somewhere
+visible, and the constraint is hard, established over several hardware runs:
+
+- **MVD does not scale.** Input 640x360 with output 240x400 gave one render error per keyframe.
+- **MVD would not write our own linear output buffer.** Input == output == 640x360 into a page-aligned
+  buffer rendered "successfully" and left all 524,288 pixels zero, with the configured output address
+  verified equal to the buffer's physical address on hardware. A CPU-drawn test square in the same frame
+  *did* appear, proving the framebuffer, cache-flush and swap paths were all fine.
+- **The console will not send a screen-sized stream.** Asking for 400x240 — which would have made frames
+  directly renderable — produced two `DISCONNECT` messages within a second of sealing, twice.
+
+Route (1) is now implemented and awaiting a run:
+
+1. **`mvdstdSetupOutputBuffers()`** — the documented way to have rendered frames written to buffers of
+   our own "instead of the output specified by configuration". That is exactly the failure above, and
+   this is the API that exists to address it. The buffer is registered through the entrylist rather than
+   assigned to `config.physaddr_outdata0`, which is the only difference between this and the attempt
+   that produced an all-zero buffer. It is also sized to a **macroblock-aligned height** (368 rows for a
+   360-row frame), since a decoder writing its padded picture buffer into a buffer sized for the
+   unpadded height is another way a legitimate write lands out of bounds.
+
+   The one-shot non-zero pixel count is back, and answers this in one line.
+
+**Resolution negotiation is settled, and it closes one escape route permanently.** A six-candidate probe
+(`proberesolutions=1`) established that the console encodes only its standard ladder: 640x360 accepted,
+960x540 **clamped down to 640x360**, and 320x180 / 480x270 / 512x288 / 400x240 all refused with the
+console's own stated reason:
+
+```
+Nagare did not init! AvCap failed to initialize video: [InitResult:-5]
+```
+
+That is the console's video encoder failing to initialise — a capability limit, not a policy, so no
+launch spec will talk it round. Alignment was never the criterion either: 400x240 and 512x288 are both
+macroblock-aligned and still refused.
+
+**So resampling on this side is mandatory and permanent**, and "ask the console for a screen-sized
+stream" is off the table for good. That makes the per-frame scale a fixed cost in the CPU budget rather
+than an optimisation.
+
+**Route (1) failed on hardware**: `SetupOutputBuffers` returned `MVD_STATUS_OK` (note: *not* 0 — MVD
+reports success as `0x17000`, and testing `!= 0` wasted a run), renders succeeded, and the buffer stayed
+entirely zero. Transposed dimensions (candidate 1) behaved identically.
+
+**The likely answer came from 3dbrew, not from the example.** `MVD_Services` states: *"Linear memory
+virtual addresses must be in the 0x30\* region; the system doesn't support the 0x14\* region."* The 3DS
+has two linear-heap mappings and which one `linearAlloc` returns depends on the kernel and how the
+process was launched. A buffer in the unsupported mapping is refused **silently** — the render still
+reports success — which matches every symptom that survived the config-address check, the entrylist,
+page alignment and macroblock padding. The build now logs the buffer's virtual address and says which
+region it is in.
+
+*(Reading 3dbrew is not a clean-room concern: that rule covers other implementations of the PS5
+protocol, not Nintendo hardware documentation. Copying GPL homebrew source would be an Apache-2.0
+licensing problem, but reading documentation is not.)*
+
+**The memory region was not the answer either** (`0x3016c000` — the supported mapping), and neither was
+the status-code theory. Instrumenting `ProcessNALUnit`'s return values gave:
+
+```
+ProcessNALUnit said: OK 0, FRAMEREADY 1237, NALUPROCFLAG 0, other 0
+```
+
+**Every unit returns FRAMEREADY.** So the decoder genuinely holds 1,237 real decoded pictures, and
+`RenderVideoFrame` reports success on them, and the pixels are not in the entrylist buffer, not in the
+config-addressed buffer, and not on screen. That rules out the entire class of explanation where we were
+asking for a frame that did not exist.
+
+**What is left is reading a working implementation.** `Core-2-Extreme/Video_player_for_3DS` does MVD
+H.264 decode on New 3DS and is the obvious reference. It is **GPL-3.0**, so its code cannot be copied
+into this Apache-2.0 tree — but reading it to learn which calls happen in which order is a factual
+question about a hardware API, not copying expression, and implementing independently from that
+understanding is exactly the method this project already uses for the protocol. (The clean-room rule does
+not apply at all here: it covers other implementations of the *PS5 protocol*, not Nintendo hardware.)
+2. **MVD input cropping** (`enable_cropping` + `input_crop_*`) — render a 400x240 window of the 640x360
+   frame straight to the framebuffer, which is the one output target MVD is proven to write. Documented
+   fields; would show a picture immediately, but the middle of the screen rather than the whole screen.
+3. **A PICA200 scaling pass** — needs (1) working first, since the frame still has to land somewhere.
+| Picture decodes but looks wrong | The output geometry, which is the least-certain part of `rc_mvd.c`. The framebuffer is transposed (240x400 in memory for a 400x240 screen) and the official example's source is already screen-sized, so it never answers what MVD does with a 640x360 input. Vary `MVD_OUTPUT_WIDTH`/`HEIGHT` and the input dimensions before suspecting the decode path. |
 
 **Where it stops, and what that implicates** — each step narrows the suspect list, which is the point of
 running them in one program:
