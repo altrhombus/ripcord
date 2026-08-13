@@ -16,6 +16,22 @@ static int tsn_less_or_equal(uint32_t a, uint32_t b)
     return (int32_t)(a - b) <= 0;
 }
 
+void takion_channel_enable_sealing(takion_reliable_channel *ch, takion_seal_fn seal, void *seal_ctx)
+{
+    if (ch == NULL)
+        return;
+    ch->seal = seal;
+    ch->seal_ctx = seal_ctx;
+}
+
+/* Seals in place if sealing is on; a no-op before the keys exist, which is the correct behaviour for the
+ * handshake and the SESSION exchange that precede them. */
+static void seal_if_enabled(takion_reliable_channel *ch, uint8_t *packet, size_t length)
+{
+    if (ch->seal != NULL)
+        ch->seal(ch->seal_ctx, packet, length);
+}
+
 static void send_sack(takion_reliable_channel *ch)
 {
     uint8_t sack_chunk[32];
@@ -32,8 +48,10 @@ static void send_sack(takion_reliable_channel *ch)
     header.gmac_tag = 0;
     header.key_position = 0;
     packet_len = takion_message_build(&header, sack_chunk, sack_len, packet, sizeof(packet));
-    if (packet_len > 0)
+    if (packet_len > 0) {
+        seal_if_enabled(ch, packet, packet_len);
         sendto(ch->sock, packet, packet_len, 0, (struct sockaddr *)&ch->peer, sizeof(ch->peer));
+    }
 }
 
 int takion_channel_connect(takion_reliable_channel *ch, int sock, struct sockaddr_in peer,
@@ -218,6 +236,9 @@ int takion_channel_send(takion_reliable_channel *ch, unsigned channel,
         slot->tsn = ch->next_send_tsn;
         slot->in_use = 1;
         slot->last_sent_ms = osGetTime();
+        /* Sealed once, here. Retransmits below resend these exact bytes rather than re-sealing, so the
+         * key position reserved for this packet stays associated with it. */
+        seal_if_enabled(ch, slot->packet, slot->length);
         sendto(ch->sock, slot->packet, slot->length, 0, (struct sockaddr *)&ch->peer, sizeof(ch->peer));
 
         ch->next_send_tsn++;
@@ -237,12 +258,20 @@ static int accept_data_chunk(takion_reliable_channel *ch, int is_first, unsigned
 {
     int complete;
 
-    if (is_first)
+    if (is_first) {
+        /* takion_reassembler_first does not fill out_channel - it already knows the channel, because we
+         * just passed it in. Setting it here is not tidiness: without it a single-chunk message (the
+         * common case - anything under 1000 bytes) leaves the caller's channel variable uninitialised,
+         * which on hardware printed a control message as arriving on "channel 0x11bdc4". Only the
+         * continuation path was ever filling it in. */
+        *out_channel = channel;
         complete = takion_reassembler_first(&ch->reassembler, channel, payload, payload_length, ending,
             out_message, out_length);
-    else
+    }
+    else {
         complete = takion_reassembler_continue(&ch->reassembler, payload, payload_length, ending,
             out_channel, out_message, out_length);
+    }
 
     ch->expected_recv_tsn = seq + 1;
     ch->last_acked_tsn = seq;

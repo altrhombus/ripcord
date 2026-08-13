@@ -170,11 +170,18 @@ CONNECT_SOURCES := \
 	source/halyard/halyard_control_crypto.c \
 	source/net/rc_soc.c \
 	source/net/rc_tcp.c \
+	source/crypto/rc_gcm.c \
 	source/stream/stream_key_schedule.c \
+	source/stream/stream_demux.c \
+	source/stream/fec_galois.c \
+	source/stream/fec_reed_solomon.c \
+	source/stream/stream_header.c \
+	source/stream/stream_packet_crypto.c \
 	source/util/rc_log.c \
 	source/util/rc_base64.c \
 	source/util/rc_hex.c \
 	source/util/rc_program_dir.c \
+	source/util/rc_profile.c \
 	source/util/rc_random.c \
 	source/util/rc_text.c \
 	source/session/halyard_control_arm.c \
@@ -192,6 +199,7 @@ CONNECT_SOURCES := \
 	source/takion/takion_reliable_channel.c \
 	source/takion/takion_control_proto.c \
 	source/takion/takion_session_negotiator.c \
+	source/media/rc_mvd.c \
 	source/connect/main.c
 
 # Modules that have no on-device app of their own yet: Phase 5.5's stream framing/FEC/demux (nothing real
@@ -200,10 +208,17 @@ CONNECT_SOURCES := \
 # target is what makes that claim checkable rather than remembered - it compiles each to an object and
 # links nothing, which is exactly as far as the claim goes.
 CROSSCHECK_SOURCES := \
+	source/stream/stream_demux.c \
+	source/stream/fec_galois.c \
+	source/stream/fec_reed_solomon.c \
 	source/stream/stream_header.c \
 	source/stream/fec_galois.c \
 	source/stream/fec_reed_solomon.c \
 	source/stream/stream_key_schedule.c \
+	source/stream/stream_demux.c \
+	source/stream/fec_galois.c \
+	source/stream/fec_reed_solomon.c \
+	source/stream/stream_header.c \
 	source/stream/stream_packet_crypto.c \
 	source/stream/stream_demux.c \
 	source/crypto/rc_ecdh.c \

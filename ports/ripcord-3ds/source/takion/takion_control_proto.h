@@ -45,6 +45,7 @@
 #define TAKION_CONTROL_DISCONNECT      8u
 #define TAKION_CONTROL_STREAM_INFO     13u
 #define TAKION_CONTROL_STREAM_INFO_ACK 14u
+#define TAKION_CONTROL_IDR_REQUEST     25u
 
 /* Uncompressed SEC1 point sizes, for callers sizing buffers. See rc_ecdh.h for the curve selection. */
 #define TAKION_ECDH_PUBKEY_MAX 133u
@@ -124,6 +125,16 @@ int takion_control_parse_session_reply(const uint8_t *data, size_t length,
                                        takion_session_reply *out_reply);
 
 /*
+ * Extracts DISCONNECT's reason string. Returns 1 and points *out_reason INTO `data` on success.
+ *
+ * Worth having as its own entry point because a console that hangs up says why, and discarding that
+ * turns a stated reason into a debugging session - which is exactly what happened when a rejected
+ * launch spec produced two 70-odd-byte DISCONNECT messages that this port logged only as "type 8".
+ */
+int takion_control_parse_disconnect(const uint8_t *data, size_t length,
+                                    const char **out_reason, size_t *out_reason_length);
+
+/*
  * Walks every field of a ControlMessage without interpreting it, returning 1 if the whole message is
  * well-formed protobuf and 0 otherwise.
  *
@@ -134,6 +145,32 @@ int takion_control_parse_session_reply(const uint8_t *data, size_t length,
  * remainder is garbage, so peeking the type is not a check. This walks to the end, which is.
  */
 int takion_control_validate(const uint8_t *data, size_t length);
+
+/*
+ * STREAM_INFO, as parsed. Pointers aim into the caller's buffer.
+ *
+ * `video_header` is the SPS/PPS parameter-set blob from the FIRST resolution entry. It matters more than
+ * its size suggests: those parameter sets are NOT present in the video stream itself, so a decoder that
+ * never receives them cannot decode the first IDR - which is why stream_demux takes them separately and
+ * re-prepends them. The console sends this unprompted once the session is sealed; the client only acks.
+ */
+typedef struct {
+    uint32_t width;
+    uint32_t height;
+    const uint8_t *video_header;
+    size_t video_header_length;
+    const uint8_t *audio_header;
+    size_t audio_header_length;
+    int has_resolution;
+} takion_stream_info;
+
+/*
+ * Parses a ControlMessage{type=STREAM_INFO, streamInfoPayload=...}. Returns 1 on success, 0 if the
+ * message is malformed or is not a STREAM_INFO. A message with no resolution entry parses successfully
+ * with has_resolution clear - the audio header can still be useful on its own.
+ */
+int takion_control_parse_stream_info(const uint8_t *data, size_t length,
+                                     takion_stream_info *out_info);
 
 /*
  * Builds a bare ControlMessage carrying only `type` and no payload - the shape HEARTBEAT and the

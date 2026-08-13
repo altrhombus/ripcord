@@ -12,6 +12,15 @@
  *   companion=...32 hex chars  (required - hex, exactly 16 bytes)
  *   deviceid=...hex            (optional - up to 16 bytes; defaults to all-zero)
  *   osmajor=10, osminor=0, bitrate=10000, streamingtype=0   (all optional, shown defaults)
+ *   streambitrate=2000         (optional - the launch spec's bwKbpsSent, in kbps)
+ *   proberesolutions=1         (optional - ask the console for a series of resolutions and report
+ *                               what it accepts, instead of streaming; see source/connect/main.c)
+ *
+ * `bitrate` and `streambitrate` are NOT the same field and default differently on purpose. `bitrate` is
+ * the /sess/ctrl RP-StartBitrate header; `streambitrate` is what the launch spec asks the console to
+ * actually send, and 2000 is chosen from this port's own Phase 2 link measurements (2.16% loss at 2 Mbps,
+ * far worse above ~5) rather than from the vendor default of 10000, which asks a 2.4 GHz link for five
+ * times what it was measured to carry.
  *
  * Lives here rather than inside a program's main.c because two on-device probes now read the same file
  * (source/session/main.c and source/connect/main.c) and a second hand-rolled copy of this parser would
@@ -44,6 +53,8 @@ typedef struct {
     int os_major;
     int os_minor;
     int start_bitrate;
+    int stream_bitrate_kbps;
+    int probe_resolutions;   /* 1 = sweep resolutions and exit, instead of streaming */
     int streaming_type;
 } halyard_pairing_record;
 

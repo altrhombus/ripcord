@@ -31,6 +31,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "../crypto/rc_gcm.h"
+
 #define STREAM_PACKET_CRYPTO_TAG_LENGTH 4
 #define STREAM_PACKET_CRYPTO_AV_TAG_OFFSET 10
 #define STREAM_PACKET_CRYPTO_FEEDBACK_TAG_OFFSET 8
@@ -43,6 +45,19 @@ typedef struct {
     uint8_t aes_key[16];
     uint8_t base_iv[16];
     uint8_t gmac_base_key[16]; /* fold(aes_key, base_iv) - the window-0 GMAC key */
+    /*
+     * The prepared GMAC key for whichever rotation window was last used, so the GHASH tables are built
+     * once per window rather than once per packet. The protocol rotates every 45,000 key-position units
+     * - roughly 650 packets - so one build serves hundreds of tags, which is the entire reason the table
+     * is affordable at all (see rc_gcm.h).
+     *
+     * This makes the struct ~4.8 KB. It must not be a stack local in the 3DS build; both live instances
+     * are file-scope in source/connect, and -Wframe-larger-than=8192 catches any attempt otherwise.
+     *
+     * `mutable` in spirit: the tag functions take a const context and this is a pure cache of a value
+     * derived from it, hence the const-cast at the one call site, explained there.
+     */
+    rc_gmac_key prepared;
 } stream_packet_crypto;
 
 void stream_packet_crypto_init(stream_packet_crypto *ctx, const uint8_t aes_key[16], const uint8_t base_iv[16]);
