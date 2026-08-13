@@ -368,6 +368,95 @@ static void run_connect_literals(void)
     }
 }
 
+/* Minimal protobuf writers, for hand-building the nested message below. Deliberately independent of
+ * takion_control_proto.c's own writers: building the test input with the code under test would make the
+ * nesting agree with itself and prove nothing about the field numbers. */
+static size_t put_varint(uint8_t *buf, uint64_t value)
+{
+    size_t n = 0;
+    while (value >= 0x80u) {
+        buf[n++] = (uint8_t)((value & 0x7Fu) | 0x80u);
+        value >>= 7;
+    }
+    buf[n++] = (uint8_t)value;
+    return n;
+}
+
+static size_t put_varint_field(uint8_t *buf, unsigned field, uint64_t value)
+{
+    size_t n = put_varint(buf, (uint64_t)field << 3);
+    return n + put_varint(buf + n, value);
+}
+
+static size_t put_len_field(uint8_t *buf, unsigned field, const uint8_t *data, size_t length)
+{
+    size_t n = put_varint(buf, ((uint64_t)field << 3) | 2u);
+    n += put_varint(buf + n, length);
+    memcpy(buf + n, data, length);
+    return n + length;
+}
+
+/*
+ * STREAM_INFO, hand-built. This is a three-level nested message (ControlMessage -> StreamInfoPayload ->
+ * ResolutionPayload) and the field it exists to reach - the SPS/PPS parameter sets - is the one thing a
+ * decoder cannot start without, because those bytes appear nowhere in the video stream itself. A real
+ * one from a console is 280 bytes; this is the same shape, small enough to read.
+ */
+static void run_stream_info(void)
+{
+    static const uint8_t kVideoHeader[] = { 0x00, 0x00, 0x00, 0x01, 0x67, 0x42, 0xC0, 0x1E };
+    static const uint8_t kAudioHeader[] = { 0x4F, 0x70, 0x75, 0x73 };
+    uint8_t resolution[64];
+    uint8_t payload[128];
+    uint8_t message[160];
+    size_t r = 0, p = 0, m = 0;
+    takion_stream_info info;
+
+    /* ResolutionPayload{width=640, height=360, videoHeader=...} */
+    r += put_varint_field(resolution + r, 1, 640);
+    r += put_varint_field(resolution + r, 2, 360);
+    r += put_len_field(resolution + r, 3, kVideoHeader, sizeof(kVideoHeader));
+
+    /* StreamInfoPayload{resolution=<above>, audioHeader=..., congestionControlInterval=200} */
+    p += put_len_field(payload + p, 1, resolution, r);
+    p += put_len_field(payload + p, 2, kAudioHeader, sizeof(kAudioHeader));
+    p += put_varint_field(payload + p, 6, 200); /* an unmodelled field, to prove it is skipped */
+
+    /* ControlMessage{type=13, streamInfoPayload=<above>} - field 15 needs a two-byte tag (0x7A 0x01). */
+    m += put_varint_field(message + m, 1, TAKION_CONTROL_STREAM_INFO);
+    m += put_len_field(message + m, 15, payload, p);
+
+    if (!takion_control_parse_stream_info(message, m, &info)) {
+        g_failed++;
+        printf("FAIL streaminfo: parse failed\n");
+        return;
+    }
+    if (info.has_resolution && info.width == 640u && info.height == 360u
+        && info.video_header_length == sizeof(kVideoHeader)
+        && memcmp(info.video_header, kVideoHeader, sizeof(kVideoHeader)) == 0
+        && info.audio_header_length == sizeof(kAudioHeader)
+        && memcmp(info.audio_header, kAudioHeader, sizeof(kAudioHeader)) == 0) {
+        g_passed++;
+    } else {
+        g_failed++;
+        printf("FAIL streaminfo: fields did not survive the nested parse\n");
+    }
+
+    /* A SESSION_REPLY must not parse as a STREAM_INFO - the type check is not decoration, since both
+     * carry a length-delimited payload and confusing them would hand the demuxer garbage. */
+    {
+        uint8_t other[8];
+        size_t n = takion_control_build_bare(TAKION_CONTROL_SESSION_REPLY, other, sizeof(other));
+        takion_stream_info wrong;
+        if (n > 0 && takion_control_parse_stream_info(other, n, &wrong)) {
+            g_failed++;
+            printf("FAIL streaminfo: a SESSION_REPLY parsed as STREAM_INFO\n");
+        } else {
+            g_passed++;
+        }
+    }
+}
+
 /* The bare-envelope shape, which has no vector because it is two bytes and no payload. */
 static void run_bare_envelope(void)
 {
@@ -451,6 +540,7 @@ int main(int argc, char **argv)
 
     run_bare_envelope();
     run_connect_literals();
+    run_stream_info();
 
     printf("\n%d passed, %d failed\n", g_passed, g_failed);
     if (g_passed == 0) {
