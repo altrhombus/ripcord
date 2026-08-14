@@ -301,11 +301,23 @@ int rc_mvd_init(rc_mvd *out, int input_width, int input_height, int rgb565)
          * and the render loop are back to the sequence that worked, the scale thread is off, and
          * widescreen and smoothing were both present in runs where the picture was visible.
          */
+        /*
+         * WHICHEVER IS LARGER. mvdstdCalculateBufferSize under-reports, and the failure it produces is
+         * not graceful: at 960x540 it asks for 6888 KB, mvdstdInit accepts that, and the first IDR slice
+         * comes back 0xD86170CC - module 92, summary OutOfResource, level Permanent.
+         *
+         * This has now been got wrong in both directions. It originally clamped DOWN to the browser
+         * default, i.e. took the smaller of the two, which is what produced that crash the first time.
+         * Forcing the default fixed 540p, but 360p was grey for unrelated reasons, so the change was
+         * reverted as ineffective - removing a correct fix because it failed to solve a different bug.
+         * The grey turned out to be six faults in the decode sequence, none of them this.
+         *
+         * The calculated figure is a floor and nothing more.
+         */
+        s_workbuf_size = MVD_DEFAULT_WORKBUF_SIZE;
         if (R_SUCCEEDED(mvdstdCalculateBufferSize(&calc, &needed))
-            && needed > 0 && needed <= MVD_DEFAULT_WORKBUF_SIZE * 2u) {
+            && needed > MVD_DEFAULT_WORKBUF_SIZE && needed <= MVD_DEFAULT_WORKBUF_SIZE * 2u) {
             s_workbuf_size = needed;
-        } else {
-            s_workbuf_size = MVD_DEFAULT_WORKBUF_SIZE;
         }
         rc_log("MVD work buffer: %u KB (calculated floor %u KB, browser default %u KB)\n",
             (unsigned)(s_workbuf_size / 1024u), (unsigned)(needed / 1024u),
@@ -1244,6 +1256,12 @@ int rc_mvd_decode_frame(rc_mvd *mvd, const uint8_t *annexb, size_t length, int i
         }
 
         (void)feed_nal_unit(mvd, annexb + unit_start, unit_length);
+
+        /* A permanent failure clears ready. Stop NOW rather than finishing the access unit: the log
+         * shows "fed #3" arriving after "MVD DISABLED", i.e. this loop kept handing slices to a decoder
+         * that had already given up, and the run ended in a data abort. */
+        if (!mvd->ready)
+            return rendered;
 
         offset = next;
         prefix = next_prefix;

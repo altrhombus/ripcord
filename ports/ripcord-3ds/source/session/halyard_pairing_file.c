@@ -23,8 +23,8 @@ static void pairing_record_defaults(halyard_pairing_record *rec)
     rec->smoothing = 1;
     rec->scale_thread = 0;
     rec->dump_video = 0;
-    rec->stream_width = 640;
-    rec->stream_height = 360;
+    rec->stream_width = 960;
+    rec->stream_height = 540;
     rec->fps = 30;
     rec->video_rgb565 = 0;
     rec->probe_resolutions = 0;
