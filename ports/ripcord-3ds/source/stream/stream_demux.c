@@ -235,6 +235,17 @@ static int first_source_slice_is_idr(const stream_demux *demux)
 {
     int i;
 
+    /*
+     * Defence in depth, NOT a fix for anything observed. flush_video_frame already refuses to call this
+     * when frame_allocated is clear, so these values are sound by the time we get here. The check is
+     * cheap and this function indexes slot_buf by console-controlled geometry, which is the class of
+     * thing worth being unconditionally safe about - but it should not be mistaken for a diagnosis.
+     */
+    if (!demux->frame_allocated || demux->unit_stride <= 0
+        || demux->source_expected <= 0 || demux->source_expected > FEC_MAX_TOTAL_UNITS) {
+        return 0;
+    }
+
     for (i = 0; i < demux->source_expected; i++) {
         const uint8_t *slice;
         int slice_length;

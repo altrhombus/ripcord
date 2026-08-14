@@ -186,6 +186,7 @@ static int g_scale_thread_enabled;
 static unsigned long g_video_bytes;
 static unsigned g_core_mask;
 static int g_measured_rtt_ms;   /* 0 until the echo probe produces a majority of samples */
+static int g_actual_width, g_actual_height;  /* what STREAM_INFO reported, not what we asked for */
 static int g_measured_mtu;      /* 0 until both MTU directions confirm; the declared default otherwise */
 static int g_stream_bitrate_kbps;
 static int g_stream_width = 640;
@@ -790,21 +791,29 @@ static int run_stream(const halyard_pairing_record *rec)
      * So the mismatch between a 640x360 stream and a 400x240 screen has to be resolved on this side, and
      * the decoder is the wrong place for it - see rc_mvd.c.
      */
-    params.width = g_probing ? g_probe_width : g_stream_width;
-    params.height = g_probing ? g_probe_height : g_stream_height;
-    params.fps = (rec->fps == 60) ? 60 : 30;
+    /*
+     * THE PAIRING RECORD IS COPIED OUT BEFORE ANYTHING READS IT. It used to be copied thirteen lines
+     * BELOW the params assignment, so the launch spec was built from g_stream_width's static
+     * initialiser while the record's value landed too late to matter - and the throughput report, which
+     * reads the same globals afterwards, saw the later value. The two halves of one ordering bug
+     * disagreed with each other: we requested 640x360 and then reported bits/pixel against 960x540.
+     */
     g_video_rgb565 = rec->video_rgb565;
-    rc_mvd_set_skip_until_keyframe(rec->skip_until_keyframe);
-    rc_mvd_set_widescreen(rec->widescreen);
-    rc_mvd_set_smoothing(rec->smoothing);
     g_video_dump_armed = rec->dump_video;
-    if (g_video_dump_armed)
-        rc_log("video dump: buffering up to %u KB in RAM, written to video.264 on exit\n",
-            (unsigned)(VIDEO_DUMP_LIMIT / 1024u));
     g_scale_thread_enabled = rec->scale_thread;
     g_stream_bitrate_kbps = rec->stream_bitrate_kbps;
     g_stream_width = rec->stream_width;
     g_stream_height = rec->stream_height;
+    rc_mvd_set_skip_until_keyframe(rec->skip_until_keyframe);
+    rc_mvd_set_widescreen(rec->widescreen);
+    rc_mvd_set_smoothing(rec->smoothing);
+    if (g_video_dump_armed)
+        rc_log("video dump: buffering up to %u KB in RAM, written to video.264 on exit\n",
+            (unsigned)(VIDEO_DUMP_LIMIT / 1024u));
+
+    params.width = g_probing ? g_probe_width : g_stream_width;
+    params.height = g_probing ? g_probe_height : g_stream_height;
+    params.fps = (rec->fps == 60) ? 60 : 30;
     /* What we ask the console to actually SEND - not RP-StartBitrate. Defaults to 2000 kbps because
      * Phase 2 measured this hardware's link at 2.16% loss at 2 Mbps and much worse above ~5, while the
      * vendor default of 10000 asks for five times what the link was shown to carry. At 10000 the first
@@ -819,6 +828,16 @@ static int run_stream(const halyard_pairing_record *rec)
     params.rtt_ms = g_measured_rtt_ms;
     params.is_hevc = 0;   /* MVD decodes H.264 only; HEVC must never be requested from this hardware */
     params.is_hdr = 0;
+
+    /*
+     * SAY WHAT WE ASKED FOR. The log has never printed the requested resolution, only what STREAM_INFO
+     * came back with - so a request the console declined was indistinguishable from a request never
+     * made. That cost a run: 960x540 was set as the default, the console answered 640x360, and there was
+     * no way to tell from the log whether pairing.txt had overridden the default or the console had
+     * simply chosen otherwise.
+     */
+    rc_log("launch spec: requesting %dx%d @ %d fps, bwKbpsSent=%d, rtt=%d ms, mtu=%d\n",
+        params.width, params.height, params.fps, params.bitrate_kbps, params.rtt_ms, params.mtu);
 
     spec_len = halyard_launch_spec_build(&params, handshake_key, g_launch_spec, sizeof(g_launch_spec));
     if (spec_len == 0) {
@@ -1086,6 +1105,12 @@ static int run_media(int sock)
                         /* Now, not earlier: the console decides the resolution, and configuring MVD for
                          * what we asked for rather than what we were given is a good way to decode into
                          * a wrongly-sized buffer. */
+                        g_actual_width = (int)info.width;
+                        g_actual_height = (int)info.height;
+                        if (g_actual_width != g_stream_width || g_actual_height != g_stream_height) {
+                            rc_log("\x1b[33mNOTE\x1b[0m console declined %dx%d and chose %dx%d\n",
+                                g_stream_width, g_stream_height, g_actual_width, g_actual_height);
+                        }
                         (void)rc_mvd_init(&g_mvd, (int)info.width, (int)info.height, g_video_rgb565);
                         if (g_mvd.ready && g_scale_thread_enabled)
                             rc_profile_set_scale_threaded(rc_mvd_start_scale_thread(g_core_mask));
@@ -1429,17 +1454,25 @@ static int run_media(int sock)
          *
          * The figure is still worth printing as a description of what arrived. It is not a verdict.
          */
-        if (g_frames > 0 && g_stream_width > 0 && g_stream_height > 0) {
+        /* Against the dimensions STREAM_INFO reported, not the ones requested - see below. */
+        if (g_frames > 0 && g_actual_width > 0 && g_actual_height > 0) {
             double secs = (double)MEDIA_WINDOW_MS / 1000.0;
             double mbps = (double)g_video_bytes * 8.0 / secs / 1000000.0;
             double bpp = ((double)g_video_bytes * 8.0 / (double)g_frames)
-                / ((double)g_stream_width * (double)g_stream_height);
+                / ((double)g_actual_width * (double)g_actual_height);
 
             rc_log("\nvideo throughput: \x1b[36m%.2f Mbps\x1b[0m received (asked for %d kbps)\n",
                 mbps, g_stream_bitrate_kbps);
-            rc_log("       %.1f KB per frame at %dx%d = \x1b[36m%.3f bits/pixel\x1b[0m\n",
+            /*
+             * THE RESOLUTION HERE IS THE ONE THAT ARRIVED. It used to be the one requested, which is a
+             * different number whenever the console declines - and it declines silently. The figure was
+             * being divided by 960x540 while 640x360 was on the wire, understating bits/pixel by 2.25x.
+             */
+            rc_log("       %.1f KB per frame at %dx%d = \x1b[36m%.3f bits/pixel\x1b[0m%s\n",
                 (double)g_video_bytes / (double)g_frames / 1024.0,
-                g_stream_width, g_stream_height, bpp);
+                g_actual_width, g_actual_height, bpp,
+                (g_actual_width != g_stream_width || g_actual_height != g_stream_height)
+                    ? "   \x1b[33m(console declined the requested size)\x1b[0m" : "");
         }
     }
     /* Now that the media window is over and the socket no longer matters, commit the capture. */
