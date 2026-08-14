@@ -130,12 +130,12 @@ dotnet run --project tools/Ripcord.ProtocolLab -- vectors
 # 2. The C compiles and agrees with it - ten runners, no hardware involved.
 make -C ports/ripcord-3ds/tests
 #    expect: self-test: AES-128 matches FIPS-197 C.1
-#            171 / 24 / 53 / 61 / 65 / 2654 / 58 / 31 / 44 / 71 passed, 0 failed  (3,232 total)
+#            171 / 24 / 53 / 61 / 65 / 2654 / 58 / 31 / 44 / 71 passed, 0 failed  (3,244 total)
 #    if ecdh_test says "skipped: built without an ECDH backend", libmbedtls-dev is missing
 
-# 3. The cross-compile produces five homebrew binaries...
+# 3. The cross-compile produces seven homebrew binaries...
 make -C ports/ripcord-3ds
-#    expect: ripcord-3ds.3dsx, -linktest, -discovery, -session, -takion
+#    expect: ripcord-3ds.3dsx, -linktest, -discovery, -session, -takion, -connect, -mvdreplay
 
 # 4. ...and the modules that have no .3dsx of their own still compile for ARM11.
 make -C ports/ripcord-3ds crosscheck
@@ -165,7 +165,22 @@ issue again:
 ```sh
 make -C ports/ripcord-3ds/tests      # after any change under source/ — fast, no hardware
 make -C ports/ripcord-3ds            # when you want a .3dsx to try on hardware
+make -C ports/ripcord-3ds mvdreplay  # just the offline decoder harness
 ```
+
+**Decoder work does not need a console.** Set `dumpvideo=1` in `pairing.txt`, run
+`ripcord-3ds-connect.3dsx` once, and it writes the H.264 elementary stream to `video.264` beside the
+.3dsx. Put that next to `ripcord-3ds-mvdreplay.3dsx` and you have a two-second edit/run loop with
+identical bytes every time — no network, no keys, no session that times out at 30 seconds, and no
+question about whether the console was showing something different this run.
+
+The replay checks its own input on load and prints `frame_num gap(s)`. **Trust that line**: an earlier
+capture was taken while the dump wrote to SD on the receive thread, the stall cost 2,168 packets, and 35%
+of its pictures referenced a frame that was not in the file. ffmpeg conceals gaps silently, so it decoded
+perfectly on a PC and was used as known-good input for a dozen rounds of decoder debugging. The dump now
+buffers in RAM and writes once, after the media window closes.
+
+`ffmpeg -i video.264 frame%03d.png` is the ground truth for what MVD is supposed to produce.
 
 Regenerate vectors only when the .NET crypto changes:
 
@@ -671,6 +686,70 @@ socket) had been wrong too; keeping it paid for itself immediately.
 
 **Also confirmed in these runs:** IDR requests do work (keyframes went from 1 per session to 15-18), and
 the A/V GMAC continues to verify on essentially every packet across ~3,700 per run.
+
+**Phase 6e — a real picture. Six decoder faults, none of which MVD reported.** 2026-08-13. Measured over
+60 seconds against a real PS5: 1,782 pictures, **0 process errors, 0 render errors**, 29.7 fps presented,
+2 units lost in 5,397, 80% of each frame carrying detail. The symptom throughout was a flat mid-grey field
+with only moving macroblocks showing content, and it survived a dozen rounds of hypotheses because every
+error counter in the port read zero the entire time.
+
+In the order the faults mattered:
+
+1. **The frame-detection sentinel wrote into the reference picture.** It stamped `0x1111` into four
+   corners of the output buffer before every access unit. The stream has `refs=1`, so that buffer is
+   exactly what the next P-frame predicts from - and four wrong pixels do not stay four pixels. Intra
+   prediction and motion compensation spread them outward every frame, resetting only at an IDR. It also
+   flushed the whole 460 KB buffer from the CPU cache each frame. Retired entirely; the render result is
+   the signal, and MVD's status codes are reliable (they correctly returned `OutOfResource` for an
+   undersized work buffer and `Internal` for slices fed without parameter sets).
+2. **Rendering ran per NAL unit.** The console emits **one slice per MTU** - a 25 KB keyframe is ~20 IDR
+   units at 640x360, not just at higher resolutions. Checking for a completed picture after each meant
+   declaring one ~20 times per keyframe and blitting partial frames. One access unit is one picture.
+3. **`MVDSTD_SetConfig` ran before the parameter sets.** 3dbrew's procedure is explicit: process the SPS
+   and PPS NAL units, *then* begin the main video processing.
+4. **The BUSY retry did not re-apply the config.** 3dbrew, on `0x17002`: the reference client re-issues
+   `{GetConfig, SetConfig, ControlFrameRendering}`. This code re-called render alone. The retry path is
+   not rare - hardware shows ~2 render calls per picture.
+5. **libctru's `MVD_CHECKNALUPROC_SUCCESS` is incomplete.** Hardware returns `0x17005`, which decodes as
+   level 0 (Success), module 92 (MVD); the macro enumerates `0x17000`-`0x17004` and `0x17007` only. Every
+   `process error` count in the earlier logs may therefore have included successes. Trust the level field.
+6. **A cold decoder needs the first access unit fed twice.** Replaying one file in a loop, the first pass
+   was grey for its entire length and every pass after a rewind was perfect, from byte-identical input.
+   What a rewind does is hand MVD the whole first access unit again - SPS, PPS and all ~20 IDR slices -
+   after it has already seen them once. Repeating only the parameter sets was tried first, on the
+   assumption that they were the part that mattered, and changed nothing.
+
+This last one explains the entire live history. **A real session is always the first pass**, and at zero
+loss the console sends about one keyframe a minute, so a decoder that never latched onto the sequence had
+nothing to recover with. The runs that "cleared up halfway through" were the ones with enough packet loss
+to trigger repeated IDR requests - which is why, for several rounds, *more* loss looked like *better*
+video.
+
+**Two mistakes of mine cost more than any of the six.** Both are method failures, not coding errors:
+
+- **I corrupted the evidence and then trusted it.** The `dumpvideo=1` capture wrote to SD on the receive
+  thread; I predicted the resulting loss, watched it happen, and used the file as known-good input anyway.
+  It had 332 `frame_num` discontinuities across 941 pictures - 35% of its pictures referencing a frame
+  that was not in the file. ffmpeg conceals gaps silently, so it decoded perfectly on a PC and looked like
+  proof the capture was sound. It only proved ffmpeg is robust. The dump now buffers in RAM.
+- **I twice wrote a diagnostic that measured something adjacent to the question.** The first counted
+  non-zero samples, which a uniform grey buffer passes trivially. The second measured luminance *spread*,
+  which a grey field with a few bright moving objects scores identically to a real picture - and it nearly
+  produced a false "fixed" verdict. The metric that works is what fraction of the frame differs from its
+  own mean: a UI screenshot is 40-80%, a cleared buffer with motion painted into it is single digits.
+
+**What actually broke the deadlock was building `source/mvdreplay`** - feeding a captured elementary
+stream to MVD with no console, no network and no session to time out. Two-second turnaround, identical
+bytes every run, `ffmpeg` as ground truth for what the output should look like. It should have been built
+a dozen rounds earlier; every hypothesis before it cost a full connect flow against a real console to test
+one idea.
+
+**Ruled out along the way, so nobody re-litigates them:** CABAC (3dbrew: Baseline, Main and High are all
+supported at levels 1-3.2; the stream is Main 3.1); `outdata1` (offset 0x68 is "only used when the output
+format type is value 0x00020001" - not ours, which is why splitting the buffers changed nothing); the work
+buffer (`refs=1`, so the DPB needs almost nothing); linear memory (~25 MB free); and libctru's init
+sequence (disassembling `mvd.o` shows `mvdstdInit` issuing all three of 3dbrew's documented commands -
+`0x00050100` and `0x001B0040` as literal-pool words, `0x00180000` as an inline immediate).
 
 ## Architectural research still owed
 

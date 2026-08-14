@@ -3,16 +3,17 @@
 A PS5 Remote Play client for modded Nintendo 3DS hardware, in C, sharing Ripcord's protocol
 specification but none of its code.
 
-**Status: negotiates real stream keys with a real PS5. Nothing decodes yet.** As of 2026-08-12
+**Status: video from a real PS5, decoded and on screen.** As of 2026-08-13
 `ripcord-3ds-connect.3dsx` runs the whole connect flow against real hardware — discovery, `/sess/init` →
 `/sess/ctrl`, the binary control channel, senkusha, the Takion handshake on UDP 9296, and the
-`SESSION_REQUEST`/`SESSION_REPLY` ECDH exchange — and derives the per-direction AES keys and IVs the A/V
-stream is encrypted with. Everything from the control-plane crypto down to the key agreement is now
-confirmed against a console rather than only against our own .NET implementation.
+`SESSION_REQUEST`/`SESSION_REPLY` ECDH exchange — derives the per-direction AES keys and IVs, seals its
+own control traffic with GMAC, acks `STREAM_INFO`, and decodes the resulting H.264 through the New 3DS's
+MVD block onto the top screen. A 60-second window: 1,782 pictures, 0 process errors, 0 render errors,
+29.7 fps presented, 2 units lost in 5,397.
 
-What is missing is the media pipeline: no MVD decode, no Y2R, no Opus, no input, and no GMAC sealing or
-STREAM_INFO ack yet. The stream framing/FEC/demux layer is implemented and passes 3,242 host known-answer
-cases but has never seen a real packet, because nothing has asked the console to start sending one. There is no video, no audio and no input. See
+Still missing: audio (no Opus), input (nothing is sent back), and senkusha's RTT/MTU measurement legs.
+Picture quality is now limited by the screen rather than by the pipeline — the console sends 640x360 and
+the top screen has 240 rows, so 37.5% of the source rows are discarded on the way down. See
 [Where this stands](#where-this-stands).
 
 ## Why this exists
@@ -301,6 +302,26 @@ Done:
       known-answer vector otherwise), the protobuf ones against Google.Protobuf's own encoding of
       `docs/protocol/stream_control.proto`. No on-device app yet, same as Phase 5.5
 
+- [x] **The media pipeline, decoding real console output on hardware** (`source/media/rc_mvd.c`,
+      `source/mvdreplay/`): GMAC-sealed control traffic, `STREAM_INFO` parsing and ack, and H.264 decode
+      through the New 3DS MVD block onto the top screen, scaled by the ARM11 into the 800x240 wide-mode
+      framebuffer. Measured over 60 seconds against a real PS5: 1,782 pictures, 0 process errors, 0 render
+      errors, 29.7 fps presented, 2 units lost in 5,397, 80% of each frame carrying detail.
+
+      Six decoder faults had to be found first, and none of them announced themselves — MVD reported
+      success throughout. In the order they mattered: a frame-detection sentinel that wrote into the very
+      buffer the next P-frame predicts from; rendering per NAL unit when the console sends one slice per
+      MTU (a 25 KB keyframe is ~20 units); `MVDSTD_SetConfig` called before the parameter sets rather than
+      after; a BUSY retry that did not re-apply the config the way 3dbrew documents; libctru's
+      `MVD_CHECKNALUPROC_SUCCESS` omitting `0x17005`, a status the hardware returns and which decodes as
+      Success; and a cold decoder needing the first access unit fed **twice** before it latches onto a
+      sequence. See SETUP.md Phase 6 for the full account, including two wrong turns of my own that cost
+      more than any of the real bugs.
+
+      `ripcord-3ds-mvdreplay.3dsx` is the tool that made this tractable: it feeds a captured elementary
+      stream to MVD with no console, no network and no session to time out, in about two seconds, with
+      identical bytes every run.
+
 Not started — roughly in dependency order. [`SETUP.md`](SETUP.md) has this as a phased plan with the
 toolchain steps:
 
@@ -374,10 +395,17 @@ per-direction stream keys, cross-checked against the .NET side on both curves. N
 has an on-device app yet — 5.5 because it had nothing real to decrypt, 6a because the key agreement has no
 socket attached by design and still needs a launch spec and a connect flow around it.
 
-**The next step is the one that has been deferred twice and cannot be a third time: run the
-discovery/session/Takion probes against a real console**, awake and resting. Everything from Phase 3
-onward is verified only against transcribed spec examples, captured vectors, and agreement with Ripcord's
-own .NET implementation — which is a genuinely strong check on *internal consistency* and no check at all
-on whether a real PS5 accepts any of it. Three phases of unvalidated wire format is the largest risk this
-port currently carries, and it grows with each phase added on top. After that, the launch spec and connect
-flow, then Phase 6's media pipeline.
+That hardware run has since happened, and so has the media pipeline. Everything from discovery to a
+decoded picture is now confirmed against a real console rather than against our own .NET implementation —
+which was the risk this port was carrying and the question it existed to answer. The spec produced a
+second working implementation, on hardware it was never written for.
+
+**What is left, in order:**
+
+- **Audio.** Opus decode and NDSP output. The demuxer already separates and strips redundant audio units;
+  nothing consumes them.
+- **Input.** Controller state to the console. Nothing is sent back at all, so the session is read-only.
+- **Senkusha's measurement legs.** RTT echo and MTU-in/MTU-out (spec §6.4). Not a quality blocker — see
+  the note in SETUP.md, because that was assumed for several rounds and measured to be false.
+- **Picture quality**, which is now a screen problem rather than a pipeline problem. 640x360 into 240 rows
+  discards 37.5% of them; `smoothing=1` averages the straddled pair and is on by default.
