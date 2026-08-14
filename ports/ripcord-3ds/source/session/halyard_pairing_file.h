@@ -22,8 +22,8 @@
  *   dumpvideo=1                (optional - write the H.264 elementary stream to video.264, 2 MB cap,
  *                               then decode it on a PC with ffmpeg; diagnostic only, costs SD writes
  *                               on the receive thread)
- *   streamwidth=640            (optional - what to ASK the console to encode; ladder values only:
- *   streamheight=360            640x360, 960x540, 1280x720, 1920x1080)
+ *   streamwidth=960            (optional - what to ASK the console to encode; ladder values only:
+ *   streamheight=540            640x360, 960x540, 1280x720, 1920x1080)
  *   proberesolutions=1         (optional - ask the console for a series of resolutions and report
  *                               what it accepts, instead of streaming; see source/connect/main.c)
  *
@@ -67,20 +67,23 @@
  * output buffer so decode and scale never touch the same one (MVD's config takes outdata0 and outdata1,
  * which is likely what they are for) - until then, inline.
  *
- * `streamwidth`/`streamheight` were hard-coded to 640x360 for five phases, and 640x360 is where they
- * are back to, having been tried higher.
+ * `streamwidth`/`streamheight` are back at 960x540, and the history is worth knowing before changing it.
  *
- * The reasoning for raising it was that the console's UI is authored at 1080p, so a 360p encode destroys
- * small text before it reaches the wire. That reasoning is sound and still is - but 960x540 does not
- * decode correctly on this hardware. The console sends two slices per picture at 540p, and MVD produces
- * a uniform mid-grey field with only the macroblocks that later inter-frames rewrite ever carrying real
- * content. Fixing the two obvious causes (rendering per-NAL instead of per-access-unit; calling
- * MVDSTD_SetConfig between the slices of one picture) improved it and did not solve it. UNRESOLVED.
+ * The console's UI is authored at 1080p, so a 360p encode destroys small text before it reaches the
+ * wire. 540p was tried for that reason, produced a flat grey field, and was reverted as broken. It was
+ * not: every cause has since been found and fixed for other reasons - the sentinel writing into the
+ * reference picture, rendering per-NAL when the console sends one slice per MTU, MVDSTD_SetConfig before
+ * the parameter sets rather than after, the BUSY retry not re-applying config, and a cold decoder
+ * needing the first access unit fed twice. 540p simply exercised the multi-slice path harder than 360p
+ * did, so it failed first and looked like a resolution problem.
  *
- * The measured picture quality argument also points back down. What actually reaches this client is
- * ~0.9 Mbps regardless of what streambitrate asks for, so 540p spreads the same bits over 2.25x the
- * pixels: 0.065 bits/pixel against 0.10 at 360p. Legible text needs roughly 0.2-0.5. Until the bitrate
- * is real, a larger frame is strictly worse, and once it is real 360p may well be sufficient.
+ * It costs roughly 2.25x the decode and scale. At 640x360 and 60 fps the receive core runs at 84%, so
+ * 540p is a 30 fps proposition unless the scale gets cheaper. Drop fps to 30 if loss appears.
+ *
+ * Also retired here: the claim that this was pointless because bits/pixel would halve. That rested on an
+ * invented threshold ("legible text wants 0.2-0.5 bits/pixel") which a PC decode of a real capture
+ * disproved - the PS5 home screen is fully legible at 0.10. What limits text is the 240-row screen, and
+ * more source rows is the only lever that addresses it.
  *
  * `videoformat` exists because MVD can emit either byte order and the top screen is configured RGB565.
  * The devkitPro example pairs MVD_OUTPUT_BGR565 with an RGB565 screen, which is what this port copied -
