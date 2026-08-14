@@ -109,6 +109,10 @@
  */
 #define SCREEN_WIDTH_MAX 800
 
+/* Output tile edge for the blit. 32x32 of BGR565 output is 2 KB and pulls a ~26x51 source region - a few
+ * kilobytes, sized to stay in ARM11 L1 across the whole tile. See blit_to_screen. */
+#define BLIT_TILE 32
+
 static int s_screen_w = SCREEN_WIDTH;
 static int s_smooth;
 
@@ -145,13 +149,34 @@ static int mvd_ok(Result res)
 
 static u32 s_workbuf_size;
 static u8 *s_staging;
-static u8 *s_output;
+/*
+ * TWO OUTPUT BUFFERS, ALTERNATING - so the scale can run on another core.
+ *
+ * With one buffer, moving the blit to a worker thread means the worker reads the picture MVD is already
+ * decoding the next one into. That was tried, and it produced a flat grey field with only moving
+ * macroblocks carrying content - the same symptom as the sentinel bug, from a different cause, which is
+ * part of why it took so long to separate them.
+ *
+ * Decode writes s_output_buf[s_decode_index] while the worker scales the other. apply_output_config
+ * already runs once per access unit, so pointing MVD at the current one costs nothing extra.
+ */
+static u8 *s_output_buf[2];
+static int s_decode_index;
+#define s_output (s_output_buf[s_decode_index])
 static size_t s_output_size;
 static MVDSTD_Config s_config;
 /* Set on loss, cleared by the next keyframe. See rc_mvd_signal_loss. */
 static int s_awaiting_keyframe;
 static int s_reported_output;
-static int s_reported_bounds;
+static volatile int s_refused_geometry;
+
+/* Probe results handed from the scale worker to the receive core, which is the only thread that logs. */
+static struct {
+    volatile int pending;
+    int frame, distinct;
+    unsigned detail;
+    uint16_t lo, hi, corner[4];
+} s_probe;
 static int s_first_sequence;
 static unsigned s_last_detail;
 /* The first unit after init is fed twice - see rc_mvd_decode_frame. */
@@ -189,19 +214,22 @@ int rc_mvd_init(rc_mvd *out, int input_width, int input_height, int rgb565)
     s_output_size = (size_t)input_width * (size_t)(((input_height + 15) / 16) * 16) * 2u;
 
     s_staging = (u8 *)linearMemAlign(MVD_INPUT_STAGING, MVD_BUFFER_ALIGN);
-    s_output = (u8 *)linearMemAlign(s_output_size, MVD_OUTPUT_ALIGN);
+    s_output_buf[0] = (u8 *)linearMemAlign(s_output_size, MVD_OUTPUT_ALIGN);
+    s_output_buf[1] = (u8 *)linearMemAlign(s_output_size, MVD_OUTPUT_ALIGN);
+    s_decode_index = 0;
     /*
      * ONE OUTPUT BUFFER. A second was added on the theory that outdata0/outdata1 are a ping-pong pair
      * and aliasing them corrupted the reference picture. It tested negative - the picture degraded
      * identically - so it is gone, because it cost 460 KB of linear memory and linear memory turns out
      * to be the resource this module never measured. See the headroom report below.
      */
-    if (s_staging == NULL || s_output == NULL) {
+    if (s_staging == NULL || s_output_buf[0] == NULL || s_output_buf[1] == NULL) {
         rc_log("\x1b[31mFAIL\x1b[0m could not allocate aligned MVD buffers\n");
         rc_mvd_exit(out);
         return 0;
     }
-    memset(s_output, 0, s_output_size);
+    memset(s_output_buf[0], 0, s_output_size);
+    memset(s_output_buf[1], 0, s_output_size);
 
     /*
      * MVD ONLY ACCEPTS LINEAR MEMORY FROM THE 0x30* REGION.
@@ -333,7 +361,7 @@ int rc_mvd_init(rc_mvd *out, int input_width, int input_height, int rgb565)
         (unsigned)s_output_size, s_screen_w, SCREEN_HEIGHT);
     rc_log("linear free: %u KB after MVD allocations\n", (unsigned)(linearSpaceFree() / 1024u));
     rc_log("memory: MVD work %u KB + output %u KB + staging %u KB = %u KB in this module\n",
-        (unsigned)(s_workbuf_size / 1024u), (unsigned)(s_output_size / 1024u),
+        (unsigned)(s_workbuf_size / 1024u), (unsigned)(s_output_size * 2u / 1024u),
         (unsigned)(MVD_INPUT_STAGING / 1024u),
         (unsigned)((s_workbuf_size + s_output_size + MVD_INPUT_STAGING) / 1024u));
     return 1;
@@ -432,10 +460,22 @@ static void build_scale_maps(int src_w, int src_h, int draw_h, int y_offset, int
  */
 static int s_picture_ready;
 
-static void blit_to_screen(const rc_mvd *mvd)
+/*
+ * NO GFX OR GSP CALL HAPPENS IN HERE, and that is a hard requirement, not tidiness.
+ *
+ * This runs on the scale worker. It used to call gfxGetFramebuffer itself and gfxFlushBuffers on the way
+ * out, while the receive core called gfxSwapBuffers - and libctru's gfx API is not thread-safe. The
+ * result was not a crash in this process: it took the whole console down hard enough to need the power
+ * button held. Corrupting the GSP command queue does that.
+ *
+ * So the caller, on the receive core, resolves the framebuffer and passes it in, and cache maintenance
+ * uses the kernel syscalls (svcFlush/InvalidateProcessDataCache) rather than the GSP service. Those act
+ * on the calling core's own cache, which is what is wanted: the core that wrote the pixels is the core
+ * that must flush them.
+ */
+static void blit_to_screen(const rc_mvd *mvd, const u8 *source, u8 *framebuffer)
 {
-    u8 *framebuffer = gfxGetFramebuffer(GFX_TOP, GFX_LEFT, NULL, NULL);
-    const uint16_t *src = (const uint16_t *)(const void *)s_output;
+    const uint16_t *src = (const uint16_t *)(const void *)source;
     uint16_t *dst = (uint16_t *)(void *)framebuffer;
     int src_w = mvd->input_width;
     int src_h = mvd->input_height;
@@ -452,18 +492,13 @@ static void blit_to_screen(const rc_mvd *mvd)
      * to interpret and a log line costs nothing.
      */
     if ((size_t)src_w * (size_t)src_h * 2u > s_output_size) {
-        if (!s_reported_bounds) {
-            rc_log("\x1b[31mBLIT REFUSED\x1b[0m %dx%d needs %u bytes, buffer is %u\n",
-                src_w, src_h, (unsigned)((size_t)src_w * (size_t)src_h * 2u),
-                (unsigned)s_output_size);
-            s_reported_bounds = 1;
-        }
+        s_refused_geometry = 1;   /* logged on the receive core - see the probe note below */
         return;
     }
 
     /* MVD wrote this through hardware, which does not go through the ARM11 data cache - without the
      * invalidate the CPU can read stale lines and blit whatever was there before. */
-    GSPGPU_InvalidateDataCache(s_output, (u32)s_output_size);
+    svcInvalidateProcessDataCache(CUR_PROCESS_HANDLE, (u32)(uintptr_t)source, (u32)s_output_size);
 
     /*
      * HOW MUCH OF THE FRAME CARRIES DETAIL - not how far apart its extremes are.
@@ -542,30 +577,24 @@ static void blit_to_screen(const rc_mvd *mvd)
                 seen[distinct++] = v;
         }
 
-        rc_log("  frame %d: %s%d distinct value(s)\x1b[0m in 1024 samples, range %04x..%04x\n",
-            s_reported_output,
-            distinct <= 4 ? "\x1b[31m" : "\x1b[32m", distinct, lo, hi);
-        rc_log("           corners TL %04x  TR %04x  BL %04x  BR %04x   (sentinel is 1111)\n",
-            src[0], src[w - 1], src[(h - 1) * w], src[(h - 1) * w + (w - 1)]);
         /*
-         * SPREAD, not distinct count. The first cut of this probe called 39 distinct values a picture -
-         * but they were 39 near-identical greys (0x8410..0xa430 is all about (16,33,16) in BGR565), so
-         * the verdict it printed was green and wrong. What separates a picture from the decoder's
-         * initialised field is how far apart the values are, not how many there are.
+         * CAPTURED HERE, LOGGED ON THE RECEIVE CORE. This function now runs on the scale worker, and
+         * rc_log writes to the console AND to a file on the SD card - two threads inside newlib stdio
+         * and the 3DS filesystem with no lock between them. It locked up on the first frame, which is
+         * exactly the frame this probe fires on.
+         *
+         * Diagnostics must never be the thing that breaks the run they exist to explain.
          */
-        {
-            unsigned lo_lum = (unsigned)(((lo >> 11) & 0x1Fu) + ((lo >> 5) & 0x3Fu) + (lo & 0x1Fu));
-            unsigned hi_lum = (unsigned)(((hi >> 11) & 0x1Fu) + ((hi >> 5) & 0x3Fu) + (hi & 0x1Fu));
-            unsigned spread = hi_lum > lo_lum ? hi_lum - lo_lum : 0u;
-
-            if (s_last_detail < 25u) {
-                rc_log("           \x1b[31m-> %u%% of the frame carries detail: FLAT FIELD"
-                       "\x1b[0m (spread %u is misleading here)\n", s_last_detail, spread);
-            } else {
-                rc_log("           \x1b[32m-> %u%% of the frame carries detail: real picture"
-                       "\x1b[0m (spread %u)\n", s_last_detail, spread);
-            }
-        }
+        s_probe.frame = s_reported_output;
+        s_probe.distinct = distinct;
+        s_probe.lo = lo;
+        s_probe.hi = hi;
+        s_probe.detail = s_last_detail;
+        s_probe.corner[0] = src[0];
+        s_probe.corner[1] = src[w - 1];
+        s_probe.corner[2] = src[(h - 1) * w];
+        s_probe.corner[3] = src[(h - 1) * w + (w - 1)];
+        s_probe.pending = 1;
         s_reported_output++;
     }
 
@@ -581,39 +610,68 @@ static void blit_to_screen(const rc_mvd *mvd)
 
     build_scale_maps(src_w, src_h, draw_h, y_offset, s_screen_w);
 
+    /* The letterbox bands, written once per column as their own runs rather than tested for inside the
+     * pixel loop. Cheap: 15 rows of 800 at 640x360. */
     for (x = 0; x < s_screen_w; x++) {
         uint16_t *col = &dst[x * SCREEN_HEIGHT];
-        unsigned sx = s_map_x[x];
 
-        /* Bottom letterbox band (highest y, so lowest indices in this column). */
         for (y = y_offset + draw_h; y < SCREEN_HEIGHT; y++)
             col[SCREEN_HEIGHT - 1 - y] = 0;
-
-        /* The picture. No division, no multiply, no branch. */
-        if (s_smooth) {
-            /*
-             * Vertical pair-average. Widescreen removes the horizontal loss entirely, leaving the
-             * 360 -> 225 vertical squeeze as the only axis still discarding rows. Averaging the two
-             * source rows recovers the dropped one instead of ignoring it.
-             *
-             * The mask is the standard 565 half-sum: 0x0821 is the low bit of each of the R/G/B fields
-             * (bits 11, 5 and 0), so clearing them before the shift keeps each channel's carry inside
-             * its own field. (a & b) + (((a ^ b) & ~0x0821) >> 1) is then the per-channel mean, four
-             * ALU ops and no unpacking.
-             */
-            for (y = y_offset; y < y_offset + draw_h; y++) {
-                uint16_t a = src[s_map_y[y] + sx];
-                uint16_t b = src[s_map_y2[y] + sx];
-                col[SCREEN_HEIGHT - 1 - y] = (uint16_t)((a & b) + (((a ^ b) & 0xF7DEu) >> 1));
-            }
-        } else {
-            for (y = y_offset; y < y_offset + draw_h; y++)
-                col[SCREEN_HEIGHT - 1 - y] = src[s_map_y[y] + sx];
-        }
-
-        /* Top letterbox band. */
         for (y = 0; y < y_offset; y++)
             col[SCREEN_HEIGHT - 1 - y] = 0;
+    }
+
+    /*
+     * THE PICTURE, IN TILES - because this loop is memory-bound, not compute-bound.
+     *
+     * It measured 12.07 ms a frame: 192,000 output pixels at ~16.9 ARM11 cycles each, for what is a
+     * table lookup and a 16-bit store. Nothing in the body costs seventeen cycles. The destination is
+     * column-major, so walking a column means walking the SOURCE down a row-major image with a 1280-byte
+     * stride - a different cache line for every single pixel, 180,000 times a frame.
+     *
+     * That cost is the whole reason 60 fps does not work. Measured at 60: the scale alone is 33.7 s of a
+     * 60 s window, the receive core hits 90%, and 40% of A/V units are lost to a drain that cannot keep
+     * up - while MVD itself decodes 2,795 pictures without a single error. The decoder and the link are
+     * both fine; this function is the ceiling.
+     *
+     * Blocking the loops fixes the access pattern without changing a single output pixel. Within a
+     * 32x32 output tile the source region is ~26 columns by ~51 rows - a few kilobytes, which stays in
+     * L1 across all 32 columns of the tile instead of being re-fetched per column. Same reads, same
+     * writes, same result; roughly six times fewer cache line fetches.
+     */
+    for (x = 0; x < s_screen_w; x += BLIT_TILE) {
+        int x_end = (x + BLIT_TILE < s_screen_w) ? x + BLIT_TILE : s_screen_w;
+        int ty;
+
+        for (ty = y_offset; ty < y_offset + draw_h; ty += BLIT_TILE) {
+            int y_end = (ty + BLIT_TILE < y_offset + draw_h) ? ty + BLIT_TILE : y_offset + draw_h;
+            int tx;
+
+            for (tx = x; tx < x_end; tx++) {
+                uint16_t *col = &dst[tx * SCREEN_HEIGHT];
+                unsigned sx = s_map_x[tx];
+
+                if (s_smooth) {
+                    /*
+                     * Vertical pair-average. Widescreen removes the horizontal loss entirely, leaving
+                     * the 360 -> 225 vertical squeeze as the only axis still discarding rows. Averaging
+                     * the two source rows recovers the dropped one instead of ignoring it.
+                     *
+                     * The mask is the standard 565 half-sum: 0x0821 is the low bit of each of the R/G/B
+                     * fields (bits 11, 5 and 0), so clearing them before the shift keeps each channel's
+                     * carry inside its own field.
+                     */
+                    for (y = ty; y < y_end; y++) {
+                        uint16_t a = src[s_map_y[y] + sx];
+                        uint16_t b = src[s_map_y2[y] + sx];
+                        col[SCREEN_HEIGHT - 1 - y] = (uint16_t)((a & b) + (((a ^ b) & 0xF7DEu) >> 1));
+                    }
+                } else {
+                    for (y = ty; y < y_end; y++)
+                        col[SCREEN_HEIGHT - 1 - y] = src[s_map_y[y] + sx];
+                }
+            }
+        }
     }
 }
 
@@ -683,7 +741,6 @@ static int sentinel_changed(const rc_mvd *mvd)
      * has since put in memory. blit_to_screen has always invalidated before reading; this function never
      * did, so the two were reading different views of the same buffer and only one of them was right.
      */
-    GSPGPU_InvalidateDataCache(s_output, (u32)s_output_size);
     size_t w = (size_t)mvd->input_width;
     size_t h = (size_t)mvd->input_height;
 
@@ -945,6 +1002,10 @@ static Thread s_scale_thread;
 static LightEvent s_scale_req, s_scale_done;
 static volatile int s_scale_running;
 static rc_mvd *s_scale_target;
+static const u8 *s_scale_source;
+static u8 *s_scale_framebuffer;   /* resolved by the receive core; the worker never calls gfx */   /* the buffer handed to the worker; never the one decode is using */
+static volatile int s_scale_inflight;
+static volatile int s_scale_swap_pending;  /* a completed blit the caller has not swapped yet */
 
 static void scale_thread_main(void *arg)
 {
@@ -955,10 +1016,12 @@ static void scale_thread_main(void *arg)
             break;
         {
             uint64_t t = rc_profile_start();
-            blit_to_screen(s_scale_target);
+            blit_to_screen(s_scale_target, s_scale_source, s_scale_framebuffer);
             rc_profile_stop(s_profile, RC_STAGE_SCALE, t);
         }
-        gfxFlushBuffers();
+        /* Kernel syscall, not GSP: this core wrote those lines, so this core cleans them. */
+        svcFlushProcessDataCache(CUR_PROCESS_HANDLE, (u32)(uintptr_t)s_scale_framebuffer,
+                                 (u32)((size_t)s_screen_w * SCREEN_HEIGHT * 2u));
         LightEvent_Signal(&s_scale_done);
     }
 }
@@ -1009,21 +1072,59 @@ unsigned rc_mvd_last_detail(void)
     return s_last_detail;
 }
 
+/* Called on the receive core only. Emits anything the scale worker captured but must not print itself. */
+static void drain_worker_diagnostics(void)
+{
+    if (s_refused_geometry) {
+        s_refused_geometry = 0;
+        rc_log("\x1b[31mBLIT REFUSED\x1b[0m geometry does not fit the output buffer\n");
+    }
+    if (s_probe.pending) {
+        s_probe.pending = 0;
+        rc_log("  frame %d: %s%d distinct value(s)\x1b[0m in 1024 samples, range %04x..%04x\n",
+            s_probe.frame, s_probe.distinct <= 4 ? "\x1b[31m" : "\x1b[32m",
+            s_probe.distinct, s_probe.lo, s_probe.hi);
+        rc_log("           corners TL %04x  TR %04x  BL %04x  BR %04x\n",
+            s_probe.corner[0], s_probe.corner[1], s_probe.corner[2], s_probe.corner[3]);
+        if (s_probe.detail < 25u) {
+            rc_log("           \x1b[31m-> %u%% of the frame carries detail: FLAT FIELD\x1b[0m\n",
+                s_probe.detail);
+        } else {
+            rc_log("           \x1b[32m-> %u%% of the frame carries detail: real picture\x1b[0m\n",
+                s_probe.detail);
+        }
+    }
+}
+
 int rc_mvd_scale_begin(rc_mvd *mvd)
 {
-    if (mvd == NULL || !mvd->ready || !s_picture_ready)
+    drain_worker_diagnostics();
+
+    if (mvd == NULL || !mvd->ready)
         return 0;
 
-    s_picture_ready = 0;
-    s_scale_target = mvd;
-
     if (s_scale_thread != NULL) {
-        LightEvent_Signal(&s_scale_req);
-        return 1;
+        /*
+         * Threaded: the blit is already running, or has finished, on the worker. Report a frame ready to
+         * swap only when one has actually been drawn - either collected by decode_frame above, or
+         * completing now. Never blocks the receive loop.
+         */
+        if (s_scale_swap_pending) {
+            s_scale_swap_pending = 0;
+            return 1;
+        }
+        if (s_scale_inflight && LightEvent_TryWait(&s_scale_done)) {
+            s_scale_inflight = 0;
+            return 1;
+        }
+        return 0;
     }
 
-    /* The blit already ran inside rc_mvd_decode_frame, next to the decode it belongs with. All that is
-     * left is pushing those CPU writes out to the framebuffer before the caller swaps. */
+    if (!s_picture_ready)
+        return 0;
+    s_picture_ready = 0;
+    /* Inline: the blit already ran inside rc_mvd_decode_frame, next to the decode it belongs with. All
+     * that is left is pushing those CPU writes out to the framebuffer before the caller swaps. */
     gfxFlushBuffers();
     return 1;
 }
@@ -1184,9 +1285,32 @@ int rc_mvd_decode_frame(rc_mvd *mvd, const uint8_t *annexb, size_t length, int i
      * THE RENDER RESULT IS THE PICTURE-READY SIGNAL. The sentinel is gone - see stamp_sentinel's note.
      */
     if (render_until_frame(mvd)) {
-        uint64_t t = rc_profile_start();
-        blit_to_screen(mvd);
-        rc_profile_stop(s_profile, RC_STAGE_SCALE, t);
+        if (s_scale_thread != NULL) {
+            /*
+             * HAND THE JUST-DECODED BUFFER TO THE WORKER, then decode into the other one.
+             *
+             * The wait below is what makes two buffers sufficient: before reusing a buffer we make sure
+             * the worker has finished with it. At 60 fps the worker has a 16.7 ms frame period to do a
+             * 7.7 ms blit, so this almost never blocks - and when it does, blocking is exactly right,
+             * because the alternative is decoding over a picture still being read.
+             */
+            if (s_scale_inflight) {
+                LightEvent_Wait(&s_scale_done);
+                s_scale_inflight = 0;
+                s_scale_swap_pending = 1;
+            }
+            s_scale_target = mvd;
+            s_scale_source = s_output_buf[s_decode_index];
+            s_scale_framebuffer = gfxGetFramebuffer(GFX_TOP, GFX_LEFT, NULL, NULL);
+            s_scale_inflight = 1;
+            LightEvent_Signal(&s_scale_req);
+            s_decode_index ^= 1;
+        } else {
+            uint64_t t = rc_profile_start();
+            blit_to_screen(mvd, s_output_buf[s_decode_index],
+                           gfxGetFramebuffer(GFX_TOP, GFX_LEFT, NULL, NULL));
+            rc_profile_stop(s_profile, RC_STAGE_SCALE, t);
+        }
         s_picture_ready = 1;
         rendered = 1;
     }
@@ -1223,8 +1347,12 @@ void rc_mvd_exit(rc_mvd *mvd)
         linearFree(s_staging);
         s_staging = NULL;
     }
-    if (s_output != NULL) {
-        linearFree(s_output);
-        s_output = NULL;
+    if (s_output_buf[0] != NULL) {
+        linearFree(s_output_buf[0]);
+        s_output_buf[0] = NULL;
+    }
+    if (s_output_buf[1] != NULL) {
+        linearFree(s_output_buf[1]);
+        s_output_buf[1] = NULL;
     }
 }
