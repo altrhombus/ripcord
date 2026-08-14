@@ -12,15 +12,79 @@
  *   companion=...32 hex chars  (required - hex, exactly 16 bytes)
  *   deviceid=...hex            (optional - up to 16 bytes; defaults to all-zero)
  *   osmajor=10, osminor=0, bitrate=10000, streamingtype=0   (all optional, shown defaults)
- *   streambitrate=2000         (optional - the launch spec's bwKbpsSent, in kbps)
+ *   streambitrate=8000         (optional - the launch spec's bwKbpsSent, in kbps)
+ *   skipuntilkeyframe=0        (optional - 1 restores the old drop-everything-after-loss behaviour)
+ *   fps=30                     (optional - 30 or 60)
+ *   videoformat=bgr565         (optional - "bgr565" or "rgb565"; see below)
+ *   widescreen=1               (optional - 800x240 top screen; on by default, see below)
+ *   smoothing=1                (optional - average the two source rows the vertical squeeze straddles)
+ *   scalethread=0              (optional - scale on a spare core; OFF by default, see below)
+ *   dumpvideo=1                (optional - write the H.264 elementary stream to video.264, 2 MB cap,
+ *                               then decode it on a PC with ffmpeg; diagnostic only, costs SD writes
+ *                               on the receive thread)
+ *   streamwidth=640            (optional - what to ASK the console to encode; ladder values only:
+ *   streamheight=360            640x360, 960x540, 1280x720, 1920x1080)
  *   proberesolutions=1         (optional - ask the console for a series of resolutions and report
  *                               what it accepts, instead of streaming; see source/connect/main.c)
  *
  * `bitrate` and `streambitrate` are NOT the same field and default differently on purpose. `bitrate` is
  * the /sess/ctrl RP-StartBitrate header; `streambitrate` is what the launch spec asks the console to
- * actually send, and 2000 is chosen from this port's own Phase 2 link measurements (2.16% loss at 2 Mbps,
- * far worse above ~5) rather than from the vendor default of 10000, which asks a 2.4 GHz link for five
- * times what it was measured to carry.
+ * actually send.
+ *
+ * `streambitrate` HAS NEVER BEEN TESTED AGAINST A CLEAN LINK, which is why the default is now high.
+ *
+ * The earlier measurements looked decisive and were not:
+ *
+ *     2000 kbps ->  0.57% unit loss,   5 loss events, 27.5 fps
+ *     6000 kbps ->  7.24% unit loss, 113 loss events,  0.8 fps
+ *
+ * That was read as "6000 saturates the radio". But the loss was this port's own: the stream socket had
+ * no SO_RCVBUF, so keyframe bursts overran the default buffer and were dropped by the stack before any
+ * draining could reach them. With the cushion in place the same link now loses ONE unit in 5,489.
+ *
+ * So every bitrate conclusion drawn before that fix is void, and the open question is whether this field
+ * moves the encoder at all: measured throughput has sat near 0.9 Mbps whether 2000, 3500 or 6000 was
+ * asked for. The connect probe now prints what actually arrived, in Mbps and bits/pixel. Run it once
+ * high and once low and compare THOSE numbers - if they match, the request is not what governs the
+ * encoder, and the senkusha measurement legs (spec 6.4, not implemented here) become the suspect.
+ *
+ * `widescreen` and `smoothing` are the two picture-quality levers that cost nothing on the wire. The
+ * console only ever sends 640x360, so a 400-wide screen point-samples away 61% of the columns - which is
+ * what makes on-screen text unreadable while flat colour looks fine. 800x240 mode turns that into an
+ * upscale. `smoothing` then addresses the vertical axis, at real CPU cost; watch the profile and the
+ * loss figure together, because this port shares one core with the receive loop.
+ *
+ * `scalethread` IS OFF BECAUSE IT RACES THE DECODER, and that cost several hardware runs to see.
+ *
+ * Moving the frame scale to core 2 was meant to unload the receive thread, and it did - core 0 went from
+ * 77% to 27%. But the scale reads MVD's output buffer while core 0 keeps feeding MVD, which decodes the
+ * NEXT picture into that same buffer. Run inline the two are strictly ordered; run on another core they
+ * overlap, and a buffer read mid-decode is the decoder's initialised state - a uniform mid-grey field
+ * with only the macroblocks written so far carrying real content.
+ *
+ * That is exactly the reported symptom, and it was misread for several rounds as a 960x540 problem
+ * because 640x360 was never run with the thread enabled until long after. The proper fix is a second
+ * output buffer so decode and scale never touch the same one (MVD's config takes outdata0 and outdata1,
+ * which is likely what they are for) - until then, inline.
+ *
+ * `streamwidth`/`streamheight` were hard-coded to 640x360 for five phases, and 640x360 is where they
+ * are back to, having been tried higher.
+ *
+ * The reasoning for raising it was that the console's UI is authored at 1080p, so a 360p encode destroys
+ * small text before it reaches the wire. That reasoning is sound and still is - but 960x540 does not
+ * decode correctly on this hardware. The console sends two slices per picture at 540p, and MVD produces
+ * a uniform mid-grey field with only the macroblocks that later inter-frames rewrite ever carrying real
+ * content. Fixing the two obvious causes (rendering per-NAL instead of per-access-unit; calling
+ * MVDSTD_SetConfig between the slices of one picture) improved it and did not solve it. UNRESOLVED.
+ *
+ * The measured picture quality argument also points back down. What actually reaches this client is
+ * ~0.9 Mbps regardless of what streambitrate asks for, so 540p spreads the same bits over 2.25x the
+ * pixels: 0.065 bits/pixel against 0.10 at 360p. Legible text needs roughly 0.2-0.5. Until the bitrate
+ * is real, a larger frame is strictly worse, and once it is real 360p may well be sufficient.
+ *
+ * `videoformat` exists because MVD can emit either byte order and the top screen is configured RGB565.
+ * The devkitPro example pairs MVD_OUTPUT_BGR565 with an RGB565 screen, which is what this port copied -
+ * if reds and blues look swapped, this is the setting, not the blit.
  *
  * Lives here rather than inside a program's main.c because two on-device probes now read the same file
  * (source/session/main.c and source/connect/main.c) and a second hand-rolled copy of this parser would
@@ -55,6 +119,15 @@ typedef struct {
     int start_bitrate;
     int stream_bitrate_kbps;
     int probe_resolutions;   /* 1 = sweep resolutions and exit, instead of streaming */
+    int fps;                 /* 30 or 60 */
+    int video_rgb565;        /* 1 = ask MVD for RGB565 instead of BGR565 */
+    int skip_until_keyframe; /* 1 = drop every frame after a loss until the next IDR */
+    int widescreen;          /* 1 = 800x240 top screen (default); 0 = 400x240 */
+    int smoothing;           /* 1 = vertical pair-average in the scale (default on) */
+    int scale_thread;        /* 1 = run the frame scale on a spare core - RACY, see below */
+    int dump_video;          /* 1 = write the Annex-B stream to video.264 for host-side decoding */
+    int stream_width;        /* resolution asked of the console - must be on the standard ladder */
+    int stream_height;
     int streaming_type;
 } halyard_pairing_record;
 

@@ -64,7 +64,7 @@ typedef struct {
  * (not a New 3DS, service unavailable, or no linear memory), having left `out` unusable but safe to
  * pass to the other calls.
  */
-int rc_mvd_init(rc_mvd *out, int input_width, int input_height);
+int rc_mvd_init(rc_mvd *out, int input_width, int input_height, int rgb565);
 
 /*
  * Decodes one whole Annex-B frame, splitting it into NAL units and rendering directly into the top
@@ -88,34 +88,43 @@ int rc_mvd_decode_frame(rc_mvd *mvd, const uint8_t *annexb, size_t length, int i
  */
 void rc_mvd_signal_loss(rc_mvd *mvd);
 
+/* Whether a loss should drop every frame until the next keyframe. Default off - see the .c for the
+ * hardware measurement that made 'correct' the wrong trade here. */
+void rc_mvd_set_skip_until_keyframe(int enabled);
+
+/* 800x240 top-screen mode. 640-wide source then UPSCALES horizontally instead of losing 61% of its
+ * columns, which is the single biggest lever on text legibility. See the .c. Call before streaming. */
+void rc_mvd_set_widescreen(int enabled);
+
+/*
+ * Starts the scale worker on a spare core, given the mask from rc_profile_probe_cores. Returns 1 if the
+ * scale now runs off the receive thread, 0 if it stayed inline (which still works, just slower).
+ */
+int rc_mvd_start_scale_thread(unsigned core_mask);
+
+/*
+ * Scale-and-present, split so the caller never blocks on it:
+ *   rc_mvd_scale_begin    - 1 if a new picture was handed to the scaler (or drawn inline), else 0
+ *   rc_mvd_scale_complete - 1 once the framebuffer is written and flushed; the caller then swaps
+ * Call at DISPLAY rate, not decode rate - the decoder outruns a 60 Hz screen whenever it is keeping up.
+ */
+int rc_mvd_scale_begin(rc_mvd *mvd);
+
+/*
+ * Percentage of the last blitted frame that differs from its own mean luminance. A real picture is
+ * mostly detail (typically 40-80%); a cleared buffer with motion painted into it is a few percent, and
+ * crucially still shows a large min-to-max SPREAD - which is why spread was the wrong thing to measure.
+ */
+unsigned rc_mvd_last_detail(void);
+int rc_mvd_scale_complete(void);
+
+/* Average the two source rows the vertical squeeze straddles, rather than picking one. */
+void rc_mvd_set_smoothing(int enabled);
+
 /* Attaches a profile so the decode and scale stages are timed alongside the network ones. Optional -
  * NULL, or never calling this, simply leaves those stages unmeasured. */
 void rc_mvd_set_profile(rc_profile *profile);
 
-/*
- * Switches to the next candidate output geometry and reports it. Returns the new candidate's index.
- *
- * WHY THIS EXISTS. Getting a decoded frame onto the screen has now cost many hardware runs, each testing
- * a single guess about MVD's output behaviour, and the remaining unknowns are all in the same small
- * space: whether the config's dimensions are in the picture's orientation or the framebuffer's
- * transposed one, whether input cropping makes a differently-sized output legal, and whether the
- * framebuffer is the only target that works. Those combine into a handful of configurations, and
- * testing them one build at a time is a poor use of a person standing in front of a console. This walks
- * them in a single session instead.
- */
-int rc_mvd_next_candidate(rc_mvd *mvd);
-
-/*
- * 1 if the current configuration has MVD write the framebuffer directly, 0 if it renders into our own
- * buffer for the CPU to scale.
- *
- * The caller needs this to decide whether to call gfxFlushBuffers before presenting. That flush pushes
- * the ARM11's cache out over the framebuffer, which is required when the CPU drew the frame and
- * DESTRUCTIVE when MVD did - it overwrites the hardware's output with whatever stale lines the CPU
- * happened to hold, which is black. That is a picture rendered successfully and then erased a
- * microsecond later, with nothing in any log to say so.
- */
-int rc_mvd_renders_to_screen(const rc_mvd *mvd);
 
 /* Shuts MVD down. Safe on an uninitialised or already-closed instance. */
 void rc_mvd_exit(rc_mvd *mvd);
