@@ -1304,6 +1304,28 @@ static int run_media(int sock)
                     }
 
                     /*
+                     * THE CONTROL CHANNEL IS SERVICED FROM INSIDE THE DRAIN TOO, and leaving it out
+                     * cost two sessions.
+                     *
+                     * service_control ran once per OUTER iteration, and an outer iteration drains up to
+                     * 64 packets. At 60 fps that is ~20 frames of decode and scale - comfortably 200 ms
+                     * of work between two chances to answer a HEARTBEAT_REQ. This file's own header
+                     * records what the console does about that: "session ~15-30 s after heartbeat
+                     * replies stop". Both 60 fps runs went black at ~29 s with "control channel closed
+                     * by console", and the picture froze because the media loop breaks out on that.
+                     *
+                     * It is the same shape as the frame-pacing bug fixed a few phases ago: work that
+                     * must happen on a wall clock, gated behind a loop whose period depends on load.
+                     * A TCP recv on an empty socket is cheap, so 1-in-16 is frequent enough to be safe
+                     * and rare enough not to matter.
+                     */
+                    if ((drained & 15) == 0) {
+                        service_control(NULL);
+                        if (!g_control_alive)
+                            break;
+                    }
+
+                    /*
                      * EVERY FOURTH PACKET, NOT EVERY SIXTEENTH - this interval is the frame-rate cap.
                      *
                      * At ~290 packets/s a 1-in-16 check runs about 18 times a second, and since the

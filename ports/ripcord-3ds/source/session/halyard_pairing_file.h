@@ -18,7 +18,7 @@
  *   videoformat=bgr565         (optional - "bgr565" or "rgb565"; see below)
  *   widescreen=1               (optional - 800x240 top screen; on by default, see below)
  *   smoothing=1                (optional - average the two source rows the vertical squeeze straddles)
- *   scalethread=0              (optional - scale on a spare core; OFF by default, see below)
+ *   scalethread=0              (optional - DO NOT ENABLE; hard-locks the console, see below)
  *   dumpvideo=1                (optional - write the H.264 elementary stream to video.264, 2 MB cap,
  *                               then decode it on a PC with ffmpeg; diagnostic only, costs SD writes
  *                               on the receive thread)
