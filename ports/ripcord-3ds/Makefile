@@ -199,6 +199,7 @@ CONNECT_SOURCES := \
 	source/takion/takion_reassembler.c \
 	source/takion/takion_reliable_channel.c \
 	source/takion/takion_control_proto.c \
+	source/takion/senkusha_echo.c \
 	source/takion/takion_session_negotiator.c \
 	source/media/rc_mvd.c \
 	source/connect/main.c
@@ -224,6 +225,7 @@ CROSSCHECK_SOURCES := \
 	source/stream/stream_demux.c \
 	source/crypto/rc_ecdh.c \
 	source/takion/takion_control_proto.c \
+	source/takion/senkusha_echo.c \
 	source/takion/takion_session_negotiator.c
 
 .PHONY: all constants clean test linktest discovery session takion connect crosscheck

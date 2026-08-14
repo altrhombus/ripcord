@@ -282,6 +282,84 @@ size_t takion_control_build_bare(uint32_t type, uint8_t *buf, size_t buf_size)
     return n;
 }
 
+/*
+ * Wraps an already-encoded sub-command in BandwidthProbePayload{command, <field_no>=inner} and then in
+ * ControlMessage{type=BANDWIDTH_PROBE, bandwidthProbePayload=inner}. Returns bytes written, 0 if short.
+ *
+ * The three probe commands differ only in their enum value and which optional field carries the body, so
+ * the two layers of framing are written once here rather than three times with the field numbers
+ * transposed - which is exactly the kind of thing that encodes cleanly and is rejected on the wire.
+ */
+static size_t wrap_bandwidth_probe(uint32_t command, uint32_t field_no,
+                                   const uint8_t *inner, size_t inner_len,
+                                   uint8_t *buf, size_t buf_size)
+{
+    uint8_t payload[48];
+    size_t payload_len = 0, n = 0;
+
+    if (buf == NULL || inner_len + 8u > sizeof(payload))
+        return 0;
+
+    payload_len += tag_write(1u, WT_VARINT, payload + payload_len);
+    payload_len += varint_write(command, payload + payload_len);
+    payload_len += tag_write(field_no, WT_LEN, payload + payload_len);
+    payload_len += varint_write((uint32_t)inner_len, payload + payload_len);
+    memcpy(payload + payload_len, inner, inner_len);
+    payload_len += inner_len;
+
+    if (varint_field_size(F_MSG_TYPE, TAKION_CONTROL_BANDWIDTH_PROBE) + 1u + 1u + payload_len > buf_size)
+        return 0;
+
+    n += tag_write(F_MSG_TYPE, WT_VARINT, buf + n);
+    n += varint_write(TAKION_CONTROL_BANDWIDTH_PROBE, buf + n);
+    n += tag_write(14u, WT_LEN, buf + n);
+    n += varint_write((uint32_t)payload_len, buf + n);
+    memcpy(buf + n, payload, payload_len);
+    return n + payload_len;
+}
+
+size_t takion_control_build_mtu_command(uint32_t id, uint32_t mtu_req, uint32_t num,
+                                        uint8_t *buf, size_t buf_size)
+{
+    uint8_t inner[24];
+    size_t n = 0;
+
+    n += tag_write(1u, WT_VARINT, inner + n);   /* id */
+    n += varint_write(id, inner + n);
+    n += tag_write(2u, WT_VARINT, inner + n);   /* mtuReq */
+    n += varint_write(mtu_req, inner + n);
+    n += tag_write(4u, WT_VARINT, inner + n);   /* num */
+    n += varint_write(num, inner + n);
+    return wrap_bandwidth_probe(1u /* MTU_COMMAND */, 3u, inner, n, buf, buf_size);
+}
+
+size_t takion_control_build_client_mtu_command(uint32_t id, uint32_t mtu_req, int state,
+                                               uint8_t *buf, size_t buf_size)
+{
+    uint8_t inner[32];
+    size_t n = 0;
+
+    n += tag_write(1u, WT_VARINT, inner + n);   /* id */
+    n += varint_write(id, inner + n);
+    n += tag_write(2u, WT_VARINT, inner + n);   /* mtuReq */
+    n += varint_write(mtu_req, inner + n);
+    n += tag_write(3u, WT_VARINT, inner + n);   /* state */
+    n += varint_write(state ? 1u : 0u, inner + n);
+    n += tag_write(4u, WT_VARINT, inner + n);   /* mtuDown - the same figure, as the .NET side sends */
+    n += varint_write(mtu_req, inner + n);
+    return wrap_bandwidth_probe(4u /* CLIENT_MTU_COMMAND */, 5u, inner, n, buf, buf_size);
+}
+
+size_t takion_control_build_echo_command(int enabled, uint8_t *buf, size_t buf_size)
+{
+    uint8_t inner[4];
+    size_t n = 0;
+
+    n += tag_write(1u, WT_VARINT, inner + n);   /* state */
+    n += varint_write(enabled ? 1u : 0u, inner + n);
+    return wrap_bandwidth_probe(0u /* ECHO_COMMAND */, 2u, inner, n, buf, buf_size);
+}
+
 /* ---- parsing ---- */
 
 int takion_control_peek_type(const uint8_t *data, size_t length, uint32_t *out_type)
