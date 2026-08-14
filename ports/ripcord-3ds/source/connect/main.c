@@ -54,6 +54,7 @@
 #include "../stream/stream_packet_crypto.h"
 #include "../util/rc_base64.h"
 #include "../util/rc_log.h"
+#include "../util/rc_program_dir.h"
 #include "../util/rc_profile.h"
 #include "../util/rc_random.h"
 
@@ -136,15 +137,51 @@ static long g_loss_events;
  * contention on this core costs real UDP throughput.
  */
 static rc_mvd g_mvd;
-static int g_decode_enabled;
-static long g_frames_since_candidate;
+static int g_decode_enabled = 1;
 static rc_profile g_profile;
-static u64 g_candidate_started_ms;
-static int g_sweeping;
 
 /* Set by the video callback (which runs deep inside stream_demux_ingest) and consumed by the media loop,
  * because the swap belongs to the loop that owns the frame timing, not to a demux callback. */
+/*
+ * RAW BITSTREAM DUMP - the test that stops the guessing.
+ *
+ * Twelve rounds of hardware runs have narrowed the grey field by elimination and every remaining theory
+ * is about a component we cannot see inside: does the console actually send a picture, does our demuxer
+ * assemble it intact, or does MVD mishandle a good stream? Writing the Annex-B elementary stream to the
+ * SD card answers all three at once, because ffmpeg on a PC is a decoder we can trust.
+ *
+ *   ffprobe -show_frames video.264      # frame types, resolution, whether it parses at all
+ *   ffmpeg -i video.264 frame%03d.png   # look at the pictures
+ *
+ * Capped at 2 MB (~700 frames at the ~2.8 KB/frame this stream runs at). Writes cost SD time on the
+ * receive thread, so this is a diagnostic switch, not something to leave on.
+ */
+static const char *g_argv0;
+/*
+ * BUFFERED IN RAM, WRITTEN AT THE END - because writing during the session damages what it captures.
+ *
+ * The first version fwrite()'d each frame as it arrived. SD writes happen on the receive thread, the
+ * drain stalls behind them, and that run lost 2168 units - so the captured stream had 332 frame_num
+ * discontinuities across 941 pictures. THIRTY-FIVE PERCENT of the pictures referenced a frame that was
+ * not in the file. ffmpeg conceals gaps silently, so the capture looked fine on a PC and was used as
+ * known-good input for several rounds of decoder debugging.
+ *
+ * A capture taken to diagnose a decoder must not be corrupted by the act of capturing it.
+ */
+static uint8_t g_video_dump_buf[2u * 1024u * 1024u];
+static unsigned long g_video_dump_bytes;
+static int g_video_dump_armed;
+#define VIDEO_DUMP_LIMIT (sizeof(g_video_dump_buf))
+
+static int g_scale_thread_enabled;
+static unsigned long g_video_bytes;
+static unsigned g_core_mask;
+static int g_stream_bitrate_kbps;
+static int g_stream_width = 640;
+static int g_stream_height = 360;
 static int g_picture_pending;
+/* Set from the pairing record before the media window; run_media has no record of its own. */
+static int g_video_rgb565;
 static u64 g_last_present_ms;
 static long g_presents;
 
@@ -163,6 +200,11 @@ static void on_video_frame(void *userdata, const uint8_t *data, size_t length, i
             (unsigned)length, is_keyframe ? "KEYFRAME" : "inter",
             length > 3 ? data[0] : 0, length > 3 ? data[1] : 0,
             length > 3 ? data[2] : 0, length > 3 ? data[3] : 0);
+    }
+
+    if (g_video_dump_armed && g_video_dump_bytes + length <= VIDEO_DUMP_LIMIT) {
+        memcpy(g_video_dump_buf + g_video_dump_bytes, data, length);
+        g_video_dump_bytes += (unsigned long)length;
     }
 
     if (g_decode_enabled && g_mvd.ready) {
@@ -205,22 +247,6 @@ static long g_idr_requests;
  * lets the console decide, which is what the .NET reference sends. Not implemented here yet.
  */
 #define IDR_REQUEST_MIN_INTERVAL_MS 500u
-/* Move to the next output geometry and ask the console for a keyframe immediately, since the new
- * candidate cannot decode anything until one arrives. */
-static void advance_candidate(void)
-{
-    uint8_t request[8];
-    size_t request_len;
-
-    (void)rc_mvd_next_candidate(&g_mvd);
-    g_frames_since_candidate = 0;
-    g_candidate_started_ms = osGetTime();
-
-    request_len = takion_control_build_bare(TAKION_CONTROL_IDR_REQUEST, request, sizeof(request));
-    if (request_len > 0)
-        (void)takion_channel_send(&g_stream_channel, TAKION_CHANNEL_SESSION, request, request_len);
-    g_last_idr_request_ms = g_candidate_started_ms;
-}
 
 
 static void on_video_loss(void *userdata, int first_frame_index, int last_frame_index)
@@ -358,6 +384,22 @@ static int open_udp(const char *host, unsigned port, struct sockaddr_in *out_pee
     if (sock < 0)
         return -1;
     fcntl(sock, F_SETFL, O_NONBLOCK);
+
+    /*
+     * A RECEIVE CUSHION BIG ENOUGH FOR A KEYFRAME BURST. source/linktest/main.c has set this since its
+     * first hardware run; this program never did, and the omission only became expensive once frames got
+     * large. A 960x540 keyframe is ~24 KB, which arrives as roughly twenty back-to-back datagrams - if
+     * the socket's default buffer is smaller than the burst, the tail is dropped by the stack before any
+     * amount of draining can reach it, and no CPU work on this end can recover it.
+     *
+     * That is consistent with what the profile showed: moving the scale to core 2 took core 0 down to
+     * ~47% - the same load that lost 1.8% at 640x360 - and the loss stayed at 16%. Loss that does not
+     * respond to CPU is not caused by CPU.
+     */
+    {
+        int rcvbuf = 262144;
+        setsockopt(sock, SOL_SOCKET, SO_RCVBUF, &rcvbuf, sizeof(rcvbuf));
+    }
 
     memset(out_peer, 0, sizeof(*out_peer));
     out_peer->sin_family = AF_INET;
@@ -574,9 +616,21 @@ static int run_stream(const halyard_pairing_record *rec)
      * So the mismatch between a 640x360 stream and a 400x240 screen has to be resolved on this side, and
      * the decoder is the wrong place for it - see rc_mvd.c.
      */
-    params.width = g_probing ? g_probe_width : 640;
-    params.height = g_probing ? g_probe_height : 360;
-    params.fps = 30;
+    params.width = g_probing ? g_probe_width : g_stream_width;
+    params.height = g_probing ? g_probe_height : g_stream_height;
+    params.fps = (rec->fps == 60) ? 60 : 30;
+    g_video_rgb565 = rec->video_rgb565;
+    rc_mvd_set_skip_until_keyframe(rec->skip_until_keyframe);
+    rc_mvd_set_widescreen(rec->widescreen);
+    rc_mvd_set_smoothing(rec->smoothing);
+    g_video_dump_armed = rec->dump_video;
+    if (g_video_dump_armed)
+        rc_log("video dump: buffering up to %u KB in RAM, written to video.264 on exit\n",
+            (unsigned)(VIDEO_DUMP_LIMIT / 1024u));
+    g_scale_thread_enabled = rec->scale_thread;
+    g_stream_bitrate_kbps = rec->stream_bitrate_kbps;
+    g_stream_width = rec->stream_width;
+    g_stream_height = rec->stream_height;
     /* What we ask the console to actually SEND - not RP-StartBitrate. Defaults to 2000 kbps because
      * Phase 2 measured this hardware's link at 2.16% loss at 2 Mbps and much worse above ~5, while the
      * vendor default of 10000 asks for five times what the link was shown to carry. At 10000 the first
@@ -728,6 +782,55 @@ static int run_stream(const halyard_pairing_record *rec)
  * so they must be kept and prepended to the first IDR - which is exactly what stream_demux already does
  * with the parameter sets it is given.
  */
+/*
+ * Scale-and-swap, rate-limited to the display.
+ *
+ * CALLED FROM INSIDE THE DRAIN LOOP as well as after it, and that is the point. It used to run once per
+ * outer iteration, after a drain of up to 64 packets - and a 64-packet drain costs tens of milliseconds
+ * on this CPU, so the outer loop only came round a few hundred times a minute. The 16 ms throttle was
+ * never the limit: presentation was capped by the drain batch, which is why hardware showed 6.5 swaps a
+ * second against a 60 Hz throttle and a decoder producing 53 pictures a second.
+ *
+ * It stays cheap to call: rc_mvd_present returns immediately unless a new picture has decoded, and the
+ * timer check gates it before that. Nothing here blocks - gspWaitForVBlank is still deliberately absent,
+ * because stalling the drain is what caused this port's largest loss regression.
+ */
+static int g_scale_inflight;
+
+static void maybe_present(u64 now_ms)
+{
+    /*
+     * A scale handed to the worker core is collected here rather than waited on: the receive loop must
+     * never block, which is the same rule that keeps gspWaitForVBlank out of this path. When the scale
+     * runs inline (no spare core) rc_mvd_scale_complete returns 1 straight away and this collapses to
+     * the old behaviour.
+     */
+    if (g_scale_inflight) {
+        if (!rc_mvd_scale_complete())
+            return;
+        gfxSwapBuffers();
+        g_scale_inflight = 0;
+        g_picture_pending = 0;
+        g_presents++;
+        g_last_present_ms = now_ms;
+        return;
+    }
+
+    if (now_ms - g_last_present_ms < VBLANK_INTERVAL_MS)
+        return;
+    if (!rc_mvd_scale_begin(&g_mvd))
+        return;
+
+    g_scale_inflight = 1;
+    if (rc_mvd_scale_complete()) {
+        gfxSwapBuffers();
+        g_scale_inflight = 0;
+        g_picture_pending = 0;
+        g_presents++;
+        g_last_present_ms = now_ms;
+    }
+}
+
 static int run_media(int sock)
 {
     uint8_t ack[16];
@@ -804,7 +907,9 @@ static int run_media(int sock)
                         /* Now, not earlier: the console decides the resolution, and configuring MVD for
                          * what we asked for rather than what we were given is a good way to decode into
                          * a wrongly-sized buffer. */
-                        (void)rc_mvd_init(&g_mvd, (int)info.width, (int)info.height);
+                        (void)rc_mvd_init(&g_mvd, (int)info.width, (int)info.height, g_video_rgb565);
+                        if (g_mvd.ready && g_scale_thread_enabled)
+                            rc_profile_set_scale_threaded(rc_mvd_start_scale_thread(g_core_mask));
                     } else {
                         rc_log("\x1b[33mNOTE\x1b[0m STREAM_INFO did not parse - no parameter sets\n");
                     }
@@ -853,8 +958,7 @@ static int run_media(int sock)
         return 0;
     }
     rc_log("stream: STREAM_INFO_ACK sent - A/V should start now\n");
-    rc_log("X toggles MVD decode, Y tries the next output geometry, START exits\n");
-    rc_log("Watch for a non-zero pixel count, or a picture appearing.\n\n");
+    rc_log("X toggles MVD decode, START exits\n\n");
 
     /*
      * 3. The media window. Keepalives run off the same tick as everything else: a 1 s Takion HEARTBEAT
@@ -876,28 +980,9 @@ static int run_media(int sock)
         kdown = hidKeysDown();
         if (kdown & KEY_START)
             break;
-        /*
-         * AUTO-ADVANCE THE SWEEP.
-         *
-         * Manual advancing did not work: every change re-arms the keyframe gate, a fresh IDR takes a
-         * moment to arrive, and pressing the button at human speed walks past three candidates before
-         * any of them sees a frame. Two hardware runs reported "never decoded a frame" for candidates
-         * 2-4 for that reason alone. A dwell timer gives each geometry a fair trial without anyone
-         * having to time button presses against a console's keyframe interval.
-         */
-        if (g_decode_enabled && g_mvd.ready && g_sweeping
-            && now_ms - g_candidate_started_ms >= (u64)CANDIDATE_DWELL_MS) {
-            advance_candidate();
-        }
-        if ((kdown & KEY_Y) && g_mvd.ready) {
-            advance_candidate();
-        }
         if (kdown & KEY_X) {
             g_decode_enabled = !g_decode_enabled;
-            if (g_decode_enabled) {
-                g_sweeping = 1;
-                g_candidate_started_ms = now_ms;
-            }
+
             /* Re-arm on every enable: switching decode on mid-stream lands us in the middle of a GOP,
              * where every frame until the next keyframe references pictures the decoder does not have. */
             if (g_decode_enabled)
@@ -998,10 +1083,12 @@ static int run_media(int sock)
                         rc_profile_stop(&g_profile, RC_STAGE_GMAC_VERIFY, t);
                     }
 
-                    if (base_type == 2u)
+                    if (base_type == 2u) {
                         video_packets++;
-                    else if (base_type == 3u)
+                        g_video_bytes += (unsigned long)n;
+                    } else if (base_type == 3u) {
                         audio_packets++;
+                    }
                     if (!verified) {
                         verify_failures++;
                         /*
@@ -1032,9 +1119,23 @@ static int run_media(int sock)
                      * separate so a framing bug and an authentication bug stay distinguishable. */
                     {
                         uint64_t t = rc_profile_start();
+                        uint64_t inner0 = g_profile.inner;
                         stream_demux_ingest(&g_demux, packet, (size_t)n);
-                        rc_profile_stop(&g_profile, RC_STAGE_DEMUX, t);
+                        rc_profile_stop_nested(&g_profile, RC_STAGE_DEMUX, t, inner0);
                     }
+
+                    /*
+                     * EVERY FOURTH PACKET, NOT EVERY SIXTEENTH - this interval is the frame-rate cap.
+                     *
+                     * At ~290 packets/s a 1-in-16 check runs about 18 times a second, and since the
+                     * threaded scale needs one call to start and another to collect, that put the
+                     * ceiling near 9 fps and explained why 30 fps never felt like 30. The decoder was
+                     * producing 1,661 pictures and only 1,236 were ever shown. The check itself is a
+                     * clock comparison and a TryWait, so running it four times as often costs nothing
+                     * next to the demux it sits beside.
+                     */
+                    if ((drained & 3) == 0)
+                        maybe_present(osGetTime());
                 }
             }
         }
@@ -1074,23 +1175,7 @@ static int run_media(int sock)
          * the swap is rate-limited to the 60 Hz refresh interval and the loop keeps draining; a frame
          * that arrives early waits in the back buffer rather than stalling the network.
          */
-        if (g_picture_pending && now_ms - g_last_present_ms >= VBLANK_INTERVAL_MS) {
-            g_last_present_ms = now_ms;
-            /*
-             * Flush ONLY when the CPU drew the frame.
-             *
-             * gfxFlushBuffers pushes the ARM11 data cache out over the framebuffer. That is required
-             * when rc_mvd scaled the frame there itself, and actively destructive when MVD wrote the
-             * framebuffer directly: it overwrites the hardware's output with whatever stale lines the
-             * CPU held for that address, which is black. Rendering a picture and then erasing it leaves
-             * no trace in any log - the render succeeded, the swap happened, the screen stayed dark.
-             */
-            if (!rc_mvd_renders_to_screen(&g_mvd))
-                gfxFlushBuffers();
-            gfxSwapBuffers();
-            g_picture_pending = 0;
-            g_presents++;
-        }
+        maybe_present(osGetTime());
         svcSleepThread(1000000); /* 1 ms, and only once the socket is empty */
     }
 
@@ -1098,7 +1183,7 @@ static int run_media(int sock)
         /* Per-candidate, not a session total: rc_mvd_next_candidate resets this so each geometry is
          * judged on its own. Earlier logs reported "0 picture(s) rendered" under a log full of
          * FIRST DECODED PICTURE lines purely because the last candidate had just been reset. */
-        rc_log("\nMVD (decode was %s): %ld picture(s) rendered by the LAST candidate\n",
+        rc_log("\nMVD (decode was %s): %ld picture(s) rendered\n",
             g_decode_enabled ? "ON" : "off", g_mvd.frames_rendered);
         rc_log("     %ld NAL unit(s) fed, %ld accepted non-picture unit(s)\n",
             g_mvd.nal_units_fed, g_mvd.param_sets);
@@ -1127,7 +1212,52 @@ static int run_media(int sock)
         rc_log("       %ld frame(s) presented (%.1f/s)\n", g_presents,
             (double)g_presents / ((double)MEDIA_WINDOW_MS / 1000.0));
         rc_log("       %ld unit(s) received, %ld lost\n", received, lost);
+
+        /*
+         * WHAT THE CONSOLE ACTUALLY SENT - the number this whole quality investigation turned on and
+         * the one the log has never printed. Every round so far it had to be reconstructed by hand from
+         * unit counts, which is how it went unexamined while resolution, scalers and threading were
+         * tuned around it.
+         *
+         * DO NOT READ bits/pixel AS A LEGIBILITY THRESHOLD. A comment here used to claim that small
+         * text needs roughly 0.2-0.5 bits/pixel, which was invented rather than measured, printed in
+         * the log as though established, and used to argue for several rounds that the console was
+         * starving the stream. It was disproved by decoding a capture on a PC: at 0.10 bits/pixel the
+         * PS5 home screen renders with every label legible. Static UI compresses far better than that
+         * rule of thumb assumed.
+         *
+         * The figure is still worth printing as a description of what arrived. It is not a verdict.
+         */
+        if (g_frames > 0 && g_stream_width > 0 && g_stream_height > 0) {
+            double secs = (double)MEDIA_WINDOW_MS / 1000.0;
+            double mbps = (double)g_video_bytes * 8.0 / secs / 1000000.0;
+            double bpp = ((double)g_video_bytes * 8.0 / (double)g_frames)
+                / ((double)g_stream_width * (double)g_stream_height);
+
+            rc_log("\nvideo throughput: \x1b[36m%.2f Mbps\x1b[0m received (asked for %d kbps)\n",
+                mbps, g_stream_bitrate_kbps);
+            rc_log("       %.1f KB per frame at %dx%d = \x1b[36m%.3f bits/pixel\x1b[0m\n",
+                (double)g_video_bytes / (double)g_frames / 1024.0,
+                g_stream_width, g_stream_height, bpp);
+        }
     }
+    /* Now that the media window is over and the socket no longer matters, commit the capture. */
+    if (g_video_dump_armed && g_video_dump_bytes > 0) {
+        char path[512];
+        FILE *f;
+
+        rc_program_dir(g_argv0, path, sizeof(path));
+        strncat(path, "video.264", sizeof(path) - strlen(path) - 1);
+        f = fopen(path, "wb");
+        if (f != NULL) {
+            fwrite(g_video_dump_buf, 1, g_video_dump_bytes, f);
+            fclose(f);
+            rc_log("video dump: %lu KB written to %s\n", g_video_dump_bytes / 1024ul, path);
+        } else {
+            rc_log("\x1b[31mvideo dump: could not open %s\x1b[0m\n", path);
+        }
+    }
+
     rc_log("media window: %d video, %d audio packet(s), %d GMAC failure(s) in a 1-in-16 sample\n",
         video_packets, audio_packets, verify_failures);
     if (video_packets + audio_packets > 0) {
@@ -1270,11 +1400,13 @@ int main(int argc, char **argv)
     gfxInit(GSP_RGB565_OES, GSP_BGR8_OES, false);
     consoleInit(GFX_BOTTOM, NULL);
 
-    rc_log_open(argc > 0 ? argv[0] : NULL, "connect.log");
+    g_argv0 = argc > 0 ? argv[0] : NULL;
+    rc_log_open(g_argv0, "connect.log");
 
     rc_log("ripcord-3ds connect flow (control -> senkusha -> Takion -> stream keys)\n");
     rc_log("-----------------------------------------------------------------------\n");
-    (void)rc_profile_probe_cores();
+    g_core_mask = rc_profile_probe_cores();
+    rc_profile_calibrate();
 
     if (!rc_random_init()) {
         rc_log("\x1b[31mFAIL\x1b[0m no entropy service (ps:ps); cannot negotiate safely\n");

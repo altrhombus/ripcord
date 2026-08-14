@@ -8,6 +8,49 @@
 
 #include <string.h>
 
+/*
+ * MEASURED, NOT ASSUMED - and the assumption it replaces was wrong.
+ *
+ * rc_profile.h used to state that svcGetSystemTick counts at SYSCLOCK_ARM11 "regardless of whether the
+ * New 3DS is running at its higher clock". It does not. osSetSpeedupEnable(true) puts the ARM11 on
+ * SYSCLOCK_ARM11_LGR2, which os.h defines as exactly SYSCLOCK_ARM11 * 3, and the tick counter goes with
+ * it - while libctru's CPU_TICKS_PER_USEC is fixed to the base clock. Every figure this port has
+ * reported since the profiler landed was therefore 3x too large, which is how a single-threaded loop
+ * came to report 153% of one core in 60 seconds of wall clock and nobody questioned the arithmetic.
+ *
+ * Timing a known sleep settles it on whatever hardware is actually running, at any clock, with no model
+ * detection. The sleep is long enough that scheduler jitter is noise and short enough to be invisible at
+ * startup. If it returns something implausible the base clock is kept, because a wrong calibration is
+ * worse than a wrong constant.
+ */
+static double s_ticks_per_usec;
+static int s_scale_threaded;
+
+void rc_profile_set_scale_threaded(int threaded)
+{
+    s_scale_threaded = threaded;
+}
+
+void rc_profile_calibrate(void)
+{
+    const s64 sleep_ns = 100000000ll; /* 100 ms */
+    u64 before, after;
+    double measured;
+
+    before = svcGetSystemTick();
+    svcSleepThread(sleep_ns);
+    after = svcGetSystemTick();
+
+    measured = (double)(after - before) / ((double)sleep_ns / 1000.0);
+    if (measured > CPU_TICKS_PER_USEC * 0.5 && measured < CPU_TICKS_PER_USEC * 6.0)
+        s_ticks_per_usec = measured;
+    else
+        s_ticks_per_usec = CPU_TICKS_PER_USEC;
+
+    rc_log("timer: %.1f ticks/us measured (libctru constant says %.1f)\n",
+        s_ticks_per_usec, (double)CPU_TICKS_PER_USEC);
+}
+
 void rc_profile_reset(rc_profile *p)
 {
     if (p != NULL)
@@ -21,9 +64,35 @@ uint64_t rc_profile_start(void)
 
 void rc_profile_stop(rc_profile *p, rc_stage stage, uint64_t started)
 {
+    uint64_t elapsed;
+
     if (p == NULL || stage >= RC_STAGE_COUNT)
         return;
-    p->ticks[stage] += svcGetSystemTick() - started;
+    elapsed = svcGetSystemTick() - started;
+    p->ticks[stage] += elapsed;
+    p->calls[stage]++;
+
+    /*
+     * These run inside the demux callback; record them so demux can subtract its own children.
+     *
+     * SCALE joined the list when the blit moved back inside rc_mvd_decode_frame. It was briefly absent
+     * and the effect was immediate and misleading: demux reported 2684 us/call against ~750 in every
+     * neighbouring run, and the receive core read 64% busy instead of ~27%, purely because the 22 s of
+     * scaling was being counted twice. Nothing had got slower.
+     */
+    if (stage == RC_STAGE_MVD_FEED || stage == RC_STAGE_MVD_RENDER || stage == RC_STAGE_SCALE)
+        p->inner += elapsed;
+}
+
+void rc_profile_stop_nested(rc_profile *p, rc_stage stage, uint64_t started, uint64_t inner_at_start)
+{
+    uint64_t elapsed, nested;
+
+    if (p == NULL || stage >= RC_STAGE_COUNT)
+        return;
+    elapsed = svcGetSystemTick() - started;
+    nested = p->inner - inner_at_start;
+    p->ticks[stage] += (elapsed > nested) ? (elapsed - nested) : 0u;
     p->calls[stage]++;
 }
 
@@ -48,10 +117,11 @@ void rc_profile_report(const rc_profile *p, unsigned window_ms)
         return;
 
     rc_log("\nCPU profile over %u ms:\n", window_ms);
-    rc_log("  stage                        calls    total ms    us/call\n");
+    rc_log("  stage                        calls    total ms    us/call   (exclusive)\n");
 
     for (i = 0; i < RC_STAGE_COUNT; i++) {
-        double us = (double)p->ticks[i] / CPU_TICKS_PER_USEC;
+        double us = (double)p->ticks[i]
+            / (s_ticks_per_usec > 0.0 ? s_ticks_per_usec : (double)CPU_TICKS_PER_USEC);
         unsigned long us_total = (unsigned long)us;
         unsigned long per_call = p->calls[i] ? (unsigned long)(us / (double)p->calls[i]) : 0ul;
 
@@ -61,16 +131,30 @@ void rc_profile_report(const rc_profile *p, unsigned window_ms)
     }
 
     /*
-     * The headline number. Anything approaching 100% means the frame pipeline is the constraint and no
-     * amount of network tuning will help; well under it means the remaining loss is the link, not us.
-     * Phase 2 already showed CPU contention on this core costs real UDP throughput, so this figure and
-     * the packet-loss figure have to be read together.
+     * THE HEADLINE IS PER-CORE, because the stages no longer share one.
+     *
+     * This used to add every stage up and call the total "% of one core". Once the scale moved to core 2
+     * that became a lie in the direction that matters: it reported 74% and invited the conclusion that
+     * the CPU was still saturated, when core 0 - the core that actually drains the socket - was at 47%.
+     * The receive loop's headroom is the number worth knowing, so it gets its own line.
      */
     if (window_ms > 0) {
-        unsigned long pct = (unsigned long)((total_us / 10ul) / (unsigned long)window_ms);
-        rc_log("  ---- measured work: %lu.%03lu s of %u.%03u s wall = %lu%% of one core\n",
-            total_us / 1000000ul, (total_us / 1000ul) % 1000ul,
-            window_ms / 1000u, window_ms % 1000u, pct);
+        unsigned long recv_us = 0;
+        int i2;
+
+        for (i2 = 0; i2 < RC_STAGE_COUNT; i2++) {
+            if (i2 != RC_STAGE_SCALE || !s_scale_threaded)
+                recv_us += (unsigned long)((double)p->ticks[i2]
+                    / (s_ticks_per_usec > 0.0 ? s_ticks_per_usec : (double)CPU_TICKS_PER_USEC));
+        }
+        rc_log("  ---- receive core: %lu.%03lu s = %lu%% busy   (all stages: %lu.%03lu s)\n",
+            recv_us / 1000000ul, (recv_us / 1000ul) % 1000ul,
+            (unsigned long)((recv_us / 10ul) / (unsigned long)window_ms),
+            total_us / 1000000ul, (total_us / 1000ul) % 1000ul);
+        rc_log("  ---- scale:        %lu.%03lu s = %lu%% of a core   (%s)\n",
+            (total_us - recv_us) / 1000000ul, ((total_us - recv_us) / 1000ul) % 1000ul,
+            (unsigned long)(((total_us - recv_us) / 10ul) / (unsigned long)window_ms),
+            s_scale_threaded ? "on a spare core" : "\x1b[33mon the receive core, included above\x1b[0m");
     }
 }
 

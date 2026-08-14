@@ -17,7 +17,16 @@ static void pairing_record_defaults(halyard_pairing_record *rec)
     rec->os_major = 10;
     rec->os_minor = 0;
     rec->start_bitrate = 10000;
-    rec->stream_bitrate_kbps = 2000;
+    rec->stream_bitrate_kbps = 8000;
+    rec->skip_until_keyframe = 0;
+    rec->widescreen = 1;
+    rec->smoothing = 1;
+    rec->scale_thread = 0;
+    rec->dump_video = 0;
+    rec->stream_width = 640;
+    rec->stream_height = 360;
+    rec->fps = 30;
+    rec->video_rgb565 = 0;
     rec->probe_resolutions = 0;
     rec->streaming_type = 0;
 }
@@ -84,6 +93,24 @@ int halyard_pairing_file_load(const char *argv0, halyard_pairing_record *rec)
             rec->stream_bitrate_kbps = atoi(value);
         } else if (strcmp(line, "proberesolutions") == 0) {
             rec->probe_resolutions = atoi(value);
+        } else if (strcmp(line, "fps") == 0) {
+            rec->fps = atoi(value);
+        } else if (strcmp(line, "videoformat") == 0) {
+            rec->video_rgb565 = (strcmp(value, "rgb565") == 0);
+        } else if (strcmp(line, "skipuntilkeyframe") == 0) {
+            rec->skip_until_keyframe = atoi(value);
+        } else if (strcmp(line, "widescreen") == 0) {
+            rec->widescreen = atoi(value);
+        } else if (strcmp(line, "dumpvideo") == 0) {
+            rec->dump_video = atoi(value);
+        } else if (strcmp(line, "scalethread") == 0) {
+            rec->scale_thread = atoi(value);
+        } else if (strcmp(line, "smoothing") == 0) {
+            rec->smoothing = atoi(value);
+        } else if (strcmp(line, "streamwidth") == 0) {
+            rec->stream_width = atoi(value);
+        } else if (strcmp(line, "streamheight") == 0) {
+            rec->stream_height = atoi(value);
         } else if (strcmp(line, "streamingtype") == 0) {
             rec->streaming_type = atoi(value);
         }
