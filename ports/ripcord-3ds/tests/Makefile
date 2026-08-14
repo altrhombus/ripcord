@@ -169,6 +169,7 @@ CONTROL_PROTO_SOURCES := \
 	$(PORT_ROOT)/source/util/rc_base64.c \
 	$(PORT_ROOT)/source/session/halyard_launch_spec.c \
 	$(PORT_ROOT)/source/takion/takion_control_proto.c \
+	$(PORT_ROOT)/source/takion/senkusha_echo.c \
 	control_proto_test.c
 
 .PHONY: all check build clean constants

@@ -24,6 +24,7 @@
  */
 #include "../source/session/halyard_launch_spec.h"
 #include "../source/takion/takion_control_proto.h"
+#include "../source/takion/senkusha_echo.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -458,6 +459,196 @@ static void run_stream_info(void)
 }
 
 /* The bare-envelope shape, which has no vector because it is two bytes and no payload. */
+/*
+ * The BANDWIDTH_PROBE envelope that arms and disarms senkusha's echo mode.
+ *
+ * Expected bytes are hand-encoded from docs/protocol/bandwidth_probe.proto rather than captured, because
+ * what is under test is our encoder against the schema:
+ *
+ *   ControlMessage.type = 1 varint    -> 08 0C            (12 = BANDWIDTH_PROBE)
+ *   ControlMessage.bandwidthProbePayload = 14 length      -> 72 06   ((14<<3)|2 = 0x72)
+ *     BandwidthProbePayload.command = 1 varint            -> 08 00   (ECHO_COMMAND, emitted although
+ *                                                                     zero: it is `required`)
+ *     BandwidthProbePayload.echoCommand = 2 length        -> 12 02
+ *       EchoCommand.state = 1 varint                      -> 08 01 / 08 00
+ */
+static void run_echo_command(void)
+{
+    static const uint8_t expect_on[]  = { 0x08, 0x0C, 0x72, 0x06, 0x08, 0x00, 0x12, 0x02, 0x08, 0x01 };
+    static const uint8_t expect_off[] = { 0x08, 0x0C, 0x72, 0x06, 0x08, 0x00, 0x12, 0x02, 0x08, 0x00 };
+    uint8_t buf[32];
+    size_t n;
+
+    n = takion_control_build_echo_command(1, buf, sizeof(buf));
+    if (n != sizeof(expect_on) || memcmp(buf, expect_on, n) != 0) {
+        g_failed++;
+        printf("FAIL echo: EchoCommand{state=true} encoding\n");
+    } else {
+        g_passed++;
+    }
+
+    n = takion_control_build_echo_command(0, buf, sizeof(buf));
+    if (n != sizeof(expect_off) || memcmp(buf, expect_off, n) != 0) {
+        g_failed++;
+        printf("FAIL echo: EchoCommand{state=false} encoding\n");
+    } else {
+        g_passed++;
+    }
+
+    /* A buffer one byte short must refuse rather than truncate a message the console would misparse. */
+    if (takion_control_build_echo_command(1, buf, sizeof(expect_on) - 1) != 0) {
+        g_failed++;
+        printf("FAIL echo: undersized buffer was not refused\n");
+    } else {
+        g_passed++;
+    }
+}
+
+/*
+ * The two MTU legs' envelopes, hand-encoded from docs/protocol/bandwidth_probe.proto.
+ *
+ *   MTU_COMMAND{id=1, mtuReq=1454, num=1}  (1454 = 0x5AE -> varint AE 0B)
+ *     inner   08 01  10 AE 0B  20 01                          (id=1, mtuReq=2, num=4)
+ *     payload 08 01  1A 07 <inner>                            (command=1, mtuCommand=3)
+ *     message 08 0C  72 0B <payload>
+ *
+ *   CLIENT_MTU_COMMAND{id=1, mtuReq=1454, state=true, mtuDown=1454}
+ *     inner   08 01  10 AE 0B  18 01  20 AE 0B                (id, mtuReq, state, mtuDown; 10 bytes)
+ *     payload 08 04  2A 0A <inner>                            (command=4, clientMtuCommand=5; 14 bytes)
+ *     message 08 0C  72 0E <payload>                          (18 bytes)
+ */
+static void run_mtu_commands(void)
+{
+    static const uint8_t expect_mtu[] = {
+        0x08, 0x0C, 0x72, 0x0B,
+        0x08, 0x01, 0x1A, 0x07,
+        0x08, 0x01, 0x10, 0xAE, 0x0B, 0x20, 0x01,
+    };
+    static const uint8_t expect_client[] = {
+        0x08, 0x0C, 0x72, 0x0E,
+        0x08, 0x04, 0x2A, 0x0A,
+        0x08, 0x01, 0x10, 0xAE, 0x0B, 0x18, 0x01, 0x20, 0xAE, 0x0B,
+    };
+    uint8_t buf[64];
+    size_t n;
+
+    n = takion_control_build_mtu_command(1u, 1454u, 1u, buf, sizeof(buf));
+    if (n != sizeof(expect_mtu) || memcmp(buf, expect_mtu, n) != 0) {
+        g_failed++;
+        printf("FAIL mtu: MTU_COMMAND encoding (%u bytes)\n", (unsigned)n);
+    } else {
+        g_passed++;
+    }
+
+    n = takion_control_build_client_mtu_command(1u, 1454u, 1, buf, sizeof(buf));
+    if (n != sizeof(expect_client) || memcmp(buf, expect_client, n) != 0) {
+        g_failed++;
+        printf("FAIL mtu: CLIENT_MTU_COMMAND{state=true} encoding (%u bytes)\n", (unsigned)n);
+    } else {
+        g_passed++;
+    }
+
+    /* The close differs from the open only in the state byte - and getting that wrong leaves the console
+     * stuck in client-MTU mode, so it is worth an assertion of its own. */
+    n = takion_control_build_client_mtu_command(2u, 1454u, 0, buf, sizeof(buf));
+    if (n != sizeof(expect_client) || buf[14] != 0x00u || buf[9] != 0x02u) {
+        g_failed++;
+        printf("FAIL mtu: CLIENT_MTU_COMMAND{state=false} did not clear the state byte\n");
+    } else {
+        g_passed++;
+    }
+
+    /* All three must still peek as BANDWIDTH_PROBE, or the console will route them nowhere. */
+    {
+        uint32_t type = 0xffffffffu;
+        if (!takion_control_peek_type(buf, n, &type) || type != TAKION_CONTROL_BANDWIDTH_PROBE) {
+            g_failed++;
+            printf("FAIL mtu: envelope did not peek as BANDWIDTH_PROBE\n");
+        } else {
+            g_passed++;
+        }
+    }
+
+    if (takion_control_build_mtu_command(1u, 1454u, 1u, buf, sizeof(expect_mtu) - 1) != 0) {
+        g_failed++;
+        printf("FAIL mtu: undersized buffer was not refused\n");
+    } else {
+        g_passed++;
+    }
+}
+
+/*
+ * The RTT ping itself. Field positions are [W] from session8-wireshark frames 155-175 via
+ * SenkushaEchoProbe.cs; this checks that the C port puts them where that file says they go.
+ */
+static void run_senkusha_echo(void)
+{
+    /* Sized for the MTU variant below, not just the 548-byte RTT ping. */
+    uint8_t buf[1500];
+    uint8_t seq = 0xAAu;
+    size_t n;
+
+    n = senkusha_echo_build(7u, 0x1122334455ull, SENKUSHA_ECHO_PAYLOAD, 0x00u, buf, sizeof(buf));
+    if (n != SENKUSHA_ECHO_PAYLOAD) {
+        g_failed++;
+        printf("FAIL senkusha: ping length %u, expected %u\n",
+            (unsigned)n, (unsigned)SENKUSHA_ECHO_PAYLOAD);
+        return;
+    }
+
+    if (buf[0] != 0x03u || buf[5] != 7u || buf[6] != 0xFFu || buf[9] != 0xFFu) {
+        g_failed++;
+        printf("FAIL senkusha: header bytes (type %02x seq %02x markers %02x %02x)\n",
+            buf[0], buf[5], buf[6], buf[9]);
+    } else {
+        g_passed++;
+    }
+
+    /* Five bytes, big-endian, at offset 22. */
+    if (buf[22] != 0x11u || buf[23] != 0x22u || buf[24] != 0x33u
+        || buf[25] != 0x44u || buf[26] != 0x55u) {
+        g_failed++;
+        printf("FAIL senkusha: timestamp not big-endian at offset 22\n");
+    } else {
+        g_passed++;
+    }
+
+    /* The RTT ping's tail is zero; only the MTU test pads with 0x47. */
+    if (buf[27] != 0x00u || buf[SENKUSHA_ECHO_PAYLOAD - 1] != 0x00u) {
+        g_failed++;
+        printf("FAIL senkusha: RTT ping tail is not zero-filled\n");
+    } else {
+        g_passed++;
+    }
+
+    /* The console echoes verbatim, so our own ping must be recognised as an echo of itself. */
+    if (!senkusha_echo_is_echo(buf, n, &seq) || seq != 7u) {
+        g_failed++;
+        printf("FAIL senkusha: a ping was not recognised as its own echo\n");
+    } else {
+        g_passed++;
+    }
+
+    /* An A/V packet (base type 2) must not be mistaken for an echo. */
+    buf[0] = 0x02u;
+    if (senkusha_echo_is_echo(buf, n, &seq)) {
+        g_failed++;
+        printf("FAIL senkusha: a non-echo datagram was accepted\n");
+    } else {
+        g_passed++;
+    }
+
+    /* The MTU variant pads from offset 27 with 0x47 - incompressible, so the datagram is genuinely the
+     * size it claims even across a link doing compression. */
+    n = senkusha_echo_build(0u, 1ull, 1226u, 0x47u, buf, sizeof(buf));
+    if (n != 1226u || buf[27] != 0x47u || buf[1225] != 0x47u || buf[0] != 0x03u) {
+        g_failed++;
+        printf("FAIL senkusha: MTU-sized ping padding\n");
+    } else {
+        g_passed++;
+    }
+}
+
 static void run_bare_envelope(void)
 {
     uint8_t buf[8];
@@ -539,6 +730,9 @@ int main(int argc, char **argv)
     fclose(file);
 
     run_bare_envelope();
+    run_echo_command();
+    run_mtu_commands();
+    run_senkusha_echo();
     run_connect_literals();
     run_stream_info();
 

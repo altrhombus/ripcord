@@ -751,6 +751,34 @@ buffer (`refs=1`, so the DPB needs almost nothing); linear memory (~25 MB free);
 sequence (disassembling `mvd.o` shows `mvdstdInit` issuing all three of 3dbrew's documented commands -
 `0x00050100` and `0x001B0040` as literal-pool words, `0x00180000` as an inline immediate).
 
+**Phase 6f — senkusha's measurement legs, and a theory they disproved.** 2026-08-13. Both legs ported
+from `src/Ripcord.Protocol.Halyard.Takion/` (the same-project reference implementation, which carries the
+`[W]` capture citations for every field) and both worked against a real console on the first attempt:
+
+```
+senkusha: RTT 2 ms from 10/10 echoes
+senkusha: MTU 1454 confirmed both directions
+```
+
+The launch spec now declares measured figures instead of `rtt: 0` and an assumed MTU.
+
+**And throughput did not move: 0.71 Mbps, exactly as before.** This was the entire reason the legs were
+prioritised - the theory that a console with no RTT or MTU falls back to a conservative encode, which was
+stated confidently here for several rounds and is now measured to be false. The console sends the same
+~0.70 Mbps either way.
+
+Two things follow, and both are worth stating because they close off a lot of speculation:
+
+- **`streambitrate` / `bwKbpsSent` does not govern the encoder, and neither does senkusha.** A 4x change
+  in the request (8000 vs 2000) produced a 3% change in delivery, on a link with 2 lost units in 5,400.
+  Whatever sets the rate, it is not any input this client currently controls.
+- **That is very likely fine.** Decoding a capture on a PC shows the PS5 home screen at 0.10 bits/pixel
+  with every label legible. The stream arriving is good; what limits text on the 3DS is that 640x360 has
+  to become 225 rows on a 240-row screen. That is a display constraint, not a bandwidth one.
+
+The `BANDWIDTH_COMMAND` leg remains unimplemented and, per spec 6.4, has never been observed in any
+capture we hold - it stays `[X]`.
+
 ## Architectural research still owed
 
 Written up after the Phase 6d decode work, because several of these are questions the port has been

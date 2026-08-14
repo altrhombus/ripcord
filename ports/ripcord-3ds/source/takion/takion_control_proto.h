@@ -45,6 +45,7 @@
 #define TAKION_CONTROL_DISCONNECT      8u
 #define TAKION_CONTROL_STREAM_INFO     13u
 #define TAKION_CONTROL_STREAM_INFO_ACK 14u
+#define TAKION_CONTROL_BANDWIDTH_PROBE 12u
 #define TAKION_CONTROL_IDR_REQUEST     25u
 
 /* Uncompressed SEC1 point sizes, for callers sizing buffers. See rc_ecdh.h for the curve selection. */
@@ -177,5 +178,39 @@ int takion_control_parse_stream_info(const uint8_t *data, size_t length,
  * STREAM_INFO_ACK-style acknowledgements use. Returns bytes written, or 0 if the buffer is too small.
  */
 size_t takion_control_build_bare(uint32_t type, uint8_t *buf, size_t buf_size);
+
+/*
+ * Builds ControlMessage{type=BANDWIDTH_PROBE, bandwidthProbePayload={command=ECHO_COMMAND,
+ * echoCommand={state}}} - the message that puts the console into echo mode and takes it back out.
+ *
+ * Field numbers from docs/protocol/bandwidth_probe.proto: BandwidthProbePayload.command = 1 (ECHO_COMMAND
+ * = 0), .echoCommand = 2, EchoCommand.state = 1. The payload hangs off ControlMessage field 14. Goes on
+ * TAKION_CHANNEL_BANDWIDTH (0x0008), not the session channel.
+ *
+ * `command` is `required` in the schema, so it is emitted even though ECHO_COMMAND is zero and proto2
+ * would otherwise let it be omitted - a required field the peer expects to find is not a default to
+ * elide. Returns bytes written, or 0 if the buffer is too small.
+ */
+size_t takion_control_build_echo_command(int enabled, uint8_t *buf, size_t buf_size);
+
+/*
+ * The two MTU legs, spec 6.4's MTU-in and MTU-out. Both go on TAKION_CHANNEL_BANDWIDTH.
+ *
+ * DOWNSTREAM: MTU_COMMAND{id, mtuReq, num} asks the console to send `num` datagrams of `mtuReq` bytes.
+ * Their ARRIVAL is the entire result - a datagram of that size reaching us intact is what "this MTU
+ * works" means, so the contents are never inspected. The console's reply reports what it SENT, which is
+ * not the same question.
+ *
+ * UPSTREAM: CLIENT_MTU_COMMAND{id, mtuReq, state} puts the console into echo mode for one large packet;
+ * we send it in the echo format at that size and it comes back. state=false closes the test, and MUST be
+ * sent on every exit path - a console left in client-MTU mode has no other way to be cleared.
+ *
+ * Field numbers from docs/protocol/bandwidth_probe.proto: MtuCommand{id=1, mtuReq=2, num=4} under
+ * BandwidthProbePayload field 3; ClientMtuCommand{id=1, mtuReq=2, state=3, mtuDown=4} under field 5.
+ */
+size_t takion_control_build_mtu_command(uint32_t id, uint32_t mtu_req, uint32_t num,
+                                        uint8_t *buf, size_t buf_size);
+size_t takion_control_build_client_mtu_command(uint32_t id, uint32_t mtu_req, int state,
+                                               uint8_t *buf, size_t buf_size);
 
 #endif /* TAKION_CONTROL_PROTO_H */
