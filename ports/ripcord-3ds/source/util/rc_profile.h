@@ -9,10 +9,12 @@
  * per-frame resample is now a permanent fixed cost sitting on the same core as the packet crypto and the
  * decoder feed. Nobody has measured any of those three.
  *
- * ON MEASURING WITH svcGetSystemTick. It counts at SYSCLOCK_ARM11 regardless of whether the New 3DS is
- * running at its higher clock, so CPU_TICKS_PER_USEC converts honestly either way. Reading it is cheap
- * (a coprocessor read, no syscall), which matters when the thing being timed is a few microseconds -
- * a timer that costs as much as the work would report nonsense.
+ * ON MEASURING WITH svcGetSystemTick. Reading it is cheap (a coprocessor read, no syscall), which
+ * matters when the thing being timed is a few microseconds - a timer that costs as much as the work
+ * would report nonsense. But the RATE IS NOT THE LIBCTRU CONSTANT: this header previously claimed the
+ * tick counts at SYSCLOCK_ARM11 whether or not the New 3DS is at its higher clock, and that is false.
+ * osSetSpeedupEnable(true) triples the ARM11 clock (os.h: SYSCLOCK_ARM11_LGR2 == SYSCLOCK_ARM11 * 3)
+ * and the tick with it, so every reported figure was 3x too large until rc_profile_calibrate landed.
  *
  * ON THE CORE PROBE. libctru documents the rules but not what a .3dsx actually gets: core 0 is always
  * available, core 1 needs APT_SetAppCpuTimeLimit, core 2 is New3DS-only and requires exheader kernel
@@ -43,13 +45,28 @@ typedef enum {
 typedef struct {
     uint64_t ticks[RC_STAGE_COUNT];
     uint32_t calls[RC_STAGE_COUNT];
+    uint64_t inner;  /* running total of stages that nest inside another - see rc_profile_stop_nested */
 } rc_profile;
+
+/* Measures the real tick rate against a known sleep. Call once, after osSetSpeedupEnable. */
+void rc_profile_calibrate(void);
+
+/* Whether the scale runs on a spare core. Decides if its cost belongs to the receive core's total. */
+void rc_profile_set_scale_threaded(int threaded);
 
 void rc_profile_reset(rc_profile *p);
 
 /* Returns the current tick, to be passed to rc_profile_stop. Cheap enough to call per packet. */
 uint64_t rc_profile_start(void);
 void rc_profile_stop(rc_profile *p, rc_stage stage, uint64_t started);
+
+/*
+ * For a stage that CONTAINS other timed stages. stream_demux_ingest invokes the video-frame callback
+ * synchronously, so MVD feed and render both run inside the demux timer - which made the report add up
+ * to 153% of one core on hardware and still nobody disbelieved it. Capture p->inner before the call and
+ * pass it here; the nested time is subtracted so every row is exclusive and the total is meaningful.
+ */
+void rc_profile_stop_nested(rc_profile *p, rc_stage stage, uint64_t started, uint64_t inner_at_start);
 
 /* Logs a table: total ms, call count, and microseconds per call for each stage. */
 void rc_profile_report(const rc_profile *p, unsigned window_ms);

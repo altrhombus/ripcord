@@ -40,6 +40,7 @@ DISCOVERY := ripcord-3ds-discovery
 SESSION   := ripcord-3ds-session
 TAKION    := ripcord-3ds-takion
 CONNECT   := ripcord-3ds-connect
+MVDREPLAY := ripcord-3ds-mvdreplay
 BUILD     := build
 
 REPO_ROOT := ../..
@@ -227,7 +228,7 @@ CROSSCHECK_SOURCES := \
 
 .PHONY: all constants clean test linktest discovery session takion connect crosscheck
 
-all: $(TARGET).3dsx $(LINKTEST).3dsx $(DISCOVERY).3dsx $(SESSION).3dsx $(TAKION).3dsx $(CONNECT).3dsx
+all: $(TARGET).3dsx $(LINKTEST).3dsx $(DISCOVERY).3dsx $(SESSION).3dsx $(TAKION).3dsx $(CONNECT).3dsx $(MVDREPLAY).3dsx
 
 linktest: $(LINKTEST).3dsx
 
@@ -238,6 +239,8 @@ session: $(SESSION).3dsx
 takion: $(TAKION).3dsx
 
 connect: $(CONNECT).3dsx
+
+mvdreplay: $(MVDREPLAY).3dsx
 
 # The interop constants are generated from the single committed JSON bundle rather than duplicated into
 # this port. tools/gen_constants.py explains why that is a deliberate constraint and not just tidiness.
@@ -292,6 +295,21 @@ $(BUILD)/$(CONNECT).elf: $(CONNECT_SOURCES) $(GENERATED)
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) $(ECDH_CFLAGS) $(LDFLAGS) -o $@ $(CONNECT_SOURCES) $(GENERATED) $(ECDH_LIBS) $(LIBS)
 
+# The replay tool needs only the decoder and its helpers - no crypto, no network, no protocol.
+MVDREPLAY_SOURCES := \
+	source/util/rc_log.c \
+	source/util/rc_program_dir.c \
+	source/util/rc_profile.c \
+	source/media/rc_mvd.c \
+	source/mvdreplay/main.c
+
+$(BUILD)/$(MVDREPLAY).elf: $(MVDREPLAY_SOURCES)
+	@mkdir -p $(BUILD)
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $(MVDREPLAY_SOURCES) $(LIBS)
+
+$(MVDREPLAY).3dsx: $(BUILD)/$(MVDREPLAY).elf
+	3dsxtool $< $@
+
 $(CONNECT).3dsx: $(BUILD)/$(CONNECT).elf
 	3dsxtool $< $@
 
@@ -309,5 +327,5 @@ test:
 	$(MAKE) -C tests
 
 clean:
-	rm -rf $(BUILD) $(TARGET).3dsx $(LINKTEST).3dsx $(DISCOVERY).3dsx $(SESSION).3dsx $(TAKION).3dsx $(CONNECT).3dsx
+	rm -rf $(BUILD) $(TARGET).3dsx $(LINKTEST).3dsx $(DISCOVERY).3dsx $(SESSION).3dsx $(TAKION).3dsx $(CONNECT).3dsx $(MVDREPLAY).3dsx
 	$(MAKE) -C tests clean
