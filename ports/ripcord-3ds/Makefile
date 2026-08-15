@@ -208,6 +208,7 @@ CONNECT_SOURCES := \
 	source/takion/takion_reliable_channel.c \
 	source/takion/takion_control_proto.c \
 	source/takion/senkusha_echo.c \
+	source/input/halyard_input.c \
 	source/takion/takion_session_negotiator.c \
 	source/media/rc_mvd.c \
 	source/media/rc_audio.c \
@@ -235,6 +236,7 @@ CROSSCHECK_SOURCES := \
 	source/crypto/rc_ecdh.c \
 	source/takion/takion_control_proto.c \
 	source/takion/senkusha_echo.c \
+	source/input/halyard_input.c \
 	source/takion/takion_session_negotiator.c
 
 .PHONY: all constants clean test linktest discovery session takion connect crosscheck
