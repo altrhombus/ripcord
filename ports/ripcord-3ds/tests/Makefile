@@ -56,6 +56,7 @@ STREAM_HEADER_TARGET := $(BUILD)/stream_header_test
 STREAM_DEMUX_TARGET := $(BUILD)/stream_demux_test
 ECDH_TARGET := $(BUILD)/ecdh_test
 CONTROL_PROTO_TARGET := $(BUILD)/control_proto_test
+INPUT_TARGET := $(BUILD)/input_test
 
 INCLUDES  := -I$(PORT_ROOT)/source/crypto -I$(PORT_ROOT)/source/halyard
 
@@ -172,11 +173,16 @@ CONTROL_PROTO_SOURCES := \
 	$(PORT_ROOT)/source/takion/senkusha_echo.c \
 	control_proto_test.c
 
+# Phase 6g: the feedback packet writer. No crypto - what is under test is the byte map from spec 6.3.
+INPUT_SOURCES := \
+	$(PORT_ROOT)/source/input/halyard_input.c \
+	input_test.c
+
 .PHONY: all check build clean constants
 
 all: check
 
-check: $(TARGET) $(VECTORS) $(DISCOVERY_TARGET) $(SESSION_TARGET) $(TAKION_TARGET) $(STREAM_CRYPTO_TARGET) $(STREAM_VECTORS) $(FEC_TARGET) $(STREAM_HEADER_TARGET) $(STREAM_DEMUX_TARGET) $(ECDH_TARGET) $(SESSION_VECTORS) $(CONTROL_PROTO_TARGET) $(PROTO_VECTORS)
+check: $(TARGET) $(VECTORS) $(DISCOVERY_TARGET) $(SESSION_TARGET) $(TAKION_TARGET) $(STREAM_CRYPTO_TARGET) $(STREAM_VECTORS) $(FEC_TARGET) $(STREAM_HEADER_TARGET) $(STREAM_DEMUX_TARGET) $(ECDH_TARGET) $(SESSION_VECTORS) $(CONTROL_PROTO_TARGET) $(PROTO_VECTORS) $(INPUT_TARGET)
 	./$(TARGET) $(VECTORS)
 	./$(DISCOVERY_TARGET)
 	./$(SESSION_TARGET)
@@ -187,6 +193,7 @@ check: $(TARGET) $(VECTORS) $(DISCOVERY_TARGET) $(SESSION_TARGET) $(TAKION_TARGE
 	./$(STREAM_DEMUX_TARGET)
 	./$(ECDH_TARGET) $(SESSION_VECTORS)
 	./$(CONTROL_PROTO_TARGET) $(PROTO_VECTORS)
+	./$(INPUT_TARGET)
 
 build: $(TARGET) $(DISCOVERY_TARGET) $(SESSION_TARGET) $(TAKION_TARGET) $(STREAM_CRYPTO_TARGET) $(FEC_TARGET) $(STREAM_HEADER_TARGET) $(STREAM_DEMUX_TARGET) $(ECDH_TARGET) $(CONTROL_PROTO_TARGET)
 
@@ -244,6 +251,10 @@ $(ECDH_TARGET): $(ECDH_SOURCES)
 $(CONTROL_PROTO_TARGET): $(CONTROL_PROTO_SOURCES)
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) -o $@ $(CONTROL_PROTO_SOURCES)
+
+$(INPUT_TARGET): $(INPUT_SOURCES)
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) -o $@ $(INPUT_SOURCES)
 
 # Not a rule that generates it: the emitter is a .NET project and quietly shelling out to `dotnet` from a
 # C makefile would be a surprising amount of machinery to hide behind `make`. Say what to run instead.
