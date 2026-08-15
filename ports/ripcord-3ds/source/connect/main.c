@@ -51,6 +51,7 @@
 #include "../takion/takion_session_negotiator.h"
 #include "../media/rc_mvd.h"
 #include "../media/rc_audio.h"
+#include "../input/halyard_input.h"
 #include "../stream/stream_demux.h"
 #include "../stream/stream_header.h"
 #include "../stream/stream_packet_crypto.h"
@@ -88,7 +89,17 @@
  * Long enough for the candidate sweep to complete unattended. Five geometries at eight seconds each is
  * forty; sixty leaves room for the console's first keyframe and a little slack at the end.
  */
-#define MEDIA_WINDOW_MS          60000u
+/*
+ * NO FIXED MEDIA WINDOW. This ran for a fixed 60 seconds because it was a probe: a bounded run that
+ * printed a report was exactly what was wanted while the question was "does any of this work at all".
+ * It now decodes video, plays audio and sends controller input, so the natural end of a session is the
+ * user deciding it is over.
+ *
+ * Every rate in the report is therefore computed against MEASURED elapsed time. Reporting per-second
+ * figures against a window the run did not actually fill is how the "receive core 40%" line came to be
+ * quoted at 60 fps when the session had died at 29 seconds - the arithmetic was right and the
+ * denominator was fiction.
+ */
 #define CANDIDATE_DWELL_MS        8000u
 #define TAKION_HEARTBEAT_MS      1000u
 #define CONGESTION_INTERVAL_MS   200u
@@ -148,6 +159,98 @@ static long g_loss_events;
  */
 static rc_mvd g_mvd;
 static rc_audio g_audio;
+static halyard_input_writer g_input;
+static long g_input_state_packets, g_input_history_packets;
+static u64 g_last_input_ms;
+static u64 g_last_input_poll_ms;
+
+/*
+ * State cadence. The .NET writer re-sends a state packet every 200 ms when nothing analog moved; that is
+ * OUR policy rather than a wire requirement, and the note there is honest that lengthening it risks a
+ * console-side timeout nobody has tested for. Matched rather than re-guessed.
+ */
+#define INPUT_STATE_INTERVAL_MS 200u
+
+/*
+ * INPUT IS POLLED ON A CLOCK, NOT ON THE LOOP.
+ *
+ * The first version sampled and sent inside the outer loop with no rate limit. That loop iterates at
+ * roughly 1 kHz when the socket is quiet, and the "has anything changed" test was a memcmp over a struct
+ * holding the RAW circle-pad reading - which jitters by +/-1 continuously. So it was true nearly every
+ * iteration and the console was receiving about a thousand state packets a second, against a real
+ * DualSense's 250 Hz. On hardware that presented as input arriving delayed, repeated, or in the wrong
+ * order, which is what flooding a console's input queue looks like from the far side.
+ *
+ * 8 ms is 125 Hz: comfortably above the 30-60 fps the picture updates at, well inside what the console
+ * expects, and far below the rate at which our own jitter becomes traffic.
+ */
+#define INPUT_POLL_INTERVAL_MS 8u
+
+/*
+ * Circle-pad deadzone, in raw libctru units (full deflection is ~155). The pad rests a few units off
+ * centre and wanders; without this, resting drift is indistinguishable from a real nudge and every
+ * sample becomes a state packet. Applied before scaling so the wire sees a clean zero at rest.
+ */
+#define INPUT_STICK_DEADZONE 12
+
+/*
+ * THE 3DS PAD, MAPPED POSITIONALLY.
+ *
+ * The face buttons go by POSITION, not by letter: the 3DS's B is where the PlayStation's Cross is, and
+ * its A is where Circle is. Mapping A->Cross by name would put "confirm" on the wrong side of the pad
+ * and feel wrong in every menu.
+ *
+ * What a 3DS cannot offer: L3/R3 (no stick click), a touchpad, and analog triggers - ZL/ZR are digital,
+ * so L2/R2 send 0x00 or 0xff rather than a level. The PS button has no key of its own, so it is
+ * START+SELECT together, which is also why both are checked before either is reported alone.
+ */
+static uint32_t map_3ds_buttons(u32 down)
+{
+    uint32_t out = 0;
+
+    if (down & KEY_B)      out |= HALYARD_PAD_CROSS;      /* bottom face, both pads */
+    if (down & KEY_A)      out |= HALYARD_PAD_CIRCLE;     /* right face */
+    if (down & KEY_Y)      out |= HALYARD_PAD_SQUARE;     /* left face */
+    if (down & KEY_X)      out |= HALYARD_PAD_TRIANGLE;   /* top face */
+    if (down & KEY_DUP)    out |= HALYARD_PAD_DPAD_UP;
+    if (down & KEY_DDOWN)  out |= HALYARD_PAD_DPAD_DOWN;
+    if (down & KEY_DLEFT)  out |= HALYARD_PAD_DPAD_LEFT;
+    if (down & KEY_DRIGHT) out |= HALYARD_PAD_DPAD_RIGHT;
+    if (down & KEY_L)      out |= HALYARD_PAD_L1;
+    if (down & KEY_R)      out |= HALYARD_PAD_R1;
+    if (down & KEY_ZL)     out |= HALYARD_PAD_L2;         /* New 3DS only; digital here */
+    if (down & KEY_ZR)     out |= HALYARD_PAD_R2;
+
+    /* START+SELECT together is the PS button - the only chord, because there is no key left for it. */
+    if ((down & KEY_START) && (down & KEY_SELECT)) {
+        out |= HALYARD_PAD_PS;
+    } else {
+        if (down & KEY_START)  out |= HALYARD_PAD_OPTIONS;
+        if (down & KEY_SELECT) out |= HALYARD_PAD_CREATE;
+    }
+    return out;
+}
+
+/*
+ * The circle pad reads +/-155ish at full deflection; the C-stick (New 3DS) reads a similar range. Scale
+ * to the wire's s16 and clamp, then invert Y: the console expects up NEGATIVE, which cap48 established
+ * from the scripted "full up" excursion driving left-Y to -32767. libctru reports up POSITIVE.
+ */
+static int16_t scale_stick(int v)
+{
+    long scaled;
+
+    /* Deadzone first: rest must read exactly zero, or drift becomes traffic. */
+    if (v > -INPUT_STICK_DEADZONE && v < INPUT_STICK_DEADZONE)
+        return 0;
+    scaled = (long)v * 32767L / 155L;
+
+    if (scaled > 32767L)
+        scaled = 32767L;
+    if (scaled < -32767L)
+        scaled = -32767L;
+    return (int16_t)scaled;
+}
 static int g_decode_enabled = 1;
 static rc_profile g_profile;
 
@@ -186,6 +289,7 @@ static int g_video_dump_armed;
 
 static int g_scale_thread_enabled;
 static unsigned long g_video_bytes;
+static long g_total_received, g_total_lost;
 static unsigned g_core_mask;
 static int g_measured_rtt_ms;   /* 0 until the echo probe produces a majority of samples */
 static int g_actual_width, g_actual_height;  /* what STREAM_INFO reported, not what we asked for */
@@ -327,22 +431,41 @@ static void seal_control_packet(void *ctx, uint8_t *packet, size_t length)
  * that a 6-second UDP handshake does not cost us the control connection. Deliberately does one unit of
  * work and returns.
  */
+/*
+ * Drain the control channel, up to a bound, rather than one message per call.
+ *
+ * This did one unit of work and returned - fine while the drain loop was idle, but under a real game the
+ * console sends far more control traffic and we fell behind one message at a time. A session that looked
+ * healthy in every other respect (5% loss, 1.75 Mbps, 25 fps) still ended with "control channel closed
+ * by console" at 70 seconds, which is what falling behind on HEARTBEAT_REQ looks like from this side.
+ *
+ * Bounded so a flood cannot starve the A/V drain - the same reasoning that caps the packet drain at 64.
+ */
+#define CONTROL_DRAIN_LIMIT 8
+
 static void service_control(void *ctx)
 {
     halyard_control_event event;
+    int drained;
 
     (void)ctx;
     if (!g_control_alive)
         return;
-    if (!halyard_control_session_service(&g_control, &event)) {
-        g_control_alive = 0;
-        rc_log("\x1b[31mFAIL\x1b[0m control channel %s\n",
-            event.kind == HALYARD_CONTROL_EVENT_CLOSED ? "closed by console" : "errored");
-        return;
+
+    for (drained = 0; drained < CONTROL_DRAIN_LIMIT; drained++) {
+        if (!halyard_control_session_service(&g_control, &event)) {
+            g_control_alive = 0;
+            rc_log("\x1b[31mFAIL\x1b[0m control channel %s\n",
+                event.kind == HALYARD_CONTROL_EVENT_CLOSED ? "closed by console" : "errored");
+            return;
+        }
+        if (event.kind == HALYARD_CONTROL_EVENT_SESSION_READY)
+            g_control.session_ready = 1;
+        if (event.kind == HALYARD_CONTROL_EVENT_NONE)
+            return;   /* nothing left to read */
     }
-    if (event.kind == HALYARD_CONTROL_EVENT_SESSION_READY)
-        g_control.session_ready = 1;
 }
+
 
 /* Waits for a condition while keeping the control channel serviced. Returns 1 if it became true. */
 static int wait_for_session_ready(unsigned timeout_ms)
@@ -1036,7 +1159,8 @@ static int run_media(int sock)
 {
     uint8_t ack[16];
     size_t ack_len;
-    u64 start_ms;
+    u64 start_ms, elapsed_ms;
+    double elapsed_secs;
     u64 last_heartbeat_ms = 0;
     u64 last_congestion_ms = 0;
     int stream_info_seen = 0;
@@ -1117,6 +1241,7 @@ static int run_media(int sock)
                         (void)rc_mvd_init(&g_mvd, (int)info.width, (int)info.height, g_video_rgb565);
                         /* Independent of video: no sound is a worse session, a dead one is worse still. */
                         (void)rc_audio_init(&g_audio);
+                        halyard_input_writer_init(&g_input);
                         if (g_mvd.ready && g_scale_thread_enabled)
                             rc_profile_set_scale_threaded(rc_mvd_start_scale_thread(g_core_mask));
                     } else {
@@ -1167,7 +1292,7 @@ static int run_media(int sock)
         return 0;
     }
     rc_log("stream: STREAM_INFO_ACK sent - A/V should start now\n");
-    rc_log("X toggles MVD decode, START exits\n\n");
+    rc_log("streaming - press HOME and close the app to end the session\n\n");
 
     /*
      * 3. The media window. Keepalives run off the same tick as everything else: a 1 s Takion HEARTBEAT
@@ -1178,26 +1303,24 @@ static int run_media(int sock)
      * and has never seen a real packet.
      */
     start_ms = osGetTime();
-    while (osGetTime() - start_ms < (u64)MEDIA_WINDOW_MS) {
+    /*
+     * EVERY BUTTON BELONGS TO THE CONSOLE NOW, so the debug bindings are gone.
+     *
+     * START used to exit and X used to toggle decode. Both are game buttons today - START is Options,
+     * START+SELECT is the PS button, X is Triangle - and a debug key that silently eats input would be a
+     * miserable thing to diagnose from the far side of a stream.
+     *
+     * Exit is HOME, which aptMainLoop already reports: pressing HOME and closing the app ends this loop.
+     * That is the 3DS's own convention and it costs no game button. The decode toggle existed to A/B
+     * whether decode cost was driving packet loss - a question that was answered (it was not; it was a
+     * missing SO_RCVBUF) and is not worth a permanent binding.
+     */
+    while (aptMainLoop()) {
         uint8_t packet[STREAM_PACKET_CRYPTO_MAX_PACKET];
         ssize_t n;
         u64 now_ms;
-        u32 kdown;
 
         now_ms = osGetTime();
-        hidScanInput();
-        kdown = hidKeysDown();
-        if (kdown & KEY_START)
-            break;
-        if (kdown & KEY_X) {
-            g_decode_enabled = !g_decode_enabled;
-
-            /* Re-arm on every enable: switching decode on mid-stream lands us in the middle of a GOP,
-             * where every frame until the next keyframe references pictures the decoder does not have. */
-            if (g_decode_enabled)
-                rc_mvd_signal_loss(&g_mvd);
-            rc_log("decode %s\n", g_decode_enabled ? "ON" : "off");
-        }
 
         service_control(NULL);
         if (!g_control_alive)
@@ -1217,9 +1340,35 @@ static int run_media(int sock)
             uint64_t key_pos;
 
             memset(congestion, 0, sizeof(congestion));
+            long window_received = 0, window_lost = 0;
+
+            /*
+             * REPORT THE LOSS. This wrote `received` and left `lost` at zero - so every 200 ms we told
+             * the console the link was perfect, no matter what was actually arriving.
+             *
+             * On a static home screen that is harmless: the console sends ~0.9 Mbps and nothing is lost
+             * anyway. Under a real game it is the whole problem. Forza pushed roughly 2.5 Mbps, 60,066
+             * units were lost against 39,177 received, and the console had no reason to back off because
+             * we kept reporting zero. It stayed at a rate the link could not carry until the session
+             * died - and each of the 314 IDR requests our own loss detection fired added another 30 KB
+             * keyframe burst to a link already drowning.
+             *
+             * stream_demux has counted both numbers all along; take_packet_stats even RESETS them, so it
+             * was built to be drained periodically. Nothing was draining it except the end-of-run report.
+             *
+             * Worth checking the .NET side for the same gap: x64 and ARM64 fail this benchmark the same
+             * way, and three clients failing identically points at something shared rather than at any
+             * one of them.
+             */
+            stream_demux_take_packet_stats(&g_demux, &window_received, &window_lost);
+            g_total_received += window_received;
+            g_total_lost += window_lost;
+
             congestion[0] = 0x05;
-            congestion[3] = (uint8_t)((unsigned)(video_packets + audio_packets) >> 8);
-            congestion[4] = (uint8_t)(video_packets + audio_packets);
+            congestion[3] = (uint8_t)((unsigned long)window_received >> 8);
+            congestion[4] = (uint8_t)window_received;
+            congestion[5] = (uint8_t)((unsigned long)window_lost >> 8);
+            congestion[6] = (uint8_t)window_lost;
             key_pos = reserve_key_pos(sizeof(congestion));
             congestion[CONGESTION_KEYPOS_OFFSET + 0] = (uint8_t)(key_pos >> 24);
             congestion[CONGESTION_KEYPOS_OFFSET + 1] = (uint8_t)(key_pos >> 16);
@@ -1230,6 +1379,99 @@ static int run_media(int sock)
             sendto(sock, congestion, sizeof(congestion), 0,
                    (struct sockaddr *)&g_stream_channel.peer, sizeof(g_stream_channel.peer));
             last_congestion_ms = now_ms;
+        }
+
+        /*
+         * CONTROLLER INPUT, up the same socket.
+         *
+         * Two packets, both sealed exactly like congestion: the shared up-direction key position, written
+         * into the header before sealing, and a GMAC that zeroes ONLY the tag. A history packet goes
+         * whenever a button transitioned; a state packet on analog movement or every 200 ms otherwise.
+         *
+         * Sent from the outer loop rather than the drain: input is a wall-clock activity like the
+         * heartbeat, and the drain's period depends on load. Two phases of this port have already been
+         * spent learning that the hard way.
+         */
+        if (now_ms - g_last_input_poll_ms >= (u64)INPUT_POLL_INTERVAL_MS) {
+            halyard_input_state in;
+            circlePosition circle, cstick;
+            uint8_t input_packet[HALYARD_INPUT_MAX_PACKET];
+            size_t payload_len;
+            uint64_t input_key_pos;
+            u32 held;
+
+            hidScanInput();
+            held = hidKeysHeld();
+            hidCircleRead(&circle);
+            hidCstickRead(&cstick);
+
+            memset(&in, 0, sizeof(in));
+            in.buttons = map_3ds_buttons(held);
+            in.left_x = scale_stick(circle.dx);
+            in.left_y = (int16_t)-scale_stick(circle.dy);   /* wire wants up NEGATIVE */
+            in.right_x = scale_stick(cstick.dx);
+            in.right_y = (int16_t)-scale_stick(cstick.dy);
+
+            payload_len = halyard_input_build_history_payload(&g_input, &in, input_packet + HALYARD_INPUT_HEADER_LENGTH,
+                                                              sizeof(input_packet) - HALYARD_INPUT_HEADER_LENGTH);
+            if (payload_len > 0) {
+                size_t total = HALYARD_INPUT_HEADER_LENGTH + payload_len;
+
+                (void)halyard_input_write_header(0x01, g_input.history_seq++, input_packet, sizeof(input_packet));
+                input_key_pos = reserve_key_pos(total);
+                input_packet[4] = (uint8_t)(input_key_pos >> 24);
+                input_packet[5] = (uint8_t)(input_key_pos >> 16);
+                input_packet[6] = (uint8_t)(input_key_pos >> 8);
+                input_packet[7] = (uint8_t)input_key_pos;
+                /*
+                 * ENCRYPT, THEN SEAL - and the first version did neither, which is what made input
+                 * unusable.
+                 *
+                 * stream_packet_crypto_seal only computes the GMAC tag; it does not touch the payload.
+                 * Congestion packets get away with that, but spec 6.3 is explicit that feedback payloads
+                 * ARE AES-CTR encrypted. So the console was faithfully DECRYPTING our plaintext button
+                 * events into noise - which is why one press arrived as D-pad movement, at an
+                 * unpredictable time, having passed authentication the whole way.
+                 *
+                 * Order matters: the tag is computed over the packet AS IT GOES ON THE WIRE, i.e. over
+                 * ciphertext. Sealing first would authenticate a payload nobody will ever see.
+                 */
+                stream_packet_crypto_crypt_payload(&g_send_crypto, input_key_pos,
+                                                   input_packet + HALYARD_INPUT_HEADER_LENGTH,
+                                                   total - HALYARD_INPUT_HEADER_LENGTH);
+                (void)stream_packet_crypto_seal(&g_send_crypto, input_key_pos, input_packet, total, 8, 0);
+                sendto(sock, input_packet, total, 0,
+                       (struct sockaddr *)&g_stream_channel.peer, sizeof(g_stream_channel.peer));
+                g_input_history_packets++;
+            }
+
+            if (memcmp(&in, &g_input.previous, sizeof(in)) != 0
+                || now_ms - g_last_input_ms >= (u64)INPUT_STATE_INTERVAL_MS) {
+                size_t total;
+
+                payload_len = halyard_input_build_state_payload(&in, input_packet + HALYARD_INPUT_HEADER_LENGTH,
+                                                                sizeof(input_packet) - HALYARD_INPUT_HEADER_LENGTH);
+                total = HALYARD_INPUT_HEADER_LENGTH + payload_len;
+                (void)halyard_input_write_header(0x06, g_input.state_seq++, input_packet, sizeof(input_packet));
+                input_key_pos = reserve_key_pos(total);
+                input_packet[4] = (uint8_t)(input_key_pos >> 24);
+                input_packet[5] = (uint8_t)(input_key_pos >> 16);
+                input_packet[6] = (uint8_t)(input_key_pos >> 8);
+                input_packet[7] = (uint8_t)input_key_pos;
+                /* Encrypt then seal - see the history packet above. */
+                stream_packet_crypto_crypt_payload(&g_send_crypto, input_key_pos,
+                                                   input_packet + HALYARD_INPUT_HEADER_LENGTH,
+                                                   total - HALYARD_INPUT_HEADER_LENGTH);
+                (void)stream_packet_crypto_seal(&g_send_crypto, input_key_pos, input_packet, total, 8, 0);
+                sendto(sock, input_packet, total, 0,
+                       (struct sockaddr *)&g_stream_channel.peer, sizeof(g_stream_channel.peer));
+                g_input_state_packets++;
+                g_last_input_ms = now_ms;
+            }
+
+            g_input.previous = in;
+            g_input.have_previous = 1;
+            g_last_input_poll_ms = now_ms;
         }
 
         /*
@@ -1433,15 +1675,35 @@ static int run_media(int sock)
             rc_log("     the decoder may never have had. That would explain the whole thing.\n");
         }
     }
-    rc_profile_report(&g_profile, MEDIA_WINDOW_MS);
+    /*
+     * MEASURED elapsed time, not a constant. Every per-second figure below divides by this. Quoting rates
+     * against a window the session did not fill is exactly how "receive core 40%" got reported for a
+     * 60 fps run that had actually died at 29 seconds - right arithmetic, fictional denominator.
+     */
+    elapsed_ms = osGetTime() - start_ms;
+    if (elapsed_ms == 0)
+        elapsed_ms = 1;
+    elapsed_secs = (double)elapsed_ms / 1000.0;
+    rc_log("\nsession ran %.1f s\n", elapsed_secs);
+
+    rc_profile_report(&g_profile, (unsigned)elapsed_ms);
     {
-        long received = 0, lost = 0;
-        stream_demux_take_packet_stats(&g_demux, &received, &lost);
+        /*
+         * The RUNNING totals, not another drain. take_packet_stats resets as it reads, and the congestion
+         * reporter now drains it every 200 ms - so reading it again here would show only the residual
+         * since the last report rather than the session.
+         */
+        long received, lost, tail_received = 0, tail_lost = 0;
+
+        stream_demux_take_packet_stats(&g_demux, &tail_received, &tail_lost);
+        received = g_total_received + tail_received;
+        lost = g_total_lost + tail_lost;
+
         rc_log("\ndemux: %ld video frame(s) (%ld keyframe(s)), %ld audio frame(s), %ld loss event(s)\n",
             g_frames, g_keyframes, g_audio_frames, g_loss_events);
         rc_log("       %ld IDR request(s) sent\n", g_idr_requests);
         rc_log("       %ld frame(s) presented (%.1f/s)\n", g_presents,
-            (double)g_presents / ((double)MEDIA_WINDOW_MS / 1000.0));
+            (double)g_presents / elapsed_secs);
         rc_log("       %ld unit(s) received, %ld lost\n", received, lost);
 
         /*
@@ -1461,7 +1723,7 @@ static int run_media(int sock)
          */
         /* Against the dimensions STREAM_INFO reported, not the ones requested - see below. */
         if (g_frames > 0 && g_actual_width > 0 && g_actual_height > 0) {
-            double secs = (double)MEDIA_WINDOW_MS / 1000.0;
+            double secs = elapsed_secs;
             double mbps = (double)g_video_bytes * 8.0 / secs / 1000000.0;
             double bpp = ((double)g_video_bytes * 8.0 / (double)g_frames)
                 / ((double)g_actual_width * (double)g_actual_height);
@@ -1500,7 +1762,7 @@ static int run_media(int sock)
     if (g_audio.ready || g_audio.frames_decoded > 0) {
         rc_log("audio: %ld frame(s) decoded (%.1f/s), %ld decode error(s), %ld dropped (queue full)%s\n",
             g_audio.frames_decoded,
-            (double)g_audio.frames_decoded / ((double)MEDIA_WINDOW_MS / 1000.0),
+            (double)g_audio.frames_decoded / elapsed_secs,
             g_audio.decode_errors, g_audio.queue_full,
             g_audio.first_error != 0 ? " \x1b[33m(see first_error)\x1b[0m" : "");
         if (g_audio.depth_samples > 0) {
@@ -1515,6 +1777,9 @@ static int run_media(int sock)
                 g_audio.rate_trim_ppm, RC_AUDIO_TARGET_SAMPLES * 1000 / RC_AUDIO_SAMPLE_RATE);
         }
     }
+
+    rc_log("input: %ld state packet(s), %ld history packet(s) sent\n",
+        g_input_state_packets, g_input_history_packets);
 
     rc_log("media window: %d video, %d audio packet(s), %d GMAC failure(s) in a 1-in-16 sample\n",
         video_packets, audio_packets, verify_failures);
