@@ -50,6 +50,7 @@
 #include "../takion/takion_reliable_channel.h"
 #include "../takion/takion_session_negotiator.h"
 #include "../media/rc_mvd.h"
+#include "../media/rc_audio.h"
 #include "../stream/stream_demux.h"
 #include "../stream/stream_header.h"
 #include "../stream/stream_packet_crypto.h"
@@ -146,6 +147,7 @@ static long g_loss_events;
  * contention on this core costs real UDP throughput.
  */
 static rc_mvd g_mvd;
+static rc_audio g_audio;
 static int g_decode_enabled = 1;
 static rc_profile g_profile;
 
@@ -233,9 +235,10 @@ static void on_video_frame(void *userdata, const uint8_t *data, size_t length, i
 static void on_audio_frame(void *userdata, const uint8_t *data, size_t length)
 {
     (void)userdata;
-    (void)data;
-    (void)length;
     g_audio_frames++;
+    /* `data` is unit 0 only - stream_demux strips the redundant copies. See rc_audio.h for what happens
+     * if the whole payload is handed to Opus instead. */
+    rc_audio_submit(&g_audio, data, length);
 }
 
 static u64 g_last_idr_request_ms;
@@ -1112,6 +1115,8 @@ static int run_media(int sock)
                                 g_stream_width, g_stream_height, g_actual_width, g_actual_height);
                         }
                         (void)rc_mvd_init(&g_mvd, (int)info.width, (int)info.height, g_video_rgb565);
+                        /* Independent of video: no sound is a worse session, a dead one is worse still. */
+                        (void)rc_audio_init(&g_audio);
                         if (g_mvd.ready && g_scale_thread_enabled)
                             rc_profile_set_scale_threaded(rc_mvd_start_scale_thread(g_core_mask));
                     } else {
@@ -1489,6 +1494,25 @@ static int run_media(int sock)
             rc_log("video dump: %lu KB written to %s\n", g_video_dump_bytes / 1024ul, path);
         } else {
             rc_log("\x1b[31mvideo dump: could not open %s\x1b[0m\n", path);
+        }
+    }
+
+    if (g_audio.ready || g_audio.frames_decoded > 0) {
+        rc_log("audio: %ld frame(s) decoded (%.1f/s), %ld decode error(s), %ld dropped (queue full)%s\n",
+            g_audio.frames_decoded,
+            (double)g_audio.frames_decoded / ((double)MEDIA_WINDOW_MS / 1000.0),
+            g_audio.decode_errors, g_audio.queue_full,
+            g_audio.first_error != 0 ? " \x1b[33m(see first_error)\x1b[0m" : "");
+        if (g_audio.depth_samples > 0) {
+            double avg = (double)g_audio.depth_sum / (double)g_audio.depth_samples;
+
+            rc_log("       ring avg %.0f samples (\x1b[36m%.0f ms\x1b[0m behind the picture), "
+                   "peak %.0f ms of %d ms, %ld starved\n",
+                avg, avg * 1000.0 / RC_AUDIO_SAMPLE_RATE,
+                (double)g_audio.depth_peak * 1000.0 / RC_AUDIO_SAMPLE_RATE,
+                RC_AUDIO_RING_SAMPLES * 1000 / RC_AUDIO_SAMPLE_RATE, g_audio.starved);
+            rc_log("       playback rate trimmed %+d ppm to hold %d ms\n",
+                g_audio.rate_trim_ppm, RC_AUDIO_TARGET_SAMPLES * 1000 / RC_AUDIO_SAMPLE_RATE);
         }
     }
 
