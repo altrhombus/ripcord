@@ -82,6 +82,14 @@ LIBS    := -lctru -lm
 # Set ECDH_BACKEND=none to build without it; rc_ecdh.c then compiles to functions that fail cleanly
 # rather than to a stub that fakes a key agreement.
 PORTLIBS := $(DEVKITPRO)/portlibs/3ds
+
+# Opus, for the audio path. Independent of the ECDH backend on purpose: audio and key agreement are
+# unrelated, and tying them together would make "built without mbedtls" silently mean "built without
+# sound". -isystem for the same reason libctru gets it - this project's -Werror -Wconversion policy has
+# no business being applied to headers it does not own.
+AUDIO_CFLAGS := -isystem $(PORTLIBS)/include
+AUDIO_LIBS   := -L$(PORTLIBS)/lib -lopus
+
 ECDH_BACKEND ?= mbedtls
 
 ifeq ($(ECDH_BACKEND),mbedtls)
@@ -202,6 +210,7 @@ CONNECT_SOURCES := \
 	source/takion/senkusha_echo.c \
 	source/takion/takion_session_negotiator.c \
 	source/media/rc_mvd.c \
+	source/media/rc_audio.c \
 	source/connect/main.c
 
 # Modules that have no on-device app of their own yet: Phase 5.5's stream framing/FEC/demux (nothing real
@@ -295,7 +304,8 @@ $(TAKION).3dsx: $(BUILD)/$(TAKION).elf
 
 $(BUILD)/$(CONNECT).elf: $(CONNECT_SOURCES) $(GENERATED)
 	@mkdir -p $(@D)
-	$(CC) $(CFLAGS) $(ECDH_CFLAGS) $(LDFLAGS) -o $@ $(CONNECT_SOURCES) $(GENERATED) $(ECDH_LIBS) $(LIBS)
+	$(CC) $(CFLAGS) $(ECDH_CFLAGS) $(AUDIO_CFLAGS) $(LDFLAGS) -o $@ $(CONNECT_SOURCES) $(GENERATED) \
+		$(ECDH_LIBS) $(AUDIO_LIBS) $(LIBS)
 
 # The replay tool needs only the decoder and its helpers - no crypto, no network, no protocol.
 MVDREPLAY_SOURCES := \
@@ -319,7 +329,7 @@ crosscheck:
 	@mkdir -p $(BUILD)/crosscheck
 	@for src in $(CROSSCHECK_SOURCES); do \
 		echo "  CC $$src"; \
-		$(CC) $(CFLAGS) $(ECDH_CFLAGS) -c $$src -o $(BUILD)/crosscheck/`basename $$src .c`.o || exit 1; \
+		$(CC) $(CFLAGS) $(ECDH_CFLAGS) $(AUDIO_CFLAGS) -c $$src -o $(BUILD)/crosscheck/`basename $$src .c`.o || exit 1; \
 	done
 	@echo "all app-less modules compile clean for ARM11"
 
