@@ -32,4 +32,20 @@ void rc_log(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
 /* Closes the log file if one was opened. Safe to call even if rc_log_open() was never called or failed. */
 void rc_log_close(void);
 
+/*
+ * RECENT LINES, so the bottom screen can be given away to an overlay and taken back.
+ *
+ * libctru's console owns that framebuffer and anything drawn over it destroys the rendered text -
+ * PrintConsole keeps a character buffer but exposes no redraw. Without a scrollback of our own, an
+ * overlay could borrow the screen and never hand it back.
+ *
+ * 30 lines is exactly one bottom-screen page at the console's 8x8 font (320/8 = 40 columns, 240/8 = 30
+ * rows). This is a VIEW, not the record: every line still goes to the SD file, flushed, as it always has.
+ */
+#define RC_LOG_RING_LINES 30
+#define RC_LOG_RING_COLUMNS 64
+
+/* Clears the console and reprints the ring, oldest first. */
+void rc_log_replay(void);
+
 #endif /* RC_LOG_H */
