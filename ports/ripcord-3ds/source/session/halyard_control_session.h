@@ -34,6 +34,9 @@
 
 #define HALYARD_CONTROL_SESSION_BUFFER 4096
 
+/* How many parsed frames of history the resync diagnostic keeps - see `recent` below. */
+#define HALYARD_CONTROL_RECENT 4
+
 /* What service() observed on this call. */
 typedef enum {
     HALYARD_CONTROL_EVENT_NONE = 0,     /* nothing happened; the common case, call again */
@@ -54,7 +57,52 @@ typedef struct {
     int sock;                      /* the /sess/ctrl connection, non-blocking, kept open */
     halyard_control_field ctrl;    /* the field/streaminfo cipher for this connection */
     uint64_t next_counter;         /* the next unused cipher counter - see the header note */
-    int session_ready;             /* set once SESSION_ID has been seen */
+    int session_ready;
+
+    /*
+     * Heartbeat replies that FAILED to send. The reply is fire-and-forget - rc_tcp_send_all retries a
+     * full non-blocking send buffer but eventually returns -1, and the caller cannot see it. A console
+     * that stops hearing our replies stops asking and closes the session ~37 s later, which is
+     * indistinguishable from "the console lost interest" unless this is counted.
+     */
+    long heartbeat_send_failures;
+
+    /*
+     * TCP receive activity, to separate "the console sent nothing" from "we failed to read it".
+     *
+     * Those look identical from outside and want opposite fixes. Hardware shows A/V flowing normally
+     * while the TCP control channel goes silent for exactly ~38 s and is then closed - so either the
+     * console stopped writing to a socket it was still reading, or we stopped draining one it was still
+     * writing to. Counting the reads and the bytes settles it.
+     */
+    long recv_calls;
+    long recv_bytes;
+    long recv_would_block;
+
+    /* Control-frame resynchronisations, and how many bytes they threw away. Should be zero; a non-zero
+     * count means the desync described in the .c is still happening and has merely been survived. */
+    long resyncs;
+    long resync_discarded;             /* set once SESSION_ID has been seen */
+
+    /*
+     * THE LAST FEW FRAMES PARSED, so a resync can name what preceded it.
+     *
+     * An 80-minute session resynced 14 times and discarded EXACTLY 8 bytes each time - never 7, never 9.
+     * A constant is a field, not corruption: some message's real length exceeds its declared length by
+     * one header's worth, and the next frame starts 8 bytes late. Which message is the whole question,
+     * and it is answerable without a packet capture, because the culprit is simply whatever we parsed
+     * immediately before. Recording a few frames of history rather than one gives the surrounding
+     * sequence too - a rare message type is only suspicious if it is rare in the same way each time.
+     *
+     * Newest at index 0. Kept small: this sits in a struct the session owns, and 4 entries is enough to
+     * see a pattern in 14 samples.
+     */
+    struct {
+        unsigned type;
+        size_t payload_length;         /* as DECLARED by the header */
+        size_t consumed;               /* header + declared payload - what we actually advanced by */
+    } recent[HALYARD_CONTROL_RECENT];
+    int recent_count;
     uint8_t buffer[HALYARD_CONTROL_SESSION_BUFFER];
     size_t buffered;
 } halyard_control_session;

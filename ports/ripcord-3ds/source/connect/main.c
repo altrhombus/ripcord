@@ -136,6 +136,9 @@ static uint8_t g_request[4096];
 /* The control session, reachable from the tick callback below. */
 static halyard_control_session g_control;
 static int g_control_alive;
+static u64 g_last_heartbeat_ms;
+static long g_heartbeats_answered, g_control_messages_other;
+static uint32_t g_last_control_type = 0xffffffffu;
 
 /*
  * The stream-plane sender state. One advancing key position is shared by every outgoing sealed packet -
@@ -454,13 +457,113 @@ static void service_control(void *ctx)
 
     for (drained = 0; drained < CONTROL_DRAIN_LIMIT; drained++) {
         if (!halyard_control_session_service(&g_control, &event)) {
+            u64 now = osGetTime();
+
             g_control_alive = 0;
+            /*
+             * SAY WHAT THE CHANNEL WAS DOING WHEN IT DIED.
+             *
+             * "closed by console" on its own has now cost several hardware runs, because it is
+             * consistent with two completely different faults: we stopped answering HEARTBEAT_REQ (our
+             * problem, a starved loop), or the console stopped asking and hung up for a reason of its
+             * own (not our problem, and not fixable by draining harder). Those want opposite responses.
+             *
+             * The gap since the last heartbeat separates them: a few seconds means the console was still
+             * talking to us right up to the close; tens of seconds means we went deaf first.
+             */
             rc_log("\x1b[31mFAIL\x1b[0m control channel %s\n",
                 event.kind == HALYARD_CONTROL_EVENT_CLOSED ? "closed by console" : "errored");
+            /*
+             * The gap is the discriminator. Hardware shows ~37-38 s in both observed failures, against a
+             * heartbeat that arrives every ~5 s - so the console went quiet long before it hung up. That
+             * rules out this loop starving, which three earlier rounds assumed.
+             *
+             * What it does NOT yet distinguish is whether the console lost interest on its own, or
+             * stopped hearing our replies. Hence the failure count: the reply is fire-and-forget through
+             * a non-blocking socket that can time out.
+             */
+            rc_log("       last HEARTBEAT_REQ %lu ms ago; %ld answered, %ld other message(s) seen\n",
+                (unsigned long)(g_last_heartbeat_ms ? now - g_last_heartbeat_ms : 0),
+                g_heartbeats_answered, g_control_messages_other);
+            rc_log("       %ld heartbeat repl%s FAILED to send\n",
+                g_control.heartbeat_send_failures,
+                g_control.heartbeat_send_failures == 1 ? "y" : "ies");
+            /*
+             * THE TAKION SIDE, because the TCP channel going quiet may be a symptom rather than the
+             * cause. We answer every heartbeat and the console still stops asking, then closes on a
+             * fixed ~38 s timer - consistent to within a second across four runs. If the console has
+             * already decided the SESSION is dead, the TCP heartbeats stopping is what that looks like
+             * from here, and the likeliest place for it to decide that is the reliable channel: control
+             * DATA that we never acknowledge, or unacked chunks of ours piling up unanswered.
+             *
+             * A stalled reliable channel is invisible in every number printed so far, because the A/V
+             * path is unreliable and keeps flowing regardless.
+             */
+            {
+                int i, unacked = 0;
+
+                for (i = 0; i < TAKION_MAX_UNACKED; i++) {
+                    if (g_stream_channel.unacked[i].length > 0)
+                        unacked++;
+                }
+                rc_log("       takion: %d/%d unacked, next_send_tsn %u, expected_recv_tsn %u, "
+                       "last_acked %u\n",
+                    unacked, TAKION_MAX_UNACKED,
+                    (unsigned)g_stream_channel.next_send_tsn,
+                    (unsigned)g_stream_channel.expected_recv_tsn,
+                    (unsigned)g_stream_channel.last_acked_tsn);
+            }
+            if (g_last_control_type != 0xffffffffu) {
+                rc_log("       last control message type was %u\n",
+                    (unsigned)g_last_control_type);
+            rc_log("       tcp: %ld recv call(s), %ld byte(s), %ld would-block, %u buffered\n",
+                g_control.recv_calls, g_control.recv_bytes, g_control.recv_would_block,
+                (unsigned)g_control.buffered);
+            /*
+             * WHAT IS STUCK IN THE BUFFER, because "56 buffered" is the whole story and the bytes name
+             * the cause.
+             *
+             * The control header is 8 bytes with a big-endian payload length at offset 0, so 56 bytes is
+             * seven complete zero-payload frames - exactly the ~7 heartbeat requests the console sent
+             * during its 37 s of apparent silence. It was never silent: we stopped PARSING, so we stopped
+             * replying, and it hung up.
+             *
+             * For the parser to stall on a complete frame, the length it reads must be implausible -
+             * i.e. the buffer is desynced and we are reading a length out of the middle of a message.
+             * These bytes say which.
+             */
+            if (g_control.buffered > 0) {
+                unsigned i, show = g_control.buffered < 24u ? (unsigned)g_control.buffered : 24u;
+
+                rc_log("       stuck bytes:");
+                for (i = 0; i < show; i++)
+                    rc_log(" %02x", g_control.buffer[i]);
+                rc_log("\n");
+                if (g_control.buffered >= 8u) {
+                    unsigned long claimed = ((unsigned long)g_control.buffer[0] << 24)
+                                          | ((unsigned long)g_control.buffer[1] << 16)
+                                          | ((unsigned long)g_control.buffer[2] << 8)
+                                          | (unsigned long)g_control.buffer[3];
+                    rc_log("       first frame claims a %lu-byte payload, type %u - %s\n",
+                        claimed,
+                        (unsigned)(((unsigned)g_control.buffer[4] << 8) | g_control.buffer[5]),
+                        claimed + 8u > g_control.buffered ? "INCOMPLETE, so we wait forever" : "parseable");
+                }
+            }
+            }
             return;
         }
         if (event.kind == HALYARD_CONTROL_EVENT_SESSION_READY)
             g_control.session_ready = 1;
+        if (event.kind == HALYARD_CONTROL_EVENT_MESSAGE) {
+            g_last_control_type = event.type;
+            if (event.type == HALYARD_CTRL_TYPE_HEARTBEAT_REQ) {
+                g_last_heartbeat_ms = osGetTime();
+                g_heartbeats_answered++;
+            } else {
+                g_control_messages_other++;
+            }
+        }
         if (event.kind == HALYARD_CONTROL_EVENT_NONE)
             return;   /* nothing left to read */
     }
@@ -1776,6 +1879,13 @@ static int run_media(int sock)
             rc_log("       playback rate trimmed %+d ppm to hold %d ms\n",
                 g_audio.rate_trim_ppm, RC_AUDIO_TARGET_SAMPLES * 1000 / RC_AUDIO_SAMPLE_RATE);
         }
+    }
+
+    rc_log("control: %ld heartbeat(s) answered, %ld other message(s), %ld reply send failure(s)\n",
+        g_heartbeats_answered, g_control_messages_other, g_control.heartbeat_send_failures);
+    if (g_control.resyncs > 0) {
+        rc_log("         \x1b[33m%ld frame resync(s), %ld byte(s) discarded\x1b[0m - the desync is real, "
+               "not merely survived\n", g_control.resyncs, g_control.resync_discarded);
     }
 
     rc_log("input: %ld state packet(s), %ld history packet(s) sent\n",
