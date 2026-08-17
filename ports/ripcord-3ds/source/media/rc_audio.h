@@ -66,7 +66,15 @@ typedef struct {
      * only a ceiling. Each queued frame is 10 ms behind the picture, so peak occupancy is peak lag.
      */
     int depth_peak;              /* peak ring occupancy, in samples */
-    long depth_sum, depth_samples;
+    /*
+     * depth_sum is 64-bit BECAUSE 32 BITS OVERFLOWED ON REAL HARDWARE. `long` is 32-bit on this ABI, and
+     * an 80-minute session accumulated 474,497 samples of a ring sitting around 5,500 - about 2.6e9,
+     * past INT32_MAX. The reported average came out NEGATIVE ("-2808 samples, -58 ms behind the
+     * picture"), which is not a value the ring can hold; the statistic was wrong, not the audio. Any
+     * counter multiplied by a session's frame count needs this width.
+     */
+    long long depth_sum;
+    long depth_samples;
     long starved;                /* times a wave buffer came due with too little audio to fill it */
     int first_error;     /* the first libopus error code, for diagnosis */
     int rate_trim_ppm;   /* last playback-rate correction, parts per million - see rc_audio.c */
