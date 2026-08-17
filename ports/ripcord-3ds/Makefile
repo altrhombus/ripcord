@@ -106,6 +106,7 @@ SOURCES := \
 	source/crypto/rc_modes.c \
 	source/halyard/halyard_control_crypto.c \
 	source/util/rc_log.c \
+	source/util/rc_stack.c \
 	source/util/rc_program_dir.c \
 	source/app/main.c
 
@@ -115,6 +116,7 @@ SOURCES := \
 LINKTEST_SOURCES := \
 	source/net/rc_soc.c \
 	source/util/rc_log.c \
+	source/util/rc_stack.c \
 	source/util/rc_program_dir.c \
 	source/linktest/main.c
 
@@ -125,6 +127,7 @@ LINKTEST_SOURCES := \
 DISCOVERY_SOURCES := \
 	source/net/rc_soc.c \
 	source/util/rc_log.c \
+	source/util/rc_stack.c \
 	source/util/rc_program_dir.c \
 	source/util/rc_text.c \
 	source/discovery/halyard_discovery.c \
@@ -141,6 +144,7 @@ SESSION_SOURCES := \
 	source/net/rc_soc.c \
 	source/net/rc_tcp.c \
 	source/util/rc_log.c \
+	source/util/rc_stack.c \
 	source/util/rc_base64.c \
 	source/util/rc_hex.c \
 	source/util/rc_program_dir.c \
@@ -158,6 +162,7 @@ SESSION_SOURCES := \
 TAKION_SOURCES := \
 	source/net/rc_soc.c \
 	source/util/rc_log.c \
+	source/util/rc_stack.c \
 	source/util/rc_program_dir.c \
 	source/takion/takion_message.c \
 	source/takion/takion_handshake.c \
@@ -187,6 +192,7 @@ CONNECT_SOURCES := \
 	source/stream/stream_header.c \
 	source/stream/stream_packet_crypto.c \
 	source/util/rc_log.c \
+	source/util/rc_stack.c \
 	source/util/rc_base64.c \
 	source/util/rc_hex.c \
 	source/util/rc_program_dir.c \
@@ -312,6 +318,7 @@ $(BUILD)/$(CONNECT).elf: $(CONNECT_SOURCES) $(GENERATED)
 # The replay tool needs only the decoder and its helpers - no crypto, no network, no protocol.
 MVDREPLAY_SOURCES := \
 	source/util/rc_log.c \
+	source/util/rc_stack.c \
 	source/util/rc_program_dir.c \
 	source/util/rc_profile.c \
 	source/media/rc_mvd.c \
