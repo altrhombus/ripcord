@@ -44,12 +44,19 @@ static int buffer_fill(halyard_control_session *s)
     if (s->buffered >= sizeof(s->buffer))
         return -1; /* no legitimate response or frame is this large - treat it as a protocol error */
 
+    s->recv_calls++;
     n = rc_tcp_recv(s->sock, s->buffer + s->buffered, sizeof(s->buffer) - s->buffered);
-    if (n < 0)
-        return (errno == EAGAIN || errno == EWOULDBLOCK) ? 0 : -1;
+    if (n < 0) {
+        if (errno == EAGAIN || errno == EWOULDBLOCK) {
+            s->recv_would_block++;
+            return 0;
+        }
+        return -1;
+    }
     if (n == 0)
         return -2;
     s->buffered += (size_t)n;
+    s->recv_bytes += (long)n;
     return (int)n;
 }
 
@@ -346,6 +353,47 @@ int halyard_control_session_send(halyard_control_session *session, unsigned type
     return rc_tcp_send_all(session->sock, frame, frame_len) == 0;
 }
 
+/* Newest at index 0, oldest pushed off the end. See `recent` in the header for why this is kept. */
+static void record_frame(halyard_control_session *s, unsigned type, size_t payload_length, size_t consumed)
+{
+    int i;
+
+    for (i = HALYARD_CONTROL_RECENT - 1; i > 0; i--)
+        s->recent[i] = s->recent[i - 1];
+    s->recent[0].type = type;
+    s->recent[0].payload_length = payload_length;
+    s->recent[0].consumed = consumed;
+    if (s->recent_count < HALYARD_CONTROL_RECENT)
+        s->recent_count++;
+}
+
+/*
+ * Names the message that under-consumed, which is the one open question about the desync.
+ *
+ * Called BEFORE the recovered frame is recorded, so `recent` still holds only frames that preceded the
+ * junk - recent[0] is the prime suspect. The discarded bytes go out as hex too: if they turn out to be
+ * the tail of the previous message rather than the head of the next, that is visible here and nowhere
+ * else. Every earlier attempt to explain this from counters alone failed; the bytes are the evidence.
+ */
+static void report_resync(const halyard_control_session *s, size_t discarded)
+{
+    size_t i;
+    int k;
+
+    rc_log("\x1b[33mctrl resync #%ld\x1b[0m discarded %u byte(s):", s->resyncs, (unsigned)discarded);
+    for (i = 0; i < discarded && i < 16u; i++)
+        rc_log(" %02x", s->buffer[i]);
+    rc_log("%s\n", discarded > 16u ? " ..." : "");
+
+    rc_log("  frames parsed just before, newest first:\n");
+    for (k = 0; k < s->recent_count; k++) {
+        rc_log("    [%d] type 0x%04x, declared payload %u, consumed %u%s\n",
+               k, s->recent[k].type, (unsigned)s->recent[k].payload_length,
+               (unsigned)s->recent[k].consumed,
+               k == 0 ? "   <- under-consumed by 8 if the gap is constant" : "");
+    }
+}
+
 int halyard_control_session_service(halyard_control_session *session, halyard_control_event *out_event)
 {
     unsigned type;
@@ -367,6 +415,57 @@ int halyard_control_session_service(halyard_control_session *session, halyard_co
 
     consumed = halyard_ctrl_message_parse(session->buffer, session->buffered,
                                           &type, &payload, &payload_length);
+
+    /*
+     * RESYNCHRONISE RATHER THAN WAIT FOREVER FOR A FRAME THAT CANNOT EXIST.
+     *
+     * A desync here is fatal and silent. Hardware caught it exactly: 8 bytes of high-entropy junk at the
+     * head of the buffer, followed by perfectly valid heartbeat frames -
+     *
+     *     <8 bytes, encrypted-frame tail> | 00 00 00 00 00 fe 00 00 | 00 00 00 00 00 fe 00 00
+     *
+     * The parser reads <4 bytes, redacted> as a payload length - four gigabytes - and waits for data that will
+     * never arrive, while the console's heartbeats stack up untouched behind it. We stop replying, and
+     * it drops the session ~38 s later. Every earlier theory about that disconnect (a starved loop, our
+     * replies failing to send, Takion stalling, the console losing interest) was downstream of this.
+     *
+     * The root cause is still open: something under-consumed an earlier message by exactly one header's
+     * worth of bytes, and identifying which message needs a capture. But waiting forever is the wrong
+     * response to an impossible length whatever produced it - the frames behind it are readable, and a
+     * client that resynchronises keeps the session alive while the cause is found.
+     *
+     * The scan looks for the frame shape the wire actually has: reserved bytes zero at offset 6..7, and
+     * a payload length small enough to be real. That is weak evidence per byte, which is why the resync
+     * is LOGGED with what it discarded - a silent recovery would hide the very bug this exists to survive.
+     */
+    if (consumed == 0 && session->buffered >= HALYARD_CTRL_HEADER_SIZE) {
+        uint32_t claimed = ((uint32_t)session->buffer[0] << 24) | ((uint32_t)session->buffer[1] << 16)
+                         | ((uint32_t)session->buffer[2] << 8) | (uint32_t)session->buffer[3];
+
+        if (claimed > HALYARD_CONTROL_SESSION_BUFFER) {
+            size_t scan;
+
+            for (scan = 1; scan + HALYARD_CTRL_HEADER_SIZE <= session->buffered; scan++) {
+                uint32_t len = ((uint32_t)session->buffer[scan] << 24)
+                             | ((uint32_t)session->buffer[scan + 1] << 16)
+                             | ((uint32_t)session->buffer[scan + 2] << 8)
+                             | (uint32_t)session->buffer[scan + 3];
+
+                if (session->buffer[scan + 6] == 0 && session->buffer[scan + 7] == 0
+                    && len <= HALYARD_CONTROL_SESSION_BUFFER) {
+                    session->resyncs++;
+                    session->resync_discarded += (long)scan;
+                    /* Before the consume, while the junk is still in the buffer to be printed. */
+                    report_resync(session, scan);
+                    buffer_consume(session, scan);
+                    consumed = halyard_ctrl_message_parse(session->buffer, session->buffered,
+                                                          &type, &payload, &payload_length);
+                    break;
+                }
+            }
+        }
+    }
+
     if (consumed == 0) {
         int filled = buffer_fill(session);
         if (filled == -2) {
@@ -384,11 +483,16 @@ int halyard_control_session_service(halyard_control_session *session, halyard_co
     out_event->payload = payload;
     out_event->payload_length = payload_length;
 
+    /* Every frame, not just interesting ones - the under-consuming message is by definition one we
+     * currently believe we handled correctly, so filtering here would hide it. */
+    record_frame(session, type, payload_length, consumed);
+
     if (type == HALYARD_CTRL_TYPE_HEARTBEAT_REQ) {
         /* Answered here rather than by the caller on purpose: forgetting it is what makes a console
          * reset the session 15-30 s in, and a caller busy with the stream bring-up is exactly the caller
          * most likely to forget. */
-        (void)halyard_control_session_send(session, HALYARD_CTRL_TYPE_HEARTBEAT_REP, NULL, 0);
+        if (!halyard_control_session_send(session, HALYARD_CTRL_TYPE_HEARTBEAT_REP, NULL, 0))
+            session->heartbeat_send_failures++;
         out_event->kind = HALYARD_CONTROL_EVENT_MESSAGE;
     } else if (type == HALYARD_CTRL_TYPE_SESSION_ID) {
         session->session_ready = 1;
