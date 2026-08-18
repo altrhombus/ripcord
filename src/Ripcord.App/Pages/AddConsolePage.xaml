@@ -296,7 +296,9 @@
                         PlaceholderText="8 digits"
                         TextChanged="OnLinkInputChanged" />
 
-                    <StackPanel Spacing="4">
+                    <!--  Shown only when signed out. Signed in, the account ID is known and asking for it
+                          again would be busywork — see AccountKnownNote below.  -->
+                    <StackPanel x:Name="AccountEntryPanel" Spacing="4">
                         <TextBox
                             x:Name="AccountBox"
                             Header="PlayStation Network account ID"
@@ -305,8 +307,16 @@
                             TextChanged="OnLinkInputChanged" />
                         <TextBlock
                             Style="{StaticResource RipcordSubtleCaptionStyle}"
-                            Text="This is the numeric id behind your PSN account — not your online ID or email address. Ripcord can't look it up for you yet, so you'll need to get it from an account-id lookup tool. It only has to be entered once per console." />
+                            Text="This is the numeric id behind your PSN account — not your online ID or email address. Sign in under Settings → Account and this fills itself in; otherwise you'll need to get it from an account-id lookup tool." />
                     </StackPanel>
+
+                    <!--  The signed-in replacement for the box above.  -->
+                    <InfoBar
+                        x:Name="AccountKnownNote"
+                        IsClosable="False"
+                        IsOpen="False"
+                        Severity="Success"
+                        Visibility="Collapsed" />
 
                     <InfoBar
                         x:Name="LinkStatus"

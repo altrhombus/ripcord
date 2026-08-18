@@ -27,6 +27,8 @@ public sealed record AddConsoleFlowState(
     string LinkHeading,
     string ConsoleStepsText,
     bool CanPair,
+    bool AccountIdIsAutomatic,
+    string AccountIdNote,
     string? LinkError,
     string PairingStatus,
     bool CanGoBack,

@@ -1,6 +1,7 @@
 using Ripcord.Core.Consoles;
 using Ripcord.Core.Platform;
 using Ripcord.Core.Settings;
+using Ripcord.Presentation.Accounts;
 using Ripcord.Presentation.Consoles;
 using Ripcord.Presentation.Pairing;
 using Ripcord.Presentation.Sessions;
@@ -59,6 +60,13 @@ public sealed class RipcordAppServices
     public required IConsoleWakeCoordinator WakeCoordinator { get; init; }
 
     /// <summary>
+    /// The account tier. Always present — a build with no OAuth credential gets a session that reports
+    /// <see cref="IAccountSession.CanSignIn"/> false rather than a null here, so no surface has to null-check
+    /// before asking, and "sign-in is unavailable" is a state the UI renders rather than a branch it takes.
+    /// </summary>
+    public required IAccountSession Account { get; init; }
+
+    /// <summary>
     /// What this machine's graphics stack can do. In the graph rather than constructed per surface because two
     /// surfaces ask (settings and about), and one of them asking differently is exactly how the UI-thread crash
     /// happened — see <see cref="IVideoCapabilitiesProbe"/>.
@@ -101,7 +109,14 @@ public sealed class RipcordAppServices
     // store is one object the app over, a view-model belongs to the surface showing it and dies with it.
 
     public AddConsoleFlow CreateAddConsoleFlow()
-        => new(Scanner, Registrar, Consoles, Dispatcher);
+        => new(Scanner, Registrar, Consoles, Dispatcher, account: Account);
+
+    /// <summary>
+    /// The account surface's view-model. Per-surface like the others, but note that the session it wraps is the
+    /// shared one: two account surfaces would show the same sign-in state, which is the intent.
+    /// </summary>
+    public AccountViewModel CreateAccountViewModel()
+        => new(Account, Dispatcher, Consoles);
 
     public ConsoleReachabilityMonitor CreateReachabilityMonitor()
         => new(ReachabilityProbe);

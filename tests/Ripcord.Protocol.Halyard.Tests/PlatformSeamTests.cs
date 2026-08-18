@@ -153,6 +153,26 @@ public class PlatformSeamTests
         Assert.True(id.Length is 0 or 16, $"expected 0 or 16 bytes, got {id.Length}");
     }
 
+    [SkippableFact]
+    public void DeviceIdentity_ResolvesOnWindows_FromANeutralHost()
+    {
+        // The regression this exists for: the Windows read used to REFLECT for Microsoft.Win32.Registry, which
+        // resolves inside Ripcord.App (net10.0-windows) and silently does not in a neutral net10.0 host. So the
+        // device id was correct in the app and empty in the console harness, on the same machine — surfacing
+        // as "this machine did not supply a stable 16-byte device id" from an ordinary Windows box, and taking
+        // account sign-in down with it via the InvalidOperationException HalyardClientDeviceId throws.
+        //
+        // This assembly is itself plain net10.0, which is exactly what makes it the right place to catch it.
+        // The test above deliberately tolerates empty (CI hosts legitimately have no machine id); this one does
+        // not, because on a real Windows machine empty is now always a bug.
+        Skip.IfNot(OperatingSystem.IsWindows(), "MachineGuid is a Windows concept.");
+
+        ReadOnlyMemory<byte> id = new DefaultDeviceIdentity().StableDeviceId;
+
+        Assert.Equal(16, id.Length);
+        Assert.False(id.Span.TrimStart((byte)0).IsEmpty, "an all-zero device id is not a real one.");
+    }
+
     [Theory]
     [InlineData("1a2b3c4d-dead-beef-0011-223344556677", true)]
     [InlineData("1a2b3c4ddeadbeef0011223344556677", true)]

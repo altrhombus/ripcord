@@ -1,7 +1,11 @@
+using Ripcord.Cloud.Halyard;
+using Ripcord.Core.Accounts;
 using Ripcord.Core.Consoles;
 using Ripcord.Core.Platform;
 using Ripcord.Core.Settings;
+using Ripcord.Presentation.Accounts;
 using Ripcord.Presentation.Consoles;
+using Ripcord.Presentation.Halyard.Accounts;
 using Ripcord.Presentation.Halyard.Consoles;
 using Ripcord.Presentation.Halyard.Pairing;
 using Ripcord.Presentation.Halyard.Sessions;
@@ -52,15 +56,21 @@ public static class HalyardAppServices
         IConsoleScanner? scanner = null,
         IConsoleRegistrar? registrar = null,
         IConsoleReachabilityProbe? reachabilityProbe = null,
-        IConsoleWakeCoordinator? wakeCoordinator = null)
+        IConsoleWakeCoordinator? wakeCoordinator = null,
+        IAccountSession? account = null,
+        IAccountTokenStore? accountTokens = null,
+        IDeviceIdentity? deviceIdentity = null)
     {
         ArgumentNullException.ThrowIfNull(dispatcher);
         ArgumentNullException.ThrowIfNull(videoCapabilities);
 
         IPlatformPaths resolvedPaths = paths ?? new DefaultPlatformPaths();
 
+        IAccountSession resolvedAccount = account ?? BuildAccountSession(resolvedPaths, accountTokens, deviceIdentity);
+
         return new RipcordAppServices
         {
+            Account = resolvedAccount,
             Dispatcher = dispatcher,
             VideoCapabilities = videoCapabilities,
             Paths = resolvedPaths,
@@ -75,7 +85,48 @@ public static class HalyardAppServices
             Scanner = scanner ?? new HalyardConsoleScanner(),
             Registrar = registrar ?? new HalyardConsoleRegistrar(),
             ReachabilityProbe = reachabilityProbe ?? new HalyardReachabilityProbe(),
-            WakeCoordinator = wakeCoordinator ?? new HalyardConsoleWakeCoordinator(),
+            // Local wake first, with the account service as a fallback for a console that is not on this
+            // network. Wrapped here rather than inside the Halyard coordinator so the local path stays free of
+            // any account dependency — a build with no credential behaves exactly as it did.
+            WakeCoordinator = wakeCoordinator
+                ?? new CloudFallbackWakeCoordinator(new HalyardConsoleWakeCoordinator(), resolvedAccount),
         };
+    }
+
+    /// <summary>
+    /// Build the account tier, or the null object when this build has no credential to sign in with.
+    ///
+    /// <para>
+    /// The decision is made once, here, rather than inside the session: a gateway constructed without a
+    /// credential would be an object whose every method declines, and the graph is a better place to say "this
+    /// capability is absent" than each of its methods. It also means the machine's device id is only resolved
+    /// when it will actually be used — <see cref="HalyardClientDeviceId"/> throws on a host that cannot supply
+    /// one, and a build that will never sign in should not fail to start over it.
+    /// </para>
+    /// </summary>
+    private static IAccountSession BuildAccountSession(
+        IPlatformPaths paths, IAccountTokenStore? tokens, IDeviceIdentity? deviceIdentity)
+    {
+        HalyardClientConfig config = HalyardClientConfigFile.Load(paths);
+        if (!config.IsConfigured)
+        {
+            return new UnavailableAccountSession();
+        }
+
+        try
+        {
+            var gateway = new HalyardAccountGateway(
+                new HttpClient(),
+                config,
+                tokens ?? new AccountTokenStore(paths),
+                deviceIdentity ?? new DefaultDeviceIdentity());
+            return new HalyardAccountSession(gateway);
+        }
+        catch (InvalidOperationException)
+        {
+            // The host could not supply a stable device id. Sign-in is genuinely unavailable on this machine,
+            // and reporting that through the same path as "no credential" means the UI already handles it.
+            return new UnavailableAccountSession();
+        }
     }
 }
