@@ -16,6 +16,15 @@
  * truncated to fit out_size. Falls back to "sdmc:/" if argv0 does not look like a path - e.g. launched
  * over a network loader (3dslink) rather than from the SD card.
  */
+/*
+ * The writable root used when argv[0] carries no directory. Each port defines it (3DS: "sdmc:/",
+ * Vita: "ux0:data/"); the default keeps a build that forgets honest rather than silently writing
+ * somewhere that does not exist.
+ */
+#ifndef RC_PROGRAM_DIR_FALLBACK
+#define RC_PROGRAM_DIR_FALLBACK "sdmc:/"
+#endif
+
 void rc_program_dir(const char *argv0, char *out, size_t out_size);
 
 #endif /* RC_PROGRAM_DIR_H */
