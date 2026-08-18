@@ -21,6 +21,10 @@ public sealed class HalyardCloudClient(HttpClient http, HalyardTokenProvider tok
     public async Task<HalyardAccountInfo> GetAccountInfoAsync(CancellationToken cancellationToken)
         => await GetJsonAsync<HalyardAccountInfo>(HalyardEndpoints.AccountInfo, cancellationToken).ConfigureAwait(false);
 
+    /// <summary>Look up the push front-end host and its keepalive timing (the serveraddr call).</summary>
+    public async Task<HalyardPushServerInfo> GetPushServerAsync(CancellationToken cancellationToken)
+        => await GetJsonAsync<HalyardPushServerInfo>(HalyardEndpoints.PushServerAddress, cancellationToken).ConfigureAwait(false);
+
     public async Task<IReadOnlyList<HalyardConsoleClient>> ListConsolesAsync(CancellationToken cancellationToken)
     {
         string url = $"{HalyardEndpoints.ConsoleList}?platform={HalyardEndpoints.CurrentGenPlatformTag}&includeFields=device&limit=10&offset=0";
@@ -63,6 +67,21 @@ public sealed class HalyardCloudClient(HttpClient http, HalyardTokenProvider tok
         return response.RemotePlaySessions ?? [];
     }
 
+    /// <summary>
+    /// Read back one specific session by id. Carries the <c>X-PSN-SESSION-MANAGER-SESSION-IDS</c> header the
+    /// service requires on a session read; a bare <c>GET remotePlaySessions</c> without it is a 400.
+    /// </summary>
+    public async Task<IReadOnlyList<HalyardCloudSession>> GetSessionAsync(string sessionId, CancellationToken cancellationToken)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, HalyardEndpoints.Sessions);
+        request.Headers.TryAddWithoutValidation(HalyardEndpoints.SessionIdsHeader, sessionId);
+
+        using HttpResponseMessage response = await SendAsync(request, cancellationToken).ConfigureAwait(false);
+        string body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        var parsed = JsonSerializer.Deserialize<HalyardSessionsResponse>(body);
+        return parsed?.RemotePlaySessions ?? [];
+    }
+
     public async Task LeaveSessionAsync(string sessionId, CancellationToken cancellationToken)
     {
         string url = $"{HalyardEndpoints.Sessions}/{sessionId}/members/me";
@@ -82,7 +101,11 @@ public sealed class HalyardCloudClient(HttpClient http, HalyardTokenProvider tok
         (string Data1, string Data2, string Data3) seeds,
         CancellationToken cancellationToken)
     {
-        // initialParams is itself a JSON *string* inside the command body.
+        // initialParams is itself a JSON *string* inside the command body. Fields and order match a captured
+        // vendor wake exactly (cap64): accountId, roomId, sessionId, clientType, data1, data2 — and nothing
+        // else. An earlier version also sent supportCmd/protocolVer/data3, which that capture does not; the
+        // extra fields are dropped because a console that wakes but does not cleanly join is the symptom of a
+        // command it did not fully accept. seeds.Data3 is now unused (the command carries only two).
         string initialParams = JsonSerializer.Serialize(new
         {
             accountId,
@@ -91,9 +114,6 @@ public sealed class HalyardCloudClient(HttpClient http, HalyardTokenProvider tok
             clientType,
             data1 = seeds.Data1,
             data2 = seeds.Data2,
-            supportCmd = "130000",
-            protocolVer = "1.0",
-            data3 = seeds.Data3,
         });
 
         var body = new
@@ -122,6 +142,10 @@ public sealed class HalyardCloudClient(HttpClient http, HalyardTokenProvider tok
         IReadOnlyList<HalyardCandidate> candidates,
         CancellationToken cancellationToken)
     {
+        // Field-for-field against our own capture of one OFFER, with two deliberate differences noted below.
+        // `skey` really is 16 zero bytes at this stage and `mappedAddr` really is the literal "0.0.0.0" — both
+        // were verified rather than assumed, because both look like placeholders a reimplementation would be
+        // tempted to "fix".
         string offerBody = JsonSerializer.Serialize(new
         {
             action = "OFFER",
@@ -141,7 +165,16 @@ public sealed class HalyardCloudClient(HttpClient http, HalyardTokenProvider tok
                     port = c.Port,
                     mappedPort = 0,
                 }).ToArray(),
+
+                // Empty in the capture too — the vendor sends the key with no value rather than omitting it.
+                defaultRouteMacAddr = string.Empty,
                 localPeerAddr = new { accountId, platform = "REMOTE_PLAY" },
+
+                // [X] `localHashedId` is NOT sent, and its absence is a known gap rather than an oversight.
+                // The capture carries 20 bytes here — SHA-1-shaped, and plausibly a digest over the account or
+                // device id — but we have not derived what it is computed over, and one sample cannot tell us.
+                // Sending a wrong value is worse than sending none: a plausible-looking digest that does not
+                // verify is far harder to diagnose than a missing field. Derive it before adding it.
             },
         });
 
