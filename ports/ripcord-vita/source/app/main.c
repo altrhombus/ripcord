@@ -19,6 +19,8 @@
  */
 
 #include "crypto/rc_crypto.h"
+#include "crypto/rc_ecdh.h"
+#include "util/rc_random.h"
 #include "halyard/halyard_v1.h"
 #include "platform/rc_platform.h"
 #include "util/rc_log.h"
@@ -108,7 +110,47 @@ static int run_checks(void)
         rc_log("ok    counter affects the keystream\n");
     }
 
-    /* 4. The measurement this program exists for. */
+    /* 4. ECDH, the one primitive this port does not implement itself.
+     *
+     * Two independent key pairs, each deriving a shared secret from the other's public key. The two
+     * secrets must be identical - that is the whole contract, and it exercises the cross-built Mbed TLS
+     * ECP/MPI layer (tools/build-mbedtls.sh) end to end: curve load, keypair generation from the
+     * platform CSPRNG, point validation, and the scalar multiply.
+     *
+     * P-521 because that is what client version 17 negotiates, so it is the path a real session takes.
+     * This ALSO exercises rc_random_vita.c's 64-byte chunking, since a P-521 private key is 66 bytes -
+     * if sceKernelGetRandomNumber short-fills, the two secrets will still match (both sides would be
+     * equally broken) but the keys would be weak. A matching pair is necessary, not sufficient. */
+    if (!rc_ecdh_available()) {
+        rc_log("SKIP  ECDH - built without a backend (ECDH_BACKEND=none)\n");
+    } else if (!rc_random_init()) {
+        rc_log("FAIL  CSPRNG refused to start; refusing to test ECDH without it\n");
+        failures++;
+    } else {
+        rc_ecdh_keypair a, b;
+        uint8_t sa[RC_ECDH_SECRET_MAX], sb[RC_ECDH_SECRET_MAX];
+        size_t la = 0, lb = 0;
+
+        if (rc_ecdh_generate(RC_ECDH_CURVE_P521, rc_random_rng_callback, NULL, &a) != 0
+            || rc_ecdh_generate(RC_ECDH_CURVE_P521, rc_random_rng_callback, NULL, &b) != 0) {
+            rc_log("FAIL  P-521 keypair generation\n");
+            failures++;
+        } else if (rc_ecdh_derive_shared(&a, b.public_key, b.public_key_length,
+                                         rc_random_rng_callback, NULL, sa, sizeof sa, &la) != 0
+                   || rc_ecdh_derive_shared(&b, a.public_key, a.public_key_length,
+                                            rc_random_rng_callback, NULL, sb, sizeof sb, &lb) != 0) {
+            rc_log("FAIL  P-521 shared-secret derivation\n");
+            failures++;
+        } else if (la != lb || la != RC_ECDH_P521_SECRET_LENGTH || memcmp(sa, sb, la) != 0) {
+            rc_log("FAIL  P-521 secrets disagree (%u vs %u bytes)\n", (unsigned)la, (unsigned)lb);
+            failures++;
+        } else {
+            rc_log("ok    P-521 ECDH agrees, %u-byte secret\n", (unsigned)la);
+        }
+        rc_random_exit();
+    }
+
+    /* 5. The measurement this program exists for. */
     start = rc_time_ms();
     for (i = 0; i < ITERATIONS; i++)
         halyard_control_field_encrypt(&ctx, (uint64_t)i, plaintext, ciphertext, sizeof(plaintext));
