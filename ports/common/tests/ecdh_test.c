@@ -25,10 +25,10 @@
  *
  * THIS BUILDS FOR THE HOST, NOT THE 3DS - see tests/Makefile.
  */
-#include "../source/crypto/rc_crypto.h"
-#include "../source/crypto/rc_ecdh.h"
-#include "../source/stream/stream_key_schedule.h"
-#include "../source/takion/takion_session_negotiator.h"
+#include "../crypto/rc_crypto.h"
+#include "../crypto/rc_ecdh.h"
+#include "../stream/stream_key_schedule.h"
+#include "../takion/takion_session_negotiator.h"
 
 #include <stdio.h>
 #include <stdlib.h>

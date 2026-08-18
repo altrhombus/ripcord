@@ -16,11 +16,11 @@
  *
  * THIS BUILDS FOR THE HOST, NOT THE 3DS - see tests/Makefile.
  */
-#include "../source/takion/takion_data_chunk.h"
-#include "../source/takion/takion_handshake.h"
-#include "../source/takion/takion_message.h"
-#include "../source/takion/takion_reassembler.h"
-#include "../source/takion/takion_sack_chunk.h"
+#include "../takion/takion_data_chunk.h"
+#include "../takion/takion_handshake.h"
+#include "../takion/takion_message.h"
+#include "../takion/takion_reassembler.h"
+#include "../takion/takion_sack_chunk.h"
 
 #include <stdio.h>
 #include <string.h>

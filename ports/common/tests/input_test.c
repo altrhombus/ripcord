@@ -3,7 +3,7 @@
  * from cap48). Hand-encoded expectations, not round-trips: what is under test is agreement with the
  * capture, and a round-trip would agree with itself while both were wrong.
  */
-#include "../source/input/halyard_input.h"
+#include "../input/halyard_input.h"
 
 #include <stdio.h>
 #include <string.h>

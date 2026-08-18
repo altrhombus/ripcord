@@ -15,7 +15,7 @@
 #include "halyard_sess_fields.h"
 #include "halyard_sess_request.h"
 
-#include <3ds.h>
+#include "rc_platform.h"
 
 #include <arpa/inet.h>
 #include <errno.h>
@@ -67,7 +67,7 @@ static int buffer_fill(halyard_control_session *s)
  */
 static size_t wait_for_response(halyard_control_session *s, halyard_sess_response *out)
 {
-    u64 start_ms = osGetTime();
+    uint64_t start_ms = rc_time_ms();
 
     for (;;) {
         size_t consumed = halyard_sess_response_parse((const char *)s->buffer, s->buffered, out);
@@ -82,11 +82,11 @@ static size_t wait_for_response(halyard_control_session *s, halyard_sess_respons
             return 0;
         }
         if (filled == 0) {
-            if (osGetTime() - start_ms > SESS_RESPONSE_TIMEOUT_MS) {
+            if (rc_time_ms() - start_ms > SESS_RESPONSE_TIMEOUT_MS) {
                 rc_log("\x1b[31mFAIL\x1b[0m timed out waiting for a response\n");
                 return 0;
             }
-            svcSleepThread(20000000); /* 20 ms - the console answers at human timescale, not packet-rate */
+            rc_sleep_ms(20); /* 20 ms - the console answers at human timescale, not packet-rate */
         }
     }
 }
@@ -101,7 +101,7 @@ static void arm_control_listener(const char *host, int is_ps5)
     int sock;
     char probe[HALYARD_CONTROL_ARM_PROBE_SIZE];
     struct sockaddr_in unicast, broadcast;
-    u64 start_ms;
+    uint64_t start_ms;
 
     sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if (sock < 0)
@@ -126,19 +126,19 @@ static void arm_control_listener(const char *host, int is_ps5)
     sendto(sock, probe, sizeof(probe), 0, (struct sockaddr *)&unicast, sizeof(unicast));
     sendto(sock, probe, sizeof(probe), 0, (struct sockaddr *)&broadcast, sizeof(broadcast));
 
-    start_ms = osGetTime();
-    while (osGetTime() - start_ms < ARM_REPLY_WINDOW_MS) {
+    start_ms = rc_time_ms();
+    while (rc_time_ms() - start_ms < ARM_REPLY_WINDOW_MS) {
         uint8_t buf[16];
         ssize_t n = recvfrom(sock, buf, sizeof(buf), 0, NULL, NULL);
         if (n > 0 && halyard_control_arm_is_reply(is_ps5, buf, (size_t)n)) {
             rc_log("control listener armed (got %s)\n", is_ps5 ? "RES3" : "RES2");
             break;
         }
-        svcSleepThread(20000000); /* 20 ms */
+        rc_sleep_ms(20); /* 20 ms */
     }
 
     close(sock);
-    svcSleepThread((s64)ARM_SETTLE_MS * 1000000);
+    rc_sleep_ms(ARM_SETTLE_MS);
 }
 
 /* /sess/init: presents RP-Registkey in plaintext, returns the console's RP-Nonce. 1 on success. */
