@@ -21,8 +21,8 @@ input/      controller state -> input packet
 net/        rc_tcp.c, a minimal TCP client over BSD sockets
 util/       base64, hex, text/header parsing, logging, program-dir resolution
 platform/   rc_platform.h - the seam, and the ONLY thing here that names an OS
-tests/      the host-side known-answer suite (3,243 assertions), plus the host seam implementation
-tools/      gen_constants.py, udp_link_test_sender.py
+tests/      the host-side known-answer suite (3,287 assertions), plus the host seam implementation
+tools/      gen_constants.py, udp_link_test_sender.py, build-mbedtls.sh + its minimal config
 ```
 
 Dependency direction matches the .NET side's: `halyard/` depends on `crypto/`, never the reverse, and
@@ -32,9 +32,10 @@ protocol ones and depend on neither.
 ## The seam
 
 [`platform/rc_platform.h`](platform/rc_platform.h) is the complete list of what this core asks of an
-OS: a monotonic millisecond clock, a sleep, a high-resolution tick, and a CSPRNG. Sockets are called
-directly as BSD names today, which is an open question for non-3DS targets — the header says so at
-length.
+OS: a monotonic millisecond clock, a sleep, a high-resolution tick, and a CSPRNG. Sockets are *not* in
+it — they are called as plain BSD names, which was expected to need a ~12-call seam on Vita and turned
+out not to: vitasdk ships POSIX socket headers whose names also link. The header records what that does
+and does not settle.
 
 The rule is: **nothing goes in that header that only one platform needs.** A seam earns its place by
 having at least two real implementations. Anything a single port wants belongs in that port's tree,
@@ -45,8 +46,8 @@ Three implementations exist:
 
 | | |
 |---|---|
-| `ports/ripcord-3ds/source/platform/rc_platform_3ds.c` | libctru — the verified one |
-| `ports/ripcord-vita/source/platform/rc_platform_vita.c` | vitasdk — never compiled |
+| `ports/ripcord-3ds/source/platform/rc_platform_3ds.c` | libctru — the hardware-verified one |
+| `ports/ripcord-vita/source/platform/rc_platform_vita.c` | vitasdk — compiles and links; never run |
 | `tests/rc_platform_host.c` | plain POSIX, for the host tests |
 
 The host one is not decoration. A header with one caller and one implementation is indirection, not a
@@ -74,8 +75,20 @@ assumption hides. Adding it immediately found two: `inet_aton` is a BSD extensio
 vitasdk's documented helper is `sceNetInetPton` instead), and `clock_gettime` needs an explicit
 `_POSIX_C_SOURCE` under strict `-std=c99`.
 
-`ECDH_BACKEND=none` builds the suite without mbedtls; `ecdh_test` then reports a skip and exits 0, which
-keeps "any machine with a C compiler" true.
+The ECDH backend needs no package installed. `rc_ecdh.c` delegates P-256/P-521 to Mbed TLS (see
+`crypto/rc_ecdh.h` for why), and `tools/build-mbedtls.sh` cross-builds **only its ECP/MPI layer** — five
+translation units — from a pinned, SHA-256-verified 2.28.8 release into a gitignored directory. Nothing
+third-party is vendored into this tree, on the same reasoning that keeps the interop constants generated
+rather than copied.
+
+That is the default (`ECDH_BACKEND=local`). `ECDH_BACKEND=mbedtls` links a system `libmbedcrypto`
+instead, and `ECDH_BACKEND=none` skips the ECDH cases and exits 0. Before the local build existed,
+`ecdh_test` skipped on any machine without `libmbedtls-dev`, which quietly meant the curve agreement and
+the derived stream keys went unchecked exactly where nobody would notice — so "any machine with a C
+compiler and nothing else installed" is now true rather than aspirational.
+
+The version is pinned to 2.28.8 because that is what devkitPro packages as `3ds-mbedtls`: one version,
+one `rc_ecdh.c`, two ports.
 
 ## The interop constants are generated, never copied
 
