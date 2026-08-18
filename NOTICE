@@ -50,6 +50,48 @@ A build that omits the constants entirely can be produced with
 -p:BundleInteropConstants=false; the result is inert and reports the constants as
 unavailable rather than failing at run time.
 
+Application OAuth credential
+----------------------------
+
+Ripcord also includes the OAuth 2.0 client_id and client_secret with which the
+vendor's own desktop Remote Play client authenticates to PlayStation Network.
+This is stated plainly because it is a different kind of thing from the
+interoperability constants above, and the two should not be read as one argument.
+
+Those constants are values the console computes against: a client cannot speak
+the protocol without them. This is an access credential for a network service,
+and a client can speak the protocol without it -- a local-network session works
+against a console with no internet connection at all. It is included for a
+narrower reason: Sony operates no third-party client registration for this
+service, so there is no credential an independent client could obtain instead.
+Without it, the account-facing features -- signing in, reading the account's own
+console list, and waking a console remotely -- are unreachable by any client that
+is not Sony's, which would foreclose interoperability on that tier entirely.
+
+The credential was recovered from the authors' own capture of their own network
+traffic, from their own machine and their own account, which is the same source
+as every other interoperability fact in this project. It was separately confirmed
+to be already published and in circulation; that confirmation is a fact about the
+world, established after the value was already in hand, and is not the source of
+the value or the basis for including it.
+
+The credential is generic. It is identical for every user and every console, and
+authenticates an application rather than a person. Ripcord includes NO user
+credential of any kind: the signed-in account's access and refresh tokens are
+obtained per user at sign-in and stored encrypted on that user's own machine
+(DPAPI on Windows), never in this repository or any build produced from it.
+
+A build that omits the credential can be produced with -p:BundleOAuthClient=false;
+the result reports account sign-in as unavailable and local-network play is
+unaffected. At run time the bundled value is the last resort, and is overridden by
+the RIPCORD_CLIENT_ID / RIPCORD_CLIENT_SECRET environment variables or by a
+client.json in the user's configuration directory, so an operator with their own
+registered client can substitute it without rebuilding.
+
+Sony Interactive Entertainment may rotate this credential at any time, which would
+disable Ripcord's account features until it is updated. No warranty of continued
+function is offered or implied.
+
 No vendor source code is included in any form. See docs/protocol/README.md for
 the full provenance writeup.
 

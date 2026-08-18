@@ -1,0 +1,5 @@
+{
+  "_comment": "The vendor desktop client's OAuth credential. See NOTICE, 'Application OAuth credential'. Recovered from the authors' own capture of their own traffic, and independently verified to be already published. Generic to the application: identical for every user, tied to no account or console. Empty values here are inert - the build behaves exactly as one made with -p:BundleOAuthClient=false, and every account surface reports sign-in as unavailable. Populate with tools/extract-oauth-client.py.",
+  "clientId": "ba495a24-818c-472b-b12d-ff231c1b5745",
+  "clientSecret": "mvaiZkRsAsI1IBkY"
+}

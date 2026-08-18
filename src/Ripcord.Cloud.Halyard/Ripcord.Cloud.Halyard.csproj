@@ -6,8 +6,25 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <!-- The application OAuth credential, bundled as data and read by HalyardBundledClient as the
+       LAST-RESORT source (RIPCORD_CLIENT_* env vars and a client.json in the config directory both take
+       precedence). Build with -p:BundleOAuthClient=false to omit it entirely: the resource is then absent,
+       HalyardClientConfig.Default reports IsConfigured=false, and every account surface renders "sign-in
+       isn't available in this build". No code change required, and LAN play is unaffected either way.
+       Deliberately a separate switch from BundleInteropConstants: the two bundles make different arguments
+       (a wire-protocol fact versus an access credential) and someone may well want one without the other.
+       See NOTICE, "Application OAuth credential". -->
+  <PropertyGroup>
+    <BundleOAuthClient Condition="'$(BundleOAuthClient)' == ''">true</BundleOAuthClient>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(BundleOAuthClient)' != 'false'">
+    <EmbeddedResource Include="Data\halyard-oauth-client.json" />
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\Ripcord.Core\Ripcord.Core.csproj" />
+    <ProjectReference Include="..\Ripcord.Core.Net\Ripcord.Core.Net.csproj" />
   </ItemGroup>
 
 </Project>
