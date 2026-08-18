@@ -9,6 +9,11 @@ specification **and**, unlike the 3DS port, its protocol code.
 elf→velf→eboot→vpk chain. What that proves is that the extraction into [`ports/common`](../common) was
 real; what it does not prove is that a single instruction of it does the right thing on a Vita.
 
+**Paused 2026-08-17 pending hardware.** Everything here was written and verified without a Vita, so the
+list of what that leaves unanswered — ordered by when you hit it, with what to run and what failure looks
+like — is [`HARDWARE-CHECKLIST.md`](HARDWARE-CHECKLIST.md). **Start there when the hardware arrives**;
+its first item (does the loader honour the stack size?) is the highest-risk unknown in the port.
+
 All four Phase 0 questions are answered:
 
 | Question | Answer |
@@ -178,7 +183,7 @@ hardware can answer, and none of them assumes the next one works.
 - **Phase 0 — toolchain. Done (2026-08-17).** vitasdk installed; the portable core, the seam and the
   ECDH backend all compile; `make` produces a `.vpk` that links P-521. Sockets, the CSPRNG and the
   ECDH backend are all answered.
-- **Phase 0.5 — a way to see output.** The smoke test writes to `ux0:data/ripcord/smoke-test.log`
+- **Phase 0.5 — a way to see output.** *(next up)* The smoke test writes to `ux0:data/ripcord/smoke-test.log`
   because vitasdk ships no debug-screen printf (`psvDebugScreen` is a samples/common file, not SDK).
   That is fine for a log and useless for a HUD, and every phase from 2 onward wants a screen. Either
   vendor a debug screen or take `vita2d` from `vdpm`.
