@@ -58,6 +58,20 @@ public sealed record PairedConsole(string Id, string Name, string Host, string P
     public DateTimeOffset? LastConnectedUtc { get; init; }
 
     /// <summary>
+    /// The console's device id as the account service knows it, when we have been able to learn it — which
+    /// requires having been signed in at some point while this console appeared in the account's list.
+    ///
+    /// <para>
+    /// Distinct from <see cref="HostId"/>, which is what the console broadcasts about itself on the local
+    /// network. The two identify the same box through different systems and neither can be derived from the
+    /// other, so both are stored. This one is what lets a console be woken remotely: it is how the wake command
+    /// is addressed, and without it the only wake available is a local broadcast that will not leave the subnet.
+    /// </para>
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? CloudDeviceId { get; init; }
+
+    /// <summary>
     /// What to show as this console's name. Falls back through nickname → what the console calls itself →
     /// <see cref="Name"/>, which for records written before this existed is the family label ("PlayStation 5").
     /// So an upgraded install looks exactly as it did, and gets better the first time it is re-discovered.
