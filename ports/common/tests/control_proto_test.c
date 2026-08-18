@@ -22,9 +22,9 @@
  *
  * Needs no crypto backend and no hardware. Builds for the host - see tests/Makefile.
  */
-#include "../source/session/halyard_launch_spec.h"
-#include "../source/takion/takion_control_proto.h"
-#include "../source/takion/senkusha_echo.h"
+#include "../session/halyard_launch_spec.h"
+#include "../takion/takion_control_proto.h"
+#include "../takion/senkusha_echo.h"
 
 #include <stdio.h>
 #include <stdlib.h>
