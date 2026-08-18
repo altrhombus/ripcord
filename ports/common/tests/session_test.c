@@ -13,12 +13,12 @@
  *
  * THIS BUILDS FOR THE HOST, NOT THE 3DS - see tests/Makefile.
  */
-#include "../source/halyard/halyard_v1.h"
-#include "../source/session/halyard_control_arm.h"
-#include "../source/session/halyard_ctrl_message.h"
-#include "../source/session/halyard_sess_fields.h"
-#include "../source/session/halyard_sess_request.h"
-#include "../source/util/rc_base64.h"
+#include "../halyard/halyard_v1.h"
+#include "../session/halyard_control_arm.h"
+#include "../session/halyard_ctrl_message.h"
+#include "../session/halyard_sess_fields.h"
+#include "../session/halyard_sess_request.h"
+#include "../util/rc_base64.h"
 
 #include <stdio.h>
 #include <string.h>
