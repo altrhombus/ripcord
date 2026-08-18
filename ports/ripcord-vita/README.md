@@ -130,8 +130,33 @@ Phases mirror the 3DS port's, because that ordering was earned — each phase en
 hardware can answer, and none of them assumes the next one works.
 
 - **Phase 0 — toolchain.** Install vitasdk. Compile `source/platform/rc_platform_vita.c` and fix what
-  the headers disagree with. Answer the socket question (POSIX names or `sceNet*`?) and the
-  `rc_random_bytes` question. **Nothing below starts until these two are settled.**
+  the headers disagree with. Answer the socket question (POSIX names or `sceNet*`?), the
+  `rc_random_bytes` question, and the ECDH-backend question below. **Nothing below starts until those
+  are settled.**
+
+### The ECDH backend is an open decision, and it is not mbedtls
+
+The shared core delegates exactly one primitive — elliptic-curve Diffie-Hellman over P-256/P-521 — to a
+third-party library, for the reason [`rc_ecdh.h`](../common/crypto/rc_ecdh.h) gives at length: a
+hand-written constant-time bigint is the last thing this project should write twice. The 3DS reaches
+devkitPro's `3ds-mbedtls`, and uses only the `mbedtls_ecp_*` and `mbedtls_mpi_*` layers — no TLS, no
+X.509, no SSL, just curve arithmetic and bignums.
+
+**vitasdk does not package mbedtls** `[C]` (checked against `vdpm`'s package list, 105 packages, 2026-08-17).
+It packages `openssl`, and `libsodium` — but libsodium is Curve25519/Ed25519 and cannot do P-256 or
+P-521, so it is not a candidate. Three options, none yet chosen:
+
+1. **OpenSSL backend.** Packaged and maintained, with full P-256/P-521 support via `EC_GROUP`/
+   `EC_POINT_mul`/`BN_*`. Costs a third `#if` branch in `rc_ecdh.c` — which is what the seam is for —
+   and pulls in a large library for four operations.
+2. **Cross-build mbedtls for Vita.** The ECP/MPI layer is portable C with no OS dependency, and this
+   port needs only that layer. Keeps one backend across both ports; costs a build step vitasdk does not
+   provide.
+3. Something else entirely (a small dedicated EC library). Unexplored.
+
+Whichever wins, `rc_ecdh.c`'s existing contract holds: without a backend it must fail cleanly and
+`rc_ecdh_available()` must return 0. **It must never substitute a stub that fakes a key agreement** — a
+build that negotiates a session with no confidentiality is far worse than one that does not link.
 - **Phase 1 — first boot.** A `.vpk` that runs the crypto self-test on device and reports what a control
   field encryption costs on a Cortex-A9. The 3DS's number is ~25 µs; this is the comparison that says
   whether the A/V path's software AES is affordable.
