@@ -54,6 +54,45 @@
             XYFocusUpNavigationStrategy="RectilinearDistance">
             <TextBlock Style="{StaticResource TitleTextBlockStyle}" Text="Settings" />
 
+            <!--
+                ============ Account ============
+
+                First, because it is the only section that changes what the others can do: signed in, pairing
+                stops asking for an account ID and a console that is not on this network can still be woken.
+            -->
+            <StackPanel Spacing="4">
+                <TextBlock Style="{StaticResource RipcordSectionHeaderStyle}" Text="Account" />
+
+                <tk:SettingsCard x:Name="AccountCard" Header="PlayStation Network">
+                    <tk:SettingsCard.HeaderIcon>
+                        <FontIcon Glyph="&#xE77B;" />
+                    </tk:SettingsCard.HeaderIcon>
+
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <ProgressRing x:Name="AccountBusy" Width="20" Height="20" IsActive="False" />
+                        <Button x:Name="SignInButton" Content="Sign in" />
+                        <Button x:Name="SignOutButton" Content="Sign out" Visibility="Collapsed" />
+                    </StackPanel>
+                </tk:SettingsCard>
+
+                <!--  Only shown when there is something to say — an error, or the account's console list.  -->
+                <InfoBar
+                    x:Name="AccountError"
+                    IsOpen="False"
+                    IsClosable="False"
+                    Severity="Warning" />
+
+                <tk:SettingsExpander
+                    x:Name="CloudConsolesExpander"
+                    Visibility="Collapsed"
+                    Header="Consoles on this account"
+                    Description="Reported by PlayStation Network, including consoles that aren't on this network.">
+                    <tk:SettingsExpander.HeaderIcon>
+                        <FontIcon Glyph="&#xE7F4;" />
+                    </tk:SettingsExpander.HeaderIcon>
+                </tk:SettingsExpander>
+            </StackPanel>
+
             <!--  ============ Video ============  -->
             <StackPanel Spacing="4">
                 <TextBlock Style="{StaticResource RipcordSectionHeaderStyle}" Text="Video" />

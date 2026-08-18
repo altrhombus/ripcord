@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using Ripcord.Core.Consoles;
 using Ripcord.Core.Discovery;
 using Ripcord.Core.Reactive;
+using Ripcord.Presentation.Accounts;
 using Ripcord.Presentation.Consoles;
 using Ripcord.Presentation.Threading;
 
@@ -43,6 +44,13 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
     private readonly IPairedConsoleStore _store;
     private readonly AddConsoleFlowOptions _options;
 
+    /// <summary>
+    /// The signed-in account, when there is one. Optional: pairing by hand is still a first-class path — a build
+    /// with no OAuth credential has no other one — so this seam being absent must change nothing except who
+    /// supplies the account id.
+    /// </summary>
+    private readonly IAccountSession? _account;
+
     private AddConsoleStep _step = AddConsoleStep.Family;
     private ConsoleFamily _family = ConsoleFamily.Ps5;
     private string? _familyNote;
@@ -53,12 +61,38 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
     private DiscoveredConsoleCard? _selected;
     private string _host = string.Empty;
     private string _passcode = string.Empty;
-    private string _accountId = string.Empty;
+    private string _typedAccountId = string.Empty;
     private string? _linkError;
     private PairedConsole? _paired;
 
+    /// <summary>
+    /// The account id actually used for pairing: the signed-in account's when there is one, otherwise whatever
+    /// was typed. Derived rather than stored so that signing in while this flow is open takes effect without the
+    /// flow having to subscribe to anything — the console's own link step is where it is read, and by then the
+    /// answer is current.
+    /// </summary>
+    private string EffectiveAccountId
+        => AccountIdIsAutomatic ? _account!.Current!.AccountId : _typedAccountId;
+
+    /// <summary>Whether the account id is coming from a signed-in account rather than from the user.</summary>
+    private bool AccountIdIsAutomatic
+        => _account?.Current is { AccountId.Length: > 0 };
+
     private CancellationTokenSource? _scanCts;
     private CancellationTokenSource? _pairCts;
+
+    /// <summary>
+    /// The account's consoles as the cloud reports them, fetched alongside the local scan when signed in.
+    ///
+    /// <para>
+    /// Not shown to the user — the local scan is what they pick from, because pairing needs an address and the
+    /// cloud does not give one. This list exists to answer a single question at the moment a console is saved:
+    /// what does the account service call this box? Learning that now is what makes a remote wake possible
+    /// later, and now is the only convenient time to ask, because it is the one moment we have the console's
+    /// local name and the account's list side by side.
+    /// </para>
+    /// </summary>
+    private IReadOnlyList<CloudConsole> _cloudConsoles = [];
 
     private const string ScanningMessage =
         "Make sure the console is switched on and on the same network as this PC.";
@@ -78,7 +112,8 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
         IPairedConsoleStore store,
         IUiDispatcher dispatcher,
         AddConsoleFlowOptions? options = null,
-        Func<TimeSpan, CancellationToken, Task>? delay = null)
+        Func<TimeSpan, CancellationToken, Task>? delay = null,
+        IAccountSession? account = null)
         : base(dispatcher)
     {
         _scanner = scanner ?? throw new ArgumentNullException(nameof(scanner));
@@ -86,6 +121,7 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _options = options ?? new AddConsoleFlowOptions();
         _delay = delay ?? Task.Delay;
+        _account = account;
     }
 
     /// <summary>
@@ -167,11 +203,24 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
         });
     }
 
-    /// <summary>Update the link-code and account fields, which together decide whether Pair is offered.</summary>
+    /// <summary>
+    /// Update the link-code and account fields, which together decide whether Pair is offered.
+    ///
+    /// <para>
+    /// The account id is ignored while it is coming from a signed-in account. The front end hides the field in
+    /// that case, but it still raises change events as the panel is built and torn down, and honouring those
+    /// would let an empty text box overwrite a perfectly good account id — which presents as Pair silently
+    /// refusing to enable, with nothing on screen to explain it.
+    /// </para>
+    /// </summary>
     public void SetLinkInput(string passcode, string accountId) => Mutate(() =>
     {
         _passcode = (passcode ?? string.Empty).Trim();
-        _accountId = (accountId ?? string.Empty).Trim();
+
+        if (!AccountIdIsAutomatic)
+        {
+            _typedAccountId = (accountId ?? string.Empty).Trim();
+        }
     });
 
     /// <summary>
@@ -196,7 +245,7 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
             return;
         }
 
-        var registration = new ConsoleRegistration(_host, _accountId, _passcode, _family);
+        var registration = new ConsoleRegistration(_host, EffectiveAccountId, _passcode, _family);
 
         CancelPairing();
         var cts = new CancellationTokenSource(_options.RegistrationTimeout);
@@ -362,6 +411,10 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
         var completion = new TaskCompletionSource();
         IDisposable? subscription = null;
 
+        // Runs alongside the scan rather than before it: it must never delay results appearing, and a cloud
+        // that is slow or down must not stop a purely local pairing from working.
+        Task cloudLookup = FetchCloudConsolesAsync(cts);
+
         try
         {
             subscription = _scanner.Scan(_options.SearchWindow, cts.Token).Subscribe(
@@ -410,6 +463,10 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
         finally
         {
             subscription?.Dispose();
+
+            // Observed so a failure cannot surface as an unobserved task exception. Its result is optional by
+            // design, so there is nothing to do with it beyond not letting it escape.
+            await cloudLookup.ConfigureAwait(false);
 
             // "Is this scan still the current one?" is answered HERE, synchronously, and the answer is captured.
             // Mutate only runs inline when the caller is already on the UI thread; off it — which is where this
@@ -487,6 +544,52 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
             : "Pick your console.";
     }
 
+    /// <summary>
+    /// Fetch the account's console list, if signed in. Never throws and never reports: this is entirely
+    /// optional enrichment, and a user pairing a console on their own sofa should not see a cloud error.
+    /// </summary>
+    private async Task FetchCloudConsolesAsync(CancellationTokenSource scan)
+    {
+        if (_account?.Current is null)
+        {
+            return;
+        }
+
+        try
+        {
+            IReadOnlyList<CloudConsole> consoles = await _account
+                .ListConsolesAsync(scan.Token)
+                .ConfigureAwait(false);
+
+            // Freshness judged here, synchronously, as the result arrives — the same rule the scan follows, and
+            // for the same reason: Mutate posts, so a check written inside the closure runs later.
+            if (IsCurrentScan(scan))
+            {
+                _cloudConsoles = consoles;
+            }
+        }
+        catch (Exception)
+        {
+            // Signed out mid-scan, offline, cloud down, or a token that expired. All of them mean "we will not
+            // learn the cloud id this time", which costs only the ability to wake this console remotely.
+        }
+    }
+
+    /// <summary>
+    /// The account service's id for the console being paired. Shared with the backfill that repairs consoles
+    /// paired before sign-in existed — see <see cref="CloudConsoleMatch"/> for the matching rule and why an
+    /// ambiguous match deliberately yields nothing.
+    /// </summary>
+    private string? ResolveCloudDeviceId()
+        => CloudConsoleMatch.ResolveId(_cloudConsoles, _selected?.Console.DisplayName);
+
+    /// <summary>The signed-in account's name in parentheses, or nothing when it has none to show.</summary>
+    private string FormatAccountName()
+    {
+        string? name = _account?.Current?.DisplayName;
+        return string.IsNullOrWhiteSpace(name) ? string.Empty : $" ({name})";
+    }
+
     private PairedConsole BuildRecord(byte[] credentialRecord)
     {
         // The console's own host-id is a better identity than its current address, which a DHCP lease can move
@@ -503,6 +606,7 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
             HostId = hostId,
             ReportedName = _selected?.Console.DisplayName,
             SystemVersion = _selected?.Console.SystemVersion,
+            CloudDeviceId = ResolveCloudDeviceId(),
         };
     }
 
@@ -584,7 +688,14 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
 
             // Enabled once both fields could plausibly be right. A disabled button that explains itself beats a
             // validation error after the fact.
-            CanPair: _passcode.Length >= _options.MinimumPasscodeLength && _accountId.Length > 0,
+            CanPair: _passcode.Length >= _options.MinimumPasscodeLength && EffectiveAccountId.Length > 0,
+
+            // When signed in, the account id stops being something the user has to find. This is the whole point
+            // of the account tier for someone who only ever plays on their own network.
+            AccountIdIsAutomatic: AccountIdIsAutomatic,
+            AccountIdNote: AccountIdIsAutomatic
+                ? $"Using the account you're signed in as{FormatAccountName()}."
+                : "Sign in to your account and this fills itself in.",
             LinkError: _linkError,
             PairingStatus: $"Registering with {name}…",
 

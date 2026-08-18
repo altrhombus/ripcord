@@ -6,7 +6,10 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Documents;
 using Microsoft.UI.Xaml.Media;
+using System.Threading.Tasks;
+using CommunityToolkit.WinUI.Controls;
 using Ripcord.Presentation;
+using Ripcord.Presentation.Accounts;
 using Ripcord.Presentation.Consoles;
 using Ripcord.Presentation.Settings;
 using Ripcord_App.Input;
@@ -49,13 +52,17 @@ public sealed partial class SettingsPage : Page
     // handler seeing -1 would clamp it to a real option and save a setting the user never touched.
     private bool _rendering;
 
+    private readonly AccountViewModel _account;
+
     public SettingsPage()
     {
         _viewModel = App.Services.CreateSettingsViewModel();
+        _account = App.Services.CreateAccountViewModel();
 
         InitializeComponent();
 
         _viewModel.PropertyChanged += (_, _) => Render(_viewModel.State);
+        _account.PropertyChanged += (_, _) => RenderAccount(_account.State);
     }
 
     /// <summary>
@@ -77,7 +84,31 @@ public sealed partial class SettingsPage : Page
         }
 
         Render(_viewModel.State);
+        RenderAccount(_account.State);
         WireHandlers();
+
+        // After the first render, and not awaited above: restoring a stored session is a network round trip,
+        // and the rest of the page must not wait on it. It renders itself when it lands.
+        await RestoreAccountAsync();
+    }
+
+    private async Task RestoreAccountAsync()
+    {
+        try
+        {
+            await _account.RestoreAsync();
+
+            if (_account.State.Step == AccountStep.SignedIn)
+            {
+                await _account.LoadConsolesAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            // The view-model already reports its own failures through state; this is the belt-and-braces guard
+            // that keeps the settings page reachable, which is where a user goes to fix a bad configuration.
+            Debug.WriteLine($"[Ripcord] account restore failed: {ex}");
+        }
     }
 
     /// <summary>
@@ -85,6 +116,9 @@ public sealed partial class SettingsPage : Page
     /// </summary>
     private void WireHandlers()
     {
+        SignInButton.Click += async (_, _) => await SignInAsync();
+        SignOutButton.Click += (_, _) => _account.SignOut();
+
         ResolutionCombo.SelectionChanged += (_, _) => Edit(() => _viewModel.SetResolution(ResolutionCombo.SelectedIndex));
         UpscaleCombo.SelectionChanged += (_, _) => Edit(() => _viewModel.SetUpscale(UpscaleCombo.SelectedIndex));
         CodecCombo.SelectionChanged += (_, _) => Edit(() => _viewModel.SetCodec(CodecCombo.SelectedIndex));
@@ -138,6 +172,105 @@ public sealed partial class SettingsPage : Page
     /// arrives as one value, so the codec picker and the HDR toggle it gates cannot disagree — which is exactly
     /// what they used to do when a change handler updated one and left the other until the page was reopened.
     /// </summary>
+    /// <summary>
+    /// Run the sign-in flow: show the web view, then hand whatever it caught back to the view-model.
+    ///
+    /// <para>
+    /// The exchange happens <em>after</em> the dialog has closed, deliberately. Awaiting a network call while a
+    /// modal is still up means the dialog owns the failure, and a dialog that has to render an error is a
+    /// dialog that has to stay open — which is how the user ends up looking at a spent authorization code.
+    /// </para>
+    /// </summary>
+    private async Task SignInAsync()
+    {
+        var dialog = new AccountSignInDialog(_account) { XamlRoot = XamlRoot };
+
+        try
+        {
+            // Through ModalHost, never ContentDialog.ShowAsync directly: the dialog needs a Modal input scope
+            // pushed for it, or the settings page underneath keeps the pad and a controller-only user is left
+            // looking at a sign-in page they cannot reach. ModalHostTests enforces this.
+            await ModalHost.ShowAsync(dialog);
+        }
+        catch (Exception ex)
+        {
+            // Another dialog already up, most likely. Nothing has been started, so there is nothing to undo.
+            Debug.WriteLine($"[Ripcord] sign-in dialog failed to show: {ex}");
+            return;
+        }
+
+        if (dialog.Failure is { } failure)
+        {
+            AccountError.Message = failure;
+            AccountError.IsOpen = true;
+            return;
+        }
+
+        if (dialog.CompletedRedirect is not { } redirect)
+        {
+            return; // cancelled, which is not worth reporting
+        }
+
+        await _account.CompleteSignInAsync(redirect);
+
+        if (_account.State.Step == AccountStep.SignedIn)
+        {
+            await _account.LoadConsolesAsync();
+        }
+    }
+
+    /// <summary>
+    /// Project the account state. Separate from <see cref="Render"/> because the two view-models change
+    /// independently and re-rendering the whole settings page on a sign-in would reset every combo box mid-edit.
+    /// </summary>
+    private void RenderAccount(AccountViewState s)
+    {
+        AccountCard.Header = s.Heading;
+        AccountCard.Description = s.Detail;
+
+        AccountBusy.IsActive = s.IsBusy;
+        SignInButton.Visibility = Vis(s.CanSignIn);
+        SignOutButton.Visibility = Vis(s.CanSignOut);
+
+        // With no credential there is nothing to press. Saying so in the description beats a dead button.
+        AccountCard.IsEnabled = s.Step != AccountStep.Unavailable;
+
+        AccountError.Message = s.Error ?? string.Empty;
+        AccountError.IsOpen = s.Error is not null;
+
+        RenderCloudConsoles(s);
+    }
+
+    private void RenderCloudConsoles(AccountViewState s)
+    {
+        CloudConsolesExpander.Visibility = Vis(s.ConsolesLoaded && s.Consoles.Count > 0);
+        if (!s.ConsolesLoaded)
+        {
+            return;
+        }
+
+        CloudConsolesExpander.Items.Clear();
+        foreach (CloudConsole console in s.Consoles)
+        {
+            // Both facts are worth showing and neither is obvious from the console itself: remote play can be
+            // switched off on the console, and remote wake is a separate standby setting people forget they
+            // never enabled — which is exactly the case that otherwise presents as "it just won't connect".
+            string detail = (console.RemotePlayEnabled, console.CanWakeRemotely) switch
+            {
+                (false, _) => "Remote play is turned off on this console.",
+                (true, true) => "Ready, and can be woken from rest mode.",
+                (true, false) => "Ready, but it can't be woken remotely — turn on Remote Play rest-mode wake on the console.",
+            };
+
+            CloudConsolesExpander.Items.Add(new SettingsCard
+            {
+                Header = console.Name,
+                Description = detail,
+                IsClickEnabled = false,
+            });
+        }
+    }
+
     private void Render(SettingsViewState s)
     {
         _rendering = true;

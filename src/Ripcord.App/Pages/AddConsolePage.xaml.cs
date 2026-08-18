@@ -110,6 +110,14 @@ public sealed partial class AddConsolePage : Page
 
         LinkHeading.Text = s.LinkHeading;
         ConsoleStepsText.Text = s.ConsoleStepsText;
+
+        // Signed in, the account ID is already known and the box comes out entirely. This is the step that used
+        // to send people off to a third-party lookup tool before they could pair at all.
+        AccountEntryPanel.Visibility = Vis(!s.AccountIdIsAutomatic);
+        AccountKnownNote.Visibility = Vis(s.AccountIdIsAutomatic);
+        AccountKnownNote.Message = s.AccountIdNote;
+        AccountKnownNote.IsOpen = s.AccountIdIsAutomatic;
+
         LinkStatus.Severity = InfoBarSeverity.Error;
         LinkStatus.Message = s.LinkError ?? string.Empty;
         LinkStatus.IsOpen = s.LinkError is not null;
