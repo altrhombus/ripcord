@@ -4,7 +4,7 @@
 #include "takion_message.h"
 #include "takion_sack_chunk.h"
 
-#include <3ds.h>
+#include "rc_platform.h"
 
 #include <errno.h>
 #include <string.h>
@@ -77,8 +77,8 @@ int takion_channel_connect_ticked(takion_reliable_channel *ch, int sock, struct 
     ch->peer = peer;
 
     /* Not a cryptographic value - SCTP's own verification tag only needs to be "probably unique enough
-     * to reject stale packets from a prior association," the same bar svcGetSystemTick() clears. */
-    ch->local_tag = (uint32_t)svcGetSystemTick();
+     * to reject stale packets from a prior association," the same bar rc_tick() clears. */
+    ch->local_tag = (uint32_t)rc_tick();
     if (ch->local_tag == 0)
         ch->local_tag = 1;
 
@@ -91,7 +91,7 @@ int takion_channel_connect_ticked(takion_reliable_channel *ch, int sock, struct 
         takion_message_header header;
         uint8_t packet[64];
         size_t packet_len;
-        u64 start_ms;
+        uint64_t start_ms;
 
         header.base_type = TAKION_BASE_TYPE_CONTROL;
         header.verification_tag = 0; /* the server's tag is not known yet */
@@ -101,8 +101,8 @@ int takion_channel_connect_ticked(takion_reliable_channel *ch, int sock, struct 
         if (packet_len > 0)
             sendto(sock, packet, packet_len, 0, (struct sockaddr *)&peer, sizeof(peer));
 
-        start_ms = osGetTime();
-        while (osGetTime() - start_ms <= (u64)per_attempt_timeout_ms) {
+        start_ms = rc_time_ms();
+        while (rc_time_ms() - start_ms <= (uint64_t)per_attempt_timeout_ms) {
             uint8_t recv_buf[TAKION_MAX_PACKET];
             ssize_t n = recvfrom(sock, recv_buf, sizeof(recv_buf), 0, NULL, NULL);
 
@@ -119,7 +119,7 @@ int takion_channel_connect_ticked(takion_reliable_channel *ch, int sock, struct 
             }
             if (tick != NULL)
                 tick(tick_ctx);
-            svcSleepThread(20000000); /* 20 ms */
+            rc_sleep_ms(20); /* 20 ms */
         }
     }
 
@@ -137,7 +137,7 @@ int takion_channel_connect_ticked(takion_reliable_channel *ch, int sock, struct 
         size_t echo_chunk_len;
         uint8_t packet[128];
         size_t packet_len;
-        u64 start_ms;
+        uint64_t start_ms;
 
         echo_chunk_len = takion_build_cookie_echo(cookie, echo_chunk, sizeof(echo_chunk));
         if (echo_chunk_len == 0)
@@ -151,8 +151,8 @@ int takion_channel_connect_ticked(takion_reliable_channel *ch, int sock, struct 
         if (packet_len > 0)
             sendto(sock, packet, packet_len, 0, (struct sockaddr *)&peer, sizeof(peer));
 
-        start_ms = osGetTime();
-        while (osGetTime() - start_ms <= (u64)per_attempt_timeout_ms) {
+        start_ms = rc_time_ms();
+        while (rc_time_ms() - start_ms <= (uint64_t)per_attempt_timeout_ms) {
             uint8_t peek_buf[TAKION_MAX_PACKET];
             /* MSG_PEEK: a DATA chunk here is equally valid proof of establishment (some real captures
              * skip an explicit COOKIE_ACK), but this function has no reassembly/ack state to process it
@@ -183,7 +183,7 @@ int takion_channel_connect_ticked(takion_reliable_channel *ch, int sock, struct 
             }
             if (tick != NULL)
                 tick(tick_ctx);
-            svcSleepThread(20000000);
+            rc_sleep_ms(20);
         }
     }
 
@@ -235,7 +235,7 @@ int takion_channel_send(takion_reliable_channel *ch, unsigned channel,
 
         slot->tsn = ch->next_send_tsn;
         slot->in_use = 1;
-        slot->last_sent_ms = osGetTime();
+        slot->last_sent_ms = rc_time_ms();
         /* Sealed once, here. Retransmits below resend these exact bytes rather than re-sealing, so the
          * key position reserved for this packet stays associated with it. */
         seal_if_enabled(ch, slot->packet, slot->length);
@@ -284,7 +284,7 @@ static int accept_data_chunk(takion_reliable_channel *ch, int is_first, unsigned
 int takion_channel_poll(takion_reliable_channel *ch, unsigned *out_channel,
                         const uint8_t **out_message, size_t *out_length)
 {
-    uint64_t now_ms = osGetTime();
+    uint64_t now_ms = rc_time_ms();
     size_t i;
     uint8_t recv_buf[TAKION_MAX_PACKET];
     ssize_t n;

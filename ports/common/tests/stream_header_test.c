@@ -9,7 +9,7 @@
  *
  * THIS BUILDS FOR THE HOST, NOT THE 3DS - see tests/Makefile.
  */
-#include "../source/stream/stream_header.h"
+#include "../stream/stream_header.h"
 
 #include <stdio.h>
 #include <string.h>
