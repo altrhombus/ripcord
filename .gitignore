@@ -9,6 +9,26 @@ docs/protocol/captures/
 ## un-ignored, the dirty room must STAY ignored. Do not collapse these two rules.
 docs/
 
+## Ripcord: the OAuth client credential and the signed-in account's tokens. These are the
+## runtime files HalyardClientConfigFile and AccountTokenStore read, and they normally live
+## in the per-user config directory rather than the repo - these rules exist for the case
+## where someone drops one in the tree while developing. client.json holds an application
+## secret; account.json holds a refresh token, which is a durable credential for a real
+## person's PSN account. Neither is ever committed. Note that this is NOT the same thing as
+## the bundled application credential in Ripcord.Cloud.Halyard/Data/, which is committed
+## deliberately and argued in NOTICE, "Application OAuth credential" - that one is generic to
+## the application, while these two are per-user and per-machine. An earlier revision of this
+## comment claimed "no credential is compiled in", which the bundle has made untrue; the
+## distinction that actually holds is application versus user, not compiled-in versus not.
+client.json
+account.json
+
+## Ripcord: per-machine Claude Code state. Local tool-permission grants, of use to nobody
+## else, and they record the paths this machine happened to read - including comparison reads
+## of other implementations, which are a permitted audit but have no business in a public
+## tree whose central claim is independent derivation. Findings belong in the dirty room.
+.claude/
+
 ## Ripcord: root-level project prose, withheld from the public repo until it has been
 ## reviewed for publication. These are deliberately root-anchored (leading /) so that
 ## brand/README.md - the one README currently published - stays tracked. The docs tree,
