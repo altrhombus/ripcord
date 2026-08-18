@@ -2,6 +2,7 @@ using Ripcord.Core.Consoles;
 using Ripcord.Core.Discovery;
 using Ripcord.Core.Platform;
 using Ripcord.Core.Settings;
+using Ripcord.Presentation.Accounts;
 using Ripcord.Presentation.Consoles;
 using Ripcord.Presentation.Pairing;
 using Ripcord.Presentation.Sessions;
@@ -42,6 +43,7 @@ public class RipcordAppServicesTests
             ReachabilityProbe = new StubProbe(),
             VideoCapabilities = new StubCapabilities(),
             WakeCoordinator = new StubWakeCoordinator(),
+            Account = new UnavailableAccountSession(),
         };
     }
 
