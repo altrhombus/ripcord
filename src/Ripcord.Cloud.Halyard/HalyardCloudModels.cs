@@ -15,6 +15,22 @@ public static class HalyardEndpoints
     public const string Commands = "https://web.np.playstation.com/api/cloudAssistedNavigation/v2/users/me/commands";
     public const string Sessions = "https://web.np.playstation.com/api/sessionManager/v1/remotePlaySessions";
 
+    /// <summary>
+    /// The push front-end <b>lookup</b>. Returns the specific push host to open the persistent WebSocket to —
+    /// the connection itself goes to that returned host, not here. Query values are required on-wire.
+    /// </summary>
+    public const string PushServerAddress =
+        "https://mobile-pushcl.np.communication.playstation.net/np/serveraddr?version=2.1&fields=keepAliveStatus&keepAliveStatusType=3";
+
+    /// <summary>The path the push WebSocket upgrades on, appended to the host from the lookup above.</summary>
+    public const string PushNotificationPath = "/np/pushNotification";
+
+    /// <summary>
+    /// Required header on a session readback: the session id(s) to return. A <c>GET remotePlaySessions</c>
+    /// without it is a 400 (wire-confirmed). Comma-separated for several; we read one at a time.
+    /// </summary>
+    public const string SessionIdsHeader = "X-PSN-SESSION-MANAGER-SESSION-IDS";
+
     /// <summary>Required platform-tag wire value for the current-gen console in the cloud API.</summary>
     public const string CurrentGenPlatformTag = "PS5";
 
@@ -81,3 +97,28 @@ public sealed record HalyardSessionsResponse(
 
 public sealed record HalyardCommandResponse(
     [property: JsonPropertyName("commandId")] string CommandId);
+
+// ---- Push channel ----
+
+/// <summary>Keepalive timing the push service dictates, in milliseconds.</summary>
+public sealed record HalyardPushKeepAlive(
+    [property: JsonPropertyName("clientKeepAliveInterval")] int ClientKeepAliveIntervalMs,
+    [property: JsonPropertyName("clientKeepAliveTimeout")] int ClientKeepAliveTimeoutMs,
+    [property: JsonPropertyName("serverKeepAliveTimeout")] int ServerKeepAliveTimeoutMs,
+    [property: JsonPropertyName("serverPresenceTimeout")] int ServerPresenceTimeoutMs);
+
+/// <summary>
+/// The push front-end the client should connect to, from the serveraddr lookup. The persistent WebSocket opens
+/// against <see cref="Fqdn"/>, not the lookup host, and pings on <see cref="HalyardPushKeepAlive"/>'s cadence.
+/// </summary>
+public sealed record HalyardPushServerInfo(
+    [property: JsonPropertyName("fqdn")] string Fqdn,
+    [property: JsonPropertyName("keepAliveStatus")] HalyardPushKeepAlive? KeepAlive)
+{
+    /// <summary>The full <c>wss://</c> URI to upgrade the push WebSocket on.</summary>
+    public Uri PushUri => new($"wss://{Fqdn}{HalyardEndpoints.PushNotificationPath}");
+
+    /// <summary>How often the client should ping. Falls back to 10 s — the observed default — if unspecified.</summary>
+    public TimeSpan ClientKeepAlive => TimeSpan.FromMilliseconds(
+        KeepAlive is { ClientKeepAliveIntervalMs: > 0 } ? KeepAlive.ClientKeepAliveIntervalMs : 10_000);
+}
