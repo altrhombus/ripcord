@@ -12,7 +12,7 @@
 
 #include <3ds.h>
 
-#include "rc_platform.h"
+#include "platform/rc_platform.h"
 
 uint64_t rc_time_ms(void)
 {
