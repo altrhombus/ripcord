@@ -25,9 +25,9 @@
  * precisely when the byte after the NAL header has its top bit set.
  */
 #include "../media/rc_mvd.h"
-#include "../util/rc_log.h"
+#include "util/rc_log.h"
 #include "../util/rc_profile.h"
-#include "../util/rc_program_dir.h"
+#include "util/rc_program_dir.h"
 
 #include <3ds.h>
 
