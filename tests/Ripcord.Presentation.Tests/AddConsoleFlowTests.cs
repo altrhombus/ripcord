@@ -2,6 +2,7 @@ using System.Net;
 using Ripcord.Core;
 using Ripcord.Core.Consoles;
 using Ripcord.Core.Discovery;
+using Ripcord.Presentation.Accounts;
 using Ripcord.Presentation.Consoles;
 using Ripcord.Presentation.Pairing;
 using Ripcord.Presentation.Threading;
@@ -157,7 +158,8 @@ public class AddConsoleFlowTests
         /// </param>
         public Harness(
             AddConsoleFlowOptions? options = null,
-            Func<TimeSpan, CancellationToken, Task>? delay = null)
+            Func<TimeSpan, CancellationToken, Task>? delay = null,
+            IAccountSession? account = null)
         {
             Flow = new AddConsoleFlow(
                 Scanner,
@@ -165,7 +167,8 @@ public class AddConsoleFlowTests
                 Store,
                 new ImmediateUiDispatcher(),
                 options,
-                delay ?? ((_, _) => Task.CompletedTask));
+                delay ?? ((_, _) => Task.CompletedTask),
+                account);
             Flow.Completed += Completions.Add;
         }
 
@@ -585,6 +588,155 @@ public class AddConsoleFlowTests
         h.Flow.SetLinkInput(passcode, account);
 
         Assert.Equal(expected, h.Flow.State.CanPair);
+    }
+
+    // ---- account id, typed or automatic ---------------------------------------------------------
+
+    [Fact]
+    public async Task WhenSignedIn_TheAccountIdIsSuppliedRatherThanTyped()
+    {
+        // The point of the whole account tier for a LAN-only user: the account id was previously something you
+        // had to go and look up somewhere else before you could pair at all.
+        var account = new FakeAccountSession { Current = new AccountIdentity("4200000000000000042", "somebody", "GB") };
+        var h = new Harness(account: account);
+        await h.ToLinkViaScanAsync();
+
+        h.Flow.SetLinkInput("12345678", string.Empty);
+
+        Assert.True(h.Flow.State.CanPair);
+        Assert.True(h.Flow.State.AccountIdIsAutomatic);
+        Assert.Contains("somebody", h.Flow.State.AccountIdNote);
+
+        await h.Flow.PairAsync();
+
+        Assert.Equal("4200000000000000042", h.Registrar.LastRegistration?.AccountId);
+    }
+
+    [Fact]
+    public async Task WhenSignedIn_AnEmptyAccountBoxDoesNotClobberTheSignedInId()
+    {
+        // The front end hides the field when signed in, but it still raises change events as the panel is built.
+        // Honouring those would leave Pair disabled with nothing on screen explaining why.
+        var account = new FakeAccountSession { Current = new AccountIdentity("99", "somebody", "GB") };
+        var h = new Harness(account: account);
+        await h.ToLinkViaScanAsync();
+
+        h.Flow.SetLinkInput("12345678", "1234567890123456");
+        h.Flow.SetLinkInput("12345678", string.Empty);
+
+        Assert.True(h.Flow.State.CanPair);
+        await h.Flow.PairAsync();
+        Assert.Equal("99", h.Registrar.LastRegistration?.AccountId);
+    }
+
+    [Fact]
+    public async Task WhenSignedOut_TheTypedAccountIdIsStillUsed()
+    {
+        // Pairing by hand stays first-class: a build with no credential has no other path.
+        var h = new Harness(account: new FakeAccountSession { CanSignIn = false });
+        await h.ToLinkViaScanAsync();
+
+        h.Flow.SetLinkInput("12345678", "1234567890123456");
+
+        Assert.False(h.Flow.State.AccountIdIsAutomatic);
+        await h.Flow.PairAsync();
+        Assert.Equal("1234567890123456", h.Registrar.LastRegistration?.AccountId);
+    }
+
+    [Fact]
+    public async Task WithNoAccountSeamAtAll_BehavesExactlyAsBefore()
+    {
+        // The seam is optional, and its absence must change nothing.
+        var h = new Harness();
+        await h.ToLinkViaScanAsync();
+
+        h.Flow.SetLinkInput("12345678", "1234567890123456");
+
+        Assert.False(h.Flow.State.AccountIdIsAutomatic);
+        await h.Flow.PairAsync();
+        Assert.Equal("1234567890123456", h.Registrar.LastRegistration?.AccountId);
+    }
+
+    [Fact]
+    public async Task SigningInWhileTheFlowIsOpen_TakesEffectWithoutResubscribing()
+    {
+        // The effective id is derived at read time rather than captured on entry, so a sign-in that happens on
+        // another surface while this flow sits on the link step is picked up without the flow observing anything.
+        var account = new FakeAccountSession();
+        var h = new Harness(account: account);
+        await h.ToLinkViaScanAsync();
+        h.Flow.SetLinkInput("12345678", string.Empty);
+        Assert.False(h.Flow.State.CanPair);
+
+        account.Current = new AccountIdentity("55", "somebody", "GB");
+        h.Flow.SetLinkInput("12345678", string.Empty);
+
+        Assert.True(h.Flow.State.CanPair);
+        Assert.True(h.Flow.State.AccountIdIsAutomatic);
+    }
+
+    [Fact]
+    public async Task PairingWhileSignedIn_LearnsTheCloudIdSoTheConsoleCanBeWokenRemotelyLater()
+    {
+        // The one moment we have the console's local name and the account's list side by side.
+        var account = new FakeAccountSession
+        {
+            Current = new AccountIdentity("42", "somebody", "GB"),
+            Consoles = [new CloudConsole("duid-living-room", "PS5-8A2F", true, true)],
+        };
+        var h = new Harness(account: account);
+        await h.ToLinkViaScanAsync(Console("10.0.0.7", name: "PS5-8A2F"));
+
+        h.Flow.SetLinkInput("12345678", string.Empty);
+        await h.Flow.PairAsync();
+        h.Flow.Finish("Living room", connect: false);
+
+        Assert.Equal("duid-living-room", h.Completions.Single().Console.CloudDeviceId);
+    }
+
+    [Fact]
+    public async Task PairingWithAnAmbiguousCloudName_StoresNoCloudIdRatherThanGuessing()
+    {
+        // Two consoles genuinely called the same thing is exactly why nicknames exist. A wrong id here would
+        // send a wake to the other console.
+        var account = new FakeAccountSession
+        {
+            Current = new AccountIdentity("42", "somebody", "GB"),
+            Consoles =
+            [
+                new CloudConsole("duid-a", "PS5-8A2F", true, true),
+                new CloudConsole("duid-b", "PS5-8A2F", true, true),
+            ],
+        };
+        var h = new Harness(account: account);
+        await h.ToLinkViaScanAsync(Console("10.0.0.7", name: "PS5-8A2F"));
+
+        h.Flow.SetLinkInput("12345678", string.Empty);
+        await h.Flow.PairAsync();
+        h.Flow.Finish("Living room", connect: false);
+
+        Assert.Null(h.Completions.Single().Console.CloudDeviceId);
+    }
+
+    [Fact]
+    public async Task PairingWhenTheCloudLookupFails_StillPairs()
+    {
+        // Enrichment is optional. A user pairing a console on their own sofa must not see a cloud error.
+        var account = new FakeAccountSession
+        {
+            Current = new AccountIdentity("42", "somebody", "GB"),
+            ListThrows = new InvalidOperationException("cloud down"),
+        };
+        var h = new Harness(account: account);
+        await h.ToLinkViaScanAsync(Console("10.0.0.7", name: "PS5-8A2F"));
+
+        h.Flow.SetLinkInput("12345678", string.Empty);
+        await h.Flow.PairAsync();
+        h.Flow.Finish("Living room", connect: false);
+
+        AddConsoleCompletion completion = h.Completions.Single();
+        Assert.Null(completion.Console.CloudDeviceId);
+        Assert.Equal("Living room", completion.Console.Nickname);
     }
 
     [Fact]
