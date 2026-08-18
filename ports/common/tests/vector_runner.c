@@ -22,8 +22,8 @@
  * spaces. A JSON parser would be a dependency this port does not otherwise need, on a target where every
  * kilobyte of binary is real, to read a file whose entire grammar is "words on a line".
  */
-#include "../source/crypto/rc_crypto.h"
-#include "../source/halyard/halyard_v1.h"
+#include "../crypto/rc_crypto.h"
+#include "../halyard/halyard_v1.h"
 
 #include <stdio.h>
 #include <stdlib.h>

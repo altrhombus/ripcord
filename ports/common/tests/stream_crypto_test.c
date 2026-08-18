@@ -15,9 +15,9 @@
  * THIS BUILDS FOR THE HOST, NOT THE 3DS - see tests/Makefile. The file format matches
  * vector_runner.c's: flat text, one vector per line, hex fields split on spaces.
  */
-#include "../source/crypto/rc_gcm.h"
-#include "../source/stream/stream_key_schedule.h"
-#include "../source/stream/stream_packet_crypto.h"
+#include "../crypto/rc_gcm.h"
+#include "../stream/stream_key_schedule.h"
+#include "../stream/stream_packet_crypto.h"
 
 #include <stdio.h>
 #include <stdlib.h>

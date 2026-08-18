@@ -34,6 +34,10 @@ OBJCOPY := $(PREFIX)objcopy
 
 CTRULIB := $(DEVKITPRO)/libctru
 
+# The portable protocol core, shared with every other Ripcord port. See ports/common/platform/
+# rc_platform.h for the seam this build implements in source/platform/rc_platform_3ds.c.
+CORE    := ../common
+
 TARGET    := ripcord-3ds
 LINKTEST  := ripcord-3ds-linktest
 DISCOVERY := ripcord-3ds-discovery
@@ -69,7 +73,7 @@ CFLAGS  := $(ARCH) -std=c99 -O2 -g \
            -Wframe-larger-than=8192 \
            -ffunction-sections -fdata-sections \
            -D__3DS__ \
-           -isystem $(CTRULIB)/include -Isource/crypto -Isource/halyard
+           -isystem $(CTRULIB)/include -I$(CORE)/crypto -I$(CORE)/halyard -I$(CORE)/platform
 
 LDFLAGS := $(ARCH) -specs=3dsx.specs -Wl,--gc-sections -L$(CTRULIB)/lib
 LIBS    := -lctru -lm
@@ -101,13 +105,13 @@ ECDH_LIBS   :=
 endif
 
 SOURCES := \
-	source/crypto/rc_aes.c \
-	source/crypto/rc_sha256.c \
-	source/crypto/rc_modes.c \
-	source/halyard/halyard_control_crypto.c \
-	source/util/rc_log.c \
+	$(CORE)/crypto/rc_aes.c \
+	$(CORE)/crypto/rc_sha256.c \
+	$(CORE)/crypto/rc_modes.c \
+	$(CORE)/halyard/halyard_control_crypto.c \
+	$(CORE)/util/rc_log.c \
 	source/util/rc_stack.c \
-	source/util/rc_program_dir.c \
+	$(CORE)/util/rc_program_dir.c \
 	source/app/main.c
 
 # Phase 2 (SETUP.md): the UDP link test. Deliberately has no dependency on source/crypto or
@@ -115,45 +119,46 @@ SOURCES := \
 # that true rather than assumed. source/util is shared with the crypto smoke test above.
 LINKTEST_SOURCES := \
 	source/net/rc_soc.c \
-	source/util/rc_log.c \
+	$(CORE)/util/rc_log.c \
 	source/util/rc_stack.c \
-	source/util/rc_program_dir.c \
+	$(CORE)/util/rc_program_dir.c \
 	source/linktest/main.c
 
 # Phase 3 (SETUP.md): LAN discovery. source/discovery has no dependency on source/crypto or
 # source/halyard either - see halyard_discovery.h for why the parser itself has no socket dependency in
-# turn, and source/discovery/main.c for where sockets and parsing meet. source/util/rc_text.c is the
+# turn, and source/discovery/main.c for where sockets and parsing meet. $(CORE)/util/rc_text.c is the
 # trim/case-insensitive-match helper shared with source/session's HTTP-like parsing below.
 DISCOVERY_SOURCES := \
 	source/net/rc_soc.c \
-	source/util/rc_log.c \
+	$(CORE)/util/rc_log.c \
 	source/util/rc_stack.c \
-	source/util/rc_program_dir.c \
-	source/util/rc_text.c \
-	source/discovery/halyard_discovery.c \
+	$(CORE)/util/rc_program_dir.c \
+	$(CORE)/util/rc_text.c \
+	$(CORE)/discovery/halyard_discovery.c \
 	source/discovery/main.c
 
 # Phase 4 (SETUP.md): the /sess/init -> /sess/ctrl exchange. Unlike discovery/linktest, this genuinely
 # needs source/halyard (the control-field cipher, established from /sess/init's RP-Nonce) and therefore
 # source/crypto beneath it - this is that layer's first real end-to-end use outside a test harness.
 SESSION_SOURCES := \
-	source/crypto/rc_aes.c \
-	source/crypto/rc_sha256.c \
-	source/crypto/rc_modes.c \
-	source/halyard/halyard_control_crypto.c \
+	$(CORE)/crypto/rc_aes.c \
+	$(CORE)/crypto/rc_sha256.c \
+	$(CORE)/crypto/rc_modes.c \
+	$(CORE)/halyard/halyard_control_crypto.c \
 	source/net/rc_soc.c \
-	source/net/rc_tcp.c \
-	source/util/rc_log.c \
+	$(CORE)/net/rc_tcp.c \
+	source/platform/rc_platform_3ds.c \
+	$(CORE)/util/rc_log.c \
 	source/util/rc_stack.c \
-	source/util/rc_base64.c \
-	source/util/rc_hex.c \
-	source/util/rc_program_dir.c \
-	source/util/rc_text.c \
-	source/session/halyard_control_arm.c \
-	source/session/halyard_ctrl_message.c \
-	source/session/halyard_pairing_file.c \
-	source/session/halyard_sess_fields.c \
-	source/session/halyard_sess_request.c \
+	$(CORE)/util/rc_base64.c \
+	$(CORE)/util/rc_hex.c \
+	$(CORE)/util/rc_program_dir.c \
+	$(CORE)/util/rc_text.c \
+	$(CORE)/session/halyard_control_arm.c \
+	$(CORE)/session/halyard_ctrl_message.c \
+	$(CORE)/session/halyard_pairing_file.c \
+	$(CORE)/session/halyard_sess_fields.c \
+	$(CORE)/session/halyard_sess_request.c \
 	source/session/main.c
 
 # Phase 5 (SETUP.md): the Takion transport (handshake, DATA/SACK, reassembly). Deliberately has no
@@ -161,15 +166,16 @@ SESSION_SOURCES := \
 # later phase; this is pure transport.
 TAKION_SOURCES := \
 	source/net/rc_soc.c \
-	source/util/rc_log.c \
+	$(CORE)/util/rc_log.c \
 	source/util/rc_stack.c \
-	source/util/rc_program_dir.c \
-	source/takion/takion_message.c \
-	source/takion/takion_handshake.c \
-	source/takion/takion_data_chunk.c \
-	source/takion/takion_sack_chunk.c \
-	source/takion/takion_reassembler.c \
-	source/takion/takion_reliable_channel.c \
+	$(CORE)/util/rc_program_dir.c \
+	$(CORE)/takion/takion_message.c \
+	$(CORE)/takion/takion_handshake.c \
+	$(CORE)/takion/takion_data_chunk.c \
+	$(CORE)/takion/takion_sack_chunk.c \
+	$(CORE)/takion/takion_reassembler.c \
+	$(CORE)/takion/takion_reliable_channel.c \
+	source/platform/rc_platform_3ds.c \
 	source/takion/main.c
 
 # Phase 6b: the combined connect flow - the only program that carries a real control session all the way
@@ -177,45 +183,46 @@ TAKION_SOURCES := \
 # console at all (see source/connect/main.c on why the standalone Takion probe cannot work). This is the
 # first target to link BOTH the control plane and the stream plane, and the only one needing mbedtls.
 CONNECT_SOURCES := \
-	source/crypto/rc_aes.c \
-	source/crypto/rc_sha256.c \
-	source/crypto/rc_modes.c \
-	source/crypto/rc_ecdh.c \
-	source/halyard/halyard_control_crypto.c \
+	$(CORE)/crypto/rc_aes.c \
+	$(CORE)/crypto/rc_sha256.c \
+	$(CORE)/crypto/rc_modes.c \
+	$(CORE)/crypto/rc_ecdh.c \
+	$(CORE)/halyard/halyard_control_crypto.c \
 	source/net/rc_soc.c \
-	source/net/rc_tcp.c \
-	source/crypto/rc_gcm.c \
-	source/stream/stream_key_schedule.c \
-	source/stream/stream_demux.c \
-	source/stream/fec_galois.c \
-	source/stream/fec_reed_solomon.c \
-	source/stream/stream_header.c \
-	source/stream/stream_packet_crypto.c \
-	source/util/rc_log.c \
+	$(CORE)/net/rc_tcp.c \
+	source/platform/rc_platform_3ds.c \
+	$(CORE)/crypto/rc_gcm.c \
+	$(CORE)/stream/stream_key_schedule.c \
+	$(CORE)/stream/stream_demux.c \
+	$(CORE)/stream/fec_galois.c \
+	$(CORE)/stream/fec_reed_solomon.c \
+	$(CORE)/stream/stream_header.c \
+	$(CORE)/stream/stream_packet_crypto.c \
+	$(CORE)/util/rc_log.c \
 	source/util/rc_stack.c \
-	source/util/rc_base64.c \
-	source/util/rc_hex.c \
-	source/util/rc_program_dir.c \
+	$(CORE)/util/rc_base64.c \
+	$(CORE)/util/rc_hex.c \
+	$(CORE)/util/rc_program_dir.c \
 	source/util/rc_profile.c \
 	source/util/rc_random.c \
-	source/util/rc_text.c \
-	source/session/halyard_control_arm.c \
-	source/session/halyard_control_session.c \
-	source/session/halyard_ctrl_message.c \
-	source/session/halyard_launch_spec.c \
-	source/session/halyard_pairing_file.c \
-	source/session/halyard_sess_fields.c \
-	source/session/halyard_sess_request.c \
-	source/takion/takion_message.c \
-	source/takion/takion_handshake.c \
-	source/takion/takion_data_chunk.c \
-	source/takion/takion_sack_chunk.c \
-	source/takion/takion_reassembler.c \
-	source/takion/takion_reliable_channel.c \
-	source/takion/takion_control_proto.c \
-	source/takion/senkusha_echo.c \
-	source/input/halyard_input.c \
-	source/takion/takion_session_negotiator.c \
+	$(CORE)/util/rc_text.c \
+	$(CORE)/session/halyard_control_arm.c \
+	$(CORE)/session/halyard_control_session.c \
+	$(CORE)/session/halyard_ctrl_message.c \
+	$(CORE)/session/halyard_launch_spec.c \
+	$(CORE)/session/halyard_pairing_file.c \
+	$(CORE)/session/halyard_sess_fields.c \
+	$(CORE)/session/halyard_sess_request.c \
+	$(CORE)/takion/takion_message.c \
+	$(CORE)/takion/takion_handshake.c \
+	$(CORE)/takion/takion_data_chunk.c \
+	$(CORE)/takion/takion_sack_chunk.c \
+	$(CORE)/takion/takion_reassembler.c \
+	$(CORE)/takion/takion_reliable_channel.c \
+	$(CORE)/takion/takion_control_proto.c \
+	$(CORE)/takion/senkusha_echo.c \
+	$(CORE)/input/halyard_input.c \
+	$(CORE)/takion/takion_session_negotiator.c \
 	source/media/rc_mvd.c \
 	source/media/rc_audio.c \
 	source/connect/main.c
@@ -226,24 +233,24 @@ CONNECT_SOURCES := \
 # target is what makes that claim checkable rather than remembered - it compiles each to an object and
 # links nothing, which is exactly as far as the claim goes.
 CROSSCHECK_SOURCES := \
-	source/stream/stream_demux.c \
-	source/stream/fec_galois.c \
-	source/stream/fec_reed_solomon.c \
-	source/stream/stream_header.c \
-	source/stream/fec_galois.c \
-	source/stream/fec_reed_solomon.c \
-	source/stream/stream_key_schedule.c \
-	source/stream/stream_demux.c \
-	source/stream/fec_galois.c \
-	source/stream/fec_reed_solomon.c \
-	source/stream/stream_header.c \
-	source/stream/stream_packet_crypto.c \
-	source/stream/stream_demux.c \
-	source/crypto/rc_ecdh.c \
-	source/takion/takion_control_proto.c \
-	source/takion/senkusha_echo.c \
-	source/input/halyard_input.c \
-	source/takion/takion_session_negotiator.c
+	$(CORE)/stream/stream_demux.c \
+	$(CORE)/stream/fec_galois.c \
+	$(CORE)/stream/fec_reed_solomon.c \
+	$(CORE)/stream/stream_header.c \
+	$(CORE)/stream/fec_galois.c \
+	$(CORE)/stream/fec_reed_solomon.c \
+	$(CORE)/stream/stream_key_schedule.c \
+	$(CORE)/stream/stream_demux.c \
+	$(CORE)/stream/fec_galois.c \
+	$(CORE)/stream/fec_reed_solomon.c \
+	$(CORE)/stream/stream_header.c \
+	$(CORE)/stream/stream_packet_crypto.c \
+	$(CORE)/stream/stream_demux.c \
+	$(CORE)/crypto/rc_ecdh.c \
+	$(CORE)/takion/takion_control_proto.c \
+	$(CORE)/takion/senkusha_echo.c \
+	$(CORE)/input/halyard_input.c \
+	$(CORE)/takion/takion_session_negotiator.c
 
 .PHONY: all constants clean test linktest discovery session takion connect crosscheck
 
@@ -271,9 +278,9 @@ constants: $(GENERATED)
 # second target - and it silently drops the mkdir side effect instead of erroring, so the link step fails
 # for a directory that was never created. `@mkdir -p $(@D)` has no such graph to get confused about.
 
-$(GENERATED): $(BUNDLE) tools/gen_constants.py
+$(GENERATED): $(BUNDLE) $(CORE)/tools/gen_constants.py
 	@mkdir -p $(@D)
-	$(PYTHON) tools/gen_constants.py $(BUNDLE) $@
+	$(PYTHON) $(CORE)/tools/gen_constants.py $(BUNDLE) $@
 
 $(BUILD)/$(TARGET).elf: $(SOURCES) $(GENERATED)
 	@mkdir -p $(@D)
@@ -317,9 +324,9 @@ $(BUILD)/$(CONNECT).elf: $(CONNECT_SOURCES) $(GENERATED)
 
 # The replay tool needs only the decoder and its helpers - no crypto, no network, no protocol.
 MVDREPLAY_SOURCES := \
-	source/util/rc_log.c \
+	$(CORE)/util/rc_log.c \
 	source/util/rc_stack.c \
-	source/util/rc_program_dir.c \
+	$(CORE)/util/rc_program_dir.c \
 	source/util/rc_profile.c \
 	source/media/rc_mvd.c \
 	source/mvdreplay/main.c
@@ -345,8 +352,8 @@ crosscheck:
 # Convenience passthrough. The host tests are the ones that actually verify the crypto, so make them easy
 # to reach from the directory people will be standing in.
 test:
-	$(MAKE) -C tests
+	$(MAKE) -C $(CORE)/tests
 
 clean:
 	rm -rf $(BUILD) $(TARGET).3dsx $(LINKTEST).3dsx $(DISCOVERY).3dsx $(SESSION).3dsx $(TAKION).3dsx $(CONNECT).3dsx $(MVDREPLAY).3dsx
-	$(MAKE) -C tests clean
+	$(MAKE) -C $(CORE)/tests clean

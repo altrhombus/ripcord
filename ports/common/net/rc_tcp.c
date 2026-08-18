@@ -1,6 +1,6 @@
 #include "rc_tcp.h"
 
-#include <3ds.h>
+#include "rc_platform.h"
 
 #include <arpa/inet.h>
 #include <errno.h>
@@ -38,7 +38,7 @@ int rc_tcp_send_all(int sock, const void *data, size_t length)
 {
     const unsigned char *p = (const unsigned char *)data;
     size_t sent = 0;
-    u64 start_ms = osGetTime();
+    uint64_t start_ms = rc_time_ms();
 
     while (sent < length) {
         ssize_t n = send(sock, p + sent, length - sent, 0);
@@ -48,9 +48,9 @@ int rc_tcp_send_all(int sock, const void *data, size_t length)
              * small - retry rather than fail outright, bounded so a genuinely wedged connection still
              * gives up instead of hanging the caller. */
             if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                if (osGetTime() - start_ms > SEND_TIMEOUT_MS)
+                if (rc_time_ms() - start_ms > SEND_TIMEOUT_MS)
                     return -1;
-                svcSleepThread(5000000); /* 5 ms */
+                rc_sleep_ms(5); /* 5 ms */
                 continue;
             }
             return -1;
