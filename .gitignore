@@ -547,3 +547,6 @@ $RECYCLE.BIN/
 
 # Vim temporary swap files
 *.swp
+
+## Ripcord: PS Vita packaging output, produced by ports/ripcord-vita/Makefile.
+ports/*/*.vpk
