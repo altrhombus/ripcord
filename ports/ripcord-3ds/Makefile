@@ -73,7 +73,7 @@ CFLAGS  := $(ARCH) -std=c99 -O2 -g \
            -Wframe-larger-than=8192 \
            -ffunction-sections -fdata-sections \
            -D__3DS__ \
-           -isystem $(CTRULIB)/include -I$(CORE)/crypto -I$(CORE)/halyard -I$(CORE)/platform
+           -isystem $(CTRULIB)/include -I$(CORE) -I$(CORE)/crypto -I$(CORE)/halyard -I$(CORE)/platform
 
 LDFLAGS := $(ARCH) -specs=3dsx.specs -Wl,--gc-sections -L$(CTRULIB)/lib
 LIBS    := -lctru -lm
