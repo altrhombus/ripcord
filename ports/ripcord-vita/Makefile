@@ -4,8 +4,10 @@
 # https://vitasdk.org/ - set $VITASDK and put $VITASDK/bin on PATH.
 #
 #     make                build every .vpk
+#     make mbedtls        cross-build the ECDH backend only (ports/common/tools/build-mbedtls.sh)
 #     make constants      regenerate the interop constants only
-#     make clean
+#     make clean          remove build output, KEEPING the fetched mbedtls
+#     make distclean      remove build output including mbedtls
 #     make test           run the HOST-side known-answer tests (no Vita involved) - ports/common/tests
 #
 # NOT IN THE SOLUTION FILE, AND NOT BUILDABLE BY dotnet, for the same reason the 3DS port is not:
@@ -72,6 +74,30 @@ CFLAGS := $(ARCH) -std=c99 -O2 -g \
 # --undefined keeps the loader-read stack-size symbol reachable; see source/platform/rc_stack_vita.c.
 LDFLAGS := $(ARCH) -Wl,-q -Wl,--gc-sections -Wl,--undefined=sceUserMainThreadStackSize
 
+# The ECDH backend - the one primitive ports/common does not implement itself (rc_ecdh.h says why).
+#
+# Unlike the 3DS, where devkitPro packages `3ds-mbedtls` and the Makefile just links it, vitasdk
+# packages no mbedtls at all. tools/build-mbedtls.sh cross-builds the ECP/MPI layer only - five
+# translation units, ~23 KB of text - from a pinned, hash-verified upstream release, into a gitignored
+# build/mbedtls. The version is pinned to 2.28.8 to MATCH the 3DS's package, so one rc_ecdh.c serves
+# both ports.
+#
+# Set ECDH_BACKEND=none to build without it; rc_ecdh.c then compiles to functions that fail cleanly and
+# rc_ecdh_available() returns 0, rather than to a stub that fakes a key agreement.
+ECDH_BACKEND ?= mbedtls
+MBEDTLS_PREFIX := $(BUILD)/mbedtls
+
+ifeq ($(ECDH_BACKEND),mbedtls)
+ECDH_CFLAGS := -DRC_CRYPTO_MBEDTLS -isystem $(MBEDTLS_PREFIX)/include \
+               -DMBEDTLS_CONFIG_FILE='<ripcord-mbedtls-config.h>'
+ECDH_LIBS   := $(MBEDTLS_PREFIX)/lib/libmbedcrypto.a
+ECDH_DEP    := $(MBEDTLS_PREFIX)/lib/libmbedcrypto.a
+else
+ECDH_CFLAGS :=
+ECDH_LIBS   :=
+ECDH_DEP    :=
+endif
+
 # Sony's own module stubs. SceLibKernel/SceSysmodule are the baseline; the rest are added per target as
 # the phases need them (SceNet for discovery, SceVideodec for decode, SceAudio, SceCtrl, SceTouch,
 # SceMotion, ScePower). All 488 stub archives ship with vitasdk - nothing here needs a portlib yet.
@@ -93,12 +119,13 @@ APP_SOURCES := \
 	$(CORE)/crypto/rc_sha256.c \
 	$(CORE)/crypto/rc_modes.c \
 	$(CORE)/halyard/halyard_control_crypto.c \
+	$(CORE)/crypto/rc_ecdh.c \
 	$(CORE)/util/rc_log.c \
 	$(CORE)/util/rc_program_dir.c \
 	$(PLATFORM_SOURCES) \
 	source/app/main.c
 
-.PHONY: all constants clean test
+.PHONY: all constants clean distclean test
 
 all: $(APP).vpk
 
@@ -112,9 +139,15 @@ $(GENERATED): $(BUNDLE) $(CORE)/tools/gen_constants.py
 	$(PYTHON) $(CORE)/tools/gen_constants.py $(BUNDLE) $@
 
 # elf -> velf -> eboot.bin -> vpk, the standard vitasdk packaging chain.
-$(BUILD)/$(APP).elf: $(APP_SOURCES) $(GENERATED)
+$(MBEDTLS_PREFIX)/lib/libmbedcrypto.a: $(CORE)/tools/build-mbedtls.sh $(CORE)/tools/ripcord-mbedtls-config.h
+	PREFIX=$(abspath $(MBEDTLS_PREFIX)) $(CORE)/tools/build-mbedtls.sh
+
+.PHONY: mbedtls
+mbedtls: $(MBEDTLS_PREFIX)/lib/libmbedcrypto.a
+
+$(BUILD)/$(APP).elf: $(APP_SOURCES) $(GENERATED) $(ECDH_DEP)
 	@mkdir -p $(@D)
-	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $(APP_SOURCES) $(GENERATED) $(LIBS)
+	$(CC) $(CFLAGS) $(ECDH_CFLAGS) $(LDFLAGS) -o $@ $(APP_SOURCES) $(GENERATED) $(ECDH_LIBS) $(LIBS)
 
 $(BUILD)/$(APP).velf: $(BUILD)/$(APP).elf
 	$(STRIP) -g $<
@@ -135,5 +168,12 @@ $(APP).vpk: $(BUILD)/eboot.bin $(BUILD)/param.sfo
 test:
 	$(MAKE) -C $(CORE)/tests
 
+# clean deliberately SPARES build/mbedtls. It is a hash-verified download plus a cross-compile, and
+# making `make clean` re-fetch it over the network turns a five-second habit into a minute and a
+# dependency on being online. Use distclean when you actually mean it.
 clean:
-	rm -rf $(BUILD) $(APP).vpk
+	rm -f $(APP).vpk
+	@find $(BUILD) -mindepth 1 -maxdepth 1 ! -name mbedtls -exec rm -rf {} + 2>/dev/null || true
+
+distclean: clean
+	rm -rf $(BUILD)
