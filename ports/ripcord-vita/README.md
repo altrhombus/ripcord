@@ -3,11 +3,20 @@
 A PS5 Remote Play client for homebrew-enabled PS Vita hardware, in C, sharing Ripcord's protocol
 specification **and**, unlike the 3DS port, its protocol code.
 
-**Status: started 2026-08-17. Nothing has been built, and nothing has been run.** What exists is the
-platform seam (`source/platform/rc_platform_vita.c`, never compiled), this document, and the extraction
-of the shared core into [`ports/common`](../common) that made a second port worth attempting at all.
-Every hardware claim below is marked `[C]` or `[X]`, and the `[X]`s outnumber the `[C]`s on exactly the
-questions that matter.
+**Status: it builds. Nothing has been run on hardware.** As of 2026-08-17 `make` produces
+`ripcord-vita.vpk` — the whole portable core (all 36 files, first try, under `-Werror -Wconversion
+-Wsign-conversion`), the platform seam, and a Phase 1 crypto smoke test, through vitasdk's
+elf→velf→eboot→vpk chain. What that proves is that the extraction into [`ports/common`](../common) was
+real; what it does not prove is that a single instruction of it does the right thing on a Vita.
+
+Three of the four Phase 0 questions are now answered, two of them favourably and one not:
+
+| Question | Answer |
+|---|---|
+| Sockets: POSIX names or `sceNet*`? | **POSIX works.** Compiles *and links* — no socket seam needed `[C]` |
+| CSPRNG | `sceKernelGetRandomNumber` (`psp2/kernel/rng.h`) `[C]`, but see the 64-byte question below |
+| ECDH backend | **Still open** — vitasdk does not package mbedtls `[C]` |
+| Main-thread stack | Mechanism written and the symbol verified present in the binary — after it was silently dropped once `[C]` |
 
 ## Why this exists, and why the reason differs from the 3DS port's
 
@@ -74,17 +83,51 @@ that should be pre-empted rather than rediscovered:
    for free by compiling the core on a Linux host during the extraction — the 3DS build had been hiding
    it because libctru declares it unconditionally.
 
-### Sockets are the largest open question
+### Sockets — answered, and the answer was free
 
-vitasdk's documented socket surface is `sceNetSocket` / `sceNetBind` / `sceNetRecvfrom` / … — the same
-BSD shapes under a prefix, with `sceNetEpoll*` in place of `poll()` `[C]`. **Whether vitasdk also ships
-POSIX-named wrappers is unconfirmed** `[X]`, and it is the single largest unknown in the seam: if it
-does not, roughly twelve call names in the shared core need mapping and
-[`rc_platform.h`](../common/platform/rc_platform.h) grows a socket section. Non-blocking mode is
-`fcntl(O_NONBLOCK)` in the core today (10 call sites); the Vita equivalent may be
-`sceNetSetsockopt(SCE_NET_SO_NBIO)` `[X]`.
+This was expected to be the expensive one. vitasdk's *documented* surface is `sceNetSocket` /
+`sceNetBind` / `sceNetRecvfrom` — the same BSD shapes under a prefix — which implied a socket seam of
+roughly twelve mapped call names.
 
-**Resolve this against a real vitasdk install before writing the transport, not after.**
+It ships real POSIX headers as well (`sys/socket.h`, `netinet/in.h`, `arpa/inet.h`, `fcntl.h`,
+`poll.h`), and a program using the POSIX names **compiles *and* links** against `-lSceNet_stub` `[C]`.
+Checked by compiling and linking, not by reading documentation, because a header declaration is not a
+link-time symbol. `inet_aton` is among them, which retires trap 4 above for this platform.
+
+So the shared core's socket code needs no changes and
+[`rc_platform.h`](../common/platform/rc_platform.h) stays four functions.
+
+Two things this does **not** settle, both still `[X]`:
+
+- Whether `sceNetInit`'s memory pool has to be up before the POSIX names work. Almost certainly yes —
+  the 3DS's `socInit()` is the same shape — and it belongs in this port's own bring-up file, not the
+  seam.
+- **Whether `bind()` to port 0 is accepted.** The 3DS rejects it, which is correct on .NET and on Unix,
+  and cost a hardware run to discover. No documentation either way for the Vita.
+
+"It compiles" is not "it works", and sockets are exactly where that gap lives.
+
+### What building it actually found
+
+Two defects, both caught before hardware, both of the kind that produce no build error:
+
+1. **The main-thread stack size symbol was silently dropped.** `sceUserMainThreadStackSize` is read by
+   the *loader*; nothing in the program references it. Under `-fdata-sections` it lands in its own
+   section and `-Wl,--gc-sections` collects it as unreachable — build succeeds, `.vpk` is produced,
+   stack is silently the 4 KiB default, and the first symptom would have been a crash deep in the audio
+   loss-concealment path on hardware. Verified with `nm`: present in the object, absent from the linked
+   ELF. Fixed with `-Wl,--undefined=sceUserMainThreadStackSize`. (`__attribute__((retain))` is the
+   self-contained fix and is unavailable — GCC 15.2 accepts it but vitasdk's binutils does not support
+   the section flag.)
+2. **`rc_program_dir`'s fallback was hardcoded to `"sdmc:/"`**, a 3DS device path, sitting in the
+   *portable* core. Invisible on 3DS forever; on Vita it is a nonexistent device and the only symptom
+   would have been a log file that never appeared. Now `RC_PROGRAM_DIR_FALLBACK`, defined per port.
+
+And one flag correction worth recording because it is the **exact inverse of the 3DS**: devkitARM needs
+`-march`/`-mfloat-abi` spelled out because libctru is built with them, while vitasdk's compiler already
+defaults to `armv7-a+simd` / `cortex-a9` / `neon` / **hard** float and its own CMake toolchain sets no
+arch flags at all. Passing `-mfloat-abi=softfp` — a faithful-looking description of the hardware, and a
+different *calling convention* — failed the link on every translation unit.
 
 ### Controls, and what a Vita cannot express
 
@@ -116,7 +159,10 @@ does not emit them.
 ## Layout
 
 ```
-source/platform/    the rc_platform.h seam, vitasdk side  <- the only file that exists today
+source/platform/    rc_platform_vita.c   the seam: clock, sleep, tick
+                    rc_random_vita.c     the CSPRNG, chunked at 64 bytes
+                    rc_stack_vita.c      the main-thread stack size, raised before it could crash
+source/app/         Phase 1 on-device crypto smoke test (ripcord-vita.vpk)
 ```
 
 Everything else comes from [`ports/common`](../common), which holds the protocol core shared with the
@@ -129,10 +175,13 @@ socket bring-up, a CSPRNG, video decode, audio out, present, and one `main.c` pe
 Phases mirror the 3DS port's, because that ordering was earned — each phase ends at a question only
 hardware can answer, and none of them assumes the next one works.
 
-- **Phase 0 — toolchain.** Install vitasdk. Compile `source/platform/rc_platform_vita.c` and fix what
-  the headers disagree with. Answer the socket question (POSIX names or `sceNet*`?), the
-  `rc_random_bytes` question, and the ECDH-backend question below. **Nothing below starts until those
-  are settled.**
+- **Phase 0 — toolchain. Mostly done (2026-08-17).** vitasdk installed; the portable core and the seam
+  compile; `make` produces a `.vpk`. Sockets and the CSPRNG are answered. **What remains is the ECDH
+  backend below** — Phase 5 cannot start without it, though Phases 1–4 can.
+- **Phase 0.5 — a way to see output.** The smoke test writes to `ux0:data/ripcord/smoke-test.log`
+  because vitasdk ships no debug-screen printf (`psvDebugScreen` is a samples/common file, not SDK).
+  That is fine for a log and useless for a HUD, and every phase from 2 onward wants a screen. Either
+  vendor a debug screen or take `vita2d` from `vdpm`.
 
 ### The ECDH backend is an open decision, and it is not mbedtls
 
@@ -153,6 +202,12 @@ P-521, so it is not a candidate. Three options, none yet chosen:
    port needs only that layer. Keeps one backend across both ports; costs a build step vitasdk does not
    provide.
 3. Something else entirely (a small dedicated EC library). Unexplored.
+
+**A second, smaller open question sits next to it.** `sceKernelGetRandomNumber`'s documented maximum
+request is reported as 64 bytes `[X]`, and this port's largest single ask is a P-521 private key at 66.
+`rc_random_vita.c` therefore chunks its requests at 64 rather than assuming. If the call instead
+short-fills without reporting an error, that loop is the only thing between this port and predictable
+key material — and no host test will ever catch it. Confirm on hardware.
 
 Whichever wins, `rc_ecdh.c`'s existing contract holds: without a backend it must fail cleanly and
 `rc_ecdh_available()` must return 0. **It must never substitute a stub that fakes a key agreement** — a
