@@ -14,15 +14,14 @@
  * platform surface either port has.
  *
  * WHY NOT JUST USE POSIX. Both targets are ARM cross-compiles against a vendor SDK, not hosted Unix.
- * libctru gives 3DS code a newlib with BSD sockets and its own clock/sleep primitives; vitasdk gives
- * Vita code a newlib whose socket layer is `sceNet*`-prefixed rather than POSIX-named [X - see the
- * socket section below, this is not yet confirmed against a real vitasdk install]. Coding the core to
- * whichever subset happens to be common to both is how you get a core that silently depends on the one
- * you developed against. Naming the seam makes the dependency checkable.
+ * Each gives its code a newlib, and the overlap between the two is real but not total: sockets turned
+ * out to be shared (see the socket section below), clocks and sleep did not. Coding the core to
+ * whichever subset happens to be common is how you get a core that silently depends on the platform you
+ * developed against. Naming the seam makes the dependency checkable.
  *
  * IMPLEMENTATIONS
  *   ports/ripcord-3ds/source/platform/rc_platform_3ds.c    libctru
- *   ports/ripcord-vita/source/platform/rc_platform_vita.c  vitasdk        [not written yet]
+ *   ports/ripcord-vita/source/platform/rc_platform_vita.c  vitasdk
  *   ports/common/tests/rc_platform_host.c                  host C, for the known-answer tests
  */
 
@@ -41,7 +40,8 @@
  * and on unsigned arithmetic a backwards clock turns that into a near-infinite loop rather than an
  * early exit.
  *
- * 3DS: osGetTime(). Vita: sceKernelGetProcessTimeWide() / 1000 [X - not yet verified].
+ * 3DS: osGetTime(). Vita: sceKernelGetProcessTimeWide() / 1000 - microseconds since process start,
+ * which is process-relative rather than wall-clock and so cannot step backwards at all.
  */
 uint64_t rc_time_ms(void);
 
@@ -74,29 +74,34 @@ uint64_t rc_tick_hz(void);
 int rc_random_bytes(uint8_t *out, size_t length);
 
 /*
- * SOCKETS.
+ * SOCKETS - RESOLVED 2026-08-17, and the answer is that there is nothing to do.
  *
  * The core makes plain BSD calls (socket/bind/connect/send/recv/sendto/recvfrom/setsockopt/close/poll)
  * and includes the BSD headers directly. That works on the 3DS because libctru's SOC service exposes
  * exactly those names.
  *
- * [X] IT IS NOT YET CONFIRMED THAT IT WORKS ON VITA. vitasdk's documented surface is `sceNetSocket`,
- * `sceNetBind`, `sceNetRecvfrom`, ... - the same shapes under a prefix, plus sceNetEpoll* in place of
- * poll(). Whether vitasdk also ships POSIX-named wrappers is an open question, and it is the single
- * largest unknown in this seam: if it does not, ~12 call names need mapping and this header grows a
- * socket section. Resolve it against a real vitasdk install before writing the Vita transport, not
- * after. Two known-adjacent facts, both worth checking at the same time:
+ * It works on the Vita too. This was the largest open question in this header and was expected to cost
+ * a socket seam of ~12 mapped call names, because vitasdk's DOCUMENTED surface is `sceNetSocket`,
+ * `sceNetBind`, `sceNetRecvfrom`, ... - the same shapes under a prefix. But vitasdk also ships real
+ * POSIX headers (sys/socket.h, netinet/in.h, arpa/inet.h, fcntl.h, poll.h), and a program using the
+ * POSIX names both COMPILES AND LINKS against -lSceNet_stub. Checked with a compile+link, not by
+ * reading documentation, because header declarations are not link-time symbols.
  *
- *   - sceNetInit() takes an explicit memory pool (~1 MB in vitasdk's own sample), exactly as the 3DS's
- *     socInit() takes its 0x100000 aligned buffer. That part is a direct parallel and is already
- *     modelled by each port's own bring-up file (rc_soc.c on 3DS), not by this seam.
- *   - non-blocking mode is fcntl(O_NONBLOCK) in the core today (10 call sites). The Vita equivalent may
- *     be sceNetSetsockopt(SCE_NET_SO_NBIO). If so, that is a seam function, and the natural first one
- *     to add here.
+ * inet_aton() in particular exists on both, which was the specific landmine flagged when the core was
+ * first compiled on a Linux host - there it needs _DEFAULT_SOURCE, being a BSD extension rather than
+ * C99, and glibc hides it by default. Neither console libc does.
  *
- * The 3DS taught this port that socket idioms are exactly where a second platform bites: binding port 0
- * is correct on .NET and on Unix, and is rejected outright by the 3DS SOC service. Assume nothing here
- * transfers until a real device says otherwise.
+ * So there is no socket seam and this header stays four functions. What has NOT been established:
+ *
+ *   - Whether sceNetInit()'s memory pool must be brought up before the POSIX names work. Almost
+ *     certainly yes (the 3DS's socInit() is the same shape), and it is each port's own bring-up file's
+ *     job - rc_soc.c on 3DS - not this seam's.
+ *   - Whether bind() to port 0 is accepted. The 3DS SOC service rejects it outright, which is correct
+ *     on .NET and on Unix and cost a hardware run to find. No documentation was found either way for
+ *     the Vita. Assume nothing until a device answers.
+ *
+ * The lesson the 3DS taught still stands: socket idioms are exactly where a second platform bites, and
+ * "it compiles" is not "it works".
  */
 
 #endif /* RC_PLATFORM_H */
