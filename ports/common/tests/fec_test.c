@@ -16,8 +16,8 @@
  *
  * THIS BUILDS FOR THE HOST, NOT THE 3DS - see tests/Makefile.
  */
-#include "../source/stream/fec_galois.h"
-#include "../source/stream/fec_reed_solomon.h"
+#include "../stream/fec_galois.h"
+#include "../stream/fec_reed_solomon.h"
 
 #include <stdio.h>
 #include <stdlib.h>

@@ -10,7 +10,7 @@
  * THIS BUILDS FOR THE HOST, NOT THE 3DS - see tests/Makefile. halyard_discovery.c has no socket or
  * hardware dependency of its own (see its header), so there is nothing 3DS-specific to verify here.
  */
-#include "../source/discovery/halyard_discovery.h"
+#include "../discovery/halyard_discovery.h"
 
 #include <stdio.h>
 #include <string.h>
