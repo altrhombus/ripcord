@@ -34,18 +34,40 @@ SESSION_VECTORS := vectors/session-crypto.kat
 PROTO_VECTORS := vectors/control-proto.kat
 
 # Phase 6a: the ECDH backend. Unlike everything else here, this one is NOT self-contained - see
-# rc_ecdh.h for why the port delegates elliptic-curve arithmetic instead of implementing it. Set
-# ECDH_BACKEND=none to build the whole suite without mbedtls; ecdh_test then reports a skip and exits 0,
-# which is the property that keeps "any machine with a C compiler" true (rc_crypto.h's argument).
-ECDH_BACKEND ?= mbedtls
+# rc_ecdh.h for why the core delegates elliptic-curve arithmetic instead of implementing it.
+# Two ways to get mbedtls on the host, and the local build is preferred because it makes the suite's
+# central promise - "any machine with a C compiler and nothing else installed" - actually true.
+# ecdh_test used to skip on any box without libmbedtls-dev, which quietly meant the P-256/P-521
+# agreement and the derived stream keys went unchecked on exactly the machines least likely to notice.
+#
+#   ECDH_BACKEND=local   (default) build the ECP/MPI layer from a pinned, hash-verified release into
+#                        build/mbedtls, using the same script and the same 2.28.8 pin as the Vita port
+#   ECDH_BACKEND=mbedtls link the system libmbedcrypto instead (faster if you already have it)
+#   ECDH_BACKEND=none    skip the ECDH cases entirely; ecdh_test reports a skip and exits 0
+# The mbedtls rule below is the first explicit target in this file, and make takes the first target as
+# the default goal. Pin it, or `make` with no arguments builds the ECDH backend and stops.
+.DEFAULT_GOAL := check
 
-ifeq ($(ECDH_BACKEND),mbedtls)
+ECDH_BACKEND ?= local
+# Deferred (=) not immediate (:=): BUILD is defined further down this file, and an immediate expansion
+# here silently yields "/mbedtls/lib/libmbedcrypto.a" at the filesystem root.
+MBEDTLS_PREFIX = $(BUILD)/mbedtls
+
+ifeq ($(ECDH_BACKEND),local)
+ECDH_CFLAGS = -DRC_CRYPTO_MBEDTLS -isystem $(MBEDTLS_PREFIX)/include \
+               -DMBEDTLS_CONFIG_FILE='<ripcord-mbedtls-config.h>'
+ECDH_LIBS   = $(MBEDTLS_PREFIX)/lib/libmbedcrypto.a
+ECDH_DEP    = $(MBEDTLS_PREFIX)/lib/libmbedcrypto.a
+else ifeq ($(ECDH_BACKEND),mbedtls)
 ECDH_CFLAGS := -DRC_CRYPTO_MBEDTLS
 ECDH_LIBS   := -lmbedcrypto
+ECDH_DEP    :=
 else
 ECDH_CFLAGS :=
 ECDH_LIBS   :=
+ECDH_DEP    :=
 endif
+
 
 BUILD     := build
 GENERATED := $(BUILD)/halyard_v1_constants.g.c
@@ -211,6 +233,13 @@ constants: $(GENERATED)
 
 # The interop constants are generated from the one committed JSON bundle rather than copied into this
 # port - see tools/gen_constants.py for why that distinction matters legally as well as practically.
+# Built here rather than taken from the system so the suite needs no package installed - see the
+# ECDH_BACKEND block above. Must appear AFTER `BUILD :=`: make expands a rule's TARGET as it reads the
+# rule, so stating it earlier silently declares /mbedtls/lib/libmbedcrypto.a at the filesystem root
+# while the prerequisite resolves to build/mbedtls/..., and the two never meet.
+$(MBEDTLS_PREFIX)/lib/libmbedcrypto.a: $(CORE)/tools/build-mbedtls.sh $(CORE)/tools/ripcord-mbedtls-config.h
+	PREFIX=$(abspath $(MBEDTLS_PREFIX)) CROSS= $(CORE)/tools/build-mbedtls.sh
+
 $(GENERATED): $(BUNDLE) $(CORE)/tools/gen_constants.py
 	@mkdir -p $(@D)
 	$(PYTHON) $(CORE)/tools/gen_constants.py $(BUNDLE) $@
@@ -247,7 +276,7 @@ $(STREAM_DEMUX_TARGET): $(STREAM_DEMUX_SOURCES)
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) -o $@ $(STREAM_DEMUX_SOURCES)
 
-$(ECDH_TARGET): $(ECDH_SOURCES)
+$(ECDH_TARGET): $(ECDH_SOURCES) $(ECDH_DEP)
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) $(ECDH_CFLAGS) -o $@ $(ECDH_SOURCES) $(ECDH_LIBS)
 

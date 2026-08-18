@@ -9,13 +9,13 @@ specification **and**, unlike the 3DS port, its protocol code.
 elf→velf→eboot→vpk chain. What that proves is that the extraction into [`ports/common`](../common) was
 real; what it does not prove is that a single instruction of it does the right thing on a Vita.
 
-Three of the four Phase 0 questions are now answered, two of them favourably and one not:
+All four Phase 0 questions are answered:
 
 | Question | Answer |
 |---|---|
 | Sockets: POSIX names or `sceNet*`? | **POSIX works.** Compiles *and links* — no socket seam needed `[C]` |
 | CSPRNG | `sceKernelGetRandomNumber` (`psp2/kernel/rng.h`) `[C]`, but see the 64-byte question below |
-| ECDH backend | **Still open** — vitasdk does not package mbedtls `[C]` |
+| ECDH backend | **Cross-built** — vitasdk packages no mbedtls, so we build the ECP/MPI layer (~23 KB) from a pinned, hash-verified 2.28.8 `[C]` |
 | Main-thread stack | Mechanism written and the symbol verified present in the binary — after it was silently dropped once `[C]` |
 
 ## Why this exists, and why the reason differs from the 3DS port's
@@ -175,64 +175,56 @@ socket bring-up, a CSPRNG, video decode, audio out, present, and one `main.c` pe
 Phases mirror the 3DS port's, because that ordering was earned — each phase ends at a question only
 hardware can answer, and none of them assumes the next one works.
 
-- **Phase 0 — toolchain. Mostly done (2026-08-17).** vitasdk installed; the portable core and the seam
-  compile; `make` produces a `.vpk`. Sockets and the CSPRNG are answered. **What remains is the ECDH
-  backend below** — Phase 5 cannot start without it, though Phases 1–4 can.
+- **Phase 0 — toolchain. Done (2026-08-17).** vitasdk installed; the portable core, the seam and the
+  ECDH backend all compile; `make` produces a `.vpk` that links P-521. Sockets, the CSPRNG and the
+  ECDH backend are all answered.
 - **Phase 0.5 — a way to see output.** The smoke test writes to `ux0:data/ripcord/smoke-test.log`
   because vitasdk ships no debug-screen printf (`psvDebugScreen` is a samples/common file, not SDK).
   That is fine for a log and useless for a HUD, and every phase from 2 onward wants a screen. Either
   vendor a debug screen or take `vita2d` from `vdpm`.
 
-### The ECDH backend is an open decision, and it is not mbedtls
+### The ECDH backend — cross-built, not packaged
 
-The shared core delegates exactly one primitive — elliptic-curve Diffie-Hellman over P-256/P-521 — to a
-third-party library, for the reason [`rc_ecdh.h`](../common/crypto/rc_ecdh.h) gives at length: a
-hand-written constant-time bigint is the last thing this project should write twice. The 3DS reaches
-devkitPro's `3ds-mbedtls`, and uses only the `mbedtls_ecp_*` and `mbedtls_mpi_*` layers — no TLS, no
-X.509, no SSL, just curve arithmetic and bignums.
+The shared core delegates exactly one primitive — ECDH over P-256/P-521 — to a third-party library, for
+the reason [`rc_ecdh.h`](../common/crypto/rc_ecdh.h) gives at length: a hand-written constant-time
+bigint is the last thing this project should write twice. The 3DS reaches devkitPro's `3ds-mbedtls`.
+**vitasdk packages no mbedtls** `[C]` (its `vdpm` list has `openssl` and `libsodium`; libsodium is
+Curve25519/Ed25519 and cannot do the NIST curves at all).
 
-**vitasdk does not package mbedtls** `[C]` (checked against `vdpm`'s package list, 105 packages, 2026-08-17).
-It packages `openssl`, and `libsodium` — but libsodium is Curve25519/Ed25519 and cannot do P-256 or
-P-521, so it is not a candidate. Three options, none yet chosen:
+So this port builds its own, via
+[`ports/common/tools/build-mbedtls.sh`](../common/tools/build-mbedtls.sh):
 
-1. **OpenSSL backend.** Packaged and maintained, with full P-256/P-521 support via `EC_GROUP`/
-   `EC_POINT_mul`/`BN_*`. Costs a third `#if` branch in `rc_ecdh.c` — which is what the seam is for —
-   and pulls in a large library for four operations.
-2. **Cross-build mbedtls for Vita.** The ECP/MPI layer is portable C with no OS dependency, and this
-   port needs only that layer. Keeps one backend across both ports; costs a build step vitasdk does not
-   provide.
-3. Something else entirely (a small dedicated EC library). Unexplored.
+- **Only the ECP/MPI layer** — five translation units (`bignum`, `ecp`, `ecp_curves`, `platform_util`,
+  `constant_time`), ~23 KB of ARM text. No TLS, no X.509, no cipher suites, no entropy source. The
+  allow-list config is [`ripcord-mbedtls-config.h`](../common/tools/ripcord-mbedtls-config.h), and the
+  module list was established by compiling and linking `rc_ecdh.c` against it rather than by reading
+  upstream's makefile.
+- **Pinned to 2.28.8 to match devkitPro's package**, so one `rc_ecdh.c` serves both ports. (3.x moved
+  struct fields behind accessors and would need a second code path.)
+- **Fetched and SHA-256 verified at build time, never vendored.** Same reasoning that keeps the interop
+  constants generated rather than copied — a checked-in third-party crypto tree is a provenance and
+  maintenance liability. The hash is checked *before* extraction, because an unverified tarball would
+  make the pin decorative.
+- `ECDH_BACKEND=none` still builds, and `rc_ecdh_available()` then returns 0 rather than a stub faking
+  a key agreement.
 
-**A second, smaller open question sits next to it.** `sceKernelGetRandomNumber`'s documented maximum
-request is reported as 64 bytes `[X]`, and this port's largest single ask is a P-521 private key at 66.
-`rc_random_vita.c` therefore chunks its requests at 64 rather than assuming. If the call instead
-short-fills without reporting an error, that loop is the only thing between this port and predictable
-key material — and no host test will ever catch it. Confirm on hardware.
+**One config choice is security-relevant and is documented where it is made.** `MBEDTLS_ECP_NO_INTERNAL_RNG`
+looks like it disables scalar-multiplication blinding and does not: mbedtls falls back to its own DRBG
+for blinding *only when the caller passes `f_rng == NULL`*, and all three call sites in `rc_ecdh.c`
+pass a real RNG. That was checked before setting it. If a call site ever passes NULL, the define
+becomes a genuine vulnerability rather than a build detail.
 
-Whichever wins, `rc_ecdh.c`'s existing contract holds: without a backend it must fail cleanly and
-`rc_ecdh_available()` must return 0. **It must never substitute a stub that fakes a key agreement** — a
-build that negotiates a session with no confidentiality is far worse than one that does not link.
-- **Phase 1 — first boot.** A `.vpk` that runs the crypto self-test on device and reports what a control
-  field encryption costs on a Cortex-A9. The 3DS's number is ~25 µs; this is the comparison that says
-  whether the A/V path's software AES is affordable.
-- **Phase 2 — link test.** Port `linktest/main.c`. Measure real UDP receive throughput and loss, idle
-  and under load. The 3DS's anecdotal Wi-Fi expectations were wrong in both directions; assume these are
-  too.
-- **Phase 3 — discovery.** SRCH probe on the LAN. First contact with a console, and the first place a
-  socket idiom will bite.
-- **Phase 4 — `/sess/init` → `/sess/ctrl`.** First use of the crypto against a real console, and the
-  single largest de-risking event the 3DS port had.
-- **Phase 5 — Takion + stream keys.** The connect flow through to derived per-direction AES keys.
-- **Phase 6 — media.** `sceAvcdec` H.264, `sceAudioOut` Opus, `sceCtrl` input.
-- **Phase 7 — what the Vita can do and the 3DS cannot.** 960×544 without downscaling, both sticks, the
-  rear touchpad as a real DualSense touchpad, gyro.
+**It also fixed the host suite.** `ecdh_test` used to skip on any machine without `libmbedtls-dev`,
+which quietly meant the P-256/P-521 agreement and the derived stream keys went unchecked precisely
+where nobody would notice. The same script builds for the host (`CROSS=`), so the suite is now
+**3,287 assertions with nothing skipped**, on a machine with a C compiler and no packages installed —
+which is what `rc_crypto.h` always claimed.
 
-An early cross-cutting task worth doing before Phase 5: **split the portable orchestration out of the
-3DS's `connect/main.c`.** It is 2,074 lines, and most of it — `service_control`,
-`wait_for_session_ready`, `check_sign_in_gate`, `await_control_message`, `seal_control_packet`, the
-stream callbacks — is flow logic with no 3DS in it. Moving that into `ports/common` means this port
-writes a thin shell instead of re-deriving the connect flow, and it is the difference between owing
-~6,000 lines of platform code and owing roughly 2,500.
+**A second, smaller open question remains.** `sceKernelGetRandomNumber`'s documented maximum request is
+reported as 64 bytes `[X]`, and this port's largest single ask is a P-521 private key at 66.
+`rc_random_vita.c` chunks at 64 rather than assuming. If the call short-fills silently instead of
+erroring, the smoke test's two ECDH secrets would still *match* — both sides equally weak — so a
+matching pair is necessary, not sufficient. Confirm on hardware.
 
 ## Clean-room: a sharper constraint here than on the 3DS
 
