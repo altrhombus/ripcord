@@ -38,9 +38,11 @@ public sealed class HalyardSessionCoordinator(HalyardCloudClient cloud) : IHalya
     {
         HalyardAccountInfo account = await _cloud.GetAccountInfoAsync(cancellationToken).ConfigureAwait(false);
 
-        // The push context ties the session to the push (WebSocket) channel. That channel isn't
-        // implemented yet (a documented gap); on LAN we still proceed via direct discovery. A fresh
-        // id keeps the session-manager call well-formed.
+        // The push context ties the session to the push (WebSocket) channel. That channel exists
+        // (HalyardPushChannel, driven by HalyardWanRendezvous, which also carries the console's OFFER and the
+        // customData1 seed); this simplified BeginAsync is the wake/offer path and does not itself run it — on
+        // LAN we proceed via direct discovery, and the WAN connect uses the rendezvous. A fresh id keeps the
+        // session-manager call well-formed.
         string pushContextId = Guid.NewGuid().ToString();
         HalyardCloudSession session = await _cloud.CreateSessionAsync(pushContextId, cancellationToken).ConfigureAwait(false);
 
