@@ -50,7 +50,9 @@ public sealed class HalyardRegistrationClient(IHalyardRegistrationCipher cipher)
         // form (scattered into the context) so the console recovers it and derives the same field IV.
         // The exchange retains the context + material needed to decrypt the response.
         byte[] fieldPlain = HalyardRegistrationMessage.BuildRequestFieldPlaintext(request);
-        HalyardRegistrationExchange exchange = _cipher.BuildRequest(request.Passcode, fieldPlain);
+        HalyardRegistrationExchange exchange = request.AccountSeed.Length == 16
+            ? _cipher.BuildAccountRequest(request.AccountSeed.Span, fieldPlain)   // account ("web") route
+            : _cipher.BuildRequest(request.Passcode, fieldPlain);                 // PIN route
 
         byte[] response;
         try

@@ -2,8 +2,14 @@ using System.Security.Cryptography;
 
 namespace Ripcord.Cloud.Halyard;
 
-/// <summary>A live cloud session context returned by <see cref="IHalyardSessionCoordinator.BeginAsync"/>.</summary>
-public sealed record HalyardConnectHandle(string SessionId, string ConsoleDuid, string AccountId);
+/// <summary>A live cloud session context returned by <see cref="IHalyardSessionCoordinator.BeginAsync"/>.
+///
+/// <para><see cref="Data1"/>/<see cref="Data2"/> are the ephemeral field-cipher key/material (base64) this
+/// session sent to the console in the connect command; the console encrypts the account registration seed
+/// with them and returns it as <c>customData1</c> on the push channel, so the pairing layer needs them to
+/// recover the seed (see the protocol layer's <c>HalyardAccountSeedDelivery</c>).</para></summary>
+public sealed record HalyardConnectHandle(
+    string SessionId, string ConsoleDuid, string AccountId, string Data1 = "", string Data2 = "");
 
 /// <summary>
 /// Orchestrates the cloud side of connecting: create the session, send the wake/trigger command to
@@ -38,22 +44,20 @@ public sealed class HalyardSessionCoordinator(HalyardCloudClient cloud) : IHalya
         string pushContextId = Guid.NewGuid().ToString();
         HalyardCloudSession session = await _cloud.CreateSessionAsync(pushContextId, cancellationToken).ConfigureAwait(false);
 
-        // Three 16-byte values the command carries to the console.
-        //
-        // [X] Their role is open. An earlier reading had them seeding the direct session's key agreement; that
-        // was a guess and the later work did not bear it out — v1 derives its control key from the registration
-        // key and the console's own nonce alone, and a session establishes against a console with no internet
-        // access at all. They are high-entropy and real, but unattached to anything we have established, so
-        // random values of the right shape are as good as anything until that changes. Do not restate the
-        // superseded reading here; see docs/protocol/ps5-cloud-session-api.md.
-        (string, string, string) seeds = (RandomSeed(), RandomSeed(), RandomSeed());
+        // The command carries `data1`/`data2` to the console: two ephemeral 16-byte values that are the
+        // account-registration seed-delivery key/material. Both are fresh random per connect; the console
+        // field-encrypts the registration seed with them and returns it as `customData1` (recovered by the
+        // pairing layer). They are opaque base64 here — this REST layer holds no crypto — but are retained on
+        // the handle so the pairing layer can decrypt the delivered seed. `data3` is unused (the command
+        // carries only two). See docs/protocol/ps5-cloud-session-api.md.
+        string data1 = RandomSeed(), data2 = RandomSeed();
         await _cloud.SendConnectCommandAsync(
-            console.Duid, account.AccountId, session.SessionId, "Windows", seeds, cancellationToken).ConfigureAwait(false);
+            console.Duid, account.AccountId, session.SessionId, "Windows", (data1, data2, ""), cancellationToken).ConfigureAwait(false);
 
         await _cloud.SendOfferAsync(
             session.SessionId, account.AccountId, console.Duid, localCandidates, cancellationToken).ConfigureAwait(false);
 
-        return new HalyardConnectHandle(session.SessionId, console.Duid, account.AccountId);
+        return new HalyardConnectHandle(session.SessionId, console.Duid, account.AccountId, data1, data2);
     }
 
     public Task EndAsync(HalyardConnectHandle handle, CancellationToken cancellationToken)

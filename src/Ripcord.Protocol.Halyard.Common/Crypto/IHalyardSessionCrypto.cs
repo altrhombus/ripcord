@@ -142,6 +142,14 @@ public interface IHalyardRegistrationCipher
     /// </summary>
     HalyardRegistrationExchange BuildRequest(string passcode, ReadOnlySpan<byte> fieldPlaintext);
 
+    /// <summary>
+    /// Build an account ("web"/no-PIN) registration request. Like <see cref="BuildRequest"/> but the transport
+    /// key is <c>seed XOR registrationTable[selector]</c> — the 16-byte <paramref name="seed"/> is the
+    /// console-delivered value recovered from <c>customData1</c> (see
+    /// <see cref="Crypto.V1.HalyardAccountSeedDelivery"/>), not an on-console passcode.
+    /// </summary>
+    HalyardRegistrationExchange BuildAccountRequest(ReadOnlySpan<byte> seed, ReadOnlySpan<byte> fieldPlaintext);
+
     /// <summary>Decrypt the console's response body into the raw pairing-record bytes for a given exchange.</summary>
     byte[] DecryptResponse(HalyardRegistrationExchange exchange, ReadOnlySpan<byte> responseBody);
 }
@@ -171,6 +179,9 @@ public sealed class UnavailableRegistrationCipher : IHalyardRegistrationCipher
     public bool IsAvailable => false;
 
     public HalyardRegistrationExchange BuildRequest(string passcode, ReadOnlySpan<byte> fieldPlaintext)
+        => throw new NotSupportedException("Registration cipher is not available (the dirty-room tables are not injected).");
+
+    public HalyardRegistrationExchange BuildAccountRequest(ReadOnlySpan<byte> seed, ReadOnlySpan<byte> fieldPlaintext)
         => throw new NotSupportedException("Registration cipher is not available (the dirty-room tables are not injected).");
 
     public byte[] DecryptResponse(HalyardRegistrationExchange exchange, ReadOnlySpan<byte> responseBody)

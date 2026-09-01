@@ -46,7 +46,16 @@ public sealed record HalyardRegistrationRequest(
     string AccountId,
     string Passcode,
     ReadOnlyMemory<byte> ClientDeviceId,
-    HalyardConsolePlatform Platform = HalyardConsolePlatform.Ps5);
+    HalyardConsolePlatform Platform = HalyardConsolePlatform.Ps5)
+{
+    /// <summary>
+    /// The account ("web"/no-PIN) route's 16-byte registration seed, when present. Recovered from the
+    /// console-delivered <c>customData1</c> via <see cref="Crypto.V1.HalyardAccountSeedDelivery"/>. When set,
+    /// registration takes the account path (transport key = <c>seed XOR registrationTable[selector]</c>) and
+    /// <see cref="Passcode"/> is ignored; empty means the PIN route.
+    /// </summary>
+    public ReadOnlyMemory<byte> AccountSeed { get; init; } = ReadOnlyMemory<byte>.Empty;
+}
 
 /// <summary>Which console family is being paired - picks the registration endpoint path (spec §2.0).</summary>
 public enum HalyardConsolePlatform
