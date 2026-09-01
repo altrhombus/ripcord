@@ -67,6 +67,14 @@ public sealed class HalyardPushChannel(IWebSocketChannel socket) : IAsyncDisposa
     /// </summary>
     public event Action<HalyardSignalingMessage>? SignalingReceived;
 
+    /// <summary>
+    /// Raised on the receive loop with the raw (double-base64) <c>customData1</c> value whenever the console
+    /// publishes one — the account ("web"/no-PIN) registration seed, field-encrypted with the connect
+    /// command's <c>data1</c>/<c>data2</c>. The protocol layer decrypts it to the seed (this layer holds no
+    /// crypto). Same non-throwing contract as <see cref="SignalingReceived"/>.
+    /// </summary>
+    public event Action<string>? CustomData1Received;
+
     /// <summary>Raised for every text frame before parsing, for diagnostics/capture. Optional.</summary>
     public event Action<string>? FrameReceived;
 
@@ -136,6 +144,12 @@ public sealed class HalyardPushChannel(IWebSocketChannel socket) : IAsyncDisposa
         if (message is not null)
         {
             Raise(SignalingReceived, message);
+            return; // a frame is signaling or customData, never both
+        }
+
+        if (HalyardCustomDataNotification.TryParseCustomData1(frame) is { } customData1)
+        {
+            Raise(CustomData1Received, customData1);
         }
     }
 

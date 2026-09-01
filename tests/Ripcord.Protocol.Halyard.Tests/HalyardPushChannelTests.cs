@@ -1,6 +1,10 @@
+using System.Security.Cryptography;
 using System.Threading.Channels;
 using Ripcord.Cloud.Halyard;
 using Ripcord.Core.Net.WebSockets;
+using Ripcord.Protocol.Halyard.Common.Crypto;
+using Ripcord.Protocol.Halyard.Common.Crypto.V1;
+using Ripcord.Protocol.Halyard.Session;
 using Xunit;
 
 namespace Ripcord.Protocol.Halyard.Tests;
@@ -88,6 +92,11 @@ public class HalyardPushChannelTests
         "{\"version\":\"2.1\",\"method\":3001,\"dataType\":\"psn:sessionManager:sys:rps:members:created\","
         + "\"to\":{\"accountId\":1,\"onlineId\":\"tester\",\"platform\":[\"REMOTE_PLAY\"]},\"body\":{\"data\":{}}}";
 
+    private static string CustomData1Frame(string value) =>
+        "{\"version\":\"2.1\",\"method\":3001,\"dataType\":\"psn:sessionManager:sys:rps:customData1:updated\","
+        + "\"to\":{\"accountId\":1,\"onlineId\":\"tester\",\"platform\":[\"REMOTE_PLAY\"]},"
+        + "\"body\":{\"data\":{\"customData1\":\"" + value + "\"}}}";
+
     private static async Task<List<HalyardSignalingMessage>> RunAsync(FakeWebSocket socket)
     {
         var received = new List<HalyardSignalingMessage>();
@@ -147,6 +156,58 @@ public class HalyardPushChannelTests
         Assert.True(offer.IsConsoleOffer);
         Assert.Equal("PROSPERO", offer.FromPlatform);
         Assert.Contains(offer.Candidates, c => c.Type == "STATIC" && c.Port == 9303);
+    }
+
+    [Fact]
+    public async Task SurfacesCustomData1_AndNotAsSignaling()
+    {
+        // customData1 (the encrypted account-registration seed) rides the same channel; it is surfaced on its
+        // own event, never mistaken for a signaling OFFER, and non-customData frames raise nothing.
+        var socket = new FakeWebSocket();
+        socket.Enqueue(PresenceFrame, CustomData1Frame("bTNadUEzNy9NcGFic1k5"), ConsoleOfferFrame);
+        socket.Close();
+
+        var signaling = new List<HalyardSignalingMessage>();
+        var customData = new List<string>();
+        await using var channel = new HalyardPushChannel(socket);
+        channel.SignalingReceived += signaling.Add;
+        channel.CustomData1Received += customData.Add;
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await channel.RunAsync(Server, "test-token", cts.Token);
+
+        Assert.Equal("bTNadUEzNy9NcGFic1k5", Assert.Single(customData));
+        Assert.True(Assert.Single(signaling).IsConsoleOffer);   // the OFFER still comes through, on its own event
+    }
+
+    [SkippableFact]
+    public async Task DeliversTheAccountRegistrationSeed_EndToEnd()
+    {
+        // Proves the whole account seed-delivery path across the layer seam: the console seals a seed with the
+        // client's data1/data2, publishes it as customData1, and the client recovers exactly that seed — over
+        // the real push-channel dispatch, no live server.
+        var bundled = HalyardInteropConstants.Registration(HalyardConsolePlatform.Ps5);
+        Skip.If(bundled is null, "Build omitted the interop constants (-p:BundleInteropConstants=false).");
+        byte[] contextKey = bundled!.Value.ContextKey;
+
+        var (data1, data2) = HalyardAccountSeedDelivery.GenerateEphemeralKeyMaterial();
+        byte[] seed = RandomNumberGenerator.GetBytes(16);
+        string customData1 = HalyardAccountSeedDelivery.EncodeCustomData1(
+            HalyardAccountSeedDelivery.SealSeed(data1, data2, seed, contextKey));
+
+        var socket = new FakeWebSocket();
+        socket.Enqueue(CustomData1Frame(customData1));
+        socket.Close();
+
+        byte[]? recovered = null;
+        await using var channel = new HalyardPushChannel(socket);
+        channel.CustomData1Received += value =>
+            recovered = HalyardAccountSeedDelivery.RecoverSeed(data1, data2, value, contextKey);
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await channel.RunAsync(Server, "test-token", cts.Token);
+
+        Assert.Equal(seed, recovered);
     }
 
     [Fact]
