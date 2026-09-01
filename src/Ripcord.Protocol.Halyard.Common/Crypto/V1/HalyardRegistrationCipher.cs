@@ -68,8 +68,37 @@ public sealed class HalyardRegistrationCipher : IHalyardRegistrationCipher
     public byte[] DecryptResponse(HalyardRegistrationExchange exchange, ReadOnlySpan<byte> responseBody)
     {
         ArgumentNullException.ThrowIfNull(exchange);
-        uint pin = HalyardRegistrationKdf.ParsePasscode(exchange.Passcode);
-        return FieldCrypto(exchange.Context, pin, exchange.Material).DecryptField(FieldCounter, responseBody);
+        return AccountFieldCrypto(exchange).DecryptField(FieldCounter, responseBody);
+    }
+
+    /// <summary>
+    /// Build the account ("web"/no-PIN) registration request. Identical to <see cref="BuildRequest"/> except
+    /// the transport key is <c>seed XOR registrationTable[selector]</c> (no passcode fold): the 16-byte
+    /// <paramref name="seed"/> is the console-delivered value recovered via
+    /// <see cref="HalyardAccountSeedDelivery"/>.
+    /// </summary>
+    public HalyardRegistrationExchange BuildAccountRequest(ReadOnlySpan<byte> seed, ReadOnlySpan<byte> fieldPlaintext)
+    {
+        if (seed.Length != 16) throw new ArgumentException("Seed must be 16 bytes.", nameof(seed));
+        byte[] context = RandomNumberGenerator.GetBytes(ContextLength);
+        byte[] material = RandomNumberGenerator.GetBytes(16);
+
+        byte[] wrapped = _kdf.WrapMaterial(material, context);
+        HalyardRegistrationKdf.ScatterWrapped(wrapped, context);
+
+        byte[] field = AccountFieldCrypto(context, seed, material).EncryptField(FieldCounter, fieldPlaintext);
+
+        byte[] body = new byte[ContextLength + field.Length];
+        context.CopyTo(body, 0);
+        field.CopyTo(body, ContextLength);
+
+        return new HalyardRegistrationExchange
+        {
+            RequestBody = body,
+            Context = context,
+            Material = material,
+            Seed = seed.ToArray(),
+        };
     }
 
     // ---- low-level helpers (used by tests / the console-side path) ----
@@ -83,6 +112,27 @@ public sealed class HalyardRegistrationCipher : IHalyardRegistrationCipher
     public byte[] DecryptWith(ReadOnlySpan<byte> context, uint passcode, ReadOnlySpan<byte> material, ReadOnlySpan<byte> body)
         => FieldCrypto(context, passcode, material).DecryptField(FieldCounter, body);
 
+    /// <summary>The account-route counterpart of <see cref="DecryptWith"/>: decrypt a body with the
+    /// seed-XOR transport key (<c>seed XOR registrationTable[selector]</c>), the context, and material. Used
+    /// by the console-side path and by tests.</summary>
+    public byte[] DecryptAccountField(ReadOnlySpan<byte> context, ReadOnlySpan<byte> seed, ReadOnlySpan<byte> material, ReadOnlySpan<byte> body)
+        => AccountFieldCrypto(context, seed, material).DecryptField(FieldCounter, body);
+
     private HalyardControlFieldCrypto FieldCrypto(ReadOnlySpan<byte> context, uint pin, ReadOnlySpan<byte> material)
         => new(_kdf.DeriveKey(context, pin), material, _contextKey);
+
+    // Account route: key' = seed XOR registrationTable[selector]. DeriveKey(context, 0) is the raw table
+    // entry (folding the zero passcode is a no-op), so XOR-ing the seed onto it yields the transport key.
+    private HalyardControlFieldCrypto AccountFieldCrypto(ReadOnlySpan<byte> context, ReadOnlySpan<byte> seed, ReadOnlySpan<byte> material)
+    {
+        byte[] key = _kdf.DeriveKey(context, 0);
+        for (int i = 0; i < key.Length; i++) key[i] ^= seed[i];
+        return new HalyardControlFieldCrypto(key, material, _contextKey);
+    }
+
+    // Dispatch to the account or PIN key path for an existing exchange.
+    private HalyardControlFieldCrypto AccountFieldCrypto(HalyardRegistrationExchange exchange)
+        => exchange.Seed.Length == 16
+            ? AccountFieldCrypto(exchange.Context, exchange.Seed, exchange.Material)
+            : FieldCrypto(exchange.Context, HalyardRegistrationKdf.ParsePasscode(exchange.Passcode), exchange.Material);
 }
