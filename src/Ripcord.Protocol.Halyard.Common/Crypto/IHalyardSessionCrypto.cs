@@ -157,6 +157,11 @@ public sealed class HalyardRegistrationExchange
     internal byte[] Context { get; init; } = [];
     internal byte[] Material { get; init; } = [];
     internal string Passcode { get; init; } = "";
+
+    /// <summary>The account ("web"/no-PIN) route's 16-byte registration seed, when set; empty for the PIN
+    /// route. When present, the transport key is <c>seed XOR registrationTable[selector]</c> rather than the
+    /// passcode-folded entry. See <see cref="Crypto.V1.HalyardAccountSeedDelivery"/>.</summary>
+    internal byte[] Seed { get; init; } = [];
 }
 
 /// <summary>Default registration cipher: reports unavailable so registration fails cleanly until the real
