@@ -164,8 +164,63 @@ public sealed class HalyardAccountPairing(
         var offer = new TaskCompletionSource<HalyardSignalingMessage>(
             TaskCreationOptions.RunContinuationsAsynchronously);
 
+        // Acknowledging the console takes the session id, which does not exist until further down; the
+        // handler is registered before that, so it reads this rather than capturing a value that is still null.
+        string? liveSessionId = null;
+        var acked = new HashSet<(string Action, int ReqId)>();
+        var ackLock = new object();
+
+        // Answer every signaling message the console sends with a RESULT carrying its reqId.
+        //
+        // **This is the thing that was missing.** Ripcord acked the console's OFFER and nothing else. Five
+        // mitmproxy captures of the vendor client (ps-rendezvous/cap71, cap72, cap96, cap99, cap107) show it
+        // acking the console's ACCEPT too, in every session, within ~1.5s. Ours never did — and in every live
+        // run the console sent its ACCEPT, waited, and then TERMINATE-d.
+        //
+        // Fired from the handler rather than awaited at some later point in the flow, because by the time the
+        // ACCEPT arrives the flow has moved on to the transport, and the console gives up about a second
+        // later. Deduplicated on (action, reqId) because the push channel delivers duplicates routinely — we
+        // see each OFFER twice.
+        void Ack(HalyardSignalingMessage message)
+        {
+            if (liveSessionId is not { } id)
+            {
+                return;
+            }
+
+            lock (ackLock)
+            {
+                if (!acked.Add((message.Action, message.ReqId)))
+                {
+                    return;
+                }
+            }
+
+            _ = Task.Run(
+                async () =>
+                {
+                    try
+                    {
+                        await _signaling
+                            .SendResultAsync(id, request.AccountId, request.ConsoleDuid, message.ReqId, cancellationToken)
+                            .ConfigureAwait(false);
+                        Log($"acked the console's {message.Action} (reqId {message.ReqId})");
+                    }
+                    catch (Exception ex)
+                    {
+                        Log($"could not ack the console's {message.Action} (reqId {message.ReqId}): {ex.Message}");
+                    }
+                },
+                CancellationToken.None);
+        }
+
         void OnSignaling(HalyardSignalingMessage message)
         {
+            if (message.ExpectsResult)
+            {
+                Ack(message);
+            }
+
             // Its own OFFER, not an answer to ours and not one of the RESULTs that follow: the exchange is
             // symmetric, so both sides OFFER and the console's is the one carrying its candidates.
             if (message.Action == "OFFER" && message.LocalHashedId is { Length: > 0 })
@@ -198,6 +253,7 @@ public sealed class HalyardAccountPairing(
             string sessionId = await _signaling
                 .CreateSessionAsync(Guid.NewGuid().ToString(), cancellationToken)
                 .ConfigureAwait(false);
+            liveSessionId = sessionId;
             joinedSessionId = sessionId;
             Log($"session created: {sessionId}");
 
@@ -268,10 +324,6 @@ public sealed class HalyardAccountPairing(
                 // answering the console's OFFER with an ACCEPT that names the console's stream id. Stopping
                 // after our own OFFER leaves the console waiting, and it never opens its side: observed live
                 // as five unanswered preludes with the console silent.
-                await _signaling.SendResultAsync(
-                    sessionId, request.AccountId, request.ConsoleDuid, consoleOffer.ReqId, cancellationToken)
-                    .ConfigureAwait(false);
-
                 IReadOnlyList<HalyardCandidate> ours = request.LocalEndpoint is { } advertised
                     ? [new HalyardCandidate("LOCAL", advertised.Address, advertised.Port)]
                     : [];
@@ -315,7 +367,8 @@ public sealed class HalyardAccountPairing(
                         local.Address, local.Port, cancellationToken).ConfigureAwait(false);
                 }
 
-                Log($"negotiation answered (RESULT {consoleOffer.ReqId}, OFFER, ACCEPT peerSid={consoleOffer.Sid})");
+                Log($"negotiation answered (OFFER, ACCEPT peerSid={consoleOffer.Sid}); "
+                    + "every console message is acked as it arrives");
             }
 
             var registrationRequest = new HalyardRegistrationRequest(

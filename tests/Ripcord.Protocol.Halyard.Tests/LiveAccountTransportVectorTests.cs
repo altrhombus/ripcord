@@ -187,6 +187,28 @@ public class LiveAccountTransportVectorTests
         Assert.True(init.Tail.ToArray().All(b => b == 0));
     }
 
+    [SkippableFact]
+    public void HelloEcho_ReturnsTheCookieMinusItsEightByteHeader()
+    {
+        // The echo is our hello body followed by the cookie's body *from offset 8*, not the whole body. Pinned
+        // against the captured bytes because the arithmetic is the whole point: 14 + 34 = 48 and a 56-byte
+        // chunk, where returning all 42 gives 64 and a console that will not accept it.
+        Fixture fx = LoadOrSkip();
+
+        HalyardControlChunk hello = Assert.Single(
+            HalyardControlChunkCodec.ReadAll(Hex.Bytes(fx.HelloClient!)));
+        HalyardControlChunk cookie = Assert.Single(
+            HalyardControlChunkCodec.ReadAll(Hex.Bytes(fx.CookieConsole!)));
+        HalyardControlChunk echo = Assert.Single(
+            HalyardControlChunkCodec.ReadAll(Hex.Bytes(fx.HelloEchoClient!)));
+
+        byte[] expected = [.. hello.Body.ToArray(), .. cookie.Body.ToArray()[8..]];
+
+        Assert.Equal(expected, echo.Body.ToArray());
+        Assert.Equal(hello.Body.Length + cookie.Body.Length - 8, echo.Body.Length);
+        Assert.Equal(new byte[] { 0, 0, 0, 2, 0, 0, 0, 0 }, cookie.Body.ToArray()[..8]);
+    }
+
     private static Fixture LoadOrSkip()
     {
         string path = Locate();

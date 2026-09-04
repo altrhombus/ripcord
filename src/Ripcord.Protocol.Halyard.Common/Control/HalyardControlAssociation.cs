@@ -135,6 +135,13 @@ public sealed class HalyardControlAssociation
     private const byte DefaultFlags = 0x30;
 
     /// <summary>
+    /// How much of a cookie's body is header the echo must <em>not</em> return: 8 bytes, observed as
+    /// <c>00 00 00 02 00 00 00 00</c> in every cookie we hold. The captured client answers a 42-byte cookie
+    /// body with the last 34 bytes, and a console that cookies us rejects an echo carrying all 42.
+    /// </summary>
+    private const int CookieHeaderLength = 8;
+
+    /// <summary>
     /// The request word the opening side sends; the answering side sends zero, and an echo mirrors whatever
     /// the Init it answers carried.
     ///
@@ -398,19 +405,33 @@ public sealed class HalyardControlAssociation
         switch (chunk.Type)
         {
             case HalyardControlChunkType.Cookie:
-                // We opened the connection and the peer wants its cookie back. Appended verbatim rather than
-                // interpreted: its internal layout is not needed to complete the handshake, and inventing a
-                // reading for bytes we only hand back would be a guess on the wire.
+                // We opened the connection and the peer wants its cookie back: our own hello body, then the
+                // cookie's *echoable* region.
+                //
+                // <b>Not the whole cookie body.</b> The first 8 bytes are a fixed header the peer does not
+                // want back, and returning them makes the echo 8 bytes too long. Measured against the captured
+                // client, which answers a 42-byte cookie body with a 34-byte tail: its echo is 56 bytes where
+                // ours was 64. This codec appended the body verbatim on the reasoning that "its internal
+                // layout is not needed to complete the handshake" — and that was wrong; a live console
+                // cookied us and then would not accept the over-long echo.
                 if (_helloBody is null)
                 {
                     return Event(new HalyardControlEvent.Unhandled(
                         "a cookie arrived for a connection we never opened", datagram.ToArray()));
                 }
 
+                if (chunk.Body.Length < CookieHeaderLength)
+                {
+                    return Event(new HalyardControlEvent.Unhandled(
+                        $"a cookie whose body is {chunk.Body.Length} bytes, too short to carry the "
+                            + $"{CookieHeaderLength}-byte header the echo skips",
+                        datagram.ToArray()));
+                }
+
                 return Datagrams(HalyardControlChunkCodec.Encode(
                     HalyardControlChunkType.HelloEcho,
                     DefaultFlags,
-                    Concat(_helloBody, chunk.Body.Span),
+                    Concat(_helloBody, chunk.Body.Span[CookieHeaderLength..]),
                     (byte)_helloAddressing));
 
             case HalyardControlChunkType.Accept:
