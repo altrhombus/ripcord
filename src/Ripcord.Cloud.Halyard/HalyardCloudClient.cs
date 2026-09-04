@@ -155,12 +155,12 @@ public sealed class HalyardCloudClient(HttpClient http, HalyardTokenProvider tok
         string consoleDuid,
         IReadOnlyList<HalyardCandidate> candidates,
         CancellationToken cancellationToken,
-        ReadOnlyMemory<byte> localHashedId = default)
+        ReadOnlyMemory<byte> localHashedId = default,
+        ReadOnlyMemory<byte> sessionKey = default)
     {
-        // Field-for-field against our own capture of one OFFER, with two deliberate differences noted below.
-        // `skey` really is 16 zero bytes at this stage and `mappedAddr` really is the literal "0.0.0.0" — both
-        // were verified rather than assumed, because both look like placeholders a reimplementation would be
-        // tempted to "fix".
+        // Field-for-field against our own capture of one OFFER. `mappedAddr` really is the literal "0.0.0.0"
+        // in an OFFER's candidate — verified, and it looks exactly like a placeholder a reimplementation
+        // would be tempted to "fix". For `skey`, see the sessionKey parameter.
         string offerBody = JsonSerializer.Serialize(new
         {
             action = "OFFER",
@@ -170,7 +170,8 @@ public sealed class HalyardCloudClient(HttpClient http, HalyardTokenProvider tok
             {
                 sid = 1,
                 peerSid = 0,
-                skey = Convert.ToBase64String(new byte[16]),
+                skey = Convert.ToBase64String(
+                    sessionKey.IsEmpty ? new byte[16] : sessionKey.ToArray()),
                 natType = 2,
                 candidate = candidates.Select(c => new
                 {
@@ -248,7 +249,8 @@ public sealed class HalyardCloudClient(HttpClient http, HalyardTokenProvider tok
         HalyardCandidate consoleCandidate,
         string localAddress,
         int localPort,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        ReadOnlyMemory<byte> sessionKey = default)
     {
         ArgumentNullException.ThrowIfNull(consoleCandidate);
 
@@ -259,7 +261,8 @@ public sealed class HalyardCloudClient(HttpClient http, HalyardTokenProvider tok
 
         string body =
             "{\"action\":\"ACCEPT\",\"reqId\":" + reqId + ",\"error\":0,\"connRequest\":{\"sid\":" + sid
-            + ",\"peerSid\":" + peerSid + ",\"skey\":\"" + Convert.ToBase64String(new byte[16])
+            + ",\"peerSid\":" + peerSid + ",\"skey\":\""
+            + Convert.ToBase64String(sessionKey.IsEmpty ? new byte[16] : sessionKey.ToArray())
             + "\",\"natType\":0,\"candidate\":[" + candidate
             + "],\"defaultRouteMacAddr\":\"\",\"localPeerAddr\":,\"localHashedId\":\"\"}}";
 
