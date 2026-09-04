@@ -55,7 +55,7 @@ public class HalyardWanRendezvousTests
         }
 
         public Task SendOfferAsync(
-            string sessionId, string accountId, string duid, IReadOnlyList<HalyardCandidate> candidates, CancellationToken ct)
+            string sessionId, string accountId, string duid, IReadOnlyList<HalyardCandidate> candidates, CancellationToken ct, ReadOnlyMemory<byte> localHashedId = default)
         {
             OfferCount++;
             Calls.Enqueue("offer");
@@ -65,7 +65,9 @@ public class HalyardWanRendezvousTests
 
         public Task<IReadOnlyList<HalyardCloudSession>> GetSessionAsync(string sessionId, CancellationToken ct)
             => Task.FromResult<IReadOnlyList<HalyardCloudSession>>(
-                [new HalyardCloudSession(SessionId, [new HalyardSessionMember("42", "REMOTE_PLAY", "me")])]);
+                [new HalyardCloudSession(SessionId, [new HalyardSessionMember("42", "REMOTE_PLAY", "me")])]);        public Task SendResultAsync(string a, string b, string c, int reqId, CancellationToken ct) => Task.CompletedTask;
+        public Task SendAcceptAsync(string a, string b, string c, int reqId, int sid, int peerSid, HalyardCandidate cand, string addr, int port, CancellationToken ct) => Task.CompletedTask;
+
 
         public Task LeaveSessionAsync(string sessionId, CancellationToken ct)
         {
@@ -95,7 +97,7 @@ public class HalyardWanRendezvousTests
             return Task.CompletedTask;
         }
 
-        public Task SendOfferAsync(string s, string a, string d, IReadOnlyList<HalyardCandidate> c, CancellationToken ct)
+        public Task SendOfferAsync(string s, string a, string d, IReadOnlyList<HalyardCandidate> c, CancellationToken ct, ReadOnlyMemory<byte> localHashedId = default)
         {
             if (Interlocked.Increment(ref _offerAttempts) <= failures)
             {
@@ -106,7 +108,9 @@ public class HalyardWanRendezvousTests
         }
 
         public Task<IReadOnlyList<HalyardCloudSession>> GetSessionAsync(string sessionId, CancellationToken ct)
-            => Task.FromResult<IReadOnlyList<HalyardCloudSession>>([]);
+            => Task.FromResult<IReadOnlyList<HalyardCloudSession>>([]);        public Task SendResultAsync(string a, string b, string c, int reqId, CancellationToken ct) => Task.CompletedTask;
+        public Task SendAcceptAsync(string a, string b, string c, int reqId, int sid, int peerSid, HalyardCandidate cand, string addr, int port, CancellationToken ct) => Task.CompletedTask;
+
 
         public Task LeaveSessionAsync(string s, CancellationToken ct) => Task.CompletedTask;
     }
