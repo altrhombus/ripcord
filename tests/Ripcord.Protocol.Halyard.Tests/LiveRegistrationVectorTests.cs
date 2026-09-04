@@ -36,6 +36,37 @@ public class LiveRegistrationVectorTests
         }
     }
 
+    /// <summary>
+    /// The account ("web"/no-PIN) seed delivery, against a captured console reply.
+    ///
+    /// <para>
+    /// <b>Why this had to exist.</b> Every other seed-delivery test is a round trip through our own code —
+    /// <c>SealSeed</c> then <c>RecoverSeed</c>, sharing the key, the material, the counter and the context key.
+    /// A round trip like that passes whichever of those four is wrong, so it proved the pair consistent and
+    /// nothing about whether either matches a console. This vector is the console's own <c>customData1</c> and
+    /// the seed the vendor client actually derived from it, so it fails if any element of the schedule drifts.
+    /// </para>
+    ///
+    /// <para>
+    /// Note the ciphertext is <b>17</b> bytes for a 16-byte seed — true of every captured value — so the
+    /// "first 16 bytes" rule is part of what is being pinned here, not an assumption around it.
+    /// </para>
+    /// </summary>
+    [SkippableFact]
+    public void AccountSeedDelivery_ReproducesTheConsolesDeliveredSeed()
+    {
+        var fx = LoadOrSkip();
+        Skip.If(fx.SeedVectors is null or { Count: 0 }, "fixture carries no account seed-delivery vectors");
+
+        foreach (var v in fx.SeedVectors!)
+        {
+            byte[] seed = HalyardAccountSeedDelivery.RecoverSeed(
+                Hex.Bytes(v.Data1), Hex.Bytes(v.Data2), v.CustomData1, Hex.Bytes(fx.ContextKey!));
+
+            Assert.Equal(v.ExpectSeed, Hex.String(seed));
+        }
+    }
+
     [SkippableFact]
     public void RegistrationResponse_DecryptsToPairingRecord()
     {
@@ -148,6 +179,21 @@ public class LiveRegistrationVectorTests
         public string? ContextKey { get; set; }
         public List<KeyVector>? KeyVectors { get; set; }
         public List<ResponseVector>? ResponseVectors { get; set; }
+        public List<SeedVector>? SeedVectors { get; set; }
+    }
+
+    /// <summary>
+    /// One account-route seed delivery as captured: the client's ephemeral <c>data1</c>/<c>data2</c> from the
+    /// cloud command, the console's <c>customData1</c> from the push channel, and the seed the vendor client
+    /// derived from them.
+    /// </summary>
+    private sealed class SeedVector
+    {
+        public string Source { get; set; } = "";
+        public string Data1 { get; set; } = "";
+        public string Data2 { get; set; } = "";
+        public string CustomData1 { get; set; } = "";
+        public string ExpectSeed { get; set; } = "";
     }
 
     private sealed class KeyVector
