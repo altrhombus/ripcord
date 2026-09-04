@@ -47,7 +47,7 @@ public sealed partial class HalyardRegistrationCipherResolver : IHalyardRegistra
         _baseDirectory = baseDirectory;
     }
 
-    public IHalyardRegistrationCipher Resolve(HalyardConsolePlatform platform, out string source)
+    public HalyardRegistrationCipherResolution Resolve(HalyardConsolePlatform platform)
     {
         bool ps4 = platform == HalyardConsolePlatform.Ps4;
 
@@ -57,10 +57,9 @@ public sealed partial class HalyardRegistrationCipherResolver : IHalyardRegistra
         string? skipped = null;
         if (path is not null)
         {
-            IHalyardRegistrationCipher? fromFixture = TryLoadFixture(path, ps4, out skipped);
+            HalyardRegistrationCipherResolution? fromFixture = TryLoadFixture(path, ps4, out skipped);
             if (fromFixture is not null)
             {
-                source = path;
                 return fromFixture;
             }
         }
@@ -70,23 +69,27 @@ public sealed partial class HalyardRegistrationCipherResolver : IHalyardRegistra
         var bundled = HalyardInteropConstants.Registration(platform);
         if (bundled is not null)
         {
-            source = skipped is null ? "bundled interop constants" : $"bundled interop constants ({skipped})";
-            return new HalyardRegistrationCipher(
-                new HalyardRegistrationKdf(bundled.Value.Secrets, bundled.Value.VersionSelector),
+            return new HalyardRegistrationCipherResolution(
+                new HalyardRegistrationCipher(
+                    new HalyardRegistrationKdf(bundled.Value.Secrets, bundled.Value.VersionSelector),
+                    bundled.Value.ContextKey),
+                skipped is null ? "bundled interop constants" : $"bundled interop constants ({skipped})",
                 bundled.Value.ContextKey);
         }
 
-        source = skipped ?? (ps4
-            ? "PS4 registration constants not found (bundle omits the PS4 tables; set RIPCORD_REGIST_FIXTURE)"
-            : "registration constants not found (set RIPCORD_REGIST_FIXTURE)");
-        return new UnavailableRegistrationCipher();
+        return new HalyardRegistrationCipherResolution(
+            new UnavailableRegistrationCipher(),
+            skipped ?? (ps4
+                ? "PS4 registration constants not found (bundle omits the PS4 tables; set RIPCORD_REGIST_FIXTURE)"
+                : "registration constants not found (set RIPCORD_REGIST_FIXTURE)"),
+            ReadOnlyMemory<byte>.Empty);
     }
 
     /// <summary>
     /// Builds the cipher from <paramref name="path"/>, or returns null with <paramref name="reason"/> set when
     /// that fixture cannot serve the requested family — the caller then falls back to the bundle.
     /// </summary>
-    private static IHalyardRegistrationCipher? TryLoadFixture(string path, bool ps4, out string? reason)
+    private static HalyardRegistrationCipherResolution? TryLoadFixture(string path, bool ps4, out string? reason)
     {
         try
         {
@@ -113,8 +116,11 @@ public sealed partial class HalyardRegistrationCipherResolver : IHalyardRegistra
                 ps4Table is null ? default : Convert.FromHexString(ps4Table),
                 ps4WrapTable is null ? default : Convert.FromHexString(ps4WrapTable));
             reason = null;
-            return new HalyardRegistrationCipher(
-                new HalyardRegistrationKdf(secrets, ps4 ? 0 : 1), Convert.FromHexString(contextKeyHex!));
+            byte[] contextKey = Convert.FromHexString(contextKeyHex!);
+            return new HalyardRegistrationCipherResolution(
+                new HalyardRegistrationCipher(new HalyardRegistrationKdf(secrets, ps4 ? 0 : 1), contextKey),
+                path,
+                contextKey);
         }
         catch (Exception ex)
         {
