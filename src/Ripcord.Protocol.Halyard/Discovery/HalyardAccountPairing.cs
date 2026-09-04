@@ -276,9 +276,18 @@ public sealed class HalyardAccountPairing(
                     ? [new HalyardCandidate("LOCAL", advertised.Address, advertised.Port)]
                     : [];
 
+                // Echo the console's own skey back rather than sending 16 zero bytes. Zeroes were what this
+                // sent for the whole life of the account route, on a comment claiming the value was verified;
+                // there is no captured client-sent signaling anywhere in the dirty room to have verified it
+                // against. The console puts a real 16-byte key in both its OFFER and its ACCEPT, the same
+                // value across both connections it negotiates. **[X]** still a choice, but now an informed one.
+                ReadOnlyMemory<byte> skey = consoleOffer.SessionKey is { Length: 16 } k
+                    ? k
+                    : ReadOnlyMemory<byte>.Empty;
+
                 await _signaling.SendOfferAsync(
                     sessionId, request.AccountId, request.ConsoleDuid, ours, cancellationToken,
-                    request.LocalHashedId).ConfigureAwait(false);
+                    request.LocalHashedId, skey).ConfigureAwait(false);
 
                 // Our Init goes out HERE: after our OFFER, before our ACCEPT.
                 //
@@ -312,7 +321,7 @@ public sealed class HalyardAccountPairing(
                         sessionId, request.AccountId, request.ConsoleDuid,
                         reqId: OurAcceptReqId, sid: OurStreamId, peerSid: consoleOffer.Sid,
                         new HalyardCandidate(path.Type, path.Address, path.Port),
-                        local.Address, local.Port, cancellationToken).ConfigureAwait(false);
+                        local.Address, local.Port, cancellationToken, skey).ConfigureAwait(false);
                 }
 
                 Log($"negotiation answered (RESULT {consoleOffer.ReqId}, OFFER, ACCEPT peerSid={consoleOffer.Sid})");
