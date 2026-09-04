@@ -58,6 +58,7 @@ public static class HalyardAppServices
         IConsoleReachabilityProbe? reachabilityProbe = null,
         IConsoleWakeCoordinator? wakeCoordinator = null,
         IAccountSession? account = null,
+        IAccountConsolePairing? accountPairing = null,
         IAccountTokenStore? accountTokens = null,
         IDeviceIdentity? deviceIdentity = null)
     {
@@ -66,11 +67,35 @@ public static class HalyardAppServices
 
         IPlatformPaths resolvedPaths = paths ?? new DefaultPlatformPaths();
 
-        IAccountSession resolvedAccount = account ?? BuildAccountSession(resolvedPaths, accountTokens, deviceIdentity);
+        // One gateway serves the account tier and account pairing, built at most once and only if something
+        // asks — a caller that substitutes both seams must not pay for a device-id lookup, or fail on a host
+        // that cannot supply one. Hence a memoised local rather than a field or an eager call.
+        HalyardAccountGateway? gateway = null;
+        bool gatewayResolved = false;
+        HalyardAccountGateway? Gateway()
+        {
+            if (!gatewayResolved)
+            {
+                gatewayResolved = true;
+                gateway = TryBuildGateway(resolvedPaths, accountTokens, deviceIdentity);
+            }
+
+            return gateway;
+        }
+
+        IAccountSession resolvedAccount = account
+            ?? (Gateway() is { } forSession ? new HalyardAccountSession(forSession) : new UnavailableAccountSession());
 
         return new RipcordAppServices
         {
             Account = resolvedAccount,
+
+            // Absent rather than broken when there is no gateway: the code route is unaffected, and the flow
+            // renders the reason instead of offering an action that cannot work.
+            AccountPairing = accountPairing
+                ?? (Gateway() is { } forPairing
+                    ? new HalyardAccountConsolePairing(forPairing)
+                    : new UnavailableAccountPairing()),
             Dispatcher = dispatcher,
             VideoCapabilities = videoCapabilities,
             Paths = resolvedPaths,
@@ -94,39 +119,45 @@ public static class HalyardAppServices
     }
 
     /// <summary>
-    /// Build the account tier, or the null object when this build has no credential to sign in with.
+    /// The account service gateway, or null when this build or this machine cannot reach the account tier at
+    /// all.
     ///
     /// <para>
-    /// The decision is made once, here, rather than inside the session: a gateway constructed without a
+    /// The decision is made once, here, rather than inside each seam: a gateway constructed without a
     /// credential would be an object whose every method declines, and the graph is a better place to say "this
     /// capability is absent" than each of its methods. It also means the machine's device id is only resolved
     /// when it will actually be used — <see cref="HalyardClientDeviceId"/> throws on a host that cannot supply
     /// one, and a build that will never sign in should not fail to start over it.
     /// </para>
+    ///
+    /// <para>
+    /// Null feeds two null objects rather than one, because two capabilities ride on this: signing in, and
+    /// pairing through the account. They are absent together, always — the second is a use of the first.
+    /// </para>
     /// </summary>
-    private static IAccountSession BuildAccountSession(
+    private static HalyardAccountGateway? TryBuildGateway(
         IPlatformPaths paths, IAccountTokenStore? tokens, IDeviceIdentity? deviceIdentity)
     {
         HalyardClientConfig config = HalyardClientConfigFile.Load(paths);
         if (!config.IsConfigured)
         {
-            return new UnavailableAccountSession();
+            return null;
         }
 
         try
         {
-            var gateway = new HalyardAccountGateway(
+            return new HalyardAccountGateway(
                 new HttpClient(),
                 config,
                 tokens ?? new AccountTokenStore(paths),
                 deviceIdentity ?? new DefaultDeviceIdentity());
-            return new HalyardAccountSession(gateway);
         }
         catch (InvalidOperationException)
         {
-            // The host could not supply a stable device id. Sign-in is genuinely unavailable on this machine,
-            // and reporting that through the same path as "no credential" means the UI already handles it.
-            return new UnavailableAccountSession();
+            // The host could not supply a stable device id. The account tier is genuinely unavailable on this
+            // machine, and reporting that through the same path as "no credential" means the UI already handles
+            // it.
+            return null;
         }
     }
 }

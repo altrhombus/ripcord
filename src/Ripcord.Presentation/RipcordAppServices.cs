@@ -55,6 +55,14 @@ public sealed class RipcordAppServices
 
     public required IConsoleRegistrar Registrar { get; init; }
 
+    /// <summary>
+    /// Pairing through the signed-in account, with no code off the console's screen. Always present, for the
+    /// same reason <see cref="Account"/> is: a build with no credential gets an
+    /// <see cref="UnavailableAccountPairing"/> that says why, rather than a null the add-console flow has to
+    /// branch on.
+    /// </summary>
+    public required IAccountConsolePairing AccountPairing { get; init; }
+
     public required IConsoleReachabilityProbe ReachabilityProbe { get; init; }
 
     public required IConsoleWakeCoordinator WakeCoordinator { get; init; }
@@ -109,7 +117,7 @@ public sealed class RipcordAppServices
     // store is one object the app over, a view-model belongs to the surface showing it and dies with it.
 
     public AddConsoleFlow CreateAddConsoleFlow()
-        => new(Scanner, Registrar, Consoles, Dispatcher, account: Account);
+        => new(Scanner, Registrar, Consoles, Dispatcher, account: Account, accountPairing: AccountPairing);
 
     /// <summary>
     /// The account surface's view-model. Per-surface like the others, but note that the session it wraps is the
