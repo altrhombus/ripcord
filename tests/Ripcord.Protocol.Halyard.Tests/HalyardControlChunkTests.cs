@@ -33,28 +33,74 @@ public class HalyardControlChunkTests
     }
 
     [Fact]
-    public void Chunk_PrefixBitsAreAFieldToBeRead_NotAMarkerToBeRequired()
-    {
-        // This codec used to reject any chunk whose top two bits were not both set, on the reading that they
-        // were a fixed marker. The vendor's own parser splits that byte as (value >> 6) and (value & 0x3F) —
-        // a 2-bit field beside the length's high 6 bits — so a different value is well-formed and refusing it
-        // would silently drop traffic the peer believes it sent. Every capture we hold carries 0b11.
-        byte[] wire = HalyardControlChunkCodec.Encode(HalyardControlChunkType.Data, 0x30, [1, 2]);
-        wire[0] = (byte)(wire[0] & 0x3F);   // prefix 0b00, length untouched
-
-        Assert.True(HalyardControlChunkCodec.TryRead(wire, out HalyardControlChunk chunk, out int consumed));
-        Assert.Equal(0, chunk.Prefix);
-        Assert.Equal(wire.Length, consumed);
-        Assert.Equal(new byte[] { 1, 2 }, chunk.Body.ToArray());
-    }
-
-    [Fact]
-    public void Chunk_WritesTheObservedPrefix()
+    public void Chunk_WritesThePairedWordCount()
     {
         byte[] wire = HalyardControlChunkCodec.Encode(HalyardControlChunkType.Data, 0x30, [1, 2]);
 
         Assert.True(HalyardControlChunkCodec.TryRead(wire, out HalyardControlChunk chunk, out _));
-        Assert.Equal(HalyardControlChunkCodec.ObservedPrefix, chunk.Prefix);
+        Assert.Equal(HalyardControlChunkCodec.PairedWordCount, chunk.WordCount);
+        Assert.Equal(HalyardControlChunkCodec.ControlPort, chunk.SourcePort);
+        Assert.Equal(HalyardControlChunkCodec.ControlPort, chunk.DestinationPort);
+    }
+
+    [Fact]
+    public void Chunk_WordCountOfTwo_CarriesOnePortUsedForBothEnds()
+    {
+        // The top two bits are a count of 16-bit words in the prefix, this one included — not a marker, and
+        // not part of the length. A count of 2 therefore means one port word follows, and the receiver
+        // requires it to match both the local and the peer port of the connection it selects. We have never
+        // had to send this shape, but the peer may, and reading it as the paired shape would put the type and
+        // flags two bytes out of place.
+        byte[] wire = [0x80, 0x06, 0x24, 0x4F, 0x02, 0x30];
+
+        Assert.True(HalyardControlChunkCodec.TryRead(wire, out HalyardControlChunk chunk, out int consumed));
+        Assert.Equal(2, chunk.WordCount);
+        Assert.Equal(HalyardControlChunkType.Data, chunk.Type);
+        Assert.Equal(0x30, chunk.Flags);
+        Assert.Equal(HalyardControlChunkCodec.ControlPort, chunk.DestinationPort);
+        Assert.Equal(chunk.DestinationPort, chunk.SourcePort);
+        Assert.Equal(6, consumed);
+    }
+
+    [Fact]
+    public void Chunk_WordCountOfOne_CarriesNoPortAtAll()
+    {
+        // A count of 1 is the header alone; the receiver then matches on the peer address rather than a port.
+        byte[] wire = [0x40, 0x05, 0x02, 0x30, 0x77];
+
+        Assert.True(HalyardControlChunkCodec.TryRead(wire, out HalyardControlChunk chunk, out int consumed));
+        Assert.Equal(1, chunk.WordCount);
+        Assert.Equal(HalyardControlChunkType.Data, chunk.Type);
+        Assert.Equal(new byte[] { 0x77 }, chunk.Body.ToArray());
+        Assert.Equal(5, consumed);
+    }
+
+    [Fact]
+    public void Chunk_PortWordsAreReadThrough_NotRequiredToBeTheControlPort()
+    {
+        // This codec used to reject any chunk whose port words were not 0x244F, on the reading that they were
+        // a fixed magic. They are ports: the receiver demultiplexes on the second one and does not constrain
+        // it to a constant, so refusing another value would drop traffic the peer believes it sent. Every
+        // capture we hold carries the control port at both.
+        byte[] wire = [0xC0, 0x08, 0x11, 0x22, 0x33, 0x44, 0x02, 0x30];
+
+        Assert.True(HalyardControlChunkCodec.TryRead(wire, out HalyardControlChunk chunk, out _));
+        Assert.Equal(0x1122, chunk.SourcePort);
+        Assert.Equal(0x3344, chunk.DestinationPort);
+    }
+
+    [Fact]
+    public void Chunk_ReservedLengthBits_AreMaskedAwayRatherThanRead()
+    {
+        // The length is 11 bits, and the receiver masks bits 13..11 off. An earlier reading had the length as
+        // 14 bits, which would read a chunk carrying anything in those bits as thousands of bytes long and
+        // abandon the datagram.
+        byte[] wire = HalyardControlChunkCodec.Encode(HalyardControlChunkType.Data, 0x30, [1, 2]);
+        wire[0] |= 0x38;   // set every reserved bit; count and length untouched
+
+        Assert.True(HalyardControlChunkCodec.TryRead(wire, out HalyardControlChunk chunk, out int consumed));
+        Assert.Equal(wire.Length, consumed);
+        Assert.Equal(new byte[] { 1, 2 }, chunk.Body.ToArray());
     }
 
     [Fact]
@@ -70,7 +116,7 @@ public class HalyardControlChunkTests
     }
 
     [Fact]
-    public void Chunk_CarriesTheMagicAtBothOffsets()
+    public void Chunk_CarriesTheControlPortAtBothWords()
     {
         byte[] wire = HalyardControlChunkCodec.Encode(HalyardControlChunkType.Hello, 0x30, []);
 
@@ -107,11 +153,12 @@ public class HalyardControlChunkTests
     }
 
     [Theory]
-    [InlineData(new byte[] { 0xC0, 0x08, 0x00, 0x00, 0x24, 0x4F, 0x02, 0x30 })]   // first magic wrong
-    [InlineData(new byte[] { 0xC0, 0x08, 0x24, 0x4F, 0x00, 0x00, 0x02, 0x30 })]   // second magic wrong
+    [InlineData(new byte[] { 0x00, 0x08, 0x24, 0x4F, 0x24, 0x4F, 0x02, 0x30 })]   // word count of zero
     [InlineData(new byte[] { 0xC0, 0x04, 0x24, 0x4F, 0x24, 0x4F, 0x02, 0x30 })]   // length undercuts the prefix
+    [InlineData(new byte[] { 0xC0, 0x07, 0x24, 0x4F, 0x24, 0x4F, 0x02, 0x30 })]   // no room for type and flags
     [InlineData(new byte[] { 0xC0, 0xFF, 0x24, 0x4F, 0x24, 0x4F, 0x02, 0x30 })]   // length overruns the datagram
     [InlineData(new byte[] { 0xC0, 0x08, 0x24, 0x4F })]                            // truncated
+    [InlineData(new byte[] { 0xC0 })]                                              // shorter than the header
     public void Chunk_Malformed_IsRejectedRatherThanGuessedAt(byte[] datagram)
     {
         // Anyone on the network can send to this port, so a reader that half-interpreted a bad datagram would
@@ -135,8 +182,20 @@ public class HalyardControlChunkTests
     [Fact]
     public void Chunk_TooLongForTheLengthField_Throws()
     {
+        // 11 bits, so 2047 total. A caller with more to say has to fragment, and finding that out from an
+        // exception here beats the console silently abandoning the datagram.
+        int longestBody = HalyardControlChunkCodec.MaxChunkLength
+            - HalyardControlChunkCodec.PairedPrefixLength
+            - HalyardControlChunkCodec.TypeAndFlagsLength;
+
+        byte[] wire = HalyardControlChunkCodec.Encode(
+            HalyardControlChunkType.Data, 0x30, new byte[longestBody]);
+        Assert.Equal(HalyardControlChunkCodec.MaxChunkLength, wire.Length);
+        Assert.True(HalyardControlChunkCodec.TryRead(wire, out _, out int consumed));
+        Assert.Equal(wire.Length, consumed);
+
         Assert.Throws<ArgumentException>(() =>
-            HalyardControlChunkCodec.Encode(HalyardControlChunkType.Data, 0x30, new byte[0x3FFF]));
+            HalyardControlChunkCodec.Encode(HalyardControlChunkType.Data, 0x30, new byte[longestBody + 1]));
     }
 
     // ---- prelude ------------------------------------------------------------------------------
