@@ -64,7 +64,8 @@ public class HalyardControlAssociationTests
         Assert.Equal(HalyardControlPrelude.Init, init.Type);
         Assert.Equal(OurId, init.SenderId.ToArray());
         Assert.Equal(PeerId, init.PeerId.ToArray());
-        Assert.Equal(0x19u, init.RequestWord);
+        // 0x40 is what a same-LAN vendor client sends; a WAN one sends 0x19 and what selects it is [X].
+        Assert.Equal(0x40u, init.RequestWord);
         Assert.NotEqual(0u, init.Token);
         Assert.Equal(HalyardControlPhase.Handshaking, association.Phase);
     }
