@@ -62,24 +62,36 @@ public enum HalyardControlChunkType : byte
 /// <summary>
 /// One chunk as it sits on the wire, with the fields that are uniform across every type.
 /// </summary>
-/// <param name="Prefix">
-/// The 2-bit field in the top of the length word. <b>Always <c>0b11</c> in every capture we hold</b>, which is
-/// why the framing was first read as "the top two bits are set" — but the vendor's own parser splits that byte
-/// as <c>value &gt;&gt; 6</c> and <c>value &amp; 0x3F</c>, i.e. a 2-bit field beside a 6-bit one. So a chunk
-/// carrying a different value here is well-formed, and rejecting it (as this codec did) would silently drop
-/// traffic the peer considers valid. Its meaning is <b>[X]</b> — a version or class, on the evidence available.
+/// <param name="WordCount">
+/// The 2-bit count in the top of the header word, <b>including the header word itself</b> — so it is 1, 2 or
+/// 3, and <c>WordCount - 1</c> port words follow the header. Zero is malformed. Every chunk this protocol has
+/// been observed to use carries 3.
+/// </param>
+/// <param name="SourcePort">
+/// The first port word, present when <see cref="WordCount"/> is 3. The receiver does not key its lookup on
+/// this one, so which of the pair is "source" is <b>[X]</b>: both are 9295 in every capture we hold, and only
+/// the second is matched against a connection.
+/// </param>
+/// <param name="DestinationPort">
+/// The word the receiver demultiplexes on — the last one present. For <see cref="WordCount"/> 3 it is the
+/// second port word; for 2, the single word, which the receiver requires to equal <em>both</em> the local and
+/// the peer port of the connection it matches. For 1 there is no port and the receiver matches on the peer
+/// address alone; this field is then <see cref="HalyardControlChunkCodec.ControlPort"/> by default and carries
+/// no wire meaning.
 /// </param>
 /// <param name="Body">
-/// Everything after the 8-byte prefix. Deliberately not decomposed further: the layout past the prefix is
-/// type-specific (some chunks carry a sequence, some a sequence and an acknowledgement, the console's cookie
-/// and close carry neither), and pretending otherwise would put a union in the codec. The channel that speaks
-/// the handshake is where that knowledge belongs.
+/// Everything after the header, its port words, and the type and flags bytes. Deliberately not decomposed
+/// further: the layout past that point is type-specific (some chunks carry a sequence, some a sequence and an
+/// acknowledgement, the console's cookie and close carry neither), and pretending otherwise would put a union
+/// in the codec. The channel that speaks the handshake is where that knowledge belongs.
 /// </param>
 public readonly record struct HalyardControlChunk(
     HalyardControlChunkType Type,
     byte Flags,
     ReadOnlyMemory<byte> Body,
-    byte Prefix = HalyardControlChunkCodec.ObservedPrefix);
+    ushort SourcePort = HalyardControlChunkCodec.ControlPort,
+    ushort DestinationPort = HalyardControlChunkCodec.ControlPort,
+    byte WordCount = HalyardControlChunkCodec.PairedWordCount);
 
 /// <summary>
 /// The chunk framing of the account ("web"/no-PIN) route's control transport.
@@ -93,54 +105,74 @@ public readonly record struct HalyardControlChunk(
 /// </para>
 ///
 /// <para>
-/// <b>Framing.</b> A 2-byte big-endian header carrying a 2-bit field and, in its low 14 bits, the chunk's total
-/// length <em>including</em> those two bytes; then two <c>0x244F</c> words — which are the control port 9295,
-/// not a magic — then a type and a flags byte. Several chunks may be concatenated in one datagram with no padding, which is not a theoretical
-/// case: the registration POST arrives as a 12-byte acknowledgement followed immediately by a 744-byte data
-/// chunk in one datagram.
+/// <b>Framing</b>, read from the vendor library's own receive loop rather than inferred from captures:
+/// </para>
+/// <code>
+/// u16 big-endian: bits 15..14 = word count (1-3, counting this word)
+///                 bits 13..11 = reserved, masked away by the receiver
+///                 bits 10..0  = total chunk length, including this word
+/// (count - 1) x u16 big-endian port words
+/// u8 type, u8 flags, payload...
+/// </code>
+/// <para>
+/// So the two <c>0x244F</c> words that every chunk of this protocol carries are not fixed structure — they are
+/// what a word count of 3 means. A count of 2 carries one port word and a count of 1 none, and both shapes are
+/// well-formed traffic this codec must not choke on even though we have never had to send them.
 /// </para>
 ///
 /// <para>
-/// <b>The <c>0x244F</c> pair is the control port, 9295.</b> Read from the vendor library, where every
-/// occurrence of that value as an immediate is a TCP connect in the registration path. So these are (source,
-/// destination) service ports and the 9303 datagram layer is a tunnel carrying a logical 9295 control stream —
-/// which is why the pair is identical across sessions and directions, and why <c>rgst</c>/<c>init</c>/
-/// <c>ctrl</c> are byte-identical on both transports. Earlier readings had it as a per-session connection id
-/// and then as a fixed magic; both are superseded. A chunk not carrying it is still rejected, because every
-/// stream we speak uses that port.
+/// <b>The port words are the control port, 9295.</b> Read from the vendor library, where every occurrence of
+/// that value as an immediate is a TCP connect in the registration path. So these are service ports and the
+/// 9303 datagram layer is a tunnel carrying a logical 9295 control stream — which is why the pair is identical
+/// across sessions and directions, and why <c>rgst</c>/<c>init</c>/<c>ctrl</c> are byte-identical on both
+/// transports. Earlier readings had the pair as a per-session connection id and then as a fixed magic; both
+/// are superseded.
+/// </para>
+///
+/// <para>
+/// Several chunks may be concatenated in one datagram with no padding, which is not a theoretical case: the
+/// registration POST arrives as a 12-byte acknowledgement followed immediately by a 744-byte data chunk in one
+/// datagram.
 /// </para>
 /// </summary>
 public static class HalyardControlChunkCodec
 {
-    /// <summary>Length, the two magic words, type and flags — the part every chunk shares.</summary>
-    public const int PrefixLength = 8;
-
     /// <summary>
-    /// The constant that occupies offsets 2 and 4. A required on-wire value, not a naming choice.
+    /// The service port carried in the port words. A required on-wire value, not a naming choice.
     /// </summary>
-    public const ushort Magic = 0x244F;
-
-    /// <summary>The length field is 14 bits, so a chunk cannot exceed this — including its own prefix.</summary>
-    public const int MaxChunkLength = 0x3FFF;
+    public const ushort ControlPort = 0x244F;
 
     /// <summary>
-    /// The value every observed chunk carries in the 2-bit field above the length. Written on the way out
-    /// because it is what the console has been seen to accept; <b>not</b> required on the way in, because the
-    /// vendor's parser treats those bits as a field rather than a marker.
+    /// The word count every chunk of this protocol carries: the header plus a (source, destination) port pair.
     /// </summary>
-    public const byte ObservedPrefix = 0b11;
+    public const byte PairedWordCount = 3;
 
-    /// <summary>How far to shift the 2-bit prefix field within the length word.</summary>
-    private const int PrefixShift = 14;
+    /// <summary>The header word plus the two port words a <see cref="PairedWordCount"/> chunk carries.</summary>
+    public const int PairedPrefixLength = PairedWordCount * 2;
 
-    /// <summary>The length occupies the low 14 bits of the word.</summary>
-    private const ushort LengthMask = 0x3FFF;
-
-    /// <summary>How many bytes <paramref name="bodyLength"/> needs on the wire.</summary>
-    public static int ChunkLength(int bodyLength) => PrefixLength + bodyLength;
+    /// <summary>Type and flags, which sit after the header and its port words in every chunk.</summary>
+    public const int TypeAndFlagsLength = 2;
 
     /// <summary>
-    /// Write one chunk. Returns the number of bytes written.
+    /// The largest total chunk length the receiver can express: the length field is <b>11 bits</b>, not the 14
+    /// an earlier reading assumed. A sender must therefore fragment above this; the 744-byte registration POST
+    /// fits comfortably.
+    /// </summary>
+    public const int MaxChunkLength = 0x7FF;
+
+    /// <summary>How far to shift the 2-bit word count within the header word.</summary>
+    private const int WordCountShift = 14;
+
+    /// <summary>The length occupies the low 11 bits of the header word.</summary>
+    private const ushort LengthMask = 0x07FF;
+
+    /// <summary>
+    /// How many bytes <paramref name="bodyLength"/> needs on the wire, as the paired shape we always send.
+    /// </summary>
+    public static int ChunkLength(int bodyLength) => PairedPrefixLength + TypeAndFlagsLength + bodyLength;
+
+    /// <summary>
+    /// Write one chunk in the paired shape. Returns the number of bytes written.
     /// </summary>
     public static int Write(
         Span<byte> destination, HalyardControlChunkType type, byte flags, ReadOnlySpan<byte> body)
@@ -149,7 +181,8 @@ public static class HalyardControlChunkCodec
         if (total > MaxChunkLength)
         {
             throw new ArgumentException(
-                $"A chunk may be at most {MaxChunkLength} bytes including its prefix; this one would be {total}.",
+                $"A chunk may be at most {MaxChunkLength} bytes including its header; this one would be "
+                    + $"{total}. The receiver's length field is 11 bits, so a longer body must be fragmented.",
                 nameof(body));
         }
 
@@ -160,12 +193,12 @@ public static class HalyardControlChunkCodec
         }
 
         BinaryPrimitives.WriteUInt16BigEndian(
-            destination, (ushort)((ObservedPrefix << PrefixShift) | (ushort)total));
-        BinaryPrimitives.WriteUInt16BigEndian(destination[2..], Magic);
-        BinaryPrimitives.WriteUInt16BigEndian(destination[4..], Magic);
+            destination, (ushort)((PairedWordCount << WordCountShift) | (ushort)total));
+        BinaryPrimitives.WriteUInt16BigEndian(destination[2..], ControlPort);
+        BinaryPrimitives.WriteUInt16BigEndian(destination[4..], ControlPort);
         destination[6] = (byte)type;
         destination[7] = flags;
-        body.CopyTo(destination[PrefixLength..]);
+        body.CopyTo(destination[(PairedPrefixLength + TypeAndFlagsLength)..]);
         return total;
     }
 
@@ -184,42 +217,61 @@ public static class HalyardControlChunkCodec
     /// How many bytes the chunk occupied, so a caller can advance to the next one in the same datagram.
     /// </param>
     /// <returns>
-    /// False for anything that is not a well-formed chunk: too short, the length bits clear, a length that
-    /// undercuts the prefix or overruns the datagram, or either magic word wrong. A malformed datagram is
-    /// dropped rather than partially interpreted — this is a transport that anyone on the network can send to.
+    /// False for anything the vendor's own receive loop would abandon the datagram on: too short, a zero word
+    /// count, a length that cannot hold the prefix it claims, or a length that overruns the datagram. A
+    /// malformed datagram is dropped rather than partially interpreted — this is a transport that anyone on
+    /// the network can send to.
     /// </returns>
     public static bool TryRead(ReadOnlySpan<byte> datagram, out HalyardControlChunk chunk, out int consumed)
     {
         chunk = default;
         consumed = 0;
 
-        if (datagram.Length < PrefixLength)
+        if (datagram.Length < 2)
         {
             return false;
         }
 
-        // The prefix is READ, not required: the vendor's parser splits this byte into a 2-bit and a 6-bit
-        // field, so a value other than the observed 0b11 is well-formed and dropping it would lose traffic
-        // the peer thinks it sent us.
         ushort header = BinaryPrimitives.ReadUInt16BigEndian(datagram);
-        byte prefix = (byte)(header >> PrefixShift);
+        byte words = (byte)(header >> WordCountShift);
         int total = header & LengthMask;
-        if (total < PrefixLength || total > datagram.Length)
+
+        // A count of zero is what makes the vendor's loop give up on the rest of the datagram. Bits 13..11 are
+        // deliberately not examined: the receiver masks them away, so requiring anything of them here would
+        // reject traffic it accepts.
+        if (words == 0 || total > datagram.Length)
         {
             return false;
         }
 
-        if (BinaryPrimitives.ReadUInt16BigEndian(datagram[2..]) != Magic
-            || BinaryPrimitives.ReadUInt16BigEndian(datagram[4..]) != Magic)
+        int prefix = words * 2;
+        if (total < prefix + TypeAndFlagsLength)
         {
             return false;
+        }
+
+        // The words after the header are ports. The receiver demultiplexes on the last one; a count of 1
+        // carries none and is matched on the peer address alone.
+        ushort source = ControlPort;
+        ushort destination = ControlPort;
+        if (words == PairedWordCount)
+        {
+            source = BinaryPrimitives.ReadUInt16BigEndian(datagram[2..]);
+            destination = BinaryPrimitives.ReadUInt16BigEndian(datagram[4..]);
+        }
+        else if (words == 2)
+        {
+            destination = BinaryPrimitives.ReadUInt16BigEndian(datagram[2..]);
+            source = destination;
         }
 
         chunk = new HalyardControlChunk(
-            (HalyardControlChunkType)datagram[6],
-            datagram[7],
-            datagram[PrefixLength..total].ToArray(),
-            prefix);
+            (HalyardControlChunkType)datagram[prefix],
+            datagram[prefix + 1],
+            datagram[(prefix + TypeAndFlagsLength)..total].ToArray(),
+            source,
+            destination,
+            words);
         consumed = total;
         return true;
     }
@@ -231,7 +283,8 @@ public static class HalyardControlChunkCodec
     /// Stops at the first malformed chunk and keeps what came before it, because that is the honest reading:
     /// the chunks already parsed were complete and self-describing, and a caller that discarded them because
     /// of trailing rubbish would drop a response it had in hand. A datagram whose <em>first</em> chunk is
-    /// malformed yields nothing.
+    /// malformed yields nothing. It is also what the vendor's loop does — it breaks out and accounts for what
+    /// it managed to read.
     /// </para>
     /// </summary>
     public static List<HalyardControlChunk> ReadAll(ReadOnlySpan<byte> datagram)
