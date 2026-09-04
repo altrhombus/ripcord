@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Text;
 using System.Text.Json;
 using Ripcord.Protocol.Halyard.Common.Control;
@@ -161,6 +162,31 @@ public class LiveAccountTransportVectorTests
         return Assert.Single(chunks);
     }
 
+    [SkippableFact]
+    public void Prelude_TheEchosTailReflectsTheConsolesOwnEndpoint()
+    {
+        // The field that was carried as "[X] unexplained, six populated bytes" and sent as zeroes. It is the
+        // peer's address and port XORed with the tag pair — STUN's XOR-MAPPED-ADDRESS trick with the tag pair
+        // standing in for the magic cookie. This is the assertion that makes that claim mean something: the
+        // tail is recomputed from the console endpoint the captured client was sending to, and has to equal
+        // the captured bytes exactly.
+        Fixture fx = LoadOrSkip();
+        Skip.If(string.IsNullOrEmpty(fx.ConsoleAddress), "Fixture predates consoleAddress/consolePort.");
+
+        Assert.True(HalyardControlPrelude.TryParse(Hex.Bytes(fx.PreludeClientCookieEcho!), out var echo));
+
+        byte[] address = [.. fx.ConsoleAddress!.Split('.').Select(byte.Parse)];
+        byte[] expected = HalyardControlPrelude.ReflectPeerEndpoint(
+            address, (ushort)fx.ConsolePort, echo.TagPair);
+
+        Assert.Equal(expected, echo.Tail.ToArray());
+
+        // And the Init carries none of it — only the echo reflects, which is what makes it a confirmation
+        // rather than an advertisement.
+        Assert.True(HalyardControlPrelude.TryParse(Hex.Bytes(fx.PreludeClientInit!), out var init));
+        Assert.True(init.Tail.ToArray().All(b => b == 0));
+    }
+
     private static Fixture LoadOrSkip()
     {
         string path = Locate();
@@ -193,6 +219,8 @@ public class LiveAccountTransportVectorTests
         public string? PreludeClientInit { get; set; }
         public string? PreludeConsoleInit { get; set; }
         public string? PreludeClientCookieEcho { get; set; }
+        public string? ConsoleAddress { get; set; }
+        public int ConsolePort { get; set; }
         public string? HelloClient { get; set; }
         public string? CookieConsole { get; set; }
         public string? HelloEchoClient { get; set; }

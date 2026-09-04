@@ -31,7 +31,12 @@ public class HalyardControlAssociationTests
         return count => [.. Enumerable.Range(0, count).Select(_ => next++)];
     }
 
-    private static HalyardControlAssociation New() => new(OurId, PeerId, Counter());
+    /// <summary>The console endpoint these tests pretend to be talking to — 10.0.0.7:9303.</summary>
+    private static readonly byte[] PeerAddress = [172, 16, 0, 104];
+    private const ushort PeerPort = 9303;
+
+    private static HalyardControlAssociation New()
+        => new(OurId, PeerId, PeerAddress, PeerPort, Counter());
 
     private static HalyardControlPrelude ParsePrelude(byte[] datagram)
     {
@@ -418,6 +423,45 @@ public class HalyardControlAssociationTests
         HalyardControlChunk cookie = ParseChunk(Assert.Single(action.Send));
         Assert.Equal(HalyardControlChunkType.Cookie, cookie.Type);
         Assert.Equal(1, cookie.WordCount);
+    }
+
+    [Fact]
+    public void OurEcho_ReflectsThePeersOwnEndpoint_RatherThanAZeroTail()
+    {
+        // The console validates the path from this: it learns which address it is actually reachable on from
+        // the echo we send. Ripcord sent zeroes here for the whole of the account route's life, completed the
+        // prelude anyway, and then had every chunk it sent ignored.
+        HalyardControlAssociation association = New();
+
+        HalyardControlAction action = association.OnDatagram(PeerInit(0x00017777, 0x11223344));
+
+        HalyardControlPrelude echo = Assert.Single(
+            action.Send.Select(ParsePrelude).Where(p => p.Type == HalyardControlPrelude.CookieEcho));
+
+        Assert.Equal(
+            HalyardControlPrelude.ReflectPeerEndpoint(PeerAddress, PeerPort, echo.TagPair),
+            echo.Tail.ToArray());
+        Assert.False(echo.Tail.ToArray().All(b => b == 0));
+    }
+
+    [Fact]
+    public void OurInit_CarriesNoReflectedEndpoint()
+    {
+        // Only the echo reflects. An Init cannot: at that point the sender has been told nothing, so anything
+        // it put here would be its own guess rather than an observation.
+        HalyardControlAssociation association = New();
+
+        HalyardControlPrelude init = ParsePrelude(Assert.Single(association.Open().Send));
+
+        Assert.Equal(HalyardControlPrelude.Init, init.Type);
+        Assert.True(init.Tail.ToArray().All(b => b == 0));
+    }
+
+    [Fact]
+    public void APeerAddressThatIsNotIPv4_IsRefusedAtConstruction()
+    {
+        Assert.Throws<ArgumentException>(() => new HalyardControlAssociation(
+            OurId, PeerId, new byte[16], PeerPort, Counter()));
     }
 
     // ---- helpers ---------------------------------------------------------------------------------

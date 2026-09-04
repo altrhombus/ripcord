@@ -256,28 +256,6 @@ public sealed class HalyardAccountPairing(
                 consoleOffer, request.ConsoleHost, request.LocalHashedId, consoleOffer.LocalHashedId!);
             IHalyardRegistration registration = _registration(context);
 
-            // Our Init goes out FIRST — before the RESULT, the OFFER and the ACCEPT below.
-            //
-            // The side that opens the association is the side that may open connections on it, and the console
-            // opens its own within tens of milliseconds of learning our candidate. Every earlier ordering lost
-            // that race, leaving us the responder on an association the console then never opened a connection
-            // on.
-            //
-            // The open question this tests: the prelude names both peers, and the console has not yet seen our
-            // OFFER, so it does not know our SenderId. If it validates only that PeerId is itself — which is the
-            // plausible reading, since SenderId is the *claim* and PeerId is the *check* — this works and we
-            // take the initiator role. If it validates SenderId too, this cannot work from here at all, and
-            // that is worth knowing plainly rather than assuming. **[X]**
-            try
-            {
-                await registration.PrepareAsync(cancellationToken).ConfigureAwait(false);
-                Log("control association opened (before the signaling answer)");
-            }
-            catch (Exception ex)
-            {
-                Log($"could not open the control association: {ex.Message}");
-            }
-
 
             // Announce ourselves — now, and not a moment earlier. A sessionMessage may only be sent to a
             // member, so this 404s until the console has joined, and the console's OFFER is exactly what tells
@@ -301,6 +279,31 @@ public sealed class HalyardAccountPairing(
                 await _signaling.SendOfferAsync(
                     sessionId, request.AccountId, request.ConsoleDuid, ours, cancellationToken,
                     request.LocalHashedId).ConfigureAwait(false);
+
+                // Our Init goes out HERE: after our OFFER, before our ACCEPT.
+                //
+                // The side that opens the association is the side that may open connections on it, so this
+                // race matters. Two orderings are now falsified against hardware. Sending it before the OFFER
+                // does not work: the console has not seen our localHashedId yet, discards the Init, and then
+                // opens an association of its own — proven by the tag pair, since a console that accepts an
+                // Init answers with the sender's own pair with its halves exchanged, and against an early Init
+                // it always announced a pair of its own invention. Sending it after the whole exchange is
+                // worse: our three signaling POSTs take about two seconds, and the console initiates within
+                // ~200ms of our OFFER, so it is already retrying by the time we speak.
+                //
+                // This position is where the captured vendor client's Init actually sits, measured from its
+                // TLS streams: one POST at t+18.85, its Init at t+20.33, two more POSTs at t+20.34. Its
+                // console then answered by adopting its tag pair 148ms later and never raced it. **[X]** why
+                // the console tolerates the wait there and not here is still unexplained.
+                try
+                {
+                    await registration.PrepareAsync(cancellationToken).ConfigureAwait(false);
+                    Log("control association opened (after our OFFER, before our ACCEPT)");
+                }
+                catch (Exception ex)
+                {
+                    Log($"could not open the control association: {ex.Message}");
+                }
 
                 HalyardSignalingCandidate? path = PreferredCandidate(consoleOffer, request.ConsoleHost);
                 if (path is not null && request.LocalEndpoint is { } local)
