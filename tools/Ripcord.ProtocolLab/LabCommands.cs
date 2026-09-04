@@ -8,7 +8,9 @@ using Ripcord.Core.Sessions;
 using Ripcord.Cloud.Halyard;
 using Ripcord.Cloud.Halyard.Rendezvous;
 using Ripcord.Core.Net.WebSockets;
+using Ripcord.Presentation.Consoles;
 using Ripcord.Presentation.Halyard.Pairing;
+using Ripcord.Presentation.Pairing;
 using Ripcord.Protocol.Halyard.Common.Crypto;
 using Ripcord.Protocol.Halyard.Common.Discovery;
 using Ripcord.Protocol.Halyard.Common.Input;
@@ -50,9 +52,9 @@ internal static class LabCommands
 
         // The same resolver the app uses. The lab used to carry its own copy, and today the identical
         // family-keying bug had to be fixed in both — so one implementation, exercised by two callers.
-        IHalyardRegistrationCipher cipher =
-            new HalyardRegistrationCipherResolver().Resolve(platform, out string source);
-        Console.WriteLine($"registration cipher: available={cipher.IsAvailable}  family={platform}  ({source})");
+        HalyardRegistrationCipherResolution resolved = new HalyardRegistrationCipherResolver().Resolve(platform);
+        IHalyardRegistrationCipher cipher = resolved.Cipher;
+        Console.WriteLine($"registration cipher: available={cipher.IsAvailable}  family={platform}  ({resolved.Source})");
         if (!cipher.IsAvailable)
         {
             Console.Error.WriteLine($"no registration constants for {platform}; supply docs/protocol/captures/registration_crypto_vectors.json or build with the bundled constants.");
@@ -85,6 +87,87 @@ internal static class LabCommands
         Console.WriteLine($"  companion (RP-Key): {Convert.ToHexString(rec.Companion).ToLowerInvariant()}");
         Console.WriteLine($"  keytype          : {rec.KeyType}");
         Console.WriteLine("  (persist rec.Serialize() as the credential blob for later sessions)");
+        return 0;
+    }
+
+    /// <summary>
+    /// accountpair &lt;consoleIp&gt; &lt;duid&gt; [ps4|ps5]
+    /// Drives a live account ("web"/no-PIN) pairing: the console is asked over the cloud to confirm this PC,
+    /// delivers the registration seed encrypted as <c>customData1</c> on the push channel, and the same
+    /// <c>/sess/rgst</c> POST the PIN route makes then completes with that seed instead of a passcode.
+    ///
+    /// <para>
+    /// Deliberately driven through <see cref="HalyardAccountConsolePairing"/> — the very object the app
+    /// composes — rather than through <see cref="HalyardAccountPairing"/> directly. The coordinator already has
+    /// unit tests over scripted frames; what is unverified against hardware is the wiring around it (which
+    /// crypto source won, the token, the push-server lookup, a real socket), and a harness that assembled its
+    /// own version of that would verify a second wiring instead of the shipping one.
+    /// </para>
+    /// </summary>
+    public static async Task<int> AccountPairAsync(string[] args)
+    {
+        if (args.Length < 3)
+        {
+            Console.Error.WriteLine("usage: accountpair <consoleIp> <duid> [ps4|ps5] [--frames]   (run `cloud` to list duids)");
+            return 1;
+        }
+
+        // Off by default: a frame can carry the encrypted seed and always carries account and device ids, and
+        // this output gets pasted into notes. On, when a summary is not enough to explain a refusal.
+        bool dumpFrames = args.Any(a => a.Equals("--frames", StringComparison.OrdinalIgnoreCase));
+
+        string consoleIp = args[1];
+        string duid = args[2];
+        ConsoleFamily family = args.Any(a => a.Equals("ps4", StringComparison.OrdinalIgnoreCase))
+            ? ConsoleFamily.Ps4
+            : ConsoleFamily.Ps5;
+
+        var gateway = BuildGateway();
+        if (await gateway.RestoreAsync(CancellationToken.None) is not { } account)
+        {
+            Console.Error.WriteLine("not signed in. Run `signin` first.");
+            return 1;
+        }
+
+        var pairing = new HalyardAccountConsolePairing(
+            gateway,
+            options: new HalyardAccountPairingOptions { Log = line => Console.WriteLine($"  · {line}") },
+
+            // Every raw push frame, summarised. The seed only follows the console JOINING the session, and both
+            // events land here — so without this a failure says "no seed" and nothing about how far it got.
+            observeChannel: channel => channel.FrameReceived += frame =>
+            {
+                Console.WriteLine($"  « {Summarise(frame)}");
+                if (dumpFrames)
+                {
+                    Console.WriteLine($"    {frame}");
+                }
+            });
+
+        AccountPairingAvailability availability = pairing.CheckAvailability(family);
+        Console.WriteLine($"account pairing: available={availability.Available}  family={family.Key}  ({availability.Detail})");
+        if (!availability.Available)
+        {
+            return 1;
+        }
+
+        Console.WriteLine($"pairing {consoleIp} (duid {duid}) as account {account.AccountId}...");
+        Console.WriteLine($"this client's device id: {HalyardClientDeviceId.For(new DefaultDeviceIdentity())}");
+        Console.WriteLine("the console must be reachable on this network: the seed comes over the cloud, the");
+        Console.WriteLine("registration POST does not.");
+
+        ConsoleRegistrationResult result = await pairing.PairAsync(
+            new AccountPairingRequest(consoleIp, account.AccountId, duid, family), CancellationToken.None);
+
+        if (!result.Succeeded || result.CredentialRecord is null)
+        {
+            Console.Error.WriteLine($"account pairing FAILED: {result.FailureReason}");
+            return 1;
+        }
+
+        Console.WriteLine($"account pairing SUCCEEDED — pairing record is {result.CredentialRecord.Length} bytes.");
+        Console.WriteLine("(the app stores this as the console's credential blob; it is deliberately not printed");
+        Console.WriteLine(" here, being per-console secret material.)");
         return 0;
     }
 
@@ -540,6 +623,123 @@ internal static class LabCommands
             Console.Error.WriteLine($"rendezvous failed: {ex.Message}");
             return 1;
         }
+    }
+
+    /// <summary>
+    /// sessions &lt;sessionId&gt; [&lt;sessionId&gt;...] | sessions leave &lt;sessionId&gt; [...]
+    /// Read back sessions by id and show who is in them; with <c>leave</c>, leave them instead.
+    ///
+    /// <para>
+    /// <b>Id-based, because the API gives no other option.</b> A bare
+    /// <c>GET /remotePlaySessions</c> is a 400 — the session-manager readback requires
+    /// <c>X-PSN-SESSION-MANAGER-SESSION-IDS</c>, so a caller can only ask about sessions it already knows the
+    /// ids of. There is no enumeration, which means a session whose id has been lost cannot be found or left
+    /// and simply expires on PSN's schedule. That is the argument for the client leaving its own sessions
+    /// rather than relying on cleanup after the fact.
+    /// </para>
+    /// </summary>
+    public static async Task<int> SessionsAsync(string[] args)
+    {
+        bool leave = args.Length > 1 && args[1].Equals("leave", StringComparison.OrdinalIgnoreCase);
+        string[] ids = [.. args.Skip(leave ? 2 : 1)];
+
+        if (ids.Length == 0)
+        {
+            Console.Error.WriteLine("usage: sessions <sessionId> [...]   |   sessions leave <sessionId> [...]");
+            Console.Error.WriteLine();
+            Console.Error.WriteLine("PSN has no session-list endpoint: a readback needs the ids up front");
+            Console.Error.WriteLine("(X-PSN-SESSION-MANAGER-SESSION-IDS), so there is nothing to enumerate.");
+            return 1;
+        }
+
+        var gateway = BuildGateway();
+        if (await gateway.RestoreAsync(CancellationToken.None) is null)
+        {
+            Console.Error.WriteLine("not signed in. Run `signin` first.");
+            return 1;
+        }
+
+        int failures = 0;
+        foreach (string id in ids)
+        {
+            try
+            {
+                if (leave)
+                {
+                    await gateway.Cloud.LeaveSessionAsync(id, CancellationToken.None);
+                    Console.WriteLine($"left {id}");
+                    continue;
+                }
+
+                IReadOnlyList<HalyardCloudSession> found =
+                    await gateway.Cloud.GetSessionAsync(id, CancellationToken.None);
+
+                if (found.Count == 0)
+                {
+                    Console.WriteLine($"{id}  (gone)");
+                    continue;
+                }
+
+                foreach (HalyardCloudSession session in found)
+                {
+                    string members = session.Members is { Length: > 0 } m
+                        ? string.Join(", ", m.Select(x => x.Platform))
+                        : "(none)";
+                    Console.WriteLine($"{session.SessionId}  members: {members}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"{id}: {ex.Message}");
+                failures++;
+            }
+        }
+
+        return failures == 0 ? 0 : 1;
+    }
+
+    /// <summary>
+    /// One push frame, reduced to what a diagnosis needs: its <c>dataType</c>, and for a membership change the
+    /// platform that joined or left (<c>PROSPERO</c> is the console; <c>REMOTE_PLAY</c> is us). Deliberately
+    /// does NOT print the frame — these carry account ids, device ids and the encrypted seed, and this output
+    /// gets pasted into notes.
+    /// </summary>
+    private static string Summarise(string frame)
+    {
+        string dataType = Match(frame, "\"dataType\":\"", "\"") ?? "?";
+        string shortType = dataType.Contains(':') ? dataType[(dataType.LastIndexOf("sys:", StringComparison.Ordinal) + 4)..] : dataType;
+
+        var platforms = new List<string>();
+        foreach (string candidate in new[] { "PROSPERO", "REMOTE_PLAY" })
+        {
+            if (frame.Contains($"\"platform\":\"{candidate}\"", StringComparison.Ordinal))
+            {
+                platforms.Add(candidate);
+            }
+        }
+
+        string who = platforms.Count > 0 ? $"  [{string.Join(",", platforms)}]" : string.Empty;
+        string action = Match(frame, "\\\"action\\\":\\\"", "\\") is { } a ? $"  action={a}" : string.Empty;
+
+        // The console's own reason, when it sends one. A TERMINATE with an error code is the console declining
+        // and saying why, which is the single most useful field in this whole stream.
+        string error = Match(frame, "\\\"error\\\":", ",") is { } e ? $"  error={e}" : string.Empty;
+        string reqId = Match(frame, "\\\"reqId\\\":", ",") is { } r ? $"  reqId={r}" : string.Empty;
+
+        return $"{shortType}{who}{action}{reqId}{error}  ({frame.Length} bytes)";
+    }
+
+    private static string? Match(string text, string prefix, string terminator)
+    {
+        int start = text.IndexOf(prefix, StringComparison.Ordinal);
+        if (start < 0)
+        {
+            return null;
+        }
+
+        start += prefix.Length;
+        int end = text.IndexOf(terminator, start, StringComparison.Ordinal);
+        return end < 0 ? null : text[start..end];
     }
 
     /// <summary>This machine's LAN address, as a default for the candidate we advertise.</summary>
