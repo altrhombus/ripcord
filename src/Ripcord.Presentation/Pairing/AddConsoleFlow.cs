@@ -51,6 +51,13 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
     /// </summary>
     private readonly IAccountSession? _account;
 
+    /// <summary>
+    /// Pairing through the account, when the graph composed one. Optional for the same reason
+    /// <see cref="_account"/> is: a build with no credential has only the code route, and must behave exactly as
+    /// it did before this existed.
+    /// </summary>
+    private readonly IAccountConsolePairing? _accountPairing;
+
     private AddConsoleStep _step = AddConsoleStep.Family;
     private ConsoleFamily _family = ConsoleFamily.Ps5;
     private string? _familyNote;
@@ -64,6 +71,20 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
     private string _typedAccountId = string.Empty;
     private string? _linkError;
     private PairedConsole? _paired;
+
+    /// <summary>
+    /// Whether this build can pair through an account, as answered once on arrival at the link step.
+    ///
+    /// <para>
+    /// Cached rather than asked from <c>Compose</c>, which runs on every state change: the answer reads files,
+    /// and the affordance has to be honest <em>before</em> the user commits to it — the same reasoning that puts
+    /// the code route's availability check ahead of its pairing panel rather than inside it.
+    /// </para>
+    /// </summary>
+    private AccountPairingAvailability? _accountPairingCapability;
+
+    /// <summary>Which route the in-flight pairing is taking, so the progress text can say the right thing.</summary>
+    private bool _accountRoute;
 
     /// <summary>
     /// The account id actually used for pairing: the signed-in account's when there is one, otherwise whatever
@@ -82,6 +103,19 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
     private CancellationTokenSource? _pairCts;
 
     /// <summary>
+    /// The account console-list lookup, owned separately from the scan that starts it.
+    ///
+    /// <para>
+    /// It used to ride the scan's token, and picking a console cancels the scan — so a cloud that had not
+    /// answered by the moment the user clicked never answered at all, and the console was saved with no cloud
+    /// id. That was invisible while the id only bought a remote wake. It is not invisible now: whether the
+    /// account already knows this console is what decides whether account pairing is offered, so a lookup
+    /// cancelled by the user's own click would present as the route silently not being available.
+    /// </para>
+    /// </summary>
+    private CancellationTokenSource? _cloudCts;
+
+    /// <summary>
     /// The account's consoles as the cloud reports them, fetched alongside the local scan when signed in.
     ///
     /// <para>
@@ -96,6 +130,18 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
 
     private const string ScanningMessage =
         "Make sure the console is switched on and on the same network as this PC.";
+
+    private const string NoAccountPairingMessage =
+        "This build can't pair through a PlayStation Network account.";
+
+    /// <summary>
+    /// Why a signed-in user still cannot take the account route. Says what to do about it, because the fix is
+    /// on the console rather than in this app: the account only lists a console once it has been signed in to
+    /// with that account.
+    /// </summary>
+    private const string NotInAccountListMessage =
+        "This console isn't in your account's console list, so pairing it needs the code from its screen. "
+        + "Sign in to the console with this account, then search again.";
 
     /// <summary>
     /// How long past the search window to keep waiting for the scanner to say it has finished. Enough that a
@@ -113,7 +159,8 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
         IUiDispatcher dispatcher,
         AddConsoleFlowOptions? options = null,
         Func<TimeSpan, CancellationToken, Task>? delay = null,
-        IAccountSession? account = null)
+        IAccountSession? account = null,
+        IAccountConsolePairing? accountPairing = null)
         : base(dispatcher)
     {
         _scanner = scanner ?? throw new ArgumentNullException(nameof(scanner));
@@ -122,6 +169,7 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
         _options = options ?? new AddConsoleFlowOptions();
         _delay = delay ?? Task.Delay;
         _account = account;
+        _accountPairing = accountPairing;
     }
 
     /// <summary>
@@ -177,10 +225,16 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
         }
 
         CancelScan();
+
+        // Resolved here rather than inside the closure: Mutate posts, so anything read in there is read later,
+        // and this one reads files. Same rule the scan's freshness check follows.
+        AccountPairingAvailability capability = ResolveAccountPairingCapability(_family);
+
         Mutate(() =>
         {
             _selected = null;
             _host = typed;
+            _accountPairingCapability = capability;
             EnterLink();
         });
     }
@@ -194,11 +248,18 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
         ArgumentNullException.ThrowIfNull(card);
 
         CancelScan();
+
+        // The card's own family, not _family: the console reports what it actually is, and that assignment
+        // happens inside the closure below — asking about the family the user guessed would answer for the
+        // wrong console.
+        AccountPairingAvailability capability = ResolveAccountPairingCapability(card.Family);
+
         Mutate(() =>
         {
             _selected = card;
             _family = card.Family;
             _host = card.Address;
+            _accountPairingCapability = capability;
             EnterLink();
         });
     }
@@ -224,7 +285,7 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
     });
 
     /// <summary>
-    /// Attempt the pairing exchange.
+    /// Attempt the pairing exchange with the code from the console's screen.
     ///
     /// <para>
     /// Availability is checked first, so a build that cannot pair reports on the step the user is still on
@@ -247,21 +308,76 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
 
         var registration = new ConsoleRegistration(_host, EffectiveAccountId, _passcode, _family);
 
+        await RunPairingAsync(
+            token => _registrar.RegisterAsync(registration, token),
+            _options.RegistrationTimeout,
+            accountRoute: false,
+            timeoutMessage: "The console didn't answer in time.").ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Attempt the pairing exchange through the signed-in account, with no code.
+    ///
+    /// <para>
+    /// The console's cloud id is resolved here and not by the seam, because it comes from the console list this
+    /// flow already fetched alongside the scan — the same value that is stored on the paired console for a
+    /// remote wake. Its absence is the one failure worth stating in full: a console that the account does not
+    /// list cannot take this route at all, and no amount of retrying changes that.
+    /// </para>
+    /// </summary>
+    public async Task PairWithAccountAsync()
+    {
+        if (_step != AddConsoleStep.Link || _accountPairing is null || !State.CanPairWithAccount)
+        {
+            return;
+        }
+
+        if (ResolveCloudDeviceId() is not { } cloudDeviceId)
+        {
+            Mutate(() => _linkError = NotInAccountListMessage);
+            return;
+        }
+
+        var request = new AccountPairingRequest(_host, EffectiveAccountId, cloudDeviceId, _family);
+
+        await RunPairingAsync(
+            token => _accountPairing.PairAsync(request, token),
+            _options.AccountPairingTimeout,
+            accountRoute: true,
+            timeoutMessage: "The console didn't confirm this PC through your account in time.")
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Run one pairing attempt, whichever route it takes.
+    ///
+    /// <para>
+    /// Shared because everything except the request itself is identical, and every part of it was a bug once:
+    /// cancelling a previous attempt, owning the timeout rather than borrowing one, checking on return that this
+    /// attempt is still the current one, and reporting nothing when it is not. A second copy of that dance for
+    /// the account route would be a second place for those to regress.
+    /// </para>
+    /// </summary>
+    private async Task RunPairingAsync(
+        Func<CancellationToken, Task<ConsoleRegistrationResult>> pair,
+        TimeSpan timeout,
+        bool accountRoute,
+        string timeoutMessage)
+    {
         CancelPairing();
-        var cts = new CancellationTokenSource(_options.RegistrationTimeout);
+        var cts = new CancellationTokenSource(timeout);
         _pairCts = cts;
 
         Mutate(() =>
         {
             _linkError = null;
+            _accountRoute = accountRoute;
             _step = AddConsoleStep.Pairing;
         });
 
         try
         {
-            ConsoleRegistrationResult result = await _registrar
-                .RegisterAsync(registration, cts.Token)
-                .ConfigureAwait(false);
+            ConsoleRegistrationResult result = await pair(cts.Token).ConfigureAwait(false);
 
             if (!ReferenceEquals(_pairCts, cts))
             {
@@ -287,7 +403,7 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
             // one, so leaving the flow does not push an error onto a state nobody is looking at.
             if (ReferenceEquals(_pairCts, cts))
             {
-                FailBackToLink("The console didn't answer in time.");
+                FailBackToLink(timeoutMessage);
             }
         }
         catch (Exception ex)
@@ -366,6 +482,13 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
     {
         CancelScan();
         CancelPairing();
+
+        // The one thing that does end the cloud lookup other than a newer one: the flow itself going away.
+        CancellationTokenSource? cloud = _cloudCts;
+        _cloudCts = null;
+        cloud?.Cancel();
+        cloud?.Dispose();
+
         await Task.CompletedTask.ConfigureAwait(false);
     }
 
@@ -386,6 +509,31 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
     {
         _step = AddConsoleStep.Link;
         _linkError = null;
+
+        // The route is decided by which button is pressed, and the last press must not colour this one's
+        // progress text after a failure sent the user back here.
+        _accountRoute = false;
+    }
+
+    /// <summary>
+    /// Ask whether this build can pair through an account. Never throws: a backend that fails while answering
+    /// leaves the code route perfectly usable, so the answer is "not this way", with the reason.
+    /// </summary>
+    private AccountPairingAvailability ResolveAccountPairingCapability(ConsoleFamily family)
+    {
+        if (_accountPairing is null)
+        {
+            return new AccountPairingAvailability(false, NoAccountPairingMessage);
+        }
+
+        try
+        {
+            return _accountPairing.CheckAvailability(family);
+        }
+        catch (Exception ex)
+        {
+            return new AccountPairingAvailability(false, $"Account pairing is unavailable: {ex.Message}");
+        }
     }
 
     private void FailBackToLink(string message) => Mutate(() =>
@@ -412,8 +560,9 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
         IDisposable? subscription = null;
 
         // Runs alongside the scan rather than before it: it must never delay results appearing, and a cloud
-        // that is slow or down must not stop a purely local pairing from working.
-        Task cloudLookup = FetchCloudConsolesAsync(cts);
+        // that is slow or down must not stop a purely local pairing from working. Not awaited anywhere and not
+        // tied to this scan's lifetime — see _cloudCts.
+        StartCloudConsoleLookup();
 
         try
         {
@@ -463,10 +612,6 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
         finally
         {
             subscription?.Dispose();
-
-            // Observed so a failure cannot surface as an unobserved task exception. Its result is optional by
-            // design, so there is nothing to do with it beyond not letting it escape.
-            await cloudLookup.ConfigureAwait(false);
 
             // "Is this scan still the current one?" is answered HERE, synchronously, and the answer is captured.
             // Mutate only runs inline when the caller is already on the UI thread; off it — which is where this
@@ -545,27 +690,55 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
     }
 
     /// <summary>
-    /// Fetch the account's console list, if signed in. Never throws and never reports: this is entirely
-    /// optional enrichment, and a user pairing a console on their own sofa should not see a cloud error.
+    /// Begin (or restart) the account console-list lookup. Fire-and-forget by design: nothing waits for it, and
+    /// <see cref="FetchCloudConsolesAsync"/> cannot fault, so there is no task worth holding.
     /// </summary>
-    private async Task FetchCloudConsolesAsync(CancellationTokenSource scan)
+    private void StartCloudConsoleLookup()
     {
         if (_account?.Current is null)
         {
             return;
         }
 
+        CancellationTokenSource? previous = _cloudCts;
+        var cts = new CancellationTokenSource();
+        _cloudCts = cts;
+
+        // Superseded, not merely ignored: a search-again means the previous answer is no longer the one being
+        // asked for, and the old request should stop rather than race the new one.
+        previous?.Cancel();
+        previous?.Dispose();
+
+        _ = FetchCloudConsolesAsync(cts);
+    }
+
+    /// <summary>
+    /// Fetch the account's console list, if signed in. Never throws and never reports: this is entirely
+    /// optional enrichment, and a user pairing a console on their own sofa should not see a cloud error.
+    /// </summary>
+    private async Task FetchCloudConsolesAsync(CancellationTokenSource own)
+    {
         try
         {
-            IReadOnlyList<CloudConsole> consoles = await _account
-                .ListConsolesAsync(scan.Token)
+            IReadOnlyList<CloudConsole> consoles = await _account!
+                .ListConsolesAsync(own.Token)
                 .ConfigureAwait(false);
 
             // Freshness judged here, synchronously, as the result arrives — the same rule the scan follows, and
-            // for the same reason: Mutate posts, so a check written inside the closure runs later.
-            if (IsCurrentScan(scan))
+            // for the same reason: Mutate posts, so a check written inside the closure runs later. The question
+            // is whether THIS lookup is still the current one, which is not the same as whether the scan that
+            // started it is: the user picking a console ends the scan and must not discard an answer that is
+            // still perfectly good.
+            //
+            // Applied THROUGH Mutate rather than assigned directly, which it was while nothing but BuildRecord
+            // read it. Two reasons, and the first is the layer's rule: this continuation is not on the
+            // dispatcher thread, and every field here is written on that thread alone. The second is visible —
+            // whether the account already knows this console decides whether account pairing is offered, so a
+            // list that lands while the user is on the link step has to recompose the state, or the button
+            // stays greyed out until something unrelated moves.
+            if (ReferenceEquals(_cloudCts, own))
             {
-                _cloudConsoles = consoles;
+                Mutate(() => _cloudConsoles = consoles);
             }
         }
         catch (Exception)
@@ -661,6 +834,14 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
     {
         string name = _selected?.DisplayName ?? _host;
 
+        // Offered whenever someone is signed in — and only then, because the route IS the account. A build with
+        // no credential never has a signed-in account, so it never reaches this and the code route is all it
+        // shows, exactly as before. Enabled is the stricter question: the constants have to be present and the
+        // account has to already know this console.
+        bool accountPairingOffered = _accountPairing is not null && AccountIdIsAutomatic;
+        bool accountCapable = _accountPairingCapability?.Available ?? false;
+        bool consoleKnownToAccount = ResolveCloudDeviceId() is not null;
+
         return new AddConsoleFlowState(
             Step: _step,
 
@@ -690,6 +871,19 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
             // validation error after the fact.
             CanPair: _passcode.Length >= _options.MinimumPasscodeLength && EffectiveAccountId.Length > 0,
 
+            AccountPairingOffered: accountPairingOffered,
+            CanPairWithAccount: accountPairingOffered && accountCapable && consoleKnownToAccount,
+
+            // Three different things to say, and the difference matters: one is an invitation, one is fixable on
+            // the console, and one is a property of the build the user cannot do anything about.
+            AccountPairingNote: !accountPairingOffered
+                ? string.Empty
+                : !accountCapable
+                    ? _accountPairingCapability?.Detail ?? NoAccountPairingMessage
+                    : consoleKnownToAccount
+                        ? $"No code needed — {name} confirms this PC through your account."
+                        : NotInAccountListMessage,
+
             // When signed in, the account id stops being something the user has to find. This is the whole point
             // of the account tier for someone who only ever plays on their own network.
             AccountIdIsAutomatic: AccountIdIsAutomatic,
@@ -697,7 +891,17 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
                 ? $"Using the account you're signed in as{FormatAccountName()}."
                 : "Sign in to your account and this fills itself in.",
             LinkError: _linkError,
-            PairingStatus: $"Registering with {name}…",
+            PairingStatus: _accountRoute
+                ? $"Waiting for {name} to confirm this PC through your account…"
+                : $"Registering with {name}…",
+
+            // The code route asks the user to leave something on screen; the account route asks nothing of them
+            // and takes longer. Telling someone to keep a code visible when they never entered one is the kind
+            // of leftover that makes people go and look for a code.
+            PairingHint: _accountRoute
+                ? "Nothing to do here — the console is confirming this PC with your account, which can take a "
+                  + "moment."
+                : "Keep the link code on screen until this finishes.",
 
             // Live everywhere except during the exchange. On the first step Back means "leave the flow", which is
             // a perfectly good thing to want, so it stays enabled rather than being a dead button on arrival.
