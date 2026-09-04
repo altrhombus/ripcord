@@ -114,17 +114,29 @@ public sealed class HalyardDatagramControlChannel : IAsyncDisposable
     private readonly HalyardControlAssociation _association;
     private readonly HalyardDatagramControlOptions _options;
 
+    /// <param name="peer">
+    /// The console endpoint this channel sends to. Needed as <em>data</em>, not read back off the socket: the
+    /// prelude's echo reflects the peer's own address and port to it, and a channel that cannot name them
+    /// sends an echo the console cannot validate the path from.
+    /// </param>
     public HalyardDatagramControlChannel(
         IHalyardDatagramTransport transport,
+        IPEndPoint peer,
         ReadOnlyMemory<byte> localHashedId,
         ReadOnlyMemory<byte> consoleHashedId,
         HalyardDatagramControlOptions? options = null,
         Func<int, byte[]>? random = null)
     {
+        ArgumentNullException.ThrowIfNull(peer);
+
         _transport = transport ?? throw new ArgumentNullException(nameof(transport));
         _options = options ?? new HalyardDatagramControlOptions();
         _association = new HalyardControlAssociation(
-            localHashedId, consoleHashedId, random ?? RandomNumberGenerator.GetBytes);
+            localHashedId,
+            consoleHashedId,
+            peer.Address.MapToIPv4().GetAddressBytes(),
+            (ushort)peer.Port,
+            random ?? RandomNumberGenerator.GetBytes);
     }
 
     /// <summary>How far the association has got — for a caller that wants to report progress.</summary>
@@ -156,7 +168,9 @@ public sealed class HalyardDatagramControlChannel : IAsyncDisposable
     /// </para>
     /// </summary>
     public Task BeginAsync(CancellationToken cancellationToken)
-        => ApplyAsync(_association.Open(), cancellationToken);
+    {
+        return ApplyAsync(_association.Open(), cancellationToken);
+    }
 
     /// <summary>
     /// Complete the prelude, in whichever role the peer leaves us.

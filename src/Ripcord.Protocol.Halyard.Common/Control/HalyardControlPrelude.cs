@@ -68,8 +68,10 @@ public readonly record struct HalyardControlPrelude
     /// </para>
     /// </param>
     /// <param name="Tail">
-    /// Eight trailing bytes, zero except in the client's <see cref="CookieEcho"/>, where six are populated.
-    /// **[X] unexplained.**
+    /// Eight trailing bytes: zero in an <see cref="Init"/>, and in a <see cref="CookieEcho"/> the sender's
+    /// <b>obfuscated view of the peer's own address and port</b> — see
+    /// <see cref="ReflectPeerEndpoint(ReadOnlySpan{byte}, ushort, uint)"/>, which is where the layout is
+    /// documented. Build it with that method rather than by hand.
     /// </param>
     public HalyardControlPrelude(
         uint Type,
@@ -120,6 +122,62 @@ public readonly record struct HalyardControlPrelude
 
     /// <summary>The <see cref="TagPair"/> with its two halves exchanged — the form the peer answers with.</summary>
     public uint SwappedTagPair => (TagPair >> 16) | (TagPair << 16);
+
+    /// <summary>The <see cref="Tail"/> length, and the six bytes of it that carry anything.</summary>
+    public const int TailLength = 8;
+
+    /// <summary>
+    /// Build a <see cref="CookieEcho"/>'s tail: the peer's address and port as <em>this</em> side observed
+    /// them, obfuscated by XOR with the tag pair.
+    ///
+    /// <code>
+    /// tail[0..4] = peer IPv4 (network order) XOR tagPair (big-endian)
+    /// tail[4..6] = peer port  (big-endian)   XOR the tag pair's high 16 bits
+    /// tail[6..8] = zero
+    /// </code>
+    ///
+    /// <para>
+    /// This is the same trick as STUN's <c>XOR-MAPPED-ADDRESS</c>, keyed on the tag pair instead of STUN's
+    /// magic cookie, and it does the same job: each side tells the other the address it is actually being
+    /// reached on, so a path that only appears to work is distinguishable from one that does. The tag pair used
+    /// as the key is the one in <em>the same datagram</em>, so the two roles use different keys and neither can
+    /// replay the other's tail.
+    /// </para>
+    ///
+    /// <para>
+    /// <b>Confirmed against every echo in every capture we hold, in both directions</b> — eleven client echoes
+    /// and eleven console echoes, LAN and WAN, exact match on all six bytes. It had been carried as
+    /// <c>[X] unexplained</c> and sent as zeroes, which is very likely why a live console completed the
+    /// prelude with Ripcord and then ignored every chunk it sent: it never received a valid confirmation of
+    /// its own address, so the path never validated and no connection object was created for us.
+    /// </para>
+    /// </summary>
+    /// <param name="peerAddress">The peer's IPv4 address, 4 bytes in network order.</param>
+    /// <param name="peerPort">The UDP port the peer is reached on.</param>
+    /// <param name="tagPair">The tag pair this datagram carries.</param>
+    public static byte[] ReflectPeerEndpoint(
+        ReadOnlySpan<byte> peerAddress, ushort peerPort, uint tagPair)
+    {
+        if (peerAddress.Length != 4)
+        {
+            throw new ArgumentException(
+                $"The tail reflects an IPv4 address, so it is 4 bytes; got {peerAddress.Length}.",
+                nameof(peerAddress));
+        }
+
+        byte[] tail = new byte[TailLength];
+        Span<byte> key = stackalloc byte[4];
+        BinaryPrimitives.WriteUInt32BigEndian(key, tagPair);
+
+        for (int i = 0; i < 4; i++)
+        {
+            tail[i] = (byte)(peerAddress[i] ^ key[i]);
+        }
+
+        BinaryPrimitives.WriteUInt16BigEndian(
+            tail.AsSpan(4), (ushort)(peerPort ^ (ushort)(tagPair >> 16)));
+        return tail;
+    }
 
     /// <summary>Serialize to the 88 bytes that go on the wire. Every unlisted byte is zero.</summary>
     public byte[] Serialize()

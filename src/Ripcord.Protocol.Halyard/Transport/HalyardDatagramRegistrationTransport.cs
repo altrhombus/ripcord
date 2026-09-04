@@ -63,7 +63,7 @@ public sealed class HalyardDatagramRegistrationTransport : IHalyardRegistrationT
     public async Task PrepareAsync(CancellationToken cancellationToken)
     {
         _channel ??= new HalyardDatagramControlChannel(
-            _transportFactory(_console), _localHashedId, _consoleHashedId, _options);
+            _transportFactory(_console), _console, _localHashedId, _consoleHashedId, _options);
 
         await _channel.BeginAsync(cancellationToken).ConfigureAwait(false);
     }
