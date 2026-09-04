@@ -25,9 +25,20 @@ namespace Ripcord.Protocol.Halyard.Discovery;
 /// searches first). We mirror the vendor's search → brief settle → POST sequence.
 /// </para>
 /// </summary>
-public sealed class HalyardRegistrationClient(IHalyardRegistrationCipher cipher) : IHalyardRegistration
+/// <param name="transport">
+/// How the request reaches the console. Defaults to the PIN route's TCP 9295; the account route supplies the
+/// UDP 9303 transport instead. Everything else in this class is identical either way — see
+/// <see cref="IHalyardRegistrationTransport"/>.
+/// </param>
+public sealed class HalyardRegistrationClient(
+    IHalyardRegistrationCipher cipher,
+    IHalyardRegistrationTransport? transport = null) : IHalyardRegistration
 {
     private readonly IHalyardRegistrationCipher _cipher = cipher;
+    private readonly IHalyardRegistrationTransport _transport = transport ?? new HalyardTcpRegistrationTransport();
+
+    public Task PrepareAsync(CancellationToken cancellationToken)
+        => _transport.PrepareAsync(cancellationToken);
 
     public async Task<HalyardRegistrationResult> RegisterAsync(
         HalyardRegistrationRequest request,
@@ -57,15 +68,25 @@ public sealed class HalyardRegistrationClient(IHalyardRegistrationCipher cipher)
         byte[] response;
         try
         {
-            response = await SendAsync(request, exchange.RequestBody, cancellationToken).ConfigureAwait(false);
+            response = await _transport
+                .ExchangeAsync(request, exchange.RequestBody, cancellationToken)
+                .ConfigureAwait(false);
         }
         catch (SocketException ex)
         {
             return Fail($"Could not reach the console for registration: {ex.Message}");
         }
 
-        if (!HalyardRegistrationMessage.TrySplitResponse(response, out int status, out byte[] respBody))
-            return Fail($"Registration was rejected by the console (HTTP {status}).");
+        if (!HalyardRegistrationMessage.TrySplitResponse(
+                response, out int status, out byte[] respBody, out string? reason))
+        {
+            // The console's own application reason when it gives one — see TrySplitResponse. Without it every
+            // rejection reads identically, which is how a wrong-transport 403 spent a session looking like a
+            // wrong-key failure.
+            return Fail(reason is null
+                ? $"Registration was rejected by the console (HTTP {status})."
+                : $"Registration was rejected by the console (HTTP {status}, RP-Application-Reason {reason}).");
+        }
 
         byte[] decrypted = _cipher.DecryptResponse(exchange, respBody);
         if (!HalyardRegistrationMessage.TryParsePairingRecord(decrypted, out HalyardPairingRecord? record))
@@ -74,31 +95,6 @@ public sealed class HalyardRegistrationClient(IHalyardRegistrationCipher cipher)
         return new HalyardRegistrationResult(true, null, record);
     }
 
-    private static async Task<byte[]> SendAsync(
-        HalyardRegistrationRequest request, byte[] body, CancellationToken cancellationToken)
-    {
-        using var client = new TcpClient();
-        await client.ConnectAsync(request.ConsoleHost, HalyardRegistrationMessage.Port, cancellationToken).ConfigureAwait(false);
-        // The console-confirmed HOST header is the CLIENT's own LAN address, known only after connect. A
-        // dual-stack socket reports it in IPv4-mapped-IPv6 form ("::ffff:1.2.3.4"); the console validates
-        // HOST as a plain dotted-quad and 403s otherwise, so normalise to IPv4.
-        IPAddress? local = (client.Client.LocalEndPoint as IPEndPoint)?.Address;
-        if (local is not null && local.IsIPv4MappedToIPv6)
-            local = local.MapToIPv4();
-        string clientIp = local?.ToString() ?? IPAddress.Loopback.ToString();
-
-        byte[] requestBytes = HalyardRegistrationMessage.BuildRequest(request, clientIp, body);
-        await using var stream = client.GetStream();
-        await stream.WriteAsync(requestBytes, cancellationToken).ConfigureAwait(false);
-        await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
-
-        using var buffer = new MemoryStream();
-        var chunk = new byte[8192];
-        int read;
-        while ((read = await stream.ReadAsync(chunk, cancellationToken).ConfigureAwait(false)) > 0)
-            buffer.Write(chunk, 0, read);
-        return buffer.ToArray();
-    }
 
     private static HalyardRegistrationResult Fail(string reason) => new(false, reason, null);
 }

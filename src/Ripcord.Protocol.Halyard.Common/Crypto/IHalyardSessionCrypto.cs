@@ -108,6 +108,13 @@ public interface IHalyardSessionCrypto
 /// <summary>First-time registration seam (obtaining a registration key). Stubbed until registration is derived.</summary>
 public interface IHalyardRegistration
 {
+    /// <summary>
+    /// Get whatever this route needs ready before the caller has finished negotiating. A no-op for the PIN
+    /// route; the account route opens its control association here, because the side that opens it is the side
+    /// that may open a connection on it and the console races us for that the moment our ACCEPT lands.
+    /// </summary>
+    Task PrepareAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
     Task<HalyardRegistrationResult> RegisterAsync(HalyardRegistrationRequest request, CancellationToken cancellationToken);
 }
 

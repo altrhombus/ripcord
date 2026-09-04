@@ -12,6 +12,16 @@ namespace Ripcord.Protocol.Halyard.Discovery;
 /// <param name="ConsoleDuid">The console's device unique id (from the cloud console list).</param>
 /// <param name="AccountId">The signed-in account id.</param>
 /// <param name="ClientDeviceId">This device's id (the RP-Did material).</param>
+/// <param name="LocalEndpoint">
+/// The address and UDP port our control transport will speak from, advertised as our <c>LOCAL</c> candidate.
+/// The vendor's OFFER lists the very port its 9303 traffic then originates from, so the console can correlate
+/// the peer that offered with the peer that opens a transport. Null omits the candidate.
+/// </param>
+/// <param name="LocalHashedId">
+/// Our own 20-byte signaling id. Published in our OFFER and re-asserted in the 9303 control prelude, which is
+/// why it belongs to the whole flow rather than to the transport alone — the two must agree. Empty falls back
+/// to the TCP registration path, i.e. the PIN route's transport, which an account console refuses.
+/// </param>
 public sealed record HalyardAccountPairingRequest(
     string ConsoleId,
     string ConsoleHost,
@@ -19,13 +29,43 @@ public sealed record HalyardAccountPairingRequest(
     string AccountId,
     ReadOnlyMemory<byte> ClientDeviceId,
     HalyardConsolePlatform Platform = HalyardConsolePlatform.Ps5,
-    string ClientType = "Windows");
+    string ClientType = "Windows",
+    ReadOnlyMemory<byte> LocalHashedId = default,
+    (string Address, int Port)? LocalEndpoint = null);
+
+/// <summary>
+/// What the account route's transport needs, known only once the console has offered.
+/// </summary>
+/// <param name="ConsoleOffer">The console's OFFER, in full — its candidates and the id it names itself by.</param>
+/// <param name="ConsoleHost">
+/// The address the caller already had for the console, from LAN discovery. Preferred over a candidate when
+/// the two agree, because it is the one we know is reachable from here.
+/// </param>
+/// <param name="LocalEndpoint">
+/// The address and UDP port our control transport will speak from, advertised as our <c>LOCAL</c> candidate.
+/// The vendor's OFFER lists the very port its 9303 traffic then originates from, so the console can correlate
+/// the peer that offered with the peer that opens a transport. Null omits the candidate.
+/// </param>
+/// <param name="LocalHashedId">Our own signaling id, as announced in our OFFER.</param>
+/// <param name="ConsoleHashedId">The console's, from its OFFER.</param>
+public sealed record HalyardAccountTransportContext(
+    HalyardSignalingMessage ConsoleOffer,
+    string ConsoleHost,
+    ReadOnlyMemory<byte> LocalHashedId,
+    ReadOnlyMemory<byte> ConsoleHashedId);
 
 /// <summary>Tunables for account pairing.</summary>
 public sealed class HalyardAccountPairingOptions
 {
     /// <summary>How long to wait for the console to publish <c>customData1</c> (the seed) after the command.</summary>
     public TimeSpan SeedTimeout { get; init; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>
+    /// How long to wait for the console's OFFER after it joins. Separate from the seed wait because they are
+    /// separate events — the console publishes the seed and offers its candidates independently, and either
+    /// can arrive first.
+    /// </summary>
+    public TimeSpan OfferTimeout { get; init; } = TimeSpan.FromSeconds(30);
 
     /// <summary>Optional progress sink for a harness (push connected, session, command, seed, register).</summary>
     public Action<string>? Log { get; init; }
@@ -55,14 +95,21 @@ public sealed class HalyardAccountPairingOptions
 /// to dispose; this type only runs and then stops the receive loop.
 /// </para>
 /// </summary>
+/// <param name="registration">
+/// Builds the registration client for the console once its OFFER has told us where it is and what it calls
+/// itself. A factory rather than a ready-made client because the account route's transport cannot be
+/// constructed until then: the 9303 prelude names both peers by their signaling ids, so the console's
+/// <c>localHashedId</c> — which arrives only in its OFFER — is an input to the transport, not to the request.
+/// </param>
 public sealed class HalyardAccountPairing(
     IHalyardSignalingClient signaling,
-    IHalyardRegistration registration,
+    Func<HalyardAccountTransportContext, IHalyardRegistration> registration,
     ReadOnlyMemory<byte> contextKey,
     HalyardAccountPairingOptions? options = null)
 {
     private readonly IHalyardSignalingClient _signaling = signaling ?? throw new ArgumentNullException(nameof(signaling));
-    private readonly IHalyardRegistration _registration = registration ?? throw new ArgumentNullException(nameof(registration));
+    private readonly Func<HalyardAccountTransportContext, IHalyardRegistration> _registration =
+        registration ?? throw new ArgumentNullException(nameof(registration));
     private readonly byte[] _contextKey = contextKey.Length == 16
         ? contextKey.ToArray()
         : throw new ArgumentException("Context key must be 16 bytes.", nameof(contextKey));
@@ -85,6 +132,10 @@ public sealed class HalyardAccountPairing(
 
         (byte[] data1, byte[] data2) = HalyardAccountSeedDelivery.GenerateEphemeralKeyMaterial();
 
+        // Set as soon as the session exists, so the teardown below can leave whatever we joined — including on
+        // the failure paths, which is where it matters.
+        string? joinedSessionId = null;
+
         using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 
         // Completed by the first customData1 that decrypts under our data1/data2. A foreign or malformed one is
@@ -101,7 +152,22 @@ public sealed class HalyardAccountPairing(
             catch (ArgumentException) { /* wrong length after decode — keep waiting */ }
         }
 
+        // The console's OFFER, which carries where it is and the id it will name itself by in the prelude.
+        var offer = new TaskCompletionSource<HalyardSignalingMessage>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+
+        void OnSignaling(HalyardSignalingMessage message)
+        {
+            // Its own OFFER, not an answer to ours and not one of the RESULTs that follow: the exchange is
+            // symmetric, so both sides OFFER and the console's is the one carrying its candidates.
+            if (message.Action == "OFFER" && message.LocalHashedId is { Length: > 0 })
+            {
+                offer.TrySetResult(message);
+            }
+        }
+
         pushChannel.CustomData1Received += OnCustomData1;
+        pushChannel.SignalingReceived += OnSignaling;
 
         // Start receiving before triggering the console, so a customData1 published the instant it joins is not
         // missed. The loop runs until lifetime is cancelled or the peer closes.
@@ -118,6 +184,7 @@ public sealed class HalyardAccountPairing(
             string sessionId = await _signaling
                 .CreateSessionAsync(Guid.NewGuid().ToString(), cancellationToken)
                 .ConfigureAwait(false);
+            joinedSessionId = sessionId;
             Log($"session created: {sessionId}");
 
             await _signaling.SendConnectCommandAsync(
@@ -139,6 +206,78 @@ public sealed class HalyardAccountPairing(
 
             Log("registration seed recovered from customData1");
 
+            HalyardSignalingMessage consoleOffer;
+            try
+            {
+                consoleOffer = await offer.Task.WaitAsync(_options.OfferTimeout, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (TimeoutException)
+            {
+                return new HalyardRegistrationResult(false,
+                    "The console never offered its candidates, so there is no address to register against.", null);
+            }
+
+            Log($"console OFFER received ({consoleOffer.Candidates.Count} candidates)");
+
+            var context = new HalyardAccountTransportContext(
+                consoleOffer, request.ConsoleHost, request.LocalHashedId, consoleOffer.LocalHashedId!);
+            IHalyardRegistration registration = _registration(context);
+
+
+            // Announce ourselves — now, and not a moment earlier. A sessionMessage may only be sent to a
+            // member, so this 404s until the console has joined, and the console's OFFER is exactly what tells
+            // us it has. (Observed as a live 404 when this was sent right after the command.) It must still
+            // precede the prelude: the console has to have seen the id and port we are about to speak from.
+            if (!request.LocalHashedId.IsEmpty)
+            {
+                // The negotiation is a real offer/accept, not two independent advertisements — the capture
+                // shows every message acknowledged by a RESULT carrying the sender's reqId, and the client
+                // answering the console's OFFER with an ACCEPT that names the console's stream id. Stopping
+                // after our own OFFER leaves the console waiting, and it never opens its side: observed live
+                // as five unanswered preludes with the console silent.
+                await _signaling.SendResultAsync(
+                    sessionId, request.AccountId, request.ConsoleDuid, consoleOffer.ReqId, cancellationToken)
+                    .ConfigureAwait(false);
+
+                IReadOnlyList<HalyardCandidate> ours = request.LocalEndpoint is { } advertised
+                    ? [new HalyardCandidate("LOCAL", advertised.Address, advertised.Port)]
+                    : [];
+
+                await _signaling.SendOfferAsync(
+                    sessionId, request.AccountId, request.ConsoleDuid, ours, cancellationToken,
+                    request.LocalHashedId).ConfigureAwait(false);
+
+                // Between the OFFER and the ACCEPT, and this placement is the protocol's, not a preference.
+                // The console cannot answer a prelude until the OFFER above has told it our candidate, and it
+                // opens an association of its own the instant the ACCEPT below arrives — and the side that
+                // opened the association is the side that may open a connection on it. Four live runs lost
+                // that race and ended with a healthy association nobody could use.
+                try
+                {
+                    await registration.PrepareAsync(cancellationToken).ConfigureAwait(false);
+                    Log("control association opened");
+                }
+                catch (Exception ex)
+                {
+                    Log($"could not open the control association: {ex.Message}");
+                }
+
+                // The ACCEPT describes the selected pair, so it needs both ends. Without a local endpoint
+                // there is no pair to name and the negotiation stops at the OFFER.
+                HalyardSignalingCandidate? path = PreferredCandidate(consoleOffer, request.ConsoleHost);
+                if (path is not null && request.LocalEndpoint is { } local)
+                {
+                    await _signaling.SendAcceptAsync(
+                        sessionId, request.AccountId, request.ConsoleDuid,
+                        reqId: OurAcceptReqId, sid: OurStreamId, peerSid: consoleOffer.Sid,
+                        new HalyardCandidate(path.Type, path.Address, path.Port),
+                        local.Address, local.Port, cancellationToken).ConfigureAwait(false);
+                }
+
+                Log($"negotiation answered (RESULT {consoleOffer.ReqId}, OFFER, ACCEPT peerSid={consoleOffer.Sid})");
+            }
+
             var registrationRequest = new HalyardRegistrationRequest(
                 request.ConsoleId, request.ConsoleHost, request.AccountId,
                 Passcode: string.Empty, request.ClientDeviceId, request.Platform)
@@ -146,7 +285,7 @@ public sealed class HalyardAccountPairing(
                 AccountSeed = recoveredSeed,
             };
 
-            HalyardRegistrationResult result = await _registration
+            HalyardRegistrationResult result = await registration
                 .RegisterAsync(registrationRequest, cancellationToken)
                 .ConfigureAwait(false);
             Log(result.Succeeded ? "registered" : $"registration failed: {result.FailureReason}");
@@ -155,12 +294,76 @@ public sealed class HalyardAccountPairing(
         finally
         {
             pushChannel.CustomData1Received -= OnCustomData1;
+            pushChannel.SignalingReceived -= OnSignaling;
+
+            // Leave the session we created, always — success or failure, and before the push channel goes down
+            // so the leave is announced on a live connection like the vendor's is (its last frame is a
+            // members:deleted for itself).
+            //
+            // This is not tidiness. Creating a session and walking away leaves the account holding a member in
+            // a session nobody is in, one per attempt, and pairing is a thing users retry. A console that finds
+            // the account already sitting in stale sessions is a plausible reason for it to refuse a new one —
+            // which is exactly the failure being chased when this was found missing.
+            if (joinedSessionId is not null)
+            {
+                await LeaveQuietlyAsync(joinedSessionId).ConfigureAwait(false);
+            }
+
             await lifetime.CancelAsync().ConfigureAwait(false);
             await SafeAwaitAsync(pushLoop).ConfigureAwait(false);
         }
     }
 
+    /// <summary>
+    /// Our stream id, and the request id of our ACCEPT. Both are small constants because we open exactly one
+    /// connection per pairing — the captured client uses 1 and 2 for its first, and only counts up when it
+    /// negotiates a second stream for the media port.
+    /// </summary>
+    private const int OurStreamId = 1;
+
+    private const int OurAcceptReqId = 2;
+
+    /// <summary>
+    /// Which of the console's candidates to accept: the one naming the address we already reached it on, so a
+    /// same-network pairing keeps its traffic on the LAN rather than going out to the reflexive address and
+    /// back. Falls back to the first offered.
+    /// </summary>
+    private static HalyardSignalingCandidate? PreferredCandidate(
+        HalyardSignalingMessage offer, string consoleHost)
+    {
+        foreach (HalyardSignalingCandidate candidate in offer.Candidates)
+        {
+            if (string.Equals(candidate.Address, consoleHost, StringComparison.Ordinal))
+            {
+                return candidate;
+            }
+        }
+
+        return offer.Candidates.Count > 0 ? offer.Candidates[0] : null;
+    }
+
     private void Log(string message) => _options.Log?.Invoke(message);
+
+    /// <summary>
+    /// Leave the session without letting the attempt's outcome depend on it. Uses a fresh token rather than the
+    /// caller's: teardown runs on the cancellation path too, and a leave that is skipped because the operation
+    /// was cancelled is precisely the leak this exists to prevent.
+    /// </summary>
+    private async Task LeaveQuietlyAsync(string sessionId)
+    {
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            await _signaling.LeaveSessionAsync(sessionId, timeout.Token).ConfigureAwait(false);
+            Log($"left session {sessionId}");
+        }
+        catch (Exception ex)
+        {
+            // Reported, not thrown: the pairing result is about the pairing, and a session PSN will expire on
+            // its own must not turn a success into a failure.
+            Log($"could not leave session {sessionId}: {ex.Message}");
+        }
+    }
 
     private static async Task SafeAwaitAsync(Task task)
     {
