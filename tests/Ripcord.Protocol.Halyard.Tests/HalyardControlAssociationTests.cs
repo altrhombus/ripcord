@@ -356,6 +356,70 @@ public class HalyardControlAssociationTests
         Assert.Contains("never opened", unhandled.Reason);
     }
 
+    [Fact]
+    public void OpenConnection_AddressedByPeerAddressOnly_SendsAHelloWithNoPortWords()
+    {
+        HalyardControlAssociation association = Established();
+
+        byte[] wire = Assert.Single(
+            association.OpenConnection(HalyardControlAddressing.PeerAddressOnly).Send);
+
+        HalyardControlChunk hello = ParseChunk(wire);
+        Assert.Equal(1, hello.WordCount);
+        Assert.Equal(HalyardControlChunkType.Hello, hello.Type);
+
+        // Only the addressing changes: the body is the same size as the paired shape's, and the whole chunk
+        // is exactly the two dropped port words shorter. A console that answers this one is answering the
+        // same hello, not a different message.
+        byte[] pairedWire = Assert.Single(
+            Established().OpenConnection(HalyardControlAddressing.PortPair).Send);
+        Assert.Equal(ParseChunk(pairedWire).Body.Length, hello.Body.Length);
+        Assert.Equal(pairedWire.Length - 4, wire.Length);
+    }
+
+    [Fact]
+    public void ReopenConnection_RepeatsTheAddressingOfTheHelloItRetransmits()
+    {
+        // A retransmission addressed differently from the hello it repeats is a second connection attempt
+        // aimed at a different lookup, which is not what a retransmission is for.
+        HalyardControlAssociation association = Established();
+        byte[] first = Assert.Single(
+            association.OpenConnection(HalyardControlAddressing.PeerAddressOnly).Send);
+
+        byte[] again = Assert.Single(association.ReopenConnection().Send);
+
+        Assert.Equal(first, again);
+    }
+
+    [Fact]
+    public void AsConnectionInitiator_TheCookieEchoRepeatsTheHellosAddressing()
+    {
+        HalyardControlAssociation association = Established();
+        association.OpenConnection(HalyardControlAddressing.PeerAddressOnly);
+
+        HalyardControlAction action = association.OnDatagram(
+            HalyardControlChunkCodec.Encode(HalyardControlChunkType.Cookie, 0x00, new byte[42]));
+
+        HalyardControlChunk echo = ParseChunk(Assert.Single(action.Send));
+        Assert.Equal(HalyardControlChunkType.HelloEcho, echo.Type);
+        Assert.Equal(1, echo.WordCount);
+    }
+
+    [Fact]
+    public void AsConnectionResponder_RepliesMirrorHowThePeerAddressedUs()
+    {
+        // Answering in a shape the peer did not use would aim our reply at a different lookup than the one
+        // its hello arrived through.
+        HalyardControlAssociation association = Established();
+
+        HalyardControlAction action = association.OnDatagram(HalyardControlChunkCodec.Encode(
+            HalyardControlChunkType.Hello, 0x30, new byte[14], wordCount: 1));
+
+        HalyardControlChunk cookie = ParseChunk(Assert.Single(action.Send));
+        Assert.Equal(HalyardControlChunkType.Cookie, cookie.Type);
+        Assert.Equal(1, cookie.WordCount);
+    }
+
     // ---- helpers ---------------------------------------------------------------------------------
 
     private static HalyardControlAssociation Connected()

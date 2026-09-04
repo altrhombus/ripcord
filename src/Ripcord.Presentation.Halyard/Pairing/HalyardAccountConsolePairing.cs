@@ -179,7 +179,11 @@ public sealed class HalyardAccountConsolePairing : IAccountConsolePairing
                         ConsoleEndpoint(context),
                         context.LocalHashedId,
                         context.ConsoleHashedId,
-                        new HalyardDatagramControlOptions { Log = _options.Log },
+                        new HalyardDatagramControlOptions
+                        {
+                            Log = _options.Log,
+                            HelloAddressing = _options.HelloAddressing,
+                        },
                         endpoint => new HalyardUdpDatagramTransport(endpoint, localPort))),
                 resolved.ContextKey,
                 _options);

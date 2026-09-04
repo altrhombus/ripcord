@@ -167,17 +167,37 @@ public static class HalyardControlChunkCodec
     private const ushort LengthMask = 0x07FF;
 
     /// <summary>
-    /// How many bytes <paramref name="bodyLength"/> needs on the wire, as the paired shape we always send.
+    /// How many bytes <paramref name="bodyLength"/> needs on the wire at the given word count.
     /// </summary>
-    public static int ChunkLength(int bodyLength) => PairedPrefixLength + TypeAndFlagsLength + bodyLength;
+    public static int ChunkLength(int bodyLength, byte wordCount = PairedWordCount)
+        => (wordCount * 2) + TypeAndFlagsLength + bodyLength;
 
     /// <summary>
-    /// Write one chunk in the paired shape. Returns the number of bytes written.
+    /// Write one chunk. Returns the number of bytes written.
+    ///
+    /// <para>
+    /// <paramref name="wordCount"/> selects the shape, and this codec can write all three because it can read
+    /// all three — an encoder that only emitted the shape we happen to have captured would make the shorter
+    /// ones untestable against a real console. Every chunk in every capture we hold is
+    /// <see cref="PairedWordCount"/>.
+    /// </para>
     /// </summary>
     public static int Write(
-        Span<byte> destination, HalyardControlChunkType type, byte flags, ReadOnlySpan<byte> body)
+        Span<byte> destination,
+        HalyardControlChunkType type,
+        byte flags,
+        ReadOnlySpan<byte> body,
+        byte wordCount = PairedWordCount)
     {
-        int total = ChunkLength(body.Length);
+        if (wordCount is < 1 or > PairedWordCount)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(wordCount),
+                wordCount,
+                $"The word count is a 2-bit field and zero is malformed, so it is 1 to {PairedWordCount}.");
+        }
+
+        int total = ChunkLength(body.Length, wordCount);
         if (total > MaxChunkLength)
         {
             throw new ArgumentException(
@@ -193,20 +213,31 @@ public static class HalyardControlChunkCodec
         }
 
         BinaryPrimitives.WriteUInt16BigEndian(
-            destination, (ushort)((PairedWordCount << WordCountShift) | (ushort)total));
-        BinaryPrimitives.WriteUInt16BigEndian(destination[2..], ControlPort);
-        BinaryPrimitives.WriteUInt16BigEndian(destination[4..], ControlPort);
-        destination[6] = (byte)type;
-        destination[7] = flags;
-        body.CopyTo(destination[(PairedPrefixLength + TypeAndFlagsLength)..]);
+            destination, (ushort)((wordCount << WordCountShift) | (ushort)total));
+
+        // One port word per prefix word after the header. The receiver demultiplexes on the last of them, and
+        // when there are none it matches on the peer address record instead.
+        int offset = 2;
+        for (int word = 1; word < wordCount; word++, offset += 2)
+        {
+            BinaryPrimitives.WriteUInt16BigEndian(destination[offset..], ControlPort);
+        }
+
+        destination[offset] = (byte)type;
+        destination[offset + 1] = flags;
+        body.CopyTo(destination[(offset + TypeAndFlagsLength)..]);
         return total;
     }
 
     /// <summary>Allocate and write one chunk — for callers that are not managing a buffer.</summary>
-    public static byte[] Encode(HalyardControlChunkType type, byte flags, ReadOnlySpan<byte> body)
+    public static byte[] Encode(
+        HalyardControlChunkType type,
+        byte flags,
+        ReadOnlySpan<byte> body,
+        byte wordCount = PairedWordCount)
     {
-        byte[] buffer = new byte[ChunkLength(body.Length)];
-        Write(buffer, type, flags, body);
+        byte[] buffer = new byte[ChunkLength(body.Length, wordCount)];
+        Write(buffer, type, flags, body, wordCount);
         return buffer;
     }
 

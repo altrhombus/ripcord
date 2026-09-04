@@ -1,5 +1,6 @@
 using Ripcord.Cloud.Halyard;
 using Ripcord.Cloud.Halyard.Rendezvous;
+using Ripcord.Protocol.Halyard.Common.Control;
 using Ripcord.Protocol.Halyard.Common.Crypto;
 using Ripcord.Protocol.Halyard.Common.Crypto.V1;
 
@@ -66,6 +67,13 @@ public sealed class HalyardAccountPairingOptions
     /// can arrive first.
     /// </summary>
     public TimeSpan OfferTimeout { get; init; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>
+    /// How the registration transport's hello addresses the console — passed straight through to
+    /// <c>HalyardDatagramControlOptions.HelloAddressing</c>. Here because the harness needs to vary it, and
+    /// this is the options object the harness already builds.
+    /// </summary>
+    public HalyardControlAddressing HelloAddressing { get; init; } = HalyardControlAddressing.PortPair;
 
     /// <summary>Optional progress sink for a harness (push connected, session, command, seed, register).</summary>
     public Action<string>? Log { get; init; }
