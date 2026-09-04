@@ -33,6 +33,31 @@ public class HalyardControlChunkTests
     }
 
     [Fact]
+    public void Chunk_PrefixBitsAreAFieldToBeRead_NotAMarkerToBeRequired()
+    {
+        // This codec used to reject any chunk whose top two bits were not both set, on the reading that they
+        // were a fixed marker. The vendor's own parser splits that byte as (value >> 6) and (value & 0x3F) —
+        // a 2-bit field beside the length's high 6 bits — so a different value is well-formed and refusing it
+        // would silently drop traffic the peer believes it sent. Every capture we hold carries 0b11.
+        byte[] wire = HalyardControlChunkCodec.Encode(HalyardControlChunkType.Data, 0x30, [1, 2]);
+        wire[0] = (byte)(wire[0] & 0x3F);   // prefix 0b00, length untouched
+
+        Assert.True(HalyardControlChunkCodec.TryRead(wire, out HalyardControlChunk chunk, out int consumed));
+        Assert.Equal(0, chunk.Prefix);
+        Assert.Equal(wire.Length, consumed);
+        Assert.Equal(new byte[] { 1, 2 }, chunk.Body.ToArray());
+    }
+
+    [Fact]
+    public void Chunk_WritesTheObservedPrefix()
+    {
+        byte[] wire = HalyardControlChunkCodec.Encode(HalyardControlChunkType.Data, 0x30, [1, 2]);
+
+        Assert.True(HalyardControlChunkCodec.TryRead(wire, out HalyardControlChunk chunk, out _));
+        Assert.Equal(HalyardControlChunkCodec.ObservedPrefix, chunk.Prefix);
+    }
+
+    [Fact]
     public void Chunk_LengthFieldCountsItsOwnPrefix()
     {
         // The property that makes concatenation work: the length is the whole chunk, not the payload. Reading
@@ -82,7 +107,6 @@ public class HalyardControlChunkTests
     }
 
     [Theory]
-    [InlineData(new byte[] { 0x00, 0x08, 0x24, 0x4F, 0x24, 0x4F, 0x02, 0x30 })]   // length bits clear
     [InlineData(new byte[] { 0xC0, 0x08, 0x00, 0x00, 0x24, 0x4F, 0x02, 0x30 })]   // first magic wrong
     [InlineData(new byte[] { 0xC0, 0x08, 0x24, 0x4F, 0x00, 0x00, 0x02, 0x30 })]   // second magic wrong
     [InlineData(new byte[] { 0xC0, 0x04, 0x24, 0x4F, 0x24, 0x4F, 0x02, 0x30 })]   // length undercuts the prefix
