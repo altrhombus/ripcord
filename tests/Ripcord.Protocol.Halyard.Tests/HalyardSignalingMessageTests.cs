@@ -125,6 +125,49 @@ public class HalyardSignalingMessageTests
         Assert.Equal(1029, stun.Port);
     }
 
+    [Fact]
+    public void ConsoleAccept_WithTheVendorsMalformedLocalPeerAddr_IsStillParsed()
+    {
+        // The console's ACCEPT carries `"localPeerAddr":,` -- a key with no value, which is not valid JSON.
+        // JsonDocument threw on it, TryParse caught JsonException and returned null, and the ACCEPT was
+        // discarded as "not a signaling frame". So it was never acknowledged, the console waited for a RESULT
+        // that never came, and every live account pairing ended in its TERMINATE. Ripcord writes this exact
+        // malformation itself when it sends an ACCEPT, so it has to be able to read it back.
+        string accept = Frame("PROSPERO",
+            "{\\\"action\\\":\\\"ACCEPT\\\",\\\"reqId\\\":14,\\\"error\\\":0,\\\"connRequest\\\":{\\\"sid\\\":24043,"
+            + "\\\"peerSid\\\":1,\\\"skey\\\":\\\"3DlNoSVIIrMt0LZJUsljaQ==\\\",\\\"natType\\\":0,\\\"candidate\\\":["
+            + "{\\\"type\\\":\\\"LOCAL\\\",\\\"addr\\\":\\\"198.51.100.7\\\",\\\"mappedAddr\\\":\\\"198.51.100.9\\\","
+            + "\\\"port\\\":60473,\\\"mappedPort\\\":9303}],\\\"defaultRouteMacAddr\\\":\\\"\\\","
+            + "\\\"localPeerAddr\\\":,\\\"localHashedId\\\":\\\"\\\"}}");
+
+        HalyardSignalingMessage msg = HalyardSignalingMessage.TryParse(accept)!;
+
+        Assert.NotNull(msg);
+        Assert.Equal("ACCEPT", msg.Action);
+        Assert.Equal(14, msg.ReqId);
+        Assert.Equal(24043, msg.Sid);
+        Assert.Equal(1, msg.PeerSid);
+        Assert.Equal(60473, Assert.Single(msg.Candidates).Port);
+    }
+
+    [Fact]
+    public void ConsoleAccept_ExpectsAResult_AndAnAckDoesNot()
+    {
+        // Five mitmproxy captures of the vendor client show it acknowledging the console's ACCEPT every time,
+        // and never acknowledging a RESULT. Ripcord acked only the OFFER.
+        string accept = Frame("PROSPERO",
+            "{\\\"action\\\":\\\"ACCEPT\\\",\\\"reqId\\\":14,\\\"error\\\":0,\\\"connRequest\\\":{\\\"sid\\\":24043,"
+            + "\\\"peerSid\\\":1,\\\"localPeerAddr\\\":,\\\"localHashedId\\\":\\\"\\\"}}");
+        string result = Frame("PROSPERO",
+            "{\\\"action\\\":\\\"RESULT\\\",\\\"reqId\\\":2,\\\"error\\\":0,\\\"connRequest\\\":{}}");
+        string ourOwn = Frame("REMOTE_PLAY",
+            "{\\\"action\\\":\\\"ACCEPT\\\",\\\"reqId\\\":2,\\\"error\\\":0,\\\"connRequest\\\":{}}");
+
+        Assert.True(HalyardSignalingMessage.TryParse(accept)!.ExpectsResult);
+        Assert.False(HalyardSignalingMessage.TryParse(result)!.ExpectsResult);
+        Assert.False(HalyardSignalingMessage.TryParse(ourOwn)!.ExpectsResult);
+    }
+
     [Theory]
     [InlineData("")]
     [InlineData("not json")]

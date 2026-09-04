@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace Ripcord.Cloud.Halyard;
 
@@ -62,6 +63,26 @@ public sealed record HalyardSignalingMessage(
     public bool IsConsoleOffer =>
         string.Equals(Action, "OFFER", StringComparison.Ordinal)
         && Candidates.Count > 0
+        && !string.Equals(FromPlatform, "REMOTE_PLAY", StringComparison.Ordinal);
+
+    /// <summary>
+    /// True when the peer sent this and it expects a <c>RESULT</c> carrying its <c>reqId</c>.
+    ///
+    /// <para>
+    /// Both an <c>OFFER</c> and an <c>ACCEPT</c> qualify, and the <c>ACCEPT</c> matters: five separate
+    /// mitmproxy captures of the vendor client (<c>ps-rendezvous/cap71, cap72, cap96, cap99, cap107</c>) show
+    /// it acknowledging the console's <c>ACCEPT</c> every time, and Ripcord acknowledged only the
+    /// <c>OFFER</c> — after which the console sent its <c>ACCEPT</c>, waited, and gave up with a
+    /// <c>TERMINATE</c> in every live run.
+    /// </para>
+    ///
+    /// <para>
+    /// A <c>RESULT</c> is not itself acknowledged; nothing in any capture acks an ack.
+    /// </para>
+    /// </summary>
+    public bool ExpectsResult =>
+        (string.Equals(Action, "OFFER", StringComparison.Ordinal)
+            || string.Equals(Action, "ACCEPT", StringComparison.Ordinal))
         && !string.Equals(FromPlatform, "REMOTE_PLAY", StringComparison.Ordinal);
 
     /// <summary>
@@ -136,9 +157,33 @@ public sealed record HalyardSignalingMessage(
         return marker < 0 ? null : payload[(marker + "body=".Length)..].TrimStart();
     }
 
+    /// <summary>
+    /// The vendor emits <c>"localPeerAddr":,</c> — a key with no value — in an <c>ACCEPT</c>, which is not
+    /// valid JSON. Repaired to <c>null</c> before parsing.
+    ///
+    /// <para>
+    /// <b>This was a real bug for the whole life of the account route, and a nasty one</b> because it was
+    /// silent: <see cref="JsonDocument"/> threw, <see cref="TryParse"/> caught <see cref="JsonException"/> and
+    /// returned null, and the console's ACCEPT was dropped as "not a signaling frame". So we never saw it and
+    /// never acknowledged it, the console waited for a <c>RESULT</c> that never came, and every live pairing
+    /// ended in the console's <c>TERMINATE</c>.
+    /// </para>
+    ///
+    /// <para>
+    /// Ripcord already reproduces this exact malformation when it <em>sends</em> an ACCEPT, deliberately,
+    /// because that is what the vendor puts on the wire. Writing bytes we could not read back is the kind of
+    /// asymmetry worth looking for elsewhere.
+    /// </para>
+    /// </summary>
+    private static string RepairVendorJson(string body)
+        => MalformedLocalPeerAddr.Replace(body, @"""localPeerAddr"":null,");
+
+    private static readonly Regex MalformedLocalPeerAddr =
+        new(@"""localPeerAddr""\s*:\s*,", RegexOptions.Compiled);
+
     private static HalyardSignalingMessage? ParseConnRequest(string inner, string? fromPlatform)
     {
-        using var doc = JsonDocument.Parse(inner);
+        using var doc = JsonDocument.Parse(RepairVendorJson(inner));
         JsonElement root = doc.RootElement;
 
         if (!root.TryGetProperty("action", out JsonElement actionElement))

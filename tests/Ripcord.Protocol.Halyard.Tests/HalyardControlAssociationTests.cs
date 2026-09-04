@@ -220,7 +220,7 @@ public class HalyardControlAssociationTests
     }
 
     [Fact]
-    public void AsConnectionInitiator_TheCookieComesBackAppendedToTheHello()
+    public void AsConnectionInitiator_TheCookiesEchoableRegionComesBackAppendedToTheHello()
     {
         HalyardControlAssociation association = Established();
         HalyardControlChunk hello = ParseChunk(Assert.Single(association.OpenConnection().Send));
@@ -232,7 +232,10 @@ public class HalyardControlAssociationTests
         HalyardControlChunk echo = ParseChunk(Assert.Single(action.Send));
         Assert.Equal(HalyardControlChunkType.HelloEcho, echo.Type);
         Assert.Equal(hello.Body.ToArray(), echo.Body[..hello.Body.Length].ToArray());
-        Assert.Equal(cookieBody, echo.Body[hello.Body.Length..].ToArray());
+        // The cookie's first 8 bytes are a fixed header the peer does not want back — the captured client
+        // answers a 42-byte cookie body with 34 bytes, and a console that cookies us rejects an echo that
+        // returns all 42. This assertion used to expect the whole body.
+        Assert.Equal(cookieBody[8..], echo.Body[hello.Body.Length..].ToArray());
     }
 
     [Fact]
