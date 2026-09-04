@@ -27,10 +27,14 @@ public sealed record AddConsoleFlowState(
     string LinkHeading,
     string ConsoleStepsText,
     bool CanPair,
+    bool AccountPairingOffered,
+    bool CanPairWithAccount,
+    string AccountPairingNote,
     bool AccountIdIsAutomatic,
     string AccountIdNote,
     string? LinkError,
     string PairingStatus,
+    string PairingHint,
     bool CanGoBack,
     string SuggestedName,
     string DoneSubtext)
@@ -53,6 +57,14 @@ public sealed class AddConsoleFlowOptions
 
     /// <summary>How long to give the console to answer a registration request before giving up.</summary>
     public TimeSpan RegistrationTimeout { get; init; } = TimeSpan.FromSeconds(20);
+
+    /// <summary>
+    /// How long to give the account route, which is a longer exchange than the code route by construction: a
+    /// WebSocket upgrade, a session create, a command to the console, the console generating and publishing the
+    /// seed, and only then the same registration POST the code route makes. Generous rather than tight, because
+    /// the console's own step is the slow one and giving up early costs the user another walk through the flow.
+    /// </summary>
+    public TimeSpan AccountPairingTimeout { get; init; } = TimeSpan.FromSeconds(75);
 
     /// <summary>The shortest link code that is worth sending. Consoles show eight digits.</summary>
     public int MinimumPasscodeLength { get; init; } = 8;

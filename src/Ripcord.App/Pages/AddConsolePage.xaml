@@ -278,6 +278,15 @@
                         Text="Link this PC to your console"
                         TextWrapping="Wrap" />
 
+                    <!--  Shown only to a signed-in user. Above the code instructions deliberately: when this
+                          route is available it is the one to take, and a user who reads the console steps first
+                          has already got up and walked over there.  -->
+                    <InfoBar
+                        x:Name="AccountPairingNote"
+                        IsClosable="False"
+                        IsOpen="False"
+                        Visibility="Collapsed" />
+
                     <Border Padding="16,14" Style="{StaticResource RipcordCardStyle}">
                         <StackPanel Spacing="10">
                             <TextBlock Style="{StaticResource BodyStrongTextBlockStyle}" Text="On the console" />
@@ -345,8 +354,9 @@
                         Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                         TextWrapping="Wrap" />
                     <TextBlock
+                        x:Name="PairingHint"
                         Style="{StaticResource RipcordSubtleCaptionStyle}"
-                        Text="Keep the link code on screen until this finishes." />
+                        TextWrapping="Wrap" />
                 </StackPanel>
 
                 <!--  ======== 5. Paired ========  -->

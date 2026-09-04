@@ -44,6 +44,7 @@ public class RipcordAppServicesTests
             VideoCapabilities = new StubCapabilities(),
             WakeCoordinator = new StubWakeCoordinator(),
             Account = new UnavailableAccountSession(),
+            AccountPairing = new UnavailableAccountPairing(),
         };
     }
 

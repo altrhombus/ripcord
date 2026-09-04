@@ -118,11 +118,22 @@ public sealed partial class AddConsolePage : Page
         AccountKnownNote.Message = s.AccountIdNote;
         AccountKnownNote.IsOpen = s.AccountIdIsAutomatic;
 
+        // Success when the button below it will work, informational when it is explaining why it will not. The
+        // text itself is composed portably — this page only chooses the tone, which is the layer's rule about
+        // what may cross the boundary (a StatusTone, never a Brush).
+        AccountPairingNote.Visibility = Vis(s.AccountPairingOffered);
+        AccountPairingNote.Message = s.AccountPairingNote;
+        AccountPairingNote.Severity = s.CanPairWithAccount
+            ? InfoBarSeverity.Success
+            : InfoBarSeverity.Informational;
+        AccountPairingNote.IsOpen = s.AccountPairingOffered;
+
         LinkStatus.Severity = InfoBarSeverity.Error;
         LinkStatus.Message = s.LinkError ?? string.Empty;
         LinkStatus.IsOpen = s.LinkError is not null;
 
         PairingStatusText.Text = s.PairingStatus;
+        PairingHint.Text = s.PairingHint;
         DoneSubtext.Text = s.DoneSubtext;
 
         // Prefill once, and only while empty: Render runs on every state change, including the ones the user's
@@ -138,10 +149,15 @@ public sealed partial class AddConsolePage : Page
         PrimaryButton.Content = s.Step == AddConsoleStep.Done ? "Save & connect" : "Pair";
         PrimaryButton.IsEnabled = s.Step == AddConsoleStep.Done || s.CanPair;
 
-        SecondaryButton.Visibility = Vis(s.Step == AddConsoleStep.Done);
-        SecondaryButton.Content = "Save";
+        // Two routes to a paired console, so the link step has two commit actions. The account one sits in the
+        // secondary slot rather than the accent one: it is offered, not urged, and one accent button per step is
+        // the rule the rest of the app follows.
+        bool secondaryOnLink = s.Step == AddConsoleStep.Link && s.AccountPairingOffered;
+        SecondaryButton.Visibility = Vis(s.Step == AddConsoleStep.Done || secondaryOnLink);
+        SecondaryButton.Content = secondaryOnLink ? "Pair with my account" : "Save";
+        SecondaryButton.IsEnabled = !secondaryOnLink || s.CanPairWithAccount;
 
-        FocusForStep(s.Step);
+        FocusForStep(s);
     }
 
     private static Visibility Vis(bool on) => on ? Visibility.Visible : Visibility.Collapsed;
@@ -153,14 +169,24 @@ public sealed partial class AddConsolePage : Page
     /// be. Only on a step change: re-focusing on every state change would pull the caret out of a text box while
     /// the user is typing in it.
     /// </summary>
-    private void FocusForStep(AddConsoleStep step)
+    private void FocusForStep(AddConsoleFlowState s)
     {
+        AddConsoleStep step = s.Step;
+
         if (_focusedStep == step)
         {
             return;
         }
 
         _focusedStep = step;
+
+        // The one case where the step alone does not decide: a signed-in user whose console the account already
+        // knows never types a code, so seeding the code box would put the caret in a field they will not use.
+        if (step == AddConsoleStep.Link && s.CanPairWithAccount)
+        {
+            SecondaryButton.Focus(FocusState.Keyboard);
+            return;
+        }
 
         switch (step)
         {
@@ -298,11 +324,16 @@ public sealed partial class AddConsolePage : Page
         }
     }
 
-    private void OnSecondaryClick(object sender, RoutedEventArgs e)
+    private async void OnSecondaryClick(object sender, RoutedEventArgs e)
     {
-        if (_flow.State.Step == AddConsoleStep.Done)
+        switch (_flow.State.Step)
         {
-            _flow.Finish(NameBox.Text, connect: false);
+            case AddConsoleStep.Link:
+                await _flow.PairWithAccountAsync();
+                break;
+            case AddConsoleStep.Done:
+                _flow.Finish(NameBox.Text, connect: false);
+                break;
         }
     }
 
