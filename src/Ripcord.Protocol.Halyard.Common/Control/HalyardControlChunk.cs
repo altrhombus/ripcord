@@ -11,6 +11,22 @@ namespace Ripcord.Protocol.Halyard.Common.Control;
 /// CLAUDE.md. The handshake reads as a cookie exchange: the client says hello, the console answers with a
 /// cookie, the client echoes it back, and the console accepts.
 /// </para>
+///
+/// <para>
+/// <b>[X] These are observed COMBINATIONS of a flags bitmap, not an enumeration.</b> Read from the vendor
+/// library, whose header codec guards with a mask (<c>(type &amp; 0x24) == 0x24</c>) and whose connection
+/// engine branches on a single bit: <c>0x02</c> carries data · <c>0x20</c> carries an acknowledgement ·
+/// <c>0x04</c> carries the extra 16-bit field (so <c>0x24</c> means ack <em>and</em> extra, which is exactly
+/// why only that combination has a trailing field) · <c>0x80</c> is connection control · <c>0x10</c> carries
+/// a cookie. Hence hello = <c>0x80</c>, hello-with-cookie = <c>0x90</c>, cookie offer = <c>0xD0</c>.
+/// </para>
+///
+/// <para>
+/// Every combination this protocol has been observed to use is named below, so nothing on the wire is
+/// misread today — but a combination we have not seen would fall through as an unknown type. Modelling the
+/// bits properly is the correct fix; it is deliberately not done here yet, because the flag meanings above
+/// come from one mask test and one branch rather than from a full reading of the codec.
+/// </para>
 /// </summary>
 public enum HalyardControlChunkType : byte
 {
