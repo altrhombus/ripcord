@@ -66,10 +66,6 @@ public sealed class HalyardAccountPairingTests
         // stream id. Stopping after our own OFFER is what left the console silent on the wire.
         Assert.Equal(1, signaling.ResultsSent);
         Assert.Equal(consoleSid, signaling.AcceptedPeerSid);
-
-        // And both carry the console's own session key back, not 16 zero bytes.
-        Assert.Equal(ConsoleSessionKey, signaling.OfferedSessionKey.ToArray());
-        Assert.Equal(ConsoleSessionKey, signaling.AcceptedSessionKey.ToArray());
     }
 
     [SkippableFact]
@@ -166,15 +162,11 @@ public sealed class HalyardAccountPairingTests
         public Task SendOfferAsync(
             string sessionId, string accountId, string consoleDuid,
             IReadOnlyList<HalyardCandidate> candidates, CancellationToken ct,
-            ReadOnlyMemory<byte> localHashedId = default, ReadOnlyMemory<byte> sessionKey = default)
+            ReadOnlyMemory<byte> localHashedId = default)
         {
             OfferedHashedId = localHashedId;
-            OfferedSessionKey = sessionKey;
             return Task.CompletedTask;
         }
-
-        /// <summary>The skey our OFFER carried — the console's own, echoed, rather than 16 zero bytes.</summary>
-        public ReadOnlyMemory<byte> OfferedSessionKey { get; private set; }
 
         public Task<IReadOnlyList<HalyardCloudSession>> GetSessionAsync(string sessionId, CancellationToken ct)
             => Task.FromResult<IReadOnlyList<HalyardCloudSession>>([]);
@@ -193,16 +185,11 @@ public sealed class HalyardAccountPairingTests
 
         public Task SendAcceptAsync(
             string sessionId, string accountId, string consoleDuid, int reqId, int sid, int peerSid,
-            HalyardCandidate consoleCandidate, string localAddress, int localPort, CancellationToken ct,
-            ReadOnlyMemory<byte> sessionKey = default)
+            HalyardCandidate consoleCandidate, string localAddress, int localPort, CancellationToken ct)
         {
             AcceptedPeerSid = peerSid;
-            AcceptedSessionKey = sessionKey;
             return Task.CompletedTask;
         }
-
-        /// <summary>The skey our ACCEPT carried.</summary>
-        public ReadOnlyMemory<byte> AcceptedSessionKey { get; private set; }
 
         public Task LeaveSessionAsync(string sessionId, CancellationToken ct) => Task.CompletedTask;
     }
@@ -218,20 +205,11 @@ public sealed class HalyardAccountPairingTests
 
     private const int consoleSid = 24043;
 
-    /// <summary>
-    /// The console's own <c>skey</c>. A real value rather than zeroes, because what we do with it is the point:
-    /// the console fills this in and we echo it back. Ripcord sent 16 zero bytes here for the whole life of
-    /// the account route.
-    /// </summary>
-    private static readonly byte[] ConsoleSessionKey = [0x40, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x4A, 0x4B, 0x4C, 0x4D, 0x4E, 0x4F];
-
-    private static readonly string ConsoleSessionKeyBase64 = Convert.ToBase64String(ConsoleSessionKey);
-
     private static string OfferFrame(byte[] consoleHashedId, int sid)
     {
         string body =
             "{\"action\":\"OFFER\",\"reqId\":1,\"error\":0,\"connRequest\":{\"sid\":" + sid + ",\"peerSid\":0,"
-            + "\"skey\":\"" + ConsoleSessionKeyBase64 + "\",\"natType\":2,"
+            + "\"skey\":\"AAAAAAAAAAAAAAAAAAAAAA==\",\"natType\":2,"
             + "\"candidate\":[{\"type\":\"LOCAL\",\"addr\":\"192.168.1.50\",\"mappedAddr\":\"0.0.0.0\","
             + "\"port\":9303,\"mappedPort\":0}],"
             + "\"localHashedId\":\"" + Convert.ToBase64String(consoleHashedId) + "\"}}";
@@ -247,9 +225,9 @@ public sealed class HalyardAccountPairingTests
     {
         public Task<string> CreateSessionAsync(string pushContextId, CancellationToken ct) => Task.FromResult("s");
         public Task SendConnectCommandAsync(string a, string b, string c, string d, (string, string, string) e, CancellationToken ct) => Task.CompletedTask;
-        public Task SendOfferAsync(string a, string b, string c, IReadOnlyList<HalyardCandidate> d, CancellationToken ct, ReadOnlyMemory<byte> localHashedId = default, ReadOnlyMemory<byte> sessionKey = default) => Task.CompletedTask;
+        public Task SendOfferAsync(string a, string b, string c, IReadOnlyList<HalyardCandidate> d, CancellationToken ct, ReadOnlyMemory<byte> localHashedId = default) => Task.CompletedTask;
         public Task SendResultAsync(string a, string b, string c, int reqId, CancellationToken ct) => Task.CompletedTask;
-        public Task SendAcceptAsync(string a, string b, string c, int reqId, int sid, int peerSid, HalyardCandidate cand, string addr, int port, CancellationToken ct, ReadOnlyMemory<byte> sessionKey = default) => Task.CompletedTask;
+        public Task SendAcceptAsync(string a, string b, string c, int reqId, int sid, int peerSid, HalyardCandidate cand, string addr, int port, CancellationToken ct) => Task.CompletedTask;
 
         public Task<IReadOnlyList<HalyardCloudSession>> GetSessionAsync(string sessionId, CancellationToken ct) => Task.FromResult<IReadOnlyList<HalyardCloudSession>>([]);
         public Task LeaveSessionAsync(string sessionId, CancellationToken ct) => Task.CompletedTask;
