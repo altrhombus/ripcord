@@ -22,8 +22,8 @@ public sealed class HalyardConsoleRegistrar : IConsoleRegistrar
     {
         ArgumentNullException.ThrowIfNull(family);
 
-        IHalyardRegistrationCipher cipher = _cipherResolver.Resolve(family.ToHalyardPlatform(), out string source);
-        return new RegistrarAvailability(cipher.IsAvailable, source);
+        HalyardRegistrationCipherResolution resolved = _cipherResolver.Resolve(family.ToHalyardPlatform());
+        return new RegistrarAvailability(resolved.Cipher.IsAvailable, resolved.Source);
     }
 
     public async Task<ConsoleRegistrationResult> RegisterAsync(
@@ -32,10 +32,10 @@ public sealed class HalyardConsoleRegistrar : IConsoleRegistrar
         ArgumentNullException.ThrowIfNull(registration);
 
         HalyardConsolePlatform platform = registration.Family.ToHalyardPlatform();
-        IHalyardRegistrationCipher cipher = _cipherResolver.Resolve(platform, out string source);
-        if (!cipher.IsAvailable)
+        HalyardRegistrationCipherResolution resolved = _cipherResolver.Resolve(platform);
+        if (!resolved.Cipher.IsAvailable)
         {
-            return new ConsoleRegistrationResult(false, source, null);
+            return new ConsoleRegistrationResult(false, resolved.Source, null);
         }
 
         var request = new HalyardRegistrationRequest(
@@ -52,7 +52,7 @@ public sealed class HalyardConsoleRegistrar : IConsoleRegistrar
             ClientDeviceId: RandomNumberGenerator.GetBytes(32),
             Platform: platform);
 
-        var client = new HalyardRegistrationClient(cipher);
+        var client = new HalyardRegistrationClient(resolved.Cipher);
         HalyardRegistrationResult result = await client
             .RegisterAsync(request, cancellationToken)
             .ConfigureAwait(false);

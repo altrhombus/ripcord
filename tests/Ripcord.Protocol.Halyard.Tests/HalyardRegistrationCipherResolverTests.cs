@@ -93,7 +93,7 @@ public class HalyardRegistrationCipherResolverTests : IDisposable
         WritePs5OnlyFixture(Path.Combine(_configDir, "registration_crypto_vectors.json"));
         Environment.SetEnvironmentVariable(FixtureEnvVar, envFixture);
 
-        NewResolver().Resolve(HalyardConsolePlatform.Ps5, out string source);
+        string source = NewResolver().Resolve(HalyardConsolePlatform.Ps5).Source;
 
         Assert.Equal(envFixture, source);
     }
@@ -103,7 +103,9 @@ public class HalyardRegistrationCipherResolverTests : IDisposable
     {
         string installed = WritePs5OnlyFixture(Path.Combine(_configDir, "registration_crypto_vectors.json"));
 
-        IHalyardRegistrationCipher cipher = NewResolver().Resolve(HalyardConsolePlatform.Ps5, out string source);
+        HalyardRegistrationCipherResolution resolved = NewResolver().Resolve(HalyardConsolePlatform.Ps5);
+        IHalyardRegistrationCipher cipher = resolved.Cipher;
+        string source = resolved.Source;
 
         Assert.Equal(installed, source);
         Assert.True(cipher.IsAvailable);
@@ -120,7 +122,7 @@ public class HalyardRegistrationCipherResolverTests : IDisposable
             Path.Combine(_emptyBaseDir, "docs", "protocol", "captures", "registration_crypto_vectors.json"));
 
         var resolver = new HalyardRegistrationCipherResolver(new FixedPaths(_configDir), nested);
-        resolver.Resolve(HalyardConsolePlatform.Ps5, out string source);
+        string source = resolver.Resolve(HalyardConsolePlatform.Ps5).Source;
 
         Assert.Equal(devTree, source);
     }
@@ -130,7 +132,9 @@ public class HalyardRegistrationCipherResolverTests : IDisposable
     {
         Skip.IfNot(BundleAvailable, "this build omits the bundled interop constants");
 
-        IHalyardRegistrationCipher cipher = NewResolver().Resolve(HalyardConsolePlatform.Ps5, out string source);
+        HalyardRegistrationCipherResolution resolved = NewResolver().Resolve(HalyardConsolePlatform.Ps5);
+        IHalyardRegistrationCipher cipher = resolved.Cipher;
+        string source = resolved.Source;
 
         Assert.True(cipher.IsAvailable);
         Assert.Equal("bundled interop constants", source);
@@ -146,7 +150,9 @@ public class HalyardRegistrationCipherResolverTests : IDisposable
 
         string installed = WritePs5OnlyFixture(Path.Combine(_configDir, "registration_crypto_vectors.json"));
 
-        IHalyardRegistrationCipher cipher = NewResolver().Resolve(HalyardConsolePlatform.Ps4, out string source);
+        HalyardRegistrationCipherResolution resolved = NewResolver().Resolve(HalyardConsolePlatform.Ps4);
+        IHalyardRegistrationCipher cipher = resolved.Cipher;
+        string source = resolved.Source;
 
         Assert.True(cipher.IsAvailable);
         Assert.StartsWith("bundled interop constants", source);
@@ -161,7 +167,7 @@ public class HalyardRegistrationCipherResolverTests : IDisposable
         // adequate for the family being asked about.
         string installed = WritePs5OnlyFixture(Path.Combine(_configDir, "registration_crypto_vectors.json"));
 
-        NewResolver().Resolve(HalyardConsolePlatform.Ps5, out string source);
+        string source = NewResolver().Resolve(HalyardConsolePlatform.Ps5).Source;
 
         Assert.Equal(installed, source);
     }
@@ -174,7 +180,9 @@ public class HalyardRegistrationCipherResolverTests : IDisposable
         string path = Path.Combine(_configDir, "registration_crypto_vectors.json");
         File.WriteAllText(path, "{ not json at all");
 
-        IHalyardRegistrationCipher cipher = NewResolver().Resolve(HalyardConsolePlatform.Ps5, out string source);
+        HalyardRegistrationCipherResolution resolved = NewResolver().Resolve(HalyardConsolePlatform.Ps5);
+        IHalyardRegistrationCipher cipher = resolved.Cipher;
+        string source = resolved.Source;
 
         Assert.True(cipher.IsAvailable);
         Assert.StartsWith("bundled interop constants", source);
@@ -193,9 +201,37 @@ public class HalyardRegistrationCipherResolverTests : IDisposable
         string path = Path.Combine(_configDir, "registration_crypto_vectors.json");
         File.WriteAllText(path, """{ "selectorOffset": 397 }""");
 
-        NewResolver().Resolve(HalyardConsolePlatform.Ps5, out string source);
+        string source = NewResolver().Resolve(HalyardConsolePlatform.Ps5).Source;
 
         Assert.Contains("fixture malformed", source);
+    }
+
+    [Fact]
+    public void ContextKey_ComesFromWhicheverSourceWon()
+    {
+        // Account pairing decrypts the console-delivered registration seed with this key, and the seed's
+        // ciphertext is produced against the key the *cipher* was built with. Resolving the two separately would
+        // let a fixture serve one and the bundle the other, which surfaces only as a seed that decrypts to
+        // noise deep inside a pairing — so they travel together, and this is the assertion that says so.
+        string installed = WritePs5OnlyFixture(Path.Combine(_configDir, "registration_crypto_vectors.json"));
+
+        HalyardRegistrationCipherResolution resolved = NewResolver().Resolve(HalyardConsolePlatform.Ps5);
+
+        Assert.Equal(installed, resolved.Source);
+        Assert.Equal(Hex(16, 3), Convert.ToHexString(resolved.ContextKey.Span));
+    }
+
+    [SkippableFact]
+    public void UnavailableCipher_CarriesNoContextKey()
+    {
+        // The pair has to fail together too: a caller that trusted IsAvailable and then used an empty key would
+        // build a cipher over sixteen missing bytes.
+        Skip.If(BundleAvailable, "this build bundles the constants, so resolution cannot fail");
+
+        HalyardRegistrationCipherResolution resolved = NewResolver().Resolve(HalyardConsolePlatform.Ps5);
+
+        Assert.False(resolved.Cipher.IsAvailable);
+        Assert.True(resolved.ContextKey.IsEmpty);
     }
 
     [SkippableFact]
@@ -205,7 +241,7 @@ public class HalyardRegistrationCipherResolverTests : IDisposable
         // was built for the wrong family derives wrong keys and fails against the console, not here.
         Skip.IfNot(Ps4BundleAvailable, "this build omits the PS4 registration tables");
 
-        Assert.True(NewResolver().Resolve(HalyardConsolePlatform.Ps5, out _).IsAvailable);
-        Assert.True(NewResolver().Resolve(HalyardConsolePlatform.Ps4, out _).IsAvailable);
+        Assert.True(NewResolver().Resolve(HalyardConsolePlatform.Ps5).Cipher.IsAvailable);
+        Assert.True(NewResolver().Resolve(HalyardConsolePlatform.Ps4).Cipher.IsAvailable);
     }
 }
