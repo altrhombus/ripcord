@@ -37,6 +37,13 @@ internal sealed class FakeAccountSession : IAccountSession
     /// <summary>Held open so a test can control when a restore or sign-in resolves.</summary>
     public TaskCompletionSource? Gate { get; set; }
 
+    /// <summary>
+    /// Held open so a test can control when the console list resolves — separately from <see cref="Gate"/>,
+    /// because the list is fetched alongside a scan rather than in response to a user action, and the
+    /// interesting case is it landing <em>after</em> the user has moved on.
+    /// </summary>
+    public TaskCompletionSource? ListGate { get; set; }
+
     public int SignOutCalls { get; private set; }
 
     public int ListCalls { get; private set; }
@@ -80,12 +87,16 @@ internal sealed class FakeAccountSession : IAccountSession
         return CompleteResult;
     }
 
-    public Task<IReadOnlyList<CloudConsole>> ListConsolesAsync(CancellationToken cancellationToken)
+    public async Task<IReadOnlyList<CloudConsole>> ListConsolesAsync(CancellationToken cancellationToken)
     {
         ListCalls++;
-        return ListThrows is { } ex
-            ? Task.FromException<IReadOnlyList<CloudConsole>>(ex)
-            : Task.FromResult(Consoles);
+
+        if (ListGate is not null)
+        {
+            await ListGate.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        return ListThrows is { } ex ? throw ex : Consoles;
     }
 
     public Exception? WakeThrows { get; set; }

@@ -133,6 +133,59 @@ public class AddConsoleFlowTests
         }
     }
 
+    private sealed class FakeAccountPairing : IAccountConsolePairing
+    {
+        public bool Available { get; set; } = true;
+
+        public string AvailabilityDetail { get; set; } = "bundled interop constants";
+
+        public Exception? AvailabilityThrows { get; set; }
+
+        public ConsoleRegistrationResult Result { get; set; } = new(true, null, [9, 8, 7, 6]);
+
+        public Exception? Throws { get; set; }
+
+        /// <summary>Never completes until released, standing in for a console that never confirms.</summary>
+        public bool HangForever { get; set; }
+
+        public int PairCalls { get; private set; }
+
+        public AccountPairingRequest? LastRequest { get; private set; }
+
+        public ConsoleFamily? AvailabilityAskedFor { get; private set; }
+
+        public AccountPairingAvailability CheckAvailability(ConsoleFamily family)
+        {
+            AvailabilityAskedFor = family;
+
+            if (AvailabilityThrows is { } ex)
+            {
+                throw ex;
+            }
+
+            return new AccountPairingAvailability(Available, AvailabilityDetail);
+        }
+
+        public async Task<ConsoleRegistrationResult> PairAsync(
+            AccountPairingRequest request, CancellationToken cancellationToken)
+        {
+            PairCalls++;
+            LastRequest = request;
+
+            if (Throws is { } ex)
+            {
+                throw ex;
+            }
+
+            if (HangForever)
+            {
+                await Task.Delay(Timeout.Infinite, cancellationToken).ConfigureAwait(false);
+            }
+
+            return Result;
+        }
+    }
+
     // ---- helpers -------------------------------------------------------------------------------
 
     private static DiscoveredConsole Console(
@@ -148,6 +201,7 @@ public class AddConsoleFlowTests
     {
         public FakeScanner Scanner { get; } = new();
         public FakeRegistrar Registrar { get; } = new();
+        public FakeAccountPairing AccountPairing { get; } = new();
         public InMemoryPairedConsoleStore Store { get; } = new();
         public AddConsoleFlow Flow { get; }
         public List<AddConsoleCompletion> Completions { get; } = [];
@@ -156,10 +210,15 @@ public class AddConsoleFlowTests
         /// Defaults to completing instantly, so the scan's window backstop does not make every test wait five
         /// real seconds. Tests that care about the timing pass their own recorder.
         /// </param>
+        /// <param name="withAccountPairing">
+        /// False builds the flow with no account-pairing seam at all, which is what a front end that composed
+        /// none looks like. Defaulted on, because the seam being present but declining is the ordinary case.
+        /// </param>
         public Harness(
             AddConsoleFlowOptions? options = null,
             Func<TimeSpan, CancellationToken, Task>? delay = null,
-            IAccountSession? account = null)
+            IAccountSession? account = null,
+            bool withAccountPairing = true)
         {
             Flow = new AddConsoleFlow(
                 Scanner,
@@ -168,7 +227,8 @@ public class AddConsoleFlowTests
                 new ImmediateUiDispatcher(),
                 options,
                 delay ?? ((_, _) => Task.CompletedTask),
-                account);
+                account,
+                withAccountPairing ? AccountPairing : null);
             Flow.Completed += Completions.Add;
         }
 
@@ -183,6 +243,20 @@ public class AddConsoleFlowTests
         }
 
         public void EnterValidLinkInput() => Flow.SetLinkInput("12345678", "1234567890123456");
+    }
+
+    /// <summary>
+    /// Wait for something a fire-and-forget continuation will make true. Polled rather than signalled because
+    /// the thing under test deliberately hands back no task to await — the cloud lookup is nobody's to wait on.
+    /// </summary>
+    private static async Task<bool> WaitUntil(Func<bool> condition)
+    {
+        for (int i = 0; i < 200 && !condition(); i++)
+        {
+            await Task.Delay(10).ConfigureAwait(false);
+        }
+
+        return condition();
     }
 
     /// <summary>
@@ -737,6 +811,257 @@ public class AddConsoleFlowTests
         AddConsoleCompletion completion = h.Completions.Single();
         Assert.Null(completion.Console.CloudDeviceId);
         Assert.Equal("Living room", completion.Console.Nickname);
+    }
+
+    // ---- pairing through the account ------------------------------------------------------------
+    //
+    // The second route to a paired console: the console delivers the registration seed over the account service
+    // instead of showing an eight-digit code. What is tested here is the decision — when it is offered, when it
+    // is refused, and what the user is told — because the exchange itself belongs to the seam.
+
+    /// <summary>Signed in, with the console present in the account's list — the case the route exists for.</summary>
+    private static FakeAccountSession SignedInKnowing(string name = "PS5-8A2F", string duid = "duid-living-room")
+        => new()
+        {
+            Current = new AccountIdentity("4200000000000000042", "somebody", "GB"),
+            Consoles = [new CloudConsole(duid, name, true, true)],
+        };
+
+    [Fact]
+    public async Task AccountPairing_WhenSignedOut_IsNotOfferedAtAll()
+    {
+        // The route IS the account. With nobody signed in there is nothing to offer, and an affordance that
+        // explains itself by being disabled is worse here than one that is simply absent — the link step already
+        // says signing in fills the account id in.
+        var h = new Harness(account: new FakeAccountSession());
+        await h.ToLinkViaScanAsync();
+
+        Assert.False(h.Flow.State.AccountPairingOffered);
+        Assert.False(h.Flow.State.CanPairWithAccount);
+        Assert.Equal(string.Empty, h.Flow.State.AccountPairingNote);
+    }
+
+    [Fact]
+    public async Task AccountPairing_WithNoSeamAtAll_IsNotOffered()
+    {
+        // A front end that composed no account pairing must behave exactly as the flow did before it existed,
+        // even for a signed-in user.
+        var h = new Harness(account: SignedInKnowing(), withAccountPairing: false);
+        await h.ToLinkViaScanAsync(Console("10.0.0.7", name: "PS5-8A2F"));
+
+        Assert.False(h.Flow.State.AccountPairingOffered);
+        Assert.False(h.Flow.State.CanPairWithAccount);
+    }
+
+    [Fact]
+    public async Task AccountPairing_SignedInAndConsoleKnown_IsOfferedAndInvited()
+    {
+        var h = new Harness(account: SignedInKnowing());
+        await h.ToLinkViaScanAsync(Console("10.0.0.7", name: "PS5-8A2F"));
+
+        Assert.True(h.Flow.State.AccountPairingOffered);
+        Assert.True(h.Flow.State.CanPairWithAccount);
+        Assert.Contains("No code needed", h.Flow.State.AccountPairingNote);
+    }
+
+    [Fact]
+    public async Task AccountPairing_ConsoleTheAccountDoesNotList_IsOfferedButRefusedWithTheFix()
+    {
+        // Offered rather than hidden, because the user IS signed in and would otherwise be left wondering why
+        // the thing they read about is missing. The note is the whole value of the state: the fix is on the
+        // console, not in this app.
+        var h = new Harness(account: SignedInKnowing(name: "PS5-SOMEWHERE-ELSE"));
+        await h.ToLinkViaScanAsync(Console("10.0.0.7", name: "PS5-8A2F"));
+
+        Assert.True(h.Flow.State.AccountPairingOffered);
+        Assert.False(h.Flow.State.CanPairWithAccount);
+        Assert.Contains("isn't in your account's console list", h.Flow.State.AccountPairingNote);
+    }
+
+    [Fact]
+    public async Task AccountPairing_WhenTheBuildCannot_SaysWhyRatherThanOffering()
+    {
+        var h = new Harness(account: SignedInKnowing());
+        h.AccountPairing.Available = false;
+        h.AccountPairing.AvailabilityDetail = "registration constants not found (set RIPCORD_REGIST_FIXTURE)";
+
+        await h.ToLinkViaScanAsync(Console("10.0.0.7", name: "PS5-8A2F"));
+
+        Assert.True(h.Flow.State.AccountPairingOffered);
+        Assert.False(h.Flow.State.CanPairWithAccount);
+        Assert.Equal("registration constants not found (set RIPCORD_REGIST_FIXTURE)", h.Flow.State.AccountPairingNote);
+    }
+
+    [Fact]
+    public async Task AccountPairing_AvailabilityIsAskedForTheConsolesOwnFamily()
+    {
+        // The console reports what it actually is, and its family decides which constants are needed. Asking
+        // about the family the user guessed on the first step would answer for the wrong console — and that
+        // assignment happens inside the same mutation, so this is easy to get wrong.
+        var h = new Harness(account: SignedInKnowing());
+        h.Scanner.Yields(Console("10.0.0.7", ConsolePlatform.HalyardLegacy, name: "PS4-8A2F"));
+        await h.Flow.SelectFamilyAsync(ConsoleFamily.Ps5);
+
+        h.Flow.SelectDiscovered(h.Flow.Discovered.Single());
+
+        Assert.Equal(ConsoleFamily.Ps4, h.AccountPairing.AvailabilityAskedFor);
+    }
+
+    [Fact]
+    public async Task AccountPairing_AvailabilityThrowing_LeavesTheCodeRouteWorking()
+    {
+        // A backend that fails while answering must not take the local route down with it.
+        var h = new Harness(account: SignedInKnowing());
+        h.AccountPairing.AvailabilityThrows = new InvalidOperationException("constants store on fire");
+
+        await h.ToLinkViaScanAsync(Console("10.0.0.7", name: "PS5-8A2F"));
+        h.Flow.SetLinkInput("12345678", string.Empty);
+
+        Assert.False(h.Flow.State.CanPairWithAccount);
+        Assert.Contains("constants store on fire", h.Flow.State.AccountPairingNote);
+
+        Assert.True(h.Flow.State.CanPair);
+        await h.Flow.PairAsync();
+        Assert.Equal(AddConsoleStep.Done, h.Flow.State.Step);
+    }
+
+    [Fact]
+    public async Task PairWithAccount_NeedsNoCode_AndCarriesWhatTheSeamAsksFor()
+    {
+        var h = new Harness(account: SignedInKnowing());
+        await h.ToLinkViaScanAsync(Console("10.0.0.7", name: "PS5-8A2F"));
+
+        // Nothing typed: the code route is not offered, and that is the point of this one.
+        Assert.False(h.Flow.State.CanPair);
+
+        await h.Flow.PairWithAccountAsync();
+
+        Assert.Equal(AddConsoleStep.Done, h.Flow.State.Step);
+        Assert.Equal(0, h.Registrar.RegisterCalls);
+
+        AccountPairingRequest request = Assert.IsType<AccountPairingRequest>(h.AccountPairing.LastRequest);
+        Assert.Equal("10.0.0.7", request.Host);
+        Assert.Equal("4200000000000000042", request.AccountId);
+        Assert.Equal("duid-living-room", request.CloudDeviceId);
+        Assert.Equal(ConsoleFamily.Ps5, request.Family);
+    }
+
+    [Fact]
+    public async Task PairWithAccount_SavesTheSameShapeOfConsoleAsTheCodeRoute()
+    {
+        // Where the pairing record came from is the seam's business. What is stored — identity, reported name,
+        // cloud id — must not depend on the route.
+        var h = new Harness(account: SignedInKnowing());
+        await h.ToLinkViaScanAsync(Console("10.0.0.7", name: "PS5-8A2F"));
+
+        await h.Flow.PairWithAccountAsync();
+        h.Flow.Finish("Living room", connect: false);
+
+        PairedConsole saved = h.Completions.Single().Console;
+        Assert.Equal("duid-living-room", saved.CloudDeviceId);
+        Assert.Equal("PS5-8A2F", saved.ReportedName);
+        Assert.Equal("10.0.0.7", saved.Host);
+        Assert.Equal("Living room", saved.Nickname);
+    }
+
+    [Fact]
+    public async Task PairWithAccount_SaysWhatItIsWaitingFor()
+    {
+        // The progress text is the only thing on the pairing panel, and the two routes wait on different things
+        // — one on the user's code reaching the console, one on the console answering the account service.
+        var h = new Harness(account: SignedInKnowing());
+        h.AccountPairing.HangForever = true;
+        await h.ToLinkViaScanAsync(Console("10.0.0.7", name: "PS5-8A2F"));
+
+        Task pairing = h.Flow.PairWithAccountAsync();
+
+        Assert.Equal(AddConsoleStep.Pairing, h.Flow.State.Step);
+        Assert.Contains("through your account", h.Flow.State.PairingStatus);
+
+        await h.Flow.DisposeAsync();
+        await pairing;
+    }
+
+    [Fact]
+    public async Task PairWithAccount_AfterAFailure_TheNextCodeRouteAttemptSaysTheOrdinaryThing()
+    {
+        // The route flag is state, and stale state on a progress panel is how a user ends up reading that the
+        // app is waiting on their account when it is waiting on their eight digits.
+        var h = new Harness(account: SignedInKnowing());
+        h.AccountPairing.Result = new ConsoleRegistrationResult(false, "the console said no", null);
+        await h.ToLinkViaScanAsync(Console("10.0.0.7", name: "PS5-8A2F"));
+
+        await h.Flow.PairWithAccountAsync();
+        Assert.Equal(AddConsoleStep.Link, h.Flow.State.Step);
+        Assert.Equal("the console said no", h.Flow.State.LinkError);
+
+        h.Registrar.HangForever = true;
+        h.EnterValidLinkInput();
+        Task pairing = h.Flow.PairAsync();
+
+        Assert.Contains("Registering with", h.Flow.State.PairingStatus);
+
+        await h.Flow.DisposeAsync();
+        await pairing;
+    }
+
+    [Fact]
+    public async Task PairWithAccount_Timeout_ReportsTheAccountRoutesOwnMessage()
+    {
+        var h = new Harness(
+            options: new AddConsoleFlowOptions { AccountPairingTimeout = TimeSpan.FromMilliseconds(20) },
+            account: SignedInKnowing());
+        h.AccountPairing.HangForever = true;
+        await h.ToLinkViaScanAsync(Console("10.0.0.7", name: "PS5-8A2F"));
+
+        await h.Flow.PairWithAccountAsync();
+
+        Assert.Equal(AddConsoleStep.Link, h.Flow.State.Step);
+        Assert.Contains("through your account", h.Flow.State.LinkError);
+    }
+
+    [Fact]
+    public async Task PairWithAccount_ThrowingSeam_IsReportedRatherThanEscaping()
+    {
+        var h = new Harness(account: SignedInKnowing());
+        h.AccountPairing.Throws = new InvalidOperationException("push upgrade rejected");
+        await h.ToLinkViaScanAsync(Console("10.0.0.7", name: "PS5-8A2F"));
+
+        await h.Flow.PairWithAccountAsync();
+
+        Assert.Equal(AddConsoleStep.Link, h.Flow.State.Step);
+        Assert.Contains("push upgrade rejected", h.Flow.State.LinkError);
+    }
+
+    [Fact]
+    public async Task PairWithAccount_WhenNotOffered_DoesNothing()
+    {
+        var h = new Harness(account: new FakeAccountSession());
+        await h.ToLinkViaScanAsync();
+
+        await h.Flow.PairWithAccountAsync();
+
+        Assert.Equal(0, h.AccountPairing.PairCalls);
+        Assert.Equal(AddConsoleStep.Link, h.Flow.State.Step);
+    }
+
+    [Fact]
+    public async Task AccountPairing_CloudListArrivingAfterTheUserHasMovedOn_StillEnablesIt()
+    {
+        // The list is fetched alongside the scan, so it can land while the user is already on the link step.
+        // That write has to go through the state machine, or the button stays greyed out until something
+        // unrelated recomposes — which is what happens when a field is assigned from a continuation instead.
+        var account = SignedInKnowing();
+        var gate = new TaskCompletionSource();
+        account.ListGate = gate;
+
+        var h = new Harness(account: account);
+        await h.ToLinkViaScanAsync(Console("10.0.0.7", name: "PS5-8A2F"));
+        Assert.False(h.Flow.State.CanPairWithAccount);
+
+        gate.SetResult();
+
+        Assert.True(await WaitUntil(() => h.Flow.State.CanPairWithAccount));
     }
 
     [Fact]
