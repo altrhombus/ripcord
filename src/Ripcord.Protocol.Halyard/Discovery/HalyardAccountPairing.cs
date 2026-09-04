@@ -248,6 +248,28 @@ public sealed class HalyardAccountPairing(
                 consoleOffer, request.ConsoleHost, request.LocalHashedId, consoleOffer.LocalHashedId!);
             IHalyardRegistration registration = _registration(context);
 
+            // Our Init goes out FIRST — before the RESULT, the OFFER and the ACCEPT below.
+            //
+            // The side that opens the association is the side that may open connections on it, and the console
+            // opens its own within tens of milliseconds of learning our candidate. Every earlier ordering lost
+            // that race, leaving us the responder on an association the console then never opened a connection
+            // on.
+            //
+            // The open question this tests: the prelude names both peers, and the console has not yet seen our
+            // OFFER, so it does not know our SenderId. If it validates only that PeerId is itself — which is the
+            // plausible reading, since SenderId is the *claim* and PeerId is the *check* — this works and we
+            // take the initiator role. If it validates SenderId too, this cannot work from here at all, and
+            // that is worth knowing plainly rather than assuming. **[X]**
+            try
+            {
+                await registration.PrepareAsync(cancellationToken).ConfigureAwait(false);
+                Log("control association opened (before the signaling answer)");
+            }
+            catch (Exception ex)
+            {
+                Log($"could not open the control association: {ex.Message}");
+            }
+
 
             // Announce ourselves — now, and not a moment earlier. A sessionMessage may only be sent to a
             // member, so this 404s until the console has joined, and the console's OFFER is exactly what tells
@@ -271,21 +293,6 @@ public sealed class HalyardAccountPairing(
                 await _signaling.SendOfferAsync(
                     sessionId, request.AccountId, request.ConsoleDuid, ours, cancellationToken,
                     request.LocalHashedId).ConfigureAwait(false);
-
-                // Our Init goes out here: the console now knows our candidate (from the OFFER sent when it
-                // joined, above), and it has not yet seen the ACCEPT below that makes it open an association of
-                // its own. That window is the whole game — the side that opens the association is the side that
-                // may open connections on it. Starting it must not block, or we would be waiting for an answer
-                // that our own unsent ACCEPT is preventing.
-                try
-                {
-                    await registration.PrepareAsync(cancellationToken).ConfigureAwait(false);
-                    Log("control association opened");
-                }
-                catch (Exception ex)
-                {
-                    Log($"could not open the control association: {ex.Message}");
-                }
 
                 HalyardSignalingCandidate? path = PreferredCandidate(consoleOffer, request.ConsoleHost);
                 if (path is not null && request.LocalEndpoint is { } local)
