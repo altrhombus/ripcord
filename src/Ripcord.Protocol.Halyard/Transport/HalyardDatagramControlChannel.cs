@@ -77,6 +77,18 @@ public sealed class HalyardDatagramControlOptions
     /// </summary>
     public TimeSpan ListenBeforeOpening { get; init; } = TimeSpan.Zero;
 
+    /// <summary>
+    /// How the hello we send addresses the console. Defaults to the shape every capture carries.
+    ///
+    /// <para>
+    /// A knob because the alternative is a live experiment, not a preference: the console has ignored every
+    /// <see cref="HalyardControlAddressing.PortPair"/> hello Ripcord has sent, in silence, which is what its
+    /// library does on a port-lookup miss. <see cref="HalyardControlAddressing.PeerAddressOnly"/> is matched
+    /// on the peer address instead and so reaches a different lookup.
+    /// </para>
+    /// </summary>
+    public HalyardControlAddressing HelloAddressing { get; init; } = HalyardControlAddressing.PortPair;
+
     /// <summary>Optional progress sink, for the harness.</summary>
     public Action<string>? Log { get; init; }
 }
@@ -200,7 +212,9 @@ public sealed class HalyardDatagramControlChannel : IAsyncDisposable
     /// <summary>Open a chunk-layer connection — or accept the one the peer opens.</summary>
     private async Task OpenConnectionAsync(CancellationToken cancellationToken)
     {
-        await ApplyAsync(_association.OpenConnection(), cancellationToken).ConfigureAwait(false);
+        await ApplyAsync(
+            _association.OpenConnection(_options.HelloAddressing), cancellationToken).ConfigureAwait(false);
+        Log($"hello sent, addressed {_options.HelloAddressing}");
 
         // Re-sent while we wait. In the captured LAN pairing the client's first hello goes unanswered and its
         // second, about a second later, is the one the console replies to — so a single attempt is not a
