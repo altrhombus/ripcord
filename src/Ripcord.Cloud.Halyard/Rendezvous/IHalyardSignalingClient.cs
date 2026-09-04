@@ -26,8 +26,7 @@ public interface IHalyardSignalingClient
         string consoleDuid,
         IReadOnlyList<HalyardCandidate> candidates,
         CancellationToken cancellationToken,
-        ReadOnlyMemory<byte> localHashedId = default,
-        ReadOnlyMemory<byte> sessionKey = default);
+        ReadOnlyMemory<byte> localHashedId = default);
 
     /// <summary>Read back one session by id — to confirm ours exists and see who has joined.</summary>
     Task<IReadOnlyList<HalyardCloudSession>> GetSessionAsync(string sessionId, CancellationToken cancellationToken);
@@ -40,7 +39,7 @@ public interface IHalyardSignalingClient
     Task SendAcceptAsync(
         string sessionId, string accountId, string consoleDuid, int reqId, int sid, int peerSid,
         HalyardCandidate consoleCandidate, string localAddress, int localPort,
-        CancellationToken cancellationToken, ReadOnlyMemory<byte> sessionKey = default);
+        CancellationToken cancellationToken);
 
     /// <summary>Leave the session — the disconnect.</summary>
     Task LeaveSessionAsync(string sessionId, CancellationToken cancellationToken);
@@ -62,9 +61,9 @@ public sealed class HalyardCloudSignalingClient(HalyardCloudClient cloud) : IHal
     public Task SendOfferAsync(
         string sessionId, string accountId, string consoleDuid,
         IReadOnlyList<HalyardCandidate> candidates, CancellationToken cancellationToken,
-        ReadOnlyMemory<byte> localHashedId = default, ReadOnlyMemory<byte> sessionKey = default)
+        ReadOnlyMemory<byte> localHashedId = default)
         => _cloud.SendOfferAsync(
-            sessionId, accountId, consoleDuid, candidates, cancellationToken, localHashedId, sessionKey);
+            sessionId, accountId, consoleDuid, candidates, cancellationToken, localHashedId);
 
     public Task<IReadOnlyList<HalyardCloudSession>> GetSessionAsync(string sessionId, CancellationToken cancellationToken)
         => _cloud.GetSessionAsync(sessionId, cancellationToken);
@@ -76,10 +75,10 @@ public sealed class HalyardCloudSignalingClient(HalyardCloudClient cloud) : IHal
     public Task SendAcceptAsync(
         string sessionId, string accountId, string consoleDuid, int reqId, int sid, int peerSid,
         HalyardCandidate consoleCandidate, string localAddress, int localPort,
-        CancellationToken cancellationToken, ReadOnlyMemory<byte> sessionKey = default)
+        CancellationToken cancellationToken)
         => _cloud.SendAcceptAsync(
             sessionId, accountId, consoleDuid, reqId, sid, peerSid, consoleCandidate, localAddress, localPort,
-            cancellationToken, sessionKey);
+            cancellationToken);
 
     public Task LeaveSessionAsync(string sessionId, CancellationToken cancellationToken)
         => _cloud.LeaveSessionAsync(sessionId, cancellationToken);
