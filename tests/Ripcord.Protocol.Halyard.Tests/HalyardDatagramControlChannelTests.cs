@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.Net;
 using System.Text;
 using Ripcord.Protocol.Halyard.Common.Control;
 using Ripcord.Protocol.Halyard.Transport;
@@ -124,9 +125,12 @@ public class HalyardDatagramControlChannelTests
         public void Dispose() => Disposals++;
     }
 
+    /// <summary>The console endpoint the scripted channel pretends to address.</summary>
+    private static readonly IPEndPoint Peer = new(IPAddress.Parse("10.0.0.7"), 9303);
+
     private static HalyardDatagramControlChannel Channel(
         IHalyardDatagramTransport transport, HalyardDatagramControlOptions? options = null)
-        => new(transport, OurId, ConsoleId, options ?? Quick());
+        => new(transport, Peer, OurId, ConsoleId, options ?? Quick());
 
     [Fact]
     public async Task Exchange_CompletesTheWholeCycle_AndReturnsTheHttpResponse()

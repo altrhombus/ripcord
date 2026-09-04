@@ -151,6 +151,14 @@ public sealed class HalyardControlAssociation
     private readonly byte[] _peerHashedId;
     private readonly Func<int, byte[]> _random;
 
+    /// <summary>
+    /// The peer's address and port as we are sending to them, which a <c>CookieEcho</c> has to reflect back —
+    /// see <see cref="HalyardControlPrelude.ReflectPeerEndpoint"/>. Held as plain data rather than reached
+    /// through a socket, so this type stays I/O-free and drivable from a capture.
+    /// </summary>
+    private readonly byte[] _peerAddress;
+    private readonly ushort _peerPort;
+
     private uint _tagPair;
 
     /// <summary>
@@ -175,6 +183,11 @@ public sealed class HalyardControlAssociation
     private ushort _peerSequence;
     private readonly List<byte> _inbound = [];
 
+    /// <param name="peerAddress">
+    /// The peer's IPv4 address, 4 bytes in network order — the address we send datagrams to. Required, because
+    /// an echo that does not reflect it is one the peer cannot validate the path from.
+    /// </param>
+    /// <param name="peerPort">The peer's UDP port.</param>
     /// <param name="random">
     /// Source of the tag, token, sequence and connection tag. Injected so a test can make a whole exchange
     /// reproducible; production passes a cryptographic source.
@@ -182,10 +195,21 @@ public sealed class HalyardControlAssociation
     public HalyardControlAssociation(
         ReadOnlyMemory<byte> localHashedId,
         ReadOnlyMemory<byte> peerHashedId,
+        ReadOnlyMemory<byte> peerAddress,
+        ushort peerPort,
         Func<int, byte[]> random)
     {
         _localHashedId = Exactly(localHashedId, nameof(localHashedId));
         _peerHashedId = Exactly(peerHashedId, nameof(peerHashedId));
+
+        if (peerAddress.Length != 4)
+        {
+            throw new ArgumentException(
+                $"peerAddress is an IPv4 address, so 4 bytes; got {peerAddress.Length}.", nameof(peerAddress));
+        }
+
+        _peerAddress = peerAddress.ToArray();
+        _peerPort = peerPort;
         _random = random ?? throw new ArgumentNullException(nameof(random));
     }
 
@@ -340,7 +364,11 @@ public sealed class HalyardControlAssociation
         // as the association lives, and each probe carries a fresh timestamp; a client that echoes once and
         // then goes quiet has stopped answering. A live console probed every half second and gave up after ten
         // seconds of our silence, and the captured client answers every one.
-        send.Add(Prelude(HalyardControlPrelude.CookieEcho, requestWord: 0, token: peer.Token));
+        send.Add(Prelude(
+            HalyardControlPrelude.CookieEcho,
+            requestWord: 0,
+            token: peer.Token,
+            tail: HalyardControlPrelude.ReflectPeerEndpoint(_peerAddress, _peerPort, _tagPair)));
         _weSentEcho = true;
 
         HalyardControlAction settled = SettleIfEstablished();
@@ -449,10 +477,13 @@ public sealed class HalyardControlAssociation
 
     // ---- wire helpers --------------------------------------------------------------------------
 
-    private byte[] Prelude(uint type, uint requestWord, uint token)
+    /// <param name="tail">
+    /// Empty for an <c>Init</c>, which carries a zero tail in every capture; a <c>CookieEcho</c> passes the
+    /// reflected peer endpoint.
+    /// </param>
+    private byte[] Prelude(uint type, uint requestWord, uint token, ReadOnlyMemory<byte> tail = default)
         => new HalyardControlPrelude(
-            type, _localHashedId, _peerHashedId, _tagPair, requestWord, token,
-            Tail: ReadOnlyMemory<byte>.Empty).Serialize();
+            type, _localHashedId, _peerHashedId, _tagPair, requestWord, token, tail).Serialize();
 
     private byte[] HelloBody(ushort sequence, ReadOnlySpan<byte> connectionTag)
     {
