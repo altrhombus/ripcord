@@ -36,13 +36,21 @@ public sealed record HalyardSignalingCandidate(string Type, string Address, int 
 /// all-zero <c>skey</c> is the not-yet-populated placeholder our own OFFER sends). Null when absent.
 /// </param>
 /// <param name="LocalHashedId">The <c>localHashedId</c> — 20 bytes in the console's OFFER. Null when absent.</param>
+/// <param name="Sid">
+/// The peer's own stream id for this connection. Needed because the negotiation is a real offer/accept: our
+/// <c>ACCEPT</c> has to name the console's <c>sid</c> as its <c>peerSid</c>, and without that the console has
+/// nothing to match our transport against.
+/// </param>
+/// <param name="PeerSid">The id the peer believes is ours. Zero in an OFFER, populated in an ACCEPT.</param>
 public sealed record HalyardSignalingMessage(
     string Action,
     int ReqId,
     string? FromPlatform,
     IReadOnlyList<HalyardSignalingCandidate> Candidates,
     byte[]? SessionKey,
-    byte[]? LocalHashedId)
+    byte[]? LocalHashedId,
+    int Sid = 0,
+    int PeerSid = 0)
 {
     /// <summary>The dataType suffix that marks a push notification as carrying a signaling message.</summary>
     private const string SessionMessageDataType = "sessionMessage:created";
@@ -144,11 +152,16 @@ public sealed record HalyardSignalingMessage(
         var candidates = new List<HalyardSignalingCandidate>();
         byte[]? skey = null;
         byte[]? hashedId = null;
+        int sid = 0;
+        int peerSid = 0;
 
         if (root.TryGetProperty("connRequest", out JsonElement conn))
         {
             skey = DecodeBase64(conn, "skey");
             hashedId = DecodeBase64(conn, "localHashedId");
+            sid = conn.TryGetProperty("sid", out JsonElement sidElement) && sidElement.TryGetInt32(out int sv) ? sv : 0;
+            peerSid = conn.TryGetProperty("peerSid", out JsonElement peerElement)
+                      && peerElement.TryGetInt32(out int pv2) ? pv2 : 0;
 
             if (conn.TryGetProperty("candidate", out JsonElement candidateArray)
                 && candidateArray.ValueKind == JsonValueKind.Array)
@@ -167,7 +180,7 @@ public sealed record HalyardSignalingMessage(
             }
         }
 
-        return new HalyardSignalingMessage(action, reqId, fromPlatform, candidates, skey, hashedId);
+        return new HalyardSignalingMessage(action, reqId, fromPlatform, candidates, skey, hashedId, sid, peerSid);
     }
 
     private static byte[]? DecodeBase64(JsonElement parent, string name)
