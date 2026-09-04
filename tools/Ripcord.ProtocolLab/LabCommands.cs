@@ -11,6 +11,7 @@ using Ripcord.Core.Net.WebSockets;
 using Ripcord.Presentation.Consoles;
 using Ripcord.Presentation.Halyard.Pairing;
 using Ripcord.Presentation.Pairing;
+using Ripcord.Protocol.Halyard.Common.Control;
 using Ripcord.Protocol.Halyard.Common.Crypto;
 using Ripcord.Protocol.Halyard.Common.Discovery;
 using Ripcord.Protocol.Halyard.Common.Input;
@@ -108,13 +109,28 @@ internal static class LabCommands
     {
         if (args.Length < 3)
         {
-            Console.Error.WriteLine("usage: accountpair <consoleIp> <duid> [ps4|ps5] [--frames]   (run `cloud` to list duids)");
+            Console.Error.WriteLine("usage: accountpair <consoleIp> <duid> [ps4|ps5] [--frames] [--hello=pair|single|addr]");
+            Console.Error.WriteLine("       (run `cloud` to list duids; --hello selects the chunk header's word count)");
             return 1;
         }
 
         // Off by default: a frame can carry the encrypted seed and always carries account and device ids, and
         // this output gets pasted into notes. On, when a summary is not enough to explain a refusal.
         bool dumpFrames = args.Any(a => a.Equals("--frames", StringComparison.OrdinalIgnoreCase));
+
+        // Which lookup our hello lands in on the console. `pair` (word count 3) is what every capture
+        // carries and what the console has ignored in silence every time; `addr` (count 1) carries no port
+        // words and is matched on the peer address record instead, so it reaches a different lookup entirely.
+        // A flag rather than a code change because the answer is a live measurement.
+        string helloArg = args.FirstOrDefault(a =>
+            a.StartsWith("--hello=", StringComparison.OrdinalIgnoreCase))?.Split('=', 2)[1] ?? "pair";
+        HalyardControlAddressing addressing = helloArg.ToLowerInvariant() switch
+        {
+            "pair" => HalyardControlAddressing.PortPair,
+            "single" => HalyardControlAddressing.SinglePort,
+            "addr" => HalyardControlAddressing.PeerAddressOnly,
+            _ => throw new ArgumentException($"--hello must be pair, single or addr; got '{helloArg}'."),
+        };
 
         string consoleIp = args[1];
         string duid = args[2];
@@ -131,7 +147,11 @@ internal static class LabCommands
 
         var pairing = new HalyardAccountConsolePairing(
             gateway,
-            options: new HalyardAccountPairingOptions { Log = line => Console.WriteLine($"  · {line}") },
+            options: new HalyardAccountPairingOptions
+            {
+                Log = line => Console.WriteLine($"  · {line}"),
+                HelloAddressing = addressing,
+            },
 
             // Every raw push frame, summarised. The seed only follows the console JOINING the session, and both
             // events land here — so without this a failure says "no seed" and nothing about how far it got.
@@ -155,6 +175,7 @@ internal static class LabCommands
         Console.WriteLine($"this client's device id: {HalyardClientDeviceId.For(new DefaultDeviceIdentity())}");
         Console.WriteLine("the console must be reachable on this network: the seed comes over the cloud, the");
         Console.WriteLine("registration POST does not.");
+        Console.WriteLine($"hello addressing: {addressing} (chunk header word count {(int)addressing})");
 
         ConsoleRegistrationResult result = await pairing.PairAsync(
             new AccountPairingRequest(consoleIp, account.AccountId, duid, family), CancellationToken.None);
