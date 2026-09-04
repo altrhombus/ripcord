@@ -39,6 +39,13 @@ public static class HalyardEndpoints
 
     /// <summary>Required signaling channel wire value.</summary>
     public const string SignalingChannel = "remote_play:1";
+
+    /// <summary>
+    /// The <c>User-Agent</c> the vendor client sends on every cloud REST call (captured, cap107 and every
+    /// other rendezvous capture). A required on-wire value, not a naming choice — see the naming rules in
+    /// CLAUDE.md, which keep interoperability facts verbatim.
+    /// </summary>
+    public const string CloudUserAgent = "RpNetHttpUtilImpl";
 }
 
 // ---- OAuth ----
