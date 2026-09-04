@@ -29,9 +29,37 @@ public class CloudConsoleMatchTests
     /// sharing one would collapse into a single entry on upsert, which is correct behaviour and makes a
     /// multi-console fixture silently a one-console fixture.
     /// </summary>
+    /// <summary>
+    /// One host octet per distinct id, assigned in first-seen order.
+    ///
+    /// <para>
+    /// This used to be <c>id.GetHashCode() &amp; 0x7f</c>, which flaked about one run in forty: .NET randomizes
+    /// string hashing per process, and 0x7f leaves 128 buckets, so two of a test's ids would occasionally land
+    /// on the same host. The store treats a shared host as the same physical console
+    /// (<c>PairedConsoleStore.IsSameConsole</c> matches on <c>Id</c> <em>or</em> <c>Host</c>, so a re-pair after
+    /// a DHCP change still finds its record), and an Upsert would then quietly replace a record the test still
+    /// expected to be there. Deterministic and injective, so it cannot.
+    /// </para>
+    /// </summary>
+    private static readonly Dictionary<string, int> HostOctets = new(StringComparer.Ordinal);
+
+    private static int HostOctetFor(string id)
+    {
+        lock (HostOctets)
+        {
+            if (!HostOctets.TryGetValue(id, out int octet))
+            {
+                octet = HostOctets.Count + 1;
+                HostOctets[id] = octet;
+            }
+
+            return octet;
+        }
+    }
+
     private static PairedConsole Stored(
         string id, string? reportedName, string? cloudDeviceId = null, string? nickname = null)
-        => new(id, "PlayStation 5", $"10.0.0.{id.GetHashCode(StringComparison.Ordinal) & 0x7f}", "PS5", "blob")
+        => new(id, "PlayStation 5", $"10.0.0.{HostOctetFor(id)}", "PS5", "blob")
         {
             ReportedName = reportedName,
             CloudDeviceId = cloudDeviceId,
