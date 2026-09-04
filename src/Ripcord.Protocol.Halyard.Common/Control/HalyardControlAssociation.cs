@@ -59,6 +59,42 @@ public enum HalyardControlPhase
 }
 
 /// <summary>
+/// How a chunk we originate addresses the peer — the chunk header's word count, named for what it selects.
+///
+/// <para>
+/// The receiver looks a connection up by the last port word a chunk carries, and a chunk carrying none is
+/// matched on the peer address record instead. Which of those we use is therefore a real protocol choice and
+/// not a formatting detail: it decides <em>which</em> of the peer's connection objects our chunk can reach.
+/// </para>
+/// </summary>
+public enum HalyardControlAddressing
+{
+    /// <summary>
+    /// Word count 3: a (source, destination) port pair, both the control port. What every capture we hold
+    /// carries, and the default.
+    /// </summary>
+    PortPair = 3,
+
+    /// <summary>
+    /// Word count 2: a single port word, which the receiver requires to equal <em>both</em> the local and the
+    /// peer port of the connection it selects. Never observed; included because the receiver accepts it.
+    /// </summary>
+    SinglePort = 2,
+
+    /// <summary>
+    /// Word count 1: no port words at all, so the receiver matches on the peer address record alone.
+    ///
+    /// <para>
+    /// <b>[X] Never observed on the wire — this is an experiment.</b> Every hello Ripcord has sent used
+    /// <see cref="PortPair"/> and the console ignored all of them in silence, which is exactly what a port
+    /// lookup miss does. This shape sidesteps the port lookup, so if the console holds any connection object
+    /// for our address — and it must, since it dialled us — a hello addressed this way reaches it.
+    /// </para>
+    /// </summary>
+    PeerAddressOnly = 1,
+}
+
+/// <summary>
 /// The account-route control transport as a <b>peer association</b>, driven purely by what arrives.
 ///
 /// <para>
@@ -128,6 +164,13 @@ public sealed class HalyardControlAssociation
     private bool _peerEchoed;
 
     private byte[]? _helloBody;
+
+    /// <summary>
+    /// How the connection we opened addresses the peer. Held so a retransmission and the cookie echo repeat
+    /// the shape of the hello they belong to — a connection addressed two different ways is two attempts, not
+    /// one.
+    /// </summary>
+    private HalyardControlAddressing _helloAddressing = HalyardControlAddressing.PortPair;
     private ushort _sequence;
     private ushort _peerSequence;
     private readonly List<byte> _inbound = [];
@@ -182,17 +225,23 @@ public sealed class HalyardControlAssociation
         };
 
     /// <summary>Open a chunk-layer connection. Only meaningful once the prelude is established.</summary>
-    public HalyardControlAction OpenConnection()
+    /// <param name="addressing">
+    /// How the hello addresses the peer. Defaults to the shape every capture carries; the others exist so the
+    /// question of which of the peer's connection objects a chunk can reach is testable against hardware.
+    /// </param>
+    public HalyardControlAction OpenConnection(
+        HalyardControlAddressing addressing = HalyardControlAddressing.PortPair)
     {
         if (Phase != HalyardControlPhase.Established)
         {
             return HalyardControlAction.None;
         }
 
+        _helloAddressing = addressing;
         _sequence = BinaryPrimitives.ReadUInt16BigEndian(_random(2));
         _helloBody = HelloBody(_sequence, _random(4));
         return Datagrams(HalyardControlChunkCodec.Encode(
-            HalyardControlChunkType.Hello, DefaultFlags, _helloBody));
+            HalyardControlChunkType.Hello, DefaultFlags, _helloBody, (byte)_helloAddressing));
     }
 
     /// <summary>
@@ -206,7 +255,7 @@ public sealed class HalyardControlAssociation
     public HalyardControlAction ReopenConnection()
         => Phase == HalyardControlPhase.Established && _helloBody is not null
             ? Datagrams(HalyardControlChunkCodec.Encode(
-                HalyardControlChunkType.Hello, DefaultFlags, _helloBody))
+                HalyardControlChunkType.Hello, DefaultFlags, _helloBody, (byte)_helloAddressing))
             : HalyardControlAction.None;
 
     /// <summary>
@@ -331,7 +380,10 @@ public sealed class HalyardControlAssociation
                 }
 
                 return Datagrams(HalyardControlChunkCodec.Encode(
-                    HalyardControlChunkType.HelloEcho, DefaultFlags, Concat(_helloBody, chunk.Body.Span)));
+                    HalyardControlChunkType.HelloEcho,
+                    DefaultFlags,
+                    Concat(_helloBody, chunk.Body.Span),
+                    (byte)_helloAddressing));
 
             case HalyardControlChunkType.Accept:
                 if (chunk.Body.Length < 4)
@@ -353,7 +405,7 @@ public sealed class HalyardControlAssociation
                     ? BinaryPrimitives.ReadUInt16BigEndian(chunk.Body.Span)
                     : (ushort)0;
                 return Datagrams(HalyardControlChunkCodec.Encode(
-                    HalyardControlChunkType.Cookie, 0x00, PeerCookieBody()));
+                    HalyardControlChunkType.Cookie, 0x00, PeerCookieBody(), chunk.WordCount));
 
             case HalyardControlChunkType.HelloEcho:
                 // It returned our cookie; the connection is open with us as the responder.
@@ -361,8 +413,10 @@ public sealed class HalyardControlAssociation
                 Phase = HalyardControlPhase.Connected;
                 return new HalyardControlAction(
                     [HalyardControlChunkCodec.Encode(
-                        HalyardControlChunkType.Accept, DefaultFlags,
-                        Concat(SequencePair(_sequence, (ushort)(_peerSequence + 1)), CapabilityTail()))],
+                        HalyardControlChunkType.Accept,
+                        DefaultFlags,
+                        Concat(SequencePair(_sequence, (ushort)(_peerSequence + 1)), CapabilityTail()),
+                        chunk.WordCount)],
                     [new HalyardControlEvent.ConnectionOpened(OpenedByPeer: true)]);
 
             case HalyardControlChunkType.Data:
