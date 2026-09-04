@@ -142,6 +142,10 @@ public sealed class HalyardAccountPairingTests
             (string Data1, string Data2, string Data3) seeds, CancellationToken ct)
         {
             CommandSent = true;
+
+            // The console joins first — the client's OFFER hangs off this, so a fake that skips it never sees
+            // one sent.
+            socket.Enqueue(ConsoleJoinedFrame());
             byte[] data1 = Convert.FromBase64String(seeds.Data1);
             byte[] data2 = Convert.FromBase64String(seeds.Data2);
             string customData1 = HalyardAccountSeedDelivery.EncodeCustomData1(
@@ -194,6 +198,11 @@ public sealed class HalyardAccountPairingTests
     /// A console OFFER as it arrives on the push channel, carrying the id the console will name itself by in
     /// the control prelude and one LOCAL candidate to reach it on.
     /// </summary>
+    /// <summary>The members:created the console's join arrives as.</summary>
+    private static string ConsoleJoinedFrame()
+        => "{\"dataType\":\"psn:sessionManager:sys:rps:members:created\",\"body\":{\"data\":{"
+           + "\"members\":[{\"platform\":\"PROSPERO\"}]}}}";
+
     private const int consoleSid = 24043;
 
     private static string OfferFrame(byte[] consoleHashedId, int sid)

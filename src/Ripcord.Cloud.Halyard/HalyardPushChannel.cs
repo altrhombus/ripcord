@@ -75,6 +75,12 @@ public sealed class HalyardPushChannel(IWebSocketChannel socket) : IAsyncDisposa
     /// </summary>
     public event Action<string>? CustomData1Received;
 
+    /// <summary>
+    /// Raised when the console joins the session — the first moment a client may message it, and the moment
+    /// before which it has not yet started its own control association.
+    /// </summary>
+    public event Action? ConsoleJoined;
+
     /// <summary>Raised for every text frame before parsing, for diagnostics/capture. Optional.</summary>
     public event Action<string>? FrameReceived;
 
@@ -150,6 +156,12 @@ public sealed class HalyardPushChannel(IWebSocketChannel socket) : IAsyncDisposa
         if (HalyardCustomDataNotification.TryParseCustomData1(frame) is { } customData1)
         {
             Raise(CustomData1Received, customData1);
+            return;
+        }
+
+        if (HalyardCustomDataNotification.IsConsoleJoined(frame))
+        {
+            Raise(ConsoleJoined);
         }
     }
 
@@ -157,6 +169,23 @@ public sealed class HalyardPushChannel(IWebSocketChannel socket) : IAsyncDisposa
     /// Invoke a handler without letting its exception escape the receive loop. A consumer that throws is a
     /// consumer bug; it must not take the push connection — and with it the whole connect attempt — down.
     /// </summary>
+    private static void Raise(Action? handler)
+    {
+        if (handler is null)
+        {
+            return;
+        }
+
+        try
+        {
+            handler();
+        }
+        catch (Exception)
+        {
+            // Deliberately swallowed; see the summary.
+        }
+    }
+
     private static void Raise<T>(Action<T>? handler, T argument)
     {
         if (handler is null)

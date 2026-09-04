@@ -98,8 +98,18 @@ public sealed class HalyardControlAssociation
     /// <summary>The flags byte on nearly every chunk. <c>0x2F</c> also occurs; what selects it is <b>[X]</b>.</summary>
     private const byte DefaultFlags = 0x30;
 
-    /// <summary>The request word the opening side of the prelude sends; the answering side sends zero.</summary>
-    private const uint InitiatorRequestWord = 0x19;
+    /// <summary>
+    /// The request word the opening side sends; the answering side sends zero, and an echo mirrors whatever
+    /// the Init it answers carried.
+    ///
+    /// <para>
+    /// <b>[X] Not a constant, and this value is a choice.</b> A WAN client sends <c>0x19</c> and a same-LAN one
+    /// <c>0x40</c>; what selects it is unknown. <c>0x40</c> is used here because the account route's live
+    /// target is a console on the same network, so it is the value a console in that position has actually
+    /// been seen to accept.
+    /// </para>
+    /// </summary>
+    private const uint InitiatorRequestWord = 0x40;
 
     private readonly byte[] _localHashedId;
     private readonly byte[] _peerHashedId;

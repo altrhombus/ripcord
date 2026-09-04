@@ -166,8 +166,14 @@ public sealed class HalyardAccountPairing(
             }
         }
 
+        // The console joining is the earliest moment we may message it, and the moment before it starts its
+        // own control association. Everything the client wants to get in early hangs off this.
+        var joined = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        void OnJoined() => joined.TrySetResult();
+
         pushChannel.CustomData1Received += OnCustomData1;
         pushChannel.SignalingReceived += OnSignaling;
+        pushChannel.ConsoleJoined += OnJoined;
 
         // Start receiving before triggering the console, so a customData1 published the instant it joins is not
         // missed. The loop runs until lifetime is cancelled or the peer closes.
@@ -192,6 +198,24 @@ public sealed class HalyardAccountPairing(
                 (Convert.ToBase64String(data1), Convert.ToBase64String(data2), string.Empty), cancellationToken)
                 .ConfigureAwait(false);
             Log("connect command sent (data1/data2)");
+
+            // The console joining is the first moment it can be messaged at all — a sessionMessage only
+            // reaches a member. It is NOT, however, the moment to offer: sending ours before the console's
+            // OFFER breaks the exchange, because on this route the console initiates the signaling (its OFFER
+            // arrives unprompted, with its own reqId) and we are the responder. Tried live; the console
+            // answered by TERMINATE-ing and never opened a control association at all.
+            if (!request.LocalHashedId.IsEmpty)
+            {
+                try
+                {
+                    await joined.Task.WaitAsync(_options.OfferTimeout, cancellationToken).ConfigureAwait(false);
+                    Log("console joined the session");
+                }
+                catch (TimeoutException)
+                {
+                    Log("the console never joined the session");
+                }
+            }
 
             byte[] recoveredSeed;
             try
@@ -248,11 +272,11 @@ public sealed class HalyardAccountPairing(
                     sessionId, request.AccountId, request.ConsoleDuid, ours, cancellationToken,
                     request.LocalHashedId).ConfigureAwait(false);
 
-                // Between the OFFER and the ACCEPT, and this placement is the protocol's, not a preference.
-                // The console cannot answer a prelude until the OFFER above has told it our candidate, and it
-                // opens an association of its own the instant the ACCEPT below arrives — and the side that
-                // opened the association is the side that may open a connection on it. Four live runs lost
-                // that race and ended with a healthy association nobody could use.
+                // Our Init goes out here: the console now knows our candidate (from the OFFER sent when it
+                // joined, above), and it has not yet seen the ACCEPT below that makes it open an association of
+                // its own. That window is the whole game — the side that opens the association is the side that
+                // may open connections on it. Starting it must not block, or we would be waiting for an answer
+                // that our own unsent ACCEPT is preventing.
                 try
                 {
                     await registration.PrepareAsync(cancellationToken).ConfigureAwait(false);
@@ -263,8 +287,6 @@ public sealed class HalyardAccountPairing(
                     Log($"could not open the control association: {ex.Message}");
                 }
 
-                // The ACCEPT describes the selected pair, so it needs both ends. Without a local endpoint
-                // there is no pair to name and the negotiation stops at the OFFER.
                 HalyardSignalingCandidate? path = PreferredCandidate(consoleOffer, request.ConsoleHost);
                 if (path is not null && request.LocalEndpoint is { } local)
                 {
@@ -295,6 +317,7 @@ public sealed class HalyardAccountPairing(
         {
             pushChannel.CustomData1Received -= OnCustomData1;
             pushChannel.SignalingReceived -= OnSignaling;
+            pushChannel.ConsoleJoined -= OnJoined;
 
             // Leave the session we created, always — success or failure, and before the push channel goes down
             // so the leave is announced on a live connection like the vendor's is (its last frame is a
