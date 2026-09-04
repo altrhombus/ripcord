@@ -86,18 +86,44 @@ public static class HalyardRegistrationMessage
     /// Split a raw HTTP response into status code and body. Returns false if malformed or non-2xx.
     /// </summary>
     public static bool TrySplitResponse(ReadOnlySpan<byte> response, out int statusCode, out byte[] body)
+        => TrySplitResponse(response, out statusCode, out body, out _);
+
+    /// <summary>
+    /// As above, and also reports the console's own <c>RP-Application-Reason</c> when it sends one.
+    ///
+    /// <para>
+    /// That header is the console explaining itself, and discarding it made every refusal look alike: a
+    /// rejected registration reported only its HTTP status, so "wrong key", "wrong transport for this route"
+    /// and "no" were the same message. It is a hex application code (e.g. the generic <c>80108bff</c>), and it
+    /// is the difference between a diagnosis and another guess.
+    /// </para>
+    /// </summary>
+    public static bool TrySplitResponse(
+        ReadOnlySpan<byte> response, out int statusCode, out byte[] body, out string? applicationReason)
     {
         statusCode = 0;
         body = [];
+        applicationReason = null;
 
         int sep = IndexOf(response, "\r\n\r\n"u8);
         if (sep < 0)
             return false;
 
         string head = Encoding.ASCII.GetString(response[..sep]);
-        string[] statusParts = head.Split("\r\n")[0].Split(' ', 3);
+        string[] lines = head.Split("\r\n");
+        string[] statusParts = lines[0].Split(' ', 3);
         if (statusParts.Length < 2 || !int.TryParse(statusParts[1], out statusCode))
             return false;
+
+        foreach (string line in lines.Skip(1))
+        {
+            int colon = line.IndexOf(':');
+            if (colon > 0 && line[..colon].Trim().Equals("RP-Application-Reason", StringComparison.OrdinalIgnoreCase))
+            {
+                applicationReason = line[(colon + 1)..].Trim();
+                break;
+            }
+        }
 
         body = response[(sep + 4)..].ToArray();
         return statusCode is >= 200 and < 300;
