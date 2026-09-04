@@ -87,6 +87,14 @@ public sealed class HalyardAccountGateway
     public HalyardCloudClient Cloud => _cloud;
 
     /// <summary>
+    /// The client device id this gateway signs in with. Exposed because the signaling <c>localHashedId</c> must
+    /// derive from the same one — a client that announced an id unrelated to the device it authenticated as
+    /// would be two different peers as far as the console is concerned. Empty when this build has no
+    /// credential and never formed one.
+    /// </summary>
+    public string ClientDeviceId => _clientDeviceId;
+
+    /// <summary>
     /// A currently-valid access token, refreshing if needed. Used by callers that must present the token
     /// somewhere other than the cloud REST surface — the push WebSocket upgrade in particular.
     /// </summary>
