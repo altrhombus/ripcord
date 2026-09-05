@@ -83,7 +83,9 @@ public sealed class HalyardRegistrationCipher : IHalyardRegistrationCipher
         byte[] context = RandomNumberGenerator.GetBytes(ContextLength);
         byte[] material = RandomNumberGenerator.GetBytes(16);
 
-        byte[] wrapped = _kdf.WrapMaterial(material, context);
+        // The account route's wrap, not the PIN route's -- same table, different transform. See
+        // HalyardRegistrationKdf.WrapAccountMaterial for why they are not interchangeable.
+        byte[] wrapped = _kdf.WrapAccountMaterial(material, context);
         HalyardRegistrationKdf.ScatterWrapped(wrapped, context);
 
         byte[] field = AccountFieldCrypto(context, seed, material).EncryptField(FieldCounter, fieldPlaintext);
@@ -106,6 +108,14 @@ public sealed class HalyardRegistrationCipher : IHalyardRegistrationCipher
     /// <summary>Recover the material the sender transmitted, from the wrapped bytes in the request context.</summary>
     public byte[] RecoverMaterial(ReadOnlySpan<byte> context)
         => _kdf.UnwrapMaterial(HalyardRegistrationKdf.GatherWrapped(context), context);
+
+    /// <summary>
+    /// The account route's counterpart of <see cref="RecoverMaterial"/>. The two routes wrap the material
+    /// with the same table under different transforms, so a request must be read back with the one that
+    /// wrote it.
+    /// </summary>
+    public byte[] RecoverAccountMaterial(ReadOnlySpan<byte> context)
+        => _kdf.UnwrapAccountMaterial(HalyardRegistrationKdf.GatherWrapped(context), context);
 
     /// <summary>Decrypt a body given the context, passcode, and material explicitly (used by live-vector tests
     /// and the console-side path, where the context, PIN, and recovered material are all known directly).</summary>
