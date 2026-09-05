@@ -48,6 +48,19 @@ public readonly struct HalyardCtrlMessage
     public const ushort TypeSessionId = 0x0033;
 
     /// <summary>
+    /// Console → client: the stream service is ready for its Takion association. Empty payload.
+    ///
+    /// <para>
+    /// Only the rendezvous route appears to need it. There, every captured session has the console send this
+    /// after the client has probed the A/V leg and reported back, and the client opens the stream association
+    /// within milliseconds of receiving it — whereas a LAN console answers the SESSION_REQUEST whether or not
+    /// anything like this has passed. **[X]** what the console requires before sending it: our own sessions
+    /// reach <see cref="TypeSessionId"/> and the probe, and this never arrives.
+    /// </para>
+    /// </summary>
+    public const ushort TypeStreamReady = 0x0034;
+
+    /// <summary>
     /// Client → console: put the console into rest mode on this disconnect. Empty payload. Isolated in cap52
     /// by diffing a rest-on disconnect against a rest-off one — the only difference was this frame (the console
     /// acks with <see cref="TypeRestModeAck"/>). Send it before tearing the session down; omit it to leave the
