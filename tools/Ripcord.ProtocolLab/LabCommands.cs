@@ -226,18 +226,21 @@ internal static class LabCommands
         }));
 
         Console.WriteLine($"watching the stream for {seconds}s...");
-        long lastVideo = 0, lastAudio = 0;
+        long lastVideo = 0, lastAudio = 0, lastKey = 0, lastBytes = 0;
         for (int elapsed = 1; elapsed <= seconds; elapsed++)
         {
             await Task.Delay(TimeSpan.FromSeconds(1)).ConfigureAwait(false);
             long nowVideo = Interlocked.Read(ref videoFrames);
             long nowAudio = Interlocked.Read(ref audioFrames);
+            long nowKey = Interlocked.Read(ref keyFrames);
+            long nowBytes = Interlocked.Read(ref videoBytes);
             Console.WriteLine(
-                $"  t+{elapsed,3}s  video {nowVideo - lastVideo,4} fps ({nowVideo} total, {keyFrames} key, "
-                + $"{videoBytes / 1024} KiB)   audio {nowAudio - lastAudio,4} ({nowAudio} total, "
-                + $"{audioBytes / 1024} KiB)");
+                $"  t+{elapsed,3}s  video {nowVideo - lastVideo,4} fps  {(nowBytes - lastBytes) * 8 / 1000,6} kbps"
+                + $"  key +{nowKey - lastKey} ({nowKey} total)   audio {nowAudio - lastAudio,4}");
             lastVideo = nowVideo;
             lastAudio = nowAudio;
+            lastKey = nowKey;
+            lastBytes = nowBytes;
         }
 
         Console.WriteLine(videoFrames > 0
