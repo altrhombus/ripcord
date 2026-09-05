@@ -339,6 +339,11 @@ public sealed class HalyardStreamingSession : IStreamingSession
             .Header("Host", _parameters.ControlEndpoint.ToString())
             .Header("User-Agent", "remoteplay Windows")
             .Header("Connection", "close")
+
+            // Every captured vendor request carries it, on both routes and both protocol versions, even
+            // though the request has no body. Ours omitted it and the LAN console did not mind; the account
+            // route refuses /sess/init and this is one of the few things that still differs from the capture.
+            .Header("Content-Length", "0")
             .Header(SessProtocol.HeaderRegistKey, registKey)
             .Header(SessProtocol.HeaderVersion, SessProtocol.VersionFor(platform));
 
@@ -352,6 +357,7 @@ public sealed class HalyardStreamingSession : IStreamingSession
             .Header("Host", _parameters.ControlEndpoint.ToString())
             .Header("User-Agent", "remoteplay Windows")
             .Header("Connection", "keep-alive")
+            .Header("Content-Length", "0")
             // Fixed plaintext fields the console requires alongside the encrypted ones (wire-confirmed, cap22).
             .Header(SessProtocol.HeaderVersion, SessProtocol.VersionFor(platform))
             .Header(SessProtocol.HeaderControllerType, "0")
