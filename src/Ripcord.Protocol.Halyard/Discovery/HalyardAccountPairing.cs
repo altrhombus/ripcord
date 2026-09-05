@@ -65,11 +65,32 @@ public sealed record HalyardAccountTransportContext(
 /// and the control frames after them. The caller owns it: disposing it ends the session.
 /// </para>
 /// </summary>
+/// <summary>
+/// What the shared rendezvous hands to whatever finishes it: the negotiated context, the seed if one was
+/// required, the cloud session it all runs in, and a way to await the console's <em>next</em> OFFER.
+///
+/// <para>
+/// The last of those is the media leg: the console offers a second connection, on its own sid, once the
+/// control plane is up. Passed as a callback rather than a collection because it is awaited long after the
+/// rendezvous returns -- the session asks for it while it is starting the stream.
+/// </para>
+/// </summary>
+public sealed record RendezvousOutcome(
+    HalyardAccountTransportContext Context,
+    byte[] Seed,
+    string SessionId,
+    IAsyncDisposable SessionLifetime,
+    Func<CancellationToken, Task<HalyardSignalingMessage?>> NextOffer);
+
+/// <summary>Where the console's A/V leg is, once its second candidate exchange has been answered.</summary>
+public sealed record HalyardMediaEndpoint(string Address, int Port, byte[] ConsoleHashedId);
+
 public sealed record HalyardAccountConnection(
     HalyardDatagramControlChannel? Channel,
     HalyardAccountTransportContext? Context,
     string? FailureReason,
-    IAsyncDisposable? SessionLifetime = null)
+    IAsyncDisposable? SessionLifetime = null,
+    Func<int, CancellationToken, Task<HalyardMediaEndpoint?>>? NegotiateMedia = null)
 {
     public bool Succeeded => Channel is not null;
 
@@ -165,7 +186,7 @@ public sealed class HalyardAccountPairing(
                 registration = _registration(context);
                 return registration.PrepareAsync(ct);
             },
-            finish: async (_, seed, _, ct) =>
+            finish: async (outcome, ct) =>
             {
                 if (registration is null)
                 {
@@ -177,7 +198,7 @@ public sealed class HalyardAccountPairing(
                     request.ConsoleId, request.ConsoleHost, request.AccountId,
                     Passcode: string.Empty, request.ClientDeviceId, request.Platform)
                 {
-                    AccountSeed = seed,
+                    AccountSeed = outcome.Seed,
                 };
 
                 HalyardRegistrationResult result = await registration
@@ -229,7 +250,7 @@ public sealed class HalyardAccountPairing(
                 transport = transportFactory(context);
                 return transport.PrepareAsync(ct);
             },
-            finish: async (context, seed, sessionLifetime, ct) =>
+            finish: async (outcome, ct) =>
             {
                 HalyardDatagramControlChannel? channel = transport?.Channel;
                 if (channel is null)
@@ -241,7 +262,7 @@ public sealed class HalyardAccountPairing(
 
                 if (registerFirst is not null)
                 {
-                    string? failure = await registerFirst(context, seed, ct).ConfigureAwait(false);
+                    string? failure = await registerFirst(outcome.Context, outcome.Seed, ct).ConfigureAwait(false);
                     if (failure is not null)
                     {
                         Log($"registration on the session's association failed: {failure}");
@@ -251,8 +272,47 @@ public sealed class HalyardAccountPairing(
                     Log("registered on the session's association");
                 }
 
+                async Task<HalyardMediaEndpoint?> NegotiateMediaAsync(int localPort, CancellationToken mediaToken)
+                {
+                    HalyardSignalingMessage? mediaOffer =
+                        await outcome.NextOffer(mediaToken).ConfigureAwait(false);
+                    if (mediaOffer is null)
+                    {
+                        Log("the console never offered a media connection");
+                        return null;
+                    }
+
+                    HalyardSignalingCandidate? path = PreferredCandidate(mediaOffer, request.ConsoleHost);
+                    if (path is null || request.LocalEndpoint is not { } local)
+                    {
+                        return null;
+                    }
+
+                    // Answered exactly as the control leg was: our own OFFER, then an ACCEPT naming the
+                    // console's stream id. Our sid and reqId count on from the control connection's, which is
+                    // what the captured client does when it negotiates its second stream -- and the sid is the
+                    // half that matters, because the console takes our id for this leg from the OFFER, not the
+                    // ACCEPT. Offering it as stream 1 again made the console's second connection collide with
+                    // its first: preluded, then never served.
+                    await _signaling.SendOfferAsync(
+                        outcome.SessionId, request.AccountId, request.ConsoleDuid,
+                        [new HalyardCandidate("LOCAL", local.Address, localPort)],
+                        mediaToken, request.LocalHashedId,
+                        reqId: OurOfferReqId + 2, sid: OurStreamId + 1).ConfigureAwait(false);
+
+                    await _signaling.SendAcceptAsync(
+                        outcome.SessionId, request.AccountId, request.ConsoleDuid,
+                        reqId: OurAcceptReqId + 2, sid: OurStreamId + 1, peerSid: mediaOffer.Sid,
+                        new HalyardCandidate(path.Type, path.Address, path.Port),
+                        local.Address, localPort, mediaToken).ConfigureAwait(false);
+
+                    Log($"media connection negotiated (peerSid={mediaOffer.Sid}, console {path.Address}:{path.Port})");
+                    return new HalyardMediaEndpoint(path.Address, path.Port, mediaOffer.LocalHashedId ?? []);
+                }
+
                 Log("control association ready for the session");
-                return new HalyardAccountConnection(channel, context, null, sessionLifetime);
+                return new HalyardAccountConnection(
+                    channel, outcome.Context, null, outcome.SessionLifetime, NegotiateMediaAsync);
             },
             fail: HalyardAccountConnection.Failed,
             cancellationToken);
@@ -282,7 +342,7 @@ public sealed class HalyardAccountPairing(
         bool requireSeed,
         bool keepSessionOpen,
         Func<HalyardAccountTransportContext, CancellationToken, Task> openAssociation,
-        Func<HalyardAccountTransportContext, byte[], IAsyncDisposable, CancellationToken, Task<T>> finish,
+        Func<RendezvousOutcome, CancellationToken, Task<T>> finish,
         Func<string, T> fail,
         CancellationToken cancellationToken)
     {
@@ -368,6 +428,11 @@ public sealed class HalyardAccountPairing(
                 CancellationToken.None);
         }
 
+        // The console offers the media connection separately, on its own sid, once the control plane is up --
+        // so a second OFFER is not a duplicate to be ignored but the A/V leg arriving.
+        var mediaOffers = System.Threading.Channels.Channel.CreateUnbounded<HalyardSignalingMessage>();
+        bool sawFirstOffer = false;
+
         void OnSignaling(HalyardSignalingMessage message)
         {
             if (message.ExpectsResult)
@@ -379,7 +444,18 @@ public sealed class HalyardAccountPairing(
             // symmetric, so both sides OFFER and the console's is the one carrying its candidates.
             if (message.Action == "OFFER" && message.LocalHashedId is { Length: > 0 })
             {
-                offer.TrySetResult(message);
+                if (offer.TrySetResult(message))
+                {
+                    sawFirstOffer = true;
+                    return;
+                }
+
+                // A repeat of the first is just the push channel delivering it twice; a new sid is the media
+                // connection being offered.
+                if (sawFirstOffer && message.Sid != offer.Task.Result.Sid)
+                {
+                    mediaOffers.Writer.TryWrite(message);
+                }
             }
         }
 
@@ -537,8 +613,23 @@ public sealed class HalyardAccountPairing(
             // ignores it and the finally below does the same work.
             var sessionLifetime = new AccountSessionLifetime(
                 this, joinedSessionId, lifetime, pushLoop, pushChannel, OnCustomData1, OnSignaling, OnJoined);
-            T finished = await finish(context, recoveredSeed, sessionLifetime, cancellationToken)
-                .ConfigureAwait(false);
+
+            async Task<HalyardSignalingMessage?> NextOfferAsync(CancellationToken offerToken)
+            {
+                try
+                {
+                    return await mediaOffers.Reader.ReadAsync(offerToken).AsTask()
+                        .WaitAsync(_options.OfferTimeout, offerToken).ConfigureAwait(false);
+                }
+                catch (TimeoutException)
+                {
+                    return null;
+                }
+            }
+
+            var outcome = new RendezvousOutcome(
+                context, recoveredSeed, sessionId, sessionLifetime, NextOfferAsync);
+            T finished = await finish(outcome, cancellationToken).ConfigureAwait(false);
 
             // Only from here is the caller holding it: a failure before this point still tears down below.
             handedOff = keepSessionOpen;
@@ -623,6 +714,8 @@ public sealed class HalyardAccountPairing(
     }
 
     private const int OurStreamId = 1;
+
+    private const int OurOfferReqId = 1;
 
     private const int OurAcceptReqId = 2;
 

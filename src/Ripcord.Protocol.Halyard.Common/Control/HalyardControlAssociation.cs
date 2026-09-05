@@ -188,6 +188,19 @@ public sealed class HalyardControlAssociation
     private HalyardControlAddressing _helloAddressing = HalyardControlAddressing.PortPair;
     private ushort _sequence;
     private ushort _peerSequence;
+
+    /// <summary>
+    /// Whether <see cref="_peerSequence"/> yet names a payload chunk we took. It starts out holding the
+    /// console's *initial* sequence from the accept, which is one below the first payload — so without this,
+    /// that first payload would read as "already delivered" and be acknowledged into the void.
+    /// </summary>
+    private bool _delivered;
+
+    /// <summary>Every payload chunk opens with its sequence.</summary>
+    private const int SequenceLength = 2;
+
+    /// <summary>What a retransmission inserts after that sequence. See <see cref="OnData"/>.</summary>
+    private const int RetransmitHeaderLength = 6;
     private readonly List<byte> _inbound = [];
 
     /// <param name="peerAddress">
@@ -275,6 +288,7 @@ public sealed class HalyardControlAssociation
         {
             Phase = HalyardControlPhase.Established;
             _peerSequence = 0;
+            _delivered = false;
             _helloBody = null;
             _inbound.Clear();
         }
@@ -500,6 +514,7 @@ public sealed class HalyardControlAssociation
                 }
 
                 _peerSequence = BinaryPrimitives.ReadUInt16BigEndian(chunk.Body.Span);
+                _delivered = false;
                 _sequence = BinaryPrimitives.ReadUInt16BigEndian(chunk.Body.Span[2..]);
                 Phase = HalyardControlPhase.Connected;
                 return Event(new HalyardControlEvent.ConnectionOpened(OpenedByPeer: false));
@@ -511,6 +526,7 @@ public sealed class HalyardControlAssociation
                 _peerSequence = chunk.Body.Length >= 2
                     ? BinaryPrimitives.ReadUInt16BigEndian(chunk.Body.Span)
                     : (ushort)0;
+                _delivered = false;
                 return Datagrams(HalyardControlChunkCodec.Encode(
                     HalyardControlChunkType.Cookie, 0x00, PeerCookieBody(), chunk.WordCount));
 
@@ -527,14 +543,8 @@ public sealed class HalyardControlAssociation
                     [new HalyardControlEvent.ConnectionOpened(OpenedByPeer: true)]);
 
             case HalyardControlChunkType.Data:
-                if (chunk.Body.Length > 2)
-                {
-                    _peerSequence = BinaryPrimitives.ReadUInt16BigEndian(chunk.Body.Span);
-                    _inbound.AddRange(chunk.Body[2..].ToArray());
-                    return Event(new HalyardControlEvent.DataReceived([.. _inbound]));
-                }
-
-                return HalyardControlAction.None;
+            case HalyardControlChunkType.DataRetransmit:
+                return OnData(chunk);
 
             case HalyardControlChunkType.Ack:
             case HalyardControlChunkType.AckExtended:
@@ -549,6 +559,62 @@ public sealed class HalyardControlAssociation
                 return Event(new HalyardControlEvent.Unhandled(
                     $"chunk type {(byte)chunk.Type:X2}", datagram.ToArray()));
         }
+    }
+
+    /// <summary>
+    /// Deliver a payload chunk, and acknowledge it.
+    ///
+    /// <para>
+    /// <b>Acknowledge, always.</b> This used to acknowledge only as a side effect of
+    /// <see cref="Send"/> prefixing one to an outgoing payload — so a console frame we had no answer for went
+    /// unacknowledged until we happened to send something, which after <c>/sess/ctrl</c> could be seconds.
+    /// The console retransmits until acknowledged: a live capture showed it resending the <c>ctrl</c> response
+    /// twice over four seconds while we sat on it. The captured client answers within about forty milliseconds.
+    /// </para>
+    ///
+    /// <para>
+    /// <b>And deliver each sequence once.</b> Which only matters because we now see retransmissions at all:
+    /// dropping them wholesale (what the unknown-type path did) was lossless but blind, and appending them
+    /// blindly would splice a duplicate copy of the response into the byte pipe. The sequence says which it is.
+    /// </para>
+    /// </summary>
+    private HalyardControlAction OnData(HalyardControlChunk chunk)
+    {
+        // A retransmission carries a header between the sequence and the payload; the payload is otherwise
+        // identical. **[X]** Its six bytes are unexplained -- the first two are constant across every one we
+        // hold (0x8a04) and the rest vary with the attempt -- but their *length* is [W], from two captured
+        // retransmissions whose chunks ran exactly six bytes longer than the originals they repeated.
+        int headerLength = chunk.Type == HalyardControlChunkType.DataRetransmit
+            ? SequenceLength + RetransmitHeaderLength
+            : SequenceLength;
+
+        if (chunk.Body.Length <= headerLength)
+        {
+            return HalyardControlAction.None;
+        }
+
+        ushort sequence = BinaryPrimitives.ReadUInt16BigEndian(chunk.Body.Span);
+
+        // Wrapping-safe "have we already taken this one?": the difference read as signed is negative or zero
+        // for anything at or behind where we are, and stays right across the 16-bit wrap.
+        bool alreadyDelivered = _delivered && (short)(sequence - _peerSequence) <= 0;
+
+        byte[] ack = HalyardControlChunkCodec.Encode(
+            HalyardControlChunkType.Ack,
+            DefaultFlags,
+            SequencePair(_sequence, (ushort)((alreadyDelivered ? _peerSequence : sequence) + 1)),
+            chunk.WordCount);
+
+        if (alreadyDelivered)
+        {
+            return Datagrams(ack);
+        }
+
+        _peerSequence = sequence;
+        _delivered = true;
+        _inbound.AddRange(chunk.Body[headerLength..].ToArray());
+
+        return new HalyardControlAction([ack], [new HalyardControlEvent.DataReceived([.. _inbound])]);
     }
 
     /// <summary>Everything after this connection's payload has been delivered, reset for the next message.</summary>
