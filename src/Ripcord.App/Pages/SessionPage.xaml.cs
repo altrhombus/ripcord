@@ -244,12 +244,6 @@ public sealed partial class SessionPage : Page
             return;
         }
 
-        if (!IPAddress.TryParse(_console.Host, out IPAddress? address))
-        {
-            ShowStatus("Can't reach that console", $"'{_console.Host}' is not a valid IP address.", terminal: true);
-            return;
-        }
-
         SessionConfig config = _settings.ToSessionConfig();
 
         // PS4 Remote Play is H.264 / SDR only — HEVC and HDR are PS5 features. Requesting HEVC makes the
@@ -283,26 +277,14 @@ public sealed partial class SessionPage : Page
         _statsTimer.Tick += StatsTick;
         _statsTimer.Start();
 
-        var secrets = HalyardControlSecretsLoader.Load(out string cryptoSource);
-        var factory = new HalyardSessionFactory(secrets, new PairedConsoleCredentialStore(_services.Consoles));
-        if (!factory.HasRealCrypto)
+        StreamingAvailability streaming = _services.Sessions.Availability;
+        if (!streaming.Available)
         {
             // FATAL, and it must say so. Without the control secrets the session crypto is a passthrough stub, so
             // the handshake can never complete — this used to be noted in the diagnostics panel and then the connect
-            // was attempted anyway, leaving "Connecting…" on screen indefinitely with no stated cause. On a machine
-            // with no debugger that is close to undiagnosable, so the message names the file AND the directory.
-            // Normal builds bundle these constants, so reaching here means either this build omitted them
-            // (-p:BundleInteropConstants=false) or an override path was set and is broken. Say both, because
-            // on a machine with no debugger a wrong hint here is expensive.
-            D3D12StatusText.Text = $"Control constants NOT loaded — {cryptoSource}";
-            ShowStatus(
-                "Missing control constants",
-                "Streaming needs the protocol's control-plane constants, which are normally bundled with the "
-                + "build. This build either omitted them (BundleInteropConstants=false) or has a broken "
-                + $"override. To supply them explicitly, put control_crypto_vectors.json in "
-                + $"{_services.Paths.ConfigDirectory} or point RIPCORD_CONTROL_FIXTURE at it, then "
-                + $"reconnect.\n\nDetail: {cryptoSource}",
-                terminal: true);
+            // was attempted anyway, leaving "Connecting…" on screen indefinitely with no stated cause.
+            D3D12StatusText.Text = $"Control constants NOT loaded — {streaming.Detail}";
+            ShowStatus("Missing control constants", streaming.Detail, terminal: true);
             return;
         }
 
@@ -319,11 +301,23 @@ public sealed partial class SessionPage : Page
         // which always claims external power — meaning a handheld on battery streamed at full desktop quality.
         _powerMonitor = PowerThermalMonitor.ForCurrentPlatform();
 
-        ShowStatus("Connecting to your console…", "Control setup and stream negotiation.", terminal: false);
+        // Which route, and why — said out loud before it is taken. The account route costs tens of seconds,
+        // and silence for that long reads as a hang; "connecting through your account because this console
+        // isn't on your network" is the difference between a slow connect that makes sense and a broken one.
+        StreamingRouteChoice choice = await _services.Sessions
+            .ChooseRouteAsync(_console!, _connectCts!.Token);
+
+        ShowStatus("Connecting to your console…", choice.Reason, terminal: false);
+
+        var connectProgress = new Progress<string>(
+            line => ShowStatus("Connecting to your console…", line, terminal: false));
 
         // The controller owns everything from here: handshake, media/input routing, stall detection, reconnect.
+        // The session it is handed owns whatever its route holds open, so teardown stays the controller's
+        // ordinary dispose regardless of how the console was reached.
         _controller = new SessionController(
-            () => factory.Create(_console!.Id, address, loginPinProvider: RequestLoginPinAsync),
+            token => _services.Sessions.OpenAsync(
+                _console!, choice.Route, RequestLoginPinAsync, connectProgress, token),
             _pipeline!,
             _inputSource,
             _powerMonitor);
