@@ -263,6 +263,22 @@ public sealed class HalyardControlAssociation
     public HalyardControlAction OpenConnection(
         HalyardControlAddressing addressing = HalyardControlAddressing.PortPair)
     {
+        // Opening a connection says nothing about the previous one. The console tears each chunk connection
+        // down once it has answered -- the captured session runs `rgst`, `init` and `ctrl` as three
+        // connections over one prelude -- so this is the normal path, not a recovery.
+        //
+        // It has to work from Connected as well as Closed, because the peer's teardown of the previous
+        // connection is often still in flight when the caller asks for the next one. Refusing there left the
+        // association apparently connected, sent the next request down the connection that was already
+        // closing, and read that teardown as the answer.
+        if (Phase is HalyardControlPhase.Connected or HalyardControlPhase.Closed)
+        {
+            Phase = HalyardControlPhase.Established;
+            _peerSequence = 0;
+            _helloBody = null;
+            _inbound.Clear();
+        }
+
         if (Phase != HalyardControlPhase.Established)
         {
             return HalyardControlAction.None;
@@ -284,10 +300,20 @@ public sealed class HalyardControlAssociation
     /// </para>
     /// </summary>
     public HalyardControlAction ReopenConnection()
-        => Phase == HalyardControlPhase.Established && _helloBody is not null
+    {
+        // The peer's teardown of the PREVIOUS connection can arrive after we have already sent the hello for
+        // the next one, which puts the association back in Closed with a hello outstanding. Re-sending is
+        // still the right move; the connection we are opening is not the one that closed.
+        if (Phase == HalyardControlPhase.Closed && _helloBody is not null)
+        {
+            Phase = HalyardControlPhase.Established;
+        }
+
+        return Phase == HalyardControlPhase.Established && _helloBody is not null
             ? Datagrams(HalyardControlChunkCodec.Encode(
                 HalyardControlChunkType.Hello, DefaultFlags, _helloBody, (byte)_helloAddressing))
             : HalyardControlAction.None;
+    }
 
     /// <summary>
     /// Send a payload on the open connection — an HTTP request, or a binary control frame.

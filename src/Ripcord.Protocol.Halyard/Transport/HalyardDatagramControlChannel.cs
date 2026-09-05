@@ -223,8 +223,16 @@ public sealed class HalyardDatagramControlChannel : IAsyncDisposable
         }
     }
 
-    /// <summary>Open a chunk-layer connection — or accept the one the peer opens.</summary>
-    private async Task OpenConnectionAsync(CancellationToken cancellationToken)
+    /// <summary>
+    /// Open a chunk-layer connection - or accept the one the peer opens.
+    ///
+    /// <para>
+    /// Public because a session needs several: the console closes each connection once it has answered, and
+    /// the captured client runs <c>rgst</c>, <c>init</c> and <c>ctrl</c> as three connections over a single
+    /// prelude. Establishing the association first is idempotent, so a caller may just call this again.
+    /// </para>
+    /// </summary>
+    public async Task OpenConnectionAsync(CancellationToken cancellationToken)
     {
         await ApplyAsync(
             _association.OpenConnection(_options.HelloAddressing), cancellationToken).ConfigureAwait(false);
@@ -233,18 +241,60 @@ public sealed class HalyardDatagramControlChannel : IAsyncDisposable
         // Re-sent while we wait. In the captured LAN pairing the client's first hello goes unanswered and its
         // second, about a second later, is the one the console replies to — so a single attempt is not a
         // question the console has declined to answer, it is one it never heard.
+        // Wait for CONNECTED specifically, not merely "left Established". The peer's teardown of the previous
+        // connection routinely arrives after the next hello has gone out, and treating that Closed as the end
+        // of the wait returns a connection that was never opened -- the next request then goes nowhere.
         await PumpUntilAsync(
-            () => _association.Phase is not HalyardControlPhase.Established,
+            () => _association.Phase is HalyardControlPhase.Connected,
             onQuiet: () => _association.ReopenConnection(),
             "The console did not open a control connection.",
             cancellationToken).ConfigureAwait(false);
 
-        if (_association.Phase == HalyardControlPhase.Closed)
-        {
-            throw new InvalidDataException("The console closed the association before a connection was open.");
-        }
-
         Log("connection open");
+    }
+
+    /// <summary>
+    /// Send raw bytes on the open connection. The transport is a byte stream from a caller's point of view;
+    /// how it is cut into chunks is this layer's business.
+    /// </summary>
+    public Task SendBytesAsync(ReadOnlyMemory<byte> payload, CancellationToken cancellationToken)
+        => ApplyAsync(_association.Send(payload), cancellationToken);
+
+    /// <summary>
+    /// Wait for the next bytes to arrive on the open connection, or null when the peer closes it.
+    ///
+    /// <para>
+    /// Returns <em>deltas</em>. The association accumulates a connection's payload so that a caller waiting
+    /// for one complete message can test the whole of it, so this takes what has accumulated and clears it -
+    /// leaving the reassembly to whoever knows the message framing. A caller that wants "the whole HTTP
+    /// response" should use <see cref="ExchangeAsync"/>, which does exactly that.
+    /// </para>
+    /// </summary>
+    public async Task<byte[]?> ReceiveBytesAsync(CancellationToken cancellationToken)
+    {
+        byte[]? delta = null;
+        bool closed = false;
+
+        await PumpUntilAsync(
+            () => delta is not null || closed,
+            onQuiet: null,
+            "The console sent nothing on the control connection.",
+            cancellationToken,
+            raised =>
+            {
+                switch (raised)
+                {
+                    case HalyardControlEvent.DataReceived data:
+                        delta = data.Payload;
+                        _association.ClearInbound();
+                        break;
+                    case HalyardControlEvent.PeerClosed:
+                        closed = true;
+                        break;
+                }
+            }).ConfigureAwait(false);
+
+        return delta;
     }
 
     private async Task<byte[]> ReadResponseAsync(CancellationToken cancellationToken)
