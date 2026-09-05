@@ -168,8 +168,15 @@ public sealed class HalyardAccountConsoleSession
                     token,
                     context =>
                     {
+                        IPEndPoint consoleEndpoint = ConsoleEndpoint(context);
+                        _options.Log?.Invoke(
+                            $"reaching the console at {consoleEndpoint} (offered: "
+                            + string.Join(", ", context.ConsoleOffer.Candidates.Select(
+                                c => $"{c.Type} {c.Address}:{c.Port}"))
+                            + $"); our local address {localAddress}:{localPort}");
+
                         transport = new HalyardDatagramRegistrationTransport(
-                            ConsoleEndpoint(context),
+                            consoleEndpoint,
                             context.LocalHashedId,
                             context.ConsoleHashedId,
                             new HalyardDatagramControlOptions
@@ -341,19 +348,49 @@ public sealed class HalyardAccountConsoleSession
     }
 
     /// <summary>Prefer the console's own LOCAL candidate when it matches where we think it is.</summary>
+    /// <summary>
+    /// Which of the console's offered candidates to actually talk to.
+    ///
+    /// <para>
+    /// The console offers a <c>LOCAL</c> address and a <c>STATIC</c> (reflexive) one for every connection, and
+    /// which is usable depends on where <em>we</em> are — so this asks the interface table rather than
+    /// assuming. On the same network the local address wins, and traffic stays on the LAN instead of going out
+    /// to the reflexive address and back. Anywhere else the local address is somebody else's private range and
+    /// the reflexive one is the only way in.
+    /// </para>
+    ///
+    /// <para>
+    /// This used to require the local candidate to equal the host the caller passed in, and to fall back to
+    /// that host otherwise — which quietly made the whole route LAN-only: off-network the caller has no
+    /// reachable address to pass, and the one it does have (the address the console was paired on) routes
+    /// nowhere.
+    /// </para>
+    /// </summary>
     private static IPEndPoint ConsoleEndpoint(HalyardAccountTransportContext context)
+        => CandidateEndpoint(context.ConsoleOffer.Candidates)
+           ?? new IPEndPoint(
+               IPAddress.Parse(context.ConsoleHost), HalyardDatagramRegistrationTransport.Port);
+
+    /// <inheritdoc cref="ConsoleEndpoint"/>
+    internal static IPEndPoint? CandidateEndpoint(IReadOnlyList<HalyardSignalingCandidate> candidates)
     {
-        foreach (HalyardSignalingCandidate candidate in context.ConsoleOffer.Candidates)
+        IPEndPoint? reflexive = null;
+
+        foreach (HalyardSignalingCandidate candidate in candidates)
         {
-            if (candidate.Type == "LOCAL"
-                && IPAddress.TryParse(candidate.Address, out IPAddress? local)
-                && string.Equals(candidate.Address, context.ConsoleHost, StringComparison.Ordinal))
+            if (!IPAddress.TryParse(candidate.Address, out IPAddress? address))
             {
-                return new IPEndPoint(local, candidate.Port);
+                continue;
             }
+
+            if (HalyardDatagramRegistrationTransport.SharesSubnetWithLocalInterface(address))
+            {
+                return new IPEndPoint(address, candidate.Port);
+            }
+
+            reflexive ??= new IPEndPoint(address, candidate.Port);
         }
 
-        return new IPEndPoint(
-            IPAddress.Parse(context.ConsoleHost), HalyardDatagramRegistrationTransport.Port);
+        return reflexive;
     }
 }
