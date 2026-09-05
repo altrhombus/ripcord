@@ -507,11 +507,22 @@ public sealed class HalyardStreamingSession : IStreamingSession
     /// (unlocked) path.</summary>
     private static readonly TimeSpan LoginPromptWindow = TimeSpan.FromSeconds(1);
 
-    /// <summary>How long to wait for the console's session-ready after a passcode is submitted. The console
-    /// accepts or rejects fast — in cap50 the session-ready arrived ~2.3 s after submit — so a few seconds
-    /// with no session-ready means the passcode was wrong (cap51: the console just waits for the next
-    /// attempt). Short so a wrong passcode re-prompts quickly rather than hanging.</summary>
-    private static readonly TimeSpan SignInAttemptTimeout = TimeSpan.FromSeconds(6);
+    /// <summary>
+    /// How long to wait for the console's session-ready after a passcode is submitted.
+    ///
+    /// <para>
+    /// It was six seconds, from a LAN capture where session-ready arrived ~2.3 s after the submit. On the
+    /// rendezvous route it does not: a live run submitted a <b>correct</b> passcode, was answered, and was
+    /// still waiting at six seconds — we reported a rejection and gave up, and the console then went on to
+    /// unlock anyway, which is how the mistake was caught. Reporting "wrong passcode" at a user who typed the
+    /// right one is the worst failure this code can have, so the bound is now generous; a genuinely wrong
+    /// passcode costs a slower re-prompt, which is the cheaper error.
+    /// </para>
+    /// </summary>
+    private static readonly TimeSpan SignInAttemptTimeout =
+        int.TryParse(Environment.GetEnvironmentVariable("RIPCORD_SIGNIN_TIMEOUT"), out int signInSeconds)
+            ? TimeSpan.FromSeconds(signInSeconds)
+            : TimeSpan.FromSeconds(25);
 
     /// <summary>Passcode attempts before giving up. The console tolerated at least six on one connection
     /// (cap51); this bound is our own, to end the loop if the user keeps mistyping rather than cancelling.</summary>
@@ -543,11 +554,17 @@ public sealed class HalyardStreamingSession : IStreamingSession
     /// failure result to abort. An unlocked console sends no prompt and this returns null after the short
     /// watch window.
     ///
-    /// <para>Success is the console's session-ready frame, and only that: a wrong passcode draws an immediate
-    /// login-result frame whose byte is opaque and different every time (cap51), so it cannot be read as
-    /// pass/fail — the reliable signal is that session-ready follows on success and does not on failure. On a
-    /// rejection the console waits for another attempt on the same connection, so we re-prompt rather than
-    /// fail the session.</para>
+    /// <para>Success is the console's session-ready frame, and only that. On a rejection the console waits for
+    /// another attempt on the same connection, so we re-prompt rather than fail the session.</para>
+    ///
+    /// <para>
+    /// <b>The login-result frame is not the signal, but the old reason for that was wrong.</b> It was recorded
+    /// as "opaque and different every time (cap51)" — which it is, as <em>ciphertext</em>, because a stream
+    /// cipher at a fresh counter produces different bytes for the same plaintext by construction. That was a
+    /// property of not being able to decrypt it, not of the frame. It decrypts cleanly now (a single byte,
+    /// <c>0x00</c> on both accepted logins we have watched), so <b>[X]</b> whether the byte is a status worth
+    /// reading is an open question rather than a settled "no" — two samples of one value prove nothing yet.
+    /// </para>
     /// </summary>
     private async Task<SessionHandshakeResult?> EnsureSignedInAsync(CancellationToken cancellationToken)
     {
