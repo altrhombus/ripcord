@@ -157,6 +157,16 @@ public sealed class HalyardDatagramSessionControlChannel : IHalyardControlChanne
 
     public async ValueTask DisposeAsync()
     {
+        // Tell the console the session is over. On TCP that is what closing the socket does; on datagrams
+        // nothing says it implicitly, and a console left believing a session is live refuses to join any
+        // further cloud session until it is rebooted.
+        if (_connected)
+        {
+            using var goodbye = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+            await _channel.CloseConnectionAsync(goodbye.Token).ConfigureAwait(false);
+            _connected = false;
+        }
+
         _sendLock.Dispose();
         if (_ownsChannel)
         {
