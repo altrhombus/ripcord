@@ -1,9 +1,11 @@
 using System.Net;
 using System.Net.Sockets;
+using System.Security.Cryptography;
 using Ripcord.Cloud.Halyard;
 using Ripcord.Cloud.Halyard.Rendezvous;
 using Ripcord.Core.Net.WebSockets;
 using Ripcord.Core.Sessions;
+using Ripcord.Presentation.Halyard.Pairing;
 using Ripcord.Protocol.Halyard.Common.Crypto;
 using Ripcord.Protocol.Halyard.Discovery;
 using Ripcord.Protocol.Halyard.Session;
@@ -56,6 +58,7 @@ public sealed class HalyardAccountConsoleSession
 {
     private readonly HalyardAccountGateway _gateway;
     private readonly HalyardSessionFactory _sessions;
+    private readonly IHalyardRegistrationCipherResolver _cipherResolver;
     private readonly Func<IWebSocketChannel> _socketFactory;
     private readonly HalyardAccountPairingOptions _options;
     private readonly Action<HalyardPushChannel>? _observeChannel;
@@ -72,12 +75,14 @@ public sealed class HalyardAccountConsoleSession
     public HalyardAccountConsoleSession(
         HalyardAccountGateway gateway,
         HalyardSessionFactory sessions,
+        IHalyardRegistrationCipherResolver? cipherResolver = null,
         Func<IWebSocketChannel>? socketFactory = null,
         HalyardAccountPairingOptions? options = null,
         Action<HalyardPushChannel>? observeChannel = null)
     {
         _gateway = gateway ?? throw new ArgumentNullException(nameof(gateway));
         _sessions = sessions ?? throw new ArgumentNullException(nameof(sessions));
+        _cipherResolver = cipherResolver ?? new HalyardRegistrationCipherResolver();
         _socketFactory = socketFactory ?? (() => new ClientWebSocketChannel());
         _options = options ?? new HalyardAccountPairingOptions();
         _observeChannel = observeChannel;
@@ -119,15 +124,24 @@ public sealed class HalyardAccountConsoleSession
             string localAddress = HalyardDatagramRegistrationTransport.LocalAddressFor(
                 IPAddress.Parse(consoleHost));
 
+            // The account route publishes a registration seed on every session, connects included, and both
+            // captures show rgst, init and ctrl on one association -- so a connect registers too, on the same
+            // association it then runs the session over.
+            HalyardRegistrationCipherResolution resolved = _cipherResolver.Resolve(platform);
+            if (!resolved.Cipher.IsAvailable || resolved.ContextKey.Length != 16)
+            {
+                return HalyardAccountSessionResult.Failed(
+                    $"The account route needs the registration constants, which are unavailable: {resolved.Source}");
+            }
+
             var rendezvous = new HalyardAccountPairing(
                 new HalyardCloudSignalingClient(_gateway.Cloud),
 
-                // Never used on this path: a connect supplies its own transport factory below, and the
-                // registration factory is only reached by PairAsync. Throwing rather than returning something
-                // plausible keeps a future miswiring loud.
+                // Only PairAsync reaches this; a connect registers through the callback below, over the very
+                // association it is about to run the session on.
                 _ => throw new InvalidOperationException(
-                    "A connect does not register; this factory should never be called."),
-                new byte[16],
+                    "A connect registers through registerFirst; this factory should never be called."),
+                resolved.ContextKey,
                 _options);
 
             // NOT `await using`: the cloud session must stay joined for as long as the stream runs. Leaving
@@ -164,6 +178,24 @@ public sealed class HalyardAccountConsoleSession
                             },
                             endpoint => new HalyardUdpDatagramTransport(endpoint, localPort));
                         return transport;
+                    },
+                    async (context, seed, ct) =>
+                    {
+                        var registration = new HalyardRegistrationClient(resolved.Cipher, transport!);
+                        HalyardRegistrationResult result = await registration
+                            .RegisterAsync(
+                                new HalyardRegistrationRequest(
+                                    consoleHost, consoleHost, _gateway.Account!.AccountId,
+                                    Passcode: string.Empty,
+                                    ClientDeviceId: RandomNumberGenerator.GetBytes(32),
+                                    Platform: platform)
+                                {
+                                    AccountSeed = seed,
+                                },
+                                ct)
+                            .ConfigureAwait(false);
+
+                        return result.Succeeded ? null : (result.FailureReason ?? "Registration failed.");
                     },
                     cancellationToken)
                 .ConfigureAwait(false);

@@ -210,6 +210,7 @@ public sealed class HalyardAccountPairing(
         HalyardPushServerInfo pushServer,
         string accessToken,
         Func<HalyardAccountTransportContext, HalyardDatagramRegistrationTransport> transportFactory,
+        Func<HalyardAccountTransportContext, byte[], CancellationToken, Task<string?>>? registerFirst,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -217,23 +218,41 @@ public sealed class HalyardAccountPairing(
 
         HalyardDatagramRegistrationTransport? transport = null;
         return RunAsync(
-            request, pushChannel, pushServer, accessToken, requireSeed: false, keepSessionOpen: true,
+            // The seed is required exactly when we intend to register. The console publishes a customData1 on
+            // every account-route session, connects included, which is what suggests registration is part of
+            // each one rather than a one-time pairing -- and both captures show rgst, init and ctrl on a
+            // single association.
+            request, pushChannel, pushServer, accessToken,
+            requireSeed: registerFirst is not null, keepSessionOpen: true,
             openAssociation: (context, ct) =>
             {
                 transport = transportFactory(context);
                 return transport.PrepareAsync(ct);
             },
-            finish: (context, _, sessionLifetime, _) =>
+            finish: async (context, seed, sessionLifetime, ct) =>
             {
                 HalyardDatagramControlChannel? channel = transport?.Channel;
-                Log(channel is null
-                    ? "no control association to connect over"
-                    : "control association ready for the session");
+                if (channel is null)
+                {
+                    Log("no control association to connect over");
+                    return HalyardAccountConnection.Failed(
+                        "The control association was never opened, so there is nothing to connect over.");
+                }
 
-                return Task.FromResult(channel is null
-                    ? HalyardAccountConnection.Failed(
-                        "The control association was never opened, so there is nothing to connect over.")
-                    : new HalyardAccountConnection(channel, context, null, sessionLifetime));
+                if (registerFirst is not null)
+                {
+                    string? failure = await registerFirst(context, seed, ct).ConfigureAwait(false);
+                    if (failure is not null)
+                    {
+                        Log($"registration on the session's association failed: {failure}");
+                        return HalyardAccountConnection.Failed(failure);
+                    }
+
+                    Log("registered on the session's association");
+                }
+
+                Log("control association ready for the session");
+                return new HalyardAccountConnection(channel, context, null, sessionLifetime);
             },
             fail: HalyardAccountConnection.Failed,
             cancellationToken);
@@ -639,6 +658,7 @@ public sealed class HalyardAccountPairing(
         {
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
             await _signaling.LeaveSessionAsync(sessionId, timeout.Token).ConfigureAwait(false);
+
             Log($"left session {sessionId}");
         }
         catch (Exception ex)

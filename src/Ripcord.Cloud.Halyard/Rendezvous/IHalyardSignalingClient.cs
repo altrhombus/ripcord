@@ -43,6 +43,7 @@ public interface IHalyardSignalingClient
 
     /// <summary>Leave the session — the disconnect.</summary>
     Task LeaveSessionAsync(string sessionId, CancellationToken cancellationToken);
+
 }
 
 /// <summary>The real signaling client, adapting <see cref="HalyardCloudClient"/> to the rendezvous seam.</summary>
@@ -82,4 +83,5 @@ public sealed class HalyardCloudSignalingClient(HalyardCloudClient cloud) : IHal
 
     public Task LeaveSessionAsync(string sessionId, CancellationToken cancellationToken)
         => _cloud.LeaveSessionAsync(sessionId, cancellationToken);
+
 }
