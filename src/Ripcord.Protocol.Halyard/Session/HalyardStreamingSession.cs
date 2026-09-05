@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.Globalization;
 using System.Net.Sockets;
 using System.Net;
@@ -558,7 +559,6 @@ public sealed class HalyardStreamingSession : IStreamingSession
         // The field counter is a single per-connection value; the passcode continues it past the five
         // /sess/ctrl fields (so the first attempt is 5), and each retry MUST advance it — a fresh IV per
         // submit, never reused (cap51's attempts each had distinct ciphertext).
-        ulong counter = HalyardSessCtrlFields.CounterLoginPin;
 
         for (int attempt = 1; attempt <= MaxSignInAttempts; attempt++)
         {
@@ -569,7 +569,7 @@ public sealed class HalyardStreamingSession : IStreamingSession
             }
 
             byte[] plaintext = HalyardSessCtrlFields.BuildLoginPinPlaintext(pin);
-            byte[] ciphertext = _crypto.EncryptControlField(counter++, plaintext);
+            byte[] ciphertext = _crypto.EncryptControlField(_clientFieldCounter++, plaintext);
             await _control.SendCtrlMessageAsync(
                 new HalyardCtrlMessage(HalyardCtrlMessage.TypeLoginSubmit, ciphertext), cancellationToken).ConfigureAwait(false);
 
@@ -669,6 +669,13 @@ public sealed class HalyardStreamingSession : IStreamingSession
     private ulong _consoleFieldCounter = 1;
 
     /// <summary>
+    /// The counter our next payload-carrying control frame is encrypted at. Our own direction counts from 0
+    /// too, and the five <c>/sess/ctrl</c> request fields spend 0–4 — which is why the login passcode, the
+    /// only client frame that existed before, is at 5.
+    /// </summary>
+    private ulong _clientFieldCounter = HalyardSessCtrlFields.CounterLoginPin;
+
+    /// <summary>
     /// Decrypt and dump a control frame, for the frames nobody has decoded yet (<c>0x0016</c>, <c>0x0017</c>,
     /// <c>0x0003</c>, and the session id's own payload). Diagnostic only, and off unless
     /// <c>RIPCORD_TRACE_CTRL</c> is set.
@@ -697,6 +704,58 @@ public sealed class HalyardStreamingSession : IStreamingSession
         catch (Exception ex)
         {
             Console.Error.WriteLine($"[ctrl] type=0x{message.Type:X4} counter={counter}: {ex.GetType().Name}");
+        }
+    }
+
+    /// <summary>
+    /// Send the post-probe report the captured client sends, and the console answers before it declares the
+    /// stream service ready.
+    ///
+    /// <para>
+    /// <b>An experiment, and gated as one</b> — off unless <c>RIPCORD_SEND_PROBE_REPORT</c> is set. The
+    /// frame's <em>structure</em> is solved from our own binary (four <c>uint32</c> big-endian, in slot
+    /// order), but <b>[X] which measurement belongs in which slot</b>, and the values below are therefore a
+    /// guess being tested, not a derivation. They must not be described as confirmed on the strength of the
+    /// console accepting them: a console that ignores the contents would accept anything. What the run
+    /// actually tests is whether the frame is accepted at all — the console's answer
+    /// (<see cref="HalyardCtrlMessage.TypeProbeReportAck"/>, then stream-ready) is the oracle, and it is
+    /// decryptable, so a positive result carries information either way.
+    /// </para>
+    /// </summary>
+    private async Task SendProbeReportAsync(CancellationToken cancellationToken)
+    {
+        if (Environment.GetEnvironmentVariable("RIPCORD_SEND_PROBE_REPORT") is null
+            || !_crypto.IsControlEstablished)
+        {
+            return;
+        }
+
+        var slots = new uint[4];
+        slots[0] = (uint)(_config?.InitialBitrateKbps ?? 10_000);
+        slots[1] = (uint)(_confirmedMtu ?? LinkMetrics.MtuToDeclare(_measuredMtu));
+        slots[2] = 0;
+        slots[3] = (uint)Math.Round(Math.Clamp(_measuredRttMs ?? 0, 0, 1000));
+
+        byte[] plaintext = new byte[16];
+        for (int i = 0; i < 4; i++)
+        {
+            BinaryPrimitives.WriteUInt32BigEndian(plaintext.AsSpan(i * 4), slots[i]);
+        }
+
+        ulong counter = _clientFieldCounter++;
+        try
+        {
+            await _control.SendCtrlMessageAsync(
+                new HalyardCtrlMessage(
+                    HalyardCtrlMessage.TypeProbeReport,
+                    _crypto.EncryptControlField(counter, plaintext)),
+                cancellationToken).ConfigureAwait(false);
+            Console.Error.WriteLine(
+                $"[ctrl] sent probe report (0x000d) counter={counter} slots=[{string.Join(", ", slots)}]");
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[ctrl] probe report failed: {ex.Message}");
         }
     }
 
@@ -871,6 +930,8 @@ public sealed class HalyardStreamingSession : IStreamingSession
             // Takion handshake either way, and refuses the session that follows.
             _connectStep = "senkusha bring-up";
             await RunSenkushaAsync(_streamSocket, streamEndpoint, cancellationToken).ConfigureAwait(false);
+
+            await SendProbeReportAsync(cancellationToken).ConfigureAwait(false);
 
             // The captured client does not open the stream association until the console says the stream
             // service is up, which it does a second or two after the probe. Not fatal on expiry: this is a
