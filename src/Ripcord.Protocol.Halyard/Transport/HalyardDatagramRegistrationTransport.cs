@@ -1,4 +1,6 @@
+using System.Buffers.Binary;
 using System.Net;
+using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using Ripcord.Protocol.Halyard.Common.Crypto;
 using Ripcord.Protocol.Halyard.Discovery;
@@ -114,6 +116,55 @@ public sealed class HalyardDatagramRegistrationTransport : IHalyardRegistrationT
     /// switch. Falls back to loopback, which will fail visibly at the console rather than silently.
     /// </para>
     /// </summary>
+    /// <summary>
+    /// Whether <paramref name="address"/> sits on a network this machine is actually attached to.
+    ///
+    /// <para>
+    /// This is the question "can we talk to the console directly, or do we have to go out and back?", and it
+    /// is asked of the interface table rather than assumed from the address we were handed. The rendezvous
+    /// route offers both a <c>LOCAL</c> and a <c>STATIC</c> candidate for every connection; taking the local
+    /// one is right on the same network and useless anywhere else, and the client cannot know which it is
+    /// without looking. Compares against each interface's own IPv4 mask instead of guessing at private
+    /// ranges, because a private address on someone else's network is exactly as unreachable as a public one.
+    /// </para>
+    /// </summary>
+    public static bool SharesSubnetWithLocalInterface(IPAddress address)
+    {
+        if (address.AddressFamily != AddressFamily.InterNetwork)
+        {
+            return false;
+        }
+
+        uint target = ToUInt32(address);
+        foreach (NetworkInterface nic in NetworkInterface.GetAllNetworkInterfaces())
+        {
+            if (nic.OperationalStatus != OperationalStatus.Up)
+            {
+                continue;
+            }
+
+            foreach (UnicastIPAddressInformation info in nic.GetIPProperties().UnicastAddresses)
+            {
+                if (info.Address.AddressFamily != AddressFamily.InterNetwork
+                    || info.IPv4Mask is null)
+                {
+                    continue;
+                }
+
+                uint mask = ToUInt32(info.IPv4Mask);
+                if (mask != 0 && (ToUInt32(info.Address) & mask) == (target & mask))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private static uint ToUInt32(IPAddress address)
+        => BinaryPrimitives.ReadUInt32BigEndian(address.GetAddressBytes());
+
     public static string LocalAddressFor(IPAddress console)
     {
         try
