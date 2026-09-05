@@ -316,6 +316,38 @@ public sealed class HalyardControlAssociation
     }
 
     /// <summary>
+    /// End the open connection, the way the peer ends one: a <c>Close</c> chunk carrying our connection tag.
+    ///
+    /// <para>
+    /// <b>Why this has to be sent explicitly.</b> On the PIN route the control plane is TCP, and closing the
+    /// socket is what tells the console the session is over. This transport is datagrams: there is no FIN, so
+    /// a client that simply stops talking leaves the console believing the session is still live. Observed
+    /// exactly that way -- after a run the console reported Remote Play in use and refused to join any further
+    /// cloud session until it was rebooted.
+    /// </para>
+    ///
+    /// <para>
+    /// The shape mirrors the console's own teardown: four zero bytes then the connection tag. <b>[X]</b> ours
+    /// carries the tag we offered in the hello, which is the only one we own; the console's carries its own.
+    /// </para>
+    /// </summary>
+    public HalyardControlAction CloseConnection()
+    {
+        if (Phase != HalyardControlPhase.Connected || _helloBody is null)
+        {
+            return HalyardControlAction.None;
+        }
+
+        // The hello body is seq(2) | capability(6) | connection tag(4) | window(2).
+        byte[] body = new byte[8];
+        _helloBody.AsSpan(2 + CapabilityBlock.Length, 4).CopyTo(body.AsSpan(4));
+
+        Phase = HalyardControlPhase.Closed;
+        return Datagrams(HalyardControlChunkCodec.Encode(
+            HalyardControlChunkType.Close, 0x00, body, (byte)_helloAddressing));
+    }
+
+    /// <summary>
     /// Send a payload on the open connection — an HTTP request, or a binary control frame.
     ///
     /// <para>
