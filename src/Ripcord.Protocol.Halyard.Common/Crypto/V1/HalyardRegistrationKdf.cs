@@ -108,6 +108,67 @@ public sealed class HalyardRegistrationKdf
         => _isPs4 ? _secrets.Ps4WrapTableEntry(index) : _secrets.WrapTableEntry(index);
 
     /// <summary>
+    /// The account route's additive constant, which is <b>not</b> the PIN route's. See
+    /// <see cref="WrapAccountMaterial"/>.
+    /// </summary>
+    private const int AccountWrapBias = 0x2b;
+
+    /// <summary>
+    /// Wrap the material for the <b>account ("web"/no-PIN) route</b>:
+    /// <c>w[i] = (((material[i] - i) + 0x2b) &amp; 0xff) ^ table[i]</c>.
+    ///
+    /// <para>
+    /// <b>Same table as the PIN route, different transform.</b> The PIN route XORs first and then does the
+    /// arithmetic; this one does the arithmetic first and XORs last, and its additive constant is
+    /// <c>0x2b</c> rather than <c>0x2d</c>. Those are not interchangeable — applying the PIN transform here
+    /// produces a material the console will not agree with, which corrupts the field IV, which corrupts
+    /// exactly the first 16 bytes of the encrypted field, which is where <c>Client-Type: </c> sits. The
+    /// console then answers <c>403 / 80108b09</c>. That was the account route's last blocker.
+    /// </para>
+    ///
+    /// <para>
+    /// The console reaches this transform because the client supplies the transport key rather than deriving
+    /// it from a passcode: the request builder branches on whether the key slot is already populated, and the
+    /// pre-supplied-key branch uses a different table routine from the derive-it-yourself branch. Confirmed
+    /// against three captured sessions — the recovered material reproduces each session's field IV exactly.
+    /// </para>
+    /// </summary>
+    public byte[] WrapAccountMaterial(ReadOnlySpan<byte> material, ReadOnlySpan<byte> context)
+    {
+        if (material.Length != KeyLength)
+        {
+            throw new ArgumentException("Material must be 16 bytes.", nameof(material));
+        }
+
+        ReadOnlySpan<byte> table = WrapEntry(context[MaterialSelectorOffset] >> 3);
+        var wrapped = new byte[KeyLength];
+        for (int i = 0; i < KeyLength; i++)
+        {
+            wrapped[i] = (byte)((byte)(material[i] - i + AccountWrapBias) ^ table[i]);
+        }
+
+        return wrapped;
+    }
+
+    /// <summary>The inverse of <see cref="WrapAccountMaterial"/>.</summary>
+    public byte[] UnwrapAccountMaterial(ReadOnlySpan<byte> wrapped, ReadOnlySpan<byte> context)
+    {
+        if (wrapped.Length != KeyLength)
+        {
+            throw new ArgumentException("Wrapped material must be 16 bytes.", nameof(wrapped));
+        }
+
+        ReadOnlySpan<byte> table = WrapEntry(context[MaterialSelectorOffset] >> 3);
+        var material = new byte[KeyLength];
+        for (int i = 0; i < KeyLength; i++)
+        {
+            material[i] = (byte)((wrapped[i] ^ table[i]) - AccountWrapBias + i);
+        }
+
+        return material;
+    }
+
+    /// <summary>
     /// Wrap the 16-byte <paramref name="material"/> for transmission, using the table entry selected by
     /// <paramref name="context"/>: <c>w[i] = ((material[i] ^ table[i]) + bias + i) &amp; 0xff</c> (PS5 bias
     /// -0x2d, PS4 bias +0x29).
