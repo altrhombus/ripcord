@@ -67,7 +67,8 @@ public sealed class HalyardSessionFactory
     public IStreamingSession Create(
         HalyardConnectionParameters parameters,
         IHalyardControlChannel control,
-        Func<bool, CancellationToken, Task<string?>>? loginPinProvider = null)
+        Func<bool, CancellationToken, Task<string?>>? loginPinProvider = null,
+        TimeSpan? controlPlaneDeadline = null)
     {
         ArgumentNullException.ThrowIfNull(parameters);
         ArgumentNullException.ThrowIfNull(control);
@@ -75,7 +76,8 @@ public sealed class HalyardSessionFactory
         IHalyardSessionCrypto crypto = _controlSecrets is null
             ? new PassthroughHalyardSessionCrypto()
             : new HalyardV1SessionCrypto(_controlSecrets);
-        return new HalyardStreamingSession(parameters, control, crypto, _credentials, loginPinProvider);
+        return new HalyardStreamingSession(
+            parameters, control, crypto, _credentials, loginPinProvider, controlPlaneDeadline);
     }
 
     /// <summary>Convenience overload: build the parameters for a console reached at <paramref name="address"/>,
