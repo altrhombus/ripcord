@@ -254,6 +254,22 @@ public sealed class HalyardDatagramControlChannel : IAsyncDisposable
     }
 
     /// <summary>
+    /// End the open connection politely, so the console stops considering the session live. Best-effort: a
+    /// teardown must not throw, and a console that never sees it is no worse off than before this existed.
+    /// </summary>
+    public async Task CloseConnectionAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await ApplyAsync(_association.CloseConnection(), cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+            // never let the goodbye hold up teardown
+        }
+    }
+
+    /// <summary>
     /// Send raw bytes on the open connection. The transport is a byte stream from a caller's point of view;
     /// how it is cut into chunks is this layer's business.
     /// </summary>
