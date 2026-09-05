@@ -511,18 +511,21 @@ public sealed class HalyardStreamingSession : IStreamingSession
     /// How long to wait for the console's session-ready after a passcode is submitted.
     ///
     /// <para>
-    /// It was six seconds, from a LAN capture where session-ready arrived ~2.3 s after the submit. On the
-    /// rendezvous route it does not: a live run submitted a <b>correct</b> passcode, was answered, and was
-    /// still waiting at six seconds — we reported a rejection and gave up, and the console then went on to
-    /// unlock anyway, which is how the mistake was caught. Reporting "wrong passcode" at a user who typed the
-    /// right one is the worst failure this code can have, so the bound is now generous; a genuinely wrong
-    /// passcode costs a slower re-prompt, which is the cheaper error.
+    /// On the LAN it arrives ~2.3 s after the submit (cap50), and the session continues.
+    ///
+    /// <para>
+    /// <b>On the rendezvous route it does not arrive at all</b>, and raising this does not help — which was
+    /// worth finding out the wrong way. A live run submitted a <b>correct</b> passcode and was answered; the
+    /// console <em>unlocked</em>, but sent no session-ready on that session, and the next connect then found
+    /// it already unlocked and streamed. Twenty-five seconds behaved exactly as six had, only slower, so the
+    /// bound is back to something responsive: this path ends in a retry either way, and the faster it gets
+    /// there the better. **[X]** why the console abandons the session it just authorised.
     /// </para>
     /// </summary>
     private static readonly TimeSpan SignInAttemptTimeout =
         int.TryParse(Environment.GetEnvironmentVariable("RIPCORD_SIGNIN_TIMEOUT"), out int signInSeconds)
             ? TimeSpan.FromSeconds(signInSeconds)
-            : TimeSpan.FromSeconds(25);
+            : TimeSpan.FromSeconds(8);
 
     /// <summary>Passcode attempts before giving up. The console tolerated at least six on one connection
     /// (cap51); this bound is our own, to end the loop if the user keeps mistyping rather than cancelling.</summary>
@@ -607,7 +610,13 @@ public sealed class HalyardStreamingSession : IStreamingSession
             // No session-ready: the passcode was rejected. Loop and re-prompt (attempt > 1 tells the UI to say so).
         }
 
-        return Fail($"Sign-in failed: the login passcode was rejected {MaxSignInAttempts} times.");
+        // Deliberately not "wrong passcode". A console reached through the account rendezvous accepts the
+        // passcode, unlocks, and then does not continue this session -- so the passcode may well have been
+        // right, and the next connect will find the console unlocked and work. Saying "rejected" at someone
+        // who typed it correctly sends them to change a passcode that was never the problem.
+        return Fail(
+            "The console didn't start a session after the passcode. If the passcode was right the console is "
+            + "unlocked now — connecting again usually works.");
     }
 
     /// <summary>True if <paramref name="task"/> completes within <paramref name="timeout"/>; false on timeout.

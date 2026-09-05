@@ -25,7 +25,7 @@ namespace Ripcord.Client;
 /// </summary>
 public sealed class SessionController : IAsyncDisposable
 {
-    private readonly Func<IStreamingSession> _sessionFactory;
+    private readonly Func<CancellationToken, Task<IStreamingSession>> _sessionFactory;
     private readonly IVideoDecodePipeline _pipeline;
     private readonly IObservable<ControllerStateFrame>? _controllerInput;
     private readonly IPowerThermalMonitor _power;
@@ -51,8 +51,25 @@ public sealed class SessionController : IAsyncDisposable
     private long _connectedAtTicks;    // UtcTicks of the last successful handshake
     private SessionStatistics? _lastStats;
 
+    /// <param name="sessionFactory">
+    /// Opens a session, once per connect attempt including reconnects.
+    ///
+    /// <para>
+    /// <b>Asynchronous, and it has to be.</b> A LAN session is a socket and could be handed over synchronously,
+    /// but a session reached through the account rendezvous is not: it is a cloud round trip that takes tens of
+    /// seconds before there is anything to hand back. A synchronous factory could only have blocked the caller
+    /// or lied about being ready. The token is the connect's own, so a user who leaves the page mid-rendezvous
+    /// cancels it rather than waiting it out.
+    /// </para>
+    ///
+    /// <para>
+    /// Whatever it returns is disposed by this controller and must own everything it needs — a route that holds
+    /// extra machinery open (an association, a push channel) hands back a session that disposes them with
+    /// itself, rather than expecting the controller to know they exist.
+    /// </para>
+    /// </param>
     public SessionController(
-        Func<IStreamingSession> sessionFactory,
+        Func<CancellationToken, Task<IStreamingSession>> sessionFactory,
         IVideoDecodePipeline pipeline,
         IObservable<ControllerStateFrame>? controllerInput = null,
         IPowerThermalMonitor? power = null,
@@ -421,11 +438,18 @@ public sealed class SessionController : IAsyncDisposable
         IStreamingSession session;
         try
         {
-            session = _sessionFactory();
+            session = await _sessionFactory(cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
-            return new ConnectOutcome(false, Retryable: false, $"Couldn't start a session: {ex.Message}");
+            // Retryable: opening a session now reaches the network, so this covers a rendezvous that timed out
+            // or a console that was busy -- transient things worth another attempt, where before it could only
+            // be a construction error.
+            return new ConnectOutcome(false, Retryable: true, $"Couldn't start a session: {ex.Message}");
         }
 
         lock (_gate)

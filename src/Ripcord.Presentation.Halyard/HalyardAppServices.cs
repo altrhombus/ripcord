@@ -1,3 +1,6 @@
+using Ripcord.Protocol.Halyard.Discovery;
+using Ripcord.Protocol.Halyard.Common.Crypto;
+using Ripcord.Protocol.Halyard.Session;
 using Ripcord.Cloud.Halyard;
 using Ripcord.Core.Accounts;
 using Ripcord.Core.Consoles;
@@ -60,7 +63,8 @@ public static class HalyardAppServices
         IAccountSession? account = null,
         IAccountConsolePairing? accountPairing = null,
         IAccountTokenStore? accountTokens = null,
-        IDeviceIdentity? deviceIdentity = null)
+        IDeviceIdentity? deviceIdentity = null,
+        IStreamingSessionSource? sessions = null)
     {
         ArgumentNullException.ThrowIfNull(dispatcher);
         ArgumentNullException.ThrowIfNull(videoCapabilities);
@@ -86,9 +90,18 @@ public static class HalyardAppServices
         IAccountSession resolvedAccount = account
             ?? (Gateway() is { } forSession ? new HalyardAccountSession(forSession) : new UnavailableAccountSession());
 
+        IPairedConsoleStore resolvedConsoles = consoles ?? new PairedConsoleStore(resolvedPaths);
+
         return new RipcordAppServices
         {
             Account = resolvedAccount,
+
+            // Built here rather than by the streaming surface, which is where it used to be: the page loaded
+            // the control secrets and constructed the session factory itself, so the one front end that
+            // streams named the PlayStation backend directly. Choosing between the local and account routes
+            // needs the account tier as well, and a page deciding that for itself would be the second place in
+            // the app with an opinion about what "signed in" means.
+            Sessions = sessions ?? BuildSessionSource(resolvedConsoles, Gateway),
 
             // Absent rather than broken when there is no gateway: the code route is unaffected, and the flow
             // renders the reason instead of offering an action that cannot work.
@@ -105,7 +118,7 @@ public static class HalyardAppServices
             // own idea of the current settings, so a change made on one page was invisible to another until the
             // app restarted.
             Settings = settings ?? new SettingsStore(resolvedPaths),
-            Consoles = consoles ?? new PairedConsoleStore(resolvedPaths),
+            Consoles = resolvedConsoles,
 
             Scanner = scanner ?? new HalyardConsoleScanner(),
             Registrar = registrar ?? new HalyardConsoleRegistrar(),
@@ -135,6 +148,39 @@ public static class HalyardAppServices
     /// pairing through the account. They are absent together, always — the second is a use of the first.
     /// </para>
     /// </summary>
+    /// <summary>
+    /// The session source: the local route always, the account route when this build has a gateway.
+    ///
+    /// <para>
+    /// The account connector is built <b>per attempt</b> rather than once, because it holds a single-use push
+    /// socket — a connect that has been tried and torn down cannot be tried again on the same object, and
+    /// connecting is exactly the thing a user retries.
+    /// </para>
+    /// </summary>
+    private static IStreamingSessionSource BuildSessionSource(
+        IPairedConsoleStore consoles, Func<HalyardAccountGateway?> gateway)
+    {
+        var factory = new HalyardSessionFactory(
+            HalyardControlSecretsLoader.Load(out string cryptoSource),
+            new PairedConsoleCredentialStore(consoles));
+
+        return new HalyardStreamingSessionSource(
+            factory,
+            progress => gateway() is { } live
+                ? new HalyardAccountConsoleSession(
+                    live,
+                    factory,
+                    options: new HalyardAccountPairingOptions
+                    {
+                        // The rendezvous takes tens of seconds and says useful things while it does; without
+                        // this the surface shows one unchanging line and reads as a hang.
+                        Log = progress is null ? null : progress.Report,
+                    })
+                : null,
+            () => gateway() is not null,
+            cryptoSource);
+    }
+
     private static HalyardAccountGateway? TryBuildGateway(
         IPlatformPaths paths, IAccountTokenStore? tokens, IDeviceIdentity? deviceIdentity)
     {

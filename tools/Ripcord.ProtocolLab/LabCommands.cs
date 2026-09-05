@@ -315,7 +315,7 @@ internal static class LabCommands
             login = (retry, _) =>
             {
                 Console.WriteLine(retry
-                    ? "the console rejected that passcode"
+                    ? "the console did not start a session after that passcode"
                     : "submitting the console login passcode");
                 return Task.FromResult(retry ? null : passcode);
             };
@@ -663,7 +663,9 @@ internal static class LabCommands
             {
                 // The bool is true when a previous attempt was rejected; re-offering the same wrong passcode
                 // would just burn the console's retry budget, so stop.
-                Console.WriteLine(retry ? "the console rejected that passcode" : "submitting the console login passcode");
+                Console.WriteLine(retry
+                    ? "the console did not start a session after that passcode"
+                    : "submitting the console login passcode");
                 return Task.FromResult(retry ? null : passcode);
             };
         }

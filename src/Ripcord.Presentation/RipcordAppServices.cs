@@ -82,6 +82,13 @@ public sealed class RipcordAppServices
     public required IVideoCapabilitiesProbe VideoCapabilities { get; init; }
 
     /// <summary>
+    /// Opens streaming sessions, by whichever route reaches the console. In the graph rather than built by the
+    /// streaming surface because choosing a route needs the account tier, and a page that constructed its own
+    /// would be the second place in the app deciding what "signed in" means.
+    /// </summary>
+    public required IStreamingSessionSource Sessions { get; init; }
+
+    /// <summary>
     /// The shell, once the front end has one.
     ///
     /// <para>
