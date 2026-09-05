@@ -187,6 +187,13 @@ internal static class LabCommands
         }
 
         Console.WriteLine($"account pairing SUCCEEDED — pairing record is {result.CredentialRecord.Length} bytes.");
+
+        // Persist through the same store the app uses, so `connect` can actually use what we just paired.
+        // Without this the lab printed success and threw the record away, and `connect` then sent no
+        // RP-Registkey at all - which looks exactly like a rejected pairing.
+        await HalyardPairingCredentialStore.ForCurrentUser()
+            .SaveAsync(consoleIp, result.CredentialRecord, CancellationToken.None);
+        Console.WriteLine($"stored against console id '{consoleIp}' in the app's own credential store.");
         Console.WriteLine("(the app stores this as the console's credential blob; it is deliberately not printed");
         Console.WriteLine(" here, being per-console secret material.)");
         return 0;
@@ -436,7 +443,9 @@ internal static class LabCommands
     {
         if (args.Length < 2 || !IPAddress.TryParse(args[1], out IPAddress? ip))
         {
-            Console.Error.WriteLine("usage: connect <ip> [ctrlPort] [strmPort]");
+            Console.Error.WriteLine("usage: connect <ip> [ctrlPort] [strmPort] [--passcode=<digits>]");
+            Console.Error.WriteLine("       (the passcode is the console's login passcode, for a locked user;");
+            Console.Error.WriteLine("        RIPCORD_CONSOLE_PASSCODE works too)");
             return 1;
         }
 
@@ -448,13 +457,44 @@ internal static class LabCommands
             ControlEndpoint: new IPEndPoint(ip, ctrlPort),
             StreamEndpoint: new IPEndPoint(ip, strmPort));
 
-        await using var session = new HalyardStreamingSession(
-            parameters,
-            new HalyardTcpControlChannel(),
-            new PassthroughHalyardSessionCrypto(),
-            new NullCredentialStore());
+        // Built through the same factory the app uses, so this exercises the shipping composition: the real
+        // control crypto when the dirty-room secrets are present, and the per-user credential store.
+        //
+        // This command previously hard-wired a NullCredentialStore and the passthrough crypto, which meant
+        // /sess/init went out with no RP-Registkey and came back 403 whether or not a pairing existed -- so a
+        // perfectly good pairing record was indistinguishable from none at all.
+        HalyardSessionFactory factory = HalyardSessionFactory.CreateDefault(out string cryptoSource);
+        bool paired = await HalyardPairingCredentialStore.ForCurrentUser()
+            .LoadAsync(ip.ToString(), CancellationToken.None) is not null;
 
-        Console.WriteLine($"connecting to {ip}:{ctrlPort} (control) / {strmPort} (stream), stub crypto...");
+        Console.WriteLine(paired
+            ? $"using the stored pairing for {ip}"
+            : $"no stored pairing for {ip} - /sess/init will be refused; pair first with `accountpair` or `register`");
+        Console.WriteLine($"session crypto: {(factory.HasRealCrypto ? "real" : "PASSTHROUGH (the console will reject the MAC)")} - {cryptoSource}");
+
+        // The console login passcode, when the console's user is locked. Taken from --passcode= or the
+        // RIPCORD_CONSOLE_PASSCODE environment variable rather than prompted: this harness runs
+        // non-interactively as often as not, and a blocking Console.ReadLine here would hang a scripted run.
+        // Returning null (neither supplied) reports the gate cleanly instead of stalling at it.
+        string? passcode = args.FirstOrDefault(a =>
+                a.StartsWith("--passcode=", StringComparison.OrdinalIgnoreCase))?.Split('=', 2)[1]
+            ?? Environment.GetEnvironmentVariable("RIPCORD_CONSOLE_PASSCODE");
+
+        Func<bool, CancellationToken, Task<string?>>? login = null;
+        if (!string.IsNullOrWhiteSpace(passcode))
+        {
+            login = (retry, _) =>
+            {
+                // The bool is true when a previous attempt was rejected; re-offering the same wrong passcode
+                // would just burn the console's retry budget, so stop.
+                Console.WriteLine(retry ? "the console rejected that passcode" : "submitting the console login passcode");
+                return Task.FromResult(retry ? null : passcode);
+            };
+        }
+
+        await using IStreamingSession session = factory.Create(parameters, login);
+
+        Console.WriteLine($"connecting to {ip}:{ctrlPort} (control) / {strmPort} (stream)...");
         var config = new SessionConfig(1280, 720, 60, 10_000, VideoCodec.H264, LatencyMode.Balanced);
         SessionHandshakeResult result = await session.ConnectAsync(config, CancellationToken.None);
 
