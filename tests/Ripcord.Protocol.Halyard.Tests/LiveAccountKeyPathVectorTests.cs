@@ -33,6 +33,8 @@ namespace Ripcord.Protocol.Halyard.Tests;
 /// </summary>
 public class LiveAccountKeyPathVectorTests
 {
+    private static readonly string CRLF = new([(char)13, (char)10]);
+
     [SkippableFact]
     public void RecoverMaterial_ReproducesTheMaterialTheCapturedClientUsed()
     {
@@ -72,28 +74,24 @@ public class LiveAccountKeyPathVectorTests
         foreach (Vector v in fx.Vectors)
         {
             byte[] plain = DecryptCapturedField(cipher, bundled, v);
-            byte[] expected = Encoding.ASCII.GetBytes(
-                "Client-Type: " + HalyardRegistrationMessage.ClientTypeHex);
+            string text = Encoding.ASCII.GetString(plain);
 
-            Assert.Equal(expected[16..], plain[16..expected.Length]);
+            // The whole field, first block included. Until the account route's material wrap was separated
+            // from the PIN route's, bytes 0..15 decrypted to noise -- which is what a 403 / 80108b09 looks
+            // like from the console's side.
+            Assert.StartsWith("Client-Type: " + HalyardRegistrationMessage.ClientTypeHex + CRLF, text);
+            Assert.Contains("Np-AccountId: ", text);
+            Assert.EndsWith(CRLF, text);
         }
     }
 
     [SkippableFact]
-    public void TheFieldIvIsNotYetDerivable_AndTheseAreTheKnownAnswers()
+    public void TheFieldIvNowMatchesTheOneTheCapturedSenderUsed()
     {
-        // The open question, pinned so it stays measurable and so the algebra never has to be redone.
-        //
-        // Exactly bytes 0..15 of every captured account request fail to decrypt, and nothing after them —
-        // which localises the fault to the field IV. Because CFB gives C0 = P0 XOR E_K(IV) and P0 is known,
-        // the IV the sender actually used follows exactly: IV = D_K(P0 XOR C0). Those three values are in the
-        // fixture. What is NOT known is how the sender arrived at them: it is not
-        // HMAC(<any of the four bundled context keys>, X || be64(0..4095)) for X in {the wrapped material,
-        // the seed, data1, data2, the derived key, the raw registration-table entry, any 16-byte window of
-        // the context}, nor any of the 32 wrap-table entries under any bias or offset-order variant.
-        //
-        // Ripcord therefore encrypts its own request's first block under an IV the console does not expect,
-        // the console reads garbage where "Client-Type: " should be, and refuses with 403 / 80108b09.
+        // The IV each captured sender actually used was solved algebraically from C0 = P0 XOR E_K(IV), with
+        // P0 known because the field always begins "Client-Type: ". Those values are in the fixture, and our
+        // derivation must now reproduce them exactly -- which it does only with the account route's own
+        // material wrap.
         Fixture fx = LoadOrSkip();
         HalyardRegistrationCipher cipher = CipherOrSkip(out var bundled);
 
@@ -103,17 +101,27 @@ public class LiveAccountKeyPathVectorTests
 
             byte[] context = Convert.FromHexString(v.Context!);
             byte[] ours = HalyardFieldIv.Derive(
-                bundled.ContextKey, cipher.RecoverMaterial(context), HalyardRegistrationCipher.FieldCounter);
+                bundled.ContextKey,
+                cipher.RecoverAccountMaterial(context),
+                HalyardRegistrationCipher.FieldCounter);
 
-            // The IV we send is not the one the console expects. When that stops being true, this test fails
-            // and should be deleted along with the workaround it documents.
-            Assert.NotEqual(Convert.FromHexString(v.SolvedFieldIv!), ours);
+            Assert.Equal(Convert.FromHexString(v.SolvedFieldIv!), ours);
+        }
+    }
 
-            // And the first block is the only thing wrong: proof the fault is the IV and not the key.
-            byte[] plain = DecryptCapturedField(cipher, bundled, v);
-            byte[] expected = Encoding.ASCII.GetBytes(
-                "Client-Type: " + HalyardRegistrationMessage.ClientTypeHex);
-            Assert.NotEqual(expected[..16], plain[..16]);
+    [SkippableFact]
+    public void TheTwoRoutesWrapTheMaterialDifferently()
+    {
+        // Guards the distinction itself. Applying the account transform to a PIN context (or the reverse)
+        // yields a different material, so a future tidy-up that "unifies" them would silently break one route
+        // -- and the symptom would be a 403 with an otherwise perfectly formed request.
+        Fixture fx = LoadOrSkip();
+        HalyardRegistrationCipher cipher = CipherOrSkip(out _);
+
+        foreach (Vector v in fx.Vectors!)
+        {
+            byte[] context = Convert.FromHexString(v.Context!);
+            Assert.NotEqual(cipher.RecoverMaterial(context), cipher.RecoverAccountMaterial(context));
         }
     }
 
@@ -130,7 +138,7 @@ public class LiveAccountKeyPathVectorTests
 
         byte[] context = Convert.FromHexString(v.Context!);
         return cipher.DecryptAccountField(
-            context, seed, cipher.RecoverMaterial(context), Convert.FromHexString(v.RequestField!));
+            context, seed, cipher.RecoverAccountMaterial(context), Convert.FromHexString(v.RequestField!));
     }
 
     private static HalyardRegistrationCipher CipherOrSkip(
