@@ -148,14 +148,26 @@ public sealed class HalyardCloudClient(HttpClient http, HalyardTokenProvider tok
         return response.CommandId;
     }
 
-    /// <summary>Send a signaling OFFER (candidate list) to the console over the session's message channel.</summary>
+    /// <summary>
+    /// Send a signaling OFFER (candidate list) to the console over the session's message channel.
+    ///
+    /// <para>
+    /// <paramref name="sid"/> and <paramref name="reqId"/> are the caller's because a session offers more than
+    /// one connection and each needs its own identity. They were fixed at 1 while only the control connection
+    /// existed, which was invisible until the A/V leg was added: both offers then claimed stream 1, the console
+    /// took our id for that leg from this message, and the second connection collided with the first. It
+    /// preludes fine and is never served. The captured client numbers them 1 and 2, with reqIds 1 and 3.
+    /// </para>
+    /// </summary>
     public async Task SendOfferAsync(
         string sessionId,
         string accountId,
         string consoleDuid,
         IReadOnlyList<HalyardCandidate> candidates,
         CancellationToken cancellationToken,
-        ReadOnlyMemory<byte> localHashedId = default)
+        ReadOnlyMemory<byte> localHashedId = default,
+        int reqId = 1,
+        int sid = 1)
     {
         // Field-for-field against our own capture of one OFFER, with two deliberate differences noted below.
         // `skey` really is 16 zero bytes at this stage and `mappedAddr` really is the literal "0.0.0.0" — both
@@ -164,11 +176,11 @@ public sealed class HalyardCloudClient(HttpClient http, HalyardTokenProvider tok
         string offerBody = JsonSerializer.Serialize(new
         {
             action = "OFFER",
-            reqId = 1,
+            reqId,
             error = 0,
             connRequest = new
             {
-                sid = 1,
+                sid,
                 peerSid = 0,
                 skey = Convert.ToBase64String(new byte[16]),
                 natType = 2,

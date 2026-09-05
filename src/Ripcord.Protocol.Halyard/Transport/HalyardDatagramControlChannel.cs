@@ -27,6 +27,7 @@ public sealed class HalyardUdpDatagramTransport : IHalyardDatagramTransport
 {
     private readonly UdpChannel _channel;
     private readonly IPEndPoint _remote;
+    private readonly bool _ownsChannel;
 
     /// <param name="localPort">
     /// 0 for an ephemeral port. The account route advertises whichever port it binds as its signaling
@@ -36,6 +37,23 @@ public sealed class HalyardUdpDatagramTransport : IHalyardDatagramTransport
     {
         _remote = remote ?? throw new ArgumentNullException(nameof(remote));
         _channel = new UdpChannel(localPort);
+        _ownsChannel = true;
+    }
+
+    /// <summary>
+    /// Run over a socket somebody else owns.
+    ///
+    /// <para>
+    /// The A/V leg needs this: its socket has to exist before the candidate exchange, because the port it
+    /// binds is what gets advertised, and it has to survive afterwards because the same socket carries the
+    /// prelude and then every Takion datagram. Disposing it here would close the stream.
+    /// </para>
+    /// </summary>
+    public HalyardUdpDatagramTransport(UdpChannel channel, IPEndPoint remote)
+    {
+        _channel = channel ?? throw new ArgumentNullException(nameof(channel));
+        _remote = remote ?? throw new ArgumentNullException(nameof(remote));
+        _ownsChannel = false;
     }
 
     public async ValueTask SendAsync(ReadOnlyMemory<byte> datagram, CancellationToken cancellationToken)
@@ -44,7 +62,13 @@ public sealed class HalyardUdpDatagramTransport : IHalyardDatagramTransport
     public async ValueTask<ReadOnlyMemory<byte>> ReceiveAsync(CancellationToken cancellationToken)
         => (await _channel.ReceiveAsync(cancellationToken).ConfigureAwait(false)).Buffer;
 
-    public void Dispose() => _channel.Dispose();
+    public void Dispose()
+    {
+        if (_ownsChannel)
+        {
+            _channel.Dispose();
+        }
+    }
 }
 
 /// <summary>Tunables for one account-route control exchange.</summary>

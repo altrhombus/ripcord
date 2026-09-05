@@ -134,6 +134,9 @@ public sealed class HalyardAccountPairingTests
 
         public ReadOnlyMemory<byte> OfferedHashedId { get; private set; }
 
+        /// <summary>The <c>sid</c> of every OFFER, in order — one per connection the session offered.</summary>
+        public List<int> OfferedStreamIds { get; } = [];
+
         public Task<string> CreateSessionAsync(string pushContextId, CancellationToken ct)
             => Task.FromResult("session-1");
 
@@ -162,9 +165,10 @@ public sealed class HalyardAccountPairingTests
         public Task SendOfferAsync(
             string sessionId, string accountId, string consoleDuid,
             IReadOnlyList<HalyardCandidate> candidates, CancellationToken ct,
-            ReadOnlyMemory<byte> localHashedId = default)
+            ReadOnlyMemory<byte> localHashedId = default, int reqId = 1, int sid = 1)
         {
             OfferedHashedId = localHashedId;
+            OfferedStreamIds.Add(sid);
             return Task.CompletedTask;
         }
 
@@ -225,7 +229,7 @@ public sealed class HalyardAccountPairingTests
     {
         public Task<string> CreateSessionAsync(string pushContextId, CancellationToken ct) => Task.FromResult("s");
         public Task SendConnectCommandAsync(string a, string b, string c, string d, (string, string, string) e, CancellationToken ct) => Task.CompletedTask;
-        public Task SendOfferAsync(string a, string b, string c, IReadOnlyList<HalyardCandidate> d, CancellationToken ct, ReadOnlyMemory<byte> localHashedId = default) => Task.CompletedTask;
+        public Task SendOfferAsync(string a, string b, string c, IReadOnlyList<HalyardCandidate> d, CancellationToken ct, ReadOnlyMemory<byte> localHashedId = default, int reqId = 1, int sid = 1) => Task.CompletedTask;
         public Task SendResultAsync(string a, string b, string c, int reqId, CancellationToken ct) => Task.CompletedTask;
         public Task SendAcceptAsync(string a, string b, string c, int reqId, int sid, int peerSid, HalyardCandidate cand, string addr, int port, CancellationToken ct) => Task.CompletedTask;
 

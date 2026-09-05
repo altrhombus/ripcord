@@ -55,7 +55,7 @@ public class HalyardWanRendezvousTests
         }
 
         public Task SendOfferAsync(
-            string sessionId, string accountId, string duid, IReadOnlyList<HalyardCandidate> candidates, CancellationToken ct, ReadOnlyMemory<byte> localHashedId = default)
+            string sessionId, string accountId, string duid, IReadOnlyList<HalyardCandidate> candidates, CancellationToken ct, ReadOnlyMemory<byte> localHashedId = default, int reqId = 1, int sid = 1)
         {
             OfferCount++;
             Calls.Enqueue("offer");
@@ -97,7 +97,7 @@ public class HalyardWanRendezvousTests
             return Task.CompletedTask;
         }
 
-        public Task SendOfferAsync(string s, string a, string d, IReadOnlyList<HalyardCandidate> c, CancellationToken ct, ReadOnlyMemory<byte> localHashedId = default)
+        public Task SendOfferAsync(string s, string a, string d, IReadOnlyList<HalyardCandidate> c, CancellationToken ct, ReadOnlyMemory<byte> localHashedId = default, int reqId = 1, int sid = 1)
         {
             if (Interlocked.Increment(ref _offerAttempts) <= failures)
             {
