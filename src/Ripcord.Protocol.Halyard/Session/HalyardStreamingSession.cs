@@ -82,8 +82,10 @@ public sealed class HalyardStreamingSession : IStreamingSession
         IHalyardControlChannel control,
         IHalyardSessionCrypto crypto,
         IConsoleCredentialStore credentials,
-        Func<bool, CancellationToken, Task<string?>>? loginPinProvider = null)
+        Func<bool, CancellationToken, Task<string?>>? loginPinProvider = null,
+        TimeSpan? controlPlaneDeadline = null)
     {
+        _controlPlaneDeadline = controlPlaneDeadline ?? DefaultControlPlaneDeadline;
         _parameters = parameters;
         _control = control;
         _crypto = crypto;
@@ -173,7 +175,14 @@ public sealed class HalyardStreamingSession : IStreamingSession
     /// another. Only the /sess/init and /sess/ctrl response reads were unbounded, and only they are covered.
     /// </para>
     /// </summary>
-    private static readonly TimeSpan ControlPlaneDeadline = TimeSpan.FromSeconds(20);
+    /// <summary>
+    /// The default, which suits a directly-reached LAN console. The account route needs longer and says so:
+    /// its console gates the control plane on a cloud rendezvous completing, and one was measured taking about
+    /// twenty seconds to send its signaling ACCEPT -- long enough that a legitimately working link failed here.
+    /// </summary>
+    public static readonly TimeSpan DefaultControlPlaneDeadline = TimeSpan.FromSeconds(20);
+
+    private readonly TimeSpan _controlPlaneDeadline;
 
     /// <summary>
     /// Which handshake step is in flight, so a timeout can name it. Set as the handshake advances and read only on
@@ -190,7 +199,7 @@ public sealed class HalyardStreamingSession : IStreamingSession
         // console that accepts the TCP connection and then never answers left the app on "Connecting…" indefinitely
         // with nothing to report. Observed on a fresh machine, where it is the least diagnosable outcome possible.
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        deadline.CancelAfter(ControlPlaneDeadline);
+        deadline.CancelAfter(_controlPlaneDeadline);
         CancellationToken token = deadline.Token;
 
         try
@@ -223,7 +232,7 @@ public sealed class HalyardStreamingSession : IStreamingSession
             SessResponse initResponse = await SendInitAsync(registrationKey, token).ConfigureAwait(false);
             if (!initResponse.IsSuccess)
             {
-                return Fail($"/sess/init rejected ({initResponse.StatusCode}).");
+                return Fail($"/sess/init rejected ({Describe(initResponse)}).");
             }
 
             // v1 control-plane key establishment: KDF over (RP-Nonce || companion). Establish the control
@@ -249,7 +258,7 @@ public sealed class HalyardStreamingSession : IStreamingSession
             SessResponse ctrlResponse = await SendControlAsync(token).ConfigureAwait(false);
             if (!ctrlResponse.IsSuccess)
             {
-                return Fail($"/sess/ctrl rejected ({ctrlResponse.StatusCode}).");
+                return Fail($"/sess/ctrl rejected ({Describe(ctrlResponse)}).");
             }
 
             // The /sess/ctrl HTTP response is immediately followed, on the SAME TCP connection, by a
@@ -289,7 +298,7 @@ public sealed class HalyardStreamingSession : IStreamingSession
             // Our own deadline fired, not the caller's cancellation. Name the step: "Connecting…" forever with no
             // stated cause is the single least diagnosable failure this app can produce, and on a machine with no
             // debugger it is the only information available.
-            return Fail($"Control setup timed out after {ControlPlaneDeadline.TotalSeconds:F0}s at: {_connectStep}. "
+            return Fail($"Control setup timed out after {_controlPlaneDeadline.TotalSeconds:F0}s at: {_connectStep}. "
                         + "The console did not answer. Check that no other device is streaming from it, and that "
                         + "inbound UDP is allowed for this app.");
         }
@@ -297,6 +306,23 @@ public sealed class HalyardStreamingSession : IStreamingSession
         {
             return Fail($"{_connectStep}: {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// The status, plus the console's own <c>RP-Application-Reason</c> when it gives one.
+    ///
+    /// <para>
+    /// Without it every refusal reads identically, and they are not identical: on the registration path the
+    /// difference between "wrong transport" and "wrong key" was two distinct reason codes, and not surfacing
+    /// them cost a session of chasing the wrong one.
+    /// </para>
+    /// </summary>
+    private static string Describe(SessResponse response)
+    {
+        string? reason = response.Header("RP-Application-Reason");
+        return reason is null
+            ? $"HTTP {response.StatusCode}"
+            : $"HTTP {response.StatusCode}, RP-Application-Reason {reason}";
     }
 
     private Task<SessResponse> SendInitAsync(byte[]? registrationKey, CancellationToken cancellationToken)

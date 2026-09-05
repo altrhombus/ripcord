@@ -68,7 +68,8 @@ public sealed record HalyardAccountTransportContext(
 public sealed record HalyardAccountConnection(
     HalyardDatagramControlChannel? Channel,
     HalyardAccountTransportContext? Context,
-    string? FailureReason)
+    string? FailureReason,
+    IAsyncDisposable? SessionLifetime = null)
 {
     public bool Succeeded => Channel is not null;
 
@@ -158,13 +159,13 @@ public sealed class HalyardAccountPairing(
 
         IHalyardRegistration? registration = null;
         return RunAsync(
-            request, pushChannel, pushServer, accessToken, requireSeed: true,
+            request, pushChannel, pushServer, accessToken, requireSeed: true, keepSessionOpen: false,
             openAssociation: (context, ct) =>
             {
                 registration = _registration(context);
                 return registration.PrepareAsync(ct);
             },
-            finish: async (_, seed, ct) =>
+            finish: async (_, seed, _, ct) =>
             {
                 if (registration is null)
                 {
@@ -216,13 +217,13 @@ public sealed class HalyardAccountPairing(
 
         HalyardDatagramRegistrationTransport? transport = null;
         return RunAsync(
-            request, pushChannel, pushServer, accessToken, requireSeed: false,
+            request, pushChannel, pushServer, accessToken, requireSeed: false, keepSessionOpen: true,
             openAssociation: (context, ct) =>
             {
                 transport = transportFactory(context);
                 return transport.PrepareAsync(ct);
             },
-            finish: (context, _, _) =>
+            finish: (context, _, sessionLifetime, _) =>
             {
                 HalyardDatagramControlChannel? channel = transport?.Channel;
                 Log(channel is null
@@ -232,7 +233,7 @@ public sealed class HalyardAccountPairing(
                 return Task.FromResult(channel is null
                     ? HalyardAccountConnection.Failed(
                         "The control association was never opened, so there is nothing to connect over.")
-                    : new HalyardAccountConnection(channel, context, null));
+                    : new HalyardAccountConnection(channel, context, null, sessionLifetime));
             },
             fail: HalyardAccountConnection.Failed,
             cancellationToken);
@@ -260,8 +261,9 @@ public sealed class HalyardAccountPairing(
         HalyardPushServerInfo pushServer,
         string accessToken,
         bool requireSeed,
+        bool keepSessionOpen,
         Func<HalyardAccountTransportContext, CancellationToken, Task> openAssociation,
-        Func<HalyardAccountTransportContext, byte[], CancellationToken, Task<T>> finish,
+        Func<HalyardAccountTransportContext, byte[], IAsyncDisposable, CancellationToken, Task<T>> finish,
         Func<string, T> fail,
         CancellationToken cancellationToken)
     {
@@ -275,7 +277,9 @@ public sealed class HalyardAccountPairing(
         // the failure paths, which is where it matters.
         string? joinedSessionId = null;
 
-        using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        // Not a `using`: when a connect takes ownership this outlives the call, and the lifetime object
+        // disposes it instead.
+        var lifetime = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 
         // Completed by the first customData1 that decrypts under our data1/data2. A foreign or malformed one is
         // ignored so a stray frame cannot resolve the wait with garbage.
@@ -372,6 +376,10 @@ public sealed class HalyardAccountPairing(
         // Start receiving before triggering the console, so a customData1 published the instant it joins is not
         // missed. The loop runs until lifetime is cancelled or the peer closes.
         Task pushLoop = pushChannel.RunAsync(pushServer, accessToken, lifetime.Token);
+
+        // Set once the caller has taken ownership of the session and the push loop; until then the teardown
+        // below owns them, including on every failure path.
+        bool handedOff = false;
 
         try
         {
@@ -506,13 +514,29 @@ public sealed class HalyardAccountPairing(
                     + "every console message is acked as it arrives");
             }
 
-            return await finish(context, recoveredSeed, cancellationToken).ConfigureAwait(false);
+            // Handed to the caller so a connect can hold the session open for the life of the stream. Pairing
+            // ignores it and the finally below does the same work.
+            var sessionLifetime = new AccountSessionLifetime(
+                this, joinedSessionId, lifetime, pushLoop, pushChannel, OnCustomData1, OnSignaling, OnJoined);
+            T finished = await finish(context, recoveredSeed, sessionLifetime, cancellationToken)
+                .ConfigureAwait(false);
+
+            // Only from here is the caller holding it: a failure before this point still tears down below.
+            handedOff = keepSessionOpen;
+            return finished;
         }
         finally
         {
-            pushChannel.CustomData1Received -= OnCustomData1;
-            pushChannel.SignalingReceived -= OnSignaling;
-            pushChannel.ConsoleJoined -= OnJoined;
+            // Only when we still own them. A handed-off connect must keep ACKING: the console goes on sending
+            // signaling for the life of the session, and one it does not get a RESULT for is one it gives up
+            // on -- observed live as an ACCEPT, then a TERMINATE, then a control connection that never opened.
+            // The lifetime object unsubscribes instead.
+            if (!handedOff)
+            {
+                pushChannel.CustomData1Received -= OnCustomData1;
+                pushChannel.SignalingReceived -= OnSignaling;
+                pushChannel.ConsoleJoined -= OnJoined;
+            }
 
             // Leave the session we created, always — success or failure, and before the push channel goes down
             // so the leave is announced on a live connection like the vendor's is (its last frame is a
@@ -522,13 +546,16 @@ public sealed class HalyardAccountPairing(
             // a session nobody is in, one per attempt, and pairing is a thing users retry. A console that finds
             // the account already sitting in stale sessions is a plausible reason for it to refuse a new one —
             // which is exactly the failure being chased when this was found missing.
-            if (joinedSessionId is not null)
+            if (!handedOff)
             {
-                await LeaveQuietlyAsync(joinedSessionId).ConfigureAwait(false);
-            }
+                if (joinedSessionId is not null)
+                {
+                    await LeaveQuietlyAsync(joinedSessionId).ConfigureAwait(false);
+                }
 
-            await lifetime.CancelAsync().ConfigureAwait(false);
-            await SafeAwaitAsync(pushLoop).ConfigureAwait(false);
+                await lifetime.CancelAsync().ConfigureAwait(false);
+                await SafeAwaitAsync(pushLoop).ConfigureAwait(false);
+            }
         }
     }
 
@@ -537,6 +564,45 @@ public sealed class HalyardAccountPairing(
     /// connection per pairing — the captured client uses 1 and 2 for its first, and only counts up when it
     /// negotiates a second stream for the media port.
     /// </summary>
+    /// <summary>
+    /// The cloud half of a connect: the session membership and the push loop, kept alive for as long as the
+    /// stream runs.
+    ///
+    /// <para>
+    /// A connect cannot do what pairing does and leave as soon as the association is open. Leaving ends the
+    /// session the console joined, and the console tears the association down with it -- observed live as a
+    /// control connection that timed out immediately after a rendezvous that had otherwise gone perfectly.
+    /// </para>
+    /// </summary>
+    private sealed class AccountSessionLifetime(
+        HalyardAccountPairing owner,
+        string? sessionId,
+        CancellationTokenSource lifetime,
+        Task pushLoop,
+        HalyardPushChannel pushChannel,
+        Action<string> onCustomData1,
+        Action<HalyardSignalingMessage> onSignaling,
+        Action onJoined) : IAsyncDisposable
+    {
+        public async ValueTask DisposeAsync()
+        {
+            pushChannel.CustomData1Received -= onCustomData1;
+            pushChannel.SignalingReceived -= onSignaling;
+            pushChannel.ConsoleJoined -= onJoined;
+
+            // Leave before the push channel goes down, so the leave is announced on a live connection --
+            // the vendor's last frame is a members:deleted for itself.
+            if (sessionId is not null)
+            {
+                await owner.LeaveQuietlyAsync(sessionId).ConfigureAwait(false);
+            }
+
+            await lifetime.CancelAsync().ConfigureAwait(false);
+            await SafeAwaitAsync(pushLoop).ConfigureAwait(false);
+            lifetime.Dispose();
+        }
+    }
+
     private const int OurStreamId = 1;
 
     private const int OurAcceptReqId = 2;
