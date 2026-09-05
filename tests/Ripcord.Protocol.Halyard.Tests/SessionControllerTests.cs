@@ -173,7 +173,7 @@ public class SessionControllerTests
         var pipeline = new FakePipeline();
 
         await using var controller = new SessionController(
-            () => session, pipeline, clock: time.Now, delay: time.Delay);
+            _ => Task.FromResult<IStreamingSession>(session), pipeline, clock: time.Now, delay: time.Delay);
 
         Assert.Equal(SessionLifecycle.Idle, controller.Lifecycle);
 
@@ -189,7 +189,7 @@ public class SessionControllerTests
         var pipeline = new FakePipeline();
 
         await using var controller = new SessionController(
-            () => session, pipeline, clock: time.Now, delay: time.Delay);
+            _ => Task.FromResult<IStreamingSession>(session), pipeline, clock: time.Now, delay: time.Delay);
         await controller.StartAsync(Config);
         await WaitFor(() => controller.Lifecycle == SessionLifecycle.Streaming, "should connect");
 
@@ -208,7 +208,7 @@ public class SessionControllerTests
         var session = new FakeSession();
 
         await using var controller = new SessionController(
-            () => session, new FakePipeline(), clock: time.Now, delay: time.Delay);
+            _ => Task.FromResult<IStreamingSession>(session), new FakePipeline(), clock: time.Now, delay: time.Delay);
         await controller.StartAsync(Config);
         await WaitFor(() => controller.Lifecycle == SessionLifecycle.Streaming, "should connect");
 
@@ -232,7 +232,7 @@ public class SessionControllerTests
         var input = new Subject<ControllerStateFrame>();
 
         await using var controller = new SessionController(
-            () => session, new FakePipeline(), controllerInput: input, clock: time.Now, delay: time.Delay);
+            _ => Task.FromResult<IStreamingSession>(session), new FakePipeline(), controllerInput: input, clock: time.Now, delay: time.Delay);
         await controller.StartAsync(Config);
         await WaitFor(() => controller.Lifecycle == SessionLifecycle.Streaming, "should connect");
 
@@ -260,7 +260,7 @@ public class SessionControllerTests
         var session = new FakeSession(succeeds: false, failureReason: "console is not paired");
 
         await using var controller = new SessionController(
-            () => session, new FakePipeline(), clock: time.Now, delay: time.Delay);
+            _ => Task.FromResult<IStreamingSession>(session), new FakePipeline(), clock: time.Now, delay: time.Delay);
 
         await controller.StartAsync(Config);
         await WaitFor(() => controller.Lifecycle == SessionLifecycle.Failed, "should fail fast");
@@ -284,7 +284,12 @@ public class SessionControllerTests
         };
 
         await using var controller = new SessionController(
-            () => { created++; return new FakeSession(succeeds: false, failureReason: "network unreachable"); },
+            _ =>
+            {
+                created++;
+                return Task.FromResult<IStreamingSession>(
+                    new FakeSession(succeeds: false, failureReason: "network unreachable"));
+            },
             new FakePipeline(),
             options: options,
             clock: time.Now,
@@ -313,7 +318,7 @@ public class SessionControllerTests
         };
 
         var controller = new SessionController(
-            () => new FakeSession(), new FakePipeline(), options: options, clock: time.Now, delay: time.Delay);
+            _ => Task.FromResult<IStreamingSession>(new FakeSession()), new FakePipeline(), options: options, clock: time.Now, delay: time.Delay);
 
         Assert.Equal(TimeSpan.FromSeconds(1), controller.BackoffFor(1));
         Assert.Equal(TimeSpan.FromSeconds(8), controller.BackoffFor(4));
@@ -337,7 +342,7 @@ public class SessionControllerTests
         };
 
         await using var controller = new SessionController(
-            () => session, new FakePipeline(), options: options, clock: time.Now, delay: time.Delay);
+            _ => Task.FromResult<IStreamingSession>(session), new FakePipeline(), options: options, clock: time.Now, delay: time.Delay);
 
         await controller.StartAsync(Config);
         await WaitFor(() => controller.Lifecycle == SessionLifecycle.Streaming, "should connect");
@@ -366,7 +371,7 @@ public class SessionControllerTests
         };
 
         await using var controller = new SessionController(
-            () => session, new FakePipeline(), options: options, clock: time.Now, delay: time.Delay);
+            _ => Task.FromResult<IStreamingSession>(session), new FakePipeline(), options: options, clock: time.Now, delay: time.Delay);
 
         await controller.StartAsync(Config);
         await WaitFor(() => controller.Lifecycle == SessionLifecycle.Streaming, "should connect");
@@ -396,7 +401,7 @@ public class SessionControllerTests
         };
 
         await using var controller = new SessionController(
-            () => session, new FakePipeline(), options: options, clock: time.Now, delay: time.Delay);
+            _ => Task.FromResult<IStreamingSession>(session), new FakePipeline(), options: options, clock: time.Now, delay: time.Delay);
 
         await controller.StartAsync(Config);
         await WaitFor(() => controller.Lifecycle == SessionLifecycle.Streaming, "should connect");
@@ -426,7 +431,7 @@ public class SessionControllerTests
         };
 
         await using var controller = new SessionController(
-            () => session, new FakePipeline(), options: options, clock: time.Now, delay: time.Delay);
+            _ => Task.FromResult<IStreamingSession>(session), new FakePipeline(), options: options, clock: time.Now, delay: time.Delay);
 
         await controller.StartAsync(Config);
         await WaitFor(() => controller.Lifecycle == SessionLifecycle.Streaming, "should connect");
@@ -458,7 +463,12 @@ public class SessionControllerTests
         };
 
         await using var controller = new SessionController(
-            () => { var s = new FakeSession(); sessions.Add(s); return s; },
+            _ =>
+            {
+                var s = new FakeSession();
+                sessions.Add(s);
+                return Task.FromResult<IStreamingSession>(s);
+            },
             new FakePipeline(),
             options: options,
             clock: time.Now,
@@ -496,7 +506,12 @@ public class SessionControllerTests
         };
 
         await using var controller = new SessionController(
-            () => { var s = new FakeSession(); sessions.Add(s); return s; },
+            _ =>
+            {
+                var s = new FakeSession();
+                sessions.Add(s);
+                return Task.FromResult<IStreamingSession>(s);
+            },
             new FakePipeline(),
             options: options,
             clock: time.Now,
@@ -539,7 +554,12 @@ public class SessionControllerTests
         };
 
         await using var controller = new SessionController(
-            () => { var s = new FakeSession(); sessions.Add(s); return s; },
+            _ =>
+            {
+                var s = new FakeSession();
+                sessions.Add(s);
+                return Task.FromResult<IStreamingSession>(s);
+            },
             new FakePipeline(),
             options: options,
             clock: time.Now,
@@ -567,7 +587,7 @@ public class SessionControllerTests
         var session = new FakeSession();
 
         var controller = new SessionController(
-            () => session, new FakePipeline(), clock: time.Now, delay: time.Delay);
+            _ => Task.FromResult<IStreamingSession>(session), new FakePipeline(), clock: time.Now, delay: time.Delay);
 
         await controller.StartAsync(Config);
         await WaitFor(() => controller.Lifecycle == SessionLifecycle.Streaming, "should connect");
@@ -592,7 +612,7 @@ public class SessionControllerTests
         List<SessionLifecycle> Snapshot() { lock (gate) return [.. seen]; }
 
         await using var controller = new SessionController(
-            () => new FakeSession(), new FakePipeline(), clock: time.Now, delay: time.Delay);
+            _ => Task.FromResult<IStreamingSession>(new FakeSession()), new FakePipeline(), clock: time.Now, delay: time.Delay);
 
         controller.Status.Subscribe(new Recorder(s => { lock (gate) seen.Add(s.Lifecycle); }));
         await controller.StartAsync(Config);
@@ -613,7 +633,7 @@ public class SessionControllerTests
         var pipeline = new FakePipeline();
 
         await using var controller = new SessionController(
-            () => session, pipeline, clock: time.Now, delay: time.Delay);
+            _ => Task.FromResult<IStreamingSession>(session), pipeline, clock: time.Now, delay: time.Delay);
 
         await controller.StartAsync(Config);
         await WaitFor(() => controller.Lifecycle == SessionLifecycle.Streaming, "should connect");
@@ -630,7 +650,7 @@ public class SessionControllerTests
         var pipeline = new FakePipeline();
 
         var controller = new SessionController(
-            () => new FakeSession(), pipeline, clock: time.Now, delay: time.Delay);
+            _ => Task.FromResult<IStreamingSession>(new FakeSession()), pipeline, clock: time.Now, delay: time.Delay);
 
         await controller.StartAsync(Config);
         await WaitFor(() => controller.Lifecycle == SessionLifecycle.Streaming, "should connect");
@@ -644,7 +664,7 @@ public class SessionControllerTests
     {
         var time = new VirtualTime();
         await using var controller = new SessionController(
-            () => new FakeSession(), new FakePipeline(), clock: time.Now, delay: time.Delay);
+            _ => Task.FromResult<IStreamingSession>(new FakeSession()), new FakePipeline(), clock: time.Now, delay: time.Delay);
 
         await controller.StartAsync(Config);
         await Assert.ThrowsAsync<InvalidOperationException>(() => controller.StartAsync(Config));

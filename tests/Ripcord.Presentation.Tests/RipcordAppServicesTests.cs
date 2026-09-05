@@ -1,3 +1,4 @@
+using Ripcord.Core.Sessions;
 using Ripcord.Core.Consoles;
 using Ripcord.Core.Discovery;
 using Ripcord.Core.Platform;
@@ -25,6 +26,24 @@ namespace Ripcord.Presentation.Tests;
 /// </summary>
 public class RipcordAppServicesTests
 {
+    /// <summary>A session source that is present and never used — the graph requires one; these tests do not
+    /// stream.</summary>
+    private sealed class StubSessionSource : IStreamingSessionSource
+    {
+        public StreamingAvailability Availability => new(true, "stub");
+
+        public Task<StreamingRouteChoice> ChooseRouteAsync(PairedConsole console, CancellationToken ct)
+            => Task.FromResult(new StreamingRouteChoice(StreamingRoute.Local, "stub"));
+
+        public Task<IStreamingSession> OpenAsync(
+            PairedConsole console,
+            StreamingRoute route,
+            Func<bool, CancellationToken, Task<string?>>? loginPin,
+            IProgress<string>? progress,
+            CancellationToken cancellationToken)
+            => throw new NotSupportedException("These tests do not open sessions.");
+    }
+
     private static RipcordAppServices Build()
     {
         // Pointed at a scratch directory, not the real one: SettingsStore reads its file in its constructor,
@@ -43,6 +62,7 @@ public class RipcordAppServicesTests
             ReachabilityProbe = new StubProbe(),
             VideoCapabilities = new StubCapabilities(),
             WakeCoordinator = new StubWakeCoordinator(),
+            Sessions = new StubSessionSource(),
             Account = new UnavailableAccountSession(),
             AccountPairing = new UnavailableAccountPairing(),
         };
