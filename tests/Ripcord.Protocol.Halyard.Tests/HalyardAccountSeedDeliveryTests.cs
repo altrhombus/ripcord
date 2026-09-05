@@ -89,9 +89,10 @@ public sealed class HalyardAccountSeedDeliveryTests
         var exchange = reg.Cipher.BuildAccountRequest(seed, plaintext);
 
         // The request body is [context][encrypted field]; the console recovers the material from the context
+        // with the ACCOUNT route's wrap -- same table as the PIN route, different transform,
         // and decrypts the field with key' = seed XOR registrationTable[selector].
         byte[] field = exchange.RequestBody.AsSpan(HalyardRegistrationCipher.ContextLength).ToArray();
-        byte[] material = reg.Cipher.RecoverMaterial(exchange.RequestBody.AsSpan(0, HalyardRegistrationCipher.ContextLength));
+        byte[] material = reg.Cipher.RecoverAccountMaterial(exchange.RequestBody.AsSpan(0, HalyardRegistrationCipher.ContextLength));
         byte[] decrypted = reg.Cipher.DecryptAccountField(
             exchange.RequestBody.AsSpan(0, HalyardRegistrationCipher.ContextLength), seed, material, field);
 
@@ -123,7 +124,7 @@ public sealed class HalyardAccountSeedDeliveryTests
         // key' = seed XOR registrationTable[selector]; material recovered from the context (same as console).
         byte[] key = reg.Kdf.DeriveKey(context, 0);
         for (int i = 0; i < key.Length; i++) key[i] ^= seed[i];
-        byte[] material = reg.Cipher.RecoverMaterial(context);
+        byte[] material = reg.Cipher.RecoverAccountMaterial(context);
         return new HalyardControlFieldCrypto(key, material, reg.ContextKey)
             .EncryptField(HalyardRegistrationCipher.FieldCounter, plaintext);
     }
