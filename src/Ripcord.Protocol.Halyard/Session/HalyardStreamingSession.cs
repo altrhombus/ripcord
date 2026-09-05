@@ -266,9 +266,17 @@ public sealed class HalyardStreamingSession : IStreamingSession
             // Arm the console's control TCP listener before connecting: the console opens :9295 only after
             // hearing the UDP search probe (SRC3 for PS5, SRC2 for PS4); a cold TCP connect is refused with a
             // RST. (The same probe the registration path uses — wire-confirmed a single probe arms init + ctrl.)
-            _connectStep = "probing the console's control listener";
-            await HalyardControlSearch.ProbeAsync(
-                _parameters.ControlEndpoint.Address.ToString(), ps5: platform == HalyardConsolePlatform.Ps5, token).ConfigureAwait(false);
+            //
+            // LAN only. The probe is a broadcast-style UDP search that arms a TCP listener we do not use on the
+            // rendezvous route -- there the control plane rides the 9303 association, which is already open by
+            // the time we get here. Off-network it is worse than useless: it fires at an address that may not
+            // be routable from where we are, and waits for an answer that cannot come.
+            if (_parameters.ConnectionPath == HalyardConnectionPath.Local)
+            {
+                _connectStep = "probing the console's control listener";
+                await HalyardControlSearch.ProbeAsync(
+                    _parameters.ControlEndpoint.Address.ToString(), ps5: platform == HalyardConsolePlatform.Ps5, token).ConfigureAwait(false);
+            }
 
             _connectStep = "opening the control connection";
             await _control.ConnectAsync(_parameters.ControlEndpoint, token).ConfigureAwait(false);

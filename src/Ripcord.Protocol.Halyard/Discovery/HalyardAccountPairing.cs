@@ -1,3 +1,4 @@
+using System.Net;
 using Ripcord.Cloud.Halyard;
 using Ripcord.Cloud.Halyard.Rendezvous;
 using Ripcord.Protocol.Halyard.Common.Control;
@@ -727,15 +728,32 @@ public sealed class HalyardAccountPairing(
     private static HalyardSignalingCandidate? PreferredCandidate(
         HalyardSignalingMessage offer, string consoleHost)
     {
+        // The one we can actually reach, and it must be the same one the transport picks: this is the
+        // candidate we name back to the console in our ACCEPT, so choosing it by a different rule than
+        // ConsoleEndpoint would have us talking to one address while telling the console we chose another.
+        HalyardSignalingCandidate? reflexive = null;
+
         foreach (HalyardSignalingCandidate candidate in offer.Candidates)
         {
-            if (string.Equals(candidate.Address, consoleHost, StringComparison.Ordinal))
+            if (!IPAddress.TryParse(candidate.Address, out IPAddress? address))
+            {
+                continue;
+            }
+
+            if (HalyardDatagramRegistrationTransport.SharesSubnetWithLocalInterface(address))
             {
                 return candidate;
             }
+
+            reflexive ??= candidate;
         }
 
-        return offer.Candidates.Count > 0 ? offer.Candidates[0] : null;
+        // The host the caller named, if it happens to be offered, then anything at all -- an offer we cannot
+        // parse is still better answered than ignored.
+        return reflexive
+               ?? offer.Candidates.FirstOrDefault(
+                   c => string.Equals(c.Address, consoleHost, StringComparison.Ordinal))
+               ?? (offer.Candidates.Count > 0 ? offer.Candidates[0] : null);
     }
 
     private void Log(string message) => _options.Log?.Invoke(message);
