@@ -58,6 +58,26 @@ public readonly struct HalyardCtrlMessage
     public const ushort TypeSessionId = 0x0033;
 
     /// <summary>
+    /// Client → console: the report the captured client sends a second or two after the bandwidth probe, on
+    /// both routes. The console answers <see cref="TypeProbeReportAck"/>, and on the rendezvous route then
+    /// sends <see cref="TypeStreamReady"/>.
+    ///
+    /// <para>
+    /// <b>Structure is solved; content is not.</b> The payload is four <c>uint32</c> in network byte order
+    /// (first-party RE of our own client: builder <c>FUN_1020c1c0</c>, each word through the <c>htonl</c>
+    /// thunk <c>FUN_101ee560</c>, read from a four-slot object in the order <c>+4, +8, +0xc, +0x10</c>, and
+    /// not emitted at all until every slot has been measured). **[X]** which measurement each slot carries.
+    /// The binary says the slots are three independent measurements — <c>+4</c>, <c>+8</c>, and the pair
+    /// <c>+0xc</c>/<c>+0x10</c> — and that <c>+0x10</c> is a time in milliseconds. The quantities in play are
+    /// bandwidth, loss, mtu, upMtu and rtt. See <c>docs/protocol/ps5-session-transport.md</c>.
+    /// </para>
+    /// </summary>
+    public const ushort TypeProbeReport = 0x000d;
+
+    /// <summary>Console → client: the 8-byte answer to <see cref="TypeProbeReport"/>. **[X]** contents.</summary>
+    public const ushort TypeProbeReportAck = 0x0010;
+
+    /// <summary>
     /// Console → client, 2-byte payload decrypting to <c>01 FF</c>. **[X]** — reads as a flag pair; the
     /// session proceeds whether or not it is acted on. Seen on both routes.
     /// </summary>
