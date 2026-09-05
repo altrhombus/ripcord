@@ -48,16 +48,34 @@ public sealed class HalyardSessionFactory
         return new HalyardSessionFactory(secrets, HalyardPairingCredentialStore.ForCurrentUser());
     }
 
-    /// <summary>Create a session from fully-specified connection parameters.</summary>
+    /// <summary>Create a session from fully-specified connection parameters, over LAN TCP.</summary>
     public IStreamingSession Create(
         HalyardConnectionParameters parameters,
         Func<bool, CancellationToken, Task<string?>>? loginPinProvider = null)
+        => Create(parameters, new HalyardTcpControlChannel(), loginPinProvider);
+
+    /// <summary>
+    /// Create a session over a control channel the caller supplies.
+    ///
+    /// <para>
+    /// The account ("web"/no-PIN) route needs this: its console answers <c>/sess/init</c> and
+    /// <c>/sess/ctrl</c> on the 9303 association that already carried <c>/sess/rgst</c> and refuses TCP
+    /// 9295, so the caller passes a <see cref="HalyardDatagramSessionControlChannel"/> wrapping the
+    /// association it established. Everything above the channel is identical, which is the point of the seam.
+    /// </para>
+    /// </summary>
+    public IStreamingSession Create(
+        HalyardConnectionParameters parameters,
+        IHalyardControlChannel control,
+        Func<bool, CancellationToken, Task<string?>>? loginPinProvider = null)
     {
         ArgumentNullException.ThrowIfNull(parameters);
+        ArgumentNullException.ThrowIfNull(control);
+
         IHalyardSessionCrypto crypto = _controlSecrets is null
             ? new PassthroughHalyardSessionCrypto()
             : new HalyardV1SessionCrypto(_controlSecrets);
-        return new HalyardStreamingSession(parameters, new HalyardTcpControlChannel(), crypto, _credentials, loginPinProvider);
+        return new HalyardStreamingSession(parameters, control, crypto, _credentials, loginPinProvider);
     }
 
     /// <summary>Convenience overload: build the parameters for a console reached at <paramref name="address"/>,
