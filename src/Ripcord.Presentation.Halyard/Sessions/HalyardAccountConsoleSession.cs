@@ -1,4 +1,5 @@
 using System.Net;
+using Ripcord.Core.Net;
 using System.Net.Sockets;
 using System.Security.Cryptography;
 using Ripcord.Cloud.Halyard;
@@ -122,6 +123,22 @@ public sealed class HalyardAccountConsoleSession
             // Chosen before the OFFER, because the OFFER advertises the port the transport will speak from and
             // that is how the console ties the peer that offered to the peer that opens an association.
             int localPort = FreeUdpPort();
+
+            // What the NAT presents on our behalf for that port, so a console on a different network has an
+            // address it can actually send to. Discovered before the port is bound for real, and best-effort:
+            // on the console's own LAN it is unnecessary, and where it fails the local candidate still stands.
+            (string Address, int Port)? reflexive = null;
+            IPEndPoint? mapped = await StunReflexiveAddress
+                .DiscoverAsync(localPort, TimeSpan.FromSeconds(3), cancellationToken).ConfigureAwait(false);
+            if (mapped is not null)
+            {
+                reflexive = (mapped.Address.ToString(), mapped.Port);
+                _options.Log?.Invoke($"our reflexive address is {mapped} (for local port {localPort})");
+            }
+            else
+            {
+                _options.Log?.Invoke("no reflexive address discovered; offering the local candidate only");
+            }
             string localAddress = HalyardDatagramRegistrationTransport.LocalAddressFor(
                 IPAddress.Parse(consoleHost));
 
@@ -162,7 +179,8 @@ public sealed class HalyardAccountConsoleSession
                         ClientDeviceId: ReadOnlyMemory<byte>.Empty,
                         Platform: platform,
                         LocalHashedId: localHashedId,
-                        LocalEndpoint: (localAddress, localPort)),
+                        LocalEndpoint: (localAddress, localPort),
+                        ReflexiveEndpoint: reflexive),
                     pushChannel,
                     pushServer,
                     token,
@@ -234,15 +252,26 @@ public sealed class HalyardAccountConsoleSession
             // the session starts streaming, because the console only offers it once the control plane is up.
             async Task<HalyardStreamTransport> PrepareStreamAsync(CancellationToken streamToken)
             {
-                // Bound first, because the port we bind is the one the ACCEPT advertises -- picking a port and
-                // binding it later leaves a window where something else takes it.
-                var socket = new UdpChannel(receiveBufferBytes: 4 * 1024 * 1024);
+                // The A/V leg needs its own reflexive address, because it is its own connection on its own
+                // port and the NAT maps each port separately. That has to be asked before the port is bound
+                // for the stream, so the port is chosen first and bound second -- a window where something
+                // else could take it, which is why the bind is checked rather than assumed below.
+                int mediaPort = FreeUdpPort();
+                (string Address, int Port)? mediaReflexive = null;
+                IPEndPoint? mediaMapped = await StunReflexiveAddress
+                    .DiscoverAsync(mediaPort, TimeSpan.FromSeconds(3), streamToken).ConfigureAwait(false);
+                if (mediaMapped is not null)
+                {
+                    mediaReflexive = (mediaMapped.Address.ToString(), mediaMapped.Port);
+                    _options.Log?.Invoke($"media reflexive address is {mediaMapped} (for local port {mediaPort})");
+                }
+
+                var socket = new UdpChannel(mediaPort, receiveBufferBytes: 4 * 1024 * 1024);
                 try
                 {
-                    int mediaPort = socket.LocalEndPoint.Port;
                     HalyardMediaEndpoint? media = connection.NegotiateMedia is null
                         ? null
-                        : await connection.NegotiateMedia(mediaPort, streamToken).ConfigureAwait(false);
+                        : await connection.NegotiateMedia(mediaPort, mediaReflexive, streamToken).ConfigureAwait(false);
 
                     if (media is null)
                     {
