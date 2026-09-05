@@ -469,6 +469,32 @@ public class HalyardControlAssociationTests
 
     // ---- helpers ---------------------------------------------------------------------------------
 
+    [Fact]
+    public void EachPayload_GetsItsOwnSequence()
+    {
+        // The bug this guards was invisible above this layer and cost a route. Every chunk we sent on a
+        // connection carried the sequence the console handed us in its accept, so the console took the first
+        // payload -- the HTTP request -- and discarded every one after it as a duplicate. Request/response
+        // still worked, because each of those opens a fresh connection and sends exactly one payload on it;
+        // what silently vanished was the persistent control channel that follows.
+        HalyardControlAssociation association = Connected();
+
+        ushort SequenceOfPayload(HalyardControlAction action)
+        {
+            // The datagram is an acknowledgement chunk followed by the payload chunk; we want the latter.
+            HalyardControlChunk data = HalyardControlChunkCodec.ReadAll(action.Send[0])
+                .Single(c => c.Type == HalyardControlChunkType.Data);
+            return BinaryPrimitives.ReadUInt16BigEndian(data.Body.Span);
+        }
+
+        ushort first = SequenceOfPayload(association.Send(new byte[] { 1 }));
+        ushort second = SequenceOfPayload(association.Send(new byte[] { 2 }));
+        ushort third = SequenceOfPayload(association.Send(new byte[] { 3 }));
+
+        Assert.Equal((ushort)(first + 1), second);
+        Assert.Equal((ushort)(first + 2), third);
+    }
+
     private static HalyardControlAssociation Connected()
     {
         HalyardControlAssociation association = Established();

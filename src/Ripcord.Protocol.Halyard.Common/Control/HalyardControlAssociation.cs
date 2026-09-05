@@ -381,6 +381,16 @@ public sealed class HalyardControlAssociation
         byte[] data = HalyardControlChunkCodec.Encode(
             HalyardControlChunkType.Data, DefaultFlags, WithSequence(_sequence, payload.Span));
 
+        // Each payload gets its own sequence, and this is where that was missing. Every chunk we sent on a
+        // connection carried the sequence the console handed us in its accept, so the console took the first
+        // one -- the HTTP request -- and discarded everything after it as a duplicate, exactly as its own
+        // acknowledgements said it would: they kept asking for the next sequence while we kept resending the
+        // previous. Nothing above this layer could see it. The request/response handshakes still worked,
+        // because each one opens a fresh connection and only ever sends a single payload on it; what broke was
+        // the persistent control channel that follows, where every frame after the first vanished -- the login
+        // passcode, the heartbeat replies, and every attempt to answer the console at all.
+        _sequence++;
+
         return Datagrams(Concat(ack, data));
     }
 
