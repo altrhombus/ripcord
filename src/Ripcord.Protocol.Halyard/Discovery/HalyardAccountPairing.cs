@@ -1,6 +1,7 @@
 using Ripcord.Cloud.Halyard;
 using Ripcord.Cloud.Halyard.Rendezvous;
 using Ripcord.Protocol.Halyard.Common.Control;
+using Ripcord.Protocol.Halyard.Transport;
 using Ripcord.Protocol.Halyard.Common.Crypto;
 using Ripcord.Protocol.Halyard.Common.Crypto.V1;
 
@@ -56,6 +57,24 @@ public sealed record HalyardAccountTransportContext(
     ReadOnlyMemory<byte> ConsoleHashedId);
 
 /// <summary>Tunables for account pairing.</summary>
+/// <summary>
+/// A live account-route association, ready for the session control plane, or the reason there is not one.
+///
+/// <para>
+/// <see cref="Channel"/> is the association the whole session runs on -- <c>/sess/init</c>, <c>/sess/ctrl</c>
+/// and the control frames after them. The caller owns it: disposing it ends the session.
+/// </para>
+/// </summary>
+public sealed record HalyardAccountConnection(
+    HalyardDatagramControlChannel? Channel,
+    HalyardAccountTransportContext? Context,
+    string? FailureReason)
+{
+    public bool Succeeded => Channel is not null;
+
+    public static HalyardAccountConnection Failed(string reason) => new(null, null, reason);
+}
+
 public sealed class HalyardAccountPairingOptions
 {
     /// <summary>How long to wait for the console to publish <c>customData1</c> (the seed) after the command.</summary>
@@ -127,11 +146,123 @@ public sealed class HalyardAccountPairing(
     /// Pair an account console. <paramref name="pushChannel"/> is a not-yet-running channel over a WebSocket
     /// the caller owns; <paramref name="pushServer"/> and <paramref name="accessToken"/> drive its upgrade.
     /// </summary>
-    public async Task<HalyardRegistrationResult> PairAsync(
+    /// <summary>Pair with the console: the seed arrives over the cloud and drives a <c>/sess/rgst</c>.</summary>
+    public Task<HalyardRegistrationResult> PairAsync(
         HalyardAccountPairingRequest request,
         HalyardPushChannel pushChannel,
         HalyardPushServerInfo pushServer,
         string accessToken,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        IHalyardRegistration? registration = null;
+        return RunAsync(
+            request, pushChannel, pushServer, accessToken, requireSeed: true,
+            openAssociation: (context, ct) =>
+            {
+                registration = _registration(context);
+                return registration.PrepareAsync(ct);
+            },
+            finish: async (_, seed, ct) =>
+            {
+                if (registration is null)
+                {
+                    return new HalyardRegistrationResult(false,
+                        "The control association was never opened, so there is nothing to register over.", null);
+                }
+
+                var registrationRequest = new HalyardRegistrationRequest(
+                    request.ConsoleId, request.ConsoleHost, request.AccountId,
+                    Passcode: string.Empty, request.ClientDeviceId, request.Platform)
+                {
+                    AccountSeed = seed,
+                };
+
+                HalyardRegistrationResult result = await registration
+                    .RegisterAsync(registrationRequest, ct)
+                    .ConfigureAwait(false);
+                Log(result.Succeeded ? "registered" : $"registration failed: {result.FailureReason}");
+                return result;
+            },
+            fail: reason => new HalyardRegistrationResult(false, reason, null),
+            cancellationToken);
+    }
+
+    /// <summary>
+    /// Reach an already-paired console over the account route, and hand back the open association.
+    ///
+    /// <para>
+    /// The same rendezvous as pairing, minus the seed: the console serves <c>/sess/init</c> and
+    /// <c>/sess/ctrl</c> on the association that would have carried <c>/sess/rgst</c>, so what a caller
+    /// wants back is the live association rather than a pairing record. The caller owns it from here, and
+    /// disposing it ends the session.
+    /// </para>
+    /// </summary>
+    /// <param name="transportFactory">
+    /// Builds the association for the console the OFFER named. Injected for the same reason the
+    /// registration is: the endpoint is not known until the console has offered.
+    /// </param>
+    public Task<HalyardAccountConnection> ConnectAsync(
+        HalyardAccountPairingRequest request,
+        HalyardPushChannel pushChannel,
+        HalyardPushServerInfo pushServer,
+        string accessToken,
+        Func<HalyardAccountTransportContext, HalyardDatagramRegistrationTransport> transportFactory,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(transportFactory);
+
+        HalyardDatagramRegistrationTransport? transport = null;
+        return RunAsync(
+            request, pushChannel, pushServer, accessToken, requireSeed: false,
+            openAssociation: (context, ct) =>
+            {
+                transport = transportFactory(context);
+                return transport.PrepareAsync(ct);
+            },
+            finish: (context, _, _) =>
+            {
+                HalyardDatagramControlChannel? channel = transport?.Channel;
+                Log(channel is null
+                    ? "no control association to connect over"
+                    : "control association ready for the session");
+
+                return Task.FromResult(channel is null
+                    ? HalyardAccountConnection.Failed(
+                        "The control association was never opened, so there is nothing to connect over.")
+                    : new HalyardAccountConnection(channel, context, null));
+            },
+            fail: HalyardAccountConnection.Failed,
+            cancellationToken);
+    }
+
+    /// <summary>
+    /// The account route's rendezvous, shared by pairing and connecting.
+    ///
+    /// <para>
+    /// Everything up to "the control association is open" is identical for both, and the sequence is
+    /// unforgiving enough -- who offers first, where our Init sits relative to our OFFER and ACCEPT, which
+    /// messages must be acknowledged -- that a second copy of it would drift. So the two differ only in
+    /// <paramref name="openAssociation"/> (what to build the association with), <paramref name="finish"/>
+    /// (what to do once it is open) and whether the registration seed is required.
+    /// </para>
+    /// </summary>
+    /// <param name="openAssociation">
+    /// Opens the association. Called at one exact point -- after our OFFER, before our ACCEPT -- because that
+    /// is where the captured client's Init sits and both neighbouring orderings are falsified against
+    /// hardware.
+    /// </param>
+    private async Task<T> RunAsync<T>(
+        HalyardAccountPairingRequest request,
+        HalyardPushChannel pushChannel,
+        HalyardPushServerInfo pushServer,
+        string accessToken,
+        bool requireSeed,
+        Func<HalyardAccountTransportContext, CancellationToken, Task> openAssociation,
+        Func<HalyardAccountTransportContext, byte[], CancellationToken, Task<T>> finish,
+        Func<string, T> fail,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -281,18 +412,24 @@ public sealed class HalyardAccountPairing(
                 }
             }
 
-            byte[] recoveredSeed;
-            try
+            // Only registration needs the seed. A connect still sends data1/data2 in the command (the console
+            // publishes a customData1 either way, and the vendor's client sends them on both routes), but it
+            // has a pairing record already and must not stall waiting for a value it will not use.
+            byte[] recoveredSeed = [];
+            if (requireSeed)
             {
-                recoveredSeed = await seed.Task.WaitAsync(_options.SeedTimeout, cancellationToken).ConfigureAwait(false);
-            }
-            catch (TimeoutException)
-            {
-                return new HalyardRegistrationResult(false,
-                    "The console did not publish the registration seed (customData1) in time.", null);
-            }
+                try
+                {
+                    recoveredSeed = await seed.Task
+                        .WaitAsync(_options.SeedTimeout, cancellationToken).ConfigureAwait(false);
+                }
+                catch (TimeoutException)
+                {
+                    return fail("The console did not publish the registration seed (customData1) in time.");
+                }
 
-            Log("registration seed recovered from customData1");
+                Log("registration seed recovered from customData1");
+            }
 
             HalyardSignalingMessage consoleOffer;
             try
@@ -302,15 +439,13 @@ public sealed class HalyardAccountPairing(
             }
             catch (TimeoutException)
             {
-                return new HalyardRegistrationResult(false,
-                    "The console never offered its candidates, so there is no address to register against.", null);
+                return fail("The console never offered its candidates, so there is no address to reach it at.");
             }
 
             Log($"console OFFER received ({consoleOffer.Candidates.Count} candidates)");
 
             var context = new HalyardAccountTransportContext(
                 consoleOffer, request.ConsoleHost, request.LocalHashedId, consoleOffer.LocalHashedId!);
-            IHalyardRegistration registration = _registration(context);
 
 
             // Announce ourselves — now, and not a moment earlier. A sessionMessage may only be sent to a
@@ -349,7 +484,7 @@ public sealed class HalyardAccountPairing(
                 // the console tolerates the wait there and not here is still unexplained.
                 try
                 {
-                    await registration.PrepareAsync(cancellationToken).ConfigureAwait(false);
+                    await openAssociation(context, cancellationToken).ConfigureAwait(false);
                     Log("control association opened (after our OFFER, before our ACCEPT)");
                 }
                 catch (Exception ex)
@@ -371,18 +506,7 @@ public sealed class HalyardAccountPairing(
                     + "every console message is acked as it arrives");
             }
 
-            var registrationRequest = new HalyardRegistrationRequest(
-                request.ConsoleId, request.ConsoleHost, request.AccountId,
-                Passcode: string.Empty, request.ClientDeviceId, request.Platform)
-            {
-                AccountSeed = recoveredSeed,
-            };
-
-            HalyardRegistrationResult result = await registration
-                .RegisterAsync(registrationRequest, cancellationToken)
-                .ConfigureAwait(false);
-            Log(result.Succeeded ? "registered" : $"registration failed: {result.FailureReason}");
-            return result;
+            return await finish(context, recoveredSeed, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
