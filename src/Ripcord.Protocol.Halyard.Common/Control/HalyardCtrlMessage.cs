@@ -78,6 +78,17 @@ public readonly struct HalyardCtrlMessage
     public const ushort TypeProbeReportAck = 0x0010;
 
     /// <summary>
+    /// Client → console, 4 bytes, answered by <see cref="TypeEchoProbeAck"/> — the high bit of the type marks
+    /// the answer, as it does for the login pair. **[X]** contents; it is useful here precisely because it is
+    /// the one client frame with a guaranteed reply, which makes it an oracle for whether the console is
+    /// reading what we send at all.
+    /// </summary>
+    public const ushort TypeEchoProbe = 0x0910;
+
+    /// <summary>Console → client: the 4-byte answer to <see cref="TypeEchoProbe"/>.</summary>
+    public const ushort TypeEchoProbeAck = 0x8910;
+
+    /// <summary>
     /// Console → client, 2-byte payload decrypting to <c>01 FF</c>. **[X]** — reads as a flag pair; the
     /// session proceeds whether or not it is acted on. Seen on both routes.
     /// </summary>
