@@ -34,7 +34,8 @@ public sealed record HalyardAccountPairingRequest(
     HalyardConsolePlatform Platform = HalyardConsolePlatform.Ps5,
     string ClientType = "Windows",
     ReadOnlyMemory<byte> LocalHashedId = default,
-    (string Address, int Port)? LocalEndpoint = null);
+    (string Address, int Port)? LocalEndpoint = null,
+    (string Address, int Port)? ReflexiveEndpoint = null);
 
 /// <summary>
 /// What the account route's transport needs, known only once the console has offered.
@@ -91,7 +92,7 @@ public sealed record HalyardAccountConnection(
     HalyardAccountTransportContext? Context,
     string? FailureReason,
     IAsyncDisposable? SessionLifetime = null,
-    Func<int, CancellationToken, Task<HalyardMediaEndpoint?>>? NegotiateMedia = null)
+    Func<int, (string Address, int Port)?, CancellationToken, Task<HalyardMediaEndpoint?>>? NegotiateMedia = null)
 {
     public bool Succeeded => Channel is not null;
 
@@ -273,7 +274,8 @@ public sealed class HalyardAccountPairing(
                     Log("registered on the session's association");
                 }
 
-                async Task<HalyardMediaEndpoint?> NegotiateMediaAsync(int localPort, CancellationToken mediaToken)
+                async Task<HalyardMediaEndpoint?> NegotiateMediaAsync(
+                    int localPort, (string Address, int Port)? mediaReflexive, CancellationToken mediaToken)
                 {
                     HalyardSignalingMessage? mediaOffer =
                         await outcome.NextOffer(mediaToken).ConfigureAwait(false);
@@ -295,9 +297,21 @@ public sealed class HalyardAccountPairing(
                     // half that matters, because the console takes our id for this leg from the OFFER, not the
                     // ACCEPT. Offering it as stream 1 again made the console's second connection collide with
                     // its first: preluded, then never served.
+                    // Both of ours again, and for the same reason: the A/V leg is a connection of its own on
+                    // a port of its own, so it needs its own reflexive address. Offering only the local one
+                    // left the control plane working off-network while the media prelude went unanswered.
+                    var mediaCandidates = new List<HalyardCandidate>();
+                    if (mediaReflexive is { } mediaPublic)
+                    {
+                        mediaCandidates.Add(
+                            new HalyardCandidate("STATIC", mediaPublic.Address, mediaPublic.Port));
+                    }
+
+                    mediaCandidates.Add(new HalyardCandidate("LOCAL", local.Address, localPort));
+
                     await _signaling.SendOfferAsync(
                         outcome.SessionId, request.AccountId, request.ConsoleDuid,
-                        [new HalyardCandidate("LOCAL", local.Address, localPort)],
+                        mediaCandidates,
                         mediaToken, request.LocalHashedId,
                         reqId: OurOfferReqId + 2, sid: OurStreamId + 1).ConfigureAwait(false);
 
@@ -563,9 +577,26 @@ public sealed class HalyardAccountPairing(
                 // answering the console's OFFER with an ACCEPT that names the console's stream id. Stopping
                 // after our own OFFER leaves the console waiting, and it never opens its side: observed live
                 // as five unanswered preludes with the console silent.
-                IReadOnlyList<HalyardCandidate> ours = request.LocalEndpoint is { } advertised
-                    ? [new HalyardCandidate("LOCAL", advertised.Address, advertised.Port)]
-                    : [];
+                // Both of ours, reflexive first, in the order the captured client offers them.
+                //
+                // The local one alone is enough only when the console is on this network. Anywhere else it is
+                // a private address on somebody else's network, and a console that has been told nothing but
+                // that has no way to send us anything -- so neither side can open the path, which is what an
+                // off-network attempt looked like: our Init leaving every five seconds and complete silence
+                // back. The reflexive address is what the NAT presents on our behalf, and it is the only
+                // address a distant console can use.
+                var candidates = new List<HalyardCandidate>();
+                if (request.ReflexiveEndpoint is { } reflexive)
+                {
+                    candidates.Add(new HalyardCandidate("STATIC", reflexive.Address, reflexive.Port));
+                }
+
+                if (request.LocalEndpoint is { } advertised)
+                {
+                    candidates.Add(new HalyardCandidate("LOCAL", advertised.Address, advertised.Port));
+                }
+
+                IReadOnlyList<HalyardCandidate> ours = candidates;
 
                 await _signaling.SendOfferAsync(
                     sessionId, request.AccountId, request.ConsoleDuid, ours, cancellationToken,
