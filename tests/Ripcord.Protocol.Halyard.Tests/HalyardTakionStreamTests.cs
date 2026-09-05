@@ -66,6 +66,7 @@ public class HalyardTakionStreamTests
         {
             uint clientTag = 0;
             var reassembler = new TakionMessageReassembler();
+            uint outboundSeq = ServerTag;
 
             while (!ct.IsCancellationRequested)
             {
@@ -103,6 +104,22 @@ public class HalyardTakionStreamTests
                 }
 
                 var message = ControlMessage.Parser.ParseFrom(complete);
+
+                // A version is agreed before a session is asked for. This console answers 9, a P-256 version,
+                // matching the curve its key pair is on.
+                if (message.Type == ControlMessage.Types.MessageType.ProtocolVersionRequest)
+                {
+                    var versionAck = new ControlMessage
+                    {
+                        Type = ControlMessage.Types.MessageType.ProtocolVersionAck,
+                        ProtocolVersionAck = new ProtocolVersionAckPayload { ProtocolVersion = 9 },
+                    };
+                    await server.SendAsync(
+                        TakionDataChunk.Build(clientTag, outboundSeq++, 0, versionAck.ToByteArray()),
+                        client, ct).ConfigureAwait(false);
+                    continue;
+                }
+
                 if (message.Type != ControlMessage.Types.MessageType.SessionRequest)
                 {
                     continue;
@@ -125,12 +142,12 @@ public class HalyardTakionStreamTests
                         EcdhSignature = ByteString.CopyFrom(serverSig),
                     },
                 };
-                await server.SendAsync(TakionDataChunk.Build(clientTag, ServerTag, 0, reply.ToByteArray()), client, ct).ConfigureAwait(false);
+                await server.SendAsync(TakionDataChunk.Build(clientTag, outboundSeq++, 0, reply.ToByteArray()), client, ct).ConfigureAwait(false);
 
                 // After the key agreement the console sends STREAM_INFO and waits for the client's
                 // STREAM_INFO_ACK before it streams A/V (mirrors the real flow, wire-confirmed).
                 var streamInfo = new ControlMessage { Type = ControlMessage.Types.MessageType.StreamInfo };
-                await server.SendAsync(TakionDataChunk.Build(clientTag, ServerTag + 1, 0, streamInfo.ToByteArray()), client, ct).ConfigureAwait(false);
+                await server.SendAsync(TakionDataChunk.Build(clientTag, outboundSeq++, 0, streamInfo.ToByteArray()), client, ct).ConfigureAwait(false);
 
                 // Give the client a moment to establish the stream keys, then send two video frames so the
                 // demuxer flushes frame 0 (it emits a frame when the next frame index arrives).
