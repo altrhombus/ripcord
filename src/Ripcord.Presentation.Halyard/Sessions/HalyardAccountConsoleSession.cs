@@ -128,12 +128,20 @@ public sealed class HalyardAccountConsoleSession
             // address it can actually send to. Discovered before the port is bound for real, and best-effort:
             // on the console's own LAN it is unnecessary, and where it fails the local candidate still stands.
             (string Address, int Port)? reflexive = null;
-            IPEndPoint? mapped = await StunReflexiveAddress
+            StunMapping? mapping = await StunReflexiveAddress
                 .DiscoverAsync(localPort, TimeSpan.FromSeconds(3), cancellationToken).ConfigureAwait(false);
-            if (mapped is not null)
+            if (mapping is not null)
             {
-                reflexive = (mapped.Address.ToString(), mapped.Port);
-                _options.Log?.Invoke($"our reflexive address is {mapped} (for local port {localPort})");
+                reflexive = (mapping.Reflexive.Address.ToString(), mapping.Reflexive.Port);
+                _options.Log?.Invoke(
+                    $"our reflexive address is {mapping.Reflexive} (for local port {localPort}), "
+                    + mapping.EndpointIndependent switch
+                    {
+                        true => "and the NAT maps consistently, so a distant console can reach it",
+                        false => "but the NAT maps per destination (symmetric) — a console on another "
+                                 + "network will NOT be able to reach this address",
+                        null => "NAT behaviour undetermined (only one server answered)",
+                    });
             }
             else
             {
@@ -258,12 +266,14 @@ public sealed class HalyardAccountConsoleSession
                 // else could take it, which is why the bind is checked rather than assumed below.
                 int mediaPort = FreeUdpPort();
                 (string Address, int Port)? mediaReflexive = null;
-                IPEndPoint? mediaMapped = await StunReflexiveAddress
+                StunMapping? mediaMapping = await StunReflexiveAddress
                     .DiscoverAsync(mediaPort, TimeSpan.FromSeconds(3), streamToken).ConfigureAwait(false);
-                if (mediaMapped is not null)
+                if (mediaMapping is not null)
                 {
-                    mediaReflexive = (mediaMapped.Address.ToString(), mediaMapped.Port);
-                    _options.Log?.Invoke($"media reflexive address is {mediaMapped} (for local port {mediaPort})");
+                    mediaReflexive =
+                        (mediaMapping.Reflexive.Address.ToString(), mediaMapping.Reflexive.Port);
+                    _options.Log?.Invoke(
+                        $"media reflexive address is {mediaMapping.Reflexive} (for local port {mediaPort})");
                 }
 
                 var socket = new UdpChannel(mediaPort, receiveBufferBytes: 4 * 1024 * 1024);
