@@ -22,6 +22,7 @@ try
         "discover" => await LabCommands.DiscoverAsync(),
         "register" => await LabCommands.RegisterAsync(args),
         "accountpair" => await LabCommands.AccountPairAsync(args),
+        "accountconnect" => await LabCommands.AccountConnectAsync(args),
         "sessions" => await LabCommands.SessionsAsync(args),
         "replay" => await LabCommands.ReplayAsync(args),
         "authurl" => LabCommands.PrintAuthUrl(),
@@ -58,6 +59,7 @@ static void PrintUsage()
           discover                       LAN SRCH discovery; lists reachable consoles
           register <ip> <passcode> <accountId> [clientIdHex] [ps4|ps5]   live PIN pairing -> pairing record (Stage 5)
           accountpair <ip> <duid> [ps4|ps5]   live account (no-PIN) pairing: the console delivers the seed over the cloud
+          Console.WriteLine("  accountconnect <ip> <duid> [ps4|ps5]   open a session over the account route (pair first)");
           sessions <id>... | sessions leave <id>...   read back or leave cloud sessions (PSN has no list endpoint)
           replay synth                   run synthetic stream packets through the demuxer (Stage 0)
           replay <file>                  replay length-prefixed packets from a file through the demuxer

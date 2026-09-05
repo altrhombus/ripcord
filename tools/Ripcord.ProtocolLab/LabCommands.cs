@@ -10,6 +10,7 @@ using Ripcord.Cloud.Halyard.Rendezvous;
 using Ripcord.Core.Net.WebSockets;
 using Ripcord.Presentation.Consoles;
 using Ripcord.Presentation.Halyard.Pairing;
+using Ripcord.Presentation.Halyard.Sessions;
 using Ripcord.Presentation.Pairing;
 using Ripcord.Protocol.Halyard.Common.Control;
 using Ripcord.Protocol.Halyard.Common.Crypto;
@@ -197,6 +198,105 @@ internal static class LabCommands
         Console.WriteLine("(the app stores this as the console's credential blob; it is deliberately not printed");
         Console.WriteLine(" here, being per-console secret material.)");
         return 0;
+    }
+
+    /// <summary>
+    /// Open a session over the account route: the cloud rendezvous establishes the 9303 association, and the
+    /// whole control plane then rides it. The console must already be paired -- `accountpair` first -- because
+    /// /sess/init needs its RP-Registkey from the credential store.
+    /// </summary>
+    public static async Task<int> AccountConnectAsync(string[] args)
+    {
+        if (args.Length < 3)
+        {
+            Console.Error.WriteLine(
+                "usage: accountconnect <consoleIp> <duid> [ps4|ps5] [--frames] [--passcode=<digits>]");
+            Console.Error.WriteLine("       (pair first with `accountpair`; run `cloud` to list duids)");
+            return 1;
+        }
+
+        bool dumpFrames = args.Any(a => a.Equals("--frames", StringComparison.OrdinalIgnoreCase));
+        string consoleIp = args[1];
+        string duid = args[2];
+        HalyardConsolePlatform platform = args.Any(a => a.Equals("ps4", StringComparison.OrdinalIgnoreCase))
+            ? HalyardConsolePlatform.Ps4
+            : HalyardConsolePlatform.Ps5;
+
+        string? passcode = args.FirstOrDefault(a =>
+                a.StartsWith("--passcode=", StringComparison.OrdinalIgnoreCase))?.Split((char)61, 2)[1]
+            ?? Environment.GetEnvironmentVariable("RIPCORD_CONSOLE_PASSCODE");
+
+        var gateway = BuildGateway();
+        if (await gateway.RestoreAsync(CancellationToken.None) is null)
+        {
+            Console.Error.WriteLine("not signed in. Run `signin` first.");
+            return 1;
+        }
+
+        HalyardSessionFactory factory = HalyardSessionFactory.CreateDefault(out string cryptoSource);
+        bool paired = await HalyardPairingCredentialStore.ForCurrentUser()
+            .LoadAsync(consoleIp, CancellationToken.None) is not null;
+
+        Console.WriteLine(paired
+            ? $"using the stored pairing for {consoleIp}"
+            : $"no stored pairing for {consoleIp} - /sess/init will be refused; run `accountpair` first");
+        Console.WriteLine($"session crypto: {(factory.HasRealCrypto ? "real" : "PASSTHROUGH")} - {cryptoSource}");
+
+        Func<bool, CancellationToken, Task<string?>>? login = null;
+        if (!string.IsNullOrWhiteSpace(passcode))
+        {
+            login = (retry, _) =>
+            {
+                Console.WriteLine(retry
+                    ? "the console rejected that passcode"
+                    : "submitting the console login passcode");
+                return Task.FromResult(retry ? null : passcode);
+            };
+        }
+
+        var connector = new HalyardAccountConsoleSession(
+            gateway,
+            factory,
+            options: new HalyardAccountPairingOptions { Log = line => Console.WriteLine($"  . {line}") },
+            observeChannel: channel => channel.FrameReceived += frame =>
+            {
+                Console.WriteLine($"  << {Summarise(frame)}");
+                if (dumpFrames)
+                {
+                    Console.WriteLine($"    {frame}");
+                }
+            });
+
+        Console.WriteLine($"connecting to {consoleIp} (duid {duid}) over the account route...");
+
+        HalyardAccountSessionResult result = await connector.ConnectAsync(
+            consoleIp, duid, platform, login, CancellationToken.None);
+
+        if (!result.Succeeded || result.Session is null)
+        {
+            Console.Error.WriteLine($"account connect FAILED: {result.FailureReason}");
+            return 1;
+        }
+
+        // The association is what owns the socket, so it outlives the session and is disposed after it.
+        try
+        {
+            await using IStreamingSession session = result.Session;
+            var config = new SessionConfig(1280, 720, 60, 10_000, VideoCodec.H264, LatencyMode.Balanced);
+            SessionHandshakeResult handshake = await session.ConnectAsync(config, CancellationToken.None);
+
+            Console.WriteLine(handshake.Succeeded
+                ? "handshake accepted over 9303 (stream loop running)"
+                : $"handshake result: {handshake.FailureReason}");
+            return handshake.Succeeded ? 0 : 1;
+        }
+        finally
+        {
+            if (result.Association is not null)
+            {
+                await result.Association.DisposeAsync();
+            }
+        }
     }
 
     // ---- Stage 2: LAN discovery ----
