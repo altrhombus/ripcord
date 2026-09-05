@@ -60,6 +60,17 @@ public sealed class HalyardDatagramRegistrationTransport : IHalyardRegistrationT
     /// we opened rather than opening its own. Does not wait for an answer — it cannot, because the answer
     /// depends on signaling this call is meant to precede.
     /// </summary>
+    /// <summary>
+    /// The established association, once <see cref="PrepareAsync"/> has run. Null before that.
+    ///
+    /// <para>
+    /// Exposed because a connect reuses it: the console serves <c>/sess/init</c> and <c>/sess/ctrl</c> on the
+    /// same association that carried <c>/sess/rgst</c>, so the prelude is built once and then handed to the
+    /// session rather than torn down with the registration.
+    /// </para>
+    /// </summary>
+    public HalyardDatagramControlChannel? Channel => _channel;
+
     public async Task PrepareAsync(CancellationToken cancellationToken)
     {
         _channel ??= new HalyardDatagramControlChannel(
