@@ -673,7 +673,10 @@ public sealed class HalyardStreamingSession : IStreamingSession
     /// too, and the five <c>/sess/ctrl</c> request fields spend 0–4 — which is why the login passcode, the
     /// only client frame that existed before, is at 5.
     /// </summary>
-    private ulong _clientFieldCounter = HalyardSessCtrlFields.CounterLoginPin;
+    private ulong _clientFieldCounter =
+        ulong.TryParse(Environment.GetEnvironmentVariable("RIPCORD_CTRL_COUNTER"), out ulong start)
+            ? start
+            : HalyardSessCtrlFields.CounterLoginPin;
 
     /// <summary>
     /// Decrypt and dump a control frame, for the frames nobody has decoded yet (<c>0x0016</c>, <c>0x0017</c>,
@@ -682,13 +685,23 @@ public sealed class HalyardStreamingSession : IStreamingSession
     /// </summary>
     private void TraceCtrlFrame(HalyardCtrlMessage message)
     {
+        bool trace = Environment.GetEnvironmentVariable("RIPCORD_TRACE_CTRL") is not null;
+
+        // An empty payload spends no counter, but it is still worth naming: the login prompt and the
+        // stream-ready signal both carry nothing, and a frame that goes unlogged because it had no payload is
+        // exactly the one you end up guessing about.
         if (message.Payload.Length == 0 || !_crypto.IsControlEstablished)
         {
+            if (trace)
+            {
+                Console.Error.WriteLine($"[ctrl] type=0x{message.Type:X4} len=0");
+            }
+
             return;
         }
 
         ulong counter = _consoleFieldCounter++;
-        if (Environment.GetEnvironmentVariable("RIPCORD_TRACE_CTRL") is null)
+        if (!trace)
         {
             return;
         }
