@@ -344,6 +344,8 @@ public sealed class HalyardStreamingSession : IStreamingSession
                     cancellationToken).ConfigureAwait(false);
             }
 
+            await SendEchoProbeAsync(cancellationToken).ConfigureAwait(false);
+
             _connectStep = "stream key agreement";
             TakionSessionResult streaming = await StartStreamingAsync(cancellationToken).ConfigureAwait(false);
             if (!streaming.Success)
@@ -721,24 +723,60 @@ public sealed class HalyardStreamingSession : IStreamingSession
     }
 
     /// <summary>
-    /// Send the post-probe report the captured client sends, and the console answers before it declares the
-    /// stream service ready.
+    /// A round-trip probe that separates "our encryption is wrong" from "the console is not reading us".
     ///
     /// <para>
-    /// <b>An experiment, and gated as one</b> — off unless <c>RIPCORD_SEND_PROBE_REPORT</c> is set. The
-    /// frame's <em>structure</em> is solved from our own binary (four <c>uint32</c> big-endian, in slot
-    /// order), but <b>[X] which measurement belongs in which slot</b>, and the values below are therefore a
-    /// guess being tested, not a derivation. They must not be described as confirmed on the strength of the
-    /// console accepting them: a console that ignores the contents would accept anything. What the run
-    /// actually tests is whether the frame is accepted at all — the console's answer
-    /// (<see cref="HalyardCtrlMessage.TypeProbeReportAck"/>, then stream-ready) is the oracle, and it is
-    /// decryptable, so a positive result carries information either way.
+    /// <c>0x0910</c> is a 4-byte client frame the console answers with <c>0x8910</c>, on both routes — it is
+    /// the one client frame with a guaranteed reply, which makes it an oracle. An answer means our
+    /// client→console crypto is being read, whatever the payload means; silence on one route and an answer on
+    /// the other localises the fault to the route rather than the cipher. Off unless
+    /// <c>RIPCORD_PROBE_ECHO</c> is set.
+    /// </para>
+    /// </summary>
+    private async Task SendEchoProbeAsync(CancellationToken cancellationToken)
+    {
+        if (Environment.GetEnvironmentVariable("RIPCORD_PROBE_ECHO") is null
+            || !_crypto.IsControlEstablished)
+        {
+            return;
+        }
+
+        ulong counter = _clientFieldCounter++;
+        try
+        {
+            await _control.SendCtrlMessageAsync(
+                new HalyardCtrlMessage(
+                    HalyardCtrlMessage.TypeEchoProbe,
+                    _crypto.EncryptControlField(counter, new byte[4])),
+                cancellationToken).ConfigureAwait(false);
+            Console.Error.WriteLine($"[ctrl] sent echo probe (0x0910) counter={counter}");
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[ctrl] echo probe failed: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Send the post-probe report, which the console answers before it will declare the stream service ready.
+    ///
+    /// <para>
+    /// <b>Required on this route</b>, and confirmed so on hardware: without it the console never sends
+    /// stream-ready and answers the <c>SESSION_REQUEST</c> with no key at all; with it, it sends stream-ready
+    /// and serves the session. The frame's <em>structure</em> is solved from our own binary — four
+    /// <c>uint32</c> big-endian in slot order, builder <c>FUN_1020c1c0</c>.
+    /// </para>
+    ///
+    /// <para>
+    /// <b>[X] which measurement belongs in which slot.</b> The values below are still a guess, and the console
+    /// accepting them does <em>not</em> confirm the ordering: they were accepted first time with two of the
+    /// four zero, which is what a console that does not read the contents would also do. Do not promote this
+    /// to a derivation without evidence that the values are actually used.
     /// </para>
     /// </summary>
     private async Task SendProbeReportAsync(CancellationToken cancellationToken)
     {
-        if (Environment.GetEnvironmentVariable("RIPCORD_SEND_PROBE_REPORT") is null
-            || !_crypto.IsControlEstablished)
+        if (!_crypto.IsControlEstablished)
         {
             return;
         }
