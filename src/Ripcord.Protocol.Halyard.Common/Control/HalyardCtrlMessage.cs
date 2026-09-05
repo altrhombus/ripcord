@@ -41,11 +41,34 @@ public readonly struct HalyardCtrlMessage
     public const ushort TypeLoginSubmit = 0x8004;
 
     /// <summary>Console → client: login result (cap50 carried a single byte). Informational; the reliable
-    /// "you may stream now" signal is <see cref="TypeSessionId"/>.</summary>
+    /// "you may stream now" signal is <see cref="TypeSessionId"/>.
+    /// <para>Payload decrypts to a single <c>0x00</c> on the unlocked path (2026-09-04, live).</para></summary>
     public const ushort TypeLogin = 0x0005;
 
-    /// <summary>Console → client: session-ready. After a login it is what gates the Takion bring-up.</summary>
+    /// <summary>
+    /// Console → client: session-ready. After a login it is what gates the Takion bring-up.
+    ///
+    /// <para>
+    /// Its payload decrypts to a <b>length-prefixed ASCII session id</b> — <c>0x10</c> followed by
+    /// <c>"InvalidSessionId"</c>, the same literal the <c>SESSION_REQUEST</c> carries. That is what made it
+    /// the known-plaintext oracle for the control-channel counter model; see
+    /// <c>docs/protocol/ps5-session-transport.md</c>.
+    /// </para>
+    /// </summary>
     public const ushort TypeSessionId = 0x0033;
+
+    /// <summary>
+    /// Console → client, 2-byte payload decrypting to <c>01 FF</c>. **[X]** — reads as a flag pair; the
+    /// session proceeds whether or not it is acted on. Seen on both routes.
+    /// </summary>
+    public const ushort TypeUnknown0016 = 0x0016;
+
+    /// <summary>
+    /// Console → client, 9-byte payload decrypting to <c>02 00 04 02 24 00 55 12 34</c>. **[X]** — clearly
+    /// structured and clearly not an error (a LAN session that goes on to stream receives the same frame),
+    /// but nothing decodes it yet.
+    /// </summary>
+    public const ushort TypeUnknown0017 = 0x0017;
 
     /// <summary>
     /// Console → client: the stream service is ready for its Takion association. Empty payload.

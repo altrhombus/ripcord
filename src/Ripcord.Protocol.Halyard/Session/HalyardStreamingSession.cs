@@ -613,6 +613,8 @@ public sealed class HalyardStreamingSession : IStreamingSession
                     return; // control connection closed
                 }
 
+                TraceCtrlFrame(message.Value);
+
                 switch (message.Value.Type)
                 {
                     case HalyardCtrlMessage.TypeHeartbeatReq:
@@ -634,6 +636,7 @@ public sealed class HalyardStreamingSession : IStreamingSession
                         // Console: the stream service is up. The rendezvous route's A/V leg waits on this.
                         _streamReady.TrySetResult();
                         break;
+
                 }
             }
         }
@@ -652,6 +655,51 @@ public sealed class HalyardStreamingSession : IStreamingSession
     /// were assigned. A send failure is logged-and-swallowed per packet: input is an unreliable channel by
     /// design (the writer re-sends recent history events), so one lost datagram must not end the session.
     /// </summary>
+    /// <summary>
+    /// The counter the console's next payload-carrying control frame is encrypted at.
+    ///
+    /// <para>
+    /// The control-field cipher's counter is per-connection and <b>shared across the whole direction</b>: the
+    /// console's <c>/sess/ctrl</c> response spends 0, and every payload-carrying frame after it takes the next
+    /// one. Heartbeats carry no payload and spend nothing. Confirmed against the console's own bytes with a
+    /// known-plaintext oracle — the session-id frame decrypts at counter 2 to a length-prefixed
+    /// <c>"InvalidSessionId"</c>, and at no other counter to anything at all.
+    /// </para>
+    /// </summary>
+    private ulong _consoleFieldCounter = 1;
+
+    /// <summary>
+    /// Decrypt and dump a control frame, for the frames nobody has decoded yet (<c>0x0016</c>, <c>0x0017</c>,
+    /// <c>0x0003</c>, and the session id's own payload). Diagnostic only, and off unless
+    /// <c>RIPCORD_TRACE_CTRL</c> is set.
+    /// </summary>
+    private void TraceCtrlFrame(HalyardCtrlMessage message)
+    {
+        if (message.Payload.Length == 0 || !_crypto.IsControlEstablished)
+        {
+            return;
+        }
+
+        ulong counter = _consoleFieldCounter++;
+        if (Environment.GetEnvironmentVariable("RIPCORD_TRACE_CTRL") is null)
+        {
+            return;
+        }
+
+        try
+        {
+            byte[] plain = _crypto.DecryptControlField(counter, message.Payload.Span);
+            var text = new string([.. plain.Select(b => b is >= 0x20 and < 0x7f ? (char)b : '.')]);
+            Console.Error.WriteLine(
+                $"[ctrl] type=0x{message.Type:X4} len={message.Payload.Length} counter={counter} "
+                + $"plain={Convert.ToHexString(plain)}  {text}");
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[ctrl] type=0x{message.Type:X4} counter={counter}: {ex.GetType().Name}");
+        }
+    }
+
     private async Task RunInputSendLoopAsync(CancellationToken cancellationToken)
     {
         ChannelReader<byte[]>? reader = _inputQueue?.Reader;
