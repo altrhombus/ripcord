@@ -200,6 +200,70 @@ internal static class LabCommands
         return 0;
     }
 
+
+    /// <summary>
+    /// Hold a connected session open and report what actually arrives, so "handshake accepted" can be told
+    /// apart from "video is decoding". Counts frames and bytes off the neutral observables — the same ones the
+    /// app's decode pipeline consumes — and prints a line a second.
+    /// </summary>
+    private static async Task WatchStreamAsync(IStreamingSession session, int seconds)
+    {
+        long videoFrames = 0, videoBytes = 0, keyFrames = 0, audioFrames = 0, audioBytes = 0;
+
+        using IDisposable v = session.VideoFrames.Subscribe(new Sink<EncodedVideoFrame>(f =>
+        {
+            Interlocked.Increment(ref videoFrames);
+            Interlocked.Add(ref videoBytes, f.Payload.Length);
+            if (f.IsKeyFrame)
+            {
+                Interlocked.Increment(ref keyFrames);
+            }
+        }));
+        using IDisposable a = session.AudioFrames.Subscribe(new Sink<EncodedAudioFrame>(f =>
+        {
+            Interlocked.Increment(ref audioFrames);
+            Interlocked.Add(ref audioBytes, f.Payload.Length);
+        }));
+
+        Console.WriteLine($"watching the stream for {seconds}s...");
+        long lastVideo = 0, lastAudio = 0;
+        for (int elapsed = 1; elapsed <= seconds; elapsed++)
+        {
+            await Task.Delay(TimeSpan.FromSeconds(1)).ConfigureAwait(false);
+            long nowVideo = Interlocked.Read(ref videoFrames);
+            long nowAudio = Interlocked.Read(ref audioFrames);
+            Console.WriteLine(
+                $"  t+{elapsed,3}s  video {nowVideo - lastVideo,4} fps ({nowVideo} total, {keyFrames} key, "
+                + $"{videoBytes / 1024} KiB)   audio {nowAudio - lastAudio,4} ({nowAudio} total, "
+                + $"{audioBytes / 1024} KiB)");
+            lastVideo = nowVideo;
+            lastAudio = nowAudio;
+        }
+
+        Console.WriteLine(videoFrames > 0
+            ? $"VIDEO CONFIRMED: {videoFrames} frames ({keyFrames} key), {videoBytes / 1024} KiB; "
+              + $"audio {audioFrames} frames, {audioBytes / 1024} KiB"
+            : "no video frames arrived — the handshake completed but nothing decoded");
+    }
+
+    /// <summary>Minimal <see cref="IObserver{T}"/>, so the harness needs no reactive dependency.</summary>
+    private sealed class Sink<T>(Action<T> onNext) : IObserver<T>
+    {
+        public void OnNext(T value) => onNext(value);
+
+        public void OnCompleted()
+        {
+        }
+
+        public void OnError(Exception error) => Console.Error.WriteLine($"  stream error: {error.Message}");
+    }
+
+    /// <summary>Seconds to hold a session open, from <c>--watch=&lt;n&gt;</c>. Zero means don't.</summary>
+    private static int WatchSeconds(string[] args)
+        => int.TryParse(
+            args.FirstOrDefault(x => x.StartsWith("--watch=", StringComparison.OrdinalIgnoreCase))?.Split('=', 2)[1],
+            out int n) ? n : 0;
+
     /// <summary>
     /// Open a session over the account route: the cloud rendezvous establishes the 9303 association, and the
     /// whole control plane then rides it. The console must already be paired -- `accountpair` first -- because
@@ -210,7 +274,7 @@ internal static class LabCommands
         if (args.Length < 3)
         {
             Console.Error.WriteLine(
-                "usage: accountconnect <consoleIp> <duid> [ps4|ps5] [--frames] [--passcode=<digits>]");
+                "usage: accountconnect <consoleIp> <duid> [ps4|ps5] [--frames] [--passcode=<digits>] [--watch=<seconds>]");
             Console.Error.WriteLine("       (pair first with `accountpair`; run `cloud` to list duids)");
             return 1;
         }
@@ -288,6 +352,12 @@ internal static class LabCommands
             Console.WriteLine(handshake.Succeeded
                 ? "handshake accepted over 9303 (stream loop running)"
                 : $"handshake result: {handshake.FailureReason}");
+
+            if (handshake.Succeeded && WatchSeconds(args) is int watch and > 0)
+            {
+                await WatchStreamAsync(session, watch);
+            }
+
             return handshake.Succeeded ? 0 : 1;
         }
         finally
@@ -543,14 +613,17 @@ internal static class LabCommands
     {
         if (args.Length < 2 || !IPAddress.TryParse(args[1], out IPAddress? ip))
         {
-            Console.Error.WriteLine("usage: connect <ip> [ctrlPort] [strmPort] [--passcode=<digits>]");
+            Console.Error.WriteLine("usage: connect <ip> [ctrlPort] [strmPort] [--passcode=<digits>] [--watch=<seconds>]");
             Console.Error.WriteLine("       (the passcode is the console's login passcode, for a locked user;");
             Console.Error.WriteLine("        RIPCORD_CONSOLE_PASSCODE works too)");
             return 1;
         }
 
-        int ctrlPort = args.Length >= 3 ? int.Parse(args[2]) : 9295;
-        int strmPort = args.Length >= 4 ? int.Parse(args[3]) : 9296;
+        // Positional ports, skipping any --flags: they used to be read by index, so a --watch= or --passcode=
+        // in position 2 was parsed as a port number and the command died before it connected.
+        string[] positional = [.. args.Skip(2).Where(a => !a.StartsWith("--", StringComparison.Ordinal))];
+        int ctrlPort = positional.Length >= 1 ? int.Parse(positional[0]) : 9295;
+        int strmPort = positional.Length >= 2 ? int.Parse(positional[1]) : 9296;
 
         var parameters = new HalyardConnectionParameters(
             ConsoleId: ip.ToString(),
@@ -601,6 +674,12 @@ internal static class LabCommands
         Console.WriteLine(result.Succeeded
             ? "handshake accepted (stream loop running)"
             : $"handshake result: {result.FailureReason}");
+
+        if (result.Succeeded && WatchSeconds(args) is int watch and > 0)
+        {
+            await WatchStreamAsync(session, watch);
+        }
+
         return result.Succeeded ? 0 : 0; // a rejection here is expected until Stage 5; not a lab failure
     }
 
