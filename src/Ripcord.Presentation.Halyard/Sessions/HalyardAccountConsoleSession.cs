@@ -3,6 +3,7 @@ using System.Net.Sockets;
 using System.Security.Cryptography;
 using Ripcord.Cloud.Halyard;
 using Ripcord.Cloud.Halyard.Rendezvous;
+using Ripcord.Core.Net.Udp;
 using Ripcord.Core.Net.WebSockets;
 using Ripcord.Core.Sessions;
 using Ripcord.Presentation.Halyard.Pairing;
@@ -216,16 +217,63 @@ public sealed class HalyardAccountConsoleSession
                 ControlEndpoint: new IPEndPoint(
                     IPAddress.Parse(consoleHost), HalyardDatagramRegistrationTransport.Port),
                 StreamEndpoint: new IPEndPoint(
-                    IPAddress.Parse(consoleHost), HalyardSessionFactory.DefaultStreamPort));
+                    IPAddress.Parse(consoleHost), HalyardSessionFactory.DefaultStreamPort),
+                ConnectionPath: HalyardConnectionPath.Rendezvous);
 
             // Longer than the LAN default: this console gates its control plane on the rendezvous completing,
             // and one was measured taking about twenty seconds to send its signaling ACCEPT -- which the
             // default deadline turned into a failure on a link that was working.
+            // The A/V leg is a second negotiated connection, not the LAN stream port. Prepared lazily, when
+            // the session starts streaming, because the console only offers it once the control plane is up.
+            async Task<HalyardStreamTransport> PrepareStreamAsync(CancellationToken streamToken)
+            {
+                // Bound first, because the port we bind is the one the ACCEPT advertises -- picking a port and
+                // binding it later leaves a window where something else takes it.
+                var socket = new UdpChannel(receiveBufferBytes: 4 * 1024 * 1024);
+                try
+                {
+                    int mediaPort = socket.LocalEndPoint.Port;
+                    HalyardMediaEndpoint? media = connection.NegotiateMedia is null
+                        ? null
+                        : await connection.NegotiateMedia(mediaPort, streamToken).ConfigureAwait(false);
+
+                    if (media is null)
+                    {
+                        throw new InvalidOperationException(
+                            "The console did not offer a media connection, so there is no A/V path.");
+                    }
+
+                    var mediaEndpoint = new IPEndPoint(IPAddress.Parse(media.Address), media.Port);
+
+                    // Same 88-byte prelude the control association opens with -- wire-confirmed on 9297, where
+                    // it precedes the first Takion byte. Run over the very socket Takion will use, and the
+                    // transport does not own it.
+                    await using (var prelude = new HalyardDatagramControlChannel(
+                        new HalyardUdpDatagramTransport(socket, mediaEndpoint),
+                        mediaEndpoint,
+                        localHashedId,
+                        media.ConsoleHashedId,
+                        new HalyardDatagramControlOptions { Log = _options.Log }))
+                    {
+                        await prelude.EstablishAsync(streamToken).ConfigureAwait(false);
+                    }
+
+                    _options.Log?.Invoke($"media prelude established with {mediaEndpoint}");
+                    return new HalyardStreamTransport(socket, mediaEndpoint);
+                }
+                catch
+                {
+                    socket.Dispose();
+                    throw;
+                }
+            }
+
             IStreamingSession session = _sessions.Create(
                 parameters,
                 new HalyardDatagramSessionControlChannel(connection.Channel),
                 loginPinProvider,
-                ControlPlaneDeadline);
+                ControlPlaneDeadline,
+                PrepareStreamAsync);
 
             // Everything the stream needs alive, disposed in the order it was built.
             return new HalyardAccountSessionResult(

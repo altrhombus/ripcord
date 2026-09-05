@@ -33,6 +33,12 @@ public enum HalyardControlChunkType : byte
     /// <summary>Carries a payload: HTTP/1.1 text, or a binary control frame once <c>ctrl</c> has completed.</summary>
     Data = 0x02,
 
+    /// <summary>
+    /// The console repeating a <see cref="Data"/> chunk it has not seen acknowledged. Same sequence, same
+    /// payload, six extra bytes of header in between — see <c>HalyardControlAssociation.OnData</c>.
+    /// </summary>
+    DataRetransmit = 0x12,
+
     /// <summary>A bare sequence acknowledgement, usually prepended to a data chunk in the same datagram.</summary>
     Ack = 0x20,
 

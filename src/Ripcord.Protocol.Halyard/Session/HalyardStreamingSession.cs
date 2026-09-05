@@ -18,14 +18,41 @@ using Ripcord.Protocol.Halyard.Transport;
 
 namespace Ripcord.Protocol.Halyard.Session;
 
+/// <summary>
+/// How the client reached the console, as the console is told in <c>RP-ConPath</c> on <c>/sess/ctrl</c>.
+///
+/// <para>
+/// It is not decoration: the console runs a different bring-up for each. On <see cref="Local"/> it hands the
+/// A/V leg straight to :9297 and expects Takion there immediately. On <see cref="Rendezvous"/> it instead
+/// offers a second connection through the cloud, which the client must answer and prelude before Takion means
+/// anything — and declaring <see cref="Local"/> while taking the rendezvous route makes the console wait for
+/// a leg the client will never open on those terms.
+/// </para>
+///
+/// <para>
+/// Only 1 and 3 have been seen on the wire ([W], LAN captures and cap63/cap64 respectively). 2 is unclaimed
+/// and deliberately unnamed rather than guessed at.
+/// </para>
+/// </summary>
+public enum HalyardConnectionPath
+{
+    /// <summary>Reached directly on the LAN.</summary>
+    Local = 1,
+
+    /// <summary>Reached through the account rendezvous, whether the peer turned out to be on-LAN or not.</summary>
+    Rendezvous = 3,
+}
+
 /// <summary>Where and how to reach a specific console for a direct session.</summary>
 /// <param name="DeviceId">This client's device id (the hex-decoded Windows MachineGuid) for the RP-Did
 /// field; empty until threaded from the platform layer.</param>
+/// <param name="ConnectionPath">Which route got us here; see <see cref="HalyardConnectionPath"/>.</param>
 public sealed record HalyardConnectionParameters(
     string ConsoleId,
     IPEndPoint ControlEndpoint,
     IPEndPoint StreamEndpoint,
-    ReadOnlyMemory<byte> DeviceId = default);
+    ReadOnlyMemory<byte> DeviceId = default,
+    HalyardConnectionPath ConnectionPath = HalyardConnectionPath.Local);
 
 /// <summary>
 /// The direct-console session: runs the /sess handshake over the control channel, establishes the
@@ -34,6 +61,19 @@ public sealed record HalyardConnectionParameters(
 /// real console rejects it at the MAC check (expected until Stage 5); against replayed captures the
 /// stream path runs fully.
 /// </summary>
+/// <summary>
+/// A stream transport prepared by someone who knows how to get one: the socket to run Takion over, and the
+/// endpoint to run it against.
+/// </summary>
+/// <param name="Socket">Owned by the session from here; it disposes it with everything else.</param>
+public sealed record HalyardStreamTransport(UdpChannel Socket, IPEndPoint Endpoint);
+
+/// <summary>
+/// Produces the A/V transport when the LAN default will not do. The account route needs this: its stream leg
+/// is a separately negotiated connection reached on a different port, opened with its own prelude.
+/// </summary>
+public delegate Task<HalyardStreamTransport> HalyardStreamTransportFactory(CancellationToken cancellationToken);
+
 public sealed class HalyardStreamingSession : IStreamingSession
 {
     private readonly HalyardConnectionParameters _parameters;
@@ -85,8 +125,10 @@ public sealed class HalyardStreamingSession : IStreamingSession
         IHalyardSessionCrypto crypto,
         IConsoleCredentialStore credentials,
         Func<bool, CancellationToken, Task<string?>>? loginPinProvider = null,
-        TimeSpan? controlPlaneDeadline = null)
+        TimeSpan? controlPlaneDeadline = null,
+        HalyardStreamTransportFactory? streamTransportFactory = null)
     {
+        _streamTransportFactory = streamTransportFactory;
         _controlPlaneDeadline = controlPlaneDeadline ?? DefaultControlPlaneDeadline;
         _parameters = parameters;
         _control = control;
@@ -185,6 +227,7 @@ public sealed class HalyardStreamingSession : IStreamingSession
     public static readonly TimeSpan DefaultControlPlaneDeadline = TimeSpan.FromSeconds(20);
 
     private readonly TimeSpan _controlPlaneDeadline;
+    private readonly HalyardStreamTransportFactory? _streamTransportFactory;
 
     /// <summary>
     /// Which handshake step is in flight, so a timeout can name it. Set as the handshake advances and read only on
@@ -282,8 +325,17 @@ public sealed class HalyardStreamingSession : IStreamingSession
             // Senkusha bring-up on UDP 9297 — the console requires it between /sess/ctrl and the stream, or
             // it never answers the stream's SESSION exchange. Non-fatal (the vendor tolerates failures here).
             // Past the control plane: back to the caller's token so these phases keep their own budgets.
-            _connectStep = "senkusha bring-up";
-            await RunSenkushaAsync(cancellationToken).ConfigureAwait(false);
+            //
+            // Skipped entirely on the rendezvous route, where it is not merely useless but actively harmful:
+            // the probe opens its own bare socket to :9297, and on that route :9297 answers nobody who has not
+            // completed a prelude there. So it can only ever time out — and it spends those eight seconds
+            // firing unanswerable Takion INITs at the very port the real A/V leg is about to negotiate, from a
+            // source port the console was never told about.
+            if (_parameters.ConnectionPath == HalyardConnectionPath.Local)
+            {
+                _connectStep = "senkusha bring-up";
+                await RunSenkushaAsync(cancellationToken).ConfigureAwait(false);
+            }
 
             _connectStep = "stream key agreement";
             TakionSessionResult streaming = await StartStreamingAsync(cancellationToken).ConfigureAwait(false);
@@ -392,7 +444,9 @@ public sealed class HalyardStreamingSession : IStreamingSession
             .Header(SessProtocol.HeaderVersion, SessProtocol.VersionFor(platform))
             .Header(SessProtocol.HeaderControllerType, "0")
             .Header(SessProtocol.HeaderClientType, "11")
-            .Header(SessProtocol.HeaderConPath, "1")
+            .Header(
+                SessProtocol.HeaderConPath,
+                ((int)_parameters.ConnectionPath).ToString(CultureInfo.InvariantCulture))
             .Header(SessProtocol.HeaderPadProcNo, "2")
             .Header(SessProtocol.HeaderSupportCmd, "060000");
 
@@ -445,6 +499,19 @@ public sealed class HalyardStreamingSession : IStreamingSession
     /// <summary>Passcode attempts before giving up. The console tolerated at least six on one connection
     /// (cap51); this bound is our own, to end the loop if the user keeps mistyping rather than cancelling.</summary>
     private const int MaxSignInAttempts = 5;
+
+    /// <summary>
+    /// How long the A/V leg waits for the console's session-ready frame before opening Takion anyway.
+    ///
+    /// <para>
+    /// Measured gaps between the A/V prelude finishing and that frame arriving were 2.3–2.9 s across three
+    /// captured rendezvous sessions, so this is roughly triple the longest. It deliberately does not fail the
+    /// session on expiry: session-ready gates the console's stream service on the rendezvous route, but a LAN
+    /// console reached the old way streams without ever sending one, and turning a missing frame into a hard
+    /// failure would trade a diagnosable timeout for an undiagnosable refusal.
+    /// </para>
+    /// </summary>
+    private static readonly TimeSpan SessionReadyWindow = TimeSpan.FromSeconds(8);
 
     /// <summary>
     /// If the console's user is locked, complete the login before the stream is attempted; a locked console
@@ -702,8 +769,37 @@ public sealed class HalyardStreamingSession : IStreamingSession
         // Give the socket a large receive buffer: the A/V stream is bursty and the default (~64 KB) drops
         // datagrams on any brief receive-loop stall (→ slice corruption + choppy audio), especially at higher
         // bitrates/resolutions.
-        _streamSocket = new UdpChannel(receiveBufferBytes: 4 * 1024 * 1024);
-        _takionStream = new HalyardTakionStream(_streamSocket, _parameters.StreamEndpoint, _crypto, _demuxer);
+        // On the account route the A/V leg is a second negotiated connection, not the LAN stream port: the
+        // console offers it separately, it is reached on 9297, and it opens with the same 88-byte prelude the
+        // control association uses before any Takion byte flows. A caller that knows how to do that supplies
+        // the prepared socket and endpoint; everyone else gets a fresh socket to the negotiated stream port.
+        IPEndPoint streamEndpoint;
+        if (_streamTransportFactory is not null)
+        {
+            HalyardStreamTransport prepared =
+                await _streamTransportFactory(cancellationToken).ConfigureAwait(false);
+            _streamSocket = prepared.Socket;
+            streamEndpoint = prepared.Endpoint;
+
+            // …and then wait to be invited. On this route the console does not serve Takion on the A/V leg the
+            // moment the prelude finishes: in every captured rendezvous session it sits quiet for two to three
+            // seconds after the prelude, sends its session-ready frame on the control plane, and only then does
+            // the captured client send a single Takion INIT — which is answered immediately.
+            //
+            // We were sending that INIT six milliseconds after the prelude and then retransmitting it a hundred
+            // times over thirty seconds into a service that was not listening yet. Waiting costs nothing when
+            // the frame has already arrived (the gate is a latch), and a console that never sends it is a
+            // console that was never going to answer.
+            _connectStep = "waiting for the console's session-ready";
+            await CompletesWithin(_sessionReady.Task, SessionReadyWindow, cancellationToken).ConfigureAwait(false);
+        }
+        else
+        {
+            _streamSocket = new UdpChannel(receiveBufferBytes: 4 * 1024 * 1024);
+            streamEndpoint = _parameters.StreamEndpoint;
+        }
+
+        _takionStream = new HalyardTakionStream(_streamSocket, streamEndpoint, _crypto, _demuxer);
         _takionStream.PacketStatsSampled += OnPacketStatsSampled;
 
         // Controller input goes up the same socket, sealed by the crypto seam. Enqueue rather than send

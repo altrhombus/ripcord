@@ -19,14 +19,19 @@ public interface IHalyardSignalingClient
         (string Data1, string Data2, string Data3) seeds,
         CancellationToken cancellationToken);
 
-    /// <summary>POST our OFFER (our candidates) to the console over the signaling channel.</summary>
+    /// <summary>
+    /// POST our OFFER (our candidates) to the console over the signaling channel. <paramref name="sid"/>
+    /// identifies which of our connections is being offered — see the implementation for why it is a parameter.
+    /// </summary>
     Task SendOfferAsync(
         string sessionId,
         string accountId,
         string consoleDuid,
         IReadOnlyList<HalyardCandidate> candidates,
         CancellationToken cancellationToken,
-        ReadOnlyMemory<byte> localHashedId = default);
+        ReadOnlyMemory<byte> localHashedId = default,
+        int reqId = 1,
+        int sid = 1);
 
     /// <summary>Read back one session by id — to confirm ours exists and see who has joined.</summary>
     Task<IReadOnlyList<HalyardCloudSession>> GetSessionAsync(string sessionId, CancellationToken cancellationToken);
@@ -62,9 +67,10 @@ public sealed class HalyardCloudSignalingClient(HalyardCloudClient cloud) : IHal
     public Task SendOfferAsync(
         string sessionId, string accountId, string consoleDuid,
         IReadOnlyList<HalyardCandidate> candidates, CancellationToken cancellationToken,
-        ReadOnlyMemory<byte> localHashedId = default)
+        ReadOnlyMemory<byte> localHashedId = default,
+        int reqId = 1, int sid = 1)
         => _cloud.SendOfferAsync(
-            sessionId, accountId, consoleDuid, candidates, cancellationToken, localHashedId);
+            sessionId, accountId, consoleDuid, candidates, cancellationToken, localHashedId, reqId, sid);
 
     public Task<IReadOnlyList<HalyardCloudSession>> GetSessionAsync(string sessionId, CancellationToken cancellationToken)
         => _cloud.GetSessionAsync(sessionId, cancellationToken);
