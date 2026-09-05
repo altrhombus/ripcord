@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.Net.Sockets;
 using System.Net;
 using System.Security.Cryptography;
 using System.Text;
@@ -325,6 +327,31 @@ public sealed class HalyardStreamingSession : IStreamingSession
             : $"HTTP {response.StatusCode}, RP-Application-Reason {reason}";
     }
 
+    /// <summary>
+    /// The <c>Host</c> value, with the octets right-aligned in three columns the way every captured vendor
+    /// request writes them (<c>Host: 172. 16.  0.104:9295</c>) -- a <c>%3d.%3d.%3d.%3d</c> format.
+    ///
+    /// <para>
+    /// A LAN console accepts the unpadded form, so this is not required there. It is one of only two things
+    /// still differing from the captured request on the account route, which refuses <c>/sess/init</c> with
+    /// <c>403 / 80108b13</c> while the same pairing record is accepted over TCP minutes earlier -- so being
+    /// byte-faithful here costs nothing and removes a variable.
+    /// </para>
+    /// </summary>
+    private string HostHeader()
+    {
+        IPEndPoint endpoint = _parameters.ControlEndpoint;
+        if (endpoint.Address.AddressFamily != AddressFamily.InterNetwork)
+        {
+            return endpoint.ToString();
+        }
+
+        byte[] octets = endpoint.Address.GetAddressBytes();
+        return string.Create(
+            CultureInfo.InvariantCulture,
+            $"{octets[0],3}.{octets[1],3}.{octets[2],3}.{octets[3],3}:{endpoint.Port}");
+    }
+
     private Task<SessResponse> SendInitAsync(byte[]? registrationKey, CancellationToken cancellationToken)
     {
         // v1 /sess/init presents the RP-Registkey as the HEX encoding of the stored registration-key bytes
@@ -336,7 +363,7 @@ public sealed class HalyardStreamingSession : IStreamingSession
         HalyardConsolePlatform platform = _pairing?.Platform ?? HalyardConsolePlatform.Ps5;
         string registKey = registrationKey is null ? string.Empty : Convert.ToHexString(registrationKey).ToLowerInvariant();
         var request = new SessRequest(SessHttpMethod.Get, SessProtocol.PathFor(platform, "init"), "HTTP/1.1")
-            .Header("Host", _parameters.ControlEndpoint.ToString())
+            .Header("Host", HostHeader())
             .Header("User-Agent", "remoteplay Windows")
             .Header("Connection", "close")
 
@@ -345,7 +372,11 @@ public sealed class HalyardStreamingSession : IStreamingSession
             // route refuses /sess/init and this is one of the few things that still differs from the capture.
             .Header("Content-Length", "0")
             .Header(SessProtocol.HeaderRegistKey, registKey)
-            .Header(SessProtocol.HeaderVersion, SessProtocol.VersionFor(platform));
+
+            // "Rp-Version" on init, not "RP-Version" -- which is what the captured client sends here, while
+            // sending "RP-Version" on /sess/ctrl. HTTP header names are case-insensitive and a LAN console
+            // treats them so; this matches the capture exactly rather than relying on that.
+            .Header("Rp-Version", SessProtocol.VersionFor(platform));
 
         return _control.SendRequestAsync(request, cancellationToken);
     }
@@ -354,7 +385,7 @@ public sealed class HalyardStreamingSession : IStreamingSession
     {
         HalyardConsolePlatform platform = _pairing?.Platform ?? HalyardConsolePlatform.Ps5;
         var request = new SessRequest(SessHttpMethod.Get, SessProtocol.PathFor(platform, "ctrl"))
-            .Header("Host", _parameters.ControlEndpoint.ToString())
+            .Header("Host", HostHeader())
             .Header("User-Agent", "remoteplay Windows")
             .Header("Connection", "keep-alive")
             .Header("Content-Length", "0")
