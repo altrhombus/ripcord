@@ -49,6 +49,12 @@ public class TakionSessionNegotiatorTests
         Assert.True(result.Success, result.FailureReason);
         Assert.True(crypto.IsStreamEstablished);
 
+        // A version is agreed before a session is asked for, and the console's answer is what gets spoken --
+        // not the version the caller requested. Skipping this exchange is how a console ends up agreeing its
+        // own lowest version and returning a SESSION_REPLY with no ECDH material in it.
+        Assert.Contains(MockConsoleVersion, await offeredVersions.Task.WaitAsync(cts.Token));
+        Assert.Equal(MockConsoleVersion, await clientVersions.Task.WaitAsync(cts.Token));
+
         // Decisive: the client opens the A/V packet the server sealed with the negotiated s->c keys.
         var (avPacket, plaintext, keyPos, payloadOffset) = await sealedByServer.Task.WaitAsync(cts.Token);
         Assert.True(crypto.TryOpenPacket(avPacket, HalyardPacketLayout.Av(keyPos, payloadOffset)));
@@ -57,6 +63,15 @@ public class TakionSessionNegotiatorTests
         await cts.CancelAsync();
         try { await serverTask; } catch (OperationCanceledException) { }
     }
+
+    /// <summary>The version the mock console picks — see the ack it builds for why this one.</summary>
+    private const uint MockConsoleVersion = 9;
+
+    private static readonly TaskCompletionSource<uint[]> offeredVersions =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    private static readonly TaskCompletionSource<uint> clientVersions =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     private static async Task RunMockConsoleAsync(
         UdpChannel server,
@@ -67,6 +82,11 @@ public class TakionSessionNegotiatorTests
         using (serverKp)
         {
             var reassembler = new TakionMessageReassembler();
+
+            // Each message this console sends needs its own sequence. It only ever sent one before, so a
+            // constant was harmless; now that a version ack precedes the reply, reusing it makes the client's
+            // reliable channel discard the second as a duplicate -- which surfaces as "no SESSION_REPLY".
+            uint outboundSeq = ServerTag;
             while (!ct.IsCancellationRequested)
             {
                 var received = await server.ReceiveAsync(ct).ConfigureAwait(false);
@@ -85,11 +105,33 @@ public class TakionSessionNegotiatorTests
                 }
 
                 var message = ControlMessage.Parser.ParseFrom(complete);
+
+                // Agree a version first, the way a console does: it picks one of the offered versions and the
+                // client speaks that. Without this the negotiator never gets as far as SESSION_REQUEST.
+                if (message.Type == ControlMessage.Types.MessageType.ProtocolVersionRequest)
+                {
+                    offeredVersions.TrySetResult([.. message.ProtocolVersionRequest.SupportedVersions]);
+
+                    // This console answers 9 — the lowest on offer, and a P-256 version, which is the curve its
+                    // key pair is on. A client that ignored the answer and used its own highest offer would put
+                    // a P-521 key on the wire and the shared secret below would not derive at all.
+                    var versionAck = new ControlMessage
+                    {
+                        Type = ControlMessage.Types.MessageType.ProtocolVersionAck,
+                        ProtocolVersionAck = new ProtocolVersionAckPayload { ProtocolVersion = MockConsoleVersion },
+                    };
+                    await server.SendAsync(
+                        TakionDataChunk.Build(ClientTag, seq: outboundSeq++, channel: 0, versionAck.ToByteArray()),
+                        client, ct).ConfigureAwait(false);
+                    continue;
+                }
+
                 if (message.Type != ControlMessage.Types.MessageType.SessionRequest)
                 {
                     continue;
                 }
 
+                clientVersions.TrySetResult(message.SessionRequestPayload.ClientVersion);
                 byte[] clientPub = message.SessionRequestPayload.EcdhPublicKey.ToByteArray();
 
                 // Mirror the ECDH: derive the shared secret and the server->client packet keys.
@@ -126,7 +168,7 @@ public class TakionSessionNegotiatorTests
                         EcdhSignature = ByteString.CopyFrom(serverSig),
                     },
                 };
-                byte[] replyPacket = TakionDataChunk.Build(ClientTag, seq: ServerTag, channel: 0, reply.ToByteArray());
+                byte[] replyPacket = TakionDataChunk.Build(ClientTag, seq: outboundSeq++, channel: 0, reply.ToByteArray());
                 await server.SendAsync(replyPacket, client, ct).ConfigureAwait(false);
             }
         }

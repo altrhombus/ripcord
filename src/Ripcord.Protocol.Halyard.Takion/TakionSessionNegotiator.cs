@@ -40,11 +40,48 @@ public sealed class TakionSessionNegotiator
         _crypto = crypto ?? throw new ArgumentNullException(nameof(crypto));
     }
 
+    /// <summary>
+    /// The protocol versions the stream association offers, in the order and with the gap the captured client
+    /// uses — 12 really is absent (cap64/cap65, [W]). The console answers with the single one it picked.
+    ///
+    /// <para>
+    /// Sending this at all is the point. The stream association used to skip straight to SESSION_REQUEST, and
+    /// a console that has agreed no version defaults to the lowest it knows: it answered ours at version 9 and
+    /// returned a SESSION_REPLY with the ECDH fields simply absent, which arrives downstream as
+    /// "ecdhSignature verification failed" and reads like a crypto bug. The senkusha association is the
+    /// exception and offers only 9, because a probe needs no key agreement.
+    /// </para>
+    /// </summary>
+    private static readonly uint[] SupportedVersions = [9, 10, 11, 13, 14, 15, 16, 17];
+
     public async Task<TakionSessionResult> NegotiateAsync(TakionSessionRequest request, CancellationToken cancellationToken)
     {
+        // Agree a version before asking for a session (channel 0x15).
+        var versionRequest = new ControlMessage
+        {
+            Type = ControlMessage.Types.MessageType.ProtocolVersionRequest,
+            ProtocolVersionRequest = new ProtocolVersionRequestPayload { SupportedVersions = { SupportedVersions } },
+        };
+        await _channel.SendMessageAsync(
+            TakionDataChunk.ChannelProtocolVersion, versionRequest, cancellationToken).ConfigureAwait(false);
+
+        ControlMessage? versionAck = await ReceiveUntilAsync(
+            ControlMessage.Types.MessageType.ProtocolVersionAck, cancellationToken).ConfigureAwait(false);
+        if (versionAck is null)
+        {
+            return TakionSessionResult.Fail("no PROTOCOL_VERSION_ACK received");
+        }
+
+        // Speak the version the console chose, not the one we hoped for. It picks from our list, so this is
+        // normally what we asked for; deferring to it costs nothing and keeps the curve choice below honest if
+        // it ever picks lower.
+        uint version = versionAck.ProtocolVersionAck?.ProtocolVersion is uint agreed and not 0
+            ? agreed
+            : request.ClientVersion;
+
         // Our ephemeral ECDH public key, on the curve for the negotiated version (§5.2), authenticated by the
         // handshakeKey.
-        byte[] publicKey = _crypto.GenerateEphemeralPublicKey((int)request.ClientVersion);
+        byte[] publicKey = _crypto.GenerateEphemeralPublicKey((int)version);
         byte[] signature = _crypto.ComputeEcdhSignature(request.HandshakeKey, publicKey);
 
         var message = new ControlMessage
@@ -52,7 +89,7 @@ public sealed class TakionSessionNegotiator
             Type = ControlMessage.Types.MessageType.SessionRequest,
             SessionRequestPayload = new SessionRequestPayload
             {
-                ClientVersion = request.ClientVersion,
+                ClientVersion = version,
                 SessionKey = request.SessionKey,
                 LaunchSpecJson = request.LaunchSpecJson,
                 // encryptedKey is a required proto field; the console drops the whole SESSION_REQUEST without it.

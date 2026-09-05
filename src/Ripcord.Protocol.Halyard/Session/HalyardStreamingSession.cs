@@ -118,6 +118,8 @@ public sealed class HalyardStreamingSession : IStreamingSession
         new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly TaskCompletionSource _sessionReady =
         new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly TaskCompletionSource _streamReady =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     public HalyardStreamingSession(
         HalyardConnectionParameters parameters,
@@ -334,7 +336,11 @@ public sealed class HalyardStreamingSession : IStreamingSession
             if (_parameters.ConnectionPath == HalyardConnectionPath.Local)
             {
                 _connectStep = "senkusha bring-up";
-                await RunSenkushaAsync(cancellationToken).ConfigureAwait(false);
+                using var probeSocket = new UdpChannel();
+                await RunSenkushaAsync(
+                    probeSocket,
+                    new IPEndPoint(_parameters.ControlEndpoint.Address, SenkushaPort),
+                    cancellationToken).ConfigureAwait(false);
             }
 
             _connectStep = "stream key agreement";
@@ -514,6 +520,13 @@ public sealed class HalyardStreamingSession : IStreamingSession
     private static readonly TimeSpan SessionReadyWindow = TimeSpan.FromSeconds(8);
 
     /// <summary>
+    /// How long the A/V leg waits for the console's stream-ready frame after the probe. Measured gaps were
+    /// 0.5–1.5 s across the captured rendezvous sessions; this is generous, and expiring is not a failure —
+    /// see the call site.
+    /// </summary>
+    private static readonly TimeSpan StreamReadyWindow = TimeSpan.FromSeconds(10);
+
+    /// <summary>
     /// If the console's user is locked, complete the login before the stream is attempted; a locked console
     /// silently drops every Takion INIT until the passcode is accepted (cap50). Returns null to proceed, or a
     /// failure result to abort. An unlocked console sends no prompt and this returns null after the short
@@ -616,6 +629,11 @@ public sealed class HalyardStreamingSession : IStreamingSession
                         // Console: session ready. After a login this is the "you may open the stream" signal.
                         _sessionReady.TrySetResult();
                         break;
+
+                    case HalyardCtrlMessage.TypeStreamReady:
+                        // Console: the stream service is up. The rendezvous route's A/V leg waits on this.
+                        _streamReady.TrySetResult();
+                        break;
                 }
             }
         }
@@ -715,13 +733,20 @@ public sealed class HalyardStreamingSession : IStreamingSession
     private int? _confirmedMtu;
 
     /// <summary>
-    /// Run the senkusha bring-up on its own UDP connection to :9297 before the stream. Best-effort: a
+    /// Run the senkusha bring-up on a Takion association to :9297 before the stream. Best-effort: a
     /// timeout or error is swallowed so the stream attempt still proceeds (matching the vendor).
+    ///
+    /// <para>
+    /// The caller supplies the transport because the two routes reach :9297 differently, and the probe has to
+    /// go where the stream will. A LAN console is probed on a socket of its own; on the rendezvous route the
+    /// only socket :9297 will answer is the negotiated A/V one, after its prelude — the captured client runs
+    /// the probe as a first Takion association on exactly that socket, tears it down, and opens a second for
+    /// the stream. Probing a fresh socket there reaches nobody, which is why this took a parameter.
+    /// </para>
     /// </summary>
-    private async Task RunSenkushaAsync(CancellationToken cancellationToken)
+    private async Task RunSenkushaAsync(
+        UdpChannel socket, IPEndPoint endpoint, CancellationToken cancellationToken)
     {
-        var endpoint = new IPEndPoint(_parameters.ControlEndpoint.Address, SenkushaPort);
-        using var socket = new UdpChannel();
         await using var senkusha = new HalyardSenkusha(socket, endpoint);
         using var senkushaCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         senkushaCts.CancelAfter(TimeSpan.FromSeconds(8));
@@ -792,6 +817,22 @@ public sealed class HalyardStreamingSession : IStreamingSession
             // console that was never going to answer.
             _connectStep = "waiting for the console's session-ready";
             await CompletesWithin(_sessionReady.Task, SessionReadyWindow, cancellationToken).ConfigureAwait(false);
+
+            // …and only now can the probe run, because only now does a socket exist that :9297 will answer.
+            // Skipping it entirely got a SESSION_REPLY carrying no public key at all: the console answers the
+            // Takion handshake either way, and refuses the session that follows.
+            _connectStep = "senkusha bring-up";
+            await RunSenkushaAsync(_streamSocket, streamEndpoint, cancellationToken).ConfigureAwait(false);
+
+            // The captured client does not open the stream association until the console says the stream
+            // service is up, which it does a second or two after the probe. Not fatal on expiry: this is a
+            // wait, and a console that never sends it is better diagnosed by the SESSION_REPLY that follows
+            // than by a timeout here that hides it.
+            _connectStep = "waiting for the console's stream-ready";
+            if (!await CompletesWithin(_streamReady.Task, StreamReadyWindow, cancellationToken).ConfigureAwait(false))
+            {
+                _connectStep = "stream-ready never arrived; opening the stream association anyway";
+            }
         }
         else
         {
