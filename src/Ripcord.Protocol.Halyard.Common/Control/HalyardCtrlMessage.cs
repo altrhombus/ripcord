@@ -46,6 +46,26 @@ public readonly struct HalyardCtrlMessage
     public const ushort TypeLogin = 0x0005;
 
     /// <summary>
+    /// <see cref="TypeLogin"/>'s payload: the passcode was accepted.
+    ///
+    /// <para>
+    /// **[C]** by controlled experiment against hardware (2026-09-05): one console, one variable changed, two
+    /// outcomes — the right passcode drew <c>0x00</c> and a deliberately wrong one drew
+    /// <see cref="LoginRejected"/>. This byte was previously recorded as opaque and different every time,
+    /// which it is as <em>ciphertext</em>: a stream cipher at a fresh counter gives different bytes for the
+    /// same plaintext by construction, so that was a fact about not being able to decrypt it. Values other
+    /// than these two remain unseen.
+    /// </para>
+    /// </summary>
+    public const byte LoginAccepted = 0x00;
+
+    /// <summary>
+    /// <see cref="TypeLogin"/>'s payload: the passcode was wrong. See <see cref="LoginAccepted"/> for how
+    /// both were established.
+    /// </summary>
+    public const byte LoginRejected = 0x01;
+
+    /// <summary>
     /// Console → client: session-ready. After a login it is what gates the Takion bring-up.
     ///
     /// <para>
