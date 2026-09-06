@@ -518,15 +518,22 @@ public sealed class HalyardStreamingSession : IStreamingSession
     /// How long to wait for the console's session-ready after a passcode is submitted.
     ///
     /// <para>
-    /// On the LAN it arrives ~2.3 s after the submit (cap50), and the session continues.
+    /// On the LAN it arrives ~2.3 s after the submit (cap50). On the rendezvous route it takes far longer,
+    /// because the console <b>renegotiates the connection first</b>: the login is answered almost at once and
+    /// then a second candidate exchange runs over the cloud before the console declares the session ready.
+    /// Measured on hardware — login result at 0.2 s, session-ready at <b>5.0 s</b> — which is why six seconds
+    /// was flaky rather than simply wrong, and why this is comfortably past it.
     ///
     /// <para>
-    /// <b>On the rendezvous route it does not arrive at all</b>, and raising this does not help — which was
-    /// worth finding out the wrong way. A live run submitted a <b>correct</b> passcode and was answered; the
-    /// console <em>unlocked</em>, but sent no session-ready on that session, and the next connect then found
-    /// it already unlocked and streamed. Twenty-five seconds behaved exactly as six had, only slower, so the
-    /// bound is back to something responsive: this path ends in a retry either way, and the faster it gets
-    /// there the better. **[X]** why the console abandons the session it just authorised.
+    /// <b>A correction worth keeping.</b> This was briefly recorded as "the console accepts the passcode and
+    /// then abandons the session", on runs that timed out before that five seconds elapsed. It does not: it is
+    /// slow, not indifferent. The wait is now two-stage — the login verdict first, then session-ready — so a
+    /// wrong passcode still re-prompts immediately and only a genuinely accepted one waits.
+    /// </para>
+    ///
+    /// <para>
+    /// **[X]** One earlier run did sit for twenty-five seconds with no session-ready on a console that had
+    /// been locked by idling rather than woken from standby. Unexplained, and recorded rather than tidied away.
     /// </para>
     /// </summary>
     private static readonly TimeSpan SignInAttemptTimeout =
@@ -645,9 +652,9 @@ public sealed class HalyardStreamingSession : IStreamingSession
                 continue; // wrong passcode; re-prompt at once (attempt > 1 tells the UI to say so)
             }
 
-            // Accepted. The session usually follows immediately; on the rendezvous route it sometimes does not
-            // -- the console unlocks and abandons this session -- so wait, then say what actually happened
-            // rather than blaming the passcode.
+            // Accepted. The session does not follow immediately on the rendezvous route: the console
+            // renegotiates the connection first and takes about five seconds over it. Wait that out, and if it
+            // still does not come, say what actually happened rather than blaming the passcode.
             if (await CompletesWithin(_sessionReady.Task, SignInAttemptTimeout, cancellationToken).ConfigureAwait(false))
             {
                 return null;
@@ -769,6 +776,10 @@ public sealed class HalyardStreamingSession : IStreamingSession
     /// <c>0x0003</c>, and the session id's own payload). Diagnostic only, and off unless
     /// <c>RIPCORD_TRACE_CTRL</c> is set.
     /// </summary>
+    private double Since() => (DateTimeOffset.UtcNow - _sessionOpenedAt).TotalSeconds;
+
+    private readonly DateTimeOffset _sessionOpenedAt = DateTimeOffset.UtcNow;
+
     private byte[]? ObserveCtrlFrame(HalyardCtrlMessage message)
     {
         bool trace = Environment.GetEnvironmentVariable("RIPCORD_TRACE_CTRL") is not null;
@@ -780,7 +791,7 @@ public sealed class HalyardStreamingSession : IStreamingSession
         {
             if (trace)
             {
-                Console.Error.WriteLine($"[ctrl] type=0x{message.Type:X4} len=0");
+                Console.Error.WriteLine($"[ctrl {Since():F1}s] type=0x{message.Type:X4} len=0");
             }
 
             return null;
@@ -794,8 +805,8 @@ public sealed class HalyardStreamingSession : IStreamingSession
             {
                 var text = new string([.. plain.Select(b => b is >= 0x20 and < 0x7f ? (char)b : '.')]);
                 Console.Error.WriteLine(
-                    $"[ctrl] type=0x{message.Type:X4} len={message.Payload.Length} counter={counter} "
-                    + $"plain={Convert.ToHexString(plain)}  {text}");
+                    $"[ctrl {Since():F1}s] type=0x{message.Type:X4} len={message.Payload.Length} "
+                    + $"counter={counter} plain={Convert.ToHexString(plain)}  {text}");
             }
 
             return plain;
@@ -858,10 +869,15 @@ public sealed class HalyardStreamingSession : IStreamingSession
     /// </para>
     ///
     /// <para>
-    /// <b>[X] which measurement belongs in which slot.</b> The values below are still a guess, and the console
-    /// accepting them does <em>not</em> confirm the ordering: they were accepted first time with two of the
-    /// four zero, which is what a console that does not read the contents would also do. Do not promote this
-    /// to a derivation without evidence that the values are actually used.
+    /// <b>[X] which measurement belongs in which slot</b> — and it does not appear to matter. Three live
+    /// sessions sending our real measurements, then <c>500</c> in every slot, then <c>0</c> in every slot,
+    /// were indistinguishable: same frame rate, same bitrate. The console wants the frame, not its contents.
+    ///
+    /// <para>
+    /// Real values are sent regardless, because "not observably read today" is not "never read", and the cost
+    /// of being right here is nil. What this does buy is that a wrong guess about the ordering cannot be
+    /// silently breaking anything.
+    /// </para>
     /// </para>
     /// </summary>
     private async Task SendProbeReportAsync(CancellationToken cancellationToken)
@@ -876,6 +892,21 @@ public sealed class HalyardStreamingSession : IStreamingSession
         slots[1] = (uint)(_confirmedMtu ?? LinkMetrics.MtuToDeclare(_measuredMtu));
         slots[2] = 0;
         slots[3] = (uint)Math.Round(Math.Clamp(_measuredRttMs ?? 0, 0, 1000));
+
+        // RIPCORD_PROBE_SLOTS=a,b,c,d overrides all four, for settling what the console actually reads here.
+        // The slot meanings are [X]; the way to find out is to send something a console could not ignore and
+        // watch whether the stream changes.
+        if (Environment.GetEnvironmentVariable("RIPCORD_PROBE_SLOTS") is { Length: > 0 } spec)
+        {
+            string[] parts = spec.Split(',');
+            for (int i = 0; i < Math.Min(4, parts.Length); i++)
+            {
+                if (uint.TryParse(parts[i].Trim(), out uint value))
+                {
+                    slots[i] = value;
+                }
+            }
+        }
 
         byte[] plaintext = new byte[16];
         for (int i = 0; i < 4; i++)

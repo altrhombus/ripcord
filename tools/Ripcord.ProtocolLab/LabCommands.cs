@@ -277,7 +277,7 @@ internal static class LabCommands
         if (args.Length < 3)
         {
             Console.Error.WriteLine(
-                "usage: accountconnect <consoleIp> <duid> [ps4|ps5] [--frames] [--passcode=<digits>] [--watch=<seconds>]");
+                "usage: accountconnect <consoleIp> <duid> [ps4|ps5] [--frames] [--passcode=<digits>] [--watch=<seconds>] [--rest]");
             Console.Error.WriteLine("       (pair first with `accountpair`; run `cloud` to list duids)");
             return 1;
         }
@@ -349,7 +349,12 @@ internal static class LabCommands
         try
         {
             await using IStreamingSession session = result.Session;
-            var config = new SessionConfig(1280, 720, 60, 10_000, VideoCodec.H264, LatencyMode.Balanced);
+            // --rest puts the console into standby as the session ends. Useful for testing far beyond its
+            // obvious purpose: a console woken from standby comes back with its user locked, which is the only
+            // way to reach the sign-in path repeatedly without somebody standing at the console.
+            var config = new SessionConfig(
+                1280, 720, 60, 10_000, VideoCodec.H264, LatencyMode.Balanced,
+                RestConsoleOnDisconnect: args.Any(a => a.Equals("--rest", StringComparison.OrdinalIgnoreCase)));
             SessionHandshakeResult handshake = await session.ConnectAsync(config, CancellationToken.None);
 
             Console.WriteLine(handshake.Succeeded
