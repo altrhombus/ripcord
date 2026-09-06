@@ -109,17 +109,42 @@ public readonly struct HalyardCtrlMessage
     public const ushort TypeEchoProbeAck = 0x8910;
 
     /// <summary>
-    /// Console → client, 2-byte payload decrypting to <c>01 FF</c>. **[X]** — reads as a flag pair; the
-    /// session proceeds whether or not it is acted on. Seen on both routes.
+    /// Console → client. <b>Exactly 2 bytes</b>, or the client drops it; read as one 16-bit value and raised
+    /// as an internal event. Observed payload <c>01 FF</c>.
+    ///
+    /// <para>
+    /// Structure from first-party RE of our own client (<c>FUN_102089b0</c>, case <c>0x16</c>). **[X]** what
+    /// the value means, and its byte order is not determinable from a single sample — the surrounding
+    /// protocol is big-endian, but this one field is loaded natively where its neighbours are assembled byte
+    /// by byte.
+    /// </para>
     /// </summary>
     public const ushort TypeUnknown0016 = 0x0016;
 
     /// <summary>
-    /// Console → client, 9-byte payload decrypting to <c>02 00 04 02 24 00 55 12 34</c>. **[X]** — clearly
-    /// structured and clearly not an error (a LAN session that goes on to stream receives the same frame),
-    /// but nothing decodes it yet.
+    /// Console → client. A <b>counted list</b>: one count byte, then <c>count</c> entries of four bytes, each
+    /// entry being two big-endian <c>uint16</c>. The client requires the length to be exactly
+    /// <c>count * 4 + 1</c> and drops the frame otherwise.
+    ///
+    /// <para>
+    /// Structure from first-party RE (<c>FUN_102089b0</c>, case <c>0x17</c>) and confirmed against the live
+    /// payload: <c>02 | 0004 0224 | 0055 1234</c> is count 2 followed by the pairs (4, 548) and (85, 4660).
+    /// **[X]** what the pairs are. Worth noting only that 548 is the size of the bandwidth probe's datagrams,
+    /// which may be coincidence.
+    /// </para>
     /// </summary>
     public const ushort TypeUnknown0017 = 0x0017;
+
+    /// <summary>
+    /// Console → client. <b>Exactly 8 bytes</b>, copied verbatim and raised as an internal event; the client
+    /// does not interpret them at this layer. Observed payload <c>00 00 00 00 02 01 00 00</c>.
+    ///
+    /// <para>
+    /// Structure from first-party RE (<c>FUN_102089b0</c>, case <c>0x41</c>). **[X]** contents. Arrives on the
+    /// LAN route after the stream is up; not seen on the rendezvous route.
+    /// </para>
+    /// </summary>
+    public const ushort TypeUnknown0041 = 0x0041;
 
     /// <summary>
     /// Console → client: the stream service is ready for its Takion association. Empty payload.
