@@ -119,6 +119,13 @@ public sealed class HalyardStreamingSession : IStreamingSession
         new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly TaskCompletionSource _sessionReady =
         new(TaskCreationOptions.RunContinuationsAsynchronously);
+    /// <summary>
+    /// The console's answer to the passcode currently in flight, armed per attempt by the sign-in gate and
+    /// read by the control reader. Null between attempts, which is why the reader uses <c>?.</c> — a login
+    /// result arriving when nobody asked is information we have no use for, not an error.
+    /// </summary>
+    private volatile TaskCompletionSource<byte>? _loginResult;
+
     private readonly TaskCompletionSource _streamReady =
         new(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -598,25 +605,62 @@ public sealed class HalyardStreamingSession : IStreamingSession
                 return Fail("Sign-in cancelled: no login passcode entered.");
             }
 
+            // Armed before the submit, not after: the console answers in milliseconds on the LAN, and a
+            // result that arrived while we were still setting up the wait would be dropped.
+            var verdict = new TaskCompletionSource<byte>(TaskCreationOptions.RunContinuationsAsynchronously);
+            _loginResult = verdict;
+
             byte[] plaintext = HalyardSessCtrlFields.BuildLoginPinPlaintext(pin);
             byte[] ciphertext = _crypto.EncryptControlField(_clientFieldCounter++, plaintext);
             await _control.SendCtrlMessageAsync(
                 new HalyardCtrlMessage(HalyardCtrlMessage.TypeLoginSubmit, ciphertext), cancellationToken).ConfigureAwait(false);
 
+            // Whichever the console says first. Session-ready is the outright success; the login result is the
+            // console's verdict on the passcode, and being able to read it is what lets a wrong passcode
+            // re-prompt at once instead of after a timeout -- and, just as importantly, stops a *right* one
+            // being reported as wrong when the session does not follow.
+            Task<byte> answered = verdict.Task;
+            Task ready = _sessionReady.Task;
+            using (var window = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken))
+            {
+                Task expiry = Task.Delay(SignInAttemptTimeout, window.Token);
+                Task first = await Task.WhenAny(ready, answered, expiry).ConfigureAwait(false);
+                window.Cancel();
+
+                if (ReferenceEquals(first, expiry))
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    continue; // said nothing at all; re-prompt
+                }
+            }
+
+            if (ready.IsCompletedSuccessfully)
+            {
+                return null; // accepted, and the session went on
+            }
+
+            byte status = await answered.ConfigureAwait(false);
+            if (status == HalyardCtrlMessage.LoginRejected)
+            {
+                continue; // wrong passcode; re-prompt at once (attempt > 1 tells the UI to say so)
+            }
+
+            // Accepted. The session usually follows immediately; on the rendezvous route it sometimes does not
+            // -- the console unlocks and abandons this session -- so wait, then say what actually happened
+            // rather than blaming the passcode.
             if (await CompletesWithin(_sessionReady.Task, SignInAttemptTimeout, cancellationToken).ConfigureAwait(false))
             {
-                return null; // accepted
+                return null;
             }
-            // No session-ready: the passcode was rejected. Loop and re-prompt (attempt > 1 tells the UI to say so).
+
+            return Fail(
+                "The console accepted the passcode but didn't start a session. It's unlocked now — "
+                + "connecting again usually works.");
         }
 
-        // Deliberately not "wrong passcode". A console reached through the account rendezvous accepts the
-        // passcode, unlocks, and then does not continue this session -- so the passcode may well have been
-        // right, and the next connect will find the console unlocked and work. Saying "rejected" at someone
-        // who typed it correctly sends them to change a passcode that was never the problem.
-        return Fail(
-            "The console didn't start a session after the passcode. If the passcode was right the console is "
-            + "unlocked now — connecting again usually works.");
+        // Reaching here means the console said "wrong" MaxSignInAttempts times, or said nothing at all that
+        // many times. Both are now distinguishable above; this is the end of the road for either.
+        return Fail($"Sign-in failed: the console rejected the passcode {MaxSignInAttempts} times.");
     }
 
     /// <summary>True if <paramref name="task"/> completes within <paramref name="timeout"/>; false on timeout.
@@ -649,7 +693,7 @@ public sealed class HalyardStreamingSession : IStreamingSession
                     return; // control connection closed
                 }
 
-                TraceCtrlFrame(message.Value);
+                byte[]? plaintext = ObserveCtrlFrame(message.Value);
 
                 switch (message.Value.Type)
                 {
@@ -661,6 +705,12 @@ public sealed class HalyardStreamingSession : IStreamingSession
                     case HalyardCtrlMessage.TypeLoginPrompt:
                         // Console: this user is locked, send the passcode. The sign-in gate is waiting on this.
                         _loginPromptReceived.TrySetResult();
+                        break;
+
+                    case HalyardCtrlMessage.TypeLogin when plaintext is { Length: > 0 }:
+                        // The console's verdict on the passcode, which is readable now — see
+                        // HalyardCtrlMessage.LoginAccepted. The gate waits on this rather than on a timeout.
+                        _loginResult?.TrySetResult(plaintext[0]);
                         break;
 
                     case HalyardCtrlMessage.TypeSessionId:
@@ -719,7 +769,7 @@ public sealed class HalyardStreamingSession : IStreamingSession
     /// <c>0x0003</c>, and the session id's own payload). Diagnostic only, and off unless
     /// <c>RIPCORD_TRACE_CTRL</c> is set.
     /// </summary>
-    private void TraceCtrlFrame(HalyardCtrlMessage message)
+    private byte[]? ObserveCtrlFrame(HalyardCtrlMessage message)
     {
         bool trace = Environment.GetEnvironmentVariable("RIPCORD_TRACE_CTRL") is not null;
 
@@ -733,26 +783,32 @@ public sealed class HalyardStreamingSession : IStreamingSession
                 Console.Error.WriteLine($"[ctrl] type=0x{message.Type:X4} len=0");
             }
 
-            return;
+            return null;
         }
 
         ulong counter = _consoleFieldCounter++;
-        if (!trace)
-        {
-            return;
-        }
-
         try
         {
             byte[] plain = _crypto.DecryptControlField(counter, message.Payload.Span);
-            var text = new string([.. plain.Select(b => b is >= 0x20 and < 0x7f ? (char)b : '.')]);
-            Console.Error.WriteLine(
-                $"[ctrl] type=0x{message.Type:X4} len={message.Payload.Length} counter={counter} "
-                + $"plain={Convert.ToHexString(plain)}  {text}");
+            if (trace)
+            {
+                var text = new string([.. plain.Select(b => b is >= 0x20 and < 0x7f ? (char)b : '.')]);
+                Console.Error.WriteLine(
+                    $"[ctrl] type=0x{message.Type:X4} len={message.Payload.Length} counter={counter} "
+                    + $"plain={Convert.ToHexString(plain)}  {text}");
+            }
+
+            return plain;
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"[ctrl] type=0x{message.Type:X4} counter={counter}: {ex.GetType().Name}");
+            if (trace)
+            {
+                Console.Error.WriteLine(
+                    $"[ctrl] type=0x{message.Type:X4} counter={counter}: {ex.GetType().Name}");
+            }
+
+            return null;
         }
     }
 
