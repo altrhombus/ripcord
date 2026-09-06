@@ -297,21 +297,12 @@ public sealed class HalyardAccountPairing(
                     // half that matters, because the console takes our id for this leg from the OFFER, not the
                     // ACCEPT. Offering it as stream 1 again made the console's second connection collide with
                     // its first: preluded, then never served.
-                    // Both of ours again, and for the same reason: the A/V leg is a connection of its own on
-                    // a port of its own, so it needs its own reflexive address. Offering only the local one
-                    // left the control plane working off-network while the media prelude went unanswered.
-                    var mediaCandidates = new List<HalyardCandidate>();
-                    if (mediaReflexive is { } mediaPublic)
-                    {
-                        mediaCandidates.Add(
-                            new HalyardCandidate("STATIC", mediaPublic.Address, mediaPublic.Port));
-                    }
-
-                    mediaCandidates.Add(new HalyardCandidate("LOCAL", local.Address, localPort));
-
+                    // All three again, and for the same reason: the A/V leg is a connection of its own on a
+                    // port of its own, so it needs its own discovery. Offering only the local one left the
+                    // control plane working off-network while the media prelude went unanswered.
                     await _signaling.SendOfferAsync(
                         outcome.SessionId, request.AccountId, request.ConsoleDuid,
-                        mediaCandidates,
+                        OurCandidates((local.Address, localPort), mediaReflexive),
                         mediaToken, request.LocalHashedId,
                         reqId: OurOfferReqId + 2, sid: OurStreamId + 1).ConfigureAwait(false);
 
@@ -577,26 +568,12 @@ public sealed class HalyardAccountPairing(
                 // answering the console's OFFER with an ACCEPT that names the console's stream id. Stopping
                 // after our own OFFER leaves the console waiting, and it never opens its side: observed live
                 // as five unanswered preludes with the console silent.
-                // Both of ours, reflexive first, in the order the captured client offers them.
-                //
-                // The local one alone is enough only when the console is on this network. Anywhere else it is
-                // a private address on somebody else's network, and a console that has been told nothing but
-                // that has no way to send us anything -- so neither side can open the path, which is what an
-                // off-network attempt looked like: our Init leaving every five seconds and complete silence
-                // back. The reflexive address is what the NAT presents on our behalf, and it is the only
-                // address a distant console can use.
-                var candidates = new List<HalyardCandidate>();
-                if (request.ReflexiveEndpoint is { } reflexive)
-                {
-                    candidates.Add(new HalyardCandidate("STATIC", reflexive.Address, reflexive.Port));
-                }
-
-                if (request.LocalEndpoint is { } advertised)
-                {
-                    candidates.Add(new HalyardCandidate("LOCAL", advertised.Address, advertised.Port));
-                }
-
-                IReadOnlyList<HalyardCandidate> ours = candidates;
+                // The local one alone is enough only when the console is on this network. Anywhere else it
+                // is a private address on somebody else's network, and a console told nothing else has no way
+                // to send us anything -- which is what an off-network attempt looked like: our Init leaving
+                // every five seconds and complete silence back.
+                IReadOnlyList<HalyardCandidate> ours =
+                    OurCandidates(request.LocalEndpoint, request.ReflexiveEndpoint);
 
                 await _signaling.SendOfferAsync(
                     sessionId, request.AccountId, request.ConsoleDuid, ours, cancellationToken,
@@ -756,6 +733,55 @@ public sealed class HalyardAccountPairing(
     /// same-network pairing keeps its traffic on the LAN rather than going out to the reflexive address and
     /// back. Falls back to the first offered.
     /// </summary>
+
+    /// <summary>
+    /// The candidates we offer for one connection, in the order and with the labels the captured client uses.
+    ///
+    /// <para>
+    /// Three, not two, and the distinction between the first two is the point:
+    /// </para>
+    /// <list type="bullet">
+    /// <item><c>STUN</c> — the public address <b>and the port the NAT actually assigned</b>, as a STUN server
+    /// reported it. This is the mapping that demonstrably exists.</item>
+    /// <item><c>STATIC</c> — the same public address with <b>our own local port</b>. A guess, and a good one:
+    /// many NATs preserve the port, and where they do this is reachable even if the STUN mapping has since
+    /// expired or was taken for a different destination.</item>
+    /// <item><c>LOCAL</c> — our address on this network, which is the only one that works when the peer turns
+    /// out to be on it.</item>
+    /// </list>
+    ///
+    /// <para>
+    /// We used to send the STUN mapping <em>labelled</em> <c>STATIC</c> and omit the guess entirely. That
+    /// worked wherever the one mapping we offered happened to be reachable, and had nothing to fall back on
+    /// where it was not — which is exactly the case a NAT that maps per destination creates, since the mapping
+    /// a STUN server sees is then not the one the console would get.
+    /// </para>
+    /// </summary>
+    internal static IReadOnlyList<HalyardCandidate> OurCandidates(
+        (string Address, int Port)? local, (string Address, int Port)? reflexive)
+    {
+        var candidates = new List<HalyardCandidate>();
+
+        if (reflexive is { } seen)
+        {
+            candidates.Add(new HalyardCandidate("STUN", seen.Address, seen.Port));
+
+            // Only when it differs: a port-preserving NAT makes the guess identical to the mapping, and two
+            // byte-identical candidates say nothing the first did not.
+            if (local is { } mine && seen.Port != mine.Port)
+            {
+                candidates.Add(new HalyardCandidate("STATIC", seen.Address, mine.Port));
+            }
+        }
+
+        if (local is { } advertised)
+        {
+            candidates.Add(new HalyardCandidate("LOCAL", advertised.Address, advertised.Port));
+        }
+
+        return candidates;
+    }
+
     private static HalyardSignalingCandidate? PreferredCandidate(
         HalyardSignalingMessage offer, string consoleHost)
     {
