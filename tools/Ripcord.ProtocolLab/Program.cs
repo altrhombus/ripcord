@@ -1,7 +1,7 @@
 using Ripcord.ProtocolLab;
 
 // Ripcord ProtocolLab - a console harness for driving and verifying the connect pipeline against
-// real hardware and captures, without the full UI. Stages 0-4 of docs/phase1-lan-build-plan.md.
+// real hardware and captures, without the full UI. Stages 0-4 of docs/history/phase1-lan-build-plan.md.
 //
 // Cloud commands read the OAuth client credential from the environment (RIPCORD_CLIENT_ID,
 // RIPCORD_CLIENT_SECRET, RIPCORD_REDIRECT_URI) or from client.json in the config directory, so no
