@@ -133,8 +133,32 @@ public sealed class RipcordAppServices
     public AccountViewModel CreateAccountViewModel()
         => new(Account, Dispatcher, Consoles);
 
+    /// <summary>
+    /// The console list's reachability monitor, with the account service as the fallback for a console that
+    /// does not answer on this network — which is the difference between "offline" and "somewhere else".
+    /// </summary>
     public ConsoleReachabilityMonitor CreateReachabilityMonitor()
-        => new(ReachabilityProbe);
+        => new(ReachabilityProbe, remotelyAvailable: RemotelyAvailableConsolesAsync);
+
+    /// <summary>
+    /// The cloud ids the account service says are set up for remote play. Empty when nobody is signed in,
+    /// which makes the monitor behave exactly as it did before there was an account tier.
+    /// </summary>
+    private async Task<IReadOnlyCollection<string>> RemotelyAvailableConsolesAsync(
+        CancellationToken cancellationToken)
+    {
+        if (!Account.CanSignIn || !Account.HasStoredSession)
+        {
+            return [];
+        }
+
+        IReadOnlyList<CloudConsole> consoles = await Account
+            .ListConsolesAsync(cancellationToken).ConfigureAwait(false);
+
+        // RemotePlayEnabled, not merely listed: a console with the feature switched off is in the account's
+        // list and cannot be streamed from, and showing it as reachable would promise something that fails.
+        return [.. consoles.Where(c => c.RemotePlayEnabled).Select(c => c.Id)];
+    }
 
     public ConsoleCardViewModel CreateConsoleCard(PairedConsole console)
         => new(console, Dispatcher);
