@@ -20,6 +20,136 @@ public class ConsoleReachabilityMonitorTests
     private static PairedConsole Console(string host, string platform = "Ps5") =>
         new(Id: host, Name: "PlayStation 5", Host: host, Platform: platform, CredentialBlob: "");
 
+    private static PairedConsole CloudConsole(string host, string cloudId) =>
+        Console(host) with { CloudDeviceId = cloudId };
+
+    // ---- silence means "offline" only on this network ---------------------------------------------
+
+    [Fact]
+    public async Task AConsoleThatIsSilentButListedByTheAccount_IsAwayNotOffline()
+    {
+        // The whole point of the distinction. A discovery probe cannot leave the subnet, so silence from a
+        // console elsewhere says nothing about it -- and calling it Offline made it unconnectable from the app
+        // while the account route could reach it perfectly well.
+        var card = new ConsoleCardViewModel(CloudConsole("10.0.0.5", "duid-1"), new ImmediateUiDispatcher());
+        var monitor = new ConsoleReachabilityMonitor(
+            new FakeProbe().Answers("10.0.0.5", (bool?)null),
+            remotelyAvailable: _ => Task.FromResult<IReadOnlyCollection<string>>(["duid-1"]));
+
+        await monitor.RefreshAsync([card], restRequestedHost: null, CancellationToken.None);
+
+        Assert.Equal(ConsoleReachability.Away, card.Reachability);
+        Assert.True(card.State.CanConnect);
+    }
+
+    [Fact]
+    public async Task AConsoleTheAccountDoesNotList_StaysOffline()
+    {
+        // Listed for the account but not this console: it really is unreachable, and saying otherwise would
+        // promise a connect that fails.
+        var card = new ConsoleCardViewModel(CloudConsole("10.0.0.5", "duid-1"), new ImmediateUiDispatcher());
+        var monitor = new ConsoleReachabilityMonitor(
+            new FakeProbe().Answers("10.0.0.5", (bool?)null),
+            remotelyAvailable: _ => Task.FromResult<IReadOnlyCollection<string>>(["duid-other"]));
+
+        await monitor.RefreshAsync([card], restRequestedHost: null, CancellationToken.None);
+
+        Assert.Equal(ConsoleReachability.Offline, card.Reachability);
+        Assert.False(card.State.CanConnect);
+    }
+
+    [Fact]
+    public async Task AConsolePairedByCode_IsNotEvenAskedAbout()
+    {
+        // No cloud id means the account service has no name for it, so there is nothing to ask -- and asking
+        // would spend a REST call to learn nothing.
+        var asked = false;
+        var card = Card("10.0.0.5");
+        var monitor = new ConsoleReachabilityMonitor(
+            new FakeProbe().Answers("10.0.0.5", (bool?)null),
+            remotelyAvailable: _ =>
+            {
+                asked = true;
+                return Task.FromResult<IReadOnlyCollection<string>>([]);
+            });
+
+        await monitor.RefreshAsync([card], restRequestedHost: null, CancellationToken.None);
+
+        Assert.Equal(ConsoleReachability.Offline, card.Reachability);
+        Assert.False(asked);
+    }
+
+    [Fact]
+    public async Task AConsoleThatAnswersLocally_NeverCostsAnAccountCall()
+    {
+        // The common case, and it must stay free: everything on this network answers, so the list is never
+        // fetched at all.
+        var asked = 0;
+        var monitor = new ConsoleReachabilityMonitor(
+            new FakeProbe().Answers("10.0.0.5", true).Answers("10.0.0.6", false),
+            remotelyAvailable: _ =>
+            {
+                asked++;
+                return Task.FromResult<IReadOnlyCollection<string>>([]);
+            });
+
+        await monitor.RefreshAsync(
+            [Card("10.0.0.5"), Card("10.0.0.6")], restRequestedHost: null, CancellationToken.None);
+
+        Assert.Equal(0, asked);
+    }
+
+    [Fact]
+    public async Task SeveralSilentConsoles_ShareOneAccountCall()
+    {
+        // One call for the list, not one per card -- which is the reason this takes a function and not the
+        // account seam itself.
+        var asked = 0;
+        var monitor = new ConsoleReachabilityMonitor(
+            new FakeProbe().Answers("10.0.0.5", (bool?)null).Answers("10.0.0.6", (bool?)null),
+            remotelyAvailable: _ =>
+            {
+                Interlocked.Increment(ref asked);
+                return Task.FromResult<IReadOnlyCollection<string>>(["duid-1", "duid-2"]);
+            });
+
+        var first = new ConsoleCardViewModel(CloudConsole("10.0.0.5", "duid-1"), new ImmediateUiDispatcher());
+        var second = new ConsoleCardViewModel(CloudConsole("10.0.0.6", "duid-2"), new ImmediateUiDispatcher());
+
+        await monitor.RefreshAsync([first, second], restRequestedHost: null, CancellationToken.None);
+
+        Assert.Equal(ConsoleReachability.Away, first.Reachability);
+        Assert.Equal(ConsoleReachability.Away, second.Reachability);
+        Assert.Equal(1, asked);
+    }
+
+    [Fact]
+    public async Task WhenAskingTheAccountFails_TheConsoleIsOfflineRatherThanAnError()
+    {
+        // A status dot is not worth surfacing an error over, and offline is what the user would have seen
+        // before there was an account tier at all.
+        var card = new ConsoleCardViewModel(CloudConsole("10.0.0.5", "duid-1"), new ImmediateUiDispatcher());
+        var monitor = new ConsoleReachabilityMonitor(
+            new FakeProbe().Answers("10.0.0.5", (bool?)null),
+            remotelyAvailable: _ => Task.FromException<IReadOnlyCollection<string>>(
+                new InvalidOperationException("the account service is unreachable")));
+
+        await monitor.RefreshAsync([card], restRequestedHost: null, CancellationToken.None);
+
+        Assert.Equal(ConsoleReachability.Offline, card.Reachability);
+    }
+
+    [Fact]
+    public async Task WithNoAccountTier_SilenceIsOfflineExactlyAsBefore()
+    {
+        var card = new ConsoleCardViewModel(CloudConsole("10.0.0.5", "duid-1"), new ImmediateUiDispatcher());
+        var monitor = new ConsoleReachabilityMonitor(new FakeProbe().Answers("10.0.0.5", (bool?)null));
+
+        await monitor.RefreshAsync([card], restRequestedHost: null, CancellationToken.None);
+
+        Assert.Equal(ConsoleReachability.Offline, card.Reachability);
+    }
+
     private static ConsoleCardViewModel Card(string host, string platform = "Ps5")
         => new(Console(host, platform), new ImmediateUiDispatcher());
 
