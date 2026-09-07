@@ -175,6 +175,9 @@ naming choices.
 ## Independent-implementation rules (hard constraint for any protocol/crypto work)
 
 This project's provenance depends on the protocol spec (`docs/protocol/`) being derived independently.
+
+**What follows is the working discipline.** Nothing here is legal advice, and Ripcord makes no claim about how any law applies to it.
+
 When working in `Ripcord.Protocol.Halyard*`, `Ripcord.Cloud.Halyard`, or anything crypto-related:
 
 - Derive behavior **only** from this project's own dated spec docs (`docs/protocol/`) and its own captures,
