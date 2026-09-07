@@ -278,16 +278,31 @@
                         Text="Link this PC to your console"
                         TextWrapping="Wrap" />
 
-                    <!--  Shown only to a signed-in user. Above the code instructions deliberately: when this
-                          route is available it is the one to take, and a user who reads the console steps first
-                          has already got up and walked over there.  -->
+                    <!--  The choice, when there is one. Shown above everything it governs, because the rest of
+                          this step is only meaningful once it is made: the step used to show both routes at
+                          once and contradict itself, promising "no code needed" directly above a box asking
+                          for a code.  -->
+                    <RadioButtons
+                        x:Name="RouteChoice"
+                        Header="How should the console confirm this PC?"
+                        SelectionChanged="OnRouteChoiceChanged"
+                        Visibility="Collapsed">
+                        <x:String>Through my account — no code needed</x:String>
+                        <x:String>With a code from the console</x:String>
+                    </RadioButtons>
+
                     <InfoBar
                         x:Name="AccountPairingNote"
                         IsClosable="False"
                         IsOpen="False"
                         Visibility="Collapsed" />
 
-                    <Border Padding="16,14" Style="{StaticResource RipcordCardStyle}">
+                    <!--  Both of these belong to the code route only, and are collapsed together.  -->
+                    <Border
+                        x:Name="ConsoleStepsCard"
+                        Padding="16,14"
+                        Style="{StaticResource RipcordCardStyle}"
+                        Visibility="Collapsed">
                         <StackPanel Spacing="10">
                             <TextBlock Style="{StaticResource BodyStrongTextBlockStyle}" Text="On the console" />
                             <TextBlock
@@ -303,7 +318,8 @@
                         Header="Link code"
                         InputScope="Number"
                         PlaceholderText="8 digits"
-                        TextChanged="OnLinkInputChanged" />
+                        TextChanged="OnLinkInputChanged"
+                        Visibility="Collapsed" />
 
                     <!--  Shown only when signed out. Signed in, the account ID is known and asking for it
                           again would be busywork — see AccountKnownNote below.  -->
