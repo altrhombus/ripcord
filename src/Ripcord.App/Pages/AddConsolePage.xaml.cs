@@ -113,7 +113,24 @@ public sealed partial class AddConsolePage : Page
 
         // Signed in, the account ID is already known and the box comes out entirely. This is the step that used
         // to send people off to a third-party lookup tool before they could pair at all.
-        AccountEntryPanel.Visibility = Vis(!s.AccountIdIsAutomatic);
+        // The account-id box belongs to the code route as well: signed in, the id is known, and the account
+        // route does not ask for it at all.
+        AccountEntryPanel.Visibility = Vis(!s.AccountIdIsAutomatic && s.CodeEntryShown);
+
+        RouteChoice.Visibility = Vis(s.RouteChoiceOffered);
+
+        // Guarded because assigning SelectedIndex raises SelectionChanged, which would call back into the flow
+        // on every render and fight the user's own choice.
+        int wanted = s.Route == PairingRoute.Account ? 0 : 1;
+        if (RouteChoice.SelectedIndex != wanted)
+        {
+            _suppressRouteChange = true;
+            RouteChoice.SelectedIndex = wanted;
+            _suppressRouteChange = false;
+        }
+
+        ConsoleStepsCard.Visibility = Vis(s.CodeEntryShown);
+        PasscodeBox.Visibility = Vis(s.CodeEntryShown);
         AccountKnownNote.Visibility = Vis(s.AccountIdIsAutomatic);
         AccountKnownNote.Message = s.AccountIdNote;
         AccountKnownNote.IsOpen = s.AccountIdIsAutomatic;
@@ -146,16 +163,15 @@ public sealed partial class AddConsolePage : Page
         BackButton.IsEnabled = s.CanGoBack;
 
         PrimaryButton.Visibility = Vis(s.Step is AddConsoleStep.Link or AddConsoleStep.Done);
-        PrimaryButton.Content = s.Step == AddConsoleStep.Done ? "Save & connect" : "Pair";
+        PrimaryButton.Content = s.Step == AddConsoleStep.Done ? "Save & connect" : s.PairActionLabel;
         PrimaryButton.IsEnabled = s.Step == AddConsoleStep.Done || s.CanPair;
 
-        // Two routes to a paired console, so the link step has two commit actions. The account one sits in the
-        // secondary slot rather than the accent one: it is offered, not urged, and one accent button per step is
-        // the rule the rest of the app follows.
-        bool secondaryOnLink = s.Step == AddConsoleStep.Link && s.AccountPairingOffered;
-        SecondaryButton.Visibility = Vis(s.Step == AddConsoleStep.Done || secondaryOnLink);
-        SecondaryButton.Content = secondaryOnLink ? "Pair with my account" : "Save";
-        SecondaryButton.IsEnabled = !secondaryOnLink || s.CanPairWithAccount;
+        // One commit action, naming the route the step is set up for. There used to be two -- "Pair" and "Pair
+        // with my account" -- above a body that described both routes at once, so nothing said which button
+        // went with which half of what you had just read. The choice moved into the step; the button follows it.
+        SecondaryButton.Visibility = Vis(s.Step == AddConsoleStep.Done);
+        SecondaryButton.Content = "Save";
+        SecondaryButton.IsEnabled = true;
 
         FocusForStep(s);
     }
@@ -311,12 +327,24 @@ public sealed partial class AddConsolePage : Page
     private void OnLinkInputChanged(object sender, TextChangedEventArgs e)
         => _flow.SetLinkInput(PasscodeBox.Text, AccountBox.Text);
 
+    private bool _suppressRouteChange;
+
+    private void OnRouteChoiceChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_suppressRouteChange)
+        {
+            return;
+        }
+
+        _flow.SelectRoute(RouteChoice.SelectedIndex == 0 ? PairingRoute.Account : PairingRoute.Code);
+    }
+
     private async void OnPrimaryClick(object sender, RoutedEventArgs e)
     {
         switch (_flow.State.Step)
         {
             case AddConsoleStep.Link:
-                await _flow.PairAsync();
+                await _flow.PairBySelectedRouteAsync();
                 break;
             case AddConsoleStep.Done:
                 _flow.Finish(NameBox.Text, connect: true);
@@ -328,9 +356,6 @@ public sealed partial class AddConsolePage : Page
     {
         switch (_flow.State.Step)
         {
-            case AddConsoleStep.Link:
-                await _flow.PairWithAccountAsync();
-                break;
             case AddConsoleStep.Done:
                 _flow.Finish(NameBox.Text, connect: false);
                 break;

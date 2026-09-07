@@ -292,6 +292,51 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
     /// instead of flashing a pairing panel they can do nothing about.
     /// </para>
     /// </summary>
+    /// <summary>
+    /// The route the user picked, or null while they have not — in which case the flow follows availability,
+    /// so the step is set up for the account route the moment it becomes possible and for the code route when
+    /// it does not. Sticky once chosen: a capability that resolves a second later must not move the selection
+    /// out from under someone who has already started typing a code.
+    /// </summary>
+    private PairingRoute? _chosenRoute;
+
+    /// <summary>The route the link step is set up for right now.</summary>
+    public PairingRoute Route => _chosenRoute ?? DefaultRoute;
+
+    private PairingRoute DefaultRoute =>
+        _accountPairing is not null && AccountIdIsAutomatic
+        && (_accountPairingCapability?.Available ?? false)
+        && ResolveCloudDeviceId() is not null
+            ? PairingRoute.Account
+            : PairingRoute.Code;
+
+    /// <summary>Pick a route. No-op mid-pairing, like every other input on this step.</summary>
+    public void SelectRoute(PairingRoute route)
+    {
+        if (State.IsPairing)
+        {
+            return;
+        }
+
+        Mutate(() =>
+        {
+            _chosenRoute = route;
+
+            // A code typed for one route is not an input to the other, and leaving it behind means a later
+            // switch back silently commits digits the user may have abandoned.
+            if (route == PairingRoute.Account)
+            {
+                _passcode = string.Empty;
+            }
+
+            _linkError = null;
+        });
+    }
+
+    /// <summary>Commit the link step by whichever route it is set up for.</summary>
+    public Task PairBySelectedRouteAsync()
+        => Route == PairingRoute.Account ? PairWithAccountAsync() : PairAsync();
+
     public async Task PairAsync()
     {
         if (_step != AddConsoleStep.Link || !State.CanPair)
@@ -869,20 +914,37 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
 
             // Enabled once both fields could plausibly be right. A disabled button that explains itself beats a
             // validation error after the fact.
-            CanPair: _passcode.Length >= _options.MinimumPasscodeLength && EffectiveAccountId.Length > 0,
+            // Route-aware: the account route needs no code, so gating its button on eight digits nobody was
+            // asked for is how a working action arrives disabled.
+            CanPair: Route == PairingRoute.Account
+                ? accountPairingOffered && accountCapable && consoleKnownToAccount
+                : _passcode.Length >= _options.MinimumPasscodeLength && EffectiveAccountId.Length > 0,
 
             AccountPairingOffered: accountPairingOffered,
             CanPairWithAccount: accountPairingOffered && accountCapable && consoleKnownToAccount,
 
+            Route: Route,
+
+            // Only worth asking when both can actually work. Where the account route cannot, the step shows
+            // the code route without putting a decision in front of someone who has none to make.
+            RouteChoiceOffered: accountPairingOffered && accountCapable && consoleKnownToAccount,
+            CodeEntryShown: Route == PairingRoute.Code,
+            PairActionLabel: Route == PairingRoute.Account ? "Pair with my account" : "Pair with a code",
+
             // Three different things to say, and the difference matters: one is an invitation, one is fixable on
             // the console, and one is a property of the build the user cannot do anything about.
+            // Suppressed on the code route: "no code needed" above a box asking for one is the contradiction
+            // this step used to open with. The reasons the account route is *unavailable* still show, because
+            // those explain why there is no choice rather than describing a route being taken.
             AccountPairingNote: !accountPairingOffered
                 ? string.Empty
                 : !accountCapable
                     ? _accountPairingCapability?.Detail ?? NoAccountPairingMessage
-                    : consoleKnownToAccount
-                        ? $"No code needed — {name} confirms this PC through your account."
-                        : NotInAccountListMessage,
+                    : !consoleKnownToAccount
+                        ? NotInAccountListMessage
+                        : Route == PairingRoute.Account
+                            ? $"No code needed — {name} confirms this PC through your account."
+                            : string.Empty,
 
             // When signed in, the account id stops being something the user has to find. This is the whole point
             // of the account tier for someone who only ever plays on their own network.
