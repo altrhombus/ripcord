@@ -176,6 +176,16 @@ naming choices.
 ## Clean-room rules (hard constraint for any protocol/crypto work)
 
 This project's legal footing depends on the protocol spec (`docs/protocol/`) being derived independently.
+
+**What follows is the working discipline, not the legal argument, and the two are not interchangeable.**
+The legal position — interoperability scope, the interface-facts reasoning, DMCA §1201(f) and EU Software
+Directive Art. 6, and the standing caveat that none of it is a determination of compliance and that anything
+distributed should be reviewed by qualified counsel — is set out in
+[`docs/protocol/README.md`](docs/protocol/README.md) ("Legal note") and [`NOTICE`](NOTICE), with a summary in
+[`README.md`](README.md). The rules below are how the work is actually carried out so that position stays
+true. Do not read this file as the project's legal reasoning, and do not restate its rules as though they
+were legal conclusions.
+
 When working in `Ripcord.Protocol.Halyard*`, `Ripcord.Cloud.Halyard`, or anything crypto-related:
 
 - Derive behavior **only** from this project's own dated spec docs (`docs/protocol/`) and its own captures,
