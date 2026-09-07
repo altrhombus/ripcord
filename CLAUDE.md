@@ -4,14 +4,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-Ripcord is a from-scratch, clean-room PS5 Remote Play client for Windows (WinUI 3). It connects directly
-to a PS5 over LAN, decodes the H.264/HEVC video stream via D3D12, plays audio via WASAPI, and sends
-controller input back over the reverse-engineered wire protocol. There is no vendor code in this repo —
-the protocol was derived independently from the project's own captures and static analysis of the vendor
-client; see "Clean-room rules" below before touching anything protocol/crypto related.
+Ripcord is a from-scratch, clean-room PS5 Remote Play client for Windows (WinUI 3). It connects directly to a
+PS5 over LAN, decodes the H.264/HEVC video stream via D3D12, plays audio via WASAPI, and sends controller
+input back over the reverse-engineered wire protocol. The protocol was derived independently from the
+project's own captures and from static analysis of **our own lawfully-obtained, installed copy** of the vendor
+client — the possession point is load-bearing, so keep that framing wherever this is restated. No vendor code
+is reproduced here — but a ~4 KB set of interoperability *constants* **is** bundled, deliberately and with an
+argument attached; see "Bounded exception 1" below and `NOTICE`. Read "Clean-room rules" before touching
+anything protocol- or crypto-related.
 
-For current project status and the active backlog, see [`ROADMAP.md`](ROADMAP.md) — keep it up to date as
-work lands, it's the source of truth for what's done vs. planned, not this file.
+For the active backlog see [`ROADMAP.md`](ROADMAP.md), which is forward-looking only and is the source of
+truth for what is left. When work lands, move the item into [`docs/journal.md`](docs/journal.md) rather than
+deleting it. [`docs/README.md`](docs/README.md) maps which document answers which question.
 
 ## Commands
 
@@ -40,7 +44,7 @@ dotnet test tests/Ripcord.Protocol.Halyard.Tests/Ripcord.Protocol.Halyard.Tests.
 dotnet test tests/Ripcord.Presentation.Tests/Ripcord.Presentation.Tests.csproj
 
 # Run a single test
-dotnet test tests/Ripcord.Protocol.Halyard.Tests/Ripcord.Protocol.Halyard.Tests.csproj --filter "FullyQualifiedName~HalyardControlKdfTests.Derive_MatchesKnownVector"
+dotnet test tests/Ripcord.Protocol.Halyard.Tests/Ripcord.Protocol.Halyard.Tests.csproj --filter "FullyQualifiedName~BundledInteropConstantsTests.Control_BundlePs4KdfReproducesKnownVector"
 
 # The console harness — the primary iteration/verification tool for protocol work (replay captures,
 # talk to a real console: discover/login/wake/connect). See docs/history/phase1-lan-build-plan.md for its role.
@@ -177,7 +181,9 @@ When working in `Ripcord.Protocol.Halyard*`, `Ripcord.Cloud.Halyard`, or anythin
 - Derive behavior **only** from this project's own dated spec docs (`docs/protocol/`) and its own captures,
   plus public references (RFCs, NIST test vectors, .NET crypto docs). **Never open, quote, or reproduce
   another implementation of these protocols to obtain implementation detail** — no source, no constants, no
-  byte-level layouts, no naming — and don't use an AI agent as an indirect route to the same thing. The
+  byte-level layouts, no naming — and don't use an AI agent as an indirect route to the same thing. There is
+  exactly one bounded exception, a provenance audit, and it never supplies a fact we lack: see "Auditing is
+  a distinct, permitted activity" below, and treat the two bullets as one rule. The
   boundary is *what gets obtained*, not whether a model was involved: AI assistance is normal here, and the
   method is the one this project has used throughout — **derive independently first, then confirm.**
 - **"Another implementation" means another project's, not Ripcord's own.** A same-project port —
@@ -203,13 +209,15 @@ When working in `Ripcord.Protocol.Halyard*`, `Ripcord.Cloud.Halyard`, or anythin
   an answer we lack, that's an open question to mark `[X]` and derive — not a value to adopt). Keep such
   reports in the gitignored dirty room, never in the committed tree.
 - Captured secrets never get committed. They live in the gitignored `docs/protocol/captures/` "dirty
-  room" (raw captures, the RE session log, reference-implementation scripts with embedded constants)
+  room" (raw captures, the RE session log, and this project's own Python analysis and reference-
+  reimplementation scripts, which have real constants embedded)
   and are supplied to the implementation as out-of-band config.
   `docs/protocol/captures/lab-notebook.md` in particular is the live RE session journal (the
   unredacted working copy of `docs/protocol-research-log.md`) — useful context if it's present locally,
   but never assume it exists or commit to it.
 - **Bounded exception 1: the v1 interoperability constants** in
-  `src/Ripcord.Protocol.Halyard/Data/halyard-v1-constants.json` are committed deliberately (~4 KB: four
+  `src/Ripcord.Protocol.Halyard/Data/halyard-v1-constants.json` are committed deliberately (~4 KB of constant
+  data — 8.7 KB on disk, since the JSON stores it hex-encoded: four
   control KDF tables — a PS5 pair and a PS4 pair — four field context keys, two registration key tables
   (PS5 and PS4), two material-wrap tables (PS5 and PS4), a byte offset). The
   test for whether something qualifies is **generic vs. personal**, not extracted vs. derived: these are
@@ -249,7 +257,7 @@ See `docs/protocol/README.md` for the full provenance/legal-posture writeup.
 
 ## Where to look next
 
-- `ROADMAP.md` — current status and backlog (start here for "what's next").
+- `ROADMAP.md` — the open backlog (start here for "what's next").
 - `docs/README.md` — the documentation index: which document answers which question.
 - `docs/architecture.md` — the canonical architecture writeup (this file's Architecture section in full).
 - `docs/journal.md` — the dated engineering record; completed backlog items land here.

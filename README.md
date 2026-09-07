@@ -189,7 +189,8 @@ better guide than this paragraph.
 
 ### Interoperability constants
 
-Ripcord includes roughly **4 KB of protocol constants** — four key-derivation tables (a PS5 pair and a PS4
+Ripcord includes roughly **4 KB of protocol constants** (8.7 KB on disk: the JSON stores them
+hex-encoded) — four key-derivation tables (a PS5 pair and a PS4
 pair), two registration key tables, two material-wrap tables, the four field context keys and the
 registration context key, and a byte offset. The console computes against these values; a client
 cannot speak the protocol without them, and changing them breaks interoperability. They are interface facts,
