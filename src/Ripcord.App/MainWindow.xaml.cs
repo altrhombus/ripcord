@@ -390,12 +390,19 @@ public sealed partial class MainWindow : Window, IShellNavigator
         // Escape goes back, which it did not — reported as "Esc in Settings does nothing, so the page felt
         // stuck". Only outside a stream: in a session Escape belongs to the session (leave the stream), and
         // that reservation is why it is not a bindable key.
-        Add(Windows.System.VirtualKey.Escape, Windows.System.VirtualKeyModifiers.None, () =>
+        //
+        // Declining rather than doing nothing is the whole point here. This accelerator sits on the window
+        // root and therefore sees Escape before the session page's own does, so swallowing it while streaming
+        // left Escape dead in a session — F11 kept working only because nothing at this level claims it.
+        AddIf(Windows.System.VirtualKey.Escape, Windows.System.VirtualKeyModifiers.None, () =>
         {
-            if (!Shell().IsStreaming)
+            if (Shell().IsStreaming)
             {
-                GoBack();
+                return false; // the session's Escape, not ours
             }
+
+            GoBack();
+            return true;
         });
 
         // F6 cycles between the window's two focus regions — the title-bar commands and the page. With the
@@ -403,15 +410,22 @@ public sealed partial class MainWindow : Window, IShellNavigator
         // other key that reaches the title bar.
         Add(Windows.System.VirtualKey.F6, Windows.System.VirtualKeyModifiers.None, CycleRegion);
 
+        // Two shapes on purpose. Most of these always act, and say so by taking an Action. One does not — and
+        // an accelerator that may decline has to report that, because marking the event handled is what stops
+        // it reaching anything else. Doing it unconditionally and then deciding inside is the bug this shape
+        // exists to make unrepresentable: the key is consumed either way, and a handler further in never runs.
         void Add(Windows.System.VirtualKey key, Windows.System.VirtualKeyModifiers modifiers, Action invoke)
+            => AddIf(key, modifiers, () =>
+            {
+                invoke();
+                return true;
+            });
+
+        void AddIf(Windows.System.VirtualKey key, Windows.System.VirtualKeyModifiers modifiers, Func<bool> invoke)
         {
             var accelerator = new KeyboardAccelerator { Key = key, Modifiers = modifiers };
 
-            accelerator.Invoked += (_, args) =>
-            {
-                args.Handled = true;
-                invoke();
-            };
+            accelerator.Invoked += (_, args) => args.Handled = invoke();
 
             root.KeyboardAccelerators.Add(accelerator);
         }
