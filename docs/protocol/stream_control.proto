@@ -1,0 +1,452 @@
+// stream_control.proto — control-plane message schema for the PS5 Remote Play v1 (older) streaming
+// protocol, expressed with our own descriptive names.
+//
+// PROVENANCE / CLEAN-ROOM NOTE: message/field/enum *numbers, wire types, and structure* are interface
+// facts recovered from our own copy of the client binary and are reproduced here because they are
+// required for interoperability (protobuf transmits field numbers, never names). All *names* in this
+// file are our own descriptive choices, not the vendor's — the vendor's coined names are deliberately
+// not reproduced. Final implementation names may differ again; this file fixes only the wire contract.
+//
+// Interoperability invariant: DO NOT change any field number or enum value below. Names may be changed
+// freely (they never appear on the wire).
+
+syntax = "proto2";
+
+package avstream;
+
+import "bandwidth_probe.proto";
+
+// Top-level control-plane envelope. `type` selects which optional payload is present.
+message ControlMessage {
+  enum MessageType {
+    SESSION_REQUEST = 0;          // client -> server: launch config + client ECDH public key
+    SESSION_REPLY = 1;            // server -> client: server ECDH public key + acceptance
+    BANDWIDTH_INFO = 2;
+    HEARTBEAT = 3;
+    PACKET_LOSS = 4;
+    CORRUPT_FRAME = 5;
+    CURSOR = 6;
+    TIMER = 7;
+    DISCONNECT = 8;
+    LOG = 9;
+    HEADER_REQUEST = 10;
+    DEBUG = 11;
+    BANDWIDTH_PROBE = 12;
+    STREAM_INFO = 13;
+    STREAM_INFO_ACK = 14;
+    SYSTEM_MENU_COMMAND = 15;
+    CONNECTION_QUALITY = 16;
+    CLIENT_METRIC = 17;
+    PLAY_TIME_LEFT = 18;
+    SERVER_MESSAGE = 19;
+    FPS_CHANGE = 20;
+    CONTROLLER_CONNECTION = 21;
+    CLIENT_INFO = 22;
+    VIDEO_CAPTURE = 23;
+    AUDIO_CAPTURE = 24;
+    IDR_REQUEST = 25;
+    TRACE = 26;
+    PERIODIC_TIMESTAMP = 27;
+    SERVER_SETTINGS = 28;
+    DIRECT_MESSAGE = 29;
+    MIC_CONNECTION = 30;
+    PROTOCOL_VERSION_REQUEST = 31;
+    PROTOCOL_VERSION_ACK = 32;
+    AUDIO_STATE = 33;
+  }
+  required ControlMessage.MessageType type = 1;
+  optional SessionRequestPayload sessionRequestPayload = 2;
+  optional SessionReplyPayload sessionReplyPayload = 3;
+  optional BandwidthInfoPayload bandwidthInfoPayload = 4;
+  optional PacketLossPayload lossPayload = 5;
+  optional CorruptFramePayload corruptPayload = 6;
+  optional CursorPayload cursorPayload = 8;
+  optional TimerPayload timerPayload = 9;
+  optional DisconnectPayload disconnectPayload = 10;
+  optional LogPayload logPayload = 11;
+  optional HeaderRequestPayload headerPayload = 12;
+  optional DebugOption debugPayload = 13;
+  optional bandwidth.BandwidthProbePayload bandwidthProbePayload = 14;
+  optional StreamInfoPayload streamInfoPayload = 15;
+  optional SystemMenuCommandPayload systemMenuCommandPayload = 16;
+  optional ConnectionQualityPayload connectionQualityPayload = 17;
+  optional ClientMetricPayload clientMetricPayload = 18;
+  optional PlayTimeLeftPayload playTimeLeftPayload = 19;
+  optional ServerMessagePayload serverMessagePayload = 20;
+  optional FpsChangePayload fpsChangePayload = 21;
+  optional ControllerConnectionPayload controllerConnectionPayload = 22;
+  optional ClientInfoPayload clientInfoPayload = 23;
+  optional VideoCapturePayload videoCapturePayload = 24;
+  optional AudioCapturePayload audioCapturePayload = 25;
+  optional TracePayload tracePayload = 26;
+  optional PeriodicTimestampPayload periodicTimestampPayload = 27;
+  optional ServerSettingsPayload serverSettingsPayload = 28;
+  optional DirectMessagePayload directMessagePayload = 29;
+  optional MicConnectionPayload micConnectionPayload = 30;
+  optional ProtocolVersionRequestPayload protocolVersionRequest = 31;
+  optional ProtocolVersionAckPayload protocolVersionAck = 32;
+  optional AudioStatePayload audioState = 33;
+}
+
+message EventCode {
+  required string eventCode = 1;
+  optional string name = 2;
+  optional string description = 3;
+}
+
+// SESSION_REQUEST (client -> server): the session bring-up request.
+// launchSpecJson is the JSON launch/stream config (its JSON keys — e.g. "handshakeKey", "sessionId" —
+// are on-wire interoperability facts and must be preserved exactly; see the spec §4.3/§5).
+message SessionRequestPayload {
+  required uint32 clientVersion = 1;
+  required string sessionKey = 2;
+  required string launchSpecJson = 3;
+  required bytes encryptedKey = 4;
+  optional bytes ecdhPublicKey = 5;     // 65-byte uncompressed P-256 point
+  optional bytes ecdhSignature = 6;     // HMAC-SHA256(handshakeKey, ecdhPublicKey)
+}
+
+// SESSION_REPLY (server -> client): acceptance + server ECDH public key.
+message SessionReplyPayload {
+  required uint32 serverVersion = 1;
+  required uint32 token = 2;
+  required bool encryptedKeyAccepted = 3;
+  required bool versionAccepted = 4;
+  required string sessionKey = 5;
+  optional EventCode extendedInfo = 6;
+  optional string serverVersionString = 7;
+  optional bytes ecdhPublicKey = 8;
+  optional bytes ecdhSignature = 9;
+}
+
+message BandwidthInfoPayload {
+  required uint32 effectiveBw = 1;
+  required uint32 bitrate = 2;
+  required uint32 minBitrate = 3;
+  required uint32 targetBitrate = 4;
+  required uint32 corruptFrameFreq = 5;
+  required uint32 mtu = 6;
+  required uint32 fps = 7;
+  required uint32 monitorInterval = 8;
+  required uint32 extOverhead = 9;
+  required uint32 intOverhead = 10;
+  required uint32 timeoutInterval = 11;
+  required uint32 minResumeQuality = 12;
+  required uint32 minFps = 13;
+}
+
+message CursorPayload {
+  required uint32 id = 1;
+  required uint32 width = 2;
+  required uint32 height = 3;
+  required uint32 hotspotX = 4;
+  required uint32 hotspotY = 5;
+  optional bytes pixels = 6;
+}
+
+message TimerPayload {
+  required uint32 secondsLeft = 1;
+  required uint32 totalSeconds = 2;
+}
+
+message CorruptFramePayload {
+  required uint32 start = 1;
+  required uint32 end = 2;
+}
+
+message PacketLossPayload {
+  required uint32 start = 1;
+  required uint32 end = 2;
+  required uint32 packetsReceived = 3;
+}
+
+message FpsChangePayload {
+  required uint32 fps = 1;
+}
+
+message DisconnectPayload {
+  required string reason = 1;
+  optional EventCode extendedInfo = 2;
+}
+
+message LogMessage {
+  enum LogLevel {
+    CRITICAL = 0;
+    ERROR = 1;
+    WARNING = 2;
+    INFO = 3;
+    DEBUG = 4;
+    TRACE = 5;
+  }
+  required int64 timestamp = 1;
+  required LogMessage.LogLevel level = 2;
+  required string component = 3;
+  required string message = 4;
+  optional double timestampdouble = 5;
+}
+
+message LogPayload {
+  repeated LogMessage messages = 1;
+}
+
+message ClientMetric {
+  enum Category {
+    VIDEO_FRAMELIFETIME = 0;
+    VIDEO_FRAMENALUSCOMPLETE = 1;
+    VIDEO_FECCORRECTION = 2;
+    VIDEO_FRAMEQUEUE = 3;
+    VIDEO_DECODERFRAMEQUEUE = 4;
+    VIDEO_SUBMITTODECODER = 5;
+    VIDEO_DECODE = 6;
+    VIDEO_DECODEDPICTUREDROP = 7;
+    VIDEO_YUVCOPY = 8;
+    VIDEO_TEXTURECOPY = 9;
+    VIDEO_RENDER = 10;
+    GRAPHICS_PRERENDER = 11;
+    GRAPHICS_PRESENT = 12;
+    AUDIO_FRAMELIFETIME = 13;
+    AUDIO_FRAMENALUSCOMPLETE = 14;
+    AUDIO_FECCORRECTION = 15;
+    AUDIO_FRAMEQUEUE = 16;
+    AUDIO_SUBMITTODECODER = 17;
+    AUDIO_DECODE = 18;
+    AUDIO_BUFFERCOPY = 19;
+    AUDIO_RENDER = 20;
+    PING_TIME = 21;
+  }
+  required ClientMetric.Category category = 1;
+  required int32 startFrame = 2;
+  required int32 endFrame = 3;
+  required int32 count = 5;
+  required float average = 6;
+  required float stdDev = 7;
+  required float minVal = 8;
+  required float maxVal = 9;
+  optional float singleVal = 10;
+}
+
+message ClientMetricPayload {
+  repeated ClientMetric messages = 1;
+}
+
+message HeaderRequestPayload {
+  enum HeaderType {
+    AUDIO = 0;
+    VIDEO = 1;
+  }
+  required HeaderRequestPayload.HeaderType type = 1;
+}
+
+message DebugOption {
+  enum Type {
+    OVERLAY = 0;
+    BITRATE = 1;
+  }
+  required DebugOption.Type type = 1;
+  optional OverlayPayload overlay = 2;
+  optional BitratePayload bitrate = 3;
+}
+
+message OverlayPayload {
+  enum LogLocation {
+    TOP_LEFT = 0;
+    TOP_RIGHT = 1;
+    BOTTOM_LEFT = 2;
+    BOTTOM_RIGHT = 3;
+  }
+  optional bool enable = 1;
+  optional bool toggle = 2;
+  optional OverlayPayload.LogLocation location = 3;
+  optional uint32 level = 4;
+}
+
+message BitratePayload {
+  optional bool toggle = 1;
+  optional float bitrateChange = 2;
+}
+
+message ResolutionPayload {
+  required uint32 width = 1;
+  required uint32 height = 2;
+  required bytes videoHeader = 3;
+}
+
+message AudioChannelPayload {
+  required uint32 audioChannelType = 1;
+  required bytes audioHeader = 2;
+  optional bool isRawPcm = 3;
+}
+
+message StreamInfoPayload {
+  repeated ResolutionPayload resolution = 1;
+  required bytes audioHeader = 2;
+  optional uint32 startTimeout = 3;
+  optional uint32 afkTimeout = 4;
+  optional uint32 afkTimeoutDisconnect = 5;
+  optional uint32 congestionControlInterval = 6;
+  repeated AudioChannelPayload audioChannel = 7;
+}
+
+
+message SystemMenuCommandPayload {
+  enum SystemMenuCommand {
+    OFF = 0;
+    ON = 1;
+    TOGGLE = 2;
+  }
+  required SystemMenuCommandPayload.SystemMenuCommand command = 1;
+  optional uint32 playerId = 2;
+}
+
+message ConnectionQualityPayload {
+  optional uint32 targetBitrate = 1;
+  optional uint32 upstreamBitrate = 2;
+  optional float upstreamLoss = 3;
+  optional bool disableUpstreamAudio = 4;
+  optional double rtt = 5;
+  optional uint64 loss = 6;
+  optional double lossPercent = 7;
+}
+
+message PlayTimeLeftPayload {
+  optional uint32 timeleft = 1;
+  optional string reason = 2;
+}
+
+message ServerMessagePayload {
+  optional string payload = 1;
+}
+
+message ControllerConnectionPayload {
+  // Values identify real controller hardware (factual identifiers, not vendor-coined expression).
+  enum ControllerType {
+    NOTSET = 0;
+    DUALSHOCK3 = 1;
+    DUALSHOCK4 = 2;
+    VITA = 3;
+    XINPUT = 4;
+    MOBILE = 5;
+    DUALSENSE = 6;
+    VR2SENSE = 7;
+  }
+  optional int32 controllerId = 1;
+  optional bool connected = 2;
+  optional ControllerConnectionPayload.ControllerType controllerType = 3;
+}
+
+message ClientInfoPayload {
+  required string sessionKey = 1;
+  optional uint32 gcmTag = 2;
+  optional uint32 keyPos = 3;
+}
+
+message VideoCapturePayload {
+  optional bool serverSide = 1;
+  optional uint32 idrperiod = 2;
+}
+
+message AudioCapturePayload {
+  optional bool serverSide = 1;
+}
+
+message ServerSettingsPayload {
+  optional uint32 idrperiod = 1;
+  optional bool sendPeriodicTimestamp = 2;
+  optional bool enableSmoothPlayback = 3;
+}
+
+
+message TracePayload {
+  required uint32 seqNo = 1;
+  required uint32 gcmTag = 2;
+  required uint32 keyPos = 3;
+}
+
+message PeriodicTimestampPayload {
+  required bytes periodicTsInfo = 1;
+  required uint32 version = 2;
+}
+
+message DeepLinkPayload {
+  enum DeepLinkType {
+    SAVE_DATA = 0;
+    INVITE = 1;
+    GAME_ALERT = 2;
+    SYSTEM_SERVICE_STATUS = 3;
+    DEBUG_SYSTEM_MENU = 4;
+    RAW = 5;
+  }
+  required DeepLinkPayload.DeepLinkType deepLinkType = 1;
+  optional uint32 requestId = 2;
+  optional uint32 padUniqueId = 3;
+  optional string invitationId = 4;
+  optional string sessionId = 5;
+  optional string itemId = 6;
+  optional string isSystemUiOverlaid = 7;
+  optional uint32 result = 8;
+  optional bool shouldShow = 9;
+  optional string rawData = 10;
+}
+
+message MicInfoPayload {
+  enum MicInfoType {
+    MIC_CONNECT = 0;
+    MIC_MUTE = 1;
+  }
+  required MicInfoPayload.MicInfoType micInfoType = 1;
+  optional uint32 controllerId = 2;
+  optional bool connected = 3;
+  optional bool muted = 4;
+  optional bool result = 5;
+}
+
+message DirectMessagePayload {
+  enum DirectMessageType {
+    DEEPLINK = 0;
+    MICINFO = 1;
+    GENERICDATA = 2;
+  }
+  enum Destination {
+    REMOTE_CONTROLLER = 1000;
+    CLIENT = 1001;
+  }
+  required DirectMessagePayload.DirectMessageType directMessageType = 1;
+  required DirectMessagePayload.Destination destination = 2;
+  optional bytes data = 3;
+}
+
+message MicConnectionPayload {
+  required int32 controllerId = 1;
+  required bool connected = 2;
+  optional bool result = 3;
+}
+
+message ProtocolVersionRequestPayload {
+  repeated uint32 supportedVersions = 1;
+}
+
+message ProtocolVersionAckPayload {
+  optional uint32 protocolVersion = 1;
+}
+
+message GenericDataPayload {
+  required uint32 transferId = 1;
+  required uint32 type = 2;
+  optional uint32 dataSize = 3;
+  optional string metadata = 4;
+  optional uint32 numPackets = 5;
+  optional string error = 6;
+  repeated uint32 missingPackets = 7;
+}
+
+message AudioStatePayload {
+  enum AudioStateType {
+    FULL = 0;
+    FLAGS = 1;
+    ANGLE = 2;
+    HRTF = 3;
+    TVCONFIG = 4;
+  }
+  required AudioStatePayload.AudioStateType audioStateType = 1;
+  optional bytes audioStateData = 2;
+}
