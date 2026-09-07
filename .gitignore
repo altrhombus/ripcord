@@ -4,10 +4,10 @@
 ## clean-room methodology and docs/protocol-research-log.md.
 docs/protocol/captures/
 
-## Ripcord: the entire docs tree is withheld pending review for publication. Note that the
-## captures rule above is kept separate and deliberately redundant: if docs/ is ever
-## un-ignored, the dirty room must STAY ignored. Do not collapse these two rules.
-docs/
+## Ripcord: docs/ was withheld in full pending a publication review. That review happened on
+## 2026-09-06 and the tree is now published - EXCEPT the dirty room, which is withheld by the
+## rule above. That rule was always kept separate for exactly this moment, and un-ignoring docs/
+## is precisely why it must not be collapsed into this one. The dirty room stays ignored.
 
 ## Ripcord: the OAuth client credential and the signed-in account's tokens. These are the
 ## runtime files HalyardClientConfigFile and AccountTokenStore read, and they normally live
@@ -29,15 +29,10 @@ account.json
 ## tree whose central claim is independent derivation. Findings belong in the dirty room.
 .claude/
 
-## Ripcord: root-level project prose, withheld from the public repo until it has been
-## reviewed for publication. These are deliberately root-anchored (leading /) so that
-## brand/README.md - the one README currently published - stays tracked. The docs tree,
-## including docs/protocol/README.md, is withheld in full by the docs/ rule above.
-/README.md
-/CONTRIBUTING.md
-/SECURITY.md
-/ROADMAP.md
-/CLAUDE.md
+## Ripcord: root-level project prose was withheld pending the same publication review, and is
+## now published - README, CONTRIBUTING, SECURITY, CODE_OF_CONDUCT, ROADMAP and CLAUDE.md all
+## ship. Nothing root-anchored is withheld any more. .claude/ (below) is a different thing and
+## stays ignored: it is per-machine tool state, not project prose.
 
 ## Ripcord: build output for the ports/ tree, which is Makefile-driven and so lands nowhere
 ## the [Bb]in/ and [Oo]bj/ rules below would catch it. Scoped to ports/ rather than a bare
