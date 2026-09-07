@@ -30,7 +30,8 @@ virtual address.
 Interoperability constants
 --------------------------
 
-Ripcord includes a small set of constants (approximately 4 KB: four control
+Ripcord includes a small set of constants (approximately 4 KB of constant
+data, stored hex-encoded in an 8.7 KB JSON file: four control
 key-derivation tables — a PlayStation 5 pair and a PlayStation 4 pair — four field
 context keys, two registration key tables — a PlayStation 5 and a PlayStation 4 —
 two material-transform tables likewise, and a byte offset) that the console itself
