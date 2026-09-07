@@ -45,6 +45,7 @@ account.json
 ports/*/build/
 ports/*/tests/build/
 *.3dsx
+*.vpk
 *.smdh
 *.cia
 *.elf
