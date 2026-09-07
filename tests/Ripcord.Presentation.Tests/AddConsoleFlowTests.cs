@@ -853,6 +853,94 @@ public class AddConsoleFlowTests
         Assert.False(h.Flow.State.CanPairWithAccount);
     }
 
+    // ---- the route choice -------------------------------------------------------------------------
+    //
+    // The link step used to show both routes at once: "no code needed", then how to find a code on the
+    // console, then a box asking for one, with two commit buttons and nothing to say which belonged to what.
+
+    [Fact]
+    public async Task WhenBothRoutesWork_TheChoiceIsOfferedAndDefaultsToTheAccount()
+    {
+        var h = new Harness(account: SignedInKnowing());
+        await h.ToLinkViaScanAsync(Console("10.0.0.7", name: "PS5-8A2F"));
+
+        Assert.True(h.Flow.State.RouteChoiceOffered);
+        Assert.Equal(PairingRoute.Account, h.Flow.State.Route);
+
+        // And the code half of the step is not shown at all, which is the contradiction being removed.
+        Assert.False(h.Flow.State.CodeEntryShown);
+        Assert.Contains("No code needed", h.Flow.State.AccountPairingNote);
+        Assert.Equal("Pair with my account", h.Flow.State.PairActionLabel);
+
+        // Committable with no code typed -- the account route never asked for one.
+        Assert.True(h.Flow.State.CanPair);
+    }
+
+    [Fact]
+    public async Task ChoosingTheCodeRoute_ShowsTheCodeHalfAndDropsTheNoCodePromise()
+    {
+        var h = new Harness(account: SignedInKnowing());
+        await h.ToLinkViaScanAsync(Console("10.0.0.7", name: "PS5-8A2F"));
+
+        h.Flow.SelectRoute(PairingRoute.Code);
+
+        Assert.True(h.Flow.State.CodeEntryShown);
+        Assert.Equal("Pair with a code", h.Flow.State.PairActionLabel);
+
+        // "No code needed" must not survive next to a box asking for a code.
+        Assert.Equal(string.Empty, h.Flow.State.AccountPairingNote);
+
+        // And it is not committable until a code is actually entered.
+        Assert.False(h.Flow.State.CanPair);
+    }
+
+    [Fact]
+    public async Task WhenOnlyTheCodeRouteWorks_NoChoiceIsPutInFrontOfTheUser()
+    {
+        // A console the account has never seen. Asking a question with one answer is worse than not asking.
+        var h = new Harness(account: SignedInKnowing(name: "PS5-SOMEWHERE-ELSE"));
+        await h.ToLinkViaScanAsync(Console("10.0.0.7", name: "PS5-8A2F"));
+
+        Assert.False(h.Flow.State.RouteChoiceOffered);
+        Assert.Equal(PairingRoute.Code, h.Flow.State.Route);
+        Assert.True(h.Flow.State.CodeEntryShown);
+
+        // The reason the account route is unavailable still shows -- that explains the absent choice.
+        Assert.NotEqual(string.Empty, h.Flow.State.AccountPairingNote);
+    }
+
+    [Fact]
+    public async Task SwitchingToTheAccountRoute_ForgetsAnAbandonedCode()
+    {
+        // Otherwise switching back would silently commit digits the user had walked away from.
+        var h = new Harness(account: SignedInKnowing());
+        await h.ToLinkViaScanAsync(Console("10.0.0.7", name: "PS5-8A2F"));
+
+        h.Flow.SelectRoute(PairingRoute.Code);
+        h.Flow.SetLinkInput("12345678", "");
+        Assert.True(h.Flow.State.CanPair);
+
+        h.Flow.SelectRoute(PairingRoute.Account);
+        h.Flow.SelectRoute(PairingRoute.Code);
+
+        Assert.False(h.Flow.State.CanPair);
+    }
+
+    [Fact]
+    public async Task AChosenRouteIsNotOverriddenByTheDefault()
+    {
+        // The account capability resolves asynchronously; a user who has started on the code route must not
+        // have the step change under them when it lands.
+        var h = new Harness(account: SignedInKnowing());
+        await h.ToLinkViaScanAsync(Console("10.0.0.7", name: "PS5-8A2F"));
+
+        h.Flow.SelectRoute(PairingRoute.Code);
+        h.Flow.SetLinkInput("1234", "");
+
+        Assert.Equal(PairingRoute.Code, h.Flow.State.Route);
+        Assert.True(h.Flow.State.CodeEntryShown);
+    }
+
     [Fact]
     public async Task AccountPairing_SignedInAndConsoleKnown_IsOfferedAndInvited()
     {
@@ -931,8 +1019,12 @@ public class AddConsoleFlowTests
         var h = new Harness(account: SignedInKnowing());
         await h.ToLinkViaScanAsync(Console("10.0.0.7", name: "PS5-8A2F"));
 
-        // Nothing typed: the code route is not offered, and that is the point of this one.
-        Assert.False(h.Flow.State.CanPair);
+        // Nothing typed, and committable anyway: CanPair is route-aware now, and the account route never asks
+        // for a code. It used to mean "the code route is ready", which is why this asserted the opposite --
+        // gating the account button on eight digits nobody was asked for is how a working action arrives
+        // disabled. What says no code is wanted is that the code half of the step is not shown.
+        Assert.True(h.Flow.State.CanPair);
+        Assert.False(h.Flow.State.CodeEntryShown);
 
         await h.Flow.PairWithAccountAsync();
 
