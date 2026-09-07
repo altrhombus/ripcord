@@ -13,6 +13,26 @@ public enum AddConsoleStep
 }
 
 /// <summary>
+/// How to prove to the console that this PC may connect.
+///
+/// <para>
+/// Two genuinely different acts, which is why the user picks rather than the app guessing: one is walking to
+/// the console and reading a code off it, the other is the console confirming this PC through the signed-in
+/// account with nobody getting up. Both remain available wherever both can work — the account route is not
+/// always possible (a console the account has never seen, a build with no credential), and someone may simply
+/// prefer the code.
+/// </para>
+/// </summary>
+public enum PairingRoute
+{
+    /// <summary>The console confirms this PC through the signed-in account. No code.</summary>
+    Account,
+
+    /// <summary>An 8-digit code read off the console's own screen.</summary>
+    Code,
+}
+
+/// <summary>
 /// Everything the add-console flow currently shows, as one immutable value.
 /// </summary>
 public sealed record AddConsoleFlowState(
@@ -30,6 +50,25 @@ public sealed record AddConsoleFlowState(
     bool AccountPairingOffered,
     bool CanPairWithAccount,
     string AccountPairingNote,
+
+    /// <summary>
+    /// Which route the link step is currently set up for. Everything below follows from it: the step used to
+    /// show both routes at once — "no code needed", then how to find a code, then a box asking for one — which
+    /// contradicted itself and left two commit buttons with nothing to say which belonged to what.
+    /// </summary>
+    PairingRoute Route,
+
+    /// <summary>
+    /// Whether to offer the choice at all. False when only one route can work, in which case the step shows
+    /// that one without asking a question that has one answer.
+    /// </summary>
+    bool RouteChoiceOffered,
+
+    /// <summary>Show the console's own instructions and the code box.</summary>
+    bool CodeEntryShown,
+
+    /// <summary>The label for the step's single commit button, which names the route it will take.</summary>
+    string PairActionLabel,
     bool AccountIdIsAutomatic,
     string AccountIdNote,
     string? LinkError,
