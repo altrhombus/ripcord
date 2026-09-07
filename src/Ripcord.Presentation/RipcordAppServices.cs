@@ -1,3 +1,4 @@
+using Ripcord.Core.Discovery;
 using Ripcord.Core.Consoles;
 using Ripcord.Core.Platform;
 using Ripcord.Core.Settings;
@@ -138,7 +139,51 @@ public sealed class RipcordAppServices
     /// does not answer on this network — which is the difference between "offline" and "somewhere else".
     /// </summary>
     public ConsoleReachabilityMonitor CreateReachabilityMonitor()
-        => new(ReachabilityProbe, remotelyAvailable: RemotelyAvailableConsolesAsync);
+        => new(
+            ReachabilityProbe,
+            remotelyAvailable: RemotelyAvailableConsolesAsync,
+            rediscover: RediscoverAsync,
+            addressChanged: moved => Consoles.Upsert(moved));
+
+    /// <summary>
+    /// A broadcast sweep of this network, for following a console whose DHCP lease has moved it. The window is
+    /// the scanner's own default rather than the pairing flow's longer one: this runs behind a console list the
+    /// user is already looking at, and anything that has not answered in a second will not look more present
+    /// in four.
+    /// </summary>
+    private async Task<IReadOnlyCollection<DiscoveredConsole>> RediscoverAsync(
+        CancellationToken cancellationToken)
+    {
+        var found = new List<DiscoveredConsole>();
+        var done = new TaskCompletionSource();
+
+        using IDisposable subscription = Scanner
+            .Scan(TimeSpan.FromSeconds(2), cancellationToken)
+            .Subscribe(new ScanSink(found, done));
+
+        using CancellationTokenRegistration cancelled = cancellationToken.Register(() => done.TrySetResult());
+        await done.Task.ConfigureAwait(false);
+        return found;
+    }
+
+    /// <summary>Collects a scan into a list, completing when the scan does. Errors end it quietly — a sweep
+    /// that failed is indistinguishable from one that found nothing, and neither is worth an exception here.
+    /// </summary>
+    private sealed class ScanSink(List<DiscoveredConsole> into, TaskCompletionSource done)
+        : IObserver<DiscoveredConsole>
+    {
+        public void OnNext(DiscoveredConsole value)
+        {
+            lock (into)
+            {
+                into.Add(value);
+            }
+        }
+
+        public void OnCompleted() => done.TrySetResult();
+
+        public void OnError(Exception error) => done.TrySetResult();
+    }
 
     /// <summary>
     /// The cloud ids the account service says are set up for remote play. Empty when nobody is signed in,
