@@ -181,7 +181,12 @@ public sealed partial class SessionPage : Page
         // static "Starting…" on screen with nothing reported anywhere.
         try
         {
-            InputEnginesText.Text = $"engines: {App.Input.SourceName}";
+            // Say when the keyboard is off. It is off by default and deliberately so, but a user pressing keys
+            // at a stream and getting nothing has no way to tell that from a fault -- and this row is the one
+            // place already telling them what input is running.
+            InputEnginesText.Text = _settings.InputBindings.KeyboardEnabled
+                ? $"engines: {App.Input.SourceName} + keyboard"
+                : $"engines: {App.Input.SourceName} (keyboard off — enable it in Settings)";
 
             if (App.Input.Connections is { } connections)
             {
@@ -769,6 +774,51 @@ public sealed partial class SessionPage : Page
     /// session. Dropping straight out of a live session on a single Escape is a lot of destruction for one
     /// keypress, and "let me see the desktop for a moment without disconnecting" is the more common intent.
     /// </summary>
+    /// <summary>
+    /// The session's own keys: Escape steps out, F11 toggles fullscreen, F3 toggles diagnostics. True when one
+    /// was handled.
+    ///
+    /// <para>
+    /// Declines while a popup or dialog is open, because Escape belongs to that first — the disconnect prompt
+    /// is a dialog, and intercepting Escape ahead of it would make the prompt undismissable. This runs on a
+    /// tunnelling handler at the window root, so it sees the key before the dialog does and has to say so.
+    /// </para>
+    /// </summary>
+    private bool TryHandleReservedKey(Windows.System.VirtualKey key)
+    {
+        if (XamlRoot is not null && VisualTreeHelper.GetOpenPopupsForXamlRoot(XamlRoot).Count > 0)
+        {
+            return false;
+        }
+
+        switch (key)
+        {
+            case Windows.System.VirtualKey.Escape:
+                if (Shell.IsFullScreen)
+                {
+                    LeaveImmersiveMode();
+                    ShowWindowedHintBriefly();
+                }
+                else
+                {
+                    LeaveSession();
+                }
+
+                return true;
+
+            case Windows.System.VirtualKey.F11:
+                ToggleFullScreen();
+                return true;
+
+            case Windows.System.VirtualKey.F3:
+                ToggleDiagnosticsPanel();
+                return true;
+
+            default:
+                return false;
+        }
+    }
+
     private void ExitAccelerator_Invoked(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
     {
         args.Handled = true;
@@ -1177,6 +1227,20 @@ public sealed partial class SessionPage : Page
     /// </summary>
     private void OnPageKeyDown(object sender, KeyRoutedEventArgs e)
     {
+        // The keys the session reserves, handled HERE rather than as accelerators on the page.
+        //
+        // A KeyboardAccelerator only fires while focus is inside its scope, and focus leaves this page as soon
+        // as the video is clicked -- SwapChainPanel is not focusable, and FocusStreamSurface only takes focus
+        // when keyboard input is enabled, which is off by default. So Escape, F11 and F3 all worked until the
+        // first click on the stream and were dead afterwards: reported as "Esc does nothing, F11 still
+        // toggles", which was simply whether focus had moved yet. Game input was already routed here for
+        // exactly this reason; the reserved keys were left behind.
+        if (TryHandleReservedKey(e.Key))
+        {
+            e.Handled = true;
+            return;
+        }
+
         if (_inputSource is null || TypingSomewhere())
         {
             return;

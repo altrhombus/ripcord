@@ -26,6 +26,11 @@
             F3 toggles the diagnostics overlay. F11 toggles fullscreen. Escape steps back one level —
             fullscreen → windowed → leave the session — so a stream is never inescapable, but a single keypress
             also never destroys a live session outright.
+
+            NOTE: these are a fallback, not the mechanism. An accelerator only fires while focus is inside its
+            scope, and focus leaves this page the moment the video is clicked — so all three used to die at the
+            first click. The live handling is TryHandleReservedKey, called from the window-root PreviewKeyDown
+            handler where focus does not matter. Change behaviour there, not here.
         -->
         <KeyboardAccelerator Key="F3" Invoked="ToggleDiagnostics" />
         <KeyboardAccelerator Key="F11" Invoked="FullScreenAccelerator_Invoked" />
