@@ -1,0 +1,594 @@
+# Ripcord roadmap
+
+**What is left to do.** This file is forward-looking only; it is the source of truth for the backlog
+and nothing else. Three companions carry the rest, and each answers a different question:
+
+| Question | Where |
+|---|---|
+| What is this, and does it work? | [`README.md`](README.md) |
+| What happened, and when? | [`docs/journal.md`](docs/journal.md) |
+| What was consulted, and what did it inform? | [`docs/protocol-research-log.md`](docs/protocol-research-log.md) |
+| How does the protocol work? | [`docs/protocol/`](docs/protocol/) |
+| How is the code arranged? | [`docs/architecture.md`](docs/architecture.md) |
+
+Completed work is not deleted — it moves to the journal, which keeps the dated record intact.
+
+## Where we are
+
+**Phase 0 — scaffold.** Done.
+
+**Phase 1 — PS5 LAN remote play. Working end-to-end against real hardware.** Pairing from scratch, connect,
+video, audio, and controller input are all live-verified. The recorded live figures are **1080p60 at 0.4%
+loss, 23.2 Mbps, handshake 2.1 ms, RTT 6.5 ms, 18 ms demux→present** — sourced from commit `4b1f76b`'s body
+and the Track D entry below. (A previous revision cited "61 fps, ~0.2% loss, commit `5739280`" and said the
+latency/bitrate figures were unlogged; that commit does not exist — history was squashed — and the figures
+*are* recorded. Corrected 2026-08-02.) What's left in Phase 1 is polish and a couple of production-path gaps,
+not research.
+
+| Stage | State |
+|---|---|
+| 0 — ProtocolLab harness + replay | Done |
+| 1 — Cloud sign-in (OAuth2) | **Done and live (2026-08-17).** The credential decision closed 2026-08-07 and the credential is bundled under its own `NOTICE` section; sign-in, the account's console list and cloud wake all work from the app. Still not on the critical path for LAN play against an already-paired console, and a build made with `-p:BundleOAuthClient=false` does without it entirely. |
+| 2 — Discovery (cloud list + LAN SRCH/mDNS) | Done — verified against a real PS5 on the LAN |
+| 3 — Session orchestration (create/wake/OFFER) | Done for the LAN path (live). **Wake is wired** as of the account work — local broadcast first, the account service as a fallback for a console off this network, reported as `AskedRemotely` rather than `Woken` because acceptance is not confirmation. **OFFER** (cloud signaling) is now built and live-exercised end to end, but the exchange never completes: the console will not join a session this client creates. See the top block. |
+| 4 — Direct transport + `/sess` framing + stream demux | Done, live |
+| 5 — Crypto seam (registration + control + stream) | **Done and live.** Control-plane field crypto verified byte-for-byte; stream (A/V) crypto verified against real console video; registration/pairing reversed, implemented, and verified live from scratch. Then made fast: batched CTR keystream + PCLMULQDQ GHASH took per-packet cost 216 µs → 7.7 µs (~28x), which is what unlocked 1080p60. |
+| 6 — Media + input wiring | Done, live. D3D12 present, **GPU decode via MFT/DXVA** (`MF_LOW_LATENCY`, decoder picked by codec, HEVC + 10-bit P010 supported), WASAPI audio with bounded latency, controller input (GameInput + DualSense raw HID). |
+
+**Phase status vs. the original deferral plan:**
+- **Phase 2 — PS4 support. CLOSED 2026-08-05** — the entry below is kept in full because it is the record of
+  how it got there, and its opening clause ("not started") was outgrown by the work described further down it.
+  The split is
+  `.Common`/`.Takion`/`Halyard` (there is no `.Ps5` project), and groundwork already exists —
+  `HalyardConsolePlatform.Ps4`, the `/sie/ps4/rp/sess/rgst` endpoint with `RP-Version 10.0`, SRC2/RES2
+  discovery, and a PS4 option in the pairing dialog. **cap53 (2026-08-03) wire-confirms all of that
+  groundwork `[W]`** against a real PS4 — endpoint path, `RP-Version 10.0`, `SRC2`/`RES2` arming probe — and
+  adds the discovery/wake deltas the code did not yet carry: **discovery/wake on UDP 987** (not 9302) with
+  **`device-discovery-protocol-version:00020020`** (not `00030010`). PS4's WAKEUP field set and
+  `user-credential` derivation are identical to PS5's. **Two PS4 unknowns remain before the existing stack
+  can be claimed to drive PS4:** (a) that 987 actually *wakes* a PS4 — cap53's wake got no reply, network-wake
+  was disabled; and (b) ~~PS4 session crypto~~ — **DERIVED and validated `[V]` (2026-08-03).** PS4 session control-field
+  crypto is the KDF dispatcher's **(mode 0, keytype 2) → `FUN_1fdd80`** variant (PS5 is mode 1 → `FUN_1fe340`),
+  reversed from our own DLL and confirmed byte-for-byte against all three cap53 sessions' `RP-Auth` +
+  `RP-OSType` → `Win11.0\0`. Same field-IV/CFB machinery and role convention; only the KDF arithmetic/tables
+  and the context key (`B_eq_0`, which falls out of mode 0) differ. So the crypto seam is no longer a PS4
+  blocker. Everything above it (discovery, wake format, `SRC2`/`RES2`, `/sie/ps4/…`, `RP-Version 10.0`, Takion
+  handshake shape) is wire-confirmed. The **A/V stream key schedule needs NO PS4 variant**: cap53's Takion `SESSION_REPLY` parses as the identical
+  PS5-v17 protobuf (`clientVersion 17`, 133-byte P-521 `ecdhPublicKey`, 32-byte `ecdhSignature`), so PS4 uses
+  the modern P-521 handshake our `HalyardStreamKeySchedule` already implements — *not* a P-256 "older protocol"
+  (early note corrected). `DeriveDirection` (SP800-108) takes no family/mode input; only the curve is
+  version-dependent and `clientVersion 17` → P-521 via the existing `CurveForVersion`. So for the *streaming*
+  path the only PS4-specific algorithm is the control KDF (`FUN_1fdd80`, `[V]`); stream handshake and key
+  schedule are the PS5 machinery unchanged. **Registration, however, is NOT the PS5 machinery** — see the
+  registration status below.
+  The **stream key schedule is now `[V]`** too: `DeriveDirection` = `generateKeyIV`/`FUN_1012d9e0` in the clean
+  v1 the vendor control DLL, disassembled and shown byte-identical to ours, **unconditional, with exactly two
+  call sites (dir 2/3) and no family dispatcher** — so PS4 runs the same function validated against PS5 hardware.
+  handshakeKey + ecdhSignature are `[V]` on PS4 too (cap54/cap57). And the **987 wake is now `[V]`** —
+  cap54–cap57 show a resting PS4 (`620 Server Standby`) waking to `200 Ok` after a `WAKEUP` on 987 (cap53's
+  no-reply was just network-wake disabled). **The PS4 streaming path is `[V]`/`[W]` — discovery, wake,
+  control-field crypto, stream handshake + key schedule — and streaming from an imported pairing record works
+  end-to-end** (H.264; PS4 is H.264-only, coerced). **Registration-from-scratch is now SOLVED, IMPLEMENTED,
+  and byte-verified `[V]` (2026-08-05, cap61–cap64).** The registration *field cipher* was already `[V]`
+  (AES-128-CFB, IV = `HMAC-SHA256(B_eq_0, material‖be64(ctr))[:16]` — context key `B_eq_0`, not PS5's
+  `B_eq_1`). The transport-key derivation is **NOT a bespoke primitive** — the 2026-08-04 "bespoke
+  a vendor net-auth symbol / `FUN_101f5700` / the vendor registration tag / 63-byte-secret, needs emulation" conclusion was
+  analysing a **stubbed dead branch** (path A, `or eax,-1; ret 8`, verified byte-identical in the live
+  process). PS4 registration is the **same table mechanism as PS5** (`FUN_101fcda0`, a mirror of PS5's
+  `FUN_101fd830`): `K = table[context[397]&0x1f]` (transposed column, stride 0x20) with `be32(PIN)` folded
+  into `K[12..16]`; the IV material is wrapped into the context at offsets `0x191`/`0xc7` (same as PS5) via
+  `w[i]=((t[i]^m[i])+0x29+i)&0xff`. **Only four constants differ from PS5:** key table (`DAT_102f873c`), wrap
+  table (`DAT_102f936d`), wrap bias (`+0x29` vs `-0x2d`), and context key (`B_eq_0` vs `B_eq_1`). All four
+  cap61–cap64 pairings reproduce key **and** material exactly. Reversed by a live Frida hook on our own client
+  + static analysis of our own DLL — **no emulation, no third-party implementation**. **All PS4 work is now
+  landed:** (i) control-KDF (commits `566a11c`/`b3d0091`); (ii) streaming path (imported record); (iii)
+  **registration KDF + material wrap implemented into the seam** — PS4 tables added to
+  `halyard-v1-constants.json`, `HalyardRegistrationKdf`/`Secrets`/`Cipher` + `HalyardInteropConstants` +
+  `AppRegistrationCipher` family-keyed by console platform, `NOTICE`/`CLAUDE.md` amended, and a bundle
+  round-trip test added (the C# seam reproduces cap64 byte-for-byte, verified locally against the dirty-room
+  vector). **(iv) The live pairing-from-scratch run is DONE and succeeded `[V]` (2026-08-05)** — a PS4
+  (`PS4-8A2F`, discovered on 987) paired from scratch from the Ripcord UI, which confirms the piece byte-level
+  verification cannot: that the console *accepts* a request Ripcord originates, not merely that we reproduce a
+  captured one. **PS4 has no open items.** See the `2026-08-05` research-log rows and the
+  dirty-room `pathB_groundtruth.md` / `ps4_regist_full_solution.json`, and
+  `docs/protocol/ps5-local-discovery.md` PS4-family section.
+- **Phase 3 — DualSense advanced features.** *Partially done* — raw-HID **input** shipped (PS button,
+  touchpad click, USB full / BT compact / BT full report formats). Output (haptics, adaptive triggers,
+  lightbar) and gyro are still not started.
+- **Phase 4 — Adaptive bitrate / WAN relay.** Mostly not started. `HalyardStreamingSession.cs` feeds real
+  RTT/loss into `AdaptiveBandwidthController.ReportNetworkSample` and calls `RecommendBitrate()`, sending the
+  result to the console via `ReportConnectionQuality` — this wiring is committed (see below). It's
+  bitrate-only: per Track C's
+  settled findings, `CONNECTION_QUALITY` can't steer resolution (fixed at launch), so this doesn't make
+  Phase 4 "done" — WAN relay and the mid-session-bitrate question (below) are still open.
+
+## Backlog
+
+### Follow-ups from the settings-page crash (cause found and fixed 2026-08-06)
+**Pre-existing, and it predates the Stage A work.** Opening Settings terminated the process every time on this
+ARM64 host: no managed exception, nothing in `crash.log`, window simply gone. WER records a stowed exception,
+`0xc000027b` with `E_UNEXPECTED` (`0x8000ffff`), faulting module `Microsoft.UI.Xaml.dll`.
+**Cause.** `VideoCapabilities.IsCodecDecodeAvailable` — `MFStartup` + `MFTEnumEx` — cannot be called from the
+WinUI UI thread. `SettingsPage` called it inline from `Page_Loaded`. `AboutPage` has always run the identical
+query through `await Task.Run(...)` and has always worked. Two call sites, one hazard, and only one of them
+knew about it.
+**Found by running the app** and driving it through UI Automation, then bisecting:
+- reproduces on the **pre-Stage-A-step-10** `SettingsPage` → not a regression from the extraction;
+- reproduces with the **pre-H.264-fix** native build → the codec detector is not implicated;
+- reproduces without the Stage B style split → not the resource dictionaries.
+What the extraction *did* change is that the crash became findable: the probe is a seam now, so it could be
+given a type that carries the constraint.
+**Fix.** `IVideoCapabilitiesProbe` returns `Task` for all three queries, and `NativeVideoCapabilitiesProbe`
+wraps each in `Task.Run`. Asynchrony here is not about throughput — it is what makes "must not run on the UI
+thread" a property of the interface rather than folklore. `LoadAsync` applies stored settings synchronously
+first so the page renders real values immediately, then awaits the probes; the GPU picker gets the same
+treatment, since enumerating adapters builds a D3D12 device per adapter.
+**The lesson worth keeping.** The `try`/`catch` around that call was never protecting anything — a stowed
+exception is not catchable — so it read as safety while the failure it was written for took the process down
+regardless. A guard that cannot catch what it names is worse than no guard, because it stops the next person
+looking.
+- [ ] **Sweep the remaining native call sites for the same hazard.** `VideoCapabilities` and the media/input
+      interop are reachable from several places; only `AboutPage` demonstrably had the pattern right. Worth a
+      structural guard rather than a convention, on the `BundledInteropConstantsTests` precedent — this is
+      exactly the class of rule that prose has already failed to hold in this repo.
+- [ ] **`MFStartup` from an STA is the suspected specific mechanism** but is `[X]`: the fix was verified by
+      behaviour (Settings opens and renders), not by establishing which of the two calls in that function is
+      the one that cannot tolerate the apartment. Worth knowing before writing the structural guard, since it
+      determines whether the rule is "no MF on the UI thread" or something broader.
+
+
+### Open — nothing requests a keyframe when no frame has *ever* decoded (carried over 2026-08-06)
+- [ ] `KeyFrameRequested` is raised in exactly **one** place: catastrophic decode backlog,
+      `jobs.Count >= MaxQueuedFrames` (`D3D12VideoDecodePipeline.cs:240-251`). **Nothing triggers a keyframe
+      request for "submitted many access units and never decoded a single frame."** That is a loop with no
+      exit: if the first IDR (carrying SPS/PPS) is lost or arrives before the decoder is ready, the MFT accepts
+      every later access unit and returns `MF_E_TRANSFORM_NEED_MORE_INPUT` forever — the failure
+      `VideoRenderer.cpp` already documents — so no frame decodes, so the queue never backs up, so the one
+      trigger never fires. The stall watchdog does not fire either: it distinguishes a static scene from a dead
+      session by console activity, and the console is still talking.
+  - Kept open after the codec-detection fix above, which explained the observed instance without needing this.
+    It remains a genuine hole in the recovery path, reachable whenever a first IDR is genuinely lost.
+  - **Fix shape:** request a keyframe when no frame has decoded within N ms of the stream coming up, bounded
+    and rate-limited. The plumbing already exists — `HalyardStreamingSession.RequestKeyFrame` is a no-op before
+    the stream is up and is rate-limited internally, and `SessionController.OnKeyFrameRequested` already knows
+    about both sides. Only the trigger is missing, and its event-source reason string would need to stop saying
+    "decoder backlog resynchronisation".
+  - Still unvaried, and still not implicated by anything: the launchSpec pins
+    `"videoEncoderProfile":"hw4.1"` unconditionally (`HalyardStreamingSession.BuildLaunchSpecJson`), an
+    H.264-shaped profile token reproduced verbatim from a vendor capture.
+
+
+### Open question — `AsyncObservable` can end a sequence without signalling it (2026-08-05)
+- [ ] **`AsyncObservable.Create` swallows `OperationCanceledException` and then raises neither `OnCompleted` nor
+      `OnError`** (`src/Ripcord.Core/Reactive/AsyncObservable.cs`). Any consumer that waits for a terminal signal
+      therefore waits forever if the producer ends that way. `AddConsolePage` knew this — its comment said "a
+      disposed subscription raises neither OnCompleted nor OnError" — and guarded it with a per-family
+      cancellation registration, which only helps when *our* token is cancelled, not when the producer throws
+      OCE on its own.
+  - **Symptom seen live (2026-08-05):** the add-console progress bar never disappeared while the user watched the
+    results list, i.e. with nothing cancelled. Worked around in `AddConsoleFlow` by making the search *window*
+    the authority on when a scan ends and treating the scanner's terminal signal as a fast path, so the spinner
+    is now self-limiting no matter what the transport does. Pinned by
+    `Scan_ThatNeverSignalsCompletion_StillEndsAfterTheWindow`.
+  - **Not established:** *why* a discovery family went quiet in that run. The workaround makes the UI symptom
+    impossible, but the cause is unproven, and the same primitive is used by the session/streaming path — where a
+    silently-ended sequence would not have a convenient window to fall back on. Worth understanding before
+    trusting `AsyncObservable` in a new place.
+  - Deliberately **not** changed here: making `Create` signal on cancellation is a one-line change to a Core
+    primitive the streaming path depends on, and it does not belong in an app-layer refactor.
+
+
+### Stage B — progress, and what is owed (2026-08-06)
+**Landed.**
+- **Design system split** into `Ripcord.Tokens/Text/Surfaces/Motion.xaml` behind the existing entry point. A
+  4px spacing scale (`x:Double` + `Thickness` pairs), five icon-size tokens, radius semantics, motion durations
+  and easings aliased onto WinUI's own.
+- **Eleven of thirteen page-local styles merged** into the shared set. Six were exact duplicates; five were
+  *not* duplicates but a collision — `RowLabelStyle`/`RowValueStyle` meant different things in AboutPage and
+  SessionPage. Now `RipcordDetail*` (body, read-and-copy) and `RipcordInstrument*` (caption, scanned).
+- **`AppEffects`** reads transparency and high contrast, which nothing read before. Vendor wash → 0 and family
+  marks → system brush in high contrast; Mica suppressed when transparency is off, and dropped for the
+  duration of a stream (opaque video over it; power win on a handheld).
+- **One call site for the native capability queries**, enforced by `NativeCapabilityAccessTests`.
+**Owed, in the order it should be picked up.**
+- [ ] **Eyeball high contrast and transparency-off.** `AppEffects` reads both correctly and the branches are
+      trivial, but the HC-on rendering has never been *seen* — both are system-wide settings and toggling them
+      changes the whole desktop, so it belongs to whoever is at the machine.
+      (Left-Alt + Left-Shift + PrintScreen toggles HC.)
+- [ ] **The remaining page renames and splits** from the same plan section: `ConsolesPage` → `HomePage`,
+      `AddConsolePage` → `PairPage` (never cached — a flow must start clean), `KeyBindingsDialog` →
+      `ControlsPage`. Only `HomePage` should be cached, to keep grid scroll position and the realized
+      containers `PrepareConnectAnimation` needs.
+- [ ] **`LargeUiScale` / `TextScaleFactor`.** The plan wants the OS text scale verified empirically at 150%
+      *before* building the fix, which is another at-the-machine check.
+
+
+### Open bug — an Xbox pad is dead while a DualSense is attached (found on hardware 2026-08-06)
+- [ ] **With both pads connected, the Xbox pad produces no input whatsoever.** Not "input arrives and is
+      dropped" — instrumented at the router, **not one frame with a button set arrives at all** across ~35,000
+      frames while the pad was connected and being pressed. The DualSense works throughout (it comes in on the
+      raw-HID engine, a separate path).
+  - **Cause is in `GameInputControllerSource`**, which polls
+    `GetCurrentReading(GameInputKindGamepad, nullptr, …)`. `nullptr` means "most recent reading from ANY
+    gamepad", and a Bluetooth DualSense — which GameInput also enumerates — reports continuously and wins that
+    race essentially always. The class's own summary already scoped itself to "a single polled device"; what
+    was not appreciated is that the single device is chosen by *whoever reported last*.
+  - **Disconnecting the DualSense is not sufficient.** The Xbox pad had to be **re-plugged** before GameInput
+    would read it, so the binding is not re-evaluated when the competing device goes away.
+  - **Not a regression.** Before the input router, chrome read GameInput alone, so the same starvation applied.
+    What changed is that the DualSense now works in menus (via raw HID), which makes the Xbox failure the
+    visible half of a problem that was always there.
+  - **`CompositeControllerSource`'s doc comment claimed this was fixed** — "with a DualSense attached an Xbox
+    pad could not be used at all … it was the act of choosing that broke it". Running both engines fixed the
+    choosing and the hot-swap case, not this one. Comment corrected in both classes rather than left to
+    mislead the next reader; the merging itself is correct and is simply never handed the second pad's frames.
+  - **Fix:** enumerate GameInput devices and read each explicitly instead of passing `nullptr`, publishing one
+    frame per device so the composite can merge them. That is native work in `Ripcord.Input.Interop`
+    (`GamepadReader`) plus the managed source above it, and it is the real "several controllers act as one
+    pad" the composite already advertises.
+
+
+### Stage C landed — steps 5–10, all UNTESTED ON HARDWARE (2026-08-06)
+- [ ] **Hand-test the whole input stack.** Six commits landed without a pad in hand (`9cbb6ec`..`0522e68`).
+      Everything below builds, launches and passes 695 tests; none of it has been driven by a human.
+  - **Focus invariants** (`9cbb6ec`): the watchdog re-seeding, `FocusAnchor` keeping the caret on the same
+    discovered console when the list reorders, focus returning after a dialog. The anchor needs **two consoles
+    answering at different times** to fire at all — with one console it never runs and a passing test proves
+    nothing.
+  - **Dialogs** (`628960c`): every prompt should now own the pad. Check the mid-session disconnect prompt
+    especially, and that focus returns to the card you opened a menu from.
+  - **Controller text entry** (`a922734`): the one most likely to be wrong on first contact. Does the keypad
+    reach the login-pin dialog? Is shift-as-one-shot right? Backspace removes the last character and there is
+    no caret movement — a deliberate call, and one you may disagree with after typing an IP address.
+  - **Key bindings page** (`f5bad5c`): rebinding should no longer throw focus to the top of the page.
+  - **Hint bar** (`afcdccc`): does it read at couch distance, and does the mode hysteresis feel right when a
+    mouse is nudged mid-session?
+  - **Touch** (`0522e68`): the 48px targets, and the one thing deliberately NOT wired — whether press-and-hold
+    on a console card raises `ContextRequested`. The container has a `ContextFlyout` so it should, but that is
+    reasoning, not observation. If it does not, wire `Holding` with `handledEventsToo: true`.
+
+
+### Open bug — HDR is reported from the wrong display (found on hardware 2026-08-06)
+- [ ] **`VideoCapabilities::IsHdrDisplayAvailable` answers "is ANY connected display HDR", not "is the display
+      this window is on HDR".** It enumerates every output of every DXGI adapter and returns true on the first
+      one whose colour space is `DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020`
+      (`src/Ripcord.Media.Interop/VideoCapabilities.cpp`).
+  - **Observed:** a laptop panel that is HDR-capable and HDR-enabled, with the app window on an external
+    monitor that is neither. Settings offered HDR; the display actually showing the video cannot present it.
+  - **The "every adapter" loop is deliberate and correct for what it was written for** — on a hybrid laptop
+    the display often hangs off the integrated GPU while decoding happens on the discrete one. The bug is the
+    question being asked, not the enumeration.
+  - **Fix:** take the window handle, resolve its monitor with `MonitorFromWindow`, and match that against
+    `DXGI_OUTPUT_DESC1::Monitor` — answering for the output the video will actually appear on. Note the window
+    can be dragged between monitors mid-session, so the answer is not a one-time startup fact and the setting
+    should re-evaluate on a display change.
+  - **Not attempted here:** this is a native `Ripcord.Media.Interop` change plus an interop signature change,
+    and it needs MSBuild rather than `dotnet build`. Filed rather than half-done, because a probe that looks
+    fixed and still answers the wrong question is worse than one known to be wrong.
+
+
+### Stage C — step 2 landed, step 3 is gated (2026-08-06)
+**Standing note for this branch:** every UI change since 2026-08-06 has been verified by launching the app and
+driving it through UI Automation, not by building it. That habit exists because building cleanly and passing
+182 tests said nothing about a Settings page that crashed on open, and because the accessibility work above
+crashed on launch the first time and was caught the same way.
+- [ ] Steps 5–10 (focus invariants, ModalHost, soft keyboard, KeyBindingsPage, hint bar, touch and keyboard
+      passes).
+- [ ] **Steps 3–4 need a pad to confirm.** Both landed 2026-08-06; the full record of what they changed is
+      in [`docs/journal.md`](docs/journal.md) under this stage.
+  - **Step 3 (`InputRouter`/`InputScope`)** — the two things it claims to fix are exactly the two needing
+    hardware: a DualSense working *in the menus* (it previously worked only in a stream, because the chrome
+    read GameInput only), and the mid-session dialog — open the disconnect prompt with a controller, check
+    the pad reaches its buttons, that the combo that opened it does not stay held inside the game, and that
+    "Stay connected" resumes forwarding. Menu navigation generally is worth a glance on the same pass
+    (auto-repeat, deadzone, B-to-go-back): the whole path from frame to focus was rewired.
+  - **Step 4 (`FocusPilot`)** — scroll rate and feel, North on a card and on the hero, and directional
+    movement generally.
+
+
+### Stage A — what landed, and what still needs a console (2026-08-06)
+All eleven steps of Stage A are in. Two new assemblies and one moved folder:
+- **`Ripcord.Presentation`** (`net10.0`) — view-models, flow state machines, and everything deciding what a
+  surface *says*. `PresentationPortabilityTests` reflects over its referenced assemblies and fails on anything
+  matching `Microsoft.UI*` / `Microsoft.Windows*` / `WinRT*` / `Avalonia*` / `Gtk*`.
+- **`Ripcord.Presentation.Halyard`** (`net10.0`) — the PlayStation implementations of its seams, plus
+  `HalyardAppServices.Create`: the one place a front end names Halyard.
+- **`Ripcord.Core/Consoles/`** — `PairedConsole`, `IPairedConsoleStore` and the credential store moved down
+  from the WinUI project. `PairedConsole.ToPairingRecord` is now an extension on the Halyard side, so the
+  record is a plain credential holder and the dependency arrow points the right way.
+**181 tests**, none of which need a console, a GPU or a window. They cover things that previously could only
+be observed by connecting to real hardware and watching: the sampling-interval floor that stops a delayed
+timer tick reporting 1610 fps and permanently poisoning a peak that never decays; "resolution pending" vs
+"resolution unknown"; that only `IsHdrOutput` lights the HDR pill; that switching off HEVC clears the HDR
+request rather than leaving it set-but-disabled to reappear later.
+**Six seams**, all following the same rule — a device gets an interface, plain data gets a parameter:
+`IConsoleScanner`, `IConsoleRegistrar`, `IConsoleReachabilityProbe`, `IConsoleWakeCoordinator`,
+`IVideoPipelineStats`, `IVideoCapabilitiesProbe`, plus `IShellNavigator` for window-level operations.
+Two flags deleted rather than moved: `SettingsPage._loading` (fourteen handlers checked it) and the
+`AddConsolePage` scan-generation guard that was being evaluated at the wrong time.
+- [ ] **`LargeUiScale` is still cosmetic-only** and collides with the fixed console-card cell height — see the
+      card-layout entry below. Stage B's problem, recorded here so it is not discovered as a surprise.
+
+
+### Console-card layout — fixed cell height is a standing constraint (noted 2026-08-05)
+The clipped "Played 31 min ago" line is fixed (the container's 12px gutter margin was being subtracted from
+`ItemsWrapGrid.ItemHeight`, so the card was 164 tall while its rows were sized for 176), and the slack now
+lives in an empty row so a shortfall closes up whitespace instead of chopping text. Two limits remain, both
+for Stage B's card redesign rather than a patch:
+- [ ] **A two-line display name still overflows.** `MaxLines="2"` on the name plus a fixed cell height cannot
+      both be honoured — a long nickname needs ~28px the cell does not have. Either the name goes single-line
+      with an ellipsis (the tooltip already carries the full name) or the card stops being fixed-height.
+- [ ] **Fixed `ItemHeight` is incompatible with the planned text scaling.** `LargeUiScale` and the OS
+      `TextScaleFactor` both grow every line in the card while the cell stays put, so the same clipping
+      returns at 150%. This is the general form of the bug above, and it applies to every fixed dimension in
+      the app — which is why the design-system work makes sizes tokens rather than literals. `ItemsWrapGrid`
+      requires a fixed item size, so a scalable card means either binding the cell size to the same scale
+      factor or moving to `ItemsRepeater` — and the latter costs the built-in gamepad focus behaviour that
+      `GridView` was chosen for in the first place.
+
+
+### Track A — Live-test the streaming-quality work
+> **Plan written 2026-08-02:** `captures/console_session_plan.md` (dirty room) batches every remaining
+> hardware-gated item across this track and Tracks B/C into one trip, in a fixed order — Phase 1 needs the
+> console *asleep*, a state you get once per session, so the ordering is load-bearing rather than advisory.
+- [ ] **Do the senkusha probes actually succeed? — RESTATED 2026-08-02.** This previously read "first live run
+      of the senkusha probes, never executed against hardware", which is **wrong**:
+      `HalyardStreamingSession` runs the bring-up on *every* connect, and the console requires it between
+      `/sess/ctrl` and the stream or it never answers the stream's SESSION exchange. We stream successfully, so
+      it has run many times.
+  - What has never been checked is whether the probes **succeed or silently fall back**. `RunSenkushaAsync`
+    swallows timeouts by design and an unconfirmed probe leaves the interface-derived estimate in place, so a
+    completely non-functional probe is externally indistinguishable from a working one.
+  - **Half of it is a ~2-minute diagnostics read.** `MtuConfirmed` false means we fell back to the interface
+    estimate — that half is unambiguous and settles the MTU probe.
+  - **CORRECTION 2026-08-02: the RTT half cannot be read this way, and an earlier version of this entry said
+    it could.** `DeclaredRttMs` is *not* null when the echo probe fails: `RunSenkushaAsync` seeds `samples`
+    with the two handshake round trips and only *replaces* them if the echo probe returns, so a non-null RTT
+    is reported even if all ten pings are lost. It is null only when the whole bring-up fails. Distinguishing
+    echo success from handshake fallback needs a **new signal** — the cheapest being to surface whether the
+    echo probe contributed, rather than inferring it from a value that always has a fallback behind it.
+  - The stranding worry in this item was **real and is now fixed** (`98fcc22`): the client-MTU close was not
+    on a `finally`, so a probe timeout unwound past it and was swallowed, leaving the console in client-MTU
+    mode. Re-verifying with a deliberately failed probe (block 9297 briefly) is still worth doing.
+- [ ] Senkusha **bandwidth** probe — still blocked on never having observed it. See Track C.
+
+
+### Track B — Phase 1 production-path gaps
+The stack connects and streams; these are the bits that still lean on dev-machine scaffolding.
+*(Already done, previously listed here: session factory (`HalyardSessionFactory`), DPAPI-backed credential
+store (`PairedConsoleStore`, `dpapi:` prefix), pairing UX (`PairConsoleDialog` → live registration), first
+live end-to-end connect.)*
+- [ ] **Trimming is off. The JSON blocker is gone; three smaller ones are not.** `PublishTrimmed=False` in
+      every config. It was breaking Release because trimming disables `System.Text.Json` reflection and the app
+      died on first deserialization. **Task #33 landed 2026-08-02** and trim analysis now reports **zero JSON
+      warnings** for `Ripcord.Core`, `Ripcord.Protocol.Halyard` and `Ripcord.App`. What still stands between
+      here and flipping the flag:
+  - **`Ripcord.Cloud.Halyard` still uses reflection** (6 × IL2026). Not an attribute away: it serialises
+    *anonymous types* and deserialises through a *generic helper*, neither of which source generation can see,
+    so the DTOs need to become real types first. Off the LAN path. **No longer parked behind the OAuth
+    decision** — that closed 2026-08-07 and the account tier shipped, so these six warnings are now the
+    largest app-code blocker to `PublishTrimmed=true` and are workable on their own merits.
+  - ~~**One non-JSON reflection site**: `IDeviceIdentity.cs:69` calls `Type.GetMethod` (IL2075).~~ **GONE
+    2026-08-07.** Replaced with a direct `RegGetValueW` P/Invoke. It was not only a trim warning: the
+    reflection resolved `Microsoft.Win32.Registry` inside `Ripcord.App` (`net10.0-windows`) and silently
+    returned nothing in every neutral `net10.0` host, so the device id was correct in the app and **empty in
+    `ProtocolLab` on the same machine** — which took account sign-in down with it. Verified byte-identical to
+    the registry value afterwards, so existing pairings (which use the same id as the registration client id)
+    are unaffected. `PlatformSeamTests.DeviceIdentity_ResolvesOnWindows_FromANeutralHost` guards it.
+  - **Whether WinUI 3 itself trims cleanly — ANSWERED 2026-08-06.** Measured: a trimmed Release publish of
+    `Ripcord.App` produces **37 ILLink warnings, all IL2075/IL2081, every one from CsWinRT's ABI layer** —
+    generic fallback initialisers for `IReadOnlyDictionary`, `IVectorView`, `IAsyncOperation` and friends.
+    **None come from app code.** So it does not trim cleanly, but it fails in one contained place rather than
+    diffusely, which makes the flag a question about whether those fallbacks are reachable at runtime rather
+    than a question about the whole UI stack. Still: do not assume the flag flips once the two items above are
+    done — the CsWinRT warnings have to be understood first, and this only established their shape.
+    (Measured while evaluating `CommunityToolkit.WinUI.Controls.SettingsControls`, which proved trim-neutral:
+    identical warning count and published size with and without it.)
+  - Worth keeping in view: published size is the *only* thing this buys, and it matters mainly for handheld
+    deployment. It is not on the path to anything else.
+
+#### Open — needs a console or a capture to resolve
+- [ ] **Does the console honour a mid-session target bitrate?** Unresolved, and the answer changes the design
+      of everything downstream. Evidence leans *no* (16.1 Mbps measured against a 13.5 Mbps target), but later
+      readings were confounded by VBR noise (20 → 34 → 20 Mbps at a fixed 40 Mbps cap).
+  - Can't be tested as the code stands: `SessionConfig` is captured once in `SessionPage.StartSessionAsync`
+    and never re-read, and `IBandwidthController` has no setter.
+  - **Hook to build first:** `AdaptiveBandwidthController.ForcedBitrateKbps` (nullable) overriding the ladder
+    in `RecommendBitrate()`, plus F4 on the session page cycling off/20/10/5 Mbps so a sweep needs no
+    rebuild. Label it "forced" in the HUD; gate the key behind the diagnostics overlay.
+  - **Do NOT test by causing congestion** — fatally confounded. Needs a *perfect* link with an artificially
+    *low* target, so only compliance can explain a drop.
+  - Protocol: 40 Mbps cap, HEVC, adaptive + connection reporting both ON (the target only reaches the wire
+    when reporting is on), park on a **static** scene, ~30 s baseline, force to ~⅓ of baseline, watch
+    30–60 s, verify loss stays 0.0% or the run is void, then release and confirm recovery.
+  - **If ignored:** resolution is fixed at launch, so the only real response to a sustained bandwidth collapse
+    is a reconnect at a lower `bwKbpsSent` — user-visible, so prompted/opt-in, never silent. Don't build
+    reconnect-on-collapse before knowing.
+  - **Status: the hook is still not built.** (Task #15.)
+- [ ] **Congestion packet size is version-negotiated — which version do we actually get?** `cap47` sends a
+      **15-byte** type-5 packet (what we implement); the older `session8` sends a **23-byte** one with a
+      different field layout entirely (sequence @1, 90 kHz timestamp @3, GMAC @15, key position @19). Both are
+      the vendor client against the same console, so something — client build, console firmware, or the
+      negotiated protocol version — selects between them, and `HalyardTakionStream` hardcodes the 15-byte form.
+  - ~~Cheap next step: pull the negotiated protocol version out of both captures' handshakes and correlate.~~ **That step does not work and was checked 2026-08-02:** neither capture contains a version negotiation at all — zero datagrams with base byte `0x06`/`0x07` in either `session8` or `cap47`. The only other signal, the `/sess/init` pubkey length, resolves to P-521 in both and so narrows only to versions 0x0d–0x11, the same bucket. The heading is right: this needs a console, or a new capture pairing a version negotiation with a congestion packet. If
+    the 23-byte form belongs to a version we can be offered, this is a latent break.
+  - Low urgency: 1080p60 runs fine today, which means either we get the 15-byte version or the console
+    tolerates/ignores malformed congestion reports. Worth knowing which, since "ignored" would also mean our
+    loss reporting has never actually reached the console.
+- [ ] **Capture `BANDWIDTH_COMMAND` (command=3).** The one senkusha piece never observed — and **absent from
+      two independent LAN captures** (`session8`, `cap47`), so this is no longer "we haven't looked," it's "it
+      doesn't happen on a LAN under the settings we've used."
+  - What `cap47` *did* buy: the probe sequence is byte-identical to `session8` from a **different client IP**
+    (`.195` vs `.100`) — independent corroboration of the whole implementation, same constants (1454, 1254,
+    `num=1`, ids 1/1/2), 53 senkusha packets, no command 3.
+  - Remaining triggers, cheapest first: (a) confirm what quality setting `cap47` used — if it was already
+    *automatic*, that hypothesis is dead; (b) vendor app on *automatic* quality if it wasn't; (c) a
+    deliberately degraded Wi-Fi link; (d) an actual **internet** session.
+  - **Handle remote captures as credential material** — they carry PSN auth tokens. Gitignored captures dir
+    only.
+  - Why it's worth the trouble: a real bandwidth measurement is the honest input to `bwKbpsSent`, which is the
+    one lever we *know* changes the console's resolution choice. Today that number is the user's configured
+    cap, which is a guess about the link rather than a measurement of it.
+
+
+#### Correctness risks — need verification
+Both need a console or a capture to settle, hence here rather than in Track D.
+- [ ] **GMAC rotation window boundary.** `HalyardPacketCrypto.GmacKey` computes `window = keyPos / 45000`.
+      The behaviour at exact multiples of 45000 is exercised for internal self-consistency by **four**
+      boundary tests — a literal grep for `45000` finds three, because `PacketCryptoHotPathTests` reaches the
+      boundary via `HalyardPacketCrypto.RotationWindow` rather than the literal — and **not only at 45000**:
+      the same file also covers `window * 2` and `window * 3`. Still never
+      against a known-answer vector or a live capture at that exact boundary. If the boundary is off by one,
+      the symptom is an intermittent, very hard-to-diagnose auth failure roughly once per rotation window.
+      Pin it from a capture that crosses a rotation boundary.
+- [ ] **ECDH curve gap for non-P521 protocol versions.** `HalyardStreamKeySchedule.CurveForVersion` returns
+      nistP256 for anything outside 0x0d–0x11. We only ever live-validated the **P-521** path (versions
+      0x0d–0x11), so the nistP256 branch is untested against hardware and may simply be wrong. Not urgent (the
+      PS5 path we use is P-521) but it will bite on Phase 2 / older firmware, and it fails as an opaque
+      handshake rejection. Decide: validate it, or throw `NotSupportedException` until we can.
+
+
+### Track D — Quality / latency leftovers
+- [ ] **D3D12-native decode path (mode 3)**, behind a capability check. Today decode is MFT/DXVA. (Task #14.)
+      Measure before building — the current path already hits 1080p60 with headroom.
+- [ ] **True PTS-based A/V sync.** Audio latency is *bounded* (ring ceiling 200 ms → trim oldest to 100 ms,
+      channel-aligned), not synced. Audio may now slightly *lead* video — fine for menu clicks; if lip-sync
+      feels off, raise `TargetLatencyMs` toward the video latency.
+- [ ] **Demuxer early-flush** — we flush a frame on the *next* frame's first packet, costing ~1 frame interval
+      (~16 ms @60). Naive early-flush breaks wire-loss accounting (parity units arriving after the flush
+      counted as loss → false congestion feedback → console needlessly drops bitrate); tried it, 4 tests
+      failed, reverted. Correct shape is a present-early/account-later split: `EmitFrameIfNeeded()` guarded by
+      a `_frameEmitted` flag on source-complete, with stats and teardown staying on index-change. **Only do
+      this if measurement says the demuxer is a meaningful chunk.**
+- [ ] Marginal: `CODECAPI_AVLowLatencyMode` on the decoder (needs `<codecapi.h>`). `MF_LOW_LATENCY` is
+      already set and did help; this is the incremental one.
+- [ ] `SessionConfig.LatencyMode` is currently **unused** in the launchSpec — possible minor lever if it maps
+      to a low-latency hint.
+- [ ] **GHASH is still ~83% of the per-packet GMAC cost even on PMULL** — not the incidental allocations.
+      Measured on ARM64 (1426 B packet, 91 AAD blocks): `AesGcmCore.Mac` ≈ 9.4 µs, of which GHASH's 93
+      multiplies are ≈ 7.9 µs (0.085 µs each). The lever is therefore the standard GHASH aggregation —
+      precompute a table of H powers and fold 4–8 blocks per reduction — which cuts the reduction count
+      proportionally. Worth it only if measurement says the A/V loop is still the constraint.
+- [ ] Minor, and **not** where the remaining time goes: the per-call `Aes.Create()` in `AesGcmCore.CreateEcb`
+      (fresh CNG key handle per packet, hit by both `Mac` and `Encrypt`) measures **1.23 µs — ~11%** of
+      per-packet A/V crypto, and `ComputeTag`'s `packet.ToArray()` is 0.15 µs. Arch-independent and unfixed on
+      **both** x64 and ARM64: `CreateReusableEcb` exists but has exactly one caller,
+      `HalyardPacketCrypto._payloadAes` (the CTR payload cipher), so the GMAC side never got it. If it is
+      cached, note the GMAC key **rotates** every 45000 key positions — cache per rotation window, not per
+      session, or it fails minutes into a session at the first boundary. See `PacketCryptoHotPathTests`.
+- [ ] **A/V loop allocation churn is what remains, and it is a latency/jitter item, not a throughput one.**
+      Post-PMULL the receive queue oscillates 0-18 at 1080p60 (it used to sit flat at 0 on x64 at lower
+      bitrate), and present-fps peaks slightly above target — burst-then-catch-up rather than steady state.
+      Sources, all per packet at ~2000 packets/s:
+  - Two ~1.4 kB copies per datagram — `HalyardStreamDemuxer.TryOpenMedia`'s `packet.ToArray()` and
+    `HalyardPacketCrypto.ComputeTag`'s — ≈ 5.8 MB/s of Gen0 churn.
+  - `HalyardPacketCrypto.GmacKey` takes its `window != 0` branch on **every** packet once a session passes key
+    position 45000 (a few seconds in), doing a `BigInteger` multiply, an allocating `IvAdd`, and a SHA-256
+    fold each time. The "deliberately left uncached" comment there guards against caching it *per session*;
+    memoising by **window index** is safe, since the key is a pure function of that index. Keep two entries so
+    a UDP reorder across a boundary still hits.
+  - Not urgent at ~2.7% core load. Do it if the queue peaks bother you, or before pushing toward 4K.
+- [ ] **`StreamHealthAssessor.ReceiveQueueBusyDepth` (16) is now below observed-healthy peaks.** It was
+      calibrated when the receive queue sat flat at 0; ARM64 at 1080p60 peaks at 18 with a healthy 0.4% loss.
+      It gates the split between the two loss verdicts, so a Wi‑Fi blip taking loss past `LossWarnRatio` (2%)
+      while the queue happens to be at an 18-deep peak would print "Your device is struggling to keep up —
+      close other apps, or lower the stream resolution" for a genuine *network* problem, on a machine with
+      ~35x crypto headroom. That is the ARM64 misattribution inverted. Prefer requiring the depth to be
+      **sustained** over raising the constant: the signal wanted is "climbing toward capacity", not "briefly
+      nonzero". Needs depth samples from more than one device before retuning.
+- [ ] **`AdaptiveBandwidthController` cannot tell wire loss from loss we inflicted on ourselves.** It sees
+      only `NetworkSample.LossRatio`, so a full `AvQueueDepth` (our processing shedding via `DropOldest`)
+      reads as a bad network and it steps the console down — exactly what happened on the ARM64 first run,
+      and the step-down needs a reconnect to apply so it degrades the session without fixing anything.
+      `StreamHealthAssessor` already makes this distinction for the *user* using `ReceiveQueueDepth`
+      (`ReceiveQueueBusyDepth`); the controller should get the same signal and hold the ladder steady (or
+      surface "we are the bottleneck") instead of blaming the link.
+
+### Track E — Controller (Phase 3 continuation)
+- [ ] Confirm whether the feature-report 0x05 activation actually upgrades DualSense BT to report **0x31**.
+      Only needed for touchpad-xy + gyro; everything else works via compat mode today.
+- [ ] Retest DualSense over **USB** (earlier failure looked like device/Windows state, not our code — the
+      raw-HID path is the same one the capture tool used successfully).
+- [ ] **Remaining input validation** (task #27). Confirmed working: Xbox pad, DualSense, keyboard, and
+      hot-swap between pads. DualSense over **Bluetooth** was confirmed on 2026-07-24 — but on the
+      *pre-composite* single-engine path, so it needs a **regression retest** now that
+      `CompositeControllerSource` runs both engines at once. Genuinely untested: a pad and keyboard
+      **together** (the merge path is unit-tested but has never seen two real devices at once), and keyboard
+      play-testing on the Ally.
+- [ ] **Unconfirmed input values** — small, and all marked as such in-code so they can't be mistaken for
+      settled. None affect streaming today.
+  - **D-pad Up/Down (`0x80`/`0x81`) are assigned by elimination.** Both were pressed during an earlier
+    misbehaving-input period in the capture, so their first-press times can't order them. Left/Right are
+    directly timed. One clean press of each in any future capture settles it.
+  - **Touchpad click has no confirmed code.** The scripted step produced no eighteenth code; `0x91` is
+    retained so the feature keeps working. It may instead ride the `00 00 00 21` event family the history
+    parser currently skips.
+  - **Motion full-scale range is underived**, so real gyro/accel can't be sent at correct magnitude yet
+    (needs a capture with known applied motion). Harmless today — we never populate them — but a prerequisite
+    for the gyro work below.
+  - **Orientation packing is underived**; the writer sends a documented zero placeholder. Also inert until
+    motion data exists.
+  - **History parser reaches 65% of packets** — at least one further `00 00 00 <subtype>` form remains
+    undecoded. Only matters for *reading* console-side history, which we don't do.
+- [ ] Touchpad **finger-drag** wire events — the input writer only sends touchpad *click* today.
+- [ ] Gyro calibration (parser leaves gyro/accel null pending it).
+- [ ] **Phase B output** — haptics, adaptive triggers, lightbar. Needs a console→client haptics path that
+      doesn't exist yet (cf. the haptics byte in the audio packet layout).
+
+
+### Track F — UX
+- [ ] **Controller-friendly UI overhaul — mostly landed; re-scoped 2026-08-02.** The original framing ("no
+      obvious connect affordance", "exit is mouse/keyboard only") is **stale on both counts**: `ConsolesPage`
+      is the startup page and gives every console an accent "Connect" button, and the pad exit gesture ships
+      as the *default*. Pad input is still suppressed from the UI **while streaming**, which is deliberate.
+      *Partly addressed* — the touch flyout now covers the buttons a non-PS pad can't reach (PS, Create,
+      touchpad) plus diagnostics and exit, and the hold-to-exit gesture (Options+Create+L1+R1) is confirmed
+      working on the Ally. **Menu navigation also ships** — directional focus with auto-repeat and a
+      configurable stick deadzone, covering every page hosted in the nav frame. Two real gaps remain, and they
+      are what this item is now about: it binds `GameInputControllerSource` **directly rather than the
+      composite source**, so a DualSense arriving purely over raw HID cannot drive menus; and focus search is
+      scoped to the window content, so directional movement does not reach inside `ContentDialog` popups
+      (activation does). **The `ContentDialog` gap narrowed 2026-08-04**: the add-console flow — by far its
+      biggest victim, being a whole multi-field form — is now a page in the nav frame, so it inherits the
+      working directional focus. What still cannot be reached by pad is the small stuff: the rename dialog,
+      the remove confirmation, and `LoginPinDialog`. Smaller and more uniform than it was, which makes the
+      real fix better scoped.
+- [ ] **Localization — nothing exists.** No `.resw`/`.resx`, no `x:Uid` in any XAML, no `ResourceLoader`;
+      every string is a hardcoded English literal split between XAML attributes and C#. Was ~60 literals,
+      nearer 100 after the onboarding rebuild, which is copy-heavy by design. Doing it properly means `.resw`
+      + `x:Uid` for markup and a loader for the C# side, plus a decision on protocol-facing constants — they
+      are exempt, and the trap is that the *same token* is both: `"PS5"` as an on-wire `host-type` must never
+      share a resource with `"PS5"` as a card caption.
+- [ ] **Accessibility backlog.** Three of these are pre-existing; the redesign made the first more visible
+      rather than causing it.
+  - **`RipcordSettings.LargeUiScale` is applied nowhere.** Written by `SettingsPage`, read by nothing
+    (`src/Ripcord.Core/Settings/RipcordSettings.cs:135`). Its stated purpose — "larger text and controls, for
+    handhelds and TV viewing distances" — is exactly the console-at-a-distance case the console grid serves,
+    so the gap shows more now. App-wide scaling, not a one-page fix.
+  - **Screen-reader pass over the card grid.** Each card composes its own `AutomationProperties.Name`
+    (name, family, status, action) because a `GridViewItem` whose content is a panel has none of its own —
+    but reading *order* across a wrapping grid is not automatic and has not been checked with Narrator.
+  - **Green-beside-red in the vendor palette** is inert while no Nintendo family exists, but Xbox-green and
+    Nintendo-red would sit adjacent in the family picker the day one does. `brand/README.md` already flags
+    this trio as the palette's weak point. The mitigation is in the design — the text label is the primary
+    carrier, never the colour — but it wants re-checking rather than assuming.
+- [ ] **Wordmark.** No typeface chosen, so nothing ships the name as artwork. Blocks a proper wide tile and
+      splash lockup — both currently mark-only.
+
+
+### Track G — Deferred phases
+- [ ] Phase 4 — WAN relay (and real adaptive bitrate, gated on Track C's bitrate experiment). **Advanced but
+      not done as of 2026-08-17:** the rendezvous, push channel, STUN and cloud wake are built and committed
+      on `feat/account-and-wan`, and every cloud step is live-confirmed. Blocked on account-based device
+      registration — see the top block. The media *relay* leg is untouched beyond the observation in
+      `ps5-wan-relay.md` that the relay carries real media at the same ports and framing, so it is
+      re-addressing rather than a new transport.
+
+## Hard rule — never commit
+
+Captures, extracted constants, key material, and vendor binaries stay in the gitignored
+`docs/protocol/captures/` dirty room. In particular the **live vectors** in
+`registration_crypto_vectors.json` / `control_crypto_vectors.json` — as distinct from the extracted tables in
+the same files — carry our own console's registration key, live nonces, the real MachineGuid, and an account
+id. Publishing those exposes our own console and account with zero interop benefit, and it is irreversible
+once in a public history. The skipped `Live*VectorTests` are doing exactly the right thing.
