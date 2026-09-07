@@ -1,3 +1,6 @@
+using Ripcord.Core;
+using Ripcord.Core.Discovery;
+using System.Net;
 using Ripcord.Core.Consoles;
 using Ripcord.Presentation.Consoles;
 using Ripcord.Presentation.Threading;
@@ -22,6 +25,144 @@ public class ConsoleReachabilityMonitorTests
 
     private static PairedConsole CloudConsole(string host, string cloudId) =>
         Console(host) with { CloudDeviceId = cloudId };
+
+    // ---- a console whose DHCP lease moved it -------------------------------------------------------
+    //
+    // The address stored at pairing is a lease, not an identity. Probing the address we remember is the one
+    // question guaranteed to fail once it changes, and every console on a normal home network is a DHCP client.
+
+    private static DiscoveredConsole Discovered(string hostId, string ip, bool awake = true) =>
+        new(hostId, "PS5-8A2F", ConsolePlatform.Halyard, IPAddress.Parse(ip), awake, DiscoveryTransport.LanBroadcast);
+
+    private static PairedConsole WithHostId(string host, string hostId) =>
+        Console(host) with { HostId = hostId };
+
+    [Fact]
+    public async Task AConsoleThatMoved_IsFoundByHostIdAndFollowed()
+    {
+        PairedConsole? saved = null;
+        var card = new ConsoleCardViewModel(WithHostId("10.0.0.5", "host-abc"), new ImmediateUiDispatcher());
+        var monitor = new ConsoleReachabilityMonitor(
+            new FakeProbe().Answers("10.0.0.5", (bool?)null),
+            rediscover: _ => Task.FromResult<IReadOnlyCollection<DiscoveredConsole>>(
+                [Discovered("host-abc", "10.0.0.99")]),
+            addressChanged: moved => saved = moved);
+
+        await monitor.RefreshAsync([card], restRequestedHost: null, CancellationToken.None);
+
+        Assert.Equal(ConsoleReachability.Online, card.Reachability);
+
+        // Followed in the card AND persisted: a relocation that lasted only as long as the page would leave
+        // every later connect using the stale address again, which is the whole bug.
+        Assert.Equal("10.0.0.99", card.Console.Host);
+        Assert.Equal("10.0.0.99", saved?.Host);
+        Assert.Equal("host-abc", saved?.HostId);
+    }
+
+    [Fact]
+    public async Task AMovedConsoleInStandby_IsFollowedAndStillReadsAsResting()
+    {
+        var card = new ConsoleCardViewModel(WithHostId("10.0.0.5", "host-abc"), new ImmediateUiDispatcher());
+        var monitor = new ConsoleReachabilityMonitor(
+            new FakeProbe().Answers("10.0.0.5", (bool?)null),
+            rediscover: _ => Task.FromResult<IReadOnlyCollection<DiscoveredConsole>>(
+                [Discovered("host-abc", "10.0.0.99", awake: false)]));
+
+        await monitor.RefreshAsync([card], restRequestedHost: null, CancellationToken.None);
+
+        Assert.Equal(ConsoleReachability.Resting, card.Reachability);
+        Assert.Equal("10.0.0.99", card.Console.Host);
+    }
+
+    [Fact]
+    public async Task ADifferentConsoleAnsweringTheBroadcast_IsNotMistakenForOurs()
+    {
+        // Matched on host-id and never on anything else: adopting a stranger's address would point our
+        // credential at somebody else's console.
+        PairedConsole? saved = null;
+        var card = new ConsoleCardViewModel(WithHostId("10.0.0.5", "host-abc"), new ImmediateUiDispatcher());
+        var monitor = new ConsoleReachabilityMonitor(
+            new FakeProbe().Answers("10.0.0.5", (bool?)null),
+            rediscover: _ => Task.FromResult<IReadOnlyCollection<DiscoveredConsole>>(
+                [Discovered("host-somebody-else", "10.0.0.99")]),
+            addressChanged: moved => saved = moved);
+
+        await monitor.RefreshAsync([card], restRequestedHost: null, CancellationToken.None);
+
+        Assert.Equal(ConsoleReachability.Offline, card.Reachability);
+        Assert.Equal("10.0.0.5", card.Console.Host);
+        Assert.Null(saved);
+    }
+
+    [Fact]
+    public async Task AConsolePairedByTypedAddress_CannotBeFollowed()
+    {
+        // No host-id, so there is nothing to match on. A real limitation, and the reason pairing prefers a
+        // discovered console over a typed address.
+        var asked = false;
+        var card = Card("10.0.0.5");
+        var monitor = new ConsoleReachabilityMonitor(
+            new FakeProbe().Answers("10.0.0.5", (bool?)null),
+            rediscover: _ =>
+            {
+                asked = true;
+                return Task.FromResult<IReadOnlyCollection<DiscoveredConsole>>([]);
+            });
+
+        await monitor.RefreshAsync([card], restRequestedHost: null, CancellationToken.None);
+
+        Assert.Equal(ConsoleReachability.Offline, card.Reachability);
+        Assert.False(asked);
+    }
+
+    [Fact]
+    public async Task RelocationIsTriedBeforeTheAccount_SoALocalConsoleStaysLocal()
+    {
+        // Order matters: a console that merely moved is still on this network, and routing it through the
+        // cloud would trade a fast local stream for a slow remote one over a stale address.
+        var askedAccount = false;
+        var card = new ConsoleCardViewModel(
+            WithHostId("10.0.0.5", "host-abc") with { CloudDeviceId = "duid-1" },
+            new ImmediateUiDispatcher());
+
+        var monitor = new ConsoleReachabilityMonitor(
+            new FakeProbe().Answers("10.0.0.5", (bool?)null),
+            remotelyAvailable: _ =>
+            {
+                askedAccount = true;
+                return Task.FromResult<IReadOnlyCollection<string>>(["duid-1"]);
+            },
+            rediscover: _ => Task.FromResult<IReadOnlyCollection<DiscoveredConsole>>(
+                [Discovered("host-abc", "10.0.0.99")]));
+
+        await monitor.RefreshAsync([card], restRequestedHost: null, CancellationToken.None);
+
+        Assert.Equal(ConsoleReachability.Online, card.Reachability);
+        Assert.False(askedAccount);
+    }
+
+    [Fact]
+    public async Task SeveralSilentConsoles_ShareOneBroadcast()
+    {
+        var sweeps = 0;
+        var first = new ConsoleCardViewModel(WithHostId("10.0.0.5", "host-a"), new ImmediateUiDispatcher());
+        var second = new ConsoleCardViewModel(WithHostId("10.0.0.6", "host-b"), new ImmediateUiDispatcher());
+
+        var monitor = new ConsoleReachabilityMonitor(
+            new FakeProbe().Answers("10.0.0.5", (bool?)null).Answers("10.0.0.6", (bool?)null),
+            rediscover: _ =>
+            {
+                Interlocked.Increment(ref sweeps);
+                return Task.FromResult<IReadOnlyCollection<DiscoveredConsole>>(
+                    [Discovered("host-a", "10.0.0.98"), Discovered("host-b", "10.0.0.99")]);
+            });
+
+        await monitor.RefreshAsync([first, second], restRequestedHost: null, CancellationToken.None);
+
+        Assert.Equal("10.0.0.98", first.Console.Host);
+        Assert.Equal("10.0.0.99", second.Console.Host);
+        Assert.Equal(1, sweeps);
+    }
 
     // ---- silence means "offline" only on this network ---------------------------------------------
 

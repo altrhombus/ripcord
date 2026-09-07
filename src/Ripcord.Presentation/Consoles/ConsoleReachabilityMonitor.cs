@@ -1,3 +1,5 @@
+using Ripcord.Core.Discovery;
+using Ripcord.Core.Consoles;
 namespace Ripcord.Presentation.Consoles;
 
 /// <summary>
@@ -22,6 +24,8 @@ public sealed class ConsoleReachabilityMonitor
     public const int DefaultRestSettleMaxChecks = 6; // 6 × 10s = 60s
 
     private readonly IConsoleReachabilityProbe _probe;
+    private readonly Func<CancellationToken, Task<IReadOnlyCollection<DiscoveredConsole>>>? _rediscover;
+    private readonly Action<PairedConsole>? _addressChanged;
     private readonly Func<CancellationToken, Task<IReadOnlyCollection<string>>>? _remotelyAvailable;
     private readonly Func<TimeSpan, CancellationToken, Task> _delay;
     private readonly TimeSpan _restSettleInterval;
@@ -47,10 +51,14 @@ public sealed class ConsoleReachabilityMonitor
         Func<TimeSpan, CancellationToken, Task>? delay = null,
         TimeSpan? restSettleInterval = null,
         int? restSettleMaxChecks = null,
-        Func<CancellationToken, Task<IReadOnlyCollection<string>>>? remotelyAvailable = null)
+        Func<CancellationToken, Task<IReadOnlyCollection<string>>>? remotelyAvailable = null,
+        Func<CancellationToken, Task<IReadOnlyCollection<DiscoveredConsole>>>? rediscover = null,
+        Action<PairedConsole>? addressChanged = null)
     {
         _probe = probe ?? throw new ArgumentNullException(nameof(probe));
         _remotelyAvailable = remotelyAvailable;
+        _rediscover = rediscover;
+        _addressChanged = addressChanged;
         _delay = delay ?? Task.Delay;
         _restSettleInterval = restSettleInterval ?? DefaultRestSettleInterval;
         _restSettleMaxChecks = restSettleMaxChecks ?? DefaultRestSettleMaxChecks;
@@ -75,6 +83,14 @@ public sealed class ConsoleReachabilityMonitor
 
         // Fetched at most once, and only if some console fails to answer locally -- which on the user's own
         // network is never, so the common case costs nothing.
+        // Same shape as the account list below: at most one broadcast per refresh, and only if something
+        // failed to answer where we last saw it.
+        var rediscovered = new Lazy<Task<IReadOnlyCollection<DiscoveredConsole>>>(
+            () => _rediscover is null
+                ? Task.FromResult<IReadOnlyCollection<DiscoveredConsole>>([])
+                : _rediscover(cancellationToken),
+            LazyThreadSafetyMode.ExecutionAndPublication);
+
         var remote = new Lazy<Task<IReadOnlyCollection<string>>>(
             () => _remotelyAvailable is null
                 ? Task.FromResult<IReadOnlyCollection<string>>([])
@@ -85,11 +101,12 @@ public sealed class ConsoleReachabilityMonitor
             restRequestedHost is not null
             && string.Equals(card.Console.Host, restRequestedHost, StringComparison.OrdinalIgnoreCase)
                 ? WatchRestSettleAsync(card, cancellationToken)
-                : ProbeOnceAsync(card, remote, cancellationToken)));
+                : ProbeOnceAsync(card, rediscovered, remote, cancellationToken)));
     }
 
     private async Task ProbeOnceAsync(
         ConsoleCardViewModel card,
+        Lazy<Task<IReadOnlyCollection<DiscoveredConsole>>> rediscovered,
         Lazy<Task<IReadOnlyCollection<string>>> remote,
         CancellationToken cancellationToken)
     {
@@ -102,7 +119,7 @@ public sealed class ConsoleReachabilityMonitor
             }
 
             card.Reachability = awake is null
-                ? await ClassifySilenceAsync(card, remote, cancellationToken).ConfigureAwait(false)
+                ? await ClassifySilenceAsync(card, rediscovered, remote, cancellationToken).ConfigureAwait(false)
                 : Classify(awake);
         }
         catch (OperationCanceledException)
@@ -168,11 +185,21 @@ public sealed class ConsoleReachabilityMonitor
     /// is not worth surfacing an error over, and offline is what the user would have seen anyway.
     /// </para>
     /// </summary>
-    private static async Task<ConsoleReachability> ClassifySilenceAsync(
+    private async Task<ConsoleReachability> ClassifySilenceAsync(
         ConsoleCardViewModel card,
+        Lazy<Task<IReadOnlyCollection<DiscoveredConsole>>> rediscovered,
         Lazy<Task<IReadOnlyCollection<string>>> remote,
         CancellationToken cancellationToken)
     {
+        // Before anything else: it may simply have moved. A console is normally a DHCP client, so the address
+        // stored at pairing is a lease and not an identity -- and asking the address we remember is the one
+        // question guaranteed to fail once that lease changes. Its host-id does not change, so a broadcast
+        // finds it again wherever it landed.
+        if (await RelocateAsync(card, rediscovered, cancellationToken).ConfigureAwait(false) is { } moved)
+        {
+            return moved;
+        }
+
         if (string.IsNullOrEmpty(card.Console.CloudDeviceId))
         {
             return ConsoleReachability.Offline;
@@ -190,6 +217,66 @@ public sealed class ConsoleReachabilityMonitor
         {
             return ConsoleReachability.Offline;
         }
+    }
+
+    /// <summary>
+    /// Find a console that stopped answering where we last saw it, and follow it. Null when it was not found,
+    /// so the caller carries on to the account fallback.
+    ///
+    /// <para>
+    /// Matched on <see cref="PairedConsole.HostId"/> -- the console's own identity, which survives a lease
+    /// change -- and never on the address, which is the thing being corrected. A console paired by typed
+    /// address has no host-id and cannot be followed this way; that is a real limitation, and the reason
+    /// pairing prefers a discovered console over a typed one.
+    /// </para>
+    ///
+    /// <para>
+    /// The new address is persisted, not merely shown. A relocation that lasted only as long as the page was
+    /// open would leave every later connect using the stale address again, which is the whole bug.
+    /// </para>
+    /// </summary>
+    private async Task<ConsoleReachability?> RelocateAsync(
+        ConsoleCardViewModel card,
+        Lazy<Task<IReadOnlyCollection<DiscoveredConsole>>> rediscovered,
+        CancellationToken cancellationToken)
+    {
+        if (_rediscover is null || card.Console.HostId is not { Length: > 0 } hostId)
+        {
+            return null;
+        }
+
+        IReadOnlyCollection<DiscoveredConsole> found;
+        try
+        {
+            found = await rediscovered.Value.ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+            return null; // a failed broadcast says nothing; fall through to the account
+        }
+
+        if (cancellationToken.IsCancellationRequested)
+        {
+            return null;
+        }
+
+        DiscoveredConsole? match = found.FirstOrDefault(
+            c => string.Equals(c.Id, hostId, StringComparison.OrdinalIgnoreCase));
+
+        if (match is null)
+        {
+            return null;
+        }
+
+        string address = match.IpAddress.ToString();
+        if (!string.Equals(address, card.Console.Host, StringComparison.OrdinalIgnoreCase))
+        {
+            PairedConsole moved = card.Console with { Host = address };
+            card.Update(moved);
+            _addressChanged?.Invoke(moved);
+        }
+
+        return match.IsAwake ? ConsoleReachability.Online : ConsoleReachability.Resting;
     }
 
     private static ConsoleReachability Classify(bool? awake) => awake switch
