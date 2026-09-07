@@ -16,6 +16,18 @@ public enum ConsoleReachability
     Offline,
 
     /// <summary>
+    /// Did not answer on this network, but the account service lists it as available for remote play — so it
+    /// is reachable, just not from here directly.
+    ///
+    /// <para>
+    /// Distinct from <see cref="Offline"/> because the difference is the whole point: both look identical to a
+    /// discovery probe, and treating them the same is what made a console anywhere but the user's own network
+    /// unconnectable from the app while the account route could reach it perfectly well.
+    /// </para>
+    /// </summary>
+    Away,
+
+    /// <summary>
     /// We asked the console to rest as we disconnected and it has not settled yet. Transitional: a bounded
     /// re-check watches it until it reaches <see cref="Resting"/> or <see cref="Offline"/>.
     /// </summary>

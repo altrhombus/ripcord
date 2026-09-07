@@ -87,6 +87,10 @@ public sealed class ConsoleCardViewModel : ObservableState<ConsoleCardState>
             ConsoleReachability.Online => "Ready",
             ConsoleReachability.Resting => "Rest mode",
             ConsoleReachability.Offline => "Offline",
+
+            // Not "Online": the distinction the user needs is that it is elsewhere, because that is what
+            // explains the slower connect and the worse latency they are about to get.
+            ConsoleReachability.Away => "Away",
             ConsoleReachability.PreparingForRest => "Going to sleep…",
             _ => "Checking…",
         };
@@ -102,6 +106,11 @@ public sealed class ConsoleCardViewModel : ObservableState<ConsoleCardState>
             // Not "Not reachable": a console that is switched off is a normal state, and the card is already
             // dimmed. Phrased as something Ripcord could not do rather than something the console is failing at.
             ConsoleReachability.Offline => "Can't reach it",
+
+            // The same verb as a local console, deliberately. Connecting to a console elsewhere is the same
+            // action with the same outcome; the card already says it is away, and a second hedge on the button
+            // would make a working thing look conditional.
+            ConsoleReachability.Away => "Play",
             _ => "Play",
         };
 
@@ -120,6 +129,10 @@ public sealed class ConsoleCardViewModel : ObservableState<ConsoleCardState>
                 // In transit shares rest's tone, so the dot does not jump hue when it lands.
                 ConsoleReachability.Resting or ConsoleReachability.PreparingForRest => StatusTone.Caution,
                 ConsoleReachability.Offline => StatusTone.Neutral,
+
+                // Positive: it is ready to play. The label carries "elsewhere"; the colour should not also
+                // suggest something is wrong, because nothing is.
+                ConsoleReachability.Away => StatusTone.Positive,
                 _ => StatusTone.Unknown,
             },
 
@@ -135,6 +148,7 @@ public sealed class ConsoleCardViewModel : ObservableState<ConsoleCardState>
 
             // False only when the console did not answer at all. Everything else is worth attempting: a console
             // can answer 620 and still be woken, and a merely slow probe should not lock the user out.
+            // Away is connectable -- that is the point of distinguishing it from Offline.
             CanConnect: _reachability != ConsoleReachability.Offline,
             LastConnectedLabel: LastPlayed.Describe(_console.LastConnectedUtc, _clock()),
             IsHighlighted: _highlighted,

@@ -22,6 +22,7 @@ public sealed class ConsoleReachabilityMonitor
     public const int DefaultRestSettleMaxChecks = 6; // 6 × 10s = 60s
 
     private readonly IConsoleReachabilityProbe _probe;
+    private readonly Func<CancellationToken, Task<IReadOnlyCollection<string>>>? _remotelyAvailable;
     private readonly Func<TimeSpan, CancellationToken, Task> _delay;
     private readonly TimeSpan _restSettleInterval;
     private readonly int _restSettleMaxChecks;
@@ -30,13 +31,26 @@ public sealed class ConsoleReachabilityMonitor
     /// Injected for the same reason <c>SessionController</c> injects one: the rest watch's whole contract is
     /// "six checks, ten seconds apart, then give up", and a test of that must not take a real minute.
     /// </param>
+    /// <param name="remotelyAvailable">
+    /// The cloud ids of consoles the account service says are available for remote play, asked at most once
+    /// per refresh and only when some console failed to answer locally. Null when this build has no account
+    /// tier, in which case a console that does not answer is simply offline, exactly as before.
+    ///
+    /// <para>
+    /// A function rather than the account seam itself, because what this needs is one set of ids: taking the
+    /// seam would let the monitor make one REST call per card, and the whole point is that it is one call for
+    /// the list.
+    /// </para>
+    /// </param>
     public ConsoleReachabilityMonitor(
         IConsoleReachabilityProbe probe,
         Func<TimeSpan, CancellationToken, Task>? delay = null,
         TimeSpan? restSettleInterval = null,
-        int? restSettleMaxChecks = null)
+        int? restSettleMaxChecks = null,
+        Func<CancellationToken, Task<IReadOnlyCollection<string>>>? remotelyAvailable = null)
     {
         _probe = probe ?? throw new ArgumentNullException(nameof(probe));
+        _remotelyAvailable = remotelyAvailable;
         _delay = delay ?? Task.Delay;
         _restSettleInterval = restSettleInterval ?? DefaultRestSettleInterval;
         _restSettleMaxChecks = restSettleMaxChecks ?? DefaultRestSettleMaxChecks;
@@ -59,14 +73,25 @@ public sealed class ConsoleReachabilityMonitor
     {
         ArgumentNullException.ThrowIfNull(cards);
 
+        // Fetched at most once, and only if some console fails to answer locally -- which on the user's own
+        // network is never, so the common case costs nothing.
+        var remote = new Lazy<Task<IReadOnlyCollection<string>>>(
+            () => _remotelyAvailable is null
+                ? Task.FromResult<IReadOnlyCollection<string>>([])
+                : _remotelyAvailable(cancellationToken),
+            LazyThreadSafetyMode.ExecutionAndPublication);
+
         return Task.WhenAll(cards.Select(card =>
             restRequestedHost is not null
             && string.Equals(card.Console.Host, restRequestedHost, StringComparison.OrdinalIgnoreCase)
                 ? WatchRestSettleAsync(card, cancellationToken)
-                : ProbeOnceAsync(card, cancellationToken)));
+                : ProbeOnceAsync(card, remote, cancellationToken)));
     }
 
-    private async Task ProbeOnceAsync(ConsoleCardViewModel card, CancellationToken cancellationToken)
+    private async Task ProbeOnceAsync(
+        ConsoleCardViewModel card,
+        Lazy<Task<IReadOnlyCollection<string>>> remote,
+        CancellationToken cancellationToken)
     {
         try
         {
@@ -76,7 +101,9 @@ public sealed class ConsoleReachabilityMonitor
                 return;
             }
 
-            card.Reachability = Classify(awake);
+            card.Reachability = awake is null
+                ? await ClassifySilenceAsync(card, remote, cancellationToken).ConfigureAwait(false)
+                : Classify(awake);
         }
         catch (OperationCanceledException)
         {
@@ -127,6 +154,41 @@ public sealed class ConsoleReachabilityMonitor
         catch (OperationCanceledException)
         {
             // As above — the watch is best-effort.
+        }
+    }
+
+    /// <summary>
+    /// What a console's silence means. On this network it means offline; anywhere else it means nothing at all,
+    /// because a discovery probe cannot leave the subnet — so before calling a console unreachable, ask the one
+    /// party that can see it from here.
+    ///
+    /// <para>
+    /// A console with no cloud id was paired by code and the account service has no name for it, so there is
+    /// nothing to ask and silence really is offline. Any failure asking is treated the same way: a status dot
+    /// is not worth surfacing an error over, and offline is what the user would have seen anyway.
+    /// </para>
+    /// </summary>
+    private static async Task<ConsoleReachability> ClassifySilenceAsync(
+        ConsoleCardViewModel card,
+        Lazy<Task<IReadOnlyCollection<string>>> remote,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrEmpty(card.Console.CloudDeviceId))
+        {
+            return ConsoleReachability.Offline;
+        }
+
+        try
+        {
+            IReadOnlyCollection<string> available = await remote.Value.ConfigureAwait(false);
+            return !cancellationToken.IsCancellationRequested
+                   && available.Contains(card.Console.CloudDeviceId, StringComparer.OrdinalIgnoreCase)
+                ? ConsoleReachability.Away
+                : ConsoleReachability.Offline;
+        }
+        catch (Exception)
+        {
+            return ConsoleReachability.Offline;
         }
     }
 
