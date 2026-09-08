@@ -10,14 +10,14 @@
 
   <Identity
     Name="6C998AC5-30E5-413B-9BA8-E3000FB5562D"
-    Publisher="CN=AppPublisher"
+    Publisher="CN=altrhombus"
     Version="1.0.0.0" />
 
   <mp:PhoneIdentity PhoneProductId="6C998AC5-30E5-413B-9BA8-E3000FB5562D" PhonePublisherId="00000000-0000-0000-0000-000000000000"/>
 
   <Properties>
-    <DisplayName>Ripcord.App</DisplayName>
-    <PublisherDisplayName>AppPublisher</PublisherDisplayName>
+    <DisplayName>Ripcord</DisplayName>
+    <PublisherDisplayName>altrhombus</PublisherDisplayName>
     <Logo>Assets\StoreLogo.png</Logo>
   </Properties>
 
@@ -35,8 +35,8 @@
       Executable="$targetnametoken$.exe"
       EntryPoint="$targetentrypoint$">
       <uap:VisualElements
-        DisplayName="Ripcord.App"
-        Description="Ripcord.App"
+        DisplayName="Ripcord"
+        Description="Remote Play client for PlayStation 5 and PlayStation 4 consoles."
         BackgroundColor="transparent"
         Square150x150Logo="Assets\Square150x150Logo.png"
         Square44x44Logo="Assets\Square44x44Logo.png">

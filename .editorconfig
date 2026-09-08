@@ -1,0 +1,62 @@
+# Ripcord code style.
+#
+# This file CODIFIES what the tree already does; it is not a proposal to reformat it. Every value
+# below was measured against the existing 295 C# files rather than chosen from a template, so
+# adopting it should produce no diff. If a rule here disagrees with the surrounding code, the code
+# is probably right and the rule is a transcription error — fix the rule.
+
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+# Windows-only tooling that breaks on LF; mirrors the same rule in .gitattributes. Keep the two in
+# step — a disagreement between them is how a script starts failing for one contributor only.
+[*.{ps1,cmd,bat}]
+end_of_line = crlf
+
+[*.{md,markdown}]
+trim_trailing_whitespace = false   # two trailing spaces is a hard line break in Markdown
+max_line_length = 110              # the width the docs are already wrapped to
+
+[*.{json,yml,yaml}]
+indent_size = 2
+
+[*.{csproj,vcxproj,props,targets,slnx,xaml,appxmanifest,idl,filters}]
+indent_size = 2
+
+[*.{c,h,cpp,hpp}]
+indent_size = 4
+
+[Makefile]
+indent_style = tab
+
+[*.cs]
+indent_size = 4
+max_line_length = 120
+
+# --- what the tree already does, made explicit -----------------------------
+csharp_style_namespace_declarations = file_scoped:warning   # 295 files file-scoped, 0 block-scoped
+dotnet_style_qualification_for_field = false:suggestion     # 'this.' appears 18 times in ~29k lines
+dotnet_style_qualification_for_property = false:suggestion
+dotnet_style_qualification_for_method = false:suggestion
+dotnet_style_qualification_for_event = false:suggestion
+csharp_style_var_when_type_is_apparent = true:suggestion
+csharp_style_var_elsewhere = true:silent                    # both forms are in use; not a fight worth having
+dotnet_style_predefined_type_for_locals_parameters_members = true:suggestion
+csharp_prefer_braces = when_multiline:suggestion
+csharp_new_line_before_open_brace = all
+csharp_using_directive_placement = outside_namespace:warning
+dotnet_sort_system_directives_first = true
+dotnet_style_readonly_field = true:suggestion
+csharp_style_prefer_primary_constructors = false:silent
+
+# Unused usings and unused private members are worth seeing; this repo deletes rather than
+# accumulates, and both have been real findings here.
+dotnet_diagnostic.IDE0005.severity = warning
+dotnet_diagnostic.IDE0051.severity = suggestion
