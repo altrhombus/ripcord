@@ -1,0 +1,78 @@
+name: Bug report
+description: Something behaves differently from how it is documented or intended.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Do not paste packet captures, registration keys, pairing records, account identifiers or
+        console serial numbers into a public issue.** They identify your hardware and your account.
+        Redact addresses and describe values by shape ("an 8-character hex key") rather than pasting them.
+
+        If the problem *is* a security issue, use the private channel in
+        [SECURITY.md](../../SECURITY.md) instead.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you observed, and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. ...
+        2. ...
+    validations:
+      required: true
+  - type: input
+    id: commit
+    attributes:
+      label: Commit or version
+      description: Output of `git rev-parse --short HEAD`. There is no tagged release yet.
+    validations:
+      required: true
+  - type: dropdown
+    id: arch
+    attributes:
+      label: Host architecture
+      options: [x64, ARM64, not sure]
+    validations:
+      required: true
+  - type: dropdown
+    id: console
+    attributes:
+      label: Console
+      options: [PS5, PS4, both, not applicable, not sure]
+    validations:
+      required: true
+  - type: dropdown
+    id: route
+    attributes:
+      label: How were you connecting?
+      options:
+        - LAN, already paired
+        - LAN, pairing for the first time
+        - Over the internet (account route)
+        - Not connecting — the problem is elsewhere in the app
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics overlay / logs
+      description: >
+        The in-app diagnostics overlay reports which resolution path each loader took and the live
+        stream figures — both are usually the fastest way to the cause. Redact addresses before pasting.
+      render: text
+  - type: checkboxes
+    id: known
+    attributes:
+      label: Before filing
+      options:
+        - label: I checked [ROADMAP.md](../../ROADMAP.md) and this is not an already-known open item.
+        - label: I checked README's "What does not work yet" and this is not one of them.
+        - label: I have not pasted any key material, capture, or account identifier above.
+          required: true
