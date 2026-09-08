@@ -1,0 +1,47 @@
+name: Feature or change request
+description: Propose something the project does not do yet.
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Open an issue before starting anything large, so effort is not wasted on something that
+        conflicts with work already in flight. [ROADMAP.md](../../ROADMAP.md) is the source of truth
+        for the open backlog.
+  - type: textarea
+    id: what
+    attributes:
+      label: What should it do
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why — what does this make possible that is not possible now
+      description: The problem it solves, not the implementation you have in mind.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - App / UI
+        - Protocol or crypto
+        - Media (video decode, present, audio)
+        - Input (controllers, keyboard, bindings)
+        - Ports (3DS, Vita, other platforms)
+        - Documentation
+        - Build, CI, packaging
+        - Something else
+    validations:
+      required: true
+  - type: checkboxes
+    id: clean-room
+    attributes:
+      label: If this touches the protocol
+      options:
+        - label: >
+            I understand that protocol and crypto contributions require the clean-room attestation in
+            [CONTRIBUTING §2](../../CONTRIBUTING.md#2-clean-room-attestation--read-this-properly), and
+            that a request describing another implementation's internals cannot be acted on.

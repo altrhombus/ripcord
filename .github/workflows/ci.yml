@@ -1,0 +1,105 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # The real gate. Both suites are plain net10.0 and need no console, GPU, native interop or
+  # Windows-only hardware, so this job is fast and should never be flaky. A clean checkout has no
+  # dirty room, so the capture-backed vector tests self-skip — that is by design, and the skip
+  # count going UP unexpectedly is worth a look, since it means a test stopped finding its fixture.
+  tests:
+    name: Tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Test — protocol
+        run: dotnet test tests/Ripcord.Protocol.Halyard.Tests/Ripcord.Protocol.Halyard.Tests.csproj -c Release --logger "console;verbosity=normal"
+      - name: Test — presentation
+        run: dotnet test tests/Ripcord.Presentation.Tests/Ripcord.Presentation.Tests.csproj -c Release --logger "console;verbosity=normal"
+
+  # The full app, including the two C++/WinRT projects. `dotnet build` cannot build a vcxproj at
+  # all, so this needs MSBuild proper. Both architectures are first-class targets and either can
+  # regress alone — ARM64 has caught real breaks that x64 did not.
+  app:
+    name: App (${{ matrix.platform }})
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [x64, ARM64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - uses: microsoft/setup-msbuild@v2
+      - name: Build solution
+        run: msbuild Ripcord.slnx -p:Platform=${{ matrix.platform }} -p:Configuration=Release -m
+      - name: Native interop landed where the managed projects look for it
+        shell: pwsh
+        run: |
+          $dir = "${{ matrix.platform }}\Release"
+          if (-not (Test-Path $dir)) { throw "native interop output missing: $dir" }
+          Get-ChildItem $dir -Recurse -Filter *.dll | Select-Object -First 20 Name, Length
+
+  # NOT a support claim: the shipping UI is Windows-only and there is no macOS or Linux front end.
+  # This guards one rule — that the 15 portable projects stay portable. `Ripcord.Presentation` is
+  # policed by PresentationPortabilityTests reflecting over assembly references, but a project
+  # picking up a Windows-only *package* would slip past that and only surface whenever someone
+  # finally tried another platform. Compiling the portable set for a non-Windows RID catches it on
+  # the commit that causes it, and costs one job. Delete this block if the guard is not wanted.
+  portable-core:
+    name: Portable core (${{ matrix.rid }})
+    runs-on: ${{ matrix.host }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { host: ubuntu-latest, rid: linux-x64 }
+          - { host: macos-latest,  rid: osx-arm64 }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Build the portable projects
+        run: |
+          for p in \
+            src/Ripcord.Core/Ripcord.Core.csproj \
+            src/Ripcord.Core.Net/Ripcord.Core.Net.csproj \
+            src/Ripcord.Cloud.Halyard/Ripcord.Cloud.Halyard.csproj \
+            src/Ripcord.Protocol.Halyard.Common/Ripcord.Protocol.Halyard.Common.csproj \
+            src/Ripcord.Protocol.Halyard.Takion/Ripcord.Protocol.Halyard.Takion.csproj \
+            src/Ripcord.Protocol.Halyard/Ripcord.Protocol.Halyard.csproj \
+            src/Ripcord.Presentation/Ripcord.Presentation.csproj \
+            src/Ripcord.Presentation.Halyard/Ripcord.Presentation.Halyard.csproj \
+            src/Ripcord.Client/Ripcord.Client.csproj \
+            src/Ripcord.Diagnostics/Ripcord.Diagnostics.csproj \
+            src/Ripcord.Media.Audio/Ripcord.Media.Audio.csproj \
+            src/Ripcord.Input.Common/Ripcord.Input.Common.csproj \
+            tools/Ripcord.ProtocolLab/Ripcord.ProtocolLab.csproj ; do
+            echo "== $p"
+            dotnet build "$p" -c Release -r ${{ matrix.rid }} --self-contained false
+          done
+      - name: Run both suites on this host
+        run: |
+          dotnet test tests/Ripcord.Protocol.Halyard.Tests/Ripcord.Protocol.Halyard.Tests.csproj -c Release
+          dotnet test tests/Ripcord.Presentation.Tests/Ripcord.Presentation.Tests.csproj -c Release

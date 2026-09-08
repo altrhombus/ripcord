@@ -20,6 +20,26 @@
   </PropertyGroup>
 
   <!--
+    Assembly metadata, set once here rather than per-project. Without it every binary in the tree
+    reports its own assembly name as its product and carries no copyright at all, which is what
+    Explorer's file-properties pane and a crash dump both show. $(Product) is deliberately the
+    project name rather than the assembly name, so `Ripcord.Protocol.Halyard.Takion.dll` still says
+    it belongs to Ripcord.
+
+    The copyright holder is the pseudonym, matching NOTICE and `git config user.name`. That is a
+    deliberate choice, not a placeholder — do not "fix" it to a legal name.
+  -->
+  <PropertyGroup>
+    <Product>Ripcord</Product>
+    <Company>altrhombus</Company>
+    <Authors>altrhombus</Authors>
+    <Copyright>Copyright 2026 altrhombus</Copyright>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+    <RepositoryUrl>https://github.com/altrhombus/ripcord</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+  </PropertyGroup>
+
+  <!--
     Normally the SDK's own default, but this file is imported by Microsoft.Common.props *before* that
     default is applied, so $(Configuration) is empty here unless it arrived as a global property (which is
     to say: it is set for `msbuild -p:Configuration=...` and empty for a bare `dotnet build`). Since
