@@ -364,7 +364,7 @@ put the tag at **off 8** and the key position at **off 4**.
 GMAC over the **entire packet buffer** (header + payload, tag bytes = 0) as AAD — not just the media
 payload. Sender does the same, then writes the tag into the zeroed field. (See §5.5.)
 
-Example video packet: `02 00 004b |media-subhdr| |52c9fe5f=tag| 00013060=ts …`.
+Example video packet: `02 00 004b |media-subhdr| |<4-byte tag>| 00013060=ts …`. The tag is session-keyed and is described rather than reproduced, per the redaction note above.
 
 **Control packet (type 0x00)** begins with a 4-byte **connection tag** (e.g. `00 00 48 23`, also seen
 `0000b18ccf`) then a subtype; the body is a control-plane protobuf `ControlMessage` (§4). Reliable/control packets
