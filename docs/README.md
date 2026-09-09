@@ -47,9 +47,13 @@ that its derivation is checkable. Cite a **date and a document section** instead
 either. Where a specific change matters, name what it did and when, and let `git log` find it.
 
 The published documents are written to stand alone without it. Values tied to a particular console,
-account or session are redacted to stable placeholders; public IP addresses are replaced with
-[RFC 5737](https://www.rfc-editor.org/rfc/rfc5737) documentation addresses. If you find a value in the
-published tree that identifies real hardware or a real account, that is a bug — please report it as one,
+account or session are redacted to stable placeholders; public IPv4 addresses are replaced with
+[RFC 5737](https://www.rfc-editor.org/rfc/rfc5737) documentation addresses. Two conventions sit alongside
+that and are easy to miss: **private RFC 1918 addresses are published as captured**, deliberately, because
+they identify nothing outside the LAN they were on; and the one IPv6 endpoint value is replaced with a
+synthetic ULA rather than an RFC 3849 documentation address, because what the socket hands you is a ULA and
+the form is the interoperability fact. If you find a value in the published tree that identifies real
+hardware or a real account, that is a bug — please report it as one,
 privately, per [`SECURITY.md`](../SECURITY.md).
 
 ## Layout
