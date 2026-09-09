@@ -1210,7 +1210,7 @@ live end-to-end connect.)*
     the identical prompt and Ripcord ignores it, so it never unlocks and every `INIT` is dropped.
   - **To build it:** handle the `0x0004` prompt (surface a PIN entry in the app), submit `0x8004` with the
     encoded PIN, and gate the Takion bring-up on the `0x0033` session-ready rather than firing immediately.
-  - **PIN encoding DERIVED [V] 2026-08-03.** `<redacted>` decrypts to ASCII `<the four digits typed>` (the PIN typed), so the
+  - **PIN encoding DERIVED [V] 2026-08-03.** the `0x8004` payload decrypts to the four ASCII digits that were typed, so the
     transform is the **same §2.1 control-field cipher as RP-Auth**: plaintext = the 4 ASCII digits,
     ciphertext = `AES-128-CFB(control_key, field_iv)`, context key = selectorOne, **counter = 5**. The counter
     is not new state — it is the existing per-connection field counter continuing past the five `/sess/ctrl`
@@ -1465,7 +1465,7 @@ live end-to-end connect.)*
            console) and are not derivable from the companion/registkey (broad HMAC/SHA sweep, validated across
            two captures). Not the join gate.
          - **Device id is not the gate either.** The official app's `duid` device-id tail is NOT
-           MachineGuid-derived (confirmed same-machine: official `…<duid>` vs ours `…<duid>`), but
+           MachineGuid-derived (confirmed same-machine: official `<duid>` vs ours `<duid>`), but
            signing in with the official app's exact device id (via a `RIPCORD_DEVICE_ID` override on the
            harness) still produced `console joined: False`.
        - **CONCLUSION: WAN play is blocked on the account-based (no-PIN) device REGISTRATION — the same
@@ -2214,7 +2214,7 @@ spec, which means provisional, not settled. Same priority tier as the correctnes
     `stream_crypto_reimpl.py`'s `derive_channel()` carried a **stale SP800-108 length field** (`\x00\x01`
     instead of `\x01\x00`) — the C# was fixed 2026-07-22 but the Python reference never was, so the tool used
     to *test* the dumps disagreed with the implementation already known to be right; (2) the handshakeKey
-    tried was `hkey.bin` = `<redacted>`, a struct header from a bad read, not
+    tried was `hkey.bin` = a struct header from a bad read, not
     `hkstruct.bin`. Both now fixed, and `validate_stream_keys.py` sweeps every (secret × non-zero
     handshakeKey) pairing on mismatch so it cannot recur.
   - **`cap3` is now the best-validated session we hold**: a complete verified chain from the ECDH X through

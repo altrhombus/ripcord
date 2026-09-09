@@ -175,6 +175,13 @@ public class BundledInteropConstantsTests
                      "companion", "nonce", "passcode", "responseBody", "plaintext", "ciphertext",
                      "ctrlHandshake", "kdfVectors", "fieldVectors", "keyVectors", "Np-Account", "RP-Did", "RP-Auth",
                      "registkey", "registrationKey", "sessionKey", "deviceId", "duid", "accountId", "handshakeKey",
+                     // snake_case twins: PSN's own API mixes conventions, so a camelCase-only list has a hole.
+                     "regist_key", "session_key", "device_id", "account_id", "handshake_key",
+                     // Identifiers absent from the original list. AP-Bssid and AP-Name are the developer's own
+                     // Wi-Fi BSSID and SSID and are carried by the registration response, which makes their
+                     // absence here the most consequential of the set.
+                     "AP-Bssid", "AP-Name", "RP-Key", "mac", "hostId", "host_id", "onlineId", "online_id",
+                     "seed", "skey", "customData1", "MachineGuid", "nickname",
                  })
         {
             Assert.DoesNotContain(forbidden, json, StringComparison.OrdinalIgnoreCase);

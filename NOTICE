@@ -33,7 +33,8 @@ Interoperability constants
 Ripcord includes a small set of constants (approximately 4 KB of constant
 data, stored hex-encoded in an 8.7 KB JSON file: four control
 key-derivation tables — a PlayStation 5 pair and a PlayStation 4 pair — four field
-context keys, two registration key tables — a PlayStation 5 and a PlayStation 4 —
+context keys (the registration context key is one of those four, stored a second
+time under its own name), two registration key tables — a PlayStation 5 and a PlayStation 4 —
 two material-transform tables likewise, and a byte offset) that the console itself
 computes against. A client cannot speak this protocol without them, and they
 cannot be altered without breaking interoperability, so they are interface facts

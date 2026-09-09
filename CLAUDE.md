@@ -238,7 +238,8 @@ When working in `Ripcord.Protocol.Halyard*`, `Ripcord.Cloud.Halyard`, or anythin
 - **Bounded exception 1: the v1 interoperability constants** in
   `src/Ripcord.Protocol.Halyard/Data/halyard-v1-constants.json` are committed deliberately (~4 KB of constant
   data — 8.7 KB on disk, since the JSON stores it hex-encoded: four
-  control KDF tables — a PS5 pair and a PS4 pair — four field context keys, two registration key tables
+  control KDF tables — a PS5 pair and a PS4 pair — four field context keys (the registration context key
+  is one of the four, stored twice under different names), two registration key tables
   (PS5 and PS4), two material-wrap tables (PS5 and PS4), a byte offset). The
   test for whether something qualifies is **generic vs. personal**, not extracted vs. derived: these are
   identical for every console and every account, and a client cannot speak the protocol without them,

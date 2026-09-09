@@ -81,20 +81,22 @@ public class HalyardAccountAuthTests
         Assert.Equal(HalyardClientConfig.DefaultScopes, bundled.Scopes);
     }
 
-    [Fact]
+    [SkippableFact]
     public void BundledCredential_CarriesNoUserOrConsoleMaterial()
     {
         // The line NOTICE draws, enforced rather than promised — the same discipline
         // BundledInteropConstantsTests applies to the v1 constants. This bundle authenticates an
         // application; anything account-scoped belongs in the user's own encrypted account.json.
         string? raw = HalyardBundledClientDiagnostics.ReadRawBundle();
-        if (raw is null)
-        {
-            return; // built with -p:BundleOAuthClient=false
-        }
+
+        // A visible skip, not a silent return: ci.yml treats a rising skip count as worth investigating,
+        // and a guard that quietly passes when its subject is absent is invisible to exactly that signal.
+        Skip.If(raw is null, "no bundled credential (built with -p:BundleOAuthClient=false)");
 
         foreach (string forbidden in (string[])
-            ["refreshToken", "refresh_token", "accessToken", "access_token", "accountId", "duid", "npAccountId"])
+            ["refreshToken", "refresh_token", "accessToken", "access_token", "accountId", "account_id",
+             "npAccountId", "np_account_id", "duid", "deviceId", "device_id", "onlineId", "online_id",
+             "registkey", "regist_key", "RP-Key", "AP-Bssid", "AP-Name", "mac", "seed", "skey"])
         {
             Assert.DoesNotContain(forbidden, raw, StringComparison.OrdinalIgnoreCase);
         }
