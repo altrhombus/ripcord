@@ -65,11 +65,11 @@ Two corrections to earlier framing, recorded because they were wrong for a while
   packet/memory captures** of our own console and account.
 - **Where a value here is an *assumption*** rather than something our own
   evidence established, it is tagged **[X]** so it cannot be mistaken for a finding.
-- **The open `[X]` list is short and stated plainly** in [`../../ROADMAP.md`](../../ROADMAP.md), and is
-  deliberately not duplicated here: a second copy of a list of open questions is a copy that goes stale,
-  and this is the document most likely to be read as evidence. An `[X]` value is provisional — it
-  interoperates, but it has not been confirmed against the console. Check the roadmap before relying on
-  any specific value.
+- **Open assumptions are tagged `[X]` in place**, next to the value each one qualifies, and are
+  deliberately not gathered into a list anywhere: a separate list is a second copy, and a second copy goes
+  stale — which is the same reason this project does not cite commit hashes. An `[X]` value is provisional:
+  it interoperates, but it has not been confirmed against the console. Grep the specs for `[X]` before
+  relying on any specific value.
 - The captures-folder research materials — the analysed binary, raw captures, decrypted samples, the working RE
   log, the reimplementation scripts (which embed extracted constants and captured secrets), and the
   vendor↔ours name mapping — live under `captures/` and are **gitignored / not distributed**.
