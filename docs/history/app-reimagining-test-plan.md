@@ -5,7 +5,7 @@
 > [`../journal.md`](../journal.md) for what happened, and [`../architecture.md`](../architecture.md)
 > for how the code is arranged now.
 
-Covers `main..HEAD` on `feat/app-reimagining`, now through `b0b925b`. Round 1's findings are folded in:
+Covers `main..HEAD` on `feat/app-reimagining`, now through that branch's tip at the time of writing. Round 1's findings are folded in:
 passes are struck through, failures are re-listed with what changed.
 
 **Round 1 was worth it.** One report — "the controller stops responding and there's a tooltip on screen" —

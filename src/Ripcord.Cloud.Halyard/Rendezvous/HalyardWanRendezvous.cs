@@ -295,8 +295,13 @@ public sealed class HalyardWanRendezvous(
         {
             // Connecting a UDP socket sends nothing but makes the OS choose the interface it would route from —
             // the address worth advertising, and more reliable than picking the first non-loopback NIC.
+            //
+            // The target only has to be somewhere the default route would carry a packet; nothing is ever sent
+            // to it. RFC 5737 TEST-NET-1 is deliberate: it says "any off-link address" out loud, and it means
+            // this does not quietly depend on a particular company's resolver staying reachable. This used to
+            // be 8.8.8.8, which worked identically and read like infrastructure.
             using var probe = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
-            probe.Connect(new IPEndPoint(IPAddress.Parse("8.8.8.8"), 65530));
+            probe.Connect(new IPEndPoint(IPAddress.Parse("192.0.2.1"), 65530));
             return (probe.LocalEndPoint as IPEndPoint)?.Address;
         }
         catch (SocketException)

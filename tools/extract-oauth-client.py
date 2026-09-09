@@ -13,7 +13,8 @@ Run from the repository root:
     python3 tools/extract-oauth-client.py
 
 The capture is not distributed with the repository, so this only works on a machine that has the
-captures folder. A checkout without it keeps the empty placeholder, which is inert.
+captures folder. Note that the committed file already ships populated -- this regenerates the value, it
+does not supply one a clone lacks. An empty file is inert, but that is not the shipped state.
 """
 
 import base64
