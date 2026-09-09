@@ -46,8 +46,9 @@ Verified end-to-end against real hardware on a LAN, on **PS5 and PS4** alike:
   and the A/V connection are separate mappings and need it separately. Throughput was indistinguishable from
   the same-LAN figures. Driven from the harness, not yet through the app's own UI.
 - **968 unit tests** across two suites, pure managed and cross-platform — they need no console, no GPU and no
-  Windows-only hardware. A clean checkout without the authors' captures runs 927 of them and skips 41, by design — the skipped
-  ones validate against real captured ground truth that is not, and will not be, published.
+  Windows-only hardware. A clean checkout without the authors' captures runs 927 of them and skips 41, by design. Thirty-six
+  validate against real captured ground truth that is not, and will not be, published; the other five are
+  the hardware-accelerated GF paths, which skip whichever of x64 and ARM64 the host is not.
 
 There is also a **second client**: [`ports/ripcord-3ds`](ports/ripcord-3ds), a from-scratch C implementation
 for modded New 3DS hardware that streams real video from a real PS5. It exists as a completeness test for the
@@ -259,9 +260,9 @@ Security reports: [`SECURITY.md`](SECURITY.md).
 ## AI assistance disclosure
 
 Ripcord has been developed with heavy use of AI coding assistants, including its protocol research,
-implementation, tests, and documentation. This is disclosed deliberately: the project publishes under a real
-identity in a legally sensitive area, and a consistent record of candour is worth more than the ambiguity of
-silence.
+implementation, tests, and documentation. This is disclosed deliberately: the project publishes under a
+consistent, attributable identity in a legally sensitive area, and a consistent record of candour is worth
+more than the ambiguity of silence.
 
 It carries a specific obligation, which [`CONTRIBUTING.md`](CONTRIBUTING.md) spells out. A language model may
 have another Remote Play implementation in its training data and can reproduce that implementation's

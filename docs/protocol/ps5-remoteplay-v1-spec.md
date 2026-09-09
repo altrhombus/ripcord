@@ -18,6 +18,15 @@ the **[X]** tag so it cannot be mistaken for settled. The raw RE trace lives in
 `captures/lab-notebook.md` — part of the gitignored dirty room, so it is **not present in a published copy** of
 this repository.
 
+**Redaction.** Values tied to one console, account, session or network are replaced here with clearly
+synthetic stand-ins, on the same policy as `../protocol-research-log.md`: registration keys and pairing
+material, and any address that identifies real hardware (public IPv4 is shown as
+[RFC 5737](https://www.rfc-editor.org/rfc/rfc5737) documentation space, and the one IPv6 endpoint token in
+§8 as a synthetic ULA). Generic protocol constants — field offsets, discovery protocol versions, RVAs into
+the vendor binary — are **not** redacted: they are identical for every console and every user, and they are
+the substance of the document. Where a passage explains how one encoding derives from another, the
+stand-ins are internally consistent so the derivation still reads correctly.
+
 **Naming & IP note.** All message/field/enum/type names in this spec and the `.proto` files are our own
 descriptive labels — the vendor's coined names, symbol names, and log strings are deliberately not
 reproduced (a private vendor↔ours mapping lives in the gitignored dirty room, `captures/name-mapping.md`).
@@ -1050,10 +1059,13 @@ socket class is built by the factory `FUN_100492f0` (vtable `PTR_FUN_102b711c`, 
 at connection `+0x44` by the ctor `FUN_100c9ae0`). Both getters (`+0x50` = `FUN_10093f20`, `+0x44` =
 `FUN_10093de0`) return the socket's stored address: for family `AF_INET` (`0x2`) the 4-byte IPv4 address, and
 for family **`AF_INET6` (`0x17`) the 16-byte `sin6_addr`**. Since the wire carries 16 bytes, the socket is
-AF_INET6 and each token is the endpoint's **IPv6 address**. Consistent with the capture: the client token
-`fd00:1a2b:3c4d:5e6f:0011:2233:4455:6677` is a well-formed **Unique Local Address** (`fc00::/7`). The observed
-datagrams were IPv4 (172.16.0.x), so these are the endpoints' **IPv6 identities** the transport uses for the
-connection — one per peer, local + remote.
+AF_INET6 and each token is the endpoint's **IPv6 address**. Consistent with the capture: the client token was a well-formed
+**Unique Local Address** in `fc00::/7` (shown here as the synthetic
+`fd00:1a2b:3c4d:5e6f:0011:2233:4455:6677` — the real value is a per-site identifier and is redacted, like
+every other per-device value in this spec). The observed datagrams were IPv4 (172.16.0.x), so these are the
+endpoints' **IPv6 identities** the transport uses for the connection — one per peer, local + remote. What
+matters for interop is the *form*, not the value: 16 bytes of `sin6_addr`, and a ULA is what a consumer
+network's stack will hand you.
 > **Note:** these TRP endpoint tokens are unrelated to the `RP-Did` *control* field (which our client fills
 > from the MachineGuid, §2.1). An earlier "random token" guess here was wrong; the binary shows an address.
 >

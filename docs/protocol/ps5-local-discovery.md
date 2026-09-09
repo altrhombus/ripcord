@@ -284,7 +284,7 @@ mode input** — only the curve is version-dependent, and `clientVersion 17` sel
 `CurveForVersion`. So `HalyardStreamKeySchedule` already covers PS4; no PS4-specific stream algorithm exists to
 derive. Handshake structure is `[W]` (parsed from cap53); the key-schedule *identity* is `[C]` — a passive
 capture has neither ECDH private key, so the derived A/V keys can't be reproduced from cap53. Final `[V]` needs
-a live PS4 stream-key dump (as done for PS5), which would also rule out any separate `<engine module>` re-dispatch.
+a live PS4 stream-key dump (as done for PS5), which would also rule out any separate engine-module re-dispatch.
 
 **Validated on PS4 hardware + statically (2026-08-03), two independent ways:**
 - **handshakeKey + ecdhSignature `[V]`** — live Frida dumps of the client's stream-enable path gave the session
