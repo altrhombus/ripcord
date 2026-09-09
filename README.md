@@ -27,7 +27,7 @@ Verified end-to-end against real hardware on a LAN, on **PS5 and PS4** alike:
 
 - **Pairing from scratch** — PIN registration against the console, no cloud round-trip. Both families;
   PS4 registration uses the same table mechanism as PS5 with four differing constants.
-- **Discovery** — LAN broadcast search and mDNS (UDP 9302 for PS5, 987 for PS4).
+- **Discovery** — LAN broadcast SRCH (UDP 9302 for PS5, 987 for PS4) and mDNS (`224.0.0.251:5353`).
 - **Connect, video, audio, and controller input**, live. The recorded figures are 1080p60 at 0.4% packet
   loss and 23.2 Mbps, with a 2.1 ms handshake, 6.5 ms RTT and 18 ms from demux to present.
 - **Waking a sleeping console** over the LAN, and signing in to a locked console with its 4-digit user
@@ -45,10 +45,11 @@ Verified end-to-end against real hardware on a LAN, on **PS5 and PS4** alike:
   classic STUN (RFC 3489 Binding Requests) to learn each leg's reflexive address; the control association
   and the A/V connection are separate mappings and need it separately. Throughput was indistinguishable from
   the same-LAN figures. Driven from the harness, not yet through the app's own UI.
-- **968 unit tests** across two suites, pure managed and cross-platform — they need no console, no GPU and no
-  Windows-only hardware. A clean checkout without the authors' captures runs 927 of them and skips 41, by design. Thirty-six
+- **970 unit tests** across two suites, pure managed and cross-platform — they need no console, no GPU and no
+  Windows-only hardware. A clean checkout without the authors' captures runs 929 of them and skips 41, by design. Thirty-six
   validate against real captured ground truth that is not, and will not be, published; the other five are
-  the hardware-accelerated GF paths, which skip whichever of x64 and ARM64 the host is not.
+  the hardware-accelerated GF paths, which skip whichever of x64 and ARM64 the host is not. Two of the
+  suite's tests sweep the published tree itself for material this project's redaction policy forbids.
 
 There is also a **second client**: [`ports/ripcord-3ds`](ports/ripcord-3ds), a from-scratch C implementation
 for modded New 3DS hardware that streams real video from a real PS5. It exists as a completeness test for the
@@ -57,6 +58,9 @@ wasn't in the room when it was written, and every place that port had to guess i
 
 ### What does not work yet
 
+- **IPv6-only networks.** The stack is IPv4 throughout — discovery, STUN and the session transport all bind
+  and filter `InterNetwork`. The STUN reflexive path that makes internet play work therefore cannot function
+  without IPv4. Nothing claims otherwise, but it is worth stating against a headline feature.
 - **Internet play through the app's own UI.** The route itself works — the account (no-PIN) registration
   that used to block it is solved, and a full off-network session carried video at 60 fps on 2026-09-05.
   What is not done is the last wiring: route selection is injectable and unit-tested, but has only ever been
@@ -184,16 +188,18 @@ code, symbol names, or log strings; vendor code is cited only by relative virtua
 
 **No other implementation of these protocols is used as a source** — not for implementation detail, not for
 byte-level constructions, not for naming. Where a value in the spec is an *assumption* rather than something
-our own evidence established, it carries an explicit `[X]` tag, and the open list of those is stated plainly in
-[`ROADMAP.md`](ROADMAP.md) rather than buried. If you are evaluating this project's provenance, that list is a
-better guide than this paragraph.
+our own evidence established, it carries an explicit `[X]` tag, in the spec text itself rather than buried in a
+separate list; they live throughout [`docs/protocol/`](docs/protocol/). If you are evaluating this
+project's provenance, reading those tags where they sit — next to the value each one qualifies — is a better
+guide than this paragraph.
 
 ### Interoperability constants
 
 Ripcord includes roughly **4 KB of protocol constants** (8.7 KB on disk: the JSON stores them
 hex-encoded) — four key-derivation tables (a PS5 pair and a PS4
-pair), two registration key tables, two material-wrap tables, the four field context keys and the
-registration context key, and a byte offset. The console computes against these values; a client
+pair), two registration key tables, two material-wrap tables, four field context keys — the registration
+context key is one of those four, stored a second time under its own name, so the file holds four distinct
+16-byte keys rather than five — and a byte offset. The console computes against these values; a client
 cannot speak the protocol without them, and changing them breaks interoperability. They are interface facts,
 not authored expression, and they are shipped as **data** read through the same configuration seam that accepts
 a local override — not compiled into program logic.
