@@ -39,11 +39,14 @@ internal static class LabCommands
         if (_warnedSecrets) return;
         _warnedSecrets = true;
 
+        // stdout, deliberately. The secrets go to stdout, so `> out.txt` or `| clip` — the exact
+        // capture-and-paste workflow this exists to interrupt — must carry the warning with them. Writing
+        // it to stderr produced a file containing every secret and no warning at all.
         ConsoleColor previous = Console.ForegroundColor;
         Console.ForegroundColor = ConsoleColor.Yellow;
-        Console.Error.WriteLine("!! The output below contains long-term secrets for YOUR console and account —");
-        Console.Error.WriteLine("!! registration key, RP-Key companion, passcode, account id. Do not paste this");
-        Console.Error.WriteLine("!! into an issue, a gist, or a chat log. Redact them the way the docs do.");
+        Console.WriteLine("!! The output below contains long-term secrets for YOUR console and account —");
+        Console.WriteLine("!! registration key, RP-Key companion, passcode, account id, online ID. Do not");
+        Console.WriteLine("!! paste this into an issue, a gist, or a chat log. Redact as the docs do.");
         Console.ForegroundColor = previous;
     }
 
@@ -197,6 +200,7 @@ internal static class LabCommands
             return 1;
         }
 
+        WarnSecretsFollow();
         Console.WriteLine($"pairing {consoleIp} (duid {duid}) as account {account.AccountId}...");
         Console.WriteLine($"this client's device id: {HalyardClientDeviceId.For(new DefaultDeviceIdentity())}");
         Console.WriteLine("the console must be reachable on this network: the seed comes over the cloud, the");
@@ -359,6 +363,7 @@ internal static class LabCommands
                 }
             });
 
+        WarnSecretsFollow();
         Console.WriteLine($"connecting to {consoleIp} (duid {duid}) over the account route...");
 
         HalyardAccountSessionResult result = await connector.ConnectAsync(
@@ -600,6 +605,7 @@ internal static class LabCommands
             return await ListConsolesAsync(new HalyardCloudClient(http, tokens));
         }
 
+        WarnSecretsFollow();
         Console.WriteLine($"signed in as {account.OnlineId} (region {account.Region})");
         Console.WriteLine($"account id: {account.AccountId}");
         return await ListConsolesAsync(gateway.Cloud);
@@ -812,6 +818,7 @@ internal static class LabCommands
         var coordinator = new HalyardSessionCoordinator(gateway.Cloud);
         var console = new HalyardConsoleClient(new HalyardDevice(string.Empty, null, null), args[1], "PS5");
 
+        WarnSecretsFollow();
         Console.WriteLine($"account {account.AccountId}, console {args[1]}");
         Console.WriteLine($"offering LOCAL candidate {localIp}:{port}");
 
@@ -858,6 +865,7 @@ internal static class LabCommands
 
         string token = await gateway.AccessTokenAsync(CancellationToken.None);
         HalyardPushServerInfo pushServer = await gateway.Cloud.GetPushServerAsync(CancellationToken.None);
+        WarnSecretsFollow();
         Console.WriteLine($"account {account.AccountId}, console {args[1]}");
         Console.WriteLine($"push host {pushServer.Fqdn}, keepalive {pushServer.ClientKeepAlive.TotalSeconds:0}s");
         Console.WriteLine($"rendezvous timeout: {timeoutSeconds}s");
