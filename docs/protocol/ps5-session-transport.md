@@ -9,6 +9,12 @@ and a connected client, at IP/port level only. Capture and this document written
 source code from any existing Remote Play client project was consulted for this document — see
 `docs/protocol-research-log.md`.
 
+**Redaction note**: no keys, nonces, HMACs, session identifiers or captured cryptographic values are
+reproduced here — only field names, offsets, sizes and structure, which is what a from-scratch
+implementation needs. Addresses that identify real hardware are redacted on the same policy as
+`../protocol-research-log.md`: public IPv4 appears as [RFC 5737](https://www.rfc-editor.org/rfc/rfc5737)
+documentation space, and client-side addresses are described rather than printed.
+
 ## Scope of this document
 
 The low-level reliable-UDP-style framing layer carrying both the HTTP-style session-establishment
@@ -72,7 +78,7 @@ is still sound and worth preserving.
 > See `docs/protocol-research-log.md`. The account route's `/sess/rgst`, `/sess/init` and `/sess/ctrl` all
 > run over this transport; a PIN-route console uses plain TCP 9295 for the same HTTP shapes instead.
 >
-> **cap64 is a WAN pair.** The client sat on a hotspot (`<client-ip>`) with the console off that network, so
+> **cap64 is a WAN pair.** The client sat on a phone hotspot with the console off that network, so
 > every exchange below went to the console's reflexive address on 9303. The LAN candidate was probed and
 > never answered. **[X] Whether a same-LAN client may skip straight to the chunk layer is untested** — the
 > faithful implementation performs the prelude either way.

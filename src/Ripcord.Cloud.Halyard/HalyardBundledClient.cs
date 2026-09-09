@@ -74,8 +74,9 @@ public static partial class HalyardBundledClient
             BundledCredential? parsed = JsonSerializer.Deserialize(
                 stream, BundledClientContext.Default.BundledCredential);
 
-            // An unpopulated placeholder is the normal state of a checkout without the dirty room, and is
-            // indistinguishable here from an omitted bundle. Both mean the same thing to every caller.
+            // The shipped file is populated, so this branch is not the normal path -- it is what a build made
+            // with -p:BundleOAuthClient=false, or a deliberately emptied file, produces. Either is
+            // indistinguishable here from an omitted bundle, and all three mean the same thing to every caller.
             return string.IsNullOrWhiteSpace(parsed?.ClientId) || string.IsNullOrWhiteSpace(parsed.ClientSecret)
                 ? HalyardClientConfig.Unconfigured
                 : new HalyardClientConfig(

@@ -23,8 +23,9 @@ subject from different angles, which is why picking by topic alone leads you to 
 `ROADMAP.md`, `journal.md` and `protocol-research-log.md` all look like running logs. They are not
 interchangeable:
 
-- **`ROADMAP.md` is forward-looking only.** The open backlog, and nothing else. When an item is finished it
-  moves to the journal rather than being deleted, so the roadmap stays short enough to be read in full.
+- **`ROADMAP.md` is the open backlog**, plus a status preamble and whatever context an open item needs to be
+  understood — and no historical record beyond that. When an item is finished, its story moves to the journal
+  and a pointer stays behind, so the roadmap stays short enough to be read in full.
 - **`journal.md` is the dated engineering record.** What was tried, what broke, what the fix turned out to
   be. It is a *record*, not a reference: where it states a protocol fact, [`protocol/`](protocol/) is
   authoritative and the journal may be out of date.
@@ -38,6 +39,12 @@ interchangeable:
 captures, the working lab notebook with unredacted values, vendor↔ours name mappings, and
 provenance-audit findings. Documents in the published tree cite it by filename so the trail is followable
 by anyone who has their own captures, but its contents do not ship.
+
+**Do not cite commit hashes in these documents.** The history was rewritten before publication, so any
+pre-publication hash the docs might carry resolves to nothing. Such citations look like
+verifiable evidence and were not, which is worse than no citation at all in a project whose central claim is
+that its derivation is checkable. Cite a **date and a document section** instead: a squash cannot break
+either. Where a specific change matters, name what it did and when, and let `git log` find it.
 
 The published documents are written to stand alone without it. Values tied to a particular console,
 account or session are redacted to stable placeholders; public IP addresses are replaced with

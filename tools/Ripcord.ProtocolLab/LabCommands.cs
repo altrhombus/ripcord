@@ -1001,7 +1001,7 @@ internal static class LabCommands
             System.Net.Sockets.AddressFamily.InterNetwork,
             System.Net.Sockets.SocketType.Dgram,
             System.Net.Sockets.ProtocolType.Udp);
-        probe.Connect("8.8.8.8", 65530);
+        probe.Connect("192.0.2.1", 65530);   // RFC 5737 TEST-NET-1: any off-link address; nothing is sent
         return ((IPEndPoint)probe.LocalEndPoint!).Address.ToString();
     }
 

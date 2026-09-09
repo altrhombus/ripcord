@@ -90,7 +90,7 @@ public static class StreamHealthAssessor
             return new StreamHealthVerdict(StreamHealthLevel.Critical,
                 "No video from the console",
                 "The connection succeeded but no video arrived. Make sure a user is logged in on the console and "
-                + "that Remote Play is enabled, then try reconnecting.");
+                + "that its remote-play setting is enabled, then try reconnecting.");
         }
 
         // 1) Packet loss is the most impactful problem. Split "our device can't keep up" from "the network is

@@ -274,8 +274,8 @@ different purpose.
 > now surfaced (it used to be discarded): `403 / RP-Application-Reason 80108b13`.
 >
 > **Start here, on a freshly power-cycled console, in this order:**
-> 1. one LAN `connect 10.0.0.7` -- expect `/sess/init` accepted (it was, earlier, with this same record);
-> 2. one `accountconnect 10.0.0.7 <duid>`.
+> 1. one LAN `connect <console-ip>` -- expect `/sess/init` accepted (it was, earlier, with this same record);
+> 2. one `accountconnect <console-ip> <duid>`.
 >
 > If LAN passes and the account route still returns `80108b13`, the refusal is route-specific. **That A/B
 > could not be completed today**: by the end the console was refusing TCP 9295 too while still reporting
@@ -400,7 +400,7 @@ different purpose.
 >
 > **↻ Previous resume block (2026-09-04, ACCOUNT PAIRING WORKS END TO END).**
 >
-> `accountpair` against PS5-8A2F completes: seed delivered over the cloud, 9303 control transport, chunk
+> `accountpair` against PS5-<redacted> completes: seed delivered over the cloud, 9303 control transport, chunk
 > handshake, `POST /sess/rgst`, a 276-byte response, a valid 34-byte pairing record stored as the console's
 > credential. **The account ("web"/no-PIN) route is done.**
 >
@@ -458,7 +458,7 @@ different purpose.
 >
 > **↻ Previous resume block (2026-09-04, THE ACCOUNT ROUTE'S TRANSPORT IS SOLVED).**
 >
-> A live run against `PS5-8A2F` now completes the entire 9303 exchange: prelude, hello, **the console's
+> A live run against `PS5-<redacted>` now completes the entire 9303 exchange: prelude, hello, **the console's
 > cookie**, echo, accept, `POST /sie/ps5/rp/sess/rgst` delivered over 9303, and a real HTTP response back.
 > The console's `TERMINATE` is gone. This is the first time the console has ever answered us at the chunk
 > layer.
@@ -491,7 +491,7 @@ different purpose.
 >
 > **The big unlock: the dirty room already contains a complete successful account pairing** —
 > `no_pin_push_frames.txt` (the push WebSocket) plus
-> `app-startup-connect-and-pair-online-first-time-no-pin.pcapng`, against the same `PS5-8A2F`. Its 9303 flow is
+> `app-startup-connect-and-pair-online-first-time-no-pin.pcapng`, against the same `PS5-<redacted>`. Its 9303 flow is
 > the exact exchange we cannot get: hello → cookie in 3 ms → echo → accept → `POST /sess/rgst` → `200 OK` →
 > close, then two more chunk connections for `init` and `ctrl`. Diff against it rather than guessing.
 >
@@ -529,7 +529,7 @@ different purpose.
 > fixes but no unblock.
 >
 > **↻ Previous resume block (2026-09-03, after the live pairing runs and the 9303 derivation).**
-> - **The account route's cloud half is confirmed live** (reproduced twice against `PS5-8A2F`): the console
+> - **The account route's cloud half is confirmed live** (reproduced twice against `PS5-<redacted>`): the console
 >   joins our session ~0.75 s after the command, delivers the seed as `customData1`, our decrypt is correct,
 >   and it then OFFERs its candidates. The `/sess/rgst` POST is then refused **HTTP 403 /
 >   `RP-Application-Reason 80108bff`** because we send it over the PIN route's TCP 9295.
@@ -608,9 +608,8 @@ full count. The previous figure, 653 on `feat/app-reimagining` (2026-08-06), pre
 its ~170 new tests. The one before that, 448 on `main` (2026-08-05), predates both Stage A and the suite split.
 The FEC/GMAC verification work and the ARM64/PMULL work were briefly split across two branches; both
 are merged to `main` as of 2026-08-02 and the branches are deleted, so there is one number again. Two earlier
-figures here were each correct when written and then outgrown by later commits — 424 (2026-08-02, outgrown by
-`d57f755`/`2b845c4`/`566a11c`/`afe59c8`) and 447 (2026-08-04, outgrown by `2f82f28`'s PS4 registration bundle
-round-trip test). This is the sort of number that is stale the moment it is written, so treat a mismatch as
+figures here were each correct when written and then outgrown by later commits — 424 (2026-08-02, outgrown by four
+later commits that day) and 447 (2026-08-04, outgrown by the PS4 registration-bundle round-trip test). This is the sort of number that is stale the moment it is written, so treat a mismatch as
 suite growth until a *failure* says otherwise.
 
 Skips are host- and build-dependent, which is why the number moves without meaning anything. Five are the
@@ -626,7 +625,7 @@ fewer passes** — that is the design (no secrets committed, CI green), not a re
 a machine that *has* the dirty room.
 
 > 🎯 **PS4 is closed as of 2026-08-05.** The previous top priority — a live PS4 **pairing-from-scratch** run
-> — **succeeded from the Ripcord UI against a real PS4** (`PS4-8A2F`), which was the one thing the byte-level
+> — **succeeded from the Ripcord UI against a real PS4** (`PS4-<redacted>`), which was the one thing the byte-level
 > verification could not establish: that the console *accepts* a request Ripcord originates, rather than that
 > we reproduce a captured one. The PS4 registration crypto was solved, implemented into the seam, and
 > byte-verified against four live captures earlier the same day (see Phase 2 below); this run confirms
@@ -720,6 +719,14 @@ landed since it was written.
 
 ## The portable core, and the Vita port — started 2026-08-17
 
+> **Not in this repository.** Everything in this section lives on the unpublished `feat/vita-port` branch:
+> `ports/common/` with the extracted protocol core, its three platform implementations, the mbedtls
+> cross-build script, and the Vita port with its hardware checklist. Only `main` is published, so none of
+> those paths resolve here, and `ports/` holds `ripcord-3ds` in its pre-extraction layout — the very layout
+> these entries describe moving away from. Kept because the reasoning is worth having; flagged because a
+> reader would otherwise go looking for files that are not there. Cross-platform work is deliberately
+> parked until the Windows client is feature complete.
+
 **`ports/common` now holds the protocol core**, on branch `feat/vita-port`. The 3DS port was written as
 a single-platform tree; auditing it for a second target found that **71 of its 88 source files reference
 no operating system at all**. The whole coupling was three libctru calls (`osGetTime`, `svcSleepThread`,
@@ -746,7 +753,7 @@ noticed; vitasdk's documented helper is `sceNetInetPton`), and `clock_gettime` n
 The extraction did break one thing the path-resolution check could not see — every 3DS-side file
 addressed core headers as a sibling or an uncle, and a quoted relative include resolves against the
 including file before it consults the search path, so `-I` alone could not fix it. 46 includes across
-12 files now address one core include root subdirectory-first. Fixed in `13ec300`.
+12 files now address one core include root subdirectory-first. Fixed later on the same branch.
 
 **The Vita port builds** (2026-08-17): the portable core compiled for Cortex-A9 first try under
 `-Werror -Wconversion`, the platform seam and a Phase 1 crypto smoke test link, and `make` produces a
@@ -840,6 +847,68 @@ connect, so none of them is unexercised. What remains genuinely unknown is narro
 is actually open (do the probes succeed, or fall back silently?).
 
 ## Completed backlog items
+
+### Phase 2 — PS4 support, closed 2026-08-05
+
+The record of how PS4 support got closed. It lives here rather than in the roadmap because that is what
+this file is for; the roadmap keeps a pointer and nothing else.
+
+- **Phase 2 — PS4 support. CLOSED 2026-08-05** — the entry below is kept in full because it is the record of
+  how it got there, and its opening clause ("not started") was outgrown by the work described further down it.
+  The split is
+  `.Common`/`.Takion`/`Halyard` (there is no `.Ps5` project), and groundwork already exists —
+  `HalyardConsolePlatform.Ps4`, the `/sie/ps4/rp/sess/rgst` endpoint with `RP-Version 10.0`, SRC2/RES2
+  discovery, and a PS4 option in the pairing dialog. **cap53 (2026-08-03) wire-confirms all of that
+  groundwork `[W]`** against a real PS4 — endpoint path, `RP-Version 10.0`, `SRC2`/`RES2` arming probe — and
+  adds the discovery/wake deltas the code did not yet carry: **discovery/wake on UDP 987** (not 9302) with
+  **`device-discovery-protocol-version:00020020`** (not `00030010`). PS4's WAKEUP field set and
+  `user-credential` derivation are identical to PS5's. **Two PS4 unknowns remain before the existing stack
+  can be claimed to drive PS4:** (a) that 987 actually *wakes* a PS4 — cap53's wake got no reply, network-wake
+  was disabled; and (b) ~~PS4 session crypto~~ — **DERIVED and validated `[V]` (2026-08-03).** PS4 session control-field
+  crypto is the KDF dispatcher's **(mode 0, keytype 2) → `FUN_1fdd80`** variant (PS5 is mode 1 → `FUN_1fe340`),
+  reversed from our own DLL and confirmed byte-for-byte against all three cap53 sessions' `RP-Auth` +
+  `RP-OSType` → `Win11.0\0`. Same field-IV/CFB machinery and role convention; only the KDF arithmetic/tables
+  and the context key (`B_eq_0`, which falls out of mode 0) differ. So the crypto seam is no longer a PS4
+  blocker. Everything above it (discovery, wake format, `SRC2`/`RES2`, `/sie/ps4/…`, `RP-Version 10.0`, Takion
+  handshake shape) is wire-confirmed. The **A/V stream key schedule needs NO PS4 variant**: cap53's Takion `SESSION_REPLY` parses as the identical
+  PS5-v17 protobuf (`clientVersion 17`, 133-byte P-521 `ecdhPublicKey`, 32-byte `ecdhSignature`), so PS4 uses
+  the modern P-521 handshake our `HalyardStreamKeySchedule` already implements — *not* a P-256 "older protocol"
+  (early note corrected). `DeriveDirection` (SP800-108) takes no family/mode input; only the curve is
+  version-dependent and `clientVersion 17` → P-521 via the existing `CurveForVersion`. So for the *streaming*
+  path the only PS4-specific algorithm is the control KDF (`FUN_1fdd80`, `[V]`); stream handshake and key
+  schedule are the PS5 machinery unchanged. **Registration, however, is NOT the PS5 machinery** — see the
+  registration status below.
+  The **stream key schedule is now `[V]`** too: `DeriveDirection` = `generateKeyIV`/`FUN_1012d9e0` in the clean
+  v1 the vendor control DLL, disassembled and shown byte-identical to ours, **unconditional, with exactly two
+  call sites (dir 2/3) and no family dispatcher** — so PS4 runs the same function validated against PS5 hardware.
+  handshakeKey + ecdhSignature are `[V]` on PS4 too (cap54/cap57). And the **987 wake is now `[V]`** —
+  cap54–cap57 show a resting PS4 (`620 Server Standby`) waking to `200 Ok` after a `WAKEUP` on 987 (cap53's
+  no-reply was just network-wake disabled). **The PS4 streaming path is `[V]`/`[W]` — discovery, wake,
+  control-field crypto, stream handshake + key schedule — and streaming from an imported pairing record works
+  end-to-end** (H.264; PS4 is H.264-only, coerced). **Registration-from-scratch is now SOLVED, IMPLEMENTED,
+  and byte-verified `[V]` (2026-08-05, cap61–cap64).** The registration *field cipher* was already `[V]`
+  (AES-128-CFB, IV = `HMAC-SHA256(B_eq_0, material‖be64(ctr))[:16]` — context key `B_eq_0`, not PS5's
+  `B_eq_1`). The transport-key derivation is **NOT a bespoke primitive** — the 2026-08-04 "bespoke
+  a vendor net-auth symbol / `FUN_101f5700` / the vendor registration tag / 63-byte-secret, needs emulation" conclusion was
+  analysing a **stubbed dead branch** (path A, `or eax,-1; ret 8`, verified byte-identical in the live
+  process). PS4 registration is the **same table mechanism as PS5** (`FUN_101fcda0`, a mirror of PS5's
+  `FUN_101fd830`): `K = table[context[397]&0x1f]` (transposed column, stride 0x20) with `be32(PIN)` folded
+  into `K[12..16]`; the IV material is wrapped into the context at offsets `0x191`/`0xc7` (same as PS5) via
+  `w[i]=((t[i]^m[i])+0x29+i)&0xff`. **Only four constants differ from PS5:** key table (`DAT_102f873c`), wrap
+  table (`DAT_102f936d`), wrap bias (`+0x29` vs `-0x2d`), and context key (`B_eq_0` vs `B_eq_1`). All four
+  cap61–cap64 pairings reproduce key **and** material exactly. Reversed by a live Frida hook on our own client
+  + static analysis of our own DLL — **no emulation, no third-party implementation**. **All PS4 work is now
+  landed:** (i) control-KDF; (ii) streaming path (imported record); (iii)
+  **registration KDF + material wrap implemented into the seam** — PS4 tables added to
+  `halyard-v1-constants.json`, `HalyardRegistrationKdf`/`Secrets`/`Cipher` + `HalyardInteropConstants` +
+  `AppRegistrationCipher` family-keyed by console platform, `NOTICE`/`CLAUDE.md` amended, and a bundle
+  round-trip test added (the C# seam reproduces cap64 byte-for-byte, verified locally against the dirty-room
+  vector). **(iv) The live pairing-from-scratch run is DONE and succeeded `[V]` (2026-08-05)** — a PS4
+  (`PS4-<redacted>`, discovered on 987) paired from scratch from the Ripcord UI, which confirms the piece byte-level
+  verification cannot: that the console *accepts* a request Ripcord originates, not merely that we reproduce a
+  captured one. **PS4 has no open items.** See the `2026-08-05` research-log rows and the
+  dirty-room `pathB_groundtruth.md` / `ps4_regist_full_solution.json`, and
+  `docs/protocol/ps5-local-discovery.md` PS4-family section.
 
 ### SOLVED — Settings page killed the app: a native probe on the UI thread (2026-08-06)
 **Pre-existing, and it predates the Stage A work.** Opening Settings terminated the process every time on this
@@ -973,7 +1042,7 @@ still says HEVC, the stream really is HEVC and something else is going on.
     and a tab-order fallback. In hindsight that was the evidence: a correct fix for the stated cause failing
     twice meant the cause was wrong. The engagement setter is kept on its own merits (the state really is
     unreachable in a desktop app) but is documented as never having been observed to help.
-  - **Fixed in `8ec48a2`** by requiring a popup to hold something focusable before it counts — the property
+  - **Fixed** by requiring a popup to hold something focusable before it counts — the property
     actually being relied on, rather than a type check that would need a list of popup types kept current.
   - **The residual was a second, unrelated cause, and it is now measured rather than theorised.** With the
     popup bug fixed, focus left the sliders but SKIPPED a row. A geometry probe gave the answer outright:
@@ -997,7 +1066,7 @@ still says HEVC, the stream really is HEVC and something else is going on.
 driving it through UI Automation, not by building it. That habit exists because building cleanly and passing
 182 tests said nothing about a Settings page that crashed on open, and because the accessibility work above
 crashed on launch the first time and was caught the same way.
-- [x] **Step 1** (search-root fix, activation chain, `FocusState.Keyboard`) — landed earlier, commit `280b4c1`.
+- [x] **Step 1** (search-root fix, activation chain, `FocusState.Keyboard`) — landed earlier.
 - [x] **Step 2** — `NavIntentReader` and `InputModeTracker` extracted into `Ripcord.Core.Input`, pure and
       clock-injected like `ExitGestureDetector`. 23 tests. `MainWindow` keeps only the half that needs a
       window (moving focus).
@@ -1177,7 +1246,7 @@ live end-to-end connect.)*
      > `ps5-session-establishment.md` for the spec. This retro-corrects the falsifications below: they were
      > right that `data1/2` don't *directly* key the response — the missing layer was `customData1`.
      >
-     > **Built on `main`** (commits `69cfa43`→`6eb812d`, all tested without hardware): `HalyardAccountSeedDelivery`
+     > **Built on `main`** (all tested without hardware): `HalyardAccountSeedDelivery`
      > (the seed crypto), the cipher's account path (`BuildAccountRequest`), `AccountSeed` threaded through the
      > registration client, the push channel surfacing `customData1`, and `HalyardAccountPairing` — the coordinator
      > that runs the whole flow (session → command → `customData1` → seed → register → pairing record) with an
@@ -1219,7 +1288,7 @@ live end-to-end connect.)*
      >   not a harness-local rebuild of the same wiring, so a live run verifies the shipping path.
      >
      > **FIRST LIVE RUNS 2026-09-03 — the cloud half works; the registration transport does not.** Driven with
-     > `ProtocolLab accountpair 10.0.0.7 <duid>` against `PS5-8A2F`, signed in as a real account. Reproduced
+     > `ProtocolLab accountpair <console-ip> <duid>` against `PS5-<redacted>`, signed in as a real account. Reproduced
      > twice, identically:
      >
      > ```
@@ -1579,7 +1648,7 @@ live end-to-end connect.)*
            exact field block — `PS5-RegistKey: <registkey-wire>`, `RP-Key: <redacted>…` (companion), nickname, MAC. Cipher
            and key confirmed. Saved to the dirty-room fixture `nopin_response_key_cap82.json`.
          - **THE LAST STEP: the key DERIVATION — narrowed, and the offline hypotheses are FALSIFIED.** The
-           derivation harness is `NoPinResponseKeyDerivationTests` (recovers cap82's material via the validated
+           derivation harness recovers cap82's material via the validated
            `RecoverMaterial` = `<redacted>`, then sweeps). It pins the confirmed fact (the
            recovered key CFB-decrypts the response to the registkey) and records the search. **Ruled out
            (2026-08-20):** the key is **not** `HMAC-SHA256(contextKey, material‖be64/le(ctr))[:16]` for any
@@ -1842,7 +1911,7 @@ live end-to-end connect.)*
          - **Solid, banked results:** response cipher = field cipher AES-128-CFB
            (validated live vs the wire); streaming KDF = `HalyardControlKdf` (reproduced by Ripcord); full
            decrypt call-chain + object layout (`conn+0x180` material / `+0x190` key / `+0x1a8` counter) mapped;
-           `NoPinResponseKeyDerivationTests` pins the recovered cipher. Resume point (if ever): page-guard at
+           The derivation harness pins the recovered cipher. Resume point (if ever): page-guard at
            `FUN_20d8c0` entry to catch the receive-side writer + backtrace.
          - Superseded note (kept for the record): earlier entries treated "find the key in the dump" as the
            goal and kept widening the graph. The dump was fine from cap78 on; the error was the *reference
@@ -1856,7 +1925,7 @@ live end-to-end connect.)*
            with the known ciphertext + plaintext fully specifies the account-route response cipher and
            `HalyardRegistrationCipher` gains its no-PIN variant. Fallback if the ECX graph is still empty:
            hook the vendor's AES primitive directly, which necessarily sees the round keys.
-         - Instrument: `HalyardPushMaterialSurvey` + `NoPinPushMaterialTests`, fixture
+         - Instrument: `HalyardPushMaterialSurvey` plus a push-material fixture,
            `docs/protocol/captures/no_pin_push_frames.txt`.
   3. **Cloud wake** — ~~`HalyardCloudClient.SendConnectCommandAsync`. Currently the **only** wake mechanism
      that exists anywhere in the tree, implemented but unreachable.~~ **REACHED 2026-08-07** — this line said
@@ -2169,7 +2238,7 @@ spec, which means provisional, not settled. Same priority tier as the correctnes
 - [x] ~~**The congestion GMAC AAD rule.**~~ — **SETTLED 2026-08-02 [V].** Same rule as control: zero the tag
       *and* the key_pos. Measured over `cap48`, **300/300** congestion packets reproduce with tag+key_pos
       zeroed and the tag-only A/V rule matches none. So control and congestion share a rule and **feedback is
-      the odd one out**. Pinned by `LiveStreamPacketVectorTests.CongestionGmac_...` (`7b4b888`).
+      the odd one out**. Pinned by `LiveStreamPacketVectorTests.CongestionGmac_...`.
   - **This was never actually blocked**, and the false blocker cost a planned phase of a console trip. The
     entry said it needed "a capture that reaches streaming with correlated keys" — `cap48` had been exactly
     that for days, with its keys dumped in the same run and already validated (its recv key decrypts that

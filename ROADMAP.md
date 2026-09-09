@@ -1,7 +1,14 @@
 # Ripcord roadmap
 
-**What is left to do.** This file is forward-looking only; it is the source of truth for the backlog
-and nothing else. Three companions carry the rest, and each answers a different question:
+**What is left to do.** This file is the source of truth for the open backlog. It carries two other things
+and nothing more: a **status preamble**, because a backlog with no sense of where the project stands is
+unusable, and the **immediate context an open item needs** to be understood — what landed around it, and
+why the remaining work is shaped as it is.
+
+What it does *not* carry is a historical record. When something is finished and its story is worth keeping,
+the story goes to the journal and a pointer stays here.
+
+Three companions carry the rest, and each answers a different question:
 
 | Question | Where |
 |---|---|
@@ -19,10 +26,11 @@ Completed work is not deleted — it moves to the journal, which keeps the dated
 
 **Phase 1 — PS5 LAN remote play. Working end-to-end against real hardware.** Pairing from scratch, connect,
 video, audio, and controller input are all live-verified. The recorded live figures are **1080p60 at 0.4%
-loss, 23.2 Mbps, handshake 2.1 ms, RTT 6.5 ms, 18 ms demux→present** — sourced from commit `4b1f76b`'s body
-and the Track D entry below. (A previous revision cited "61 fps, ~0.2% loss, commit `5739280`" and said the
-latency/bitrate figures were unlogged; that commit does not exist — history was squashed — and the figures
-*are* recorded. Corrected 2026-08-02.) What's left in Phase 1 is polish and a couple of production-path gaps,
+loss, 23.2 Mbps, handshake 2.1 ms, RTT 6.5 ms, 18 ms demux→present** — recorded in the Track D entry
+below and in [`docs/journal.md`](docs/journal.md). (A previous revision said the latency/bitrate figures were
+unlogged and cited a commit that no longer existed; the figures *are* recorded. Corrected 2026-08-02. The
+hashes went too, in 2026-09-09's sweep — see [`docs/README.md`](docs/README.md) on why pre-publication
+hashes do not resolve.) What's left in Phase 1 is polish and a couple of production-path gaps,
 not research.
 
 | Stage | State |
@@ -36,62 +44,9 @@ not research.
 | 6 — Media + input wiring | Done, live. D3D12 present, **GPU decode via MFT/DXVA** (`MF_LOW_LATENCY`, decoder picked by codec, HEVC + 10-bit P010 supported), WASAPI audio with bounded latency, controller input (GameInput + DualSense raw HID). |
 
 **Phase status vs. the original deferral plan:**
-- **Phase 2 — PS4 support. CLOSED 2026-08-05** — the entry below is kept in full because it is the record of
-  how it got there, and its opening clause ("not started") was outgrown by the work described further down it.
-  The split is
-  `.Common`/`.Takion`/`Halyard` (there is no `.Ps5` project), and groundwork already exists —
-  `HalyardConsolePlatform.Ps4`, the `/sie/ps4/rp/sess/rgst` endpoint with `RP-Version 10.0`, SRC2/RES2
-  discovery, and a PS4 option in the pairing dialog. **cap53 (2026-08-03) wire-confirms all of that
-  groundwork `[W]`** against a real PS4 — endpoint path, `RP-Version 10.0`, `SRC2`/`RES2` arming probe — and
-  adds the discovery/wake deltas the code did not yet carry: **discovery/wake on UDP 987** (not 9302) with
-  **`device-discovery-protocol-version:00020020`** (not `00030010`). PS4's WAKEUP field set and
-  `user-credential` derivation are identical to PS5's. **Two PS4 unknowns remain before the existing stack
-  can be claimed to drive PS4:** (a) that 987 actually *wakes* a PS4 — cap53's wake got no reply, network-wake
-  was disabled; and (b) ~~PS4 session crypto~~ — **DERIVED and validated `[V]` (2026-08-03).** PS4 session control-field
-  crypto is the KDF dispatcher's **(mode 0, keytype 2) → `FUN_1fdd80`** variant (PS5 is mode 1 → `FUN_1fe340`),
-  reversed from our own DLL and confirmed byte-for-byte against all three cap53 sessions' `RP-Auth` +
-  `RP-OSType` → `Win11.0\0`. Same field-IV/CFB machinery and role convention; only the KDF arithmetic/tables
-  and the context key (`B_eq_0`, which falls out of mode 0) differ. So the crypto seam is no longer a PS4
-  blocker. Everything above it (discovery, wake format, `SRC2`/`RES2`, `/sie/ps4/…`, `RP-Version 10.0`, Takion
-  handshake shape) is wire-confirmed. The **A/V stream key schedule needs NO PS4 variant**: cap53's Takion `SESSION_REPLY` parses as the identical
-  PS5-v17 protobuf (`clientVersion 17`, 133-byte P-521 `ecdhPublicKey`, 32-byte `ecdhSignature`), so PS4 uses
-  the modern P-521 handshake our `HalyardStreamKeySchedule` already implements — *not* a P-256 "older protocol"
-  (early note corrected). `DeriveDirection` (SP800-108) takes no family/mode input; only the curve is
-  version-dependent and `clientVersion 17` → P-521 via the existing `CurveForVersion`. So for the *streaming*
-  path the only PS4-specific algorithm is the control KDF (`FUN_1fdd80`, `[V]`); stream handshake and key
-  schedule are the PS5 machinery unchanged. **Registration, however, is NOT the PS5 machinery** — see the
-  registration status below.
-  The **stream key schedule is now `[V]`** too: `DeriveDirection` = `generateKeyIV`/`FUN_1012d9e0` in the clean
-  v1 the vendor control DLL, disassembled and shown byte-identical to ours, **unconditional, with exactly two
-  call sites (dir 2/3) and no family dispatcher** — so PS4 runs the same function validated against PS5 hardware.
-  handshakeKey + ecdhSignature are `[V]` on PS4 too (cap54/cap57). And the **987 wake is now `[V]`** —
-  cap54–cap57 show a resting PS4 (`620 Server Standby`) waking to `200 Ok` after a `WAKEUP` on 987 (cap53's
-  no-reply was just network-wake disabled). **The PS4 streaming path is `[V]`/`[W]` — discovery, wake,
-  control-field crypto, stream handshake + key schedule — and streaming from an imported pairing record works
-  end-to-end** (H.264; PS4 is H.264-only, coerced). **Registration-from-scratch is now SOLVED, IMPLEMENTED,
-  and byte-verified `[V]` (2026-08-05, cap61–cap64).** The registration *field cipher* was already `[V]`
-  (AES-128-CFB, IV = `HMAC-SHA256(B_eq_0, material‖be64(ctr))[:16]` — context key `B_eq_0`, not PS5's
-  `B_eq_1`). The transport-key derivation is **NOT a bespoke primitive** — the 2026-08-04 "bespoke
-  a vendor net-auth symbol / `FUN_101f5700` / the vendor registration tag / 63-byte-secret, needs emulation" conclusion was
-  analysing a **stubbed dead branch** (path A, `or eax,-1; ret 8`, verified byte-identical in the live
-  process). PS4 registration is the **same table mechanism as PS5** (`FUN_101fcda0`, a mirror of PS5's
-  `FUN_101fd830`): `K = table[context[397]&0x1f]` (transposed column, stride 0x20) with `be32(PIN)` folded
-  into `K[12..16]`; the IV material is wrapped into the context at offsets `0x191`/`0xc7` (same as PS5) via
-  `w[i]=((t[i]^m[i])+0x29+i)&0xff`. **Only four constants differ from PS5:** key table (`DAT_102f873c`), wrap
-  table (`DAT_102f936d`), wrap bias (`+0x29` vs `-0x2d`), and context key (`B_eq_0` vs `B_eq_1`). All four
-  cap61–cap64 pairings reproduce key **and** material exactly. Reversed by a live Frida hook on our own client
-  + static analysis of our own DLL — **no emulation, no third-party implementation**. **All PS4 work is now
-  landed:** (i) control-KDF (commits `566a11c`/`b3d0091`); (ii) streaming path (imported record); (iii)
-  **registration KDF + material wrap implemented into the seam** — PS4 tables added to
-  `halyard-v1-constants.json`, `HalyardRegistrationKdf`/`Secrets`/`Cipher` + `HalyardInteropConstants` +
-  `AppRegistrationCipher` family-keyed by console platform, `NOTICE`/`CLAUDE.md` amended, and a bundle
-  round-trip test added (the C# seam reproduces cap64 byte-for-byte, verified locally against the dirty-room
-  vector). **(iv) The live pairing-from-scratch run is DONE and succeeded `[V]` (2026-08-05)** — a PS4
-  (`PS4-8A2F`, discovered on 987) paired from scratch from the Ripcord UI, which confirms the piece byte-level
-  verification cannot: that the console *accepts* a request Ripcord originates, not merely that we reproduce a
-  captured one. **PS4 has no open items.** See the `2026-08-05` research-log rows and the
-  dirty-room `pathB_groundtruth.md` / `ps4_regist_full_solution.json`, and
-  `docs/protocol/ps5-local-discovery.md` PS4-family section.
+- **Phase 2 — PS4 support. CLOSED 2026-08-05.** Nothing open. The full record of how it got there —
+  including the falsified leads and the four differing constants — is in
+  [`docs/journal.md`](docs/journal.md) under "Phase 2 — PS4 support, closed 2026-08-05".
 - **Phase 3 — DualSense advanced features.** *Partially done* — raw-HID **input** shipped (PS button,
   touchpad click, USB full / BT compact / BT full report formats). Output (haptics, adaptive triggers,
   lightbar) and gyro are still not started.
@@ -229,21 +184,21 @@ looking.
 
 
 ### Stage C landed — steps 5–10, all UNTESTED ON HARDWARE (2026-08-06)
-- [ ] **Hand-test the whole input stack.** Six commits landed without a pad in hand (`9cbb6ec`..`0522e68`).
+- [ ] **Hand-test the whole input stack.** Six commits landed without a pad in hand.
       Everything below builds, launches and passes 695 tests; none of it has been driven by a human.
-  - **Focus invariants** (`9cbb6ec`): the watchdog re-seeding, `FocusAnchor` keeping the caret on the same
+  - **Focus invariants**: the watchdog re-seeding, `FocusAnchor` keeping the caret on the same
     discovered console when the list reorders, focus returning after a dialog. The anchor needs **two consoles
     answering at different times** to fire at all — with one console it never runs and a passing test proves
     nothing.
-  - **Dialogs** (`628960c`): every prompt should now own the pad. Check the mid-session disconnect prompt
+  - **Dialogs**: every prompt should now own the pad. Check the mid-session disconnect prompt
     especially, and that focus returns to the card you opened a menu from.
-  - **Controller text entry** (`a922734`): the one most likely to be wrong on first contact. Does the keypad
+  - **Controller text entry**: the one most likely to be wrong on first contact. Does the keypad
     reach the login-pin dialog? Is shift-as-one-shot right? Backspace removes the last character and there is
     no caret movement — a deliberate call, and one you may disagree with after typing an IP address.
-  - **Key bindings page** (`f5bad5c`): rebinding should no longer throw focus to the top of the page.
+  - **Key bindings page**: rebinding should no longer throw focus to the top of the page.
   - **Hint bar** (`afcdccc`): does it read at couch distance, and does the mode hysteresis feel right when a
     mouse is nudged mid-session?
-  - **Touch** (`0522e68`): the 48px targets, and the one thing deliberately NOT wired — whether press-and-hold
+  - **Touch**: the 48px targets, and the one thing deliberately NOT wired — whether press-and-hold
     on a console card raises `ContextRequested`. The container has a `ContextFlyout` so it should, but that is
     reasoning, not observation. If it does not, wire `Holding` with `handledEventsToo: true`.
 
@@ -347,7 +302,7 @@ for Stage B's card redesign rather than a patch:
     is reported even if all ten pings are lost. It is null only when the whole bring-up fails. Distinguishing
     echo success from handshake fallback needs a **new signal** — the cheapest being to surface whether the
     echo probe contributed, rather than inferring it from a value that always has a fallback behind it.
-  - The stranding worry in this item was **real and is now fixed** (`98fcc22`): the client-MTU close was not
+  - The stranding worry in this item was **real and is now fixed**: the client-MTU close was not
     on a `finally`, so a probe timeout unwound past it and was swallowed, leaving the console in client-MTU
     mode. Re-verifying with a deliberately failed probe (block 9297 briefly) is still worth doing.
 - [ ] Senkusha **bandwidth** probe — still blocked on never having observed it. See Track C.
