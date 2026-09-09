@@ -138,6 +138,7 @@ static void test_ctrl_message(void)
     {
         uint8_t session_payload[17];
         uint8_t wire[8 + 17 + 8];
+        /* Synthetic: arbitrary bytes standing in for a session-id payload. Nothing captured. */
         size_t payload_len = from_hex("1053796e74686574696353657373496421", session_payload, sizeof(session_payload));
         size_t offset = 0;
 

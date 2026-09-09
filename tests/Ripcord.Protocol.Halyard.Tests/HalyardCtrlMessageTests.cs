@@ -35,6 +35,7 @@ public class HalyardCtrlMessageTests
     {
         // A session-id frame (size=0x11, type=0x0033, 17-byte payload) immediately followed by a heartbeat
         // request — the reader must consume exactly the first frame and leave the second intact.
+        // Synthetic: 17 arbitrary bytes standing in for a session-id payload. Nothing captured.
         byte[] payload = Convert.FromHexString("1053796e74686574696353657373496421");
         byte[] wire = Convert.FromHexString("0000001100330000" + Convert.ToHexString(payload) + "0000000000fe0000");
 

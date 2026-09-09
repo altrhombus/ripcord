@@ -25,6 +25,29 @@ namespace Ripcord.ProtocolLab;
 
 internal static class LabCommands
 {
+    /// <summary>
+    /// Warn once, before anything sensitive reaches the terminal.
+    ///
+    /// <para>This harness prints registration keys, the RP-Key companion, passcodes, account ids and online
+    /// ids, because driving the protocol is its job and it is useless without them. The hazard is that
+    /// <c>.github/ISSUE_TEMPLATE/bug.yml</c> tells users never to paste precisely these values, and a person
+    /// debugging with this tool has them sitting in scrollback. The registration key and companion are
+    /// long-term per-console secrets: publishing them is not undoable by the person who does it.</para>
+    /// </summary>
+    private static void WarnSecretsFollow()
+    {
+        if (_warnedSecrets) return;
+        _warnedSecrets = true;
+
+        ConsoleColor previous = Console.ForegroundColor;
+        Console.ForegroundColor = ConsoleColor.Yellow;
+        Console.Error.WriteLine("!! The output below contains long-term secrets for YOUR console and account —");
+        Console.Error.WriteLine("!! registration key, RP-Key companion, passcode, account id. Do not paste this");
+        Console.Error.WriteLine("!! into an issue, a gist, or a chat log. Redact them the way the docs do.");
+        Console.ForegroundColor = previous;
+    }
+
+    private static bool _warnedSecrets;
     // ---- Stage 5: registration (PIN pairing) ----
 
     /// <summary>
@@ -71,6 +94,7 @@ internal static class LabCommands
             ClientDeviceId: clientId,
             Platform: platform);
 
+        WarnSecretsFollow();
         Console.WriteLine($"pairing {platform} at {consoleIp} (passcode {passcode}, account {accountId}, client-type {Convert.ToHexString(clientId).ToLowerInvariant()})...");
         var client = new HalyardRegistrationClient(cipher);
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
@@ -83,6 +107,7 @@ internal static class LabCommands
         }
 
         HalyardPairingRecord rec = result.Record!;
+        WarnSecretsFollow();
         Console.WriteLine("registration SUCCEEDED — pairing record:");
         Console.WriteLine($"  registkey (ascii): {System.Text.Encoding.ASCII.GetString(rec.RegistrationKey)}");
         Console.WriteLine($"  registkey (hex)  : {Convert.ToHexString(rec.RegistrationKey).ToLowerInvariant()}");
@@ -546,6 +571,7 @@ internal static class LabCommands
         }
 
         HalyardAccount account = await gateway.CompleteSignInAsync(redirected, CancellationToken.None);
+        WarnSecretsFollow();
         Console.WriteLine($"signed in as {account.OnlineId} (region {account.Region}); refresh token stored.");
         Console.WriteLine($"account id: {account.AccountId}   <- this is what pairing needs");
         return 0;
