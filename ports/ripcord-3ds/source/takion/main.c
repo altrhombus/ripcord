@@ -10,7 +10,7 @@
  * captured vectors" - a question it turns out to be structurally unable to ask a console at all.
  *
  * THIS PROGRAM CANNOT SUCCEED ON ITS OWN, and hardware confirmed it (2026-08-12): five INITs to
- * 10.0.0.7:9297 went unanswered. That is not a transport bug, it is the design of this probe. The
+ * <console-ip>:9297 went unanswered. That is not a transport bug, it is the design of this probe. The
  * console opens its UDP listeners only between /sess/ctrl and the stream, so with no live session there
  * is nothing listening to answer an INIT - and the run that proved it had already ended its session and
  * put the console into rest mode. The default port compounds it: 9297 is the SENKUSHA port, one above

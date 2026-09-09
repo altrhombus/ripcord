@@ -41,7 +41,7 @@ version numbers, and they are **not** the `RP-Version` header:
   AES-128-CFB over a handful of small headers. **No public-key exchange in the HTTP handshake at all.**
   ECDH exists in this generation only later, inside the Takion *stream* handshake
   (`ecdhPublicKey`/`ecdhSignature`). Validated end-to-end against our own PS5 and PS4.
-- **`v2` — observed, never reverse-engineered.** The newer client (`<engine module>`, packed/anti-debug)
+- **`v2` — observed, never reverse-engineered.** The newer client (its engine module, packed/anti-debug)
   uses a *different* HTTP control plane: an ECDH exchange carried in `RP-Pubkey`/`RP-Hmac` headers plus
   the `RP-DevACha`/`RP-DevAChaTag` pair. Seen in five capture sessions on 2026-07-10 and documented in
   `ps5-session-establishment.md`; the packer made static RE uneconomic, so we pivoted to the older
@@ -66,12 +66,11 @@ Two corrections to earlier framing, recorded because they were wrong for a while
 - **No other implementation of these protocols is used as a source.** Not for implementation detail, not for
   byte-level constructions, not for naming. Where a value here is an *assumption* rather than something our own
   evidence established, it is tagged **[X]** so it cannot be mistaken for a finding.
-- **The open `[X]` list is short and stated plainly** in [`../../ROADMAP.md`](../../ROADMAP.md). The three
-  items this section used to name — the FEC generator-matrix form, the GF primitive polynomial, and the FEC
-  per-unit stride padding — were all settled on 2026-08-01/02 against our own binary and our own console; the
-  chief remainders now are the control GMAC AAD rule and the senkusha probe ordering. An `[X]` value is
-  provisional — it interoperates, but it has not been confirmed against the console. Check that list before
-  relying on any specific value.
+- **The open `[X]` list is short and stated plainly** in [`../../ROADMAP.md`](../../ROADMAP.md), and is
+  deliberately not duplicated here: a second copy of a list of open questions is a copy that goes stale,
+  and this is the document most likely to be read as evidence. An `[X]` value is provisional — it
+  interoperates, but it has not been confirmed against the console. Check the roadmap before relying on
+  any specific value.
 - The "dirty-room" research materials — the analysed binary, raw captures, decrypted samples, the working RE
   log, the reimplementation scripts (which embed extracted constants and captured secrets), and the
   vendor↔ours name mapping — live under `captures/` and are **gitignored / not distributed**.
