@@ -283,6 +283,42 @@ public sealed partial class AboutPage : Page
         => Application.Current.Resources.TryGetValue(key, out var value) ? value as Brush : null;
 
     /// <summary>
+    /// Collapse this machine's profile directories to their environment-variable form.
+    ///
+    /// <para>This button exists to be pasted into a public issue, and the "Settings folder" row is
+    /// <c>%LocalAppData%\Ripcord</c> expanded — which on Windows contains the reader's Windows account name.
+    /// Nobody filing a bug report intends to publish that, and the row itself has to stay expanded because the
+    /// adjacent button opens it.</para>
+    ///
+    /// <para>Applied to every row rather than to that one, deliberately: a later row carrying a path would
+    /// otherwise reintroduce this silently, and a copy button is exactly where nobody would think to look for
+    /// it. Longest prefix first, since LocalApplicationData sits underneath UserProfile.</para>
+    /// </summary>
+    private static string WithoutUserProfile(string value)
+    {
+        if (string.IsNullOrEmpty(value))
+        {
+            return value;
+        }
+
+        foreach ((Environment.SpecialFolder folder, string token) in (ReadOnlySpan<(Environment.SpecialFolder, string)>)
+        [
+            (Environment.SpecialFolder.LocalApplicationData, "%LocalAppData%"),
+            (Environment.SpecialFolder.ApplicationData, "%AppData%"),
+            (Environment.SpecialFolder.UserProfile, "%UserProfile%"),
+        ])
+        {
+            string expanded = Environment.GetFolderPath(folder);
+            if (expanded.Length > 0 && value.StartsWith(expanded, StringComparison.OrdinalIgnoreCase))
+            {
+                return string.Concat(token, value.AsSpan(expanded.Length));
+            }
+        }
+
+        return value;
+    }
+
+    /// <summary>
     /// Add or update a fact by label, keeping insertion order, so the clipboard text and the table agree even
     /// though the graphics rows are filled in asynchronously.
     /// </summary>
@@ -309,7 +345,7 @@ public sealed partial class AboutPage : Page
             var text = new StringBuilder();
             foreach ((string label, string value) in _details)
             {
-                text.Append(label).Append(": ").AppendLine(value);
+                text.Append(label).Append(": ").AppendLine(WithoutUserProfile(value));
             }
 
             var package = new DataPackage { RequestedOperation = DataPackageOperation.Copy };

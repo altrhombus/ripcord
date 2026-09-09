@@ -10,8 +10,13 @@ this one is right and the other is stale.
 ## The one rule everything else follows
 
 Dependency direction is strictly **platform-specific → shared → `Ripcord.Core`**. `Ripcord.Core` and
-`Ripcord.Core.Net` know nothing about PlayStation; protocol and platform code sits above them and depends
-downward, never the reverse.
+`Ripcord.Core.Net` carry no PlayStation *types and no references upward* — both declare zero project
+references — and protocol and platform code sits above them and depends downward, never the reverse.
+
+Precisely what that claims: their `ConsolePlatform` enum uses this project's own codenames (`Halyard`,
+`Lanyard`) so the neutral layer never names a console, and some comments there cross-reference the layers
+above to explain why a primitive is shaped as it is. A comment is not a dependency; a `using` or a type
+would be, and `PresentationPortabilityTests` is what stops one appearing.
 
 ```
   FRONT ENDS          Ripcord.App                ports/ripcord-3ds   (C, devkitARM)
@@ -116,6 +121,11 @@ The rationale for each lives in the file that implements it; what follows is wha
    dispatcher thread alone. `Mutate` runs inline when already on that thread and **posts otherwise** — so
    anything a posted closure reads is read *later*. Decide freshness questions synchronously and capture the
    answer; a guard evaluated inside a posted closure is a bug, and has been twice.
+   *The one lock in the layer is at its boundary, not inside it:* `ScanSink` in `RipcordAppServices`
+   accumulates `IObserver` callbacks that genuinely arrive off the dispatcher thread, so the "one thread
+   only" premise does not hold for it and a lock is the correct answer. That is the exception and it is
+   named here so the rule stays literally true — if you want a lock on a *view-model* field, the answer is
+   the dispatcher, not the lock.
 3. **A device gets a seam; data does not.** Anything touching a GPU, a driver, a presenter or a native handle
    is reached through an interface implemented in the front end (`IVideoPipelineStats`,
    `IVideoCapabilitiesProbe`, `IConsoleReachabilityProbe`, `IConsoleScanner`, `IConsoleRegistrar`,
