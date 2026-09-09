@@ -33,7 +33,8 @@ public sealed record PairedConsole(string Id, string Name, string Host, string P
 
     /// <summary>
     /// What the user chose to call this console. Wins over everything, including what the console calls
-    /// itself: two consoles that both ship as "PS5-8A2F" are exactly the case this exists for.
+    /// itself: two consoles that both ship as "PS5-8A2F" (a synthetic stand-in for the vendor's default
+    /// host-name form, used as a fixture throughout this repository — no real console is named here) are exactly the case this exists for.
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Nickname { get; init; }

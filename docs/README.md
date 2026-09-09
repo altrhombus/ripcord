@@ -56,6 +56,25 @@ the form is the interoperability fact. If you find a value in the published tree
 hardware or a real account, that is a bug — please report it as one,
 privately, per [`SECURITY.md`](../SECURITY.md).
 
+## Redaction placeholders
+
+The canonical set. A value tied to one console, account, session or network is replaced with the narrowest
+of these that fits, so a reader can tell what was removed without seeing it:
+
+| Placeholder | Stands for |
+|---|---|
+| `<redacted>` | anything with no more specific form below |
+| `<registkey-wire>` / `<registkey-hex>` / `<registkey-dec>` | the three encodings of one registration key |
+| `<ps4-registkey>` / `<ps4-companion>` | the PS4 equivalents |
+| `<handshake-key>` | a session handshake key |
+| `<duid>` | a device unique id |
+| `<console-ip>` / `<client-ip>` | an address that identifies real hardware |
+| `<passcode>` | the console's 8-digit pairing passcode or 4-digit login PIN |
+| `<hostname>` / `<fqdn>` | a name that identifies real hardware |
+| `<base64>` | a base64 value whose content is per-account or per-session |
+
+`PublishedTreeSweepTests` enforces the absence of the values; this table is what to replace them with.
+
 ## Layout
 
 ```

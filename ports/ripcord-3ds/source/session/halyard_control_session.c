@@ -424,7 +424,9 @@ int halyard_control_session_service(halyard_control_session *session, halyard_co
      *
      *     <8 bytes, encrypted-frame tail> | 00 00 00 00 00 fe 00 00 | 00 00 00 00 00 fe 00 00
      *
-     * The parser reads <4 bytes, redacted> as a payload length - four gigabytes - and waits for data that will
+     * (The junk is the tail of an encrypted frame and is not reproduced: it is session-keyed, and the shape
+     * is what matters here, not the value.) The parser reads its first four bytes as a payload length -
+     * around four gigabytes, since the high byte is large - and waits for data that will
      * never arrive, while the console's heartbeats stack up untouched behind it. We stop replying, and
      * it drops the session ~38 s later. Every earlier theory about that disconnect (a starved loop, our
      * replies failing to send, Takion stalling, the console losing interest) was downstream of this.

@@ -42,6 +42,11 @@ rather than authored expression.
 They are included as data, read at runtime through the same configuration seam
 that accepts a local override, and are not compiled into program logic.
 
+One further constant of the same kind is compiled in rather than bundled: the
+32-byte Client-Type value the console parses by content, which a message builder
+needs inline. It meets the same test -- generic to the application, identical for
+every client, tied to no account or console.
+
 These values are generic to the protocol. They are identical for every user and
 every console. Ripcord includes NO key material, credential, or identifier tied
 to any particular console, user, or account: no registration key, no pairing

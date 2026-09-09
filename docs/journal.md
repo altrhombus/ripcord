@@ -12,6 +12,20 @@ different purpose.
 
 ## Session log
 
+> **↻ Attribution note — four commits without a model trailer.**
+>
+> 192 of this repository's commits carry `Co-Authored-By: Claude <model>`, naming the specific model. Four
+> do not, and they are recorded here because they are the four where a reader would most want the
+> provenance: the two that widened the resource guards on 2026-08-02, the pre-publication redaction pass,
+> and the commit that wrote the published-tree sweep itself. The commits that remove secrets and the commits
+> that write the rules about secrets are exactly the ones whose authorship should not be ambiguous.
+>
+> All four were AI-assisted on the same terms as the rest of the project, as
+> [`README.md`](../README.md)'s AI-assistance disclosure describes. The trailer was omitted by mistake, not
+> by choice. It is recorded here rather than corrected in place because the history has been rewritten
+> several times already to remove real key material, and a further rewrite for a metadata line is not worth
+> putting a verified-clean history back through the machinery.
+
 > **↻ RESUME HERE (2026-09-05 — VIDEO OVER THE INTERNET. The account route works off-network.)**
 >
 > Client on a phone hotspot, console on a different network, both behind NAT, no port forwarding, direct
