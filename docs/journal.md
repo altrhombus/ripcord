@@ -12,19 +12,28 @@ different purpose.
 
 ## Session log
 
-> **↻ Attribution note — four commits without a model trailer.**
+> **↻ Attribution note — five commits without a model trailer.**
 >
-> 192 of this repository's commits carry `Co-Authored-By: Claude <model>`, naming the specific model. Four
-> do not, and they are recorded here because they are the four where a reader would most want the
-> provenance: the two that widened the resource guards on 2026-08-02, the pre-publication redaction pass,
-> and the commit that wrote the published-tree sweep itself. The commits that remove secrets and the commits
-> that write the rules about secrets are exactly the ones whose authorship should not be ambiguous.
+> Almost every commit in this repository carries `Co-Authored-By: Claude <model>`, naming the specific
+> model. Five do not, and they are recorded here because they are the five where a reader would most want
+> the provenance — the commits that remove secrets and the commits that write the rules about secrets are
+> exactly the ones whose authorship should not be ambiguous:
 >
-> All four were AI-assisted on the same terms as the rest of the project, as
+> - the two that widened the resource guards, 2026-08-02;
+> - the pre-publication redaction pass, 2026-09-09;
+> - the commit that wrote the published-tree sweep, 2026-09-09;
+> - the commit that hardened that sweep after a review found it blind — and added this note, 2026-09-09.
+>
+> All five were AI-assisted on the same terms as the rest of the project, as
 > [`README.md`](../README.md)'s AI-assistance disclosure describes. The trailer was omitted by mistake, not
 > by choice. It is recorded here rather than corrected in place because the history has been rewritten
 > several times already to remove real key material, and a further rewrite for a metadata line is not worth
 > putting a verified-clean history back through the machinery.
+>
+> A `commit-msg` hook was considered and rejected: a hook cannot tell whether a commit was AI-assisted, so
+> it would either reject honest human commits or teach everyone to paste a trailer that no longer means
+> anything. The list above is short, it is checkable in one `git log --format=%B | grep`, and it stops
+> growing the moment someone notices — which is the property that actually matters.
 
 > **↻ RESUME HERE (2026-09-05 — VIDEO OVER THE INTERNET. The account route works off-network.)**
 >
