@@ -46,6 +46,18 @@ verifiable evidence and were not, which is worse than no citation at all in a pr
 that its derivation is checkable. Cite a **date and a document section** instead: a squash cannot break
 either. Where a specific change matters, name what it did and when, and let `git log` find it.
 
+**`README.md`'s test figures are exact, so re-derive them when the count changes.** The total, the
+clean-checkout figure and the sweep's own case count are all stated precisely, in a document whose value is
+that a reader can check it — and they have gone stale twice, both times because a commit added tests without
+touching prose. There is no automated check because a test asserting a number in a README is worse than the
+staleness it prevents. The command is two lines, and the skip count is unaffected unless the new tests are
+`Skippable`:
+
+```
+dotnet test tests/Ripcord.Protocol.Halyard.Tests/Ripcord.Protocol.Halyard.Tests.csproj
+dotnet test tests/Ripcord.Presentation.Tests/Ripcord.Presentation.Tests.csproj
+```
+
 The published documents are written to stand alone without it. Values tied to a particular console,
 account or session are redacted to stable placeholders; public IPv4 addresses are replaced with
 [RFC 5737](https://www.rfc-editor.org/rfc/rfc5737) documentation addresses. Two conventions sit alongside
