@@ -58,8 +58,9 @@ namespace Ripcord.Protocol.Halyard.Tests;
 public class PublishedTreeSweepTests
 {
     /// <summary>Values that are legitimately committed, each with the reason it identifies nobody.</summary>
-    // <sweep:fixtures>  — the allowlists are data that must be leak-shaped to work, same as the contract
-    // table below. The exemption covers the tables and nothing else; the prose around them is swept.
+    // The allowlists are data that must be leak-shaped to work, same as the contract table below. The
+    // exemption covers the tables and nothing else; the prose around them is swept like any other prose.
+    // <sweep:fixtures>
     private static readonly Dictionary<string, string> Allowed = new(StringComparer.OrdinalIgnoreCase)
     {
         ["271fa4e2"] = "SHA-256 prefix of the vendor DLL we analysed - provenance evidence",
@@ -457,7 +458,8 @@ public class PublishedTreeSweepTests
     /// <see cref="LineContext.Code"/> rows below make the prose-only trade a decision on the record rather
     /// than an absence.</para>
     /// </summary>
-    // <sweep:fixtures>  — everything to the closing marker is deliberately leak-shaped and is not swept.
+    // Everything to the closing marker is deliberately leak-shaped and is not swept.
+    // <sweep:fixtures>
     public static TheoryData<string, LineContext, bool, string> DetectorContract() => new()
     {
         // --- must catch in prose: shapes that have concealed a real value at some point ----------------
@@ -591,8 +593,61 @@ public class PublishedTreeSweepTests
     /// into CONTRIBUTING.md, and no check could see it. An exemption drifting from its reason is this
     /// file's oldest failure shape; here it had drifted by three orders of magnitude.</para>
     /// </summary>
-    private const string FixturesBegin = "<sweep:fixtures>";
-    private const string FixturesEnd = "</sweep:fixtures>";
+    private const string FixturesBegin = "// <sweep:fixtures>";
+    private const string FixturesEnd = "// </sweep:fixtures>";
+
+    /// <summary>
+    /// How many fixture regions this file has. Asserted, not assumed: a marker mechanism that silently
+    /// tolerates the wrong number of regions is a mechanism that stops looking without saying so.
+    /// </summary>
+    private const int ExpectedFixtureRegions = 2;
+
+    /// <summary>
+    /// Which lines of the sweep's own file are exempt, and what is wrong with the markers if anything is.
+    ///
+    /// <para><b>Fails closed, deliberately, and every clause here is a defect that existed.</b> The first
+    /// version of this mechanism was a bare boolean toggled by <c>Contains</c>, honoured in every swept
+    /// file. So: any committed file could exempt its own content by carrying the string — an exemption
+    /// meant for two tables, granted to anything that asked. Dropping a closing marker during an edit
+    /// silently exempted the rest of the file and the suite stayed green, because the guard simply stopped
+    /// looking. And <c>Contains</c> fired on any <em>mention</em>, so documenting the convention would have
+    /// opened an unswept region inside the document explaining how not to open one.</para>
+    ///
+    /// <para>The reason for the exemption is "this file's two tables", so the mechanism says exactly that:
+    /// caller-gated to this file, whole-line markers rather than substrings, and a count that must match.
+    /// Anything else is reported as an offender rather than tolerated. Three rounds running, the instance
+    /// was fixed and the mechanism inherited more generality than the reason required; this is the attempt
+    /// to write the reason in instead.</para>
+    /// </summary>
+    private static (bool[] Exempt, string? Problem) FixtureRegions(string[] lines)
+    {
+        bool[] exempt = new bool[lines.Length];
+        int open = -1;
+        int pairs = 0;
+
+        for (int i = 0; i < lines.Length; i++)
+        {
+            string trimmed = lines[i].Trim();
+
+            if (trimmed == FixturesBegin)
+            {
+                if (open >= 0) return (exempt, $"fixture marker reopened at line {i + 1} without closing the one at line {open + 1}");
+                open = i;
+            }
+            else if (trimmed == FixturesEnd)
+            {
+                if (open < 0) return (exempt, $"fixture marker closed at line {i + 1} without being opened");
+                for (int j = open; j <= i; j++) exempt[j] = true;
+                open = -1;
+                pairs++;
+            }
+        }
+
+        if (open >= 0) return (exempt, $"fixture marker opened at line {open + 1} is never closed, so the rest of the file would go unswept");
+        if (pairs != ExpectedFixtureRegions) return (exempt, $"expected {ExpectedFixtureRegions} fixture regions, found {pairs}");
+
+        return (exempt, null);
+    }
 
     /// <summary>
     /// The sweep's own file, which is swept like any other except for the fixture block.
@@ -601,6 +656,13 @@ public class PublishedTreeSweepTests
     /// than lazy: revisions predating the markers have leak-shaped fixtures spread through the file, so
     /// sweeping them would report the contract table of every past version. History cannot be given
     /// markers retroactively without a rewrite per revision.</para>
+    ///
+    /// <para><b>The consequence, which is the audit-relevant half:</b> three historical blobs of this file
+    /// carry a dash-separated form of a purged value, put there by a docstring written before the prose
+    /// here was swept. Eight characters of a ciphertext prefix that identify nothing — but no guard in
+    /// this repository can see them, and a reader of this file should learn that from this file rather
+    /// than from an outside review. Removing them is one <c>filter-repo --replace-text</c> pass and is
+    /// cheap only while the repository is unpublished.</para>
     /// </summary>
     private static bool IsSweepOwnFile(string relative) =>
         relative.EndsWith("PublishedTreeSweepTests.cs", StringComparison.Ordinal);
@@ -872,12 +934,18 @@ public class PublishedTreeSweepTests
             bool isProductCode = IsProductCode(relative);
 
             string[] lines = File.ReadAllLines(path);
-            bool inFixtures = false;
+
+            // Only this file's markers mean anything. Anywhere else the string is just text.
+            bool[] exempt = new bool[lines.Length];
+            if (IsSweepOwnFile(relative))
+            {
+                (exempt, string? problem) = FixtureRegions(lines);
+                if (problem is not null) found.Add($"{relative}|fixture-markers|{problem}");
+            }
+
             for (int i = 0; i < lines.Length; i++)
             {
-                if (lines[i].Contains(FixturesBegin, StringComparison.Ordinal)) { inFixtures = true; continue; }
-                if (lines[i].Contains(FixturesEnd, StringComparison.Ordinal)) { inFixtures = false; continue; }
-                if (inFixtures) continue;
+                if (exempt[i]) continue;
 
                 found.AddRange(
                     ScanLine(lines[i], isProse, applyAllowlist, Where(root, path, i + 1), isProductCode));
