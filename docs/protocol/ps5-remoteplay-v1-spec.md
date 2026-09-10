@@ -292,8 +292,12 @@ IV = HMAC-SHA256( context_key, out2 ‖ big-endian-uint64(counter) )[0:16]
 - `counter` starts at 0 and **increments once per field-encrypt call** (single per-connection counter).
 - `context_key` is one of four hardcoded 16-byte constants selected by protocol/version selectors
   (`FUN_101eddb0`): `sel0∈{8,9}→A`; `elif sel1==1→B_eq_1`; `elif sel1==0→B_eq_0`; else zero. Observed
-  sessions resolve to the `B_eq_1` variant. The four constant values are extracted interop material and
-  live only in the gitignored dirty room (`captures/name-mapping.md`), not here.
+  sessions resolve to the `B_eq_1` variant. **The four values are not reproduced in this document** — this
+  spec redacts observed constant values by default, and our own working copy is in the dirty room
+  (`captures/name-mapping.md`). They *are* shipped in this repository's client, in
+  `src/Ripcord.Protocol.Halyard/Data/halyard-v1-constants.json`, as a deliberate bounded exception for values
+  identical across every console and account; see [`NOTICE`](../../NOTICE). Reimplementing from this document
+  alone means recovering them from your own captures.
 
 **Field cipher**: `AES-128-CFB`, key `out1`, IV as above, then base64. Field order fixes the counter:
 
@@ -304,6 +308,24 @@ IV = HMAC-SHA256( context_key, out2 ‖ big-endian-uint64(counter) )[0:16]
 | `RP-OSType` | 2 | `"Win%d.%d"` from kernel32 version (e.g. `"Win10.0\0"`) |
 | `RP-StartBitrate` | 3 | 4-byte int |
 | `RP-StreamingType` | 4 | 4-byte int |
+
+**Plaintext headers sent alongside them** — the console requires these on `/sess/ctrl` and rejects the
+request without them. They are not encrypted and take no counter, so they do not disturb the field order
+above. Wire-confirmed **[W]**; the values are the client's own declaration of what it is, not derived from
+anything:
+
+| Header | Value sent | Meaning |
+|--------|-----------|---------|
+| `RP-ControllerType` | `0` | Which pad the client presents as |
+| `RP-ClientType` | `11` | Client platform/build class |
+| `RP-ConPath` | `1` on the LAN · `3` via the account/rendezvous route | How the client reached the console |
+| `RP-PadProcNo` | `2` | Pad processing mode |
+| `RP-SupportCmd` | `060000` on `/sess/ctrl` | Command-set bitfield (see §2.0 for the rgst value) |
+
+`RP-ConPath` is not decoration: the console runs a different bring-up for each value. On `1` it hands the A/V
+leg straight to :9297 and expects Takion there immediately; on `3` it instead offers a second connection
+through the cloud, which the client must answer and prelude first. Declaring `1` while taking the rendezvous
+route makes the console wait for a leg that will never open on those terms.
 
 ---
 
