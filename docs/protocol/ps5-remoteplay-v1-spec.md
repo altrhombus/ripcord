@@ -232,8 +232,12 @@ The PIN fold **is** the authentication: the console recomputes `K` from the tran
 PIN the user typed, so a client with the wrong PIN derives the wrong key and cannot decrypt the pairing
 record. The table lookup is obfuscation, not secrecy. The `(table, selectorOffset)` pair is chosen by the
 negotiated protocol variant (there are ~11; RP-Version 1.0 → the variant with selectorOffset `0x18d`). The
-table contents are extracted interop constants that live only in the gitignored dirty room (as with the
-§2.1 KDF tables), not here.
+table contents are extracted interop constants. They are **not reproduced in this document** — this spec
+redacts observed constant values by default — but they **are** shipped in this repository's client, in
+`src/Ripcord.Protocol.Halyard/Data/halyard-v1-constants.json`, under the same bounded exception as the §2.1
+KDF tables and on the same grounds: identical for every console and every account. See
+[`NOTICE`](../../NOTICE). Implementing from this document alone means recovering them from your own
+captures.
 
 Both fields then use the §2.1 field cipher unchanged: `AES-128-CFB(K, IV)`,
 `IV = HMAC-SHA256(context_key, material ‖ be64(counter))[0:16]`, context key **B_eq_1**, **counter 0**,

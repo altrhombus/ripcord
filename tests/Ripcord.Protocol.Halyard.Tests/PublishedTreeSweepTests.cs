@@ -46,6 +46,14 @@ namespace Ripcord.Protocol.Halyard.Tests;
 /// mechanisms. What no pattern can reach is pinned by value instead
 /// (<see cref="PinnedDataFiles"/>, <see cref="PinnedConstants"/>). All of it is CI's problem now rather than
 /// an auditor's.</para>
+///
+/// <para><b>And the corpus can be narrower than the artifact.</b> Four rounds of this were patterns too
+/// narrow for the belief about them; the fifth was different in kind. Every check here read files, while a
+/// clone also carries commit messages, author identity and timestamps — none of them files, all of them
+/// published. The proof was a redaction that held in the source comment and not in the message of the commit
+/// that made it. <see cref="CommitMessages_CarryNoUnredactedValues"/> closes the message corpus. Author
+/// identity and the committer timezone remain outside every guard here, by nature: see
+/// <c>docs/README.md</c>, which records what that discloses and why it is accepted rather than rewritten.</para>
 /// </summary>
 public class PublishedTreeSweepTests
 {
@@ -83,6 +91,26 @@ public class PublishedTreeSweepTests
             "a captured Takion SACK, same - the retransmit tests parse it and assert the gap blocks",
         ["69c4e0d86a7b0430d8cdb78070b4c55a"] =
             "the FIPS-197 AES-128 ECB known-answer ciphertext - a published NIST vector, in the 3DS test runner",
+        ["ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"] =
+            "the base64 alphabet itself, in the 3DS port's encoder - RFC 4648 table 1, not a value",
+
+        // --- commit messages: published prose that cannot be amended once pushed. -----------------------
+        ["<redacted-frame-tail>"] =
+            "ACCEPTED RESIDUE. Eight bytes of encrypted-frame tail in the message of the 2026-08-17 3DS "
+            + "resync commit - the same bytes that commit redacted from the source comment beside it. "
+            + "Session-keyed ciphertext: not reversible, identifies no console and no account, useful for "
+            + "nothing. It stays because removing it means rewriting a history verified clean five times, "
+            + "which costs more than it buys. Allowlisted rather than ignored so the next one is caught "
+            + "while `git commit --amend` is still the whole fix.",
+        ["0000000000fe"] =
+            "the heartbeat frame from that same message, six bytes of it - protocol structure, and the "
+            + "longer form is already allowlisted above for the docs explaining the desync",
+        ["deadbeefcafebabe1234"] =
+            "this file's own synthetic contract value, quoted in two later commit messages explaining the "
+            + "gap it exposed - made up, and the whole point of it is that it looks like a secret",
+        ["2001:db8a::"] =
+            "the RFC 3849 near-miss from the contract table, quoted in the commit message that added it - "
+            + "documentation-adjacent by construction and routed nowhere",
     };
 
     // A hex run may be introduced by 0x and must not touch other word characters. A \b anchor cannot express
@@ -117,7 +145,9 @@ public class PublishedTreeSweepTests
     /// <b>product code only</b> (<see cref="IsProductCode"/>), where it is the entire rule and there is
     /// nothing to bypass: no dependence on <c>const</c>, on <c>readonly</c>, on the literal sharing a line
     /// with its declaration, or on the quoting form. <c>@"…"</c>, <c>"""…"""</c>, a value wrapped onto its
-    /// own line, an expression-bodied member and <c>Convert.FromHexString("…")</c> all read alike to it.
+    /// own line, an expression-bodied member and <c>Convert.FromHexString("…")</c> all read alike to it,
+    /// and either quote character serves — the one <c>.py</c> file in this corpus is the OAuth extractor,
+    /// Python single-quotes by convention, and a double-quote-only rule could not see into it.
     ///
     /// <para>This replaced a rule that required a declaration on one line. That rule caught a fourth
     /// constant written exactly the way the third was, and six other forms walked past it — the worst being
@@ -135,7 +165,23 @@ public class PublishedTreeSweepTests
     /// something for the next audit to rediscover.</para>
     /// </summary>
     private static readonly Regex CodeHexLiteral =
-        new(@"""([0-9a-fA-F]{32,})""", RegexOptions.Compiled);
+        new(@"[""']([0-9a-fA-F]{32,})[""']", RegexOptions.Compiled);
+
+    /// <summary>
+    /// Base64 of sixteen bytes or more in shipping code. With hex absolute, this is the plausible
+    /// remaining way to ship a secret: a 32-byte key is 44 base64 characters, and <c>&lt;base64&gt;</c>
+    /// is already a placeholder in this project's canonical table with nothing enforcing it. Raised in
+    /// round 1 and the one item from that round never taken up.
+    ///
+    /// <para>Costs one allowlist entry: the only 40+ character base64 literal in shipping code is the
+    /// alphabet itself, in the 3DS encoder. Pure hex is skipped at the call site rather than excluded in
+    /// the pattern, because hex is a subset of the base64 alphabet and the hex rule has already reported
+    /// it — excluding it here would only duplicate the finding.</para>
+    /// </summary>
+    private static readonly Regex CodeBase64Literal =
+        new(@"[""']([A-Za-z0-9+/]{40,}={0,2})[""']", RegexOptions.Compiled);
+
+    private static readonly Regex PureHex = new("^[0-9a-fA-F]+$", RegexOptions.Compiled);
 
     /// <summary>
     /// The declaration-shaped rule, kept for test code only. It reports four sites there: three allowlisted
@@ -252,10 +298,10 @@ public class PublishedTreeSweepTests
         { "AA:BB:CC:DD:EE:FF", LineContext.Prose, true, "MAC, uppercase" },
         { "00-11-22-33-44-55", LineContext.Prose, true, "MAC, dash-separated" },
         { "001122334455aa", LineContext.Prose, true, "bare hex below the old 16-character floor" },
-        { "<8 bytes, encrypted-frame tail>", LineContext.Prose, true, "space-separated byte run" },
-        { "<6 bytes, encrypted-frame tail>", LineContext.Prose, true, "six bytes - a key wrapped across lines yields short runs" },
-        { "<7 bytes, encrypted-frame tail>", LineContext.Prose, true, "tab-separated byte run" },
-        { "<7 bytes, encrypted-frame tail>", LineContext.Prose, true, "comma-separated byte run" },
+        { "b7 4e 2c 91 6a d3 58 0f", LineContext.Prose, true, "space-separated byte run" },
+        { "b7 4e 2c 91 6a d3", LineContext.Prose, true, "six bytes - a key wrapped across lines yields short runs" },
+        { "b7\t4e\t2c\t91\t6a\td3\t58", LineContext.Prose, true, "tab-separated byte run" },
+        { "b7,4e,2c,91,6a,d3,58", LineContext.Prose, true, "comma-separated byte run" },
         { "172.217.16.14", LineContext.Prose, true, "public IPv4" },
         { "2600:1f18:1a2b:3c4d:5e6f:7a8b:9c0d:1e2f", LineContext.Prose, true, "global IPv6, uncompressed" },
         { "2600:1700:abcd::5", LineContext.Prose, true, "global IPv6, compressed - how a real address is actually written" },
@@ -263,7 +309,7 @@ public class PublishedTreeSweepTests
 
         // --- must catch in a trailing comment: the policy reaches a comment wherever it sits -----------
         { "0xdeadbeefcafebabe1234", LineContext.Comment, true, "a trailing comment is prose; ProsePortion must return it" },
-        { "<8 bytes, encrypted-frame tail>", LineContext.Comment, true, "the shape the 3DS port carried, in the place it carried it" },
+        { "b7 4e 2c 91 6a d3 58 0f", LineContext.Comment, true, "a captured-frame shape in a trailing comment - the 3DS port carried one exactly here" },
         { "2600:1700:abcd::5", LineContext.Comment, true, "an address is caught wherever it appears" },
 
         // --- must catch in code: patterns that deliberately ignore the prose boundary ------------------
@@ -281,7 +327,7 @@ public class PublishedTreeSweepTests
         { "0xdeadbeefcafebabe1234", LineContext.Code, false, "long hex in a code literal is out of scope by decision, not by accident" },
         { "deadbeefcafebabe1234", LineContext.Code, false, "same trade: a bare fixture is not swept for value" },
         { "001122334455aa", LineContext.Code, false, "same trade" },
-        { "<8 bytes, encrypted-frame tail>", LineContext.Code, false, "a byte-array initialiser is the archetype of the noise this excludes" },
+        { "b7 4e 2c 91 6a d3 58 0f", LineContext.Code, false, "a byte-array initialiser is the archetype of the noise this excludes" },
 
         // --- must catch in a declaration: the one exception to the prose-only scope --------------------
         { "a3f19c4e0d86a7b0430d8cdb78070b4c55a2e6f81b9d3c07a4e5f60918273645", LineContext.DeclaredConstant, true,
@@ -550,6 +596,18 @@ public class PublishedTreeSweepTests
             found.Add($"{at}|{(isProductCode ? "shipped-hex" : "declared-const")}|{hex}");
         }
 
+        if (isProductCode)
+        {
+            foreach (Match m in CodeBase64Literal.Matches(line))
+            {
+                string b64 = m.Groups[1].Value;
+                if (PureHex.IsMatch(b64)) continue;   // the hex rule above already reported it
+                if (IsSyntheticFiller(b64)) continue;
+                if (applyAllowlist && IsAllowed(b64)) continue;
+                found.Add($"{at}|shipped-base64|{b64}");
+            }
+        }
+
         foreach (Match m in SeparatedMac.Matches(line))
         {
             if (applyAllowlist && IsAllowed(m.Value)) continue;
@@ -567,6 +625,7 @@ public class PublishedTreeSweepTests
         {
             if (SeparatedMac.IsMatch(m.Value)) continue;   // a MAC, not an address
             if (IsAllowedIpv6(m.Value)) continue;
+            if (applyAllowlist && IsAllowed(m.Value)) continue;   // this family had no allowlist hook
             found.Add($"{at}|ipv6|{m.Value}");
         }
 
@@ -638,6 +697,90 @@ public class PublishedTreeSweepTests
             "A pinned data file changed. This is the only value-level check on the files the name-based guard "
             + "cannot see into. Open it, confirm against CLAUDE.md's inventory that nothing per-console has "
             + "appeared, and only then re-pin:\n    " + string.Join("\n    ", drifted));
+    }
+
+    /// <summary>
+    /// Every commit message in the history, through the same detector in prose mode.
+    ///
+    /// <para><b>Why this exists.</b> Every other check here reads files, and a commit message is neither a
+    /// file nor less published than one: it is permanent, project-authored prose that ships with the clone,
+    /// and nothing could see it. That was not hypothetical. Eight bytes of captured frame tail were redacted
+    /// from a 3DS source comment on the grounds that they are session-keyed, and the same bytes stayed in
+    /// the message of the commit that did the redacting, where no edit short of rewriting history reaches
+    /// them. They are allowlisted above, because eight bytes of non-reversible ciphertext identify nothing —
+    /// but nothing here noticed for three weeks, and that is the finding.</para>
+    ///
+    /// <para>The value of this check is timing. Caught before a push, a bad message is one
+    /// <c>git commit --amend</c>; caught after, it is a history rewrite, which this project has done enough
+    /// times to know the price. Returns empty rather than failing when git is unavailable — a source archive
+    /// is a legitimate way to receive this repository, and it simply has no such corpus.</para>
+    /// </summary>
+    private static List<string> CommitMessageOffenders(bool applyAllowlist = true)
+    {
+        string root = RepoRoot();
+        if (!Directory.Exists(Path.Combine(root, ".git"))) return [];
+
+        string log;
+        try
+        {
+            using var git = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "git",
+                Arguments = "log --no-color --format=%H%x1f%B%x1e",
+                WorkingDirectory = root,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+            });
+            if (git is null) return [];
+            log = git.StandardOutput.ReadToEnd();
+            git.WaitForExit(120_000);
+            if (git.ExitCode != 0) return [];
+        }
+        catch (System.ComponentModel.Win32Exception)
+        {
+            return [];   // no git on PATH
+        }
+
+        const char RecordSeparator = (char)0x1e;
+        const char UnitSeparator = (char)0x1f;
+        const char Lf = (char)0x0a;
+        const char Cr = (char)0x0d;
+
+        List<string> found = [];
+        foreach (string record in log.Split(RecordSeparator, StringSplitOptions.RemoveEmptyEntries))
+        {
+            string[] parts = record.Split(UnitSeparator, 2);
+            if (parts.Length != 2) continue;
+
+            string sha = parts[0].Trim();
+            sha = sha[..Math.Min(8, sha.Length)];
+
+            string[] lines = parts[1].Split(Lf);
+            for (int i = 0; i < lines.Length; i++)
+            {
+                found.AddRange(
+                    ScanLine(lines[i].TrimEnd(Cr), isProse: true, applyAllowlist, $"commit {sha}:{i + 1}"));
+            }
+        }
+
+        return found;
+    }
+
+    /// <summary>
+    /// The other published corpus. See <see cref="CommitMessageOffenders"/> for why it is not a file, and
+    /// why that mattered.
+    /// </summary>
+    [Fact]
+    public void CommitMessages_CarryNoUnredactedValues()
+    {
+        List<string> offenders = CommitMessageOffenders();
+        Assert.True(
+            offenders.Count == 0,
+            "Unredacted values in commit messages. If the commit is not yet pushed, `git commit --amend` is "
+            + "the whole fix and it is worth doing now - afterwards this needs a history rewrite. Describe "
+            + "the class of value instead of repeating it, the way the docs do:" + (char)10 + "  "
+            + string.Join((char)10 + "  ", offenders));
     }
 
     /// <summary>
@@ -716,7 +859,7 @@ public class PublishedTreeSweepTests
     public void EveryAllowlistEntry_SuppressesSomethingReal()
     {
         HashSet<string> produced = new(StringComparer.OrdinalIgnoreCase);
-        foreach (string offender in Offenders(applyAllowlist: false))
+        foreach (string offender in Offenders(applyAllowlist: false).Concat(CommitMessageOffenders(false)))
         {
             produced.Add(Normalise(offender.Split('|')[^1]));
         }
