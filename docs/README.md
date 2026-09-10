@@ -46,6 +46,17 @@ verifiable evidence and were not, which is worse than no citation at all in a pr
 that its derivation is checkable. Cite a **date and a document section** instead: a squash cannot break
 either. Where a specific change matters, name what it did and when, and let `git log` find it.
 
+**What the git history discloses, and why it is not being rewritten.** The guards in this repository all
+read file contents. A clone carries three things that are not files and that no check here can see: commit
+messages, author identity, and commit timestamps. The first is now swept — the test suite runs every commit
+message through the same detector, because a message caught before a push is one `git commit --amend` and a
+message caught after is a history rewrite. The other two are inherent to git and are recorded here as known:
+authorship is a pseudonym and a `@users.noreply.github.com` address, and **every commit carries a `-0500` UTC
+offset**, which across July–September places the author in North American Central Time, with a visible
+evening working pattern. That is real information about the author, it is not removable without rewriting
+every commit, and a history that four independent audits have verified clean is worth more than a hidden
+timezone. Committing with `TZ=UTC` avoids adding to it.
+
 **`README.md`'s test figures are exact, so re-derive them when the count changes.** The total, the
 clean-checkout figure and the sweep's own case count are all stated precisely, in a document whose value is
 that a reader can check it — and they have gone stale twice, both times because a commit added tests without
