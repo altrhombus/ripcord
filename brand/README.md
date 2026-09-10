@@ -45,7 +45,7 @@ outside edge, where it reads as a trail rather than as a mistake.
 | Nintendo | `#F0433A` red | none yet — reserved |
 
 **The mapping is by vendor, not by family**, and the app depends on it: every console card, family mark and
-accent wash resolves its colour this way (`ConsoleVendor` in `src/Ripcord.App/Services/ConsoleFamily.cs`,
+accent wash resolves its colour this way (`ConsoleVendor` in `src/Ripcord.Presentation/Consoles/ConsoleFamily.cs`,
 against the brushes in `src/Ripcord.App/Styles/Ripcord.xaml`). PS4 and PS5 deliberately share the blue —
 they are the same vendor, and a second blue invented to separate them would make the palette say something
 the mark does not. What tells those two apart in the UI is the plain-text "PS5"/"PS4" label, which is why
