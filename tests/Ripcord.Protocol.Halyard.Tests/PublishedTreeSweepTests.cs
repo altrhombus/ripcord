@@ -24,12 +24,21 @@ namespace Ripcord.Protocol.Halyard.Tests;
 /// single-space-only byte run, and a prose-only scope that excluded the two <c>.json</c> files which are the
 /// only ones in the repository deliberately holding secret-shaped data.</para>
 ///
+/// <para>Then, one round later, the same shape one level up: the table written to test the belief tested the
+/// bare regexes instead of the sweep, so five of its rows certified a catch that does not happen outside
+/// prose — and a 64-character capture-derived constant sat in a string literal, unseen, while the table
+/// asserted that exact shape was caught.</para>
+///
 /// <para><b>So what is tested here is the belief, not the pattern.</b> <see cref="DetectorContract"/> is a
-/// table of inputs this sweep must catch and inputs it must tolerate; every gap ever found is a row in it,
-/// and finding another means adding a row rather than reasoning about a regex.
+/// table of inputs this sweep must catch and inputs it must tolerate, each with the
+/// <see cref="LineContext"/> it must do so in; every gap ever found is a row in it, and finding another
+/// means adding a row rather than reasoning about a regex. Every row runs through
+/// <see cref="ScanLine"/> — the one function the file sweep also uses, so the two cannot diverge again.
 /// <see cref="EveryAllowlistEntry_SuppressesSomethingReal"/> closes the other half — an allowlist entry
 /// matching nothing asserts a coverage that does not exist, which has now happened twice by three different
-/// mechanisms. Both are CI's problem now rather than an auditor's.</para>
+/// mechanisms. What no pattern can reach is pinned by value instead
+/// (<see cref="PinnedDataFiles"/>, <see cref="PinnedConstants"/>). All of it is CI's problem now rather than
+/// an auditor's.</para>
 /// </summary>
 public class PublishedTreeSweepTests
 {
@@ -61,6 +70,12 @@ public class PublishedTreeSweepTests
         ["84D000000000"] = "a session-transport length field - protocol structure",
         ["080110AE0B2001"] = "a Takion control protobuf in a 3DS test comment - generic structure",
         ["080110AE0B180120AE0B"] = "the same protobuf with an extra field - generic structure",
+        ["0000b18ccf000000000000000000010014000048230015000000081ffa01020809"] =
+            "a captured Takion DATA chunk, the reassembly parser's ground truth - header structure, tag and TSN, no key material",
+        ["0000004823000000000000000003000010000048230001900000000000"] =
+            "a captured Takion SACK, same - the retransmit tests parse it and assert the gap blocks",
+        ["69c4e0d86a7b0430d8cdb78070b4c55a"] =
+            "the FIPS-197 AES-128 ECB known-answer ciphertext - a published NIST vector, in the 3DS test runner",
     };
 
     // A hex run may be introduced by 0x and must not touch other word characters. A \b anchor cannot express
@@ -89,6 +104,20 @@ public class PublishedTreeSweepTests
     /// <summary>Six bytes and up, any of space/tab/comma: a key wrapped across lines yields short runs.</summary>
     private static readonly Regex SeparatedByteRun =
         new(@"(?<![0-9a-zA-Z])(?:[0-9a-fA-F]{2}[ \t,]+){5,}[0-9a-fA-F]{2}" + HexEnd, RegexOptions.Compiled);
+
+    /// <summary>
+    /// A hex string assigned to a named constant — <c>const</c> or <c>static readonly</c>, C# or C. This is
+    /// the one shape allowed through the prose-only scope, and it exists because pinning the three declared
+    /// constants by value does nothing about a <em>fourth</em>: <c>ClientTypeHex</c> sat in a bare string
+    /// literal for months, correctly declared in CLAUDE.md and invisible to every guard here.
+    ///
+    /// <para>Narrow on purpose. Sweeping every hex literal in code means 305 sites, nearly all crypto test
+    /// vectors; requiring a declaration brings that to five, of which four are allowlisted below with their
+    /// reasons and one is pinned. Thirty-two characters, because sixteen bytes is the floor for anything
+    /// key-shaped and shorter runs in prose are already covered by <see cref="LongHex"/>.</para>
+    /// </summary>
+    private static readonly Regex DeclaredHexConstant =
+        new(@"\b(?:const|readonly)\b[^""=]*=\s*""([0-9a-fA-F]{32,})""", RegexOptions.Compiled);
 
     private static readonly Regex Ipv4 =
         new(@"(?<![0-9.])((?:\d{1,3}\.){3}\d{1,3})(?![0-9.])", RegexOptions.Compiled);
@@ -140,38 +169,118 @@ public class PublishedTreeSweepTests
     };
 
     /// <summary>
-    /// What this sweep must catch, and what it must tolerate. One row per gap ever found. When the next gap
-    /// turns up, add the row first — the row is the finding; changing a regex is only how it gets satisfied.
+    /// Where on a line a candidate value sits. The sweep does not treat these alike, so neither can the
+    /// contract: <see cref="LongHex"/> and <see cref="SeparatedByteRun"/> see only
+    /// <see cref="ProsePortion"/>, while the address, MAC and truncation patterns see the whole line.
+    /// Stating the context per row is what stops the contract from certifying a catch the sweep never makes.
     /// </summary>
-    public static TheoryData<string, bool, string> DetectorContract() => new()
+    public enum LineContext
     {
-        // --- must catch: shapes that have concealed a real value at some point ------------------------
-        { "0xdeadbeefcafebabe1234", true, "the 0x prefix defeated the old \\b anchor" },
-        { "deadbeefcafebabe1234", true, "plain long hex" },
-        { "0x4825abcd…", true, "0x plus truncation" },
-        { "4825abcd…", true, "a truncated prefix - the shape of every leak found in round 1" },
-        { "…fddb4c", true, "suffix truncation, the mirror shape" },
-        { "AA:BB:CC:DD:EE:FF", true, "MAC, uppercase" },
-        { "00-11-22-33-44-55", true, "MAC, dash-separated" },
-        { "001122334455aa", true, "bare hex below the old 16-character floor" },
-        { "<8 bytes, encrypted-frame tail>", true, "space-separated byte run" },
-        { "<6 bytes, encrypted-frame tail>", true, "six bytes - a key wrapped across lines yields short runs" },
-        { "<7 bytes, encrypted-frame tail>", true, "tab-separated byte run" },
-        { "<7 bytes, encrypted-frame tail>", true, "comma-separated byte run" },
-        { "172.217.16.14", true, "public IPv4" },
-        { "2600:1f18:1a2b:3c4d:5e6f:7a8b:9c0d:1e2f", true, "global IPv6, uncompressed" },
-        { "2600:1700:abcd::5", true, "global IPv6, compressed - how a real address is actually written" },
-        { "fe80::1c2d:3e4f:5a6b:7c8d", true, "link-local, compressed" },
+        /// <summary>A line of a <c>.md</c>, <c>.json</c> or <c>NOTICE</c>-class file: all of it is prose.</summary>
+        Prose,
+
+        /// <summary>A trailing <c>//</c> comment on a line of code — prose the policy reaches.</summary>
+        Comment,
+
+        /// <summary>Code with no comment: a string literal, an initialiser, a fixture array.</summary>
+        Code,
+
+        /// <summary>
+        /// A hex string bound to a named <c>const</c> — the one code shape that is swept for value, because
+        /// it is how the three committed interoperability constants are written.
+        /// </summary>
+        DeclaredConstant,
+    }
+
+    /// <summary>
+    /// What this sweep must catch, and what it must tolerate — <em>and where</em>. One row per gap ever
+    /// found. When the next gap turns up, add the row first: the row is the finding; changing a regex is only
+    /// how it gets satisfied.
+    ///
+    /// <para>The <see cref="LineContext"/> column exists because the previous version of this table asserted
+    /// against the bare regexes rather than the sweep, so five rows — including
+    /// <c>0xdeadbeefcafebabe1234</c>, the row the docstring above singles out — certified a catch that does
+    /// not happen in a code literal. That was the seventh instance of "a scope narrower than the belief held
+    /// about it", and the first where the belief was written down in a test that passed. The
+    /// <see cref="LineContext.Code"/> rows below make the prose-only trade a decision on the record rather
+    /// than an absence.</para>
+    /// </summary>
+    public static TheoryData<string, LineContext, bool, string> DetectorContract() => new()
+    {
+        // --- must catch in prose: shapes that have concealed a real value at some point ----------------
+        { "0xdeadbeefcafebabe1234", LineContext.Prose, true, "the 0x prefix defeated the old \\b anchor" },
+        { "deadbeefcafebabe1234", LineContext.Prose, true, "plain long hex" },
+        { "0x4825abcd…", LineContext.Prose, true, "0x plus truncation" },
+        { "4825abcd…", LineContext.Prose, true, "a truncated prefix - the shape of every leak found in round 1" },
+        { "…fddb4c", LineContext.Prose, true, "suffix truncation, the mirror shape" },
+        { "AA:BB:CC:DD:EE:FF", LineContext.Prose, true, "MAC, uppercase" },
+        { "00-11-22-33-44-55", LineContext.Prose, true, "MAC, dash-separated" },
+        { "001122334455aa", LineContext.Prose, true, "bare hex below the old 16-character floor" },
+        { "<8 bytes, encrypted-frame tail>", LineContext.Prose, true, "space-separated byte run" },
+        { "<6 bytes, encrypted-frame tail>", LineContext.Prose, true, "six bytes - a key wrapped across lines yields short runs" },
+        { "<7 bytes, encrypted-frame tail>", LineContext.Prose, true, "tab-separated byte run" },
+        { "<7 bytes, encrypted-frame tail>", LineContext.Prose, true, "comma-separated byte run" },
+        { "172.217.16.14", LineContext.Prose, true, "public IPv4" },
+        { "2600:1f18:1a2b:3c4d:5e6f:7a8b:9c0d:1e2f", LineContext.Prose, true, "global IPv6, uncompressed" },
+        { "2600:1700:abcd::5", LineContext.Prose, true, "global IPv6, compressed - how a real address is actually written" },
+        { "fe80::1c2d:3e4f:5a6b:7c8d", LineContext.Prose, true, "link-local, compressed" },
+
+        // --- must catch in a trailing comment: the policy reaches a comment wherever it sits -----------
+        { "0xdeadbeefcafebabe1234", LineContext.Comment, true, "a trailing comment is prose; ProsePortion must return it" },
+        { "<8 bytes, encrypted-frame tail>", LineContext.Comment, true, "the shape the 3DS port carried, in the place it carried it" },
+        { "2600:1700:abcd::5", LineContext.Comment, true, "an address is caught wherever it appears" },
+
+        // --- must catch in code: patterns that deliberately ignore the prose boundary ------------------
+        { "AA:BB:CC:DD:EE:FF", LineContext.Code, true, "a MAC is a MAC in a fixture too - SeparatedMac runs on the whole line" },
+        { "172.217.16.14", LineContext.Code, true, "addresses are never prose-scoped" },
+        { "fe80::1c2d:3e4f:5a6b:7c8d", LineContext.Code, true, "addresses are never prose-scoped" },
+        { "4825abcd…", LineContext.Code, true, "an ellipsis in code is redacted output, not a fixture" },
+
+        // --- must TOLERATE in code: the prose-only scope, stated as a decision -------------------------
+        // Sweeping bare code lines for long hex puts every crypto fixture, test vector and KDF table in
+        // this repository into scope, which is the noise that gets a guard switched off. The cost is real
+        // and is paid deliberately: a capture-derived constant assigned to a string literal is invisible
+        // here. That is why the three that exist are pinned by value instead - see PinnedDataFiles and
+        // PinnedConstants, which are the compensating control for exactly these four rows.
+        { "0xdeadbeefcafebabe1234", LineContext.Code, false, "long hex in a code literal is out of scope by decision, not by accident" },
+        { "deadbeefcafebabe1234", LineContext.Code, false, "same trade: a bare fixture is not swept for value" },
+        { "001122334455aa", LineContext.Code, false, "same trade" },
+        { "<8 bytes, encrypted-frame tail>", LineContext.Code, false, "a byte-array initialiser is the archetype of the noise this excludes" },
+
+        // --- must catch in a declaration: the one exception to the prose-only scope --------------------
+        { "a3f19c4e0d86a7b0430d8cdb78070b4c55a2e6f81b9d3c07a4e5f60918273645", LineContext.DeclaredConstant, true,
+          "a 32-byte constant in a string literal - exactly how ClientTypeHex is written, and it was invisible" },
+        { "a3f19c4e0d86a7b0430d8cdb78070b4c", LineContext.DeclaredConstant, true, "16 bytes, the floor" },
+        { "deadbeefcafebabe1234", LineContext.DeclaredConstant, false,
+          "20 characters - under the 16-byte floor, which is a trade against 305 crypto fixtures" },
 
         // --- must tolerate: things that are not disclosures --------------------------------------------
-        { "and so on, continued…", false, "an ordinary prose ellipsis" },
-        { "192.0.2.1", false, "RFC 5737 documentation address" },
-        { "10.0.0.7", false, "RFC 1918, published as captured by stated policy" },
-        { "224.0.0.251", false, "the mDNS multicast group" },
-        { "Version=\"1.0.0.0\"", false, "a version quad, not an address - decided rather than discovered" },
-        { "fd00:1a2b:3c4d:5e6f:0011:2233:4455:6677", false, "the declared synthetic ULA" },
-        { "2001:db8::1", false, "RFC 3849 documentation prefix" },
-        { "00000000000000000000", false, "filler, not a value" },
+        { "and so on, continued…", LineContext.Prose, false, "an ordinary prose ellipsis" },
+        { "192.0.2.1", LineContext.Prose, false, "RFC 5737 documentation address" },
+        { "10.0.0.7", LineContext.Prose, false, "RFC 1918, published as captured by stated policy" },
+        { "224.0.0.251", LineContext.Prose, false, "the mDNS multicast group" },
+        { "Version=\"1.0.0.0\"", LineContext.Prose, false, "a version quad, not an address - decided rather than discovered" },
+        { "fd00:1a2b:3c4d:5e6f:0011:2233:4455:6677", LineContext.Prose, false, "the declared synthetic ULA, allowed by value" },
+        { "fd00:abcd:1234:5678::9", LineContext.Prose, true, "a different address in the same /8 - the prefix test used to wave this through" },
+        { "2001:db8::1", LineContext.Prose, false, "RFC 3849 documentation prefix" },
+        { "2001:db8a::1", LineContext.Prose, true, "2001:db8a::/32 is not RFC 3849 - the prefix test was not colon-terminated" },
+        { "00000000000000000000", LineContext.Prose, false, "filler, not a value" },
+    };
+
+    /// <summary>
+    /// Values that are not in a file the sweep can usefully read, pinned by the SHA-256 of the value itself.
+    ///
+    /// <para><c>ClientTypeHex</c> is the third declared committed constant (CLAUDE.md and <c>NOTICE</c> both
+    /// carry it), and until this pin it was the only one with no value-level guard of any kind: it lives in a
+    /// C# string literal with no comment, so the prose-only scope above cannot see it, and the two tests that
+    /// name it assert how a message is built rather than what the value is. The hash is of the constant's
+    /// text, so the value is not restated here.</para>
+    /// </summary>
+    private static readonly Dictionary<string, (string Sha256, Func<string> Read)> PinnedConstants = new()
+    {
+        ["HalyardRegistrationMessage.ClientTypeHex"] =
+            ("426f45089cb8f0af6360e69974ba40dc249b60d8a3c98a7d6d5eac232969b010",
+             () => Ripcord.Protocol.Halyard.Common.Crypto.HalyardRegistrationMessage.ClientTypeHex),
     };
 
     private static string RepoRoot()
@@ -186,6 +295,13 @@ public class PublishedTreeSweepTests
         return dir!.FullName;
     }
 
+    /// <summary>
+    /// Build scratch and the dirty room. The doubled dot in <c>Ripcord..</c> is deliberate and is not a typo
+    /// for a project directory: MSBuild names its per-project tracking-log folder
+    /// <c>&lt;Project&gt;..&lt;hash&gt;</c> — e.g. <c>src/Ripcord.Input.Interop/Ripcord..7A5F5E4B/</c> — which
+    /// exists only after a native build and so is invisible in a clean clone. Written with one dot it would
+    /// silently drop every project directory under <c>src/</c> and <c>tests/</c>, which is most of the corpus.
+    /// </summary>
     private static bool Excluded(string relative) =>
         relative.Split('/').Any(s =>
             s is "captures" or "bin" or "obj" or "build" or ".git" or ".vs" or ".claude"
@@ -214,6 +330,22 @@ public class PublishedTreeSweepTests
     /// <summary>The dictionary folds case; there is no second clause, and so no doubt that it does.</summary>
     private static bool IsAllowed(string value) => Allowed.ContainsKey(Normalise(value));
 
+    /// <summary>
+    /// A declared constant already covered by <see cref="PinnedConstants"/>. Not an allowlist entry, because
+    /// the point is not that the value is tolerable — it is that a stronger guard has it.
+    ///
+    /// <para>Matched against the <em>recorded hash</em>, not the constant's current value. Reading the live
+    /// value would make the exemption self-referential: swap the constant for a per-console one and it would
+    /// still exempt itself, leaving the pin as the only guard. Keyed on the hash, a changed value loses the
+    /// exemption and fails both.</para>
+    /// </summary>
+    private static bool IsPinnedConstant(string hex)
+    {
+        string sha = Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(hex)))
+            .ToLowerInvariant();
+        return PinnedConstants.Values.Any(c => c.Sha256.Equals(sha, StringComparison.OrdinalIgnoreCase));
+    }
+
     /// <summary>So a dash-separated MAC is looked up as its colon-separated twin.</summary>
     private static string Normalise(string value) =>
         value.Replace('-', ':').Replace(" ", "").Replace("\t", "").Replace(",", "");
@@ -231,6 +363,9 @@ public class PublishedTreeSweepTests
 
     private static bool IsDocumentationAddress(string ip)
     {
+        // A quad that does not parse is not an address, so it is tolerated rather than reported. Stated
+        // because it is the permissive branch: `999.1.2.3` passes here, and nothing it could disclose is
+        // reachable over IP.
         string[] parts = ip.Split('.');
         if (parts.Length != 4 || !parts.All(p => byte.TryParse(p, out _))) return true;
         byte[] o = parts.Select(byte.Parse).ToArray();
@@ -250,11 +385,18 @@ public class PublishedTreeSweepTests
         };
     }
 
+    /// <summary>
+    /// The one synthetic ULA is allowed <em>by value</em>, not by prefix. <c>fd00:</c> is a whole /8, and ULA
+    /// is exactly the family in which the console's real token was recorded — a router that skips the
+    /// randomisation RFC 4193 asks for emits `fd00:` addresses, so a prefix test would wave through the very
+    /// thing this looks for. RFC 3849's test is colon-terminated for the same reason: <c>2001:db8abc::1</c> is
+    /// not a documentation address.
+    /// </summary>
     private static bool IsAllowedIpv6(string value)
     {
         string v = value.ToLowerInvariant();
-        return v.StartsWith("fd00:", StringComparison.Ordinal)       // the declared synthetic ULA
-            || v.StartsWith("2001:db8", StringComparison.Ordinal)    // RFC 3849
+        return v is "fd00:1a2b:3c4d:5e6f:0011:2233:4455:6677"      // the declared synthetic, exactly
+            || v.StartsWith("2001:db8:", StringComparison.Ordinal)  // RFC 3849, incl. the "2001:db8::x" form
             // A bare range name in prose ("a ULA in fc00::/7") names a family, not a host. A full address
             // in the same range still reports, which is the distinction that matters.
             || v is "fc00::" or "fd00::" or "fe80::";
@@ -285,6 +427,79 @@ public class PublishedTreeSweepTests
     private static string Where(string root, string path, int line)
         => $"{Path.GetRelativePath(root, path).Replace(Path.DirectorySeparatorChar, '/')}:{line}";
 
+    /// <summary>
+    /// The whole detector, for one line. Everything that reports lives here and nowhere else, so the file
+    /// sweep and the contract cannot drift apart: that drift is what let the contract certify five catches
+    /// the sweep did not perform.
+    /// </summary>
+    private static List<string> ScanLine(string line, bool isProse, bool applyAllowlist, string at)
+    {
+        List<string> found = [];
+
+        foreach (Match m in TruncatedHex.Matches(line))
+        {
+            if (applyAllowlist && IsAllowed(m.Groups[1].Value)) continue;
+            found.Add($"{at}|truncated|{m.Groups[1].Value}");
+        }
+
+        foreach (Match m in SuffixTruncatedHex.Matches(line))
+        {
+            if (applyAllowlist && IsAllowed(m.Groups[1].Value)) continue;
+            found.Add($"{at}|suffix|{m.Groups[1].Value}");
+        }
+
+        string prose = isProse ? line : ProsePortion(line);
+        if (prose.Length > 0)
+        {
+            foreach (Match m in LongHex.Matches(prose))
+            {
+                string hex = m.Groups[1].Value;
+                if (IsSyntheticFiller(hex)) continue;
+                if (applyAllowlist && IsAllowed(hex)) continue;
+                found.Add($"{at}|hex|{hex}");
+            }
+
+            foreach (Match m in SeparatedByteRun.Matches(prose))
+            {
+                string flat = Normalise(m.Value);
+                if (IsSyntheticFiller(flat)) continue;
+                if (applyAllowlist && IsAllowed(flat)) continue;
+                found.Add($"{at}|byte-run|{flat}");
+            }
+        }
+
+        foreach (Match m in DeclaredHexConstant.Matches(line))
+        {
+            string hex = m.Groups[1].Value;
+            if (IsSyntheticFiller(hex)) continue;
+            if (IsPinnedConstant(hex)) continue;   // guarded by hash instead, like the two data files
+            if (applyAllowlist && IsAllowed(hex)) continue;
+            found.Add($"{at}|declared-const|{hex}");
+        }
+
+        foreach (Match m in SeparatedMac.Matches(line))
+        {
+            if (applyAllowlist && IsAllowed(m.Value)) continue;
+            found.Add($"{at}|mac|{m.Value}");
+        }
+
+        foreach (Match m in Ipv4.Matches(line))
+        {
+            if (IsDocumentationAddress(m.Groups[1].Value)) continue;
+            if (VersionContext.IsMatch(line)) continue;
+            found.Add($"{at}|ipv4|{m.Value}");
+        }
+
+        foreach (Match m in Ipv6.Matches(line))
+        {
+            if (SeparatedMac.IsMatch(m.Value)) continue;   // a MAC, not an address
+            if (IsAllowedIpv6(m.Value)) continue;
+            found.Add($"{at}|ipv6|{m.Value}");
+        }
+
+        return found;
+    }
+
     /// <summary>Everything the shipped detector reports, so the tests and the contract share one code path.</summary>
     private static List<string> Offenders(bool applyAllowlist = true)
     {
@@ -301,60 +516,7 @@ public class PublishedTreeSweepTests
             string[] lines = File.ReadAllLines(path);
             for (int i = 0; i < lines.Length; i++)
             {
-                string line = lines[i];
-                string at = Where(root, path, i + 1);
-
-                foreach (Match m in TruncatedHex.Matches(line))
-                {
-                    if (applyAllowlist && IsAllowed(m.Groups[1].Value)) continue;
-                    found.Add($"{at}|truncated|{m.Groups[1].Value}");
-                }
-
-                foreach (Match m in SuffixTruncatedHex.Matches(line))
-                {
-                    if (applyAllowlist && IsAllowed(m.Groups[1].Value)) continue;
-                    found.Add($"{at}|suffix|{m.Groups[1].Value}");
-                }
-
-                string prose = isProse ? line : ProsePortion(line);
-                if (prose.Length > 0)
-                {
-                    foreach (Match m in LongHex.Matches(prose))
-                    {
-                        string hex = m.Groups[1].Value;
-                        if (IsSyntheticFiller(hex)) continue;
-                        if (applyAllowlist && IsAllowed(hex)) continue;
-                        found.Add($"{at}|hex|{hex}");
-                    }
-                }
-
-                foreach (Match m in SeparatedMac.Matches(line))
-                {
-                    if (applyAllowlist && IsAllowed(m.Value)) continue;
-                    found.Add($"{at}|mac|{m.Value}");
-                }
-
-                foreach (Match m in SeparatedByteRun.Matches(prose))
-                {
-                    string flat = Normalise(m.Value);
-                    if (IsSyntheticFiller(flat)) continue;
-                    if (applyAllowlist && IsAllowed(flat)) continue;
-                    found.Add($"{at}|byte-run|{flat}");
-                }
-
-                foreach (Match m in Ipv4.Matches(line))
-                {
-                    if (IsDocumentationAddress(m.Groups[1].Value)) continue;
-                    if (VersionContext.IsMatch(line)) continue;
-                    found.Add($"{at}|ipv4|{m.Value}");
-                }
-
-                foreach (Match m in Ipv6.Matches(line))
-                {
-                    if (SeparatedMac.IsMatch(m.Value)) continue;   // a MAC, not an address
-                    if (IsAllowedIpv6(m.Value)) continue;
-                    found.Add($"{at}|ipv6|{m.Value}");
-                }
+                found.AddRange(ScanLine(lines[i], isProse, applyAllowlist, Where(root, path, i + 1)));
             }
         }
 
@@ -401,29 +563,65 @@ public class PublishedTreeSweepTests
             + "appeared, and only then re-pin:\n    " + string.Join("\n    ", drifted));
     }
 
-    /// <summary>The belief under test: each row is a gap that was once real, or a value that must not cry wolf.</summary>
+    /// <summary>
+    /// The belief under test: each row is a gap that was once real, or a value that must not cry wolf.
+    ///
+    /// <para>This runs the value through <see cref="ScanLine"/> — the same function the two file-sweeping
+    /// facts use — placed on a line of the shape its context names, so the answer is what the sweep would
+    /// actually do rather than what a regex does in isolation. The allowlist is off: this asks what the
+    /// detector can <em>see</em>, and what is deliberately tolerated afterwards is
+    /// <see cref="EveryAllowlistEntry_SuppressesSomethingReal"/>'s question, not this one. (With it on, the
+    /// dash-MAC row would be suppressed by the synthetic-fixture entry and prove nothing.)</para>
+    /// </summary>
     [Theory]
     [MemberData(nameof(DetectorContract))]
-    public void Detector_HonoursItsContract(string input, bool shouldMatch, string why)
+    public void Detector_HonoursItsContract(string input, LineContext context, bool shouldMatch, string why)
     {
-        bool matched =
-            TruncatedHex.IsMatch(input)
-            || SuffixTruncatedHex.IsMatch(input)
-            || (LongHex.IsMatch(input) && !IsSyntheticFiller(LongHex.Match(input).Groups[1].Value))
-            || SeparatedMac.IsMatch(input)
-            || SeparatedByteRun.IsMatch(input)
-            || (Ipv4.IsMatch(input)
-                && !IsDocumentationAddress(Ipv4.Match(input).Groups[1].Value)
-                && !VersionContext.IsMatch(input))
-            || (Ipv6.IsMatch(input)
-                && !SeparatedMac.IsMatch(input)
-                && !IsAllowedIpv6(Ipv6.Match(input).Value));
+        string line = context switch
+        {
+            LineContext.Prose => input,
+            LineContext.DeclaredConstant => $"    private const string Fixture = \"{input}\";",
+            LineContext.Comment => $"        StartSession();   // as captured: {input}",
+            LineContext.Code => $"        var fixture = Decode(\"{input}\");",
+            _ => throw new ArgumentOutOfRangeException(nameof(context)),
+        };
+
+        List<string> hits = ScanLine(line, isProse: context == LineContext.Prose, applyAllowlist: false, at: "contract");
 
         Assert.True(
-            matched == shouldMatch,
+            hits.Count > 0 == shouldMatch,
             shouldMatch
-                ? $"the detector must catch \"{input}\" — {why}"
-                : $"the detector must tolerate \"{input}\" — {why}");
+                ? $"the sweep must catch \"{input}\" in {context} — {why}"
+                : $"the sweep must tolerate \"{input}\" in {context} — {why}\n  reported: "
+                  + string.Join(", ", hits));
+    }
+
+    /// <summary>
+    /// A committed constant the prose-only scope cannot see, checked by the hash of its value. The two data
+    /// files beside it are pinned the same way; this closes the last declared constant that had no
+    /// value-level guard at all.
+    /// </summary>
+    [Fact]
+    public void PinnedConstants_HaveNotChanged()
+    {
+        List<string> drifted = [];
+
+        foreach ((string name, (string expected, Func<string> read)) in PinnedConstants)
+        {
+            string actual = Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(read())))
+                .ToLowerInvariant();
+            if (!actual.Equals(expected, StringComparison.OrdinalIgnoreCase))
+            {
+                drifted.Add($"{name}\n      expected {expected}\n      actual   {actual}");
+            }
+        }
+
+        Assert.True(
+            drifted.Count == 0,
+            "A pinned constant changed. It is committed under a bounded exception, so confirm against "
+            + "CLAUDE.md's inventory that the new value is still generic — identical for every console and "
+            + "every account — and amend NOTICE with it before re-pinning:\n    "
+            + string.Join("\n    ", drifted));
     }
 
     /// <summary>
@@ -440,8 +638,12 @@ public class PublishedTreeSweepTests
             produced.Add(Normalise(offender.Split('|')[^1]));
         }
 
+        // Exact, because exact is what IsAllowed does. A substring test would call an entry live when its
+        // text merely occurs inside a longer run the detector reports whole — suppressing nothing, which is
+        // the condition this test exists to find. Validating against a looser predicate than the one that
+        // ships is this file's signature defect; it had crept into the test written to prevent it.
         List<string> inert = Allowed
-            .Where(e => !produced.Any(p => p.Contains(Normalise(e.Key), StringComparison.OrdinalIgnoreCase)))
+            .Where(e => !produced.Contains(Normalise(e.Key)))
             .Select(e => $"{e.Key}  (\"{e.Value}\")")
             .ToList();
 
