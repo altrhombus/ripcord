@@ -26,13 +26,22 @@ from any existing Remote Play client project was consulted - see `docs/protocol-
 
 **Redaction note - this document is the most sensitive in the set and the rules are strict.** The
 raw captures contain *live* credentials and personal data: OAuth access/refresh tokens **and
-authorization codes**, the app's own OAuth client id/secret, **WebAuthn/passkey challenge material**,
-account identifiers (numeric account id, hashed account id, online ID), date of birth, **console and
-client device unique IDs (`duid`)**, **console names**, **candidate IP addresses (LAN and
-reflexive/relay)**, session UUIDs, and push-context UUIDs. **None of these are reproduced here or
-anywhere in the repo**, and the raw `.saz`/pcap files are gitignored and never committed. Only
-endpoint paths, method names, field *names*, and structural shape are documented. Placeholders like
-`<token>`, `<accountId>`, `<duid>`, `<uuid>`, `<ip>` stand in for real values throughout.
+authorization codes**, **WebAuthn/passkey challenge material**, account identifiers (numeric account id,
+hashed account id, online ID), date of birth, **console and client device unique IDs (`duid`)**, **console
+names**, **candidate IP addresses (LAN and reflexive/relay)**, session UUIDs, and push-context UUIDs.
+**None of these are reproduced here or anywhere in the repo**, and the raw `.saz`/pcap files are gitignored
+and never committed. Only endpoint paths, method names, field *names*, and structural shape are documented.
+Placeholders like `<token>`, `<accountId>`, `<duid>`, `<uuid>`, `<ip>` stand in for real values throughout.
+
+**One value from these captures is deliberately committed, and it is not in the list above:** the vendor
+desktop client's own OAuth `client_id`/`client_secret`, which ships populated in
+`src/Ripcord.Cloud.Halyard/Data/halyard-oauth-client.json`. It authenticates an *application*, not a person
+— identical for every user, tied to no account and no console — which is why it is not personal data and why
+it is treated separately here. That is a deliberate, argued exception, not an oversight: see
+[`NOTICE`](../../NOTICE), which makes the case on its own grounds, and
+[`CLAUDE.md`](../../CLAUDE.md)'s "Bounded exception 2". Nothing else from these captures is committed, and no
+*user* credential is: the signed-in account's refresh token lives encrypted in the user's own
+`account.json`.
 
 ## Why this matters
 

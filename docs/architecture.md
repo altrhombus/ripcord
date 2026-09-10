@@ -141,6 +141,8 @@ The rationale for each lives in the file that implements it; what follows is wha
 | Code name | Origin | Real-world referent |
 |---|---|---|
 | Halyard | **Ours** — invented | The Sony console backend (`Ripcord.Cloud.Halyard`, `Ripcord.Protocol.Halyard*`) |
+| HalyardLegacy | **Ours** — invented | The same backend's older console generation (`ConsolePlatform`) |
+| Lanyard | **Ours** — invented, provisional | The Xbox streaming backend — reserved in `ConsolePlatform`, not implemented |
 | Takion | **Vendor's own codename**, retained | The SCTP-over-UDP transport layer inside Halyard |
 | Senkusha | **Vendor's own codename**, retained | The echo/MTU/bandwidth probe sub-protocol |
 

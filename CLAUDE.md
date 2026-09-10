@@ -160,6 +160,8 @@ The rationale for each lives in the file that implements it; what follows is wha
 | Code name | Origin | Real-world referent |
 |---|---|---|
 | Halyard | **Ours** — invented | The Sony console backend (`Ripcord.Cloud.Halyard`, `Ripcord.Protocol.Halyard*`) |
+| HalyardLegacy | **Ours** — invented | The same backend's older console generation (`ConsolePlatform`) |
+| Lanyard | **Ours** — invented, provisional | The Xbox streaming backend — reserved in `ConsolePlatform`, not implemented |
 | Takion | **Vendor's own codename**, retained | The SCTP-over-UDP transport layer inside Halyard |
 | Senkusha | **Vendor's own codename**, retained | The echo/MTU/bandwidth probe sub-protocol |
 
@@ -220,8 +222,11 @@ When working in `Ripcord.Protocol.Halyard*`, `Ripcord.Cloud.Halyard`, or anythin
   recall looks like, and it reads like competence.
 - **Marking uncertainty is mandatory, not optional.** `[X]` means *assumed, never confirmed against the
   console*. An `[X]` value with no accompanying `[C]`/`[V]`/`[W]` tag is provisional and must never be
-  described in code or docs as confirmed — an over-confident comment stops the next person checking. The open
-  list lives in `ROADMAP.md`; when you can't settle something, that list is where it belongs.
+  described in code or docs as confirmed — an over-confident comment stops the next person checking. There is
+  deliberately **no central list** of them: a second copy goes stale, which is the same reason this project
+  does not cite commit hashes. Tag the value in place and grep the specs for `[X]` —
+  `docs/protocol/README.md` states the rule. A *research* question you cannot settle belongs in `ROADMAP.md`;
+  an unconfirmed *value* belongs next to the value.
 - **Auditing is a distinct, permitted activity.** Reading another implementation *to compare it against ours*
   — a provenance/similarity audit — is allowed and occasionally worth doing, since an independence claim is
   only as good as its last check. Two conditions: the output is a **findings report, never code or spec

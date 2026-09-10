@@ -151,7 +151,7 @@ looking.
       changes the whole desktop, so it belongs to whoever is at the machine.
       (Left-Alt + Left-Shift + PrintScreen toggles HC.)
 - [ ] **The remaining page renames and splits** from the same plan section: `ConsolesPage` → `HomePage`,
-      `AddConsolePage` → `PairPage` (never cached — a flow must start clean), `KeyBindingsDialog` →
+      `AddConsolePage` → `PairPage` (never cached — a flow must start clean), `KeyBindingsPage` →
       `ControlsPage`. Only `HomePage` should be cached, to keep grid scroll position and the realized
       containers `PrepareConnectAnimation` needs.
 - [ ] **`LargeUiScale` / `TextScaleFactor`.** The plan wants the OS text scale verified empirically at 150%
