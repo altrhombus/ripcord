@@ -255,7 +255,7 @@ public class PublishedTreeSweepTests
     private static readonly string[] TextExtensions =
         [".md", ".cs", ".c", ".h", ".cpp", ".hpp", ".idl", ".def", ".json", ".yml", ".yaml", ".xaml",
          ".py", ".props", ".targets", ".csproj", ".vcxproj", ".slnx", ".proto", ".sh", ".ps1",
-         ".editorconfig", ".gitattributes", ".appxmanifest", ".manifest", ".svg"];
+         ".editorconfig", ".gitattributes", ".appxmanifest", ".manifest", ".svg", ".resx", ".resw"];
 
     private static readonly string[] NamedFiles = ["NOTICE", "LICENSE", ".gitignore", "Makefile"];
 

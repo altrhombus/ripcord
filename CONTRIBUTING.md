@@ -148,6 +148,20 @@ excluded from its own sweep so that examples can be written without writing secr
 underscore-separated matching demonstrated it with the real value and thereby became the first thing the
 new rule caught.
 
+**User-facing strings go in the catalogue; three kinds do not.** `Ripcord.Presentation` owns its text in
+`Resources/Strings.resx`, reached through the generated `Strings` accessor, and `LocalizationTests` fails
+the build if a key is unused, missing, or has no translator comment. Three categories stay hard-coded on
+purpose: exception messages for programmer error, because they are read in bug reports and a translated
+stack trace is less useful; the diagnostics report, because its audience is whoever is helping you; and
+protocol or product identifiers, because CLAUDE.md already requires those verbatim and a translated wire
+tag is a bug. The trap worth naming is that the *same token* can be both — `"Ps5"` as an on-wire
+`host-type` must never share a resource entry with `"PS5"` as a caption on a card.
+
+**Adding a language** needs no code: copy `Strings.resx` to `Strings.<culture>.resx`, translate the
+`<value>` elements, leave every `<data name>` alone, and .NET resolves the satellite assembly from the
+user's `CurrentUICulture`. Ripcord ships English only, deliberately — an unreviewed machine translation is
+worse than honest English, and the catalogue exists so a speaker can contribute a real one.
+
 **Building** needs Windows plus a C++ toolchain; see [`README.md`](README.md). A contribution that only
 touches managed protocol or core code can be developed and tested without the native half.
 
