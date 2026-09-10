@@ -471,10 +471,21 @@ public class PublishedTreeSweepTests
     }
 
     /// <summary>The dictionary folds case; there is no second clause, and so no doubt that it does.</summary>
-    private static bool IsAllowed(string value)
+    /// <summary>
+    /// Whether a value is tolerated <em>in this corpus</em>. The scoping is the point: splitting the
+    /// allowlist so reachability could be asserted per corpus, while suppression still consulted both
+    /// dictionaries everywhere, widened the file allowlist by four entries that nothing checks against
+    /// files. One of those four is the real captured ciphertext — so had it reappeared in a source file,
+    /// the file sweep would have silently swallowed it.
+    ///
+    /// <para>That is the fifth appearance of this file's signature defect: an allowlist validated against
+    /// something other than what it suppresses in. Message-corpus entries stay readable from the message
+    /// sweep only, because commit messages legitimately quote values the docs carry.</para>
+    /// </summary>
+    private static bool IsAllowed(string value, bool inMessages)
     {
         string n = Normalise(value);
-        return Allowed.ContainsKey(n) || AllowedInMessages.ContainsKey(n);
+        return Allowed.ContainsKey(n) || (inMessages && AllowedInMessages.ContainsKey(n));
     }
 
     /// <summary>
@@ -580,19 +591,22 @@ public class PublishedTreeSweepTests
     /// the sweep did not perform.
     /// </summary>
     private static List<string> ScanLine(
-        string line, bool isProse, bool applyAllowlist, string at, bool isProductCode = false)
+        string line, bool isProse, bool applyAllowlist, string at, bool isProductCode = false,
+        bool isMessage = false)
     {
+        bool Allow(string v) => applyAllowlist && IsAllowed(v, isMessage);
+
         List<string> found = [];
 
         foreach (Match m in TruncatedHex.Matches(line))
         {
-            if (applyAllowlist && IsAllowed(m.Groups[1].Value)) continue;
+            if (Allow(m.Groups[1].Value)) continue;
             found.Add($"{at}|truncated|{m.Groups[1].Value}");
         }
 
         foreach (Match m in SuffixTruncatedHex.Matches(line))
         {
-            if (applyAllowlist && IsAllowed(m.Groups[1].Value)) continue;
+            if (Allow(m.Groups[1].Value)) continue;
             found.Add($"{at}|suffix|{m.Groups[1].Value}");
         }
 
@@ -603,7 +617,7 @@ public class PublishedTreeSweepTests
             {
                 string hex = m.Groups[1].Value;
                 if (IsSyntheticFiller(hex)) continue;
-                if (applyAllowlist && IsAllowed(hex)) continue;
+                if (Allow(hex)) continue;
                 found.Add($"{at}|hex|{hex}");
             }
 
@@ -611,7 +625,7 @@ public class PublishedTreeSweepTests
             {
                 string flat = Normalise(m.Value);
                 if (IsSyntheticFiller(flat)) continue;
-                if (applyAllowlist && IsAllowed(flat)) continue;
+                if (Allow(flat)) continue;
                 found.Add($"{at}|byte-run|{flat}");
             }
         }
@@ -621,7 +635,7 @@ public class PublishedTreeSweepTests
             string hex = m.Groups[1].Value;
             if (IsSyntheticFiller(hex)) continue;
             if (IsPinnedConstant(hex)) continue;   // guarded by hash instead, like the two data files
-            if (applyAllowlist && IsAllowed(hex)) continue;
+            if (Allow(hex)) continue;
             found.Add($"{at}|{(isProductCode ? "shipped-hex" : "declared-const")}|{hex}");
         }
 
@@ -632,14 +646,14 @@ public class PublishedTreeSweepTests
                 string b64 = m.Groups[1].Value;
                 if (PureHex.IsMatch(b64)) continue;   // the hex rule above already reported it
                 if (IsSyntheticFiller(b64)) continue;
-                if (applyAllowlist && IsAllowed(b64)) continue;
+                if (Allow(b64)) continue;
                 found.Add($"{at}|shipped-base64|{b64}");
             }
         }
 
         foreach (Match m in SeparatedMac.Matches(line))
         {
-            if (applyAllowlist && IsAllowed(m.Value)) continue;
+            if (Allow(m.Value)) continue;
             found.Add($"{at}|mac|{m.Value}");
         }
 
@@ -654,7 +668,7 @@ public class PublishedTreeSweepTests
         {
             if (SeparatedMac.IsMatch(m.Value)) continue;   // a MAC, not an address
             if (IsAllowedIpv6(m.Value)) continue;
-            if (applyAllowlist && IsAllowed(m.Value)) continue;   // this family had no allowlist hook
+            if (Allow(m.Value)) continue;   // this family had no allowlist hook
             found.Add($"{at}|ipv6|{m.Value}");
         }
 
@@ -757,15 +771,19 @@ public class PublishedTreeSweepTests
     private static (bool Readable, string? Reason) MessageCorpusState()
     {
         string root = RepoRoot();
-        if (!Directory.Exists(Path.Combine(root, ".git"))) return (false, null);
 
-        // A worktree or submodule has .git as a file; the marker still lives in the real git dir, and
-        // rev-parse is the portable answer. Fall back to the file check if git cannot be run at all.
+        // Either form counts. A worktree or a submodule has .git as a *file* pointing at the real git dir,
+        // and testing only for a directory short-circuited before rev-parse could ever run — so in a
+        // `git worktree`, a mainstream workflow, the sweep did nothing and said nothing. That is the exact
+        // silent pass this function exists to prevent, one environment over. The guard stays because it
+        // correctly stops an archive unpacked inside some other repository from sweeping *that* history.
+        string dotGit = Path.Combine(root, ".git");
+        if (!Directory.Exists(dotGit) && !File.Exists(dotGit)) return (false, null);
         string? shallow = RunGit(root, "rev-parse --is-shallow-repository");
         if (shallow is null) return (false, null);
 
         if (shallow.Trim().Equals("true", StringComparison.OrdinalIgnoreCase)
-            || File.Exists(Path.Combine(root, ".git", "shallow")))
+            || (Directory.Exists(dotGit) && File.Exists(Path.Combine(dotGit, "shallow"))))
         {
             return (false,
                 "This is a SHALLOW clone, so the commit-message corpus is truncated — `git log` here answers "
@@ -828,7 +846,9 @@ public class PublishedTreeSweepTests
             for (int i = 0; i < lines.Length; i++)
             {
                 found.AddRange(
-                    ScanLine(lines[i].TrimEnd(Cr), isProse: true, applyAllowlist, $"commit {sha}:{i + 1}"));
+                    ScanLine(
+                        lines[i].TrimEnd(Cr), isProse: true, applyAllowlist, $"commit {sha}:{i + 1}",
+                        isMessage: true));
             }
         }
 
@@ -933,25 +953,27 @@ public class PublishedTreeSweepTests
         HashSet<string> Values(IEnumerable<string> offenders) =>
             new(offenders.Select(o => Normalise(o.Split('|')[^1])), StringComparer.OrdinalIgnoreCase);
 
-        HashSet<string> produced = Values(Offenders(applyAllowlist: false));
+        HashSet<string> fromFiles = Values(Offenders(applyAllowlist: false));
 
-        // Only assert the message entries when there is a message corpus to assert them against. A shallow
-        // clone is NOT that case and must not take this exit — it is a truncated corpus pretending to be a
-        // whole one, which is the whole of finding R6-1; MessageCorpusState reports it as a problem and the
-        // assertion below leads with it.
+        // Each dictionary is asserted against the corpus it silences, and only that one. A shallow clone is
+        // NOT a legitimate absence and must not take this exit — it is a truncated corpus pretending to be
+        // a whole one; MessageCorpusState reports it and the assertion below leads with that.
         (bool readable, string? corpusProblem) = MessageCorpusState();
-        if (readable) produced.UnionWith(Values(CommitMessageOffenders(false)));
+        HashSet<string> fromMessages =
+            readable ? Values(CommitMessageOffenders(false)) : new(StringComparer.OrdinalIgnoreCase);
 
         // Exact, because exact is what IsAllowed does. A substring test would call an entry live when its
         // text merely occurs inside a longer run the detector reports whole — suppressing nothing, which is
         // the condition this test exists to find. Validating against a looser predicate than the one that
         // ships is this file's signature defect; it had crept into the test written to prevent it.
-        IEnumerable<KeyValuePair<string, string>> toCheck =
-            readable ? Allowed.Concat(AllowedInMessages) : Allowed;
-
-        List<string> inert = toCheck
-            .Where(e => !produced.Contains(Normalise(e.Key)))
-            .Select(e => $"{e.Key}  (\"{e.Value}\")")
+        List<string> inert = Allowed
+            .Where(e => !fromFiles.Contains(Normalise(e.Key)))
+            .Select(e => $"{e.Key}  (\"{e.Value}\")  [file corpus]")
+            .Concat(readable
+                ? AllowedInMessages
+                    .Where(e => !fromMessages.Contains(Normalise(e.Key)))
+                    .Select(e => $"{e.Key}  (\"{e.Value}\")  [message corpus]")
+                : [])
             .ToList();
 
         Assert.True(
