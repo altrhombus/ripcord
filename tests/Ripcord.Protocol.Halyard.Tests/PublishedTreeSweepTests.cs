@@ -250,14 +250,43 @@ public class PublishedTreeSweepTests
     private static readonly string[] TextExtensions =
         [".md", ".cs", ".c", ".h", ".cpp", ".hpp", ".idl", ".def", ".json", ".yml", ".yaml", ".xaml",
          ".py", ".props", ".targets", ".csproj", ".vcxproj", ".slnx", ".proto", ".sh", ".ps1",
-         ".editorconfig", ".gitattributes", ".appxmanifest", ".manifest"];
+         ".editorconfig", ".gitattributes", ".appxmanifest", ".manifest", ".svg"];
 
     private static readonly string[] NamedFiles = ["NOTICE", "LICENSE", ".gitignore", "Makefile"];
 
-    /// <summary>Extensions that are genuinely not text, so their absence from the corpus is not a gap.</summary>
+    /// <summary>
+    /// Extensions that are genuinely not text, so their absence from the corpus is not a gap.
+    ///
+    /// <para><c>.svg</c> was on this list and should never have been: all five committed SVGs are UTF-8
+    /// text carrying human prose comments, and SVG can hold <c>&lt;metadata&gt;</c>, <c>&lt;desc&gt;</c>,
+    /// <c>data:</c> URIs and editor-inserted author strings — exactly the class widening the corpus existed
+    /// for. It is in <see cref="TextExtensions"/> now, and
+    /// <see cref="EveryCommittedTextFile_IsSwept"/> no longer takes this list's word for it.</para>
+    ///
+    /// <para><c>.pcapng</c> and <c>.bin</c> were also here, which gave a committed capture a route
+    /// <em>past</em> the corpus guard as "declared binary". Capture types are on
+    /// <see cref="NeverCommitted"/> instead, where the answer is not "skip it" but "fail".</para>
+    /// </summary>
     private static readonly string[] BinaryExtensions =
-        [".png", ".ico", ".svg", ".jpg", ".jpeg", ".gif", ".bmp", ".ttf", ".otf", ".pfx", ".dll", ".pri",
-         ".exe", ".lib", ".pdb", ".zip", ".gz", ".pcapng", ".bin"];
+        [".png", ".ico", ".jpg", ".jpeg", ".gif", ".bmp", ".ttf", ".otf", ".pfx", ".dll", ".pri",
+         ".exe", ".lib", ".pdb", ".zip", ".gz"];
+
+    /// <summary>
+    /// File types that must never be committed, whatever directory they are in.
+    ///
+    /// <para>The dirty-room rule was enforced for eleven rounds by one <c>.gitignore</c> line naming one
+    /// directory, so a capture saved anywhere else was not ignored at all. These types definitionally hold
+    /// raw session material — <c>docs/protocol-research-log.md</c> enumerates it: OAuth access and refresh
+    /// tokens, authorization codes, WebAuthn material, account identifiers, date of birth, device ids,
+    /// console names, candidate IP addresses. The whole redaction architecture rests on none of them being
+    /// committed, and until now that rested on remembering where to save.</para>
+    ///
+    /// <para>Deliberately not a skip and not an allowlist entry. There is no reason to commit one of these
+    /// and no benign form of doing so, which is the only case in this file that warrants an outright
+    /// refusal rather than a scope decision.</para>
+    /// </summary>
+    private static readonly string[] NeverCommitted =
+        [".pcap", ".pcapng", ".cap", ".saz", ".har", ".etl", ".utrace", ".bin"];
 
     /// <summary>
     /// The two files that deliberately carry secret-shaped data, pinned by content hash.
@@ -334,9 +363,36 @@ public class PublishedTreeSweepTests
         (8, "4995751499b43f886e7c50af275bea59b2ed10937391e17173d133c2db41d556"),
     ];
 
-    /// <summary>Hex, possibly written with separators, from which a purged value could be reassembled.</summary>
+    /// <summary>
+    /// Hex, possibly written with separators, from which a purged value could be reassembled. Runs of
+    /// separators are allowed, and <c>:</c> and <c>.</c> are in the class, because the question here is
+    /// what a value could be <em>rewritten</em> as, not what this repository happens to write today.
+    /// </summary>
     private static readonly Regex HexRun =
-        new(@"[0-9a-fA-F](?:[ ,	-]?[0-9a-fA-F])*", RegexOptions.Compiled);
+        new(@"[0-9a-fA-F](?:[ ,\t:.-]*[0-9a-fA-F])*", RegexOptions.Compiled);
+
+    /// <summary>Every character <see cref="HexRun"/> will step over, and therefore every one to strip.</summary>
+    private static readonly char[] HexRunSeparators = [' ', (char)0x09, ',', ':', '.', '-'];
+
+    /// <summary>
+    /// Flattens a hex run to bare hex. <b>Not <see cref="Normalise"/>.</b> That function maps <c>-</c> to
+    /// <c>:</c> so a dash-separated MAC canonicalises to its colon twin, which is right for the allowlist
+    /// and exactly wrong here: it turned the one separator <see cref="HexRun"/> was widened to accept into
+    /// a character nothing then stripped, so <c>f3-d1-d9-28</c> flattened to <c>f3:d1:d9:28</c> and matched
+    /// nothing. Two halves of one mechanism, each validated against a different definition of "separator" —
+    /// inside the check written specifically to be definition-independent.
+    /// </summary>
+    private static string FlattenHex(string run)
+    {
+        Span<char> buffer = stackalloc char[run.Length];
+        int n = 0;
+        foreach (char c in run)
+        {
+            if (!HexRunSeparators.Contains(c)) buffer[n++] = char.ToLowerInvariant(c);
+        }
+
+        return new string(buffer[..n]);
+    }
 
     /// <summary>
     /// Any window of any hex run on this line whose digest is a purged value. Separator-blind, so a value
@@ -347,7 +403,7 @@ public class PublishedTreeSweepTests
     {
         foreach (Match run in HexRun.Matches(line))
         {
-            string flat = Normalise(run.Value).ToLowerInvariant();
+            string flat = FlattenHex(run.Value);
             foreach ((int length, string sha) in PurgedValues)
             {
                 for (int i = 0; i + length <= flat.Length; i++)
@@ -1077,6 +1133,12 @@ public class PublishedTreeSweepTests
     ///
     /// <para>So a new extension arriving in the repository now fails here until someone classifies it,
     /// which is the property the list itself could never have.</para>
+    ///
+    /// <para>It also checks the two ways a classification can be wrong rather than missing, because the
+    /// round after this guard landed found both: a file <em>declared binary</em> that is really text is
+    /// hidden just as thoroughly as one on no list, so declarations are verified with a NUL-byte test
+    /// rather than believed; and a capture type has no legitimate classification at all, so
+    /// <see cref="NeverCommitted"/> fails outright instead of resolving to skip.</para>
     /// </summary>
     [Fact]
     public void EveryCommittedTextFile_IsSwept()
@@ -1086,18 +1148,57 @@ public class PublishedTreeSweepTests
         if (listing is null) return;   // no git: an archive has no committed-file list to check against
 
         List<string> unclassified = [];
+        List<string> mislabelled = [];
+        List<string> forbidden = [];
         foreach (string raw in listing.Split((char)0x0a))
         {
             string rel = raw.TrimEnd((char)0x0d);
             if (rel.Length == 0 || Excluded(rel)) continue;
 
             string ext = Path.GetExtension(rel);
+
+            if (NeverCommitted.Contains(ext, StringComparer.OrdinalIgnoreCase))
+            {
+                forbidden.Add(rel);
+                continue;
+            }
+
             if (TextExtensions.Contains(ext, StringComparer.OrdinalIgnoreCase)) continue;
             if (NamedFiles.Contains(Path.GetFileName(rel), StringComparer.OrdinalIgnoreCase)) continue;
-            if (BinaryExtensions.Contains(ext, StringComparer.OrdinalIgnoreCase)) continue;
+
+            if (BinaryExtensions.Contains(ext, StringComparer.OrdinalIgnoreCase))
+            {
+                // Verify the declaration rather than trusting it. `.svg` sat on the binary list while
+                // being UTF-8 text with human prose comments in it, and the guard endorsed that: closing
+                // the "on no list" hole did nothing about the "on the wrong list" one, and a wrong
+                // declaration satisfied this test exactly as well as a right one. A real binary has a NUL
+                // in its first few KB; a text file claiming to be binary is a file nothing reads.
+                string path = Path.Combine(root, rel.Replace('/', Path.DirectorySeparatorChar));
+                if (!File.Exists(path)) continue;
+
+                byte[] head = new byte[Math.Min(8192, (int)new FileInfo(path).Length)];
+                using (FileStream fs = File.OpenRead(path)) fs.ReadExactly(head);
+                if (Array.IndexOf(head, (byte)0) < 0) mislabelled.Add(rel);
+
+                continue;
+            }
 
             unclassified.Add(rel);
         }
+
+        Assert.True(
+            forbidden.Count == 0,
+            "Committed files of a type that must never be committed. These hold raw session material by "
+            + "definition - tokens, account identifiers, device ids, console names, addresses - and there "
+            + "is no benign reason for one to be in the tree. Remove it, then purge it from history while "
+            + "that is still cheap, and check why .gitignore did not stop it:\n  "
+            + string.Join("\n  ", forbidden));
+
+        Assert.True(
+            mislabelled.Count == 0,
+            "Files declared binary that contain no NUL byte, so they are text that nothing sweeps. Move "
+            + "the extension to TextExtensions - a wrong declaration hides a file just as effectively as "
+            + "no declaration:\n  " + string.Join("\n  ", mislabelled));
 
         Assert.True(
             unclassified.Count == 0,
