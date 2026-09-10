@@ -74,4 +74,20 @@
   <resheader name="writer">
     <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
   </resheader>
+  <data name="Family_EarlySupportChip" xml:space="preserve">
+    <value>Early support</value>
+    <comment>Short chip beside a family name. Keep it short; it sits in a small pill.</comment>
+  </data>
+  <data name="Family_EarlySupportNote" xml:space="preserve">
+    <value>Everything needed is built and confirmed against a real console, but this family hasn't been streamed end to end yet. Expect rough edges.</value>
+    <comment>Caption under a console family that works but has not been streamed end to end.</comment>
+  </data>
+  <data name="Family_NotYetAvailableChip" xml:space="preserve">
+    <value>Not yet available</value>
+    <comment>Short chip beside a family name. Keep it short; it sits in a small pill.</comment>
+  </data>
+  <data name="Family_NotYetAvailableNote" xml:space="preserve">
+    <value>Xbox isn't supported yet. It's here so you can see where Ripcord is going.</value>
+    <comment>Caption under a console family that is shown but not implemented. Xbox is a product name - do not translate it.</comment>
+  </data>
 </root>

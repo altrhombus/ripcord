@@ -1,4 +1,5 @@
 using Ripcord.Core;
+using Ripcord.Presentation.Resources;
 
 namespace Ripcord.Presentation.Consoles;
 
@@ -111,19 +112,16 @@ public sealed record ConsoleFamily(
     /// </summary>
     public string? SupportNote => Support switch
     {
-        ConsoleFamilySupport.Early =>
-            "Everything needed is built and confirmed against a real console, but this family hasn't been "
-            + "streamed end to end yet. Expect rough edges.",
-        ConsoleFamilySupport.NotYetAvailable =>
-            "Xbox isn't supported yet. It's here so you can see where Ripcord is going.",
+        ConsoleFamilySupport.Early => Strings.Family_EarlySupportNote,
+        ConsoleFamilySupport.NotYetAvailable => Strings.Family_NotYetAvailableNote,
         _ => null,
     };
 
     /// <summary>The chip caption beside the family name, or null when there is nothing to qualify.</summary>
     public string? SupportChip => Support switch
     {
-        ConsoleFamilySupport.Early => "Early support",
-        ConsoleFamilySupport.NotYetAvailable => "Not yet available",
+        ConsoleFamilySupport.Early => Strings.Family_EarlySupportChip,
+        ConsoleFamilySupport.NotYetAvailable => Strings.Family_NotYetAvailableChip,
         _ => null,
     };
 
