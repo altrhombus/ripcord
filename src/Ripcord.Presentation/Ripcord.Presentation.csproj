@@ -26,6 +26,21 @@
     to its own types. PresentationPortabilityTests enforces this, because prose alone has not held elsewhere
     in this repo.
   -->
+  <!--
+    Strings for the portable layer. Generated at build time into obj/ rather than checked in as a
+    .Designer.cs, so the accessor cannot drift from the .resx. System.Resources only - no UI framework,
+    which is what lets this project keep its portability guarantee while still being translatable.
+  -->
+  <ItemGroup>
+    <EmbeddedResource Update="Resources\Strings.resx">
+      <Generator>MSBuild:Compile</Generator>
+      <StronglyTypedFileName>$(IntermediateOutputPath)\Strings.Designer.cs</StronglyTypedFileName>
+      <StronglyTypedLanguage>CSharp</StronglyTypedLanguage>
+      <StronglyTypedNamespace>Ripcord.Presentation.Resources</StronglyTypedNamespace>
+      <StronglyTypedClassName>Strings</StronglyTypedClassName>
+    </EmbeddedResource>
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\Ripcord.Core\Ripcord.Core.csproj" />
     <ProjectReference Include="..\Ripcord.Client\Ripcord.Client.csproj" />
