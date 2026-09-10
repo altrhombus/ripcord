@@ -4,6 +4,34 @@
 ## clean-room methodology and docs/protocol-research-log.md.
 docs/protocol/captures/
 
+## Ripcord: captures by TYPE as well as by location. The rule above is a directory, and for eleven
+## rounds that was the whole of it - a capture saved anywhere else was not ignored at all. These files
+## definitionally hold raw session material: OAuth access and refresh tokens, authorization codes,
+## WebAuthn material, account identifiers, date of birth, device ids, console names and candidate IP
+## addresses. Nothing in this repository survives one of them being committed by accident, so the rule
+## must not depend on remembering which directory to save into.
+*.pcap
+*.pcapng
+*.cap
+*.saz
+*.har
+*.etl
+*.utrace
+
+## Ripcord: captures by TYPE as well as by location. The rule above is a directory, and for eleven
+## rounds that was the whole of it - a capture saved anywhere else was not ignored at all. These files
+## definitionally hold raw session material: OAuth access and refresh tokens, authorization codes,
+## WebAuthn material, account identifiers, date of birth, device ids, console names and candidate IP
+## addresses. Nothing in this repository survives one of them being committed by accident, so the rule
+## must not depend on remembering which directory to save into.
+*.pcap
+*.pcapng
+*.cap
+*.saz
+*.har
+*.etl
+*.utrace
+
 ## Ripcord: docs/ was withheld in full pending a publication review. That review happened on
 ## 2026-09-06 and docs/ is now committed and ships - EXCEPT the dirty room, which is withheld by
 ## the rule above. ("Ships" means it is in the tree a clone receives. The GitHub repository itself
