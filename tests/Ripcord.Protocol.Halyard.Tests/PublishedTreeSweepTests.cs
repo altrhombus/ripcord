@@ -94,7 +94,17 @@ public class PublishedTreeSweepTests
         ["ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"] =
             "the base64 alphabet itself, in the 3DS port's encoder - RFC 4648 table 1, not a value",
 
-        // --- commit messages: published prose that cannot be amended once pushed. -----------------------
+    };
+
+    /// <summary>
+    /// Allowed in <b>commit messages</b> only. Separate from <see cref="Allowed"/> because reachability has
+    /// to be checked in the corpus an entry claims, and this corpus can be legitimately absent: a source
+    /// archive has no history, and these four would otherwise read as dead entries and turn the suite red
+    /// for anyone who unpacked a tarball. Suppression is identical either way —
+    /// <see cref="IsAllowed"/> consults both.
+    /// </summary>
+    private static readonly Dictionary<string, string> AllowedInMessages = new(StringComparer.OrdinalIgnoreCase)
+    {
         ["<redacted-frame-tail>"] =
             "ACCEPTED RESIDUE. Eight bytes of encrypted-frame tail in the message of the 2026-08-17 3DS "
             + "resync commit - the same bytes that commit redacted from the source comment beside it. "
@@ -173,13 +183,28 @@ public class PublishedTreeSweepTests
     /// is already a placeholder in this project's canonical table with nothing enforcing it. Raised in
     /// round 1 and the one item from that round never taken up.
     ///
+    /// <para>Both alphabets: standard and base64url (<c>-_</c>, RFC 4648 §5). base64url is the convention
+    /// throughout OAuth and JWT, which is exactly this project's cloud layer — the bundled credential, PSN
+    /// access and refresh tokens — so it is the form a secret from there would arrive in. Widening the class
+    /// costs nothing measurable: at the 40-character floor both alphabets surface the same single site.</para>
+    ///
+    /// <para><b>The 40-character floor is 30 bytes, and that is a decision, not a match for the hex rule's
+    /// 16.</b> The gap between them covers AES-128 — a 16-byte key is 32 hex characters and caught, 24
+    /// base64 characters and missed — which is this protocol's core primitive. It is left open because
+    /// closing it costs more than it buys: measured over the 373 product-code files, a 40-character floor
+    /// surfaces 1 distinct value, 32 characters surfaces 12, and 24 characters surfaces 84 across 127 sites
+    /// — almost entirely identifier strings, WinUI brush names, XAML keys, type names and HTTP header
+    /// names. That is the noise this project has refused elsewhere, and it would bury the entries whose
+    /// reasons are the guard. A mitigation worth having would key on entropy or on proximity to a crypto
+    /// identifier, not on length.</para>
+    ///
     /// <para>Costs one allowlist entry: the only 40+ character base64 literal in shipping code is the
     /// alphabet itself, in the 3DS encoder. Pure hex is skipped at the call site rather than excluded in
     /// the pattern, because hex is a subset of the base64 alphabet and the hex rule has already reported
     /// it — excluding it here would only duplicate the finding.</para>
     /// </summary>
     private static readonly Regex CodeBase64Literal =
-        new(@"[""']([A-Za-z0-9+/]{40,}={0,2})[""']", RegexOptions.Compiled);
+        new(@"[""']([A-Za-z0-9+/_-]{40,}={0,2})[""']", RegexOptions.Compiled);
 
     private static readonly Regex PureHex = new("^[0-9a-fA-F]+$", RegexOptions.Compiled);
 
@@ -446,7 +471,11 @@ public class PublishedTreeSweepTests
     }
 
     /// <summary>The dictionary folds case; there is no second clause, and so no doubt that it does.</summary>
-    private static bool IsAllowed(string value) => Allowed.ContainsKey(Normalise(value));
+    private static bool IsAllowed(string value)
+    {
+        string n = Normalise(value);
+        return Allowed.ContainsKey(n) || AllowedInMessages.ContainsKey(n);
+    }
 
     /// <summary>
     /// A declared constant already covered by <see cref="PinnedConstants"/>. Not an allowlist entry, because
@@ -715,32 +744,71 @@ public class PublishedTreeSweepTests
     /// times to know the price. Returns empty rather than failing when git is unavailable — a source archive
     /// is a legitimate way to receive this repository, and it simply has no such corpus.</para>
     /// </summary>
-    private static List<string> CommitMessageOffenders(bool applyAllowlist = true)
+    /// <summary>
+    /// Whether the message corpus is readable here, and if not, why. <c>Reason</c> is null when it is.
+    ///
+    /// <para>A shallow clone is the case that matters and the one that nearly got away. <c>git log</c> in a
+    /// <c>--depth 1</c> checkout returns one commit and exits <b>0</b>: the sweep succeeds, reads 1 of 200-odd
+    /// messages and reports clean, and success and near-total failure are the same observable.
+    /// <c>actions/checkout</c> defaults to exactly that. The other two cases — no <c>.git</c>, no
+    /// <c>git</c> — are honest absences and return quietly, because a source archive is a legitimate way to
+    /// receive this repository and simply has no such corpus.</para>
+    /// </summary>
+    private static (bool Readable, string? Reason) MessageCorpusState()
     {
         string root = RepoRoot();
-        if (!Directory.Exists(Path.Combine(root, ".git"))) return [];
+        if (!Directory.Exists(Path.Combine(root, ".git"))) return (false, null);
 
-        string log;
+        // A worktree or submodule has .git as a file; the marker still lives in the real git dir, and
+        // rev-parse is the portable answer. Fall back to the file check if git cannot be run at all.
+        string? shallow = RunGit(root, "rev-parse --is-shallow-repository");
+        if (shallow is null) return (false, null);
+
+        if (shallow.Trim().Equals("true", StringComparison.OrdinalIgnoreCase)
+            || File.Exists(Path.Combine(root, ".git", "shallow")))
+        {
+            return (false,
+                "This is a SHALLOW clone, so the commit-message corpus is truncated — `git log` here answers "
+                + "successfully with a fraction of the history, which is why this fails instead of passing. "
+                + "In CI, set `fetch-depth: 0` on the actions/checkout step (the default is 1). Locally, "
+                + "`git fetch --unshallow`.");
+        }
+
+        return (true, null);
+    }
+
+    /// <summary>Runs git and returns stdout, or null if it could not be run or exited non-zero.</summary>
+    private static string? RunGit(string root, string arguments)
+    {
         try
         {
             using var git = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
             {
                 FileName = "git",
-                Arguments = "log --no-color --format=%H%x1f%B%x1e",
+                Arguments = arguments,
                 WorkingDirectory = root,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 UseShellExecute = false,
             });
-            if (git is null) return [];
-            log = git.StandardOutput.ReadToEnd();
+            if (git is null) return null;
+            string output = git.StandardOutput.ReadToEnd();
             git.WaitForExit(120_000);
-            if (git.ExitCode != 0) return [];
+            return git.ExitCode == 0 ? output : null;
         }
         catch (System.ComponentModel.Win32Exception)
         {
-            return [];   // no git on PATH
+            return null;   // no git on PATH
         }
+    }
+
+    private static List<string> CommitMessageOffenders(bool applyAllowlist = true)
+    {
+        string root = RepoRoot();
+        if (!MessageCorpusState().Readable) return [];
+
+        string? log = RunGit(root, "log --no-color --format=%H%x1f%B%x1e");
+        if (log is null) return [];
 
         const char RecordSeparator = (char)0x1e;
         const char UnitSeparator = (char)0x1f;
@@ -774,6 +842,10 @@ public class PublishedTreeSweepTests
     [Fact]
     public void CommitMessages_CarryNoUnredactedValues()
     {
+        (bool readable, string? reason) = MessageCorpusState();
+        Assert.True(reason is null, reason);
+        if (!readable) return;   // no git, or no .git: an honest absence, not a truncated corpus
+
         List<string> offenders = CommitMessageOffenders();
         Assert.True(
             offenders.Count == 0,
@@ -858,24 +930,37 @@ public class PublishedTreeSweepTests
     [Fact]
     public void EveryAllowlistEntry_SuppressesSomethingReal()
     {
-        HashSet<string> produced = new(StringComparer.OrdinalIgnoreCase);
-        foreach (string offender in Offenders(applyAllowlist: false).Concat(CommitMessageOffenders(false)))
-        {
-            produced.Add(Normalise(offender.Split('|')[^1]));
-        }
+        HashSet<string> Values(IEnumerable<string> offenders) =>
+            new(offenders.Select(o => Normalise(o.Split('|')[^1])), StringComparer.OrdinalIgnoreCase);
+
+        HashSet<string> produced = Values(Offenders(applyAllowlist: false));
+
+        // Only assert the message entries when there is a message corpus to assert them against. A shallow
+        // clone is NOT that case and must not take this exit — it is a truncated corpus pretending to be a
+        // whole one, which is the whole of finding R6-1; MessageCorpusState reports it as a problem and the
+        // assertion below leads with it.
+        (bool readable, string? corpusProblem) = MessageCorpusState();
+        if (readable) produced.UnionWith(Values(CommitMessageOffenders(false)));
 
         // Exact, because exact is what IsAllowed does. A substring test would call an entry live when its
         // text merely occurs inside a longer run the detector reports whole — suppressing nothing, which is
         // the condition this test exists to find. Validating against a looser predicate than the one that
         // ships is this file's signature defect; it had crept into the test written to prevent it.
-        List<string> inert = Allowed
+        IEnumerable<KeyValuePair<string, string>> toCheck =
+            readable ? Allowed.Concat(AllowedInMessages) : Allowed;
+
+        List<string> inert = toCheck
             .Where(e => !produced.Contains(Normalise(e.Key)))
             .Select(e => $"{e.Key}  (\"{e.Value}\")")
             .ToList();
 
         Assert.True(
             inert.Count == 0,
-            "Allowlist entries that suppress nothing. Each states a reason for tolerating a value the detector "
+            (corpusProblem is null
+                ? string.Empty
+                : "READ THIS FIRST — the entries below are probably fine and the corpus is not: "
+                  + corpusProblem + "\n\n")
+            + "Allowlist entries that suppress nothing. Each states a reason for tolerating a value the detector "
             + "never produces, which asserts a coverage that does not exist. Either the value is gone (delete "
             + "the entry) or the detector cannot reach it (fix the detector):\n  "
             + string.Join("\n  ", inert));
