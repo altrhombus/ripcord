@@ -7,9 +7,14 @@ docs/protocol/captures/
 ## Ripcord: captures by TYPE as well as by location. The rule above is a directory, and for eleven
 ## rounds that was the whole of it - a capture saved anywhere else was not ignored at all. These files
 ## definitionally hold raw session material: OAuth access and refresh tokens, authorization codes,
-## WebAuthn material, account identifiers, date of birth, device ids, console names and candidate IP
+## WebAuthn material, account identifiers, date of birth, console names, device ids and candidate IP
 ## addresses. Nothing in this repository survives one of them being committed by accident, so the rule
 ## must not depend on remembering which directory to save into.
+##
+## The compressed forms matter more than the bare ones: five of the ten capture filenames in
+## docs/protocol-research-log.md end .pcapng.gz, so gzip is this project's actual practice and the
+## by-type rule missed all of it for a round. Nothing legitimate here is a .gz or .zip; if that ever
+## changes, force-add the one file rather than narrowing these.
 *.pcap
 *.pcapng
 *.cap
@@ -17,20 +22,8 @@ docs/protocol/captures/
 *.har
 *.etl
 *.utrace
-
-## Ripcord: captures by TYPE as well as by location. The rule above is a directory, and for eleven
-## rounds that was the whole of it - a capture saved anywhere else was not ignored at all. These files
-## definitionally hold raw session material: OAuth access and refresh tokens, authorization codes,
-## WebAuthn material, account identifiers, date of birth, device ids, console names and candidate IP
-## addresses. Nothing in this repository survives one of them being committed by accident, so the rule
-## must not depend on remembering which directory to save into.
-*.pcap
-*.pcapng
-*.cap
-*.saz
-*.har
-*.etl
-*.utrace
+*.gz
+*.zip
 
 ## Ripcord: docs/ was withheld in full pending a publication review. That review happened on
 ## 2026-09-06 and docs/ is now committed and ships - EXCEPT the dirty room, which is withheld by

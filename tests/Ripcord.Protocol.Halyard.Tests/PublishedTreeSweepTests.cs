@@ -265,11 +265,14 @@ public class PublishedTreeSweepTests
     ///
     /// <para><c>.pcapng</c> and <c>.bin</c> were also here, which gave a committed capture a route
     /// <em>past</em> the corpus guard as "declared binary". Capture types are on
-    /// <see cref="NeverCommitted"/> instead, where the answer is not "skip it" but "fail".</para>
+    /// <see cref="NeverCommitted"/> instead, where the answer is not "skip it" but "fail". <c>.gz</c> and
+    /// <c>.zip</c> came off for the same reason one round later — a <c>.pcapng.gz</c> resolved to
+    /// <c>.gz</c> and was skipped as declared binary. An opaque container is not a thing this guard can
+    /// vouch for, and nothing here legitimately is one, so it now fails as unclassified.</para>
     /// </summary>
     private static readonly string[] BinaryExtensions =
         [".png", ".ico", ".jpg", ".jpeg", ".gif", ".bmp", ".ttf", ".otf", ".pfx", ".dll", ".pri",
-         ".exe", ".lib", ".pdb", ".zip", ".gz"];
+         ".exe", ".lib", ".pdb"];
 
     /// <summary>
     /// File types that must never be committed, whatever directory they are in.
@@ -285,6 +288,27 @@ public class PublishedTreeSweepTests
     /// and no benign form of doing so, which is the only case in this file that warrants an outright
     /// refusal rather than a scope decision.</para>
     /// </summary>
+    /// <summary>
+    /// Every extension in a filename, not just the last. <c>session5-wireshark.pcapng.gz</c> yields both
+    /// <c>.pcapng</c> and <c>.gz</c>.
+    ///
+    /// <para>Written because <see cref="NeverCommitted"/> was matched against
+    /// <c>Path.GetExtension</c> alone, and five of the ten capture filenames in this project's own
+    /// research log end <c>.pcapng.gz</c> — so the rule was defeated by the form the documented workflow
+    /// actually produces. The rule was written against the file <em>type</em> and matched against the
+    /// file <em>name</em>, which is the same gap between belief and mechanism every round of this has
+    /// turned on, arriving at the shallowest layer there is.</para>
+    /// </summary>
+    private static IEnumerable<string> Extensions(string path)
+    {
+        string name = Path.GetFileName(path);
+        for (int i = name.IndexOf('.'); i >= 0 && i < name.Length - 1; i = name.IndexOf('.', i + 1))
+        {
+            int next = name.IndexOf('.', i + 1);
+            yield return next < 0 ? name[i..] : name[i..next];
+        }
+    }
+
     private static readonly string[] NeverCommitted =
         [".pcap", ".pcapng", ".cap", ".saz", ".har", ".etl", ".utrace", ".bin"];
 
@@ -369,10 +393,10 @@ public class PublishedTreeSweepTests
     /// what a value could be <em>rewritten</em> as, not what this repository happens to write today.
     /// </summary>
     private static readonly Regex HexRun =
-        new(@"[0-9a-fA-F](?:[ ,\t:.-]*[0-9a-fA-F])*", RegexOptions.Compiled);
+        new(@"[0-9a-fA-F](?:[ ,\t:._-]*[0-9a-fA-F])*", RegexOptions.Compiled);
 
     /// <summary>Every character <see cref="HexRun"/> will step over, and therefore every one to strip.</summary>
-    private static readonly char[] HexRunSeparators = [' ', (char)0x09, ',', ':', '.', '-'];
+    private static readonly char[] HexRunSeparators = [' ', (char)0x09, ',', ':', '.', '-', '_'];
 
     /// <summary>
     /// Flattens a hex run to bare hex. <b>Not <see cref="Normalise"/>.</b> That function maps <c>-</c> to
@@ -1157,7 +1181,7 @@ public class PublishedTreeSweepTests
 
             string ext = Path.GetExtension(rel);
 
-            if (NeverCommitted.Contains(ext, StringComparer.OrdinalIgnoreCase))
+            if (Extensions(rel).Any(e => NeverCommitted.Contains(e, StringComparer.OrdinalIgnoreCase)))
             {
                 forbidden.Add(rel);
                 continue;
