@@ -26,7 +26,14 @@ jobs:
       matrix:
         os: [windows-latest]
     steps:
+      # fetch-depth: 0, deliberately. PublishedTreeSweepTests sweeps every commit message, and
+      # actions/checkout defaults to a depth-1 clone in which `git log` returns one commit and
+      # exits 0 — indistinguishable from a single-commit repository. The sweep would report clean
+      # having read 1 of N messages. The suite now fails on a shallow clone rather than pass
+      # quietly, so removing this line turns the job red instead of hollowing the guard out.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
@@ -76,7 +83,14 @@ jobs:
           - { host: ubuntu-latest, rid: linux-x64 }
           - { host: macos-latest,  rid: osx-arm64 }
     steps:
+      # fetch-depth: 0, deliberately. PublishedTreeSweepTests sweeps every commit message, and
+      # actions/checkout defaults to a depth-1 clone in which `git log` returns one commit and
+      # exits 0 — indistinguishable from a single-commit repository. The sweep would report clean
+      # having read 1 of N messages. The suite now fails on a shallow clone rather than pass
+      # quietly, so removing this line turns the job red instead of hollowing the guard out.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
