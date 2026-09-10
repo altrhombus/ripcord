@@ -99,19 +99,12 @@ public class PublishedTreeSweepTests
     /// <summary>
     /// Allowed in <b>commit messages</b> only. Separate from <see cref="Allowed"/> because reachability has
     /// to be checked in the corpus an entry claims, and this corpus can be legitimately absent: a source
-    /// archive has no history, and these four would otherwise read as dead entries and turn the suite red
-    /// for anyone who unpacked a tarball. Suppression is identical either way —
+    /// archive has no history, and these would otherwise read as dead entries and turn the suite red for
+    /// anyone who unpacked a tarball. Suppression is identical either way —
     /// <see cref="IsAllowed"/> consults both.
     /// </summary>
     private static readonly Dictionary<string, string> AllowedInMessages = new(StringComparer.OrdinalIgnoreCase)
     {
-        ["<redacted-frame-tail>"] =
-            "ACCEPTED RESIDUE. Eight bytes of encrypted-frame tail in the message of the 2026-08-17 3DS "
-            + "resync commit - the same bytes that commit redacted from the source comment beside it. "
-            + "Session-keyed ciphertext: not reversible, identifies no console and no account, useful for "
-            + "nothing. It stays because removing it means rewriting a history verified clean five times, "
-            + "which costs more than it buys. Allowlisted rather than ignored so the next one is caught "
-            + "while `git commit --amend` is still the whole fix.",
         ["0000000000fe"] =
             "the heartbeat frame from that same message, six bytes of it - protocol structure, and the "
             + "longer form is already allowlisted above for the docs explaining the desync",
@@ -474,9 +467,9 @@ public class PublishedTreeSweepTests
     /// <summary>
     /// Whether a value is tolerated <em>in this corpus</em>. The scoping is the point: splitting the
     /// allowlist so reachability could be asserted per corpus, while suppression still consulted both
-    /// dictionaries everywhere, widened the file allowlist by four entries that nothing checks against
-    /// files. One of those four is the real captured ciphertext — so had it reappeared in a source file,
-    /// the file sweep would have silently swallowed it.
+    /// dictionaries everywhere, widened the file allowlist by the history-evidenced entries, which nothing
+    /// checks against files. One of them was the real captured ciphertext — so had it reappeared in a source
+    /// file, the file sweep would have silently swallowed it.
     ///
     /// <para>That is the fifth appearance of this file's signature defect: an allowlist validated against
     /// something other than what it suppresses in. Message-corpus entries stay readable from the message
@@ -750,8 +743,12 @@ public class PublishedTreeSweepTests
     /// and nothing could see it. That was not hypothetical. Eight bytes of captured frame tail were redacted
     /// from a 3DS source comment on the grounds that they are session-keyed, and the same bytes stayed in
     /// the message of the commit that did the redacting, where no edit short of rewriting history reaches
-    /// them. They are allowlisted above, because eight bytes of non-reversible ciphertext identify nothing —
-    /// but nothing here noticed for three weeks, and that is the finding.</para>
+    /// them without a rewrite. Nothing here noticed for three weeks, and that is the finding — not the
+    /// bytes, which were eight bytes of non-reversible ciphertext identifying nothing. They were carried as
+    /// an allowlisted residue for two rounds and then removed at the source: the repository had never been
+    /// public, so the rewrite that the residue's own reasoning had priced as expensive was in fact free, and
+    /// the message now describes the shape exactly as the code comment beside it does. The entries that
+    /// remain here are synthetic values quoted by later commit messages.</para>
     ///
     /// <para>The value of this check is timing. Caught before a push, a bad message is one
     /// <c>git commit --amend</c>; caught after, it is a history rewrite, which this project has done enough
