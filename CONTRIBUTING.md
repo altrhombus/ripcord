@@ -136,6 +136,18 @@ dotnet test tests/Ripcord.Presentation.Tests/Ripcord.Presentation.Tests.csproj
 Keep it green, and add coverage for behaviour you change. Some tests validate against real captured ground
 truth held outside the repository and self-skip when absent — that is expected, not a failure.
 
+**Run them after you commit, not before.** One of these tests sweeps every commit message, so your message
+is part of what it checks and cannot be checked until it exists. Running the suite, committing, and pushing
+in that order will pass locally and go red on the next clone — which is exactly how a purged value got back
+into a published message once already. `commit → test → push` is the order; if it fails, `git commit
+--amend` is the whole fix, and it stops being the whole fix the moment you push.
+
+**And when you widen a detector, illustrate the new form with a synthetic value, never the real one.**
+`PublishedTreeSweepTests.cs` keeps a table of deliberately leak-shaped fixtures for exactly this, and is
+excluded from its own sweep so that examples can be written without writing secrets. The commit that added
+underscore-separated matching demonstrated it with the real value and thereby became the first thing the
+new rule caught.
+
 **Building** needs Windows plus a C++ toolchain; see [`README.md`](README.md). A contribution that only
 touches managed protocol or core code can be developed and tested without the native half.
 
