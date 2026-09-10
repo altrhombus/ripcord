@@ -58,6 +58,8 @@ namespace Ripcord.Protocol.Halyard.Tests;
 public class PublishedTreeSweepTests
 {
     /// <summary>Values that are legitimately committed, each with the reason it identifies nobody.</summary>
+    // <sweep:fixtures>  — the allowlists are data that must be leak-shaped to work, same as the contract
+    // table below. The exemption covers the tables and nothing else; the prose around them is swept.
     private static readonly Dictionary<string, string> Allowed = new(StringComparer.OrdinalIgnoreCase)
     {
         ["271fa4e2"] = "SHA-256 prefix of the vendor DLL we analysed - provenance evidence",
@@ -115,6 +117,7 @@ public class PublishedTreeSweepTests
             "the RFC 3849 near-miss from the contract table, quoted in the commit message that added it - "
             + "documentation-adjacent by construction and routed nowhere",
     };
+    // </sweep:fixtures>
 
     // A hex run may be introduced by 0x and must not touch other word characters. A \b anchor cannot express
     // this: in "0x4825" there is no boundary between x and 4.
@@ -224,10 +227,11 @@ public class PublishedTreeSweepTests
     private static readonly Regex Ipv6 = new(
         @"(?<![0-9a-zA-Z:.])(?:"
         + @"(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}"                                    // eight full groups
-        + @"|(?:[0-9a-fA-F]{1,4}:)+:(?:[0-9a-fA-F]{1,4}:)*[0-9a-fA-F]{1,4}"              // a:b::c:d
-        + @"|(?:[0-9a-fA-F]{1,4}:)+:"                                                     // a:b::
-        + @"|::(?:[0-9a-fA-F]{1,4}:)+[0-9a-fA-F]{1,4}"                                    // ::a:b — two groups,
-                                                                                           // so C++ ::name is not an address
+        + @"|(?:[0-9a-fA-F]{1,4}:)+:(?:[0-9a-fA-F]{1,4}:)*[0-9a-fA-F]{1,4}"              // groups, gap, groups
+        + @"|(?:[0-9a-fA-F]{1,4}:)+:"                                                     // groups, then a gap
+        + @"|::(?:[0-9a-fA-F]{1,4}:)+[0-9a-fA-F]{1,4}"                                    // gap, then two or more
+                                                                                           // groups, so a C++ scope
+                                                                                           // resolution is not an address
         + @")(?![0-9a-zA-Z:.])",
         RegexOptions.Compiled);
 
@@ -402,8 +406,8 @@ public class PublishedTreeSweepTests
     /// Flattens a hex run to bare hex. <b>Not <see cref="Normalise"/>.</b> That function maps <c>-</c> to
     /// <c>:</c> so a dash-separated MAC canonicalises to its colon twin, which is right for the allowlist
     /// and exactly wrong here: it turned the one separator <see cref="HexRun"/> was widened to accept into
-    /// a character nothing then stripped, so <c>f3-d1-d9-28</c> flattened to <c>f3:d1:d9:28</c> and matched
-    /// nothing. Two halves of one mechanism, each validated against a different definition of "separator" —
+    /// a character nothing then stripped, so a dash-separated run flattened to a colon-separated one and
+    /// matched nothing. Two halves of one mechanism, each validated against a different definition of "separator" —
     /// inside the check written specifically to be definition-independent.
     /// </summary>
     private static string FlattenHex(string run)
@@ -447,13 +451,13 @@ public class PublishedTreeSweepTests
     /// how it gets satisfied.
     ///
     /// <para>The <see cref="LineContext"/> column exists because the previous version of this table asserted
-    /// against the bare regexes rather than the sweep, so five rows — including
-    /// <c>0xdeadbeefcafebabe1234</c>, the row the docstring above singles out — certified a catch that does
-    /// not happen in a code literal. That was the seventh instance of "a scope narrower than the belief held
+    /// against the bare regexes rather than the sweep, so five rows — including the <c>0x</c>-prefixed one
+    /// the docstring above singles out — certified a catch that does not happen in a code literal. That was the seventh instance of "a scope narrower than the belief held
     /// about it", and the first where the belief was written down in a test that passed. The
     /// <see cref="LineContext.Code"/> rows below make the prose-only trade a decision on the record rather
     /// than an absence.</para>
     /// </summary>
+    // <sweep:fixtures>  — everything to the closing marker is deliberately leak-shaped and is not swept.
     public static TheoryData<string, LineContext, bool, string> DetectorContract() => new()
     {
         // --- must catch in prose: shapes that have concealed a real value at some point ----------------
@@ -539,6 +543,7 @@ public class PublishedTreeSweepTests
         { "2001:db8a::1", LineContext.Prose, true, "2001:db8a::/32 is not RFC 3849 - the prefix test was not colon-terminated" },
         { "00000000000000000000", LineContext.Prose, false, "filler, not a value" },
     };
+    // </sweep:fixtures>
 
     /// <summary>
     /// Values that are not in a file the sweep can usefully read, pinned by the SHA-256 of the value itself.
@@ -575,13 +580,36 @@ public class PublishedTreeSweepTests
     /// exists only after a native build and so is invisible in a clean clone. Written with one dot it would
     /// silently drop every project directory under <c>src/</c> and <c>tests/</c>, which is most of the corpus.
     /// </summary>
+    /// <summary>
+    /// Lines between these markers are not swept. They bracket <see cref="DetectorContract"/>, which has
+    /// to hold leak-shaped fixtures to do its job.
+    ///
+    /// <para>This replaced a whole-file exclusion. The exemption was needed for a table and was granted to
+    /// 1,300 lines, so every docstring here — including the paragraphs explaining what the guards are for
+    /// — sat outside every corpus. The predictable happened: a purged value went into the prose above in
+    /// the same commit that wrote "illustrate the new form with a synthetic value, never the real one"
+    /// into CONTRIBUTING.md, and no check could see it. An exemption drifting from its reason is this
+    /// file's oldest failure shape; here it had drifted by three orders of magnitude.</para>
+    /// </summary>
+    private const string FixturesBegin = "<sweep:fixtures>";
+    private const string FixturesEnd = "</sweep:fixtures>";
+
+    /// <summary>
+    /// The sweep's own file, which is swept like any other except for the fixture block.
+    ///
+    /// <para>Still excluded wholesale from the <em>historical</em> corpus, and that is deliberate rather
+    /// than lazy: revisions predating the markers have leak-shaped fixtures spread through the file, so
+    /// sweeping them would report the contract table of every past version. History cannot be given
+    /// markers retroactively without a rewrite per revision.</para>
+    /// </summary>
+    private static bool IsSweepOwnFile(string relative) =>
+        relative.EndsWith("PublishedTreeSweepTests.cs", StringComparison.Ordinal);
+
     private static bool Excluded(string relative) =>
         relative.Split('/').Any(s =>
             s is "captures" or "bin" or "obj" or "build" or ".git" or ".vs" or ".claude"
               or "node_modules" or "packages" or "Generated Files" or "ARM64" or "x64"
-            || s.StartsWith("Ripcord..", StringComparison.Ordinal))
-        // This file's own contract table is deliberately leak-shaped.
-        || relative.EndsWith("PublishedTreeSweepTests.cs", StringComparison.Ordinal);
+            || s.StartsWith("Ripcord..", StringComparison.Ordinal));
 
     /// <summary>
     /// Code that ships, as opposed to code that tests it. The distinction carries real weight: a hex
@@ -840,12 +868,17 @@ public class PublishedTreeSweepTests
                            || ext.Equals(".json", StringComparison.OrdinalIgnoreCase)
                            || NamedFiles.Contains(Path.GetFileName(path), StringComparer.OrdinalIgnoreCase);
 
-            bool isProductCode = IsProductCode(
-                Path.GetRelativePath(root, path).Replace(Path.DirectorySeparatorChar, '/'));
+            string relative = Path.GetRelativePath(root, path).Replace(Path.DirectorySeparatorChar, '/');
+            bool isProductCode = IsProductCode(relative);
 
             string[] lines = File.ReadAllLines(path);
+            bool inFixtures = false;
             for (int i = 0; i < lines.Length; i++)
             {
+                if (lines[i].Contains(FixturesBegin, StringComparison.Ordinal)) { inFixtures = true; continue; }
+                if (lines[i].Contains(FixturesEnd, StringComparison.Ordinal)) { inFixtures = false; continue; }
+                if (inFixtures) continue;
+
                 found.AddRange(
                     ScanLine(lines[i], isProse, applyAllowlist, Where(root, path, i + 1), isProductCode));
             }
@@ -1056,7 +1089,7 @@ public class PublishedTreeSweepTests
         Dictionary<string, string> wanted = [];
         foreach ((string sha, string rel) in pathOf)
         {
-            if (Excluded(rel)) continue;
+            if (Excluded(rel) || IsSweepOwnFile(rel)) continue;   // see IsSweepOwnFile: history has no markers
             if (PinnedDataFiles.ContainsKey(rel)) continue;
 
             string e = Path.GetExtension(rel);
