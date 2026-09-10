@@ -29,6 +29,13 @@ namespace Ripcord.Protocol.Halyard.Tests;
 /// prose — and a 64-character capture-derived constant sat in a string literal, unseen, while the table
 /// asserted that exact shape was caught.</para>
 ///
+/// <para>And once more, with the narrowing coming from somewhere else entirely: the rule added to catch that
+/// constant required the declaration and the value on one line, while <c>.editorconfig</c> caps lines at 120
+/// — so any constant larger than the 107-character one that prompted the rule gets wrapped by anyone
+/// following the project's own style, straight past a per-line scan. Nothing in the detector was wrong when
+/// read on its own; the gap only appeared when it was read against another file. Hence
+/// <see cref="CodeHexLiteral"/>, which depends on no syntax at all.</para>
+///
 /// <para><b>So what is tested here is the belief, not the pattern.</b> <see cref="DetectorContract"/> is a
 /// table of inputs this sweep must catch and inputs it must tolerate, each with the
 /// <see cref="LineContext"/> it must do so in; every gap ever found is a row in it, and finding another
@@ -106,17 +113,40 @@ public class PublishedTreeSweepTests
         new(@"(?<![0-9a-zA-Z])(?:[0-9a-fA-F]{2}[ \t,]+){5,}[0-9a-fA-F]{2}" + HexEnd, RegexOptions.Compiled);
 
     /// <summary>
-    /// A hex string assigned to a named constant — <c>const</c> or <c>static readonly</c>, C# or C. This is
-    /// the one shape allowed through the prose-only scope, and it exists because pinning the three declared
-    /// constants by value does nothing about a <em>fourth</em>: <c>ClientTypeHex</c> sat in a bare string
-    /// literal for months, correctly declared in CLAUDE.md and invisible to every guard here.
+    /// Any hex string literal of sixteen bytes or more, wherever it sits on the line. Applied to
+    /// <b>product code only</b> (<see cref="IsProductCode"/>), where it is the entire rule and there is
+    /// nothing to bypass: no dependence on <c>const</c>, on <c>readonly</c>, on the literal sharing a line
+    /// with its declaration, or on the quoting form. <c>@"…"</c>, <c>"""…"""</c>, a value wrapped onto its
+    /// own line, an expression-bodied member and <c>Convert.FromHexString("…")</c> all read alike to it.
     ///
-    /// <para>Narrow on purpose. Sweeping every hex literal in code means 305 sites, nearly all crypto test
-    /// vectors; requiring a declaration brings that to five, of which four are allowlisted below with their
-    /// reasons and one is pinned. Thirty-two characters, because sixteen bytes is the floor for anything
-    /// key-shaped and shorter runs in prose are already covered by <see cref="LongHex"/>.</para>
+    /// <para>This replaced a rule that required a declaration on one line. That rule caught a fourth
+    /// constant written exactly the way the third was, and six other forms walked past it — the worst being
+    /// the wrapped declaration, which <c>.editorconfig</c>'s 120-column limit makes the <em>expected</em>
+    /// form for any constant larger than the 107-character one that motivated the guard. A guard whose
+    /// reach depends on the secret being short enough to fit a style rule is not a guard.</para>
+    ///
+    /// <para><b>It is absolute because it costs nothing.</b> Product code holds exactly one 32+ character
+    /// hex literal today — <c>ClientTypeHex</c>, pinned below — so every future one is a deliberate act
+    /// that has to be argued into the allowlist. Test code is a different corpus and a different question:
+    /// 83 sites, 61 distinct values, essentially all published NIST vectors and captured protocol frames.
+    /// Inverting over those would add 61 entries reading "a crypto test vector" and bury the 28 whose
+    /// reasons <em>are</em> the guard. Tests keep the narrower declaration rule
+    /// (<see cref="DeclaredHexConstantInTests"/>), and the forms it misses are contract rows rather than
+    /// something for the next audit to rediscover.</para>
     /// </summary>
-    private static readonly Regex DeclaredHexConstant =
+    private static readonly Regex CodeHexLiteral =
+        new(@"""([0-9a-fA-F]{32,})""", RegexOptions.Compiled);
+
+    /// <summary>
+    /// The declaration-shaped rule, kept for test code only. It reports four sites there: three allowlisted
+    /// with their reasons and one suppressed as filler. (An earlier version of this comment said five sites
+    /// and four allowlisted; it counted <c>ClientTypeHex</c>, which is product code and pinned, and it
+    /// counted the filler one as allowlisted. A comment justifying a security scope in this file of all
+    /// files should be countable, so it is now the measured figure.) What this rule misses in a test file is
+    /// an accepted trade — the risk the mechanism exists for is a capture-derived constant <em>shipped in
+    /// the product</em>, and that corpus is covered without exception above.
+    /// </summary>
+    private static readonly Regex DeclaredHexConstantInTests =
         new(@"\b(?:const|readonly)\b[^""=]*=\s*""([0-9a-fA-F]{32,})""", RegexOptions.Compiled);
 
     private static readonly Regex Ipv4 =
@@ -186,10 +216,16 @@ public class PublishedTreeSweepTests
         Code,
 
         /// <summary>
-        /// A hex string bound to a named <c>const</c> — the one code shape that is swept for value, because
-        /// it is how the three committed interoperability constants are written.
+        /// A hex string bound to a named <c>const</c> in a <b>test</b> file — the one shape swept for value
+        /// there, because it is how the committed interoperability constants are written.
         /// </summary>
         DeclaredConstant,
+
+        /// <summary>
+        /// A line of shipping code (<c>src/</c>, <c>tools/</c>, a port's <c>source/</c>). Every hex literal
+        /// of sixteen bytes or more is swept here, in any syntax, because this is the corpus a user runs.
+        /// </summary>
+        ProductCode,
     }
 
     /// <summary>
@@ -252,7 +288,31 @@ public class PublishedTreeSweepTests
           "a 32-byte constant in a string literal - exactly how ClientTypeHex is written, and it was invisible" },
         { "a3f19c4e0d86a7b0430d8cdb78070b4c", LineContext.DeclaredConstant, true, "16 bytes, the floor" },
         { "deadbeefcafebabe1234", LineContext.DeclaredConstant, false,
-          "20 characters - under the 16-byte floor, which is a trade against 305 crypto fixtures" },
+          "20 characters - under the 16-byte floor, a trade against 61 distinct crypto vectors in tests" },
+
+        // --- must catch in shipping code: every syntax, because the corpus costs nothing to sweep whole ---
+        // Six of these walked past the declaration-shaped rule that preceded CodeHexLiteral. The wrapped
+        // form is the one that mattered: .editorconfig caps lines at 120, so a constant any larger than the
+        // 107-character ClientTypeHex is wrapped by anyone following the project's own style, and the
+        // per-line scan could not follow it. Each row is one of those forms.
+        // The 32-byte fixture below is synthetic, generated for this table and tied to no console, account
+        // or session — stated explicitly because every other leak-shaped fixture in this repository carries
+        // that declaration, and a reader should not have to infer it from Excluded()'s note that this file
+        // is deliberately leak-shaped.
+        { "a3f19c4e0d86a7b0430d8cdb78070b4c55a2e6f81b9d3c07a4e5f60918273645", LineContext.ProductCode, true,
+          "a synthetic 32-byte constant in shipping code - the ClientTypeHex shape, and this rule's whole reason" },
+        { "a3f19c4e0d86a7b0430d8cdb78070b4c", LineContext.ProductCode, true, "16 bytes, the floor" },
+        { "        \"a3f19c4e0d86a7b0430d8cdb78070b4c55a2e6f81b9d3c07a4e5f60918273645\";",
+          LineContext.Prose, true, "the value wrapped onto its own line - what the 120-column rule produces" },
+
+        // --- must tolerate: the boundary itself, stated so it reads as a decision -----------------------
+        // A hex literal in a test file is swept only when it is a const declaration. 83 sites and 61
+        // distinct values live there, essentially all published NIST vectors and captured protocol frames;
+        // inverting over them would add 61 entries reading "a crypto test vector" and bury the 28 whose
+        // reasons are the actual guard. The risk being defended against is a constant shipped to users, and
+        // that corpus is swept without exception. This is the gap, and it is chosen.
+        { "a3f19c4e0d86a7b0430d8cdb78070b4c55a2e6f81b9d3c07a4e5f60918273645", LineContext.Code, false,
+          "a bare literal in a test file is out of value scope - the accepted half of the trade above" },
 
         // --- must tolerate: things that are not disclosures --------------------------------------------
         { "and so on, continued…", LineContext.Prose, false, "an ordinary prose ellipsis" },
@@ -309,6 +369,18 @@ public class PublishedTreeSweepTests
             || s.StartsWith("Ripcord..", StringComparison.Ordinal))
         // This file's own contract table is deliberately leak-shaped.
         || relative.EndsWith("PublishedTreeSweepTests.cs", StringComparison.Ordinal);
+
+    /// <summary>
+    /// Code that ships, as opposed to code that tests it. The distinction carries real weight: a hex
+    /// constant under <c>src/</c> is something every user runs, while one in a test file is almost always a
+    /// published NIST vector or a captured frame the parser is checked against. Ports keep their tests
+    /// beside their source, hence the <c>/source/</c> segment rather than a prefix.
+    /// </summary>
+    private static bool IsProductCode(string relative) =>
+        relative.StartsWith("src/", StringComparison.Ordinal)
+        || relative.StartsWith("tools/", StringComparison.Ordinal)
+        || (relative.StartsWith("ports/", StringComparison.Ordinal)
+            && relative.Contains("/source/", StringComparison.Ordinal));
 
     private static IEnumerable<string> CommittedText()
     {
@@ -432,7 +504,8 @@ public class PublishedTreeSweepTests
     /// sweep and the contract cannot drift apart: that drift is what let the contract certify five catches
     /// the sweep did not perform.
     /// </summary>
-    private static List<string> ScanLine(string line, bool isProse, bool applyAllowlist, string at)
+    private static List<string> ScanLine(
+        string line, bool isProse, bool applyAllowlist, string at, bool isProductCode = false)
     {
         List<string> found = [];
 
@@ -468,13 +541,13 @@ public class PublishedTreeSweepTests
             }
         }
 
-        foreach (Match m in DeclaredHexConstant.Matches(line))
+        foreach (Match m in (isProductCode ? CodeHexLiteral : DeclaredHexConstantInTests).Matches(line))
         {
             string hex = m.Groups[1].Value;
             if (IsSyntheticFiller(hex)) continue;
             if (IsPinnedConstant(hex)) continue;   // guarded by hash instead, like the two data files
             if (applyAllowlist && IsAllowed(hex)) continue;
-            found.Add($"{at}|declared-const|{hex}");
+            found.Add($"{at}|{(isProductCode ? "shipped-hex" : "declared-const")}|{hex}");
         }
 
         foreach (Match m in SeparatedMac.Matches(line))
@@ -513,10 +586,14 @@ public class PublishedTreeSweepTests
                            || ext.Equals(".json", StringComparison.OrdinalIgnoreCase)
                            || NamedFiles.Contains(Path.GetFileName(path), StringComparer.OrdinalIgnoreCase);
 
+            bool isProductCode = IsProductCode(
+                Path.GetRelativePath(root, path).Replace(Path.DirectorySeparatorChar, '/'));
+
             string[] lines = File.ReadAllLines(path);
             for (int i = 0; i < lines.Length; i++)
             {
-                found.AddRange(ScanLine(lines[i], isProse, applyAllowlist, Where(root, path, i + 1)));
+                found.AddRange(
+                    ScanLine(lines[i], isProse, applyAllowlist, Where(root, path, i + 1), isProductCode));
             }
         }
 
@@ -580,13 +657,19 @@ public class PublishedTreeSweepTests
         string line = context switch
         {
             LineContext.Prose => input,
-            LineContext.DeclaredConstant => $"    private const string Fixture = \"{input}\";",
+            LineContext.DeclaredConstant or LineContext.ProductCode =>
+                $"    private const string Fixture = \"{input}\";",
             LineContext.Comment => $"        StartSession();   // as captured: {input}",
             LineContext.Code => $"        var fixture = Decode(\"{input}\");",
             _ => throw new ArgumentOutOfRangeException(nameof(context)),
         };
 
-        List<string> hits = ScanLine(line, isProse: context == LineContext.Prose, applyAllowlist: false, at: "contract");
+        List<string> hits = ScanLine(
+            line,
+            isProse: context == LineContext.Prose,
+            applyAllowlist: false,
+            at: "contract",
+            isProductCode: context == LineContext.ProductCode);
 
         Assert.True(
             hits.Count > 0 == shouldMatch,
