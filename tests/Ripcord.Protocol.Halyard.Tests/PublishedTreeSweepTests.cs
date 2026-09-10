@@ -1187,8 +1187,22 @@ public class PublishedTreeSweepTests
                 continue;
             }
 
-            if (TextExtensions.Contains(ext, StringComparer.OrdinalIgnoreCase)) continue;
-            if (NamedFiles.Contains(Path.GetFileName(rel), StringComparer.OrdinalIgnoreCase)) continue;
+            if (TextExtensions.Contains(ext, StringComparer.OrdinalIgnoreCase)
+                || NamedFiles.Contains(Path.GetFileName(rel), StringComparer.OrdinalIgnoreCase))
+            {
+                // Verified in this direction too. Round 11 caught "declared binary, actually text";
+                // this is its mirror, and it is the only route past all three capture layers, because
+                // every one of them keys on the name — the .gitignore patterns, Extensions() against
+                // NeverCommitted, and the unclassified-fails default. A capture renamed to .md is
+                // declared text, swept as text, and its content read as prose that happens to match
+                // nothing. Content is the one thing a rename cannot change.
+                if (HasNulByte(Path.Combine(root, rel.Replace('/', Path.DirectorySeparatorChar))))
+                {
+                    mislabelled.Add($"{rel}  (declared text, contains NUL)");
+                }
+
+                continue;
+            }
 
             if (BinaryExtensions.Contains(ext, StringComparer.OrdinalIgnoreCase))
             {
@@ -1197,12 +1211,11 @@ public class PublishedTreeSweepTests
                 // the "on no list" hole did nothing about the "on the wrong list" one, and a wrong
                 // declaration satisfied this test exactly as well as a right one. A real binary has a NUL
                 // in its first few KB; a text file claiming to be binary is a file nothing reads.
-                string path = Path.Combine(root, rel.Replace('/', Path.DirectorySeparatorChar));
-                if (!File.Exists(path)) continue;
-
-                byte[] head = new byte[Math.Min(8192, (int)new FileInfo(path).Length)];
-                using (FileStream fs = File.OpenRead(path)) fs.ReadExactly(head);
-                if (Array.IndexOf(head, (byte)0) < 0) mislabelled.Add(rel);
+                if (File.Exists(Path.Combine(root, rel.Replace('/', Path.DirectorySeparatorChar)))
+                    && !HasNulByte(Path.Combine(root, rel.Replace('/', Path.DirectorySeparatorChar))))
+                {
+                    mislabelled.Add($"{rel}  (declared binary, no NUL)");
+                }
 
                 continue;
             }
@@ -1220,9 +1233,11 @@ public class PublishedTreeSweepTests
 
         Assert.True(
             mislabelled.Count == 0,
-            "Files declared binary that contain no NUL byte, so they are text that nothing sweeps. Move "
-            + "the extension to TextExtensions - a wrong declaration hides a file just as effectively as "
-            + "no declaration:\n  " + string.Join("\n  ", mislabelled));
+            "Files whose declared kind does not match their content. Declared binary but text means a "
+            + "file nothing sweeps; declared text but binary means a renamed blob being read as prose, "
+            + "which is the one route past every capture rule here since all of them key on the name. "
+            + "Move the extension, or find out why the content is not what the name says:\n  "
+            + string.Join("\n  ", mislabelled));
 
         Assert.True(
             unclassified.Count == 0,
@@ -1231,6 +1246,17 @@ public class PublishedTreeSweepTests
             + "not. Leaving it unclassified means it is neither swept nor knowingly skipped, which is how "
             + "fourteen product-code files stayed unread for eight rounds:\n  "
             + string.Join("\n  ", unclassified));
+    }
+
+    /// <summary>A file is binary if its first 8 KB contain a NUL. Cheap, and content cannot be renamed.</summary>
+    private static bool HasNulByte(string path)
+    {
+        if (!File.Exists(path)) return false;
+
+        byte[] head = new byte[Math.Min(8192, (int)new FileInfo(path).Length)];
+        using FileStream fs = File.OpenRead(path);
+        fs.ReadExactly(head);
+        return Array.IndexOf(head, (byte)0) >= 0;
     }
 
     /// <summary>
