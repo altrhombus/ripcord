@@ -45,12 +45,12 @@ Verified end-to-end against real hardware on a LAN, on **PS5 and PS4** alike:
   classic STUN (RFC 3489 Binding Requests) to learn each leg's reflexive address; the control association
   and the A/V connection are separate mappings and need it separately. Throughput was indistinguishable from
   the same-LAN figures. Driven from the harness, not yet through the app's own UI.
-- **1,012 unit tests** across two suites, pure managed and cross-platform — they need no console, no GPU and
-  no Windows-only hardware. A clean checkout without the authors' captures runs 971 of them and skips 41, by
+- **1,016 unit tests** across two suites, pure managed and cross-platform — they need no console, no GPU and
+  no Windows-only hardware. A clean checkout without the authors' captures runs 975 of them and skips 41, by
   design. Thirty-six validate against real captured ground truth that is not, and will not be, published; the
   other five are the hardware-accelerated GF paths, which skip whichever of x64 and ARM64 the host is not.
-  Forty-four of them — four checks and a forty-row detector contract — sweep the published tree itself for
-  material this project's redaction policy forbids.
+  Forty-eight of them — four checks and a forty-four-row detector contract — sweep the published tree itself
+  for material this project's redaction policy forbids.
 
 There is also a **second client**: [`ports/ripcord-3ds`](ports/ripcord-3ds), a from-scratch C implementation
 for modded New 3DS hardware that streams real video from a real PS5. It exists as a completeness test for the
