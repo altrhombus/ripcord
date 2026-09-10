@@ -45,8 +45,8 @@ Verified end-to-end against real hardware on a LAN, on **PS5 and PS4** alike:
   classic STUN (RFC 3489 Binding Requests) to learn each leg's reflexive address; the control association
   and the A/V connection are separate mappings and need it separately. Throughput was indistinguishable from
   the same-LAN figures. Driven from the harness, not yet through the app's own UI.
-- **1,019 unit tests** across two suites, pure managed and cross-platform — they need no console, no GPU and
-  no Windows-only hardware. A clean checkout without the authors' captures runs 978 of them and skips 41, by
+- **1,023 unit tests** across two suites, pure managed and cross-platform — they need no console, no GPU and
+  no Windows-only hardware. A clean checkout without the authors' captures runs 982 of them and skips 41, by
   design. Thirty-six validate against real captured ground truth that is not, and will not be, published; the
   other five are the hardware-accelerated GF paths, which skip whichever of x64 and ARM64 the host is not.
   Fifty-one of them — seven checks and a forty-four-row detector contract — sweep all three corpora a clone
