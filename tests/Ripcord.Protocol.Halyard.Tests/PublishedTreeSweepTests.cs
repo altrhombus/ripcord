@@ -235,12 +235,29 @@ public class PublishedTreeSweepTests
     private static readonly Regex VersionContext =
         new(@"(?i)version|net\d|\bv\d+\.\d+|TargetFramework|MaxVersionTested|MinVersion", RegexOptions.Compiled);
 
+    /// <summary>
+    /// <c>.cpp</c>, <c>.hpp</c>, <c>.idl</c> and <c>.def</c> were missing until the tenth review, so the
+    /// entire C++/WinRT interop layer — fourteen committed files under <c>src/</c>, which is the corpus
+    /// this file makes <em>absolute</em> for hex literals on the grounds that it is "the corpus a user
+    /// runs" — was outside every sweep, tree and historical alike. Clean when finally read, but unread for
+    /// eight rounds while the coverage of everything else was argued in detail.
+    ///
+    /// <para>The lesson is cheaper than the miss: the question to ask of a corpus is not "does the list
+    /// look complete" but "which committed files does it not open". That is one command —
+    /// <c>git ls-files</c> minus this list — and it is what <see cref="EveryCommittedTextFile_IsSwept"/>
+    /// now asks on every run.</para>
+    /// </summary>
     private static readonly string[] TextExtensions =
-        [".md", ".cs", ".c", ".h", ".json", ".yml", ".yaml", ".xaml", ".py", ".props", ".targets",
-         ".csproj", ".vcxproj", ".slnx", ".proto", ".sh", ".ps1", ".editorconfig", ".gitattributes",
-         ".appxmanifest", ".manifest"];
+        [".md", ".cs", ".c", ".h", ".cpp", ".hpp", ".idl", ".def", ".json", ".yml", ".yaml", ".xaml",
+         ".py", ".props", ".targets", ".csproj", ".vcxproj", ".slnx", ".proto", ".sh", ".ps1",
+         ".editorconfig", ".gitattributes", ".appxmanifest", ".manifest"];
 
-    private static readonly string[] NamedFiles = ["NOTICE", "LICENSE", ".gitignore"];
+    private static readonly string[] NamedFiles = ["NOTICE", "LICENSE", ".gitignore", "Makefile"];
+
+    /// <summary>Extensions that are genuinely not text, so their absence from the corpus is not a gap.</summary>
+    private static readonly string[] BinaryExtensions =
+        [".png", ".ico", ".svg", ".jpg", ".jpeg", ".gif", ".bmp", ".ttf", ".otf", ".pfx", ".dll", ".pri",
+         ".exe", ".lib", ".pdb", ".zip", ".gz", ".pcapng", ".bin"];
 
     /// <summary>
     /// The two files that deliberately carry secret-shaped data, pinned by content hash.
@@ -290,6 +307,58 @@ public class PublishedTreeSweepTests
         /// of sixteen bytes or more is swept here, in any syntax, because this is the corpus a user runs.
         /// </summary>
         ProductCode,
+    }
+
+    /// <summary>
+    /// Values purged from this repository's history, identified by length and SHA-256 rather than written
+    /// down. Matched with <b>no floor, no prose scoping and no allowlist</b>, in every corpus.
+    ///
+    /// <para><b>Why this is separate from the detector.</b> Two rewrites removed a captured frame tail, and
+    /// each time a commit asserted the value was gone when it was not — the first from a one-off script
+    /// that mis-parsed <c>git cat-file</c>, the second from
+    /// <see cref="HistoricalBlobs_CarryNothingUnredacted"/> itself, which passed while an eight-character
+    /// form of the value sat in a reachable blob, four characters under <see cref="LongHex"/>'s documented
+    /// twelve. The floor is a good decision for the tree sweep and the wrong instrument here, because
+    /// <em>"nothing in this looks like a secret"</em> and <em>"this specific value is gone"</em> are
+    /// different propositions and only the second one was being claimed.</para>
+    ///
+    /// <para><b>Why hashes and not the values.</b> The obvious form of this list is literal, and a literal
+    /// list would put the value back into the one file the sweep structurally cannot read — which is the
+    /// finding an earlier round raised about the contract table. Storing the length and the digest keeps the
+    /// list complete without reintroducing what it exists to prove absent. The cost is that a value must be
+    /// hashed to be added, which is one command and is written into the failure message.</para>
+    /// </summary>
+    private static readonly (int Length, string Sha256)[] PurgedValues =
+    [
+        (16, "4293ff14142dd3be6bace0049d591d960bf0fe2545f59a63716443225351dca9"),
+        (8, "4995751499b43f886e7c50af275bea59b2ed10937391e17173d133c2db41d556"),
+    ];
+
+    /// <summary>Hex, possibly written with separators, from which a purged value could be reassembled.</summary>
+    private static readonly Regex HexRun =
+        new(@"[0-9a-fA-F](?:[ ,	-]?[0-9a-fA-F])*", RegexOptions.Compiled);
+
+    /// <summary>
+    /// Any window of any hex run on this line whose digest is a purged value. Separator-blind, so a value
+    /// re-spaced or re-delimited is still found, and length-blind in the sense that matters: it looks for
+    /// exactly the lengths recorded, wherever they sit inside a longer run.
+    /// </summary>
+    private static IEnumerable<string> PurgedValueHits(string line)
+    {
+        foreach (Match run in HexRun.Matches(line))
+        {
+            string flat = Normalise(run.Value).ToLowerInvariant();
+            foreach ((int length, string sha) in PurgedValues)
+            {
+                for (int i = 0; i + length <= flat.Length; i++)
+                {
+                    string window = flat.Substring(i, length);
+                    string digest = Convert.ToHexString(
+                        SHA256.HashData(System.Text.Encoding.ASCII.GetBytes(window))).ToLowerInvariant();
+                    if (digest == sha) yield return $"{length} chars, sha {sha[..12]}";
+                }
+            }
+        }
     }
 
     /// <summary>
@@ -591,6 +660,16 @@ public class PublishedTreeSweepTests
 
         List<string> found = [];
 
+        // First, and unconditionally. No floor, no scoping, no allowlist: this asks whether a value known
+        // to have been purged from this repository is still present, and that question has no legitimate
+        // "yes". Everything below it answers the different question of whether anything *looks* like a
+        // secret, and every floor and scope those rules carry is a deliberate trade that does not belong
+        // in a completeness check.
+        foreach (string hit in PurgedValueHits(line))
+        {
+            found.Add($"{at}|purged-value|{hit}");
+        }
+
         foreach (Match m in TruncatedHex.Matches(line))
         {
             if (Allow(m.Groups[1].Value)) continue;
@@ -880,6 +959,13 @@ public class PublishedTreeSweepTests
         string? listing = RunGit(root, "rev-list --all --objects");
         if (listing is null) return [];
 
+        // One path per blob, because `rev-list --all --objects` names each object once even when the
+        // same content lived at several paths — `pch.cpp` and `dllmain.def` are each shared by the two
+        // interop projects here. That single name then decides four things: exclusion, pin membership,
+        // extension eligibility and product-code status. A blob shared between a swept path and an
+        // excluded one would therefore be classified by whichever name git happened to emit first.
+        // Known, latent (the shared blobs here are swept under every one of their names), and the fix if
+        // it ever bites is to build the map from `log --all --raw` instead, which is a great deal slower.
         Dictionary<string, string> pathOf = [];
         foreach (string line in listing.Split((char)0x0a))
         {
@@ -977,6 +1063,49 @@ public class PublishedTreeSweepTests
 
             i = nl + 1 + size + 1;
         }
+    }
+
+    /// <summary>
+    /// Every committed file is either swept, or a declared binary. Nothing is outside both.
+    ///
+    /// <para>This exists because the corpus lists above were wrong for eight rounds and no amount of
+    /// reading them showed it. <c>.cpp</c>, <c>.idl</c> and <c>.def</c> were simply absent, so the whole
+    /// C++/WinRT interop layer — fourteen files under <c>src/</c> — was never opened by any sweep, while
+    /// the coverage of every other corpus was argued in detail. The reviewer who found it put the lesson
+    /// better than the fix: the question is not "does this list look complete" but "which committed files
+    /// does it not open", and only <c>git</c> can answer that.</para>
+    ///
+    /// <para>So a new extension arriving in the repository now fails here until someone classifies it,
+    /// which is the property the list itself could never have.</para>
+    /// </summary>
+    [Fact]
+    public void EveryCommittedTextFile_IsSwept()
+    {
+        string root = RepoRoot();
+        string? listing = RunGit(root, "ls-files");
+        if (listing is null) return;   // no git: an archive has no committed-file list to check against
+
+        List<string> unclassified = [];
+        foreach (string raw in listing.Split((char)0x0a))
+        {
+            string rel = raw.TrimEnd((char)0x0d);
+            if (rel.Length == 0 || Excluded(rel)) continue;
+
+            string ext = Path.GetExtension(rel);
+            if (TextExtensions.Contains(ext, StringComparer.OrdinalIgnoreCase)) continue;
+            if (NamedFiles.Contains(Path.GetFileName(rel), StringComparer.OrdinalIgnoreCase)) continue;
+            if (BinaryExtensions.Contains(ext, StringComparer.OrdinalIgnoreCase)) continue;
+
+            unclassified.Add(rel);
+        }
+
+        Assert.True(
+            unclassified.Count == 0,
+            "Committed files that no sweep opens and that are not declared binary. Add the extension to "
+            + "TextExtensions (or the name to NamedFiles) if it is text, or to BinaryExtensions if it is "
+            + "not. Leaving it unclassified means it is neither swept nor knowingly skipped, which is how "
+            + "fourteen product-code files stayed unread for eight rounds:\n  "
+            + string.Join("\n  ", unclassified));
     }
 
     /// <summary>
