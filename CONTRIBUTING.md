@@ -125,10 +125,12 @@ Practical guidance:
 
 ## 4. Practical matters
 
-**Tests.** The suite is pure managed and runs anywhere, with no console and no Windows-only hardware:
+**Tests.** Both suites are pure managed and run anywhere, with no console and no Windows-only hardware. CI
+runs both, so run both:
 
 ```
 dotnet test tests/Ripcord.Protocol.Halyard.Tests/Ripcord.Protocol.Halyard.Tests.csproj
+dotnet test tests/Ripcord.Presentation.Tests/Ripcord.Presentation.Tests.csproj
 ```
 
 Keep it green, and add coverage for behaviour you change. Some tests validate against real captured ground
@@ -137,8 +139,13 @@ truth held outside the repository and self-skip when absent — that is expected
 **Building** needs Windows plus a C++ toolchain; see [`README.md`](README.md). A contribution that only
 touches managed protocol or core code can be developed and tested without the native half.
 
-**Never commit** captures, extracted constants, key material, or vendor binaries. `docs/protocol/captures/` is
-gitignored and must stay that way — it is the first rule in `.gitignore` for a reason. Check `git status`
+**Never commit** captures, key material, or vendor binaries. `docs/protocol/captures/` is gitignored and must
+stay that way — it is the first rule in `.gitignore` for a reason. The test is **generic versus personal**,
+not extracted versus derived: anything tied to a specific console, account or session stays out, whatever its
+provenance. Two sets of *generic* extracted values are committed deliberately and under a stated argument —
+the v1 interoperability constants and the application OAuth credential — and widening that is not a
+contributor decision: it needs [`NOTICE`](NOTICE) and [`CLAUDE.md`](CLAUDE.md) amended together, so raise it
+in an issue first. Check `git status`
 before committing; if you have added a new tooling directory that might collect artifacts, add it to
 `.gitignore` in the same commit.
 

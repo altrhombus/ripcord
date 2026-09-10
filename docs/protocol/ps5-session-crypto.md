@@ -113,6 +113,7 @@ locally only, **gitignored, never committed**.
 
 ## Implementation seam
 
-This document, once complete, is the spec that `IHalyardSessionCrypto` / `IHalyardRegistration`
-(`Ripcord.Protocol.Halyard.Common`) are implemented from — replacing `PassthroughHalyardSessionCrypto`.
+This document, once complete, is the spec that `IHalyardSessionCrypto` (`Ripcord.Protocol.Halyard.Common`)
+and the registration path (`HalyardRegistrationClient`, `IHalyardRegistrationTransport` in
+`Ripcord.Protocol.Halyard`) are implemented from — replacing `PassthroughHalyardSessionCrypto`.
 Nothing here is implemented by reading another Remote Play project's source.

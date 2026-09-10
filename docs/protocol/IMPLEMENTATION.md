@@ -7,12 +7,13 @@ directory. Read this first, then work the spec's §7 checklist top to bottom.
   test-vector index; §7 is an ordered build checklist. Confidence tags: **[V]** verified byte-for-byte on a
   live capture · **[C]** confirmed from our decompiled binary · **[W]** observed on the wire · **[I]**
   inferred · **[X]** assumed — adopted provisionally and not confirmed against the console. An `[X]` value
-  with no accompanying `[C]`/`[V]`/`[W]` tag is **not settled**; treat it as a known risk, and see the
-  roadmap's provisional-values list.
+  with no accompanying `[C]`/`[V]`/`[W]` tag is **not settled**; treat it as a known risk. There is no
+  central list of them, deliberately — a second copy goes stale — so grep the specs for `[X]`;
+  [`README.md`](README.md) states the rule.
 - **Protobuf:** [`stream_control.proto`](stream_control.proto) + [`bandwidth_probe.proto`](bandwidth_probe.proto)
   — `protoc`-compile for the control-plane bindings.
 - **Provenance / clean-room:** [`README.md`](README.md).
-- **Where it plugs in:** [`../phase1-lan-build-plan.md`](../history/phase1-lan-build-plan.md) — the
+- **Where it plugs in:** [`../history/phase1-lan-build-plan.md`](../history/phase1-lan-build-plan.md) — the
   `IHalyardSessionCrypto` seam and the Phase-1 stage table. Everything else in Phase 1 (discovery, session
   orchestration, transport demux, the D3D12+WASAPI media pipeline, controller input) is already built behind
   that seam against a passthrough stub; this work fills in the stub.
@@ -25,20 +26,30 @@ directory. Read this first, then work the spec's §7 checklist top to bottom.
 agreement → per-packet AES-CTR + GMAC → Takion (SCTP-over-UDP) transport → A/V header parse. Spec §2–§8, all
 **[V]** or **[C]**.
 
-**The one real risk to plan around.** The **control** path is **[V]** (verified byte-for-byte against live
-captures). The **stream** crypto is **[C]** — verified at the primitive/round-trip level, but **never driven
-end-to-end against a live stream-key capture**. The math is
-self-consistent, but the first live connection is where an off-by-one in the nonce / key-position wiring
-would surface. **Budget a debug pass on the target machine; do not expect first-try picture.** This is a
-validation gap, not a spec gap — and the discipline below is how you retire it cheaply.
+**That risk has since been retired, and this section is kept for the reader building from the spec alone.**
+When this was written the **control** path was **[V]** and the **stream** crypto only **[C]** — verified at
+the primitive and round-trip level, never driven end-to-end against a live stream-key capture — so the advice
+was to budget a debug pass and not expect a first-try picture. Both are now **[V]** against a real console,
+and the client streams video over the LAN and over the internet. If you are reimplementing from these
+documents rather than using this code, the advice still applies to *your* first connection: the nonce and
+key-position wiring is where an off-by-one surfaces, and the discipline below is how you retire it cheaply.
 
 ---
 
-## Progress — C# implementation (2026-07-21)
+## Progress — C# implementation
 
-The crypto primitives and key schedules are now implemented and unit-tested in the client, following the
-build order below. Nothing is wired into the live session path yet (the `IHalyardSessionCrypto` seam still
-needs reshaping for v1's two crypto systems — see below), but every transform has a green known-answer test.
+**Status, as of 2026-09-09: the whole build order below is done and live.** Registration, the control plane,
+the stream crypto, the Takion transport and A/V decode all run against a real console, on the LAN and over
+the internet. What follows is the dated record of how it was built, kept because the order it was built in is
+the useful part of this document; read it as history, not as a to-do list. [`../journal.md`](../journal.md)
+carries the record past this point, and [`../../ROADMAP.md`](../../ROADMAP.md) is the source of truth for
+what is actually left.
+
+### 2026-07-21 — primitives and key schedules
+
+The crypto primitives and key schedules were implemented and unit-tested first, following the build order
+below, with every transform behind a green known-answer test before anything was wired into the live session
+path.
 
 - **Primitives** (`src/Ripcord.Core.Net/Crypto/`): `AesKeystreamModes` (CTR/OFB/CFB128) and `AesGcmCore`
   (GCM with an arbitrary-length IV — the platform `AesGcm` only accepts 12-byte nonces, but the stream MAC
@@ -46,8 +57,12 @@ needs reshaping for v1's two crypto systems — see below), but every transform 
 - **v1 key schedules** (`src/Ripcord.Protocol.Halyard.Common/Crypto/V1/`): `HalyardControlKdf`,
   `HalyardFieldIv`, `HalyardControlFieldCrypto` (control plane); `HalyardStreamKeySchedule` (ECDH-P256 +
   SP 800-108) and `HalyardPacketCrypto` (per-packet AES-CTR + rotating GMAC) for the stream.
-- **Extracted constants stay out of the repo**: `HalyardControlSecrets` holds the two KDF tables + four
-  context keys, supplied as config from the gitignored dirty room (never committed).
+- **Constants, then supplied out of band, now bundled**: `HalyardControlSecrets` holds the KDF tables and
+  context keys. At this point they were fed in as config from the gitignored dirty room. They are **committed
+  today**, in `src/Ripcord.Protocol.Halyard/Data/halyard-v1-constants.json` — a deliberate, argued exception
+  covering values that are identical for every console and every account; see [`NOTICE`](../../NOTICE) and
+  [`CLAUDE.md`](../../CLAUDE.md)'s "Bounded exception 1". Nothing tied to a specific console or account is
+  bundled, and a test enforces that line.
 - **Seam reshaped + wired** (`Crypto/IHalyardSessionCrypto.cs`): the seam now models v1's two crypto
   systems — control (`EstablishControl` → `EncryptControlField`/`DecryptControlField`/`CryptStreaminfo`) and
   stream (`GenerateEphemeralPublicKey` → `TryEstablishStream` → per-packet `TryOpenPacket`/`SealPacket`,
@@ -97,7 +112,8 @@ needs reshaping for v1's two crypto systems — see below), but every transform 
   - Still open: the pre-SCTP PROTOCOL_VERSION_REQUEST/ACK (0x06/0x07) exchange (skippable — version can be
     assumed); and the launchSpec template + `encryptedKey`/`sessionKey` field semantics are still `[I]` (a
     minimal placeholder launchSpec is built today — pin these from capture before a live attempt).
-- **Tests** (`tests/Ripcord.Protocol.Halyard.Tests/`): 39 tests, all green.
+- **Tests** (`tests/Ripcord.Protocol.Halyard.Tests/`): 39 tests at this point, all green. (The suite has
+  grown a long way past that since; [`../../README.md`](../../README.md) carries the current figure.)
   - Self-contained (public NIST vectors + a fully-synthetic stream round-trip that ports
     `stream_crypto_reimpl.py` — the [C]-risk validator — plus seam-level seal/open round-trips through
     `HalyardV1SessionCrypto` in both directions).
@@ -107,33 +123,36 @@ needs reshaping for v1's two crypto systems — see below), but every transform 
     present, the control plane now reproduces the live capture byte-for-byte in C# — [V] in our code, not
     just in the Python reference.**
 
-**Still open** (the software stack — crypto, Takion transport, session integration — is built and tested;
-stream crypto is now [V] against a live console): (1) first-time registration (§2.0), which persists the
-`HalyardPairingRecord`; (2) threading the companion (RP-Key) through the credential store so
-`EstablishControl` runs on a real connect; (3) decrypting the real launchSpec (needs the companion) to
-finalize the JSON template. `sessionKey`/`encryptedKey` are now pinned, the RP-Did device id reads the real
-MachineGuid (`HalyardDeviceIdentity`), and the **stream ECDH is now version-aware** — v17 uses P-521 (133-byte
-pubkey), auto-detected on receive, with the full ECDH X as the KDF secret (the working hypothesis; a
-full-length secret dump would confirm the reduction, if any). These stand between the tested stack and a first
-live picture.
+**Open at the time of writing, all three since closed:** (1) first-time registration (§2.0), which persists
+the `HalyardPairingRecord` — built, as `HalyardRegistrationClient`, and later joined by account-based no-PIN
+registration; (2) threading the companion (RP-Key) through the credential store so `EstablishControl` runs on
+a real connect — built, as `HalyardPairingCredentialStore`; (3) decrypting the real launchSpec to finalize the
+JSON template — done. `sessionKey`/`encryptedKey` were pinned, the RP-Did device id reads the real MachineGuid
+(`HalyardDeviceIdentity`), and the **stream ECDH is version-aware** — v17 uses P-521 (133-byte pubkey),
+auto-detected on receive, with the full ECDH X as the KDF secret. These were what stood between the tested
+stack and a first live picture; the picture arrived.
 
 ---
 
-## Two inputs that live outside these committed docs
+## Two inputs the spec withholds — and where they are now
 
-The committed spec deliberately omits extracted constants and captured secrets (clean-room discipline — see
-[`README.md`](README.md)). The implementation will compile without them but **will not interoperate**. Both
-live in the gitignored `captures/` dirty room and must be supplied out of band (config/inputs — never
-committed):
+The committed **spec** deliberately omits extracted constants and captured secrets (clean-room discipline —
+see [`README.md`](README.md)). A reimplementation built from these documents alone will compile without them
+but **will not interoperate**. What has changed since this section was written is where the first of the two
+lives:
 
-1. **Extracted constants** — `captures/name-mapping.md`:
-   - the hardcoded **64-char registration secret** (pairing auth; spec §2.0),
-   - the four **`context_key`** constants for the per-field IV (spec §2.1; only the `B_eq_1` variant is
-     observed in our captures).
-   Feed these to the implementation as configuration. They are on-the-wire interoperability values, not code.
+1. **Extracted constants** — the registration key tables and the `context_key` constants for the per-field IV
+   (spec §2.0, §2.1). **These are now committed**, in
+   `src/Ripcord.Protocol.Halyard/Data/halyard-v1-constants.json`, and this repository's client needs nothing
+   supplied out of band to interoperate. They are generic interoperability values — identical for every
+   console and every account, and a client cannot speak the protocol without them — which is the argument
+   [`NOTICE`](../../NOTICE) makes in full and the reason the exception is bounded to values of that kind. The
+   spec still withholds them, so if you are implementing from the spec rather than from this code, they are
+   the values you have to recover from your own captures. `captures/name-mapping.md` is where our own
+   working copy sits, in the dirty room.
 
 2. **The reference implementations** — `captures/*_reimpl.py` (see spec §0). These are your **golden test
-   vectors**. Port each one into the client as a known-answer test.
+   vectors** and they are *not* committed. Port each one into the client as a known-answer test.
 
 > Registration-derived key material (registkey, companion/`RP-Key`, `RP-KeyType`) is **not** a constant — it
 > comes from the user pairing their own console at runtime (spec §2.0). Only the two items above are static
@@ -149,7 +168,7 @@ exactly where the [C]-vs-[V] risk gets retired.
 
 | # | Step | Spec | Golden vector (`captures/`) |
 |---|------|------|------------------------------|
-| 1 | Registration / pairing (one-time, passcode) | §2.0 | — (needs registration secret from `name-mapping.md`) |
+| 1 | Registration / pairing (one-time, passcode) | §2.0 | — (registration table; bundled here, recover it from your own captures if reimplementing) |
 | 2 | Session-control session-key KDF (`out1`,`out2`) | §2.1 | `kdf_reimpl.py` **[V]** |
 | 3 | Per-field IV (HMAC-SHA256 over `out2‖counter`) | §2.1 | `field_iv_reimpl.py` **[V]** (needs `context_key`) |
 | 4 | `/sess/ctrl` field encryption (AES-128-CFB) | §2.1 | `rp_auth_reimpl.py` **[V]** |
