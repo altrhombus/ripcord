@@ -853,6 +853,155 @@ public class PublishedTreeSweepTests
     }
 
     /// <summary>
+    /// Every blob that has ever been committed, swept with the rules for the path it lived at.
+    ///
+    /// <para><b>Why this exists.</b> A clone carries the whole history, so a value redacted from a file is
+    /// still shipped by the revision before the redaction. This project has hit that six times, and the
+    /// sixth was the worst kind: a rewrite removed eight bytes of captured ciphertext from every commit
+    /// <em>message</em>, the commit doing it was titled "now that the value is gone from the history", and
+    /// the bytes stayed in nine historical blobs. The check that was supposed to confirm the purge was
+    /// written for the occasion, mis-parsed <c>git cat-file --batch</c>, and reported zero. An outside
+    /// reviewer found it.</para>
+    ///
+    /// <para>So the rule this encodes is not "redact the file" but <b>a value is gone when no reachable
+    /// object contains it</b>. It is the check that reviewer had been running by hand for nine rounds; it
+    /// costs about a second, and having it here means the next redaction is verified by the same detector
+    /// that defines what needs redacting, rather than by a one-off script written under the impression the
+    /// job is already done.</para>
+    ///
+    /// <para>Absent history is an honest absence and returns empty, exactly as the message sweep does — but
+    /// a shallow clone is not, and takes the same loud failure, for the same reason.</para>
+    /// </summary>
+    private static List<string> HistoricalBlobOffenders()
+    {
+        string root = RepoRoot();
+        if (!MessageCorpusState().Readable) return [];
+
+        string? listing = RunGit(root, "rev-list --all --objects");
+        if (listing is null) return [];
+
+        Dictionary<string, string> pathOf = [];
+        foreach (string line in listing.Split((char)0x0a))
+        {
+            string[] parts = line.TrimEnd((char)0x0d).Split(' ', 2);
+            if (parts.Length == 2 && parts[1].Length > 0) pathOf.TryAdd(parts[0], parts[1]);
+        }
+
+        Dictionary<string, string> wanted = [];
+        foreach ((string sha, string rel) in pathOf)
+        {
+            if (Excluded(rel)) continue;
+            if (PinnedDataFiles.ContainsKey(rel)) continue;
+
+            string e = Path.GetExtension(rel);
+            if (TextExtensions.Contains(e, StringComparer.OrdinalIgnoreCase)
+                || NamedFiles.Contains(Path.GetFileName(rel), StringComparer.OrdinalIgnoreCase))
+            {
+                wanted[sha] = rel;
+            }
+        }
+
+        List<string> found = [];
+        foreach ((string sha, string body) in CatFileBatch(root, wanted.Keys))
+        {
+            string rel = wanted[sha];
+            string ext = Path.GetExtension(rel);
+
+            bool isProse = ext.Equals(".md", StringComparison.OrdinalIgnoreCase)
+                           || ext.Equals(".json", StringComparison.OrdinalIgnoreCase)
+                           || NamedFiles.Contains(Path.GetFileName(rel), StringComparer.OrdinalIgnoreCase);
+            bool isProductCode = IsProductCode(rel);
+
+            string[] lines = body.Split((char)0x0a);
+            for (int i = 0; i < lines.Length; i++)
+            {
+                found.AddRange(ScanLine(
+                    lines[i].TrimEnd((char)0x0d), isProse, applyAllowlist: true,
+                    $"{sha[..8]} {rel}:{i + 1}", isProductCode));
+            }
+        }
+
+        return found;
+    }
+
+    /// <summary>
+    /// Reads many objects through a single <c>git cat-file --batch</c>. One process per blob was the
+    /// obvious way to write this and cost fifteen seconds against a suite that otherwise runs in two;
+    /// batching is the difference between a guard people keep and a guard people delete. Content is decoded
+    /// as Latin-1, which is a lossless byte-to-char mapping and cannot throw on a non-UTF-8 blob — the
+    /// patterns are all ASCII, so nothing is lost by it.
+    /// </summary>
+    private static IEnumerable<(string Sha, string Body)> CatFileBatch(string root, IEnumerable<string> shas)
+    {
+        using var git = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+        {
+            FileName = "git",
+            Arguments = "cat-file --batch",
+            WorkingDirectory = root,
+            RedirectStandardInput = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+        });
+        if (git is null) yield break;
+
+        // Feed stdin on another thread. Writing it all first deadlocks: git starts filling the stdout pipe
+        // long before the last sha is written, that pipe's buffer fills, git blocks on it, and we are still
+        // blocked writing stdin. It hangs forever rather than failing, which took a 600-second timeout to
+        // notice.
+        var feeder = System.Threading.Tasks.Task.Run(() =>
+        {
+            foreach (string sha in shas) git.StandardInput.Write(sha + (char)0x0a);
+            git.StandardInput.Close();
+        });
+
+        using var raw = new MemoryStream();
+        git.StandardOutput.BaseStream.CopyTo(raw);
+        feeder.Wait(300_000);
+        git.WaitForExit(300_000);
+
+        byte[] all = raw.ToArray();
+        int i = 0;
+        while (i < all.Length)
+        {
+            int nl = Array.IndexOf(all, (byte)0x0a, i);
+            if (nl < 0) yield break;
+
+            string[] header = System.Text.Encoding.ASCII.GetString(all, i, nl - i).Split(' ');
+            if (header.Length != 3 || !int.TryParse(header[2], out int size)) yield break;
+
+            if (header[1] == "blob")
+            {
+                yield return (header[0], System.Text.Encoding.Latin1.GetString(all, nl + 1, size));
+            }
+
+            i = nl + 1 + size + 1;
+        }
+    }
+
+    /// <summary>
+    /// The third corpus: not the tree, not the messages, but every revision of every file a clone carries.
+    /// See <see cref="HistoricalBlobOffenders"/> for the redaction this one caught too late.
+    /// </summary>
+    [Fact]
+    public void HistoricalBlobs_CarryNothingUnredacted()
+    {
+        (bool readable, string? reason) = MessageCorpusState();
+        Assert.True(reason is null, reason);
+        if (!readable) return;
+
+        List<string> offenders = HistoricalBlobOffenders();
+        Assert.True(
+            offenders.Count == 0,
+            "Unredacted values in historical blobs. Redacting the file is not enough — the revision before "
+            + "the redaction still ships with every clone. While this repository is unpublished a "
+            + "`git filter-repo --replace-text` pass is cheap and total; once it is public it is neither. "
+            + "Allowlist the value with its reason only if it is genuinely benign:\n  "
+            + string.Join("\n  ", offenders.Take(40))
+            + (offenders.Count > 40 ? $"\n  ... and {offenders.Count - 40} more" : string.Empty));
+    }
+
+    /// <summary>
     /// The other published corpus. See <see cref="CommitMessageOffenders"/> for why it is not a file, and
     /// why that mattered.
     /// </summary>

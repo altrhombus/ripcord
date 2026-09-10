@@ -56,10 +56,19 @@ offset**, which across July–September places the author in North American Cent
 evening working pattern.
 
 That is real information about the author and it is not removable without rewriting every commit. **The
-project owner has looked at it and accepted it**: the disclosure is a timezone band, the history has been
-verified clean by five independent audits, and putting a clean history back through the rewrite machinery
-costs more than it buys. This is settled — a later review can note it, but it does not need re-deciding.
-Committing with `TZ=UTC` avoids adding to it.
+project owner has looked at it and accepted it, twice** — the second time knowing that a rewrite was cheap,
+because this repository has never been public and has no forks. The disclosure is a timezone band, and
+rewriting every commit's dates is a categorically larger operation than the two targeted rewrites this
+history has had: it would rewrite the one field those rewrites went out of their way to preserve, which is
+what lets a reader check that the dated engineering record in `docs/journal.md` matches the commits behind
+it. This is settled — a later review can note it, but it does not need re-deciding. Committing with
+`TZ=UTC` avoids adding to it.
+
+*(An earlier version of this paragraph argued the point from "putting a clean history back through the
+rewrite machinery costs more than it buys". That reasoning was wrong and was retired when a targeted
+message rewrite turned out to be free; the conclusion here does not rest on it. Counts of how many reviews
+the history has passed are deliberately not stated, because that number keeps changing and this document
+asks three paragraphs below that stated figures be re-derived when they do.)*
 
 **`README.md`'s test figures are exact, so re-derive them when the count changes.** The total, the
 clean-checkout figure and the sweep's own case count are all stated precisely, in a document whose value is
