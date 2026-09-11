@@ -21,7 +21,7 @@
     xmlns:controls="using:Ripcord_App.Controls"
     xmlns:local="using:Ripcord_App"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-    Title="Ripcord"
+    x:Uid="MainWindow_Ripcord"
     mc:Ignorable="d">
     <Window.SystemBackdrop>
         <MicaBackdrop />
@@ -73,10 +73,9 @@
                         MinWidth="{StaticResource RipcordTouchTargetCompact}"
                         MinHeight="{StaticResource RipcordTouchTargetCompact}"
                         AccessKey="S"
-                        AutomationProperties.Name="Settings"
+                        x:Uid="MainWindow_Settings"
                         Click="OnSettingsClick"
-                        Style="{StaticResource SubtleButtonStyle}"
-                        ToolTipService.ToolTip="Settings">
+                        Style="{StaticResource SubtleButtonStyle}">
                         <FontIcon FontSize="{ThemeResource RipcordIconSizeAction}" Glyph="&#xE713;" />
                     </Button>
                     <Button
@@ -84,10 +83,9 @@
                         MinWidth="{StaticResource RipcordTouchTargetCompact}"
                         MinHeight="{StaticResource RipcordTouchTargetCompact}"
                         AccessKey="A"
-                        AutomationProperties.Name="About Ripcord"
+                        x:Uid="MainWindow_AboutRipcord"
                         Click="OnAboutClick"
-                        Style="{StaticResource SubtleButtonStyle}"
-                        ToolTipService.ToolTip="About Ripcord">
+                        Style="{StaticResource SubtleButtonStyle}">
                         <FontIcon FontSize="{ThemeResource RipcordIconSizeAction}" Glyph="&#xE946;" />
                     </Button>
                 </StackPanel>

@@ -47,7 +47,7 @@
                             Width="72"
                             Height="72"
                             VerticalAlignment="Top"
-                            AutomationProperties.Name="Ripcord logo">
+                            x:Uid="AboutPage_RipcordLogo">
                             <Canvas Width="64" Height="64">
                                 <Rectangle
                                     Width="64"
@@ -104,10 +104,10 @@
                         </Viewbox>
 
                         <StackPanel Grid.Column="1" Spacing="6">
-                            <TextBlock Style="{StaticResource TitleLargeTextBlockStyle}" Text="Ripcord" />
+                            <TextBlock x:Uid="AboutPage_Ripcord" Style="{StaticResource TitleLargeTextBlockStyle}" />
                             <TextBlock
                                 Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                Text="Remote play for Windows 11 — direct to your console over the LAN, decoded on the GPU."
+                                x:Uid="AboutPage_RemotePlayWindowsDirect"
                                 TextWrapping="Wrap" />
 
                             <StackPanel
@@ -118,13 +118,13 @@
                                     <TextBlock
                                         x:Name="VersionText"
                                         Style="{StaticResource CaptionTextBlockStyle}"
-                                        Text="Version" />
+                                        x:Uid="AboutPage_Version" />
                                 </Border>
                                 <Border Style="{StaticResource RipcordChipStyle}">
                                     <TextBlock
                                         Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                         Style="{StaticResource CaptionTextBlockStyle}"
-                                        Text="Apache-2.0" />
+                                        x:Uid="AboutPage_Apache" />
                                 </Border>
                             </StackPanel>
 
@@ -137,27 +137,27 @@
                                     without it a screen reader announces three unlabelled links.
                                 -->
                                 <HyperlinkButton
-                                    AutomationProperties.Name="Source code on GitHub"
+                                    x:Uid="AboutPage_SourceCodeGithub"
                                     NavigateUri="https://github.com/altrhombus/Ripcord">
                                     <StackPanel Orientation="Horizontal" Spacing="8">
                                         <FontIcon FontSize="{ThemeResource RipcordIconSizeBody}" Glyph="&#xE8A7;" />
-                                        <TextBlock Text="Source" />
+                                        <TextBlock x:Uid="AboutPage_Source" />
                                     </StackPanel>
                                 </HyperlinkButton>
                                 <HyperlinkButton
-                                    AutomationProperties.Name="Report an issue on GitHub"
+                                    x:Uid="AboutPage_ReportIssueGithub"
                                     NavigateUri="https://github.com/altrhombus/Ripcord/issues/new">
                                     <StackPanel Orientation="Horizontal" Spacing="8">
                                         <FontIcon FontSize="{ThemeResource RipcordIconSizeBody}" Glyph="&#xEBE8;" />
-                                        <TextBlock Text="Report an issue" />
+                                        <TextBlock x:Uid="AboutPage_ReportIssue" />
                                     </StackPanel>
                                 </HyperlinkButton>
                                 <HyperlinkButton
-                                    AutomationProperties.Name="Protocol specification"
+                                    x:Uid="AboutPage_ProtocolSpecification"
                                     NavigateUri="https://github.com/altrhombus/Ripcord/tree/main/docs/protocol">
                                     <StackPanel Orientation="Horizontal" Spacing="8">
                                         <FontIcon FontSize="{ThemeResource RipcordIconSizeBody}" Glyph="&#xE8A5;" />
-                                        <TextBlock Text="Protocol spec" />
+                                        <TextBlock x:Uid="AboutPage_ProtocolSpec" />
                                     </StackPanel>
                                 </HyperlinkButton>
                             </StackPanel>
@@ -177,21 +177,21 @@
                     <TextBlock
                         Margin="0,16,0,0"
                         Style="{StaticResource RipcordSectionHeaderStyle}"
-                        Text="This device" />
+                        x:Uid="AboutPage_Device" />
                     <TextBlock
                         Foreground="{ThemeResource TextFillColorTertiaryBrush}"
                         Style="{StaticResource CaptionTextBlockStyle}"
-                        Text="The facts a bug report needs, so nobody has to go hunting for them." />
+                        x:Uid="AboutPage_FactsBugReportNeeds" />
                 </StackPanel>
                 <Button
                     x:Name="CopyButton"
                     Grid.Column="1"
                     VerticalAlignment="Bottom"
-                    AutomationProperties.Name="Copy these details to the clipboard"
+                    x:Uid="AboutPage_CopyTheseDetailsClipboard"
                     Click="OnCopyDetailsClick">
                     <StackPanel Orientation="Horizontal" Spacing="8">
                         <FontIcon FontSize="{ThemeResource RipcordIconSizeBody}" Glyph="&#xE8C8;" />
-                        <TextBlock x:Name="CopyButtonText" Text="Copy details" />
+                        <TextBlock x:Uid="AboutPage_CopyDetails" x:Name="CopyButtonText" />
                     </StackPanel>
                 </Button>
             </Grid>
@@ -216,7 +216,7 @@
                         <RowDefinition Height="Auto" />
                     </Grid.RowDefinitions>
 
-                    <TextBlock Style="{StaticResource RipcordDetailLabelStyle}" Text="Windows" />
+                    <TextBlock x:Uid="AboutPage_Windows" Style="{StaticResource RipcordDetailLabelStyle}" />
                     <TextBlock
                         x:Name="WindowsText"
                         Grid.Column="1"
@@ -230,7 +230,7 @@
                     <TextBlock
                         Grid.Row="2"
                         Style="{StaticResource RipcordDetailLabelStyle}"
-                        Text="Runtime" />
+                        x:Uid="AboutPage_Runtime" />
                     <TextBlock
                         x:Name="RuntimeText"
                         Grid.Row="2"
@@ -245,13 +245,13 @@
                     <TextBlock
                         Grid.Row="4"
                         Style="{StaticResource RipcordDetailLabelStyle}"
-                        Text="Graphics" />
+                        x:Uid="AboutPage_Graphics" />
                     <TextBlock
                         x:Name="GraphicsText"
                         Grid.Row="4"
                         Grid.Column="1"
                         Style="{StaticResource RipcordDetailValueStyle}"
-                        Text="Checking…" />
+                        x:Uid="AboutPage_Checking" />
 
                     <Border
                         Grid.Row="5"
@@ -261,7 +261,7 @@
                     <TextBlock
                         Grid.Row="6"
                         Style="{StaticResource RipcordDetailLabelStyle}"
-                        Text="Video decoding" />
+                        x:Uid="AboutPage_VideoDecoding" />
                     <StackPanel
                         Grid.Row="6"
                         Grid.Column="1"
@@ -282,7 +282,7 @@
                                 <TextBlock
                                     x:Name="DecodePillText"
                                     Style="{StaticResource CaptionTextBlockStyle}"
-                                    Text="Checking…" />
+                                    x:Uid="AboutPage_DecodePillChecking" />
                             </StackPanel>
                         </Border>
                         <TextBlock
@@ -301,7 +301,7 @@
                     <TextBlock
                         Grid.Row="8"
                         Style="{StaticResource RipcordDetailLabelStyle}"
-                        Text="HEVC" />
+                        x:Uid="AboutPage_Hevc" />
                     <Border
                         x:Name="HevcPill"
                         Grid.Row="8"
@@ -319,7 +319,7 @@
                             <TextBlock
                                 x:Name="HevcPillText"
                                 Style="{StaticResource CaptionTextBlockStyle}"
-                                Text="Checking…" />
+                                x:Uid="AboutPage_HevcPillChecking" />
                         </StackPanel>
                     </Border>
 
@@ -331,7 +331,7 @@
                     <TextBlock
                         Grid.Row="10"
                         Style="{StaticResource RipcordDetailLabelStyle}"
-                        Text="Settings folder" />
+                        x:Uid="AboutPage_SettingsFolder" />
                     <Grid
                         Grid.Row="10"
                         Grid.Column="1"
@@ -349,10 +349,8 @@
                             Grid.Column="1"
                             Margin="0,8,12,8"
                             VerticalAlignment="Center"
-                            AutomationProperties.Name="Open the settings folder"
-                            Click="OnOpenConfigFolderClick"
-                            Content="Open"
-                            ToolTipService.ToolTip="Open the settings folder in File Explorer" />
+                            x:Uid="AboutPage_OpenSettingsFolder"
+                            Click="OnOpenConfigFolderClick" />
                     </Grid>
                 </Grid>
             </Border>
@@ -361,7 +359,7 @@
             <TextBlock
                 Margin="0,16,0,0"
                 Style="{StaticResource RipcordSectionHeaderStyle}"
-                Text="About this project" />
+                x:Uid="AboutPage_AboutProject" />
 
             <Border Margin="0,6,0,0" Padding="16,14" Style="{StaticResource RipcordCardStyle}">
                 <Grid ColumnSpacing="14">
@@ -375,16 +373,16 @@
                         Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                         Glyph="&#xE946;" />
                     <StackPanel Grid.Column="1" Spacing="6">
-                        <TextBlock Style="{StaticResource BodyStrongTextBlockStyle}" Text="Independent and built clean-room" />
+                        <TextBlock x:Uid="AboutPage_IndependentBuiltCleanRoom" Style="{StaticResource BodyStrongTextBlockStyle}" />
                         <TextBlock
                             Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                             Style="{StaticResource CaptionTextBlockStyle}"
-                            Text="Ripcord is a from-scratch client. Its wire protocol was derived independently, from this project's own captures and analysis, and no vendor code is included in it."
+                            x:Uid="AboutPage_RipcordFromScratchClient"
                             TextWrapping="Wrap" />
                         <TextBlock
                             Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                             Style="{StaticResource CaptionTextBlockStyle}"
-                            Text="Not affiliated with, endorsed by, or sponsored by Sony Interactive Entertainment or Microsoft. “PlayStation”, “PS5” and “Remote Play” are trademarks of Sony Interactive Entertainment, used here only to describe what Ripcord is compatible with. All other product names and trademarks belong to their respective owners."
+                            x:Uid="AboutPage_AffiliatedEndorsedBySponsored"
                             TextWrapping="Wrap" />
                     </StackPanel>
                 </Grid>
@@ -395,37 +393,37 @@
                 HorizontalAlignment="Stretch"
                 HorizontalContentAlignment="Stretch">
                 <Expander.Header>
-                    <TextBlock Text="Open-source components" />
+                    <TextBlock x:Uid="AboutPage_OpenSourceComponents" />
                 </Expander.Header>
                 <StackPanel Spacing="10">
                     <StackPanel>
-                        <TextBlock Text="Concentus" />
+                        <TextBlock x:Uid="AboutPage_Concentus" />
                         <TextBlock
                             Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                             Style="{StaticResource CaptionTextBlockStyle}"
-                            Text="Opus audio decoding"
+                            x:Uid="AboutPage_OpusAudioDecoding"
                             TextWrapping="Wrap" />
                     </StackPanel>
                     <StackPanel>
-                        <TextBlock Text="Google.Protobuf" />
+                        <TextBlock x:Uid="AboutPage_GoogleProtobuf" />
                         <TextBlock
                             Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                             Style="{StaticResource CaptionTextBlockStyle}"
-                            Text="Control-plane message encoding"
+                            x:Uid="AboutPage_ControlPlaneMessageEncoding"
                             TextWrapping="Wrap" />
                     </StackPanel>
                     <StackPanel>
-                        <TextBlock Text="Windows App SDK" />
+                        <TextBlock x:Uid="AboutPage_WindowsAppSdk" />
                         <TextBlock
                             Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                             Style="{StaticResource CaptionTextBlockStyle}"
-                            Text="WinUI 3 and the platform APIs behind it"
+                            x:Uid="AboutPage_WinuiPlatformApisBehind"
                             TextWrapping="Wrap" />
                     </StackPanel>
                     <TextBlock
                         Foreground="{ThemeResource TextFillColorTertiaryBrush}"
                         Style="{StaticResource CaptionTextBlockStyle}"
-                        Text="Video, audio and input run on Windows itself: Direct3D 12, Media Foundation, WASAPI and GameInput."
+                        x:Uid="AboutPage_VideoAudioInputRun"
                         TextWrapping="Wrap" />
                 </StackPanel>
             </Expander>
