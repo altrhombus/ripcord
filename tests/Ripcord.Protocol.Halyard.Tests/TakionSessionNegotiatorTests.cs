@@ -64,8 +64,19 @@ public class TakionSessionNegotiatorTests
         try { await serverTask; } catch (OperationCanceledException) { }
     }
 
-    /// <summary>The version the mock console picks — see the ack it builds for why this one.</summary>
-    private const uint MockConsoleVersion = 9;
+    /// <summary>
+    /// The version the mock console picks: 17 (0x11), the one our own capture negotiated.
+    ///
+    /// <para>It was 9 until 2026-09-11, which meant this whole end-to-end path — negotiate, agree an ECDH
+    /// key, derive stream keys, decrypt a server packet — ran on P-256, because <c>CurveForVersion</c>
+    /// silently answered P-256 for any version it did not recognise. No console has ever been observed
+    /// speaking version 9. So the most complete test of the crypto path was exercising a curve the project
+    /// had never validated, while the curve real hardware uses went untested here.</para>
+    ///
+    /// <para>Now that the fallback throws, the mock has to name a version that means something, and the
+    /// coverage follows the console instead of the guess.</para>
+    /// </summary>
+    private const uint MockConsoleVersion = 17;
 
     private static readonly TaskCompletionSource<uint[]> offeredVersions =
         new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -78,7 +89,8 @@ public class TakionSessionNegotiatorTests
         TaskCompletionSource<(byte[], byte[], ulong, int)> sealedByServer,
         CancellationToken ct)
     {
-        var (serverKp, serverPub) = HalyardStreamKeySchedule.GenerateKeyPair();
+        // P-521, matching MockConsoleVersion - both halves of the ECDH must be on one curve.
+        var (serverKp, serverPub) = HalyardStreamKeySchedule.GenerateKeyPair(HalyardStreamCurve.NistP521);
         using (serverKp)
         {
             var reassembler = new TakionMessageReassembler();
@@ -159,7 +171,7 @@ public class TakionSessionNegotiatorTests
                     Type = ControlMessage.Types.MessageType.SessionReply,
                     SessionReplyPayload = new SessionReplyPayload
                     {
-                        ServerVersion = 9,
+                        ServerVersion = (int)MockConsoleVersion,
                         Token = 1,
                         EncryptedKeyAccepted = true,
                         VersionAccepted = true,
