@@ -138,7 +138,9 @@ static void test_ctrl_message(void)
     {
         uint8_t session_payload[17];
         uint8_t wire[8 + 17 + 8];
-        /* Synthetic: arbitrary bytes standing in for a session-id payload. Nothing captured. */
+        /* Synthetic: 0x10 then ASCII "SyntheticSessId!" - the real frame's shape, invented content.
+         * The value here until 2026-09-11 made the same claim and was a real captured (encrypted)
+         * payload; see HalyardCtrlMessageTests.cs and CaptureProvenanceTests. */
         size_t payload_len = from_hex("1053796e74686574696353657373496421", session_payload, sizeof(session_payload));
         size_t offset = 0;
 
