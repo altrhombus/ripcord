@@ -172,7 +172,7 @@ public class HalyardControlAssociationTests
         HalyardControlAction again = association.OnDatagram(PeerInit(0x00017777, token: 0x11229999));
 
         HalyardControlPrelude echo = Assert.Single(
-            again.Send.Select(ParsePrelude).Where(p => p.Type == HalyardControlPrelude.CookieEcho));
+            again.Send.Select(ParsePrelude), p => p.Type == HalyardControlPrelude.CookieEcho);
         Assert.Equal(0x11229999u, echo.Token);   // the LATEST probe's timestamp, not the first
     }
 
@@ -439,7 +439,7 @@ public class HalyardControlAssociationTests
         HalyardControlAction action = association.OnDatagram(PeerInit(0x00017777, 0x11223344));
 
         HalyardControlPrelude echo = Assert.Single(
-            action.Send.Select(ParsePrelude).Where(p => p.Type == HalyardControlPrelude.CookieEcho));
+            action.Send.Select(ParsePrelude), p => p.Type == HalyardControlPrelude.CookieEcho);
 
         Assert.Equal(
             HalyardControlPrelude.ReflectPeerEndpoint(PeerAddress, PeerPort, echo.TagPair),

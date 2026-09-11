@@ -12,7 +12,8 @@
 -->
 <ResourceDictionary
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:ui="using:Windows.UI">
 
     <!--
         ================================================================================================
@@ -141,9 +142,9 @@
         setting — see AppEffects.
         ================================================================================================
     -->
-    <Color x:Key="RipcordPlayStationAccentColor">#2D7DF6</Color>
-    <Color x:Key="RipcordXboxAccentColor">#2FBF5B</Color>
-    <Color x:Key="RipcordNintendoAccentColor">#F0433A</Color>
+    <ui:Color x:Key="RipcordPlayStationAccentColor">#2D7DF6</ui:Color>
+    <ui:Color x:Key="RipcordXboxAccentColor">#2FBF5B</ui:Color>
+    <ui:Color x:Key="RipcordNintendoAccentColor">#F0433A</ui:Color>
 
     <SolidColorBrush x:Key="RipcordPlayStationAccentBrush" Color="{StaticResource RipcordPlayStationAccentColor}" />
     <SolidColorBrush x:Key="RipcordXboxAccentBrush" Color="{StaticResource RipcordXboxAccentColor}" />
