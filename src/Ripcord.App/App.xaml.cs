@@ -85,6 +85,13 @@ public partial class App : Application
 
         _input = new InputRouter(_services.Settings);
 
+        // After the settings store, before the first window — and that ordering is load-bearing rather than
+        // tidy. AppScale writes sizes into Application.Resources and edits the text styles in place; a page
+        // parsed before it ran would capture the unscaled values, and a Style already applied to an element
+        // is sealed and cannot be edited at all. There is exactly one correct place for this call and this
+        // is it.
+        AppScale.Apply(_services.Settings.Current.LargeUiScale);
+
         var window = new MainWindow();
         _services.AttachShell(window);
 
