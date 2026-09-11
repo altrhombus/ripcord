@@ -21,7 +21,7 @@
     xmlns:controls="using:Ripcord_App.Controls"
     xmlns:local="using:Ripcord_App"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-    x:Uid="MainWindow_Ripcord"
+    Title="Ripcord"
     mc:Ignorable="d">
     <Window.SystemBackdrop>
         <MicaBackdrop />

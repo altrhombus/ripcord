@@ -328,10 +328,6 @@
     <value>About Ripcord</value>
     <comment>ToolTip on the main window title bar. Ripcord is a product or standard name - do not translate.</comment>
   </data>
-  <data name="MainWindow_Ripcord.Title" xml:space="preserve">
-    <value>Ripcord</value>
-    <comment>The dialog title on the main window title bar. Ripcord is a product or standard name - do not translate.</comment>
-  </data>
   <data name="MainWindow_Settings.AutomationProperties.Name" xml:space="preserve">
     <value>Settings</value>
     <comment>Name on the main window title bar.</comment>
