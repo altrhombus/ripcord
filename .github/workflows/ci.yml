@@ -58,6 +58,13 @@ jobs:
         with:
           dotnet-version: '10.0.x'
       - uses: microsoft/setup-msbuild@v2
+        with:
+          # The action defaults to the 32-bit MSBuild.exe. Directory.Build.props' own error text tells
+          # you to "use the one matching the machine" for exactly this reason: a 32-bit MSBuild makes any
+          # property derived from the process architecture answer x86. The csproj no longer asks that
+          # question, so this is belt-and-braces rather than the fix - but a 64-bit MSBuild is what these
+          # projects are meant to be driven by.
+          msbuild-architecture: x64
       - name: Build solution
         # -restore, not a bare build. Without it every managed project fails NETSDK1004 looking for a
         # project.assets.json that no step has produced - which is what every App job did until someone
