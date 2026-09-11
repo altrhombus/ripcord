@@ -95,9 +95,9 @@ unmeasured `[X]`** and is the most useful next measurement.
 Nothing in 1–4 needs a PS3.
 
 1. ~~Parse SPS/PPS from an existing capture.~~ **Done** — see above. Settled the decoder route.
-2. Bitstream reader and SPS/PPS/slice-header parser, portable C, host-tested in `ports/ripcord-ps3/tests/`
-   against vectors from `dotnet run --project tools/Ripcord.ProtocolLab -- vectors` — the same pattern
-   `ports/ripcord-3ds/tests/` uses, so it needs no console and runs anywhere.
+2. ~~Bitstream reader and SPS/PPS/slice-header parser.~~ **Done** — `source/media/rc_h264_bits.[ch]`
+   and `rc_h264_params.[ch]`, with `tests/h264_test.c`. 80 checks, no console needed:
+   `make -C ports/ripcord-ps3/tests`.
 3. Annex-B splitter and slice-boundary extraction, likewise host-tested. Useful whichever decoder route
    wins.
 4. `rc_platform_ps3.c` and a PSL1GHT skeleton that links and prints a timestamp. Cheap, and it flushes
