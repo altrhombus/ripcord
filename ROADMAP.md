@@ -63,7 +63,9 @@ not research.
 
 ## 1.0 — scope
 
-**Draft, 2026-09-11. Nothing here is decided until the owner says so; the open questions are at the end.**
+**Settled 2026-09-11.** The four questions this draft opened with have been answered by the owner and are
+recorded under "Decisions" below, along with one constraint those answers collide with. Scope changes from
+here are changes, not refinements.
 
 The backlog below has 44 open items and no line through it, which means it cannot answer "are we done yet".
 This section draws that line. It is deliberately a *definition* first, because every argument about whether
@@ -119,7 +121,14 @@ and `CurveForVersion` having no answer for non-P521 versions are both correctnes
 negotiates something this project has not observed. Everything else in Track B is an optimisation or an
 open research question and can wait.
 
-**7. Honest first-run docs.** What works, what does not, which console generations, and the fact that it is
+**7. An MSIX alongside the zip.** `EnableMsixTooling` is already on and `Package.appxmanifest` already
+exists, so this is packaging and verification rather than new plumbing — but see the decisions below for the
+signing constraint and the two behavioural differences a packaged build brings.
+
+**8. `LargeUiScale` wired through.** App-wide scaling, which collides with the fixed console-card cell
+height and wants the 150% OS text scale checked at the machine.
+
+**9. Honest first-run docs.** What works, what does not, which console generations, and the fact that it is
 English-only. The README is already unusually honest; 1.0 needs it to also be *complete* about limits.
 
 ### Explicitly out, and said so in the release notes
@@ -137,6 +146,8 @@ English-only. The README is already unusually honest; 1.0 needs it to also be *c
   source until someone can test one.
 - **Translations.** The catalogues exist and a speaker can contribute one; shipping an unreviewed machine
   translation would be worse than English.
+- **A purchased code-signing certificate.** The zip is unsigned and SmartScreen will say so on first run;
+  the README has to say so first. The MSIX is self-signed — see the decisions below for what that costs.
 - **The wordmark**, the senkusha probe questions, and the remaining accessibility items other than
   `LargeUiScale`.
 
@@ -145,8 +156,11 @@ English-only. The README is already unusually honest; 1.0 needs it to also be *c
 1.0 ships when every line is true:
 
 - [ ] CI passes on a real runner, on a clean clone, for every job.
-- [ ] A tagged release exists with an x64 build attached and install steps verified on a machine without
-      the SDK.
+- [ ] A tagged release exists with an x64 zip and an x64 MSIX attached, and install steps for both
+      verified on a machine without the SDK.
+- [ ] The MSIX has been installed and launched from its signed package, not just built - including a pair
+      and a stream, because packaged data paths and packaged resource loading are both different.
+- [ ] `LargeUiScale` changes the UI, at 100% and at the OS 150% text scale.
 - [ ] The three known defects are fixed, each confirmed on hardware.
 - [ ] The input stack, Stage A steps 8–10 and the two Stage B checks have been driven by a person, and
       whatever that finds is either fixed or listed.
@@ -156,21 +170,38 @@ English-only. The README is already unusually honest; 1.0 needs it to also be *c
       vulnerability reporting is enabled.
 - [ ] The README states the limits a first-time user meets in their first ten minutes.
 
-### Open questions for the owner
+### Decisions (settled 2026-09-11)
 
-These change the shape of the work rather than its size, so they are worth settling before any of it starts:
+**Distribution: a zip and an MSIX.** The zip is the primary artifact and the one the README points at. The
+MSIX exists for people who want Start-menu integration and clean uninstall.
 
-1. **Distribution shape.** A plain zip of the unpackaged build is the cheapest thing that satisfies "someone
-   can run it". An MSIX installer is friendlier and brings code-signing into scope, which is a cost and a
-   decision of its own. Recommendation: zip for 1.0.
-2. **Code signing.** Unsigned means SmartScreen warns on first run, which for a remote-play client that
-   asks for a PSN sign-in is a worse first impression than it sounds. It is also money and identity.
-   Recommendation: ship unsigned and say so plainly in the README, revisit for 1.1.
-3. **`LargeUiScale`: wire it or hide it.** Wiring it is app-wide scaling work; hiding it is a one-line
-   change and a note. Recommendation: hide for 1.0.
-4. **Does 1.0 include the account tier**, or is it LAN-only with the account features documented as
-   working-but-unpolished? Everything works today, so this is about how much of the surface you want to
-   support on day one. Recommendation: include it.
+**Code signing: no purchased certificate.** These two decisions meet at a real constraint, so it is written
+down rather than discovered during packaging: **Windows will not install an MSIX that is not signed by a
+certificate the machine already trusts.** An unsigned `.msix` is not a thing a user can double-click, so the
+MSIX has to be signed with a *self-signed* certificate whose thumbprint is published beside the download,
+and installing it means trusting that certificate first. That is a worse first run than the zip, which is
+why the zip leads. If that trade is unacceptable the honest options are to drop the MSIX until there is a
+real certificate, or to publish it for people who will re-sign it themselves — but "MSIX, unsigned,
+double-click to install" is not available.
+
+**Two consequences of shipping an MSIX that are easy to miss, and both need testing rather than reasoning:**
+
+- **A packaged app stores its data somewhere else.** `DefaultPlatformPaths` resolves under
+  `LocalApplicationData`, which Windows redirects for packaged apps. Someone who pairs a console with the
+  zip and then installs the MSIX will find their paired consoles gone, and the DPAPI-protected credential
+  blob is written per-user in that same tree.
+- **Resource loading differs between packaged and unpackaged.** The XAML catalogue resolves through MRT,
+  and the packaged path is a different one from the unpackaged path the app runs today. Both need to be
+  launched, not just built — this is the failure mode that produced a launch crash this week, where the
+  markup compiled, the PRI indexed, and the app died on load.
+
+**`LargeUiScale`: wire it.** It becomes real 1.0 work rather than a one-line hide. It is app-wide scaling,
+it collides with the fixed console-card cell height already noted in the backlog, and the plan wants the OS
+text scale verified at 150% at the machine — so it lands with the hardware pass rather than before it.
+
+**The account tier is in the supported surface.** Sign-in, the account console list, cloud wake and the
+account pairing route are all part of what 1.0 claims to support, and therefore part of what the hardware
+pass has to exercise.
 
 ## Backlog
 
