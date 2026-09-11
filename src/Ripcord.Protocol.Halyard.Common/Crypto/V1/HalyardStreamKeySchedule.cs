@@ -34,9 +34,43 @@ public static class HalyardStreamKeySchedule
     public const byte DirectionClientToServer = 2;
     public const byte DirectionServerToClient = 3;
 
-    /// <summary>Map a negotiated protocol version to its ECDH curve (0x0d–0x11 → P-521).</summary>
+    /// <summary>The version range whose curve this project has actually observed on the wire.</summary>
+    public const int LowestValidatedVersion = 0x0d;
+
+    /// <inheritdoc cref="LowestValidatedVersion"/>
+    public const int HighestValidatedVersion = 0x11;
+
+    /// <summary>
+    /// Map a negotiated protocol version to its ECDH curve.
+    ///
+    /// <para><b>Throws for any version outside 0x0d–0x11, and that is the point.</b> This used to answer
+    /// P-256 for everything else, which read like a documented default and was not one. The spec retracts it
+    /// in as many words — <i>"the earlier 'v1 uses P-256, the default' was a guess; versions 0xd–0x11 use
+    /// P-521"</i> (ps5-remoteplay-v1-spec.md §5.2, the 2026-07-22 live-parse). The correction landed for the
+    /// range that was confirmed; the guess it replaced stayed behind as the fallback.</para>
+    ///
+    /// <para>A wrong curve does not fail where it is chosen. The handshake completes, both sides derive
+    /// different secrets, and the console rejects the session with no reason attached — so the cost of
+    /// guessing is a debugging session against an opaque symptom on hardware nobody here owns. An exception
+    /// naming the version is a worse first run for someone on that firmware and a far better one for whoever
+    /// has to find out why.</para>
+    ///
+    /// <para>The P-256 machinery stays and is still correct: <see cref="CurveForPublicKeyLength"/> selects it
+    /// from a 65-byte peer key, which is evidence rather than inference. What has been removed is the claim
+    /// that a <i>version number</i> we have never seen implies that curve. To restore it, observe a session
+    /// on such a version and widen the range — not the fallback.</para>
+    /// </summary>
+    /// <exception cref="NotSupportedException">The version's curve has never been observed.</exception>
     public static HalyardStreamCurve CurveForVersion(int protocolVersion)
-        => protocolVersion is >= 0x0d and <= 0x11 ? HalyardStreamCurve.NistP521 : HalyardStreamCurve.NistP256;
+        => protocolVersion is >= LowestValidatedVersion and <= HighestValidatedVersion
+            ? HalyardStreamCurve.NistP521
+            : throw new NotSupportedException(
+                $"No ECDH curve is known for protocol version {protocolVersion} (0x{protocolVersion:x2}). "
+                + $"Only versions 0x{LowestValidatedVersion:x2}-0x{HighestValidatedVersion:x2} have been "
+                + "observed, and those use P-521. P-256 was previously returned here for everything else, but "
+                + "that was a guess the spec has since retracted, and an unvalidated curve fails as an opaque "
+                + "session rejection rather than as an error. If you have a capture of this version, widen the "
+                + "validated range; do not reinstate a default.");
 
     private static ECCurve ToEcCurve(HalyardStreamCurve c)
         => c == HalyardStreamCurve.NistP521 ? ECCurve.NamedCurves.nistP521 : ECCurve.NamedCurves.nistP256;
@@ -62,7 +96,12 @@ public static class HalyardStreamKeySchedule
     /// Generate an ephemeral ECDH keypair on the given curve, returning the handle and its uncompressed public
     /// key (65 bytes for P-256, 133 for P-521).
     /// </summary>
-    public static (ECDiffieHellman KeyPair, byte[] PublicKey) GenerateKeyPair(HalyardStreamCurve curve = HalyardStreamCurve.NistP256)
+    /// <remarks>
+    /// The curve is required. It defaulted to P-256, which is the same trap <see cref="CurveForVersion"/>
+    /// carried one level up: a caller that had not thought about the curve silently got the one this project
+    /// has never validated against hardware. Two mock consoles in the test suite were doing exactly that.
+    /// </remarks>
+    public static (ECDiffieHellman KeyPair, byte[] PublicKey) GenerateKeyPair(HalyardStreamCurve curve)
     {
         int cs = CoordinateSize(curve);
         var ecdh = ECDiffieHellman.Create(ToEcCurve(curve));

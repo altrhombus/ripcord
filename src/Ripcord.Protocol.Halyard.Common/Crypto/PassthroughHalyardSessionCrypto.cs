@@ -23,7 +23,7 @@ public sealed class PassthroughHalyardSessionCrypto : IHalyardSessionCrypto
 
     public byte[] CryptStreaminfo(ulong counter, ReadOnlySpan<byte> data) => data.ToArray();
 
-    public byte[] GenerateEphemeralPublicKey(int protocolVersion = 0)
+    public byte[] GenerateEphemeralPublicKey(int protocolVersion)
     {
         int length = protocolVersion is >= 0x0d and <= 0x11 ? 133 : 65;
         var pub = new byte[length];
