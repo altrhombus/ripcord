@@ -1,6 +1,6 @@
 #!/bin/sh
 #
-# ripcord-vita - cross-build the Mbed TLS ECP/MPI layer, and nothing else.
+# ripcord ports - cross-build the Mbed TLS ECP/MPI layer, and nothing else.
 #
 # WHY THIS EXISTS. ports/common/crypto/rc_ecdh.c delegates one primitive - ECDH over P-256/P-521 - to
 # Mbed TLS, for the reason rc_ecdh.h gives at length: a hand-written constant-time bigint is the last
@@ -27,7 +27,9 @@
 # does not need it - devkitPro packages 3ds-mbedtls - which is why the version here is pinned to match
 # that package rather than chosen freely.
 #
-# Both Makefiles call it automatically; run it by hand only to re-fetch or to debug.
+# The Makefile of each caller runs it automatically; run it by hand only to re-fetch or to debug.
+# Only the host suite is in this tree - the Vita port is on its own branch - so the CROSS= (empty)
+# path below is the only one exercised here.
 
 set -eu
 
@@ -35,6 +37,9 @@ VERSION=2.28.8
 SHA256=4fef7de0d8d542510d726d643350acb3cdb9dc76ad45611b59c9aa08372b4213
 URL="https://codeload.github.com/Mbed-TLS/mbedtls/tar.gz/refs/tags/v${VERSION}"
 
+# The default names vitasdk's triple because the Vita port is the caller that needs a cross-build at
+# all. Left pointing there rather than re-aimed at the host: it is correct for the caller it exists
+# for, and the host suite passes CROSS= explicitly precisely so it does not depend on this default.
 CROSS="${CROSS-arm-vita-eabi-}"   # CROSS= (empty) means the host compiler, not the default
 TOOLS=$(cd "$(dirname "$0")" && pwd)
 PREFIX="${PREFIX:?set PREFIX to where the library should be installed}"
