@@ -4,6 +4,7 @@ using Ripcord.Core.Sessions;
 using Ripcord.Core.Settings;
 using Ripcord.Presentation.Consoles;
 using Ripcord.Presentation.Threading;
+using Ripcord.Presentation.Resources;
 
 namespace Ripcord.Presentation.Settings;
 
@@ -55,36 +56,54 @@ public sealed class SettingsViewModel : ObservableState<SettingsViewState>
     /// The resolutions offered, and the only place the label/geometry pairing lives. A user picks a row; nothing
     /// above this type ever converts between an index and a width.
     /// </summary>
-    private static readonly (string Label, int Width, int Height, int Fps)[] Resolutions =
+    private static readonly (int Width, int Height, int Fps)[] Resolutions =
     [
-        ("1080p 60 fps", 1920, 1080, 60),
-        ("1080p 30 fps", 1920, 1080, 30),
-        ("720p 60 fps", 1280, 720, 60),
-        ("720p 30 fps", 1280, 720, 30),
-        ("540p 60 fps", 960, 540, 60),
+        (1920, 1080, 60),
+        (1920, 1080, 30),
+        (1280, 720, 60),
+        (1280, 720, 30),
+        (960, 540, 60),
+    ];
+
+    /// <summary>
+    /// Labels for <see cref="Resolutions"/>, in the same index order.
+    ///
+    /// <para>A property rather than a static array on purpose: a static initialiser would resolve the
+    /// catalogue once, against whichever culture happened to be current when this type was first touched,
+    /// and keep that for the life of the process. Every option table below is a property for the same
+    /// reason.</para>
+    /// </summary>
+    private static string[] ResolutionLabels =>
+    [
+        Strings.Settings_Resolution1080p60,
+        Strings.Settings_Resolution1080p30,
+        Strings.Settings_Resolution720p60,
+        Strings.Settings_Resolution720p30,
+        Strings.Settings_Resolution540p60,
     ];
 
     /// <summary>Index of the 720p60 entry, used when the stored geometry matches no offered row.</summary>
     private const int DefaultResolutionIndex = 2;
 
-    private const string H264Label = "H.264 (compatible)";
-    private const string HevcLabel = "HEVC (better quality per Mbps)";
+    private static string H264Label => Strings.Settings_CodecH264;
 
-    private static readonly string[] UpscaleOptions = ["Smooth (bilinear)", "Sharp (bicubic)"];
+    private static string HevcLabel => Strings.Settings_CodecHevc;
 
-    private static readonly string[] GpuOptions =
+    private static string[] UpscaleOptions => [Strings.Settings_UpscaleSmooth, Strings.Settings_UpscaleSharp];
+
+    private static string[] GpuOptions =>
     [
-        "Automatic (recommended)",
-        "Prefer battery life",
-        "Prefer performance",
-        "Choose a specific GPU",
+        Strings.Settings_GpuAutomatic,
+        Strings.Settings_GpuBatteryLife,
+        Strings.Settings_GpuPerformance,
+        Strings.Settings_GpuSpecific,
     ];
 
-    private static readonly string[] ExitGestureOptions =
+    private static string[] ExitGestureOptions =>
     [
-        "Options + Create + L1 + R1",
-        "Both sticks pressed (L3 + R3)",
-        "Keyboard only (Esc)",
+        Strings.Settings_ExitGestureShoulders,
+        Strings.Settings_ExitGestureSticks,
+        Strings.Settings_ExitGestureKeyboard,
     ];
 
     public SettingsViewModel(
@@ -167,7 +186,7 @@ public sealed class SettingsViewModel : ObservableState<SettingsViewState>
 
     public void SetResolution(int index) => Apply(() =>
     {
-        (_, int width, int height, int fps) = Resolutions[Math.Clamp(index, 0, Resolutions.Length - 1)];
+        (int width, int height, int fps) = Resolutions[Math.Clamp(index, 0, Resolutions.Length - 1)];
         return _draft with { Width = width, Height = height, TargetFps = fps };
     });
 
@@ -295,7 +314,7 @@ public sealed class SettingsViewModel : ObservableState<SettingsViewState>
         {
             // A settings file that cannot be written is worth saying so about — silently discarding the user's
             // choice while the control shows it applied is the worst of both.
-            _loadError = $"Couldn't save settings: {ex.Message}";
+            _loadError = string.Format(Strings.Settings_SaveFailed, ex.Message);
         }
     });
 
@@ -317,7 +336,7 @@ public sealed class SettingsViewModel : ObservableState<SettingsViewState>
         catch (Exception ex)
         {
             adapters = [];
-            error = $"Couldn't list the graphics adapters on this PC: {ex.Message}";
+            error = string.Format(Strings.Settings_AdapterListFailed, ex.Message);
         }
 
         Mutate(() =>
@@ -358,15 +377,14 @@ public sealed class SettingsViewModel : ObservableState<SettingsViewState>
         // means "not enumerated yet", which is not a finding.
         bool noneUsable = adapters.Count > 0 && adapters.All(a => !a.SupportsHardwareDecode);
         string adapterWarning = _adapterError ?? (noneUsable
-            ? "None of the installed GPUs report hardware video decoding. Streaming will fall back to the CPU, "
-              + "which uses far more power."
+            ? Strings.Settings_NoHardwareDecode
             : string.Empty);
 
         return new SettingsViewState(
-            ResolutionOptions: Resolutions.Select(r => r.Label).ToArray(),
+            ResolutionOptions: ResolutionLabels,
             ResolutionIndex: resolutionIndex >= 0 ? resolutionIndex : DefaultResolutionIndex,
             BitrateMbps: _draft.BitrateKbps / 1000.0,
-            BitrateLabel: $"{_draft.BitrateKbps / 1000.0:F0} Mbps",
+            BitrateLabel: string.Format(Strings.Settings_BitrateMbps, _draft.BitrateKbps / 1000.0),
             UpscaleIndex: _draft.UpscaleMode == UpscaleMode.FsrFallback ? 1 : 0,
             AdaptiveQuality: _draft.AdaptiveQuality,
             ReportConnectionQuality: _draft.ReportConnectionQuality,
@@ -385,8 +403,8 @@ public sealed class SettingsViewModel : ObservableState<SettingsViewState>
                 // Say so when the machine is ready. Three ticks plus a sentence about what happens if something
                 // is missing leaves the reader to work out that nothing is; an affirmative line is shorter and
                 // is the answer they came for.
-                ? "This PC is ready for HDR. Whether a given game streams in HDR is up to the console."
-                : "Tone-mapped to SDR if any of the above is missing, which still looks correct, just flatter.",
+                ? Strings.Settings_HdrReady
+                : Strings.Settings_HdrToneMapped,
 
             GpuPreferenceIndex: (int)_draft.GpuPreference,
             AdapterPickerVisible: specific,
@@ -409,14 +427,12 @@ public sealed class SettingsViewModel : ObservableState<SettingsViewState>
             LargeUiScale: _draft.LargeUiScale,
 
             CredentialTitle: _consoles.CredentialsEncrypted
-                ? "Saved consoles are encrypted"
-                : "Saved consoles are not encrypted",
+                ? Strings.Settings_ConsolesEncrypted
+                : Strings.Settings_ConsolesNotEncrypted,
             CredentialMessage: _consoles.CredentialsEncrypted
-                ? $"Pairing credentials are protected with {_consoles.ProtectionDescription} and can only be "
-                  + "read by your Windows account on this PC."
+                ? string.Format(Strings.Settings_CredentialsProtected, _consoles.ProtectionDescription)
                 // Never imply protection that is not there.
-                : $"Pairing credentials are stored {_consoles.ProtectionDescription}. Anyone who can read your "
-                  + "user folder could copy them.",
+                : string.Format(Strings.Settings_CredentialsUnprotected, _consoles.ProtectionDescription),
             CredentialTone: _consoles.CredentialsEncrypted ? StatusTone.Positive : StatusTone.Caution,
 
             LoadError: _loadError);
@@ -431,10 +447,8 @@ public sealed class SettingsViewModel : ObservableState<SettingsViewState>
     /// limited connection, and the help text must not promise the latter.
     /// </summary>
     private string ComposeCodecHelp() => _hevcAvailable
-        ? "HEVC uses the available bandwidth more efficiently, so the picture can look cleaner at the same "
-          + "resolution. It does not change which resolution the console sends. Takes effect on the next "
-          + "connection."
-        : "HEVC is unavailable on this PC — no HEVC decoder is installed. Takes effect on the next connection.";
+        ? Strings.Settings_HevcExplained
+        : Strings.Settings_HevcUnavailable;
 
     /// <summary>
     /// Four prerequisites for HDR, of which this app controls one — so a user whose picture stays SDR needs to
@@ -444,20 +458,20 @@ public sealed class SettingsViewModel : ObservableState<SettingsViewState>
     [
         new HdrCheck(
             _hevcAvailable && hevcSelected ? HdrCheckState.Met : HdrCheckState.Unmet,
-            "HEVC codec",
+            Strings.Settings_HdrCheckHevcCodec,
             !_hevcAvailable
-                ? "No HEVC decoder on this PC."
-                : hevcSelected ? null : "Choose HEVC in the codec picker above."),
+                ? Strings.Settings_HdrNoHevcDecoder
+                : hevcSelected ? null : Strings.Settings_HdrChooseHevc),
 
         new HdrCheck(
             _displayHdr ? HdrCheckState.Met : HdrCheckState.Unmet,
-            "Display in HDR mode",
-            _displayHdr ? null : "Turn on Use HDR in Windows display settings."),
+            Strings.Settings_HdrCheckDisplayMode,
+            _displayHdr ? null : Strings.Settings_HdrTurnOnInWindows),
 
         new HdrCheck(
             HdrCheckState.Unknown,
-            "Console sends HDR",
-            "Checked once you connect — the diagnostics overlay (F3) reports what arrived."),
+            Strings.Settings_HdrCheckConsoleSends,
+            Strings.Settings_HdrCheckedOnConnect),
     ];
 
     private string ComposeKeyboardSummary()
@@ -466,21 +480,20 @@ public sealed class SettingsViewModel : ObservableState<SettingsViewState>
         int remapped = _draft.InputBindings.GamepadRemap.Count;
 
         return remapped > 0
-            ? $"{bound} keys bound · {remapped} gamepad buttons remapped"
-            : $"{bound} keys bound";
+            ? string.Format(Strings.Settings_KeysBoundAndRemapped, bound, remapped)
+            : string.Format(Strings.Settings_KeysBound, bound);
     }
 
     private string ComposeExitGestureDescription() => _draft.ExitGesture == ExitGesture.None
-        ? "No controller gesture. You will need a keyboard (Esc) or the on-screen button to leave a stream."
-        : $"{ExitGestureDetector.Describe(_draft.ExitGesture)}, held briefly. The PS button is deliberately not "
-          + "used — it has to reach the console.";
+        ? Strings.Settings_ExitNoGesture
+        : string.Format(Strings.Settings_ExitGestureHeld, ExitGestureDetector.Describe(_draft.ExitGesture));
 
     /// <summary>Say plainly why an adapter is a poor choice rather than letting someone pick one that fails.</summary>
     private static string DescribeAdapter(VideoAdapterOption adapter)
     {
         string note = !adapter.SupportsHardwareDecode
-            ? " — no hardware video decoding"
-            : adapter.DrivesADisplay ? string.Empty : " — not driving a display (adds a copy each frame)";
+            ? Strings.Settings_AdapterNoHardwareDecode
+            : adapter.DrivesADisplay ? string.Empty : Strings.Settings_AdapterNotDrivingDisplay;
 
         return $"{adapter.Description}{note}";
     }

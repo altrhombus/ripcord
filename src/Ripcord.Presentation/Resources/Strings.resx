@@ -90,4 +90,420 @@
     <value>Xbox isn't supported yet. It's here so you can see where Ripcord is going.</value>
     <comment>Caption under a console family that is shown but not implemented. Xbox is a product name - do not translate it.</comment>
   </data>
+  <data name="Settings_AdapterListFailed" xml:space="preserve">
+    <value>Couldn't list the graphics adapters on this PC: {0}</value>
+    <comment>Shown on the settings page. {0} is the system error message.</comment>
+  </data>
+  <data name="Settings_AdapterNoHardwareDecode" xml:space="preserve">
+    <value> — no hardware video decoding</value>
+    <comment>Suffix appended to a graphics adapter's name. Keep the leading space and dash.</comment>
+  </data>
+  <data name="Settings_AdapterNotDrivingDisplay" xml:space="preserve">
+    <value> — not driving a display (adds a copy each frame)</value>
+    <comment>Suffix appended to a graphics adapter's name. Keep the leading space and dash.</comment>
+  </data>
+  <data name="Settings_BitrateMbps" xml:space="preserve">
+    <value>{0:F0} Mbps</value>
+    <comment>Label beside the bitrate slider. {0} is a number; 'Mbps' is a standard unit.</comment>
+  </data>
+  <data name="Settings_CodecH264" xml:space="preserve">
+    <value>H.264 (compatible)</value>
+    <comment>Codec picker option. 'H.264' is a standard name - do not translate it.</comment>
+  </data>
+  <data name="Settings_CodecHevc" xml:space="preserve">
+    <value>HEVC (better quality per Mbps)</value>
+    <comment>Codec picker option. 'HEVC' and 'Mbps' are standard names - do not translate them.</comment>
+  </data>
+  <data name="Settings_ConsolesEncrypted" xml:space="preserve">
+    <value>Saved consoles are encrypted</value>
+    <comment>Heading for the credential-protection status.</comment>
+  </data>
+  <data name="Settings_ConsolesNotEncrypted" xml:space="preserve">
+    <value>Saved consoles are not encrypted</value>
+    <comment>Heading for the credential-protection status.</comment>
+  </data>
+  <data name="Settings_CredentialsProtected" xml:space="preserve">
+    <value>Pairing credentials are protected with {0} and can only be read by your Windows account on this PC.</value>
+    <comment>{0} names the protection mechanism, e.g. a platform API name.</comment>
+  </data>
+  <data name="Settings_CredentialsUnprotected" xml:space="preserve">
+    <value>Pairing credentials are stored {0}. Anyone who can read your user folder could copy them.</value>
+    <comment>{0} describes how they are stored.</comment>
+  </data>
+  <data name="Settings_ExitGestureHeld" xml:space="preserve">
+    <value>{0}, held briefly. The PS button is deliberately not used — it has to reach the console.</value>
+    <comment>{0} is a description of the chosen button combination. 'PS button' is the name printed on the controller.</comment>
+  </data>
+  <data name="Settings_ExitGestureKeyboard" xml:space="preserve">
+    <value>Keyboard only (Esc)</value>
+    <comment>'Esc' is the key name printed on the keyboard - do not translate it.</comment>
+  </data>
+  <data name="Settings_ExitGestureShoulders" xml:space="preserve">
+    <value>Options + Create + L1 + R1</value>
+    <comment>Controller button names - do NOT translate. These are the labels printed on a DualSense.</comment>
+  </data>
+  <data name="Settings_ExitGestureSticks" xml:space="preserve">
+    <value>Both sticks pressed (L3 + R3)</value>
+    <comment>L3/R3 are controller button names - do not translate those.</comment>
+  </data>
+  <data name="Settings_ExitNoGesture" xml:space="preserve">
+    <value>No controller gesture. You will need a keyboard (Esc) or the on-screen button to leave a stream.</value>
+    <comment>Shown when no exit gesture is configured. 'Esc' is a key name.</comment>
+  </data>
+  <data name="Settings_GpuAutomatic" xml:space="preserve">
+    <value>Automatic (recommended)</value>
+    <comment>Graphics-adapter preference option.</comment>
+  </data>
+  <data name="Settings_GpuBatteryLife" xml:space="preserve">
+    <value>Prefer battery life</value>
+    <comment>Graphics-adapter preference option.</comment>
+  </data>
+  <data name="Settings_GpuPerformance" xml:space="preserve">
+    <value>Prefer performance</value>
+    <comment>Graphics-adapter preference option.</comment>
+  </data>
+  <data name="Settings_GpuSpecific" xml:space="preserve">
+    <value>Choose a specific GPU</value>
+    <comment>Graphics-adapter preference option; choosing it reveals a list of adapters.</comment>
+  </data>
+  <data name="Settings_HdrCheckConsoleSends" xml:space="preserve">
+    <value>Console sends HDR</value>
+    <comment>Name of one row in the HDR readiness checklist.</comment>
+  </data>
+  <data name="Settings_HdrCheckDisplayMode" xml:space="preserve">
+    <value>Display in HDR mode</value>
+    <comment>Name of one row in the HDR readiness checklist.</comment>
+  </data>
+  <data name="Settings_HdrCheckHevcCodec" xml:space="preserve">
+    <value>HEVC codec</value>
+    <comment>Name of one row in the HDR readiness checklist.</comment>
+  </data>
+  <data name="Settings_HdrCheckedOnConnect" xml:space="preserve">
+    <value>Checked once you connect — the diagnostics overlay (F3) reports what arrived.</value>
+    <comment>Why the console row of the HDR checklist cannot be answered yet. F3 is a key name.</comment>
+  </data>
+  <data name="Settings_HdrChooseHevc" xml:space="preserve">
+    <value>Choose HEVC in the codec picker above.</value>
+    <comment>How to satisfy the HEVC row of the HDR checklist.</comment>
+  </data>
+  <data name="Settings_HdrNoHevcDecoder" xml:space="preserve">
+    <value>No HEVC decoder on this PC.</value>
+    <comment>Why the HEVC row of the HDR checklist is not satisfied.</comment>
+  </data>
+  <data name="Settings_HdrReady" xml:space="preserve">
+    <value>This PC is ready for HDR. Whether a given game streams in HDR is up to the console.</value>
+    <comment>Summary under the HDR checklist when every requirement is met.</comment>
+  </data>
+  <data name="Settings_HdrToneMapped" xml:space="preserve">
+    <value>Tone-mapped to SDR if any of the above is missing, which still looks correct, just flatter.</value>
+    <comment>Summary under the HDR checklist when a requirement is missing. HDR/SDR are standard terms.</comment>
+  </data>
+  <data name="Settings_HdrTurnOnInWindows" xml:space="preserve">
+    <value>Turn on Use HDR in Windows display settings.</value>
+    <comment>How to satisfy the display row. 'Use HDR' is the exact label Windows uses - match the OS wording in your language.</comment>
+  </data>
+  <data name="Settings_HevcExplained" xml:space="preserve">
+    <value>HEVC uses the available bandwidth more efficiently, so the picture can look cleaner at the same resolution. It does not change which resolution the console sends. Takes effect on the next connection.</value>
+    <comment>Help text under the codec picker. 'HEVC' is a standard name.</comment>
+  </data>
+  <data name="Settings_HevcUnavailable" xml:space="preserve">
+    <value>HEVC is unavailable on this PC — no HEVC decoder is installed. Takes effect on the next connection.</value>
+    <comment>Help text under the codec picker when no decoder is present.</comment>
+  </data>
+  <data name="Settings_KeysBound" xml:space="preserve">
+    <value>{0} keys bound</value>
+    <comment>Summary under the input section when nothing is remapped. {0} is a count.</comment>
+  </data>
+  <data name="Settings_KeysBoundAndRemapped" xml:space="preserve">
+    <value>{0} keys bound · {1} gamepad buttons remapped</value>
+    <comment>Summary under the input section. {0} and {1} are counts.</comment>
+  </data>
+  <data name="Settings_NoHardwareDecode" xml:space="preserve">
+    <value>None of the installed GPUs report hardware video decoding. Streaming will fall back to the CPU, which uses far more power.</value>
+    <comment>Warning under the graphics-adapter list.</comment>
+  </data>
+  <data name="Settings_Resolution1080p30" xml:space="preserve">
+    <value>1080p 30 fps</value>
+    <comment>Resolution picker option. 'fps' = frames per second.</comment>
+  </data>
+  <data name="Settings_Resolution1080p60" xml:space="preserve">
+    <value>1080p 60 fps</value>
+    <comment>Resolution picker option. 'fps' = frames per second.</comment>
+  </data>
+  <data name="Settings_Resolution540p60" xml:space="preserve">
+    <value>540p 60 fps</value>
+    <comment>Resolution picker option. 'fps' = frames per second.</comment>
+  </data>
+  <data name="Settings_Resolution720p30" xml:space="preserve">
+    <value>720p 30 fps</value>
+    <comment>Resolution picker option. 'fps' = frames per second.</comment>
+  </data>
+  <data name="Settings_Resolution720p60" xml:space="preserve">
+    <value>720p 60 fps</value>
+    <comment>Resolution picker option. 'fps' = frames per second.</comment>
+  </data>
+  <data name="Settings_SaveFailed" xml:space="preserve">
+    <value>Couldn't save settings: {0}</value>
+    <comment>Shown on the settings page when saving fails. {0} is the system error message.</comment>
+  </data>
+  <data name="Settings_UpscaleSharp" xml:space="preserve">
+    <value>Sharp (bicubic)</value>
+    <comment>Upscaling picker option. 'bicubic' is the technical term for the filter.</comment>
+  </data>
+  <data name="Settings_UpscaleSmooth" xml:space="preserve">
+    <value>Smooth (bilinear)</value>
+    <comment>Upscaling picker option. 'bilinear' is the technical term for the filter.</comment>
+  </data>
+  <data name="Pairing_AccountConfirmTimedOut" xml:space="preserve">
+    <value>The console didn't confirm this PC through your account in time.</value>
+    <comment>Timeout message during account-route pairing.</comment>
+  </data>
+  <data name="Pairing_AccountUnavailable" xml:space="preserve">
+    <value>Account pairing is unavailable: {0}</value>
+    <comment>Why the account route cannot be used. {0} is a technical detail.</comment>
+  </data>
+  <data name="Pairing_ActionWithAccount" xml:space="preserve">
+    <value>Pair with my account</value>
+    <comment>Button label on the pairing step.</comment>
+  </data>
+  <data name="Pairing_ActionWithCode" xml:space="preserve">
+    <value>Pair with a code</value>
+    <comment>Button label on the pairing step.</comment>
+  </data>
+  <data name="Pairing_ConsoleSteps" xml:space="preserve">
+    <value>Open Settings → System → Remote Play → Link Device. The console shows an 8-digit code.</value>
+    <comment>Steps to follow ON THE CONSOLE. Match the console's own menu wording in your language - these are its menu names, not ours.</comment>
+  </data>
+  <data name="Pairing_ConsoleStepsLegacy" xml:space="preserve">
+    <value>Open Settings → Remote Play Connection Settings → Add Device. The console shows an 8-digit code.</value>
+    <comment>Steps to follow ON THE CONSOLE. Match the console's own menu wording in your language - these are its menu names, not ours.</comment>
+  </data>
+  <data name="Pairing_ConsoleTimedOut" xml:space="preserve">
+    <value>The console didn't answer in time.</value>
+    <comment>Timeout message during pairing.</comment>
+  </data>
+  <data name="Pairing_CryptoUnavailable" xml:space="preserve">
+    <value>Registration crypto unavailable: {0}</value>
+    <comment>Error during pairing. {0} is a technical detail.</comment>
+  </data>
+  <data name="Pairing_DoneSubtext" xml:space="preserve">
+    <value>{0} is linked to this PC. You won't need the code again.</value>
+    <comment>Confirmation after successful pairing. {0} is the console's name.</comment>
+  </data>
+  <data name="Pairing_Error" xml:space="preserve">
+    <value>Pairing error: {0}</value>
+    <comment>Error during pairing. {0} is the system error message.</comment>
+  </data>
+  <data name="Pairing_Failed" xml:space="preserve">
+    <value>Pairing failed.</value>
+    <comment>Fallback message when pairing fails with no more specific reason.</comment>
+  </data>
+  <data name="Pairing_HintAccountRoute" xml:space="preserve">
+    <value>Nothing to do here — the console is confirming this PC with your account, which can take a moment.</value>
+    <comment>Reassurance during account-route pairing, which asks nothing of the user.</comment>
+  </data>
+  <data name="Pairing_HintCodeRoute" xml:space="preserve">
+    <value>Keep the link code on screen until this finishes.</value>
+    <comment>Instruction during code-route pairing.</comment>
+  </data>
+  <data name="Pairing_LinkHeading" xml:space="preserve">
+    <value>Link this PC to {0}</value>
+    <comment>Heading on the pairing step. {0} is the console's name.</comment>
+  </data>
+  <data name="Pairing_LookingFor" xml:space="preserve">
+    <value>Looking for your {0}</value>
+    <comment>Heading while scanning. {0} is a short console name such as PS5 - do not translate it.</comment>
+  </data>
+  <data name="Pairing_NoAccountPairing" xml:space="preserve">
+    <value>This build can't pair through a PlayStation Network account.</value>
+    <comment>Shown when the build has no account credential. 'PlayStation Network' is a product name - do not translate.</comment>
+  </data>
+  <data name="Pairing_NoCodeNeeded" xml:space="preserve">
+    <value>No code needed — {0} confirms this PC through your account.</value>
+    <comment>Shown when the account route means no code is required. {0} is the console's name.</comment>
+  </data>
+  <data name="Pairing_NotInAccountList" xml:space="preserve">
+    <value>This console isn't in your account's console list, so pairing it needs the code from its screen. Sign in to the console with this account, then search again.</value>
+    <comment>Shown when the signed-in account does not know this console. The fix is on the console, not in the app.</comment>
+  </data>
+  <data name="Pairing_NothingAnswered" xml:space="preserve">
+    <value>Nothing answered. The console needs to be switched on, on the same network, and reachable — some networks block the broadcast this uses. You can enter its address instead.</value>
+    <comment>Shown when a network scan finds no console.</comment>
+  </data>
+  <data name="Pairing_PickConsole" xml:space="preserve">
+    <value>Pick your console.</value>
+    <comment>Shown above the list of discovered consoles.</comment>
+  </data>
+  <data name="Pairing_PickConsoleMixedFamilies" xml:space="preserve">
+    <value>Pick your console. We also found consoles from another family — they're listed too, in case you picked the wrong one.</value>
+    <comment>Shown above the results when consoles of more than one family were found. 'Family' means PS5 vs PS4.</comment>
+  </data>
+  <data name="Pairing_Registering" xml:space="preserve">
+    <value>Registering with {0}…</value>
+    <comment>Progress text during code-route pairing. {0} is the console's name.</comment>
+  </data>
+  <data name="Pairing_ScanningHint" xml:space="preserve">
+    <value>Make sure the console is switched on and on the same network as this PC.</value>
+    <comment>Shown under the spinner while searching the network for a console.</comment>
+  </data>
+  <data name="Pairing_SearchFailed" xml:space="preserve">
+    <value>Couldn't search the network: {0}</value>
+    <comment>Shown when the network scan itself fails. {0} is the system error message.</comment>
+  </data>
+  <data name="Pairing_SignInToAutofill" xml:space="preserve">
+    <value>Sign in to your account and this fills itself in.</value>
+    <comment>Shown beside the account-id field when not signed in.</comment>
+  </data>
+  <data name="Pairing_UsingSignedInAccount" xml:space="preserve">
+    <value>Using the account you're signed in as{0}.</value>
+    <comment>{0} is either empty or a parenthesised account name, including its own leading space.</comment>
+  </data>
+  <data name="Pairing_WaitingForAccountConfirm" xml:space="preserve">
+    <value>Waiting for {0} to confirm this PC through your account…</value>
+    <comment>Progress text during account-route pairing. {0} is the console's name.</comment>
+  </data>
+  <data name="Account_CheckingWithPsn" xml:space="preserve">
+    <value>Checking your account with PlayStation Network.</value>
+    <comment>Body of the account panel while signing in.</comment>
+  </data>
+  <data name="Account_LoadConsolesFailed" xml:space="preserve">
+    <value>Couldn't load your consoles: {0}</value>
+    <comment>Shown when the account's console list cannot be fetched. {0} is the system error message.</comment>
+  </data>
+  <data name="Account_NotSignedIn" xml:space="preserve">
+    <value>Not signed in</value>
+    <comment>Heading on the account panel before signing in.</comment>
+  </data>
+  <data name="Account_RestoreFailed" xml:space="preserve">
+    <value>Couldn't restore your session: {0}</value>
+    <comment>Shown when a stored sign-in cannot be resumed. {0} is the system error message.</comment>
+  </data>
+  <data name="Account_SignInIncomplete" xml:space="preserve">
+    <value>Sign-in didn't complete: {0}</value>
+    <comment>Shown when interactive sign-in fails. {0} is the system error message.</comment>
+  </data>
+  <data name="Account_SignInPitch" xml:space="preserve">
+    <value>Sign in to pair without typing your account ID, and to see consoles that aren't on this network.</value>
+    <comment>Body of the account panel before signing in - why signing in is worth it.</comment>
+  </data>
+  <data name="Account_SignInUnavailableBody" xml:space="preserve">
+    <value>Ripcord ships without an account credential, so it can't reach the PlayStation Network. Playing over your local network doesn't need one — pair a console and it will work.</value>
+    <comment>Body of the account panel for builds with no credential. 'Ripcord' and 'PlayStation Network' are names - do not translate.</comment>
+  </data>
+  <data name="Account_SignInUnavailableTitle" xml:space="preserve">
+    <value>Account sign-in isn't available in this build</value>
+    <comment>Heading on the account panel for builds with no credential.</comment>
+  </data>
+  <data name="Account_SignedIn" xml:space="preserve">
+    <value>Signed in</value>
+    <comment>Fallback heading when the account has no display name.</comment>
+  </data>
+  <data name="Account_SignedInNoRegion" xml:space="preserve">
+    <value>Signed in. Your consoles are listed below, wherever they are.</value>
+    <comment>Body of the account panel once signed in, when no region is known.</comment>
+  </data>
+  <data name="Account_SignedInWithRegion" xml:space="preserve">
+    <value>Signed in — {0}. Your consoles are listed below, wherever they are.</value>
+    <comment>Body of the account panel once signed in. {0} is a region code.</comment>
+  </data>
+  <data name="Account_SigningIn" xml:space="preserve">
+    <value>Signing in…</value>
+    <comment>Heading on the account panel while signing in.</comment>
+  </data>
+  <data name="Console_CannotReach" xml:space="preserve">
+    <value>Can't reach it</value>
+    <comment>Status label on a console card that does not answer.</comment>
+  </data>
+  <data name="Console_Checking" xml:space="preserve">
+    <value>Checking…</value>
+    <comment>Status label on a console card while reachability is being probed.</comment>
+  </data>
+  <data name="Console_GoingToSleep" xml:space="preserve">
+    <value>Going to sleep…</value>
+    <comment>Status label on a console card.</comment>
+  </data>
+  <data name="Console_RestMode" xml:space="preserve">
+    <value>Rest mode</value>
+    <comment>Status label on a console card - the console is asleep but wakeable.</comment>
+  </data>
+  <data name="Console_WakeAndPlay" xml:space="preserve">
+    <value>Wake &amp; play</value>
+    <comment>Button label on a console card that is in rest mode.</comment>
+  </data>
+  <data name="Discovered_InRestMode" xml:space="preserve">
+    <value>In rest mode</value>
+    <comment>Status label on a newly discovered console that is asleep.</comment>
+  </data>
+  <data name="Discovered_Ready" xml:space="preserve">
+    <value>Ready</value>
+    <comment>Status label on a newly discovered console that is awake.</comment>
+  </data>
+  <data name="LastPlayed_DaysAgo" xml:space="preserve">
+    <value>Played {0} days ago</value>
+    <comment>Caption on a console card. {0} is a whole number of days, always 2 or more.</comment>
+  </data>
+  <data name="LastPlayed_HoursAgo" xml:space="preserve">
+    <value>Played {0} hours ago</value>
+    <comment>Caption on a console card. {0} is a whole number of hours, always 2 or more.</comment>
+  </data>
+  <data name="LastPlayed_JustNow" xml:space="preserve">
+    <value>Played just now</value>
+    <comment>Caption on a console card for a very recent session.</comment>
+  </data>
+  <data name="LastPlayed_MinutesAgo" xml:space="preserve">
+    <value>Played {0} min ago</value>
+    <comment>Caption on a console card. {0} is a whole number of minutes, always 2 or more.</comment>
+  </data>
+  <data name="LastPlayed_OnDate" xml:space="preserve">
+    <value>Played {0:d MMM yyyy}</value>
+    <comment>Caption on a console card for an older session. {0} is a date - adjust the format pattern to suit your locale.</comment>
+  </data>
+  <data name="LastPlayed_OneDayAgo" xml:space="preserve">
+    <value>Played 1 day ago</value>
+    <comment>Caption on a console card - the singular case.</comment>
+  </data>
+  <data name="LastPlayed_OneHourAgo" xml:space="preserve">
+    <value>Played 1 hour ago</value>
+    <comment>Caption on a console card - the singular case, kept separate because pluralisation is not a suffix in every language.</comment>
+  </data>
+  <data name="Pairing_NoSignInUseCode" xml:space="preserve">
+    <value>This build can't sign in to PlayStation Network, so pairing needs the code shown on the console.</value>
+    <comment>Why the account pairing route is unavailable. 'PlayStation Network' is a product name - do not translate.</comment>
+  </data>
+  <data name="Session_Connecting" xml:space="preserve">
+    <value>Connecting…</value>
+    <comment>Status overlay headline.</comment>
+  </data>
+  <data name="Session_CouldNotConnect" xml:space="preserve">
+    <value>Couldn't connect</value>
+    <comment>Status overlay headline after a failed connection. The detail line beneath carries the reason.</comment>
+  </data>
+  <data name="Session_NoControllers" xml:space="preserve">
+    <value>none attached</value>
+    <comment>Shown where a controller name would go when none is connected. Lower case on purpose - it follows a label.</comment>
+  </data>
+  <data name="Session_NotConnectedYet" xml:space="preserve">
+    <value>Not connected yet</value>
+    <comment>Stream-health summary shown before a session exists.</comment>
+  </data>
+  <data name="Session_Reconnecting" xml:space="preserve">
+    <value>Reconnecting…</value>
+    <comment>Status overlay headline.</comment>
+  </data>
+  <data name="Session_ReconnectingVideo" xml:space="preserve">
+    <value>Reconnecting the video…</value>
+    <comment>Status overlay headline when the video stream degrades and is being re-established.</comment>
+  </data>
+  <data name="Session_Starting" xml:space="preserve">
+    <value>Starting…</value>
+    <comment>Status overlay headline while a session is starting.</comment>
+  </data>
+  <data name="Session_WaitingToStart" xml:space="preserve">
+    <value>Waiting for the session to start.</value>
+    <comment>Stream-health detail shown before a session exists.</comment>
+  </data>
+  <data name="Wake_AskingPsn" xml:space="preserve">
+    <value>Asking PlayStation Network to wake your console…</value>
+    <comment>Progress text while waking a console that is not on this network. 'PlayStation Network' is a product name - do not translate.</comment>
+  </data>
 </root>

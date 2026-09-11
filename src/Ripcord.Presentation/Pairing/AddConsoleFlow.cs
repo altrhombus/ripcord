@@ -5,6 +5,7 @@ using Ripcord.Core.Reactive;
 using Ripcord.Presentation.Accounts;
 using Ripcord.Presentation.Consoles;
 using Ripcord.Presentation.Threading;
+using Ripcord.Presentation.Resources;
 
 namespace Ripcord.Presentation.Pairing;
 
@@ -128,20 +129,16 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
     /// </summary>
     private IReadOnlyList<CloudConsole> _cloudConsoles = [];
 
-    private const string ScanningMessage =
-        "Make sure the console is switched on and on the same network as this PC.";
+    private static string ScanningMessage => Strings.Pairing_ScanningHint;
 
-    private const string NoAccountPairingMessage =
-        "This build can't pair through a PlayStation Network account.";
+    private static string NoAccountPairingMessage => Strings.Pairing_NoAccountPairing;
 
     /// <summary>
     /// Why a signed-in user still cannot take the account route. Says what to do about it, because the fix is
     /// on the console rather than in this app: the account only lists a console once it has been signed in to
     /// with that account.
     /// </summary>
-    private const string NotInAccountListMessage =
-        "This console isn't in your account's console list, so pairing it needs the code from its screen. "
-        + "Sign in to the console with this account, then search again.";
+    private static string NotInAccountListMessage => Strings.Pairing_NotInAccountList;
 
     /// <summary>
     /// How long past the search window to keep waiting for the scanner to say it has finished. Enough that a
@@ -347,7 +344,7 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
         RegistrarAvailability availability = _registrar.CheckAvailability(_family);
         if (!availability.Available)
         {
-            Mutate(() => _linkError = $"Registration crypto unavailable: {availability.Detail}");
+            Mutate(() => _linkError = string.Format(Strings.Pairing_CryptoUnavailable, availability.Detail));
             return;
         }
 
@@ -357,7 +354,7 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
             token => _registrar.RegisterAsync(registration, token),
             _options.RegistrationTimeout,
             accountRoute: false,
-            timeoutMessage: "The console didn't answer in time.").ConfigureAwait(false);
+            timeoutMessage: Strings.Pairing_ConsoleTimedOut).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -389,7 +386,7 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
             token => _accountPairing.PairAsync(request, token),
             _options.AccountPairingTimeout,
             accountRoute: true,
-            timeoutMessage: "The console didn't confirm this PC through your account in time.")
+            timeoutMessage: Strings.Pairing_AccountConfirmTimedOut)
             .ConfigureAwait(false);
     }
 
@@ -431,7 +428,7 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
 
             if (!result.Succeeded || result.CredentialRecord is null)
             {
-                FailBackToLink(result.FailureReason ?? "Pairing failed.");
+                FailBackToLink(result.FailureReason ?? Strings.Pairing_Failed);
                 return;
             }
 
@@ -455,7 +452,7 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
         {
             if (ReferenceEquals(_pairCts, cts))
             {
-                FailBackToLink($"Pairing error: {ex.Message}");
+                FailBackToLink(string.Format(Strings.Pairing_Error, ex.Message));
             }
         }
         finally
@@ -577,7 +574,7 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
         }
         catch (Exception ex)
         {
-            return new AccountPairingAvailability(false, $"Account pairing is unavailable: {ex.Message}");
+            return new AccountPairingAvailability(false, string.Format(Strings.Pairing_AccountUnavailable, ex.Message));
         }
     }
 
@@ -650,7 +647,7 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
             {
                 if (faultedScanIsCurrent)
                 {
-                    _findSubheading = $"Couldn't search the network: {ex.Message}";
+                    _findSubheading = string.Format(Strings.Pairing_SearchFailed, ex.Message);
                 }
             });
         }
@@ -721,17 +718,14 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
     {
         if (Discovered.Count == 0)
         {
-            _findSubheading =
-                "Nothing answered. The console needs to be switched on, on the same network, and reachable — "
-                + "some networks block the broadcast this uses. You can enter its address instead.";
+            _findSubheading = Strings.Pairing_NothingAnswered;
             _manualEntryOpen = true;
             return;
         }
 
         _findSubheading = Discovered.Any(d => d.Family != _family)
-            ? "Pick your console. We also found consoles from another family — they're listed too, in case you "
-              + "picked the wrong one."
-            : "Pick your console.";
+            ? Strings.Pairing_PickConsoleMixedFamilies
+            : Strings.Pairing_PickConsole;
     }
 
     /// <summary>
@@ -901,16 +895,16 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
             },
             Family: _family,
             FamilyNote: _familyNote,
-            FindHeading: $"Looking for your {_family.ShortName}",
+            FindHeading: string.Format(Strings.Pairing_LookingFor, _family.ShortName),
             FindSubheading: _findSubheading,
             IsScanning: _isScanning,
             ManualEntryOpen: _manualEntryOpen,
-            LinkHeading: $"Link this PC to {name}",
+            LinkHeading: string.Format(Strings.Pairing_LinkHeading, name),
 
             // Sending someone to a menu that does not exist on their console is the fastest way to lose them.
             ConsoleStepsText: _family == ConsoleFamily.Ps4
-                ? "Open Settings → Remote Play Connection Settings → Add Device. The console shows an 8-digit code."
-                : "Open Settings → System → Remote Play → Link Device. The console shows an 8-digit code.",
+                ? Strings.Pairing_ConsoleStepsLegacy
+                : Strings.Pairing_ConsoleSteps,
 
             // Enabled once both fields could plausibly be right. A disabled button that explains itself beats a
             // validation error after the fact.
@@ -929,7 +923,9 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
             // the code route without putting a decision in front of someone who has none to make.
             RouteChoiceOffered: accountPairingOffered && accountCapable && consoleKnownToAccount,
             CodeEntryShown: Route == PairingRoute.Code,
-            PairActionLabel: Route == PairingRoute.Account ? "Pair with my account" : "Pair with a code",
+            PairActionLabel: Route == PairingRoute.Account
+                ? Strings.Pairing_ActionWithAccount
+                : Strings.Pairing_ActionWithCode,
 
             // Three different things to say, and the difference matters: one is an invitation, one is fixable on
             // the console, and one is a property of the build the user cannot do anything about.
@@ -943,27 +939,26 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
                     : !consoleKnownToAccount
                         ? NotInAccountListMessage
                         : Route == PairingRoute.Account
-                            ? $"No code needed — {name} confirms this PC through your account."
+                            ? string.Format(Strings.Pairing_NoCodeNeeded, name)
                             : string.Empty,
 
             // When signed in, the account id stops being something the user has to find. This is the whole point
             // of the account tier for someone who only ever plays on their own network.
             AccountIdIsAutomatic: AccountIdIsAutomatic,
             AccountIdNote: AccountIdIsAutomatic
-                ? $"Using the account you're signed in as{FormatAccountName()}."
-                : "Sign in to your account and this fills itself in.",
+                ? string.Format(Strings.Pairing_UsingSignedInAccount, FormatAccountName())
+                : Strings.Pairing_SignInToAutofill,
             LinkError: _linkError,
             PairingStatus: _accountRoute
-                ? $"Waiting for {name} to confirm this PC through your account…"
-                : $"Registering with {name}…",
+                ? string.Format(Strings.Pairing_WaitingForAccountConfirm, name)
+                : string.Format(Strings.Pairing_Registering, name),
 
             // The code route asks the user to leave something on screen; the account route asks nothing of them
             // and takes longer. Telling someone to keep a code visible when they never entered one is the kind
             // of leftover that makes people go and look for a code.
             PairingHint: _accountRoute
-                ? "Nothing to do here — the console is confirming this PC with your account, which can take a "
-                  + "moment."
-                : "Keep the link code on screen until this finishes.",
+                ? Strings.Pairing_HintAccountRoute
+                : Strings.Pairing_HintCodeRoute,
 
             // Live everywhere except during the exchange. On the first step Back means "leave the flow", which is
             // a perfectly good thing to want, so it stays enabled rather than being a dead button on arrival.
@@ -972,6 +967,6 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
             SuggestedName: _paired?.DisplayName ?? string.Empty,
             DoneSubtext: _paired is null
                 ? string.Empty
-                : $"{_paired.DisplayName} is linked to this PC. You won't need the code again.");
+                : string.Format(Strings.Pairing_DoneSubtext, _paired.DisplayName));
     }
 }

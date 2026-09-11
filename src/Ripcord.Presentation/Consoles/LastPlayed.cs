@@ -1,3 +1,5 @@
+using Ripcord.Presentation.Resources;
+
 namespace Ripcord.Presentation.Consoles;
 
 /// <summary>
@@ -27,13 +29,19 @@ public static class LastPlayed
         {
             // A clock that has gone backwards (an NTP correction, or a record written on another machine) must
             // not produce "Played -3 min ago". It reads as just now, which is the least wrong thing to say.
-            { TotalMinutes: < 2 } => "Played just now",
-            { TotalMinutes: < 60 } => $"Played {(int)ago.TotalMinutes} min ago",
-            { TotalHours: < 24 } => $"Played {Plural((int)ago.TotalHours, "hour")} ago",
-            { TotalDays: < 7 } => $"Played {Plural((int)ago.TotalDays, "day")} ago",
-            _ => $"Played {last.ToLocalTime():d MMM yyyy}",
+            { TotalMinutes: < 2 } => Strings.LastPlayed_JustNow,
+            { TotalMinutes: < 60 } => string.Format(Strings.LastPlayed_MinutesAgo, (int)ago.TotalMinutes),
+            { TotalHours: < 24 } => Hours((int)ago.TotalHours),
+            { TotalDays: < 7 } => Days((int)ago.TotalDays),
+            _ => string.Format(Strings.LastPlayed_OnDate, last.ToLocalTime()),
         };
     }
 
-    private static string Plural(int n, string unit) => n == 1 ? $"1 {unit}" : $"{n} {unit}s";
+    // Separate keys rather than appending an "s": pluralisation is not a suffix in most languages, and a
+    // helper that assumes it is cannot be translated correctly however carefully the values are written.
+    private static string Hours(int n) =>
+        n == 1 ? Strings.LastPlayed_OneHourAgo : string.Format(Strings.LastPlayed_HoursAgo, n);
+
+    private static string Days(int n) =>
+        n == 1 ? Strings.LastPlayed_OneDayAgo : string.Format(Strings.LastPlayed_DaysAgo, n);
 }

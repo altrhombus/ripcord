@@ -1,4 +1,5 @@
 using Ripcord.Presentation.Consoles;
+using Ripcord.Presentation.Resources;
 
 namespace Ripcord.Presentation.Pairing;
 
@@ -82,8 +83,7 @@ public sealed class UnavailableAccountPairing : IAccountConsolePairing
     /// the OAuth credential, which is the only way this type is reached in practice.
     /// </param>
     public UnavailableAccountPairing(string? detail = null)
-        => Detail = detail ?? "This build can't sign in to PlayStation Network, so pairing needs the code shown "
-            + "on the console.";
+        => Detail = detail ?? Strings.Pairing_NoSignInUseCode;
 
     public string Detail { get; }
 

@@ -1,5 +1,6 @@
 using Ripcord.Core.Consoles;
 using Ripcord.Presentation.Threading;
+using Ripcord.Presentation.Resources;
 
 namespace Ripcord.Presentation.Consoles;
 
@@ -85,14 +86,14 @@ public sealed class ConsoleCardViewModel : ObservableState<ConsoleCardState>
         string statusLabel = _reachability switch
         {
             ConsoleReachability.Online => "Ready",
-            ConsoleReachability.Resting => "Rest mode",
+            ConsoleReachability.Resting => Strings.Console_RestMode,
             ConsoleReachability.Offline => "Offline",
 
             // Not "Online": the distinction the user needs is that it is elsewhere, because that is what
             // explains the slower connect and the worse latency they are about to get.
             ConsoleReachability.Away => "Away",
-            ConsoleReachability.PreparingForRest => "Going to sleep…",
-            _ => "Checking…",
+            ConsoleReachability.PreparingForRest => Strings.Console_GoingToSleep,
+            _ => Strings.Console_Checking,
         };
 
         // What activating the card does, said plainly, in the verb the player came for. "Connect" is our word
@@ -101,11 +102,11 @@ public sealed class ConsoleCardViewModel : ObservableState<ConsoleCardState>
         // promises both rather than making the user wake it first and come back.
         string actionLabel = _reachability switch
         {
-            ConsoleReachability.Resting or ConsoleReachability.PreparingForRest => "Wake & play",
+            ConsoleReachability.Resting or ConsoleReachability.PreparingForRest => Strings.Console_WakeAndPlay,
 
             // Not "Not reachable": a console that is switched off is a normal state, and the card is already
             // dimmed. Phrased as something Ripcord could not do rather than something the console is failing at.
-            ConsoleReachability.Offline => "Can't reach it",
+            ConsoleReachability.Offline => Strings.Console_CannotReach,
 
             // The same verb as a local console, deliberately. Connecting to a console elsewhere is the same
             // action with the same outcome; the card already says it is away, and a second hedge on the button
