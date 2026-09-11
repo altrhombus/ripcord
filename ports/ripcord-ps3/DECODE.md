@@ -188,9 +188,11 @@ Nothing in 1–4 needs a PS3.
 
 1. ~~**Parse SPS/PPS from an existing capture.**~~ **Done** — §2, and it decided §1. Took one throwaway
    script against `3ds/video.264`; nothing from the dirty room was committed.
-2. **Bitstream reader + SPS/PPS/slice-header parser**, portable C, host-tested in
-   `ports/ripcord-ps3/tests/` against vectors from `dotnet run --project tools/Ripcord.ProtocolLab --
-   vectors` — the pattern `ports/ripcord-3ds/tests/` already uses, so it needs no console.
+2. ~~**Bitstream reader + SPS/PPS/slice-header parser.**~~ **Done.** `rc_h264_bits` reads RBSP with
+   emulation-prevention handled in place rather than by copying — the SPE has 256 KB of local store and
+   no cache, so a decode that copies each slice to strip three bytes has doubled its DMA for nothing.
+   `rc_h264_params` parses both parameter sets and the slice header as far as `redundant_pic_cnt`, which
+   is exactly what sec 7.4.1.2.4 needs to find picture boundaries and no further. 80 host checks.
 3. **Annex-B splitter and slice-boundary extraction**, likewise host-tested. The seam between the existing
    demuxer and any decoder, and useful whichever route §5 takes.
 4. **`rc_platform_ps3.c` and a PSL1GHT skeleton** that links and prints a timestamp. Cheap, and it flushes
