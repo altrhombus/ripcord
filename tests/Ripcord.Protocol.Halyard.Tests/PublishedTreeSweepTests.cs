@@ -240,9 +240,23 @@ public class PublishedTreeSweepTests
         + @")(?![0-9a-zA-Z:.])",
         RegexOptions.Compiled);
 
-    /// <summary>A version attribute is not an address. Decided here rather than left to trip a later widening.</summary>
-    private static readonly Regex VersionContext =
-        new(@"(?i)version|net\d|\bv\d+\.\d+|TargetFramework|MaxVersionTested|MinVersion", RegexOptions.Compiled);
+    /// <summary>
+    /// Dotted decimals that are not addresses. A version attribute was the first kind; a specification
+    /// clause reference is the second, and it arrived with ripcord-ps3 - H.264 is cited by clause
+    /// throughout, and exactly-four-part numbers like <c>sec 7.4.1.1</c> are indistinguishable from an
+    /// IPv4 address to a pattern. Three- and five-part references never collided - <c>9.1.1</c> is too
+    /// short for the quad and <c>7.4.1.2.4</c> too long - which is why this went unnoticed until a file
+    /// full of four-part ones existed.
+    ///
+    /// <para>The clause alternative is deliberately tight: the citation word must be immediately
+    /// followed by the dotted number, so "in section 3" beside a real address suppresses nothing, which
+    /// a bare word match would not have managed. The residual cost is the one this guard always had -
+    /// it is tested per line, so a genuine address sharing a line with a clause citation is missed.
+    /// Both properties are contract rows.</para>
+    /// </summary>
+    private static readonly Regex NotAnAddressContext =
+        new(@"(?i)version|net\d|\bv\d+\.\d+|TargetFramework|MaxVersionTested|MinVersion"
+            + @"|\b(?:sec|section|clause|annex)\.?\s*\d+(?:\.\d+)+", RegexOptions.Compiled);
 
     /// <summary>
     /// <c>.cpp</c>, <c>.hpp</c>, <c>.idl</c> and <c>.def</c> were missing until the tenth review, so the
@@ -565,6 +579,10 @@ public class PublishedTreeSweepTests
         { "10.0.0.7", LineContext.Prose, false, "RFC 1918, published as captured by stated policy" },
         { "224.0.0.251", LineContext.Prose, false, "the mDNS multicast group" },
         { "Version=\"1.0.0.0\"", LineContext.Prose, false, "a version quad, not an address - decided rather than discovered" },
+        { "ITU-T H.264 sec 7.4.1.1", LineContext.Prose, false,
+          "a four-part specification clause is not an address - ripcord-ps3 is full of them" },
+        { "the console answered from 172.217.16.14 in section 3", LineContext.Prose, true,
+          "a citation word with no dotted clause after it must not suppress a real address" },
         { "fd00:1a2b:3c4d:5e6f:0011:2233:4455:6677", LineContext.Prose, false, "the declared synthetic ULA, allowed by value" },
         { "fd00:abcd:1234:5678::9", LineContext.Prose, true, "a different address in the same /8 - the prefix test used to wave this through" },
         { "2001:db8::1", LineContext.Prose, false, "RFC 3849 documentation prefix" },
@@ -935,7 +953,7 @@ public class PublishedTreeSweepTests
         foreach (Match m in Ipv4.Matches(line))
         {
             if (IsDocumentationAddress(m.Groups[1].Value)) continue;
-            if (VersionContext.IsMatch(line)) continue;
+            if (NotAnAddressContext.IsMatch(line)) continue;
             found.Add($"{at}|ipv4|{m.Value}");
         }
 
