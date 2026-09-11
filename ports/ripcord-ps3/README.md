@@ -75,18 +75,26 @@ SPU thread groups both do too.
 The comparison with the 3DS is the useful one: that port had a hardware decoder (MVD) and almost no CPU.
 This one has abundant CPU and no decoder. More work, far less likely to hit a wall.
 
-## The decisive unknown
+## What the console sends — measured
 
-**Which H.264 profile and entropy coding mode the PS5 sends is recorded nowhere in this repository
-`[X]`.** It decides how much decoder there is to write, and it is the cheapest experiment available —
-parse one SPS and PPS out of a capture already held. `DECODE.md` §2.
+Parsed out of the two decrypted Annex-B dumps the 3DS port already wrote. Both agree; recorded in
+`docs/protocol/ps5-av-stream.md` as **[W]**, and in `DECODE.md` §2.
+
+**Main profile, CABAC, progressive, I- and P-slices only, no 8×8 transform, one slice group, 4:2:0.**
+
+CABAC is the answer that decides the decoder base — see `DECODE.md` §1, which now recommends openh264.
+Everything else narrows the target usefully: no B-slices means no reordering and no bipredictive motion
+compensation, and Main rather than High removes the 8×8 transform and scaling matrices entirely.
+
+Slices per picture measured 1–2 in the steady state (the 22-slice maximum is the rare IDR), which is less
+parallelism than hoped for the entropy stage. Both dumps are 640×368, so **whether that scales at 720p is
+unmeasured `[X]`** and is the most useful next measurement.
 
 ## Order of work
 
 Nothing in 1–4 needs a PS3.
 
-1. Parse SPS/PPS from an existing capture — `profile_idc`, `entropy_coding_mode_flag`,
-   `transform_8x8_mode_flag`, slice count, B-slices. Half a day; settles the decoder route.
+1. ~~Parse SPS/PPS from an existing capture.~~ **Done** — see above. Settled the decoder route.
 2. Bitstream reader and SPS/PPS/slice-header parser, portable C, host-tested in `ports/ripcord-ps3/tests/`
    against vectors from `dotnet run --project tools/Ripcord.ProtocolLab -- vectors` — the same pattern
    `ports/ripcord-3ds/tests/` uses, so it needs no console and runs anywhere.
@@ -95,7 +103,8 @@ Nothing in 1–4 needs a PS3.
 4. `rc_platform_ps3.c` and a PSL1GHT skeleton that links and prints a timestamp. Cheap, and it flushes
    out the toolchain before anything depends on it. **This is the step that wants `ports/common`** — rebase
    here rather than earlier.
-5. Choose the decoder base on the evidence from 1.
+5. ~~Choose the decoder base on the evidence from 1.~~ **Done — openh264.** CABAC decided it;
+   `DECODE.md` §1.
 6. SPU bring-up: one SPE running a trivial DMA job, measured.
 7. Decoder proper, stage by stage, against the same vectors.
 
@@ -104,4 +113,12 @@ Nothing in 1–4 needs a PS3.
 Ripcord is Apache-2.0 and its ports hold a permissive-only line: mbedtls (Apache-2.0), Opus (BSD-3).
 **FFmpeg does not fit it** — `libavcodec` is LGPL-2.1-or-later, which the FSF treats as incompatible with
 Apache-2.0, and the relink provision is awkward on a statically linked homebrew target. `DECODE.md` §1
-sets out the options; the short version is openh264 (BSD-2) or from scratch, decided by §2.
+sets out the options.
+
+**Settled: openh264.** Its `LICENSE` was read directly rather than recalled — two clauses, no endorsement
+clause, so **BSD-2-Clause**, which is Apache-2.0-compatible without qualification. CABAC (§2) is what ruled
+out writing the entropy decoder ourselves.
+
+Worth separating two things that get conflated: ffmpeg as a *development* tool is fine and this project
+already uses it that way — `mvdreplay`'s own comment cites `ffmpeg -i video.264` for ground truth. The
+constraint is only on what gets linked into a shipped client.
