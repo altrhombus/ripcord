@@ -228,6 +228,15 @@ public class CaptureProvenanceTests
                 FileName = "git",
                 Arguments = arguments,
                 WorkingDirectory = root,
+                // UTF-8 explicitly. Without this .NET decodes a redirected child's stdout with the
+                // console's ANSI code page on Windows, and git emits UTF-8 - so every non-ASCII byte in a
+                // commit message arrived mangled. This repository writes em-dashes and ellipses into commit
+                // messages constantly, and the truncated-fragment detector keys on the ellipsis, so the
+                // message corpus was swept against mojibake on the one platform its author uses. It passed
+                // here and failed on every Linux and macOS runner, for the same commit, on the same history:
+                // a commit message quoting two pin digests in truncated form sailed past on Windows and was
+                // caught on Linux. A guard whose reach depends on the host's code page is not a guard.
+                StandardOutputEncoding = System.Text.Encoding.UTF8,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 UseShellExecute = false,
