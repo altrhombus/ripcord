@@ -67,34 +67,49 @@ standard, and reading the specification or a BSD reference decoder is an ordinar
 a different category entirely. Nothing in the independence claim is touched by it. Stated plainly here so
 the next reader does not stretch the rule to cover a codec.
 
-**Recommendation:** do not decide yet. Answer §2 first — if the answer is Constrained Baseline, from
-scratch becomes attractive and the licence question evaporates. If it is High/CABAC, port from openh264.
-Either way, **not FFmpeg.**
+**Recommendation, now that §2 is answered: openh264.**
+
+CABAC settles it. Writing an arithmetic decoder and its context modelling from scratch is the one part of
+H.264 that is both large and unforgiving — it has to be bit-exact or the stream desynchronises silently,
+and there is no partial credit. Everything *else* §2 turned up points the other way (Main not High,
+progressive, I+P only, one slice group), so a from-scratch decoder is far from absurd — but it would be
+spending the effort precisely where the risk is concentrated.
+
+The shape of the work is therefore **not** "port openh264 to PS3". It is: take its Main/progressive/I-P
+CABAC path, discard what §2 rules out — B-slices, High-profile transforms, field coding, FMO — and rewrite
+the inner loops for the SPU's 128-bit SIMD. Its x86/ARM SIMD does not transfer; its structure and its
+conformance-tested correctness do.
+
+Still **not FFmpeg**, for the licence reasons above. Worth noting the project already uses ffmpeg as a
+*development* tool — `mvdreplay`'s comment cites `ffmpeg -i video.264` for ground truth — and that is
+entirely fine. The constraint is on what gets linked into a shipped client, not on what decodes a dump on
+a workstation.
 
 ---
 
-## 2. The decisive unknown
+## 2. What the console actually sends — **answered**
 
-**Nothing in this repository records which H.264 profile the PS5 sends `[X]`.**
+Measured by parsing the parameter sets out of the two decrypted Annex-B dumps the 3DS port's
+`dumpvideo=1` wrote (1,214 and 941 pictures). Both agree exactly; one SPS and one PPS serve each whole
+session. Recorded in `docs/protocol/ps5-av-stream.md` as **[W]**.
 
-`docs/protocol/` establishes that the stream is Annex-B and that SPS/PPS arrive as their own NAL units
-prepended to the first IDR (`ports/ripcord-3ds/source/media/rc_mvd.h`). It does not record:
-
-| Field | Where | Why it decides the design |
+| Field | Value | What it costs us |
 |---|---|---|
-| `profile_idc` | SPS | Baseline vs Main vs High — sets the feature surface |
-| `entropy_coding_mode_flag` | PPS | **CABAC or CAVLC.** The biggest lever on both effort and parallelism |
-| `transform_8x8_mode_flag` | PPS | A second transform path if set |
-| slices per frame | slice headers | Whether entropy decode parallelises across SPUs at all |
-| B-slices present | slice headers | Reordering delay; low-latency encoders usually avoid them — confirm |
+| `profile_idc` | **77 — Main** | No 8×8 transform, no scaling matrices. Those are High-only |
+| `entropy_coding_mode_flag` | **1 — CABAC** | The expensive half. This is the answer that decides §1 |
+| `frame_mbs_only_flag` | **1 — progressive** | No field coding, no MBAFF |
+| Slice types | **I and P only** | No B-slices: no reordering, no bipredictive MC, no DPB reorder |
+| `num_slice_groups_minus1` | 0 | One slice group; no FMO/ASO |
+| `chroma_format_idc` | 1 — 4:2:0 | |
+| `level_idc` | 31, at 640×368 | 720p60 exceeds Level 3.1's MB rate, so the console must raise it **[X]** |
+| Slices per picture | min 1, **mean 2.0–2.3**, max 22 | The max is the IDR. Ordinary P-pictures carry one or two |
 
-All five come out of **one SPS, one PPS and one frame of slice headers in a capture already held.**
-Cheapest experiment available, and it gates everything below. Task one.
+**So the target is narrow and well-defined: Main profile, progressive, I- and P-slices only, CABAC, no
+8×8 transform, one slice group, 4:2:0.** That is a great deal less than "H.264".
 
-That MVD accepted the stream is indirect evidence it is not exotic, but MVD's own profile support is not
-documented here either, so it constrains nothing usefully.
-
----
+Two caveats worth carrying. Both dumps are 640×368, so **slices per picture at 720p is not measured
+`[X]`** — one slice per MTU implies it scales with macroblock count, but that is inference, and §3 depends
+on it. And the level will differ at higher resolutions, which affects DPB sizing.
 
 ## 3. Where the parallelism is, and where it is not
 
@@ -120,11 +135,27 @@ SPE 5   deblocking (wavefront over MB edges) + DMA out to RSX-visible memory
 RSX     YUV -> RGB, scale, present
 ```
 
-**The lever that changes this picture is slices per frame.** If the PS5 emits several independent slices
-per frame — likely, given low-latency encoding and the documented FEC scheme — each slice is independently
-entropy-decodable, SPE 0 stops being a bottleneck, and the entropy stage spreads across as many SPEs as
-there are slices. That is why slice count is in §2's table, and it may be the difference between
-comfortable and marginal.
+**§2 measured the lever, and the answer is less generous than hoped.** Ordinary P-pictures carry one or
+two slices, not six — the 21-slice maximum is the IDR, and IDRs are rare. So slice-parallel entropy decode
+relieves the steady state by about 2×, not 6×, at least at 640×368. Whether 720p multiplies it is
+unmeasured **[X]** and is the single most useful next measurement for this design.
+
+**But the load probably is not where the original split assumed.** CABAC throughput tracks *bitrate*, and
+the observed stream is 2.8–7.8 Mbps — low. Reconstruction and deblocking track *pixels*, and those scale
+with the resolution we actually want. So the likely bottleneck at 720p60 is the per-pixel half, not the
+entropy half, and the allocation should lean that way until measurement says otherwise:
+
+```
+PPE      network, Takion, crypto, reassembly, Annex-B split, job dispatch
+SPE 0-1  CABAC, one slice each where a picture has two
+SPE 2-4  macroblock reconstruction: intra/inter prediction, inverse transform, MC
+SPE 5    deblocking (wavefront over MB edges) + DMA out to RSX-visible memory
+RSX      YUV -> RGB, scale, present
+```
+
+Frame-level pipelining — entropy for picture N+1 while reconstructing N — would hide the serial stage
+entirely, and is available precisely because there are no B-slices. It costs one frame of latency
+(16.7 ms), which is most of the decode budget in §4, so it is a fallback rather than a starting point.
 
 ---
 
@@ -155,7 +186,8 @@ slice-parallel path more effective than it would be on general content.
 
 Nothing in 1–4 needs a PS3.
 
-1. **Parse SPS/PPS from an existing capture.** Answer every row of §2. Half a day; decides §1.
+1. ~~**Parse SPS/PPS from an existing capture.**~~ **Done** — §2, and it decided §1. Took one throwaway
+   script against `3ds/video.264`; nothing from the dirty room was committed.
 2. **Bitstream reader + SPS/PPS/slice-header parser**, portable C, host-tested in
    `ports/ripcord-ps3/tests/` against vectors from `dotnet run --project tools/Ripcord.ProtocolLab --
    vectors` — the pattern `ports/ripcord-3ds/tests/` already uses, so it needs no console.
