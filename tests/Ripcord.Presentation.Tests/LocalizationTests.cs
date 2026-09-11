@@ -147,4 +147,105 @@ public class LocalizationTests
         (string key, string expected) = entries.First();
         Assert.Equal(expected, manager.GetString(key, CultureInfo.InvariantCulture));
     }
+
+    // ---- the XAML half -------------------------------------------------------------------------------
+    //
+    // These check Ripcord.App's .resw even though this project tests Ripcord.Presentation. No test project
+    // targets the app - it is Windows-only and needs the C++ toolchain - and these checks read files from
+    // disk rather than touching a WinUI type, so they cost this suite nothing and would otherwise not exist
+    // anywhere. The failure they prevent is the one that does not show up in a build: an x:Uid whose entry
+    // was renamed resolves to nothing and the control simply renders empty.
+
+    private static DirectoryInfo AppRoot()
+    {
+        DirectoryInfo? dir = new(AppContext.BaseDirectory);
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "Ripcord.slnx")))
+        {
+            dir = dir.Parent;
+        }
+
+        return new DirectoryInfo(Path.Combine(dir!.FullName, "src", "Ripcord.App"));
+    }
+
+    private static Dictionary<string, string> ReswEntries()
+    {
+        string path = Path.Combine(AppRoot().FullName, "Strings", "en-US", "Resources.resw");
+        Assert.True(File.Exists(path), $"the XAML string catalogue is missing: {path}");
+
+        Dictionary<string, string> entries = [];
+        foreach (XElement data in XDocument.Load(path).Root!.Elements("data"))
+        {
+            string? name = data.Attribute("name")?.Value;
+            if (name is null) continue;
+
+            Assert.False(entries.ContainsKey(name), $"duplicate resource key: {name}");
+            entries[name] = data.Element("value")?.Value ?? string.Empty;
+        }
+
+        return entries;
+    }
+
+    private static readonly Regex UidUse = new(@"x:Uid=""([^""]+)""", RegexOptions.Compiled);
+
+    private static HashSet<string> UidsInMarkup()
+    {
+        HashSet<string> uids = [];
+        foreach (string file in Directory.EnumerateFiles(AppRoot().FullName, "*.xaml", SearchOption.AllDirectories))
+        {
+            string rel = file.Replace(Path.DirectorySeparatorChar, '/');
+            if (rel.Contains("/obj/") || rel.Contains("/bin/")) continue;
+
+            foreach (Match m in UidUse.Matches(File.ReadAllText(file)))
+            {
+                uids.Add(m.Groups[1].Value);
+            }
+        }
+
+        return uids;
+    }
+
+    [Fact]
+    public void EveryUid_HasAResourceEntry()
+    {
+        // Split on the FIRST dot, not the last: an attached property carries one of its own, so
+        // "Page_Thing.AutomationProperties.Name" names the uid "Page_Thing" and not "Page_Thing.AutomationProperties".
+        HashSet<string> named = [.. ReswEntries().Keys.Select(k => k[..k.IndexOf('.')])];
+        List<string> orphaned = [.. UidsInMarkup().Where(u => !named.Contains(u)).Order()];
+
+        Assert.True(
+            orphaned.Count == 0,
+            "x:Uid values with no entry in Resources.resw. This does not fail the XAML compiler - the "
+            + "control renders with no text at all, which is only visible by running the app and looking "
+            + "at the right screen:\n  " + string.Join("\n  ", orphaned));
+    }
+
+    [Fact]
+    public void EveryReswEntry_IsReferencedByMarkup()
+    {
+        HashSet<string> uids = UidsInMarkup();
+        List<string> unused = [.. ReswEntries().Keys
+            .Where(k => !uids.Contains(k[..k.IndexOf('.')]))
+            .Order()];
+
+        Assert.True(
+            unused.Count == 0,
+            "Resource entries no x:Uid references. Either the markup lost its x:Uid, or the entry outlived "
+            + "the control it was written for:\n  " + string.Join("\n  ", unused));
+    }
+
+    [Fact]
+    public void EveryReswEntry_HasAValueAndATranslatorComment()
+    {
+        string path = Path.Combine(AppRoot().FullName, "Strings", "en-US", "Resources.resw");
+        List<string> bad = [];
+
+        foreach (XElement data in XDocument.Load(path).Root!.Elements("data"))
+        {
+            string name = data.Attribute("name")?.Value ?? "(unnamed)";
+            if (string.IsNullOrWhiteSpace(data.Element("value")?.Value)) bad.Add($"{name}: empty value");
+            if (string.IsNullOrWhiteSpace(data.Element("comment")?.Value)) bad.Add($"{name}: no translator comment");
+        }
+
+        Assert.True(bad.Count == 0, "XAML resource entries a translator could not act on:\n  " + string.Join("\n  ", bad));
+    }
 }

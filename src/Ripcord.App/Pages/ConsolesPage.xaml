@@ -102,12 +102,11 @@
                             Margin="0,-8,-8,0"
                             Padding="0"
                             VerticalAlignment="Top"
-                            AutomationProperties.Name="More options for this console"
+                            x:Uid="ConsolesPage_MoreOptionsConsole"
                             Background="Transparent"
                             BorderThickness="0"
                             Click="OnConsoleOverflowClick"
-                            Tag="{x:Bind}"
-                            ToolTipService.ToolTip="More options">
+                            Tag="{x:Bind}">
                             <FontIcon FontSize="{ThemeResource RipcordIconSizeBody}" Glyph="&#xE712;" />
                         </Button>
 
@@ -225,7 +224,7 @@
             a button that wandered into the grid.
         -->
         <DataTemplate x:Key="AddConsoleCardTemplate" x:DataType="services:AddConsolePlaceholder">
-            <Grid AutomationProperties.Name="Add a console">
+            <Grid x:Uid="ConsolesPage_AddConsole2">
                 <!--
                     A dashed outline, which a Border cannot draw — StrokeDashArray belongs to Shape. So the
                     outline is a Rectangle sitting over the fill, sized to the tile.
@@ -249,7 +248,7 @@
                         HorizontalAlignment="Center"
                         Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                         Style="{StaticResource BodyStrongTextBlockStyle}"
-                        Text="Add a console" />
+                        x:Uid="ConsolesPage_AddConsole" />
                 </StackPanel>
             </Grid>
         </DataTemplate>
@@ -303,14 +302,14 @@
         <TextBlock
             VerticalAlignment="Center"
             Style="{StaticResource TitleTextBlockStyle}"
-            Text="Consoles" />
+            x:Uid="ConsolesPage_Consoles" />
 
         <TextBlock
             x:Name="SubtitleText"
             Grid.Row="1"
             Margin="0,0,0,12"
             Style="{StaticResource RipcordSubtleCaptionStyle}"
-            Text="Pick one to start streaming. A console in rest mode will be woken for you." />
+            x:Uid="ConsolesPage_PickOneStartStreaming" />
 
         <!--
             The one-console layout, and the reason it exists: one or two consoles is the real case, and a grid
@@ -375,7 +374,7 @@
                         x:Name="HeroOverflowButton"
                         Grid.Column="2"
                         VerticalAlignment="Top"
-                        AutomationProperties.Name="More options for this console"
+                        x:Uid="ConsolesPage_MoreOptionsConsole2"
                         Click="OnHeroOverflowClick"
                         Style="{StaticResource SubtleButtonStyle}">
                         <FontIcon FontSize="{ThemeResource RipcordIconSizeCaption}" Glyph="&#xE712;" />
@@ -399,7 +398,7 @@
                 x:Name="HeroAddLink"
                 HorizontalAlignment="Center"
                 Click="OnAddConsoleClick"
-                Content="Add another console" />
+                x:Uid="ConsolesPage_AddAnotherConsole" />
         </StackPanel>
 
         <!--  Empty state — shown when no consoles are paired.  -->
@@ -418,12 +417,12 @@
             <TextBlock
                 HorizontalAlignment="Center"
                 Style="{StaticResource SubtitleTextBlockStyle}"
-                Text="No consoles yet"
+                x:Uid="ConsolesPage_ConsolesYet"
                 TextAlignment="Center" />
             <TextBlock
                 HorizontalAlignment="Center"
                 Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                Text="Add your console once and it stays paired. Ripcord finds it on your network, so you won't need its address."
+                x:Uid="ConsolesPage_AddConsoleOnceStays"
                 TextAlignment="Center"
                 TextWrapping="Wrap" />
             <Button
@@ -434,7 +433,7 @@
                 Style="{StaticResource AccentButtonStyle}">
                 <StackPanel Orientation="Horizontal" Spacing="8">
                     <FontIcon FontSize="{ThemeResource RipcordIconSizeAction}" Glyph="&#xE710;" />
-                    <TextBlock Text="Add a console" />
+                    <TextBlock x:Uid="ConsolesPage_AddConsoleButton" />
                 </StackPanel>
             </Button>
         </StackPanel>
