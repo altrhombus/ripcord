@@ -157,9 +157,13 @@ protocol or product identifiers, because CLAUDE.md already requires those verbat
 tag is a bug. The trap worth naming is that the *same token* can be both — `"Ps5"` as an on-wire
 `host-type` must never share a resource entry with `"PS5"` as a caption on a card.
 
-**Adding a language** needs no code: copy `Strings.resx` to `Strings.<culture>.resx`, translate the
-`<value>` elements, leave every `<data name>` alone, and .NET resolves the satellite assembly from the
-user's `CurrentUICulture`. Ripcord ships English only, deliberately — an unreviewed machine translation is
+**Adding a language** needs no code, and there are two files because there are two layers. For the
+portable one, copy `src/Ripcord.Presentation/Resources/Strings.resx` to `Strings.<culture>.resx`; for the
+Windows UI, copy `src/Ripcord.App/Strings/en-US/Resources.resw` to `Strings/<culture>/Resources.resw`. In
+both, translate the `<value>` elements and leave every `<data name>` alone. .NET resolves the satellite
+assembly and MRT resolves the `.resw` from the user's `CurrentUICulture`. The split is not an accident:
+MRT is Windows-only, and the portable layer has to stay linkable by a macOS or Linux front end, so its
+strings are translated once and every front end inherits them. Ripcord ships English only, deliberately — an unreviewed machine translation is
 worse than honest English, and the catalogue exists so a speaker can contribute a real one.
 
 **Building** needs Windows plus a C++ toolchain; see [`README.md`](README.md). A contribution that only

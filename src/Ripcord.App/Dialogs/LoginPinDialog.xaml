@@ -5,10 +5,8 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-    Title="Enter your console login passcode"
-    CloseButtonText="Cancel"
+    x:Uid="LoginPinDialog_EnterConsoleLoginPasscode"
     DefaultButton="Primary"
-    PrimaryButtonText="Sign in"
     IsPrimaryButtonEnabled="False"
     mc:Ignorable="d">
 
@@ -17,7 +15,7 @@
             Style="{StaticResource BodyTextBlockStyle}"
             Foreground="{ThemeResource TextFillColorSecondaryBrush}"
             TextWrapping="Wrap"
-            Text="Your console is signed out and needs its login passcode — the one set under Settings → Users and Accounts → Login Settings. This is not the pairing code." />
+            x:Uid="LoginPinDialog_ConsoleSignedOutNeeds" />
 
         <!--  Shown only on a re-prompt, after the console rejected the previous passcode.  -->
         <TextBlock
@@ -26,13 +24,13 @@
             Style="{StaticResource BodyStrongTextBlockStyle}"
             Foreground="{ThemeResource SystemFillColorCautionBrush}"
             TextWrapping="Wrap"
-            Text="That passcode wasn't accepted. Try again." />
+            x:Uid="LoginPinDialog_PasscodeWasnTAccepted" />
 
         <!--  Digits only, submits on the last one. MaxLength is not fixed to 4 because the passcode length is
               user-configured on the console (4 is the common case); the Sign in button enables at >= 4.  -->
         <TextBox
             x:Name="PinBox"
-            Header="Login passcode"
+            x:Uid="LoginPinDialog_LoginPasscode"
             PlaceholderText="••••"
             InputScope="NumericPin"
             MaxLength="16"
