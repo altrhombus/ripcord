@@ -8,6 +8,10 @@ why the remaining work is shaped as it is.
 What it does *not* carry is a historical record. When something is finished and its story is worth keeping,
 the story goes to the journal and a pointer stays here.
 
+**Start with "1.0 — scope" below.** The backlog is a list of everything outstanding, which is a different
+question from what has to be true to ship; that section draws the line and the backlog stays the detail
+behind it.
+
 Three companions carry the rest, and each answers a different question:
 
 | Question | Where |
@@ -56,6 +60,117 @@ not research.
   bitrate-only: per Track C's
   settled findings, `CONNECTION_QUALITY` can't steer resolution (fixed at launch), so this doesn't make
   Phase 4 "done" — WAN relay and the mid-session-bitrate question (below) are still open.
+
+## 1.0 — scope
+
+**Draft, 2026-09-11. Nothing here is decided until the owner says so; the open questions are at the end.**
+
+The backlog below has 44 open items and no line through it, which means it cannot answer "are we done yet".
+This section draws that line. It is deliberately a *definition* first, because every argument about whether
+something belongs in 1.0 turns out to be an argument about what 1.0 is for.
+
+### What 1.0 means
+
+> **Someone who is not the author can download a build, pair their own console, and play — on PS5 or PS4 —
+> without hitting a defect the project already knows about.**
+
+That sentence does the work. It admits the things a stranger cannot work around (no build to download, a
+pad that goes dead, a toggle that does nothing) and excludes the things they will never notice (a frame of
+demux latency, a GHASH hot path, a missing wordmark). It says nothing about feature completeness, because
+this is a 1.0 and not a 2.0.
+
+Three consequences worth stating, since each closes an argument:
+
+- **Feature work is not what is left.** The protocol is done for both console generations, LAN and WAN both
+  stream, and the app is a working client. What is left is almost entirely *verification*, *distribution*
+  and *three known bugs*.
+- **"Works on the author's machine" is the thing 1.0 has to stop relying on.** Most of the remaining risk
+  is that large parts of the app have never been exercised by a human with a pad in hand, and that CI has
+  never run at all.
+- **Anything deferred gets said out loud in the release notes.** Shipping without haptics is fine.
+  Shipping without haptics and letting someone discover it is not.
+
+### In scope
+
+**1. A build someone can actually run.** There is no release artifact today: `WindowsPackageType=None`, no
+installer, no publish profile in use, no tag. 1.0 needs a downloadable x64 build, instructions that work on
+a machine that has never had the SDK on it, and a tagged release to hang them from.
+
+**2. CI green on a real runner.** `.github/workflows/ci.yml` has existed for days and has never executed.
+It is the only thing that would have caught the launch crash, the shallow-clone gap, and the commit-message
+violation without someone noticing by hand. Until it runs once, it is a file, not a check.
+
+**3. The three known defects.** All were found on hardware and all sit in the primary path:
+- an Xbox pad is dead while a DualSense is attached — the single most likely first-run configuration for
+  someone with a console and a spare controller;
+- HDR is reported from the wrong display, so the readiness panel lies on a multi-monitor desk;
+- a two-line console name overflows its card, which is the first screen anyone sees.
+
+**4. The hardware-verification debt.** Six input commits, Stage A steps 8–10 and two Stage B checks landed
+without ever being driven by a person. This is not code — it is an afternoon with a pad, a console and a
+list. It is also where the three bugs above came from, so the expectation should be that it finds more.
+
+**5. Controls that do what they say.** `LargeUiScale` is written by the settings page and read by nothing.
+A switch that does nothing is worse than an absent one, because it costs trust rather than a feature.
+Either wire it or hide it for 1.0 — both are acceptable, doing neither is not.
+
+**6. Two protocol gaps that could bite a console we have never seen.** The GMAC rotation-window boundary
+and `CurveForVersion` having no answer for non-P521 versions are both correctness against a console that
+negotiates something this project has not observed. Everything else in Track B is an optimisation or an
+open research question and can wait.
+
+**7. Honest first-run docs.** What works, what does not, which console generations, and the fact that it is
+English-only. The README is already unusually honest; 1.0 needs it to also be *complete* about limits.
+
+### Explicitly out, and said so in the release notes
+
+- **DualSense output** — haptics, adaptive triggers, lightbar, gyro, touchpad drag. Input works; output is
+  a whole subsystem and its absence is not a defect.
+- **Track D's ten latency and quality items.** The stream already runs 1080p60 at 23 Mbps with 18 ms
+  demux→present. Every one of these makes a working thing better.
+- **WAN relay (Phase 4).** Peer-to-peer WAN already works through STUN. Relay is the fallback for networks
+  where it does not, and nobody is blocked on it today.
+- **Trimming.** `PublishTrimmed=False` costs download size, not correctness. Six reflection sites in the
+  cloud layer stand between here and flipping it.
+- **ARM64 binaries.** The code is architecture-clean and ARM64 is a first-class *build* platform, but no
+  ARM64 build has been verified recently and the author's machine is x64. Ship x64; let ARM64 build from
+  source until someone can test one.
+- **Translations.** The catalogues exist and a speaker can contribute one; shipping an unreviewed machine
+  translation would be worse than English.
+- **The wordmark**, the senkusha probe questions, and the remaining accessibility items other than
+  `LargeUiScale`.
+
+### Exit criteria
+
+1.0 ships when every line is true:
+
+- [ ] CI passes on a real runner, on a clean clone, for every job.
+- [ ] A tagged release exists with an x64 build attached and install steps verified on a machine without
+      the SDK.
+- [ ] The three known defects are fixed, each confirmed on hardware.
+- [ ] The input stack, Stage A steps 8–10 and the two Stage B checks have been driven by a person, and
+      whatever that finds is either fixed or listed.
+- [ ] No user-visible control is inert.
+- [ ] The GMAC window boundary and the non-P521 curve gap are resolved or proven unreachable.
+- [ ] `SECURITY.md` names a supported version rather than "no release yet", and GitHub private
+      vulnerability reporting is enabled.
+- [ ] The README states the limits a first-time user meets in their first ten minutes.
+
+### Open questions for the owner
+
+These change the shape of the work rather than its size, so they are worth settling before any of it starts:
+
+1. **Distribution shape.** A plain zip of the unpackaged build is the cheapest thing that satisfies "someone
+   can run it". An MSIX installer is friendlier and brings code-signing into scope, which is a cost and a
+   decision of its own. Recommendation: zip for 1.0.
+2. **Code signing.** Unsigned means SmartScreen warns on first run, which for a remote-play client that
+   asks for a PSN sign-in is a worse first impression than it sounds. It is also money and identity.
+   Recommendation: ship unsigned and say so plainly in the README, revisit for 1.1.
+3. **`LargeUiScale`: wire it or hide it.** Wiring it is app-wide scaling work; hiding it is a one-line
+   change and a note. Recommendation: hide for 1.0.
+4. **Does 1.0 include the account tier**, or is it LAN-only with the account features documented as
+   working-but-unpolished? Everything works today, so this is about how much of the surface you want to
+   support on day one. Recommendation: include it.
 
 ## Backlog
 
