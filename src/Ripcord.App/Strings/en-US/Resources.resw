@@ -473,7 +473,7 @@
     <comment>The header above a control on the Settings page.</comment>
   </data>
   <data name="SettingsPage_EasierReadHandheldFrom.Description" xml:space="preserve">
-    <value>Easier to read on a handheld or from across the room.</value>
+    <value>Makes Ripcord's own text and buttons bigger, on top of your Windows text size. Takes effect next time Ripcord starts.</value>
     <comment>The description under a control on the Settings page.</comment>
   </data>
   <data name="SettingsPage_EasierReadHandheldFrom.Header" xml:space="preserve">
