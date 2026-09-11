@@ -405,6 +405,11 @@ public class PublishedTreeSweepTests
     [
         (16, "4293ff14142dd3be6bace0049d591d960bf0fe2545f59a63716443225351dca9"),
         (8, "4995751499b43f886e7c50af275bea59b2ed10937391e17173d133c2db41d556"),
+        // The session-id frame payload, purged 2026-09-11. Committed for weeks under a comment
+        // asserting it was synthetic; it was a real captured 0x0033 payload, and because that frame
+        // is encrypted it was ciphertext against a plaintext the spec publishes. Caught by
+        // CaptureProvenanceTests, which checks provenance claims rather than trusting them.
+        (34, "2c7b51060080c732a5c57e7d2720c389e854e912a00aaefbd0607291568b0f51"),
     ];
 
     /// <summary>

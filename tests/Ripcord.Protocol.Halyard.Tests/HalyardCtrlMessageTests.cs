@@ -35,7 +35,17 @@ public class HalyardCtrlMessageTests
     {
         // A session-id frame (size=0x11, type=0x0033, 17-byte payload) immediately followed by a heartbeat
         // request — the reader must consume exactly the first frame and leave the second intact.
-        // Synthetic: 17 arbitrary bytes standing in for a session-id payload. Nothing captured.
+        // Synthetic: 0x10 then ASCII "SyntheticSessId!" - the real frame's shape (a length prefix and
+        // sixteen bytes of id) with content that decodes to something self-evidently invented.
+        //
+        // The value here until 2026-09-11 carried this same "Nothing captured" line and it was false.
+        // It was the payload of a real 0x0033 frame, lifted from a capture with its 00000011 00330000
+        // header still attached. The console encrypts that frame, so the committed bytes were
+        // ciphertext; against the plaintext docs/protocol/ps5-session-transport.md publishes for it,
+        // they gave up 17 bytes of session keystream. Three audit rounds cleared it by reading the
+        // comment - which is the point: a false declaration is stronger than no declaration, because
+        // it is where the reviewer stops. Provenance is now checked, not asserted; see
+        // CaptureProvenanceTests.NoCommittedLiteral_IsInACapture.
         byte[] payload = Convert.FromHexString("1053796e74686574696353657373496421");
         byte[] wire = Convert.FromHexString("0000001100330000" + Convert.ToHexString(payload) + "0000000000fe0000");
 
