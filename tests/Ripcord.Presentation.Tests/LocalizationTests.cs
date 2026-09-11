@@ -248,4 +248,58 @@ public class LocalizationTests
 
         Assert.True(bad.Count == 0, "XAML resource entries a translator could not act on:\n  " + string.Join("\n  ", bad));
     }
+
+    /// <summary>
+    /// Types that cannot carry an <c>x:Uid</c>, because MRT applies resources through
+    /// <c>FrameworkElement</c> and these do not derive from it.
+    ///
+    /// <para>This exists because the other guards could not see the failure. Every x:Uid had an entry and
+    /// every entry was referenced — the catalogue was perfectly consistent — and the app still died on
+    /// launch with "Failed to assign to property 'Microsoft.UI.Xaml.Window.Title'". A <c>Window</c> in
+    /// WinUI 3 derives from <c>DependencyObject</c>, so it has no x:Uid support at all, and a migration
+    /// that moved its Title into the catalogue produced markup that compiles, indexes into the PRI, and
+    /// throws a XamlParseException the first time it is loaded.</para>
+    ///
+    /// <para>Consistency between markup and catalogue was the wrong question. Whether the element can
+    /// receive the resource at all is the one that crashes.</para>
+    /// </summary>
+    private static readonly string[] CannotCarryUid = ["Window", "Application", "ResourceDictionary"];
+
+    [Fact]
+    public void NoUid_OnATypeThatCannotReceiveOne()
+    {
+        Regex element = new(@"<(" + string.Join("|", CannotCarryUid) + @")(?=[\s>]|$)", RegexOptions.Compiled);
+        List<string> offenders = [];
+
+        foreach (string file in Directory.EnumerateFiles(AppRoot().FullName, "*.xaml", SearchOption.AllDirectories))
+        {
+            string rel = file.Replace(Path.DirectorySeparatorChar, '/');
+            if (rel.Contains("/obj/") || rel.Contains("/bin/")) continue;
+
+            string[] lines = File.ReadAllLines(file);
+            for (int i = 0; i < lines.Length; i++)
+            {
+                Match m = element.Match(lines[i]);
+                if (!m.Success) continue;
+
+                // Scan this element's attributes: from its tag to the line closing it.
+                for (int j = i; j < lines.Length; j++)
+                {
+                    if (lines[j].Contains("x:Uid=", StringComparison.Ordinal))
+                    {
+                        offenders.Add($"{Path.GetFileName(file)}:{j + 1}  x:Uid on <{m.Groups[1].Value}>");
+                    }
+
+                    if (lines[j].TrimEnd().EndsWith(">", StringComparison.Ordinal)) break;
+                }
+            }
+        }
+
+        Assert.True(
+            offenders.Count == 0,
+            "x:Uid on a type that cannot receive one. This compiles, indexes into the PRI and passes every "
+            + "other check here, then throws XamlParseException the moment the markup loads. Set the "
+            + "property in markup or from code-behind instead:\n  "
+            + string.Join("\n  ", offenders));
+    }
 }
