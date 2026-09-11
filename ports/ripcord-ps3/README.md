@@ -2,15 +2,18 @@
 
 A PS5 Remote Play client for PlayStation 3 homebrew, in C.
 
-**Status: nothing built. This is a scoping branch**, cut from `main`.
+**Status: nothing runs on a console yet.** Cut from `main`. What exists is the bitstream front end —
+reader, parameter-set and slice-header parsers, Annex-B splitter, picture-boundary tracking — built and
+tested on the host, because none of it needs a PS3 to be found wrong.
 
 It ought to sit on `ports/common` — the portable protocol core — but that lives on `feat/vita-port`, which
 is **94 commits behind `main` and does not build**: `docs/protocol/*.proto` were added to `main`
 afterwards, so the .NET solution cannot restore there and the test suite cannot run. Since this project's
 `CONTRIBUTING.md` requires `commit → test → push`, a branch that cannot be tested is the wrong base.
 
-Nothing in steps 1–3 of [Order of work](#order-of-work) needs `ports/common` anyway — they are standalone
-portable C with host tests. Rebase onto `common` at step 4, when the Vita work lands on `main`.
+Nothing in steps 1–3 of [Order of work](#order-of-work) needed `ports/common` — they are standalone
+portable C with host tests, and all three are done. Step 4 is where that stops being true, so the Vita
+work landing on `main` is now what gates this port rather than a convenience.
 
 No PS3 on hand yet, which is fine: none of the work that comes first needs one.
 
@@ -96,10 +99,11 @@ Nothing in 1–4 needs a PS3.
 
 1. ~~Parse SPS/PPS from an existing capture.~~ **Done** — see above. Settled the decoder route.
 2. ~~Bitstream reader and SPS/PPS/slice-header parser.~~ **Done** — `source/media/rc_h264_bits.[ch]`
-   and `rc_h264_params.[ch]`, with `tests/h264_test.c`. 80 checks, no console needed:
-   `make -C ports/ripcord-ps3/tests`.
-3. Annex-B splitter and slice-boundary extraction, likewise host-tested. Useful whichever decoder route
-   wins.
+   and `rc_h264_params.[ch]`.
+3. ~~Annex-B splitter and slice-boundary extraction.~~ **Done** — `source/media/rc_h264_annexb.[ch]`:
+   a zero-copy NAL iterator and an access-unit tracker that answers where each picture begins from the
+   slice headers rather than from the framing layer's frame index. Steps 2 and 3 together are 142 checks
+   in `tests/h264_test.c`, no console needed: `make -C ports/ripcord-ps3/tests`.
 4. `rc_platform_ps3.c` and a PSL1GHT skeleton that links and prints a timestamp. Cheap, and it flushes
    out the toolchain before anything depends on it. **This is the step that wants `ports/common`** — rebase
    here rather than earlier.
