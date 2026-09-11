@@ -2,29 +2,28 @@
 
 A PS5 Remote Play client for PlayStation 3 homebrew, in C.
 
-**Status: nothing runs on a console yet.** Cut from `main`. What exists is the bitstream front end —
-reader, parameter-set and slice-header parsers, Annex-B splitter, picture-boundary tracking — built and
-tested on the host, because none of it needs a PS3 to be found wrong.
+**Status: nothing runs on a console yet.** What exists is the bitstream front end — reader,
+parameter-set and slice-header parsers, Annex-B splitter, picture-boundary tracking — built and tested
+on the host, because none of it needs a PS3 to be found wrong.
 
-It ought to sit on `ports/common` — the portable protocol core — but that lives on `feat/vita-port`, which
-is **94 commits behind `main` and does not build**: `docs/protocol/*.proto` were added to `main`
-afterwards, so the .NET solution cannot restore there and the test suite cannot run. Since this project's
-`CONTRIBUTING.md` requires `commit → test → push`, a branch that cannot be tested is the wrong base.
-
-Nothing in steps 1–3 of [Order of work](#order-of-work) needed `ports/common` — they are standalone
-portable C with host tests, and all three are done. Step 4 is where that stops being true, so the Vita
-work landing on `main` is now what gates this port rather than a convenience.
+This branch sits on `feat/ports-common`, so `ports/common` — the portable protocol core — is in the
+tree. That was not true when the port was scoped: the core lived on `feat/vita-port`, 94 commits behind
+`main` and unable to build, since `docs/protocol/*.proto` were added to `main` afterwards and the .NET
+solution could not restore there. `CONTRIBUTING.md` requires `commit → test → push`, and a branch whose
+tests cannot run is the wrong base — so steps 1–3 were deliberately chosen to need nothing from the core,
+and the core was rebased onto `main` on its own branch before step 4 asked for it.
 
 No PS3 on hand yet, which is fine: none of the work that comes first needs one.
 
 ## Why this port is only the decoder
 
-`ports/common/platform/rc_platform.h` (on `feat/vita-port`) is the entire list of things the portable core
+`ports/common/platform/rc_platform.h` is the entire list of things the portable core
 asks of an operating system, and it is **four functions**: `rc_time_ms`, `rc_sleep_ms`,
 `rc_tick`/`rc_tick_hz`, and `rc_random_bytes`. Sockets turned out to need no seam at all, because both
 consoles expose the BSD names.
 
-The Vita port is the measure of what a new target costs:
+The Vita port is the measure of what a new target costs. It is on its own branch rather than in this
+tree — `feat/ports-common` carries the core without it — but the shape of the bill is what matters:
 
 ```
 rc_platform_vita.c    67 lines
@@ -105,8 +104,8 @@ Nothing in 1–4 needs a PS3.
    slice headers rather than from the framing layer's frame index. Steps 2 and 3 together are 142 checks
    in `tests/h264_test.c`, no console needed: `make -C ports/ripcord-ps3/tests`.
 4. `rc_platform_ps3.c` and a PSL1GHT skeleton that links and prints a timestamp. Cheap, and it flushes
-   out the toolchain before anything depends on it. **This is the step that wants `ports/common`** — rebase
-   here rather than earlier.
+   out the toolchain before anything depends on it. **This is the step that wants `ports/common`**, which
+   is why the branch was rebased onto `feat/ports-common` before starting it. Next.
 5. ~~Choose the decoder base on the evidence from 1.~~ **Done — openh264.** CABAC decided it;
    `DECODE.md` §1.
 6. SPU bring-up: one SPE running a trivial DMA job, measured.

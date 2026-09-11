@@ -198,12 +198,12 @@ Nothing in 1–4 needs a PS3.
    those pointers into 256 KB of local store — and an access-unit tracker absorbs the parameter sets and
    reports where each picture begins. 142 host checks across steps 2 and 3.
 4. **`rc_platform_ps3.c` and a PSL1GHT skeleton** that links and prints a timestamp. Cheap, and it flushes
-   out the toolchain before anything depends on it. This is the step that wants `ports/common`, so rebase
-   onto it here rather than earlier.
+   out the toolchain before anything depends on it. This is the step that wants `ports/common`, which is
+   in the tree now — the branch sits on `feat/ports-common`.
 5. **Choose the decoder base** on the evidence from 1.
 6. **SPU bring-up**: one SPE running a trivial DMA job, measured. Establishes the toolchain and job model
    before codec work rides on it.
 7. **Decoder proper**, stage by stage, against the same vectors.
 
 Steps 2 and 3 were worth doing regardless of how 5 resolves, which was the argument for starting there
-rather than with the SPU. Step 4 is now the next one, and is where `ports/common` is first needed.
+rather than with the SPU. Step 4 is next, and its dependency on `ports/common` is satisfied.
