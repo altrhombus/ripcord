@@ -192,9 +192,11 @@ Nothing in 1–4 needs a PS3.
    emulation-prevention handled in place rather than by copying — the SPE has 256 KB of local store and
    no cache, so a decode that copies each slice to strip three bytes has doubled its DMA for nothing.
    `rc_h264_params` parses both parameter sets and the slice header as far as `redundant_pic_cnt`, which
-   is exactly what sec 7.4.1.2.4 needs to find picture boundaries and no further. 80 host checks.
-3. **Annex-B splitter and slice-boundary extraction**, likewise host-tested. The seam between the existing
-   demuxer and any decoder, and useful whichever route §5 takes.
+   is exactly what sec 7.4.1.2.4 needs to find picture boundaries and no further.
+3. ~~**Annex-B splitter and slice-boundary extraction.**~~ **Done.** `rc_h264_annexb` yields NAL units as
+   pointers into the caller's buffer — nothing copied, because the decoder DMAs slice bytes from exactly
+   those pointers into 256 KB of local store — and an access-unit tracker absorbs the parameter sets and
+   reports where each picture begins. 142 host checks across steps 2 and 3.
 4. **`rc_platform_ps3.c` and a PSL1GHT skeleton** that links and prints a timestamp. Cheap, and it flushes
    out the toolchain before anything depends on it. This is the step that wants `ports/common`, so rebase
    onto it here rather than earlier.
@@ -203,5 +205,5 @@ Nothing in 1–4 needs a PS3.
    before codec work rides on it.
 7. **Decoder proper**, stage by stage, against the same vectors.
 
-Steps 2 and 3 are worth doing regardless of how 5 resolves, which is the argument for starting there
-rather than with the SPU.
+Steps 2 and 3 were worth doing regardless of how 5 resolves, which was the argument for starting there
+rather than with the SPU. Step 4 is now the next one, and is where `ports/common` is first needed.
