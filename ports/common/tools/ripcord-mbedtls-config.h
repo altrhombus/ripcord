@@ -1,5 +1,5 @@
 /*
- * ripcord-vita - a minimal Mbed TLS configuration: elliptic curves and bignums, nothing else.
+ * ripcord ports - a minimal Mbed TLS configuration: elliptic curves and bignums, nothing else.
  *
  * ports/common/crypto/rc_ecdh.c delegates exactly one primitive to this library - ECDH over P-256 and
  * P-521 - and uses only its mbedtls_ecp_* and mbedtls_mpi_* entry points. There is no TLS here, no
