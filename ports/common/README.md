@@ -42,13 +42,17 @@ having at least two real implementations. Anything a single port wants belongs i
 reached through a callback the port installs — which is how the media path works, and why decode/audio/
 present are absent from the seam despite being the largest platform surface any port has.
 
-Three implementations exist:
+Three implementations have been written. Two are in this tree:
 
 | | |
 |---|---|
 | `ports/ripcord-3ds/source/platform/rc_platform_3ds.c` | libctru — the hardware-verified one |
-| `ports/ripcord-vita/source/platform/rc_platform_vita.c` | vitasdk — compiles and links; never run |
 | `tests/rc_platform_host.c` | plain POSIX, for the host tests |
+| *`rc_platform_vita.c`, on the Vita branch* | vitasdk — compiles and links; never run |
+
+The third is where several of the findings recorded below actually came from — that sockets need no
+seam, that `inet_aton` is a BSD extension rather than C99 — so the evidence for this header's shape is
+real even though the file is not here yet. It arrives when that port does.
 
 The host one is not decoration. A header with one caller and one implementation is indirection, not a
 seam; the host build is what notices when a "portable" file quietly grows a dependency on a console.
