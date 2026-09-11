@@ -6,8 +6,7 @@
     xmlns:controls="using:Microsoft.UI.Xaml.Controls"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-    Title="Sign in to PlayStation Network"
-    CloseButtonText="Cancel"
+    x:Uid="AccountSignInDialog"
     mc:Ignorable="d">
 
     <!--  Sized generously: this hosts someone else's sign-in page, including a QR code for the passkey flow,
@@ -24,8 +23,8 @@
             Grid.Row="0"
             Style="{StaticResource CaptionTextBlockStyle}"
             Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-            TextWrapping="Wrap"
-            Text="This is Sony's own sign-in page. Ripcord never sees your password — it receives only a sign-in token when you're done." />
+            x:Uid="AccountSignInDialog_Disclaimer"
+            TextWrapping="Wrap" />
 
         <Grid Grid.Row="1">
             <controls:WebView2 x:Name="Browser" NavigationStarting="OnNavigationStarting" />
@@ -43,8 +42,8 @@
                     Style="{StaticResource BodyTextBlockStyle}"
                     Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                     TextWrapping="Wrap"
-                    TextAlignment="Center"
-                    Text="Opening the sign-in page…" />
+                    x:Uid="AccountSignInDialog_Loading"
+                    TextAlignment="Center" />
             </StackPanel>
         </Grid>
     </Grid>
