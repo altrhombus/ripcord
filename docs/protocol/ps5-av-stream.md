@@ -115,6 +115,13 @@ serve the whole session in each.
 | `chroma_format_idc` | 1 — 4:2:0 | |
 | `frame_mbs_only_flag` | **1 — progressive** | No field coding, no MBAFF |
 | `num_slice_groups_minus1` | 0 | One slice group; no FMO/ASO |
+| `pic_order_cnt_type` | **2** | Picture order **is** decode order. No `pic_order_cnt_lsb` is coded at all and reordering is not representable — which corroborates the I-and-P-only slice types from a second direction |
+| `log2_max_frame_num` | 7 | `frame_num` is 7 bits and wraps at 128 |
+| `max_num_ref_frames` | **9** | A nine-frame DPB. With no B-slices, long P-prediction chains are where the efficiency comes from — and nine 720p NV12 frames is ~12.5 MB a decoder must hold |
+| `frame_cropping_flag` | 1 | 640×368 coded, cropped to the 640×360 displayed |
+| `pic_init_qp` | 26 | |
+| `deblocking_filter_control_present_flag` | 1 | Slice headers carry deblocking overrides |
+| `redundant_pic_cnt_present_flag` | 0 | No redundant slices |
 | Slice types present | **I and P only** | No B-slices: no reordering delay, no bipredictive MC, no DPB reorder logic |
 | Coded size | 640×368 | Macroblock-aligned; 640×360 displayed, per `ports/ripcord-3ds/HARDWARE-PROBES.md` |
 
