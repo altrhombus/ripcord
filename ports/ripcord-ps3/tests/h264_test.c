@@ -20,11 +20,17 @@
  * buys more coverage than the two slices that could have been lifted: field combinations this console
  * never sends are exactly the ones a parser gets wrong.
  *
+ * THE ANNEX-B SECTIONS BUILD THEIR STREAMS OUT OF BOTH. A test stream is the real parameter sets, wrapped
+ * back into NAL units with start codes, interleaved with synthesised slices - so the splitter is exercised
+ * against the byte patterns the console actually emits while the picture-boundary rule is exercised against
+ * field combinations the console never sends.
+ *
  * WHAT IS NOT TESTED HERE. The slice parser stops at redundant_pic_cnt by design, so nothing below
  * exercises reference list modification, prediction weights or the marking process - there is nothing to
  * exercise. rc_h264_params.h says why.
  */
 #include "../source/media/rc_h264_bits.h"
+#include "../source/media/rc_h264_annexb.h"
 #include "../source/media/rc_h264_params.h"
 
 #include <stdio.h>
@@ -102,6 +108,23 @@ static void bw_se(bitwriter *w, int32_t value)
 static size_t bw_bytes(const bitwriter *w)
 {
     return (w->bits + 7u) / 8u;
+}
+
+/*
+ * rbsp_trailing_bits (sec 7.3.2.11): a one bit, then zeros to the byte boundary.
+ *
+ * Real NAL units carry it and these fixtures did not, which was harmless while they were handed straight
+ * to a parser. It stops being harmless once they go through the Annex-B splitter, because the splitter
+ * trims trailing zero bytes - so a header whose last byte happened to hold only zero bits would lose that
+ * byte and the parse would run off the end. The stop bit guarantees the final byte is non-zero, which is
+ * exactly the property the real syntax exists to provide.
+ */
+static void bw_trailing_bits(bitwriter *w)
+{
+    bw_u(w, 1u, 1u);
+    while ((w->bits & 7u) != 0u) {
+        bw_u(w, 1u, 0u);
+    }
 }
 
 /* ---------------------------------------------------------------------------------------------------
@@ -322,6 +345,7 @@ static void build_slice_header(bitwriter *w, uint32_t first_mb, uint32_t slice_t
     }
     /* bottom_field_pic_order_in_frame_present_flag and redundant_pic_cnt_present_flag are both 0 in the
      * real PPS, so nothing follows that this parser reads. */
+    bw_trailing_bits(w);
 }
 
 static void test_slice_headers(void)
@@ -395,6 +419,242 @@ static void test_slice_headers(void)
           "nal_ref_idc dropping to zero begins a new picture even at the same frame_num");
 }
 
+/* ---------------------------------------------------------------------------------------------------
+ * Annex-B splitting
+ * ------------------------------------------------------------------------------------------------ */
+
+typedef struct {
+    uint8_t buf[4096];
+    size_t len;
+} annexb_builder;
+
+static void ab_init(annexb_builder *s)
+{
+    memset(s, 0, sizeof(*s));
+}
+
+static void ab_raw(annexb_builder *s, const uint8_t *bytes, size_t n)
+{
+    size_t i;
+    for (i = 0u; i < n && s->len < sizeof(s->buf); i++) {
+        s->buf[s->len++] = bytes[i];
+    }
+}
+
+static void ab_start_code(annexb_builder *s, size_t length)
+{
+    static const uint8_t k_sc[4] = { 0x00u, 0x00u, 0x00u, 0x01u };
+    ab_raw(s, k_sc + (4u - length), length);
+}
+
+/* One NAL unit: start code of the requested length, the header byte, then the payload. */
+static void ab_nal(annexb_builder *s, size_t sc_length, uint8_t header,
+                   const uint8_t *payload, size_t n)
+{
+    ab_start_code(s, sc_length);
+    ab_raw(s, &header, 1u);
+    ab_raw(s, payload, n);
+}
+
+static void test_annexb_splitting(void)
+{
+    static const uint8_t k_leading_junk[] = { 0xde, 0xad, 0x00, 0x02, 0xbe, 0xef };
+    static const uint8_t k_two_zeros[] = { 0x00u, 0x00u };
+    static const uint8_t k_payload_a[] = { 0x11, 0x22, 0x33 };
+    static const uint8_t k_payload_b[] = { 0x44 };
+    annexb_builder s;
+    rc_h264_annexb it;
+    rc_h264_nal nal;
+
+    /* An empty buffer, and a buffer with no start code in it at all, both yield nothing rather than
+     * inventing a unit out of whatever the caller handed over. */
+    rc_h264_annexb_init(&it, NULL, 0u);
+    CHECK(!rc_h264_annexb_next(&it, &nal), "a null buffer yields no NAL units");
+    rc_h264_annexb_init(&it, k_leading_junk, sizeof(k_leading_junk));
+    CHECK(!rc_h264_annexb_next(&it, &nal), "a buffer with no start code yields no NAL units");
+
+    ab_init(&s);
+    ab_raw(&s, k_leading_junk, sizeof(k_leading_junk));   /* bytes before the first start code */
+    ab_nal(&s, 4u, 0x67u, k_payload_a, sizeof(k_payload_a));
+    ab_raw(&s, k_two_zeros, sizeof(k_two_zeros));         /* cabac_zero_words after the first unit */
+    ab_nal(&s, 3u, 0x21u, k_payload_b, sizeof(k_payload_b));
+
+    rc_h264_annexb_init(&it, s.buf, s.len);
+
+    CHECK(rc_h264_annexb_next(&it, &nal), "first NAL should be found past the leading junk");
+    CHECK(nal.type == 7u, "first NAL type should be 7 (SPS), got %u", nal.type);
+    CHECK(nal.ref_idc == 3u, "first NAL nal_ref_idc should be 3, got %u", nal.ref_idc);
+    CHECK(nal.forbidden_zero == 0, "forbidden_zero_bit should be clear");
+    CHECK(nal.size == sizeof(k_payload_a) + 1u,
+          "trailing zeros must not be counted into the unit: expected %u bytes, got %u",
+          (unsigned)(sizeof(k_payload_a) + 1u), (unsigned)nal.size);
+    CHECK(nal.payload_size == sizeof(k_payload_a) && nal.payload[0] == 0x11u,
+          "payload should start after the header byte");
+
+    CHECK(rc_h264_annexb_next(&it, &nal), "second NAL should be found after a 3-byte start code");
+    CHECK(nal.type == 1u && nal.ref_idc == 1u, "second NAL header should decode to type 1, ref_idc 1");
+    CHECK(nal.size == 2u, "second NAL should be 2 bytes, got %u", (unsigned)nal.size);
+
+    CHECK(!rc_h264_annexb_next(&it, &nal), "the buffer is exhausted");
+    CHECK(it.empty_units == 0u, "no empty units in a well-formed buffer, got %u",
+          (unsigned)it.empty_units);
+
+    /* Back-to-back start codes are not NAL units. They are counted rather than silently swallowed,
+     * because a run of them means the buffer is damaged. */
+    ab_init(&s);
+    ab_start_code(&s, 4u);
+    ab_start_code(&s, 4u);
+    ab_nal(&s, 4u, 0x41u, k_payload_b, sizeof(k_payload_b));
+    rc_h264_annexb_init(&it, s.buf, s.len);
+    CHECK(rc_h264_annexb_next(&it, &nal) && nal.type == 1u, "the real unit is still found");
+    CHECK(!rc_h264_annexb_next(&it, &nal), "and it is the only one");
+    CHECK(it.empty_units >= 1u, "empty units should be counted, got %u", (unsigned)it.empty_units);
+
+    /* The forbidden_zero_bit is set, which sec 7.4.1 says cannot happen - so this is corruption, and the
+     * splitter reports it rather than the access-unit layer having to re-derive it. */
+    ab_init(&s);
+    ab_nal(&s, 4u, 0xe5u, k_payload_b, sizeof(k_payload_b));
+    rc_h264_annexb_init(&it, s.buf, s.len);
+    CHECK(rc_h264_annexb_next(&it, &nal) && nal.forbidden_zero == 1,
+          "a set forbidden_zero_bit should be reported");
+}
+
+/* ---------------------------------------------------------------------------------------------------
+ * Access units and picture boundaries
+ * ------------------------------------------------------------------------------------------------ */
+
+/* Appends a slice NAL built against the real parameter sets. */
+static void ab_slice(annexb_builder *s, uint8_t header, uint32_t first_mb, uint32_t slice_type,
+                     uint32_t frame_num, int is_idr, uint32_t idr_pic_id)
+{
+    bitwriter w;
+    build_slice_header(&w, first_mb, slice_type, frame_num, is_idr, idr_pic_id, 0u);
+    ab_nal(s, 4u, header, w.buf, bw_bytes(&w));
+}
+
+static void test_access_units(void)
+{
+    annexb_builder s;
+    rc_h264_annexb it;
+    rc_h264_nal nal;
+    rc_h264_au_nal out;
+
+    /* Static, not a local, and the header says why: this structure is twenty kilobytes. ripcord-3ds has
+     * a comment in exactly this shape because its main thread had a 32 KB stack. */
+    static rc_h264_au au;
+
+    ab_init(&s);
+    ab_nal(&s, 4u, 0x67u, k_real_sps, sizeof(k_real_sps));
+    ab_nal(&s, 3u, 0x68u, k_real_pps, sizeof(k_real_pps));
+    ab_slice(&s, 0x65u, 0u,  7u, 0u, 1, 0u);   /* IDR, first slice of picture 1 */
+    ab_slice(&s, 0x65u, 60u, 7u, 0u, 1, 0u);   /* IDR, second slice of the same picture */
+    ab_slice(&s, 0x41u, 0u,  5u, 1u, 0, 0u);   /* P, picture 2 - opens its own access unit */
+    ab_nal(&s, 4u, 0x67u, k_real_sps, sizeof(k_real_sps));   /* opens access unit 3 */
+    ab_nal(&s, 4u, 0x68u, k_real_pps, sizeof(k_real_pps));
+    ab_slice(&s, 0x41u, 0u,  5u, 2u, 0, 0u);   /* P, picture 3 - inside the unit the SPS opened */
+
+    rc_h264_au_init(&au);
+    rc_h264_annexb_init(&it, s.buf, s.len);
+
+    /* 1. SPS. Nothing has been fed, so this opens the first access unit. */
+    CHECK(rc_h264_annexb_next(&it, &nal), "SPS unit present");
+    CHECK(rc_h264_au_feed(&au, &nal, &out) == RC_H264_AU_NON_VCL, "an SPS is non-VCL");
+    CHECK(out.begins_access_unit == 1, "the first NAL of the stream opens an access unit");
+    CHECK(out.sps != NULL && out.sps->coded_width == 640u, "the SPS should be absorbed and readable");
+
+    /* 2. PPS, still inside that unit. */
+    CHECK(rc_h264_annexb_next(&it, &nal), "PPS unit present");
+    CHECK(rc_h264_au_feed(&au, &nal, &out) == RC_H264_AU_NON_VCL, "a PPS is non-VCL");
+    CHECK(out.begins_access_unit == 0, "a PPS following an SPS does not open a second unit");
+    CHECK(out.pps != NULL && out.pps->entropy_coding_mode_flag == 1, "the PPS should be absorbed");
+
+    /* 3. The IDR slice opens the picture but NOT the access unit - the SPS already did. This is the
+     * distinction sec 7.4.1.2.3 forces and the reason the two flags are separate. */
+    CHECK(rc_h264_annexb_next(&it, &nal), "first IDR slice present");
+    CHECK(rc_h264_au_feed(&au, &nal, &out) == RC_H264_AU_SLICE, "an IDR NAL is a slice");
+    CHECK(out.begins_picture == 1, "the first slice of the stream begins a picture");
+    CHECK(out.begins_access_unit == 0, "but the SPS in front of it already opened the access unit");
+    CHECK(out.slice.is_idr == 1 && out.slice.slice_type_base == RC_H264_SLICE_I, "IDR, I slice");
+
+    /* 4. Second slice of the same picture. */
+    CHECK(rc_h264_annexb_next(&it, &nal), "second IDR slice present");
+    CHECK(rc_h264_au_feed(&au, &nal, &out) == RC_H264_AU_SLICE, "still a slice");
+    CHECK(out.begins_picture == 0, "same frame_num and idr_pic_id: the same picture continues");
+    CHECK(out.slice.first_mb_in_slice == 60u, "and it is not the first macroblock");
+
+    /* 5. A P slice with no parameter sets in front of it: it opens both the picture and the unit. */
+    CHECK(rc_h264_annexb_next(&it, &nal), "P slice present");
+    CHECK(rc_h264_au_feed(&au, &nal, &out) == RC_H264_AU_SLICE, "a P slice");
+    CHECK(out.begins_picture == 1, "a new frame_num begins a picture");
+    CHECK(out.begins_access_unit == 1, "with nothing in front of it, the slice opens the unit too");
+
+    /* 6-7. Parameter sets repeated mid-stream. The SPS closes the previous unit and opens a new one. */
+    CHECK(rc_h264_annexb_next(&it, &nal), "repeated SPS present");
+    CHECK(rc_h264_au_feed(&au, &nal, &out) == RC_H264_AU_NON_VCL, "non-VCL");
+    CHECK(out.begins_access_unit == 1, "a parameter set after a slice opens the next access unit");
+    CHECK(rc_h264_annexb_next(&it, &nal), "repeated PPS present");
+    CHECK(rc_h264_au_feed(&au, &nal, &out) == RC_H264_AU_NON_VCL, "non-VCL");
+    CHECK(out.begins_access_unit == 0, "the PPS is inside the unit the SPS opened");
+
+    /* 8. And its slice begins a picture inside that already-open unit. */
+    CHECK(rc_h264_annexb_next(&it, &nal), "final P slice present");
+    CHECK(rc_h264_au_feed(&au, &nal, &out) == RC_H264_AU_SLICE, "a P slice");
+    CHECK(out.begins_picture == 1, "frame_num moved again");
+    CHECK(out.begins_access_unit == 0, "the repeated SPS opened this unit, not the slice");
+
+    CHECK(!rc_h264_annexb_next(&it, &nal), "stream exhausted");
+    CHECK(au.pictures == 3u, "three pictures expected, got %u", (unsigned)au.pictures);
+    CHECK(au.access_units == 3u, "three access units expected, got %u", (unsigned)au.access_units);
+    CHECK(au.slices == 4u, "four slices expected, got %u", (unsigned)au.slices);
+    CHECK(au.dropped_no_params == 0u, "nothing should have been dropped");
+
+    printf("  stream: %u bytes -> %u access units, %u pictures, %u slices\n",
+           (unsigned)s.len, (unsigned)au.access_units, (unsigned)au.pictures, (unsigned)au.slices);
+    printf("  sizeof(rc_h264_au) = %u bytes - static or heap, not a PPU thread stack\n",
+           (unsigned)sizeof(au));
+}
+
+static void test_access_unit_refusals(void)
+{
+    static const uint8_t k_payload[] = { 0x88, 0x80 };
+    annexb_builder s;
+    rc_h264_annexb it;
+    rc_h264_nal nal;
+    rc_h264_au_nal out;
+    static rc_h264_au au;
+
+    /* A slice before its parameter sets is NEED_PARAMS, not an error. A client joining a stream in
+     * progress, or one that lost the fragment carrying them, sees exactly this. */
+    ab_init(&s);
+    ab_slice(&s, 0x41u, 0u, 5u, 3u, 0, 0u);
+    rc_h264_au_init(&au);
+    rc_h264_annexb_init(&it, s.buf, s.len);
+    CHECK(rc_h264_annexb_next(&it, &nal), "slice present");
+    CHECK(rc_h264_au_feed(&au, &nal, &out) == RC_H264_AU_NEED_PARAMS,
+          "a slice with no parameter sets should ask for them, not fail");
+    CHECK(au.dropped_no_params == 1u, "and should be counted as dropped");
+    CHECK(au.pictures == 0u && au.slices == 0u, "a dropped slice is not a picture");
+
+    /* REFUSED: data partitioning. Partitions B and C carry no slice header, so grouping cannot see
+     * them - refusing is the only answer that fails loudly instead of quietly. */
+    ab_init(&s);
+    ab_nal(&s, 4u, 0x42u, k_payload, sizeof(k_payload));   /* nal_unit_type 2 - partition A */
+    rc_h264_au_init(&au);
+    rc_h264_annexb_init(&it, s.buf, s.len);
+    CHECK(rc_h264_annexb_next(&it, &nal) && nal.type == 2u, "partition A present");
+    CHECK(rc_h264_au_feed(&au, &nal, &out) == RC_H264_AU_ERROR, "data partitioning should be refused");
+
+    /* Corruption reported by the splitter is refused rather than parsed. */
+    ab_init(&s);
+    ab_nal(&s, 4u, 0xe7u, k_real_sps, sizeof(k_real_sps));
+    rc_h264_au_init(&au);
+    rc_h264_annexb_init(&it, s.buf, s.len);
+    CHECK(rc_h264_annexb_next(&it, &nal), "unit present");
+    CHECK(rc_h264_au_feed(&au, &nal, &out) == RC_H264_AU_ERROR,
+          "a set forbidden_zero_bit means the bytes are not trustworthy");
+    CHECK(au.sps_valid[0] == 0u, "and nothing from it should have been stored");
+}
+
 int main(void)
 {
     test_bit_reader_basics();
@@ -404,6 +664,9 @@ int main(void)
     test_real_pps();
     test_rejects_malformed();
     test_slice_headers();
+    test_annexb_splitting();
+    test_access_units();
+    test_access_unit_refusals();
 
     printf("\n%d passed, %d failed\n", g_passed, g_failed);
     return g_failed == 0 ? 0 : 1;
