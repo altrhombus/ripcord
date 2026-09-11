@@ -69,7 +69,15 @@ jobs:
         # -restore, not a bare build. Without it every managed project fails NETSDK1004 looking for a
         # project.assets.json that no step has produced - which is what every App job did until someone
         # read a CI log.
-        run: msbuild Ripcord.slnx -restore -p:Platform=${{ matrix.platform }} -p:Configuration=Release -m
+        #
+        # -p:RipcordNativePlatform is the documented escape hatch for a cross-architecture build, and this
+        # is one: an x64 runner producing ARM64. A solution build hands -p:Platform only to projects that
+        # declare <Platforms>, so the AnyCPU managed consumers (Ripcord.Media, Ripcord.Input) see
+        # Platform=AnyCPU, fall to the last rule in Directory.Build.props - the machine's OSArchitecture -
+        # and look for their native interop under x64\Release while the C++ projects correctly wrote it to
+        # ARM64\Release. The native half built perfectly; the managed half looked in the wrong directory
+        # and failed with a hundred CS0246s naming types that were sitting right there.
+        run: msbuild Ripcord.slnx -restore -p:Platform=${{ matrix.platform }} -p:RipcordNativePlatform=${{ matrix.platform }} -p:Configuration=Release -m
       - name: Native interop landed where the managed projects look for it
         shell: pwsh
         run: |
