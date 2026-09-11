@@ -1,5 +1,6 @@
 using Ripcord.Core.Consoles;
 using Ripcord.Presentation.Accounts;
+using Ripcord.Presentation.Resources;
 
 namespace Ripcord.Presentation.Sessions;
 
@@ -51,7 +52,7 @@ public sealed class CloudFallbackWakeCoordinator(
             return local;
         }
 
-        progress?.Report("Asking PlayStation Network to wake your console…");
+        progress?.Report(Strings.Wake_AskingPsn);
 
         try
         {
