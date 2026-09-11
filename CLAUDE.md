@@ -26,7 +26,10 @@ projects are only buildable via MSBuild/Visual Studio, not plain `dotnet build`)
 
 Both **x64** and **ARM64** are first-class build platforms — an ARM64 machine builds and runs the whole
 stack natively, and either host can cross-build the other. Native interop output is per-architecture, in
-`<ARM64|x64>/<Config>/<Project>/`.
+`<ARM64|x64>/<Config>/<Project>/`. Building the native half for ARM64 needs the **C++ ARM64/ARM64EC build
+tools** component in the Visual Studio Installer; without it the SDK cannot be resolved for that platform
+and the build fails claiming a Windows SDK is missing when it is not. The vcxproj projects check for it
+and say so directly.
 
 ```
 # Build everything (Visual Studio / MSBuild, from a Developer Command Prompt or VS itself).

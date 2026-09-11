@@ -152,4 +152,17 @@
       <ClCompile Include="$(GeneratedFilesDir)module.g.cpp" />
     </ItemGroup>
   </Target>
+  <!--
+    Say which component is missing, rather than letting the SDK say the wrong thing.
+
+    Without the C++ ARM64 build tools installed, MSBuild has no Platforms\ARM64 directory for the
+    toolset, Windows SDK resolution falls back to TargetPlatformVersion 7.0, and CppWinRT reports
+    "The Windows SDK version 10.0.17134.0 (or later) was not found" - which sends you looking for a
+    Windows SDK that is in fact installed and complete. The SDK is not the problem; the platform is.
+  -->
+  <Target Name="RipcordVerifyArm64Toolset" BeforeTargets="CppWinRTVerifyKitVersion;PrepareForBuild"
+          Condition="'$(Platform)' == 'ARM64'">
+    <Error Condition="!Exists('$(VCTargetsPath)Platforms\ARM64')"
+           Text="No C++ ARM64 platform support is installed for this Visual Studio ($(VCTargetsPath)Platforms\ARM64 does not exist), so an ARM64 native build cannot resolve a Windows SDK and will report a misleading MSB8036 about SDK 10.0.17134.0. Install the 'MSVC ... C++ ARM64/ARM64EC build tools' component from the Visual Studio Installer, or build x64 with -p:Platform=x64." />
+  </Target>
 </Project>

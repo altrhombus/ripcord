@@ -403,13 +403,16 @@ public sealed class FocusPilot(
 
         IReadOnlyList<Popup> popups = NavigablePopups(xamlRoot);
 
-        for (int i = popups.Count - 1; i >= 0; i--)
+        // The topmost popup only. A loop here read as "close them all" and could never do that - the
+        // body returned on its first pass, leaving the decrement unreachable. One press dismisses one
+        // layer, which is what Back means everywhere else.
+        if (popups.Count == 0)
         {
-            popups[i].IsOpen = false;
-            return true;
+            return false;
         }
 
-        return false;
+        popups[^1].IsOpen = false;
+        return true;
     }
 
     /// <summary>
