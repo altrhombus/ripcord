@@ -112,9 +112,10 @@ violation without someone noticing by hand. Until it runs once, it is a file, no
 without ever being driven by a person. This is not code — it is an afternoon with a pad, a console and a
 list. It is also where the three bugs above came from, so the expectation should be that it finds more.
 
-**5. Controls that do what they say.** `LargeUiScale` is written by the settings page and read by nothing.
-A switch that does nothing is worse than an absent one, because it costs trust rather than a feature.
-Either wire it or hide it for 1.0 — both are acceptable, doing neither is not.
+**5. Controls that do what they say.** `LargeUiScale` is wired: `UiScale` holds the policy, `AppScale`
+applies it to the WinUI resources at startup, and the switch now says it takes effect on restart. What is
+left is not code — it is one look at a screen. See the accessibility item below for the question that is
+still open, which has to be answered at 150% on a real display and cannot be settled by argument.
 
 **6. Two protocol gaps that could bite a console we have never seen.** The GMAC rotation-window boundary
 and `CurveForVersion` having no answer for non-P521 versions are both correctness against a console that
@@ -160,7 +161,8 @@ English-only. The README is already unusually honest; 1.0 needs it to also be *c
       verified on a machine without the SDK.
 - [ ] The MSIX has been installed and launched from its signed package, not just built - including a pair
       and a stream, because packaged data paths and packaged resource loading are both different.
-- [ ] `LargeUiScale` changes the UI, at 100% and at the OS 150% text scale.
+- [ ] `LargeUiScale` changes the UI, at 100% and at the OS 150% text scale — and at 150% the text is
+      scaled once, not twice. See `UiScale.AppliesOsTextScaleItself`.
 - [ ] The three known defects are fixed, each confirmed on hardware.
 - [ ] The input stack, Stage A steps 8–10 and the two Stage B checks have been driven by a person, and
       whatever that finds is either fixed or listed.
@@ -669,10 +671,31 @@ Both need a console or a capture to settle, hence here rather than in Track D.
   - **No translations ship**, deliberately. An unreviewed machine translation is worse than honest English.
 - [ ] **Accessibility backlog.** Three of these are pre-existing; the redesign made the first more visible
       rather than causing it.
-  - **`RipcordSettings.LargeUiScale` is applied nowhere.** Written by `SettingsPage`, read by nothing
-    (`src/Ripcord.Core/Settings/RipcordSettings.cs:135`). Its stated purpose — "larger text and controls, for
-    handhelds and TV viewing distances" — is exactly the console-at-a-distance case the console grid serves,
-    so the gap shows more now. App-wide scaling, not a one-page fix.
+  - **`LargeUiScale` is applied, but one premise under it is still unverified.** The mechanism landed:
+    `UiScale` (portable, tested) decides the multiplier, `AppScale` writes scaled sizes into the WinUI
+    resources before the first window exists.
+
+    Two things were learned building it that contradict
+    `docs/history/app-reimagining-plan.md`, and the plan is left as written because it is a historical
+    record — the corrections live in `AppScale`'s own documentation, which is where someone changing this
+    will be standing:
+
+    1. **The plan's mechanism cannot work.** It proposed overriding WinUI's font-size keys at app level. The
+       stock text ramp reaches them through `StaticResource`, not `ThemeResource`, and
+       `XamlControlsResources` *defines* those keys — so a reference inside it resolves locally and never
+       escalates to `Application.Resources`. Overriding them changes nothing. Control-internal text is the
+       opposite (`{ThemeResource ControlContentThemeFontSize}`) and is handled the easy way, so there are two
+       mechanisms in `AppScale` because the platform has two behaviours.
+    2. **The premise may be false, and getting it wrong is worse than doing nothing.** The plan asserts WinUI
+       3 desktop ignores `UISettings.TextScaleFactor`, and then says in italics to verify that before
+       building on it. Nobody did, and Microsoft's text-scaling documentation says the opposite. If the
+       platform already applies the OS factor and we multiply by it too, a user at 150% gets a 225% Ripcord —
+       an accessibility setting breaking the layout it was meant to rescue. So the app-level switch is
+       currently a flat 1.3× and the OS factor is not in our arithmetic at all.
+
+    **The open item is one observation:** set Windows text size to 150%, launch Ripcord, see whether its text
+    grows. If it does not, flip `UiScale.AppliesOsTextScaleItself` to `true` — that constant exists to be the
+    only thing that changes. `UiScaleTests` asserts the factor is applied exactly once either way.
   - **Screen-reader pass over the card grid.** Each card composes its own `AutomationProperties.Name`
     (name, family, status, action) because a `GridViewItem` whose content is a panel has none of its own —
     but reading *order* across a wrapping grid is not automatic and has not been checked with Narrator.
