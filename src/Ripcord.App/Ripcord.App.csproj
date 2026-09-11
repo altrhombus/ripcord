@@ -14,7 +14,20 @@
          platform the app advertises but cannot produce is worse than one it omits - it let a mis-resolved
          $(RipcordNativePlatform) look plausible instead of failing loudly. -->
     <Platforms>x64;ARM64</Platforms>
-    <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == ''">win-$([System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture.ToString().ToLowerInvariant())</RuntimeIdentifier>
+    <!-- $(RipcordNativePlatform), not ProcessArchitecture. Directory.Build.props already answers "which
+         architecture is this build for?" by the right ladder - explicit $(Platform) first, then the RID,
+         then the *machine's* OSArchitecture - and carries a long comment on why ProcessArchitecture is the
+         wrong question. This line asked it anyway, one file over, and so reintroduced the exact trap that
+         comment describes.
+
+         It only ever fired on a clean tree. Once obj/ exists the SDK and Windows App SDK props have
+         already set $(RuntimeIdentifier) and the condition here is false - so on any developer machine
+         that had built once, this was invisible. On a fresh checkout it fires, and MSBuild's own bitness
+         becomes the answer: microsoft/setup-msbuild puts the 32-bit MSBuild.exe on PATH by default, which
+         made every CI App job resolve win-x86 for *both* platforms and fail NETSDK1032 against a
+         PlatformTarget of x64. Reproduced by cloning to an empty directory and evaluating this property
+         with Bin\MSBuild.exe rather than Bin\amd64\MSBuild.exe. -->
+    <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == ''">win-$(RipcordNativePlatform.ToLowerInvariant())</RuntimeIdentifier>
     <!-- Restore for every architecture we build, not just the one this build selected. Restore writes a
          single obj/project.assets.json keyed by RID, so without this, switching Platform between x64 and
          ARM64 fails with NETSDK1047 until an explicit restore is run again — which makes the platform
