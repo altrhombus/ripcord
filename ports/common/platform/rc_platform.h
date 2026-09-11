@@ -21,8 +21,12 @@
  *
  * IMPLEMENTATIONS
  *   ports/ripcord-3ds/source/platform/rc_platform_3ds.c    libctru
- *   ports/ripcord-vita/source/platform/rc_platform_vita.c  vitasdk
  *   ports/common/tests/rc_platform_host.c                  host C, for the known-answer tests
+ *
+ * A third is written and sits on the Vita branch rather than in this tree. That matters to read this
+ * header correctly: the socket section below says what vitasdk does because a real build was made
+ * against it, and only the file is elsewhere. Two implementations are visible here; three exist, and
+ * the seam was derived from all three.
  */
 
 #ifndef RC_PLATFORM_H
