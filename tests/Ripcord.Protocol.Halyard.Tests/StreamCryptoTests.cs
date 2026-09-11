@@ -20,7 +20,7 @@ public class StreamCryptoTests
     [Fact]
     public void EcdhSignature_IsHmacSha256OverPubkey_AndVerifies()
     {
-        var (kp, pub) = HalyardStreamKeySchedule.GenerateKeyPair();
+        var (kp, pub) = HalyardStreamKeySchedule.GenerateKeyPair(HalyardStreamCurve.NistP256);
         using (kp)
         {
             Assert.Equal(65, pub.Length);
@@ -38,8 +38,8 @@ public class StreamCryptoTests
     [Fact]
     public void EcdhP256_SharedSecretAgrees_AndPerDirectionKeysDiffer()
     {
-        var (clientKp, clientPub) = HalyardStreamKeySchedule.GenerateKeyPair();
-        var (serverKp, serverPub) = HalyardStreamKeySchedule.GenerateKeyPair();
+        var (clientKp, clientPub) = HalyardStreamKeySchedule.GenerateKeyPair(HalyardStreamCurve.NistP256);
+        var (serverKp, serverPub) = HalyardStreamKeySchedule.GenerateKeyPair(HalyardStreamCurve.NistP256);
         using (clientKp)
         using (serverKp)
         {
@@ -56,13 +56,40 @@ public class StreamCryptoTests
     }
 
     [Theory]
-    [InlineData(9, HalyardStreamCurve.NistP256)]
-    [InlineData(0x0c, HalyardStreamCurve.NistP256)]
-    [InlineData(0x0d, HalyardStreamCurve.NistP521)]
-    [InlineData(17, HalyardStreamCurve.NistP521)] // 0x11 — the version our live capture negotiated
-    [InlineData(0x12, HalyardStreamCurve.NistP256)]
-    public void CurveForVersion_SelectsP521ForVersions0xD_to_0x11(int version, HalyardStreamCurve expected)
-        => Assert.Equal(expected, HalyardStreamKeySchedule.CurveForVersion(version));
+    [InlineData(0x0d)]
+    [InlineData(0x0e)]
+    [InlineData(0x10)]
+    [InlineData(17)] // 0x11 — the version our live capture negotiated
+    public void CurveForVersion_AnswersP521_ForTheVersionsWeHaveObserved(int version)
+        => Assert.Equal(HalyardStreamCurve.NistP521, HalyardStreamKeySchedule.CurveForVersion(version));
+
+    /// <summary>
+    /// Outside the observed range this must refuse rather than answer.
+    ///
+    /// <para>These cases asserted <c>NistP256</c> until 2026-09-11, which made a retracted guess look like
+    /// settled behaviour with a test behind it. The spec withdrew that default explicitly - "the earlier
+    /// 'v1 uses P-256, the default' was a guess" - and only the P-521 range was ever confirmed. A test that
+    /// pins a guess is worse than no test: it converts an open question into a documented answer and stops
+    /// the next person asking.</para>
+    ///
+    /// <para>0x0c and 0x12 are the two that matter, being one step outside each end of the range, which is
+    /// where an off-by-one in the bound would show.</para>
+    /// </summary>
+    [Theory]
+    [InlineData(0)]     // the old default argument, which used to land silently on the guess
+    [InlineData(9)]
+    [InlineData(0x0c)]  // one below the validated range
+    [InlineData(0x12)]  // one above it
+    [InlineData(0xff)]
+    public void CurveForVersion_RefusesAVersionWhoseCurveWeHaveNeverSeen(int version)
+    {
+        var ex = Assert.Throws<NotSupportedException>(
+            () => HalyardStreamKeySchedule.CurveForVersion(version));
+
+        // The message has to name the version: the symptom this replaces is an unexplained session
+        // rejection, so the exception earns its place only by saying what could not be answered.
+        Assert.Contains(version.ToString(), ex.Message);
+    }
 
     [Fact]
     public void EcdhP521_133BytePubkeys_AgreeAndDeriveMatchingKeys()
@@ -132,8 +159,8 @@ public class StreamCryptoTests
     [Fact]
     public void PerPacket_EncryptThenMac_RoundTripsAndDetectsTamper()
     {
-        var (clientKp, clientPub) = HalyardStreamKeySchedule.GenerateKeyPair();
-        var (serverKp, serverPub) = HalyardStreamKeySchedule.GenerateKeyPair();
+        var (clientKp, clientPub) = HalyardStreamKeySchedule.GenerateKeyPair(HalyardStreamCurve.NistP256);
+        var (serverKp, serverPub) = HalyardStreamKeySchedule.GenerateKeyPair(HalyardStreamCurve.NistP256);
         using (clientKp)
         using (serverKp)
         {

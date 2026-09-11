@@ -117,9 +117,11 @@ applies it to the WinUI resources at startup, and the switch now says it takes e
 left is not code — it is one look at a screen. See the accessibility item below for the question that is
 still open, which has to be answered at 150% on a real display and cannot be settled by argument.
 
-**6. Two protocol gaps that could bite a console we have never seen.** The GMAC rotation-window boundary
-and `CurveForVersion` having no answer for non-P521 versions are both correctness against a console that
-negotiates something this project has not observed. Everything else in Track B is an optimisation or an
+**6. Two protocol gaps that could bite a console we have never seen.** ~~The GMAC rotation-window boundary
+and `CurveForVersion` having no answer for non-P521 versions.~~ **Both closed 2026-09-11.** The rotation
+boundary turned out to be already live-validated across 223 windows and was mis-described here as a quiet
+risk when its failure mode is loud; the curve gap is closed by refusing an unobserved version instead of
+guessing at it. Everything else in Track B is an optimisation or an
 open research question and can wait.
 
 **7. An MSIX alongside the zip.** `EnableMsixTooling` is already on and `Package.appxmanifest` already
@@ -167,7 +169,7 @@ English-only. The README is already unusually honest; 1.0 needs it to also be *c
 - [ ] The input stack, Stage A steps 8–10 and the two Stage B checks have been driven by a person, and
       whatever that finds is either fixed or listed.
 - [ ] No user-visible control is inert.
-- [ ] The GMAC window boundary and the non-P521 curve gap are resolved or proven unreachable.
+- [x] The GMAC window boundary and the non-P521 curve gap are resolved — see Track B.
 - [ ] `SECURITY.md` names a supported version rather than "no release yet", and GitHub private
       vulnerability reporting is enabled.
 - [ ] The README states the limits a first-time user meets in their first ten minutes.
@@ -536,19 +538,52 @@ live end-to-end connect.)*
 
 #### Correctness risks — need verification
 Both need a console or a capture to settle, hence here rather than in Track D.
-- [ ] **GMAC rotation window boundary.** `HalyardPacketCrypto.GmacKey` computes `window = keyPos / 45000`.
-      The behaviour at exact multiples of 45000 is exercised for internal self-consistency by **four**
-      boundary tests — a literal grep for `45000` finds three, because `PacketCryptoHotPathTests` reaches the
-      boundary via `HalyardPacketCrypto.RotationWindow` rather than the literal — and **not only at 45000**:
-      the same file also covers `window * 2` and `window * 3`. Still never
-      against a known-answer vector or a live capture at that exact boundary. If the boundary is off by one,
-      the symptom is an intermittent, very hard-to-diagnose auth failure roughly once per rotation window.
-      Pin it from a capture that crosses a rotation boundary.
-- [ ] **ECDH curve gap for non-P521 protocol versions.** `HalyardStreamKeySchedule.CurveForVersion` returns
-      nistP256 for anything outside 0x0d–0x11. We only ever live-validated the **P-521** path (versions
-      0x0d–0x11), so the nistP256 branch is untested against hardware and may simply be wrong. Not urgent (the
-      PS5 path we use is P-521) but it will bite on Phase 2 / older firmware, and it fails as an opaque
-      handshake rejection. Decide: validate it, or throw `NotSupportedException` until we can.
+- [x] **GMAC rotation window boundary — closed 2026-09-11, and it was never the risk this entry described.**
+      The item asked for validation "against a known-answer vector or a live capture at that exact boundary".
+      That validation already existed and predates the entry: `ps5-remoteplay-v1-spec.md` §5.4 records the
+      chained form GMAC-verifying **13670 of 13672 A/V packets across 223 rotation windows**, the two misses
+      being a torn capture tail, and marks it **[V] live-validated 2026-07-22**. Rotation is not an untested
+      path; it is one of the better-evidenced things in the crypto.
+
+      Two corrections to what this entry claimed:
+
+      - **The stated symptom was backwards.** It predicted "an intermittent, very hard-to-diagnose auth
+        failure roughly once per rotation window". Key positions advance fast enough that a real session
+        crosses windows continuously, so a wrong rotation kills the stream seconds in, every time — which is
+        exactly what the superseded form did before it was corrected. A bug here is one of the loudest
+        available, not one of the quietest.
+      - **The committed fixture cannot reach it.** `stream_packet_vectors.json` carries key positions from 9
+        to 720 — all of window 0. So the shipped vectors could never have pinned rotation regardless of how
+        many boundary tests were written against them, and nothing said so.
+
+      What was actually missing was a guard on the *form*, since the real historical bug was folding
+      `aes_key` where the spec folds `key0`. Both are one plausible line, both yield a correct-looking
+      16-byte key, and both satisfy every "does it change at the boundary and hold inside the window" test.
+      `GmacRotationFormTests` now recomputes the spec's formula independently and, separately, requires the
+      superseded form to *disagree* — so a revert has something to trip over rather than moving both sides
+      together.
+- [x] **ECDH curve gap for non-P521 protocol versions — closed 2026-09-11 by refusing rather than guessing.**
+      The decision this entry offered was "validate it, or throw `NotSupportedException` until we can". We
+      cannot validate it — no capture of any other version exists — so `CurveForVersion` now throws, naming
+      the version and saying why.
+
+      The fallback was not a conservative default, it was a retracted guess still in force: the spec says in
+      as many words that *"the earlier 'v1 uses P-256, the default' was a guess"*, then corrects only the
+      range it had confirmed. The guess stayed behind as the `else` branch.
+
+      Removing it found more than expected, because a silent default is used by whatever forgets to think:
+
+      - `GenerateEphemeralPublicKey(int protocolVersion = 0)` defaulted to version 0, which landed straight
+        on the guessed curve. The parameter is now required, at the interface and both implementations.
+      - `GenerateKeyPair(curve = NistP256)` was the same trap one level down, and is now required too.
+      - **Two mock consoles negotiated version 9**, a number no console has been observed using. So the two
+        most end-to-end tests in the suite — full handshake, key agreement, decrypt a server packet — were
+        running entirely on the unvalidated P-256 branch, while the curve real hardware uses went untested
+        there. Both now speak version 17, the one our own capture negotiated.
+
+      P-256 itself is untouched and still selected from a 65-byte peer key by `CurveForPublicKeyLength`,
+      which is evidence rather than inference. To support another version, observe one and widen the
+      validated range — do not reinstate a default.
 
 
 ### Track D — Quality / latency leftovers

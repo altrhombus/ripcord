@@ -21,6 +21,14 @@ namespace Ripcord.Protocol.Halyard.Tests;
 /// </summary>
 public class HalyardTakionStreamTests
 {
+    /// <summary>
+    /// 17 (0x11) — the protocol version our own capture negotiated, and the only range whose ECDH curve has
+    /// been observed. This mock answered 9 until 2026-09-11, which put the full-stack decrypt test on the
+    /// P-256 branch that <c>CurveForVersion</c> used to guess at for unknown versions. The most end-to-end
+    /// test in the suite was therefore covering a curve no console has been seen to use.
+    /// </summary>
+    private const int LiveVersion = 17;
+
     private const uint ServerTag = 0x00002222;
     private static readonly byte[] HandshakeKey = Convert.FromHexString("7a8b9c0d1e2f3344556677889900aabb");
     private static readonly byte[] FramePlaintext = RandomNumberGenerator.GetBytes(200);
@@ -61,7 +69,8 @@ public class HalyardTakionStreamTests
 
     private static async Task RunMockConsoleAsync(UdpChannel server, CancellationToken ct)
     {
-        var (serverKp, serverPub) = HalyardStreamKeySchedule.GenerateKeyPair();
+        // P-521: the curve version 17 selects, i.e. the one a real console brings to this exchange.
+        var (serverKp, serverPub) = HalyardStreamKeySchedule.GenerateKeyPair(HalyardStreamCurve.NistP521);
         using (serverKp)
         {
             uint clientTag = 0;
@@ -112,7 +121,7 @@ public class HalyardTakionStreamTests
                     var versionAck = new ControlMessage
                     {
                         Type = ControlMessage.Types.MessageType.ProtocolVersionAck,
-                        ProtocolVersionAck = new ProtocolVersionAckPayload { ProtocolVersion = 9 },
+                        ProtocolVersionAck = new ProtocolVersionAckPayload { ProtocolVersion = LiveVersion },
                     };
                     await server.SendAsync(
                         TakionDataChunk.Build(clientTag, outboundSeq++, 0, versionAck.ToByteArray()),
@@ -136,7 +145,7 @@ public class HalyardTakionStreamTests
                     Type = ControlMessage.Types.MessageType.SessionReply,
                     SessionReplyPayload = new SessionReplyPayload
                     {
-                        ServerVersion = 9, Token = 1, EncryptedKeyAccepted = true, VersionAccepted = true,
+                        ServerVersion = LiveVersion, Token = 1, EncryptedKeyAccepted = true, VersionAccepted = true,
                         SessionKey = "skey",
                         EcdhPublicKey = ByteString.CopyFrom(serverPub),
                         EcdhSignature = ByteString.CopyFrom(serverSig),

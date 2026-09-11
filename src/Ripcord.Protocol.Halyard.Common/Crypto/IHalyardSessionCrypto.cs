@@ -44,7 +44,7 @@ public interface IHalyardSessionCrypto
     /// <see cref="TryEstablishStream"/>. The curve follows the negotiated <paramref name="protocolVersion"/>
     /// (versions 0x0d–0x11 use P-521 → a 133-byte point; others P-256 → 65 bytes).
     /// </summary>
-    byte[] GenerateEphemeralPublicKey(int protocolVersion = 0);
+    byte[] GenerateEphemeralPublicKey(int protocolVersion);
 
     /// <summary>The <c>ecdhSignature</c> for a public key: HMAC-SHA256(handshakeKey, publicKey).</summary>
     byte[] ComputeEcdhSignature(ReadOnlySpan<byte> handshakeKey, ReadOnlySpan<byte> publicKey);

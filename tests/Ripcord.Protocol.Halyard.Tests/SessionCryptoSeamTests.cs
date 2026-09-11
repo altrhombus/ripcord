@@ -50,6 +50,12 @@ public class SessionCryptoSeamTests
         Assert.Equal(Hex.String(cfg), Hex.String(crypto.CryptStreaminfo(0, enc)));
     }
 
+    /// <summary>
+    /// The protocol version our own capture negotiated, and the only one whose curve has been observed.
+    /// Passed explicitly because <c>CurveForVersion</c> no longer has a fallback to be defaulted into.
+    /// </summary>
+    private const int LiveVersion = 17;
+
     [Fact]
     public void Stream_DownDirection_ServerSealsClientOpens()
     {
@@ -57,8 +63,8 @@ public class SessionCryptoSeamTests
         using var client = new HalyardV1SessionCrypto(SyntheticSecrets());
 
         // Client generates its ephemeral key; the "server" completes ECDH against the client's pubkey.
-        byte[] clientPub = client.GenerateEphemeralPublicKey();
-        var (serverKp, serverPub) = HalyardStreamKeySchedule.GenerateKeyPair();
+        byte[] clientPub = client.GenerateEphemeralPublicKey(LiveVersion);
+        var (serverKp, serverPub) = HalyardStreamKeySchedule.GenerateKeyPair(HalyardStreamCurve.NistP521);
         using (serverKp)
         {
             Assert.True(client.TryEstablishStream(serverPub, handshakeKey));
@@ -132,8 +138,8 @@ public class SessionCryptoSeamTests
     {
         var handshakeKey = RandomBytes(16);
         using var client = new HalyardV1SessionCrypto(SyntheticSecrets());
-        byte[] clientPub = client.GenerateEphemeralPublicKey();
-        var (serverKp, serverPub) = HalyardStreamKeySchedule.GenerateKeyPair();
+        byte[] clientPub = client.GenerateEphemeralPublicKey(LiveVersion);
+        var (serverKp, serverPub) = HalyardStreamKeySchedule.GenerateKeyPair(HalyardStreamCurve.NistP521);
         using (serverKp)
         {
             Assert.True(client.TryEstablishStream(serverPub, handshakeKey));
