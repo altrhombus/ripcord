@@ -721,13 +721,29 @@ public class PublishedTreeSweepTests
     /// Code that ships, as opposed to code that tests it. The distinction carries real weight: a hex
     /// constant under <c>src/</c> is something every user runs, while one in a test file is almost always a
     /// published NIST vector or a captured frame the parser is checked against. Ports keep their tests
-    /// beside their source, hence the <c>/source/</c> segment rather than a prefix.
+    /// beside their source, so the ports clause names a segment rather than a prefix.
+    ///
+    /// <para><b>It names the test segment, not the source one, and the difference is the whole point.</b>
+    /// This clause read <c>Contains("/source/")</c> until the portable core was extracted to
+    /// <c>ports/common/</c> — whose files are <c>crypto/</c>, <c>takion/</c>, <c>stream/</c>,
+    /// <c>session/</c>, with no <c>/source/</c> segment anywhere. Ninety files, the crypto and the key
+    /// schedule and the transport among them, silently reclassified as test code: the strict
+    /// <see cref="CodeHexLiteral"/> rule stopped applying to them, <see cref="CodeBase64Literal"/> stopped
+    /// running on them entirely, and nothing said so. What surfaced it was
+    /// <see cref="EveryAllowlistEntry_SuppressesSomethingReal"/> reporting the base64-alphabet entry as
+    /// inert — the entry had been written for <c>rc_base64.c</c>, which had simply moved.</para>
+    ///
+    /// <para>A positive marker fails open: code in a layout the rule did not anticipate gets the weaker
+    /// scope, and gets it quietly. A negative one fails closed — anything new under <c>ports/</c> is
+    /// product code until a <c>tests</c> segment says otherwise, so the next port to invent a directory
+    /// layout is over-covered rather than under-covered. For a guard, that is the direction to be wrong in.
+    /// <see cref="ProductCodeClassification"/> pins both halves.</para>
     /// </summary>
     private static bool IsProductCode(string relative) =>
         relative.StartsWith("src/", StringComparison.Ordinal)
         || relative.StartsWith("tools/", StringComparison.Ordinal)
         || (relative.StartsWith("ports/", StringComparison.Ordinal)
-            && relative.Contains("/source/", StringComparison.Ordinal));
+            && !relative.Split('/').Contains("tests", StringComparer.Ordinal));
 
     private static IEnumerable<string> CommittedText()
     {
@@ -1524,6 +1540,30 @@ public class PublishedTreeSweepTests
                 : $"the sweep must tolerate \"{input}\" in {context} — {why}\n  reported: "
                   + string.Join(", ", hits));
     }
+
+    /// <summary>
+    /// Which paths get the strict scope. <see cref="IsProductCode"/> decides which of two hex rules applies
+    /// and whether <see cref="CodeBase64Literal"/> runs at all, so a path drifting out of it weakens the
+    /// detector everywhere in that directory at once — and does it silently, which is how the extraction of
+    /// <c>ports/common/</c> demoted the whole portable core in a refactor that touched no test.
+    ///
+    /// <para>The rows that matter are the last two. A directory layout nobody has invented yet must land on
+    /// the strict side by default, because the alternative is a guard that quietly stops covering new code.
+    /// </para>
+    /// </summary>
+    [Theory]
+    [InlineData("src/Ripcord.Protocol.Halyard.Common/Crypto/V1/HalyardV1SessionCrypto.cs", true)]
+    [InlineData("tools/Ripcord.ProtocolLab/Program.cs", true)]
+    [InlineData("tests/Ripcord.Protocol.Halyard.Tests/LiveControlVectorTests.cs", false)]
+    [InlineData("ports/ripcord-3ds/source/util/rc_base64.c", true)]
+    [InlineData("ports/ripcord-3ds/tests/vector_runner.c", false)]
+    [InlineData("ports/common/crypto/rc_aes.c", true)]
+    [InlineData("ports/common/util/rc_base64.c", true)]
+    [InlineData("ports/common/tests/fec_test.c", false)]
+    [InlineData("ports/a-port-that-does-not-exist-yet/media/decoder.c", true)]
+    [InlineData("ports/a-port-that-does-not-exist-yet/tests/decoder_test.c", false)]
+    public void ProductCodeClassification(string relative, bool expected)
+        => Assert.Equal(expected, IsProductCode(relative));
 
     /// <summary>
     /// A committed constant the prose-only scope cannot see, checked by the hash of its value. The two data
