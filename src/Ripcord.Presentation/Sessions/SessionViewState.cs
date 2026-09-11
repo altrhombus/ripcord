@@ -1,4 +1,5 @@
 using Ripcord.Core.Sessions;
+using Ripcord.Presentation.Resources;
 
 namespace Ripcord.Presentation.Sessions;
 
@@ -60,12 +61,12 @@ public sealed record SessionViewState(
 {
     public static SessionViewState Initial { get; } = new(
         StatusVisible: true,
-        StatusHeadline: "Starting…",
+        StatusHeadline: Strings.Session_Starting,
         StatusDetail: string.Empty,
         StatusBusy: true,
         StatusActionsVisible: false,
         IsStreamLive: false,
-        ConnectedControllers: "none attached",
+        ConnectedControllers: Strings.Session_NoControllers,
         Diagnostics: SessionDiagnosticsState.Empty);
 }
 
@@ -149,7 +150,7 @@ public sealed record SessionDiagnosticsState(
         Decode: string.Empty,
         Queues: string.Empty,
         Path: string.Empty,
-        Health: "Not connected yet",
-        HealthTip: "Waiting for the session to start.",
+        Health: Strings.Session_NotConnectedYet,
+        HealthTip: Strings.Session_WaitingToStart,
         HealthLevel: StreamHealthLevel.Info);
 }

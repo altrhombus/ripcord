@@ -508,24 +508,25 @@ Both need a console or a capture to settle, hence here rather than in Track D.
       working directional focus. What still cannot be reached by pad is the small stuff: the rename dialog,
       the remove confirmation, and `LoginPinDialog`. Smaller and more uniform than it was, which makes the
       real fix better scoped.
-- [ ] **Localization — the machinery exists; the strings have not moved yet.** `Ripcord.Presentation` has a
-      `.resx` catalogue with build-time generated accessors (`System.Resources` only, so the portability
-      guarantee holds), four guards in `LocalizationTests`, and `ConsoleFamily` migrated as the worked
-      example. What remains is the bulk move, and it is judgement work rather than a script — one
-      attempt at automating it produced mangled keys, a corrupted value and a broken build, because it
-      could not tell three categories apart:
-  - **~90 strings still inline in `Ripcord.Presentation`**, concentrated in `SettingsViewModel` (35),
-    `AddConsoleFlow` (30) and `SessionViewModel` (17).
-  - **~171 literals still in XAML**, needing `Strings/en-US/Resources.resw` and an `x:Uid` per element.
-    Not started; the `.resw` half is the Windows App SDK's own system and is separate from the `.resx`
-    above by necessity, not by accident.
-  - **What must NOT move**, now written into `LocalizationTests`: exception messages for programmer error
-    (they are read in bug reports), the diagnostics dump (its audience is the maintainer), and protocol or
-    product identifiers. The trap the earlier note called out is real and the automation walked into it —
-    the *same token* is both: `"Ps5"` as an on-wire `host-type` must never share a resource with `"PS5"`
-    as a card caption.
-  - **No second language ships**, deliberately. Machine-translated UI that nobody can review is worse than
-    honest English; the catalogue is the thing that lets a speaker contribute one.
+- [ ] **Localization — the portable layer is done; XAML is not.** `Ripcord.Presentation` carries its text in
+      a `.resx` catalogue (108 entries, each with a translator comment), reached through build-time
+      generated accessors, guarded by four tests in `LocalizationTests`. Verified cross-platform: the layer
+      builds for `linux-x64` and `osx-arm64`, satellite assemblies are produced for both, and a culture
+      switch resolves them. Every string the policy says to translate has moved.
+  - **~171 literals remain in XAML**, needing `Strings/en-US/Resources.resw` and an `x:Uid` per element.
+    This is the Windows App SDK's own resource system and is separate from the `.resx` by necessity — MRT
+    cannot be referenced from a project that must stay linkable by a macOS or Linux front end.
+  - **The question to ask per XAML string is not "what is its `x:Uid`" but "should this be in the portable
+    layer instead".** Copy that belongs to `Ripcord.Presentation` is translated once and inherited by every
+    front end; copy left in XAML is Windows-only forever. Doing the mechanical thing would quietly strand a
+    chunk of the product's text.
+  - **Deliberately not translated**, and enforced by the guard's docstring: exception messages for
+    programmer error (read in bug reports), the diagnostics report and the F3 overlay (their audience is
+    whoever is helping you), and protocol or product identifiers. The old warning here was right and an
+    automated pass walked straight into it — `"Ps5"` as an on-wire `host-type` must never share an entry
+    with `"PS5"` as a card caption.
+  - **No second language ships**, deliberately. An unreviewed machine translation is worse than honest
+    English; the catalogue is what lets a speaker contribute a real one, and `CONTRIBUTING.md` says how.
 - [ ] **Accessibility backlog.** Three of these are pre-existing; the redesign made the first more visible
       rather than causing it.
   - **`RipcordSettings.LargeUiScale` is applied nowhere.** Written by `SettingsPage`, read by nothing

@@ -1,6 +1,7 @@
 using Ripcord.Core.Consoles;
 using Ripcord.Presentation.Consoles;
 using Ripcord.Presentation.Threading;
+using Ripcord.Presentation.Resources;
 
 namespace Ripcord.Presentation.Accounts;
 
@@ -103,7 +104,7 @@ public sealed class AccountViewModel : ObservableState<AccountViewState>
             {
                 // A failed restore is not a failed sign-in: the user did nothing and there is nothing for them
                 // to fix, so it reports as signed out with the reason available rather than as an error state.
-                Settle(null, $"Couldn't restore your session: {ex.Message}");
+                Settle(null, string.Format(Strings.Account_RestoreFailed, ex.Message));
             }
         }
     }
@@ -161,7 +162,7 @@ public sealed class AccountViewModel : ObservableState<AccountViewState>
         {
             if (generation == _generation)
             {
-                Settle(null, $"Sign-in didn't complete: {ex.Message}");
+                Settle(null, string.Format(Strings.Account_SignInIncomplete, ex.Message));
             }
         }
     }
@@ -205,7 +206,7 @@ public sealed class AccountViewModel : ObservableState<AccountViewState>
         {
             if (generation == _generation)
             {
-                Mutate(() => _error = $"Couldn't load your consoles: {ex.Message}");
+                Mutate(() => _error = string.Format(Strings.Account_LoadConsolesFailed, ex.Message));
             }
         }
     }
@@ -292,26 +293,25 @@ public sealed class AccountViewModel : ObservableState<AccountViewState>
         (string heading, string detail, StatusTone tone) = step switch
         {
             AccountStep.Unavailable => (
-                "Account sign-in isn't available in this build",
-                "Ripcord ships without an account credential, so it can't reach the PlayStation Network. "
-                + "Playing over your local network doesn't need one — pair a console and it will work.",
+                Strings.Account_SignInUnavailableTitle,
+                Strings.Account_SignInUnavailableBody,
                 StatusTone.Neutral),
 
             AccountStep.Working => (
-                "Signing in…",
-                "Checking your account with PlayStation Network.",
+                Strings.Account_SigningIn,
+                Strings.Account_CheckingWithPsn,
                 StatusTone.Unknown),
 
             AccountStep.SignedIn => (
-                _identity!.DisplayName.Length > 0 ? _identity.DisplayName : "Signed in",
+                _identity!.DisplayName.Length > 0 ? _identity.DisplayName : Strings.Account_SignedIn,
                 _identity.Region.Length > 0
-                    ? $"Signed in — {_identity.Region}. Your consoles are listed below, wherever they are."
-                    : "Signed in. Your consoles are listed below, wherever they are.",
+                    ? string.Format(Strings.Account_SignedInWithRegion, _identity.Region)
+                    : Strings.Account_SignedInNoRegion,
                 StatusTone.Positive),
 
             _ => (
-                "Not signed in",
-                "Sign in to pair without typing your account ID, and to see consoles that aren't on this network.",
+                Strings.Account_NotSignedIn,
+                Strings.Account_SignInPitch,
                 StatusTone.Neutral),
         };
 
