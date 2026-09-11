@@ -332,13 +332,17 @@ public class PublishedTreeSweepTests
     ///
     /// <para>If one fails, do not re-pin reflexively: open the file, confirm against CLAUDE.md's inventory
     /// that nothing per-console has appeared, and only then update the hash.</para>
+    ///
+    /// <para>Hashed with line endings normalised to LF, which is how git stores them. The first version of
+    /// this hashed the bytes on disk and so pinned the <em>checkout</em> rather than the content — green on
+    /// Windows, red on every Linux and macOS runner, for weeks, because nobody had looked at a CI result.</para>
     /// </summary>
     private static readonly Dictionary<string, string> PinnedDataFiles = new(StringComparer.OrdinalIgnoreCase)
     {
         ["src/Ripcord.Protocol.Halyard/Data/halyard-v1-constants.json"] =
-            "04bad8c5ba3307f5676632e0e096aae8793b4c628a18b05afe4809f0186771f8",
+            "97a0f5fe80c7f63d4d950776c49d15cee6a259b51958d4ac324fff1ec55349ff",
         ["src/Ripcord.Cloud.Halyard/Data/halyard-oauth-client.json"] =
-            "eade485e6c257532339d1d76a3e55b24db03622d14dc37bee19a4aac5bac2fe0",
+            "7a7426e4c114753f934e31c83359a9151d059e0167e359987d19a8d264f6e9f0",
     };
 
     /// <summary>
@@ -1005,7 +1009,13 @@ public class PublishedTreeSweepTests
             string path = Path.Combine(root, rel.Replace('/', Path.DirectorySeparatorChar));
             Assert.True(File.Exists(path), $"pinned file missing: {rel}");
 
-            string actual = Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path))).ToLowerInvariant();
+            // Line endings normalised before hashing. Hashing the bytes as they sit on disk pinned the
+            // checkout rather than the content: `.gitattributes` stores these LF and checks them out
+            // native, so the same unmodified file hashed one way on Windows and another on Linux. The
+            // pin passed on the author's machine and failed every CI run on Linux and macOS for weeks.
+            // LF is the stored form, so the LF hash is the repository's content, whatever a checkout does.
+            byte[] bytes = File.ReadAllBytes(path);
+            string actual = Convert.ToHexString(SHA256.HashData(Normalised(bytes))).ToLowerInvariant();
             if (!actual.Equals(expected, StringComparison.OrdinalIgnoreCase))
             {
                 drifted.Add($"{rel}\n      expected {expected}\n      actual   {actual}");
@@ -1371,6 +1381,19 @@ public class PublishedTreeSweepTests
             + "not. Leaving it unclassified means it is neither swept nor knowingly skipped, which is how "
             + "fourteen product-code files stayed unread for eight rounds:\n  "
             + string.Join("\n  ", unclassified));
+    }
+
+    /// <summary>CRLF to LF, so a hash describes content rather than whichever checkout produced it.</summary>
+    private static byte[] Normalised(byte[] bytes)
+    {
+        List<byte> outBytes = new(bytes.Length);
+        for (int i = 0; i < bytes.Length; i++)
+        {
+            if (bytes[i] == 0x0d && i + 1 < bytes.Length && bytes[i + 1] == 0x0a) continue;
+            outBytes.Add(bytes[i]);
+        }
+
+        return [.. outBytes];
     }
 
     /// <summary>A file is binary if its first 8 KB contain a NUL. Cheap, and content cannot be renamed.</summary>
