@@ -53,7 +53,7 @@ public sealed class HalyardV1SessionCrypto : IHalyardSessionCrypto, IDisposable
 
     // ---- stream key agreement ----
 
-    public byte[] GenerateEphemeralPublicKey(int protocolVersion = 0)
+    public byte[] GenerateEphemeralPublicKey(int protocolVersion)
     {
         _ephemeral?.Dispose();
         var curve = HalyardStreamKeySchedule.CurveForVersion(protocolVersion);
