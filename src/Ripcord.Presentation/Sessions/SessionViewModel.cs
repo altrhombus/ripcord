@@ -3,6 +3,7 @@ using Ripcord.Core.Sessions;
 using Ripcord.Core.Settings;
 using Ripcord.Diagnostics;
 using Ripcord.Presentation.Threading;
+using Ripcord.Presentation.Resources;
 
 namespace Ripcord.Presentation.Sessions;
 
@@ -39,7 +40,7 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
 
     // ---- overlay ----
     private bool _statusVisible = true;
-    private string _statusHeadline = "Starting…";
+    private string _statusHeadline = Strings.Session_Starting;
     private string _statusDetail = string.Empty;
     private bool _statusBusy = true;
     private bool _statusTerminal;
@@ -172,13 +173,15 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
                 break;
 
             case SessionLifecycle.Degraded:
-                ShowStatus("Reconnecting the video…", status.Detail, terminal: false);
+                ShowStatus(Strings.Session_ReconnectingVideo, status.Detail, terminal: false);
                 break;
 
             case SessionLifecycle.Connecting:
             case SessionLifecycle.Reconnecting:
                 ShowStatus(
-                    status.Lifecycle == SessionLifecycle.Connecting ? "Connecting…" : "Reconnecting…",
+                    status.Lifecycle == SessionLifecycle.Connecting
+                        ? Strings.Session_Connecting
+                        : Strings.Session_Reconnecting,
                     status.Detail,
                     terminal: false);
                 break;
@@ -188,7 +191,7 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
                 {
                     _isStreamLive = false;
                     _statusVisible = true;
-                    _statusHeadline = "Couldn't connect";
+                    _statusHeadline = Strings.Session_CouldNotConnect;
                     _statusDetail = status.Detail ?? string.Empty;
                     _statusBusy = false;
                     _statusTerminal = true;
@@ -492,7 +495,7 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
         {
             // The assessor's inputs are all zero without a session, and "frame rate is below target" is a
             // misleading thing to say about a stream that has not started.
-            return ("Not connected yet", "Waiting for the session to start.", StreamHealthLevel.Info);
+            return (Strings.Session_NotConnectedYet, Strings.Session_WaitingToStart, StreamHealthLevel.Info);
         }
 
         SessionStatistics stats = telemetry.Statistics;
@@ -547,7 +550,7 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
         // contributing is exactly the thing that is otherwise invisible.
         ConnectedControllers: _controllers.Count switch
         {
-            0 => "none attached",
+            0 => Strings.Session_NoControllers,
             1 => _controllers.Values.First(),
             _ => string.Join("\n", _controllers.Values.Order()),
         },

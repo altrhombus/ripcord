@@ -1,4 +1,5 @@
 using Ripcord.Core.Discovery;
+using Ripcord.Presentation.Resources;
 
 namespace Ripcord.Presentation.Consoles;
 
@@ -46,7 +47,7 @@ public sealed record DiscoveredConsoleCard(
 
         // A resting console is a perfectly good thing to pair with, so this is a statement of fact rather than a
         // warning — but it is worth saying, because the console has to be awake to show a link code.
-        string statusLabel = console.IsAwake ? "Ready" : "In rest mode";
+        string statusLabel = console.IsAwake ? Strings.Discovered_Ready : Strings.Discovered_InRestMode;
 
         return new DiscoveredConsoleCard(
             Console: console,
