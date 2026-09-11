@@ -52,7 +52,7 @@
             Spacing="24"
             XYFocusDownNavigationStrategy="RectilinearDistance"
             XYFocusUpNavigationStrategy="RectilinearDistance">
-            <TextBlock Style="{StaticResource TitleTextBlockStyle}" Text="Settings" />
+            <TextBlock x:Uid="SettingsPage_Settings" Style="{StaticResource TitleTextBlockStyle}" />
 
             <!--
                 ============ Account ============
@@ -61,17 +61,17 @@
                 stops asking for an account ID and a console that is not on this network can still be woken.
             -->
             <StackPanel Spacing="4">
-                <TextBlock Style="{StaticResource RipcordSectionHeaderStyle}" Text="Account" />
+                <TextBlock x:Uid="SettingsPage_Account" Style="{StaticResource RipcordSectionHeaderStyle}" />
 
-                <tk:SettingsCard x:Name="AccountCard" Header="PlayStation Network">
+                <tk:SettingsCard x:Uid="SettingsPage_PlaystationNetwork" x:Name="AccountCard">
                     <tk:SettingsCard.HeaderIcon>
                         <FontIcon Glyph="&#xE77B;" />
                     </tk:SettingsCard.HeaderIcon>
 
                     <StackPanel Orientation="Horizontal" Spacing="8">
                         <ProgressRing x:Name="AccountBusy" Width="20" Height="20" IsActive="False" />
-                        <Button x:Name="SignInButton" Content="Sign in" />
-                        <Button x:Name="SignOutButton" Content="Sign out" Visibility="Collapsed" />
+                        <Button x:Uid="SettingsPage_SignIn" x:Name="SignInButton" />
+                        <Button x:Uid="SettingsPage_SignOut" x:Name="SignOutButton" Visibility="Collapsed" />
                     </StackPanel>
                 </tk:SettingsCard>
 
@@ -85,8 +85,7 @@
                 <tk:SettingsExpander
                     x:Name="CloudConsolesExpander"
                     Visibility="Collapsed"
-                    Header="Consoles on this account"
-                    Description="Reported by PlayStation Network, including consoles that aren't on this network.">
+                    x:Uid="SettingsPage_ConsolesAccount">
                     <tk:SettingsExpander.HeaderIcon>
                         <FontIcon Glyph="&#xE7F4;" />
                     </tk:SettingsExpander.HeaderIcon>
@@ -95,15 +94,14 @@
 
             <!--  ============ Video ============  -->
             <StackPanel Spacing="4">
-                <TextBlock Style="{StaticResource RipcordSectionHeaderStyle}" Text="Video" />
+                <TextBlock x:Uid="SettingsPage_Video" Style="{StaticResource RipcordSectionHeaderStyle}" />
 
                 <tk:SettingsCard
-                    Description="720p60 is the verified-good default. Higher settings need a strong network."
-                    Header="Resolution and frame rate">
+                    x:Uid="SettingsPage_PVerifiedGoodDefault">
                     <ComboBox
                         x:Name="ResolutionCombo"
                         MinWidth="180"
-                        AutomationProperties.Name="Resolution and frame rate" />
+                        x:Uid="SettingsPage_ResolutionFrameRate" />
                 </tk:SettingsCard>
 
                 <!--
@@ -111,8 +109,7 @@
                     because a number that moves needs to be next to the thing moving it.
                 -->
                 <tk:SettingsCard
-                    Description="The starting rate. Ripcord lowers it automatically if the network can't keep up."
-                    Header="Maximum bitrate">
+                    x:Uid="SettingsPage_StartingRateRipcordLowers">
                     <StackPanel
                         Orientation="Horizontal"
                         Spacing="12"
@@ -121,7 +118,7 @@
                             x:Name="BitrateSlider"
                             MinWidth="220"
                             VerticalAlignment="Center"
-                            AutomationProperties.Name="Maximum bitrate in megabits per second"
+                            x:Uid="SettingsPage_MaximumBitrateMegabitsPer"
                             Maximum="40"
                             Minimum="2"
                             StepFrequency="1" />
@@ -134,51 +131,48 @@
                 </tk:SettingsCard>
 
                 <tk:SettingsCard
-                    Description="Lower the bitrate on packet loss, and on battery or when the device gets hot."
-                    Header="Adapt quality automatically">
+                    x:Uid="SettingsPage_LowerBitratePacketLoss">
                     <ToggleSwitch
                         x:Name="AdaptiveToggle"
-                        AutomationProperties.Name="Adapt quality automatically" />
+                        x:Uid="SettingsPage_AdaptQualityAutomatically" />
                 </tk:SettingsCard>
 
-                <tk:SettingsCard Description="How the stream is scaled up to fill the window." Header="Image scaling">
+                <tk:SettingsCard x:Uid="SettingsPage_HowStreamScaledUp">
                     <ComboBox
                         x:Name="UpscaleCombo"
                         MinWidth="180"
-                        AutomationProperties.Name="Image scaling" />
+                        x:Uid="SettingsPage_ImageScaling" />
                 </tk:SettingsCard>
 
                 <tk:SettingsCard
-                    Description="Sends the measured delay and packet loss to the console, and asks it for the bitrate Ripcord thinks your connection can carry. Off by default because it is not yet verified against real hardware — turn it on and watch the diagnostics graph to see whether it helps."
-                    Header="Tell the console about your connection (experimental)">
+                    x:Uid="SettingsPage_SendsMeasuredDelayPacket">
                     <ToggleSwitch
                         x:Name="ConnectionQualityToggle"
-                        AutomationProperties.Name="Tell the console about your connection" />
+                        x:Uid="SettingsPage_TellConsoleAboutConnection" />
                 </tk:SettingsCard>
             </StackPanel>
 
             <!--  ============ Graphics device ============  -->
             <StackPanel Spacing="4">
-                <TextBlock Style="{StaticResource RipcordSectionHeaderStyle}" Text="Graphics device" />
+                <TextBlock x:Uid="SettingsPage_GraphicsDevice" Style="{StaticResource RipcordSectionHeaderStyle}" />
 
                 <tk:SettingsCard
-                    Description="Automatic picks the GPU driving your display, which is usually both the fastest and the most efficient choice for streaming. Takes effect on the next connection."
-                    Header="Which GPU to use">
+                    x:Uid="SettingsPage_AutomaticPicksGpuDriving">
                     <ComboBox
                         x:Name="GpuCombo"
                         MinWidth="180"
-                        AutomationProperties.Name="Which GPU to use" />
+                        x:Uid="SettingsPage_WhichGpuUse" />
                 </tk:SettingsCard>
 
                 <!--  Shown only for the "specific GPU" preference — see SettingsViewModel.AdapterPickerVisible.  -->
                 <tk:SettingsCard
                     x:Name="AdapterCard"
-                    Header="Specific adapter"
+                    x:Uid="SettingsPage_SpecificAdapter"
                     Visibility="Collapsed">
                     <ComboBox
                         x:Name="AdapterCombo"
                         MinWidth="280"
-                        AutomationProperties.Name="Specific graphics adapter" />
+                        x:Uid="SettingsPage_SpecificGraphicsAdapter" />
                 </tk:SettingsCard>
 
                 <InfoBar
@@ -192,11 +186,11 @@
                     selected into a session that then fails to start. The Description is written from the
                     view-model, because what it says depends on that answer.
                 -->
-                <tk:SettingsCard x:Name="CodecCard" Header="Video codec">
+                <tk:SettingsCard x:Uid="SettingsPage_VideoCodec" x:Name="CodecCard">
                     <ComboBox
                         x:Name="CodecCombo"
                         MinWidth="180"
-                        AutomationProperties.Name="Video codec" />
+                        x:Uid="SettingsPage_VideoCodec" />
                 </tk:SettingsCard>
 
                 <!--
@@ -209,8 +203,8 @@
                     HDR cannot be known until a session runs, and a cross for "unknown" reads as a fault the
                     user should go and fix.
                 -->
-                <tk:SettingsExpander Header="Request HDR">
-                    <ToggleSwitch x:Name="HdrToggle" AutomationProperties.Name="Request HDR" />
+                <tk:SettingsExpander x:Uid="SettingsPage_RequestHdr">
+                    <ToggleSwitch x:Uid="SettingsPage_RequestHdr2" x:Name="HdrToggle" />
 
                     <tk:SettingsExpander.Items>
                         <tk:SettingsCard HorizontalContentAlignment="Left" ContentAlignment="Left">
@@ -229,37 +223,35 @@
 
             <!--  ============ Controls ============  -->
             <StackPanel Spacing="4">
-                <TextBlock Style="{StaticResource RipcordSectionHeaderStyle}" Text="Controls" />
+                <TextBlock x:Uid="SettingsPage_Controls" Style="{StaticResource RipcordSectionHeaderStyle}" />
 
                 <!--
                     Keyboard input is off by default: with a pad connected there is no reason for stray typing to
                     reach the game, and the default layout overlaps ordinary window shortcuts.
                 -->
                 <tk:SettingsCard
-                    Description="Off by default — with a pad connected, stray typing has no reason to reach the game."
-                    Header="Send keyboard input to the console">
+                    x:Uid="SettingsPage_OffByDefaultPad">
                     <ToggleSwitch
                         x:Name="KeyboardToggle"
-                        AutomationProperties.Name="Send keyboard input to the console" />
+                        x:Uid="SettingsPage_SendKeyboardInputConsole" />
                 </tk:SettingsCard>
 
-                <tk:SettingsCard x:Name="KeyBindingsCard" Header="Keys and gamepad mapping">
+                <tk:SettingsCard x:Uid="SettingsPage_KeysGamepadMapping" x:Name="KeyBindingsCard">
                     <Button
                         x:Name="KeyBindingsButton"
                         Click="KeyBindings_Click"
-                        Content="Configure…" />
+                        x:Uid="SettingsPage_Configure" />
                 </tk:SettingsCard>
 
-                <tk:SettingsCard x:Name="ExitGestureCard" Header="Leave a stream with the controller">
+                <tk:SettingsCard x:Uid="SettingsPage_LeaveStreamController" x:Name="ExitGestureCard">
                     <ComboBox
                         x:Name="ExitGestureCombo"
                         MinWidth="180"
-                        AutomationProperties.Name="Leave a stream with the controller" />
+                        x:Uid="SettingsPage_LeaveStreamController" />
                 </tk:SettingsCard>
 
                 <tk:SettingsCard
-                    Description="How far you must push the stick to move between items in Ripcord's own menus."
-                    Header="Menu stick sensitivity">
+                    x:Uid="SettingsPage_HowFarMustPush">
                     <StackPanel
                         Orientation="Horizontal"
                         Spacing="12"
@@ -268,7 +260,7 @@
                             x:Name="DeadzoneSlider"
                             MinWidth="220"
                             VerticalAlignment="Center"
-                            AutomationProperties.Name="Menu stick sensitivity"
+                            x:Uid="SettingsPage_MenuStickSensitivity"
                             Maximum="0.9"
                             Minimum="0.1"
                             StepFrequency="0.05" />
@@ -283,52 +275,47 @@
 
             <!--  ============ Display ============  -->
             <StackPanel Spacing="4">
-                <TextBlock Style="{StaticResource RipcordSectionHeaderStyle}" Text="Display" />
+                <TextBlock x:Uid="SettingsPage_Display" Style="{StaticResource RipcordSectionHeaderStyle}" />
 
                 <tk:SettingsCard
-                    Description="Hides the title bar and navigation while you play."
-                    Header="Full screen when a stream starts">
+                    x:Uid="SettingsPage_HidesTitleBarNavigation">
                     <ToggleSwitch
                         x:Name="FullScreenToggle"
-                        AutomationProperties.Name="Full screen when a stream starts" />
+                        x:Uid="SettingsPage_FullScreenWhenStream" />
                 </tk:SettingsCard>
 
                 <tk:SettingsCard
-                    Description="Confirms when you end a stream, and lets you choose rest mode for that disconnect. Off leaves instantly, using the default below."
-                    Header="Ask before disconnecting">
+                    x:Uid="SettingsPage_ConfirmsWhenEndStream">
                     <ToggleSwitch
                         x:Name="ConfirmOnDisconnectToggle"
-                        AutomationProperties.Name="Ask before disconnecting" />
+                        x:Uid="SettingsPage_AskBeforeDisconnecting" />
                 </tk:SettingsCard>
 
                 <tk:SettingsCard
-                    Description="The default answer for rest mode: puts the console into rest when you end the stream, instead of leaving it awake."
-                    Header="Rest console when I disconnect">
+                    x:Uid="SettingsPage_DefaultAnswerRestMode">
                     <ToggleSwitch
                         x:Name="RestOnDisconnectToggle"
-                        AutomationProperties.Name="Rest console when I disconnect" />
+                        x:Uid="SettingsPage_RestConsoleWhenI" />
                 </tk:SettingsCard>
 
                 <tk:SettingsCard
-                    Description="Frame rate, latency and packet loss over the video. You can also toggle this with F3 while streaming."
-                    Header="Show connection diagnostics">
+                    x:Uid="SettingsPage_FrameRateLatencyPacket">
                     <ToggleSwitch
                         x:Name="DiagnosticsToggle"
-                        AutomationProperties.Name="Show connection diagnostics" />
+                        x:Uid="SettingsPage_ShowConnectionDiagnostics" />
                 </tk:SettingsCard>
 
                 <tk:SettingsCard
-                    Description="Easier to read on a handheld or from across the room."
-                    Header="Larger text and controls">
+                    x:Uid="SettingsPage_EasierReadHandheldFrom">
                     <ToggleSwitch
                         x:Name="LargeUiToggle"
-                        AutomationProperties.Name="Larger text and controls" />
+                        x:Uid="SettingsPage_LargerTextControls" />
                 </tk:SettingsCard>
             </StackPanel>
 
             <!--  ============ Saved consoles ============  -->
             <StackPanel Spacing="4">
-                <TextBlock Style="{StaticResource RipcordSectionHeaderStyle}" Text="Saved consoles" />
+                <TextBlock x:Uid="SettingsPage_SavedConsoles" Style="{StaticResource RipcordSectionHeaderStyle}" />
 
                 <InfoBar
                     x:Name="CredentialProtectionBar"

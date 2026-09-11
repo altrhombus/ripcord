@@ -205,6 +205,10 @@ public class PublishedTreeSweepTests
 
     private static readonly Regex PureHex = new("^[0-9a-fA-F]+$", RegexOptions.Compiled);
 
+    /// <summary>Matches when the text immediately before a literal is a XAML identifier attribute.</summary>
+    private static readonly Regex XamlIdentifierAttribute =
+        new(@"x:(Uid|Name|Key)=$", RegexOptions.Compiled);
+
     /// <summary>
     /// The declaration-shaped rule, kept for test code only. It reports four sites there: three allowlisted
     /// with their reasons and one suppressed as filler. (An earlier version of this comment said five sites
@@ -365,6 +369,13 @@ public class PublishedTreeSweepTests
         /// of sixteen bytes or more is swept here, in any syntax, because this is the corpus a user runs.
         /// </summary>
         ProductCode,
+
+        /// <summary>
+        /// A XAML <c>x:Uid</c>. The language allows only an identifier there, so it cannot carry data —
+        /// but a descriptive uid is long and drawn entirely from the base64 alphabet, which is why this
+        /// is a row rather than something a reader has to infer from the absence of a finding.
+        /// </summary>
+        XamlIdentifier,
     }
 
     /// <summary>
@@ -532,6 +543,12 @@ public class PublishedTreeSweepTests
         // that corpus is swept without exception. This is the gap, and it is chosen.
         { "a3f19c4e0d86a7b0430d8cdb78070b4c55a2e6f81b9d3c07a4e5f60918273645", LineContext.Code, false,
           "a bare literal in a test file is out of value scope - the accepted half of the trade above" },
+
+        // --- XAML identifier attributes: long, base64-alphabet, and structurally incapable of data ----
+        { "SettingsPage_CredentialsAreProtectedWithDpapi", LineContext.XamlIdentifier, false,
+          "a descriptive x:Uid is 40+ base64-alphabet characters and is an identifier, not a value" },
+        { "SettingsPage_CredentialsAreProtectedWithDpapi", LineContext.ProductCode, true,
+          "the same text as a bare literal is not an identifier attribute and is reported" },
 
         // --- must tolerate: things that are not disclosures --------------------------------------------
         { "and so on, continued…", LineContext.Prose, false, "an ordinary prose ellipsis" },
@@ -887,6 +904,13 @@ public class PublishedTreeSweepTests
             {
                 string b64 = m.Groups[1].Value;
                 if (PureHex.IsMatch(b64)) continue;   // the hex rule above already reported it
+
+                // A XAML x:Uid, x:Name or x:Key is an identifier by the language's own rules - it cannot
+                // hold a secret, because it cannot hold anything but an identifier. Long descriptive uids
+                // are ordinary here and every one of them is drawn from the base64 alphabet. This is a
+                // property of the attribute, not an exemption for a place: nothing else on the line is
+                // skipped, and the hex rule still applies to all of it.
+                if (XamlIdentifierAttribute.IsMatch(line[..m.Index])) continue;
                 if (IsSyntheticFiller(b64)) continue;
                 if (Allow(b64)) continue;
                 found.Add($"{at}|shipped-base64|{b64}");
@@ -1421,6 +1445,7 @@ public class PublishedTreeSweepTests
             LineContext.Prose => input,
             LineContext.DeclaredConstant or LineContext.ProductCode =>
                 $"    private const string Fixture = \"{input}\";",
+            LineContext.XamlIdentifier => $"                    x:Uid=\"{input}\" />",
             LineContext.Comment => $"        StartSession();   // as captured: {input}",
             LineContext.Code => $"        var fixture = Decode(\"{input}\");",
             _ => throw new ArgumentOutOfRangeException(nameof(context)),

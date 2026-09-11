@@ -26,10 +26,10 @@
     <ScrollViewer Padding="24,16,24,24">
         <StackPanel MaxWidth="820" Spacing="16">
             <StackPanel Spacing="4">
-                <TextBlock Style="{StaticResource TitleTextBlockStyle}" Text="Keyboard controls" />
+                <TextBlock x:Uid="KeyBindingsPage_KeyboardControls" Style="{StaticResource TitleTextBlockStyle}" />
                 <TextBlock
                     Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                    Text="Press Change, then press the key you want. Backspace clears a binding. Sticks move at full deflection while a key is held."
+                    x:Uid="KeyBindingsPage_PressChangeThenPress"
                     TextWrapping="Wrap" />
             </StackPanel>
 
@@ -38,12 +38,12 @@
                 IsClosable="False"
                 IsOpen="False"
                 Severity="Informational"
-                Title="Press a key" />
+                x:Uid="KeyBindingsPage_PressKey" />
 
             <TextBlock
                 Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                 Style="{StaticResource CaptionTextBlockStyle}"
-                Text="Escape, F3 and F11 stay with the app — leave the stream, diagnostics, fullscreen — and cannot be bound."
+                x:Uid="KeyBindingsPage_EscapeFFStay"
                 TextWrapping="Wrap" />
 
             <ItemsControl x:Name="BindingList">
@@ -70,7 +70,7 @@
                                 Grid.Column="2"
                                 AutomationProperties.Name="{x:Bind ChangeButtonName, Mode=OneWay}"
                                 Click="Rebind_Click"
-                                Content="Change"
+                                x:Uid="KeyBindingsPage_Change"
                                 Tag="{x:Bind Action}" />
                         </Grid>
                     </DataTemplate>
@@ -85,7 +85,7 @@
             <Button
                 x:Name="ResetButton"
                 Click="Reset_Click"
-                Content="Reset to defaults"
+                x:Uid="KeyBindingsPage_ResetDefaults"
                 HorizontalAlignment="Left" />
         </StackPanel>
     </ScrollViewer>

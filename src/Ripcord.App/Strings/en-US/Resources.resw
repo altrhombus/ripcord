@@ -20,4 +20,740 @@
     <value>Opening the sign-in page…</value>
     <comment>Shown while the embedded sign-in page loads.</comment>
   </data>
+  <data name="AboutPage_AboutProject.Text" xml:space="preserve">
+    <value>About this project</value>
+    <comment>Static text on the About page.</comment>
+  </data>
+  <data name="AboutPage_AffiliatedEndorsedBySponsored.Text" xml:space="preserve">
+    <value>Not affiliated with, endorsed by, or sponsored by Sony Interactive Entertainment or Microsoft. “PlayStation”, “PS5” and “Remote Play” are trademarks of Sony Interactive Entertainment, used here only to describe what Ripcord is compatible with. All other product names and trademarks belong to their respective owners.</value>
+    <comment>Static text on the About page. PlayStation, PS5, Ripcord, Sony are product or standard names - do not translate.</comment>
+  </data>
+  <data name="AboutPage_Apache.Text" xml:space="preserve">
+    <value>Apache-2.0</value>
+    <comment>Static text on the About page.</comment>
+  </data>
+  <data name="AboutPage_Checking.Text" xml:space="preserve">
+    <value>Checking…</value>
+    <comment>Static text on the About page.</comment>
+  </data>
+  <data name="AboutPage_DecodePillChecking.Text" xml:space="preserve">
+    <value>Checking…</value>
+    <comment>Static text on the About page.</comment>
+  </data>
+  <data name="AboutPage_HevcPillChecking.Text" xml:space="preserve">
+    <value>Checking…</value>
+    <comment>Static text on the About page.</comment>
+  </data>
+  <data name="AboutPage_ControlPlaneMessageEncoding.Text" xml:space="preserve">
+    <value>Control-plane message encoding</value>
+    <comment>Static text on the About page.</comment>
+  </data>
+  <data name="AboutPage_CopyTheseDetailsClipboard.AutomationProperties.Name" xml:space="preserve">
+    <value>Copy these details to the clipboard</value>
+    <comment>Name on the About page.</comment>
+  </data>
+  <data name="AboutPage_Device.Text" xml:space="preserve">
+    <value>This device</value>
+    <comment>Static text on the About page.</comment>
+  </data>
+  <data name="AboutPage_FactsBugReportNeeds.Text" xml:space="preserve">
+    <value>The facts a bug report needs, so nobody has to go hunting for them.</value>
+    <comment>Static text on the About page.</comment>
+  </data>
+  <data name="AboutPage_Graphics.Text" xml:space="preserve">
+    <value>Graphics</value>
+    <comment>Static text on the About page.</comment>
+  </data>
+  <data name="AboutPage_Hevc.Text" xml:space="preserve">
+    <value>HEVC</value>
+    <comment>Static text on the About page. HEVC is a product or standard name - do not translate.</comment>
+  </data>
+  <data name="AboutPage_OpenSettingsFolder.AutomationProperties.Name" xml:space="preserve">
+    <value>Open the settings folder</value>
+    <comment>Name on the About page.</comment>
+  </data>
+  <data name="AboutPage_OpenSettingsFolder.Content" xml:space="preserve">
+    <value>Open</value>
+    <comment>The label on a control on the About page. Keep it short; it sits on a control.</comment>
+  </data>
+  <data name="AboutPage_OpenSettingsFolder.ToolTipService.ToolTip" xml:space="preserve">
+    <value>Open the settings folder in File Explorer</value>
+    <comment>ToolTip on the About page.</comment>
+  </data>
+  <data name="AboutPage_OpusAudioDecoding.Text" xml:space="preserve">
+    <value>Opus audio decoding</value>
+    <comment>Static text on the About page.</comment>
+  </data>
+  <data name="AboutPage_ProtocolSpecification.AutomationProperties.Name" xml:space="preserve">
+    <value>Protocol specification</value>
+    <comment>Name on the About page.</comment>
+  </data>
+  <data name="AboutPage_RemotePlayWindowsDirect.Text" xml:space="preserve">
+    <value>Remote play for Windows 11 — direct to your console over the LAN, decoded on the GPU.</value>
+    <comment>Static text on the About page. Windows is a product or standard name - do not translate.</comment>
+  </data>
+  <data name="AboutPage_ReportIssueGithub.AutomationProperties.Name" xml:space="preserve">
+    <value>Report an issue on GitHub</value>
+    <comment>Name on the About page.</comment>
+  </data>
+  <data name="AboutPage_RipcordFromScratchClient.Text" xml:space="preserve">
+    <value>Ripcord is a from-scratch client. Its wire protocol was derived independently, from this project's own captures and analysis, and no vendor code is included in it.</value>
+    <comment>Static text on the About page. Ripcord is a product or standard name - do not translate.</comment>
+  </data>
+  <data name="AboutPage_RipcordLogo.AutomationProperties.Name" xml:space="preserve">
+    <value>Ripcord logo</value>
+    <comment>Name on the About page. Ripcord is a product or standard name - do not translate.</comment>
+  </data>
+  <data name="AboutPage_Runtime.Text" xml:space="preserve">
+    <value>Runtime</value>
+    <comment>Static text on the About page.</comment>
+  </data>
+  <data name="AboutPage_SettingsFolder.Text" xml:space="preserve">
+    <value>Settings folder</value>
+    <comment>Static text on the About page.</comment>
+  </data>
+  <data name="AboutPage_SourceCodeGithub.AutomationProperties.Name" xml:space="preserve">
+    <value>Source code on GitHub</value>
+    <comment>Name on the About page.</comment>
+  </data>
+  <data name="AboutPage_Version.Text" xml:space="preserve">
+    <value>Version</value>
+    <comment>Static text on the About page.</comment>
+  </data>
+  <data name="AboutPage_VideoAudioInputRun.Text" xml:space="preserve">
+    <value>Video, audio and input run on Windows itself: Direct3D 12, Media Foundation, WASAPI and GameInput.</value>
+    <comment>Static text on the About page. Windows is a product or standard name - do not translate.</comment>
+  </data>
+  <data name="AboutPage_VideoDecoding.Text" xml:space="preserve">
+    <value>Video decoding</value>
+    <comment>Static text on the About page.</comment>
+  </data>
+  <data name="AboutPage_WinuiPlatformApisBehind.Text" xml:space="preserve">
+    <value>WinUI 3 and the platform APIs behind it</value>
+    <comment>Static text on the About page.</comment>
+  </data>
+  <data name="AddConsolePage_Back.Content" xml:space="preserve">
+    <value>Back</value>
+    <comment>The label on a control on the add-a-console flow. Keep it short; it sits on a control.</comment>
+  </data>
+  <data name="AddConsolePage_ConsoleAddress.Header" xml:space="preserve">
+    <value>Console address</value>
+    <comment>The header above a control on the add-a-console flow.</comment>
+  </data>
+  <data name="AddConsolePage_EnterAddressInstead.Content" xml:space="preserve">
+    <value>Enter an address instead</value>
+    <comment>The label on a control on the add-a-console flow. Keep it short; it sits on a control.</comment>
+  </data>
+  <data name="AddConsolePage_HandyWhenHaveMore.Text" xml:space="preserve">
+    <value>Handy when you have more than one. You can change it any time.</value>
+    <comment>Static text on the add-a-console flow.</comment>
+  </data>
+  <data name="AddConsolePage_HowShouldConsoleConfirm.Header" xml:space="preserve">
+    <value>How should the console confirm this PC?</value>
+    <comment>The header above a control on the add-a-console flow.</comment>
+  </data>
+  <data name="AddConsolePage_LinkCode.Header" xml:space="preserve">
+    <value>Link code</value>
+    <comment>The header above a control on the add-a-console flow.</comment>
+  </data>
+  <data name="AddConsolePage_LinkCode.PlaceholderText" xml:space="preserve">
+    <value>8 digits</value>
+    <comment>Placeholder inside an empty text box on the add-a-console flow.</comment>
+  </data>
+  <data name="AddConsolePage_LinkPcConsole.Text" xml:space="preserve">
+    <value>Link this PC to your console</value>
+    <comment>Static text on the add-a-console flow.</comment>
+  </data>
+  <data name="AddConsolePage_LookingConsole.Text" xml:space="preserve">
+    <value>Looking for your console</value>
+    <comment>Static text on the add-a-console flow.</comment>
+  </data>
+  <data name="AddConsolePage_MakeSureConsoleSwitched.Text" xml:space="preserve">
+    <value>Make sure the console is switched on and on the same network as this PC.</value>
+    <comment>Static text on the add-a-console flow.</comment>
+  </data>
+  <data name="AddConsolePage_NumericIdBehindPsn.Text" xml:space="preserve">
+    <value>This is the numeric id behind your PSN account — not your online ID or email address. Sign in under Settings → Account and this fills itself in; otherwise you'll need to get it from an account-id lookup tool.</value>
+    <comment>Static text on the add-a-console flow.</comment>
+  </data>
+  <data name="AddConsolePage_Paired.Text" xml:space="preserve">
+    <value>Paired</value>
+    <comment>Static text on the add-a-console flow.</comment>
+  </data>
+  <data name="AddConsolePage_Pairing.Text" xml:space="preserve">
+    <value>Pairing…</value>
+    <comment>Static text on the add-a-console flow.</comment>
+  </data>
+  <data name="AddConsolePage_Playstation.AutomationProperties.Name" xml:space="preserve">
+    <value>PlayStation 5</value>
+    <comment>Name on the add-a-console flow. PlayStation is a product or standard name - do not translate.</comment>
+  </data>
+  <data name="AddConsolePage_Playstation2.AutomationProperties.Name" xml:space="preserve">
+    <value>PlayStation 4</value>
+    <comment>Name on the add-a-console flow. PlayStation is a product or standard name - do not translate.</comment>
+  </data>
+  <data name="AddConsolePage_PlaystationNetworkAccountId.Header" xml:space="preserve">
+    <value>PlayStation Network account ID</value>
+    <comment>The header above a control on the add-a-console flow. PlayStation is a product or standard name - do not translate.</comment>
+  </data>
+  <data name="AddConsolePage_PlaystationNetworkAccountId.PlaceholderText" xml:space="preserve">
+    <value>numeric account id</value>
+    <comment>Placeholder inside an empty text box on the add-a-console flow.</comment>
+  </data>
+  <data name="AddConsolePage_SearchAgain.Content" xml:space="preserve">
+    <value>Search again</value>
+    <comment>The label on a control on the add-a-console flow. Keep it short; it sits on a control.</comment>
+  </data>
+  <data name="AddConsolePage_UseAddress.Content" xml:space="preserve">
+    <value>Use this address</value>
+    <comment>The label on a control on the add-a-console flow. Keep it short; it sits on a control.</comment>
+  </data>
+  <data name="AddConsolePage_WhichConsoleConnecting.Text" xml:space="preserve">
+    <value>Which console are you connecting to?</value>
+    <comment>Static text on the add-a-console flow.</comment>
+  </data>
+  <data name="AddConsolePage_Xbox.AutomationProperties.Name" xml:space="preserve">
+    <value>Xbox</value>
+    <comment>Name on the add-a-console flow. Xbox is a product or standard name - do not translate.</comment>
+  </data>
+  <data name="ConsolesPage_AddAnotherConsole.Content" xml:space="preserve">
+    <value>Add another console</value>
+    <comment>The label on a control on the console list (the home screen). Keep it short; it sits on a control.</comment>
+  </data>
+  <data name="ConsolesPage_AddConsole.Text" xml:space="preserve">
+    <value>Add a console</value>
+    <comment>Static text on the console list (the home screen).</comment>
+  </data>
+  <data name="ConsolesPage_AddConsoleOnceStays.Text" xml:space="preserve">
+    <value>Add your console once and it stays paired. Ripcord finds it on your network, so you won't need its address.</value>
+    <comment>Static text on the console list (the home screen). Ripcord is a product or standard name - do not translate.</comment>
+  </data>
+  <data name="ConsolesPage_Consoles.Text" xml:space="preserve">
+    <value>Consoles</value>
+    <comment>Static text on the console list (the home screen).</comment>
+  </data>
+  <data name="ConsolesPage_ConsolesYet.Text" xml:space="preserve">
+    <value>No consoles yet</value>
+    <comment>Static text on the console list (the home screen).</comment>
+  </data>
+  <data name="ConsolesPage_MoreOptionsConsole.AutomationProperties.Name" xml:space="preserve">
+    <value>More options for this console</value>
+    <comment>Name on the console list (the home screen).</comment>
+  </data>
+  <data name="ConsolesPage_MoreOptionsConsole.ToolTipService.ToolTip" xml:space="preserve">
+    <value>More options</value>
+    <comment>ToolTip on the console list (the home screen).</comment>
+  </data>
+  <data name="ConsolesPage_MoreOptionsConsole2.AutomationProperties.Name" xml:space="preserve">
+    <value>More options for this console</value>
+    <comment>Name on the console list (the home screen).</comment>
+  </data>
+  <data name="ConsolesPage_PickOneStartStreaming.Text" xml:space="preserve">
+    <value>Pick one to start streaming. A console in rest mode will be woken for you.</value>
+    <comment>Static text on the console list (the home screen).</comment>
+  </data>
+  <data name="DisconnectDialog_DisconnectFromConsole.CloseButtonText" xml:space="preserve">
+    <value>Stay connected</value>
+    <comment>The dismiss button on the disconnect confirmation dialog. Keep it short; it sits on a control.</comment>
+  </data>
+  <data name="DisconnectDialog_DisconnectFromConsole.PrimaryButtonText" xml:space="preserve">
+    <value>Disconnect</value>
+    <comment>The confirm button on the disconnect confirmation dialog. Keep it short; it sits on a control.</comment>
+  </data>
+  <data name="DisconnectDialog_DisconnectFromConsole.Title" xml:space="preserve">
+    <value>Disconnect from your console?</value>
+    <comment>The dialog title on the disconnect confirmation dialog.</comment>
+  </data>
+  <data name="DisconnectDialog_GameKeepsRunningConsole.Text" xml:space="preserve">
+    <value>Your game keeps running on the console after you disconnect.</value>
+    <comment>Static text on the disconnect confirmation dialog.</comment>
+  </data>
+  <data name="DisconnectDialog_PutConsoleIntoRest.AutomationProperties.Name" xml:space="preserve">
+    <value>Put the console into rest mode</value>
+    <comment>Name on the disconnect confirmation dialog.</comment>
+  </data>
+  <data name="DisconnectDialog_PutConsoleIntoRest.Content" xml:space="preserve">
+    <value>Put the console into rest mode</value>
+    <comment>The label on a control on the disconnect confirmation dialog.</comment>
+  </data>
+  <data name="KeyBindingsPage_Change.Content" xml:space="preserve">
+    <value>Change</value>
+    <comment>The label on a control on the key-bindings page. Keep it short; it sits on a control.</comment>
+  </data>
+  <data name="KeyBindingsPage_EscapeFFStay.Text" xml:space="preserve">
+    <value>Escape, F3 and F11 stay with the app — leave the stream, diagnostics, fullscreen — and cannot be bound.</value>
+    <comment>Static text on the key-bindings page. F3 is a product or standard name - do not translate.</comment>
+  </data>
+  <data name="KeyBindingsPage_PressChangeThenPress.Text" xml:space="preserve">
+    <value>Press Change, then press the key you want. Backspace clears a binding. Sticks move at full deflection while a key is held.</value>
+    <comment>Static text on the key-bindings page.</comment>
+  </data>
+  <data name="KeyBindingsPage_PressKey.Title" xml:space="preserve">
+    <value>Press a key</value>
+    <comment>The dialog title on the key-bindings page.</comment>
+  </data>
+  <data name="KeyBindingsPage_ResetDefaults.Content" xml:space="preserve">
+    <value>Reset to defaults</value>
+    <comment>The label on a control on the key-bindings page. Keep it short; it sits on a control.</comment>
+  </data>
+  <data name="LoginPinDialog_ConsoleSignedOutNeeds.Text" xml:space="preserve">
+    <value>Your console is signed out and needs its login passcode — the one set under Settings → Users and Accounts → Login Settings. This is not the pairing code.</value>
+    <comment>Static text on the pairing-code dialog.</comment>
+  </data>
+  <data name="LoginPinDialog_EnterConsoleLoginPasscode.CloseButtonText" xml:space="preserve">
+    <value>Cancel</value>
+    <comment>The dismiss button on the pairing-code dialog. Keep it short; it sits on a control.</comment>
+  </data>
+  <data name="LoginPinDialog_EnterConsoleLoginPasscode.PrimaryButtonText" xml:space="preserve">
+    <value>Sign in</value>
+    <comment>The confirm button on the pairing-code dialog. Keep it short; it sits on a control.</comment>
+  </data>
+  <data name="LoginPinDialog_EnterConsoleLoginPasscode.Title" xml:space="preserve">
+    <value>Enter your console login passcode</value>
+    <comment>The dialog title on the pairing-code dialog.</comment>
+  </data>
+  <data name="LoginPinDialog_LoginPasscode.Header" xml:space="preserve">
+    <value>Login passcode</value>
+    <comment>The header above a control on the pairing-code dialog.</comment>
+  </data>
+  <data name="LoginPinDialog_PasscodeWasnTAccepted.Text" xml:space="preserve">
+    <value>That passcode wasn't accepted. Try again.</value>
+    <comment>Static text on the pairing-code dialog.</comment>
+  </data>
+  <data name="MainWindow_AboutRipcord.AutomationProperties.Name" xml:space="preserve">
+    <value>About Ripcord</value>
+    <comment>Name on the main window title bar. Ripcord is a product or standard name - do not translate.</comment>
+  </data>
+  <data name="MainWindow_AboutRipcord.ToolTipService.ToolTip" xml:space="preserve">
+    <value>About Ripcord</value>
+    <comment>ToolTip on the main window title bar. Ripcord is a product or standard name - do not translate.</comment>
+  </data>
+  <data name="MainWindow_Ripcord.Title" xml:space="preserve">
+    <value>Ripcord</value>
+    <comment>The dialog title on the main window title bar. Ripcord is a product or standard name - do not translate.</comment>
+  </data>
+  <data name="MainWindow_Settings.AutomationProperties.Name" xml:space="preserve">
+    <value>Settings</value>
+    <comment>Name on the main window title bar.</comment>
+  </data>
+  <data name="MainWindow_Settings.ToolTipService.ToolTip" xml:space="preserve">
+    <value>Settings</value>
+    <comment>ToolTip on the main window title bar.</comment>
+  </data>
+  <data name="SessionPage_BackConsoles.Content" xml:space="preserve">
+    <value>Back to consoles</value>
+    <comment>The label on a control on the in-stream session page. Keep it short; it sits on a control.</comment>
+  </data>
+  <data name="SessionPage_CreateButton.AutomationProperties.Name" xml:space="preserve">
+    <value>Create button</value>
+    <comment>Name on the in-stream session page.</comment>
+  </data>
+  <data name="SessionPage_CreateButton.Content" xml:space="preserve">
+    <value>Create</value>
+    <comment>The label on a control on the in-stream session page. Keep it short; it sits on a control.</comment>
+  </data>
+  <data name="SessionPage_FramesS.Text" xml:space="preserve">
+    <value>frames/s</value>
+    <comment>Static text on the in-stream session page.</comment>
+  </data>
+  <data name="SessionPage_HoldOptionsCreateL.Text" xml:space="preserve">
+    <value>Hold Options + Create + L1 + R1 to leave the stream</value>
+    <comment>Static text on the in-stream session page.</comment>
+  </data>
+  <data name="SessionPage_LastSeconds.Text" xml:space="preserve">
+    <value>LAST 30 SECONDS</value>
+    <comment>Static text on the in-stream session page.</comment>
+  </data>
+  <data name="SessionPage_LeaveStream.AutomationProperties.Name" xml:space="preserve">
+    <value>Leave the stream</value>
+    <comment>Name on the in-stream session page.</comment>
+  </data>
+  <data name="SessionPage_LeaveStream.ToolTipService.ToolTip" xml:space="preserve">
+    <value>Leave the stream (Esc)</value>
+    <comment>ToolTip on the in-stream session page. Esc is a product or standard name - do not translate.</comment>
+  </data>
+  <data name="SessionPage_LeavingStream.Text" xml:space="preserve">
+    <value>Leaving the stream…</value>
+    <comment>Static text on the in-stream session page.</comment>
+  </data>
+  <data name="SessionPage_OptionsButton.AutomationProperties.Name" xml:space="preserve">
+    <value>Options button</value>
+    <comment>Name on the in-stream session page.</comment>
+  </data>
+  <data name="SessionPage_OptionsButton.Content" xml:space="preserve">
+    <value>Options</value>
+    <comment>The label on a control on the in-stream session page. Keep it short; it sits on a control.</comment>
+  </data>
+  <data name="SessionPage_PsButton.AutomationProperties.Name" xml:space="preserve">
+    <value>PS button</value>
+    <comment>Name on the in-stream session page.</comment>
+  </data>
+  <data name="SessionPage_PsButton.ToolTipService.ToolTip" xml:space="preserve">
+    <value>PS button — hold for the power menu</value>
+    <comment>ToolTip on the in-stream session page.</comment>
+  </data>
+  <data name="SessionPage_Resolution.Text" xml:space="preserve">
+    <value>resolution</value>
+    <comment>Static text on the in-stream session page.</comment>
+  </data>
+  <data name="SessionPage_SaveDiagnosticsFile.AutomationProperties.Name" xml:space="preserve">
+    <value>Save diagnostics to a file</value>
+    <comment>Name on the in-stream session page.</comment>
+  </data>
+  <data name="SessionPage_SaveDiagnosticsFile.ToolTipService.ToolTip" xml:space="preserve">
+    <value>Save diagnostics (F8)</value>
+    <comment>ToolTip on the in-stream session page.</comment>
+  </data>
+  <data name="SessionPage_Starting.Text" xml:space="preserve">
+    <value>Starting…</value>
+    <comment>Static text on the in-stream session page.</comment>
+  </data>
+  <data name="SessionPage_StreamDiagnostics.Text" xml:space="preserve">
+    <value>Stream diagnostics</value>
+    <comment>Static text on the in-stream session page.</comment>
+  </data>
+  <data name="SessionPage_ToggleConnectionDiagnostics.AutomationProperties.Name" xml:space="preserve">
+    <value>Toggle connection diagnostics</value>
+    <comment>Name on the in-stream session page.</comment>
+  </data>
+  <data name="SessionPage_ToggleConnectionDiagnostics.ToolTipService.ToolTip" xml:space="preserve">
+    <value>Connection diagnostics (F3)</value>
+    <comment>ToolTip on the in-stream session page. F3 is a product or standard name - do not translate.</comment>
+  </data>
+  <data name="SessionPage_TouchpadClick.AutomationProperties.Name" xml:space="preserve">
+    <value>Touchpad click</value>
+    <comment>Name on the in-stream session page.</comment>
+  </data>
+  <data name="SessionPage_TouchpadClick.Content" xml:space="preserve">
+    <value>Touchpad</value>
+    <comment>The label on a control on the in-stream session page. Keep it short; it sits on a control.</comment>
+  </data>
+  <data name="SessionPage_TryAgain.Content" xml:space="preserve">
+    <value>Try again</value>
+    <comment>The label on a control on the in-stream session page. Keep it short; it sits on a control.</comment>
+  </data>
+  <data name="SettingsPage_AdaptQualityAutomatically.AutomationProperties.Name" xml:space="preserve">
+    <value>Adapt quality automatically</value>
+    <comment>Name on the Settings page.</comment>
+  </data>
+  <data name="SettingsPage_AskBeforeDisconnecting.AutomationProperties.Name" xml:space="preserve">
+    <value>Ask before disconnecting</value>
+    <comment>Name on the Settings page.</comment>
+  </data>
+  <data name="SettingsPage_AutomaticPicksGpuDriving.Description" xml:space="preserve">
+    <value>Automatic picks the GPU driving your display, which is usually both the fastest and the most efficient choice for streaming. Takes effect on the next connection.</value>
+    <comment>The description under a control on the Settings page.</comment>
+  </data>
+  <data name="SettingsPage_AutomaticPicksGpuDriving.Header" xml:space="preserve">
+    <value>Which GPU to use</value>
+    <comment>The header above a control on the Settings page.</comment>
+  </data>
+  <data name="SettingsPage_Configure.Content" xml:space="preserve">
+    <value>Configure…</value>
+    <comment>The label on a control on the Settings page. Keep it short; it sits on a control.</comment>
+  </data>
+  <data name="SettingsPage_ConfirmsWhenEndStream.Description" xml:space="preserve">
+    <value>Confirms when you end a stream, and lets you choose rest mode for that disconnect. Off leaves instantly, using the default below.</value>
+    <comment>The description under a control on the Settings page.</comment>
+  </data>
+  <data name="SettingsPage_ConfirmsWhenEndStream.Header" xml:space="preserve">
+    <value>Ask before disconnecting</value>
+    <comment>The header above a control on the Settings page.</comment>
+  </data>
+  <data name="SettingsPage_ConsolesAccount.Description" xml:space="preserve">
+    <value>Reported by PlayStation Network, including consoles that aren't on this network.</value>
+    <comment>The description under a control on the Settings page. PlayStation is a product or standard name - do not translate.</comment>
+  </data>
+  <data name="SettingsPage_ConsolesAccount.Header" xml:space="preserve">
+    <value>Consoles on this account</value>
+    <comment>The header above a control on the Settings page.</comment>
+  </data>
+  <data name="SettingsPage_DefaultAnswerRestMode.Description" xml:space="preserve">
+    <value>The default answer for rest mode: puts the console into rest when you end the stream, instead of leaving it awake.</value>
+    <comment>The description under a control on the Settings page.</comment>
+  </data>
+  <data name="SettingsPage_DefaultAnswerRestMode.Header" xml:space="preserve">
+    <value>Rest console when I disconnect</value>
+    <comment>The header above a control on the Settings page.</comment>
+  </data>
+  <data name="SettingsPage_EasierReadHandheldFrom.Description" xml:space="preserve">
+    <value>Easier to read on a handheld or from across the room.</value>
+    <comment>The description under a control on the Settings page.</comment>
+  </data>
+  <data name="SettingsPage_EasierReadHandheldFrom.Header" xml:space="preserve">
+    <value>Larger text and controls</value>
+    <comment>The header above a control on the Settings page.</comment>
+  </data>
+  <data name="SettingsPage_FrameRateLatencyPacket.Description" xml:space="preserve">
+    <value>Frame rate, latency and packet loss over the video. You can also toggle this with F3 while streaming.</value>
+    <comment>The description under a control on the Settings page. F3 is a product or standard name - do not translate.</comment>
+  </data>
+  <data name="SettingsPage_FrameRateLatencyPacket.Header" xml:space="preserve">
+    <value>Show connection diagnostics</value>
+    <comment>The header above a control on the Settings page.</comment>
+  </data>
+  <data name="SettingsPage_FullScreenWhenStream.AutomationProperties.Name" xml:space="preserve">
+    <value>Full screen when a stream starts</value>
+    <comment>Name on the Settings page.</comment>
+  </data>
+  <data name="SettingsPage_HidesTitleBarNavigation.Description" xml:space="preserve">
+    <value>Hides the title bar and navigation while you play.</value>
+    <comment>The description under a control on the Settings page.</comment>
+  </data>
+  <data name="SettingsPage_HidesTitleBarNavigation.Header" xml:space="preserve">
+    <value>Full screen when a stream starts</value>
+    <comment>The header above a control on the Settings page.</comment>
+  </data>
+  <data name="SettingsPage_HowFarMustPush.Description" xml:space="preserve">
+    <value>How far you must push the stick to move between items in Ripcord's own menus.</value>
+    <comment>The description under a control on the Settings page. Ripcord is a product or standard name - do not translate.</comment>
+  </data>
+  <data name="SettingsPage_HowFarMustPush.Header" xml:space="preserve">
+    <value>Menu stick sensitivity</value>
+    <comment>The header above a control on the Settings page.</comment>
+  </data>
+  <data name="SettingsPage_ImageScaling.AutomationProperties.Name" xml:space="preserve">
+    <value>Image scaling</value>
+    <comment>Name on the Settings page.</comment>
+  </data>
+  <data name="SettingsPage_LargerTextControls.AutomationProperties.Name" xml:space="preserve">
+    <value>Larger text and controls</value>
+    <comment>Name on the Settings page.</comment>
+  </data>
+  <data name="SettingsPage_LeaveStreamController.AutomationProperties.Name" xml:space="preserve">
+    <value>Leave a stream with the controller</value>
+    <comment>Name on the Settings page.</comment>
+  </data>
+  <data name="SettingsPage_LowerBitratePacketLoss.Description" xml:space="preserve">
+    <value>Lower the bitrate on packet loss, and on battery or when the device gets hot.</value>
+    <comment>The description under a control on the Settings page.</comment>
+  </data>
+  <data name="SettingsPage_LowerBitratePacketLoss.Header" xml:space="preserve">
+    <value>Adapt quality automatically</value>
+    <comment>The header above a control on the Settings page.</comment>
+  </data>
+  <data name="SettingsPage_MaximumBitrateMegabitsPer.AutomationProperties.Name" xml:space="preserve">
+    <value>Maximum bitrate in megabits per second</value>
+    <comment>Name on the Settings page.</comment>
+  </data>
+  <data name="SettingsPage_MenuStickSensitivity.AutomationProperties.Name" xml:space="preserve">
+    <value>Menu stick sensitivity</value>
+    <comment>Name on the Settings page.</comment>
+  </data>
+  <data name="SettingsPage_OffByDefaultPad.Description" xml:space="preserve">
+    <value>Off by default — with a pad connected, stray typing has no reason to reach the game.</value>
+    <comment>The description under a control on the Settings page.</comment>
+  </data>
+  <data name="SettingsPage_OffByDefaultPad.Header" xml:space="preserve">
+    <value>Send keyboard input to the console</value>
+    <comment>The header above a control on the Settings page.</comment>
+  </data>
+  <data name="SettingsPage_PVerifiedGoodDefault.Description" xml:space="preserve">
+    <value>720p60 is the verified-good default. Higher settings need a strong network.</value>
+    <comment>The description under a control on the Settings page.</comment>
+  </data>
+  <data name="SettingsPage_PVerifiedGoodDefault.Header" xml:space="preserve">
+    <value>Resolution and frame rate</value>
+    <comment>The header above a control on the Settings page.</comment>
+  </data>
+  <data name="SettingsPage_ResolutionFrameRate.AutomationProperties.Name" xml:space="preserve">
+    <value>Resolution and frame rate</value>
+    <comment>Name on the Settings page.</comment>
+  </data>
+  <data name="SettingsPage_RestConsoleWhenI.AutomationProperties.Name" xml:space="preserve">
+    <value>Rest console when I disconnect</value>
+    <comment>Name on the Settings page.</comment>
+  </data>
+  <data name="SettingsPage_SendKeyboardInputConsole.AutomationProperties.Name" xml:space="preserve">
+    <value>Send keyboard input to the console</value>
+    <comment>Name on the Settings page.</comment>
+  </data>
+  <data name="SettingsPage_SendsMeasuredDelayPacket.Description" xml:space="preserve">
+    <value>Sends the measured delay and packet loss to the console, and asks it for the bitrate Ripcord thinks your connection can carry. Off by default because it is not yet verified against real hardware — turn it on and watch the diagnostics graph to see whether it helps.</value>
+    <comment>The description under a control on the Settings page. Ripcord is a product or standard name - do not translate.</comment>
+  </data>
+  <data name="SettingsPage_SendsMeasuredDelayPacket.Header" xml:space="preserve">
+    <value>Tell the console about your connection (experimental)</value>
+    <comment>The header above a control on the Settings page.</comment>
+  </data>
+  <data name="SettingsPage_ShowConnectionDiagnostics.AutomationProperties.Name" xml:space="preserve">
+    <value>Show connection diagnostics</value>
+    <comment>Name on the Settings page.</comment>
+  </data>
+  <data name="SettingsPage_SpecificAdapter.Header" xml:space="preserve">
+    <value>Specific adapter</value>
+    <comment>The header above a control on the Settings page.</comment>
+  </data>
+  <data name="SettingsPage_SpecificGraphicsAdapter.AutomationProperties.Name" xml:space="preserve">
+    <value>Specific graphics adapter</value>
+    <comment>Name on the Settings page.</comment>
+  </data>
+  <data name="SettingsPage_StartingRateRipcordLowers.Description" xml:space="preserve">
+    <value>The starting rate. Ripcord lowers it automatically if the network can't keep up.</value>
+    <comment>The description under a control on the Settings page. Ripcord is a product or standard name - do not translate.</comment>
+  </data>
+  <data name="SettingsPage_StartingRateRipcordLowers.Header" xml:space="preserve">
+    <value>Maximum bitrate</value>
+    <comment>The header above a control on the Settings page.</comment>
+  </data>
+  <data name="SettingsPage_TellConsoleAboutConnection.AutomationProperties.Name" xml:space="preserve">
+    <value>Tell the console about your connection</value>
+    <comment>Name on the Settings page.</comment>
+  </data>
+  <data name="SettingsPage_VideoCodec.AutomationProperties.Name" xml:space="preserve">
+    <value>Video codec</value>
+    <comment>Name on the Settings page.</comment>
+  </data>
+  <data name="SettingsPage_WhichGpuUse.AutomationProperties.Name" xml:space="preserve">
+    <value>Which GPU to use</value>
+    <comment>Name on the Settings page.</comment>
+  </data>
+  <data name="AboutPage_Concentus.Text" xml:space="preserve">
+    <value>Concentus</value>
+    <comment>Static text on the About page.</comment>
+  </data>
+  <data name="AboutPage_CopyDetails.Text" xml:space="preserve">
+    <value>Copy details</value>
+    <comment>Static text on the About page.</comment>
+  </data>
+  <data name="AboutPage_GoogleProtobuf.Text" xml:space="preserve">
+    <value>Google.Protobuf</value>
+    <comment>Static text on the About page.</comment>
+  </data>
+  <data name="AboutPage_IndependentBuiltCleanRoom.Text" xml:space="preserve">
+    <value>Independent and built clean-room</value>
+    <comment>Static text on the About page.</comment>
+  </data>
+  <data name="AboutPage_OpenSourceComponents.Text" xml:space="preserve">
+    <value>Open-source components</value>
+    <comment>Static text on the About page.</comment>
+  </data>
+  <data name="AboutPage_ProtocolSpec.Text" xml:space="preserve">
+    <value>Protocol spec</value>
+    <comment>Static text on the About page.</comment>
+  </data>
+  <data name="AboutPage_ReportIssue.Text" xml:space="preserve">
+    <value>Report an issue</value>
+    <comment>Static text on the About page.</comment>
+  </data>
+  <data name="AboutPage_Ripcord.Text" xml:space="preserve">
+    <value>Ripcord</value>
+    <comment>Static text on the About page. Ripcord is a product or standard name - do not translate.</comment>
+  </data>
+  <data name="AboutPage_Source.Text" xml:space="preserve">
+    <value>Source</value>
+    <comment>Static text on the About page.</comment>
+  </data>
+  <data name="AboutPage_Windows.Text" xml:space="preserve">
+    <value>Windows</value>
+    <comment>Static text on the About page. Windows is a product or standard name - do not translate.</comment>
+  </data>
+  <data name="AboutPage_WindowsAppSdk.Text" xml:space="preserve">
+    <value>Windows App SDK</value>
+    <comment>Static text on the About page. Windows is a product or standard name - do not translate.</comment>
+  </data>
+  <data name="AddConsolePage_AddConsole.Text" xml:space="preserve">
+    <value>Add a console</value>
+    <comment>Static text on the add-a-console flow.</comment>
+  </data>
+  <data name="AddConsolePage_Console.Text" xml:space="preserve">
+    <value>On the console</value>
+    <comment>Static text on the add-a-console flow.</comment>
+  </data>
+  <data name="AddConsolePage_WhatShouldWeCall.Header" xml:space="preserve">
+    <value>What should we call it?</value>
+    <comment>The header above a control on the add-a-console flow.</comment>
+  </data>
+  <data name="ConsolesPage_AddConsole2.AutomationProperties.Name" xml:space="preserve">
+    <value>Add a console</value>
+    <comment>The screen-reader name (not visible on screen) on the console list (the home screen).</comment>
+  </data>
+  <data name="ConsolesPage_AddConsoleButton.Text" xml:space="preserve">
+    <value>Add a console</value>
+    <comment>Static text on the console list (the home screen).</comment>
+  </data>
+  <data name="KeyBindingsPage_KeyboardControls.Text" xml:space="preserve">
+    <value>Keyboard controls</value>
+    <comment>Static text on the key-bindings page.</comment>
+  </data>
+  <data name="SessionPage_Bitrate.Text" xml:space="preserve">
+    <value>bitrate</value>
+    <comment>Static text on the in-stream session page.</comment>
+  </data>
+  <data name="SessionPage_Frames.Text" xml:space="preserve">
+    <value>frames</value>
+    <comment>Static text on the in-stream session page.</comment>
+  </data>
+  <data name="SessionPage_Latency.Text" xml:space="preserve">
+    <value>latency</value>
+    <comment>Static text on the in-stream session page.</comment>
+  </data>
+  <data name="SettingsPage_Account.Text" xml:space="preserve">
+    <value>Account</value>
+    <comment>Static text on the Settings page.</comment>
+  </data>
+  <data name="SettingsPage_Controls.Text" xml:space="preserve">
+    <value>Controls</value>
+    <comment>Static text on the Settings page.</comment>
+  </data>
+  <data name="SettingsPage_Display.Text" xml:space="preserve">
+    <value>Display</value>
+    <comment>Static text on the Settings page.</comment>
+  </data>
+  <data name="SettingsPage_GraphicsDevice.Text" xml:space="preserve">
+    <value>Graphics device</value>
+    <comment>Static text on the Settings page.</comment>
+  </data>
+  <data name="SettingsPage_HowStreamScaledUp.Description" xml:space="preserve">
+    <value>How the stream is scaled up to fill the window.</value>
+    <comment>The description under a control on the Settings page.</comment>
+  </data>
+  <data name="SettingsPage_HowStreamScaledUp.Header" xml:space="preserve">
+    <value>Image scaling</value>
+    <comment>The header above a control on the Settings page.</comment>
+  </data>
+  <data name="SettingsPage_KeysGamepadMapping.Header" xml:space="preserve">
+    <value>Keys and gamepad mapping</value>
+    <comment>The header above a control on the Settings page.</comment>
+  </data>
+  <data name="SettingsPage_LeaveStreamController.Header" xml:space="preserve">
+    <value>Leave a stream with the controller</value>
+    <comment>The header above a control on the Settings page.</comment>
+  </data>
+  <data name="SettingsPage_PlaystationNetwork.Header" xml:space="preserve">
+    <value>PlayStation Network</value>
+    <comment>The header above a control on the Settings page. PlayStation is a product or standard name - do not translate.</comment>
+  </data>
+  <data name="SettingsPage_RequestHdr.Header" xml:space="preserve">
+    <value>Request HDR</value>
+    <comment>The header above a control on the Settings page. HDR is a product or standard name - do not translate.</comment>
+  </data>
+  <data name="SettingsPage_RequestHdr2.AutomationProperties.Name" xml:space="preserve">
+    <value>Request HDR</value>
+    <comment>The screen-reader name (not visible on screen) on the Settings page. HDR is a product or standard name - do not translate.</comment>
+  </data>
+  <data name="SettingsPage_SavedConsoles.Text" xml:space="preserve">
+    <value>Saved consoles</value>
+    <comment>Static text on the Settings page.</comment>
+  </data>
+  <data name="SettingsPage_Settings.Text" xml:space="preserve">
+    <value>Settings</value>
+    <comment>Static text on the Settings page.</comment>
+  </data>
+  <data name="SettingsPage_SignIn.Content" xml:space="preserve">
+    <value>Sign in</value>
+    <comment>The label on a control on the Settings page.</comment>
+  </data>
+  <data name="SettingsPage_SignOut.Content" xml:space="preserve">
+    <value>Sign out</value>
+    <comment>The label on a control on the Settings page.</comment>
+  </data>
+  <data name="SettingsPage_Video.Text" xml:space="preserve">
+    <value>Video</value>
+    <comment>Static text on the Settings page.</comment>
+  </data>
+  <data name="SettingsPage_VideoCodec.Header" xml:space="preserve">
+    <value>Video codec</value>
+    <comment>The header above a control on the Settings page.</comment>
+  </data>
 </root>

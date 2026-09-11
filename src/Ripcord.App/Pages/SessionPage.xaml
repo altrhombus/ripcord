@@ -85,7 +85,7 @@
                     x:Name="StatusHeadline"
                     HorizontalAlignment="Center"
                     Style="{StaticResource SubtitleTextBlockStyle}"
-                    Text="Starting…"
+                    x:Uid="SessionPage_Starting"
                     TextAlignment="Center"
                     TextWrapping="Wrap" />
                 <TextBlock
@@ -104,12 +104,12 @@
                     <Button
                         x:Name="RetryButton"
                         Click="RetryButton_Click"
-                        Content="Try again"
+                        x:Uid="SessionPage_TryAgain"
                         Style="{StaticResource AccentButtonStyle}" />
                     <Button
                         x:Name="LeaveButton"
                         Click="LeaveButton_Click"
-                        Content="Back to consoles" />
+                        x:Uid="SessionPage_BackConsoles" />
                 </StackPanel>
             </StackPanel>
         </Border>
@@ -130,7 +130,7 @@
             <TextBlock
                 x:Name="ExitHintText"
                 Style="{StaticResource CaptionTextBlockStyle}"
-                Text="Hold Options + Create + L1 + R1 to leave the stream" />
+                x:Uid="SessionPage_HoldOptionsCreateL" />
         </Border>
 
         <!--  Feedback while the exit gesture is being held, so a partial hold is visible rather than silent.  -->
@@ -147,7 +147,7 @@
                 <TextBlock
                     HorizontalAlignment="Center"
                     Style="{StaticResource CaptionTextBlockStyle}"
-                    Text="Leaving the stream…" />
+                    x:Uid="SessionPage_LeavingStream" />
                 <ProgressBar x:Name="ExitProgressBar" Width="180" Maximum="1" />
             </StackPanel>
         </Border>
@@ -194,7 +194,7 @@
                         VerticalAlignment="Center"
                         CharacterSpacing="60"
                         Style="{StaticResource BodyStrongTextBlockStyle}"
-                        Text="Stream diagnostics" />
+                        x:Uid="SessionPage_StreamDiagnostics" />
                     <Border
                         Grid.Column="1"
                         Padding="6,1"
@@ -267,7 +267,7 @@
                             <TextBlock
                                 Foreground="{ThemeResource TextFillColorTertiaryBrush}"
                                 Style="{StaticResource CaptionTextBlockStyle}"
-                                Text="resolution" />
+                                x:Uid="SessionPage_Resolution" />
                         </StackPanel>
 
                         <Rectangle
@@ -281,7 +281,7 @@
                             <TextBlock
                                 Foreground="{ThemeResource TextFillColorTertiaryBrush}"
                                 Style="{StaticResource CaptionTextBlockStyle}"
-                                Text="frames/s"
+                                x:Uid="SessionPage_FramesS"
                                 TextAlignment="Right" />
                         </StackPanel>
 
@@ -428,7 +428,7 @@
                                     CharacterSpacing="80"
                                     Foreground="{ThemeResource TextFillColorTertiaryBrush}"
                                     Style="{StaticResource CaptionTextBlockStyle}"
-                                    Text="LAST 30 SECONDS" />
+                                    x:Uid="SessionPage_LastSeconds" />
                                 <TextBlock
                                     Grid.Column="1"
                                     Foreground="{ThemeResource TextFillColorTertiaryBrush}"
@@ -452,7 +452,7 @@
                                 </Grid.RowDefinitions>
 
                                 <!--  Frame rate  -->
-                                <TextBlock Grid.Row="0" VerticalAlignment="Center" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Style="{StaticResource CaptionTextBlockStyle}" Text="frames" />
+                                <TextBlock x:Uid="SessionPage_Frames" Grid.Row="0" VerticalAlignment="Center" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Style="{StaticResource CaptionTextBlockStyle}" />
                                 <TextBlock x:Name="FpsValueText" Grid.Row="0" Grid.Column="1" VerticalAlignment="Center" Style="{StaticResource CaptionTextBlockStyle}" TextAlignment="Right" />
                                 <Canvas x:Name="FpsSpark" Grid.Row="0" Grid.Column="2" Height="18">
                                     <Polyline x:Name="FpsLine" Stroke="{ThemeResource SystemFillColorSuccessBrush}" StrokeThickness="1.5" StrokeLineJoin="Round" />
@@ -460,7 +460,7 @@
                                 <TextBlock x:Name="FpsPeakText" Grid.Row="0" Grid.Column="3" VerticalAlignment="Center" Foreground="{ThemeResource TextFillColorTertiaryBrush}" Style="{StaticResource CaptionTextBlockStyle}" TextAlignment="Right" />
 
                                 <!--  Latency  -->
-                                <TextBlock Grid.Row="1" VerticalAlignment="Center" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Style="{StaticResource CaptionTextBlockStyle}" Text="latency" />
+                                <TextBlock x:Uid="SessionPage_Latency" Grid.Row="1" VerticalAlignment="Center" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Style="{StaticResource CaptionTextBlockStyle}" />
                                 <TextBlock x:Name="RttValueText" Grid.Row="1" Grid.Column="1" VerticalAlignment="Center" Style="{StaticResource CaptionTextBlockStyle}" TextAlignment="Right" />
                                 <Canvas x:Name="RttSpark" Grid.Row="1" Grid.Column="2" Height="18">
                                     <Polyline x:Name="RttLine" Stroke="{ThemeResource SystemFillColorCautionBrush}" StrokeThickness="1.5" StrokeLineJoin="Round" />
@@ -468,7 +468,7 @@
                                 <TextBlock x:Name="RttPeakText" Grid.Row="1" Grid.Column="3" VerticalAlignment="Center" Foreground="{ThemeResource TextFillColorTertiaryBrush}" Style="{StaticResource CaptionTextBlockStyle}" TextAlignment="Right" />
 
                                 <!--  Loss  -->
-                                <TextBlock Grid.Row="2" VerticalAlignment="Center" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Style="{StaticResource CaptionTextBlockStyle}" Text="loss" />
+                                <TextBlock Text="loss" Grid.Row="2" VerticalAlignment="Center" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Style="{StaticResource CaptionTextBlockStyle}" />
                                 <TextBlock x:Name="LossValueText" Grid.Row="2" Grid.Column="1" VerticalAlignment="Center" Style="{StaticResource CaptionTextBlockStyle}" TextAlignment="Right" />
                                 <Canvas x:Name="LossSpark" Grid.Row="2" Grid.Column="2" Height="18">
                                     <Polyline x:Name="LossLine" Stroke="{ThemeResource SystemFillColorCriticalBrush}" StrokeThickness="1.5" StrokeLineJoin="Round" />
@@ -476,7 +476,7 @@
                                 <TextBlock x:Name="LossPeakText" Grid.Row="2" Grid.Column="3" VerticalAlignment="Center" Foreground="{ThemeResource TextFillColorTertiaryBrush}" Style="{StaticResource CaptionTextBlockStyle}" TextAlignment="Right" />
 
                                 <!--  Bitrate  -->
-                                <TextBlock Grid.Row="3" VerticalAlignment="Center" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Style="{StaticResource CaptionTextBlockStyle}" Text="bitrate" />
+                                <TextBlock x:Uid="SessionPage_Bitrate" Grid.Row="3" VerticalAlignment="Center" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Style="{StaticResource CaptionTextBlockStyle}" />
                                 <TextBlock x:Name="BitrateValueText" Grid.Row="3" Grid.Column="1" VerticalAlignment="Center" Style="{StaticResource CaptionTextBlockStyle}" TextAlignment="Right" />
                                 <Canvas x:Name="BitrateSpark" Grid.Row="3" Grid.Column="2" Height="18">
                                     <Polyline x:Name="BitrateLine" Stroke="{ThemeResource AccentTextFillColorPrimaryBrush}" StrokeThickness="1.5" StrokeLineJoin="Round" />
@@ -642,31 +642,27 @@
                     x:Name="PsButton"
                     MinWidth="64"
                     MinHeight="52"
-                    AutomationProperties.Name="PS button"
+                    x:Uid="SessionPage_PsButton"
                     Content="PS"
                     Style="{StaticResource AccentButtonStyle}"
-                    Tag="Guide"
-                    ToolTipService.ToolTip="PS button — hold for the power menu" />
+                    Tag="Guide" />
                 <Button
                     x:Name="CreateButton"
                     MinWidth="72"
                     MinHeight="52"
-                    AutomationProperties.Name="Create button"
-                    Content="Create"
+                    x:Uid="SessionPage_CreateButton"
                     Tag="Select" />
                 <Button
                     x:Name="OptionsButton"
                     MinWidth="76"
                     MinHeight="52"
-                    AutomationProperties.Name="Options button"
-                    Content="Options"
+                    x:Uid="SessionPage_OptionsButton"
                     Tag="Start" />
                 <Button
                     x:Name="TouchpadButton"
                     MinWidth="88"
                     MinHeight="52"
-                    AutomationProperties.Name="Touchpad click"
-                    Content="Touchpad"
+                    x:Uid="SessionPage_TouchpadClick"
                     Tag="TouchpadClick" />
 
                 <Rectangle
@@ -679,27 +675,24 @@
                     x:Name="DiagnosticsToggleButton"
                     MinWidth="56"
                     MinHeight="52"
-                    AutomationProperties.Name="Toggle connection diagnostics"
-                    Click="DiagnosticsToggleButton_Click"
-                    ToolTipService.ToolTip="Connection diagnostics (F3)">
+                    x:Uid="SessionPage_ToggleConnectionDiagnostics"
+                    Click="DiagnosticsToggleButton_Click">
                     <FontIcon FontSize="{ThemeResource RipcordIconSizeStanding}" Glyph="&#xE9D9;" />
                 </Button>
                 <Button
                     x:Name="SaveDiagnosticsButton"
                     MinWidth="56"
                     MinHeight="52"
-                    AutomationProperties.Name="Save diagnostics to a file"
-                    Click="SaveDiagnosticsButton_Click"
-                    ToolTipService.ToolTip="Save diagnostics (F8)">
+                    x:Uid="SessionPage_SaveDiagnosticsFile"
+                    Click="SaveDiagnosticsButton_Click">
                     <FontIcon FontSize="{ThemeResource RipcordIconSizeStanding}" Glyph="&#xE74E;" />
                 </Button>
                 <Button
                     x:Name="ExitButton"
                     MinWidth="56"
                     MinHeight="52"
-                    AutomationProperties.Name="Leave the stream"
-                    Click="LeaveButton_Click"
-                    ToolTipService.ToolTip="Leave the stream (Esc)">
+                    x:Uid="SessionPage_LeaveStream"
+                    Click="LeaveButton_Click">
                     <FontIcon FontSize="{ThemeResource RipcordIconSizeStanding}" Glyph="&#xE711;" />
                 </Button>
             </StackPanel>
