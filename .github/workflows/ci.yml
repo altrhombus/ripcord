@@ -59,7 +59,10 @@ jobs:
           dotnet-version: '10.0.x'
       - uses: microsoft/setup-msbuild@v2
       - name: Build solution
-        run: msbuild Ripcord.slnx -p:Platform=${{ matrix.platform }} -p:Configuration=Release -m
+        # -restore, not a bare build. Without it every managed project fails NETSDK1004 looking for a
+        # project.assets.json that no step has produced - which is what every App job did until someone
+        # read a CI log.
+        run: msbuild Ripcord.slnx -restore -p:Platform=${{ matrix.platform }} -p:Configuration=Release -m
       - name: Native interop landed where the managed projects look for it
         shell: pwsh
         run: |
