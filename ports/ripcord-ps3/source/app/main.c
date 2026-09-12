@@ -62,6 +62,8 @@
  * `make` printed. See the Makefile's BUILD_NO comment for the five runs that made this necessary.
  */
 #include "rc_build_id.h"
+#include "rc_spu.h"
+#include "rc_spu_phase.h"
 
 #include "../platform/rc_platform_ps3.h"
 
@@ -398,6 +400,178 @@ static int check_csprng(void)
     return 0;
 }
 
+/*
+ * 256 KB each way. Large enough that the DMA dominates the per-job overhead measured beside it - at any
+ * plausible Cell bandwidth this is hundreds of microseconds against a start-up cost in the tens - and
+ * small enough to sit in .bss on a console with 256 MB. 128-byte aligned because the MFC requires it.
+ */
+#define SPU_BYTES (256u * 1024u)
+
+static unsigned char g_spu_src[SPU_BYTES] __attribute__((aligned(128)));
+static unsigned char g_spu_dst[SPU_BYTES] __attribute__((aligned(128)));
+
+/* Renders a phase word for the log. The SPE's values are ASCII on purpose, but a raw hex figure beside
+ * the name is what you actually want when the value is none of them. */
+static const char *spu_phase_name(uint32_t phase)
+{
+    switch (phase) {
+    case RC_SPU_PHASE_NOTHING: return "NOTHING - the SPE never wrote anything";
+    case RC_SPU_PHASE_ENTERED: return "ENTERED - the SPE ran, then stalled or died";
+    case RC_SPU_PHASE_DONE:    return "DONE";
+    default:                   return "unrecognised - not a value this program writes";
+    }
+}
+
+static const char *spu_heartbeat_name(uint32_t hb)
+{
+    switch (hb) {
+    case RC_SPU_HEARTBEAT_RUNNING:    return "RUNNING - executed, but died at or inside the DMA";
+    case RC_SPU_HEARTBEAT_GOTJOB:     return "GOTJOB - the job block arrived, died signalling";
+    case RC_SPU_HEARTBEAT_PASTDMA:    return "PASTDMA - the transfer returned on the SPE side";
+    case RC_SPU_HEARTBEAT_LOADED:     return "LOADED - image in local store, main() never ran";
+    case RC_SPU_HEARTBEAT_UNREADABLE: return "local store could not be read";
+    case RC_SPU_HEARTBEAT_UNREAD:     return "not read";
+    default:                          return "local store does not hold our program";
+    }
+}
+
+static int spu_report_failure(const char *what, uint32_t phase, uint32_t heartbeat,
+                              const uint64_t *spu_args, const uint64_t *passed,
+                              uint32_t cause, uint32_t status)
+{
+    /* What each mirrored slot means now that a job block replaced the argument list: the address the
+     * SPE was handed, then three fields it read back out of the block at that address. */
+    static const char *const argname[RC_SPU_ARG_COUNT] = { "job", "src", "size", "done" };
+    uint32_t entry = 0u, segments = 0u, expected = 0u;
+    int mismatch = 0;
+    int i;
+
+    rc_spu_image_info(&entry, &segments, &expected);
+
+    ps3_log("FAIL  %s\n", what);
+    ps3_log("      heartbeat 0x%08x  %s\n", heartbeat, spu_heartbeat_name(heartbeat));
+    ps3_log("      phase     0x%08x  %s\n", phase, spu_phase_name(phase));
+    ps3_log("      join      cause 0x%08x  status 0x%08x\n", cause, status);
+
+    /* Raw only. PSL1GHT's sysSpuImage layout does not match lv2's on this target - b9's reading of
+     * these fields produced a confident and wrong conclusion, so they no longer decide anything. */
+    ps3_log("      image     entry 0x%08x segs %u (linker 0x%08x; fields unreliable)\n",
+            entry, segments, expected);
+
+    ps3_log("      arguments  as passed        as the SPE saw them\n");
+    for (i = 0; i < RC_SPU_ARG_COUNT; i++) {
+        int bad = (spu_args[i] != passed[i]);
+        if (bad)
+            mismatch = 1;
+        ps3_log("        %-4s  %016llx  %016llx %s\n",
+                argname[i],
+                (unsigned long long)passed[i],
+                (unsigned long long)spu_args[i],
+                bad ? "<- MISMATCH" : "");
+    }
+
+    /*
+     * The decision tree, in the log rather than in a header nobody has open beside the console. Each of
+     * these runs costs an install, so the log should say what to do next, not only what it saw.
+     */
+    if (mismatch)
+        ps3_log("      -> the job block did not survive the round trip. Address or DMA path.\n");
+    else if (heartbeat == RC_SPU_HEARTBEAT_RUNNING)
+        ps3_log("      -> died at the transfer, with the right address. Suspect MFC rules.\n");
+    else if (heartbeat == RC_SPU_HEARTBEAT_PASTDMA)
+        ps3_log("      -> the SPE completed the transfer and the PPE cannot see it. Coherency.\n");
+    else if (heartbeat == RC_SPU_HEARTBEAT_LOADED)
+        ps3_log("      -> image loaded but main() never ran. Suspect entry point or scheduling.\n");
+    else
+        ps3_log("      -> local store does not hold our program. Suspect the import or the thread.\n");
+
+    return 1;
+}
+
+static int check_spu(void)
+{
+    uint64_t empty_ticks = 0u, copy_ticks = 0u;
+    uint64_t hz = rc_tick_hz();
+    uint32_t phase = 0u, heartbeat = 0u, cause = 0u, status = 0u;
+    uint64_t spu_args[RC_SPU_ARG_COUNT];
+    uint64_t passed[RC_SPU_ARG_COUNT];
+    size_t i;
+
+    if (!rc_spu_init()) {
+        ps3_log("FAIL  rc_spu_init: could not bring up the SPU subsystem or import the image\n");
+        return 1;
+    }
+
+    /*
+     * TWO RUNS, AND THE SUBTRACTION IS THE POINT. The first asks the SPE to copy nothing: what it times
+     * is thread-group start, the SPE's own startup, and the completion write - the cost of ASKING. The
+     * second copies 256 KB. The difference is the DMA, and the first number on its own is what decides
+     * how coarsely the decoder must batch. Neither is interesting without the other.
+     */
+    passed[0] = rc_spu_job_ea();
+    passed[1] = (uint64_t)(uintptr_t)g_spu_src;
+    passed[2] = 0u;
+    passed[3] = rc_spu_done_ea();
+
+    if (!rc_spu_run(g_spu_src, g_spu_dst, 0u, &empty_ticks, &phase, &heartbeat, spu_args,
+                    &cause, &status)) {
+        int r = spu_report_failure("rc_spu_run: the empty job did not complete",
+                                   phase, heartbeat, spu_args, passed, cause, status);
+        rc_spu_exit();
+        return r;
+    }
+
+    for (i = 0u; i < SPU_BYTES; i++) {
+        g_spu_src[i] = (unsigned char)(i * 7u + 1u);
+        g_spu_dst[i] = 0u;
+    }
+
+    passed[2] = (uint64_t)SPU_BYTES;
+
+    if (!rc_spu_run(g_spu_src, g_spu_dst, SPU_BYTES, &copy_ticks, &phase, &heartbeat, spu_args,
+                    &cause, &status)) {
+        int r = spu_report_failure("rc_spu_run: the 256 KB job did not complete",
+                                   phase, heartbeat, spu_args, passed, cause, status);
+        rc_spu_exit();
+        return r;
+    }
+
+    /* The SPE actually moved the bytes, or the timing measures an empty loop. memcmp rather than a
+     * checksum: a wrong byte anywhere is what matters, not how many. */
+    if (memcmp(g_spu_src, g_spu_dst, SPU_BYTES) != 0) {
+        ps3_log("FAIL  the SPE reported done but the copy does not match\n");
+        rc_spu_exit();
+        return 1;
+    }
+
+    ps3_log("spu:   empty job      %llu ticks (%llu us)  <- cost of asking\n",
+            (unsigned long long)empty_ticks,
+            (unsigned long long)(empty_ticks * 1000000ULL / hz));
+    ps3_log("       %u KB copied  %llu ticks (%llu us)\n",
+            SPU_BYTES / 1024u,
+            (unsigned long long)copy_ticks,
+            (unsigned long long)(copy_ticks * 1000000ULL / hz));
+
+    if (copy_ticks > empty_ticks) {
+        uint64_t dma_ticks = copy_ticks - empty_ticks;
+        /* Both directions: the SPE reads the source into local store and writes it back out, so the
+         * MFC moved twice what the buffer holds. Reported in MB/s, which is the unit the decoder
+         * budget will be argued in. */
+        uint64_t bytes = (uint64_t)SPU_BYTES * 2ULL;
+        uint64_t mb_per_s = (dma_ticks > 0ULL)
+                            ? (bytes * hz / dma_ticks) / (1024ULL * 1024ULL)
+                            : 0ULL;
+        ps3_log("       DMA alone     %llu ticks (%llu us), %llu MB/s both ways, single-buffered\n",
+                (unsigned long long)dma_ticks,
+                (unsigned long long)(dma_ticks * 1000000ULL / hz),
+                (unsigned long long)mb_per_s);
+    }
+
+    ps3_log("ok    one SPE ran a DMA job and the bytes arrived intact\n");
+    rc_spu_exit();
+    return 0;
+}
+
 int main(void)
 {
     int failures = 0;
@@ -502,8 +676,9 @@ int main(void)
     failures += measure_timebase();
     failures += check_monotonic();
     failures += check_csprng();
+    failures += check_spu();
 
-    ps3_log("\nnot covered here: sockets, threads, decode. See README.md.\n");
+    ps3_log("\nnot covered here: sockets, decode. See README.md.\n");
     ps3_log("%s\n", failures == 0 ? "all checks passed" : "CHECKS FAILED");
     lv2_log_close();
     rc_log_close();
