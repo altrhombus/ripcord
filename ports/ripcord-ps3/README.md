@@ -132,6 +132,30 @@ recorded the first as though it settled the second.
 **Still open `[X]`:** the default the loader applies when the macro is absent. Never measured, because
 the runs that would have measured it were broken for other reasons.
 
+### What lv2 does with SPU thread arguments — measured, and it cost four runs
+
+`sysSpuThreadInitialize` takes a `sysSpuThreadArgument` with four `u64` fields, and every SPU `main` in
+PSL1GHT's samples is declared to receive four of them. **lv2 delivered `arg0`, `arg1` and `arg2` intact
+and `arg3` as zero.** The SPE then DMA'd to effective address 0, the MFC faulted, and the thread died
+before its next instruction.
+
+The SDK corroborates it in hindsight: every sample declares the four-parameter signature and **not one
+populates `arg2` or `arg3`**. Nothing in the SDK exercises the convention past the second slot, which is
+exactly the sort of thing that looks load-bearing until you test it. `[X]` Whether `arg3` is reserved by
+lv2 or simply not delivered is unknown, and does not matter — the fix does not want it.
+
+So the port passes **one** argument, the effective address of a job block in main memory that the SPE
+fetches by DMA before doing anything else. That is the standard shape for SPU work dispatch and what step
+7 needs regardless: a decode job has far more than four parameters, so the argument registers were never
+going to be the mechanism. Finding the limit on a 30-line memcpy rather than inside a half-built decoder
+is the cheap version.
+
+The diagnostics that found it are still in the program and still pointed at its replacement: a heartbeat
+the SPE writes to its own local store (read back by the PPE with `sysSpuThreadReadLocalStorage`, which
+does not need the SPE to participate), and a mirror of the job block as the SPE received it. Between
+them they separate "never ran", "ran and its DMA went nowhere", and "was handed the wrong address" —
+three failures that look identical from outside and have nothing in common as bugs.
+
 ## Can the hardware do it?
 
 | Concern | PS3 | Verdict |
@@ -183,8 +207,11 @@ Nothing in 1–4 needs a PS3.
    packaging anything else for this console.
 5. ~~Choose the decoder base on the evidence from 1.~~ **Done — openh264.** CABAC decided it;
    `DECODE.md` §1.
-6. SPU bring-up: one SPE running a trivial DMA job, measured. `spu-gcc` and `ppu-embedspu` ship in the
-   same archive as the PPU compiler, so nothing here is blocked on more toolchain.
+6. ~~SPU bring-up: one SPE running a trivial DMA job, measured.~~ **Done, on hardware 2026-09-11.**
+   `spu/rc_spu_probe.c` and `source/spu/rc_spu.c`. Dispatch costs **~65 µs** and DMA runs at **~10 GB/s**
+   single-buffered, both ways; `DECODE.md` §3 has what those numbers do to the decoder's shape. Took five
+   console round trips, and the cause of four of them is worth knowing before writing any more SPU code —
+   see "what lv2 does with SPU thread arguments" below.
 7. Decoder proper, stage by stage, against the same vectors.
 
 ## Licensing

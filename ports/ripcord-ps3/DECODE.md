@@ -157,6 +157,35 @@ Frame-level pipelining — entropy for picture N+1 while reconstructing N — wo
 entirely, and is available precisely because there are no B-slices. It costs one frame of latency
 (16.7 ms), which is most of the decode budget in §4, so it is a fallback rather than a starting point.
 
+### What a job costs — **measured on hardware, 2026-09-11**
+
+Step 6 of README.md's order of work ran on a console. One SPE, one thread group, one job, synchronous:
+
+```
+empty job      5227 ticks (65 us)   <- thread group start, SPE startup, completion signal
+256 KB copied  9230 ticks (115 us)
+DMA alone      4003 ticks (50 us), 9967 MB/s both ways, single-buffered
+```
+
+**Dispatch costs ~65 µs, and that is the number this section needed.** It is 0.4% of a 16.7 ms frame
+period, so a few dozen jobs per frame is free and the granularity question has an answer: a job must be
+worth at least a few hundred microseconds of work for the overhead to disappear into it. A macroblock-row
+stripe comfortably is; a single macroblock is not, by two orders of magnitude. The stripe-based design
+above stands, and "dispatch per macroblock" is now ruled out on evidence rather than on instinct.
+
+Note that the empty job is most of the 115 µs total — at this size overhead dominates transfer, which is
+exactly the regime that decides batching.
+
+**~10 GB/s of DMA is not the constraint.** A 720p NV12 frame is ~1.4 MB, so a whole frame in and back out
+is ~280 µs of transfer against an 8 ms budget. That figure is also a deliberate floor: the probe is
+single-buffered, issuing a get, waiting, issuing a put, waiting. The double-buffered stripe pattern this
+section assumes roughly doubles it. Bandwidth was never going to be the problem; local store size and the
+serial entropy stage still are.
+
+**[X] All of this is one SPE.** Whether six run at anything like six times the aggregate is unmeasured,
+and the EIB and memory controller are shared. It is the obvious next measurement, and cheap now that the
+job model works.
+
 ---
 
 ## 4. Budget
@@ -197,14 +226,16 @@ Nothing in 1–4 needs a PS3.
    pointers into the caller's buffer — nothing copied, because the decoder DMAs slice bytes from exactly
    those pointers into 256 KB of local store — and an access-unit tracker absorbs the parameter sets and
    reports where each picture begins. 142 host checks across steps 2 and 3.
-4. **`rc_platform_ps3.c` and a PSL1GHT skeleton** that links and prints a timestamp. **Written, not
-   built** — no PSL1GHT on hand. It measures the time base rather than trusting the constant, which is the
-   only part of the seam a wrong value would corrupt silently.
-5. **Choose the decoder base** on the evidence from 1.
-6. **SPU bring-up**: one SPE running a trivial DMA job, measured. Establishes the toolchain and job model
-   before codec work rides on it.
-7. **Decoder proper**, stage by stage, against the same vectors.
+4. ~~**`rc_platform_ps3.c` and a PSL1GHT skeleton.**~~ **Done, on hardware.** The seam measures the time
+   base rather than trusting the constant — the only part of it a wrong value would corrupt silently —
+   and the console answered 79,800,986 Hz against 79,800,000 expected.
+5. ~~**Choose the decoder base** on the evidence from 1.~~ **Done — openh264**, §1.
+6. ~~**SPU bring-up**: one SPE running a trivial DMA job, measured.~~ **Done, on hardware** — see §3.
+   Dispatch costs ~65 µs and DMA runs at ~10 GB/s, which settles the granularity question this document
+   had been deferring.
+7. **Decoder proper**, stage by stage, against the same vectors. **The only step left.**
 
-Steps 2 and 3 were worth doing regardless of how 5 resolves, which was the argument for starting there
-rather than with the SPU. Step 4 is written and waiting on a toolchain; step 6 is the next one that
-can move, and it needs the same toolchain, so acquiring one is now the critical path.
+Steps 2 and 3 were worth doing regardless of how 5 resolved, which was the argument for starting there
+rather than with the SPU — and it held up: the front end was finished and tested before any console was
+involved. Everything in 1–6 is now confirmed, so the remaining work is the decoder itself and the two
+measurements §3 marks `[X]`: whether slice parallelism scales at 720p, and whether six SPEs aggregate.
