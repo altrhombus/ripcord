@@ -2,12 +2,18 @@
 
 A PS5 Remote Play client for PlayStation 3 homebrew, in C.
 
-**Status: nothing runs on a console yet, and nothing has been cross-compiled.** What exists and is
-tested is the bitstream front end — reader, parameter-set and slice-header parsers, Annex-B splitter,
-picture-boundary tracking — built on the host, because none of it needs a PS3 to be found wrong. What
-exists and is *not* tested is the platform layer and the build: written against PSL1GHT's documented
-surface, with no PSL1GHT here to compile them. The difference between those two categories is tracked
-per item in [Order of work](#order-of-work) and marked `[X]` in the files themselves.
+**Status: it runs on a PS3, and the platform seam is confirmed against hardware.** What exists and is tested is the
+bitstream front end — reader, parameter-set and slice-header parsers, Annex-B splitter, picture-boundary
+tracking — built on the host, because none of it needs a PS3 to be found wrong. What is now *also*
+confirmed is the platform layer: on 2026-09-11 the bring-up program ran on a real console and every check
+passed. The time base, the sleep's units and the CSPRNG are measurements rather than assumptions.
+
+**The headline measurement: the PPE time base is 79,800,986 Hz against the 79,800,000 this port
+expected — 12 parts per million.** That number scales every timeout in the core, and it is right.
+
+What remains untouched by hardware is everything above the seam: sockets, threads, decode.
+[`SETUP.md`](SETUP.md) records what the toolchain install took, what it corrected, and — at some length —
+the five runs it took to get a program to start at all.
 
 This branch sits on `feat/ports-common`, so `ports/common` — the portable protocol core — is in the
 tree. That was not true when the port was scoped: the core lived on `feat/vita-port`, 94 commits behind
@@ -17,8 +23,10 @@ tests cannot run is the wrong base — so steps 1–3 were deliberately chosen t
 and the core was rebased onto `main` on its own branch before step 4 asked for it.
 
 No PS3 on hand yet, which is fine: none of the work that comes first needs one. A *toolchain*
-unblocks more of this port than a console does — [`SETUP.md`](SETUP.md) is how to get one, and is
-written for the same Linux box the 3DS and Vita ports are built on.
+unblocks more of this port than a console does, and that has now been demonstrated rather than argued —
+installing one settled two of this file's open `[X]` questions and turned up two build errors, without
+a console being involved. [`SETUP.md`](SETUP.md) is how to get one, and is written for the same Linux
+box the 3DS and Vita ports are built on.
 
 ## Why this port is only the decoder
 
@@ -49,39 +57,80 @@ largest platform surface and the least shared.
 
 ## The platform layer
 
-Written, never compiled — `source/platform/rc_platform_ps3.c`. Everything SDK-facing is `[X]`.
+`source/platform/rc_platform_ps3.c`. It compiles against real PSL1GHT headers now, which is not the
+same as working: every row below is still `[X]` on *behaviour*, because no line of it has executed on a
+console.
 
 | Seam | PS3 | Note |
 |---|---|---|
 | `rc_time_ms()` | Derived from the time base, **not** a wall clock | The seam forbids going backwards, and the PS3 has a user-settable date and an internet time sync. One monotonic source makes that property structural rather than hoped for |
-| `rc_sleep_ms()` | `sysUsleep(ms * 1000)` `[X]` | The units trap the seam exists to contain. The multiply happens once, in the seam, and nowhere else |
-| `rc_tick()` / `rc_tick_hz()` | `mftb`, at 79,800,000 Hz `[X]` | `mftb` is an architectural fact rather than a name in a header, so the only thing here that can be wrong is the frequency — and a wrong one scales every timeout in the core silently |
-| `rc_random_bytes()` | **Not implemented, deliberately** | An lv2 random-number syscall is the candidate `[X]`. Until it is confirmed, this port does not link once anything asks for key material, which is the correct failure |
+| `rc_sleep_ms()` | `sysUsleep(ms * 1000)` | **Microseconds, confirmed on hardware.** A 1000 ms sleep measured 79,800,986 ticks against an independently-reported 79.8 MHz time base, which only works out if the units are what the seam assumes |
+| `rc_tick()` / `rc_tick_hz()` | `mftb`, at whatever `sysGetTimebaseFrequency()` reports | **The 79.8 MHz magic number is gone** — lv2 answers it directly (syscall 147), and 79,800,000 survives only as the value the bring-up program cross-checks against. On the console the two agreed to 12 ppm, so the documented figure was right all along; the point is that the port no longer *depends* on it having been |
+| `rc_random_bytes()` | `sysGetRandomNumber`, in `source/platform/rc_random_ps3.c` | Resolves against `sysPrxForUser` — the always-resident library, so no `sysModuleLoad` first. Capped at 4096 bytes a call, so the body is a chunking loop. **Both of its `[X]`s are now closed on hardware:** zero does mean success, and lv2 *does* tolerate an unaligned destination — `rc_random_init()`'s probe asks for bytes at a deliberately odd address and it passed |
 | sockets | PSL1GHT BSD names after `netInitialize()` `[X]` | Same shape as `socInit()` / `sceNetInit()`. Belongs in a port bring-up file, not the seam |
 
 Three of the four functions read the PowerPC time base with one instruction, so the whole file's exposure
-to PSL1GHT is one sleep call and one constant. That is a much smaller surface to be wrong about than four
-independent SDK calls, and it is why the bring-up program measures the constant before anything depends
-on it.
+to PSL1GHT is one sleep call and one frequency query. That is a much smaller surface to be wrong about
+than four independent SDK calls — and smaller again now that the frequency is asked for rather than
+asserted, which removed the only value here that a wrong answer would have corrupted in silence.
+
+What that leaves the bring-up program doing is *better*, not redundant. Its own comment used to concede
+that measuring ticks against a sleep tests the conjunction of two unknowns and cannot say which failed.
+With the frequency authoritative, a disagreement is evidence about `sysUsleep` specifically.
 
 Two things the Vita port learned that apply here unchanged: **"it compiles" is not "it works"** for socket
 idioms, and `bind()` to port 0 is worth testing on a device before assuming — the 3DS rejects it outright.
 
-### The main thread's stack — open `[X]`
+### The CSPRNG — implemented, and why it is a probe
 
-Both prior ports pay for this, and the measurement transfers. The 3DS crashed twice on a 32 KB default;
-the Vita raised its 4 KiB default to 256 KB before running anything. The instructive failure was the
-second 3DS one — not a single oversized frame, which `-Wframe-larger-than=8192` catches at build time,
-but **cumulative call depth** down the audio loss-concealment chain, ~12.4 KB across five frames with
-every frame under the limit. That chain is `ports/common` code and Opus, so it will exist here too, and
-it only runs when a packet is *lost*, which is a path ordinary testing does not take.
+`source/platform/rc_random_ps3.c`, as of 2026-09-11. This was the last thing the README called "standing
+between this port and a session", and what unblocked it was reading the SDK's own headers — no console
+involved.
 
-What is unknown is the PS3 half: the default main-thread stack, and how to change it. The Vita's answer
-was a loader-read symbol that `--gc-sections` silently collected until the Makefile pinned it; there is
-no reason to expect PSL1GHT's answer to have the same shape. What is *not* in doubt is that
-`sysThreadCreate` takes a stack size per thread `[X]`, so the fallback is to run the deep paths on a
-thread this port creates rather than on whatever the loader hands it. Settle this before the connect
-flow runs, not after a dump.
+Three things were established from our own installed toolchain, with `ar` and `objdump` rather than from
+documentation: the call is `sysGetRandomNumber(void *, u64)` in `<lv2/system.h>`, it is defined in
+`liblv2.a` which this port already links, and — the part worth the disassembly — it is a **PRX stub**
+resolving against `sysPrxForUser`, the library the loader binds without being asked. So there is no
+`sysModuleLoad()` to perform first, which was the open question worth settling before writing anything.
+
+Two things were **not** established, and both are why `rc_random_init()` draws a probe rather than
+returning 1: whether zero means success (inferred from every other lv2-family call in this SDK, not
+documented), and whether an unaligned destination is accepted (the header says `void *addr` and nothing
+more). The probe asks for bytes at an odd address on purpose, and rejects a call that reports success
+while writing nothing — which is what an unimplemented syscall looks like, and produces an all-zero key.
+
+36 host checks in `tests/random_test.c` cover the half that does not need a console: the chunking loop,
+the refusal to return a half-filled buffer, the gate before init, and the inversion in
+`rc_random_rng_callback`. They build `rc_random_ps3.c` unmodified against a stand-in for the SDK header.
+They prove nothing whatsoever about lv2, and the file says so at length.
+
+### The main thread's stack — settled, and it cost two runs to settle
+
+`SYS_PROCESS_PARAM(1001, 0x100000)` in `source/app/main.c`, and **the second argument is a raw byte
+count**. This document previously said it was one of the `SYS_PROCESS_SPAWN_STACK_SIZE_32K` … `_1M`
+enumerations. That was wrong, and it was wrong in a way that shipped: `SYS_PROCESS_SPAWN_STACK_SIZE_1M`
+is `0x70`, so the binary asked lv2 for a **112-byte stack** — worse than the default it was written to
+replace, and a crash before `main()` with no output of any kind.
+
+Two pieces of evidence were available before that build was made and neither was used. Every sample in
+PSL1GHT writes `SYS_PROCESS_PARAM(1001, 0x100000)` — a byte count, spelled in hex. And the field
+immediately after this one in the same struct is `SYS_PROCESS_SPAWN_MALLOC_PAGE_SIZE_1M`, which is
+`0x00100000`: the struct's own neighbour makes the units unambiguous. The `_STACK_SIZE_*` names belong to
+the `flags` argument of `sysProcessExitSpawn`, a different call entirely. Checking against the SDK's own
+samples is what caught it.
+
+The Vita's `--gc-sections` trap does **not** repeat here, and that part was checked properly: built with
+this port's exact flags, `.sys_proc_param` survives at 32 bytes with its magic and size intact, through
+`strip` and `sprxlinker` as well. No linker pin is needed. Recorded because a negative result is what
+stops the next person adding an incantation against a problem they do not have.
+
+**The deeper lesson is not about stacks.** The mechanism was identified, the linker question was
+investigated, the finding was written up in three documents — and nobody put the macro in the program.
+"We identified the mechanism" and "the program uses it" are different claims, and the documentation
+recorded the first as though it settled the second.
+
+**Still open `[X]`:** the default the loader applies when the macro is absent. Never measured, because
+the runs that would have measured it were broken for other reasons.
 
 ## Can the hardware do it?
 
@@ -126,14 +175,16 @@ Nothing in 1–4 needs a PS3.
    a zero-copy NAL iterator and an access-unit tracker that answers where each picture begins from the
    slice headers rather than from the framing layer's frame index. Steps 2 and 3 together are 142 checks
    in `tests/h264_test.c`, no console needed: `make -C ports/ripcord-ps3/tests`.
-4. `rc_platform_ps3.c` and a PSL1GHT skeleton that links and prints a timestamp. **Written, not built**
-   — `source/platform/rc_platform_ps3.c`, `source/app/main.c` and a `Makefile`, with no PSL1GHT on hand to
-   compile any of it. The program measures the time base against a known sleep rather than only printing
-   a timestamp, because the one constant in the seam is the one thing a wrong value would corrupt
-   silently. **This step is not finished until it has run**; a toolchain is what it is waiting for.
+4. ~~`rc_platform_ps3.c` and a PSL1GHT skeleton that links and prints a timestamp.~~ **Done — it ran on
+   a console on 2026-09-11 and every check passed.** The time base measured 79,800,986 Hz against an
+   expected 79,800,000; `sysUsleep` is microseconds; `rc_time_ms` is monotonic; the CSPRNG is live and
+   tolerates an unaligned destination. Getting there took five hardware runs and four of them produced no
+   output whatsoever — [`SETUP.md`](SETUP.md) §6 is the post-mortem, and it is worth reading before
+   packaging anything else for this console.
 5. ~~Choose the decoder base on the evidence from 1.~~ **Done — openh264.** CABAC decided it;
    `DECODE.md` §1.
-6. SPU bring-up: one SPE running a trivial DMA job, measured.
+6. SPU bring-up: one SPE running a trivial DMA job, measured. `spu-gcc` and `ppu-embedspu` ship in the
+   same archive as the PPU compiler, so nothing here is blocked on more toolchain.
 7. Decoder proper, stage by stage, against the same vectors.
 
 ## Licensing
