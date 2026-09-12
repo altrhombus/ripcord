@@ -235,8 +235,9 @@ question is answered: a packaged title can write to its own `USRDIR`, to `/dev_h
 1. **The loader's default main-thread stack**, when `SYS_PROCESS_PARAM` is absent — never measured.
 2. **Sockets on hardware.** `bind()` to port 0 is the specific thing worth testing before assuming; the
    3DS rejects it outright and no PS3 has been asked.
-3. **Step 6, SPU bring-up** — one SPE running a trivial DMA job, measured. `spu-gcc` and `ppu-embedspu`
-   ship in the archive. That is where this port stops resembling the other two.
+3. ~~**Step 6, SPU bring-up.**~~ **Done on hardware.** Dispatch ~65 µs, DMA ~10 GB/s single-buffered;
+   `DECODE.md` §3 has what that does to the decoder's design. The second compiler works, an SPE image
+   embeds into the PPU binary, and a job model exists.
 
 ## 6. Packaging for this console — read this before you debug anything
 
@@ -263,6 +264,14 @@ crashes before `main()` exactly as if the macro were absent. Every PSL1GHT sampl
 found a real and correct fact about newlib's devoptab layer that was entirely beside the point, because
 the program was not running at all. Reading the reference implementation of the thing you are copying is
 cheaper than deriving what it must have meant.
+
+**Two SPU-specific traps, learned in step 6.** `sysSpuThreadInitialize` takes four `u64` arguments and
+lv2 delivers three: `arg3` arrives as zero, the SPE DMAs to address 0, and the thread dies before its
+next instruction. Pass a job block by effective address instead - README.md argues it in full, and
+PSL1GHT's own samples never populate past `arg1`, which is why nothing in the SDK reveals the limit. And
+`sysSpuImage` as PSL1GHT declares it does not match what lv2 writes on a 64-bit process, so `entryPoint`
+and `segmentCount` read as garbage; an earlier revision of the bring-up program concluded from them that
+the image was wrong, confidently and incorrectly.
 
 **A build id, for the same reason.** Every build stamps a number into the XMB title, the beacon file and
 the first line of both logs; `make` prints it. For all five runs above, the only evidence of which binary
