@@ -29,6 +29,20 @@
 *.cmd       text eol=crlf
 *.bat       text eol=crlf
 
+# The mirror case: Unix-only tooling that breaks on CRLF, and it breaks confusingly.
+#
+# The ports are built on a Linux box (ports/ripcord-3ds/SETUP.md) while the tree is edited on Windows,
+# where `* text=auto` checks these out native - so build-mbedtls.sh arrives with CRLF, `#!/bin/sh`
+# is not an interpreter any kernel recognises, and the error names neither the file's real problem nor
+# the line ending. GNU make is worse rather than better: it mostly tolerates CRLF, then passes the
+# stray  into a recipe's shell, so the failure surfaces somewhere else entirely.
+#
+# This matters more than a checkout rule usually would because SETUP.md copies the tree with rsync
+# rather than cloning it. rsync moves bytes, so whatever Windows checked out is what Linux runs.
+*.sh        text eol=lf
+Makefile    text eol=lf
+*.mk        text eol=lf
+
 # Binary: never touch, never diff.
 *.png       binary
 *.ico       binary
