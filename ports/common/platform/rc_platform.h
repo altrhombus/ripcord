@@ -72,8 +72,20 @@ uint64_t rc_tick_hz(void);
 
 /*
  * CSPRNG. Declared here rather than in util/rc_random.h so that the seam is one header, but the
- * contract is unchanged: returns 0 on success, non-zero on failure, and a failure must never be
- * papered over with a fallback PRNG. Key material depends on this.
+ * contract is unchanged: RETURNS 1 ON SUCCESS, 0 ON FAILURE, and a failure must never be papered over
+ * with a fallback PRNG. Key material depends on this.
+ *
+ * This comment said the opposite - 0 on success - until 2026-09-11, and it is worth saying why the
+ * wrong version is not a harmless typo. util/rc_random.h states the real contract and warns in its own
+ * words that an inverted check here "would make every failure look like a success"; the 3DS
+ * implementation returns 1 on success and its caller tests `if (!rc_random_bytes(...))`. But THIS is
+ * the header a new port is written from - it is the whole list of what the core asks of an OS - so the
+ * inversion was pointed exactly at the person with no other context, writing the first draft of a
+ * platform's entropy source. It was found while writing the PS3 one, before that draft existed.
+ *
+ * Note that rc_random_rng_callback() in util/rc_random.h really is inverted relative to this, on
+ * purpose, because mbedtls's f_rng convention is 0-on-success. Two conventions in one seam is the
+ * hazard; the adaptor is where they are allowed to meet.
  */
 int rc_random_bytes(uint8_t *out, size_t length);
 
