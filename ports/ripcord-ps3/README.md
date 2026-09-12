@@ -16,7 +16,9 @@ solution could not restore there. `CONTRIBUTING.md` requires `commit → test �
 tests cannot run is the wrong base — so steps 1–3 were deliberately chosen to need nothing from the core,
 and the core was rebased onto `main` on its own branch before step 4 asked for it.
 
-No PS3 on hand yet, which is fine: none of the work that comes first needs one.
+No PS3 on hand yet, which is fine: none of the work that comes first needs one. A *toolchain*
+unblocks more of this port than a console does — [`SETUP.md`](SETUP.md) is how to get one, and is
+written for the same Linux box the 3DS and Vita ports are built on.
 
 ## Why this port is only the decoder
 
