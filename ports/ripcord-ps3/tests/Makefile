@@ -31,18 +31,37 @@ H264_SOURCES := \
 	$(PORT_ROOT)/source/media/rc_h264_annexb.c \
 	h264_test.c
 
+# The CSPRNG seam's platform-independent half - chunking, partial-failure handling, the init gate, and
+# the mbedtls inversion. rc_random_ps3.c is built UNMODIFIED against stub-sdk/, which stands in for
+# PSL1GHT's <lv2/system.h>; random_test.c supplies sysGetRandomNumber itself so every failure a console
+# could produce can be asked for on demand. What this does NOT test is lv2, and the file says so at
+# length - the two [X] facts about the real call are settled by the bring-up program on hardware.
+#
+# -I$(CORE) reaches ports/common for util/rc_random.h, the contract both this and the 3DS implement.
+RANDOM_TARGET := $(BUILD)/random_test
+RANDOM_SOURCES := \
+	$(PORT_ROOT)/source/platform/rc_random_ps3.c \
+	random_test.c
+
+CORE := $(PORT_ROOT)/../common
+
 .PHONY: all check build clean
 
 all: check
 
-check: $(H264_TARGET)
+check: $(H264_TARGET) $(RANDOM_TARGET)
 	./$(H264_TARGET)
+	./$(RANDOM_TARGET)
 
-build: $(H264_TARGET)
+build: $(H264_TARGET) $(RANDOM_TARGET)
 
 $(H264_TARGET): $(H264_SOURCES)
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) -o $@ $(H264_SOURCES)
+
+$(RANDOM_TARGET): $(RANDOM_SOURCES) stub-sdk/lv2/system.h
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) -I stub-sdk -I $(CORE) -o $@ $(RANDOM_SOURCES)
 
 clean:
 	rm -rf $(BUILD)
