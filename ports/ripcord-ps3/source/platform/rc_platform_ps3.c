@@ -38,18 +38,54 @@
 
 #include "platform/rc_platform.h"
 
+#include "rc_platform_ps3.h"
+
 /*
- * [X] The PPE time base runs at 79,800,000 Hz - the documented figure for every retail PS3, derived
- * from the 3.2 GHz core clock divided by 40. It is the one number in this file that a wrong value
- * would corrupt silently rather than loudly: every timeout in the core would scale by the ratio, so a
- * 5-second handshake deadline could become 4 or 6 and look like a flaky console rather than a bug here.
+ * THE TIME BASE FREQUENCY IS ASKED FOR, NOT ASSUMED - which is a change from how this file was first
+ * written, and the reason is worth recording.
  *
- * VERIFY FIRST, AND IT IS CHEAP: sleep a known wall-clock interval, read rc_tick() either side, and
- * divide. source/app/main.c does exactly that and prints the result, which is most of the reason that
- * program exists. If the printed figure is not within a percent or two of the constant below, fix the
- * constant before trusting a single timing-dependent line anywhere else in this port.
+ * The original version hard-coded 79,800,000 Hz, the documented figure for every retail PS3 (3.2 GHz
+ * divided by 40), and carried a long warning that it was the one number here a wrong value would
+ * corrupt silently: every timeout in the core scales by the ratio, so a 5-second handshake deadline
+ * becomes 4 or 6 and the console reads as flaky rather than as a bug in this file. All of that is still
+ * true. What changed is that the warning was unnecessary, because lv2 will simply tell us:
+ * sysGetTimebaseFrequency() is syscall 147, declared in <sys/systime.h>, returning the rate as a u64.
+ * It was found by reading the SDK's own header while confirming something else.
+ *
+ * So the constant below is no longer the source of truth. It is the EXPECTED value, kept for two jobs:
+ * as the fallback if the syscall ever returns something unusable, and as the figure source/app/main.c
+ * cross-checks the kernel's answer against.
+ *
+ * This also sharpens the bring-up program. Its own comment worried that measuring the tick with a sleep
+ * tests the CONJUNCTION of two unknowns - sysUsleep's units and the frequency - and cannot say which is
+ * wrong. With the frequency coming from the kernel, that stops being true: an authoritative frequency
+ * plus a measured one isolates the sleep. See main.c, which now says so.
+ *
+ * [X] The syscall number and the unit are the SDK's, not ours, and neither has been run on a console.
  */
-#define RC_PS3_TIMEBASE_HZ 79800000ULL
+#define RC_PS3_TIMEBASE_HZ_EXPECTED 79800000ULL
+
+/*
+ * Cached because rc_time_ms() calls this on every timeout check in the core, and a syscall per check is
+ * a poor trade for a value that cannot change while the machine is on. Not thread-safe by construction,
+ * and it does not need to be: the worst a race can do is make two threads each perform the same syscall
+ * and store the same answer.
+ */
+static uint64_t rc_ps3_timebase_hz(void)
+{
+    static uint64_t cached;
+
+    if (cached == 0ULL) {
+        uint64_t hz = sysGetTimebaseFrequency();
+
+        /* A frequency under 1 kHz is not a slow clock, it is a failed call - and rc_time_ms() divides
+         * by hz/1000, so taking it at face value would divide by zero. Fall back rather than trust it.
+         * Anything else, including a figure that disagrees with the expected one, is believed: the
+         * kernel knows this machine's clock and this file does not. main.c reports the disagreement. */
+        cached = (hz >= 1000ULL) ? hz : RC_PS3_TIMEBASE_HZ_EXPECTED;
+    }
+    return cached;
+}
 
 /*
  * The time base, read with one instruction.
@@ -60,7 +96,7 @@
  * reader that the hazard exists here, which is a worse defect than the two instructions it saves.
  *
  * At 79.8 MHz a 64-bit counter wraps after roughly seven thousand years, so no wrap handling is needed
- * and none is written.
+ * and none is written. That conclusion survives any plausible correction to the frequency.
  */
 static inline uint64_t rc_ps3_timebase(void)
 {
@@ -73,7 +109,7 @@ uint64_t rc_time_ms(void)
 {
     /* Milliseconds since power-on. The epoch is unspecified by the seam and only differences are
      * meaningful, so counting from an arbitrary point costs nothing and buys monotonicity outright. */
-    return rc_ps3_timebase() / (RC_PS3_TIMEBASE_HZ / 1000ULL);
+    return rc_ps3_timebase() / (rc_ps3_timebase_hz() / 1000ULL);
 }
 
 void rc_sleep_ms(uint32_t ms)
@@ -96,27 +132,26 @@ uint64_t rc_tick(void)
 
 uint64_t rc_tick_hz(void)
 {
-    return RC_PS3_TIMEBASE_HZ;
+    return rc_ps3_timebase_hz();
+}
+
+uint64_t rc_ps3_timebase_hz_expected(void)
+{
+    /* Not the seam - see rc_platform_ps3.h. This is here so main.c can cross-check lv2's answer without
+     * a second copy of the number existing anywhere. */
+    return RC_PS3_TIMEBASE_HZ_EXPECTED;
 }
 
 /*
- * rc_random_bytes() IS NOT IMPLEMENTED HERE, AND MUST NOT BE STUBBED TO GET A BUILD.
+ * rc_random_bytes() IS NOT HERE, AND THAT IS STILL DELIBERATE - but the reason has changed.
  *
- * This port does not yet know, with confidence worth acting on, which call the PS3 exposes for
- * cryptographically secure bytes. The candidate recorded in README.md is an lv2 random-number syscall,
- * marked [X] there for the same reason it is unimplemented here. The earlier note in that file also
- * offered /dev/urandom as a fallback; that is withdrawn rather than carried forward, because whether
- * this platform's libc exposes such a device was never checked and a fallback nobody has confirmed is
- * exactly the kind of comfort this seam must not offer.
+ * It used to be absent because this port did not know which call the PS3 exposes for cryptographically
+ * secure bytes, and a seam whose failure is invisible must refuse to link rather than be stubbed. The
+ * call was confirmed on 2026-09-11 - sysGetRandomNumber, from sysPrxForUser - so it is now implemented,
+ * in source/platform/rc_random_ps3.c.
  *
- * So the port does not link once anything asks for key material, and that is the correct failure. Two
- * callers need real entropy and neither shows a symptom when it does not get it: the handshake key that
- * authenticates the ECDH exchange, and the ephemeral ECDH private scalar. A session keyed from a
- * counter connects, plays, and looks exactly like a working one. ports/common/util/rc_random.h makes
- * the argument in full; ports/ripcord-vita took precisely this position for precisely this reason, and
- * it is why the smoke test in source/app/main.c exercises the clock and nothing cryptographic.
- *
- * When the call is confirmed against real headers it belongs in its own source/platform/rc_random_ps3.c
- * - not appended here - so that the argument above stays in a file about entropy rather than being
- * buried in one about clocks.
+ * It lives there rather than here for the reason this comment gave when it was still a refusal: the
+ * argument about why entropy fails silently belongs in a file about entropy, not buried in one about
+ * clocks. That file carries the argument, what was confirmed and how, and the two things about the call
+ * that are still [X].
  */
