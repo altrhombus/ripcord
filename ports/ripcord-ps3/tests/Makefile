@@ -28,6 +28,7 @@ H264_TARGET := $(BUILD)/h264_test
 H264_SOURCES := \
 	$(PORT_ROOT)/source/media/rc_h264_bits.c \
 	$(PORT_ROOT)/source/media/rc_h264_params.c \
+	$(PORT_ROOT)/source/media/rc_h264_annexb.c \
 	h264_test.c
 
 .PHONY: all check build clean
