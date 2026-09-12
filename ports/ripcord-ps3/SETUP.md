@@ -286,12 +286,36 @@ channels wrote on the successful run. `_open_r` does dispatch through a devoptab
 
 ## 7. Getting a build onto the console
 
-FTP to `/dev_hdd0/packages/`, then the XMB package manager, is what these runs used and it works. webMAN
-MOD's FTP server is enough; nothing else is needed.
+### The fast loop — `make run`
 
-`ps3load` is the faster loop and was not used here, which in hindsight was the mistake that cost the most
-time — it relays the program's stdout back over the network, and any one of the four silent runs would
-have been diagnosed instantly by it. It connects to **TCP 4299** (read out of the client binary's
-`sin_port = 0xcb10`, and confirmed by `#define PORT 4299` in PSL1GHT's own
-`samples/network/ps3load/source/main.c`). The toolchain ships only the client half; the listener is
-either multiMAN, or that sample built from source.
+```sh
+make -C ports/ripcord-ps3 run PS3LOAD=tcp:<console-ip>
+```
+
+One command. No package, no install, no XMB round trip, and the program's stdout comes back over the
+network. Use it for iteration and keep `make pkg` for a build you want to survive a reboot.
+
+It needs a listener on the console, on **TCP 4299** — a port read out of the `ps3load` client binary's
+`sin_port = 0xcb10` and independently confirmed by `#define PORT 4299` in PSL1GHT's own
+`samples/network/ps3load/source/main.c`. The toolchain ships only the client half. Two ways to get the
+other: multiMAN runs one while it is open, or build the sample, which takes about a minute:
+
+```sh
+cd <PSL1GHT source>/samples/network/ps3load && make pkg   # install ps3load.pkg, then launch it
+```
+
+**This should have been the first thing set up.** Step 6 took five install-and-run cycles to find one
+wrong argument, and every one of them would have been answered in seconds against live output — the four
+silent runs especially, where the whole difficulty was that the program had no way to say anything.
+Packaging is the right way to ship a build. It is a poor way to ask a question.
+
+### The durable route — FTP and a package
+
+FTP to `/dev_hdd0/packages/`, then the XMB package manager. webMAN MOD's FTP server is enough and nothing
+else is needed. This is what every run in section 6 used, and it is still what you want for a build that
+has to persist, or when no listener is running.
+
+Two practical notes from those runs. The console takes a new DHCP lease across a power cycle, so check
+the address before concluding anything is wrong — it moved twice here. And webMAN's FTP and web server
+come up a little after the XMB does, so a console that answers ping but refuses port 21 is usually still
+settling rather than broken.
