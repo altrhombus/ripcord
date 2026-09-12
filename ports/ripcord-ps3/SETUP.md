@@ -295,6 +295,16 @@ make -C ports/ripcord-ps3 run PS3LOAD=tcp:<console-ip>
 One command. No package, no install, no XMB round trip, and the program's stdout comes back over the
 network. Use it for iteration and keep `make pkg` for a build you want to survive a reboot.
 
+**Relaunch the listener before each run.** It ends in `sysProcessExitSpawn2`, which replaces the listener
+process with the program it just received, so one launch serves one run. A `connection refused` almost
+always means the previous run consumed it. Still much cheaper than the packaging route below; just not
+zero-touch.
+
+**Send the `.self`, not the ELF.** `make run` does. The listener writes whatever arrives to
+`/dev_hdd0/tmp/ps3load.self` and launches that, so a raw ELF transfers perfectly and then does not start
+— and `ps3load` reports success either way, because from its end the transfer worked. The build id on the
+first log line is what catches it.
+
 It needs a listener on the console, on **TCP 4299** — a port read out of the `ps3load` client binary's
 `sin_port = 0xcb10` and independently confirmed by `#define PORT 4299` in PSL1GHT's own
 `samples/network/ps3load/source/main.c`. The toolchain ships only the client half. Two ways to get the

@@ -43,6 +43,7 @@ BIN2S      := $(PS3DEV)/bin/bin2s
 # Packaging tools, all from $(PS3DEV)/bin. Only `make pkg` uses these; a plain `make` needs fself alone.
 # sprxlinker. Not optional - see the .ready.elf rule below for what leaving it out does.
 SPRX           := $(PS3DEV)/bin/sprxlinker
+SELF           := $(PS3DEV)/bin/make_self
 FSELF          := $(PS3DEV)/bin/fself
 SELF_NPDRM     := $(PS3DEV)/bin/make_self_npdrm
 SFO            := $(PS3DEV)/bin/sfo
@@ -243,10 +244,21 @@ $(BUILD)/$(APP).ready.elf: $(BUILD)/$(APP).elf
 	$(STRIP) -g $@
 	$(SPRX) $@
 
-# elf -> self. `fself` produces an unsigned SELF, which is what a homebrew-enabled console runs; a
-# retail-signed one is neither available nor wanted here.
+# elf -> self, following $(PSL1GHT)/ppu_rules' %.self rule: make_self produces the primary artifact and
+# fself a secondary .fake.self beside it.
+#
+# AN EARLIER REVISION USED fself FOR THE PRIMARY, on the reasoning that an unsigned SELF is what a
+# homebrew-enabled console runs and a signed one was neither available nor wanted. That sounds right and
+# it is not what the SDK does: ppu_rules labels the make_self output "CEX self", makes it the .self, and
+# every run: target in PSL1GHT - ten of them - hands ps3load that file. A fake SELF transferred to the
+# listener perfectly well and then did not launch.
+#
+# Third time in this file that a plausible-sounding assertion about the SDK has been wrong where the
+# SDK's own rule was sitting there to be read. The rule is the specification; reasoning about what it
+# must have meant is not.
 $(APP).self: $(BUILD)/$(APP).ready.elf
-	$(FSELF) $< $@
+	$(SELF) $< $@
+	$(FSELF) $< $(APP).fake.self
 
 # THE PACKAGE, for launching from the XMB rather than through a loader.
 #
@@ -278,11 +290,23 @@ pkg: $(APP).pkg
 # wrong argument, and any one of them would have been diagnosed in seconds against live output; that is
 # the whole argument for this target existing.
 #
-# Sends the .ready.elf, not the raw link output: ps3load wants an ELF rather than a SELF, but it still
-# has to be the sprxlinked one - see that rule for what happens otherwise.
+# SENDS THE .self, NOT THE ELF. The first version of this rule sent build/$(APP).ready.elf on the
+# assertion that "ps3load wants an ELF rather than a SELF". That is backwards. Every run: target in
+# PSL1GHT - ten of them - is `ps3load $(OUTPUT).self`, and the listener writes whatever it receives to
+# /dev_hdd0/tmp/ps3load.self and launches that, so a raw ELF arrives intact and then does not start.
+#
+# The failure is quiet from this end: ps3load reports the transfer and exits "done." either way. It was
+# caught by the build id - the console's log still said b11 while the tree was at b13 - which is exactly
+# the stale-binary case that stamp was added for, arriving one commit after it was added.
+#
+# THE LISTENER IS ONE-SHOT. It ends with sysProcessExitSpawn2, which replaces the listener process with
+# the program it just received - so it has to be launched again on the console before each run. That is
+# still far cheaper than build, FTP, package manager, install, navigate, launch; it is just not zero
+# touch, and a "connection refused" here usually means the last run consumed it rather than anything
+# being wrong.
 #
 #     make run PS3LOAD=tcp:192.168.1.42
-run: $(BUILD)/$(APP).ready.elf
+run: $(APP).self
 	@test -n "$(PS3LOAD)" || { echo "ERROR: set PS3LOAD, e.g. make run PS3LOAD=tcp:<console-ip>"; exit 1; }
 	PS3LOAD=$(PS3LOAD) $(PS3DEV)/bin/ps3load $<
 
@@ -295,5 +319,5 @@ test:
 
 # Note what clean does NOT remove: $(BUILDNO_FILE). See the comment on BUILD_NO.
 clean:
-	rm -f $(APP).self $(APP).pkg $(APP).gnpdrm.pkg
+	rm -f $(APP).self $(APP).fake.self $(APP).pkg $(APP).gnpdrm.pkg
 	rm -rf $(BUILD)
