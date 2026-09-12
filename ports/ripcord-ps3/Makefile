@@ -177,7 +177,7 @@ SPU_LIBS    := -lsputhread
 SPU_SOURCES := spu/rc_spu_probe.c
 SPU_NAME    := rc_spu_probe
 
-.PHONY: all clean test pkg
+.PHONY: all clean test pkg run
 
 all: $(APP).self
 
@@ -269,6 +269,22 @@ $(APP).pkg: $(BUILD)/$(APP).ready.elf
 	$(PKG_FINALIZE) $(APP).gnpdrm.pkg
 
 pkg: $(APP).pkg
+
+# THE FAST LOOP. Sends the ELF straight to a listener on the console over TCP 4299 and relays the
+# program's stdout back, so an iteration is one command with no install step and no XMB round trip.
+#
+# It needs a ps3load server running on the PS3 - either multiMAN, or PSL1GHT's own
+# samples/network/ps3load built and installed. Step 6 took five install-and-run cycles to find a single
+# wrong argument, and any one of them would have been diagnosed in seconds against live output; that is
+# the whole argument for this target existing.
+#
+# Sends the .ready.elf, not the raw link output: ps3load wants an ELF rather than a SELF, but it still
+# has to be the sprxlinked one - see that rule for what happens otherwise.
+#
+#     make run PS3LOAD=tcp:192.168.1.42
+run: $(BUILD)/$(APP).ready.elf
+	@test -n "$(PS3LOAD)" || { echo "ERROR: set PS3LOAD, e.g. make run PS3LOAD=tcp:<console-ip>"; exit 1; }
+	PS3LOAD=$(PS3LOAD) $(PS3DEV)/bin/ps3load $<
 
 # Convenience passthrough. These are the tests that actually verify anything today - the H.264 front end
 # from steps 2 and 3, the CSPRNG seam's host-testable half, and the core's known-answer vectors. All run
