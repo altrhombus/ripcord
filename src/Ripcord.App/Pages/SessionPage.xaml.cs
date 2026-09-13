@@ -85,6 +85,8 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer
 
     private string _renderedSummaryPillSignature = string.Empty;
 
+    private double _appliedDiagnosticsInset = 16;
+
     private PairedConsole? _console;
     private IPowerThermalMonitor? _powerMonitor;
     private ExitGestureDetector? _exitDetector;
@@ -442,6 +444,9 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer
 
         // One source of truth for how much of the HUD is up. It used to be DiagnosticsPanel.Visibility,
         // consulted from eight places, three of which had to agree about a panel they did not own.
+        // The decoded size is not known until the first frame, so placement cannot be settled at load.
+        ApplyDiagnosticsPlacement();
+
         DiagnosticsSummary.Visibility = Vis(s.Rung == DiagnosticsRung.Summary);
         DiagnosticsPanel.Visibility = Vis(s.Rung == DiagnosticsRung.Full);
 
@@ -1167,6 +1172,50 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer
         // The panel's own 16px margins top and bottom, plus a little room so it never touches the edge.
         double available = ActualHeight - 48;
         DiagnosticsPanel.MaxHeight = available > 120 ? available : 120;
+
+        ApplyDiagnosticsPlacement();
+    }
+
+    /// <summary>
+    /// Put the instrument panel where the video isn't.
+    ///
+    /// <para>
+    /// The stream is 16:9 and the window usually is not, so there is nearly always a bar that is already black
+    /// and carrying nothing. Claiming it costs the player no picture — which is also the answer to "nobody
+    /// leaves the panel open": today it is expensive to, and it does not have to be.
+    /// </para>
+    ///
+    /// <para>
+    /// Only the pillarbox case is wired here. The panel is already a tall narrow column, so moving it into a
+    /// pillar is a position change; the letterbox <see cref="DiagnosticsPlacement.Sheet"/> wants a four-column
+    /// re-flow that does not exist yet, and until it does that case is handled as an overlay — which is what
+    /// happens today, so nothing regresses while it is missing.
+    /// </para>
+    /// </summary>
+    private void ApplyDiagnosticsPlacement()
+    {
+        SessionDiagnosticsState d = _viewModel.State.Diagnostics;
+        HudLayout layout = HudPlacement.For(ActualWidth, ActualHeight, d.VideoWidth, d.VideoHeight);
+
+        // The panel is MaxWidth-constrained rather than fixed, so Width is NaN until it has been measured -
+        // and NaN propagates silently through Math.Max into a Thickness nobody can read.
+        double panelWidth = DiagnosticsPanel.ActualWidth > 0
+            ? DiagnosticsPanel.ActualWidth
+            : DiagnosticsPanel.MaxWidth;
+
+        // Centre the panel in the pillar it is claiming rather than pinning it to the window edge: a rail
+        // hard against the bezel reads as something that fell off the side.
+        double inset = layout.Placement == DiagnosticsPlacement.Rail && double.IsFinite(panelWidth)
+            ? Math.Max(16, (layout.PillarWidth - panelWidth) / 2)
+            : 16;
+
+        // Only when it actually moves. This runs on every state change, and reassigning a Thickness
+        // invalidates layout whether or not the value differs.
+        if (Math.Abs(inset - _appliedDiagnosticsInset) > 0.5)
+        {
+            _appliedDiagnosticsInset = inset;
+            DiagnosticsPanel.Margin = new Thickness(inset, 16, 16, 16);
+        }
     }
 
     private void SaveDiagnosticsAccelerator_Invoked(
