@@ -65,6 +65,7 @@
 #include "rc_spu.h"
 #include "rc_spu_phase.h"
 #include "rc_netlog.h"
+#include "rc_decode_probe.h"
 
 #include "../platform/rc_platform_ps3.h"
 
@@ -618,6 +619,45 @@ static int check_spu(void)
     return 0;
 }
 
+/*
+ * WHERE THE CAPTURE LIVES ON THE CONSOLE. Copied there by hand over FTP; not embedded in the binary and
+ * never committed, because it is dirty-room material - docs/protocol/captures/ is gitignored and a 2 MB
+ * capture baked into a .self would be that rule defeated by a build step.
+ *
+ * Its absence is not a failure. The check reports "no stream" and the run continues, which is the same
+ * shape as the .NET suite's fixture-backed tests: a machine without the dirty room still gets a green
+ * run of everything that does not need it.
+ */
+#ifndef RC_DECODE_STREAM_PATH
+#define RC_DECODE_STREAM_PATH "/dev_hdd0/video.264"
+#endif
+
+static int check_decode(void)
+{
+    rc_decode_probe_result r;
+    int i;
+
+    if (!rc_decode_probe(RC_DECODE_STREAM_PATH, &r)) {
+        if (!r.opened) {
+            /* Not a failure - see above. */
+            ps3_log("dec:   no stream at %s - skipping (copy the capture there to run it)\n",
+                    RC_DECODE_STREAM_PATH);
+            return 0;
+        }
+        ps3_log("FAIL  openh264 read %u bytes and produced no frame\n", (unsigned)r.bytes);
+        ps3_log("      initialised=%d nals=%d frames=%d last_error=%ld\n",
+                r.initialised, r.nals_fed, r.frames_out, (long)r.last_error);
+        return 1;
+    }
+
+    ps3_log("dec:   %u bytes, %d NALs fed, %d frames out, %dx%d\n",
+            (unsigned)r.bytes, r.nals_fed, r.frames_out, r.width, r.height);
+    for (i = 0; i < r.hashes; i++)
+        ps3_log("       frame %3d  0x%016llx\n", i, (unsigned long long)r.hash[i]);
+    ps3_log("ok    openh264 decoded on the PPE - compare the hashes with the reference decode\n");
+    return 0;
+}
+
 int main(void)
 {
     int failures = 0;
@@ -736,8 +776,9 @@ int main(void)
     failures += check_monotonic();
     failures += check_csprng();
     failures += check_spu();
+    failures += check_decode();
 
-    ps3_log("\nnot covered here: sockets, decode. See README.md.\n");
+    ps3_log("\nnot covered here: the rest of the decoder. See README.md.\n");
     ps3_log("%s\n", failures == 0 ? "all checks passed" : "CHECKS FAILED");
     lv2_log_close();
     rc_log_close();
