@@ -211,12 +211,18 @@ and a LAN-only player never signs in.
 
 | Section | Holds |
 |---|---|
-| Picture | Resolution and frame rate, max bitrate, adapt automatically, image scaling, HDR |
+| Picture | Resolution and frame rate, max bitrate, adapt automatically, image scaling, **video codec**, HDR |
 | Controls | Keyboard input, key and pad bindings, exit gesture, menu stick sensitivity |
 | When you play | Full screen on connect, ask before disconnecting, rest on disconnect, diagnostics (off / summary / full) |
 | Accessibility | Larger text and controls |
 | Account | PSN sign-in, consoles on this account |
-| Advanced | GPU preference, specific adapter, video codec, connection reporting, credential protection |
+| Advanced | GPU preference, specific adapter, connection reporting, credential protection |
+
+**Codec stays with Picture, against this table’s first draft.** It was listed under Advanced as a
+technician’s dial, which it is — but HDR is *gated* on HEVC, and the toggle is disabled until the codec
+allows it. Filing the two in different sections would leave a casual player looking at a dead HDR switch
+whose reason sits behind a collapsed heading somewhere else. A control that explains why another control
+is unavailable belongs beside it.
 
 Every knob survives; they stop being peers. The dials an enthusiast expects move into a collapsed
 **Advanced** so a casual player never scrolls past them. Accessibility gets its own heading, because burying
