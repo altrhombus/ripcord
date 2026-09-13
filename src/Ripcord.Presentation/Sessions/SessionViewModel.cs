@@ -43,6 +43,8 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
 
     private DiagnosticsRung _rung;
 
+    private ConnectPhase? _phase;
+
     /// <summary>
     /// Which rung to come back to. Someone who lives at rung 3 gets rung 3, which is the whole reason the
     /// key is a toggle rather than a cycle: it returns you where you were, not one step further in.
@@ -211,7 +213,31 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
         _statusDetail = detail ?? string.Empty;
         _statusBusy = !terminal;
         _statusTerminal = terminal;
+
+        // Cleared, not kept. This overload is what a reconnect, a stall and a close all go through, and a
+        // trail still sitting at "waking" during a reconnect is claiming progress that belongs to a
+        // sequence which already finished.
+        _phase = null;
     });
+
+    /// <summary>
+    /// Show one step of the connect sequence. Separate from <see cref="ShowStatus"/> because only these
+    /// carry a phase — see the note on <see cref="SessionViewState.Phase"/>.
+    /// </summary>
+    public void ShowConnectStage(ConnectStage stage)
+    {
+        ArgumentNullException.ThrowIfNull(stage);
+
+        Mutate(() =>
+        {
+            _statusVisible = true;
+            _statusHeadline = stage.Headline;
+            _statusDetail = stage.Detail;
+            _statusBusy = !stage.Terminal;
+            _statusTerminal = stage.Terminal;
+            _phase = stage.Phase;
+        });
+    }
 
     public void HideStatus() => Mutate(() =>
     {
@@ -673,6 +699,7 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
         // situation, and two notices about one problem read as two problems.
         AlertVisible: _alertRaised && !_statusVisible,
         Rung: _rung,
+        Phase: _phase,
 
         // All of them, one per line: with several pads merged into one virtual controller, which devices are
         // contributing is exactly the thing that is otherwise invisible.

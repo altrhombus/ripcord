@@ -62,6 +62,13 @@ public sealed record SessionViewState(
     DiagnosticsRung Rung,
 
     /// <summary>
+    /// How far the connect sequence has got, for the trail. <see langword="null"/> whenever the status on
+    /// screen did not come from that sequence — a reconnect, a stall, a close — because a trail that keeps
+    /// its last position through an unrelated state is claiming progress it does not have.
+    /// </summary>
+    ConnectPhase? Phase,
+
+    /// <summary>
     /// Which pads are attached, one per line. At the top level rather than inside the diagnostics record because
     /// it changes when hardware is plugged in, not on the twice-a-second stats cadence.
     /// </summary>
@@ -78,6 +85,7 @@ public sealed record SessionViewState(
         IsStreamLive: false,
         AlertVisible: false,
         Rung: DiagnosticsRung.Hidden,
+        Phase: null,
         ConnectedControllers: Strings.Session_NoControllers,
         Diagnostics: SessionDiagnosticsState.Empty);
 }
