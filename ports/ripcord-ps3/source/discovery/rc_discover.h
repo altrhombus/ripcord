@@ -33,6 +33,21 @@ extern "C" {
 #define RC_DISCOVER_MAX 4
 
 typedef struct {
+    /*
+     * DOES sin_len ACTUALLY HAVE TO BE SET? source/net/rc_netlog.c sets it on every sockaddr because
+     * PSL1GHT's networktest sample does, and that was copied rather than tested. The distinction matters
+     * to more than this port: ports/common builds sockaddr_in in three places -
+     * session/halyard_control_session.c and net/rc_tcp.c - and sets sin_family without sin_len, so if
+     * the field is genuinely required then the shared core cannot open a control session on this
+     * platform, and if it is not then nothing needs changing anywhere.
+     *
+     * Answered by broadcasting the same SRCH probe twice, once with the field zeroed and once with it
+     * set. Two sends, one extra datagram on the wire, and it settles whether a change to code every port
+     * shares is warranted.
+     */
+    int  sinlen_zero_send_ok;   /* sendto() succeeded with sin_len left at 0 */
+    int  sinlen_set_send_ok;    /* sendto() succeeded with sin_len = sizeof  */
+
     int  bind_port0_ok;      /* 1 if bind() to port 0 was accepted - the [X] above          */
     int  bind_errno;         /* what it said if it was not                                  */
     int  socket_ok;          /* the socket was created and broadcast was enabled            */

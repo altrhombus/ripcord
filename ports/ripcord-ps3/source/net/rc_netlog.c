@@ -60,16 +60,23 @@ int rc_netlog_open(const char *ip, uint16_t port)
     memset(&s_dest, 0, sizeof(s_dest));
 
     /*
-     * *** sin_len IS NOT OPTIONAL HERE, AND THIS IS THE TRAP rc_platform.h PREDICTED. ***
+     * sin_len: SET BECAUSE THE SDK'S SAMPLE SETS IT, NOT BECAUSE IT IS REQUIRED.
      *
-     * The PS3's sockaddr_in carries a leading length byte, in the original BSD style. Linux and the 3DS
-     * both dropped it, so code written against either compiles here unchanged and leaves it zero -
-     * which is exactly the shape of failure the seam's notes warn about: "socket idioms are exactly
-     * where a second platform bites, and 'it compiles' is not 'it works'."
+     * The PS3's sockaddr_in carries a leading length byte in the original BSD style that Linux and the
+     * 3DS both dropped, so code written against either compiles here unchanged and leaves it zero.
+     * PSL1GHT's samples/network/networktest sets it on every sockaddr it builds, and this was copied
+     * from there.
      *
-     * PSL1GHT's own samples/network/networktest sets it on every sockaddr it builds. Copied from there
-     * rather than deduced, because a struct field that only matters at runtime is not something to
-     * reason about when a worked example is available.
+     * AN EARLIER VERSION OF THIS COMMENT CALLED IT "NOT OPTIONAL" AND WAS WRONG. It was copied, not
+     * tested, and the difference mattered to more than this file: ports/common builds sockaddr_in in
+     * three places without the field, so "required" would have meant the shared core could not open a
+     * control session on this platform. Rather than change code every port shares on the strength of a
+     * comment, the question was put to the hardware - source/discovery/rc_discover.c broadcasts the same
+     * probe twice, once with the field zeroed - and on 2026-09-12 the console accepted BOTH and replied
+     * to both. sin_len is not required for sendto here.
+     *
+     * It stays set, because matching the SDK's own sample costs nothing and the field is real. What
+     * changed is the claim about it.
      */
     s_dest.sin_len = (uint8_t)sizeof(s_dest);
     s_dest.sin_family = AF_INET;
