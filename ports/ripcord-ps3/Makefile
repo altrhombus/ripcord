@@ -94,12 +94,20 @@ APP   := ripcord-ps3
 # looking description of the hardware (-mfloat-abi=softfp) failed the link on every translation unit -
 # the hardware description was right and the calling convention was wrong.
 #
-# The lesson both taught is the same: GET THIS FROM THE SDK, NOT FROM THE HARDWARE. This line is now the
-# SDK's own answer, copied from MACHDEP in $(PSL1GHT)/ppu_rules, which is the variable PSL1GHT's own
-# samples put into their CFLAGS - minus the two -f*-sections flags, which CFLAGS below already carries.
-# An earlier revision guessed -mcpu=cell from the hardware. It does compile and link, so this was a
-# correction made on the rule rather than on a failure; the rule is what has a track record.
-ARCH := -mhard-float -fmodulo-sched
+# The lesson both taught is the same: GET THIS FROM THE SDK, NOT FROM THE HARDWARE - and getting it from
+# the SDK means reading what the SDK's projects actually compile with, not just the variable it defines.
+#
+# An earlier revision guessed -mcpu=cell from the hardware, and a later one replaced it with MACHDEP from
+# $(PSL1GHT)/ppu_rules on the grounds that the SDK should decide. Both were half right. Twenty-five of
+# PSL1GHT's sample Makefiles, and bucanero's apollo-ps3, all write:
+#
+#     CFLAGS = -O2 -Wall -mcpu=cell $(MACHDEP) $(INCLUDE)
+#
+# MACHDEP AND -mcpu=cell TOGETHER. MACHDEP is the float ABI and scheduling flags every PSL1GHT library is
+# built with, which is the part that has to agree; -mcpu=cell is tuning for the processor the code will
+# actually run on, which the SDK leaves to the project and every project sets. The -f*-sections half of
+# MACHDEP is omitted here only because CFLAGS below already carries it.
+ARCH := -mcpu=cell -mhard-float -fmodulo-sched
 
 # WHERE THE LOG GOES, and it is /dev_hdd0/ rather than this program's own install directory on purpose.
 #
@@ -117,6 +125,14 @@ ARCH := -mhard-float -fmodulo-sched
 # The real client, when it has settings to store, should use its own install directory and derive it
 # from argv[0] - that is what the seam is for. This is a bring-up program with one job.
 LOG_DIR := /dev_hdd0/
+
+# THE NETWORK LOG. Every line the bring-up program prints is also sent as a UDP datagram here, which is
+# the only channel that needs no write permission on the console - see source/net/rc_netlog.h. Override
+# on the command line: make RC_NETLOG_HOST=192.168.1.10
+#
+# Listen for it with:  nc -u -l -p 9000      (or: socat -u UDP-RECV:9000 -)
+RC_NETLOG_HOST ?= 192.168.1.10
+RC_NETLOG_PORT ?= 9000
 
 # -Wframe-larger-than is inherited from both prior ports, where it was not a style preference but a crash
 # the hardware had already found. The deepest live path either port measured was the audio loss-
@@ -137,14 +153,20 @@ CFLAGS := $(ARCH) -std=gnu99 -O2 -g \
           -ffunction-sections -fdata-sections \
           -DRC_PROGRAM_DIR_FALLBACK='"$(LOG_DIR)"' \
           -DRC_PS3_APPID='"$(APPID)"' \
-          -I$(CORE) -I$(BUILD) -Isource/spu -Ispu -I$(PSL1GHT)/ppu/include
+          -DRC_NETLOG_HOST='"$(RC_NETLOG_HOST)"' -DRC_NETLOG_PORT=$(RC_NETLOG_PORT) \
+          -I$(CORE) -I$(BUILD) -Isource/spu -Isource/net -Ispu -I$(PSL1GHT)/ppu/include
 
 LDFLAGS := $(ARCH) -Wl,--gc-sections -L$(PSL1GHT)/ppu/lib
 
 # [X] The minimum PSL1GHT libraries for a program that does nothing but keep time and write a file.
 # Sockets, video and the SPU job manager are added when the phase that needs them arrives, deliberately
 # rather than pre-emptively - an unnecessary library here is a link error nobody can explain later.
-LIBS := -lrt -llv2
+# -lnet joined this list when the UDP log channel did. netInitialize() and the BSD socket names both
+# come from it, and it is the first PS3 code in this port to open a socket at all.
+# -lsysmodule is not optional beside -lnet: netInitialize() calls sysModuleLoad, and without it the link
+# fails on that symbol rather than on anything mentioning networking. PSL1GHT's network samples all pair
+# the two - `LIBS := -lnet -lsysmodule` - which is the fastest place to have learned it.
+LIBS := -lnet -lsysmodule -lrt -llv2
 
 # The platform seam plus the two core utilities the bring-up program needs. rc_random_ps3.c joined this
 # list on 2026-09-11, when the CSPRNG call was confirmed against real headers; before that its ABSENCE
@@ -156,6 +178,7 @@ SOURCES := \
 	source/platform/rc_platform_ps3.c \
 	source/platform/rc_random_ps3.c \
 	source/spu/rc_spu.c \
+	source/net/rc_netlog.c \
 	source/app/main.c
 
 # ---------------------------------------------------------------------------------------------------
