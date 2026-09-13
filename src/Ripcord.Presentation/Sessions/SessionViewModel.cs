@@ -110,9 +110,32 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
 
     /// <summary>
     /// Full scale for the bitrate plot: a little above the configured cap, so a stream sitting at its ceiling
-    /// draws near the top rather than off it.
+    /// draws near the top rather than off it. No threshold rule — bitrate is a magnitude, not a verdict.
     /// </summary>
     public double BitrateFullScaleMbps => Math.Max(1, _settings.BitrateKbps / 1000.0 * 1.2);
+
+    /// <summary>The bitrate plot. Never carries a severity: there is no bitrate that is wrong by itself.</summary>
+    public MetricPlot BitratePlot => new(BitrateFullScaleMbps, WarnFraction: null);
+
+    /// <summary>
+    /// The frame-rate plot. Scaled to the requested rate with headroom, so "at target" sits high but not
+    /// clipped and a shortfall reads as a drop. This is the one plot whose threshold is not its ceiling, so
+    /// the rule is drawn where a shortfall actually begins.
+    /// </summary>
+    public MetricPlot FramesPlot => new(
+        FramesFullScale,
+        WarnFraction: StreamHealthAssessor.FpsShortfallFactor / FramesHeadroom);
+
+    /// <summary>The latency plot. Full scale is the warn threshold, so the rule sits along the top.</summary>
+    public static MetricPlot LatencyPlot { get; } = new(RttFullScaleMs, WarnFraction: 1);
+
+    /// <summary>The loss plot. Full scale is the warn threshold, so the rule sits along the top.</summary>
+    public static MetricPlot LossPlot { get; } = new(LossFullScalePercent, WarnFraction: 1);
+
+    /// <summary>Headroom above the requested frame rate, so a stream exactly at target is not drawn clipped.</summary>
+    private const double FramesHeadroom = 1.2;
+
+    private double FramesFullScale => Math.Max(1, _settings.TargetFps * FramesHeadroom);
 
     /// <summary>
     /// Full scale for the loss plot: the health assessor's warn threshold, so the line touching the top means
@@ -408,8 +431,41 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
 
             Health: health,
             HealthTip: healthTip,
-            HealthLevel: level);
+            HealthLevel: level,
+
+            FramesSeverity: FramesSeverityFor(presentFps),
+            LatencySeverity: LatencySeverityFor(stats.RoundTripTimeMs),
+            LossSeverity: LossSeverityFor(stats.PacketLossRatio));
     }
+
+    /// <summary>
+    /// Where the frame rate stands. Warning only: there is no "catastrophically low but still arriving" frame
+    /// rate that is worse than the shortfall the assessor already names, and a stream with no frames at all is
+    /// a verdict about the stream, not about this row.
+    /// </summary>
+    private MetricSeverity FramesSeverityFor(double presentFps)
+        => presentFps < _settings.TargetFps * StreamHealthAssessor.FpsShortfallFactor
+            ? MetricSeverity.Warning
+            : MetricSeverity.Normal;
+
+    /// <summary>
+    /// Where latency stands. Thresholds come from the assessor rather than being restated here: the row and
+    /// the verdict must agree, and two copies of a threshold is how they stop agreeing.
+    /// </summary>
+    private static MetricSeverity LatencySeverityFor(double rttMs) => rttMs switch
+    {
+        >= StreamHealthAssessor.RttBadMs => MetricSeverity.Critical,
+        >= StreamHealthAssessor.RttWarnMs => MetricSeverity.Warning,
+        _ => MetricSeverity.Normal,
+    };
+
+    /// <summary>Where loss stands, on the assessor's thresholds for the same reason as latency.</summary>
+    private static MetricSeverity LossSeverityFor(double lossRatio) => lossRatio switch
+    {
+        >= StreamHealthAssessor.LossBadRatio => MetricSeverity.Critical,
+        >= StreamHealthAssessor.LossWarnRatio => MetricSeverity.Warning,
+        _ => MetricSeverity.Normal,
+    };
 
     /// <summary>
     /// Which capabilities the picture currently has.
