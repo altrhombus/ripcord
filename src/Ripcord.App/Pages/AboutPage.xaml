@@ -13,7 +13,7 @@
         <StackPanel MaxWidth="820" Spacing="8">
 
             <!--  ============ Identity ============  -->
-            <Border Style="{StaticResource RipcordCardStyle}" CornerRadius="12">
+            <Border Style="{StaticResource RipcordCardStyle}" CornerRadius="{StaticResource RipcordPanelCornerRadius}">
                 <Grid>
                     <!--
                         A wash of the user's accent colour, kept at low opacity so it reads as a tint over Mica
@@ -272,7 +272,7 @@
                         <Border
                             x:Name="DecodePill"
                             HorizontalAlignment="Left"
-                            CornerRadius="10"
+                            CornerRadius="{StaticResource RipcordPillCornerRadius}"
                             Padding="10,2">
                             <StackPanel Orientation="Horizontal" Spacing="6">
                                 <FontIcon
@@ -309,7 +309,7 @@
                         Margin="0,9,16,9"
                         HorizontalAlignment="Left"
                         VerticalAlignment="Center"
-                        CornerRadius="10"
+                        CornerRadius="{StaticResource RipcordPillCornerRadius}"
                         Padding="10,2">
                         <StackPanel Orientation="Horizontal" Spacing="6">
                             <FontIcon
