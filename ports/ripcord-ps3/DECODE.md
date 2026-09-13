@@ -103,33 +103,49 @@ The three failures are shallow and two of them are things this port does not wan
 So §1's recommendation survives contact with the toolchain. That was worth establishing before writing
 any decoder code against it.
 
-### Endianness — the risk that compiling does not test
+### Endianness — **settled, and it is fine**
 
-The PPE is **big-endian** and openh264 is developed on little-endian x86 and ARM. There is no endianness
-handling anywhere in its decoder core — no `bswap`, no `BYTE_ORDER`, nothing — which is either fine or
-fatal, and the two look identical until something runs.
+The PPE is big-endian and openh264 is developed on little-endian x86 and ARM, with no endianness handling
+anywhere in its decoder core — no `bswap`, no `BYTE_ORDER`, nothing. That is either fine or fatal and the
+two look identical until something runs, so it was the first thing step 7 had to settle: every later bug
+would otherwise have been debugged through it.
 
-The evidence so far says fine, by construction rather than by care. The bitstream cache is filled a byte
-at a time, composed explicitly MSB-first:
+**Settled by a differential decode, 2026-09-12.** The console's own `video.264` — 2,475 NAL units,
+2,451 P-slices, 22 IDRs — decoded twice with the same source, no modifications, pure-C path both times:
+
+| | |
+|---|---|
+| little-endian | native x86-64, 1,214 frames, 419,558,400 bytes |
+| big-endian | `powerpc64-linux-gnu`, statically linked, run under `qemu-ppc64`, 1,214 frames, same size |
+| result | **identical SHA-256**, `<redacted>`, byte for byte across 400 MB |
+
+So openh264 decodes bit-exactly on a big-endian PowerPC64, on this project's own stream. That is a real
+measurement over the whole capture, not a spot check.
+
+Why it works is worth knowing, because it says the property is structural rather than lucky. The bitstream
+cache is filled a byte at a time and composed explicitly MSB-first —
 
 ```c
 uiCache32Bit |= (((pBuf[2] << 8) | pBuf[3]) << (32 - uiRemainBits));
 ```
 
-No pointer is cast to a wider type to read the stream, so the code has no byte order to get wrong. The
-Exp-Golomb writer in `golomb_common.h` does the same thing in reverse. That is the path that would break
-loudly and it is clean.
+— so no pointer is ever cast to a wider type to read the stream, and there is no byte order to get wrong.
+The pointer casts that *do* exist, 81 in `mv_pred.cpp` and 39 in `deblocking.cpp`, are bulk uniform writes
+(`val * 0x01010101UL`) and zeroing, where every byte is equal; those cannot observe endianness either.
+Reading had suggested this and could not establish it at that volume, which is why it was tested.
 
-What is **not** cleared: `mv_pred.cpp` (81) and `deblocking.cpp` (39) do cast pointers to `uint16_t*` and
-`uint32_t*`, mostly for bulk uniform writes — `val * 0x01010101UL` replicated across four bytes, or
-zeroing — which are endian-safe because every byte is the same. A cast that writes a word and is later
-read back per-byte would not be, and grep cannot tell those apart at that volume.
+**What this does and does not prove.** `qemu-ppc64` emulates a big-endian PowerPC64 running Linux, which
+is the right proxy for byte order and the wrong one for everything else — it is not the PPE, not GCC 7.2,
+not newlib, and not 256 MB of XDR. Endianness is the question it was asked and endianness is what it
+answered. Toolchain and memory behaviour on the real console remain to be established by running there.
 
-**[X] So endianness is open, and it cannot be closed by reading.** The test that would close it is a
-differential one: decode the same stream with a little-endian build and a big-endian build and compare the
-output frame for frame. No big-endian emulator is installed here, so the options are qemu-ppc64 on the
-development machine or the console itself once there is enough of a harness to feed it a stream. It is the
-first thing to settle in step 7, because every later bug would be debugged through it.
+### The little-endian reference output is now ground truth
+
+The same run produced a reference decode of the whole capture: 1,214 frames of 640x360 NV12-equivalent
+planar YUV, from the console's own stream. Every later decoder — a stage at a time, on the PPE, then on
+SPEs — can be compared against it frame by frame with `sha256sum`, which is the cheapest possible
+correctness harness and needs no console. It lives in the dirty room with the capture that produced it,
+for the same reason the capture does.
 
 Still **not FFmpeg**, for the licence reasons above. Worth noting the project already uses ffmpeg as a
 *development* tool — `mvdreplay`'s comment cites `ffmpeg -i video.264` for ground truth — and that is
@@ -295,7 +311,10 @@ Nothing in 1–4 needs a PS3.
 6. ~~**SPU bring-up**: one SPE running a trivial DMA job, measured.~~ **Done, on hardware** — see §3.
    Dispatch costs ~65 µs and DMA runs at ~10 GB/s, which settles the granularity question this document
    had been deferring.
-7. **Decoder proper**, stage by stage, against the same vectors. **The only step left.**
+7. **Decoder proper**, stage by stage, against the same vectors. **The only step left**, and it now has
+   a reference to be checked against: openh264 builds for the PPU (20 of 20 decoder-core files) and
+   decodes this project's own capture bit-exactly on big-endian PowerPC64, so the base is sound and the
+   1,214-frame little-endian decode is ground truth for everything built on top of it.
 
 Steps 2 and 3 were worth doing regardless of how 5 resolved, which was the argument for starting there
 rather than with the SPU — and it held up: the front end was finished and tested before any console was
