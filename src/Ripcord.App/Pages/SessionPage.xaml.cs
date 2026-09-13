@@ -26,11 +26,13 @@ using Ripcord.Diagnostics;
 using Ripcord.Input;
 using Ripcord.Media;
 using Ripcord.Presentation;
+using Ripcord.Presentation.Consoles;
 using Ripcord.Presentation.Sessions;
 using Ripcord.Core.Security;
 using Ripcord.Protocol.Halyard.Common.Crypto;
 using Ripcord.Protocol.Halyard.Common.Discovery;
 using Ripcord.Protocol.Halyard.Session;
+using Ripcord_App.Accents;
 using Ripcord_App.Dialogs;
 using Ripcord_App.Input;
 using Ripcord_App.Services;
@@ -134,6 +136,7 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer
     {
         base.OnNavigatedTo(e);
         _console = e.Parameter as PairedConsole;
+        ShowConnectIdentity();
     }
 
     /// <summary>
@@ -428,7 +431,10 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer
         StatusOverlay.Visibility = Vis(s.StatusVisible);
         StatusHeadline.Text = s.StatusHeadline;
         StatusDetail.Text = s.StatusDetail;
-        StatusRing.IsActive = s.StatusBusy;
+        // The trail runs while something is still in progress and stops when it is not. Hidden rather than
+        // merely stopped on a terminal state: a stalled bar reads as a stalled connect.
+        StatusTrail.Visibility = Vis(s.StatusBusy);
+        StatusTrail.IsIndeterminate = s.StatusBusy;
         StatusActions.Visibility = Vis(s.StatusActionsVisible);
 
         ControllerConnectedText.Text = s.ConnectedControllers;
@@ -620,6 +626,29 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer
         return Application.Current.Resources.TryGetValue(key, out object? brush) && brush is Brush themed
             ? themed
             : null;
+    }
+
+    /// <summary>
+    /// Put the console's identity where its card's mark sat.
+    ///
+    /// <para>
+    /// This is the whole of "connect is the card becoming the window rather than a new place you navigated
+    /// to": the ConnectedAnimation lands the card's mark up here, and finding the same mark and the same name
+    /// still on screen is what makes the transition read as continuous rather than as a jump.
+    /// </para>
+    /// </summary>
+    private void ShowConnectIdentity()
+    {
+        if (_console is null)
+        {
+            ConnectIdentity.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        ConsoleFamily family = ConsoleFamily.ForPlatformName(_console.Platform);
+        ConnectMark.Accent = AccentResources.Brush(family.Accent);
+        ConnectConsoleName.Text = _console.DisplayName;
+        ConnectIdentity.Visibility = Visibility.Visible;
     }
 
     private static Visibility Vis(bool on) => on ? Visibility.Visible : Visibility.Collapsed;
