@@ -157,6 +157,30 @@ does not need the SPE to participate), and a mirror of the job block as the SPE 
 them they separate "never ran", "ran and its DMA went nowhere", and "was handed the wrong address" —
 three failures that look identical from outside and have nothing in common as bugs.
 
+### The shared core is byte-order clean — **measured, not argued**
+
+`ports/common` is the code every port shares — Takion, the FEC, stream framing and demux, the control
+session, discovery, input encoding — and until 2026-09-12 every assertion in it had only ever run on
+little-endian x86. The PPE is big-endian.
+
+Seven of its eleven runners now build for the PPE and run on the console, and the counts match the host
+exactly:
+
+```
+core:  running ports/common's suites on this hardware
+       discovery pass   session pass   takion pass   stream_header pass
+       stream_demux pass   input pass   fec pass
+       2912 assertions passed, 0 failed
+```
+
+Reading had said it should be clean: 28 sites assemble multi-byte values with explicit shifts and there
+is not one multi-byte pointer cast in the transport, stream, session or util layers. That is an argument.
+This is a result, and the distinction has earned its keep repeatedly in this port.
+
+The other four runners read `.kat` vector files emitted by the .NET side, so running them means getting
+those onto the console — a second step rather than a harder one, and the one that would extend this to
+the control crypto, the stream crypto and ECDH.
+
 ## Can the hardware do it?
 
 | Concern | PS3 | Verdict |

@@ -66,6 +66,7 @@
 #include "rc_spu_phase.h"
 #include "rc_netlog.h"
 #include "rc_decode_probe.h"
+#include "rc_core_tests.h"
 
 #include "../platform/rc_platform_ps3.h"
 
@@ -641,6 +642,69 @@ static int check_spu(void)
 #define RC_DECODE_FRAMES 300
 #endif
 
+/*
+ * ports/common's own suites, on the console. See source/coretest/rc_core_tests.h for why this matters:
+ * every assertion in the shared core has only ever run on little-endian x86, and the PPE is big-endian.
+ *
+ * THE RUNNERS PRINT WITH printf, which here goes to a TTY nobody is reading, so stdout is redirected to
+ * a file for the duration and replayed through ps3_log afterwards - which puts it on the network log and
+ * in both files, like everything else. Their output is the useful part when something fails: a bare exit
+ * code would say "fec failed" and leave the next step to a rebuild.
+ */
+#define RC_CORE_TEST_CAPTURE "/dev_hdd0/ripcord-core-tests.txt"
+
+static void replay_captured(const char *path)
+{
+    static char line[512];
+    FILE *f = fopen(path, "r");
+
+    if (f == NULL) {
+        ps3_log("      (could not reopen %s to replay it)\n", path);
+        return;
+    }
+    while (fgets(line, (int)sizeof(line), f) != NULL) {
+        size_t n = strlen(line);
+        while (n > 0u && (line[n - 1u] == '\n' || line[n - 1u] == '\r'))
+            line[--n] = '\0';
+        if (n > 0u)
+            ps3_log("      | %s\n", line);
+    }
+    fclose(f);
+}
+
+static int check_core(void)
+{
+    rc_core_test_result results[RC_CORE_TEST_COUNT];
+    int failed;
+    int i;
+
+    ps3_log("core:  running ports/common's suites on this hardware\n");
+
+    /* Redirected, not duplicated: there is no dup2 to restore through here, and rc_log still reaches
+     * its own file and the network, so nothing is actually lost by giving stdout away. */
+    if (freopen(RC_CORE_TEST_CAPTURE, "w", stdout) == NULL)
+        ps3_log("      (stdout could not be captured - the runners' detail will be lost)\n");
+
+    failed = rc_core_tests_run(results);
+
+    fflush(stdout);
+
+    for (i = 0; i < RC_CORE_TEST_COUNT; i++)
+        ps3_log("       %-14s %s\n", results[i].name,
+                results[i].exit_code == 0 ? "pass" : "FAIL");
+
+    if (failed != 0) {
+        ps3_log("FAIL  %d of %d core suites failed on big-endian - their output follows\n",
+                failed, RC_CORE_TEST_COUNT);
+        replay_captured(RC_CORE_TEST_CAPTURE);
+        return 1;
+    }
+
+    ps3_log("ok    all %d core suites pass on the PPE - the shared core is byte-order clean\n",
+            RC_CORE_TEST_COUNT);
+    return 0;
+}
+
 static int check_decode(void)
 {
     rc_decode_probe_result r;
@@ -805,6 +869,7 @@ int main(void)
     failures += check_monotonic();
     failures += check_csprng();
     failures += check_spu();
+    failures += check_core();
     failures += check_decode();
 
     ps3_log("\nnot covered here: the rest of the decoder. See README.md.\n");
