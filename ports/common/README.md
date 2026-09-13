@@ -14,7 +14,7 @@ calls in three files, plus sockets. Extracting it was mostly `git mv`.
 crypto/     AES-128, SHA-256, HMAC, GCM/GMAC, cipher modes, the ECDH seam
 halyard/    the control KDF, field IV derivation, field ciphers
 session/    /sess/init -> /sess/ctrl, the binary control channel, launchSpec, pairing records
-discovery/  the SRCH probe and its response parser
+discovery/  the SRCH probe and its response parser, and the LAN wake datagram
 takion/     the SCTP-over-UDP transport: handshake, DATA/SACK, reassembly, senkusha, key negotiation
 stream/     A/V framing, Cauchy Reed-Solomon FEC over GF(2^8), packet crypto, frame reassembly
 input/      controller state -> input packet
