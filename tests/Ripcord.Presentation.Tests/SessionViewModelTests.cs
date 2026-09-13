@@ -491,4 +491,111 @@ public class SessionViewModelTests
         Stream(vm, pipeline, clock, seconds: 2, lossRatio: 0.05);
         Assert.False(vm.State.AlertVisible);
     }
+
+    // ---- instrument severities: a coloured stroke has to mean something ------------------------
+
+    [Fact]
+    public void AHealthyStreamPlotsEveryLineNeutral()
+    {
+        (SessionViewModel vm, FakePipeline pipeline, TestClock clock) = Build();
+        vm.ApplyLifecycle(new SessionStatus(SessionLifecycle.Streaming, "Streaming"));
+        Stream(vm, pipeline, clock, seconds: 4, lossRatio: 0);
+
+        // The bug this replaces: loss drew red at zero loss and frames drew green while collapsing, so no
+        // stroke colour on the panel carried any information at all.
+        Assert.Equal(MetricSeverity.Normal, vm.State.Diagnostics.LossSeverity);
+        Assert.Equal(MetricSeverity.Normal, vm.State.Diagnostics.LatencySeverity);
+        Assert.Equal(MetricSeverity.Normal, vm.State.Diagnostics.FramesSeverity);
+    }
+
+    [Theory]
+    [InlineData(0.0, MetricSeverity.Normal)]
+    [InlineData(0.019, MetricSeverity.Normal)]
+    [InlineData(0.02, MetricSeverity.Warning)]
+    [InlineData(0.05, MetricSeverity.Warning)]
+    [InlineData(0.10, MetricSeverity.Critical)]
+    [InlineData(0.40, MetricSeverity.Critical)]
+    public void LossWearsTheAssessorsOwnThresholds(double lossRatio, MetricSeverity expected)
+    {
+        // Deliberately the assessor's constants rather than numbers restated here: the row and the verdict
+        // have to agree, and two copies of a threshold is how they stop agreeing.
+        (SessionViewModel vm, FakePipeline pipeline, TestClock clock) = Build();
+        vm.ApplyLifecycle(new SessionStatus(SessionLifecycle.Streaming, "Streaming"));
+        Stream(vm, pipeline, clock, seconds: 2, lossRatio: lossRatio);
+
+        Assert.Equal(expected, vm.State.Diagnostics.LossSeverity);
+    }
+
+    [Theory]
+    [InlineData(10, MetricSeverity.Normal)]
+    [InlineData(59, MetricSeverity.Normal)]
+    [InlineData(60, MetricSeverity.Warning)]
+    [InlineData(119, MetricSeverity.Warning)]
+    [InlineData(120, MetricSeverity.Critical)]
+    public void LatencyWearsTheAssessorsOwnThresholds(double rttMs, MetricSeverity expected)
+    {
+        (SessionViewModel vm, FakePipeline pipeline, TestClock clock) = Build();
+        vm.ApplyLifecycle(new SessionStatus(SessionLifecycle.Streaming, "Streaming"));
+
+        clock.Advance(TimeSpan.FromMilliseconds(500));
+        pipeline.Snapshot = new VideoPipelineSnapshot(30, 30, 0, 0, 2, 1920, 1080);
+        vm.Sample(Live(rttMs: rttMs));
+        clock.Advance(TimeSpan.FromMilliseconds(500));
+        pipeline.Snapshot = new VideoPipelineSnapshot(60, 60, 0, 0, 2, 1920, 1080);
+        vm.Sample(Live(rttMs: rttMs));
+
+        Assert.Equal(expected, vm.State.Diagnostics.LatencySeverity);
+    }
+
+    [Fact]
+    public void FramesGoWarningBelowTheShortfallFactor()
+    {
+        (SessionViewModel vm, FakePipeline pipeline, TestClock clock) = Build();
+        vm.ApplyLifecycle(new SessionStatus(SessionLifecycle.Streaming, "Streaming"));
+
+        // 20 frames per half second is 40 fps against a 60 fps target - below 0.75x, so a shortfall.
+        long frames = 0;
+        for (int i = 0; i < 4; i++)
+        {
+            clock.Advance(TimeSpan.FromMilliseconds(500));
+            frames += 20;
+            pipeline.Snapshot = new VideoPipelineSnapshot(frames, frames, 0, 0, 2, 1920, 1080);
+            vm.Sample(Live());
+        }
+
+        Assert.Equal(MetricSeverity.Warning, vm.State.Diagnostics.FramesSeverity);
+    }
+
+    [Fact]
+    public void ThePlotsDeclareWhereTheirThresholdIsDrawn()
+    {
+        (SessionViewModel vm, _, _) = Build();
+
+        // Loss and latency are scaled so full scale IS the warn threshold, so the rule sits along the
+        // ceiling and "touching the top" reads as "this is now a problem".
+        Assert.Equal(1, SessionViewModel.LossPlot.WarnFraction);
+        Assert.Equal(1, SessionViewModel.LatencyPlot.WarnFraction);
+
+        // Frames is the one plot whose threshold is not its ceiling: it is scaled with headroom so a stream
+        // at target is not drawn clipped, which puts the shortfall rule partway down.
+        Assert.NotNull(vm.FramesPlot.WarnFraction);
+        Assert.InRange(vm.FramesPlot.WarnFraction!.Value, 0.6, 0.65);
+
+        // Bitrate has no threshold to draw, because there is no bitrate that is wrong by itself.
+        Assert.Null(vm.BitratePlot.WarnFraction);
+    }
+
+    [Fact]
+    public void ScalesAreFixedRatherThanDerivedFromTheSamples()
+    {
+        // An auto-scaled axis makes a calm stream and a broken one look identical, so the scale must not
+        // move when the data does.
+        (SessionViewModel vm, FakePipeline pipeline, TestClock clock) = Build();
+        double before = vm.FramesPlot.FullScale;
+
+        Stream(vm, pipeline, clock, seconds: 6, lossRatio: 0.3);
+
+        Assert.Equal(before, vm.FramesPlot.FullScale);
+        Assert.Equal(SessionViewModel.LossPlot.FullScale, SessionViewModel.LossPlot.FullScale);
+    }
 }

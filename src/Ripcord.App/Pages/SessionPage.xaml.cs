@@ -542,6 +542,25 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer
         }
     }
 
+    /// <summary>
+    /// A plotted metric's stroke. Neutral while the reading is inside its threshold, which is what makes a
+    /// coloured line worth looking at; resolved defensively, like the health dot, so a missing key leaves the
+    /// previous stroke rather than crashing the overlay or inventing a colour the design system does not own.
+    /// </summary>
+    private static Brush? SeverityBrush(MetricSeverity severity)
+    {
+        string key = severity switch
+        {
+            MetricSeverity.Warning => "SystemFillColorCautionBrush",
+            MetricSeverity.Critical => "SystemFillColorCriticalBrush",
+            _ => "TextFillColorSecondaryBrush",
+        };
+
+        return Application.Current.Resources.TryGetValue(key, out object? brush) && brush is Brush themed
+            ? themed
+            : null;
+    }
+
     private static Visibility Vis(bool on) => on ? Visibility.Visible : Visibility.Collapsed;
 
     /// <summary>
@@ -1333,12 +1352,14 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer
         // Frame rate is scaled against the requested rate with headroom, so "at target" sits high but not
         // clipped and a shortfall is immediately visible as a drop. The other three scales belong to the
         // view-model, because each is derived from a threshold it already reasons about.
-        double fpsFullScale = Math.Max(1, _settings.TargetFps * 1.2);
+        SessionDiagnosticsState d = _viewModel.State.Diagnostics;
 
-        PlotSpark(FpsLine, FpsSpark, fps, fpsFullScale);
-        PlotSpark(RttLine, RttSpark, rtt, SessionViewModel.RttFullScaleMs);
-        PlotSpark(LossLine, LossSpark, loss, SessionViewModel.LossFullScalePercent);
-        PlotSpark(BitrateLine, BitrateSpark, bitrate, _viewModel.BitrateFullScaleMbps);
+        PlotSpark(FpsLine, FpsSpark, fps, _viewModel.FramesPlot, d.FramesSeverity);
+        PlotSpark(RttLine, RttSpark, rtt, SessionViewModel.LatencyPlot, d.LatencySeverity);
+        PlotSpark(LossLine, LossSpark, loss, SessionViewModel.LossPlot, d.LossSeverity);
+
+        // Bitrate never carries a severity: there is no bitrate that is wrong by itself.
+        PlotSpark(BitrateLine, BitrateSpark, bitrate, _viewModel.BitratePlot, MetricSeverity.Normal);
 
         // Value and peak beside each line, because a sparkline shows shape and says nothing about magnitude.
         FpsValueText.Text = $"{fps.Latest:F0}";
@@ -1360,8 +1381,19 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer
     /// line was identifiable. Each is now labelled, scaled independently, and sits beside its own value and peak.
     /// </para>
     /// </summary>
-    private static void PlotSpark(Polyline line, Canvas host, MetricHistory history, double fullScale)
+    private static void PlotSpark(
+        Polyline line, Canvas host, MetricHistory history, MetricPlot plot, MetricSeverity severity)
     {
+        // The stroke's colour is the reading, not the row's identity. These were fixed per metric in markup,
+        // so the loss line was red at zero loss and the frames line green while frames collapsed - colour that
+        // looked like it meant something and never did.
+        if (SeverityBrush(severity) is { } stroke)
+        {
+            line.Stroke = stroke;
+        }
+
+        double fullScale = plot.FullScale;
+
         // ActualWidth is 0 until the first layout pass, and these canvases are star-sized so there is no declared
         // Width to fall back on — skip rather than draw a degenerate line at x=0.
         double width = host.ActualWidth;
