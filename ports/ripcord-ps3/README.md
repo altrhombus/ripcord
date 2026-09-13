@@ -68,7 +68,7 @@ console.
 | `rc_sleep_ms()` | `sysUsleep(ms * 1000)` | **Microseconds, confirmed on hardware.** A 1000 ms sleep measured 79,800,986 ticks against an independently-reported 79.8 MHz time base, which only works out if the units are what the seam assumes |
 | `rc_tick()` / `rc_tick_hz()` | `mftb`, at whatever `sysGetTimebaseFrequency()` reports | **The 79.8 MHz magic number is gone** — lv2 answers it directly (syscall 147), and 79,800,000 survives only as the value the bring-up program cross-checks against. On the console the two agreed to 12 ppm, so the documented figure was right all along; the point is that the port no longer *depends* on it having been |
 | `rc_random_bytes()` | `sysGetRandomNumber`, in `source/platform/rc_random_ps3.c` | Resolves against `sysPrxForUser` — the always-resident library, so no `sysModuleLoad` first. Capped at 4096 bytes a call, so the body is a chunking loop. **Both of its `[X]`s are now closed on hardware:** zero does mean success, and lv2 *does* tolerate an unaligned destination — `rc_random_init()`'s probe asks for bytes at a deliberately odd address and it passed |
-| sockets | PSL1GHT BSD names after `netInitialize()` `[X]` | Same shape as `socInit()` / `sceNetInit()`. Belongs in a port bring-up file, not the seam |
+| sockets | PSL1GHT BSD names after `netInitialize()` | **Confirmed on hardware.** UDP socket, broadcast, `bind()`, `sendto`, `recvfrom` — the PS3 found a real PS5 on the LAN. `netInitialize()` is required first, as predicted, and `sin_len` is the trap: the PS3's `sockaddr_in` carries the original BSD length byte that Linux and the 3DS dropped |
 
 Three of the four functions read the PowerPC time base with one instruction, so the whole file's exposure
 to PSL1GHT is one sleep call and one frequency query. That is a much smaller surface to be wrong about
@@ -81,6 +81,27 @@ With the frequency authoritative, a disagreement is evidence about `sysUsleep` s
 
 Two things the Vita port learned that apply here unchanged: **"it compiles" is not "it works"** for socket
 idioms, and `bind()` to port 0 is worth testing on a device before assuming — the 3DS rejects it outright.
+
+**Both were worth it, and both came out well.** `bind()` to port 0 is **accepted** on the PS3, so the
+3DS's restriction is that platform's rather than a general one — `rc_platform.h` records the answer.
+And "it compiles is not it works" was earned exactly as advertised: `sockaddr_in` on the PS3 carries a
+leading `sin_len` byte in the original BSD style that Linux and the 3DS both dropped, so code written
+against either compiles unchanged, leaves it zero, and silently sends nothing.
+
+### Discovery works, from the console
+
+```
+disc:  broadcasting SRCH for 3000 ms
+       bind() to port 0: accepted
+       sent 1 probe(s), 1 datagram(s) back, 1 parsed
+       192.168.1.42  PS5  MyConsoleName  id=...  sw=...  standby
+```
+
+The first thing in this port that has talked to a PS5 rather than to a file. The division of labour is
+the one `rc_platform.h` describes, exercised end to end for the first time: `ports/common` builds the
+SRCH datagram and parses the reply, and `source/discovery/rc_discover.c` contributes sockets, a
+broadcast address and a deadline. Note the console answered from **standby** — discovery replies in rest
+mode with a different status line, which is what makes LAN wake possible later.
 
 ### The CSPRNG — implemented, and why it is a probe
 
