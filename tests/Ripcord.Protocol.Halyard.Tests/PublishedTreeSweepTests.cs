@@ -745,20 +745,64 @@ public class PublishedTreeSweepTests
         || (relative.StartsWith("ports/", StringComparison.Ordinal)
             && !relative.Split('/').Contains("tests", StringComparer.Ordinal));
 
+    /// <summary>
+    /// The files this sweep reads: the ones git actually tracks.
+    ///
+    /// <para><b>It asked the filesystem until 2026-09-12, and the two answers are not the same.</b> A
+    /// <c>Directory.EnumerateFiles</c> walk filtered by <see cref="Excluded"/> reads whatever happens to be
+    /// on the disk, including files <c>.gitignore</c> exists to keep out of the repository. What surfaced
+    /// it was a PS3 decoder build: <c>ports/*/third-party/</c> is gitignored, and 165 MB of upstream Mbed
+    /// TLS landed there, whereupon the sweep reported upstream's DHM test constants and an address in one
+    /// of its comments as "unredacted values in committed text". None of it was committed, or ever could
+    /// be.</para>
+    ///
+    /// <para>That is not a cosmetic mismatch. A guard that cries wolf about files nobody can publish gets
+    /// its findings skimmed, and this one's whole value is that a finding means something. Worse, the two
+    /// halves of this file disagreed about the word "committed": <see cref="EveryCommittedTextFile_IsSwept"/>
+    /// already asked <c>git ls-files</c>, and its own docstring says only git can answer which committed
+    /// files a corpus does not open. The corpus it was checking answered a different question.</para>
+    ///
+    /// <para><b>This narrows the sweep, so the safety of the narrowing is the thing to check, not the
+    /// tidiness.</b> The threat is publication, and a gitignored file is not published. The capture-type
+    /// guard is unaffected because it never lived here: <see cref="NeverCommitted"/> is enforced inside
+    /// <see cref="EveryCommittedTextFile_IsSwept"/>, against git's list, where a gitignored capture is
+    /// correct and a committed one fails. The dirty room stays doubly covered — gitignored, and named in
+    /// <see cref="Excluded"/>. What is given up is the sweep noticing a value in a file that is not in the
+    /// repository and is not going to be, which was never the promise.</para>
+    ///
+    /// <para>If git cannot answer — an archive rather than a clone — this falls back to the old walk
+    /// rather than sweeping nothing. Over-reporting is the safe direction to fail in, and an empty corpus
+    /// would make every assertion in this file pass while checking nothing.
+    /// <see cref="SweptCorpus_ContainsOnlyTrackedFiles"/> pins the property.</para>
+    /// </summary>
     private static IEnumerable<string> CommittedText()
     {
         string root = RepoRoot();
-        foreach (string path in Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories))
+        string? listing = RunGit(root, "ls-files");
+
+        IEnumerable<string> relatives = listing is null
+            ? Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories)
+                .Select(p => Path.GetRelativePath(root, p).Replace(Path.DirectorySeparatorChar, '/'))
+            : listing.Split((char)0x0a).Select(r => r.TrimEnd((char)0x0d));
+
+        foreach (string rel in relatives)
         {
-            string rel = Path.GetRelativePath(root, path).Replace(Path.DirectorySeparatorChar, '/');
+            if (rel.Length == 0) continue;
             if (Excluded(rel)) continue;
             if (PinnedDataFiles.ContainsKey(rel)) continue;   // covered by hash instead
 
-            if (TextExtensions.Contains(Path.GetExtension(path), StringComparer.OrdinalIgnoreCase)
-                || NamedFiles.Contains(Path.GetFileName(path), StringComparer.OrdinalIgnoreCase))
+            if (!TextExtensions.Contains(Path.GetExtension(rel), StringComparer.OrdinalIgnoreCase)
+                && !NamedFiles.Contains(Path.GetFileName(rel), StringComparer.OrdinalIgnoreCase))
             {
-                yield return path;
+                continue;
             }
+
+            // Tracked but not on disk: a file deleted in the working tree is still in git's list, and
+            // reading it would throw rather than report anything.
+            string full = Path.Combine(root, rel.Replace('/', Path.DirectorySeparatorChar));
+            if (!File.Exists(full)) continue;
+
+            yield return full;
         }
     }
 
@@ -1539,6 +1583,42 @@ public class PublishedTreeSweepTests
                 ? $"the sweep must catch \"{input}\" in {context} — {why}"
                 : $"the sweep must tolerate \"{input}\" in {context} — {why}\n  reported: "
                   + string.Join(", ", hits));
+    }
+
+    /// <summary>
+    /// The corpus named "committed text" contains only committed text.
+    ///
+    /// <para>Stated as a test rather than left to the implementation because the two ways of being wrong
+    /// have opposite signs and only one of them is loud. Reading untracked files produces false findings,
+    /// which is what actually happened and is at least visible. Reading <em>fewer</em> files than git
+    /// tracks would make this whole file pass while checking less than it claims, and nothing else here
+    /// would notice — <see cref="EveryCommittedTextFile_IsSwept"/> checks classification coverage, not
+    /// that the sweep opened anything.</para>
+    /// </summary>
+    [Fact]
+    public void SweptCorpus_ContainsOnlyTrackedFiles()
+    {
+        string root = RepoRoot();
+        string? listing = RunGit(root, "ls-files");
+        if (listing is null) return;   // no git: the fallback walk is deliberate, and this cannot judge it
+
+        HashSet<string> tracked = new(
+            listing.Split((char)0x0a).Select(r => r.TrimEnd((char)0x0d)).Where(r => r.Length > 0),
+            StringComparer.OrdinalIgnoreCase);
+
+        List<string> untracked = CommittedText()
+            .Select(p => Path.GetRelativePath(root, p).Replace(Path.DirectorySeparatorChar, '/'))
+            .Where(rel => !tracked.Contains(rel))
+            .ToList();
+
+        Assert.True(
+            untracked.Count == 0,
+            "The sweep opened files git does not track. A finding in one of these is not a finding — the "
+            + "file cannot be published — and noise here is what gets a real finding skimmed past:\n  "
+            + string.Join("\n  ", untracked.Take(20)));
+
+        // And the corpus is not empty, because an empty one passes everything.
+        Assert.True(CommittedText().Any(), "the swept corpus is empty, so every assertion in this file is vacuous");
     }
 
     /// <summary>
