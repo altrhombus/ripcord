@@ -681,4 +681,44 @@ public class SessionViewModelTests
 
         Assert.Equal("3.4%", vm.State.Diagnostics.HeroLoss);
     }
+
+    // ---- the connect trail's phase --------------------------------------------------------------
+
+    [Fact]
+    public void AConnectStageCarriesItsPhaseToTheTrail()
+    {
+        (SessionViewModel vm, _, _) = Build();
+
+        vm.ShowConnectStage(new ConnectStage("Waking", "standby", Terminal: false, ConnectPhase.Waking));
+
+        Assert.Equal(ConnectPhase.Waking, vm.State.Phase);
+        Assert.Equal("Waking", vm.State.StatusHeadline);
+    }
+
+    [Fact]
+    public void AnythingThatIsNotTheConnectSequenceClearsThePhase()
+    {
+        // The trail must not keep its last position through a reconnect. It would be claiming progress that
+        // belongs to a sequence which already finished, on a screen that is about to start a new one.
+        (SessionViewModel vm, _, _) = Build();
+        vm.ShowConnectStage(new ConnectStage("Waking", "standby", Terminal: false, ConnectPhase.Waking));
+        Assert.NotNull(vm.State.Phase);
+
+        vm.ApplyLifecycle(new SessionStatus(SessionLifecycle.Reconnecting, "Lost the console"));
+
+        Assert.Null(vm.State.Phase);
+    }
+
+    [Fact]
+    public void AFailedConnectKeepsItsPhaseSoTheTrailStopsWhereItGotTo()
+    {
+        (SessionViewModel vm, _, _) = Build();
+
+        vm.ShowConnectStage(new ConnectStage(
+            "Console didn't wake", "it never came up", Terminal: true, ConnectPhase.Waking));
+
+        Assert.Equal(ConnectPhase.Waking, vm.State.Phase);
+        Assert.True(vm.State.StatusActionsVisible);
+        Assert.False(vm.State.StatusBusy);
+    }
 }
