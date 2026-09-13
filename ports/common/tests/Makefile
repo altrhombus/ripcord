@@ -99,6 +99,7 @@ SOURCES := \
 DISCOVERY_SOURCES := \
 	$(CORE)/util/rc_text.c \
 	$(CORE)/discovery/halyard_discovery.c \
+	$(CORE)/discovery/halyard_wake.c \
 	discovery_test.c
 
 # Phase 4: the /sess/init -> /sess/ctrl exchange, minus the crypto itself (already checked above via
