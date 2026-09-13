@@ -210,7 +210,11 @@ CXXSOURCES := source/media/rc_decode_probe.cpp
 # exercise. Each runner keeps its own main(), renamed at compile time so seven of them can share one
 # binary; that is the only modification, and it is a -D rather than an edit.
 CORE_TEST_DIR := $(CORE)/tests
-CORE_TEST_RUNNERS := discovery session takion fec stream_header stream_demux input
+# The seven that carry their own expectations, and the four that check against .kat vectors emitted by
+# the .NET side. vector_runner is named for its file rather than its subject - it is the control crypto.
+CORE_TEST_RUNNERS := discovery session takion fec stream_header stream_demux input \
+                     stream_crypto ecdh control_proto
+CORE_TEST_EXTRA_OBJS := $(BUILD)/ct_vector_runner.o
 
 # Taken from ports/common/tests' own variables rather than assembled by hand - an earlier revision
 # guessed from a grep, missed halyard_sess_request.c and stream_demux.c, and got a page of undefined
@@ -228,11 +232,27 @@ CORE_TEST_SUPPORT := \
 	$(CORE)/takion/takion_data_chunk.c $(CORE)/takion/takion_handshake.c \
 	$(CORE)/takion/takion_message.c $(CORE)/takion/takion_reassembler.c \
 	$(CORE)/takion/takion_sack_chunk.c \
-	$(CORE)/util/rc_base64.c $(CORE)/util/rc_text.c
+	$(CORE)/util/rc_base64.c $(CORE)/util/rc_text.c \
+	$(CORE)/crypto/rc_ecdh.c \
+	$(CORE)/session/halyard_launch_spec.c \
+	$(CORE)/stream/stream_key_schedule.c \
+	$(CORE)/takion/takion_control_proto.c $(CORE)/takion/takion_session_negotiator.c \
+	$(CORE)/takion/senkusha_echo.c
+
+# ECDH delegates elliptic-curve arithmetic to mbedtls - rc_ecdh.h argues at length that a hand-written
+# constant-time bigint is the last thing this project should write twice. The same script the Vita port
+# and the host suite use cross-builds it here, unmodified, with CROSS set:
+#
+#     PREFIX=third-party/mbedtls CROSS=powerpc64-ps3-elf- sh ../common/tools/build-mbedtls.sh
+MBEDTLS_PREFIX := third-party/mbedtls
+MBEDTLS_LIB    := $(MBEDTLS_PREFIX)/lib/libmbedcrypto.a
+ECDH_CFLAGS    := -DRC_CRYPTO_MBEDTLS -isystem $(MBEDTLS_PREFIX)/include \
+                  -DMBEDTLS_CONFIG_FILE='<ripcord-mbedtls-config.h>'
 
 CORE_TEST_OBJS := $(BUILD)/ct_halyard_v1_constants.g.o \
                   $(addprefix $(BUILD)/ct_,$(notdir $(CORE_TEST_SUPPORT:.c=.o))) \
                   $(addprefix $(BUILD)/ct_,$(addsuffix _test.o,$(CORE_TEST_RUNNERS))) \
+                  $(CORE_TEST_EXTRA_OBJS) \
                   $(BUILD)/rc_core_tests.o
 
 # The runners are -Wno-conversion because they are the CORE's tests built for a target they were not
@@ -243,7 +263,7 @@ CORE_TEST_OBJS := $(BUILD)/ct_halyard_v1_constants.g.o \
 # other by bare filename rather than by path, so the directories have to be on the search path.
 CORE_TEST_CFLAGS := $(ARCH) -std=gnu99 -O2 -g -Wall -I$(CORE) -I$(CORE_TEST_DIR) \
                     -I$(CORE)/crypto -I$(CORE)/halyard -I$(CORE)/platform \
-                    -Isource/coretest -I$(PSL1GHT)/ppu/include
+                    -Isource/coretest -I$(PSL1GHT)/ppu/include $(ECDH_CFLAGS)
 
 # ---------------------------------------------------------------------------------------------------
 # The SPE program. Step 6 of README.md's order of work.
@@ -342,6 +362,12 @@ $(BUILD)/ct_%_test.o: $(CORE_TEST_DIR)/%_test.c
 	@mkdir -p $(@D)
 	$(CC) $(CORE_TEST_CFLAGS) -Dmain=$*_test_main -c -o $@ $<
 
+# vector_runner does not follow the *_test.c naming, so it gets its own rule rather than a special case
+# in the pattern above.
+$(BUILD)/ct_vector_runner.o: $(CORE_TEST_DIR)/vector_runner.c
+	@mkdir -p $(@D)
+	$(CC) $(CORE_TEST_CFLAGS) -Dmain=vector_runner_main -c -o $@ $<
+
 $(BUILD)/rc_core_tests.o: source/coretest/rc_core_tests.c
 	@mkdir -p $(@D)
 	$(CC) $(CORE_TEST_CFLAGS) -c -o $@ $<
@@ -377,7 +403,7 @@ $(BUILD)/%.o: %.c | $(BUILD)/rc_build_id.h $(BUILD)/rc_spu_symbols.h $(BUILD)/$(
 $(BUILD)/$(APP).elf: $(COBJS) $(BUILD)/$(SPU_NAME)_bin.o $(BUILD)/rc_decode_probe.o $(CORE_TEST_OBJS)
 	@mkdir -p $(@D)
 	$(CXX) $(LDFLAGS) -o $@ $(COBJS) $(BUILD)/$(SPU_NAME)_bin.o \
-	       $(BUILD)/rc_decode_probe.o $(CORE_TEST_OBJS) $(OPENH264_LIB) $(LIBS)
+	       $(BUILD)/rc_decode_probe.o $(CORE_TEST_OBJS) $(OPENH264_LIB) $(MBEDTLS_LIB) $(LIBS)
 
 # THE PREPARED ELF - strip, then sprxlinker. BOTH STEPS, IN THAT ORDER, AND THE SECOND ONE IS NOT
 # OPTIONAL: leaving it out is what made the first three hardware runs produce no output at all.
