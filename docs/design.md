@@ -148,10 +148,19 @@ carrier of it.
   there is none. This applies to the numbers at rung 2 as well as the lines at rung 3.
 - **Bitrate never colours.** It is a magnitude, not a verdict.
 - **The threshold is drawn**, as a dashed rule at the warn level, so "is this bad?" is answerable without
-  knowing what the number ought to be.
-- **Loss scales to `LossBadRatio`** (10 %) with the warn line at 2 %. Scaling to the warn ratio pinned
-  everything past it to the ceiling, so 2.1 % and 30 % drew identically — exactly when the difference
-  matters most.
+  knowing what the number ought to be. For loss and latency that rule sits along the *ceiling*, because full
+  scale already is the warn threshold; drawing it makes "touching the top means trouble" explicit rather
+  than folklore. Frames is the exception — it is scaled with headroom so a stream at target is not drawn
+  clipped, which puts its rule partway down.
+- **Loss keeps its warn-threshold scale. Amended 2026-09-13, against this document's first draft**, which
+  said to rescale to `LossBadRatio` (10 %) so that 2.1 % and 30 % would stop drawing identically. That
+  reasoning does not survive contact with the code: `LossFullScalePercent` carries a comment recording that
+  the scale *was* 20 %, and that a real 0.4 % blip then drew at 2 % of row height — invisible, so the row
+  could not tell "no loss" from "a little loss", which is the distinction that matters most on wireless.
+  At 10 % that blip is about one pixel, so the proposed fix reintroduces the bug that comment describes.
+  And the case for it was weak: **a player's action is identical at 3 % loss and at 30 %** — fix the network
+  — while the value and peak are printed beside the line anyway, so magnitude is never actually lost. The
+  severity colour carries "past the threshold"; the scale keeps the detail below it.
 
 Fixed scales stay fixed and numbers still never animate, both for the reasons already recorded.
 

@@ -502,7 +502,7 @@
                                 <TextBlock x:Uid="SessionPage_Frames" Grid.Row="0" VerticalAlignment="Center" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Style="{StaticResource CaptionTextBlockStyle}" />
                                 <TextBlock x:Name="FpsValueText" Grid.Row="0" Grid.Column="1" VerticalAlignment="Center" Style="{StaticResource CaptionTextBlockStyle}" TextAlignment="Right" />
                                 <Canvas x:Name="FpsSpark" Grid.Row="0" Grid.Column="2" Height="18">
-                                    <Polyline x:Name="FpsLine" Stroke="{ThemeResource SystemFillColorSuccessBrush}" StrokeThickness="1.5" StrokeLineJoin="Round" />
+                                    <Polyline x:Name="FpsLine" StrokeThickness="1.5" StrokeLineJoin="Round" />
                                 </Canvas>
                                 <TextBlock x:Name="FpsPeakText" Grid.Row="0" Grid.Column="3" VerticalAlignment="Center" Foreground="{ThemeResource TextFillColorTertiaryBrush}" Style="{StaticResource CaptionTextBlockStyle}" TextAlignment="Right" />
 
@@ -510,7 +510,7 @@
                                 <TextBlock x:Uid="SessionPage_Latency" Grid.Row="1" VerticalAlignment="Center" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Style="{StaticResource CaptionTextBlockStyle}" />
                                 <TextBlock x:Name="RttValueText" Grid.Row="1" Grid.Column="1" VerticalAlignment="Center" Style="{StaticResource CaptionTextBlockStyle}" TextAlignment="Right" />
                                 <Canvas x:Name="RttSpark" Grid.Row="1" Grid.Column="2" Height="18">
-                                    <Polyline x:Name="RttLine" Stroke="{ThemeResource SystemFillColorCautionBrush}" StrokeThickness="1.5" StrokeLineJoin="Round" />
+                                    <Polyline x:Name="RttLine" StrokeThickness="1.5" StrokeLineJoin="Round" />
                                 </Canvas>
                                 <TextBlock x:Name="RttPeakText" Grid.Row="1" Grid.Column="3" VerticalAlignment="Center" Foreground="{ThemeResource TextFillColorTertiaryBrush}" Style="{StaticResource CaptionTextBlockStyle}" TextAlignment="Right" />
 
@@ -518,7 +518,7 @@
                                 <TextBlock Text="loss" Grid.Row="2" VerticalAlignment="Center" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Style="{StaticResource CaptionTextBlockStyle}" />
                                 <TextBlock x:Name="LossValueText" Grid.Row="2" Grid.Column="1" VerticalAlignment="Center" Style="{StaticResource CaptionTextBlockStyle}" TextAlignment="Right" />
                                 <Canvas x:Name="LossSpark" Grid.Row="2" Grid.Column="2" Height="18">
-                                    <Polyline x:Name="LossLine" Stroke="{ThemeResource SystemFillColorCriticalBrush}" StrokeThickness="1.5" StrokeLineJoin="Round" />
+                                    <Polyline x:Name="LossLine" StrokeThickness="1.5" StrokeLineJoin="Round" />
                                 </Canvas>
                                 <TextBlock x:Name="LossPeakText" Grid.Row="2" Grid.Column="3" VerticalAlignment="Center" Foreground="{ThemeResource TextFillColorTertiaryBrush}" Style="{StaticResource CaptionTextBlockStyle}" TextAlignment="Right" />
 
@@ -526,7 +526,7 @@
                                 <TextBlock x:Uid="SessionPage_Bitrate" Grid.Row="3" VerticalAlignment="Center" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Style="{StaticResource CaptionTextBlockStyle}" />
                                 <TextBlock x:Name="BitrateValueText" Grid.Row="3" Grid.Column="1" VerticalAlignment="Center" Style="{StaticResource CaptionTextBlockStyle}" TextAlignment="Right" />
                                 <Canvas x:Name="BitrateSpark" Grid.Row="3" Grid.Column="2" Height="18">
-                                    <Polyline x:Name="BitrateLine" Stroke="{ThemeResource AccentTextFillColorPrimaryBrush}" StrokeThickness="1.5" StrokeLineJoin="Round" />
+                                    <Polyline x:Name="BitrateLine" StrokeThickness="1.5" StrokeLineJoin="Round" />
                                 </Canvas>
                                 <TextBlock x:Name="BitratePeakText" Grid.Row="3" Grid.Column="3" VerticalAlignment="Center" Foreground="{ThemeResource TextFillColorTertiaryBrush}" Style="{StaticResource CaptionTextBlockStyle}" TextAlignment="Right" />
                             </Grid>
