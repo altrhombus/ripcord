@@ -46,4 +46,15 @@ void rc_netlog_close(void);
 /* Whether the channel is carrying this run, for the report the program prints about its own channels. */
 int rc_netlog_is_open(void);
 
+/* Not yet attempted. Distinct from any value sendto can return. */
+#define RC_NETLOG_SEND_UNTRIED (-999L)
+
+/*
+ * What the FIRST sendto returned: the byte count on success, negative on failure, UNTRIED if no line has
+ * been written yet. The channel reporting itself open says only that netInitialize, socket and inet_pton
+ * all succeeded - on hardware that was true while nothing arrived at the far end, and a byte count here
+ * separates "the console refused to send" from "the datagram did not survive the network".
+ */
+long rc_netlog_first_send_result(void);
+
 #endif /* RC_NETLOG_H */
