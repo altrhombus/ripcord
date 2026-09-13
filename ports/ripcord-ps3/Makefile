@@ -162,7 +162,8 @@ CFLAGS := $(ARCH) -std=gnu99 -O2 -g \
           -DRC_PS3_APPID='"$(APPID)"' \
           -DRC_NETLOG_HOST='"$(RC_NETLOG_HOST)"' -DRC_NETLOG_PORT=$(RC_NETLOG_PORT) \
           -I$(CORE) -I$(BUILD) -Isource/spu -Isource/net -Isource/media -Isource/coretest \
-          -Isource/discovery -I$(CORE)/discovery -Ispu \
+          -Isource/discovery -Isource/connect -I$(CORE)/discovery -I$(CORE)/session \
+          -I$(CORE)/halyard -I$(CORE)/crypto -I$(CORE)/net -I$(CORE)/platform -Ispu \
           -I$(PSL1GHT)/ppu/include
 
 LDFLAGS := $(ARCH) -Wl,--gc-sections -L$(PSL1GHT)/ppu/lib
@@ -190,7 +191,13 @@ SOURCES := \
 	source/net/rc_netlog.c \
 	source/media/rc_h264_annexb.c \
 	source/discovery/rc_discover.c \
+	source/connect/rc_connect.c \
 	$(CORE)/discovery/halyard_discovery.c \
+	$(CORE)/discovery/halyard_wake.c \
+	$(CORE)/session/halyard_pairing_file.c \
+	$(CORE)/session/halyard_control_session.c \
+	$(CORE)/net/rc_tcp.c \
+	$(CORE)/util/rc_hex.c \
 	$(CORE)/util/rc_text.c \
 	source/app/main.c
 
@@ -416,8 +423,8 @@ $(OPENH264_LIB):
 #
 # vpath rather than per-directory rules: the basenames across these five directories are unique, and one
 # pattern rule is easier to be right about than five.
-vpath %.c $(CORE)/util $(CORE)/discovery source/platform source/spu source/net source/media \
-          source/discovery source/app
+vpath %.c $(CORE)/util $(CORE)/discovery $(CORE)/session $(CORE)/net \
+          source/platform source/spu source/net source/media source/discovery source/connect source/app
 
 COBJS := $(addprefix $(BUILD)/,$(notdir $(SOURCES:.c=.o)))
 
@@ -425,6 +432,34 @@ COBJS := $(addprefix $(BUILD)/,$(notdir $(SOURCES:.c=.o)))
 # rc_spu_probe_bin.h that bin2s writes alongside its object. Order-only (after the |) because their
 # CONTENT does not decide whether a C file needs recompiling - the build id changes on every source
 # change by design, and making every object depend on its content would rebuild the world each time.
+# TWO CORE FILES OPEN SOCKETS, and PSL1GHT's headers make that expensive under this port's flag set.
+# halyard_control_session.c and rc_tcp.c include <net/socket.h>, which pulls in ppu-lv2.h, whose inline
+# syscall wrappers convert int to u64 all over - exactly what source/app/main.c has to pragma away for
+# its own includes.
+#
+# The pragma trick is not available here: these are ports/common files, shared by every port, and a
+# PSL1GHT-specific pragma has no business in a platform-neutral layer. So the relaxation lives in the
+# Makefile of the port whose SDK causes it, scoped to the two files that need it, and nothing about the
+# core's own code is excused - only the SDK headers it is compiled against.
+# APPENDED, not filtered. Removing -Wsign-conversion from the list is not enough: -Wconversion implies
+# it for C, so it comes straight back. A trailing -Wno- wins because later options override earlier ones.
+# And -include sys/time.h, because PSL1GHT's <sys/socket.h> declares sysNetSelect taking a
+# `struct timeval *` without having pulled that struct in - so the first thing to include it gets
+# "declared inside parameter list will not be visible outside of this definition", which under -Werror
+# is fatal and reads like the core's mistake rather than a header ordering one. Same shape as the
+# -include stdio.h that tools/build-openh264.sh needs, and the same reason: fix it from outside rather
+# than edit code that is not ours.
+CFLAGS_SDK_SOCKETS := $(CFLAGS) -Wno-sign-conversion -include sys/time.h
+
+$(BUILD)/halyard_control_session.o: $(CORE)/session/halyard_control_session.c \
+                                    | $(BUILD)/rc_build_id.h $(BUILD)/rc_spu_symbols.h
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS_SDK_SOCKETS) -c -o $@ $<
+
+$(BUILD)/rc_tcp.o: $(CORE)/net/rc_tcp.c | $(BUILD)/rc_build_id.h $(BUILD)/rc_spu_symbols.h
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS_SDK_SOCKETS) -c -o $@ $<
+
 $(BUILD)/%.o: %.c | $(BUILD)/rc_build_id.h $(BUILD)/rc_spu_symbols.h $(BUILD)/$(SPU_NAME)_bin.o
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) -c -o $@ $<
