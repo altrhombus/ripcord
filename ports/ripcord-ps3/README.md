@@ -161,7 +161,7 @@ three failures that look identical from outside and have nothing in common as bu
 
 | Concern | PS3 | Verdict |
 |---|---|---|
-| H.264 decode | Cell SPUs in software; no exposed fixed-function block `[X]` | **The whole problem.** See [`DECODE.md`](DECODE.md) |
+| H.264 decode | openh264 on the PPE: **177.8 fps at 640x360**, measured on hardware. No SIMD, no SPEs | Was "the whole problem". Extrapolates to ~44 fps at 720p, which is 1.3x off 60 and inside 30. See [`DECODE.md`](DECODE.md) §1 |
 | Crypto | PPE trivially | Free — the New 3DS manages it at 268 MHz |
 | Opus | Software, PPE | Free |
 | RAM | 256 MB XDR + 256 MB GDDR3 | Ample — a 720p NV12 frame is ~1.4 MB |
