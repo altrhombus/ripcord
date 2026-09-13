@@ -192,10 +192,54 @@ endian-clean; this says the real machine runs it.
 45 NAL units to produce 8 frames is the expected shape: the stream opens with SPS, PPS and a 22-slice
 IDR, so the first picture alone costs two dozen of them.
 
-**What is still open.** Eight frames is not 1,214, and nothing here is timed — the run decodes as fast as
-it can and reports no rate, so whether the PPE alone manages anything near 60 fps is unmeasured and
-almost certainly no. That is the whole reason for the SPE work in section 3, and the next measurement
-worth taking.
+### How fast is the PPE alone? — **far faster than this document assumed**
+
+300 frames decoded on the console, timing only `DecodeFrameNoDelay` — file reading, NAL splitting and
+hashing all outside the measured region, and the hashing of the first eight frames (19 ms) reported
+separately and excluded:
+
+```
+PPE alone: 300 frames in 1687 ms, 5624 us/frame, 177.8 fps   (640x360)
+```
+
+**177.8 fps, with no SIMD and no SPE involvement at all.** openh264's pure-C path, on one in-order
+PowerPC core.
+
+Scaling to the target resolution — 720p is exactly four times the pixels, 921,600 against 230,400:
+
+| | |
+|---|---|
+| extrapolated 720p | **22.5 ms/frame, ~44 fps** |
+| against a 60 fps frame period (16.7 ms) | 1.3x over |
+| against §4's ~8 ms decode target | 2.8x over |
+| against a 30 fps frame period (33.3 ms) | **68% of budget** |
+
+This document has been assuming the PPE could not do it — "the PPE alone will not decode 720p H.264 and
+there is no fixed-function block to fall back on". On this evidence that was too pessimistic. The PPE
+alone is within **1.3x** of 720p60 and comfortably inside 720p30, before a single SPE is used and before
+a single inner loop is vectorised.
+
+**Four reasons not to over-read it**, because a 4x pixel scaling is the crudest possible extrapolation:
+
+1. **CABAC tracks bitrate, not pixels.** §3 already makes this point. The capture is 2.8–7.8 Mbps; a
+   720p stream would carry more, so the entropy share grows by something other than 4x and the estimate
+   above under-counts it.
+2. **Decode is not the whole frame.** The real client also runs network, Takion, crypto, reassembly and
+   Annex-B splitting on the same PPE, plus colour conversion and present. 22.5 ms of a 16.7 ms period
+   leaves nothing for any of it.
+3. **This is decode from memory with no deadline.** No jitter buffer, no arrival pacing, nothing
+   competing.
+4. **It is one stream at one resolution.** 640x360 is what the console happened to send the 3DS port.
+
+**And one reason it may be better still: the PPE has AltiVec/VMX and openh264 is not using it.** The
+build takes the pure-C path because `build/arch.mk` has no PowerPC branch — it dispatches on x86, arm,
+arm64, mips and loongarch, and an unknown architecture gets no SIMD at all. So this figure is the
+*scalar* floor, and the 128-bit vector unit sitting on the same core is entirely unexploited.
+
+**That reorders the work.** §3's plan moves the inner loops to SPEs; this measurement says the cheaper
+experiment comes first — vectorise the PPE's hot loops with VMX, which shares an instruction set family
+with the SPU work that would follow and would not be wasted if the SPEs are needed anyway. Whether the
+SPEs are needed for 720p60 at all is now an open question rather than a settled premise.
 
 ### The little-endian reference output is now ground truth
 
@@ -238,6 +282,14 @@ on it. And the level will differ at higher resolutions, which affects DPB sizing
 
 ## 3. Where the parallelism is, and where it is not
 
+> **Read §1's throughput measurement first.** This section was written before anything ran on a console
+> and assumes the PPE cannot decode 720p, so the whole design hangs off moving work to SPEs. The measured
+> figure — 177.8 fps at 640x360, extrapolating to ~44 fps at 720p, scalar, no SPEs, no SIMD — does not
+> support that premise as stated. The allocation below is still the right shape if SPEs turn out to be
+> needed; it is no longer established that they are. What follows is kept as written, with that caveat
+> attached, rather than rewritten to match one measurement.
+
+
 Cell for homebrew: one PPE (in-order PowerPC, 2-way SMT, 3.2 GHz) and **six usable SPEs**, each with
 **256 KB of local store**, 128-bit SIMD, no cache, explicit DMA.
 
@@ -246,7 +298,8 @@ never holds a frame — it works in macroblock-row stripes with double-buffered 
 Cell pattern; it just has to be designed in rather than retrofitted.
 
 **Entropy decode is the serial stage.** CABAC is context-adaptive and bit-serial: it cannot be SIMD'd and
-cannot be split *within* a slice. CAVLC is table-driven and cheaper but still serial per slice. Everything
+cannot be split *within* a slice. It is also the part the §1 measurement is least able to extrapolate,
+since it tracks bitrate rather than pixel count. CAVLC is table-driven and cheaper but still serial per slice. Everything
 downstream — prediction, inverse transform, motion compensation, deblocking — is parallel over macroblocks
 with known dependencies.
 

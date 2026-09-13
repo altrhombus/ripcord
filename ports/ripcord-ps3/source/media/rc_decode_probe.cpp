@@ -9,6 +9,7 @@
 
 extern "C" {
 #include "rc_h264_annexb.h"
+#include "platform/rc_platform.h"
 }
 
 #include <stdio.h>
@@ -50,7 +51,7 @@ extern "C" uint64_t rc_decode_probe_hash_plane(const uint8_t *plane, int stride,
     return h;
 }
 
-extern "C" int rc_decode_probe(const char *path, rc_decode_probe_result *out)
+extern "C" int rc_decode_probe(const char *path, int max_frames, rc_decode_probe_result *out)
 {
     ISVCDecoder *dec = 0;
     SDecodingParam param;
@@ -59,6 +60,7 @@ extern "C" int rc_decode_probe(const char *path, rc_decode_probe_result *out)
     FILE *f = 0;
     rc_h264_annexb it;
     rc_h264_nal nal;
+    uint64_t t0;
     int ok = 0;
 
     memset(out, 0, sizeof(*out));
@@ -95,7 +97,7 @@ extern "C" int rc_decode_probe(const char *path, rc_decode_probe_result *out)
      */
     rc_h264_annexb_init(&it, buf, len);
 
-    while (out->hashes < RC_DECODE_PROBE_FRAMES && rc_h264_annexb_next(&it, &nal)) {
+    while (out->frames_out < max_frames && rc_h264_annexb_next(&it, &nal)) {
         uint8_t *planes[3] = { 0, 0, 0 };
         SBufferInfo info;
         int32_t rc;
@@ -120,7 +122,15 @@ extern "C" int rc_decode_probe(const char *path, rc_decode_probe_result *out)
         feed_len = (int32_t)nal.size + 3;
 
         memset(&info, 0, sizeof(info));
+
+        /*
+         * The timed region is this call and nothing else. Reading the file, splitting NALs and hashing
+         * are all outside it: the question is what the PPE's H.264 decode costs, not what this probe
+         * costs.
+         */
+        t0 = rc_tick();
         rc = dec->DecodeFrameNoDelay(with_start, feed_len, planes, &info);
+        out->decode_ticks += rc_tick() - t0;
         out->nals_fed++;
 
         if (rc != 0) {
@@ -140,6 +150,13 @@ extern "C" int rc_decode_probe(const char *path, rc_decode_probe_result *out)
             out->height = h;
             out->frames_out++;
 
+            /* Only the first few are hashed; see RC_DECODE_PROBE_FRAMES. */
+            if (out->hashes >= RC_DECODE_PROBE_FRAMES) {
+                ok = 1;
+                continue;
+            }
+            t0 = rc_tick();
+
             /* Y, then U, then V - the order the reference file stores them in. One running hash across
              * all three planes, so a mismatch in any of them shows up in one number. */
             hash = rc_decode_probe_hash_plane(planes[0], ys, w, h, FNV64_OFFSET);
@@ -147,6 +164,7 @@ extern "C" int rc_decode_probe(const char *path, rc_decode_probe_result *out)
             hash = rc_decode_probe_hash_plane(planes[2], cs, w / 2, h / 2, hash);
 
             out->hash[out->hashes++] = hash;
+            out->hash_ticks += rc_tick() - t0;
             ok = 1;
         }
     }
