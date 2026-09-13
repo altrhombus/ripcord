@@ -64,6 +64,7 @@
 #include "rc_build_id.h"
 #include "rc_spu.h"
 #include "rc_spu_phase.h"
+#include "rc_netlog.h"
 
 #include "../platform/rc_platform_ps3.h"
 
@@ -266,6 +267,7 @@ static void ps3_log(const char *fmt, ...)
 
     rc_log("%s", g_line);
     lv2_log_write(g_line);
+    rc_netlog_write(g_line);
 }
 
 /* The sleep used for calibration. Long enough that the sleep's own wake-up jitter - a scheduler
@@ -618,7 +620,17 @@ int main(void)
         }
     }
 
-    /* THE LV2 CHANNEL FIRST, because it is the one that has to work. Opened before anything else in
+    /*
+     * THE NETWORK CHANNEL FIRST OF ALL, because it is the only one that needs no write permission
+     * anywhere. A program launched by ps3load transfers, spawns, blacks the screen and writes nothing to
+     * disk; if its sandbox is what denies the file channels, this is the only voice it has.
+     *
+     * RC_NETLOG_HOST and RC_NETLOG_PORT come from the Makefile. Failure is ignored: a console with no
+     * network is still a console worth running the rest of these checks on.
+     */
+    (void)rc_netlog_open(RC_NETLOG_HOST, RC_NETLOG_PORT);
+
+    /* THE LV2 CHANNEL FIRST of the file channels, because it is the one that has to work. Opened before anything else in
      * the program so that a crash after this point still leaves a file behind - an empty
      * ps3-bringup-lv2.log is itself the finding that main() was entered. */
     for (lv2_dir = 0; lv2_dir < LOG_DIR_COUNT; lv2_dir++) {
@@ -648,6 +660,8 @@ int main(void)
      * about this port, and "which directories may a packaged homebrew write to" is worth answering once
      * and keeping. */
     ps3_log("log:   channels carrying this run\n");
+    ps3_log("       [%c] udp to %s:%u\n",
+            rc_netlog_is_open() ? 'x' : ' ', RC_NETLOG_HOST, (unsigned)RC_NETLOG_PORT);
     ps3_log("       [%c] lv2 syscalls (sysLv2FsOpen)   %s\n",
             (g_lv2_fd >= 0) ? 'x' : ' ',
             (g_lv2_dir != NULL) ? g_lv2_dir : "- nowhere accepted a file");
@@ -682,6 +696,7 @@ int main(void)
     ps3_log("%s\n", failures == 0 ? "all checks passed" : "CHECKS FAILED");
     lv2_log_close();
     rc_log_close();
+    rc_netlog_close();
 
     return failures == 0 ? 0 : 1;
 }
