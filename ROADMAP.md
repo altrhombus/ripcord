@@ -99,6 +99,15 @@ Three consequences worth stating, since each closes an argument:
 - **Anything deferred gets said out loud in the release notes.** Shipping without haptics is fine.
   Shipping without haptics and letting someone discover it is not.
 
+**Amended 2026-09-13 — the bar was raised, deliberately and as a change rather than a refinement.** The
+owner asked for a UX review with the app judged as a Windows 11 Fluent showcase, and chose to make that
+work 1.0-blocking rather than a 1.1 track. The definition above still holds as the floor; what changed is
+that "without hitting a defect the project already knows about" now includes *the app reading as a generic
+WinUI sample*, which the design review found to be a structural property rather than an absence of polish.
+See [`docs/design.md`](docs/design.md) for what was settled and the four priced items below for what is
+still open. One consequence: the wordmark moves out of "explicitly out" and into scope, because the design
+depends on it and asset generation is a one-way door.
+
 ### In scope
 
 **1. A build someone can actually run.** There is no release artifact today: `WindowsPackageType=None`, no
@@ -160,8 +169,8 @@ English-only. The README is already unusually honest; 1.0 needs it to also be *c
   translation would be worse than English.
 - **A purchased code-signing certificate.** The zip is unsigned and SmartScreen will say so on first run;
   the README has to say so first. The MSIX is self-signed — see the decisions below for what that costs.
-- **The wordmark**, the senkusha probe questions, and the remaining accessibility items other than
-  `LargeUiScale`.
+- The senkusha probe questions, and the remaining accessibility items other than `LargeUiScale`.
+  (**The wordmark is no longer out** — see the amendment under "What 1.0 means".)
 
 ### Exit criteria
 
@@ -233,6 +242,54 @@ exists for.
 - **Reference, not a port.** `SessionController`'s watchdog is the shape to follow; the PS3 lifecycle is its
   own (`rc_connect` returns to `rc_shell_run`), so this is a loop around the connect call with a limit, not
   a lift of the C# object.
+
+### Design direction — settled 2026-09-13, four items open and priced
+
+The UX review is done and its decisions are recorded in [`docs/design.md`](docs/design.md), which is now
+the standing answer to "what does the app look like". Implementation has not started. Four questions were
+left open rather than guessed, and each is priced here so the cost of the design work is visible before it
+is committed to.
+
+Nothing below is a design question. They are all *verifications and one-way doors* — the things that have
+to be true before drawings become code.
+
+- [ ] **Verify `UiScale.AppliesOsTextScaleItself` at 150% on a real display.** Still the unverified
+      assumption its own file warns about: if WinUI already applies `TextScaleFactor`, applying it again
+      lands the user at 225%. **Price: ~30 minutes to answer** — set Windows text scale to 150%, launch,
+      measure a known glyph. If the assumption is wrong, **add half a day**: the flag flips and every
+      surface needs re-checking at 150%, which is a pass someone has to do anyway.
+      **Blocks** the console-card redesign, because the card, the wedge and the `ItemsWrapGrid` cell size
+      all have to scale by the same factor and the card work bakes that factor in.
+
+- [ ] **Re-derive `ReceiveQueueBusyDepth` from ARM64 captures.** 16 sits below observed-healthy ARM64 peaks
+      of 18, and it is the discriminator between "Losing packets on the network" and "Your device is
+      struggling to keep up" — so a healthy handheld can be told its hardware is at fault. Already recorded
+      under the streaming-quality items; repeated here because the HUD redesign makes it load-bearing.
+      **Price: one hardware session, ~2 hours** — capture queue depth on ARM64 while healthy and while
+      deliberately lossy, pick a threshold with daylight between the two, change one constant, add the test
+      that pins it.
+      **Blocks** HUD rung 1, which is a single sentence with no numbers behind it. Promoting a verdict to
+      the only thing on screen makes a wrong verdict much louder than it is today.
+
+- [ ] **Settle the wordmark.** Outfit is used throughout the design drawings and is explicitly provisional.
+      `brand/README.md` shortlists Poppins and Plus Jakarta Sans alongside it; all three are open-licensed,
+      so this is a look decision with a licence check attached, not a procurement.
+      **Price: ~1 hour to choose, ~2 hours to draw the lockup and add it to `generate-assets.ps1`.**
+      **One-way door**: once the tile, splash and store assets are cut from a face, changing it re-cuts all
+      of them. Decide before generating, not after.
+
+- [ ] **Capture regression baselines before touching the card.** Screenshots of the console grid and the
+      session page in light, dark and high contrast, including hover and focus states. None exist in the
+      tree — the repository has no product screenshots at all.
+      **Price: ~1 hour at the machine**, and it needs a live stream for the session shots, so it batches
+      with the next hardware session.
+      **Blocks nothing, de-risks everything.** The card redesign is the highest visual-regression risk in
+      the plan and there is currently no artefact to regress against.
+
+**What is not open:** the direction (the wedge), the light-theme treatment, the connect composition, the
+HUD's three rungs and its placement rule, the pairing route model, and the settings re-tiering. Those are
+settled in `docs/design.md`. Reopening one is a change, not a refinement.
+
 
 ### Follow-ups from the settings-page crash (cause found and fixed 2026-08-06)
 **Pre-existing, and it predates the Stage A work.** Opening Settings terminated the process every time on this
