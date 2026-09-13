@@ -82,11 +82,20 @@ With the frequency authoritative, a disagreement is evidence about `sysUsleep` s
 Two things the Vita port learned that apply here unchanged: **"it compiles" is not "it works"** for socket
 idioms, and `bind()` to port 0 is worth testing on a device before assuming — the 3DS rejects it outright.
 
-**Both were worth it, and both came out well.** `bind()` to port 0 is **accepted** on the PS3, so the
-3DS's restriction is that platform's rather than a general one — `rc_platform.h` records the answer.
-And "it compiles is not it works" was earned exactly as advertised: `sockaddr_in` on the PS3 carries a
-leading `sin_len` byte in the original BSD style that Linux and the 3DS both dropped, so code written
-against either compiles unchanged, leaves it zero, and silently sends nothing.
+**Both were worth testing, and both came out well.** `bind()` to port 0 is **accepted** on the PS3, so
+the 3DS's restriction is that platform's rather than a general one — `rc_platform.h` records the answer.
+
+`sin_len` is the more instructive one, because the first conclusion drawn about it here was wrong. The
+PS3's `sockaddr_in` does carry the original BSD length byte that Linux and the 3DS dropped, and this port
+sets it because PSL1GHT's own sample does — but a comment in `rc_netlog.c` went on to call it *"not
+optional"*, which was copied reasoning rather than a result.
+
+That mattered beyond this port. `ports/common` builds `sockaddr_in` in three places —
+`halyard_control_session.c` and `rc_tcp.c` — and never sets the field, so "required" would have meant the
+shared core could not open a control session on a PS3. Rather than change code every port depends on from
+a comment, the question went to the hardware: `rc_discover.c` broadcasts the same SRCH probe twice, once
+with the field zeroed, and **the console accepted both and replied to both.** Not required. `ports/common`
+needs no change, and the field stays set here only because matching the SDK costs nothing.
 
 ### Discovery works, from the console
 
