@@ -44,7 +44,7 @@ namespace Ripcord_App.Pages;
 /// lifecycle (connect, degrade, reconnect, tear down), so this page renders status, routes controller input,
 /// and handles the immersive-mode concerns a Page is actually responsible for.
 /// </summary>
-public sealed partial class SessionPage : Page
+public sealed partial class SessionPage : Page, IVideoPipelinePreparer
 {
     private readonly DispatcherQueue _dispatcherQueue = DispatcherQueue.GetForCurrentThread();
     private readonly RipcordAppServices _services = App.Services;
@@ -243,61 +243,30 @@ public sealed partial class SessionPage : Page
     private async Task StartSessionAsync()
     {
         _connectCts = new CancellationTokenSource();
-        if (_console is null)
-        {
-            ShowStatus("No console selected", "Choose a console from the Consoles page to start streaming.", terminal: true);
-            return;
-        }
 
-        SessionConfig config = _settings.ToSessionConfig();
-
-        // PS4 Remote Play is H.264 / SDR only — HEVC and HDR are PS5 features. Requesting HEVC makes the
-        // console reject the launchSpec silently (no SESSION_REPLY, so no stream), and the decoder codec must
-        // match the launchSpec anyway. Force both for a PS4 regardless of the user's setting; the same config
-        // feeds the launchSpec and the decode pipeline below, so they stay in agreement.
-        if (string.Equals(_console?.Platform, "Ps4", StringComparison.OrdinalIgnoreCase))
-        {
-            config = config with { CodecPreference = VideoCodec.H264, RequestedDynamicRange = DynamicRange.Sdr };
-        }
-
-        // Each phase announces itself BEFORE it runs, so if one hangs the last message on screen names it. Video
-        // device creation in particular is a plausible place to stall on unfamiliar hardware, and it used to be
-        // indistinguishable from a network problem because the overlay said "Connecting…" throughout.
-        ShowStatus("Preparing video…", "Creating the graphics device and decoder.", terminal: false);
-
-        try
-        {
-            await InitVideoPipelineAsync(config);
-        }
-        catch (Exception ex)
-        {
-            ShowStatus("Video setup failed", ex.Message, terminal: true);
-            return;
-        }
-
-        ShowStatus("Checking credentials…", "Loading control secrets and pairing.", terminal: false);
-        // Diagnostics run from here on, before the session exists: an empty panel is least useful precisely while
-        // something is failing to connect, and the GPU/adapter rows are already meaningful at this point.
+        // Diagnostics run from here on, before the session exists: an empty panel is least useful precisely
+        // while something is failing to connect, and the GPU/adapter rows are already meaningful at this point.
         _statsTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
         _statsTimer.Tick += StatsTick;
         _statsTimer.Start();
 
-        StreamingAvailability streaming = _services.Sessions.Availability;
-        if (!streaming.Available)
+        // A diagnostics row, not a gate. ConnectFlow independently refuses to connect without the constants;
+        // this is the panel saying so, and it has to be written whether or not anyone opens the panel.
+        if (_services.Sessions.Availability is { Available: false } unavailable)
         {
-            // FATAL, and it must say so. Without the control secrets the session crypto is a passthrough stub, so
-            // the handshake can never complete — this used to be noted in the diagnostics panel and then the connect
-            // was attempted anyway, leaving "Connecting…" on screen indefinitely with no stated cause.
-            D3D12StatusText.Text = $"Control constants NOT loaded — {streaming.Detail}";
-            ShowStatus("Missing control constants", streaming.Detail, terminal: true);
-            return;
+            D3D12StatusText.Text = $"Control constants NOT loaded — {unavailable.Detail}";
         }
 
-        // Wake the console if it is in standby, before attempting to connect. A connect to a sleeping console
-        // cannot succeed, and without this it just hung on "Connecting…" until timeout with no cause given.
-        // Non-fatal except for the one case that genuinely blocks streaming (asked to wake, did not).
-        if (!await EnsureConsoleAwakeAsync())
+        // The sequence itself is portable and tested off-device; this page supplies the one part that needs a
+        // GPU (IVideoPipelinePreparer, implemented below) and renders each stage as it is announced.
+        var flow = new ConnectFlow(_services.Sessions, _services.WakeCoordinator, this);
+        var stages = new Progress<ConnectStage>(
+            stage => ShowStatus(stage.Headline, stage.Detail, stage.Terminal));
+
+        ConnectPlan? plan = await flow.RunAsync(_console, _settings, stages, _connectCts.Token);
+        if (plan is null)
         {
+            // The flow reported a terminal stage saying why, or the page was left mid-connect.
             return;
         }
 
@@ -306,23 +275,17 @@ public sealed partial class SessionPage : Page
         // which always claims external power — meaning a handheld on battery streamed at full desktop quality.
         _powerMonitor = PowerThermalMonitor.ForCurrentPlatform();
 
-        // Which route, and why — said out loud before it is taken. The account route costs tens of seconds,
-        // and silence for that long reads as a hang; "connecting through your account because this console
-        // isn't on your network" is the difference between a slow connect that makes sense and a broken one.
-        StreamingRouteChoice choice = await _services.Sessions
-            .ChooseRouteAsync(_console!, _connectCts!.Token);
-
-        ShowStatus("Connecting to your console…", choice.Reason, terminal: false);
-
+        // Keep whatever headline the flow last set and replace only the detail, so the console's own progress
+        // lines land under "Connecting to your console…" instead of replacing it.
         var connectProgress = new Progress<string>(
-            line => ShowStatus("Connecting to your console…", line, terminal: false));
+            line => ShowStatus(_viewModel.State.StatusHeadline, line, terminal: false));
 
         // The controller owns everything from here: handshake, media/input routing, stall detection, reconnect.
         // The session it is handed owns whatever its route holds open, so teardown stays the controller's
         // ordinary dispose regardless of how the console was reached.
         _controller = new SessionController(
             token => _services.Sessions.OpenAsync(
-                _console!, choice.Route, RequestLoginPinAsync, connectProgress, token),
+                _console!, plan.Route, RequestLoginPinAsync, connectProgress, token),
             _pipeline!,
             _inputSource,
             _powerMonitor);
@@ -331,44 +294,7 @@ public sealed partial class SessionPage : Page
             new AnonymousObserver<SessionStatus>(OnStatusChanged));
 
         OnStatusChanged(_controller.CurrentStatus);
-        await _controller.StartAsync(config);
-    }
-
-    /// <summary>
-    /// Make sure the console is awake before connecting. Returns false only when we sent a wake and the
-    /// console never came up — the one outcome that genuinely cannot lead to a stream, so the connect stops
-    /// with a stated reason. Everything else (already awake, woke, or not answering discovery) proceeds:
-    /// a console that does not answer SRCH may still be reachable, and letting the connect surface that is
-    /// more useful than refusing to try.
-    /// </summary>
-    private async Task<bool> EnsureConsoleAwakeAsync()
-    {
-        var progress = new Progress<string>(line => ShowStatus(line, "The console was in standby.", terminal: false));
-
-        ConsoleWakeOutcome outcome;
-        try
-        {
-            // Everything family-specific about waking — ports, protocol versions, the pairing credential the
-            // wake has to be signed with — now lives behind IConsoleWakeCoordinator.
-            outcome = await _services.WakeCoordinator
-                .EnsureAwakeAsync(_console!, progress, _connectCts!.Token);
-        }
-        catch (OperationCanceledException)
-        {
-            return false; // the user left the page mid-wake
-        }
-
-        if (outcome == ConsoleWakeOutcome.TimedOut)
-        {
-            ShowStatus(
-                "Console didn't wake",
-                "The console reported standby and did not wake within 30 seconds. Turn it on manually, or "
-                + "check it is set to allow being woken from rest mode, then reconnect.",
-                terminal: true);
-            return false;
-        }
-
-        return true;
+        await _controller.StartAsync(plan.Config);
     }
 
     /// <summary>
@@ -404,6 +330,15 @@ public sealed partial class SessionPage : Page
 
         return tcs.Task;
     }
+
+    /// <summary>
+    /// <see cref="IVideoPipelinePreparer"/>, implemented explicitly because it is a seam ConnectFlow calls,
+    /// not part of the page's own surface. Implemented by the page rather than by an adapter class because
+    /// the pipeline it creates is a page field with a page lifetime — an adapter would exist only to hold a
+    /// reference back here.
+    /// </summary>
+    Task IVideoPipelinePreparer.PrepareAsync(SessionConfig config, CancellationToken cancellationToken)
+        => InitVideoPipelineAsync(config);
 
     /// <summary>Stand up the D3D12 decode pipeline and bind its swap chain to the panel.</summary>
     private async Task InitVideoPipelineAsync(SessionConfig config)

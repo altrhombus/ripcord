@@ -506,4 +506,52 @@
     <value>Asking PlayStation Network to wake your console…</value>
     <comment>Progress text while waking a console that is not on this network. 'PlayStation Network' is a product name - do not translate.</comment>
   </data>
+  <data name="Connect_NoConsoleHeadline" xml:space="preserve">
+    <value>No console selected</value>
+    <comment>Connect sequence: shown when the session page opens without a console.</comment>
+  </data>
+  <data name="Connect_NoConsoleDetail" xml:space="preserve">
+    <value>Choose a console from the Consoles page to start streaming.</value>
+    <comment>Connect sequence: what to do when no console was selected.</comment>
+  </data>
+  <data name="Connect_PreparingVideoHeadline" xml:space="preserve">
+    <value>Preparing video…</value>
+    <comment>Connect sequence: first phase, creating the graphics device and decoder.</comment>
+  </data>
+  <data name="Connect_PreparingVideoDetail" xml:space="preserve">
+    <value>Creating the graphics device and decoder.</value>
+    <comment>Connect sequence: detail line under the video preparation headline.</comment>
+  </data>
+  <data name="Connect_VideoFailedHeadline" xml:space="preserve">
+    <value>Video setup failed</value>
+    <comment>Connect sequence: the graphics device or decoder could not be created. The detail is the error message.</comment>
+  </data>
+  <data name="Connect_CheckingCredentialsHeadline" xml:space="preserve">
+    <value>Checking credentials…</value>
+    <comment>Connect sequence: second phase, loading control secrets and the pairing record.</comment>
+  </data>
+  <data name="Connect_CheckingCredentialsDetail" xml:space="preserve">
+    <value>Loading control secrets and pairing.</value>
+    <comment>Connect sequence: detail line under the credentials headline.</comment>
+  </data>
+  <data name="Connect_NoConstantsHeadline" xml:space="preserve">
+    <value>Missing control constants</value>
+    <comment>Connect sequence: this build cannot speak the protocol, so a stream is impossible. Fatal.</comment>
+  </data>
+  <data name="Connect_WakeDetail" xml:space="preserve">
+    <value>The console was in standby.</value>
+    <comment>Connect sequence: detail line shown under the wake progress headline.</comment>
+  </data>
+  <data name="Connect_DidNotWakeHeadline" xml:space="preserve">
+    <value>Console didn't wake</value>
+    <comment>Connect sequence: a wake was sent and the console never came up. Fatal.</comment>
+  </data>
+  <data name="Connect_DidNotWakeDetail" xml:space="preserve">
+    <value>The console reported standby and did not wake within 30 seconds. Turn it on manually, or check it is set to allow being woken from rest mode, then reconnect.</value>
+    <comment>Connect sequence: what to do when the console did not wake.</comment>
+  </data>
+  <data name="Connect_ConnectingHeadline" xml:space="preserve">
+    <value>Connecting to your console…</value>
+    <comment>Connect sequence: final phase. The detail line says which route was chosen and why.</comment>
+  </data>
 </root>
