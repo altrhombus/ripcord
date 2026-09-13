@@ -566,4 +566,96 @@
     <value>Full instruments</value>
     <comment>Diagnostics picker: a stream opens with the full instrument panel.</comment>
   </data>
+  <data name="Console_MenuRename" xml:space="preserve">
+    <value>Rename</value>
+    <comment>Card overflow menu: rename this console.</comment>
+  </data>
+  <data name="Console_MenuDetails" xml:space="preserve">
+    <value>Details</value>
+    <comment>Card overflow menu: show what is known about this console.</comment>
+  </data>
+  <data name="Console_MenuRemove" xml:space="preserve">
+    <value>Remove</value>
+    <comment>Card overflow menu: forget this console pairing.</comment>
+  </data>
+  <data name="Console_DetailName" xml:space="preserve">
+    <value>Name</value>
+    <comment>Console details row label: the name shown in Ripcord.</comment>
+  </data>
+  <data name="Console_DetailConsole" xml:space="preserve">
+    <value>Console</value>
+    <comment>Console details row label: which console generation this is.</comment>
+  </data>
+  <data name="Console_DetailAddress" xml:space="preserve">
+    <value>Address</value>
+    <comment>Console details row label: the network address.</comment>
+  </data>
+  <data name="Console_DetailStatus" xml:space="preserve">
+    <value>Status</value>
+    <comment>Console details row label: reachable, resting, offline.</comment>
+  </data>
+  <data name="Console_DetailReportedName" xml:space="preserve">
+    <value>Reported name</value>
+    <comment>Console details row label: the name the console calls itself.</comment>
+  </data>
+  <data name="Console_DetailHostId" xml:space="preserve">
+    <value>Host ID</value>
+    <comment>Console details row label: the console identifier discovery reports. Not translated as an abbreviation.</comment>
+  </data>
+  <data name="Console_DetailSystemVersion" xml:space="preserve">
+    <value>System version</value>
+    <comment>Console details row label: the console firmware version.</comment>
+  </data>
+  <data name="Console_DetailLastPlayed" xml:space="preserve">
+    <value>Last played</value>
+    <comment>Console details row label: when this console was last streamed from.</comment>
+  </data>
+  <data name="Console_DetailsClose" xml:space="preserve">
+    <value>Close</value>
+    <comment>Button that dismisses the console details dialog.</comment>
+  </data>
+  <data name="Console_RenameTitle" xml:space="preserve">
+    <value>Rename console</value>
+    <comment>Title of the rename dialog.</comment>
+  </data>
+  <data name="Console_RenameExplanation" xml:space="preserve">
+    <value>Give this console a name you will recognise — useful when you have more than one.</value>
+    <comment>Rename dialog: why you might rename a console.</comment>
+  </data>
+  <data name="Console_RenameHint" xml:space="preserve">
+    <value>Leave it empty to go back to the name the console reports.</value>
+    <comment>Rename dialog: what clearing the field does.</comment>
+  </data>
+  <data name="Console_RenameSave" xml:space="preserve">
+    <value>Save</value>
+    <comment>Rename dialog primary button.</comment>
+  </data>
+  <data name="Console_Cancel" xml:space="preserve">
+    <value>Cancel</value>
+    <comment>Dismisses a dialog without doing anything. Shared by rename and remove.</comment>
+  </data>
+  <data name="Console_RenameFailed" xml:space="preserve">
+    <value>Couldn't rename that console</value>
+    <comment>Error dialog title when saving a new name failed.</comment>
+  </data>
+  <data name="Console_RemoveTitle" xml:space="preserve">
+    <value>Remove this console?</value>
+    <comment>Title of the destructive remove confirmation.</comment>
+  </data>
+  <data name="Console_RemovePrompt" xml:space="preserve">
+    <value>Ripcord will forget its pairing with {0}. To use it again you will need to enter a new link code from the console.</value>
+    <comment>Remove confirmation body. {0} is the console name.</comment>
+  </data>
+  <data name="Console_RemoveConfirm" xml:space="preserve">
+    <value>Remove</value>
+    <comment>Remove dialog primary button. Destructive.</comment>
+  </data>
+  <data name="Console_RemoveFailed" xml:space="preserve">
+    <value>Couldn't remove that console</value>
+    <comment>Error dialog title when removing a pairing failed.</comment>
+  </data>
+  <data name="Console_Ok" xml:space="preserve">
+    <value>OK</value>
+    <comment>Dismisses an error dialog. Acknowledgement only - nothing is undone by it.</comment>
+  </data>
 </root>
