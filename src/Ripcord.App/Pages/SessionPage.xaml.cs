@@ -430,6 +430,15 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer
 
         ControllerConnectedText.Text = s.ConnectedControllers;
 
+        // Rung 1. Cheap enough to keep current unconditionally, unlike the panel below: it is two
+        // properties, and it has to be right the instant it becomes visible.
+        HealthAlert.Visibility = Vis(s.AlertVisible);
+        if (s.AlertVisible)
+        {
+            AlertText.Text = s.Diagnostics.Health;
+            RenderHealthDot(AlertDot, s.Diagnostics.HealthLevel);
+        }
+
         // The state is kept current twice a second regardless; assigning two dozen text properties on a
         // collapsed panel is the part worth skipping. ToggleDiagnosticsPanel renders on the way in, so opening
         // the overlay shows the latest sample rather than whatever was there when it was last closed.
@@ -474,7 +483,7 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer
 
         HealthText.Text = d.Health;
         HealthTipText.Text = d.HealthTip;
-        RenderHealthDot(d.HealthLevel);
+        RenderHealthDot(HealthDot, d.HealthLevel);
     }
 
     /// <summary>
@@ -517,7 +526,7 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer
     /// the previous LimeGreen/Orange were wrong in light theme and invisible in high contrast — and looked up
     /// defensively, so a missing key can never crash the overlay.
     /// </summary>
-    private void RenderHealthDot(StreamHealthLevel level)
+    private void RenderHealthDot(Shape dot, StreamHealthLevel level)
     {
         string brushKey = level switch
         {
@@ -529,7 +538,7 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer
 
         if (Application.Current.Resources.TryGetValue(brushKey, out object? brush) && brush is Brush themed)
         {
-            HealthDot.Fill = themed;
+            dot.Fill = themed;
         }
     }
 
