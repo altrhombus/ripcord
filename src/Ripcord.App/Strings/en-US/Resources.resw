@@ -692,14 +692,6 @@
     <value>Controls</value>
     <comment>Static text on the Settings page.</comment>
   </data>
-  <data name="SettingsPage_Display.Text" xml:space="preserve">
-    <value>Display</value>
-    <comment>Static text on the Settings page.</comment>
-  </data>
-  <data name="SettingsPage_GraphicsDevice.Text" xml:space="preserve">
-    <value>Graphics device</value>
-    <comment>Static text on the Settings page.</comment>
-  </data>
   <data name="SettingsPage_HowStreamScaledUp.Description" xml:space="preserve">
     <value>How the stream is scaled up to fill the window.</value>
     <comment>The description under a control on the Settings page.</comment>
@@ -728,10 +720,6 @@
     <value>Request HDR</value>
     <comment>The screen-reader name (not visible on screen) on the Settings page. HDR is a product or standard name - do not translate.</comment>
   </data>
-  <data name="SettingsPage_SavedConsoles.Text" xml:space="preserve">
-    <value>Saved consoles</value>
-    <comment>Static text on the Settings page.</comment>
-  </data>
   <data name="SettingsPage_Settings.Text" xml:space="preserve">
     <value>Settings</value>
     <comment>Static text on the Settings page.</comment>
@@ -743,10 +731,6 @@
   <data name="SettingsPage_SignOut.Content" xml:space="preserve">
     <value>Sign out</value>
     <comment>The label on a control on the Settings page.</comment>
-  </data>
-  <data name="SettingsPage_Video.Text" xml:space="preserve">
-    <value>Video</value>
-    <comment>Static text on the Settings page.</comment>
   </data>
   <data name="SettingsPage_VideoCodec.Header" xml:space="preserve">
     <value>Video codec</value>
@@ -775,5 +759,21 @@
   <data name="SessionPage_DiagnosticsDetails.Content" xml:space="preserve">
     <value>Details</value>
     <comment>Button on the diagnostics summary that opens the full instrument panel.</comment>
+  </data>
+  <data name="SettingsPage_Picture.Text" xml:space="preserve">
+    <value>Picture</value>
+    <comment>Settings section heading: resolution, bitrate, scaling, codec and HDR.</comment>
+  </data>
+  <data name="SettingsPage_WhenYouPlay.Text" xml:space="preserve">
+    <value>When you play</value>
+    <comment>Settings section heading: what the app does when a stream starts and ends.</comment>
+  </data>
+  <data name="SettingsPage_Accessibility.Text" xml:space="preserve">
+    <value>Accessibility</value>
+    <comment>Settings section heading: controls that make the app easier to use.</comment>
+  </data>
+  <data name="SettingsPage_Advanced.Text" xml:space="preserve">
+    <value>Advanced</value>
+    <comment>Settings section heading: graphics device, experimental reporting, credential storage.</comment>
   </data>
 </root>
