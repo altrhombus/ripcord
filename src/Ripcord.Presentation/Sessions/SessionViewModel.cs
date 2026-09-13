@@ -36,6 +36,11 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
     private readonly IVideoPipelineStats _pipeline;
     private readonly Func<DateTimeOffset> _clock;
 
+    /// <summary>Decides which health verdicts are worth interrupting the player about. See the class note.</summary>
+    private readonly HealthAlertGate _alertGate = new();
+
+    private bool _alertRaised;
+
     private RipcordSettings _settings;
 
     // ---- overlay ----
@@ -178,6 +183,13 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
 
             case SessionLifecycle.Connecting:
             case SessionLifecycle.Reconnecting:
+                // A fresh attempt starts with nothing sustained, so the previous session's notice cannot
+                // survive into a stream that has not been measured yet.
+                Mutate(() =>
+                {
+                    _alertGate.Reset();
+                    _alertRaised = false;
+                });
                 ShowStatus(
                     status.Lifecycle == SessionLifecycle.Connecting
                         ? Strings.Session_Connecting
@@ -266,7 +278,8 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
         }
 
         VideoPipelineSnapshot s = _pipeline.Read();
-        long nowTicks = _clock().UtcTicks;
+        DateTimeOffset now = _clock();
+        long nowTicks = now.UtcTicks;
         double seconds = _prevSampleTicks == 0
             ? 0
             : (nowTicks - _prevSampleTicks) / (double)TimeSpan.TicksPerSecond;
@@ -296,7 +309,15 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
             BitrateHistory.Add(stats.BitrateKbps / 1000.0);
         }
 
-        Mutate(() => _diagnostics = ComposeDiagnostics(s, telemetry, decodeFps, presentFps, audioFps));
+        Mutate(() =>
+        {
+            _diagnostics = ComposeDiagnostics(s, telemetry, decodeFps, presentFps, audioFps);
+
+            // The verdict is recomputed twice a second and is right to be twitchy - the panel wants the live
+            // value. The notice over the game is not: the gate is what stops a two-second wobble becoming a
+            // banner, and a banner nobody trusts is worse than none.
+            _alertRaised = _alertGate.Update(_diagnostics.HealthLevel, now);
+        });
         return telemetry.HasSession;
     }
 
@@ -545,6 +566,10 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
         StatusBusy: _statusBusy,
         StatusActionsVisible: _statusTerminal,
         IsStreamLive: _isStreamLive,
+
+        // Suppressed while the status overlay is up: that overlay is a stronger statement about the same
+        // situation, and two notices about one problem read as two problems.
+        AlertVisible: _alertRaised && !_statusVisible,
 
         // All of them, one per line: with several pads merged into one virtual controller, which devices are
         // contributing is exactly the thing that is otherwise invisible.
