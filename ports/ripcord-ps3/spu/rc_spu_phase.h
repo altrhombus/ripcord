@@ -101,7 +101,14 @@
  * a decode job has far more than four parameters, so the argument registers were never going to be the
  * mechanism. Finding the limit this early is cheap.
  *
- * 32 bytes: a multiple of 16, which the MFC requires, and both copies are 128-byte aligned.
+ * 32 BYTES, AND THE SIZE IS NOT AN ACCIDENT TO LEAVE UNREMARKED. The MFC rejects any transfer whose size
+ * is not 0, 1, 2, 4, 8 or a multiple of 16 - IBM's Cell Broadband Engine Programmers Guide devotes a
+ * worked example to a 24-byte control block that fails for exactly this reason, which is the same shape
+ * as this structure and one field short of the same bug. Four u64s happen to come to 32. Anything added
+ * here must keep it a multiple of 16, and the guide's advice is to pad explicitly rather than to count.
+ *
+ * Both copies are 128-byte aligned, which the same guide names as the alignment at which DMA reaches peak
+ * performance rather than merely working (16 is the minimum for transfers of 16 bytes or more).
  */
 typedef struct {
     uint64_t src_ea;
