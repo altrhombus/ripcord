@@ -11,6 +11,7 @@
  * hardware dependency of its own (see its header), so there is nothing 3DS-specific to verify here.
  */
 #include "../discovery/halyard_discovery.h"
+#include "../discovery/halyard_wake.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -172,6 +173,115 @@ static void test_truncated_datagram(void)
     CHECK(strcmp(console.host_id, "001122334455") == 0, "host_id mismatch on truncated datagram");
 }
 
+/* ---------------------------------------------------------------------------------------------------
+ * LAN wake - ps5-local-discovery.md, "LAN wake (rest mode -> awake)"
+ *
+ * The key below is SYNTHETIC. A real registration key is personal to one console and one account and
+ * never appears in this tree; "1a2b3c4d" is eight ASCII hex characters chosen because the spec's own
+ * worked derivation is easy to follow through them - 0x1a2b3c4d = 439041101.
+ * ------------------------------------------------------------------------------------------------ */
+
+static void test_wake_credential(void)
+{
+    char credential[HALYARD_WAKE_CREDENTIAL_MAX];
+
+    /* The spec's derivation: user-credential = int(ascii(hex_decode(RP-Registkey)), 16). The record
+     * stores the hex-decoded bytes, which for a real key are themselves ASCII hex digits. */
+    CHECK(halyard_wake_credential((const uint8_t *)"1a2b3c4d", 8u, credential, sizeof(credential)) == 1,
+        "a well-formed key should produce a credential");
+    CHECK(strcmp(credential, "439041101") == 0, "expected 439041101, got %s", credential);
+
+    /* Case does not matter - both spellings are the same number. */
+    CHECK(halyard_wake_credential((const uint8_t *)"1A2B3C4D", 8u, credential, sizeof(credential)) == 1
+        && strcmp(credential, "439041101") == 0, "uppercase hex should derive identically");
+
+    /*
+     * THE SIGNED CASE, WHICH IS THE WHOLE REASON THIS FUNCTION IS NOT A ONE-LINER.
+     *
+     * ps5-local-discovery.md's PS4 section pins the field as a signed 32-bit decimal [W], because the
+     * PS4's observed credential is negative. Every PS5 sample is below 2^31, where signed and unsigned
+     * print identically, so nothing we had held distinguished the two readings.
+     *
+     * halyard_wake.h records that the .NET side renders these unsigned and that this file follows the
+     * spec instead. If that ever flips, this is the assertion that has to change with it - deliberately,
+     * not by accident.
+     */
+    CHECK(halyard_wake_credential((const uint8_t *)"ffffffff", 8u, credential, sizeof(credential)) == 1,
+        "an all-Fs key is well-formed");
+    CHECK(strcmp(credential, "-1") == 0,
+        "0xffffffff is -1 as a signed 32-bit decimal, got %s (unsigned would be 4294967295)", credential);
+
+    CHECK(halyard_wake_credential((const uint8_t *)"80000000", 8u, credential, sizeof(credential)) == 1
+        && strcmp(credential, "-2147483648") == 0, "the sign boundary itself");
+    CHECK(halyard_wake_credential((const uint8_t *)"7fffffff", 8u, credential, sizeof(credential)) == 1
+        && strcmp(credential, "2147483647") == 0, "one below the boundary is still positive");
+
+    /* A corrupt key is refused, not guessed at. strtoul() would have accepted every one of these. */
+    CHECK(halyard_wake_credential((const uint8_t *)"1a2b3c4g", 8u, credential, sizeof(credential)) == 0,
+        "a non-hex digit should be refused");
+    CHECK(halyard_wake_credential((const uint8_t *)" 1a2b3c4", 8u, credential, sizeof(credential)) == 0,
+        "leading whitespace should be refused");
+    CHECK(halyard_wake_credential((const uint8_t *)"0x1a2b3c", 8u, credential, sizeof(credential)) == 0,
+        "an 0x prefix should be refused");
+    CHECK(halyard_wake_credential((const uint8_t *)"123456789", 9u, credential, sizeof(credential)) == 0,
+        "a key longer than 32 bits would discard its leading digits - refuse instead");
+    CHECK(halyard_wake_credential((const uint8_t *)"1a2b3c4d", 0u, credential, sizeof(credential)) == 0,
+        "an empty key is not a key");
+    CHECK(halyard_wake_credential((const uint8_t *)"1a2b3c4d", 8u, credential, 4u) == 0,
+        "a buffer too small for the widest credential should fail closed");
+}
+
+static void test_wake_payload(void)
+{
+    char buf[256];
+    size_t n;
+
+    /* Verbatim from the spec's WAKEUP block, LF-terminated, with the synthetic credential filled in. */
+    static const char expected_ps5[] =
+        "WAKEUP * HTTP/1.1\n"
+        "client-type:vr\n"
+        "auth-type:R\n"
+        "model:w\n"
+        "app-type:r\n"
+        "user-credential:439041101\n"
+        "device-discovery-protocol-version:00030010\n";
+
+    n = halyard_wake_build_payload(&halyard_discovery_profile_ps5, "439041101", buf, sizeof(buf));
+    CHECK(n == strlen(expected_ps5) && memcmp(buf, expected_ps5, n) == 0,
+        "ps5 WAKEUP bytes did not match the spec's datagram block");
+
+    /* Bare line feeds, and not one carriage return - the SRCH probe in the same exchange uses CRLF, and
+     * making the two "consistent" is the change this guards against. */
+    CHECK(memchr(buf, '\r', n) == NULL, "WAKEUP must not contain CR; SRCH does and WAKEUP does not");
+
+    /* A PS4 WAKEUP differs only in the version token. */
+    n = halyard_wake_build_payload(&halyard_discovery_profile_ps4, "439041101", buf, sizeof(buf));
+    CHECK(n > 0 && strstr(buf, "device-discovery-protocol-version:00020020\n") != NULL,
+        "ps4 WAKEUP should carry the PS4 protocol version");
+    CHECK(strstr(buf, "00030010") == NULL, "ps4 WAKEUP should not carry the PS5 version");
+
+    n = halyard_wake_build_payload(&halyard_discovery_profile_ps5, "439041101", buf, 16u);
+    CHECK(n == 0, "undersized buffer should report 0, not a truncated datagram");
+}
+
+static void test_wake_ports(void)
+{
+    /*
+     * Wire-confirmed source ports, and they are SOURCE ports - where the datagram comes from. The
+     * destination is the discovery port in both families, never the host-request-port:997 the standby
+     * reply advertises, which the spec calls a red herring for wake.
+     */
+    CHECK(halyard_discovery_profile_ps5.port == 9302
+        && halyard_discovery_profile_ps5.wake_source_port == 9303
+        && halyard_discovery_profile_ps5.wake_search_source_port == 9303,
+        "ps5 wake ports: 9302 destination, 9303 source (cap49)");
+
+    CHECK(halyard_discovery_profile_ps4.port == 987
+        && halyard_discovery_profile_ps4.wake_source_port == 987
+        && halyard_discovery_profile_ps4.wake_search_source_port == 0,
+        "ps4 wake ports: 987 destination and source, ephemeral for the poll (cap53-cap57)");
+}
+
 int main(void)
 {
     test_build_probe();
@@ -181,6 +291,9 @@ int main(void)
     test_defaults_and_case_insensitivity();
     test_rejects_non_srch_and_missing_host_id();
     test_truncated_datagram();
+    test_wake_credential();
+    test_wake_payload();
+    test_wake_ports();
 
     printf("\n%d passed, %d failed\n", g_passed, g_failed);
     return g_failed == 0 ? 0 : 1;

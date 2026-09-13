@@ -5,8 +5,8 @@
 #include <stdio.h>
 #include <string.h>
 
-const halyard_discovery_profile halyard_discovery_profile_ps5 = { "PS5", 9302, "00030010" };
-const halyard_discovery_profile halyard_discovery_profile_ps4 = { "PS4", 987, "00020020" };
+const halyard_discovery_profile halyard_discovery_profile_ps5 = { "PS5", 9302, "00030010", 9303, 9303 };
+const halyard_discovery_profile halyard_discovery_profile_ps4 = { "PS4", 987, "00020020", 987, 0 };
 
 size_t halyard_discovery_build_probe(const halyard_discovery_profile *profile, char *buf, size_t buf_size)
 {

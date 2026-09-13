@@ -24,9 +24,12 @@
  *     \r\n
  *
  * `host-request-port` is deliberately not parsed here: the spec calls it "a red herring" - the LAN
- * wake exchange (not yet implemented on this port) goes to the discovery port itself (9302/987), never
- * to this advertised value, on both console families. Carrying a field this port cannot act on would
- * just be a second thing to keep in sync with a spec section that already says not to use it.
+ * wake exchange goes to the discovery port itself (9302/987), never to this advertised value, on both
+ * console families. Carrying a field this port cannot act on would just be a second thing to keep in
+ * sync with a spec section that already says not to use it.
+ *
+ * The wake itself is halyard_wake.h, which is the other half of this exchange: this parser is what
+ * reports `is_awake == 0`, and that file is what does something about it.
  *
  * PLAIN ASCII, HTTP-STATUS-LINE-LIKE BUT NOT FULL HTTP: no header-section framing beyond the trailing
  * blank line, no Host:/User-Agent:. Only PS5 is a build target for this port (README's "Can the
@@ -49,6 +52,19 @@ typedef struct {
     const char *host_type;         /* "PS5" or "PS4" - the value this profile expects in the reply */
     unsigned short port;           /* SRCH broadcast/response UDP port for this console family */
     const char *protocol_version;  /* device-discovery-protocol-version, echoed by a matching console */
+
+    /*
+     * SOURCE ports for the wake exchange - where the datagram must come FROM, not where it goes. A
+     * sleeping console may only honour a wake that originates on the vendor's own source port, so a
+     * port should bind these where it can and fall back to ephemeral rather than fail: a wake from the
+     * wrong port is more likely to work than no wake at all.
+     *
+     * Wire-confirmed per family (cap49 for PS5, cap53-cap57 for PS4). Zero means "use an ephemeral
+     * port" - which is what a PS4's post-wake SRCH poll actually did, and is a captured fact rather
+     * than a default standing in for one we lack.
+     */
+    unsigned short wake_source_port;
+    unsigned short wake_search_source_port;
 } halyard_discovery_profile;
 
 extern const halyard_discovery_profile halyard_discovery_profile_ps5;
