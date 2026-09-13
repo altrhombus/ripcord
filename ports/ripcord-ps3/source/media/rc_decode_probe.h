@@ -29,6 +29,8 @@
 extern "C" {
 #endif
 
+/* How many frames get hashed. Correctness needs a handful; throughput needs hundreds, and hashing all of
+ * them would measure the hash. */
 #define RC_DECODE_PROBE_FRAMES 8
 
 typedef struct {
@@ -41,6 +43,15 @@ typedef struct {
     uint64_t hash[RC_DECODE_PROBE_FRAMES];        /* FNV-1a 64 per frame, in output order     */
     int      hashes;                              /* how many of the above are filled         */
     int32_t  last_error;                          /* whatever failed, as openh264 reported it */
+
+    /*
+     * TIMING, in rc_tick() units, and the two are reported separately because one of them is not the
+     * decoder. FNV-1a over 345,600 bytes a frame is 345,600 dependent multiplies in scalar C, which on
+     * an in-order PPE is not a rounding error - folding it into the decode time would flatter or
+     * slander the decoder depending on how many frames were hashed. `decode_ticks` excludes it.
+     */
+    uint64_t decode_ticks;
+    uint64_t hash_ticks;
 } rc_decode_probe_result;
 
 /*
@@ -48,7 +59,7 @@ typedef struct {
  * decoder produced at least one frame, 0 otherwise; `out` is filled either way, because a run that
  * produced nothing still has to say how far it got.
  */
-int rc_decode_probe(const char *path, rc_decode_probe_result *out);
+int rc_decode_probe(const char *path, int max_frames, rc_decode_probe_result *out);
 
 /* The hash the caller compares against. Exposed so the development machine can compute it identically. */
 uint64_t rc_decode_probe_hash_plane(const uint8_t *plane, int stride, int width, int height,
