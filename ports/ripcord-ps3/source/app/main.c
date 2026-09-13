@@ -753,6 +753,19 @@ static int check_discovery(void)
     if (!d.bind_port0_ok)
         ps3_log("       (errno %d)\n", d.bind_errno);
 
+    /*
+     * Whether sin_len is required, which decides whether ports/common needs a change. It builds
+     * sockaddr_in in three places and never sets the field, so this is a question about the shared core
+     * rather than about this port.
+     */
+    ps3_log("       sendto with sin_len=0: %s;  with sin_len set: %s\n",
+            d.sinlen_zero_send_ok ? "accepted" : "REFUSED",
+            d.sinlen_set_send_ok ? "accepted" : "REFUSED");
+    if (!d.sinlen_zero_send_ok && d.sinlen_set_send_ok)
+        ps3_log("       -> sin_len IS required. ports/common must set it before it can connect here.\n");
+    else if (d.sinlen_zero_send_ok)
+        ps3_log("       -> sin_len is not required for sendto. ports/common needs no change for this.\n");
+
     if (!d.socket_ok) {
         ps3_log("FAIL  could not create or configure the broadcast socket\n");
         return 1;
