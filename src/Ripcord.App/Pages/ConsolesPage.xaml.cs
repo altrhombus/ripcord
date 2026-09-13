@@ -390,13 +390,13 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
 
         // Glyphs escaped rather than pasted: a private-use codepoint sitting raw in a C# string is invisible
         // in a diff and quietly mangled by anything that re-encodes the file.
-        var rename = new MenuFlyoutItem { Text = "Rename", Icon = new FontIcon { Glyph = "\uE8AC" } };
+        var rename = new MenuFlyoutItem { Text = ConsoleCardCopy.MenuRename, Icon = new FontIcon { Glyph = "\uE8AC" } };
         rename.Click += async (_, _) => await RenameAsync(item);
 
-        var details = new MenuFlyoutItem { Text = "Details", Icon = new FontIcon { Glyph = "\uE946" } };
+        var details = new MenuFlyoutItem { Text = ConsoleCardCopy.MenuDetails, Icon = new FontIcon { Glyph = "\uE946" } };
         details.Click += async (_, _) => await ShowDetailsAsync(item);
 
-        var remove = new MenuFlyoutItem { Text = "Remove", Icon = new FontIcon { Glyph = "\uE74D" } };
+        var remove = new MenuFlyoutItem { Text = ConsoleCardCopy.MenuRemove, Icon = new FontIcon { Glyph = "\uE74D" } };
         remove.Click += async (_, _) => await RemoveAsync(item);
 
         flyout.Items.Add(rename);
@@ -527,7 +527,7 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
         var dialog = new ContentDialog
         {
             XamlRoot = XamlRoot,
-            Title = "Rename console",
+            Title = ConsoleCardCopy.RenameTitle,
             Content = new StackPanel
             {
                 Spacing = 12,
@@ -536,21 +536,21 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
                 {
                     new TextBlock
                     {
-                        Text = "Give this console a name you'll recognise — useful when you have more than one.",
+                        Text = ConsoleCardCopy.RenameExplanation,
                         TextWrapping = TextWrapping.Wrap,
                     },
                     box,
                     new TextBlock
                     {
-                        Text = "Leave it empty to go back to the name the console reports.",
+                        Text = ConsoleCardCopy.RenameHint,
                         Style = (Style)Application.Current.Resources["CaptionTextBlockStyle"],
                         Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["TextFillColorTertiaryBrush"],
                         TextWrapping = TextWrapping.Wrap,
                     },
                 },
             },
-            PrimaryButtonText = "Save",
-            CloseButtonText = "Cancel",
+            PrimaryButtonText = ConsoleCardCopy.RenameSave,
+            CloseButtonText = ConsoleCardCopy.Cancel,
             DefaultButton = ContentDialogButton.Primary,
         };
 
@@ -568,38 +568,20 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
         }
         catch (Exception ex)
         {
-            await ShowErrorAsync("Couldn't rename that console", ex.Message);
+            await ShowErrorAsync(ConsoleCardCopy.RenameFailed, ex.Message);
         }
     }
 
     private async Task ShowDetailsAsync(ConsoleCardViewModel item)
     {
         var panel = new StackPanel { Spacing = 8, MinWidth = 320 };
-        AddDetail(panel, "Name", item.State.DisplayName);
-        AddDetail(panel, "Console", item.Family.LongName);
-        AddDetail(panel, "Address", item.Console.Host);
-        AddDetail(panel, "Status", item.State.StatusLabel);
 
-        // Everything below is only known for consoles paired since discovery started carrying it, so each is
-        // shown only when there is something to show rather than as a row of blanks.
-        if (item.Console.ReportedName is { Length: > 0 } reported && reported != item.State.DisplayName)
+        // Which rows exist is a decision about what the surface says - most of these facts are only known
+        // for consoles paired since discovery started carrying them - so it is made in the presentation
+        // layer and tested there. This loop is the whole of the page's part in it.
+        foreach (ConsoleDetail detail in ConsoleCardCopy.Details(item))
         {
-            AddDetail(panel, "Reported name", reported);
-        }
-
-        if (item.Console.HostId is { Length: > 0 } hostId)
-        {
-            AddDetail(panel, "Host ID", hostId);
-        }
-
-        if (item.Console.SystemVersion is { Length: > 0 } version)
-        {
-            AddDetail(panel, "System version", version);
-        }
-
-        if (item.State.LastConnectedLabel is { } played)
-        {
-            AddDetail(panel, "Last played", played);
+            AddDetail(panel, detail.Label, detail.Value);
         }
 
         try
@@ -609,7 +591,7 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
                 XamlRoot = XamlRoot,
                 Title = item.State.DisplayName,
                 Content = panel,
-                CloseButtonText = "Close",
+                CloseButtonText = ConsoleCardCopy.DetailsClose,
             });
         }
         catch (Exception)
@@ -652,11 +634,10 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
             var confirm = new ContentDialog
             {
                 XamlRoot = XamlRoot,
-                Title = "Remove this console?",
-                Content = $"Ripcord will forget its pairing with {item.State.DisplayName}. To use it again you'll need "
-                          + "to enter a new link code from the console.",
-                PrimaryButtonText = "Remove",
-                CloseButtonText = "Cancel",
+                Title = ConsoleCardCopy.RemoveTitle,
+                Content = ConsoleCardCopy.RemovePrompt(item.State.DisplayName),
+                PrimaryButtonText = ConsoleCardCopy.RemoveConfirm,
+                CloseButtonText = ConsoleCardCopy.Cancel,
                 DefaultButton = ContentDialogButton.Close,
             };
 
@@ -668,7 +649,7 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
         }
         catch (Exception ex)
         {
-            await ShowErrorAsync("Couldn't remove that console", ex.Message);
+            await ShowErrorAsync(ConsoleCardCopy.RemoveFailed, ex.Message);
         }
     }
 
@@ -681,7 +662,7 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
                 XamlRoot = XamlRoot,
                 Title = title,
                 Content = message,
-                CloseButtonText = "OK",
+                CloseButtonText = ConsoleCardCopy.Ok,
             });
         }
         catch (Exception)
