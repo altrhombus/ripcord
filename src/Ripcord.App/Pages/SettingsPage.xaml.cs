@@ -152,7 +152,8 @@ public sealed partial class SettingsPage : Page
         FullScreenToggle.Toggled += (_, _) => Edit(() => _viewModel.SetFullScreenOnConnect(FullScreenToggle.IsOn));
         ConfirmOnDisconnectToggle.Toggled += (_, _) => Edit(() => _viewModel.SetConfirmOnDisconnect(ConfirmOnDisconnectToggle.IsOn));
         RestOnDisconnectToggle.Toggled += (_, _) => Edit(() => _viewModel.SetRestOnDisconnect(RestOnDisconnectToggle.IsOn));
-        DiagnosticsToggle.Toggled += (_, _) => Edit(() => _viewModel.SetShowDiagnostics(DiagnosticsToggle.IsOn));
+        DiagnosticsPicker.SelectionChanged += (_, _) =>
+            Edit(() => _viewModel.SetDiagnosticsRung(DiagnosticsPicker.SelectedIndex));
         LargeUiToggle.Toggled += (_, _) => Edit(() => _viewModel.SetLargeUiScale(LargeUiToggle.IsOn));
     }
 
@@ -309,7 +310,7 @@ public sealed partial class SettingsPage : Page
             FullScreenToggle.IsOn = s.FullScreenOnConnect;
             ConfirmOnDisconnectToggle.IsOn = s.ConfirmOnDisconnect;
             RestOnDisconnectToggle.IsOn = s.RestConsoleOnDisconnect;
-            DiagnosticsToggle.IsOn = s.ShowDiagnosticsOverlay;
+            FillCombo(DiagnosticsPicker, s.DiagnosticsOptions, s.DiagnosticsIndex);
             LargeUiToggle.IsOn = s.LargeUiScale;
 
             RenderCredentialBar(s);

@@ -75,7 +75,13 @@ public sealed record SettingsViewState(
     bool FullScreenOnConnect,
     bool ConfirmOnDisconnect,
     bool RestConsoleOnDisconnect,
-    bool ShowDiagnosticsOverlay,
+    /// <summary>
+    /// Which rung a stream opens at, as an index into <see cref="DiagnosticsOptions"/>. A picker rather
+    /// than a switch because there are three answers, and because it is the only control a pad-only player
+    /// has over the HUD — nothing in the stream layer takes gamepad input, by design.
+    /// </summary>
+    IReadOnlyList<string> DiagnosticsOptions,
+    int DiagnosticsIndex,
     bool LargeUiScale,
 
     // ---- credential banner ----
