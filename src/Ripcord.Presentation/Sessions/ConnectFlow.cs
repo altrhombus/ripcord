@@ -5,11 +5,37 @@ using Ripcord.Core.Sessions;
 using Ripcord.Core.Settings;
 using Ripcord.Presentation.Resources;
 
+/// <summary>
+/// How far along the connect sequence is, coarsely.
+///
+/// <para>
+/// Three, because the trail that draws it is the mark's own three dashes and a progress indicator with more
+/// steps than the logo it is made of would be a different graphic wearing the logo's clothes. They are also
+/// the three waits a player can actually distinguish: the device coming up, the console coming up, and the
+/// handshake.
+/// </para>
+/// </summary>
+public enum ConnectPhase
+{
+    /// <summary>Bringing up the decoder and checking this build can speak the protocol.</summary>
+    Preparing,
+
+    /// <summary>Waiting on the console to leave standby.</summary>
+    Waking,
+
+    /// <summary>Opening the session.</summary>
+    Connecting,
+}
+
 /// <summary>One step of the connect sequence, as the user is told about it.</summary>
 /// <param name="Headline">What is happening now, in the player's words.</param>
 /// <param name="Detail">Why, or what it is waiting on. Rendered verbatim.</param>
 /// <param name="Terminal">The sequence has stopped here and will not continue without the user.</param>
-public sealed record ConnectStage(string Headline, string Detail, bool Terminal);
+/// <param name="Phase">
+/// How far along, for the trail. A terminal stage keeps the phase it failed in rather than reporting a
+/// fourth "failed" state: where it stopped is the useful half of what went wrong.
+/// </param>
+public sealed record ConnectStage(string Headline, string Detail, bool Terminal, ConnectPhase Phase);
 
 /// <summary>
 /// Everything a caller needs to open the session, once the flow has decided it can be opened.
@@ -74,13 +100,13 @@ public sealed class ConnectFlow
 
         if (console is null)
         {
-            Report(stages, Strings.Connect_NoConsoleHeadline, Strings.Connect_NoConsoleDetail, terminal: true);
+            Report(stages, Strings.Connect_NoConsoleHeadline, Strings.Connect_NoConsoleDetail, terminal: true, ConnectPhase.Preparing);
             return null;
         }
 
         SessionConfig config = ConfigureFor(console, settings);
 
-        Report(stages, Strings.Connect_PreparingVideoHeadline, Strings.Connect_PreparingVideoDetail, terminal: false);
+        Report(stages, Strings.Connect_PreparingVideoHeadline, Strings.Connect_PreparingVideoDetail, terminal: false, ConnectPhase.Preparing);
         try
         {
             await _video.PrepareAsync(config, cancellationToken).ConfigureAwait(false);
@@ -92,11 +118,11 @@ public sealed class ConnectFlow
         catch (Exception ex)
         {
             // The message is the diagnosis here — see IVideoPipelinePreparer on why this one throws.
-            Report(stages, Strings.Connect_VideoFailedHeadline, ex.Message, terminal: true);
+            Report(stages, Strings.Connect_VideoFailedHeadline, ex.Message, terminal: true, ConnectPhase.Preparing);
             return null;
         }
 
-        Report(stages, Strings.Connect_CheckingCredentialsHeadline, Strings.Connect_CheckingCredentialsDetail, terminal: false);
+        Report(stages, Strings.Connect_CheckingCredentialsHeadline, Strings.Connect_CheckingCredentialsDetail, terminal: false, ConnectPhase.Preparing);
 
         // FATAL, and it must say so. Without the control secrets the session crypto is a passthrough stub, so
         // the handshake can never complete. This used to be noted in the diagnostics panel and the connect was
@@ -104,7 +130,7 @@ public sealed class ConnectFlow
         StreamingAvailability streaming = _sessions.Availability;
         if (!streaming.Available)
         {
-            Report(stages, Strings.Connect_NoConstantsHeadline, streaming.Detail, terminal: true);
+            Report(stages, Strings.Connect_NoConstantsHeadline, streaming.Detail, terminal: true, ConnectPhase.Preparing);
             return null;
         }
 
@@ -126,7 +152,7 @@ public sealed class ConnectFlow
             return null;
         }
 
-        Report(stages, Strings.Connect_ConnectingHeadline, choice.Reason, terminal: false);
+        Report(stages, Strings.Connect_ConnectingHeadline, choice.Reason, terminal: false, ConnectPhase.Connecting);
         return new ConnectPlan(config, choice.Route);
     }
 
@@ -164,7 +190,7 @@ public sealed class ConnectFlow
         // session already connecting. Everything this flow reports is reported synchronously, in order, and
         // whoever supplied `stages` decides where it is marshalled to.
         var wakeProgress = new SynchronousProgress<string>(
-            line => Report(stages, line, Strings.Connect_WakeDetail, terminal: false));
+            line => Report(stages, line, Strings.Connect_WakeDetail, terminal: false, ConnectPhase.Waking));
 
         ConsoleWakeOutcome outcome;
         try
@@ -178,15 +204,16 @@ public sealed class ConnectFlow
 
         if (outcome == ConsoleWakeOutcome.TimedOut)
         {
-            Report(stages, Strings.Connect_DidNotWakeHeadline, Strings.Connect_DidNotWakeDetail, terminal: true);
+            Report(stages, Strings.Connect_DidNotWakeHeadline, Strings.Connect_DidNotWakeDetail, terminal: true, ConnectPhase.Waking);
             return false;
         }
 
         return true;
     }
 
-    private static void Report(IProgress<ConnectStage> stages, string headline, string detail, bool terminal)
-        => stages.Report(new ConnectStage(headline, detail, terminal));
+    private static void Report(
+        IProgress<ConnectStage> stages, string headline, string detail, bool terminal, ConnectPhase phase)
+        => stages.Report(new ConnectStage(headline, detail, terminal, phase));
 
     /// <summary>
     /// An <see cref="IProgress{T}"/> that calls its handler rather than posting it.

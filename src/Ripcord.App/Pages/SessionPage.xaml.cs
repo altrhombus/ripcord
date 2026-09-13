@@ -267,7 +267,7 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer
         // GPU (IVideoPipelinePreparer, implemented below) and renders each stage as it is announced.
         var flow = new ConnectFlow(_services.Sessions, _services.WakeCoordinator, this);
         var stages = new Progress<ConnectStage>(
-            stage => ShowStatus(stage.Headline, stage.Detail, stage.Terminal));
+            stage => _viewModel.ShowConnectStage(stage));
 
         ConnectPlan? plan = await flow.RunAsync(_console, _settings, stages, _connectCts.Token);
         if (plan is null)
@@ -431,10 +431,7 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer
         StatusOverlay.Visibility = Vis(s.StatusVisible);
         StatusHeadline.Text = s.StatusHeadline;
         StatusDetail.Text = s.StatusDetail;
-        // The trail runs while something is still in progress and stops when it is not. Hidden rather than
-        // merely stopped on a terminal state: a stalled bar reads as a stalled connect.
-        StatusTrail.Visibility = Vis(s.StatusBusy);
-        StatusTrail.IsIndeterminate = s.StatusBusy;
+        RenderTrail(s);
         StatusActions.Visibility = Vis(s.StatusActionsVisible);
 
         ControllerConnectedText.Text = s.ConnectedControllers;
@@ -649,6 +646,54 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer
         ConnectMark.Accent = AccentResources.Brush(family.Accent);
         ConnectConsoleName.Text = _console.DisplayName;
         ConnectIdentity.Visibility = Visibility.Visible;
+    }
+
+    /// <summary>
+    /// Light the trail as far as the connect has travelled.
+    ///
+    /// <para>
+    /// A terminal stage keeps the phase it failed in and stops there rather than dimming to nothing: where it
+    /// got to is the useful half of what went wrong, and a player who watched it stop at the second dash
+    /// already knows the console never came up.
+    /// </para>
+    /// </summary>
+    private void RenderTrail(SessionViewState s)
+    {
+        bool hasPhase = s.StatusVisible && s.Phase is not null;
+
+        StatusTrail.Visibility = Vis(hasPhase);
+
+        // Only when there is something in progress that the trail cannot describe. Both hidden at rest, so a
+        // terminal state does not leave a bar cycling under a message saying it stopped.
+        StatusBusyBar.Visibility = Vis(s.StatusVisible && s.Phase is null && s.StatusBusy);
+
+        if (!hasPhase)
+        {
+            return;
+        }
+
+        int reached = s.Phase switch
+        {
+            ConnectPhase.Preparing => 1,
+            ConnectPhase.Waking => 2,
+            _ => 3,
+        };
+
+        PaintDash(TrailOne, reached >= 1);
+        PaintDash(TrailTwo, reached >= 2);
+        PaintDash(TrailThree, reached >= 3);
+    }
+
+    /// <summary>
+    /// One dash of the trail. The vendor accent, because this is the console's own mark travelling — and it
+    /// is resolved through AccentResources, so high contrast drops it to a system brush rather than painting
+    /// decorative colour where the palette forbids it.
+    /// </summary>
+    private void PaintDash(Shape dash, bool lit)
+    {
+        ConsoleFamily family = ConsoleFamily.ForPlatformName(_console?.Platform);
+        dash.Fill = AccentResources.Brush(family.Accent);
+        dash.Opacity = lit ? 1.0 : 0.22;
     }
 
     private static Visibility Vis(bool on) => on ? Visibility.Visible : Visibility.Collapsed;
