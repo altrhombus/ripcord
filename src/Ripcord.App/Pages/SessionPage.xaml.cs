@@ -89,6 +89,9 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer
 
     private double _appliedDiagnosticsInset = 16;
 
+    /// <summary>Which arrangement the panel is currently in, so the rebuild only runs when it changes.</summary>
+    private bool _diagnosticsIsSheet;
+
     private PairedConsole? _console;
     private IPowerThermalMonitor? _powerMonitor;
     private ExitGestureDetector? _exitDetector;
@@ -696,6 +699,65 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer
         dash.Opacity = lit ? 1.0 : 0.22;
     }
 
+    /// <summary>Groups of the instrument panel, in the order they read. Column order in a sheet, row order otherwise.</summary>
+    private IEnumerable<FrameworkElement> DiagnosticsGroups()
+        => [DiagGroupStatus, DiagGroupTarget, DiagGroupMetrics, DiagGroupPipeline, DiagGroupDevice];
+
+    /// <summary>
+    /// Turn the panel on its side when it is sitting in a letterbox bar.
+    ///
+    /// <para>
+    /// One set of facts in two arrangements, which is why this is a layout change and not a second panel: two
+    /// copies of that markup would be two things to keep in step, and the one that is off screen is the one
+    /// that would quietly stop matching.
+    /// </para>
+    ///
+    /// <para>
+    /// A bar is wide and short, so the column becomes a row and the panel stops being something you scroll.
+    /// Everywhere else - the pillarbox rail, and the overlay when there is no dead space at all - it stays the
+    /// tall narrow column it has always been.
+    /// </para>
+    /// </summary>
+    private void ApplyDiagnosticsLayout(DiagnosticsPlacement placement)
+    {
+        bool sheet = placement == DiagnosticsPlacement.Sheet;
+        if (sheet == _diagnosticsIsSheet)
+        {
+            return;
+        }
+
+        _diagnosticsIsSheet = sheet;
+
+        DiagnosticsBody.RowDefinitions.Clear();
+        DiagnosticsBody.ColumnDefinitions.Clear();
+
+        int index = 0;
+        foreach (FrameworkElement group in DiagnosticsGroups())
+        {
+            if (sheet)
+            {
+                // Star-sized rather than auto: the groups hold wildly different amounts of text, and letting
+                // them size to content puts the sparklines in whatever width is left over.
+                DiagnosticsBody.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                Grid.SetRow(group, 0);
+                Grid.SetColumn(group, index);
+            }
+            else
+            {
+                DiagnosticsBody.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+                Grid.SetRow(group, index);
+                Grid.SetColumn(group, 0);
+            }
+
+            index++;
+        }
+
+        // The panel itself: a bar spans the width it was given, a rail keeps the width it was designed for.
+        DiagnosticsPanel.MaxWidth = sheet ? double.PositiveInfinity : 400;
+        DiagnosticsPanel.HorizontalAlignment = sheet ? HorizontalAlignment.Stretch : HorizontalAlignment.Left;
+        DiagnosticsPanel.VerticalAlignment = sheet ? VerticalAlignment.Bottom : VerticalAlignment.Top;
+    }
+
     private static Visibility Vis(bool on) => on ? Visibility.Visible : Visibility.Collapsed;
 
     /// <summary>
@@ -1276,6 +1338,15 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer
         double panelWidth = DiagnosticsPanel.ActualWidth > 0
             ? DiagnosticsPanel.ActualWidth
             : DiagnosticsPanel.MaxWidth;
+
+        ApplyDiagnosticsLayout(layout.Placement);
+
+        // A sheet must not grow past the bar it is sitting in. Without this it keeps the window-height cap set
+        // above and quietly covers the picture - which is the one thing claiming dead space exists to avoid.
+        if (layout.Placement == DiagnosticsPlacement.Sheet)
+        {
+            DiagnosticsPanel.MaxHeight = Math.Max(120, layout.BarHeight - 32);
+        }
 
         // Centre the panel in the pillar it is claiming rather than pinning it to the window edge: a rail
         // hard against the bezel reads as something that fell off the side.
