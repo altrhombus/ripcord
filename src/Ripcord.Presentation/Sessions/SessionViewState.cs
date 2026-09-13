@@ -58,6 +58,9 @@ public sealed record SessionViewState(
     /// </summary>
     bool AlertVisible,
 
+    /// <summary>How much of the HUD is on screen. See <see cref="DiagnosticsRung"/>.</summary>
+    DiagnosticsRung Rung,
+
     /// <summary>
     /// Which pads are attached, one per line. At the top level rather than inside the diagnostics record because
     /// it changes when hardware is plugged in, not on the twice-a-second stats cadence.
@@ -74,6 +77,7 @@ public sealed record SessionViewState(
         StatusActionsVisible: false,
         IsStreamLive: false,
         AlertVisible: false,
+        Rung: DiagnosticsRung.Hidden,
         ConnectedControllers: Strings.Session_NoControllers,
         Diagnostics: SessionDiagnosticsState.Empty);
 }
@@ -134,6 +138,9 @@ public sealed record SessionDiagnosticsState(
     string HealthTip,
     StreamHealthLevel HealthLevel,
 
+    /// <summary>Loss as a percentage, for rung 2. The panel plots it; the summary strip states it.</summary>
+    string HeroLoss,
+
     // ---- instrument severities ----
 
     /// <summary>
@@ -172,6 +179,7 @@ public sealed record SessionDiagnosticsState(
         Health: Strings.Session_NotConnectedYet,
         HealthTip: Strings.Session_WaitingToStart,
         HealthLevel: StreamHealthLevel.Info,
+        HeroLoss: "—",
         FramesSeverity: MetricSeverity.Normal,
         LatencySeverity: MetricSeverity.Normal,
         LossSeverity: MetricSeverity.Normal);

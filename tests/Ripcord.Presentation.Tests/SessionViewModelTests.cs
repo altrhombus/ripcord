@@ -598,4 +598,87 @@ public class SessionViewModelTests
         Assert.Equal(before, vm.FramesPlot.FullScale);
         Assert.Equal(SessionViewModel.LossPlot.FullScale, SessionViewModel.LossPlot.FullScale);
     }
+
+    // ---- the rungs: one key, one meaning --------------------------------------------------------
+
+    [Fact]
+    public void TheKeyNeverRevealsMoreThanItHid()
+    {
+        // The interaction this design exists to prevent: press to open, press again expecting to close, and
+        // get MORE of the game covered instead. A cycle does that; a toggle cannot.
+        (SessionViewModel vm, _, _) = Build(Defaults with { ShowDiagnosticsOverlay = false });
+
+        vm.ToggleDiagnostics();
+        Assert.Equal(DiagnosticsRung.Summary, vm.State.Rung);
+
+        vm.ToggleDiagnostics();
+        Assert.Equal(DiagnosticsRung.Hidden, vm.State.Rung);
+    }
+
+    [Fact]
+    public void SomeoneWhoLivesAtRungThreeGetsRungThreeBack()
+    {
+        (SessionViewModel vm, _, _) = Build(Defaults with { ShowDiagnosticsOverlay = false });
+
+        vm.ToggleDiagnostics();
+        vm.ShowDiagnosticsDetail();
+        Assert.Equal(DiagnosticsRung.Full, vm.State.Rung);
+
+        vm.ToggleDiagnostics();
+        Assert.Equal(DiagnosticsRung.Hidden, vm.State.Rung);
+
+        // Returning where you were is the whole reason the key is a toggle rather than a cycle.
+        vm.ToggleDiagnostics();
+        Assert.Equal(DiagnosticsRung.Full, vm.State.Rung);
+    }
+
+    [Fact]
+    public void GoingDeeperAndComingBackIsASeparateControl()
+    {
+        (SessionViewModel vm, _, _) = Build(Defaults with { ShowDiagnosticsOverlay = false });
+
+        vm.ToggleDiagnostics();
+        vm.ShowDiagnosticsDetail();
+        Assert.Equal(DiagnosticsRung.Full, vm.State.Rung);
+
+        vm.HideDiagnosticsDetail();
+        Assert.Equal(DiagnosticsRung.Summary, vm.State.Rung);
+
+        // And it is not a way out of the HUD: Details goes between rungs, the key leaves.
+        vm.HideDiagnosticsDetail();
+        Assert.Equal(DiagnosticsRung.Summary, vm.State.Rung);
+    }
+
+    [Fact]
+    public void TheSettingDecidesWhetherTheHudIsUpWhenAStreamStarts()
+    {
+        (SessionViewModel on, _, _) = Build(Defaults with { ShowDiagnosticsOverlay = true });
+        Assert.Equal(DiagnosticsRung.Summary, on.State.Rung);
+
+        (SessionViewModel off, _, _) = Build(Defaults with { ShowDiagnosticsOverlay = false });
+        Assert.Equal(DiagnosticsRung.Hidden, off.State.Rung);
+    }
+
+    [Fact]
+    public void ChangingTheSettingMidSessionDoesNotOpenThePanelOverTheGame()
+    {
+        // The setting is "how much is up when a stream starts". Having a panel appear over a running game
+        // because another window's toggle moved would be a surprise, and the key is one press away anyway.
+        (SessionViewModel vm, _, _) = Build(Defaults with { ShowDiagnosticsOverlay = false });
+        Assert.Equal(DiagnosticsRung.Hidden, vm.State.Rung);
+
+        vm.UseSettings(Defaults with { ShowDiagnosticsOverlay = true });
+
+        Assert.Equal(DiagnosticsRung.Hidden, vm.State.Rung);
+    }
+
+    [Fact]
+    public void LossIsStatedAtRungTwoRatherThanOnlyPlotted()
+    {
+        (SessionViewModel vm, FakePipeline pipeline, TestClock clock) = Build();
+        vm.ApplyLifecycle(new SessionStatus(SessionLifecycle.Streaming, "Streaming"));
+        Stream(vm, pipeline, clock, seconds: 2, lossRatio: 0.034);
+
+        Assert.Equal("3.4%", vm.State.Diagnostics.HeroLoss);
+    }
 }

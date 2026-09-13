@@ -41,6 +41,14 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
 
     private bool _alertRaised;
 
+    private DiagnosticsRung _rung;
+
+    /// <summary>
+    /// Which rung to come back to. Someone who lives at rung 3 gets rung 3, which is the whole reason the
+    /// key is a toggle rather than a cycle: it returns you where you were, not one step further in.
+    /// </summary>
+    private DiagnosticsRung _lastShown = DiagnosticsRung.Summary;
+
     private RipcordSettings _settings;
 
     // ---- overlay ----
@@ -89,6 +97,11 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
         _pipeline = pipeline ?? throw new ArgumentNullException(nameof(pipeline));
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         _clock = clock ?? (() => DateTimeOffset.UtcNow);
+
+        // The setting is "how much of the HUD is up when a stream starts", so it is read once here rather
+        // than watched: changing it mid-session and having the panel appear over the game would be a
+        // surprise, and the key that shows it is one press away regardless.
+        _rung = _settings.ShowDiagnosticsOverlay ? DiagnosticsRung.Summary : DiagnosticsRung.Hidden;
     }
 
     /// <summary>
@@ -149,6 +162,36 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
     public static double RttFullScaleMs => StreamHealthAssessor.RttWarnMs;
 
     // ---- transitions ---------------------------------------------------------------------------
+
+    /// <summary>
+    /// Show the HUD, or hide it. <b>It never reveals more.</b>
+    ///
+    /// <para>
+    /// Toggling is the learned convention for a debug overlay everywhere else, so a key that cycled deeper on
+    /// its second press would do the opposite of what the muscle expects - and the failure is the worst one
+    /// available: MORE of the game covered at the moment someone was trying to uncover it. Going deeper is a
+    /// visible control instead, which is also what makes rung 3 discoverable; a hidden second keypress is not
+    /// an affordance.
+    /// </para>
+    /// </summary>
+    public void ToggleDiagnostics() => Mutate(() =>
+    {
+        if (_rung == DiagnosticsRung.Hidden)
+        {
+            _rung = _lastShown;
+        }
+        else
+        {
+            _lastShown = _rung;
+            _rung = DiagnosticsRung.Hidden;
+        }
+    });
+
+    /// <summary>Go one rung deeper, from the summary strip to the full instrument panel.</summary>
+    public void ShowDiagnosticsDetail() => Mutate(() => _rung = DiagnosticsRung.Full);
+
+    /// <summary>Come back up to the summary strip.</summary>
+    public void HideDiagnosticsDetail() => Mutate(() => _rung = DiagnosticsRung.Summary);
 
     /// <summary>Settings can change under a live session (the user has another window open).</summary>
     public void UseSettings(RipcordSettings settings)
@@ -432,6 +475,7 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
             Health: health,
             HealthTip: healthTip,
             HealthLevel: level,
+            HeroLoss: $"{stats.PacketLossRatio * 100:F1}%",
 
             FramesSeverity: FramesSeverityFor(presentFps),
             LatencySeverity: LatencySeverityFor(stats.RoundTripTimeMs),
@@ -626,6 +670,7 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
         // Suppressed while the status overlay is up: that overlay is a stronger statement about the same
         // situation, and two notices about one problem read as two problems.
         AlertVisible: _alertRaised && !_statusVisible,
+        Rung: _rung,
 
         // All of them, one per line: with several pads merged into one virtual controller, which devices are
         // contributing is exactly the thing that is otherwise invisible.

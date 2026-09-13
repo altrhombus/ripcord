@@ -309,4 +309,21 @@ public class ConnectFlowTests
         Assert.Throws<ArgumentNullException>(() => new ConnectFlow(new StubSessions(), null!, new StubVideo()));
         Assert.Throws<ArgumentNullException>(() => new ConnectFlow(new StubSessions(), new StubWake(), null!));
     }
+
+    [Fact]
+    public async Task StagesArriveInOrder_IncludingTheOnesRelayedFromTheWakeCoordinator()
+    {
+        // Progress<T> POSTS rather than invoking, so a wake line reported through one can land after the
+        // stage that follows it - leaving "Waking the console" on screen over a session already connecting.
+        // This passed by luck until an unrelated change shifted the timing, so it is pinned here.
+        (_, Stages stages) = await RunAsync(
+            new StubSessions(),
+            new StubWake(progressLines: ["Waking your PS5…"]),
+            new StubVideo(),
+            Ps5());
+
+        int wake = stages.Reported.FindIndex(stage => stage.Headline == "Waking your PS5…");
+        Assert.True(wake >= 0, "the wake line never arrived at all");
+        Assert.Equal(stages.Reported.Count - 2, wake);
+    }
 }

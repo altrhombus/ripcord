@@ -158,7 +158,12 @@ public sealed class ConnectFlow
     {
         // The coordinator's progress lines are headlines in their own right ("Waking your PS5…"), so they
         // replace the headline rather than sitting under one.
-        var wakeProgress = new Progress<string>(
+        //
+        // NOT Progress<T>: that POSTS to the captured SynchronizationContext instead of invoking, so a wake
+        // line could arrive after the stage that follows it and leave "Waking the console" on screen over a
+        // session already connecting. Everything this flow reports is reported synchronously, in order, and
+        // whoever supplied `stages` decides where it is marshalled to.
+        var wakeProgress = new SynchronousProgress<string>(
             line => Report(stages, line, Strings.Connect_WakeDetail, terminal: false));
 
         ConsoleWakeOutcome outcome;
@@ -182,4 +187,18 @@ public sealed class ConnectFlow
 
     private static void Report(IProgress<ConnectStage> stages, string headline, string detail, bool terminal)
         => stages.Report(new ConnectStage(headline, detail, terminal));
+
+    /// <summary>
+    /// An <see cref="IProgress{T}"/> that calls its handler rather than posting it.
+    ///
+    /// <para>
+    /// <see cref="Progress{T}"/> exists to marshal, which is the wrong job here twice over: this flow already
+    /// reports every other stage synchronously, so mixing the two lets a wake line overtake the stage after
+    /// it; and the caller has its own dispatcher and has already decided where these land.
+    /// </para>
+    /// </summary>
+    private sealed class SynchronousProgress<T>(Action<T> handler) : IProgress<T>
+    {
+        public void Report(T value) => handler(value);
+    }
 }
