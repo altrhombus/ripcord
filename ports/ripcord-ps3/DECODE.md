@@ -170,9 +170,32 @@ Keeping openh264 unmodified is deliberate. A patch against a dependency fetched 
 time has to be carried, rebased and justified forever; a shim on the include path is local, visible, and
 costs nothing when the dependency moves.
 
-**[X] Still not run on a console.** It builds, it links, and it decodes bit-exactly on big-endian under
-emulation. Whether it decodes on the PPE itself, inside the PS3's memory, is the next thing to establish
-and nothing above substitutes for it.
+### It decodes on the console — **2026-09-12**
+
+The capture was copied to `/dev_hdd0/`, the bring-up program split it with **this port's own**
+`rc_h264_annexb` — the one with 142 host checks behind it, because that is the seam the real client will
+use — fed each NAL to `ISVCDecoder`, and hashed the first eight output frames with FNV-1a over the
+logical pixels, ignoring stride padding so the numbers are comparable with a plain reference file.
+
+```
+dec:   2096837 bytes, 45 NALs fed, 8 frames out, 640x360
+       frame   0  0x<redacted>
+       frame   1  0x<redacted>
+       ...
+```
+
+**All eight match the little-endian reference decode exactly.** The PS3 produced pixel-identical output
+to a known-good decode of its own stream — which confirms the PPE, GCC 7.2's code generation, newlib and
+the console's memory all at once, in a way qemu could not. The emulated result said the code is
+endian-clean; this says the real machine runs it.
+
+45 NAL units to produce 8 frames is the expected shape: the stream opens with SPS, PPS and a 22-slice
+IDR, so the first picture alone costs two dozen of them.
+
+**What is still open.** Eight frames is not 1,214, and nothing here is timed — the run decodes as fast as
+it can and reports no rate, so whether the PPE alone manages anything near 60 fps is unmeasured and
+almost certainly no. That is the whole reason for the SPE work in section 3, and the next measurement
+worth taking.
 
 ### The little-endian reference output is now ground truth
 
