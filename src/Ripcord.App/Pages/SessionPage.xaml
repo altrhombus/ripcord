@@ -67,7 +67,7 @@
             Background="{ThemeResource AcrylicInAppFillColorDefaultBrush}"
             BorderBrush="{ThemeResource SurfaceStrokeColorDefaultBrush}"
             BorderThickness="1"
-            CornerRadius="12">
+            CornerRadius="{StaticResource RipcordPanelCornerRadius}">
             <StackPanel Spacing="14">
                 <ProgressRing
                     x:Name="StatusRing"
@@ -125,7 +125,7 @@
             HorizontalAlignment="Center"
             VerticalAlignment="Top"
             Background="{ThemeResource AcrylicInAppFillColorDefaultBrush}"
-            CornerRadius="16"
+            CornerRadius="{StaticResource RipcordHeroCornerRadius}"
             Visibility="Collapsed">
             <TextBlock
                 x:Name="ExitHintText"
@@ -141,7 +141,7 @@
             HorizontalAlignment="Center"
             VerticalAlignment="Bottom"
             Background="{ThemeResource AcrylicInAppFillColorDefaultBrush}"
-            CornerRadius="12"
+            CornerRadius="{StaticResource RipcordPanelCornerRadius}"
             Visibility="Collapsed">
             <StackPanel Spacing="8">
                 <TextBlock
@@ -171,7 +171,7 @@
             Background="{ThemeResource AcrylicInAppFillColorDefaultBrush}"
             BorderBrush="{ThemeResource SurfaceStrokeColorDefaultBrush}"
             BorderThickness="1"
-            CornerRadius="12"
+            CornerRadius="{StaticResource RipcordPanelCornerRadius}"
             Visibility="Collapsed">
             <!--
                 A Grid, NOT a StackPanel. A vertical StackPanel measures its children with infinite available
@@ -200,7 +200,7 @@
                         Padding="6,1"
                         VerticalAlignment="Center"
                         Background="{ThemeResource ControlFillColorSecondaryBrush}"
-                        CornerRadius="4">
+                        CornerRadius="{StaticResource RipcordTagCornerRadius}">
                         <TextBlock
                             Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                             Style="{StaticResource CaptionTextBlockStyle}"
@@ -410,7 +410,7 @@
                         Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
                         BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
                         BorderThickness="1"
-                        CornerRadius="8">
+                        CornerRadius="{StaticResource RipcordCardCornerRadius}">
                         <StackPanel Spacing="8">
                             <!--
                                 No sample counter here. It was added to prove the RTT metric was being fed at all
@@ -630,7 +630,7 @@
             Background="{ThemeResource AcrylicInAppFillColorDefaultBrush}"
             BorderBrush="{ThemeResource SurfaceStrokeColorDefaultBrush}"
             BorderThickness="1"
-            CornerRadius="14"
+            CornerRadius="{StaticResource RipcordPanelCornerRadius}"
             Visibility="Collapsed">
             <StackPanel Orientation="Horizontal" Spacing="6">
 
