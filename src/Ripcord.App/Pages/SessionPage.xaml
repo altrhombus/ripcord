@@ -4,6 +4,7 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:controls="using:Ripcord_App.Controls"
     xmlns:local="using:Ripcord_App.Pages"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     Loaded="Page_Loaded"
@@ -55,26 +56,42 @@
         <SwapChainPanel x:Name="VideoPanel" />
 
         <!--
-            Connection status. This is the user-facing surface for connecting / reconnecting / failure — those
-            states used to be reported only as small grey text inside the debug overlay, with no way to retry.
+            Connecting, reconnecting, and failing. It was a 460px acrylic card in the middle of the window with
+            a spinner on top - which read as Windows Setup, and for a good reason: it was ceremony. Setup can
+            afford ceremony because you do it once; connecting happens several times an evening, and a ceremony
+            performed daily is a chore.
+
+            So nothing here is centred, because THE CENTRE BELONGS TO THE GAME - the layout reserves the space
+            the picture is about to occupy. The console's identity sits where its card's mark sat, because the
+            ConnectedAnimation lands it there and connect is the card becoming the window rather than a new
+            place you navigated to. Status sits low and left, where rung 1 of the HUD also speaks, so a player
+            who has watched a stream come up already knows where Ripcord talks from.
         -->
-        <Border
-            x:Name="StatusOverlay"
-            MaxWidth="460"
-            Padding="28,24"
-            HorizontalAlignment="Center"
-            VerticalAlignment="Center"
-            Background="{ThemeResource AcrylicInAppFillColorDefaultBrush}"
-            BorderBrush="{ThemeResource SurfaceStrokeColorDefaultBrush}"
-            BorderThickness="1"
-            CornerRadius="{StaticResource RipcordPanelCornerRadius}">
-            <StackPanel Spacing="14">
-                <ProgressRing
-                    x:Name="StatusRing"
-                    Width="36"
-                    Height="36"
-                    HorizontalAlignment="Center"
-                    IsActive="True" />
+        <Grid x:Name="StatusOverlay">
+            <StackPanel
+                x:Name="ConnectIdentity"
+                Margin="32,30,0,0"
+                HorizontalAlignment="Left"
+                VerticalAlignment="Top"
+                Orientation="Horizontal"
+                Spacing="{StaticResource RipcordSpacingM}">
+                <controls:FamilyMark
+                    x:Name="ConnectMark"
+                    Width="24"
+                    Height="20"
+                    VerticalAlignment="Center" />
+                <TextBlock
+                    x:Name="ConnectConsoleName"
+                    VerticalAlignment="Center"
+                    Style="{StaticResource BodyStrongTextBlockStyle}" />
+            </StackPanel>
+
+            <StackPanel
+                Margin="32,0,32,72"
+                MaxWidth="620"
+                HorizontalAlignment="Left"
+                VerticalAlignment="Bottom"
+                Spacing="{StaticResource RipcordSpacingM}">
                 <!--
                     Default is "Starting…", deliberately NOT "Connecting…": that is a real state the controller
                     reports, and having it as the static default made a hang ANYWHERE before the network — video
@@ -83,23 +100,31 @@
                 -->
                 <TextBlock
                     x:Name="StatusHeadline"
-                    HorizontalAlignment="Center"
-                    Style="{StaticResource SubtitleTextBlockStyle}"
+                    Style="{StaticResource TitleTextBlockStyle}"
                     x:Uid="SessionPage_Starting"
-                    TextAlignment="Center"
                     TextWrapping="Wrap" />
                 <TextBlock
                     x:Name="StatusDetail"
-                    HorizontalAlignment="Center"
                     Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                     Style="{StaticResource BodyTextBlockStyle}"
-                    TextAlignment="Center"
                     TextWrapping="Wrap" />
+
+                <!--
+                    The trail, at the weight of a hairline. Indeterminate on purpose: how long a connect takes
+                    is genuinely unknown - a LAN wake is seconds and an account rendezvous can be forty - and a
+                    bar that implied otherwise would be inventing a number to look reassuring.
+                -->
+                <ProgressBar
+                    x:Name="StatusTrail"
+                    Width="180"
+                    Height="3"
+                    HorizontalAlignment="Left"
+                    IsIndeterminate="True" />
+
                 <StackPanel
                     x:Name="StatusActions"
-                    HorizontalAlignment="Center"
                     Orientation="Horizontal"
-                    Spacing="8"
+                    Spacing="{StaticResource RipcordSpacingS}"
                     Visibility="Collapsed">
                     <Button
                         x:Name="RetryButton"
@@ -112,7 +137,7 @@
                         x:Uid="SessionPage_BackConsoles" />
                 </StackPanel>
             </StackPanel>
-        </Border>
+        </Grid>
 
         <!--
             How to leave the stream. Shown on entry and then faded out: without it the exit gesture is
