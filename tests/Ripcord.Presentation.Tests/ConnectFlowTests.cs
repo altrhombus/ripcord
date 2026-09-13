@@ -326,4 +326,34 @@ public class ConnectFlowTests
         Assert.True(wake >= 0, "the wake line never arrived at all");
         Assert.Equal(stages.Reported.Count - 2, wake);
     }
+
+    [Fact]
+    public async Task EveryStageSaysHowFarAlongItIs()
+    {
+        (_, Stages stages) = await RunAsync(
+            new StubSessions(), new StubWake(progressLines: ["Waking…"]), new StubVideo(), Ps5());
+
+        // The phases only ever move forward, which is what lets the trail be drawn by lighting dashes up to
+        // the current one rather than by tracking each dash separately.
+        List<ConnectPhase> seen = [.. stages.Reported.Select(stage => stage.Phase)];
+        Assert.Equal(seen, [.. seen.Order()]);
+
+        Assert.Equal(ConnectPhase.Preparing, stages.Reported[0].Phase);
+        Assert.Contains(ConnectPhase.Waking, seen);
+        Assert.Equal(ConnectPhase.Connecting, stages.Last!.Phase);
+    }
+
+    [Fact]
+    public async Task AFailureKeepsThePhaseItFailedIn()
+    {
+        // Where it stopped is the useful half of what went wrong: a trail that stopped at the second dash
+        // has already told the player the console never came up.
+        (_, Stages wake) = await RunAsync(
+            new StubSessions(), new StubWake(ConsoleWakeOutcome.TimedOut), new StubVideo(), Ps5());
+        Assert.Equal(ConnectPhase.Waking, wake.Last!.Phase);
+
+        (_, Stages video) = await RunAsync(
+            new StubSessions(), new StubWake(), new StubVideo(new InvalidOperationException("no decoder")), Ps5());
+        Assert.Equal(ConnectPhase.Preparing, video.Last!.Phase);
+    }
 }
