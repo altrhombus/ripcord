@@ -490,9 +490,50 @@ static int spu_report_failure(const char *what, uint32_t phase, uint32_t heartbe
     return 1;
 }
 
+/*
+ * HOW MANY TIMES TO REPEAT A MEASUREMENT, AND WHY THE MINIMUM IS TAKEN.
+ *
+ * The first two hardware runs disagreed badly: dispatch measured 65 us and then 89 us, and the DMA
+ * figure derived from subtracting them came out at 9,967 MB/s and then 39,741 MB/s. The second is not
+ * credible for one SPE, and the pair of them are not a measurement - they are one sample each, of a
+ * quantity that shares a console with the XMB, a network stack and a filesystem, put through a
+ * subtraction that amplifies whatever noise each carried.
+ *
+ * DECODE.md now cites these numbers, so they have to be worth citing. Ten runs, keep the minimum: the
+ * fastest observed time is the one least contaminated by something else happening on the machine, which
+ * is the right estimator for "what does this cost when nothing is in the way". The spread is reported
+ * beside it, because a wide spread is itself the finding - it would mean dispatch cost is not a stable
+ * quantity on this hardware and the decoder cannot budget against it.
+ */
+#define SPU_REPEATS 10
+
+static int spu_measure(size_t size, uint64_t *best, uint64_t *worst,
+                       uint32_t *phase, uint32_t *heartbeat, uint64_t *spu_args,
+                       uint32_t *cause, uint32_t *status)
+{
+    unsigned i;
+
+    *best = 0u;
+    *worst = 0u;
+
+    for (i = 0u; i < SPU_REPEATS; i++) {
+        uint64_t t = 0u;
+
+        if (!rc_spu_run(g_spu_src, g_spu_dst, size, &t, phase, heartbeat, spu_args, cause, status))
+            return 0;
+
+        if (i == 0u || t < *best)
+            *best = t;
+        if (t > *worst)
+            *worst = t;
+    }
+    return 1;
+}
+
 static int check_spu(void)
 {
     uint64_t empty_ticks = 0u, copy_ticks = 0u;
+    uint64_t empty_worst = 0u, copy_worst = 0u;
     uint64_t hz = rc_tick_hz();
     uint32_t phase = 0u, heartbeat = 0u, cause = 0u, status = 0u;
     uint64_t spu_args[RC_SPU_ARG_COUNT];
@@ -515,8 +556,8 @@ static int check_spu(void)
     passed[2] = 0u;
     passed[3] = rc_spu_done_ea();
 
-    if (!rc_spu_run(g_spu_src, g_spu_dst, 0u, &empty_ticks, &phase, &heartbeat, spu_args,
-                    &cause, &status)) {
+    if (!spu_measure(0u, &empty_ticks, &empty_worst, &phase, &heartbeat, spu_args,
+                     &cause, &status)) {
         int r = spu_report_failure("rc_spu_run: the empty job did not complete",
                                    phase, heartbeat, spu_args, passed, cause, status);
         rc_spu_exit();
@@ -530,8 +571,8 @@ static int check_spu(void)
 
     passed[2] = (uint64_t)SPU_BYTES;
 
-    if (!rc_spu_run(g_spu_src, g_spu_dst, SPU_BYTES, &copy_ticks, &phase, &heartbeat, spu_args,
-                    &cause, &status)) {
+    if (!spu_measure(SPU_BYTES, &copy_ticks, &copy_worst, &phase, &heartbeat, spu_args,
+                     &cause, &status)) {
         int r = spu_report_failure("rc_spu_run: the 256 KB job did not complete",
                                    phase, heartbeat, spu_args, passed, cause, status);
         rc_spu_exit();
@@ -546,13 +587,14 @@ static int check_spu(void)
         return 1;
     }
 
-    ps3_log("spu:   empty job      %llu ticks (%llu us)  <- cost of asking\n",
-            (unsigned long long)empty_ticks,
-            (unsigned long long)(empty_ticks * 1000000ULL / hz));
-    ps3_log("       %u KB copied  %llu ticks (%llu us)\n",
+    ps3_log("spu:   best of %u runs each; spread is the worst case beside it\n", SPU_REPEATS);
+    ps3_log("       empty job      %llu us  (worst %llu us)  <- cost of asking\n",
+            (unsigned long long)(empty_ticks * 1000000ULL / hz),
+            (unsigned long long)(empty_worst * 1000000ULL / hz));
+    ps3_log("       %u KB copied  %llu us  (worst %llu us)\n",
             SPU_BYTES / 1024u,
-            (unsigned long long)copy_ticks,
-            (unsigned long long)(copy_ticks * 1000000ULL / hz));
+            (unsigned long long)(copy_ticks * 1000000ULL / hz),
+            (unsigned long long)(copy_worst * 1000000ULL / hz));
 
     if (copy_ticks > empty_ticks) {
         uint64_t dma_ticks = copy_ticks - empty_ticks;
@@ -563,10 +605,12 @@ static int check_spu(void)
         uint64_t mb_per_s = (dma_ticks > 0ULL)
                             ? (bytes * hz / dma_ticks) / (1024ULL * 1024ULL)
                             : 0ULL;
-        ps3_log("       DMA alone     %llu ticks (%llu us), %llu MB/s both ways, single-buffered\n",
-                (unsigned long long)dma_ticks,
+        ps3_log("       DMA alone     %llu us, %llu MB/s both ways, single-buffered\n",
                 (unsigned long long)(dma_ticks * 1000000ULL / hz),
                 (unsigned long long)mb_per_s);
+        /* The subtraction of two best-of-ten figures is still a difference of two noisy quantities, and
+         * it is small here relative to either. Treated as an order of magnitude, not a throughput. */
+        ps3_log("                     (a difference of two measurements - read it as an order)\n");
     }
 
     ps3_log("ok    one SPE ran a DMA job and the bytes arrived intact\n");
@@ -660,8 +704,9 @@ int main(void)
      * about this port, and "which directories may a packaged homebrew write to" is worth answering once
      * and keeping. */
     ps3_log("log:   channels carrying this run\n");
-    ps3_log("       [%c] udp to %s:%u\n",
-            rc_netlog_is_open() ? 'x' : ' ', RC_NETLOG_HOST, (unsigned)RC_NETLOG_PORT);
+    ps3_log("       [%c] udp to %s:%u  (first sendto returned %ld)\n",
+            rc_netlog_is_open() ? 'x' : ' ', RC_NETLOG_HOST, (unsigned)RC_NETLOG_PORT,
+            rc_netlog_first_send_result());
     ps3_log("       [%c] lv2 syscalls (sysLv2FsOpen)   %s\n",
             (g_lv2_fd >= 0) ? 'x' : ' ',
             (g_lv2_dir != NULL) ? g_lv2_dir : "- nowhere accepted a file");

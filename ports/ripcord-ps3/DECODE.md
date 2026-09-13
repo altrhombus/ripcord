@@ -162,25 +162,36 @@ entirely, and is available precisely because there are no B-slices. It costs one
 Step 6 of README.md's order of work ran on a console. One SPE, one thread group, one job, synchronous:
 
 ```
-empty job      5227 ticks (65 us)   <- thread group start, SPE startup, completion signal
-256 KB copied  9230 ticks (115 us)
-DMA alone      4003 ticks (50 us), 9967 MB/s both ways, single-buffered
+best of 10 runs each; spread is the worst case beside it
+empty job      60 us  (worst 70 us)   <- thread group start, SPE startup, completion signal
+256 KB copied  80 us  (worst 127 us)
+DMA alone      20 us, ~24 GB/s both ways, single-buffered  (a difference of two measurements)
 ```
 
-**Dispatch costs ~65 µs, and that is the number this section needed.** It is 0.4% of a 16.7 ms frame
+**Dispatch costs ~60 µs, and that is the number this section needed.** It is 0.4% of a 16.7 ms frame
 period, so a few dozen jobs per frame is free and the granularity question has an answer: a job must be
 worth at least a few hundred microseconds of work for the overhead to disappear into it. A macroblock-row
 stripe comfortably is; a single macroblock is not, by two orders of magnitude. The stripe-based design
-above stands, and "dispatch per macroblock" is now ruled out on evidence rather than on instinct.
+above stands, and "dispatch per macroblock" is ruled out on evidence rather than on instinct.
 
-Note that the empty job is most of the 115 µs total — at this size overhead dominates transfer, which is
-exactly the regime that decides batching.
+The 60–70 µs spread matters as much as the figure: dispatch cost is *stable*, so a decoder can budget
+against it. A wide spread would have meant it could not.
 
-**~10 GB/s of DMA is not the constraint.** A 720p NV12 frame is ~1.4 MB, so a whole frame in and back out
-is ~280 µs of transfer against an 8 ms budget. That figure is also a deliberate floor: the probe is
-single-buffered, issuing a get, waiting, issuing a put, waiting. The double-buffered stripe pattern this
-section assumes roughly doubles it. Bandwidth was never going to be the problem; local store size and the
-serial entropy stage still are.
+**METHOD, because the first version of this paragraph was wrong.** It cited 65 µs and 9,967 MB/s from a
+single sample of each. A second run of the same binary gave 89 µs and 39,741 MB/s — and 39.7 GB/s is not
+a credible figure for one SPE, which is what exposed the method rather than the number. The probe now
+repeats each measurement ten times and keeps the minimum, the fastest observation being the one least
+contaminated by the XMB, the network stack and the filesystem sharing the machine. The dispatch figure
+moved by a third under that treatment. Two samples of a noisy quantity are not a measurement, and a
+document that other decisions rest on should not have been given one.
+
+**DMA is not the constraint, and the figure should be read as an order rather than a throughput.** It is
+the difference between two measured times, both noisy, and 20 µs for 512 KB in both directions lands
+suspiciously close to the ~25 GB/s an SPE can theoretically pull from the EIB — which is what a
+difference-of-two-numbers tends to do. What survives is the conclusion: a 720p NV12 frame is ~1.4 MB, so
+a whole frame in and back out is a few hundred microseconds against an 8 ms budget, with a probe that is
+deliberately single-buffered and therefore a floor. Bandwidth was never going to be the problem; local
+store size and the serial entropy stage still are.
 
 **[X] All of this is one SPE.** Whether six run at anything like six times the aggregate is unmeasured,
 and the EIB and memory controller are shared. It is the obvious next measurement, and cheap now that the

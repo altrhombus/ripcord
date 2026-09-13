@@ -14,6 +14,17 @@ static int s_sock = -1;
 static int s_net_up;
 static struct sockaddr_in s_dest;
 
+/*
+ * The result of the FIRST sendto, kept because ignoring every result turned out to be one decision too
+ * many. The channel reported itself open on hardware - netInitialize, socket and inet_pton all succeeded
+ * - and no datagram arrived at the other end, and there was no way to tell whether the console had
+ * refused the send or the network had dropped it. Those need completely different fixes.
+ *
+ * Subsequent sends stay fire-and-forget: the argument for that is unchanged, and one sample is enough to
+ * distinguish "this console will not send" from "this datagram did not arrive".
+ */
+static long s_first_send_result = RC_NETLOG_SEND_UNTRIED;
+
 int rc_netlog_open(const char *ip, uint16_t port)
 {
     if (s_sock >= 0)
@@ -80,6 +91,7 @@ int rc_netlog_open(const char *ip, uint16_t port)
 void rc_netlog_write(const char *text)
 {
     size_t len;
+    ssize_t sent;
 
     if (s_sock < 0 || text == NULL)
         return;
@@ -88,14 +100,22 @@ void rc_netlog_write(const char *text)
     if (len == 0u)
         return;
 
-    /* Result ignored on purpose - see the header. There is nothing useful this could do about a failure
-     * that would not be worse than the failure. */
-    (void)sendto(s_sock, text, len, 0, (const struct sockaddr *)&s_dest, (socklen_t)sizeof(s_dest));
+    sent = sendto(s_sock, text, len, 0, (const struct sockaddr *)&s_dest, (socklen_t)sizeof(s_dest));
+
+    /* First one recorded, the rest ignored - see s_first_send_result. Still nothing useful this could do
+     * about a failure that would not be worse than the failure. */
+    if (s_first_send_result == RC_NETLOG_SEND_UNTRIED)
+        s_first_send_result = (long)sent;
 }
 
 int rc_netlog_is_open(void)
 {
     return s_sock >= 0;
+}
+
+long rc_netlog_first_send_result(void)
+{
+    return s_first_send_result;
 }
 
 void rc_netlog_close(void)
