@@ -83,6 +83,8 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer
     // text — are rebuilt only when the SET changes and not twice a second.
     private string _renderedPillSignature = string.Empty;
 
+    private string _renderedSummaryPillSignature = string.Empty;
+
     private PairedConsole? _console;
     private IPowerThermalMonitor? _powerMonitor;
     private ExitGestureDetector? _exitDetector;
@@ -173,7 +175,6 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer
 
         _exitDetector = new ExitGestureDetector(_settings.ExitGesture);
 
-        DiagnosticsPanel.Visibility = _settings.ShowDiagnosticsOverlay ? Visibility.Visible : Visibility.Collapsed;
 
         // Input set-up is ISOLATED and non-fatal. It reaches native code (GameInput via Ripcord.Input.Interop), and
         // a stream is perfectly watchable without a controller — so a failure here must degrade to "no input", never
@@ -439,12 +440,55 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer
             RenderHealthDot(AlertDot, s.Diagnostics.HealthLevel);
         }
 
+        // One source of truth for how much of the HUD is up. It used to be DiagnosticsPanel.Visibility,
+        // consulted from eight places, three of which had to agree about a panel they did not own.
+        DiagnosticsSummary.Visibility = Vis(s.Rung == DiagnosticsRung.Summary);
+        DiagnosticsPanel.Visibility = Vis(s.Rung == DiagnosticsRung.Full);
+
+        if (s.Rung == DiagnosticsRung.Summary)
+        {
+            RenderSummary(s.Diagnostics);
+        }
+
         // The state is kept current twice a second regardless; assigning two dozen text properties on a
-        // collapsed panel is the part worth skipping. ToggleDiagnosticsPanel renders on the way in, so opening
-        // the overlay shows the latest sample rather than whatever was there when it was last closed.
-        if (DiagnosticsPanel.Visibility == Visibility.Visible)
+        // collapsed panel is the part worth skipping.
+        if (s.Rung == DiagnosticsRung.Full)
         {
             RenderDiagnostics(s.Diagnostics);
+        }
+    }
+
+    /// <summary>
+    /// Rung 2. Four numbers, and colour only where a reading has crossed its own threshold — the same grammar
+    /// the sparklines use, for the same reason: a row of four coloured numbers would say nothing.
+    /// </summary>
+    private void RenderSummary(SessionDiagnosticsState d)
+    {
+        SummaryHealthText.Text = d.Health;
+        SummaryTipText.Text = d.HealthTip;
+        RenderHealthDot(SummaryDot, d.HealthLevel);
+
+        SummaryResolutionText.Text = d.HeroResolution;
+        SummaryFpsText.Text = d.HeroFps;
+        SummaryBitrateText.Text = d.HeroBitrate;
+        SummaryLossText.Text = d.HeroLoss;
+
+        // Resolution and bitrate have no threshold of their own: the first is what was asked for and the
+        // second is a magnitude. Only frames and loss can be wrong by themselves.
+        ApplySeverity(SummaryFpsText, d.FramesSeverity);
+        ApplySeverity(SummaryLossText, d.LossSeverity);
+
+        RenderPills(SummaryPills, d, ref _renderedSummaryPillSignature);
+    }
+
+    /// <summary>Paint a value with its severity, or leave it in the default foreground when it is fine.</summary>
+    private static void ApplySeverity(TextBlock value, MetricSeverity severity)
+    {
+        value.ClearValue(TextBlock.ForegroundProperty);
+
+        if (severity != MetricSeverity.Normal && SeverityBrush(severity) is { } brush)
+        {
+            value.Foreground = brush;
         }
     }
 
@@ -492,18 +536,30 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer
     /// visible difference. The view-model decides WHICH pills; this decides when redrawing is worth it.
     /// </summary>
     private void RenderCapabilityPills(SessionDiagnosticsState d)
+        => RenderPills(CapabilityPills, d, ref _renderedPillSignature);
+
+    /// <summary>
+    /// Rebuild a pill row, but only when the set has actually changed - these are otherwise reconstructed
+    /// twice a second for a row that changes about twice a session.
+    ///
+    /// <para>
+    /// The cached signature belongs to the TARGET, not to the page. Two rungs show the same pills, and one
+    /// shared cache would let whichever rendered first convince the other it was already up to date.
+    /// </para>
+    /// </summary>
+    private static void RenderPills(ItemsControl target, SessionDiagnosticsState d, ref string cachedSignature)
     {
-        if (d.CapabilityPillSignature == _renderedPillSignature)
+        if (d.CapabilityPillSignature == cachedSignature)
         {
             return;
         }
 
-        _renderedPillSignature = d.CapabilityPillSignature;
-        CapabilityPills.Items.Clear();
+        cachedSignature = d.CapabilityPillSignature;
+        target.Items.Clear();
 
         foreach (CapabilityPill pill in d.CapabilityPills)
         {
-            CapabilityPills.Items.Add(new Border
+            target.Items.Add(new Border
             {
                 // Application.Current.Resources, not this page's: the pill styles are shared now, and a page's
                 // own dictionary does not see app-level ones.
@@ -932,7 +988,7 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer
             ExitProgressBar.Value = progress;
             ExitProgressPanel.Visibility = progress is > 0 and < 1 ? Visibility.Visible : Visibility.Collapsed;
 
-            if (DiagnosticsPanel.Visibility == Visibility.Visible)
+            if (_viewModel.State.Rung == DiagnosticsRung.Full)
             {
                 ControllerButtonsText.Text = $"Buttons: {frame.Buttons}";
                 ControllerSticksText.Text =
@@ -1259,6 +1315,15 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer
         args.Handled = true;
     }
 
+    private void DiagnosticsDetailButton_Click(object sender, RoutedEventArgs e)
+    {
+        _viewModel.ShowDiagnosticsDetail();
+
+        // Same reason as the touch toggle: the button would otherwise keep focus and swallow every
+        // subsequent Space before it reached the console.
+        FocusStreamSurface();
+    }
+
     private void DiagnosticsToggleButton_Click(object sender, RoutedEventArgs e)
     {
         ToggleDiagnosticsPanel();
@@ -1268,16 +1333,19 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer
         FocusStreamSurface();
     }
 
+    /// <summary>
+    /// Show the HUD or hide it, at whatever rung it was last at. Never a step deeper — see
+    /// <see cref="SessionViewModel.ToggleDiagnostics"/> for why that matters.
+    /// </summary>
     private void ToggleDiagnosticsPanel()
     {
-        bool showing = DiagnosticsPanel.Visibility != Visibility.Visible;
-        DiagnosticsPanel.Visibility = showing ? Visibility.Visible : Visibility.Collapsed;
+        _viewModel.ToggleDiagnostics();
 
-        if (showing)
+        // Catch it up in one pass: rendering is skipped while a rung is hidden, so without this it would show
+        // the last sample from before it was closed until the next tick. Render already ran for the text;
+        // the graph is the part it does not cover.
+        if (_viewModel.State.Rung == DiagnosticsRung.Full)
         {
-            // Catch the panel up in one pass: rendering is skipped while it is collapsed, so without this it
-            // would show the last sample from before it was closed until the next tick.
-            RenderDiagnostics(_viewModel.State.Diagnostics);
             RenderGraph();
         }
     }
@@ -1308,7 +1376,7 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer
         //
         // False means the sample was skipped — no pipeline yet, or too little time since the last one for a rate
         // to mean anything — so there is nothing new to plot either.
-        if (_viewModel.Sample(ReadTelemetry()) && DiagnosticsPanel.Visibility == Visibility.Visible)
+        if (_viewModel.Sample(ReadTelemetry()) && _viewModel.State.Rung == DiagnosticsRung.Full)
         {
             RenderGraph();
         }
