@@ -163,15 +163,31 @@ three failures that look identical from outside and have nothing in common as bu
 session, discovery, input encoding — and until 2026-09-12 every assertion in it had only ever run on
 little-endian x86. The PPE is big-endian.
 
-Seven of its eleven runners now build for the PPE and run on the console, and the counts match the host
-exactly:
+**All eleven of its runners** now build for the PPE and run on the console, and the counts match the host
+exactly — runner for runner, not just in total:
 
 ```
 core:  running ports/common's suites on this hardware
-       discovery pass   session pass   takion pass   stream_header pass
-       stream_demux pass   input pass   fec pass
-       2912 assertions passed, 0 failed
+       discovery pass  session pass  takion pass  stream_header pass
+       stream_demux pass  input pass  fec pass
+       control_crypto pass  stream_crypto pass  ecdh pass  control_proto pass
+       3287 assertions passed, 0 failed        (host: 3287)
 ```
+
+That is the whole core: Reed-Solomon and the Galois tables, the Takion handshake, data chunks, SACK and
+reassembly, stream framing and A/V demux, discovery, the control session, input encoding — and the
+crypto, which is where a byte-order bug would have been most expensive. A wrong key derivation does not
+crash; it produces a session that negotiates and then silently fails to decrypt.
+
+`ecdh` runs against **mbedtls cross-built for the PPE**, and that needed no new code at all:
+`ports/common/tools/build-mbedtls.sh` already takes `CROSS=`, so `CROSS=powerpc64-ps3-elf-` produced a
+102 KB `libmbedcrypto.a` from the same pinned, hash-verified 2.28.8 release the host suite and the Vita
+port use. A script written for one console worked unchanged for a third target.
+
+The four vector-backed runners read `.kat` files from `/dev_hdd0/ripcord-vectors/`, copied across by
+hand — they are dirty-room material and are not embedded in the binary, for the same reason the H.264
+capture is not. A missing file reports `skipped` rather than failing, which is the contract `ecdh_test`
+already has on the host when its backend is absent.
 
 Reading had said it should be clean: 28 sites assemble multi-byte values with explicit shifts and there
 is not one multi-byte pointer cast in the transport, stream, session or util layers. That is an argument.
