@@ -43,7 +43,7 @@ URL="https://codeload.github.com/cisco/openh264/tar.gz/refs/tags/v${VERSION}"
 : "${PSL1GHT:?set PSL1GHT - it is the same directory as PS3DEV}"
 
 HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-OUT=${1:-"$HERE/../build/openh264"}
+OUT=${1:-"$HERE/../third-party/openh264"}
 mkdir -p "$OUT"
 OUT=$(CDPATH= cd -- "$OUT" && pwd)
 
