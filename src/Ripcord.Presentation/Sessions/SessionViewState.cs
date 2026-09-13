@@ -132,7 +132,18 @@ public sealed record SessionDiagnosticsState(
     // ---- verdict ----
     string Health,
     string HealthTip,
-    StreamHealthLevel HealthLevel)
+    StreamHealthLevel HealthLevel,
+
+    // ---- instrument severities ----
+
+    /// <summary>
+    /// How each plotted metric stands against its own threshold, so a stroke's colour carries information
+    /// rather than merely identifying which row it belongs to. Bitrate has no severity by construction —
+    /// there is no bitrate that is wrong by itself. See <see cref="MetricPlot"/>.
+    /// </summary>
+    MetricSeverity FramesSeverity,
+    MetricSeverity LatencySeverity,
+    MetricSeverity LossSeverity)
 {
     public static SessionDiagnosticsState Empty { get; } = new(
         Adapter: "—",
@@ -160,5 +171,8 @@ public sealed record SessionDiagnosticsState(
         Path: string.Empty,
         Health: Strings.Session_NotConnectedYet,
         HealthTip: Strings.Session_WaitingToStart,
-        HealthLevel: StreamHealthLevel.Info);
+        HealthLevel: StreamHealthLevel.Info,
+        FramesSeverity: MetricSeverity.Normal,
+        LatencySeverity: MetricSeverity.Normal,
+        LossSeverity: MetricSeverity.Normal);
 }
