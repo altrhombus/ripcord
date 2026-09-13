@@ -632,12 +632,22 @@ static int check_spu(void)
 #define RC_DECODE_STREAM_PATH "/dev_hdd0/video.264"
 #endif
 
+/*
+ * HOW MANY FRAMES TO DECODE FOR THE RATE. Enough that start-up costs - the decoder's first allocations,
+ * the 22-slice IDR that opens the stream - average out, and few enough that the run stays a couple of
+ * minutes rather than ten. The capture holds 1,214.
+ */
+#ifndef RC_DECODE_FRAMES
+#define RC_DECODE_FRAMES 300
+#endif
+
 static int check_decode(void)
 {
     rc_decode_probe_result r;
+    uint64_t hz = rc_tick_hz();
     int i;
 
-    if (!rc_decode_probe(RC_DECODE_STREAM_PATH, &r)) {
+    if (!rc_decode_probe(RC_DECODE_STREAM_PATH, RC_DECODE_FRAMES, &r)) {
         if (!r.opened) {
             /* Not a failure - see above. */
             ps3_log("dec:   no stream at %s - skipping (copy the capture there to run it)\n",
@@ -654,6 +664,25 @@ static int check_decode(void)
             (unsigned)r.bytes, r.nals_fed, r.frames_out, r.width, r.height);
     for (i = 0; i < r.hashes; i++)
         ps3_log("       frame %3d  0x%016llx\n", i, (unsigned long long)r.hash[i]);
+
+    if (r.frames_out > 0 && r.decode_ticks > 0u) {
+        uint64_t us = r.decode_ticks * 1000000ULL / hz;
+        uint64_t per_frame_us = us / (uint64_t)r.frames_out;
+        /* Tenths, because integer fps loses the difference between 4 and 4.9 and this number is about
+         * to be multiplied by four to guess at 720p. */
+        uint64_t fps_tenths = (per_frame_us > 0u) ? (10000000ULL / per_frame_us) : 0u;
+
+        ps3_log("       PPE alone: %llu frames in %llu ms, %llu us/frame, %llu.%llu fps\n",
+                (unsigned long long)r.frames_out,
+                (unsigned long long)(us / 1000ULL),
+                (unsigned long long)per_frame_us,
+                (unsigned long long)(fps_tenths / 10ULL),
+                (unsigned long long)(fps_tenths % 10ULL));
+        ps3_log("       (hashing %d frames cost %llu ms and is NOT in the above)\n",
+                r.hashes, (unsigned long long)(r.hash_ticks * 1000000ULL / hz / 1000ULL));
+        ps3_log("       (this is %dx%d - 720p is ~4x the pixels)\n", r.width, r.height);
+    }
+
     ps3_log("ok    openh264 decoded on the PPE - compare the hashes with the reference decode\n");
     return 0;
 }
