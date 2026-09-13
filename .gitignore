@@ -62,6 +62,12 @@ account.json
 ## build/ so it cannot quietly swallow a directory somebody adds elsewhere.
 ports/*/build/
 ports/*/tests/build/
+## Ripcord: third-party dependencies a port fetches and hash-verifies at build time rather than
+## vendoring them - openh264 for the PS3 decoder, via that port's own build script. Deliberately
+## OUTSIDE build/: `make clean` must not destroy a 57 MB fetch and 35 compiles, and `make distclean`
+## is the one that does. Kept here beside the other ports/ rules rather than in the port that needed
+## it first, so a working tree cannot lose the fetch just by standing on a branch without that port.
+ports/*/third-party/
 *.3dsx
 *.vpk
 *.smdh
