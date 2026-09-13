@@ -1,4 +1,4 @@
-namespace Ripcord.Presentation.Sessions;
+namespace Ripcord.Core.Sessions;
 
 /// <summary>
 /// How much of the stream HUD is on screen.
@@ -24,8 +24,13 @@ namespace Ripcord.Presentation.Sessions;
 ///
 /// <para>
 /// Rung 1 is deliberately not a member here. It is not a state anyone selects: it appears and clears on its
-/// own (see <see cref="HealthAlertGate"/>), and making it a rung would imply it could be chosen, or worse,
+/// own (see the health alert gate), and making it a rung would imply it could be chosen, or worse,
 /// dismissed — which would mean dismissing the only unprompted thing the app says while a game is running.
+/// </para>
+///
+/// <para>
+/// It lives in Core rather than beside the view-model because it is also a persisted preference: the
+/// settings record has to name the rung a stream opens at, and Core cannot reference the layer above it.
 /// </para>
 /// </summary>
 public enum DiagnosticsRung
