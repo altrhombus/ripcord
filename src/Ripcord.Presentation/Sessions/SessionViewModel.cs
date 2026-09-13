@@ -101,7 +101,7 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
         // The setting is "how much of the HUD is up when a stream starts", so it is read once here rather
         // than watched: changing it mid-session and having the panel appear over the game would be a
         // surprise, and the key that shows it is one press away regardless.
-        _rung = _settings.ShowDiagnosticsOverlay ? DiagnosticsRung.Summary : DiagnosticsRung.Hidden;
+        _rung = _settings.DiagnosticsRungOnConnect;
     }
 
     /// <summary>

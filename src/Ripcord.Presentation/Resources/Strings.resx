@@ -554,4 +554,16 @@
     <value>Connecting to your console…</value>
     <comment>Connect sequence: final phase. The detail line says which route was chosen and why.</comment>
   </data>
+  <data name="Settings_DiagnosticsOff" xml:space="preserve">
+    <value>Off</value>
+    <comment>Diagnostics picker: the HUD is not shown when a stream starts.</comment>
+  </data>
+  <data name="Settings_DiagnosticsSummary" xml:space="preserve">
+    <value>Summary</value>
+    <comment>Diagnostics picker: a stream opens with the one-line summary strip.</comment>
+  </data>
+  <data name="Settings_DiagnosticsFull" xml:space="preserve">
+    <value>Full instruments</value>
+    <comment>Diagnostics picker: a stream opens with the full instrument panel.</comment>
+  </data>
 </root>
