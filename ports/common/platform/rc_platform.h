@@ -116,6 +116,13 @@ int rc_random_bytes(uint8_t *out, size_t length);
  *     on .NET and on Unix and cost a hardware run to find. No documentation was found either way for
  *     the Vita. Assume nothing until a device answers.
  *
+ *     **THE PS3 ANSWERED, 2026-09-12: accepted.** A UDP socket bound to port 0 and then received the
+ *     unicast SRCH reply from a real console, so the 3DS's restriction is that platform's and not a
+ *     general one. Established by ports/ripcord-ps3/source/discovery/rc_discover.c on hardware, which
+ *     asks the question deliberately and reports the answer whether or not discovery then succeeds -
+ *     the two failures look identical from outside and are not the same problem. The Vita is still
+ *     unanswered.
+ *
  * The lesson the 3DS taught still stands: socket idioms are exactly where a second platform bites, and
  * "it compiles" is not "it works".
  */
