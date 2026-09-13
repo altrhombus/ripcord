@@ -67,6 +67,7 @@
 #include "rc_netlog.h"
 #include "rc_decode_probe.h"
 #include "rc_core_tests.h"
+#include "rc_discover.h"
 
 #include "../platform/rc_platform_ps3.h"
 
@@ -719,6 +720,66 @@ static int check_core(void)
     return 0;
 }
 
+/*
+ * THE FIRST THING IN THIS PORT THAT TALKS TO A PS5. Everything else has been checked against vectors,
+ * captures and reference decodes, all of which are recordings - and a recording cannot refuse a
+ * datagram, answer from an address you did not expect, or take longer than you allowed.
+ *
+ * A console that is off, resting, or on another subnet is not a failure of this program, so finding
+ * nothing is reported and not counted against the run. What IS reported either way is how far the
+ * socket work got, because "no console answered" and "this port cannot broadcast" look identical from
+ * the outside and are entirely different problems.
+ */
+#ifndef RC_DISCOVER_TIMEOUT_MS
+#define RC_DISCOVER_TIMEOUT_MS 3000u
+#endif
+
+static int check_discovery(void)
+{
+    rc_discover_result d;
+    int n;
+    int i;
+
+    ps3_log("disc:  broadcasting SRCH for %u ms\n", RC_DISCOVER_TIMEOUT_MS);
+
+    n = rc_discover(RC_DISCOVER_TIMEOUT_MS, &d);
+
+    /* The [X] rc_platform.h left open, asked and answered on hardware. Reported whatever discovery
+     * found, because it is a fact about the platform rather than about the network. */
+    ps3_log("       bind() to port 0: %s%s\n",
+            d.bind_port0_ok ? "accepted" : "REFUSED",
+            d.bind_port0_ok ? " - the 3DS's restriction does not apply here"
+                            : " - fell back to the discovery port");
+    if (!d.bind_port0_ok)
+        ps3_log("       (errno %d)\n", d.bind_errno);
+
+    if (!d.socket_ok) {
+        ps3_log("FAIL  could not create or configure the broadcast socket\n");
+        return 1;
+    }
+    if (d.probes_sent == 0) {
+        ps3_log("FAIL  the socket came up but the SRCH broadcast could not be sent\n");
+        return 1;
+    }
+
+    ps3_log("       sent %d probe(s), %d datagram(s) back, %d parsed\n",
+            d.probes_sent, d.datagrams_rx, d.parsed);
+
+    if (n == 0) {
+        ps3_log("       no console answered - not a failure; check it is on the same LAN and awake\n");
+        return 0;
+    }
+
+    for (i = 0; i < n; i++)
+        ps3_log("       %s  %s  %s  id=%s  sysver=%s  %s\n",
+                d.console[i].address, d.console[i].host_type, d.console[i].host_name,
+                d.console[i].host_id, d.console[i].system_version,
+                d.console[i].is_awake ? "awake" : "standby");
+
+    ps3_log("ok    found %d console(s) from the PS3 - discovery works end to end\n", n);
+    return 0;
+}
+
 static int check_decode(void)
 {
     rc_decode_probe_result r;
@@ -884,6 +945,7 @@ int main(void)
     failures += check_csprng();
     failures += check_spu();
     failures += check_core();
+    failures += check_discovery();
     failures += check_decode();
 
     ps3_log("\nnot covered here: the rest of the decoder. See README.md.\n");
