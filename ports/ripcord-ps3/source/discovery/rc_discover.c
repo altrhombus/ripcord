@@ -81,11 +81,26 @@ int rc_discover(unsigned timeout_ms, rc_discover_result *out)
 
     fill_addr(&bcast, "255.255.255.255", profile->port);
 
+    /*
+     * THE sin_len EXPERIMENT. See rc_discover.h: whether this field is required decides whether
+     * ports/common needs changing, and it was copied from a sample rather than established. The zeroed
+     * attempt goes first so that if it works, the console has already seen a probe by the time the
+     * second one goes out - either way the reply handling below is unchanged.
+     */
+    {
+        struct sockaddr_in zeroed = bcast;
+        zeroed.sin_len = 0;
+        out->sinlen_zero_send_ok =
+            (sendto(sock, probe, probe_len, 0, (struct sockaddr *)&zeroed,
+                    (socklen_t)sizeof(zeroed)) >= 0) ? 1 : 0;
+    }
+
     if (sendto(sock, probe, probe_len, 0, (struct sockaddr *)&bcast, (socklen_t)sizeof(bcast)) < 0) {
         (void)close(sock);
         return 0;
     }
-    out->probes_sent = 1;
+    out->sinlen_set_send_ok = 1;
+    out->probes_sent = out->sinlen_zero_send_ok ? 2 : 1;
 
     /*
      * Poll rather than block. rc_time_ms is the seam's monotonic clock - the one rc_platform_ps3.c
@@ -117,8 +132,26 @@ int rc_discover(unsigned timeout_ms, rc_discover_result *out)
             const char *src = inet_ntop(AF_INET, &from.sin_addr, ip, (socklen_t)sizeof(ip));
 
             if (halyard_discovery_parse_response(buf, (size_t)n, src, &out->console[found])) {
+                int dup = 0;
+                int j;
+
                 out->parsed++;
-                found++;
+
+                /*
+                 * DEDUPE BY host-id. Two probes go out - see the sin_len experiment above - so one
+                 * console answers twice and the first version of this counted it as two consoles.
+                 * That was cosmetic here and would not be in a client: a console can reply more than
+                 * once to a single broadcast, and a list that grows an entry per datagram is a list
+                 * that shows the same machine repeatedly.
+                 */
+                for (j = 0; j < found; j++)
+                    if (strcmp(out->console[j].host_id, out->console[found].host_id) == 0) {
+                        dup = 1;
+                        break;
+                    }
+
+                if (!dup)
+                    found++;
             }
         }
     }
