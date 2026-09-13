@@ -161,7 +161,8 @@ CFLAGS := $(ARCH) -std=gnu99 -O2 -g \
           -DRC_PROGRAM_DIR_FALLBACK='"$(LOG_DIR)"' \
           -DRC_PS3_APPID='"$(APPID)"' \
           -DRC_NETLOG_HOST='"$(RC_NETLOG_HOST)"' -DRC_NETLOG_PORT=$(RC_NETLOG_PORT) \
-          -I$(CORE) -I$(BUILD) -Isource/spu -Isource/net -Isource/media -Isource/coretest -Ispu \
+          -I$(CORE) -I$(BUILD) -Isource/spu -Isource/net -Isource/media -Isource/coretest \
+          -Isource/discovery -I$(CORE)/discovery -Ispu \
           -I$(PSL1GHT)/ppu/include
 
 LDFLAGS := $(ARCH) -Wl,--gc-sections -L$(PSL1GHT)/ppu/lib
@@ -188,6 +189,9 @@ SOURCES := \
 	source/spu/rc_spu.c \
 	source/net/rc_netlog.c \
 	source/media/rc_h264_annexb.c \
+	source/discovery/rc_discover.c \
+	$(CORE)/discovery/halyard_discovery.c \
+	$(CORE)/util/rc_text.c \
 	source/app/main.c
 
 # THE DECODER, and the one C++ translation unit in this port. openh264's ISVCDecoder is an abstract class
@@ -219,10 +223,13 @@ CORE_TEST_EXTRA_OBJS := $(BUILD)/ct_vector_runner.o
 # Taken from ports/common/tests' own variables rather than assembled by hand - an earlier revision
 # guessed from a grep, missed halyard_sess_request.c and stream_demux.c, and got a page of undefined
 # references for its trouble.
+# NOTE what is NOT here: halyard_discovery.c and rc_text.c. The application links those itself now that
+# source/discovery/ uses them, and compiling a translation unit twice into one binary is a duplicate
+# symbol rather than a convenience. The test objects use the application's copies.
 CORE_TEST_SUPPORT := \
 	$(CORE)/crypto/rc_aes.c $(CORE)/crypto/rc_gcm.c $(CORE)/crypto/rc_modes.c \
 	$(CORE)/crypto/rc_sha256.c \
-	$(CORE)/discovery/halyard_discovery.c $(CORE)/halyard/halyard_control_crypto.c \
+	$(CORE)/halyard/halyard_control_crypto.c \
 	$(CORE)/input/halyard_input.c \
 	$(CORE)/session/halyard_control_arm.c $(CORE)/session/halyard_ctrl_message.c \
 	$(CORE)/session/halyard_sess_fields.c $(CORE)/session/halyard_sess_request.c \
@@ -232,7 +239,7 @@ CORE_TEST_SUPPORT := \
 	$(CORE)/takion/takion_data_chunk.c $(CORE)/takion/takion_handshake.c \
 	$(CORE)/takion/takion_message.c $(CORE)/takion/takion_reassembler.c \
 	$(CORE)/takion/takion_sack_chunk.c \
-	$(CORE)/util/rc_base64.c $(CORE)/util/rc_text.c \
+	$(CORE)/util/rc_base64.c \
 	$(CORE)/crypto/rc_ecdh.c \
 	$(CORE)/session/halyard_launch_spec.c \
 	$(CORE)/stream/stream_key_schedule.c \
@@ -388,7 +395,8 @@ $(OPENH264_LIB):
 #
 # vpath rather than per-directory rules: the basenames across these five directories are unique, and one
 # pattern rule is easier to be right about than five.
-vpath %.c $(CORE)/util source/platform source/spu source/net source/media source/app
+vpath %.c $(CORE)/util $(CORE)/discovery source/platform source/spu source/net source/media \
+          source/discovery source/app
 
 COBJS := $(addprefix $(BUILD)/,$(notdir $(SOURCES:.c=.o)))
 
