@@ -300,8 +300,14 @@
 
                 <tk:SettingsCard
                     x:Uid="SettingsPage_FrameRateLatencyPacket">
-                    <ToggleSwitch
-                        x:Name="DiagnosticsToggle"
+                    <!--
+                        A picker, not a switch: there are three answers now. It is also the only control a
+                        pad-only player has over the HUD, since nothing in the stream layer takes gamepad
+                        input by design, so "which rung" has to be answerable before connecting.
+                    -->
+                    <ComboBox
+                        x:Name="DiagnosticsPicker"
+                        MinWidth="180"
                         x:Uid="SettingsPage_ShowConnectionDiagnostics" />
                 </tk:SettingsCard>
 
