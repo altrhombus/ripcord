@@ -2,7 +2,8 @@
 
 A PS5 Remote Play client for PlayStation 3 homebrew, in C.
 
-**Status: it runs on a PS3, and the platform seam is confirmed against hardware.** What exists and is tested is the
+**Status: it runs on a PS3, the platform seam is confirmed against hardware, and it decodes H.264
+pixel-correctly on the console.** What exists and is tested is the
 bitstream front end — reader, parameter-set and slice-header parsers, Annex-B splitter, picture-boundary
 tracking — built on the host, because none of it needs a PS3 to be found wrong. What is now *also*
 confirmed is the platform layer: on 2026-09-11 the bring-up program ran on a real console and every check
@@ -213,7 +214,11 @@ Nothing in 1–4 needs a PS3.
    version of them was a single unrepeated sample and wrong. Took five
    console round trips, and the cause of four of them is worth knowing before writing any more SPU code —
    see "what lv2 does with SPU thread arguments" below.
-7. Decoder proper, stage by stage, against the same vectors.
+7. **Decoder proper**, stage by stage, against the same vectors. **Started, and the base is proven.**
+   openh264 builds for the PPE, links, and on 2026-09-12 decoded eight frames of this project's own
+   capture on the console **pixel-identical to a reference decode** — `DECODE.md` §1. `tools/build-openh264.sh`
+   fetches and hash-verifies it rather than vendoring it. What remains is throughput: moving the inner
+   loops onto SPEs, one stage at a time, checked against the same hashes.
 
 ## Licensing
 
