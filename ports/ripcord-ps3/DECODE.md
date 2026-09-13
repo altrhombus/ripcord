@@ -139,6 +139,41 @@ is the right proxy for byte order and the wrong one for everything else — it i
 not newlib, and not 256 MB of XDR. Endianness is the question it was asked and endianness is what it
 answered. Toolchain and memory behaviour on the real console remain to be established by running there.
 
+### It links, too — `tools/build-openh264.sh`
+
+Compiling is not linking, and the decoder turned out to want more than the files that compile. The
+build is now a script, in the shape `ports/common/tools/build-mbedtls.sh` established: **fetched from a
+pinned, hash-verified release (2.6.0) at build time into a gitignored directory, never vendored.** A
+checked-in 23,000-line third-party codec would be a maintenance and provenance liability nobody asked for.
+
+It produces `libopenh264dec.a` for the PPE, and a program that creates, initializes and destroys an
+`ISVCDecoder` through the real API links to a 2.6 MB big-endian PowerPC64 executable with **no undefined
+symbols**.
+
+Three things had to be dealt with, and **none of them is a patch to openh264**:
+
+- **`-std=gnu++11`, not `-std=c++11`** — the same trap the port's C code hit with `-std=c99`. Strict ISO
+  mode defines `__STRICT_ANSI__`, under which newlib hides `vsnprintf`; openh264 calls it on every
+  platform while including `<stdio.h>` only on the Windows paths. The error names `vsnprintf` and
+  suggests `vsprintf`, which reads exactly like a missing include and is not one.
+- **`<sys/sysctl.h>` supplied by `tools/shim`** — openh264 asks the OS for a logical processor count, and
+  a bare newlib target matches none of its guarded platforms. The shim declares the call and the build
+  supplies one that always fails, so openh264's own error path sets `ProcessorCount = 1`. That is the
+  right answer arrived at by its own logic: this port's parallelism is SPEs, which openh264 knows nothing
+  about.
+- **PSL1GHT's `libpthread`** carries the mutexes, condition variables and semaphores underneath.
+
+One file is excluded: `WelsThread.cpp`, whose `CWelsThread` constructs a `pte_handle_t` from an int that
+PSL1GHT's pthreads-embedded does not offer. Nothing the decoder needs refers to it.
+
+Keeping openh264 unmodified is deliberate. A patch against a dependency fetched and verified at build
+time has to be carried, rebased and justified forever; a shim on the include path is local, visible, and
+costs nothing when the dependency moves.
+
+**[X] Still not run on a console.** It builds, it links, and it decodes bit-exactly on big-endian under
+emulation. Whether it decodes on the PPE itself, inside the PS3's memory, is the next thing to establish
+and nothing above substitutes for it.
+
 ### The little-endian reference output is now ground truth
 
 The same run produced a reference decode of the whole capture: 1,214 frames of 640x360 NV12-equivalent
