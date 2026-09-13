@@ -476,6 +476,8 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
             HealthTip: healthTip,
             HealthLevel: level,
             HeroLoss: $"{stats.PacketLossRatio * 100:F1}%",
+            VideoWidth: s.DecodedWidth,
+            VideoHeight: s.DecodedHeight,
 
             FramesSeverity: FramesSeverityFor(presentFps),
             LatencySeverity: LatencySeverityFor(stats.RoundTripTimeMs),

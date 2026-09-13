@@ -141,6 +141,14 @@ public sealed record SessionDiagnosticsState(
     /// <summary>Loss as a percentage, for rung 2. The panel plots it; the summary strip states it.</summary>
     string HeroLoss,
 
+    /// <summary>
+    /// The decoded picture size as numbers rather than as the display string beside it. The front end has
+    /// to compute a letterbox from it — see <see cref="HudPlacement"/> — and parsing that back out of
+    /// "1920×1080" would be inventing a format to re-read.
+    /// </summary>
+    int VideoWidth,
+    int VideoHeight,
+
     // ---- instrument severities ----
 
     /// <summary>
@@ -180,6 +188,8 @@ public sealed record SessionDiagnosticsState(
         HealthTip: Strings.Session_WaitingToStart,
         HealthLevel: StreamHealthLevel.Info,
         HeroLoss: "—",
+        VideoWidth: 0,
+        VideoHeight: 0,
         FramesSeverity: MetricSeverity.Normal,
         LatencySeverity: MetricSeverity.Normal,
         LossSeverity: MetricSeverity.Normal);
