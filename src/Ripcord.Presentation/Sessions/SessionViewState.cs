@@ -52,6 +52,13 @@ public sealed record SessionViewState(
     bool IsStreamLive,
 
     /// <summary>
+    /// Rung 1 of the HUD: something is wrong and has stayed wrong long enough to be worth saying over a
+    /// running game. Gated by <see cref="HealthAlertGate"/> rather than read straight off the verdict, and
+    /// suppressed entirely while the status overlay is up, since that overlay already says more.
+    /// </summary>
+    bool AlertVisible,
+
+    /// <summary>
     /// Which pads are attached, one per line. At the top level rather than inside the diagnostics record because
     /// it changes when hardware is plugged in, not on the twice-a-second stats cadence.
     /// </summary>
@@ -66,6 +73,7 @@ public sealed record SessionViewState(
         StatusBusy: true,
         StatusActionsVisible: false,
         IsStreamLive: false,
+        AlertVisible: false,
         ConnectedControllers: Strings.Session_NoControllers,
         Diagnostics: SessionDiagnosticsState.Empty);
 }
