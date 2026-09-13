@@ -208,8 +208,9 @@ Nothing in 1–4 needs a PS3.
 5. ~~Choose the decoder base on the evidence from 1.~~ **Done — openh264.** CABAC decided it;
    `DECODE.md` §1.
 6. ~~SPU bring-up: one SPE running a trivial DMA job, measured.~~ **Done, on hardware 2026-09-11.**
-   `spu/rc_spu_probe.c` and `source/spu/rc_spu.c`. Dispatch costs **~65 µs** and DMA runs at **~10 GB/s**
-   single-buffered, both ways; `DECODE.md` §3 has what those numbers do to the decoder's shape. Took five
+   `spu/rc_spu_probe.c` and `source/spu/rc_spu.c`. Dispatch costs **~60 µs** (best of ten, spread 60–70)
+   and DMA is comfortably not the constraint; `DECODE.md` §3 has both the numbers and why the first
+   version of them was a single unrepeated sample and wrong. Took five
    console round trips, and the cause of four of them is worth knowing before writing any more SPU code —
    see "what lv2 does with SPU thread arguments" below.
 7. Decoder proper, stage by stage, against the same vectors.
