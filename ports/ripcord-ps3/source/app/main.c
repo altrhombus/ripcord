@@ -691,7 +691,15 @@ static int check_core(void)
 
     for (i = 0; i < RC_CORE_TEST_COUNT; i++)
         ps3_log("       %-14s %s\n", results[i].name,
-                results[i].exit_code == 0 ? "pass" : "FAIL");
+                results[i].skipped ? "skipped - no vectors on this console"
+                                   : (results[i].exit_code == 0 ? "pass" : "FAIL"));
+
+    for (i = 0; i < RC_CORE_TEST_COUNT; i++)
+        if (results[i].skipped) {
+            ps3_log("       (copy ports/common/tests/vectors/*.kat to %s to run those)\n",
+                    RC_CORE_TEST_VECTOR_DIR);
+            break;
+        }
 
     if (failed != 0) {
         ps3_log("FAIL  %d of %d core suites failed on big-endian - their output follows\n",
@@ -700,8 +708,14 @@ static int check_core(void)
         return 1;
     }
 
-    ps3_log("ok    all %d core suites pass on the PPE - the shared core is byte-order clean\n",
-            RC_CORE_TEST_COUNT);
+    {
+        int ran = 0;
+        for (i = 0; i < RC_CORE_TEST_COUNT; i++)
+            if (!results[i].skipped)
+                ran++;
+        ps3_log("ok    %d of %d core suites pass on the PPE - the shared core is byte-order clean\n",
+                ran, RC_CORE_TEST_COUNT);
+    }
     return 0;
 }
 
