@@ -396,4 +396,99 @@ public class SessionViewModelTests
 
         Assert.Equal("pad-2 · Bluetooth · DualSense", vm.State.ConnectedControllers);
     }
+
+    // ---- rung 1: the notice over a running game ------------------------------------------------
+
+    /// <summary>
+    /// Run a live stream for <paramref name="seconds"/>, sampling every half second the way the real stats
+    /// timer does, presenting a healthy 60 fps throughout. Frames have to keep arriving or the verdict is
+    /// about the missing picture rather than about the loss, which is what these cases are testing.
+    /// </summary>
+    private static void Stream(
+        SessionViewModel vm, FakePipeline pipeline, TestClock clock, double seconds, double lossRatio)
+    {
+        long frames = pipeline.Snapshot.PresentedFrames;
+
+        for (double elapsed = 0; elapsed < seconds; elapsed += 0.5)
+        {
+            clock.Advance(TimeSpan.FromMilliseconds(500));
+            frames += 30;
+            pipeline.Snapshot = new VideoPipelineSnapshot(frames, frames, 0, 0, 2, 1920, 1080);
+            vm.Sample(Live(lossRatio: lossRatio));
+        }
+    }
+
+    [Fact]
+    public void AHealthyStreamStaysSilentHoweverLongItRuns()
+    {
+        (SessionViewModel vm, FakePipeline pipeline, TestClock clock) = Build();
+        vm.ApplyLifecycle(new SessionStatus(SessionLifecycle.Streaming, "Streaming"));
+
+        Stream(vm, pipeline, clock, seconds: 60, lossRatio: 0);
+
+        Assert.Equal(StreamHealthLevel.Healthy, vm.State.Diagnostics.HealthLevel);
+        Assert.False(vm.State.AlertVisible);
+    }
+
+    [Fact]
+    public void ABriefWobbleNeverReachesTheScreen()
+    {
+        (SessionViewModel vm, FakePipeline pipeline, TestClock clock) = Build();
+        vm.ApplyLifecycle(new SessionStatus(SessionLifecycle.Streaming, "Streaming"));
+        Stream(vm, pipeline, clock, seconds: 10, lossRatio: 0);
+
+        // Two seconds of loss - exactly the blip the design refuses to raise a banner for.
+        Stream(vm, pipeline, clock, seconds: 2, lossRatio: 0.05);
+
+        Assert.Equal(StreamHealthLevel.Warning, vm.State.Diagnostics.HealthLevel);
+        Assert.False(vm.State.AlertVisible);
+    }
+
+    [Fact]
+    public void SustainedTroubleRaisesTheNotice()
+    {
+        (SessionViewModel vm, FakePipeline pipeline, TestClock clock) = Build();
+        vm.ApplyLifecycle(new SessionStatus(SessionLifecycle.Streaming, "Streaming"));
+
+        Stream(vm, pipeline, clock, seconds: 8, lossRatio: 0.05);
+
+        Assert.True(vm.State.AlertVisible);
+
+        // It says what the panel says, rather than inventing a second vocabulary for the same situation.
+        Assert.Equal(StreamHealthLevel.Warning, vm.State.Diagnostics.HealthLevel);
+        Assert.False(string.IsNullOrWhiteSpace(vm.State.Diagnostics.Health));
+    }
+
+    [Fact]
+    public void TheNoticeIsSuppressedWhileTheStatusOverlayIsUp()
+    {
+        (SessionViewModel vm, FakePipeline pipeline, TestClock clock) = Build();
+        vm.ApplyLifecycle(new SessionStatus(SessionLifecycle.Streaming, "Streaming"));
+        Stream(vm, pipeline, clock, seconds: 8, lossRatio: 0.05);
+        Assert.True(vm.State.AlertVisible);
+
+        // The overlay is a stronger statement about the same situation. Two notices about one problem read
+        // as two problems.
+        vm.ShowStatus("Reconnecting…", "Lost the console", terminal: false);
+
+        Assert.True(vm.State.StatusVisible);
+        Assert.False(vm.State.AlertVisible);
+    }
+
+    [Fact]
+    public void AReconnectStartsWithNothingSustained()
+    {
+        (SessionViewModel vm, FakePipeline pipeline, TestClock clock) = Build();
+        vm.ApplyLifecycle(new SessionStatus(SessionLifecycle.Streaming, "Streaming"));
+        Stream(vm, pipeline, clock, seconds: 8, lossRatio: 0.05);
+        Assert.True(vm.State.AlertVisible);
+
+        vm.ApplyLifecycle(new SessionStatus(SessionLifecycle.Reconnecting, "Reconnecting"));
+        vm.ApplyLifecycle(new SessionStatus(SessionLifecycle.Streaming, "Streaming"));
+        Assert.False(vm.State.AlertVisible);
+
+        // Reset, not merely hidden: fresh trouble has to earn the notice again from zero.
+        Stream(vm, pipeline, clock, seconds: 2, lossRatio: 0.05);
+        Assert.False(vm.State.AlertVisible);
+    }
 }
