@@ -286,6 +286,46 @@ channels wrote on the successful run. `_open_r` does dispatch through a devoptab
 
 ## 7. Getting a build onto the console
 
+### `make run` / ps3load — **does not work on the console this was developed against**
+
+> Tried over six cycles and abandoned. The `run` target is kept because it is correct and may well work
+> elsewhere, but on this console it does not, and the reason is not in our program.
+>
+> **ps3load's own UI never draws.** Its `main()` calls `init_screen()` and `ioPadInit()` before it ever
+> listens, and on this console that produces a black screen unresponsive to a controller — from the
+> moment it is launched, with nothing sent to it yet. The network half works well enough to accept a
+> transfer and stage the file correctly, and then the spawn does not produce a running program.
+>
+> The cost of learning that was high, and the reason is worth recording: the black screen was assumed to
+> be *our* program failing to draw, so six rounds of increasingly careful instrumentation went into a
+> binary that was never started. What settled it was asking what the screen showed **before** anything
+> was sent. That question was available from the first run and was not asked for five of them.
+>
+> Three real bugs were fixed on the way and none of them was the problem: the target sent the ELF rather
+> than the `.self`, the `.self` was built with `fself` where `ppu_rules` uses `make_self`, and `-mcpu=cell`
+> was missing. All three were the same mistake — asserting something about the SDK with the SDK's own rule
+> sitting there to be read.
+>
+> If you have a console where ps3load works, the target is `make run PS3LOAD=tcp:<ip>` and the rest of
+> this section applies.
+
+### The loop that does work — a package, plus the network log
+
+`make pkg`, FTP it to `/dev_hdd0/packages/`, install from the XMB. One install per iteration, which is
+the real cost, and it has worked every time.
+
+What takes most of the sting out is that the bring-up program logs over **UDP** as well as to disk
+(`source/net/rc_netlog.c`), so the output arrives live on the development machine instead of needing an
+FTP fetch per question:
+
+```sh
+# on the development machine, before running anything on the console
+nc -u -l -p 9000          # or: socat -u UDP-RECV:9000 -
+
+# the destination is compiled in; override it if this machine is not 192.168.1.10
+make -C ports/ripcord-ps3 pkg RC_NETLOG_HOST=192.168.1.10
+```
+
 ### The fast loop — `make run`
 
 ```sh
