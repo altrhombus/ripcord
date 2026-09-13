@@ -752,4 +752,8 @@
     <value>Video codec</value>
     <comment>The header above a control on the Settings page.</comment>
   </data>
+  <data name="SessionPage_AlertMoreKey.Text" xml:space="preserve">
+    <value>F3</value>
+    <comment>Keyboard key shown on the stream health notice, opening the diagnostics summary. Usually not translated.</comment>
+  </data>
 </root>

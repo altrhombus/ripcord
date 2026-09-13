@@ -133,6 +133,53 @@
                 x:Uid="SessionPage_HoldOptionsCreateL" />
         </Border>
 
+        <!--
+            Rung 1 of the HUD. The stream is unwell and has stayed unwell long enough to be worth saying over
+            a running game - HealthAlertGate decides that, not the raw verdict, so a two-second wobble never
+            gets here. Deliberately one line and no numbers: a measurement at rung 1 is exactly what the
+            disclosure ladder forbids, and the player who wants one is a keypress away from rung 2.
+
+            Bottom-left because that is where the connect sequence speaks from. Someone who just watched the
+            stream come up already knows where Ripcord talks, and a second location to learn is a cost with
+            nothing bought by it.
+        -->
+        <Border
+            x:Name="HealthAlert"
+            Margin="28,0,0,28"
+            MaxWidth="400"
+            Padding="16,11"
+            HorizontalAlignment="Left"
+            VerticalAlignment="Bottom"
+            Background="{ThemeResource AcrylicInAppFillColorDefaultBrush}"
+            BorderBrush="{ThemeResource SurfaceStrokeColorDefaultBrush}"
+            BorderThickness="1"
+            CornerRadius="{StaticResource RipcordPanelCornerRadius}"
+            Visibility="Collapsed">
+            <StackPanel
+                Orientation="Horizontal"
+                Spacing="{StaticResource RipcordSpacingM}"
+                VerticalAlignment="Center">
+                <!--  Colour is never the sole carrier: the dot is read together with the verdict beside it.  -->
+                <Ellipse
+                    x:Name="AlertDot"
+                    Width="8"
+                    Height="8"
+                    VerticalAlignment="Center" />
+                <TextBlock
+                    x:Name="AlertText"
+                    Style="{StaticResource BodyStrongTextBlockStyle}"
+                    TextWrapping="Wrap"
+                    VerticalAlignment="Center" />
+                <Border
+                    Style="{StaticResource RipcordPillStyle}"
+                    VerticalAlignment="Center">
+                    <TextBlock
+                        x:Uid="SessionPage_AlertMoreKey"
+                        Style="{StaticResource RipcordPillTextStyle}" />
+                </Border>
+            </StackPanel>
+        </Border>
+
         <!--  Feedback while the exit gesture is being held, so a partial hold is visible rather than silent.  -->
         <Border
             x:Name="ExitProgressPanel"
