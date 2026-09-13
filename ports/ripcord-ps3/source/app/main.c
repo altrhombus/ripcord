@@ -68,6 +68,7 @@
 #include "rc_decode_probe.h"
 #include "rc_core_tests.h"
 #include "rc_discover.h"
+#include "rc_connect.h"
 
 #include "../platform/rc_platform_ps3.h"
 
@@ -793,6 +794,59 @@ static int check_discovery(void)
     return 0;
 }
 
+/*
+ * Wake the console and open the control session. Needs a pairing record, which is dirty-room material -
+ * see rc_connect.h. NOTHING BELOW PRINTS ANYTHING FROM IT: not the keys, not the derived credential, not
+ * the host address. What it reports is which stage was reached, which is the useful part anyway.
+ */
+#ifndef RC_CONNECT_WAKE_TIMEOUT_MS
+#define RC_CONNECT_WAKE_TIMEOUT_MS 30000u
+#endif
+
+static int check_connect(void)
+{
+    rc_connect_result c;
+    rc_connect_stage stage = rc_connect(RC_CONNECT_WAKE_TIMEOUT_MS, &c);
+
+    if (stage == RC_CONNECT_NO_RECORD) {
+        ps3_log("conn:  no pairing record - skipping\n");
+        ps3_log("       generate one with `ProtocolLab -- register` and copy it to the console;\n");
+        ps3_log("       it is per-console and per-account, so it never belongs in this repository.\n");
+        return 0;
+    }
+
+    ps3_log("conn:  record loaded; %s\n", c.was_asleep ? "console was in standby" : "console was awake");
+
+    if (c.wakeups_sent > 0) {
+        ps3_log("       wake credential derived: %s\n", c.credential_ok ? "yes" : "NO");
+        ps3_log("       WAKEUP sent from %s source port\n",
+                c.wake_source_bound ? "the spec's" : "an ephemeral");
+        if (stage != RC_CONNECT_WAKE_SENT)
+            ps3_log("       woke after %u ms (%d SRCH polls)\n", c.woke_after_ms, c.polls);
+    }
+
+    ps3_log("       stage reached: %s\n", rc_connect_stage_name(stage));
+
+    switch (stage) {
+    case RC_CONNECT_SESSION_READY:
+        ps3_log("ok    control session open and the console is willing to stream\n");
+        return 0;
+    case RC_CONNECT_SESSION_OPEN:
+        ps3_log("       session opened but no SESSION_ID within the deadline (event %d)\n",
+                c.session_error);
+        return 1;
+    case RC_CONNECT_AWAKE:
+        ps3_log("FAIL  console is awake but the control session would not open\n");
+        return 1;
+    case RC_CONNECT_WAKE_SENT:
+        ps3_log("FAIL  it did not wake within %u ms\n", RC_CONNECT_WAKE_TIMEOUT_MS);
+        return 1;
+    default:
+        ps3_log("FAIL  %s\n", rc_connect_stage_name(stage));
+        return 1;
+    }
+}
+
 static int check_decode(void)
 {
     rc_decode_probe_result r;
@@ -959,6 +1013,7 @@ int main(void)
     failures += check_spu();
     failures += check_core();
     failures += check_discovery();
+    failures += check_connect();
     failures += check_decode();
 
     ps3_log("\nnot covered here: the rest of the decoder. See README.md.\n");
