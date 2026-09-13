@@ -80,6 +80,57 @@ CABAC path, discard what §2 rules out — B-slices, High-profile transforms, fi
 the inner loops for the SPU's 128-bit SIMD. Its x86/ARM SIMD does not transfer; its structure and its
 conformance-tested correctness do.
 
+### Does it build for the PPU? — **tested, 2026-09-12**
+
+The recommendation above was made on the evidence of §2 and on reading openh264's licence. Whether the
+thing can be *compiled for this target at all* was never checked, and it is the assumption the whole
+decoder plan rests on. Checked now, against ps3dev's GCC 7.2.0 for `powerpc64-ps3-elf`:
+
+| | |
+|---|---|
+| `codec/decoder/core` | **20 of 20 files compile.** No warnings, no modifications, big-endian PowerPC64 objects |
+| `codec/common` | 13 of 16 |
+| Licence | Two clauses, no endorsement clause — **BSD-2-Clause**, as claimed |
+
+The three failures are shallow and two of them are things this port does not want:
+
+- `WelsThread.cpp`, `WelsThreadLib.cpp` — openh264's threading. PSL1GHT's pthreads are partial
+  (`pte_handle_t` has no int constructor) and `sys/sysctl.h` does not exist, which is what the core count
+  is read from. **The decoder is not going to use openh264's thread pool anyway** — the design in §3 runs
+  the PPE single-threaded and puts the work on SPEs, which is a different parallelism model entirely.
+- `crt_util_safe_x.cpp` — `vsnprintf` not declared. A missing include, nothing more.
+
+So §1's recommendation survives contact with the toolchain. That was worth establishing before writing
+any decoder code against it.
+
+### Endianness — the risk that compiling does not test
+
+The PPE is **big-endian** and openh264 is developed on little-endian x86 and ARM. There is no endianness
+handling anywhere in its decoder core — no `bswap`, no `BYTE_ORDER`, nothing — which is either fine or
+fatal, and the two look identical until something runs.
+
+The evidence so far says fine, by construction rather than by care. The bitstream cache is filled a byte
+at a time, composed explicitly MSB-first:
+
+```c
+uiCache32Bit |= (((pBuf[2] << 8) | pBuf[3]) << (32 - uiRemainBits));
+```
+
+No pointer is cast to a wider type to read the stream, so the code has no byte order to get wrong. The
+Exp-Golomb writer in `golomb_common.h` does the same thing in reverse. That is the path that would break
+loudly and it is clean.
+
+What is **not** cleared: `mv_pred.cpp` (81) and `deblocking.cpp` (39) do cast pointers to `uint16_t*` and
+`uint32_t*`, mostly for bulk uniform writes — `val * 0x01010101UL` replicated across four bytes, or
+zeroing — which are endian-safe because every byte is the same. A cast that writes a word and is later
+read back per-byte would not be, and grep cannot tell those apart at that volume.
+
+**[X] So endianness is open, and it cannot be closed by reading.** The test that would close it is a
+differential one: decode the same stream with a little-endian build and a big-endian build and compare the
+output frame for frame. No big-endian emulator is installed here, so the options are qemu-ppc64 on the
+development machine or the console itself once there is enough of a harness to feed it a stream. It is the
+first thing to settle in step 7, because every later bug would be debugged through it.
+
 Still **not FFmpeg**, for the licence reasons above. Worth noting the project already uses ffmpeg as a
 *development* tool — `mvdreplay`'s comment cites `ffmpeg -i video.264` for ground truth — and that is
 entirely fine. The constraint is on what gets linked into a shipped client, not on what decodes a dump on
