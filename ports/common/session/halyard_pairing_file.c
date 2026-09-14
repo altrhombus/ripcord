@@ -65,7 +65,10 @@ int halyard_pairing_file_load(const char *argv0, halyard_pairing_record *rec)
         if (trail != NULL)
             *trail = '\0';
 
-        if (strcmp(line, "host") == 0) {
+        if (strcmp(line, "pin") == 0) {
+            /* Never logged, never echoed - see the field's note in the header. */
+            strncpy(rec->login_pin, value, sizeof(rec->login_pin) - 1);
+        } else if (strcmp(line, "host") == 0) {
             strncpy(rec->host, value, sizeof(rec->host) - 1);
             have_host = (rec->host[0] != '\0');
         } else if (strcmp(line, "platform") == 0) {
