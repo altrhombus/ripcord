@@ -390,6 +390,9 @@ static int takion_bring_up(takion_reliable_channel *channel, const char *host, u
     return 1;
 }
 
+/* Reported rather than assumed - see rc_udp_rcvbuf_actual. */
+static int g_stream_rcvbuf;
+
 /*
  * How long to wait for each control reply on a Takion channel. The console answers these promptly when it
  * answers at all; the generous figure is for the reply that has to cross a fragmented request.
@@ -1896,6 +1899,9 @@ rc_connect_stage rc_connect(unsigned wake_timeout_ms, rc_connect_log_fn log,
                 out->takion_local_tag = (unsigned)g_stream_channel.local_tag;
                 out->takion_peer_tag = (unsigned)g_stream_channel.peer_tag;
                 out->stage = RC_CONNECT_TAKION_UP;
+                g_stream_rcvbuf = rc_udp_rcvbuf_actual(stream_sock);
+                out->stream_rcvbuf = g_stream_rcvbuf;
+                out->stream_rcvbuf_asked = RC_UDP_RCVBUF;
 
                 if (stream_session_exchange(&rec, &session, out)) {
                     out->stage = RC_CONNECT_STREAM_KEYS;
