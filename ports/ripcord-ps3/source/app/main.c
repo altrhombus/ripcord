@@ -915,8 +915,10 @@ static int check_connect(void)
                     " %u audio frame(s) (%lu bytes)\n",
                     c.video_frames, c.keyframes, c.video_frame_bytes, c.largest_frame,
                     c.audio_frames, c.audio_frame_bytes);
-            ps3_log("       units %ld received, %ld lost; %u loss event(s)\n",
-                    c.units_received, c.units_lost, c.corrupt_events);
+            ps3_log("       units %ld received, %ld lost; %u loss event(s), %u IDR requested\n",
+                    c.units_received, c.units_lost, c.corrupt_events, c.idr_requests);
+            if (c.corrupt_events > 0u && c.keyframes <= 1u && c.idr_requests == 0u)
+                ps3_log("       loss with no IDR requested - every frame after the gap is undecodable\n");
             if (c.decoded_fed > 0) {
                 unsigned long hz = (unsigned long)rc_tick_hz();
                 unsigned long us = (hz > 0UL && c.decoded_pictures > 0)
@@ -953,7 +955,7 @@ static int check_connect(void)
             ps3_log("       demux was never started - no video header to start it with\n");
         }
         ps3_log("       held the session %u ms: %u message(s), last type 0x%04x%s\n",
-                6000u, c.held_messages, c.held_last_type,
+                c.hold_ms, c.held_messages, c.held_last_type,
                 c.held_channel_error ? ", CHANNEL ERROR" : "");
         if (c.held_stream_info_repeats > 0u)
             ps3_log("       the console re-sent STREAM_INFO %u time(s) - it did not hear an ack\n",
