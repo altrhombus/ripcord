@@ -52,7 +52,12 @@ typedef enum {
 } rc_connect_stage;
 
 /* The drain bound, here rather than only in the .c so the report cannot drift from the code. */
-#define RC_AV_DRAIN_BURST 64
+/*
+ * Raised from 64 after real content. The bound existed to stop one burst starving the heartbeat, and the
+ * timers are now checked inside the drain itself - so it can be sized for the burst alone. A keyframe
+ * under motion is ~50 KB, which is forty-odd packets, and IDR requests make those frequent.
+ */
+#define RC_AV_DRAIN_BURST 256
 
 typedef struct {
     rc_connect_stage stage;
