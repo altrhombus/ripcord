@@ -887,8 +887,11 @@ static int check_connect(void)
                 c.takion_local_tag, c.takion_peer_tag);
         ps3_log("       asked for %dx%d @ %d fps (rtt declared 0 - the echo leg is not run yet)\n",
                 c.asked_width, c.asked_height, c.asked_fps);
-        ps3_log("       SESSION_REQUEST %u bytes on %s, SESSION_REPLY %u bytes\n",
-                c.session_request_bytes, c.curve_p521 ? "P-521" : "P-256", c.session_reply_bytes);
+        ps3_log("       protocol version %u (%s), so the curve is %s\n",
+                c.stream_version, c.stream_version_acked ? "the console's choice" : "ours - no ack",
+                c.curve_p521 ? "P-521" : "P-256");
+        ps3_log("       SESSION_REQUEST %u bytes, SESSION_REPLY %u bytes\n",
+                c.session_request_bytes, c.session_reply_bytes);
         ps3_log("       the reply's ECDH point verified under the handshake key - that signature\n");
         ps3_log("       check is what stops an injected DATA chunk substituting its own key.\n");
         ps3_log("ok    stream keys derived - the session is negotiated end to end\n");
@@ -916,6 +919,10 @@ static int check_connect(void)
                 "the console's public point is not on our curve, or not on the curve at all"
             };
             int why = c.reply_reject_reason;
+
+            ps3_log("      protocol version %u (%s), curve %s\n",
+                    c.stream_version, c.stream_version_acked ? "the console's choice" : "ours - no ack",
+                    c.curve_p521 ? "P-521" : "P-256");
 
             ps3_log("      A SESSION_REPLY of %u bytes DID arrive and was refused - so the console\n",
                     c.session_reply_bytes);
