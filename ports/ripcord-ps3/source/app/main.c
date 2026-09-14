@@ -884,7 +884,7 @@ static int check_connect(void)
         ps3_log("       protocol version %u, curve %s, SESSION_REPLY %u bytes\n",
                 c.stream_version, c.curve_p521 ? "P-521" : "P-256", c.session_reply_bytes);
         ps3_log("       GMAC sealing on - every control packet from here, SACKs included\n");
-        ps3_log("       incoming tags: %lu checked, %lu failed (counting, not enforcing)\n",
+        ps3_log("       incoming tags: %lu checked, %lu failed (ENFORCING - failures are dropped)\n",
                 c.verify_checked, c.verify_failed);
         if (c.verify_checked == 0UL)
             ps3_log("       nothing arrived to check - the sample says nothing either way\n");
@@ -896,6 +896,10 @@ static int check_connect(void)
             ps3_log("       %lu failed - if that is all of them the receive key schedule is wrong;\n"
                     "       if it is a few, some traffic is not sealed the way this assumes.\n",
                     c.verify_failed);
+        if (c.verify_dropped > 0UL)
+            ps3_log("       %lu packet(s) DROPPED for failing authentication\n", c.verify_dropped);
+        ps3_log("       sent %u heartbeat(s) on the stream channel; the console's own need no reply\n",
+                c.heartbeats_sent);
         ps3_log("       held the session %u ms: %u message(s), last type 0x%04x%s\n",
                 6000u, c.held_messages, c.held_last_type,
                 c.held_channel_error ? ", CHANNEL ERROR" : "");
