@@ -607,6 +607,8 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
         out->reply_reject_reason = g_negotiator.last_reject_reason;
         out->peer_key_length = (unsigned)g_negotiator.last_peer_key_length;
         out->peer_key_prefix = (unsigned)g_negotiator.last_peer_key_prefix;
+        out->ecdh_step = g_negotiator.last_ecdh_step;
+        out->ecdh_code = g_negotiator.last_ecdh_code;
         goto done;
     }
 
