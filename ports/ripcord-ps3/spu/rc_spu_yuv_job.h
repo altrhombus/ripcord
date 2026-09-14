@@ -18,23 +18,41 @@
  * converting an odd number would either re-fetch a chroma row or use the wrong one. */
 #define RC_SPU_YUV_ROWS_PER_PASS 2u
 
-/* The widest picture a strip buffer is sized for. 1280 covers 720p; the PPE refuses anything wider rather
- * than overrunning local store, which is 256 KB for everything including this program. */
-#define RC_SPU_YUV_MAX_WIDTH 1280u
+/* The widest SOURCE a line buffer is sized for. 1920 covers a 1080p stream; the PPE refuses anything
+ * wider rather than overrunning local store, which is 256 KB for everything including this program. */
+#define RC_SPU_YUV_MAX_WIDTH 1920u
 
+/* The widest OUTPUT. The display is whatever mode the television negotiated, and the source is whatever
+ * the console agreed to send - those will rarely be the same, which is why scaling is not an alternative
+ * to choosing a resolution but a permanent part of the path. */
+#define RC_SPU_YUV_MAX_DST_WIDTH 1920u
+
+/*
+ * The strip is now described in OUTPUT rows, and the planes are given at row zero rather than
+ * pre-offset. With scaling there is no longer a fixed relationship between a strip's first output row
+ * and a source row - the SPE computes it - so offsetting the pointers on the PPE would be doing the same
+ * arithmetic in two places and getting to disagree about it.
+ *
+ * 80 bytes, a multiple of 16, which the MFC requires of a transfer size. Anything added must keep it so.
+ */
 typedef struct {
-    uint64_t y_ea;        /* luma plane, at the first row of THIS strip                */
-    uint64_t u_ea;        /* chroma planes, likewise, already offset for the strip     */
+    uint64_t y_ea;           /* luma plane at row 0                                          */
+    uint64_t u_ea;           /* chroma planes at row 0                                       */
     uint64_t v_ea;
-    uint64_t dst_ea;      /* first output pixel of the strip, inside the display buffer */
-    uint64_t done_ea;     /* where to write RC_SPU_PHASE_DONE when the strip is finished */
+    uint64_t dst_ea;         /* first output pixel of THIS strip, inside the display buffer   */
+    uint64_t done_ea;        /* where to write the sequence when the strip is finished        */
     uint32_t y_stride;
     uint32_t uv_stride;
-    uint32_t dst_stride;  /* bytes per output line - the display pitch, not width * 4   */
-    uint32_t width;       /* pixels per line                                            */
-    uint32_t rows;        /* lines in this strip; always even                           */
-    uint32_t sequence;    /* incremented per frame, so a stale done flag cannot be read
-                           * as this frame's - see the PPE side                         */
+    uint32_t dst_stride;     /* bytes per output line - the display pitch, not width * 4      */
+    uint32_t src_width;
+    uint32_t src_height;
+    uint32_t dst_width;
+    uint32_t dst_height;     /* of the whole output rect, not this strip - the vertical map
+                              * is computed against the full picture or the strips will not
+                              * join up                                                      */
+    uint32_t first_dst_row;  /* this strip's first row within that rect                       */
+    uint32_t dst_rows;       /* rows in this strip                                            */
+    uint32_t sequence;
 } rc_spu_yuv_job;
 
 #endif /* RC_SPU_YUV_JOB_H */

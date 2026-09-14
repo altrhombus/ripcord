@@ -1175,6 +1175,8 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
     out->blits = g_blits;
     out->blit_avg_us = (g_blits > 0u) ? (g_blit_us_total / g_blits) : 0u;
     out->blit_worst_us = g_blit_worst_us;
+    rc_video_scale_info(&out->scaled_width, &out->scaled_height,
+                        &out->display_width, &out->display_height);
     out->pictures_dropped = g_pictures_dropped;
     out->hold_ms = (unsigned)RC_STREAM_HOLD_MS;
     out->idr_requests = g_idr_requests;

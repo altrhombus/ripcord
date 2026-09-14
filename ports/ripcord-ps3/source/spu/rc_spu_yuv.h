@@ -46,7 +46,7 @@ int rc_spu_yuv_init(void);
  */
 unsigned rc_spu_yuv_convert(const uint8_t *y, const uint8_t *u, const uint8_t *v,
                             int y_stride, int uv_stride, int width, int height,
-                            uint32_t *dst, int dst_pitch);
+                            uint32_t *dst, int dst_pitch, int dst_width, int dst_height);
 
 void rc_spu_yuv_stats_get(rc_spu_yuv_stats *out);
 void rc_spu_yuv_exit(void);
