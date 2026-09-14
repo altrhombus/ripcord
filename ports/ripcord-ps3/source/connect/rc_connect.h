@@ -178,6 +178,9 @@ typedef struct {
     int  control_step;
     int  control_code;
     int  peer_point_ok;
+    int  precheck_ok;          /* the same check run inside accept_reply, just before derive */
+    int  precheck_step;
+    int  precheck_code;
     unsigned long derive_fingerprint;  /* of the bytes derive_shared actually read   */
     unsigned long copy_fingerprint;    /* of the copy that passes the isolated check */
     unsigned derive_private_length;
