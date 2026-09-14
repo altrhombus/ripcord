@@ -8,6 +8,7 @@
 #include "takion_reliable_channel.h"
 #include "rc_udp.h"
 #include "rc_ecdh.h"
+#include "rc_stack_ps3.h"
 #include "takion_control_proto.h"
 #include "takion_session_negotiator.h"
 #include "takion_data_chunk.h"
@@ -603,6 +604,10 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
 
     out->stream_build_step = RC_STREAM_STEP_REPLY;
     out->session_reply_bytes = (unsigned)reply_len;
+    /* Taken immediately before the call that has been failing, which is the only place the number
+     * means anything. */
+    rc_stack_probe(&out->stack_size, &out->stack_used, &out->stack_headroom);
+
     if (!takion_session_negotiator_accept_reply(&g_negotiator, reply, reply_len,
                                                 rc_random_rng_callback, NULL)) {
         out->reply_reject_reason = g_negotiator.last_reject_reason;
