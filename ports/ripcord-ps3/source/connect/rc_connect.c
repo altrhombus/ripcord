@@ -9,6 +9,7 @@
 #include "rc_udp.h"
 #include "rc_ecdh.h"
 #include "rc_stack_ps3.h"
+#include "takion_control_sealer.h"
 #include "takion_control_proto.h"
 #include "takion_session_negotiator.h"
 #include "takion_data_chunk.h"
@@ -295,6 +296,7 @@ const char *rc_connect_stage_name(rc_connect_stage stage)
     case RC_CONNECT_SENKUSHA_UP:   return "senkusha channel up, stream channel did not follow";
     case RC_CONNECT_TAKION_UP:     return "Takion established on the stream channel";
     case RC_CONNECT_STREAM_KEYS:   return "stream keys derived - the session is negotiated";
+    case RC_CONNECT_STREAM_READY:  return "sealed, and the console has described the stream";
     default:                       return "unknown";
     }
 }
@@ -383,6 +385,13 @@ static int takion_bring_up(takion_reliable_channel *channel, const char *host, u
  */
 #define RC_TAKION_REPLY_MS 5000u
 
+/*
+ * How long to wait for STREAM_INFO after sealing comes on. Longer than a control reply because this is
+ * not an answer to anything we sent - the console produces it when its encoder is ready, and a figure
+ * sized for a round trip would report a console that is merely still setting up as one that never spoke.
+ */
+#define RC_STREAM_INFO_WAIT_MS 10000u
+
 /* PROTOCOL_VERSION_ACK's message type. Named because a bare 32 in a comparison says nothing. */
 #define RC_TAKION_PROTOCOL_VERSION_ACK 32u
 
@@ -403,6 +412,7 @@ static char g_launch_spec[HALYARD_LAUNCH_SPEC_MAX];
 static char g_launch_spec_b64[HALYARD_LAUNCH_SPEC_B64_MAX];
 static uint8_t g_session_request[HALYARD_LAUNCH_SPEC_B64_MAX + 512];
 static takion_session_negotiator g_negotiator;
+static takion_control_sealer g_sealer;
 
 /*
  * The senkusha legs the console GATES ON, as opposed to the ones that merely tune the stream.
@@ -677,6 +687,62 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
     }
 
     out->stream_keys_derived = 1;
+
+    /*
+     * SEALING ON, IMMEDIATELY, AND BEFORE ANYTHING ELSE GOES OUT.
+     *
+     * From here the console authenticates every control packet it receives, so the first unsealed one is
+     * the last one it listens to. That includes SACKs, which is the trap this is arranged to avoid: the
+     * channel routes every outgoing control packet through one callback, so arming it here makes the
+     * SACKs correct by construction rather than by anybody remembering them.
+     *
+     * The send key seals; the receive key is not needed yet, because GMAC authenticates and does not
+     * encrypt - an incoming STREAM_INFO can be parsed as it stands. Verifying what the console sends is
+     * a separate job and is not done here [X].
+     */
+    takion_control_sealer_init(&g_sealer, g_negotiator.send_aes_key, g_negotiator.send_base_iv);
+    takion_channel_enable_sealing(&g_stream_channel, takion_control_sealer_seal, &g_sealer);
+    out->sealing_on = 1;
+
+    /*
+     * STREAM_INFO is the console's answer to the whole negotiation: the resolution it actually chose,
+     * and the SPS/PPS the first IDR will be undecodable without, since they are not carried in the video
+     * stream itself. It arrives unprompted once sealing is live, and it wants an ack.
+     */
+    {
+        const uint8_t *info_msg = NULL;
+        size_t info_len = 0u;
+
+        if (takion_channel_await_control(&g_stream_channel, TAKION_CONTROL_STREAM_INFO,
+                                         RC_STREAM_INFO_WAIT_MS, service_control_tick, session,
+                                         &info_msg, &info_len)) {
+            takion_stream_info info;
+
+            out->stream_info_bytes = (unsigned)info_len;
+            memset(&info, 0, sizeof(info));
+            if (takion_control_parse_stream_info(info_msg, info_len, &info) && info.has_resolution) {
+                out->given_width = (int)info.width;
+                out->given_height = (int)info.height;
+                out->video_header_bytes = (unsigned)info.video_header_length;
+                out->audio_header_bytes = (unsigned)info.audio_header_length;
+                out->stream_info_parsed = 1;
+            }
+
+            /*
+             * Acked whether or not the payload parsed. The ack says "received", and withholding it
+             * because this build could not read a field would stall a console that did nothing wrong.
+             */
+            {
+                uint8_t ack[8];
+                size_t ack_len = takion_control_build_bare(TAKION_CONTROL_STREAM_INFO_ACK,
+                                                           ack, sizeof(ack));
+                if (ack_len > 0u
+                    && takion_channel_send(&g_stream_channel, TAKION_CHANNEL_SESSION, ack, ack_len))
+                    out->stream_info_acked = 1;
+            }
+        }
+    }
+
     ok = 1;
 
 done:
@@ -1022,8 +1088,11 @@ rc_connect_stage rc_connect(unsigned wake_timeout_ms, rc_connect_log_fn log,
                 out->takion_peer_tag = (unsigned)g_stream_channel.peer_tag;
                 out->stage = RC_CONNECT_TAKION_UP;
 
-                if (stream_session_exchange(&rec, &session, out))
+                if (stream_session_exchange(&rec, &session, out)) {
                     out->stage = RC_CONNECT_STREAM_KEYS;
+                    if (out->stream_info_acked)
+                        out->stage = RC_CONNECT_STREAM_READY;
+                }
             }
         }
 
@@ -1034,6 +1103,7 @@ rc_connect_stage rc_connect(unsigned wake_timeout_ms, rc_connect_log_fn log,
         /* The negotiator holds four live stream keys. This probe stops here, so they are wiped
          * rather than left in .bss for the remainder of the run. */
         takion_session_negotiator_reset(&g_negotiator);
+        takion_control_sealer_reset(&g_sealer);
 
         if (stream_sock >= 0)
             (void)close(stream_sock);
