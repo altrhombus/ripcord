@@ -884,6 +884,11 @@ static int check_connect(void)
         ps3_log("       protocol version %u, curve %s, SESSION_REPLY %u bytes\n",
                 c.stream_version, c.curve_p521 ? "P-521" : "P-256", c.session_reply_bytes);
         ps3_log("       GMAC sealing on - every control packet from here, SACKs included\n");
+        ps3_log("       incoming tags: %lu checked, %lu failed%s\n",
+                c.verify_checked, c.verify_failed,
+                (c.verify_checked > 0UL && c.verify_failed == 0UL)
+                    ? "  <- the receive schedule is right; this can enforce now"
+                    : (c.verify_checked == 0UL ? "  (nothing arrived to check)" : ""));
         ps3_log("       STREAM_INFO %u bytes, acked: asked %dx%d, GIVEN %dx%d\n",
                 c.stream_info_bytes, c.asked_width, c.asked_height, c.given_width, c.given_height);
         ps3_log("       %u-byte video header (SPS/PPS), %u-byte audio header\n",

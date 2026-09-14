@@ -413,6 +413,7 @@ static char g_launch_spec_b64[HALYARD_LAUNCH_SPEC_B64_MAX];
 static uint8_t g_session_request[HALYARD_LAUNCH_SPEC_B64_MAX + 512];
 static takion_session_negotiator g_negotiator;
 static takion_control_sealer g_sealer;
+static takion_control_verifier g_verifier;
 
 /*
  * The senkusha legs the console GATES ON, as opposed to the ones that merely tune the stream.
@@ -705,6 +706,24 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
     out->sealing_on = 1;
 
     /*
+     * AND THE RECEIVE HALF, in COUNTING mode for now.
+     *
+     * Sealing without verifying is half a mechanism - GMAC authenticates without encrypting, so a
+     * control message from anyone parses perfectly well, and until now this port read whatever arrived
+     * without asking who wrote it.
+     *
+     * Counting rather than enforcing on the first hardware run, deliberately. Enforcing a check that has
+     * never been observed to pass turns any mistake in the receive key schedule into a session that goes
+     * quiet, which is indistinguishable from the console losing interest and is the hardest failure
+     * shape to diagnose - this port has already spent a dozen runs on one of those. The run reports the
+     * proportion instead, and "0 of N failed" is what earns enforcement.
+     */
+    takion_control_verifier_init(&g_verifier, g_negotiator.receive_aes_key,
+                                 g_negotiator.receive_base_iv);
+    takion_channel_enable_verification(&g_stream_channel, takion_control_verifier_check, &g_verifier,
+                                       0 /* count, do not drop - see above */);
+
+    /*
      * STREAM_INFO is the console's answer to the whole negotiation: the resolution it actually chose,
      * and the SPS/PPS the first IDR will be undecodable without, since they are not carried in the video
      * stream itself. It arrives unprompted once sealing is live, and it wants an ack.
@@ -743,6 +762,8 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
         }
     }
 
+    out->verify_checked = g_verifier.checked;
+    out->verify_failed = g_verifier.failed;
     ok = 1;
 
 done:
@@ -1104,6 +1125,7 @@ rc_connect_stage rc_connect(unsigned wake_timeout_ms, rc_connect_log_fn log,
          * rather than left in .bss for the remainder of the run. */
         takion_session_negotiator_reset(&g_negotiator);
         takion_control_sealer_reset(&g_sealer);
+        takion_control_verifier_reset(&g_verifier);
 
         if (stream_sock >= 0)
             (void)close(stream_sock);
