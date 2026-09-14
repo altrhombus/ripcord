@@ -172,7 +172,7 @@ CFLAGS := $(ARCH) -std=gnu99 -O2 -g \
           -DRC_PROGRAM_DIR_FALLBACK='"$(LOG_DIR)"' \
           -DRC_PS3_APPID='"$(APPID)"' \
           -DRC_NETLOG_HOST='"$(RC_NETLOG_HOST)"' -DRC_NETLOG_PORT=$(RC_NETLOG_PORT) \
-          -I$(CORE) -I$(BUILD) -Isource/platform -Isource/spu -Isource/net -Isource/media -Isource/coretest \
+          -I$(CORE) -I$(BUILD) -Isource/platform -Isource/video -Isource/spu -Isource/net -Isource/media -Isource/coretest \
           -Isource/discovery -Isource/connect -I$(CORE)/discovery -I$(CORE)/session \
           -I$(CORE)/halyard -I$(CORE)/crypto -I$(CORE)/net -I$(CORE)/takion -I$(CORE)/stream -I$(CORE)/util -I$(CORE)/platform -Ispu \
           -I$(PSL1GHT)/ppu/include
@@ -187,7 +187,7 @@ LDFLAGS := $(ARCH) -Wl,--gc-sections -L$(PSL1GHT)/ppu/lib
 # -lsysmodule is not optional beside -lnet: netInitialize() calls sysModuleLoad, and without it the link
 # fails on that symbol rather than on anything mentioning networking. PSL1GHT's network samples all pair
 # the two - `LIBS := -lnet -lsysmodule` - which is the fastest place to have learned it.
-LIBS := -lnet -lsysmodule -lpthread -lrt -llv2
+LIBS := -lrsx -lgcm_sys -lsysutil -lnet -lsysmodule -lpthread -lrt -llv2
 
 # The platform seam plus the two core utilities the bring-up program needs. rc_random_ps3.c joined this
 # list on 2026-09-11, when the CSPRNG call was confirmed against real headers; before that its ABSENCE
@@ -199,6 +199,7 @@ SOURCES := \
 	source/platform/rc_platform_ps3.c \
 	source/platform/rc_random_ps3.c \
 	source/platform/rc_stack_ps3.c \
+	source/video/rc_video_ps3.c \
 	source/spu/rc_spu.c \
 	source/net/rc_netlog.c \
 	source/media/rc_h264_annexb.c \
@@ -462,7 +463,7 @@ $(OPENH264_LIB):
 #
 # vpath rather than per-directory rules: the basenames across these five directories are unique, and one
 # pattern rule is easier to be right about than five.
-vpath %.c $(CORE)/util $(CORE)/discovery $(CORE)/session $(CORE)/net $(CORE)/takion \
+vpath %.c source/video $(CORE)/util $(CORE)/discovery $(CORE)/session $(CORE)/net $(CORE)/takion \
           $(CORE)/crypto $(CORE)/stream \
           source/platform source/spu source/net source/media source/discovery source/connect source/app
 
@@ -508,7 +509,8 @@ SDK_SOCKET_OBJS := \
 	$(BUILD)/rc_udp.o \
 	$(BUILD)/rc_connect.o \
 	$(BUILD)/takion_reliable_channel.o \
-	$(BUILD)/rc_stack_ps3.o
+	$(BUILD)/rc_stack_ps3.o \
+	$(BUILD)/rc_video_ps3.o
 
 $(SDK_SOCKET_OBJS): CFLAGS := $(CFLAGS_SDK_SOCKETS)
 
