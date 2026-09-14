@@ -288,7 +288,8 @@ const char *rc_connect_stage_name(rc_connect_stage stage)
 
 #define SAY(text) do { if (log != NULL) log(text); } while (0)
 
-rc_connect_stage rc_connect(unsigned wake_timeout_ms, rc_connect_log_fn log, rc_connect_result *out)
+rc_connect_stage rc_connect(unsigned wake_timeout_ms, rc_connect_log_fn log,
+                            const char *const *dirs, int dir_count, rc_connect_result *out)
 {
     halyard_pairing_record rec;
     halyard_control_session session;
@@ -300,10 +301,39 @@ rc_connect_stage rc_connect(unsigned wake_timeout_ms, rc_connect_log_fn log, rc_
 
     SAY("loading the pairing record");
 
-    /* The loader appends "pairing.txt" to the directory part of what it is given - see above. */
-    if (!halyard_pairing_file_load(RC_CONNECT_PAIRING_DIR, &rec)) {
-        out->stage = RC_CONNECT_NO_RECORD;
-        return out->stage;
+    /*
+     * TRY THE SAME DIRECTORIES THE LOG TRIES, in the same order, rather than the single hard-coded one
+     * this used to read.
+     *
+     * b40 failed here with the record sitting on the console: the log resolves a writable directory by
+     * trying four and picking the first that works - which is the install directory - while this looked
+     * only in /dev_hdd0/. Two different answers to "where does this program keep its files" in one
+     * program, and the person putting the record on the console has no way to know which one applies.
+     * Worse, the advice given at the time named the log's directory, so following it moved the record
+     * out of the only place this would look.
+     *
+     * The caller passes the list so it cannot drift from the log's. A NULL list falls back to the
+     * compile-time constant, which is what a caller with no opinion gets.
+     */
+    {
+        int loaded = 0;
+        int i;
+
+        if (dirs == NULL || dir_count <= 0) {
+            loaded = halyard_pairing_file_load(RC_CONNECT_PAIRING_DIR, &rec);
+        } else {
+            for (i = 0; i < dir_count && !loaded; i++) {
+                /* The loader appends "pairing.txt" to the directory part of what it is given. */
+                loaded = halyard_pairing_file_load(dirs[i], &rec);
+                if (loaded)
+                    out->record_dir = dirs[i];
+            }
+        }
+
+        if (!loaded) {
+            out->stage = RC_CONNECT_NO_RECORD;
+            return out->stage;
+        }
     }
     out->had_record = 1;
 
