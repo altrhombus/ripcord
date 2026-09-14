@@ -1546,6 +1546,14 @@ int main(void)
                 ps3_log("spu:   the SPE path was ABANDONED after repeated misses - the PPE carried the\n"
                         "       rest of the run, which is the outcome this is designed to produce\n");
 
+            {
+                unsigned calls = 0, busy = 0, last = 0;
+
+                rc_video_flip_stats(&calls, &busy, &last);
+                ps3_log("vid:   flip-ready asked %u time(s), %u said busy, last raw status %u\n",
+                        calls, busy, last);
+            }
+
             rc_video_verify_get(&checked, &match, &spu_hash, &ppe_hash);
             if (!checked) {
                 ps3_log("spu:   the SPE and PPE conversions were never compared\n");

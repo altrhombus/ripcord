@@ -99,6 +99,9 @@ unsigned rc_video_blit_yuv420(const uint8_t *y, const uint8_t *u, const uint8_t 
  */
 void rc_video_verify_get(int *checked, int *match, uint64_t *spu_hash, uint64_t *ppe_hash);
 
+/* How the flip-readiness check has been answering - see rc_video_present_ready. */
+void rc_video_flip_stats(unsigned *calls, unsigned *busy, unsigned *last_status);
+
 void rc_video_close(void);
 
 #endif /* RC_VIDEO_PS3_H */
