@@ -55,7 +55,52 @@ void takion_control_sealer_init(takion_control_sealer *sealer,
 /* Matches takion_seal_fn. Pass this and the sealer to takion_channel_enable_sealing. */
 void takion_control_sealer_seal(void *ctx, uint8_t *packet, size_t length);
 
+/*
+ * CONGESTION FEEDBACK, which is a different packet at different offsets and MUST use this sealer.
+ *
+ * Not a convenience: the outgoing key position is a single advancing sequence shared by control DATA,
+ * SACKs and congestion packets alike, so a congestion path with a counter of its own would repeat a
+ * position that control had already spent - and a repeated position is a repeated GMAC nonce under one
+ * key. That is a key-recovery bug, not an inefficiency, and it is the reason this lives on the sealer
+ * rather than beside the code that builds the packet.
+ *
+ * The offsets differ from control's and from A/V's, and all three are [V] against captures on the .NET
+ * side: control tag@5 key_pos@9 (2528 packets), congestion tag@7 key_pos@11 (474 packets), A/V tag@10
+ * key_pos@14. The AAD rule here matches CONTROL - both the tag and the key-position field are zeroed -
+ * which is not what A/V does.
+ */
+#define TAKION_CONGESTION_TAG_OFFSET    7u
+#define TAKION_CONGESTION_KEYPOS_OFFSET 11u
+
+void takion_control_sealer_seal_congestion(takion_control_sealer *sealer,
+                                           uint8_t *packet, size_t length);
+
 /* Wipes the key material. */
+/*
+ * Builds one congestion-feedback packet: 15 bytes, base type 5, carrying the A/V units received and lost
+ * since the last one. Returns the length written, or 0 if the buffer is too small.
+ *
+ * LAYOUT AND ITS PROVENANCE, which differ in confidence and should not be blurred. Derived on the .NET
+ * side from 474 congestion packets in one capture: type at 0; bytes 1-2 zero in every packet **[V]**;
+ * received at 3 as a big-endian u16 **[V]**, observed between 2 and 351 per interval; lost at 5, also
+ * u16 big-endian - its POSITION is confirmed but its MEANING is **[X]**, because that session had no
+ * loss and every one of those 474 packets carried zero there. GMAC at 7 and key position at 11 are
+ * written by the sealer, not here.
+ *
+ * VERSION CAVEAT, recorded because a future firmware will make it matter: this 15-byte form is what that
+ * capture shows. An older capture shows a 23-byte variant of the same base type with a sequence at 1, a
+ * 90 kHz timestamp at 3, GMAC at 15 and key position at 19. The size is protocol-version-specific rather
+ * than universal. This port only negotiates the version the 15-byte capture used; if a console ever
+ * rejects these, that variant is the first thing to look at.
+ *
+ * The counts SATURATE rather than wrap. A u16 cannot carry more than 65535 and an interval that busy is
+ * a reporting problem, not a reason to tell the console a small number.
+ */
+#define TAKION_CONGESTION_PACKET_SIZE 15u
+
+size_t takion_congestion_build(unsigned long received, unsigned long lost,
+                               uint8_t *buf, size_t buf_size);
+
 void takion_control_sealer_reset(takion_control_sealer *sealer);
 
 /*
