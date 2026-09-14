@@ -413,6 +413,10 @@ static int takion_bring_up(takion_reliable_channel *channel, const char *host, u
 /* The client's own heartbeat cadence on the stream channel, from the reference's one second. */
 #define RC_STREAM_HEARTBEAT_MS 1000u
 
+/* The reference's own throttle. One IDR repairs the entire reference chain, so asking again while the
+ * answer is still in flight buys nothing and costs upstream bandwidth. */
+#define RC_IDR_REQUEST_MIN_MS 200u
+
 /* PROTOCOL_VERSION_ACK's message type. Named because a bare 32 in a comparison says nothing. */
 #define RC_TAKION_PROTOCOL_VERSION_ACK 32u
 
@@ -537,15 +541,48 @@ static void on_audio_frame(void *userdata, const uint8_t *data, size_t length)
     g_tally.audio_bytes += (unsigned long)length;
 }
 
+static uint64_t g_last_idr_request_ms;
+static unsigned g_idr_requests;
+
 static void on_video_loss(void *userdata, int first_frame_index, int last_frame_index)
 {
+    uint64_t now;
+
     (void)userdata;
     (void)first_frame_index;
     (void)last_frame_index;
-    /* Counted, not acted on. A real client answers with CORRUPT_FRAME and asks for an IDR; this probe
-     * is measuring whether reassembly works at all, and a recovery path it cannot yet verify would only
-     * obscure that. */
     g_tally.corrupt_events++;
+
+    /*
+     * ASK FOR A FRESH IDR, which this used to merely count.
+     *
+     * The old comment said a recovery path that could not be verified would obscure the measurement,
+     * and while reassembly was the open question that was right. b90 made it wrong: over thirty seconds
+     * the console sent 893 video frames and exactly ONE keyframe, seven loss events cost the decoder its
+     * reference chain, and 686 of those frames failed with openh264's 0x12 - dsNoParamSets | dsRefLost.
+     * The picture froze while a perfectly healthy stream kept arriving.
+     *
+     * Inter-frames reference the pictures before them, so a gap is not one lost frame - it is every
+     * frame until the next keyframe, and the console only sends another when asked. Counting the loss
+     * and not asking is the one response guaranteed not to recover.
+     *
+     * Throttled to the reference's interval. One IDR repairs the whole chain, so requesting on every
+     * lost slice while a burst is still arriving would spend upstream bandwidth on repairs already in
+     * flight.
+     */
+    now = rc_time_ms();
+    if (now - g_last_idr_request_ms < RC_IDR_REQUEST_MIN_MS)
+        return;
+    g_last_idr_request_ms = now;
+
+    {
+        uint8_t request[8];
+        size_t request_len = takion_control_build_bare(TAKION_CONTROL_IDR_REQUEST,
+                                                       request, sizeof(request));
+        if (request_len > 0u
+            && takion_channel_send(&g_stream_channel, TAKION_CHANNEL_SESSION, request, request_len))
+            g_idr_requests++;
+    }
 }
 
 /*
@@ -900,6 +937,8 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
                     g_blit_worst_us = 0u;
                     g_blits = 0u;
                     g_pictures_dropped = 0u;
+                    g_idr_requests = 0u;
+                    g_last_idr_request_ms = 0u;
                     g_live_open = rc_decode_live_open();
                     if (g_live_open) {
                         rc_decode_live_set_sink(on_picture, NULL);
@@ -1112,6 +1151,7 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
     out->blit_worst_us = g_blit_worst_us;
     out->pictures_dropped = g_pictures_dropped;
     out->hold_ms = (unsigned)RC_STREAM_HOLD_MS;
+    out->idr_requests = g_idr_requests;
 
     out->verify_checked = g_verifier.checked;
     out->verify_failed = g_verifier.failed;

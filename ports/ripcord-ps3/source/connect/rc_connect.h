@@ -260,6 +260,7 @@ typedef struct {
     unsigned blit_worst_us;
     unsigned pictures_dropped;  /* decoded, but the display was still busy - see on_picture */
     unsigned hold_ms;           /* how long the session was held, so a rate can be computed */
+    unsigned idr_requests;      /* keyframes asked for after loss - see on_video_loss */
     int      held_channel_error;
     unsigned stream_info_bytes;
     int  stream_info_parsed;
