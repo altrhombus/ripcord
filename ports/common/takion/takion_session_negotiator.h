@@ -52,6 +52,16 @@
 #define TAKION_CLIENT_VERSION 17u
 
 /*
+ * The largest peer point this code handles: an uncompressed P-521 point, 0x04 || X(66) || Y(66).
+ *
+ * Stated here rather than pulled in from rc_ecdh.h, because this header is included by callers that do
+ * not otherwise need the crypto layer on their include path - and making a diagnostic field drag a new
+ * dependency through every port's Makefile is the wrong trade. rc_ecdh.h's RC_ECDH_PUBKEY_MAX is the
+ * same number for the same reason; if a larger curve ever appears, both move together.
+ */
+#define TAKION_SESSION_PEER_KEY_MAX 133u
+
+/*
  * The observed session-key string. It is a literal, not an identifier this port is failing to fill in:
  * the vendor client sends exactly this on a direct LAN session, and the console accepts it. Treated as a
  * protocol constant for the same reason the "PS5" platform tag is.
@@ -86,6 +96,15 @@ typedef struct {
      */
     size_t last_peer_key_length;
     uint8_t last_peer_key_prefix;
+
+    /*
+     * The peer's point itself, copied here rather than left as a pointer into a buffer the caller may
+     * have moved on from. A caller that tried to re-read it later got zeros - the pointer was into the
+     * channel's own storage - which produced a dump that contradicted the prefix recorded beside it.
+     *
+     * A public key for one session. Sized for the largest curve this code knows.
+     */
+    uint8_t last_peer_key[TAKION_SESSION_PEER_KEY_MAX];
 
     /* When the refusal was DERIVE: which backend call failed and what it returned. RC_ECDH_STEP_* and
      * the backend's own code, unmapped - see rc_ecdh.h. */
