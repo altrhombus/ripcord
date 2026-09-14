@@ -258,6 +258,7 @@ typedef struct {
     unsigned blits;
     unsigned blit_avg_us;
     unsigned blit_worst_us;
+    unsigned pictures_dropped;  /* decoded, but the display was still busy - see on_picture */
     int      held_channel_error;
     unsigned stream_info_bytes;
     int  stream_info_parsed;

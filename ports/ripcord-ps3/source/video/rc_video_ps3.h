@@ -50,7 +50,20 @@ int rc_video_open(rc_video_info *out);
 /* The back buffer: `pitch` bytes per line, `height` lines, XRGB8888. NULL if the display is not open. */
 uint32_t *rc_video_back_buffer(void);
 
-/* Presents the back buffer and waits for the flip to land. */
+/*
+ * Is the previous flip finished, so the back buffer is safe to write?
+ *
+ * The caller asks BEFORE converting a picture, not after. b87 blitted and flipped for every decoded
+ * frame and waited for vsync each time, on the receive thread - so the display's pace became the
+ * network's pace, the socket buffer overflowed, and 90 units were lost where the run before had lost
+ * none. The loss looked like a network fault and was self-inflicted.
+ *
+ * Dropping a picture is the right answer when the display is behind: a frame not shown costs a frame,
+ * while a frame waited on costs every packet that arrives during the wait.
+ */
+int rc_video_present_ready(void);
+
+/* Presents the back buffer. Does NOT wait for the flip - see rc_video_present_ready. */
 void rc_video_flip(void);
 
 /*

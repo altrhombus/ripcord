@@ -200,6 +200,17 @@ int rc_video_open(rc_video_info *out)
     return 1;
 }
 
+int rc_video_present_ready(void)
+{
+    if (!s_open)
+        return 0;
+    /* Zero means the flip has completed. Reset it here, where the answer is consumed. */
+    if (gcmGetFlipStatus() != 0)
+        return 0;
+    gcmResetFlipStatus();
+    return 1;
+}
+
 uint32_t *rc_video_back_buffer(void)
 {
     if (!s_open)
@@ -221,12 +232,10 @@ void rc_video_flip(void)
     rsxFlushBuffer(s_context);
     gcmSetWaitFlip(s_context);
 
-    /* Wait for the flip to land before anything writes the other buffer. rsx.h suggests a short sleep
-     * between polls rather than a tight spin, and this program has other work to do. */
-    while (gcmGetFlipStatus() != 0)
-        usleep(200);
-    gcmResetFlipStatus();
-
+    /*
+     * NOT waited on here. The caller asks rc_video_present_ready before it converts the next picture,
+     * so the wait becomes "skip a frame" instead of "block the thread that is also draining a socket".
+     */
     s_current = back;
 }
 
@@ -274,28 +283,46 @@ unsigned rc_video_blit_yuv420(const uint8_t *y, const uint8_t *u, const uint8_t 
 
     for (row = 0; row < height; row++) {
         const uint8_t *yr = y + (size_t)row * (size_t)y_stride;
-        const uint8_t *ur = u + (size_t)(row / 2) * (size_t)uv_stride;
-        const uint8_t *vr = v + (size_t)(row / 2) * (size_t)uv_stride;
+        const uint8_t *ur = u + (size_t)(row >> 1) * (size_t)uv_stride;
+        const uint8_t *vr = v + (size_t)(row >> 1) * (size_t)uv_stride;
         uint32_t *out = back + (size_t)(oy + row) * (size_t)stride_px + (size_t)ox;
         int col;
 
-        for (col = 0; col < width; col++) {
-            /*
-             * BT.709 limited range, in 10-bit fixed point. The chroma planes are half resolution in
-             * both directions, so each pair of columns and each pair of rows share one sample - that
-             * is what 4:2:0 means, and reading u/v per luma pixel without the /2 is the classic way to
-             * get a picture that is right at the top-left and progressively wrong everywhere else.
-             */
-            int32_t c = (int32_t)yr[col] - 16;
-            int32_t d = (int32_t)ur[col / 2] - 128;
-            int32_t e = (int32_t)vr[col / 2] - 128;
-            int32_t yy = 1192 * c;
+        /*
+         * TWO LUMA PIXELS PER CHROMA SAMPLE, which is what 4:2:0 already means - the chroma planes are
+         * half resolution in both directions, so a pair of columns shares one sample and so does a pair
+         * of rows.
+         *
+         * The first version wrote `ur[col / 2]` inside the pixel loop: an integer divide and a fresh
+         * chroma load for every luma pixel, doing twice the chroma work and the division for nothing.
+         * Stepping the chroma pointer once per PAIR removes both, and the red/blue terms - which depend
+         * only on chroma - are computed once for the pair instead of twice.
+         */
+        for (col = 0; col + 1 < width; col += 2) {
+            int32_t d = (int32_t)*ur++ - 128;
+            int32_t e = (int32_t)*vr++ - 128;
+            int32_t r_term = 1836 * e;
+            int32_t g_term = -218 * d - 546 * e;
+            int32_t b_term = 2163 * d;
+            int32_t y0 = 1192 * ((int32_t)yr[col] - 16);
+            int32_t y1 = 1192 * ((int32_t)yr[col + 1] - 16);
 
-            uint32_t r = clamp255((yy + 1836 * e) >> 10);
-            uint32_t g = clamp255((yy - 218 * d - 546 * e) >> 10);
-            uint32_t b = clamp255((yy + 2163 * d) >> 10);
+            out[col] = (clamp255((y0 + r_term) >> 10) << 16)
+                     | (clamp255((y0 + g_term) >> 10) << 8)
+                     |  clamp255((y0 + b_term) >> 10);
+            out[col + 1] = (clamp255((y1 + r_term) >> 10) << 16)
+                         | (clamp255((y1 + g_term) >> 10) << 8)
+                         |  clamp255((y1 + b_term) >> 10);
+        }
+        if (col < width) {
+            /* An odd width leaves one pixel, which reuses the last chroma pair. */
+            int32_t d = (int32_t)ur[-1] - 128;
+            int32_t e = (int32_t)vr[-1] - 128;
+            int32_t y0 = 1192 * ((int32_t)yr[col] - 16);
 
-            out[col] = (r << 16) | (g << 8) | b;
+            out[col] = (clamp255((y0 + 1836 * e) >> 10) << 16)
+                     | (clamp255((y0 - 218 * d - 546 * e) >> 10) << 8)
+                     |  clamp255((y0 + 2163 * d) >> 10);
         }
     }
 
