@@ -928,6 +928,12 @@ static int check_connect(void)
                         c.decoded_errors);
                 if (us > 0UL)
                     ps3_log("       %lu us per picture on the PPE - the budget at 30 fps is 33333 us\n", us);
+                if (c.blits > 0u)
+                    ps3_log("       ON SCREEN: %u picture(s) blitted, %u us average, %u us worst\n"
+                            "       decode + blit is %lu us against the same 33333 us budget\n",
+                            c.blits, c.blit_avg_us, c.blit_worst_us, us + (unsigned long)c.blit_avg_us);
+                else
+                    ps3_log("       nothing reached the screen - the display was not open\n");
                 if (c.decoded_errors > 0)
                     ps3_log("       last decoder error 0x%x\n", (unsigned)c.decoded_last_error);
                 if (c.decoded_pictures < c.decoded_fed)
@@ -1316,7 +1322,15 @@ static int check_display(void)
     ps3_log("      a clean yellow diagonal, corner to corner   - the pitch applied per line\n");
     ps3_log("      a grey wedge along the bottom               - the full range, not just saturation\n");
     ps3_log("      a white block sliding left to right         - flipping, not one stuck frame\n");
-    rc_video_close();
+    ps3_log("      (the border and the diagonal are ONE PIXEL wide - at 1080p on a television\n");
+    ps3_log("       overscan eats the first and the second is near-invisible over the bars. The\n");
+    ps3_log("       bars landing in the right thirds already proves the pitch: a wrong one skews\n");
+    ps3_log("       every line progressively and could not look tidy.)\n");
+    /*
+     * LEFT OPEN on purpose. The connect stage puts live frames on this screen, and closing the display
+     * here would mean bringing it up twice - the one call in this port with a history of refusing.
+     * main() closes it at the end.
+     */
     return 0;
 }
 
@@ -1471,6 +1485,7 @@ int main(void)
     ps3_log("%s\n", failures == 0 ? "all checks passed" : "CHECKS FAILED");
     /* The generator was opened by the CSPRNG check and used by everything after it - see the note
      * there. It is closed here, with the other process-wide resources, rather than by any one check. */
+    rc_video_close();
     rc_random_exit();
     lv2_log_close();
     rc_log_close();
