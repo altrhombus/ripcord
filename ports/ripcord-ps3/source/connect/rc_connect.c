@@ -12,6 +12,7 @@
 #include "takion_control_sealer.h"
 #include "stream_header.h"
 #include "stream_demux.h"
+#include "rc_decode_probe.h"
 #include "takion_control_proto.h"
 #include "takion_session_negotiator.h"
 #include "takion_data_chunk.h"
@@ -446,16 +447,33 @@ typedef struct {
 
 static rc_demux_tally g_tally;
 
+static rc_decode_live_stats g_live_stats;
+static int g_live_open;
+
 static void on_video_frame(void *userdata, const uint8_t *data, size_t length, int is_keyframe)
 {
     (void)userdata;
-    (void)data;
     g_tally.video_frames++;
     if (is_keyframe)
         g_tally.keyframes++;
     g_tally.video_bytes += (unsigned long)length;
     if (length > (size_t)g_tally.largest_frame)
         g_tally.largest_frame = (unsigned)length;
+
+    /*
+     * STRAIGHT INTO THE DECODER, in the sink, while the frame is still valid.
+     *
+     * The demuxer's contract is explicit that these bytes live only for the duration of this call, so
+     * decoding here rather than queueing avoids a copy of every frame - and a copy is not free at
+     * 960x540: the largest frame this console has sent so far is nearly 30 KB.
+     *
+     * It also puts the decode on the same thread as the receive loop, which is a real constraint and
+     * not an oversight. If decoding a frame ever costs longer than the gap between packets, the socket
+     * buffer absorbs the difference until it cannot, and the symptom is loss that looks like a network
+     * problem. The measured cost is reported beside the frame count for exactly that reason.
+     */
+    if (g_live_open)
+        (void)rc_decode_live_feed(data, length, &g_live_stats);
 }
 
 static void on_audio_frame(void *userdata, const uint8_t *data, size_t length)
@@ -824,6 +842,8 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
                     sink.video_loss_detected = on_video_loss;
 
                     memset(&g_tally, 0, sizeof(g_tally));
+                    memset(&g_live_stats, 0, sizeof(g_live_stats));
+                    g_live_open = rc_decode_live_open();
                     stream_demux_init(&g_demux, stream_demux_packet_crypto(&g_verifier.crypto), sink);
                     if (info.video_header_length > 0u)
                         stream_demux_set_video_header(&g_demux, info.video_header,
@@ -1012,6 +1032,18 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
     out->corrupt_events = g_tally.corrupt_events;
     out->largest_frame = g_tally.largest_frame;
     stream_demux_take_packet_stats(&g_demux, &out->units_received, &out->units_lost);
+
+    if (g_live_open) {
+        rc_decode_live_close();
+        g_live_open = 0;
+    }
+    out->decoded_pictures = g_live_stats.pictures_out;
+    out->decoded_fed = g_live_stats.frames_in;
+    out->decoded_errors = g_live_stats.errors;
+    out->decoded_last_error = g_live_stats.last_error;
+    out->decoded_width = g_live_stats.width;
+    out->decoded_height = g_live_stats.height;
+    out->decode_ticks = g_live_stats.decode_ticks;
 
     out->verify_checked = g_verifier.checked;
     out->verify_failed = g_verifier.failed;

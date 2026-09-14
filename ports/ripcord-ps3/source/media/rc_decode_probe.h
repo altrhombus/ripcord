@@ -61,6 +61,36 @@ typedef struct {
  */
 int rc_decode_probe(const char *path, int max_frames, rc_decode_probe_result *out);
 
+/*
+ * THE LIVE DECODER, as opposed to the file probe above.
+ *
+ * rc_decode_probe answers "can this hardware decode H.264, and how fast" from a capture on disk. This
+ * answers the different question the stream asks: can it decode frames as they arrive, in order, from a
+ * decoder that stays open across them. A frame handed to a decoder that was re-created for it would
+ * decode nothing useful - inter-frames reference the pictures before them, which is the whole point of
+ * the format and the reason a per-frame open cannot work.
+ *
+ * Frames are whole access units in Annex-B form, exactly as stream_demux emits them.
+ */
+typedef struct {
+    int  frames_in;        /* access units handed to the decoder */
+    int  pictures_out;     /* pictures it produced - not the same number, and the gap is informative */
+    int  width;
+    int  height;
+    int  last_error;       /* openh264's own return from the last failing call, 0 if none */
+    int  errors;
+    uint64_t decode_ticks; /* decode calls only - not the demux, not the copy */
+} rc_decode_live_stats;
+
+/* Opens a decoder that stays open. Returns 1 on success. */
+int rc_decode_live_open(void);
+
+/* Feeds one whole access unit. Returns 1 if a picture came out. Statistics accumulate into `stats`,
+ * which the caller owns and may read at any time. */
+int rc_decode_live_feed(const uint8_t *access_unit, size_t length, rc_decode_live_stats *stats);
+
+void rc_decode_live_close(void);
+
 /* The hash the caller compares against. Exposed so the development machine can compute it identically. */
 uint64_t rc_decode_probe_hash_plane(const uint8_t *plane, int stride, int width, int height,
                                     uint64_t seed);
