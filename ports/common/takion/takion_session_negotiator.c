@@ -89,19 +89,29 @@ int takion_session_negotiator_accept_reply(takion_session_negotiator *ctx,
     int ok = 0;
 
     if (ctx == NULL || reply == NULL || rng == NULL) {
+        if (ctx != NULL)
+            ctx->last_reject_reason = TAKION_SESSION_REJECT_ARGUMENTS;
         return 0;
     }
     ctx->established = 0;
+    ctx->last_reject_reason = TAKION_SESSION_REJECT_NONE;
 
     if (!takion_control_parse_session_reply(reply, reply_length, &parsed)) {
+        ctx->last_reject_reason = TAKION_SESSION_REJECT_PARSE;
         return 0;
     }
     /* The console telling us our version is unacceptable is a clean, diagnosable failure - and it will
      * not have sent usable key material alongside that refusal. */
-    if (!parsed.version_accepted || !parsed.has_ecdh) {
+    if (!parsed.version_accepted) {
+        ctx->last_reject_reason = TAKION_SESSION_REJECT_VERSION;
+        return 0;
+    }
+    if (!parsed.has_ecdh) {
+        ctx->last_reject_reason = TAKION_SESSION_REJECT_NO_ECDH;
         return 0;
     }
     if (parsed.ecdh_signature_length != sizeof(expected_signature)) {
+        ctx->last_reject_reason = TAKION_SESSION_REJECT_SIG_LENGTH;
         return 0;
     }
 
@@ -110,6 +120,7 @@ int takion_session_negotiator_accept_reply(takion_session_negotiator *ctx,
                    parsed.ecdh_public_key, parsed.ecdh_public_key_length,
                    expected_signature);
     if (!fixed_time_equal(expected_signature, parsed.ecdh_signature, sizeof(expected_signature))) {
+        ctx->last_reject_reason = TAKION_SESSION_REJECT_SIGNATURE;
         return 0;
     }
 
@@ -126,6 +137,8 @@ int takion_session_negotiator_accept_reply(takion_session_negotiator *ctx,
                                              ctx->receive_aes_key, ctx->receive_base_iv);
         ctx->established = 1;
         ok = 1;
+    } else {
+        ctx->last_reject_reason = TAKION_SESSION_REJECT_CURVE;
     }
 
     memset(shared, 0, sizeof(shared));
