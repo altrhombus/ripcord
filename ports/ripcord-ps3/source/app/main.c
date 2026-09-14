@@ -904,7 +904,25 @@ static int check_connect(void)
                     c.session_request_bytes, c.curve_p521 ? "P-521" : "P-256");
             ps3_log("      senkusha gating legs above are incomplete, suspect those first.\n");
         } else {
-            ps3_log("      The request was never built - launch spec, base64 or the ECDH backend.\n");
+            /*
+             * Name the step that failed rather than the set of candidates. The same sequence with the
+             * same parameters and buffers succeeds on the host, so "one of these three" was never going
+             * to be enough to act on.
+             */
+            static const char *const kStep[] = {
+                "the handshake key could not be drawn - the CSPRNG refused 16 bytes",
+                "the launch spec JSON would not build (resolution ladder, or the buffer)",
+                "the launch spec would not encrypt-and-base64",
+                "SESSION_REQUEST would not build - this is the ECDH keygen",
+                "SESSION_REQUEST was built but the channel refused to send it",
+                "SESSION_REQUEST went out and no SESSION_REPLY came back"
+            };
+            int step = c.stream_build_step;
+
+            ps3_log("      spec %u bytes, base64 %u bytes, step reached %d\n",
+                    c.launch_spec_bytes, c.launch_spec_b64_bytes, step);
+            if (step >= 0 && step < (int)(sizeof(kStep) / sizeof(kStep[0])))
+                ps3_log("      %s\n", kStep[step]);
         }
         return 1;
     case RC_CONNECT_SENKUSHA_UP:
