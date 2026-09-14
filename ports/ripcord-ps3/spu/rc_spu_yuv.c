@@ -36,6 +36,39 @@ static unsigned int  g_out[RC_SPU_YUV_ROWS_PER_PASS][RC_SPU_YUV_MAX_WIDTH] __att
 
 static rc_spu_yuv_job g_job __attribute__((aligned(128)));
 
+/*
+ * FOUR PIXELS AT A TIME, IN VECTORS.
+ *
+ * b100 ran this scalar and measured it: five SPEs converted a picture in 5884 us where the PPE alone
+ * took 11869. Two times, for five processors - and per pixel each SPE was 2.5x SLOWER than the PPE.
+ * That is what scalar code on an SPE costs. There is no scalar unit: every scalar operation is a vector
+ * operation with the value extracted and reinserted around it, so the parallelism was buying back what
+ * the instruction mix was throwing away.
+ *
+ * The multiply is the part worth explaining. The SPE has no 32x32 integer multiply, but spu_mulo takes
+ * the ODD halfwords of two short vectors and produces 32-bit products - which, on this big-endian
+ * machine, is the LOW 16 bits of each 32-bit lane. Every value here fits in 16 bits (y-16 is -16..239,
+ * the largest coefficient is 2163), so keeping them as 32-bit lanes and multiplying with spu_mulo is a
+ * 16x16 -> 32 multiply per lane with no packing at all.
+ *
+ * Clamping is spu_cmpgt and spu_sel rather than branches. A branch per channel per pixel on a processor
+ * with no branch predictor is the other half of what made the scalar version slow.
+ */
+/* vec_int4, vec_short8 and vec_uint4 come from spu_intrinsics.h - this file does not define them. */
+static inline vec_int4 mul_coef(vec_int4 v, short coef)
+{
+    return spu_mulo((vec_short8)v, spu_splats(coef));
+}
+
+static inline vec_int4 clamp_vec(vec_int4 v)
+{
+    const vec_int4 zero = spu_splats((signed int)0);
+    const vec_int4 max = spu_splats((signed int)255);
+
+    v = spu_sel(zero, v, spu_cmpgt(v, zero));
+    return spu_sel(v, max, spu_cmpgt(v, max));
+}
+
 static inline unsigned int clamp255(int v)
 {
     if (v < 0)
@@ -46,29 +79,48 @@ static inline unsigned int clamp255(int v)
 }
 
 /* One row pair, sharing one chroma row. BT.709 limited range in 10-bit fixed point - the same constants
- * the PPE used, so a picture converted here and one converted there are the same picture. */
+ * the PPE uses, so a picture converted here and one converted there are the same picture. */
 static void convert_pair(unsigned int width, unsigned int rows_this_pass)
 {
-    unsigned int col;
+    unsigned int row;
 
-    for (col = 0; col + 1 < width; col += 2) {
-        int d = (int)g_u[col >> 1] - 128;
-        int e = (int)g_v[col >> 1] - 128;
-        int r_term = 1836 * e;
-        int g_term = -218 * d - 546 * e;
-        int b_term = 2163 * d;
-        unsigned int row;
+    for (row = 0u; row < rows_this_pass; row++) {
+        const unsigned char *yp = g_y[row];
+        unsigned int *outp = g_out[row];
+        unsigned int col = 0u;
 
-        for (row = 0u; row < rows_this_pass; row++) {
-            int y0 = 1192 * ((int)g_y[row][col] - 16);
-            int y1 = 1192 * ((int)g_y[row][col + 1] - 16);
+        /* Four luma pixels need two chroma samples, each used twice. */
+        for (; col + 3u < width; col += 4u) {
+            vec_int4 c, d, e, yy, r, g, b;
+            int d0 = (int)g_u[(col >> 1)] - 128;
+            int d1 = (int)g_u[(col >> 1) + 1u] - 128;
+            int e0 = (int)g_v[(col >> 1)] - 128;
+            int e1 = (int)g_v[(col >> 1) + 1u] - 128;
 
-            g_out[row][col] = (clamp255((y0 + r_term) >> 10) << 16)
-                            | (clamp255((y0 + g_term) >> 10) << 8)
-                            |  clamp255((y0 + b_term) >> 10);
-            g_out[row][col + 1] = (clamp255((y1 + r_term) >> 10) << 16)
-                                | (clamp255((y1 + g_term) >> 10) << 8)
-                                |  clamp255((y1 + b_term) >> 10);
+            c = (vec_int4){ (int)yp[col] - 16, (int)yp[col + 1u] - 16,
+                            (int)yp[col + 2u] - 16, (int)yp[col + 3u] - 16 };
+            d = (vec_int4){ d0, d0, d1, d1 };
+            e = (vec_int4){ e0, e0, e1, e1 };
+
+            yy = mul_coef(c, 1192);
+            r = clamp_vec(spu_rlmaska(spu_add(yy, mul_coef(e, 1836)), -10));
+            g = clamp_vec(spu_rlmaska(spu_add(yy, spu_add(mul_coef(d, -218), mul_coef(e, -546))), -10));
+            b = clamp_vec(spu_rlmaska(spu_add(yy, mul_coef(d, 2163)), -10));
+
+            *(vec_uint4 *)&outp[col] = spu_or(spu_or(spu_sl((vec_uint4)r, 16u),
+                                                     spu_sl((vec_uint4)g, 8u)),
+                                              (vec_uint4)b);
+        }
+
+        /* Whatever a width not divisible by four leaves. Scalar, because it is at most three pixels. */
+        for (; col < width; col++) {
+            int d = (int)g_u[col >> 1] - 128;
+            int e = (int)g_v[col >> 1] - 128;
+            int y0 = 1192 * ((int)yp[col] - 16);
+
+            outp[col] = (clamp255((y0 + 1836 * e) >> 10) << 16)
+                      | (clamp255((y0 - 218 * d - 546 * e) >> 10) << 8)
+                      |  clamp255((y0 + 2163 * d) >> 10);
         }
     }
 }

@@ -93,6 +93,12 @@ void rc_video_flip(void);
 unsigned rc_video_blit_yuv420(const uint8_t *y, const uint8_t *u, const uint8_t *v,
                               int y_stride, int uv_stride, int width, int height);
 
+/*
+ * The one-shot agreement check between the SPE and PPE conversions. `checked` is 0 until a frame has
+ * been converted both ways. See rc_video_blit_yuv420 for why this exists at all.
+ */
+void rc_video_verify_get(int *checked, int *match, uint64_t *spu_hash, uint64_t *ppe_hash);
+
 void rc_video_close(void);
 
 #endif /* RC_VIDEO_PS3_H */
