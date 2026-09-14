@@ -394,30 +394,8 @@ unsigned rc_video_blit_yuv420(const uint8_t *y, const uint8_t *u, const uint8_t 
         uint32_t *dst = back + (size_t)oy * (size_t)stride_px + (size_t)ox;
         unsigned spu_us = rc_spu_yuv_convert(y, u, v, y_stride, uv_stride, width, height,
                                              dst, s_info.pitch, dst_w, dst_h);
-        if (spu_us > 0u) {
-            /*
-             * ONCE PER RUN, CHECK THE SPEs AGAINST THE PPE.
-             *
-             * The SPE kernel is SIMD and the PPE one is scalar, and they are supposed to compute the
-             * same thing from the same constants. A mistake in the vector version - a coefficient in
-             * the wrong lane, a shift off by one, chroma duplicated the wrong way round - produces a
-             * picture that is present and subtly wrong, which is exactly the kind of fault a glance at
-             * a television does not catch.
-             *
-             * So the first converted frame is done BOTH ways and the results compared. It costs one
-             * frame's PPE conversion, once, and it is the only thing that can tell "the SPEs are fast"
-             * from "the SPEs are fast and correct".
-             */
-            if (!s_verified) {
-                s_verified = 1;
-                s_verify_hash_spu = hash_region(dst, stride_px, dst_w, dst_h);
-                convert_on_ppe(y, u, v, y_stride, uv_stride, width, height,
-                               dst, stride_px, dst_w, dst_h);
-                s_verify_hash_ppe = hash_region(dst, stride_px, dst_w, dst_h);
-                s_verify_match = (s_verify_hash_spu == s_verify_hash_ppe);
-            }
+        if (spu_us > 0u)
             return spu_us;
-        }
     }
 
     t0 = rc_tick();
@@ -497,4 +475,69 @@ void rc_video_scale_info(int *scaled_w, int *scaled_h, int *display_w, int *disp
         *display_w = s_info.width;
     if (display_h != NULL)
         *display_h = s_info.height;
+}
+
+/*
+ * THE AGREEMENT CHECK, MOVED OFF THE STREAMING PATH.
+ *
+ * It used to run on the first frame of the session, which was affordable at 960x540 and became a
+ * disaster at 1920x1080: an SPE conversion, two hashes of two million pixels, and a full PPE conversion
+ * of the same - well over a tenth of a second stalled inside the receive loop, at exactly the moment the
+ * console is establishing its cadence. b112 lost the Takion channel to it and received 58 packets where
+ * the run before received 6287.
+ *
+ * The check was never about a particular frame. It is about two implementations agreeing, and a
+ * synthetic input tests that better: the gradients below sweep luma and both chroma channels across
+ * their whole range, including the values that clamp, which a given frame of a game may never contain.
+ *
+ * It runs once, before streaming, on a small picture, and it SCALES - because the scaler is now part of
+ * what has to agree, and a 1:1 check would pass while every scaled pixel was wrong.
+ */
+#define RC_VERIFY_SRC_W 64
+#define RC_VERIFY_SRC_H 32
+#define RC_VERIFY_DST_W 128
+#define RC_VERIFY_DST_H 64
+
+int rc_video_self_test(void)
+{
+    static uint8_t yp[RC_VERIFY_SRC_W * RC_VERIFY_SRC_H] __attribute__((aligned(128)));
+    static uint8_t up[(RC_VERIFY_SRC_W / 2) * (RC_VERIFY_SRC_H / 2)] __attribute__((aligned(128)));
+    static uint8_t vp[(RC_VERIFY_SRC_W / 2) * (RC_VERIFY_SRC_H / 2)] __attribute__((aligned(128)));
+    static uint32_t spu_out[RC_VERIFY_DST_W * RC_VERIFY_DST_H] __attribute__((aligned(128)));
+    static uint32_t ppe_out[RC_VERIFY_DST_W * RC_VERIFY_DST_H] __attribute__((aligned(128)));
+    int x, ynd;
+
+    s_verified = 0;
+    s_verify_match = 0;
+
+    /* Sweep the full range, including values that clamp - a real frame may never contain them. */
+    for (ynd = 0; ynd < RC_VERIFY_SRC_H; ynd++) {
+        for (x = 0; x < RC_VERIFY_SRC_W; x++)
+            yp[ynd * RC_VERIFY_SRC_W + x] = (uint8_t)((x * 255) / (RC_VERIFY_SRC_W - 1));
+    }
+    for (ynd = 0; ynd < RC_VERIFY_SRC_H / 2; ynd++) {
+        for (x = 0; x < RC_VERIFY_SRC_W / 2; x++) {
+            up[ynd * (RC_VERIFY_SRC_W / 2) + x] = (uint8_t)((x * 255) / ((RC_VERIFY_SRC_W / 2) - 1));
+            vp[ynd * (RC_VERIFY_SRC_W / 2) + x] =
+                (uint8_t)((ynd * 255) / ((RC_VERIFY_SRC_H / 2) - 1));
+        }
+    }
+
+    memset(spu_out, 0, sizeof(spu_out));
+    memset(ppe_out, 0, sizeof(ppe_out));
+
+    if (rc_spu_yuv_convert(yp, up, vp, RC_VERIFY_SRC_W, RC_VERIFY_SRC_W / 2,
+                           RC_VERIFY_SRC_W, RC_VERIFY_SRC_H,
+                           spu_out, RC_VERIFY_DST_W * 4, RC_VERIFY_DST_W, RC_VERIFY_DST_H) == 0u)
+        return 0;   /* no SPEs, or they refused - not a mismatch, and the caller is told apart */
+
+    convert_on_ppe(yp, up, vp, RC_VERIFY_SRC_W, RC_VERIFY_SRC_W / 2,
+                   RC_VERIFY_SRC_W, RC_VERIFY_SRC_H,
+                   ppe_out, RC_VERIFY_DST_W, RC_VERIFY_DST_W, RC_VERIFY_DST_H);
+
+    s_verify_hash_spu = hash_region(spu_out, RC_VERIFY_DST_W, RC_VERIFY_DST_W, RC_VERIFY_DST_H);
+    s_verify_hash_ppe = hash_region(ppe_out, RC_VERIFY_DST_W, RC_VERIFY_DST_W, RC_VERIFY_DST_H);
+    s_verified = 1;
+    s_verify_match = (s_verify_hash_spu == s_verify_hash_ppe);
+    return 1;
 }
