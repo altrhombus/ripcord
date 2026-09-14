@@ -201,6 +201,7 @@ SOURCES := \
 	source/platform/rc_stack_ps3.c \
 	source/video/rc_video_ps3.c \
 	source/spu/rc_spu.c \
+	source/spu/rc_spu_yuv.c \
 	source/net/rc_netlog.c \
 	source/media/rc_h264_annexb.c \
 	source/discovery/rc_discover.c \
@@ -339,6 +340,12 @@ SPU_LIBS    := -lsputhread
 SPU_SOURCES := spu/rc_spu_probe.c
 SPU_NAME    := rc_spu_probe
 
+# THE SECOND SPE IMAGE. The probe measures dispatch and DMA; this one does the colour conversion, and
+# they are separate programs rather than one with a mode switch because they have nothing in common but
+# the architecture - the probe is a one-shot that exits, this one waits on a mailbox forever.
+SPU2_SOURCES := spu/rc_spu_yuv.c
+SPU2_NAME    := rc_spu_yuv
+
 .PHONY: all clean distclean test pkg run
 
 all: $(APP).self
@@ -367,6 +374,19 @@ $(BUILD)/rc_spu_symbols.h: $(BUILD)/$(SPU_NAME).elf
 
 $(BUILD)/$(SPU_NAME).bin: $(BUILD)/$(SPU_NAME).elf
 	cp $< $@
+
+$(BUILD)/$(SPU2_NAME).elf: $(SPU2_SOURCES)
+	@mkdir -p $(@D)
+	@test -x "$(SPU_CC)" || { echo "ERROR: spu-gcc not found at $(SPU_CC)"; exit 1; }
+	$(SPU_CC) $(SPU_CFLAGS) $(SPU_LDFLAGS) -o $@ $(SPU2_SOURCES) $(SPU_LIBS)
+
+$(BUILD)/$(SPU2_NAME).bin: $(BUILD)/$(SPU2_NAME).elf
+	cp $< $@
+
+$(BUILD)/$(SPU2_NAME)_bin.o: $(BUILD)/$(SPU2_NAME).bin
+	$(BIN2S) -a 64 $< | $(AS) -o $@
+	@printf 'extern const unsigned char %s_bin_end[];\nextern const unsigned char %s_bin[];\nextern const unsigned int %s_bin_size;\n' \
+	        $(SPU2_NAME) $(SPU2_NAME) $(SPU2_NAME) > $(BUILD)/$(SPU2_NAME)_bin.h
 
 $(BUILD)/$(SPU_NAME)_bin.o: $(BUILD)/$(SPU_NAME).bin
 	$(BIN2S) -a 64 $< | $(AS) -o $@
@@ -510,17 +530,18 @@ SDK_SOCKET_OBJS := \
 	$(BUILD)/rc_connect.o \
 	$(BUILD)/takion_reliable_channel.o \
 	$(BUILD)/rc_stack_ps3.o \
-	$(BUILD)/rc_video_ps3.o
+	$(BUILD)/rc_video_ps3.o \
+	$(BUILD)/rc_spu_yuv.o
 
 $(SDK_SOCKET_OBJS): CFLAGS := $(CFLAGS_SDK_SOCKETS)
 
-$(BUILD)/%.o: %.c | $(BUILD)/rc_build_id.h $(BUILD)/rc_spu_symbols.h $(BUILD)/$(SPU_NAME)_bin.o
+$(BUILD)/%.o: %.c | $(BUILD)/rc_build_id.h $(BUILD)/rc_spu_symbols.h $(BUILD)/$(SPU_NAME)_bin.o $(BUILD)/$(SPU2_NAME)_bin.o
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) $(DEPFLAGS) -c -o $@ $<
 
-$(BUILD)/$(APP).elf: $(COBJS) $(BUILD)/$(SPU_NAME)_bin.o $(BUILD)/rc_decode_probe.o $(CORE_TEST_OBJS)
+$(BUILD)/$(APP).elf: $(COBJS) $(BUILD)/$(SPU_NAME)_bin.o $(BUILD)/$(SPU2_NAME)_bin.o $(BUILD)/rc_decode_probe.o $(CORE_TEST_OBJS)
 	@mkdir -p $(@D)
-	$(CXX) $(LDFLAGS) -o $@ $(COBJS) $(BUILD)/$(SPU_NAME)_bin.o \
+	$(CXX) $(LDFLAGS) -o $@ $(COBJS) $(BUILD)/$(SPU_NAME)_bin.o $(BUILD)/$(SPU2_NAME)_bin.o \
 	       $(BUILD)/rc_decode_probe.o $(CORE_TEST_OBJS) $(OPENH264_LIB) $(MBEDTLS_LIB) $(LIBS)
 
 # THE PREPARED ELF - strip, then sprxlinker. BOTH STEPS, IN THAT ORDER, AND THE SECOND ONE IS NOT
