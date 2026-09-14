@@ -7,6 +7,7 @@
 #include <rsx/rsx.h>
 #include <sysutil/video.h>
 #include <sysmodule/sysmodule.h>
+#include "rc_platform.h"
 
 #define RC_VIDEO_BUFFERS 2
 
@@ -187,6 +188,11 @@ int rc_video_open(rc_video_info *out)
     s_info.video_state = out->video_state;
     s_info.gcm_module = s_gcm_module;
     s_info.sysutil_module = s_sysutil_module;
+    /* These are filled in on `out` during the sweep and would be lost by the copy below, which is
+     * exactly what b85 reported: "0 attempts, 0 bytes" from a run that had plainly succeeded. */
+    s_info.rsx_attempts = out->rsx_attempts;
+    s_info.cmd_size = out->cmd_size;
+    s_info.io_size = out->io_size;
     s_info.ok = 1;
     s_info.failed_at = NULL;
     s_open = 1;
@@ -232,4 +238,71 @@ void rc_video_close(void)
      * hands the IO region back, so this only marks the display closed. */
     s_open = 0;
     s_info.ok = 0;
+}
+
+/* Clamp to a byte without a branch per channel in the common case. */
+static inline uint32_t clamp255(int32_t v)
+{
+    if (v < 0)
+        return 0u;
+    if (v > 255)
+        return 255u;
+    return (uint32_t)v;
+}
+
+unsigned rc_video_blit_yuv420(const uint8_t *y, const uint8_t *u, const uint8_t *v,
+                              int y_stride, int uv_stride, int width, int height)
+{
+    uint32_t *back = rc_video_back_buffer();
+    uint64_t t0;
+    int stride_px;
+    int ox, oy;
+    int row;
+
+    if (back == NULL || y == NULL || u == NULL || v == NULL)
+        return 0u;
+    if (width <= 0 || height <= 0)
+        return 0u;
+
+    stride_px = s_info.pitch / 4;
+    ox = (s_info.width - width) / 2;
+    oy = (s_info.height - height) / 2;
+    if (ox < 0 || oy < 0)
+        return 0u;   /* a picture larger than the screen wants scaling, which this does not do */
+
+    t0 = rc_tick();
+
+    for (row = 0; row < height; row++) {
+        const uint8_t *yr = y + (size_t)row * (size_t)y_stride;
+        const uint8_t *ur = u + (size_t)(row / 2) * (size_t)uv_stride;
+        const uint8_t *vr = v + (size_t)(row / 2) * (size_t)uv_stride;
+        uint32_t *out = back + (size_t)(oy + row) * (size_t)stride_px + (size_t)ox;
+        int col;
+
+        for (col = 0; col < width; col++) {
+            /*
+             * BT.709 limited range, in 10-bit fixed point. The chroma planes are half resolution in
+             * both directions, so each pair of columns and each pair of rows share one sample - that
+             * is what 4:2:0 means, and reading u/v per luma pixel without the /2 is the classic way to
+             * get a picture that is right at the top-left and progressively wrong everywhere else.
+             */
+            int32_t c = (int32_t)yr[col] - 16;
+            int32_t d = (int32_t)ur[col / 2] - 128;
+            int32_t e = (int32_t)vr[col / 2] - 128;
+            int32_t yy = 1192 * c;
+
+            uint32_t r = clamp255((yy + 1836 * e) >> 10);
+            uint32_t g = clamp255((yy - 218 * d - 546 * e) >> 10);
+            uint32_t b = clamp255((yy + 2163 * d) >> 10);
+
+            out[col] = (r << 16) | (g << 8) | b;
+        }
+    }
+
+    {
+        uint64_t hz = rc_tick_hz();
+        uint64_t ticks = rc_tick() - t0;
+
+        return (hz > 0u) ? (unsigned)((ticks * 1000000u) / hz) : 0u;
+    }
 }

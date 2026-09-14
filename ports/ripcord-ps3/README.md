@@ -363,6 +363,29 @@ not have been right — "no A/V" and "A/V thrown away" were indistinguishable. `
 type (the low nibble of byte 0: 0 control, 2 video, 3 audio) without taking the datagram, so each one goes
 to whichever reader owns it.
 
+**There is a picture on the television.** The display came up on 2026-09-14 at **1920x1080, pitch 7680,
+double-buffered** — the console's own mode, read from `videoGetState` rather than chosen.
+
+Getting there took five wrong hypotheses and one useful failure, and both halves are worth recording:
+
+- `rsxInit`'s IO region must be **1 MB-aligned AND a whole number of megabytes** (`rsx.h` says so in the
+  paragraph above the sequence). 512 KB gave `0x802100FF`.
+- `rsxInit` and `videoGetState` are **PRX imports** — `nm` shows them as `D` symbols with `_stub`
+  entries. `sprxlinker` patches the call sites, but `sysModuleLoad(SYSMODULE_GCM_SYS)` and `SYSUTIL`
+  must still make the modules resident. Networking never needed this because `netInitialize` loads its
+  own; the display has no such courtesy.
+- The **command buffer is carved out of the IO region**, so asking for 1 MB of command buffer inside a
+  1 MB region leaves nothing for the heap `rsxInit` builds. A small command buffer in a larger region is
+  the shape that works.
+- **`videoGetState` reports 0 on a working display**, which PSL1GHT's own header calls
+  `VIDEO_STATE_DISABLED`. The value is recorded and never judged — refusing to open on it would
+  manufacture exactly the black screen this was trying to explain.
+
+The useful failure was moving the display check to the **front** of the run. It failed there too, which
+eliminated in one go every theory about networking, the raw SPU, openh264 or the decoder holding
+something the RSX needed. After four wrong guesses about the call, `rsxInit` is now **swept** across
+several size pairs rather than given one — the same discipline the writable-directory probe uses.
+
 **What is not done.** Incoming GMAC tags are
 **not verified `[X]`**: GMAC authenticates without encrypting, so `STREAM_INFO` parses as it stands and this
 build reads it without checking who wrote it. That is the receive half of the sealing mechanism and a real

@@ -53,6 +53,23 @@ uint32_t *rc_video_back_buffer(void);
 /* Presents the back buffer and waits for the flip to land. */
 void rc_video_flip(void);
 
+/*
+ * Converts one YUV 4:2:0 picture into the back buffer, centred, one pixel per pixel.
+ *
+ * NO SCALING, deliberately, for the first light-up. The stream is 960x540 and the display is 1920x1080,
+ * which is an exact doubling and therefore tempting - but doubling is four times the pixels, and the
+ * open question here is what this conversion COSTS on the PPE while it is also decoding. Answer that at
+ * the cheap size first; a 2x blit that drops frames would say nothing about whether the colour is right.
+ *
+ * The colour matrix is BT.709 limited range. **[X]** - this is what HD content normally uses and the
+ * console has not been asked. A wrong matrix gives a picture that is visibly present and visibly
+ * off-colour, which is a good failure: it cannot be confused with no picture at all.
+ *
+ * Returns the microseconds it took, so the cost is measured rather than assumed.
+ */
+unsigned rc_video_blit_yuv420(const uint8_t *y, const uint8_t *u, const uint8_t *v,
+                              int y_stride, int uv_stride, int width, int height);
+
 void rc_video_close(void);
 
 #endif /* RC_VIDEO_PS3_H */

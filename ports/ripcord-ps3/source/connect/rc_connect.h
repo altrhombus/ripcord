@@ -253,6 +253,11 @@ typedef struct {
     int  decoded_width;
     int  decoded_height;
     uint64_t decode_ticks;
+
+    /* Pictures actually put on the screen, and what the conversion cost. */
+    unsigned blits;
+    unsigned blit_avg_us;
+    unsigned blit_worst_us;
     int      held_channel_error;
     unsigned stream_info_bytes;
     int  stream_info_parsed;

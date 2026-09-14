@@ -89,6 +89,17 @@ int rc_decode_live_open(void);
  * which the caller owns and may read at any time. */
 int rc_decode_live_feed(const uint8_t *access_unit, size_t length, rc_decode_live_stats *stats);
 
+/*
+ * Called with each decoded picture, inside rc_decode_live_feed, while openh264 still owns the planes.
+ * They are valid for the duration of the call only - the decoder reuses them - so a consumer either
+ * uses them now or copies them. Using them now is what the display does.
+ */
+typedef void (*rc_decode_picture_fn)(void *ctx, const unsigned char *y, const unsigned char *u,
+                                     const unsigned char *v, int y_stride, int uv_stride,
+                                     int width, int height);
+
+void rc_decode_live_set_sink(rc_decode_picture_fn fn, void *ctx);
+
 void rc_decode_live_close(void);
 
 /* The hash the caller compares against. Exposed so the development machine can compute it identically. */
