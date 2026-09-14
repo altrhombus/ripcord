@@ -3,6 +3,7 @@
 #include "rc_platform.h"
 
 #include <arpa/inet.h>
+#include <fcntl.h>
 #include <errno.h>
 #include <netinet/in.h>
 #include <string.h>
@@ -66,4 +67,27 @@ int rc_tcp_send_all(int sock, const void *data, size_t length)
 ssize_t rc_tcp_recv(int sock, void *buf, size_t buf_size)
 {
     return recv(sock, buf, buf_size, 0);
+}
+
+int rc_socket_set_nonblocking(int sock)
+{
+    /*
+     * SO_NBIO first, because where it exists it is the mechanism that actually works. See rc_tcp.h: on
+     * the PS3, fcntl reports success and leaves the socket blocking, which turns every bounded poll loop
+     * into an unbounded one.
+     */
+#ifdef SO_NBIO
+    {
+        int on = 1;
+        if (setsockopt(sock, SOL_SOCKET, SO_NBIO, &on, (socklen_t)sizeof(on)) == 0)
+            return 1;
+    }
+#endif
+
+#if defined(O_NONBLOCK) && defined(F_SETFL)
+    return fcntl(sock, F_SETFL, O_NONBLOCK) != -1;
+#else
+    (void)sock;
+    return 0;
+#endif
 }
