@@ -86,6 +86,11 @@ typedef struct {
      */
     size_t last_peer_key_length;
     uint8_t last_peer_key_prefix;
+
+    /* When the refusal was DERIVE: which backend call failed and what it returned. RC_ECDH_STEP_* and
+     * the backend's own code, unmapped - see rc_ecdh.h. */
+    int last_ecdh_step;
+    int last_ecdh_code;
 } takion_session_negotiator;
 
 /* Maps a negotiated protocol version to its curve: 0x0d-0x11 -> P-521, anything else -> P-256. */

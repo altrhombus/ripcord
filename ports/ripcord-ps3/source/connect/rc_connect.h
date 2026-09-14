@@ -158,6 +158,8 @@ typedef struct {
     int  reply_reject_reason;  /* TAKION_SESSION_REJECT_* - why accept_reply said no */
     unsigned peer_key_length;  /* the console's ECDH point as it arrived: 65 = P-256, */
     unsigned peer_key_prefix;  /* 133 = P-521; prefix 0x04 = uncompressed             */
+    int  ecdh_step;            /* RC_ECDH_STEP_* when the derivation itself failed    */
+    int  ecdh_code;            /* ...and the backend's own return value               */
     int  stream_keys_derived;
     int  asked_width;
     int  asked_height;

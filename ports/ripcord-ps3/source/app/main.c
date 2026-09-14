@@ -934,6 +934,21 @@ static int check_connect(void)
             ps3_log("      answered and we declined it, which is not the same as silence.\n");
             if (why >= 0 && why < (int)(sizeof(kReject) / sizeof(kReject[0])))
                 ps3_log("      %s\n", kReject[why]);
+            if (c.ecdh_step != 0) {
+                static const char *const kEcdhStep[] = {
+                    "none", "arguments", "curve", "sizes", "group load", "our private key",
+                    "reading the peer point", "checking the peer point",
+                    "THE POINT MULTIPLY", "the result was the identity", "writing the result"
+                };
+                int st = c.ecdh_step;
+
+                ps3_log("      backend step %d (%s), code %d (0x%04x)\n", st,
+                        (st >= 0 && st < (int)(sizeof(kEcdhStep) / sizeof(kEcdhStep[0])))
+                            ? kEcdhStep[st] : "?",
+                        c.ecdh_code, (unsigned)(-c.ecdh_code));
+                ps3_log("      the code is mbedtls's own and unmapped - -0x4d80 is ALLOC_FAILED,\n");
+                ps3_log("      which would be a platform limit rather than anything cryptographic.\n");
+            }
         } else if (c.session_request_bytes > 0u) {
             ps3_log("      SESSION_REQUEST went out (%u bytes, %s) and nothing came back. If the\n",
                     c.session_request_bytes, c.curve_p521 ? "P-521" : "P-256");
