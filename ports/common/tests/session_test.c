@@ -405,6 +405,52 @@ static void test_end_to_end_field_pipeline(void)
  * console would answer it normally, and nothing would ever complain - which is exactly the kind of
  * defect worth a host test rather than a hardware run.
  */
+/*
+ * The console's direction counts separately from ours, and only payload-carrying frames spend a counter.
+ * Both halves matter: starting at the wrong value, or spending one on an empty heartbeat, shifts every
+ * later frame onto a counter that decrypts to plausible garbage rather than to an error.
+ */
+static void test_console_direction_counter(void)
+{
+    static const uint8_t nonce[16] = {
+        0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff
+    };
+    static const uint8_t companion[16] = {
+        0x0f, 0x1e, 0x2d, 0x3c, 0x4b, 0x5a, 0x69, 0x78, 0x87, 0x96, 0xa5, 0xb4, 0xc3, 0xd2, 0xe1, 0xf0
+    };
+    halyard_control_field ctx;
+    uint8_t verdict_cipher[1];
+    uint8_t back[1];
+    const uint8_t accepted = HALYARD_CTRL_LOGIN_ACCEPTED;
+
+    CHECK(HALYARD_SESS_COUNTER_CONSOLE_START == 1u,
+          "the console's first encrypted frame is counter 1 - its /sess/ctrl response spent 0");
+    CHECK(HALYARD_SESS_COUNTER_CONSOLE_START != HALYARD_SESS_COUNTER_LOGIN_PIN_START,
+          "the two directions must not share a counter origin");
+
+    if (halyard_control_field_init(&ctx, nonce, companion, 0, HALYARD_VERSION_SELECTOR_PS5) != 0) {
+        CHECK(0, "control field init refused - constants not bundled in this build?");
+        return;
+    }
+
+    /* A verdict the console encrypted at its counter 1 round-trips at 1 and nowhere else. */
+    halyard_control_field_encrypt(&ctx, HALYARD_SESS_COUNTER_CONSOLE_START,
+                                  &accepted, verdict_cipher, sizeof(verdict_cipher));
+    halyard_control_field_decrypt(&ctx, HALYARD_SESS_COUNTER_CONSOLE_START,
+                                  verdict_cipher, back, sizeof(back));
+    CHECK(back[0] == HALYARD_CTRL_LOGIN_ACCEPTED, "the verdict decrypts at the counter it was sent at");
+
+    halyard_control_field_decrypt(&ctx, HALYARD_SESS_COUNTER_CONSOLE_START + 1u,
+                                  verdict_cipher, back, sizeof(back));
+    CHECK(back[0] != HALYARD_CTRL_LOGIN_ACCEPTED,
+          "...and not at the next one - an off-by-one here is silent, not loud");
+
+    CHECK(HALYARD_CTRL_LOGIN_ACCEPTED != HALYARD_CTRL_LOGIN_REJECTED,
+          "accept and reject must be distinguishable");
+    CHECK(HALYARD_CTRL_LOGIN_ACCEPTED == 0x00u, "accepted is 0x00, by controlled experiment");
+    CHECK(HALYARD_CTRL_LOGIN_REJECTED == 0x01u, "rejected is 0x01, by the same experiment");
+}
+
 static void test_login_submit_payload(void)
 {
     static const uint8_t nonce[16] = {
@@ -473,6 +519,7 @@ int main(void)
     test_control_arm();
     test_end_to_end_field_pipeline();
     test_login_submit_payload();
+    test_console_direction_counter();
 
     printf("\n%d passed, %d failed\n", g_passed, g_failed);
     return g_failed == 0 ? 0 : 1;
