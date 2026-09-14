@@ -816,13 +816,15 @@ static int check_connect(void)
     rc_connect_stage stage;
 
     ps3_log("conn:  starting\n");
-    stage = rc_connect(RC_CONNECT_WAKE_TIMEOUT_MS, connect_progress, &c);
+    stage = rc_connect(RC_CONNECT_WAKE_TIMEOUT_MS, connect_progress, g_log_dirs, LOG_DIR_COUNT, &c);
 
     if (stage == RC_CONNECT_NO_RECORD) {
         ps3_log("conn:  no pairing record - skipping\n");
         ps3_log("       generate one with `ProtocolLab -- register`, copy it to the console as\n");
         ps3_log("       pairing.txt - that exact name, which is what the core's loader appends;\n");
         ps3_log("       it is per-console and per-account, so it never belongs in this repository.\n");
+        ps3_log("       every directory listed in the writable-directory probe above was searched,\n");
+        ps3_log("       so any of them will do - the install directory is the one tried first.\n");
         return 0;
     }
 
@@ -831,7 +833,8 @@ static int check_connect(void)
      * still at its memset default when nothing had answered at all - which read as a successful probe
      * immediately above a line saying no console answered.
      */
-    ps3_log("conn:  record loaded; recorded address %s\n",
+    ps3_log("conn:  record loaded from %s; recorded address %s\n",
+            c.record_dir != NULL ? c.record_dir : "the compiled-in directory",
             c.host_parsed ? "parses" : "IS NOT A DOTTED QUAD");
     ps3_log("       fcntl(F_SETFL,O_NONBLOCK)=%d, reads back non-blocking: %s; SO_NBIO: %s\n",
             c.fcntl_set_rc,

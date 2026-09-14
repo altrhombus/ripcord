@@ -41,6 +41,7 @@ typedef enum {
 typedef struct {
     rc_connect_stage stage;
     int  had_record;
+    const char *record_dir;  /* which of the candidate directories it came from (a literal, not owned) */
     int  host_parsed;        /* the recorded address is a dotted quad we can send to               */
     int  unicast_replied;    /* the recorded address answered SRCH                                 */
     int  broadcast_found;    /* SOME console answered a broadcast, when the recorded one did not    */
@@ -113,7 +114,13 @@ typedef void (*rc_connect_log_fn)(const char *stage_text);
  * Returns the stage reached; `out` is filled either way, because how far it got is the finding when it
  * does not finish.
  */
-rc_connect_stage rc_connect(unsigned wake_timeout_ms, rc_connect_log_fn log, rc_connect_result *out);
+/*
+ * `dirs` is an ordered list of directories to look for "pairing.txt" in - pass the same list the log
+ * probes, so the two cannot disagree about where this program keeps its files. NULL uses the
+ * compile-time RC_CONNECT_PAIRING_DIR instead.
+ */
+rc_connect_stage rc_connect(unsigned wake_timeout_ms, rc_connect_log_fn log,
+                            const char *const *dirs, int dir_count, rc_connect_result *out);
 
 /* For the caller's report. Never includes anything from the pairing record. */
 const char *rc_connect_stage_name(rc_connect_stage stage);
