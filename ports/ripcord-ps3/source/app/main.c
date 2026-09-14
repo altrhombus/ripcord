@@ -946,8 +946,24 @@ static int check_connect(void)
                         (st >= 0 && st < (int)(sizeof(kEcdhStep) / sizeof(kEcdhStep[0])))
                             ? kEcdhStep[st] : "?",
                         c.ecdh_code, (unsigned)(-c.ecdh_code));
-                ps3_log("      the code is mbedtls's own and unmapped - -0x4d80 is ALLOC_FAILED,\n");
-                ps3_log("      which would be a platform limit rather than anything cryptographic.\n");
+                ps3_log("      the code is mbedtls's own and unmapped - -0x4c80 is INVALID_KEY,\n");
+                ps3_log("      -0x4d80 is ALLOC_FAILED.\n");
+            }
+            if (c.peer_key_length > 0u && c.peer_key_length <= sizeof(c.peer_key)) {
+                /*
+                 * The point itself. An ephemeral public key for one session - no secret, no account, no
+                 * console identity - printed so it can be checked off the console, because the four
+                 * P-521 vectors sitting on this machine pass the check this point fails.
+                 */
+                unsigned i;
+
+                ps3_log("      peer point, for off-console analysis:\n      ");
+                for (i = 0u; i < c.peer_key_length; i++) {
+                    ps3_log("%02x", c.peer_key[i]);
+                    if (((i + 1u) % 32u) == 0u && (i + 1u) < c.peer_key_length)
+                        ps3_log("\n      ");
+                }
+                ps3_log("\n");
             }
         } else if (c.session_request_bytes > 0u) {
             ps3_log("      SESSION_REQUEST went out (%u bytes, %s) and nothing came back. If the\n",
