@@ -862,6 +862,43 @@ static unsigned g_worst_other_ms;
 static uint64_t g_ingest_ticks;
 static unsigned g_ingest_calls;
 
+/*
+ * SPLIT THE 829 MICROSECONDS. b139 measured stream_demux_ingest at 829 us per packet, which at 3.2 GHz
+ * is about 1900 cycles for every byte of a 1400-byte datagram. A naive software AES is 50 to 100 cycles
+ * per byte, so the cipher cannot be most of this - and removing an entire redundant GMAC pass in b138
+ * moved the drain by a tenth, which said the same thing.
+ *
+ * The port supplies the demuxer's crypto seam, so it can wrap it: this callback does exactly what
+ * stream_demux_packet_crypto's does and times it. Whatever is left of the 829 is header parsing, FEC
+ * bookkeeping and the assembly copy - and one of those is then the thing to attack.
+ *
+ * Wrapping rather than editing ports/common, because this is a question about this platform's
+ * performance and not a change to how the demuxer works.
+ */
+static uint64_t g_crypto_ticks;
+static unsigned g_crypto_calls;
+
+static int timed_open_packet(void *ctx, uint8_t *packet, size_t packet_length,
+                             uint32_t key_position, int payload_offset)
+{
+    stream_packet_crypto *crypto = (stream_packet_crypto *)ctx;
+    uint64_t t0 = rc_tick();
+    int ok;
+
+    if (!stream_packet_crypto_verify(crypto, key_position, packet, packet_length,
+                                     STREAM_HEADER_TAG_OFFSET, 0)) {
+        ok = 0;
+    } else {
+        stream_packet_crypto_crypt_payload(crypto, key_position, packet + payload_offset,
+                                           packet_length - (size_t)payload_offset);
+        ok = 1;
+    }
+
+    g_crypto_ticks += rc_tick() - t0;
+    g_crypto_calls++;
+    return ok;
+}
+
 static int drain_av(halyard_control_session *session, rc_connect_result *out,
                     uint64_t *next_heartbeat, uint64_t *next_congestion)
 {
@@ -1519,6 +1556,8 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
                     g_worst_other_ms = 0u;
                     g_ingest_ticks = 0u;
                     g_ingest_calls = 0u;
+                    g_crypto_ticks = 0u;
+                    g_crypto_calls = 0u;
                     g_live_open = rc_decode_live_open();
                     if (g_live_open) {
                         rc_decode_live_set_sink(on_picture, NULL);
@@ -1526,7 +1565,13 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
                          * stream appears inside a frame of leftover test pattern. */
                         rc_video_clear_all(0x00000000u);
                     }
-                    stream_demux_init(&g_demux, stream_demux_packet_crypto(&g_verifier.crypto), sink);
+                    {
+                        stream_demux_crypto timed;
+
+                        timed.open_packet = timed_open_packet;
+                        timed.ctx = &g_verifier.crypto;
+                        stream_demux_init(&g_demux, timed, sink);
+                    }
                     if (info.video_header_length > 0u)
                         stream_demux_set_video_header(&g_demux, info.video_header,
                                                       info.video_header_length);
@@ -1766,6 +1811,9 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
 
         out->ingest_avg_us = (hz > 0u && g_ingest_calls > 0u)
             ? (unsigned)((g_ingest_ticks * 1000000u) / hz / g_ingest_calls)
+            : 0u;
+        out->crypto_avg_us = (hz > 0u && g_crypto_calls > 0u)
+            ? (unsigned)((g_crypto_ticks * 1000000u) / hz / g_crypto_calls)
             : 0u;
     }
     rc_video_scale_info(&out->scaled_width, &out->scaled_height,

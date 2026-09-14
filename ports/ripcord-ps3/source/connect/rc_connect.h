@@ -291,6 +291,7 @@ typedef struct {
     unsigned worst_drain_ms;    /* longest single drain                                    */
     unsigned worst_decode_ms;   /* longest run of decodes in one pass                      */
     unsigned worst_other_ms;
+    unsigned crypto_avg_us;     /* of which: the GMAC verify plus the CTR decrypt           */
     unsigned ingest_avg_us;     /* average cost of one stream_demux_ingest                  */    /* longest everything-else: poll, blit, the loop's own work */
     unsigned worst_read_gap_ms; /* longest interval between two reads of the A/V socket     */
     unsigned queue_worst;       /* deepest the queue got, against its 8 slots             */
