@@ -289,6 +289,43 @@ that half wrong desynchronises almost immediately.
 Confirmed on hardware rather than assumed: the console's `LOGIN` (`0x0005`) verdict decrypted at counter 1
 to exactly `0x00`, "accepted". A wrong counter origin would not have produced a byte the port recognises.
 
+**The session is negotiated, end to end.** On 2026-09-14 a PS3 woke a PS5, answered its sign-in gate,
+brought up both Takion channels, ran senkusha's gating legs, and completed the ECDH exchange:
+`SESSION_REQUEST` 1800 bytes on P-521, `SESSION_REPLY` 203 bytes, the reply's point verified under the
+handshake key, and all four per-direction stream keys derived. Every check in the bring-up passed in the
+same run.
+
+**Two bugs it cost, and both are worth knowing.**
+
+The first was in `ports/common` and every port had it. `takion_reassembler_first` returned two different
+lifetimes: a message needing reassembly was copied into the reassembler and lived as long as the channel,
+while a message arriving complete in ONE CHUNK had the caller's pointer handed straight back — and in
+`takion_channel_poll` that buffer is a local. The short lifetime belonged to the common case, because
+anything under about a kilobyte arrives in one chunk. Both headers already promised otherwise; the code
+contradicted its own documented contract.
+
+It impersonated a crypto fault for eleven hardware runs. A 203-byte `SESSION_REPLY` is one chunk, so its
+HMAC verified — that read happens immediately — and the on-curve check failed a few calls later, once
+mbedtls's own frames had overwritten the point. Every signpost pointed at the arithmetic: a well-formed
+P-521 point, `INVALID_KEY` from the backend, the host build accepting the identical bytes, the same check
+passing on the console against a copy. What finally said otherwise was fingerprinting the derivation's own
+argument and finding it differed from the copy, plus the fact that adding a READ-ONLY call changed the
+answer. A pure function cannot change what a buffer holds; a stack frame can.
+
+The second was this port's Makefile, which tracked no header dependencies at all, so editing a header
+rebuilt nothing that included it. A struct that gained a field left older objects reading the old layout —
+which surfaced as one core suite failing on big-endian for a dozen builds. It also means readings taken
+from non-clean builds during that window are suspect. `-MMD -MP` now, and the two recipes that build with
+`-Dmain=...` needed it added by hand: they did not match the shape of the others, and they were precisely
+the stale ones.
+
+**A side effect worth keeping.** The stack probe added while chasing the first bug settles a question this
+port had assumed since its first boot. PSL1GHT's header defines the process stack size as an *enum*
+(`0x70` = 1M) while its own samples pass a raw byte count; this port passes `0x100000`.
+`sysThreadGetStackInformation` reports **1,048,576 bytes given, ~6 KB used** at the deepest point of the
+session exchange. lv2 takes the byte count. The value was right, and now it is measured rather than
+believed.
+
 **Takion is up.** Senkusha first — the console gates the stream channel's `SESSION` exchange on a senkusha
 bring-up having happened — then the stream channel's own handshake on a different UDP port. Both completed
 their four-way handshake on 2026-09-14 and returned a non-zero **peer tag**, which is a number the console
@@ -298,10 +335,12 @@ The control session stays open throughout, serviced by a tick callback roughly e
 load-bearing and not a style choice: the console resets a session 15–30 s after heartbeat replies stop,
 the UDP waits are longer than that, and this port has one thread.
 
-**What is not done.** `SESSION_REQUEST` → `SESSION_REPLY` and the per-direction stream keys, which need the
-launch spec and ECDH. Nothing is sealed with GMAC yet, no `STREAM_INFO` is acked, and no A/V has been
-demuxed — the transport is up, which is not the same as a stream. Log rotation is implemented in
-`ports/common` but **has not yet fired on hardware `[X]`**: the log has not reached the threshold.
+**What is not done.** Nothing is sealed with GMAC yet, no `STREAM_INFO` is acked, and no A/V has been
+demuxed — a negotiated session is not a stream. Senkusha's echo and MTU measurement legs are not run, so
+the launch spec declares `rtt 0` and a default MTU `[X]`; the 3DS port's note on that is worth heeding,
+since it omitted the echo leg for five phases on the reasoning that it only tunes bitrate, and the
+declared RTT turned out to be an input the console uses. Log rotation is implemented in `ports/common`
+but **has not yet fired on hardware `[X]`** — the log has not reached the threshold.
 
 ## Order of work
 
