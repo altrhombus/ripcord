@@ -1542,6 +1542,10 @@ int main(void)
                     " %u fell back to the PPE\n",
                     stats.frames, stats.spes, stats.avg_us, stats.worst_us, stats.fallbacks);
 
+            if (stats.disabled)
+                ps3_log("spu:   the SPE path was ABANDONED after repeated misses - the PPE carried the\n"
+                        "       rest of the run, which is the outcome this is designed to produce\n");
+
             rc_video_verify_get(&checked, &match, &spu_hash, &ppe_hash);
             if (!checked) {
                 ps3_log("spu:   the SPE and PPE conversions were never compared\n");

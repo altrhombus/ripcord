@@ -34,6 +34,7 @@ typedef struct {
     unsigned fallbacks;     /* frames that timed out and went to the PPE instead */
     unsigned avg_us;
     unsigned worst_us;
+    int      disabled;      /* the SPE path gave up and the PPE carried the rest of the run */
 } rc_spu_yuv_stats;
 
 /* Brings up the SPE threads. Returns the number running - zero is a valid answer and not an error. */
