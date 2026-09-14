@@ -90,10 +90,14 @@ typedef struct {
     unsigned first_type;     /* the first frame's type, 0 if none                           */
     unsigned last_type;      /* and the last                                                */
     int  login_prompt;       /* the console asked for a sign-in PIN                          */
-    int  login_submitted;    /* ...and a passcode from the pairing record went back to it.
-                              * NOT a verdict: reading the console's accept/reject needs the
-                              * receive-direction counter ports/common does not track yet, so
-                              * a wrong passcode is indistinguishable from silence here.     */
+    int  login_submitted;    /* ...and a passcode from the pairing record went back to it   */
+
+    /*
+     * The console's verdict on that passcode, read from LOGIN (0x0005). -1 means it never arrived, which
+     * is a different fact from "rejected" and is kept distinct on purpose: a console that goes quiet and
+     * a console that says no want different things looked at next.
+     */
+    int  login_verdict;      /* -1 none, 0 accepted, 1 rejected, 2 something else entirely   */
     int  heartbeats;         /* HEARTBEAT_REQ answered - proof the channel is live           */
 } rc_connect_result;
 

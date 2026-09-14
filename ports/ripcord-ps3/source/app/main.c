@@ -869,18 +869,27 @@ static int check_connect(void)
 
     switch (stage) {
     case RC_CONNECT_SESSION_READY:
+        if (c.login_verdict == 0)
+            ps3_log("       the console accepted the passcode (LOGIN 0x0005 -> 0x00)\n");
         ps3_log("ok    control session open and the console is willing to stream\n");
         return 0;
     case RC_CONNECT_SESSION_OPEN:
         ps3_log("       %d control frame(s) while waiting; first 0x%04x, last 0x%04x, %d heartbeat(s)\n",
                 c.frames_seen, c.first_type, c.last_type, c.heartbeats);
-        if (c.login_prompt && c.login_submitted) {
-            ps3_log("FAIL  the console asked for a sign-in passcode, the one in the pairing record\n");
-            ps3_log("      went back to it, and no SESSION_ID followed within the deadline. This\n");
-            ps3_log("      port cannot yet read the console's verdict (that is LOGIN 0x0005, and\n");
-            ps3_log("      decrypting it needs the receive-direction counter), so a WRONG passcode\n");
-            ps3_log("      and a console that simply went quiet look identical from here. Check the\n");
-            ps3_log("      passcode before suspecting the submit.\n");
+        if (c.login_prompt && c.login_verdict == 1) {
+            ps3_log("FAIL  the console REJECTED the passcode in the pairing record. That is its own\n");
+            ps3_log("      answer, not a timeout - correct `pin=` and re-run.\n");
+        } else if (c.login_prompt && c.login_verdict == 2) {
+            ps3_log("FAIL  the console answered the passcode with a verdict byte nobody has seen\n");
+            ps3_log("      before - neither 0x00 nor 0x01. Worth a look rather than a retry.\n");
+        } else if (c.login_prompt && c.login_verdict == 0) {
+            ps3_log("FAIL  the console ACCEPTED the passcode and then sent no SESSION_ID within the\n");
+            ps3_log("      deadline. The reference sees session-ready ~2.3 s after a LAN submit, so\n");
+            ps3_log("      this is the console being slow or the session stalling after login - it\n");
+            ps3_log("      is NOT a bad passcode.\n");
+        } else if (c.login_prompt && c.login_submitted) {
+            ps3_log("FAIL  the passcode went back to the console and nothing returned - no verdict,\n");
+            ps3_log("      no SESSION_ID. The console went quiet rather than saying no.\n");
         } else if (c.login_prompt) {
             ps3_log("       the console wants a sign-in passcode and none was supplied. Either put\n");
             ps3_log("       `pin=<digits>` in the pairing record beside the console, or sign in on\n");
