@@ -900,6 +900,15 @@ static int check_connect(void)
             ps3_log("       %lu packet(s) DROPPED for failing authentication\n", c.verify_dropped);
         ps3_log("       sent %u heartbeat(s) on the stream channel; the console's own need no reply\n",
                 c.heartbeats_sent);
+        ps3_log("       A/V on the same socket: %u packet(s), %lu bytes - %u video, %u audio, %u other\n",
+                c.av_packets, c.av_bytes, c.av_video, c.av_audio, c.av_other);
+        if (c.av_packets > 0u)
+            ps3_log("       %u of %u authenticated under the A/V rule (tag@10, key pos from the packet\n"
+                    "       at @14, only the tag zeroed in the AAD - not the control rule)\n",
+                    c.av_verified, c.av_packets);
+        else
+            ps3_log("       none arrived. Until now poll's recvfrom consumed and discarded them, so\n"
+                    "       'no A/V' and 'A/V thrown away' looked identical - this run can tell them apart.\n");
         ps3_log("       held the session %u ms: %u message(s), last type 0x%04x%s\n",
                 6000u, c.held_messages, c.held_last_type,
                 c.held_channel_error ? ", CHANNEL ERROR" : "");
