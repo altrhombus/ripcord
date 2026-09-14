@@ -824,6 +824,92 @@ static void send_periodic(halyard_control_session *session, rc_connect_result *o
     }
 }
 
+/*
+ * Takes whatever A/V is waiting, up to the bound, and feeds it to the demuxer. Returns how many
+ * datagrams it took.
+ *
+ * A FUNCTION because it has to be called from more than one place. The receive loop calls it, and so
+ * does the gap between decodes - one decode is 19 to 23 ms and the socket holds 122 KB, so going more
+ * than one decode without reading is how b130 put loss back to 6.6% after b129 had it at 1.3%.
+ */
+static int drain_av(halyard_control_session *session, rc_connect_result *out,
+                    uint64_t *next_heartbeat, uint64_t *next_congestion)
+{
+    int drained;
+
+    drained = 0;
+    while (drained < RC_AV_DRAIN_BURST) {
+        /*
+         * THE TIMERS ARE CHECKED IN HERE TOO, which is what lets the bound be generous.
+         *
+         * They used to live only in the outer loop, so the bound was a compromise: large enough
+         * to drain a burst, small enough that heartbeats and congestion reports were not starved
+         * by one. Checking them per drained packet costs two comparisons and removes the
+         * tension, so the bound can be sized for the burst alone.
+         */
+        send_periodic(session, out, next_heartbeat, next_congestion);
+
+        uint8_t peek[STREAM_HEADER_LENGTH];
+        ssize_t peeked = recvfrom(g_stream_channel.sock, peek, sizeof(peek), MSG_PEEK,
+                                  NULL, NULL);
+
+        if (peeked <= 0)
+            break;                                   /* nothing waiting */
+        if ((unsigned)(peek[0] & 0x0fu) == 0u)
+            break;                                   /* control - takion_channel_poll owns it */
+        drained++;
+        {
+            /* Not the control association - take it and account for it here. */
+            uint8_t packet[TAKION_MAX_PACKET];
+            ssize_t n = recvfrom(g_stream_channel.sock, packet, sizeof(packet), 0, NULL, NULL);
+
+            if (n >= (ssize_t)STREAM_HEADER_LENGTH) {
+                unsigned base = (unsigned)(packet[0] & 0x0fu);
+                uint64_t key_pos;
+
+                out->av_packets++;
+                out->av_bytes += (unsigned long)n;
+                if (base == STREAM_HEADER_TYPE_VIDEO)
+                    out->av_video++;
+                else if (base == STREAM_HEADER_TYPE_AUDIO)
+                    out->av_audio++;
+                else
+                    out->av_other++;
+
+                /*
+                 * THE A/V AUTHENTICATION RULE, which is NOT the control one. The key position
+                 * travels in the packet at offset 14 rather than being ours to choose, the tag
+                 * sits at offset 10, and only the TAG region is zeroed in the AAD - the key
+                 * position is NOT. Getting either half wrong makes every packet fail, which is a
+                 * much better outcome than silently decrypting noise.
+                 */
+                key_pos = ((uint64_t)packet[STREAM_HEADER_KEY_POSITION_OFFSET + 0] << 24)
+                        | ((uint64_t)packet[STREAM_HEADER_KEY_POSITION_OFFSET + 1] << 16)
+                        | ((uint64_t)packet[STREAM_HEADER_KEY_POSITION_OFFSET + 2] << 8)
+                        | (uint64_t)packet[STREAM_HEADER_KEY_POSITION_OFFSET + 3];
+
+                if (stream_packet_crypto_verify(&g_verifier.crypto, key_pos, packet, (size_t)n,
+                                                STREAM_HEADER_TAG_OFFSET, 0 /* tag only */))
+                    out->av_verified++;
+
+                /*
+                 * Into the demuxer, which verifies and decrypts again through its own crypto
+                 * seam before doing anything with the bytes. The duplicated verify above is the
+                 * probe's own measurement and is deliberately kept: it answers "does the A/V
+                 * rule hold" independently of whether reassembly works, and collapsing the two
+                 * would make one failure look like the other.
+                 */
+                if (out->demux_ready)
+                    stream_demux_ingest(&g_demux, packet, (size_t)n);
+            }
+        }
+    }
+    if ((unsigned)drained > out->av_worst_burst)
+        out->av_worst_burst = (unsigned)drained;
+
+    return drained;
+}
+
 static void on_picture(void *ctx, const unsigned char *y, const unsigned char *u,
                        const unsigned char *v, int y_stride, int uv_stride, int width, int height)
 {
@@ -1464,76 +1550,7 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
              * channel's heartbeats and the console's own messages are serviced by the loop outside
              * this one, and a sustained flood that never yields would starve them.
              */
-            drained = 0;
-            while (drained < RC_AV_DRAIN_BURST) {
-                /*
-                 * THE TIMERS ARE CHECKED IN HERE TOO, which is what lets the bound be generous.
-                 *
-                 * They used to live only in the outer loop, so the bound was a compromise: large enough
-                 * to drain a burst, small enough that heartbeats and congestion reports were not starved
-                 * by one. Checking them per drained packet costs two comparisons and removes the
-                 * tension, so the bound can be sized for the burst alone.
-                 */
-                send_periodic(session, out, &next_heartbeat, &next_congestion);
-
-                uint8_t peek[STREAM_HEADER_LENGTH];
-                ssize_t peeked = recvfrom(g_stream_channel.sock, peek, sizeof(peek), MSG_PEEK,
-                                          NULL, NULL);
-
-                if (peeked <= 0)
-                    break;                                   /* nothing waiting */
-                if ((unsigned)(peek[0] & 0x0fu) == 0u)
-                    break;                                   /* control - takion_channel_poll owns it */
-                drained++;
-                {
-                    /* Not the control association - take it and account for it here. */
-                    uint8_t packet[TAKION_MAX_PACKET];
-                    ssize_t n = recvfrom(g_stream_channel.sock, packet, sizeof(packet), 0, NULL, NULL);
-
-                    if (n >= (ssize_t)STREAM_HEADER_LENGTH) {
-                        unsigned base = (unsigned)(packet[0] & 0x0fu);
-                        uint64_t key_pos;
-
-                        out->av_packets++;
-                        out->av_bytes += (unsigned long)n;
-                        if (base == STREAM_HEADER_TYPE_VIDEO)
-                            out->av_video++;
-                        else if (base == STREAM_HEADER_TYPE_AUDIO)
-                            out->av_audio++;
-                        else
-                            out->av_other++;
-
-                        /*
-                         * THE A/V AUTHENTICATION RULE, which is NOT the control one. The key position
-                         * travels in the packet at offset 14 rather than being ours to choose, the tag
-                         * sits at offset 10, and only the TAG region is zeroed in the AAD - the key
-                         * position is NOT. Getting either half wrong makes every packet fail, which is a
-                         * much better outcome than silently decrypting noise.
-                         */
-                        key_pos = ((uint64_t)packet[STREAM_HEADER_KEY_POSITION_OFFSET + 0] << 24)
-                                | ((uint64_t)packet[STREAM_HEADER_KEY_POSITION_OFFSET + 1] << 16)
-                                | ((uint64_t)packet[STREAM_HEADER_KEY_POSITION_OFFSET + 2] << 8)
-                                | (uint64_t)packet[STREAM_HEADER_KEY_POSITION_OFFSET + 3];
-
-                        if (stream_packet_crypto_verify(&g_verifier.crypto, key_pos, packet, (size_t)n,
-                                                        STREAM_HEADER_TAG_OFFSET, 0 /* tag only */))
-                            out->av_verified++;
-
-                        /*
-                         * Into the demuxer, which verifies and decrypts again through its own crypto
-                         * seam before doing anything with the bytes. The duplicated verify above is the
-                         * probe's own measurement and is deliberately kept: it answers "does the A/V
-                         * rule hold" independently of whether reassembly works, and collapsing the two
-                         * would make one failure look like the other.
-                         */
-                        if (out->demux_ready)
-                            stream_demux_ingest(&g_demux, packet, (size_t)n);
-                    }
-                }
-            }
-            if ((unsigned)drained > out->av_worst_burst)
-                out->av_worst_burst = (unsigned)drained;
-
+            drained = drain_av(session, out, &next_heartbeat, &next_congestion);
             /*
              * A negative peek is treated as "nothing waiting", not as an error, and deliberately so.
              * On this platform sockets are lv2 descriptors and errors surface through net_errno rather
@@ -1567,7 +1584,20 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
                     g_frame_count--;
                     (void)rc_decode_live_feed(g_frame_queue[slot], g_frame_length[slot], &g_live_stats);
                     decoded_here++;
+
+                    /*
+                     * READ THE SOCKET AFTER EVERY DECODE, not just around the run of them.
+                     *
+                     * b130 decoded four per pass with only the timers serviced between, which is 76 ms
+                     * of a 122 KB buffer going unread - and loss went from 1.3% back to 6.6%. Servicing
+                     * a timer is not the same as emptying a queue, and that is the whole difference
+                     * between this version and the last.
+                     *
+                     * One decode is 19 to 23 ms, or about 6 KB at this rate. That is the longest the
+                     * socket now goes unattended.
+                     */
                     send_periodic(session, out, &next_heartbeat, &next_congestion);
+                    (void)drain_av(session, out, &next_heartbeat, &next_congestion);
                 }
             }
 
