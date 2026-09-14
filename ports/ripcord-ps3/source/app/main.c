@@ -942,6 +942,12 @@ static int check_connect(void)
                     " %u audio frame(s) (%lu bytes)\n",
                     c.video_frames, c.keyframes, c.video_frame_bytes, c.largest_frame,
                     c.audio_frames, c.audio_frame_bytes);
+            ps3_log("       receive buffer: asked %d, platform says %d%s\n",
+                    c.stream_rcvbuf_asked, c.stream_rcvbuf,
+                    (c.stream_rcvbuf > 0 && c.stream_rcvbuf < c.stream_rcvbuf_asked)
+                        ? "  <- CAPPED. A buffer smaller than a burst loses its tail, and that"
+                          " looks exactly like the network."
+                        : (c.stream_rcvbuf == 0 ? "  (the platform declined to say)" : ""));
             ps3_log("       worst drain burst %u of %u%s\n", c.av_worst_burst, RC_AV_DRAIN_BURST,
                     (c.av_worst_burst >= RC_AV_DRAIN_BURST)
                         ? " - AT THE BOUND. Benign at this rate: yielding every 64 packets is every"

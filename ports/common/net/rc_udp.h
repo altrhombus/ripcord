@@ -28,4 +28,18 @@
  */
 int rc_udp_open(const char *host, unsigned port, struct sockaddr_in *out_peer, int rcvbuf_bytes);
 
+/*
+ * WHAT THE RECEIVE BUFFER ACTUALLY IS, which is not necessarily what was asked for.
+ *
+ * SO_RCVBUF is a hint. A platform may round it, cap it, double it for bookkeeping, or ignore it, and the
+ * setsockopt return says only that the request was accepted - not that the size was. This port has
+ * already been caught once believing an SDK call did what it said: fcntl(F_SETFL) returns -1 on these
+ * sockets with nothing useful behind it.
+ *
+ * Returns the size the platform reports, or 0 if it will not say. The answer matters because a buffer
+ * smaller than a burst loses the tail of that burst before any amount of draining can reach it, and the
+ * symptom is loss that looks exactly like the network.
+ */
+int rc_udp_rcvbuf_actual(int sock);
+
 #endif /* RC_UDP_H */

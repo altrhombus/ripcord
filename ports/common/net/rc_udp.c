@@ -41,3 +41,15 @@ int rc_udp_open(const char *host, unsigned port, struct sockaddr_in *out_peer, i
     }
     return sock;
 }
+
+int rc_udp_rcvbuf_actual(int sock)
+{
+    int value = 0;
+    socklen_t len = (socklen_t)sizeof(value);
+
+    if (sock < 0)
+        return 0;
+    if (getsockopt(sock, SOL_SOCKET, SO_RCVBUF, &value, &len) != 0)
+        return 0;
+    return value;
+}
