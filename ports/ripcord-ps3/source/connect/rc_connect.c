@@ -702,6 +702,37 @@ static rc_decode_live_stats g_live_stats;
 static int g_live_open;
 
 /*
+ * A FRAME QUEUE, so that decoding does not happen inside the receive loop.
+ *
+ * b128 measured what the receive buffer actually is: 124800 bytes, where 1048576 was asked for and lv2
+ * capped it. That is about half a second of this stream on average and HALF OF ONE KEYFRAME at the
+ * 57 KB they now reach - so the average was never the problem, the stalls were.
+ *
+ * Decoding used to happen in the demuxer's callback, inside the drain loop. A pass that completed five
+ * frames stopped reading the socket for five decodes - around 133 ms - and at 232 KB/s that is 31 KB
+ * arriving with nowhere to go, on top of whatever burst provoked it. The loss looked like the network
+ * twice over: first because poll was eating packets, and then because the buffer was overrunning while
+ * the PPE was busy.
+ *
+ * So the sink COPIES and returns, and the outer loop decodes one frame per pass. The copy is a few
+ * microseconds against a 22 ms decode, and the longest the socket goes unread becomes one decode rather
+ * than however many frames happened to complete together.
+ *
+ * Sized in whole frames rather than bytes: eight is enough to ride out a keyframe followed by a burst of
+ * inter-frames, and a slot has to hold the largest frame seen with room to spare.
+ */
+#define RC_FRAME_QUEUE_SLOTS 8
+#define RC_FRAME_SLOT_BYTES (96 * 1024)
+
+static uint8_t g_frame_queue[RC_FRAME_QUEUE_SLOTS][RC_FRAME_SLOT_BYTES];
+static size_t g_frame_length[RC_FRAME_QUEUE_SLOTS];
+static int g_frame_head;
+static int g_frame_count;
+static unsigned g_frames_queued;
+static unsigned g_frames_overrun;
+static unsigned g_queue_worst;
+
+/*
  * The picture sink: a decoded frame goes straight onto the screen.
  *
  * In the decoder's callback, which is inside the demuxer's callback, which is inside the receive loop.
@@ -833,19 +864,36 @@ static void on_video_frame(void *userdata, const uint8_t *data, size_t length, i
         g_tally.largest_frame = (unsigned)length;
 
     /*
-     * STRAIGHT INTO THE DECODER, in the sink, while the frame is still valid.
+     * COPIED, NOT DECODED. The reasoning that put the decode here was sound and the conclusion was
+     * wrong: avoiding a copy per frame is worth a few microseconds, and paying for it with a 22 ms
+     * stall in the loop that drains a 122 KB socket buffer is not. See the frame queue above.
      *
-     * The demuxer's contract is explicit that these bytes live only for the duration of this call, so
-     * decoding here rather than queueing avoids a copy of every frame - and a copy is not free at
-     * 960x540: the largest frame this console has sent so far is nearly 30 KB.
-     *
-     * It also puts the decode on the same thread as the receive loop, which is a real constraint and
-     * not an oversight. If decoding a frame ever costs longer than the gap between packets, the socket
-     * buffer absorbs the difference until it cannot, and the symptom is loss that looks like a network
-     * problem. The measured cost is reported beside the frame count for exactly that reason.
+     * The demuxer's contract says these bytes live only for this call, which is exactly why the copy is
+     * the price of decoding anywhere else.
      */
-    if (g_live_open)
-        (void)rc_decode_live_feed(data, length, &g_live_stats);
+    if (g_live_open && length > 0u && length <= RC_FRAME_SLOT_BYTES) {
+        int slot;
+
+        if (g_frame_count == RC_FRAME_QUEUE_SLOTS) {
+            /*
+             * Behind. The OLDEST goes, not the newest: the newest is the one closest to live, and
+             * dropping it would throw away the frame the viewer is waiting for to keep one they have
+             * already missed. Either way the reference chain is broken, so ask for a keyframe.
+             */
+            g_frame_head = (g_frame_head + 1) % RC_FRAME_QUEUE_SLOTS;
+            g_frame_count--;
+            g_frames_overrun++;
+            g_awaiting_keyframe = 1;
+        }
+
+        slot = (g_frame_head + g_frame_count) % RC_FRAME_QUEUE_SLOTS;
+        memcpy(g_frame_queue[slot], data, length);
+        g_frame_length[slot] = length;
+        g_frame_count++;
+        g_frames_queued++;
+        if ((unsigned)g_frame_count > g_queue_worst)
+            g_queue_worst = (unsigned)g_frame_count;
+    }
 }
 
 static void on_audio_frame(void *userdata, const uint8_t *data, size_t length)
@@ -1299,6 +1347,11 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
                     g_idr_requests = 0u;
                     g_last_idr_request_ms = 0u;
                     g_awaiting_keyframe = 0;
+                    g_frame_head = 0;
+                    g_frame_count = 0;
+                    g_frames_queued = 0u;
+                    g_frames_overrun = 0u;
+                    g_queue_worst = 0u;
                     g_live_open = rc_decode_live_open();
                     if (g_live_open) {
                         rc_decode_live_set_sink(on_picture, NULL);
@@ -1483,6 +1536,19 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
              * recvfrom and reports a genuine socket failure through its own return.
              */
 
+            /*
+             * ONE FRAME PER PASS, outside the drain. Alternating "read what is waiting" with "decode one"
+             * bounds the time the socket goes unread to a single decode instead of however many frames
+             * arrived together.
+             */
+            if (g_live_open && g_frame_count > 0) {
+                int slot = g_frame_head;
+
+                g_frame_head = (g_frame_head + 1) % RC_FRAME_QUEUE_SLOTS;
+                g_frame_count--;
+                (void)rc_decode_live_feed(g_frame_queue[slot], g_frame_length[slot], &g_live_stats);
+            }
+
             result = takion_channel_poll(&g_stream_channel, &channel_id, &message, &message_length);
             if (result == 1) {
                 uint32_t type = 0xffffffffu;
@@ -1546,6 +1612,9 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
     out->blits = g_blits;
     out->blit_avg_us = (g_blits > 0u) ? (g_blit_us_total / g_blits) : 0u;
     out->blit_worst_us = g_blit_worst_us;
+    out->frames_queued = g_frames_queued;
+    out->frames_overrun = g_frames_overrun;
+    out->queue_worst = g_queue_worst;
     rc_video_scale_info(&out->scaled_width, &out->scaled_height,
                         &out->display_width, &out->display_height);
     out->pictures_dropped = g_pictures_dropped;
