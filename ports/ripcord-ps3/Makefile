@@ -163,7 +163,7 @@ CFLAGS := $(ARCH) -std=gnu99 -O2 -g \
           -DRC_NETLOG_HOST='"$(RC_NETLOG_HOST)"' -DRC_NETLOG_PORT=$(RC_NETLOG_PORT) \
           -I$(CORE) -I$(BUILD) -Isource/spu -Isource/net -Isource/media -Isource/coretest \
           -Isource/discovery -Isource/connect -I$(CORE)/discovery -I$(CORE)/session \
-          -I$(CORE)/halyard -I$(CORE)/crypto -I$(CORE)/net -I$(CORE)/platform -Ispu \
+          -I$(CORE)/halyard -I$(CORE)/crypto -I$(CORE)/net -I$(CORE)/takion -I$(CORE)/platform -Ispu \
           -I$(PSL1GHT)/ppu/include
 
 LDFLAGS := $(ARCH) -Wl,--gc-sections -L$(PSL1GHT)/ppu/lib
@@ -197,6 +197,13 @@ SOURCES := \
 	$(CORE)/session/halyard_pairing_file.c \
 	$(CORE)/session/halyard_control_session.c \
 	$(CORE)/net/rc_tcp.c \
+	$(CORE)/net/rc_udp.c \
+	$(CORE)/takion/takion_message.c \
+	$(CORE)/takion/takion_handshake.c \
+	$(CORE)/takion/takion_data_chunk.c \
+	$(CORE)/takion/takion_sack_chunk.c \
+	$(CORE)/takion/takion_reassembler.c \
+	$(CORE)/takion/takion_reliable_channel.c \
 	$(CORE)/util/rc_hex.c \
 	$(CORE)/util/rc_text.c \
 	source/app/main.c
@@ -233,6 +240,16 @@ CORE_TEST_EXTRA_OBJS := $(BUILD)/ct_vector_runner.o
 # NOTE what is NOT here: halyard_discovery.c and rc_text.c. The application links those itself now that
 # source/discovery/ uses them, and compiling a translation unit twice into one binary is a duplicate
 # symbol rather than a convenience. The test objects use the application's copies.
+# WHAT IS *NOT* HERE: the five Takion sources the application itself now links - data_chunk, handshake,
+# message, reassembler and sack_chunk. They moved to SOURCES when the connect probe grew a real Takion
+# stage, and a source cannot be in both lists: each list compiles it into its own object, and two objects
+# defining the same symbols do not link.
+#
+# The application's copy wins rather than this one, and that direction matters. These objects are built
+# with CORE_TEST_CFLAGS, which is deliberately relaxed - it exists so the core's test harness need not
+# satisfy a warning set written for this port. Shipping the relaxed build inside the application would
+# quietly exempt real application code from the port's own flags. The test runners link against the strict
+# objects instead, which is the same code either way.
 CORE_TEST_SUPPORT := \
 	$(CORE)/crypto/rc_aes.c $(CORE)/crypto/rc_gcm.c $(CORE)/crypto/rc_modes.c \
 	$(CORE)/crypto/rc_sha256.c \
@@ -243,9 +260,6 @@ CORE_TEST_SUPPORT := \
 	$(CORE)/stream/fec_galois.c $(CORE)/stream/fec_reed_solomon.c \
 	$(CORE)/stream/stream_demux.c $(CORE)/stream/stream_header.c \
 	$(CORE)/stream/stream_packet_crypto.c \
-	$(CORE)/takion/takion_data_chunk.c $(CORE)/takion/takion_handshake.c \
-	$(CORE)/takion/takion_message.c $(CORE)/takion/takion_reassembler.c \
-	$(CORE)/takion/takion_sack_chunk.c \
 	$(CORE)/util/rc_base64.c \
 	$(CORE)/crypto/rc_ecdh.c \
 	$(CORE)/session/halyard_launch_spec.c \
@@ -423,7 +437,7 @@ $(OPENH264_LIB):
 #
 # vpath rather than per-directory rules: the basenames across these five directories are unique, and one
 # pattern rule is easier to be right about than five.
-vpath %.c $(CORE)/util $(CORE)/discovery $(CORE)/session $(CORE)/net \
+vpath %.c $(CORE)/util $(CORE)/discovery $(CORE)/session $(CORE)/net $(CORE)/takion \
           source/platform source/spu source/net source/media source/discovery source/connect source/app
 
 COBJS := $(addprefix $(BUILD)/,$(notdir $(SOURCES:.c=.o)))
@@ -451,14 +465,23 @@ COBJS := $(addprefix $(BUILD)/,$(notdir $(SOURCES:.c=.o)))
 # than edit code that is not ours.
 CFLAGS_SDK_SOCKETS := $(CFLAGS) -Wno-sign-conversion -include sys/time.h
 
-$(BUILD)/halyard_control_session.o: $(CORE)/session/halyard_control_session.c \
-                                    | $(BUILD)/rc_build_id.h $(BUILD)/rc_spu_symbols.h
-	@mkdir -p $(@D)
-	$(CC) $(CFLAGS_SDK_SOCKETS) -c -o $@ $<
+# EVERY OBJECT THAT REACHES A SOCKET HEADER, as a list with one target-specific override rather than one
+# hand-written rule apiece. It started as two explicit rules; adding Takion would have made it six, each a
+# copy of the last, and the copy that eventually differs is the bug. A target-specific CFLAGS assignment
+# overrides the value the pattern rule below expands, so the list is the only thing to maintain.
+#
+# It is a LIST and not a wildcard on purpose: the relaxation drops a real warning class, so a file joins
+# it deliberately or not at all. Note rc_connect.o is here now - it always included <net/socket.h>, but it
+# included <sys/time.h> first and so happened not to need this, which is a fact about the order of its
+# own include block rather than anything durable.
+SDK_SOCKET_OBJS := \
+	$(BUILD)/halyard_control_session.o \
+	$(BUILD)/rc_tcp.o \
+	$(BUILD)/rc_udp.o \
+	$(BUILD)/rc_connect.o \
+	$(BUILD)/takion_reliable_channel.o
 
-$(BUILD)/rc_tcp.o: $(CORE)/net/rc_tcp.c | $(BUILD)/rc_build_id.h $(BUILD)/rc_spu_symbols.h
-	@mkdir -p $(@D)
-	$(CC) $(CFLAGS_SDK_SOCKETS) -c -o $@ $<
+$(SDK_SOCKET_OBJS): CFLAGS := $(CFLAGS_SDK_SOCKETS)
 
 $(BUILD)/%.o: %.c | $(BUILD)/rc_build_id.h $(BUILD)/rc_spu_symbols.h $(BUILD)/$(SPU_NAME)_bin.o
 	@mkdir -p $(@D)
