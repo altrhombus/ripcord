@@ -47,7 +47,8 @@ typedef enum {
     RC_CONNECT_SESSION_READY,   /* SESSION_ID seen - the console is willing to stream      */
     RC_CONNECT_SENKUSHA_UP,     /* the senkusha Takion channel completed its handshake     */
     RC_CONNECT_TAKION_UP,       /* the stream's own Takion channel is established          */
-    RC_CONNECT_STREAM_KEYS      /* SESSION_REPLY verified and the stream keys are derived  */
+    RC_CONNECT_STREAM_KEYS,     /* SESSION_REPLY verified and the stream keys are derived  */
+    RC_CONNECT_STREAM_READY     /* sealing on, STREAM_INFO received and acked              */
 } rc_connect_stage;
 
 typedef struct {
@@ -191,6 +192,21 @@ typedef struct {
     unsigned derive_private_length;
     unsigned derive_curve;
     int  stream_keys_derived;
+
+    /*
+     * Past the keys. `sealing_on` means every outgoing control packet is now GMAC-authenticated, SACKs
+     * included. STREAM_INFO is the console's own answer about the stream: the resolution it CHOSE,
+     * which need not be the one asked for, and the SPS/PPS without which the first IDR cannot be
+     * decoded - they are not carried in the video stream.
+     */
+    int  sealing_on;
+    unsigned stream_info_bytes;
+    int  stream_info_parsed;
+    int  stream_info_acked;
+    int  given_width;
+    int  given_height;
+    unsigned video_header_bytes;
+    unsigned audio_header_bytes;
     int  asked_width;
     int  asked_height;
     int  asked_fps;
