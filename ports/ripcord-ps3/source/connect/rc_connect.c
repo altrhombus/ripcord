@@ -7,6 +7,7 @@
 #include "halyard_control_session.h"
 #include "takion_reliable_channel.h"
 #include "rc_udp.h"
+#include "rc_ecdh.h"
 #include "takion_control_proto.h"
 #include "takion_session_negotiator.h"
 #include "takion_data_chunk.h"
@@ -618,6 +619,47 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
         }
         out->ecdh_step = g_negotiator.last_ecdh_step;
         out->ecdh_code = g_negotiator.last_ecdh_code;
+
+        /*
+         * THE CONTROL. Run a KNOWN-GOOD P-521 point through the identical validator, right here, at the
+         * same call depth, in the same run.
+         *
+         * The console's point has been checked off-console against the curve equation by integer
+         * arithmetic and it IS on P-521; the same bytes are accepted by the same code built for the
+         * host. Yet this machine refuses them, while four P-521 vectors sitting on its own disk pass -
+         * two of which have the same high-byte shape as this point, so it is not the 521st bit.
+         *
+         * Those facts cannot all be about the point, so this asks whether they are about the PLACE. If
+         * the control point fails here too, the environment at this call site is the subject and the
+         * console's key is innocent. If the control passes and the console's does not, the reverse.
+         *
+         * The control is one of the vectors from ports/common/tests/vectors/session-crypto.kat, which
+         * this project generates from its own .NET side - generic test material, tied to no console and
+         * no account.
+         */
+        {
+            static const unsigned char kControlPoint[133] = {
+                0x04,0x01,0x0d,0x81,0xe0,0x7f,0xf3,0x60,0xff,0xb5,0x90,0x14,0xfc,0xed,0x66,0x84,
+                0x93,0xaf,0x0f,0xbd,0x78,0xc2,0xb9,0xc1,0xb4,0xe4,0x7e,0xc6,0xc9,0x39,0x47,0xb1,
+                0x09,0x34,0xaf,0xf3,0x12,0xc0,0xdf,0xb8,0x3c,0xbf,0xb1,0xf3,0xa5,0xa7,0x79,0xa7,
+                0x68,0x09,0x89,0x44,0x4c,0x01,0x86,0x91,0xdf,0xfe,0x5b,0xd9,0x73,0xb9,0x22,0x68,
+                0x1b,0x51,0x59,0x01,0xcd,0x23,0x66,0x79,0x46,0x86,0xd2,0x48,0x70,0x7b,0x65,0x6d,
+                0xd8,0xc9,0x83,0xa3,0xc4,0xfc,0xff,0xf3,0xdd,0x83,0x72,0x93,0x4a,0x8a,0x95,0x3c,
+                0xc1,0x87,0x59,0xb2,0x35,0x36,0x2b,0x2c,0x69,0x32,0x01,0x35,0xc3,0x91,0xf5,0x07,
+                0xd3,0xde,0xba,0xf0,0x96,0xb7,0xe4,0x90,0x29,0xf9,0xc5,0xd7,0x3f,0xe9,0xbf,0x02,
+                0x8f,0x26,0x80,0xfa,0xca
+            };
+
+            out->control_point_ok = rc_ecdh_check_peer_point(RC_ECDH_CURVE_P521, kControlPoint,
+                                                             sizeof(kControlPoint));
+            out->control_step = rc_ecdh_last_error_step();
+            out->control_code = rc_ecdh_last_error_code();
+
+            /* And the console's own point through the same entry point, so both answers come from one
+             * function rather than one from derive_shared and one from here. */
+            out->peer_point_ok = rc_ecdh_check_peer_point(RC_ECDH_CURVE_P521, out->peer_key,
+                                                          (size_t)out->peer_key_length);
+        }
         goto done;
     }
 

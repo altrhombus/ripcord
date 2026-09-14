@@ -194,6 +194,46 @@ int rc_ecdh_keypair_from_private(unsigned curve, const uint8_t *private_key, siz
     return ok;
 }
 
+int rc_ecdh_check_peer_point(unsigned curve, const uint8_t *point, size_t length)
+{
+    mbedtls_ecp_group grp;
+    mbedtls_ecp_point pt;
+    mbedtls_ecp_group_id id;
+    int rc;
+    int ok = 0;
+
+    s_last_error_step = RC_ECDH_STEP_NONE;
+    s_last_error_code = 0;
+
+    if (point == NULL)
+        return ecdh_fail(RC_ECDH_STEP_ARGUMENTS, 0);
+    if (rc_ecdh_curve_for_public_key_length(length) != curve)
+        return ecdh_fail(RC_ECDH_STEP_CURVE, 0);
+    id = group_id_for(curve);
+    if (id == MBEDTLS_ECP_DP_NONE)
+        return ecdh_fail(RC_ECDH_STEP_CURVE, 0);
+
+    mbedtls_ecp_group_init(&grp);
+    mbedtls_ecp_point_init(&pt);
+
+    do {
+        rc = mbedtls_ecp_group_load(&grp, id);
+        if (rc != 0) { (void)ecdh_fail(RC_ECDH_STEP_GROUP_LOAD, rc); break; }
+
+        rc = mbedtls_ecp_point_read_binary(&grp, &pt, point, length);
+        if (rc != 0) { (void)ecdh_fail(RC_ECDH_STEP_PEER_READ, rc); break; }
+
+        rc = mbedtls_ecp_check_pubkey(&grp, &pt);
+        if (rc != 0) { (void)ecdh_fail(RC_ECDH_STEP_PEER_CHECK, rc); break; }
+
+        ok = 1;
+    } while (0);
+
+    mbedtls_ecp_point_free(&pt);
+    mbedtls_ecp_group_free(&grp);
+    return ok;
+}
+
 int rc_ecdh_derive_shared(const rc_ecdh_keypair *pair,
                           const uint8_t *peer_public_key, size_t peer_public_key_length,
                           rc_rng_fn rng, void *rng_ctx,
