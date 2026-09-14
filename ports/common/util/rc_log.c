@@ -7,12 +7,59 @@
 
 static FILE *s_log = NULL;
 
+/*
+ * Rotate `path` to `path.prev` if it has grown past RC_LOG_MAX_BYTES. Returns nothing and reports
+ * nothing: a log that cannot be rotated is not a reason to fail a run, and the next line written will
+ * make it obvious anyway.
+ *
+ * Size is measured by seeking rather than by stat(), because this has to work on every platform the
+ * ports run on and fopen/fseek/ftell is the part of the C library all of them agree about.
+ */
+static void rotate_if_large(const char *path)
+{
+    char previous[512];
+    long size;
+    FILE *existing = fopen(path, "r");
+
+    if (existing == NULL)
+        return;  /* nothing there yet - the common case on a fresh install */
+
+    if (fseek(existing, 0L, SEEK_END) != 0) {
+        (void)fclose(existing);
+        return;
+    }
+    size = ftell(existing);
+    (void)fclose(existing);
+
+    if (size < 0L || (unsigned long)size < (unsigned long)RC_LOG_MAX_BYTES)
+        return;
+
+    if (strlen(path) + 5u >= sizeof(previous))
+        return;
+    strcpy(previous, path);
+    strcat(previous, ".prev");
+
+    /* remove() first because rename() onto an existing file is not portable. Both are allowed to fail. */
+    (void)remove(previous);
+    if (rename(path, previous) != 0) {
+        /*
+         * Rotation failed - truncate instead. Losing the history is worse than keeping it, but a log
+         * that grows without bound on a console partition is worse than both.
+         */
+        FILE *truncated = fopen(path, "w");
+        if (truncated != NULL)
+            (void)fclose(truncated);
+    }
+}
+
 void rc_log_open(const char *argv0, const char *filename)
 {
     char path[512];
 
     rc_program_dir(argv0, path, sizeof(path));
     strncat(path, filename, sizeof(path) - strlen(path) - 1);
+
+    rotate_if_large(path);
 
     s_log = fopen(path, "a");
     if (s_log != NULL) {

@@ -32,6 +32,19 @@
 #define HALYARD_SESS_COUNTER_STREAMING_TYPE   4u
 #define HALYARD_SESS_COUNTER_LOGIN_PIN_START  5u
 
+/*
+ * THE CONSOLE'S OWN COUNTER, which is a separate sequence from the five above.
+ *
+ * The control-field cipher's counter is per-connection and shared across a whole DIRECTION, so each side
+ * counts independently. Ours spends 0-4 on the /sess/ctrl request fields, which is why a login passcode
+ * is 5. The console's spends 0 on its /sess/ctrl response, so the next frame it encrypts is 1.
+ *
+ * Only payload-carrying frames spend a counter; heartbeats and the login prompt carry nothing and spend
+ * nothing. Confirmed on the .NET side with a known-plaintext oracle - the session-id frame decrypts at
+ * counter 2 to a length-prefixed "InvalidSessionId", and at no other counter to anything at all.
+ */
+#define HALYARD_SESS_COUNTER_CONSOLE_START    1u
+
 #define HALYARD_SESS_AUTH_PLAINTEXT_SIZE 16
 #define HALYARD_SESS_DID_PLAINTEXT_SIZE 32
 

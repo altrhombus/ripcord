@@ -333,6 +333,7 @@ int halyard_control_session_open(const halyard_pairing_record *record, halyard_c
     /* The five headers above consumed counters 0-4; anything encrypted later on this connection starts
      * here. See the header's note on why this must never be restarted. */
     out->next_counter = HALYARD_SESS_COUNTER_LOGIN_PIN_START;
+    out->recv_counter = HALYARD_SESS_COUNTER_CONSOLE_START;
     return 1;
 }
 
@@ -484,6 +485,30 @@ int halyard_control_session_service(halyard_control_session *session, halyard_co
     out_event->type = type;
     out_event->payload = payload;
     out_event->payload_length = payload_length;
+
+    /*
+     * SPEND THE CONSOLE'S COUNTER FOR EVERY PAYLOAD-CARRYING FRAME, decrypt where we can.
+     *
+     * The increment is unconditional on there being a payload, and deliberately so: the counter tracks
+     * what the CONSOLE encrypted at, not what we managed to read. Skipping it for a frame we chose not to
+     * decrypt - because it was too large, or because nobody wanted it - would silently shift every
+     * subsequent frame onto the wrong counter, and a wrong counter does not fail loudly. It produces
+     * plausible garbage.
+     *
+     * Empty payloads spend nothing. Heartbeats and the login prompt are both empty, and they are the two
+     * most frequent frames on this channel, so getting that wrong would desynchronise almost at once.
+     */
+    out_event->counter = session->recv_counter;
+    if (payload_length > 0u) {
+        session->recv_counter++;
+
+        if (payload_length <= sizeof(session->recv_plain)) {
+            halyard_control_field_decrypt(&session->ctrl, out_event->counter,
+                                          payload, session->recv_plain, payload_length);
+            out_event->plaintext = session->recv_plain;
+            out_event->plaintext_length = payload_length;
+        }
+    }
 
     /* Every frame, not just interesting ones - the under-consuming message is by definition one we
      * currently believe we handled correctly, so filtering here would hide it. */
