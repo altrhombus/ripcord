@@ -9,10 +9,21 @@
 
 #define RC_VIDEO_BUFFERS 2
 
-/* The RSX command buffer and the IO region it is mapped through. Nothing here builds command lists
- * beyond the flip itself, so these are generous rather than tuned. */
-#define RC_VIDEO_CB_SIZE 0x100000u
-#define RC_VIDEO_IO_SIZE 0x080000u
+/*
+ * The RSX command buffer and the IO region it is mapped through.
+ *
+ * THE IO SIZE MUST BE A WHOLE NUMBER OF MEGABYTES, and the alignment must be 1 MB too. rsx.h says so in
+ * as many words - "a 1 MB-aligned IO buffer allocated in main memory, which size is a multiple of one
+ * megabyte" - and b80 passed 512 KB, which is neither. rsxInit answered 0x802100FF and the screen stayed
+ * black. The requirement was in the documentation the rest of this file was written from; I read the
+ * sequence and skipped the sentence above it.
+ *
+ * Kept as an explicit multiple rather than a bare hex constant so the constraint is visible at the place
+ * someone would change it.
+ */
+#define RC_VIDEO_MB       (1024u * 1024u)
+#define RC_VIDEO_CB_SIZE  (1u * RC_VIDEO_MB)
+#define RC_VIDEO_IO_SIZE  (1u * RC_VIDEO_MB)
 
 static gcmContextData *s_context;
 static void *s_host_addr;
@@ -46,8 +57,8 @@ int rc_video_open(rc_video_info *out)
         return 1;
     }
 
-    /* The IO region's host memory comes from the heap, 1 MB aligned, and is handed to rsxInit. */
-    s_host_addr = memalign(1024 * 1024, RC_VIDEO_IO_SIZE);
+    /* 1 MB alignment AND a whole number of megabytes - see RC_VIDEO_IO_SIZE. */
+    s_host_addr = memalign(RC_VIDEO_MB, RC_VIDEO_IO_SIZE);
     if (s_host_addr == NULL)
         return fail(out, "memalign for the RSX IO region", 0);
 
