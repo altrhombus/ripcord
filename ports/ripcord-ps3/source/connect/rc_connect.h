@@ -28,6 +28,15 @@
 extern "C" {
 #endif
 
+/* How far stream_session_exchange got. Each value means the named step returned a usable result. */
+#define RC_STREAM_STEP_NOTHING      0
+#define RC_STREAM_STEP_RANDOM       1  /* the 16-byte handshake key was drawn      */
+#define RC_STREAM_STEP_SPEC         2  /* the launch spec JSON was built           */
+#define RC_STREAM_STEP_B64          3  /* it encrypted and base64-encoded          */
+#define RC_STREAM_STEP_REQUEST      4  /* SESSION_REQUEST was built (ECDH ran)     */
+#define RC_STREAM_STEP_SENT         5  /* ...and went out on the stream channel    */
+#define RC_STREAM_STEP_REPLY        6  /* a SESSION_REPLY came back                */
+
 typedef enum {
     RC_CONNECT_NO_RECORD = 0,   /* no pairing record on the console - skip, not a failure */
     RC_CONNECT_BAD_RECORD,      /* the file was there and unusable                        */
@@ -127,6 +136,18 @@ typedef struct {
      * per-direction key/IV values exist. The byte counts are recorded because a reply that arrives
      * and fails to verify is a different problem from one that never arrives.
      */
+    /*
+     * HOW FAR THE REQUEST GOT BEFORE IT DID NOT GET BUILT.
+     *
+     * b48 reported "the request was never built - launch spec, base64 or the ECDH backend", which named
+     * three possibilities and distinguished none of them, and the same sequence with the same parameters
+     * and the same buffer sizes succeeds on the host. A message that lists the suspects is not a
+     * diagnosis; this records which step actually returned 0.
+     */
+    int  stream_build_step;      /* see RC_STREAM_STEP_* below - the last step that SUCCEEDED */
+    unsigned launch_spec_bytes;  /* plaintext JSON length, before encryption and base64       */
+    unsigned launch_spec_b64_bytes;
+
     unsigned session_request_bytes;
     unsigned session_reply_bytes;
     int  curve_p521;

@@ -498,6 +498,7 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
 
     if (!rc_random_bytes(handshake_key, sizeof(handshake_key)))
         return 0;
+    out->stream_build_step = RC_STREAM_STEP_RANDOM;
 
     memset(&params, 0, sizeof(params));
     params.width = (rec->stream_width > 0) ? rec->stream_width : 640;
@@ -516,6 +517,8 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
     spec_len = halyard_launch_spec_build(&params, handshake_key, g_launch_spec, sizeof(g_launch_spec));
     if (spec_len == 0u)
         goto done;
+    out->launch_spec_bytes = (unsigned)spec_len;
+    out->stream_build_step = RC_STREAM_STEP_SPEC;
 
     /* AES-128-OFB under the control session's field context at counter 0. In place: OFB is symmetric and
      * the plaintext is not wanted again. */
@@ -526,6 +529,8 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
                                g_launch_spec_b64, sizeof(g_launch_spec_b64));
     if (b64_len == 0u)
         goto done;
+    out->launch_spec_b64_bytes = (unsigned)b64_len;
+    out->stream_build_step = RC_STREAM_STEP_B64;
 
     request_len = takion_session_negotiator_begin(&g_negotiator, TAKION_CLIENT_VERSION, handshake_key,
                                                   g_launch_spec_b64, b64_len,
@@ -534,17 +539,20 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
     if (request_len == 0u)
         goto done;
 
+    out->stream_build_step = RC_STREAM_STEP_REQUEST;
     out->session_request_bytes = (unsigned)request_len;
     out->curve_p521 = (g_negotiator.curve == RC_ECDH_CURVE_P521);
 
     if (!takion_channel_send(&g_stream_channel, TAKION_CHANNEL_SESSION, g_session_request, request_len))
         goto done;
+    out->stream_build_step = RC_STREAM_STEP_SENT;
 
     if (!takion_channel_await_control(&g_stream_channel, TAKION_CONTROL_SESSION_REPLY,
                                       RC_TAKION_REPLY_MS, service_control_tick, session,
                                       &reply, &reply_len))
         goto done;
 
+    out->stream_build_step = RC_STREAM_STEP_REPLY;
     out->session_reply_bytes = (unsigned)reply_len;
     if (!takion_session_negotiator_accept_reply(&g_negotiator, reply, reply_len,
                                                 rc_random_rng_callback, NULL))
