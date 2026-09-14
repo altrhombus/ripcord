@@ -524,10 +524,38 @@ The MTU close is unconditional: past the open the console *is* in client-MTU mod
 being cleared, and the .NET side records that this was once a sequential send a timeout could unwind
 past, leaving the console stuck.
 
-**What is still unexplained** is the bitrate `[X]`. The remaining candidate the reference has and this
-port does not is **congestion feedback**: a sealed 15-byte type-5 packet sent every 200 ms carrying
-received/lost unit counts, described there as being what lets "the console's rate controller adapt the
-encoder bitrate to the link". This port sends none, so the console has no evidence the link is healthy. PSL1GHT exposes the PS3's own H.264 decoder
+## Congestion feedback — done, and the bitrate was never the protocol
+
+The reference sends a sealed 15-byte type-5 packet every 200 ms carrying received/lost unit counts, and
+describes it as what lets "the console's rate controller adapt the encoder bitrate to the link". This
+port sent none, which made it the obvious remaining suspect. It now sends them — 135 in a 30-second run —
+and the bitrate did not move. **1.35 Mbps before, 1.35 Mbps after.**
+
+Three explanations were offered for that number and all three were wrong: decode headroom, then the
+declared `rtt`/`mtu`, then congestion feedback. Looking at the frames instead of the protocol settles it:
+
+| | |
+|---|---|
+| video payload | 3,141,755 bytes over 30 s = **0.84 Mbps** |
+| keyframe | 43,923 bytes |
+| average inter-frame | 3,473 bytes → **0.03 bits per pixel** at 1280×720 |
+
+Typical H.264 at moderate motion is 0.05–0.15 bpp. **0.03 bpp is what a near-static picture costs.** The
+encoder was never being throttled — it had nothing to spend bits on, because the console was showing
+essentially still content throughout every measurement. No declared figure can change that.
+
+The work was still right to do. A client that never reports what arrived is not a correct client
+regardless of what the console does with it, and the same is true of the senkusha legs: a launch spec
+declaring figures nobody measured is a defect whether or not it is the binding one. But neither was the
+answer to the question that motivated them, and the honest measurement of throughput needs **moving
+content on the console**.
+
+**Where congestion feedback lives, and why.** In `ports/common`, on the sealer — because the reference is
+explicit that the outgoing key position is one sequence shared by control DATA, SACKs and congestion
+packets alike. A congestion path with its own counter would repeat a position control had already spent,
+and a repeated position is a repeated GMAC nonce under one key. Three offset pairs that look alike and
+are not: control tag@5/pos@9, congestion tag@7/pos@11, A/V tag@10/pos@14 — and A/V zeroes only the tag in
+its AAD where the other two zero both. PSL1GHT exposes the PS3's own H.264 decoder
 (`codec/vdec.h`, `libvdec.a`, `SYSMODULE_VDEC_H264`), which is the path to 1080p and would free the PPE
 almost entirely — the same shape as the 3DS port's MVD hardware path.
 
