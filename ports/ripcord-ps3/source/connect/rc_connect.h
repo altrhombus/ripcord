@@ -178,6 +178,11 @@ typedef struct {
     int  control_step;
     int  control_code;
     int  peer_point_ok;
+    /* Stack at the deepest point of the session exchange - see rc_stack_ps3.h for why. */
+    unsigned long stack_size;
+    unsigned long stack_used;
+    unsigned long stack_headroom;
+
     int  precheck_ok;          /* the same check run inside accept_reply, just before derive */
     int  precheck_step;
     int  precheck_code;
