@@ -32,6 +32,28 @@ size_t rc_ecdh_secret_length(unsigned curve)
 /* See the header: diagnostic only, single-threaded, overwritten by every derive. */
 static int s_last_error_step;
 static int s_last_error_code;
+static unsigned long s_last_peer_fingerprint;
+static size_t s_last_private_length;
+static unsigned s_last_curve;
+
+unsigned long rc_ecdh_fingerprint(const unsigned char *data, size_t length)
+{
+    unsigned long hash = 2166136261UL;
+    size_t i;
+
+    if (data == NULL)
+        return 0UL;
+    for (i = 0; i < length; i++) {
+        hash ^= (unsigned long)data[i];
+        hash *= 16777619UL;
+        hash &= 0xffffffffUL;
+    }
+    return hash;
+}
+
+unsigned long rc_ecdh_last_peer_fingerprint(void) { return s_last_peer_fingerprint; }
+size_t rc_ecdh_last_private_length(void) { return s_last_private_length; }
+unsigned rc_ecdh_last_curve(void) { return s_last_curve; }
 
 int rc_ecdh_last_error_step(void) { return s_last_error_step; }
 int rc_ecdh_last_error_code(void) { return s_last_error_code; }
@@ -253,10 +275,18 @@ int rc_ecdh_derive_shared(const rc_ecdh_keypair *pair,
 
     s_last_error_step = RC_ECDH_STEP_NONE;
     s_last_error_code = 0;
+    s_last_peer_fingerprint = 0UL;
+    s_last_private_length = 0u;
+    s_last_curve = 0u;
 
     if (pair == NULL || peer_public_key == NULL || out_secret == NULL || rng == NULL) {
         return ecdh_fail(RC_ECDH_STEP_ARGUMENTS, 0);
     }
+
+    /* Taken from the arguments as received, before anything else touches them. */
+    s_last_peer_fingerprint = rc_ecdh_fingerprint(peer_public_key, peer_public_key_length);
+    s_last_private_length = pair->private_key_length;
+    s_last_curve = pair->curve;
     /* The wire carries no curve id, so the peer key's length is what identifies its curve - and it has
      * to be the same curve we hold a private scalar on. A mismatch here is a protocol-level
      * disagreement about the negotiated version, not something to coerce. */
