@@ -306,6 +306,7 @@ static int s_verified;
 static int s_verify_match;
 static uint64_t s_verify_hash_spu;
 static uint64_t s_verify_hash_ppe;
+static const char *s_verify_failed_case;
 
 /*
  * FNV-1a over the converted pixels. An identity check between two implementations inside one program,
@@ -495,8 +496,26 @@ void rc_video_scale_info(int *scaled_w, int *scaled_h, int *display_w, int *disp
  */
 #define RC_VERIFY_SRC_W 64
 #define RC_VERIFY_SRC_H 32
-#define RC_VERIFY_DST_W 128
-#define RC_VERIFY_DST_H 64
+#define RC_VERIFY_DST_W 160    /* widest destination any case below uses */
+#define RC_VERIFY_DST_H 80
+
+/*
+ * SEVERAL SCALE FACTORS, not one, and specifically not only the integer one.
+ *
+ * The first version checked 64x32 into 128x64 - exactly 2x, which is the forgiving case: source column
+ * x maps to output columns 2x and 2x+1 and any reasonable mapping gets it right. A 1280x720 source on a
+ * 1920x1080 display is 1.5x, where the 16.16 stepping and the PPE's reference have to agree about which
+ * source pixel each output pixel takes, and an off-by-one in either would show only here.
+ *
+ * 1:1 is included because it takes a different branch in the kernel, and a shrink because nothing says
+ * the display is always the larger of the two.
+ */
+static const struct { int dw, dh; const char *what; } kVerifyCases[] = {
+    { 128, 64, "2x, the integer case" },
+    {  96, 48, "1.5x, what 720p on a 1080p display actually needs" },
+    {  64, 32, "1:1, which takes its own branch" },
+    {  48, 24, "0.75x, a shrink" }
+};
 
 int rc_video_self_test(void)
 {
@@ -523,21 +542,41 @@ int rc_video_self_test(void)
         }
     }
 
-    memset(spu_out, 0, sizeof(spu_out));
-    memset(ppe_out, 0, sizeof(ppe_out));
+    s_verify_match = 1;
+    for (x = 0; x < (int)(sizeof(kVerifyCases) / sizeof(kVerifyCases[0])); x++) {
+        int dw = kVerifyCases[x].dw;
+        int dh = kVerifyCases[x].dh;
+        uint64_t hs, hp;
 
-    if (rc_spu_yuv_convert(yp, up, vp, RC_VERIFY_SRC_W, RC_VERIFY_SRC_W / 2,
-                           RC_VERIFY_SRC_W, RC_VERIFY_SRC_H,
-                           spu_out, RC_VERIFY_DST_W * 4, RC_VERIFY_DST_W, RC_VERIFY_DST_H) == 0u)
-        return 0;   /* no SPEs, or they refused - not a mismatch, and the caller is told apart */
+        memset(spu_out, 0, sizeof(spu_out));
+        memset(ppe_out, 0, sizeof(ppe_out));
 
-    convert_on_ppe(yp, up, vp, RC_VERIFY_SRC_W, RC_VERIFY_SRC_W / 2,
-                   RC_VERIFY_SRC_W, RC_VERIFY_SRC_H,
-                   ppe_out, RC_VERIFY_DST_W, RC_VERIFY_DST_W, RC_VERIFY_DST_H);
+        if (rc_spu_yuv_convert(yp, up, vp, RC_VERIFY_SRC_W, RC_VERIFY_SRC_W / 2,
+                               RC_VERIFY_SRC_W, RC_VERIFY_SRC_H,
+                               spu_out, RC_VERIFY_DST_W * 4, dw, dh) == 0u)
+            return 0;   /* no SPEs, or they refused - not a mismatch, and the caller is told apart */
 
-    s_verify_hash_spu = hash_region(spu_out, RC_VERIFY_DST_W, RC_VERIFY_DST_W, RC_VERIFY_DST_H);
-    s_verify_hash_ppe = hash_region(ppe_out, RC_VERIFY_DST_W, RC_VERIFY_DST_W, RC_VERIFY_DST_H);
+        convert_on_ppe(yp, up, vp, RC_VERIFY_SRC_W, RC_VERIFY_SRC_W / 2,
+                       RC_VERIFY_SRC_W, RC_VERIFY_SRC_H,
+                       ppe_out, RC_VERIFY_DST_W, dw, dh);
+
+        hs = hash_region(spu_out, RC_VERIFY_DST_W, dw, dh);
+        hp = hash_region(ppe_out, RC_VERIFY_DST_W, dw, dh);
+        if (hs != hp) {
+            s_verify_match = 0;
+            s_verify_failed_case = kVerifyCases[x].what;
+        }
+        /* The last case's hashes are kept for the report; a mismatch keeps its own. */
+        if (s_verify_match || s_verify_failed_case == kVerifyCases[x].what) {
+            s_verify_hash_spu = hs;
+            s_verify_hash_ppe = hp;
+        }
+    }
     s_verified = 1;
-    s_verify_match = (s_verify_hash_spu == s_verify_hash_ppe);
     return 1;
+}
+
+const char *rc_video_self_test_failure(void)
+{
+    return s_verify_failed_case;
 }
