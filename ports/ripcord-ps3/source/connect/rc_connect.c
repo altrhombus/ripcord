@@ -417,12 +417,7 @@ static int takion_bring_up(takion_reliable_channel *channel, const char *host, u
  * answer is still in flight buys nothing and costs upstream bandwidth. */
 #define RC_IDR_REQUEST_MIN_MS 200u
 
-/*
- * How many A/V datagrams to take in one pass before yielding to the control channel. A frame is about
- * six packets, so this is several frames of headroom for a burst while still returning often enough
- * that heartbeats are never late.
- */
-#define RC_AV_DRAIN_BURST 64
+/* RC_AV_DRAIN_BURST now lives in rc_connect.h, so the run's report cannot disagree with it. */
 
 /* PROTOCOL_VERSION_ACK's message type. Named because a bare 32 in a comparison says nothing. */
 #define RC_TAKION_PROTOCOL_VERSION_ACK 32u
