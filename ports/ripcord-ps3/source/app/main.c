@@ -904,10 +904,24 @@ static int check_connect(void)
                 c.senkusha_version_ack ? "yes" : "NO", c.senkusha_complete ? "complete" : "INCOMPLETE");
         ps3_log("FAIL  Takion is up on both channels but the stream SESSION exchange did not finish.\n");
         if (c.session_reply_bytes > 0u) {
-            ps3_log("      A SESSION_REPLY of %u bytes DID arrive and was refused - so this is the\n",
+            static const char *const kReject[] = {
+                "no reason recorded - which should not happen here",
+                "bad arguments - a bug on this side, not the console's",
+                "it did not parse as a SESSION_REPLY at all",
+                "the console REFUSED OUR PROTOCOL VERSION",
+                "version accepted, but the reply carried no ECDH key",
+                "the ecdhSignature was not 32 bytes",
+                "the ecdhSignature DID NOT VERIFY under our handshake key - the console computed"
+                " it under a different one, which points at the launch spec's encryption",
+                "the console's public point is not on our curve, or not on the curve at all"
+            };
+            int why = c.reply_reject_reason;
+
+            ps3_log("      A SESSION_REPLY of %u bytes DID arrive and was refused - so the console\n",
                     c.session_reply_bytes);
-            ps3_log("      reply failing its checks (version, curve, or the ecdhSignature under the\n");
-            ps3_log("      handshake key), not the console staying silent.\n");
+            ps3_log("      answered and we declined it, which is not the same as silence.\n");
+            if (why >= 0 && why < (int)(sizeof(kReject) / sizeof(kReject[0])))
+                ps3_log("      %s\n", kReject[why]);
         } else if (c.session_request_bytes > 0u) {
             ps3_log("      SESSION_REQUEST went out (%u bytes, %s) and nothing came back. If the\n",
                     c.session_request_bytes, c.curve_p521 ? "P-521" : "P-256");
