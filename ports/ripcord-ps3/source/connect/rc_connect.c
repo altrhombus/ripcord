@@ -607,17 +607,14 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
         out->reply_reject_reason = g_negotiator.last_reject_reason;
         out->peer_key_length = (unsigned)g_negotiator.last_peer_key_length;
         out->peer_key_prefix = (unsigned)g_negotiator.last_peer_key_prefix;
+        /*
+         * Taken from the negotiator, which copied the bytes while it still held them. Re-parsing the
+         * reply here instead produced 133 zeros beside a recorded prefix of 0x04 - the pointer aimed
+         * into channel storage that had moved on, and the dump disagreed with the field next to it.
+         */
         if (g_negotiator.last_peer_key_length > 0u
-            && g_negotiator.last_peer_key_length <= sizeof(out->peer_key)
-            && reply != NULL) {
-            /* The parser aimed into the reply buffer; copy before it is reused. */
-            const uint8_t *pk = NULL;
-            takion_session_reply parsed;
-
-            if (takion_control_parse_session_reply(reply, reply_len, &parsed))
-                pk = parsed.ecdh_public_key;
-            if (pk != NULL)
-                memcpy(out->peer_key, pk, g_negotiator.last_peer_key_length);
+            && g_negotiator.last_peer_key_length <= sizeof(out->peer_key)) {
+            memcpy(out->peer_key, g_negotiator.last_peer_key, g_negotiator.last_peer_key_length);
         }
         out->ecdh_step = g_negotiator.last_ecdh_step;
         out->ecdh_code = g_negotiator.last_ecdh_code;
