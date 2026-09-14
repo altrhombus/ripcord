@@ -3,6 +3,7 @@
 #include "takion_handshake.h"
 #include "takion_message.h"
 #include "takion_sack_chunk.h"
+#include "takion_control_proto.h"
 
 #include "rc_platform.h"
 
@@ -279,6 +280,54 @@ static int accept_data_chunk(takion_reliable_channel *ch, int is_first, unsigned
     send_sack(ch);
 
     return complete == 1;
+}
+
+int takion_channel_await_control(takion_reliable_channel *ch, uint32_t want_type, unsigned timeout_ms,
+                                 takion_tick_fn tick, void *tick_ctx,
+                                 const uint8_t **out_message, size_t *out_length)
+{
+    uint64_t start_ms;
+
+    if (out_message != NULL)
+        *out_message = NULL;
+    if (out_length != NULL)
+        *out_length = 0u;
+    if (ch == NULL)
+        return 0;
+
+    start_ms = rc_time_ms();
+    while (rc_time_ms() - start_ms < (uint64_t)timeout_ms) {
+        unsigned channel_id;
+        const uint8_t *message;
+        size_t message_length;
+        int result;
+
+        if (tick != NULL)
+            tick(tick_ctx);
+
+        result = takion_channel_poll(ch, &channel_id, &message, &message_length);
+        if (result == 1) {
+            uint32_t type = 0xffffffffu;
+
+            /*
+             * A message whose type will not parse is dropped rather than treated as the one wanted.
+             * Returning success on an unparseable reply would turn "the console said something" into
+             * "the console said yes", which is the wrong direction to be wrong in.
+             */
+            if (takion_control_peek_type(message, message_length, &type) && type == want_type) {
+                if (out_message != NULL)
+                    *out_message = message;
+                if (out_length != NULL)
+                    *out_length = message_length;
+                return 1;
+            }
+            (void)channel_id;
+        } else if (result == -1) {
+            return 0;
+        }
+        rc_sleep_ms(10);
+    }
+    return 0;
 }
 
 int takion_channel_poll(takion_reliable_channel *ch, unsigned *out_channel,
