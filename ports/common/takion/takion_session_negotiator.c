@@ -132,6 +132,10 @@ int takion_session_negotiator_accept_reply(takion_session_negotiator *ctx,
      */
     ctx->last_peer_key_length = parsed.ecdh_public_key_length;
     ctx->last_peer_key_prefix = (parsed.ecdh_public_key_length > 0u) ? parsed.ecdh_public_key[0] : 0u;
+    if (parsed.ecdh_public_key_length > 0u
+        && parsed.ecdh_public_key_length <= sizeof(ctx->last_peer_key)) {
+        memcpy(ctx->last_peer_key, parsed.ecdh_public_key, parsed.ecdh_public_key_length);
+    }
     if (rc_ecdh_curve_for_public_key_length(parsed.ecdh_public_key_length) != ctx->curve) {
         ctx->last_reject_reason = TAKION_SESSION_REJECT_CURVE;
         return 0;
