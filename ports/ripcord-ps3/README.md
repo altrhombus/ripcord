@@ -476,15 +476,28 @@ whichever has room left — taking the larger would fill the screen by cropping,
 someone is playing is worse than a border. Nearest neighbour for now `[X]`: exactly correct for the
 integer factor that matters most here, and not yet compared against bilinear on hardware.
 
-**What that leaves.** Decode is now the only significant term, and it scales with source pixels:
+**What that leaves.** Decode is now the only significant term. Both of the first two rows are measured:
 
-| source | decode est. | total est. | 30 fps |
-|---|---|---|---|
-| 960×540 | 11,490 (measured) | 14,544 (measured) | ✓ 44% |
-| 1280×720 | ~20,400 | ~23,800 | ✓ ~72% |
-| 1920×1080 | ~45,900 | ~49,300 | ✗ |
+| source | decode | convert + scale | total | 30 fps budget |
+|---|---|---|---|---|
+| 960×540 | 11,491 | 3,053 | **14,544** | ✓ 44% |
+| 1280×720 | 18,722 | 4,064 | **22,786** | ✓ 68% |
+| 1920×1080 | ~37,300 `[X]` | ~3,000 (1:1) | ~40,300 | ✗ 121% |
 
-So 720p is reachable on openh264 and 1080p is not. PSL1GHT exposes the PS3's own H.264 decoder
+**Decode scales as pixels^0.85, not linearly** — 22.2 ns/pixel at 960×540 against 20.3 at 1280×720, so
+larger frames are slightly cheaper per pixel. The first 1080p estimate here assumed linear and was 8,600 µs
+too pessimistic; the exponent comes from the two measured points and the 1080p row is still marked `[X]`
+because it is extrapolation, not measurement.
+
+720p is comfortable. 1080p is roughly 121% of a 30 fps budget on openh264 — not a tuning problem.
+PSL1GHT exposes the PS3's own H.264 decoder (`codec/vdec.h`, `libvdec.a`, `SYSMODULE_VDEC_H264`), which
+is the path to 1080p and would free the PPE almost entirely, the same shape as the 3DS port's MVD
+hardware path.
+
+**One thing the numbers hint at.** At 720p the console sent ~1.4 Mbps while the launch spec asked for
+8,000 kbps. The likely cause is unfinished business recorded above: senkusha's echo and MTU legs are not
+run, so the spec declares `rtt 0` and a default MTU, and the console's rate controller is choosing against
+figures nobody measured. PSL1GHT exposes the PS3's own H.264 decoder
 (`codec/vdec.h`, `libvdec.a`, `SYSMODULE_VDEC_H264`), which is the path to 1080p and would free the PPE
 almost entirely — the same shape as the 3DS port's MVD hardware path.
 
