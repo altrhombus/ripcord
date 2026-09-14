@@ -154,6 +154,17 @@ RC_NETLOG_PORT ?= 9000
 # before 'asm'" pointing into the SDK's own header, which reads like a broken installation and is not
 # one. Anything that includes a PSL1GHT header needs GNU mode. tests/Makefile stays on -std=c99 on
 # purpose: nothing it builds touches the SDK, so it keeps the stricter setting.
+# HEADER DEPENDENCIES, and this Makefile had none until a hardware run went looking for a bug that was
+# not there. Editing a header rebuilt nothing that included it, so a struct that gained a field left every
+# object compiled before the edit reading the OLD layout while the ones after it read the new. What that
+# looked like from the console was one core suite failing for four days, on big-endian, in the crypto -
+# and it was two objects disagreeing about where a field lived.
+#
+# -MMD writes a .d beside each .o listing the headers it used; -MP adds a phony target for each of those,
+# so deleting or renaming a header does not wedge make with "no rule to make target". The .d files are
+# included at the bottom, after the goals they might otherwise become.
+DEPFLAGS := -MMD -MP
+
 CFLAGS := $(ARCH) -std=gnu99 -O2 -g \
           -Wall -Wextra -Werror -Wshadow -Wconversion -Wsign-conversion \
           -Wframe-larger-than=8192 \
@@ -389,47 +400,47 @@ $(GENERATED): $(BUNDLE) $(CORE)/tools/gen_constants.py
 
 $(BUILD)/ct_halyard_v1_constants.g.o: $(GENERATED)
 	@mkdir -p $(@D)
-	$(CC) $(CORE_TEST_CFLAGS) -c -o $@ $<
+	$(CC) $(CORE_TEST_CFLAGS) $(DEPFLAGS) -c -o $@ $<
 
 $(BUILD)/ct_%.o: $(CORE)/crypto/%.c
 	@mkdir -p $(@D)
-	$(CC) $(CORE_TEST_CFLAGS) -c -o $@ $<
+	$(CC) $(CORE_TEST_CFLAGS) $(DEPFLAGS) -c -o $@ $<
 $(BUILD)/ct_%.o: $(CORE)/discovery/%.c
 	@mkdir -p $(@D)
-	$(CC) $(CORE_TEST_CFLAGS) -c -o $@ $<
+	$(CC) $(CORE_TEST_CFLAGS) $(DEPFLAGS) -c -o $@ $<
 $(BUILD)/ct_%.o: $(CORE)/halyard/%.c
 	@mkdir -p $(@D)
-	$(CC) $(CORE_TEST_CFLAGS) -c -o $@ $<
+	$(CC) $(CORE_TEST_CFLAGS) $(DEPFLAGS) -c -o $@ $<
 $(BUILD)/ct_%.o: $(CORE)/input/%.c
 	@mkdir -p $(@D)
-	$(CC) $(CORE_TEST_CFLAGS) -c -o $@ $<
+	$(CC) $(CORE_TEST_CFLAGS) $(DEPFLAGS) -c -o $@ $<
 $(BUILD)/ct_%.o: $(CORE)/session/%.c
 	@mkdir -p $(@D)
-	$(CC) $(CORE_TEST_CFLAGS) -c -o $@ $<
+	$(CC) $(CORE_TEST_CFLAGS) $(DEPFLAGS) -c -o $@ $<
 $(BUILD)/ct_%.o: $(CORE)/stream/%.c
 	@mkdir -p $(@D)
-	$(CC) $(CORE_TEST_CFLAGS) -c -o $@ $<
+	$(CC) $(CORE_TEST_CFLAGS) $(DEPFLAGS) -c -o $@ $<
 $(BUILD)/ct_%.o: $(CORE)/takion/%.c
 	@mkdir -p $(@D)
-	$(CC) $(CORE_TEST_CFLAGS) -c -o $@ $<
+	$(CC) $(CORE_TEST_CFLAGS) $(DEPFLAGS) -c -o $@ $<
 $(BUILD)/ct_%.o: $(CORE)/util/%.c
 	@mkdir -p $(@D)
-	$(CC) $(CORE_TEST_CFLAGS) -c -o $@ $<
+	$(CC) $(CORE_TEST_CFLAGS) $(DEPFLAGS) -c -o $@ $<
 
 # The runners themselves, each with its main() renamed so they can share a binary.
 $(BUILD)/ct_%_test.o: $(CORE_TEST_DIR)/%_test.c
 	@mkdir -p $(@D)
-	$(CC) $(CORE_TEST_CFLAGS) -Dmain=$*_test_main -c -o $@ $<
+	$(CC) $(CORE_TEST_CFLAGS) $(DEPFLAGS) -Dmain=$*_test_main -c -o $@ $<
 
 # vector_runner does not follow the *_test.c naming, so it gets its own rule rather than a special case
 # in the pattern above.
 $(BUILD)/ct_vector_runner.o: $(CORE_TEST_DIR)/vector_runner.c
 	@mkdir -p $(@D)
-	$(CC) $(CORE_TEST_CFLAGS) -Dmain=vector_runner_main -c -o $@ $<
+	$(CC) $(CORE_TEST_CFLAGS) $(DEPFLAGS) -Dmain=vector_runner_main -c -o $@ $<
 
 $(BUILD)/rc_core_tests.o: source/coretest/rc_core_tests.c
 	@mkdir -p $(@D)
-	$(CC) $(CORE_TEST_CFLAGS) -c -o $@ $<
+	$(CC) $(CORE_TEST_CFLAGS) $(DEPFLAGS) -c -o $@ $<
 
 $(BUILD)/rc_decode_probe.o: $(CXXSOURCES) $(OPENH264_LIB)
 	@mkdir -p $(@D)
@@ -499,7 +510,7 @@ $(SDK_SOCKET_OBJS): CFLAGS := $(CFLAGS_SDK_SOCKETS)
 
 $(BUILD)/%.o: %.c | $(BUILD)/rc_build_id.h $(BUILD)/rc_spu_symbols.h $(BUILD)/$(SPU_NAME)_bin.o
 	@mkdir -p $(@D)
-	$(CC) $(CFLAGS) -c -o $@ $<
+	$(CC) $(CFLAGS) $(DEPFLAGS) -c -o $@ $<
 
 $(BUILD)/$(APP).elf: $(COBJS) $(BUILD)/$(SPU_NAME)_bin.o $(BUILD)/rc_decode_probe.o $(CORE_TEST_OBJS)
 	@mkdir -p $(@D)
@@ -608,3 +619,10 @@ clean:
 # rebuilding openh264 is minutes, and wanting fresh objects is not wanting that.
 distclean: clean
 	rm -rf $(OPENH264_DIR)
+
+# The dependency files the DEPFLAGS above produce. Wildcard rather than a derived list: an object that is
+# no longer built leaves a stale .d behind, and naming them from the object list would demand it exist.
+# Not included for `clean`, which would otherwise rebuild them only to delete them.
+ifeq (,$(filter clean distclean,$(MAKECMDGOALS)))
+-include $(wildcard $(BUILD)/*.d)
+endif
