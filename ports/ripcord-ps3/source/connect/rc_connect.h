@@ -158,6 +158,17 @@ typedef struct {
     int  reply_reject_reason;  /* TAKION_SESSION_REJECT_* - why accept_reply said no */
     unsigned peer_key_length;  /* the console's ECDH point as it arrived: 65 = P-256, */
     unsigned peer_key_prefix;  /* 133 = P-521; prefix 0x04 = uncompressed             */
+    /*
+     * The console's ECDH point itself, kept so it can be examined off the console.
+     *
+     * An EPHEMERAL PUBLIC key for one session: not a secret, not tied to an account, and worthless once
+     * the session ends. It is logged because the alternative is another round trip per hypothesis, and
+     * the four P-521 vectors on this console pass the very check this point fails - a contradiction that
+     * cannot be settled by reading code. It must not be committed: the log it lands in is dirty-room
+     * material like every other capture.
+     */
+    unsigned char peer_key[133];
+
     int  ecdh_step;            /* RC_ECDH_STEP_* when the derivation itself failed    */
     int  ecdh_code;            /* ...and the backend's own return value               */
     int  stream_keys_derived;
