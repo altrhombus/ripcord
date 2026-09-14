@@ -884,11 +884,24 @@ static int check_connect(void)
         ps3_log("       protocol version %u, curve %s, SESSION_REPLY %u bytes\n",
                 c.stream_version, c.curve_p521 ? "P-521" : "P-256", c.session_reply_bytes);
         ps3_log("       GMAC sealing on - every control packet from here, SACKs included\n");
-        ps3_log("       incoming tags: %lu checked, %lu failed%s\n",
-                c.verify_checked, c.verify_failed,
-                (c.verify_checked > 0UL && c.verify_failed == 0UL)
-                    ? "  <- the receive schedule is right; this can enforce now"
-                    : (c.verify_checked == 0UL ? "  (nothing arrived to check)" : ""));
+        ps3_log("       incoming tags: %lu checked, %lu failed (counting, not enforcing)\n",
+                c.verify_checked, c.verify_failed);
+        if (c.verify_checked == 0UL)
+            ps3_log("       nothing arrived to check - the sample says nothing either way\n");
+        else if (c.verify_failed == 0UL)
+            ps3_log("       every one verified. A 32-bit tag passing by chance is ~1 in 4e9, so the\n"
+                    "       RECEIVE SCHEDULE is right; whether ALL console traffic is sealed is a\n"
+                    "       separate question and wants the sample size above to be large.\n");
+        else
+            ps3_log("       %lu failed - if that is all of them the receive key schedule is wrong;\n"
+                    "       if it is a few, some traffic is not sealed the way this assumes.\n",
+                    c.verify_failed);
+        ps3_log("       held the session %u ms: %u message(s), last type 0x%04x%s\n",
+                6000u, c.held_messages, c.held_last_type,
+                c.held_channel_error ? ", CHANNEL ERROR" : "");
+        if (c.held_stream_info_repeats > 0u)
+            ps3_log("       the console re-sent STREAM_INFO %u time(s) - it did not hear an ack\n",
+                    c.held_stream_info_repeats);
         ps3_log("       STREAM_INFO %u bytes, acked: asked %dx%d, GIVEN %dx%d\n",
                 c.stream_info_bytes, c.asked_width, c.asked_height, c.given_width, c.given_height);
         ps3_log("       %u-byte video header (SPS/PPS), %u-byte audio header\n",

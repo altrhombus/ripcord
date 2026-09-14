@@ -208,6 +208,13 @@ typedef struct {
      */
     unsigned long verify_checked;
     unsigned long verify_failed;
+    unsigned long verify_dropped;
+
+    /* What turned up while the session was held open - see RC_STREAM_HOLD_MS. */
+    unsigned held_messages;
+    unsigned held_last_type;
+    unsigned held_stream_info_repeats;
+    int      held_channel_error;
     unsigned stream_info_bytes;
     int  stream_info_parsed;
     int  stream_info_acked;
