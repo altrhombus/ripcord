@@ -455,6 +455,47 @@ anyway, and cleanup that *cannot hang* is worth more here than cleanup that is t
 still was the ordering fix: **the logs close before the teardown**, so a frozen console costs a reboot
 rather than the run that would explain it.
 
+## Scaling, and where the budget actually goes
+
+The display is whatever mode the television negotiated and the source is whatever the console agreed to
+send, so scaling is a permanent part of the path rather than an alternative to choosing a resolution
+well. It lives in the SPE conversion because that already touches every output pixel.
+
+On 2026-09-14, a 960×540 stream scaled to **1920×1080 full screen at 29 fps**, 891 pictures, nothing
+dropped, no fallbacks, no decoder errors, no loss events:
+
+| stage | µs per frame | share of a 30 fps budget |
+|---|---|---|
+| decode (openh264, PPE) | ~11,490 | 34% |
+| convert **and scale** to 1080p (5 SPEs) | **3,053** | 9% |
+| **total** | **14,544** | **44%** |
+
+Scaling to four times the pixels cost about 2,000 µs more than converting at source resolution. The
+scale is the **smaller** of the two ratios, so the picture fits in both directions and is centred in
+whichever has room left — taking the larger would fill the screen by cropping, and cropping a game
+someone is playing is worse than a border. Nearest neighbour for now `[X]`: exactly correct for the
+integer factor that matters most here, and not yet compared against bilinear on hardware.
+
+**What that leaves.** Decode is now the only significant term, and it scales with source pixels:
+
+| source | decode est. | total est. | 30 fps |
+|---|---|---|---|
+| 960×540 | 11,490 (measured) | 14,544 (measured) | ✓ 44% |
+| 1280×720 | ~20,400 | ~23,800 | ✓ ~72% |
+| 1920×1080 | ~45,900 | ~49,300 | ✗ |
+
+So 720p is reachable on openh264 and 1080p is not. PSL1GHT exposes the PS3's own H.264 decoder
+(`codec/vdec.h`, `libvdec.a`, `SYSMODULE_VDEC_H264`), which is the path to 1080p and would free the PPE
+almost entirely — the same shape as the 3DS port's MVD hardware path.
+
+**A lesson that cost a run.** The SPE/PPE agreement check originally ran on the first live frame. At
+960×540 that was affordable; at 1920×1080 it became two 2-million-pixel hashes and a full PPE conversion,
+stalling the receive loop for over a tenth of a second and killing the Takion channel — 58 packets where
+the previous run saw 6,287. **Something added to prove correctness destroyed the thing it was proving.**
+It now runs once before streaming on a synthetic picture, which is also a better test: the gradients
+sweep both chroma channels and luma across their whole range including the values that clamp, and it
+scales, so the scaler is part of what must agree.
+
 **What is not done.** Incoming GMAC tags are
 **not verified `[X]`**: GMAC authenticates without encrypting, so `STREAM_INFO` parses as it stands and this
 build reads it without checking who wrote it. That is the receive half of the sealing mechanism and a real
