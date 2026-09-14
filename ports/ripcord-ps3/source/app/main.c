@@ -915,6 +915,8 @@ static int check_connect(void)
                     " %u audio frame(s) (%lu bytes)\n",
                     c.video_frames, c.keyframes, c.video_frame_bytes, c.largest_frame,
                     c.audio_frames, c.audio_frame_bytes);
+            ps3_log("       worst drain burst %u of 64 - if this reaches the bound the loop is\n"
+                    "       yielding while packets wait\n", c.av_worst_burst);
             ps3_log("       units %ld received, %ld lost; %u loss event(s), %u IDR requested\n",
                     c.units_received, c.units_lost, c.corrupt_events, c.idr_requests);
             if (c.corrupt_events > 0u && c.keyframes <= 1u && c.idr_requests == 0u)
