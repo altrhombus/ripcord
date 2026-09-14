@@ -215,6 +215,18 @@ typedef struct {
     unsigned held_last_type;
     unsigned held_stream_info_repeats;
     unsigned heartbeats_sent;   /* ours, on the stream channel - the console's need no reply */
+
+    /*
+     * A/V, which shares the stream channel's UDP socket with the control association. Counted here
+     * before anything tries to decode it: whether the console is sending at all, and whether the
+     * packets authenticate under the A/V rule, are two separate questions and both come first.
+     */
+    unsigned av_packets;
+    unsigned av_video;
+    unsigned av_audio;
+    unsigned av_other;
+    unsigned av_verified;
+    unsigned long av_bytes;
     int      held_channel_error;
     unsigned stream_info_bytes;
     int  stream_info_parsed;

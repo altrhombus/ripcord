@@ -10,6 +10,7 @@
 #include "rc_ecdh.h"
 #include "rc_stack_ps3.h"
 #include "takion_control_sealer.h"
+#include "stream_header.h"
 #include "takion_control_proto.h"
 #include "takion_session_negotiator.h"
 #include "takion_data_chunk.h"
@@ -825,6 +826,73 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
             int result;
 
             service_control_tick(session);
+
+            /*
+             * PEEK BEFORE READING, and this is not an optimisation - it is the only way A/V can be seen
+             * at all.
+             *
+             * One UDP socket carries both the control association and the A/V stream, and
+             * takion_channel_poll does an unconditional recvfrom: every packet it does not recognise is
+             * consumed and discarded. So a console that has been sending video since STREAM_INFO was
+             * acked would look exactly like a console sending nothing, which is what the last two runs
+             * reported. MSG_PEEK reads the base type without taking the datagram, so each one can be
+             * routed to whichever reader owns it.
+             *
+             * The base type is the LOW NIBBLE of the first byte. 0 is the control association; 2 and 3
+             * are video and audio.
+             */
+            {
+                uint8_t peek[STREAM_HEADER_LENGTH];
+                ssize_t peeked = recvfrom(g_stream_channel.sock, peek, sizeof(peek), MSG_PEEK,
+                                          NULL, NULL);
+
+                if (peeked > 0 && (unsigned)(peek[0] & 0x0fu) != 0u) {
+                    /* Not the control association - take it and account for it here. */
+                    uint8_t packet[TAKION_MAX_PACKET];
+                    ssize_t n = recvfrom(g_stream_channel.sock, packet, sizeof(packet), 0, NULL, NULL);
+
+                    if (n >= (ssize_t)STREAM_HEADER_LENGTH) {
+                        unsigned base = (unsigned)(packet[0] & 0x0fu);
+                        uint64_t key_pos;
+
+                        out->av_packets++;
+                        out->av_bytes += (unsigned long)n;
+                        if (base == STREAM_HEADER_TYPE_VIDEO)
+                            out->av_video++;
+                        else if (base == STREAM_HEADER_TYPE_AUDIO)
+                            out->av_audio++;
+                        else
+                            out->av_other++;
+
+                        /*
+                         * THE A/V AUTHENTICATION RULE, which is NOT the control one. The key position
+                         * travels in the packet at offset 14 rather than being ours to choose, the tag
+                         * sits at offset 10, and only the TAG region is zeroed in the AAD - the key
+                         * position is NOT. Getting either half wrong makes every packet fail, which is a
+                         * much better outcome than silently decrypting noise.
+                         */
+                        key_pos = ((uint64_t)packet[STREAM_HEADER_KEY_POSITION_OFFSET + 0] << 24)
+                                | ((uint64_t)packet[STREAM_HEADER_KEY_POSITION_OFFSET + 1] << 16)
+                                | ((uint64_t)packet[STREAM_HEADER_KEY_POSITION_OFFSET + 2] << 8)
+                                | (uint64_t)packet[STREAM_HEADER_KEY_POSITION_OFFSET + 3];
+
+                        if (stream_packet_crypto_verify(&g_verifier.crypto, key_pos, packet, (size_t)n,
+                                                        STREAM_HEADER_TAG_OFFSET, 0 /* tag only */))
+                            out->av_verified++;
+                    }
+                    rc_sleep_ms(1u);
+                    continue;
+                }
+                /*
+                 * A negative peek is treated as "nothing waiting", not as an error, and deliberately so.
+                 * On this platform sockets are lv2 descriptors and errors surface through net_errno
+                 * rather than errno - a distinction this port has already been caught by once, when
+                 * fcntl(F_SETFL) returned -1 with nothing useful in errno. Rather than depend on a
+                 * mapping nobody here has verified, the peek stays advisory: takion_channel_poll below
+                 * does its own recvfrom and reports a genuine socket failure through its own return.
+                 */
+                (void)peeked;
+            }
 
             result = takion_channel_poll(&g_stream_channel, &channel_id, &message, &message_length);
             if (result == 1) {
