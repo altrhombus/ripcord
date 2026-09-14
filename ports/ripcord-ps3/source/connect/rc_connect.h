@@ -134,6 +134,18 @@ typedef struct {
     int  senkusha_version_ack;   /* PROTOCOL_VERSION_ACK came back                             */
     int  senkusha_complete;      /* ...and the keyless SESSION exchange completed too          */
 
+    /* The measurement legs. These unlock nothing; they decide what the launch spec declares, and the
+     * console's rate controller plans against those figures. */
+    unsigned echo_samples;       /* echoes received of SENKUSHA_PING_COUNT pings                */
+    int  measured_rtt_ms;        /* what the launch spec will declare; 0 if nothing was measured */
+    int  rtt_from_echo;          /* 1 = the echo probe; 0 = the handshake fallback. The reference
+                                  * warns that a non-null RTT does not imply the echo succeeded,
+                                  * so the two are reported apart rather than inferred.          */
+    int  handshake_rtt_ms;       /* the PROTOCOL_VERSION round trip, for the record              */
+    int  mtu_downstream;
+    int  mtu_upstream;
+    int  measured_mtu;           /* 0 unless both directions confirmed                          */
+
     /*
      * The stream SESSION exchange. `stream_keys_derived` is the milestone: it means the console's
      * SESSION_REPLY arrived, its ECDH point verified under the handshake key, and all four
