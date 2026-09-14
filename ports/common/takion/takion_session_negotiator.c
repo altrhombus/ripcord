@@ -141,6 +141,24 @@ int takion_session_negotiator_accept_reply(takion_session_negotiator *ctx,
         return 0;
     }
 
+    /*
+     * THE SAME QUESTION, ASKED HERE, A MICROSECOND EARLIER.
+     *
+     * rc_ecdh_check_peer_point runs the identical group load, point read and check_pubkey that
+     * rc_ecdh_derive_shared is about to run, on the same pointer. On the PS3 the two disagree: run from
+     * the caller, after the derivation has failed and freed its working memory, this ACCEPTS the very
+     * point the derivation refused - on bytes a fingerprint proves identical.
+     *
+     * Asking it here pins down which of those two differences matters. Same heap, same stack depth, same
+     * instant, same bytes: if it accepts here and the derivation still refuses, the subject is inside the
+     * derivation's own frame. If it refuses here too, the subject is the environment at this moment, and
+     * the earlier acceptance was a consequence of the derivation having cleaned up after itself.
+     */
+    ctx->last_precheck_ok = rc_ecdh_check_peer_point(ctx->curve, parsed.ecdh_public_key,
+                                                     parsed.ecdh_public_key_length);
+    ctx->last_precheck_step = rc_ecdh_last_error_step();
+    ctx->last_precheck_code = rc_ecdh_last_error_code();
+
     /* rc_ecdh_derive_shared re-checks that the peer key is on our curve and on the curve at all; the
      * signature above only proves whoever sent it knew handshakeKey, not that the point is well-formed. */
     if (rc_ecdh_derive_shared(&ctx->local_pair,
