@@ -12,6 +12,7 @@
 #include "takion_control_sealer.h"
 #include "stream_header.h"
 #include "stream_demux.h"
+#include "senkusha_echo.h"
 #include "rc_decode_probe.h"
 #include "rc_video_ps3.h"
 #include "takion_control_proto.h"
@@ -431,6 +432,227 @@ static int takion_bring_up(takion_reliable_channel *channel, const char *host, u
 #define RC_DECLARED_MTU 1454
 
 /*
+ * How long to wait for one echo, and for an MTU-sized datagram.
+ *
+ * The echo window is short on purpose: a reply that takes 80 ms on a LAN is not a slow round trip worth
+ * recording, it is a lost ping, and waiting longer would let one bad sample stretch the whole probe. The
+ * MTU window is long because the console has to prepare and send a full-sized datagram, which is a
+ * different kind of wait. Both figures are ports/ripcord-3ds'.
+ */
+#define RC_SENKUSHA_ECHO_TIMEOUT_MS 80u
+#define RC_SENKUSHA_MTU_TIMEOUT_MS 600u
+
+/*
+ * WHOLE-PROBE BACKSTOPS, from the reference. Ten pings on a LAN take a few milliseconds and ten misses
+ * cost under a second, so these are not targets - they bound the case where something is wrong in a way
+ * the per-reply timeouts do not catch, and this port has already lost runs to a loop with an inner bound
+ * and no outer one.
+ */
+#define RC_SENKUSHA_ECHO_BUDGET_MS 3000u
+#define RC_SENKUSHA_MTU_BUDGET_MS 3000u
+
+/* Measured by the legs below; 0 until they succeed, which is what the launch spec falls back on. */
+static int g_measured_rtt_ms;
+static int g_measured_mtu;
+
+/* The PROTOCOL_VERSION round trip, used as a fallback RTT sample - see senkusha_echo_probe. */
+static int g_version_rtt_ms;
+
+/*
+ * THE RTT PROBE. Ten pings, each timed against its own echo, and the MINIMUM taken.
+ *
+ * The minimum rather than the mean, because a sample can only be inflated by delay and never deflated:
+ * the smallest round trip observed is the closest thing to the true path time, and an average would
+ * report the queue rather than the link.
+ *
+ * A MAJORITY IS ENOUGH, and that is not defensive padding. The 3DS port's captures show a real loss and
+ * retry - one ping unanswered for ~200 ms, eleven sent for ten echoes - so a probe demanding all ten
+ * would fail a perfectly healthy session. Five of ten and the result stands.
+ *
+ * Each echo is matched to ITS OWN ping by sequence. Crediting a late echo of an earlier ping to a later
+ * one would report a round trip shorter than it was, which is the one direction this must not be wrong in.
+ */
+static void senkusha_echo_probe(halyard_control_session *session, rc_connect_result *out)
+{
+    static uint8_t ping[SENKUSHA_ECHO_PAYLOAD + 64];
+    static uint8_t rx[SENKUSHA_ECHO_PAYLOAD + 64];
+    uint8_t payload[256];
+    unsigned samples = 0u;
+    uint64_t best_ms = 0u;
+    uint64_t budget_end = rc_time_ms() + RC_SENKUSHA_ECHO_BUDGET_MS;
+    size_t n;
+    uint8_t seq;
+
+    /*
+     * SEEDED WITH THE VERSION HANDSHAKE, which the reference calls the purest sample available: answering
+     * a version request asks the console to do essentially no work, so it is nearly all path time. Since
+     * the result is a MINIMUM, a sample that is slow can only be ignored and never inflate the figure -
+     * which is what makes including a handshake round trip safe at all.
+     *
+     * It is a FALLBACK, not a substitute. The reference's own documentation warns that a non-null RTT
+     * therefore does not mean the echo probe succeeded; this port reports the echo count separately so
+     * that ambiguity does not exist here.
+     */
+    if (g_version_rtt_ms > 0) {
+        best_ms = (uint64_t)g_version_rtt_ms;
+        out->handshake_rtt_ms = g_version_rtt_ms;
+    }
+
+    /* Arm echo mode. */
+    n = takion_control_build_echo_command(1, payload, sizeof(payload));
+    if (n == 0u || !takion_channel_send(&g_senkusha_channel, TAKION_CHANNEL_BANDWIDTH, payload, n))
+        return;
+
+    for (seq = 0u; seq < (uint8_t)SENKUSHA_PING_COUNT; seq++) {
+        uint64_t sent_ms = rc_time_ms();
+        uint64_t deadline;
+
+        if (sent_ms > budget_end)
+            break;   /* the backstop - see RC_SENKUSHA_ECHO_BUDGET_MS */
+
+        n = senkusha_echo_build(seq, sent_ms * 1000u, SENKUSHA_ECHO_PAYLOAD, 0x00u,
+                                ping, sizeof(ping));
+        if (n == 0u)
+            break;
+        if (sendto(g_senkusha_channel.sock, ping, n, 0,
+                   (struct sockaddr *)&g_senkusha_channel.peer,
+                   sizeof(g_senkusha_channel.peer)) < 0)
+            continue;
+
+        deadline = sent_ms + RC_SENKUSHA_ECHO_TIMEOUT_MS;
+        while (rc_time_ms() < deadline) {
+            uint8_t got;
+            ssize_t r;
+
+            service_control_tick(session);
+            r = recvfrom(g_senkusha_channel.sock, rx, sizeof(rx), 0, NULL, NULL);
+            if (r > 0 && senkusha_echo_is_echo(rx, (size_t)r, &got) && got == seq) {
+                uint64_t rtt = rc_time_ms() - sent_ms;
+
+                if (best_ms == 0u || rtt < best_ms)
+                    best_ms = rtt;
+                samples++;
+                break;
+            }
+            if (r <= 0)
+                rc_sleep_ms(1u);
+        }
+    }
+
+    /* Disarm, whatever happened. */
+    n = takion_control_build_echo_command(0, payload, sizeof(payload));
+    if (n > 0u)
+        (void)takion_channel_send(&g_senkusha_channel, TAKION_CHANNEL_BANDWIDTH, payload, n);
+
+    out->echo_samples = samples;
+
+    /*
+     * A MAJORITY OF ECHOES, or fall back to the handshake sample. The reference's captures show a real
+     * loss and retry - one ping unanswered for ~200 ms, eleven sent for ten echoes - so demanding all ten
+     * would fail a healthy session.
+     */
+    if (samples * 2u >= SENKUSHA_PING_COUNT) {
+        g_measured_rtt_ms = (int)best_ms;
+        out->rtt_from_echo = 1;
+    } else if (g_version_rtt_ms > 0) {
+        g_measured_rtt_ms = g_version_rtt_ms;
+        out->rtt_from_echo = 0;
+    }
+    out->measured_rtt_ms = g_measured_rtt_ms;
+}
+
+/*
+ * THE MTU LEGS, downstream then upstream, in the capture's order.
+ *
+ * DOWNSTREAM: ask the console for one datagram of the candidate size. ITS ARRIVAL IS THE ENTIRE RESULT -
+ * a datagram that size reaching us intact is what "this MTU works" means, so the contents are never
+ * inspected. The console's reply reports what it SENT, which is a different question.
+ *
+ * UPSTREAM: put the console into echo mode for one large packet and send it, padded with 0x47 rather
+ * than zeros. A zero-filled payload is trivially compressible, and a link doing compression would let
+ * this pass at a size the path cannot actually carry.
+ *
+ * THE CLOSE IS UNCONDITIONAL. Past the open the console IS in client-MTU mode with no other way of being
+ * cleared, so state=false goes out on every exit path including failure. The .NET side records that this
+ * was once a plain sequential send a timeout could unwind past, leaving the console stuck - a mistake
+ * worth not repeating in a third implementation.
+ *
+ * Only the value we intend to DECLARE is tested. The vendor probes a smaller size upstream than
+ * downstream, but it has reason to know its own uplink and this port does not, so verifying the figure
+ * that will go in the launch spec is more useful than reproducing theirs.
+ */
+static void senkusha_mtu_probe(halyard_control_session *session, rc_connect_result *out)
+{
+    static uint8_t probe[1600];
+    static uint8_t rx[1600];
+    uint8_t payload[256];
+    size_t probe_len = (size_t)RC_DECLARED_MTU - SENKUSHA_IP_UDP_OVERHEAD;
+    uint64_t budget_end = rc_time_ms() + RC_SENKUSHA_MTU_BUDGET_MS;
+    uint64_t deadline;
+    size_t n;
+    int downstream = 0;
+    int upstream = 0;
+
+    n = takion_control_build_mtu_command(1u, (uint32_t)RC_DECLARED_MTU, 1u, payload, sizeof(payload));
+    if (n > 0u && takion_channel_send(&g_senkusha_channel, TAKION_CHANNEL_BANDWIDTH, payload, n)) {
+        deadline = rc_time_ms() + RC_SENKUSHA_MTU_TIMEOUT_MS;
+        if (deadline > budget_end)
+            deadline = budget_end;
+        while (rc_time_ms() < deadline && !downstream) {
+            ssize_t r;
+
+            service_control_tick(session);
+            r = recvfrom(g_senkusha_channel.sock, rx, sizeof(rx), 0, NULL, NULL);
+            if (r > 0 && (rx[0] & 0x0fu) == 0x02u)
+                downstream = 1;     /* base type 2 - the console's MTU datagram, arrived intact */
+            else if (r <= 0)
+                rc_sleep_ms(1u);
+        }
+    }
+
+    if (downstream) {
+        n = takion_control_build_client_mtu_command(1u, (uint32_t)RC_DECLARED_MTU, 1,
+                                                    payload, sizeof(payload));
+        if (n > 0u && takion_channel_send(&g_senkusha_channel, TAKION_CHANNEL_BANDWIDTH, payload, n)) {
+            size_t m = senkusha_echo_build(0u, rc_time_ms() * 1000u, probe_len, 0x47u,
+                                           probe, sizeof(probe));
+
+            if (m > 0u && sendto(g_senkusha_channel.sock, probe, m, 0,
+                                 (struct sockaddr *)&g_senkusha_channel.peer,
+                                 sizeof(g_senkusha_channel.peer)) >= 0) {
+                deadline = rc_time_ms() + RC_SENKUSHA_MTU_TIMEOUT_MS;
+                if (deadline > budget_end)
+                    deadline = budget_end;
+                while (rc_time_ms() < deadline && !upstream) {
+                    uint8_t got;
+                    ssize_t r;
+
+                    service_control_tick(session);
+                    r = recvfrom(g_senkusha_channel.sock, rx, sizeof(rx), 0, NULL, NULL);
+                    if (r > 0 && senkusha_echo_is_echo(rx, (size_t)r, &got) && got == 0u)
+                        upstream = 1;
+                    else if (r <= 0)
+                        rc_sleep_ms(1u);
+                }
+            }
+        }
+
+        /* Unconditional - see above. */
+        n = takion_control_build_client_mtu_command(2u, (uint32_t)RC_DECLARED_MTU, 0,
+                                                    payload, sizeof(payload));
+        if (n > 0u)
+            (void)takion_channel_send(&g_senkusha_channel, TAKION_CHANNEL_BANDWIDTH, payload, n);
+    }
+
+    out->mtu_downstream = downstream;
+    out->mtu_upstream = upstream;
+    if (downstream && upstream) {
+        g_measured_mtu = RC_DECLARED_MTU;
+        out->measured_mtu = g_measured_mtu;
+    }
+}
+
+/*
  * Static for the frame-size reason again, and here it is not a nicety: the launch spec is 2 KB, its
  * base64 form is another 2.7 KB, and the SESSION_REQUEST built from them is larger still. The port
  * compiles with -Wframe-larger-than=8192 and these three together would breach it on their own.
@@ -626,9 +848,17 @@ static int senkusha_legs(halyard_control_session *session, rc_connect_result *ou
 
     if (!takion_channel_send(&g_senkusha_channel, TAKION_CHANNEL_PROTOCOL_VERSION, payload, payload_len))
         return 0;
-    if (takion_channel_await_control(&g_senkusha_channel, RC_TAKION_PROTOCOL_VERSION_ACK,
-                                     RC_TAKION_REPLY_MS, service_control_tick, session, NULL, NULL))
-        out->senkusha_version_ack = 1;
+    {
+        /* Timed: answering a version request asks the console to do essentially no work, so this is very
+         * nearly all path time - the reference calls it the purest sample available. */
+        uint64_t asked_ms = rc_time_ms();
+
+        if (takion_channel_await_control(&g_senkusha_channel, RC_TAKION_PROTOCOL_VERSION_ACK,
+                                         RC_TAKION_REPLY_MS, service_control_tick, session, NULL, NULL)) {
+            out->senkusha_version_ack = 1;
+            g_version_rtt_ms = (int)(rc_time_ms() - asked_ms);
+        }
+    }
 
     /*
      * The KEYLESS SESSION_REQUEST: client version 9, empty session key and launch spec, four zero
@@ -659,6 +889,21 @@ static int senkusha_legs(halyard_control_session *session, rc_connect_result *ou
     }
 
     out->senkusha_complete = 1;
+
+    /*
+     * THE MEASUREMENT LEGS, after the exchange the console gates on and before the launch spec is built.
+     *
+     * These do not unlock anything, which is exactly why they were skipped - and the 3DS port's note
+     * says what that cost: it omitted the echo leg for five phases reasoning that it "only tunes
+     * bitrate", and both halves of that were true while the conclusion was not. The declared RTT is an
+     * input the console's rate controller uses, and declaring 0 asks it to plan against a figure nobody
+     * measured. b115 asked for 8000 kbps at 720p and was sent about 1400.
+     *
+     * Best-effort throughout: a failed probe leaves the declared defaults in place, which is the status
+     * quo rather than a regression.
+     */
+    senkusha_echo_probe(session, out);
+    senkusha_mtu_probe(session, out);
     return 1;
 }
 
@@ -738,8 +983,8 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
     params.height = (rec->stream_height > 0) ? rec->stream_height : 360;
     params.fps = (rec->fps == 60) ? 60 : 30;
     params.bitrate_kbps = (rec->stream_bitrate_kbps > 0) ? rec->stream_bitrate_kbps : 2000;
-    params.mtu = RC_DECLARED_MTU;
-    params.rtt_ms = 0;   /* unmeasured - see senkusha_legs' note on the echo leg  [X] */
+    params.mtu = (g_measured_mtu > 0) ? g_measured_mtu : RC_DECLARED_MTU;
+    params.rtt_ms = g_measured_rtt_ms;   /* 0 if the echo probe did not get a majority */
     params.is_hevc = 0;  /* H.264 only: the decoder this port proved is openh264   */
     params.is_hdr = 0;
 

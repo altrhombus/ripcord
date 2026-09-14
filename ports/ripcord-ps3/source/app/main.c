@@ -985,8 +985,19 @@ static int check_connect(void)
                 c.senkusha_version_ack ? "yes" : "NO", c.senkusha_complete ? "complete" : "INCOMPLETE");
         ps3_log("       stream    local 0x%08x  peer 0x%08x\n",
                 c.takion_local_tag, c.takion_peer_tag);
-        ps3_log("       asked for %dx%d @ %d fps (rtt declared 0 - the echo leg is not run yet)\n",
-                c.asked_width, c.asked_height, c.asked_fps);
+        ps3_log("       asked for %dx%d @ %d fps\n", c.asked_width, c.asked_height, c.asked_fps);
+        ps3_log("       senkusha echo: %u/%u echoes, handshake round trip %d ms\n",
+                c.echo_samples, 10u, c.handshake_rtt_ms);
+        ps3_log("       declared rtt %d ms (%s), mtu %d (%s)\n",
+                c.measured_rtt_ms,
+                c.measured_rtt_ms == 0 ? "nothing measured"
+                                       : (c.rtt_from_echo ? "from the echo probe"
+                                                          : "handshake fallback - the echo probe did"
+                                                            " NOT get a majority"),
+                c.measured_mtu > 0 ? c.measured_mtu : 1454,
+                (c.measured_mtu > 0) ? "confirmed both directions"
+                                     : (c.mtu_downstream ? "downstream only - declared anyway"
+                                                         : "unconfirmed - declared anyway"));
         ps3_log("       protocol version %u (%s), so the curve is %s\n",
                 c.stream_version, c.stream_version_acked ? "the console's choice" : "ours - no ack",
                 c.curve_p521 ? "P-521" : "P-256");
