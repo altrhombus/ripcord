@@ -161,7 +161,7 @@ CFLAGS := $(ARCH) -std=gnu99 -O2 -g \
           -DRC_PROGRAM_DIR_FALLBACK='"$(LOG_DIR)"' \
           -DRC_PS3_APPID='"$(APPID)"' \
           -DRC_NETLOG_HOST='"$(RC_NETLOG_HOST)"' -DRC_NETLOG_PORT=$(RC_NETLOG_PORT) \
-          -I$(CORE) -I$(BUILD) -Isource/spu -Isource/net -Isource/media -Isource/coretest \
+          -I$(CORE) -I$(BUILD) -Isource/platform -Isource/spu -Isource/net -Isource/media -Isource/coretest \
           -Isource/discovery -Isource/connect -I$(CORE)/discovery -I$(CORE)/session \
           -I$(CORE)/halyard -I$(CORE)/crypto -I$(CORE)/net -I$(CORE)/takion -I$(CORE)/stream -I$(CORE)/util -I$(CORE)/platform -Ispu \
           -I$(PSL1GHT)/ppu/include
@@ -187,6 +187,7 @@ SOURCES := \
 	$(CORE)/util/rc_program_dir.c \
 	source/platform/rc_platform_ps3.c \
 	source/platform/rc_random_ps3.c \
+	source/platform/rc_stack_ps3.c \
 	source/spu/rc_spu.c \
 	source/net/rc_netlog.c \
 	source/media/rc_h264_annexb.c \
@@ -481,7 +482,9 @@ CFLAGS_SDK_SOCKETS := $(CFLAGS) -Wno-sign-conversion -include sys/time.h
 # overrides the value the pattern rule below expands, so the list is the only thing to maintain.
 #
 # It is a LIST and not a wildcard on purpose: the relaxation drops a real warning class, so a file joins
-# it deliberately or not at all. Note rc_connect.o is here now - it always included <net/socket.h>, but it
+# it deliberately or not at all. rc_stack_ps3.o is here for a different header than the others - it calls
+# a thread syscall rather than a socket one - but the cause is identical: PSL1GHT's inline lv2 wrappers
+# convert int to u64, and that is the SDK's code, not this port's. Note rc_connect.o is here now - it always included <net/socket.h>, but it
 # included <sys/time.h> first and so happened not to need this, which is a fact about the order of its
 # own include block rather than anything durable.
 SDK_SOCKET_OBJS := \
@@ -489,7 +492,8 @@ SDK_SOCKET_OBJS := \
 	$(BUILD)/rc_tcp.o \
 	$(BUILD)/rc_udp.o \
 	$(BUILD)/rc_connect.o \
-	$(BUILD)/takion_reliable_channel.o
+	$(BUILD)/takion_reliable_channel.o \
+	$(BUILD)/rc_stack_ps3.o
 
 $(SDK_SOCKET_OBJS): CFLAGS := $(CFLAGS_SDK_SOCKETS)
 
