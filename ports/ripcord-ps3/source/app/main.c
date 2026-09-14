@@ -1435,6 +1435,27 @@ int main(void)
     ps3_log("       rc_tick()    = %llu\n\n", (unsigned long long)rc_tick());
 
     failures += measure_timebase();
+    /*
+     * THE DISPLAY GOES FIRST, and the order is the experiment.
+     *
+     * rsxInit has refused with 0x802100FF across three builds - a 512 KB IO region (a real bug, fixed),
+     * a 1 MB one, and one with GCM_SYS and SYSUTIL both loading successfully. Three hypotheses about the
+     * call itself, all wrong, which is a sign the question is not about the call.
+     *
+     * What the call has always had in common is WHEN it happens: dead last, after netInitialize, after
+     * a raw SPU has been created and torn down, after openh264 and mbedtls have taken whatever they
+     * take, and after the decoder has run. Any of those could hold a resource the RSX needs, and none of
+     * them can be ruled out by reading rsx.h.
+     *
+     * So the display is attempted before any of it. If it comes up here, the subject is something this
+     * program does earlier and the bisection continues downward. If it refuses here too, on a freshly
+     * started process that has done nothing but open its log files, then it is about how this program is
+     * built or launched and not about anything it runs.
+     *
+     * The order goes back once that is answered. It is a diagnostic arrangement, not a design.
+     */
+    failures += check_display();
+
     failures += check_monotonic();
     failures += check_csprng();
     failures += check_spu();
@@ -1442,7 +1463,6 @@ int main(void)
     failures += check_discovery();
     failures += check_connect();
     failures += check_decode();
-    failures += check_display();
 
     ps3_log("\nnot covered here: the rest of the decoder. See README.md.\n");
     ps3_log("%s\n", failures == 0 ? "all checks passed" : "CHECKS FAILED");
