@@ -1272,8 +1272,12 @@ static int check_display(void)
     ps3_log("\nvid:   bringing up the display\n");
 
     if (!rc_video_open(&info)) {
-        ps3_log("FAIL  display did not come up: %s (code %d)\n",
-                info.failed_at != NULL ? info.failed_at : "unknown step", info.last_error);
+        /* In hex as well as signed. lv2 error codes are documented as 0x8-prefixed words and are
+         * unrecognisable as negative decimals - b80's -2145320705 is 0x802100FF, and looking that up
+         * cost a step that printing it would not have. */
+        ps3_log("FAIL  display did not come up: %s (code %d = 0x%08X)\n",
+                info.failed_at != NULL ? info.failed_at : "unknown step",
+                info.last_error, (unsigned)info.last_error);
         ps3_log("      the step is named because \"no picture\" says nothing on its own\n");
         return 1;
     }
