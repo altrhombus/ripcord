@@ -386,6 +386,42 @@ eliminated in one go every theory about networking, the raw SPU, openh264 or the
 something the RSX needed. After four wrong guesses about the call, `rsxInit` is now **swept** across
 several size pairs rather than given one — the same discipline the writable-directory probe uses.
 
+## A PS5 stream, on a PS3, on a television — measured
+
+On 2026-09-14 the whole thing ran end to end, unattended, for thirty seconds:
+
+| | |
+|---|---|
+| A/V packets | **6287 of 6287 authenticated** |
+| video frames demuxed | 893 |
+| units lost / loss events | 9 lost, **0 events** — FEC recovered every one |
+| decoded | **892 pictures from 893 frames, 0 errors** |
+| on screen | **891 pictures, 29 fps** |
+| decode | 11,731 µs per picture |
+| colour conversion | 12,037 µs per picture |
+| total against the 30 fps budget | **23,768 µs of 33,333 µs** |
+
+Getting from a first picture to that number took four runs, and every one of them fixed something
+self-inflicted rather than anything the console did:
+
+- **The display stalled the receive loop.** Blitting and waiting for vsync on the thread draining the
+  socket cost 90 units and 30 loss events. Presenting is non-blocking now, and a picture arriving while
+  the previous flip is in flight is dropped whole — a dropped frame costs one frame, a waited-on frame
+  costs every packet that arrives during the wait.
+- **The conversion did twice the chroma work it needed.** 4:2:0 means a column *pair* shares one sample;
+  indexing `u[col / 2]` per luma pixel is an integer divide and a redundant load for every pixel.
+- **Loss was counted and not acted on.** Over one run the console sent 893 frames and *one* keyframe,
+  and 686 frames failed with `dsNoParamSets | dsRefLost`. An inter-frame gap is not one lost frame, it
+  is every frame until the next keyframe — and the console only sends one **when asked**. Requesting an
+  IDR on loss (throttled to the reference's 200 ms) took decoding from 205/893 to 717/858.
+- **The loop slept a millisecond per packet.** At ~190 packets/s that is 190 ms of every second asleep
+  with data waiting, on top of 24 ms per frame of work. It now drains up to 64 datagrams per pass and
+  sleeps only when nothing arrived.
+
+**The instrument is still flagging one thing**: the worst drain burst reaches the bound, 64 of 64.
+Benign at this bitrate — yielding every 64 packets is every ~300 ms against a 1000 ms heartbeat — and
+recorded rather than tidied away, because it will matter if the bitrate rises.
+
 **What is not done.** Incoming GMAC tags are
 **not verified `[X]`**: GMAC authenticates without encrypting, so `STREAM_INFO` parses as it stands and this
 build reads it without checking who wrote it. That is the receive half of the sealing mechanism and a real
