@@ -124,6 +124,19 @@ int takion_session_negotiator_accept_reply(takion_session_negotiator *ctx,
         return 0;
     }
 
+    /*
+     * Record what arrived before trying to use it, and separate a curve disagreement from a derivation
+     * that failed for any other reason. Both refusals look identical from outside, and they want
+     * completely different things looked at: the first is a negotiation fault several steps earlier,
+     * the second is the crypto itself.
+     */
+    ctx->last_peer_key_length = parsed.ecdh_public_key_length;
+    ctx->last_peer_key_prefix = (parsed.ecdh_public_key_length > 0u) ? parsed.ecdh_public_key[0] : 0u;
+    if (rc_ecdh_curve_for_public_key_length(parsed.ecdh_public_key_length) != ctx->curve) {
+        ctx->last_reject_reason = TAKION_SESSION_REJECT_CURVE;
+        return 0;
+    }
+
     /* rc_ecdh_derive_shared re-checks that the peer key is on our curve and on the curve at all; the
      * signature above only proves whoever sent it knew handshakeKey, not that the point is well-formed. */
     if (rc_ecdh_derive_shared(&ctx->local_pair,
@@ -138,7 +151,7 @@ int takion_session_negotiator_accept_reply(takion_session_negotiator *ctx,
         ctx->established = 1;
         ok = 1;
     } else {
-        ctx->last_reject_reason = TAKION_SESSION_REJECT_CURVE;
+        ctx->last_reject_reason = TAKION_SESSION_REJECT_DERIVE;
     }
 
     memset(shared, 0, sizeof(shared));
