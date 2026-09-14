@@ -916,6 +916,23 @@ static int check_connect(void)
                     c.audio_frames, c.audio_frame_bytes);
             ps3_log("       units %ld received, %ld lost; %u loss event(s)\n",
                     c.units_received, c.units_lost, c.corrupt_events);
+            if (c.decoded_fed > 0) {
+                unsigned long hz = (unsigned long)rc_tick_hz();
+                unsigned long us = (hz > 0UL && c.decoded_pictures > 0)
+                    ? (unsigned long)((c.decode_ticks * 1000000ULL) / hz) / (unsigned long)c.decoded_pictures
+                    : 0UL;
+
+                ps3_log("       DECODED LIVE: %d picture(s) from %d frame(s) at %dx%d, %d error(s)\n",
+                        c.decoded_pictures, c.decoded_fed, c.decoded_width, c.decoded_height,
+                        c.decoded_errors);
+                if (us > 0UL)
+                    ps3_log("       %lu us per picture on the PPE - the budget at 30 fps is 33333 us\n", us);
+                if (c.decoded_errors > 0)
+                    ps3_log("       last decoder error 0x%x\n", (unsigned)c.decoded_last_error);
+                if (c.decoded_pictures < c.decoded_fed)
+                    ps3_log("       fewer pictures than frames is normal at the start - the decoder\n"
+                            "       produces nothing until its first keyframe\n");
+            }
             if (c.video_frames > 0u && c.keyframes == 0u)
                 ps3_log("       NO KEYFRAME yet - a stream no decoder can start on, which is not the\n"
                         "       same finding as no frames at all\n");
