@@ -335,8 +335,22 @@ The control session stays open throughout, serviced by a tick callback roughly e
 load-bearing and not a style choice: the console resets a session 15–30 s after heartbeat replies stop,
 the UDP waits are longer than that, and this port has one thread.
 
-**What is not done.** Nothing is sealed with GMAC yet, no `STREAM_INFO` is acked, and no A/V has been
-demuxed — a negotiated session is not a stream. Senkusha's echo and MTU measurement legs are not run, so
+**Sealed, and the console has described the stream.** Once the keys exist, GMAC sealing goes on before
+anything else is sent: from that moment the console authenticates every control packet it receives, so the
+first unsealed one is the last it listens to. SACKs are sealed too, which is a documented way to lose a
+session — the channel routes every outgoing control packet through one callback, so that is right by
+construction rather than by anyone remembering it.
+
+`STREAM_INFO` then arrives unprompted and is acked. On 2026-09-14 it carried **330 bytes**: a request for
+960×540 granted at 960×540, a **40-byte video header** (the SPS/PPS, without which the first IDR cannot be
+decoded — they are not carried in the video stream) and a **14-byte audio header**. It is acked whether or
+not its payload parses; the ack means "received", and withholding it because this build could not read a
+field would stall a console that had done nothing wrong.
+
+**What is not done.** No A/V has been demuxed — a described stream is not a stream. Incoming GMAC tags are
+**not verified `[X]`**: GMAC authenticates without encrypting, so `STREAM_INFO` parses as it stands and this
+build reads it without checking who wrote it. That is the receive half of the sealing mechanism and a real
+gap rather than an oversight. Senkusha's echo and MTU measurement legs are not run, so
 the launch spec declares `rtt 0` and a default MTU `[X]`; the 3DS port's note on that is worth heeding,
 since it omitted the echo leg for five phases on the reasoning that it only tunes bitrate, and the
 declared RTT turned out to be an input the console uses. Log rotation is implemented in `ports/common`
