@@ -70,6 +70,11 @@ typedef struct {
     uint8_t receive_aes_key[16];
     uint8_t receive_base_iv[16];
     int established;
+    /*
+     * Set by accept_reply on every call - TAKION_SESSION_REJECT_* above. Diagnostic only: nothing in the
+     * protocol depends on it, and a caller that ignores it behaves exactly as before.
+     */
+    int last_reject_reason;
 } takion_session_negotiator;
 
 /* Maps a negotiated protocol version to its curve: 0x0d-0x11 -> P-521, anything else -> P-256. */
@@ -101,6 +106,27 @@ size_t takion_session_negotiator_begin(takion_session_negotiator *ctx,
  * That last check is the one that matters: without it, anything able to inject a DATA chunk on this
  * channel could substitute its own public key and read the whole session.
  */
+/*
+ * WHY accept_reply SAID NO, recorded in the context rather than returned.
+ *
+ * The function has five distinct ways to refuse a reply and they all used to collapse into a single 0,
+ * which on hardware reads as "the console answered and we did not like it" - true, unactionable, and one
+ * console round trip per guess. This is a field rather than a new parameter so that existing callers,
+ * which are ports this change has no business breaking, keep compiling unchanged.
+ *
+ * The distinction that matters most is SIGNATURE vs the rest: a signature that does not verify means the
+ * console computed it under a different handshakeKey than the one we embedded, which points at the launch
+ * spec's encryption rather than at anything in this file.
+ */
+#define TAKION_SESSION_REJECT_NONE        0  /* no refusal recorded - either accepted, or never called */
+#define TAKION_SESSION_REJECT_ARGUMENTS   1
+#define TAKION_SESSION_REJECT_PARSE       2  /* not a well-formed SESSION_REPLY at all                 */
+#define TAKION_SESSION_REJECT_VERSION     3  /* the console refused our protocol version               */
+#define TAKION_SESSION_REJECT_NO_ECDH     4  /* accepted the version, carried no ECDH key              */
+#define TAKION_SESSION_REJECT_SIG_LENGTH  5  /* the signature was not 32 bytes                         */
+#define TAKION_SESSION_REJECT_SIGNATURE   6  /* it did not verify under handshakeKey                   */
+#define TAKION_SESSION_REJECT_CURVE       7  /* the point is not on our curve, or not on any           */
+
 int takion_session_negotiator_accept_reply(takion_session_negotiator *ctx,
                                            const uint8_t *reply, size_t reply_length,
                                            rc_rng_fn rng, void *rng_ctx);
