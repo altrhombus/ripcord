@@ -61,6 +61,16 @@ uint32_t *rc_video_back_buffer(void);
  * Dropping a picture is the right answer when the display is behind: a frame not shown costs a frame,
  * while a frame waited on costs every packet that arrives during the wait.
  */
+/*
+ * Clears EVERY buffer, not just the back one, and presents.
+ *
+ * Both matter. The test pattern is drawn into both buffers alternately, so clearing one leaves the
+ * other still holding it - and with the video window occupying only the centre, the result is a stream
+ * framed by a test pattern that flickers between two stale frames. That is what b87 and b89 actually
+ * looked like on a television, and it reads as "a glimpse in the middle" rather than as a stream.
+ */
+void rc_video_clear_all(uint32_t colour);
+
 int rc_video_present_ready(void);
 
 /* Presents the back buffer. Does NOT wait for the flip - see rc_video_present_ready. */

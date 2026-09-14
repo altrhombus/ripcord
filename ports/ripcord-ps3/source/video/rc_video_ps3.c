@@ -200,6 +200,24 @@ int rc_video_open(rc_video_info *out)
     return 1;
 }
 
+void rc_video_clear_all(uint32_t colour)
+{
+    int i;
+
+    if (!s_open)
+        return;
+    for (i = 0; i < RC_VIDEO_BUFFERS; i++) {
+        size_t pixels = (size_t)(s_info.pitch / 4) * (size_t)s_info.height;
+        size_t n;
+
+        /* memset only helps for a byte-uniform colour; black is, but say it generally. */
+        for (n = 0; n < pixels; n++)
+            s_buffer[i][n] = colour;
+    }
+    /* Present one of them so the screen is clear immediately rather than at the next picture. */
+    rc_video_flip();
+}
+
 int rc_video_present_ready(void)
 {
     if (!s_open)
