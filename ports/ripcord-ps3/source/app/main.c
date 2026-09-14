@@ -957,6 +957,12 @@ static int check_connect(void)
                  */
                 unsigned i;
 
+                ps3_log("      control: a known-good P-521 vector point %s here; the console's %s\n",
+                        c.control_point_ok ? "PASSES" : "FAILS",
+                        c.peer_point_ok ? "PASSES" : "FAILS");
+                if (!c.control_point_ok)
+                    ps3_log("      control failed at step %d code %d - so this is the call site, not the key\n",
+                            c.control_step, c.control_code);
                 ps3_log("      peer point, for off-console analysis:\n      ");
                 for (i = 0u; i < c.peer_key_length; i++) {
                     ps3_log("%02x", c.peer_key[i]);

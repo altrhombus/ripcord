@@ -171,6 +171,13 @@ typedef struct {
 
     int  ecdh_step;            /* RC_ECDH_STEP_* when the derivation itself failed    */
     int  ecdh_code;            /* ...and the backend's own return value               */
+
+    /* The control experiment - see rc_connect.c. A known-good P-521 point and the console's own,
+     * put through one validator at one call depth in one run. */
+    int  control_point_ok;
+    int  control_step;
+    int  control_code;
+    int  peer_point_ok;
     int  stream_keys_derived;
     int  asked_width;
     int  asked_height;
