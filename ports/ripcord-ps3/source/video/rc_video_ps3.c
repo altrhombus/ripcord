@@ -8,6 +8,7 @@
 #include <sysutil/video.h>
 #include <sysmodule/sysmodule.h>
 #include "rc_platform.h"
+#include "rc_spu_yuv.h"
 
 #define RC_VIDEO_BUFFERS 2
 
@@ -296,6 +297,23 @@ unsigned rc_video_blit_yuv420(const uint8_t *y, const uint8_t *u, const uint8_t 
     oy = (s_info.height - height) / 2;
     if (ox < 0 || oy < 0)
         return 0u;   /* a picture larger than the screen wants scaling, which this does not do */
+
+    /*
+     * THE SPEs FIRST, THE PPE AS FALLBACK.
+     *
+     * Not a preference between two implementations - the PPE path is the one that is known to work, and
+     * it stays because a conversion that silently produces nothing is far worse than a slow one. If the
+     * SPEs are not up, or a frame does not finish inside its deadline, this falls through and converts
+     * here exactly as before. The caller cannot tell, which is the point; the statistics can, which is
+     * how the choice is measured rather than assumed.
+     */
+    {
+        unsigned spu_us = rc_spu_yuv_convert(y, u, v, y_stride, uv_stride, width, height,
+                                             back + (size_t)oy * (size_t)stride_px + (size_t)ox,
+                                             s_info.pitch);
+        if (spu_us > 0u)
+            return spu_us;
+    }
 
     t0 = rc_tick();
 
