@@ -605,6 +605,8 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
     if (!takion_session_negotiator_accept_reply(&g_negotiator, reply, reply_len,
                                                 rc_random_rng_callback, NULL)) {
         out->reply_reject_reason = g_negotiator.last_reject_reason;
+        out->peer_key_length = (unsigned)g_negotiator.last_peer_key_length;
+        out->peer_key_prefix = (unsigned)g_negotiator.last_peer_key_prefix;
         goto done;
     }
 
