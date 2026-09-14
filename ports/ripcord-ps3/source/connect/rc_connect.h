@@ -214,6 +214,7 @@ typedef struct {
     unsigned held_messages;
     unsigned held_last_type;
     unsigned held_stream_info_repeats;
+    unsigned heartbeats_sent;   /* ours, on the stream channel - the console's need no reply */
     int      held_channel_error;
     unsigned stream_info_bytes;
     int  stream_info_parsed;
