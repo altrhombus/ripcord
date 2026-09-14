@@ -963,6 +963,13 @@ static int check_connect(void)
                 if (!c.control_point_ok)
                     ps3_log("      control failed at step %d code %d - so this is the call site, not the key\n",
                             c.control_step, c.control_code);
+                ps3_log("      the SAME check run one call earlier, same heap and depth: %s%s\n",
+                        c.precheck_ok ? "PASSES" : "FAILS",
+                        c.precheck_ok
+                            ? " -> the subject is inside the derivation's own frame"
+                            : " -> the subject is the environment at that moment");
+                if (!c.precheck_ok)
+                    ps3_log("      (precheck step %d code %d)\n", c.precheck_step, c.precheck_code);
                 ps3_log("      derive saw fingerprint %08lx, the copy is %08lx - %s\n",
                         c.derive_fingerprint, c.copy_fingerprint,
                         (c.derive_fingerprint == c.copy_fingerprint)
