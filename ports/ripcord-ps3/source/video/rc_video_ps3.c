@@ -6,6 +6,7 @@
 
 #include <rsx/rsx.h>
 #include <sysutil/video.h>
+#include <sysmodule/sysmodule.h>
 
 #define RC_VIDEO_BUFFERS 2
 
@@ -32,6 +33,8 @@ static u32 s_offset[RC_VIDEO_BUFFERS];
 static int s_current;
 static rc_video_info s_info;
 static int s_open;
+static int s_gcm_module;
+static int s_sysutil_module;
 
 static int fail(rc_video_info *out, const char *where, int code)
 {
@@ -56,6 +59,29 @@ int rc_video_open(rc_video_info *out)
         *out = s_info;
         return 1;
     }
+
+    /*
+     * LOAD THE MODULES FIRST, because these libraries are PRXes and nothing in them exists until they
+     * are loaded.
+     *
+     * b80 and b81 both got 0x802100FF out of rsxInit with nothing on screen, and the second run proved
+     * the IO size was not the whole story. nm on the SDK's own libraries says why: rsxInit and
+     * videoGetState are `D` symbols with matching _stub entries - PRX import pointers, not linked code.
+     * sprxlinker patches the call sites at build time, which is why this links and runs, but the module
+     * behind them still has to be resident at runtime, and this program called sysModuleLoad nowhere at
+     * all.
+     *
+     * Networking did not need it because PSL1GHT's netInitialize loads its own module; the display has
+     * no such courtesy.
+     *
+     * A module that is already loaded returns an error rather than success, so the return is recorded
+     * and not treated as fatal - refusing to continue because something was already there would be a
+     * new way to produce a black screen.
+     */
+    s_gcm_module = (int)sysModuleLoad(SYSMODULE_GCM_SYS);
+    s_sysutil_module = (int)sysModuleLoad(SYSMODULE_SYSUTIL);
+    out->gcm_module = s_gcm_module;
+    out->sysutil_module = s_sysutil_module;
 
     /* 1 MB alignment AND a whole number of megabytes - see RC_VIDEO_IO_SIZE. */
     s_host_addr = memalign(RC_VIDEO_MB, RC_VIDEO_IO_SIZE);
@@ -119,6 +145,8 @@ int rc_video_open(rc_video_info *out)
     s_info.pitch = (int)config.pitch;
     s_info.buffers = RC_VIDEO_BUFFERS;
     s_info.video_state = out->video_state;
+    s_info.gcm_module = s_gcm_module;
+    s_info.sysutil_module = s_sysutil_module;
     s_info.ok = 1;
     s_info.failed_at = NULL;
     s_open = 1;
