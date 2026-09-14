@@ -347,7 +347,23 @@ decoded — they are not carried in the video stream) and a **14-byte audio head
 not its payload parses; the ack means "received", and withholding it because this build could not read a
 field would stall a console that had done nothing wrong.
 
-**What is not done.** No A/V has been demuxed — a described stream is not a stream. Incoming GMAC tags are
+**The console is streaming, and every packet authenticates.** On 2026-09-14, six seconds of a held
+session carried **1250 A/V packets, 842,990 bytes** — 653 video, 597 audio — and **1250 of 1250**
+verified under the A/V rule.
+
+That rule is not the control rule, and the differences are exactly where it goes wrong quietly: the tag
+sits at offset 10, the key position travels **in the packet** at offset 14 rather than being ours to
+choose, and only the tag region is zeroed in the AAD — not the key position. Getting either half wrong
+makes every packet fail, which is a far better outcome than silently decrypting noise.
+
+**And it had been arriving all along.** One UDP socket carries both the control association and the A/V
+stream, and `takion_channel_poll` does an unconditional `recvfrom`: anything it did not recognise was
+consumed and discarded. Runs before this one reported "the console sent only control traffic" and could
+not have been right — "no A/V" and "A/V thrown away" were indistinguishable. `MSG_PEEK` reads the base
+type (the low nibble of byte 0: 0 control, 2 video, 3 audio) without taking the datagram, so each one goes
+to whichever reader owns it.
+
+**What is not done.** Incoming GMAC tags are
 **not verified `[X]`**: GMAC authenticates without encrypting, so `STREAM_INFO` parses as it stands and this
 build reads it without checking who wrote it. That is the receive half of the sealing mechanism and a real
 gap rather than an oversight. Senkusha's echo and MTU measurement legs are not run, so

@@ -909,6 +909,19 @@ static int check_connect(void)
         else
             ps3_log("       none arrived. Until now poll's recvfrom consumed and discarded them, so\n"
                     "       'no A/V' and 'A/V thrown away' looked identical - this run can tell them apart.\n");
+        if (c.demux_ready) {
+            ps3_log("       demux: %u video frame(s) (%u keyframe(s), %lu bytes, largest %u),"
+                    " %u audio frame(s) (%lu bytes)\n",
+                    c.video_frames, c.keyframes, c.video_frame_bytes, c.largest_frame,
+                    c.audio_frames, c.audio_frame_bytes);
+            ps3_log("       units %ld received, %ld lost; %u loss event(s)\n",
+                    c.units_received, c.units_lost, c.corrupt_events);
+            if (c.video_frames > 0u && c.keyframes == 0u)
+                ps3_log("       NO KEYFRAME yet - a stream no decoder can start on, which is not the\n"
+                        "       same finding as no frames at all\n");
+        } else {
+            ps3_log("       demux was never started - no video header to start it with\n");
+        }
         ps3_log("       held the session %u ms: %u message(s), last type 0x%04x%s\n",
                 6000u, c.held_messages, c.held_last_type,
                 c.held_channel_error ? ", CHANNEL ERROR" : "");
