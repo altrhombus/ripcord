@@ -985,6 +985,9 @@ static int check_connect(void)
                     ps3_log("       ON SCREEN: %u picture(s) blitted, %u us average, %u us worst;"
                             " %u dropped because the display was busy\n",
                             c.blits, c.blit_avg_us, c.blit_worst_us, c.pictures_dropped);
+                    ps3_log("       longest gap between socket reads: %u ms"
+                            " (a 122 KB buffer at this rate fills in ~400 ms)\n",
+                            c.worst_read_gap_ms);
                     ps3_log("       frame queue: %u queued, %u dropped for overrun, deepest %u of 8\n",
                             c.frames_queued, c.frames_overrun, c.queue_worst);
                     ps3_log("       decode + blit is %lu us against the same 33333 us budget\n",

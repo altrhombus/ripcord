@@ -832,10 +832,37 @@ static void send_periodic(halyard_control_session *session, rc_connect_result *o
  * does the gap between decodes - one decode is 19 to 23 ms and the socket holds 122 KB, so going more
  * than one decode without reading is how b130 put loss back to 6.6% after b129 had it at 1.3%.
  */
+/*
+ * THE LONGEST THE SOCKET GOES UNREAD, measured rather than reasoned about.
+ *
+ * Four builds have now moved work across this boundary on the theory that some unit of it was too long
+ * to sit between two reads - decode inside the drain, then one decode per pass, then four with only the
+ * timers between, then four with a drain between each. Loss went 11.9%, 1.3%, 6.6%, 8.6%. That is not a
+ * sequence converging on an answer, it is a sequence of guesses, and the thing every one of them was
+ * guessing at is a number this loop can simply report.
+ *
+ * A 122 KB buffer at ~300 KB/s is full in about 400 ms. If the worst gap is nowhere near that, the
+ * overflow theory is wrong and the loss is somewhere else entirely.
+ */
+static uint64_t g_last_drain_ms;
+static unsigned g_worst_read_gap_ms;
+
 static int drain_av(halyard_control_session *session, rc_connect_result *out,
                     uint64_t *next_heartbeat, uint64_t *next_congestion)
 {
     int drained;
+
+    {
+        uint64_t now = rc_time_ms();
+
+        if (g_last_drain_ms != 0u) {
+            uint64_t gap = now - g_last_drain_ms;
+
+            if (gap > (uint64_t)g_worst_read_gap_ms)
+                g_worst_read_gap_ms = (unsigned)gap;
+        }
+        g_last_drain_ms = now;
+    }
 
     drained = 0;
     while (drained < RC_AV_DRAIN_BURST) {
@@ -1445,6 +1472,8 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
                     g_frames_queued = 0u;
                     g_frames_overrun = 0u;
                     g_queue_worst = 0u;
+                    g_last_drain_ms = 0u;
+                    g_worst_read_gap_ms = 0u;
                     g_live_open = rc_decode_live_open();
                     if (g_live_open) {
                         rc_decode_live_set_sink(on_picture, NULL);
@@ -1667,6 +1696,7 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
     out->frames_queued = g_frames_queued;
     out->frames_overrun = g_frames_overrun;
     out->queue_worst = g_queue_worst;
+    out->worst_read_gap_ms = g_worst_read_gap_ms;
     rc_video_scale_info(&out->scaled_width, &out->scaled_height,
                         &out->display_width, &out->display_height);
     out->pictures_dropped = g_pictures_dropped;
