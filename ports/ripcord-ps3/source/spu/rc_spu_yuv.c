@@ -265,22 +265,29 @@ void rc_spu_yuv_exit(void)
         return;
 
     /*
-     * ASK THEM TO LEAVE, then join. Zero is the sentinel the SPE reads as "stop" - see the kernel.
+     * ASK THEM TO LEAVE, AND THEN STOP ASKING FOR ANYTHING.
      *
-     * The first version went straight to sysSpuThreadGroupTerminate on five threads blocked in a mailbox
-     * read, and locked the console. A blocked thread cannot notice it is being terminated; it has to be
-     * given something to wake up for. The group is still destroyed afterwards, and the join is bounded by
-     * lv2 rather than by this code, because a shutdown path that can hang is how b105 ended.
+     * Two attempts at a tidy shutdown have now locked this console. b105 called
+     * sysSpuThreadGroupTerminate on five threads blocked in a mailbox read - a blocked thread cannot
+     * notice it is being terminated. b107 asked them to leave first and then joined the group, which
+     * froze too: the stream had run to completion and the freeze was entirely in the teardown.
+     *
+     * So the teardown does the one thing that helps and nothing that can block. The sentinel is written
+     * because an SPE waiting on its doorbell will wake, see zero and return from main - that is cheap and
+     * it is the right thing when it works. Nothing then WAITS for that to have happened.
+     *
+     * No join, no terminate, no destroy, and that is not a leak being excused. This runs as the process
+     * exits, and lv2 reclaims a process's SPE thread groups when it does. The question is not whether
+     * cleanup is tidy but whether it can hang, because a shutdown that hangs costs a reboot and - until
+     * the log order was fixed alongside this - the last lines of the log as well. Cleanup that cannot
+     * fail is worth more here than cleanup that is complete.
+     *
+     * Deliberately NOT marked [X]: this is not an unverified guess about the protocol, it is a decision
+     * about what to do at exit, and the reasoning is the whole justification.
      */
     for (i = 0; i < s_spes; i++)
         (void)sysSpuThreadWriteMb(s_thread[i], 0u);
 
-    {
-        u32 cause = 0, status = 0;
-        (void)sysSpuThreadGroupJoin(s_group, &cause, &status);
-    }
-    (void)sysSpuThreadGroupDestroy(s_group);
-    (void)sysSpuImageClose(&s_image);
     s_ready = 0;
     s_spes = 0;
 }
