@@ -142,7 +142,17 @@ int main(uint64_t job_ea, uint64_t unused1, uint64_t unused2, uint64_t unused3)
          * thread creation and the mailbox is only a doorbell. Reading the EA from the mailbox instead
          * would need two writes for a 64-bit address and a protocol to match them up.
          */
-        (void)spu_read_in_mbox();
+        /*
+         * A doorbell, and now also a way out. Zero means "stop": the thread returns from main and lv2
+         * can join it normally.
+         *
+         * b105 completed its entire run, printed its summary, and then locked the console hard enough to
+         * take the FTP server with it - because rc_spu_yuv_exit terminated a thread group whose five
+         * SPEs were all blocked in this read with no way to be told to leave. Terminating is not the
+         * same as asking, and the difference only shows at shutdown, which is exactly where nobody looks.
+         */
+        if (spu_read_in_mbox() == 0u)
+            return 0;
 
         mfc_get(&g_job, job_ea, (uint32_t)sizeof(g_job), TAG, 0, 0);
         mfc_write_tag_mask(1u << TAG);
