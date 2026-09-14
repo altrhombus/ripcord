@@ -252,6 +252,71 @@ static void run_control_sealer(void)
     seal_check(sealer.enabled == 0 && sealer.key_pos == 0u, "reset wipes the sealer");
 }
 
+/*
+ * The verifier is the sealer read backwards, and the round trip is the only check that proves both are
+ * using the same rule. Sealing and verifying with mismatched AAD conventions would each look internally
+ * consistent and never interoperate.
+ */
+static void run_control_verifier(void)
+{
+    static const uint8_t key[16] = {
+        0x00,0x11,0x22,0x33,0x44,0x55,0x66,0x77,0x88,0x99,0xaa,0xbb,0xcc,0xdd,0xee,0xff
+    };
+    static const uint8_t iv[16] = {
+        0x0f,0x1e,0x2d,0x3c,0x4b,0x5a,0x69,0x78,0x87,0x96,0xa5,0xb4,0xc3,0xd2,0xe1,0xf0
+    };
+    takion_control_sealer sealer;
+    takion_control_verifier verifier;
+    uint8_t packet[40];
+
+    takion_control_sealer_init(&sealer, key, iv);
+    takion_control_verifier_init(&verifier, key, iv);
+
+    memset(packet, 0x5a, sizeof(packet));
+    takion_control_sealer_seal(&sealer, packet, sizeof(packet));
+    seal_check(takion_control_verifier_check(&verifier, packet, sizeof(packet)) == 1,
+               "a freshly sealed packet verifies");
+    seal_check(verifier.checked == 1UL && verifier.failed == 0UL, "and is counted as a pass");
+
+    /* One flipped payload byte must fail - that is the entire point. */
+    packet[sizeof(packet) - 1] ^= 0x01u;
+    seal_check(takion_control_verifier_check(&verifier, packet, sizeof(packet)) == 0,
+               "a single altered payload byte fails");
+    packet[sizeof(packet) - 1] ^= 0x01u;
+
+    /* So must a forged key position, even though the receiver reads it from the packet. */
+    packet[TAKION_CONTROL_KEYPOS_OFFSET + 3u] ^= 0x10u;
+    seal_check(takion_control_verifier_check(&verifier, packet, sizeof(packet)) == 0,
+               "a forged key position fails - it is in the nonce, not merely alongside it");
+    packet[TAKION_CONTROL_KEYPOS_OFFSET + 3u] ^= 0x10u;
+    seal_check(takion_control_verifier_check(&verifier, packet, sizeof(packet)) == 1,
+               "and verifies again once restored");
+
+    /* A packet too short to carry the fields is a failure, not a pass. Treating "cannot be
+     * authenticated" as "fine" is how a check gets bypassed rather than enforced. */
+    {
+        uint8_t tiny[8];
+        memset(tiny, 0x3c, sizeof(tiny));
+        seal_check(takion_control_verifier_check(&verifier, tiny, sizeof(tiny)) == 0,
+                   "a packet too short to authenticate fails rather than passing");
+    }
+
+    /* The wrong direction's key must not verify - send and receive keys are different for a reason. */
+    {
+        static const uint8_t other[16] = {
+            0xff,0xee,0xdd,0xcc,0xbb,0xaa,0x99,0x88,0x77,0x66,0x55,0x44,0x33,0x22,0x11,0x00
+        };
+        takion_control_verifier wrong;
+
+        takion_control_verifier_init(&wrong, other, iv);
+        seal_check(takion_control_verifier_check(&wrong, packet, sizeof(packet)) == 0,
+                   "the wrong direction's key does not verify");
+    }
+
+    seal_check(verifier.failed > 0UL && verifier.checked > verifier.failed,
+               "the counters distinguish some failures from all of them");
+}
+
 int main(int argc, char **argv)
 {
     const char *path = (argc > 1) ? argv[1] : "vectors/stream-crypto.kat";
@@ -297,6 +362,7 @@ int main(int argc, char **argv)
     fclose(file);
 
     run_control_sealer();
+    run_control_verifier();
 
     printf("\n%d passed, %d failed\n", g_passed, g_failed);
     if (g_passed == 0) {
