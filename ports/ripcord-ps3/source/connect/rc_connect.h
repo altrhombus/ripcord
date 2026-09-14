@@ -286,6 +286,9 @@ typedef struct {
     int  scaled_height;
     int  display_width;
     int  display_height;
+    unsigned frames_queued;     /* handed from the receive loop to the decoder            */
+    unsigned frames_overrun;    /* dropped because the queue was full - we were behind    */
+    unsigned queue_worst;       /* deepest the queue got, against its 8 slots             */
     unsigned pictures_dropped;  /* decoded, but the display was still busy - see on_picture */
     unsigned hold_ms;           /* how long the session was held, so a rate can be computed */
     unsigned idr_requests;      /* keyframes asked for after loss - see on_video_loss */
