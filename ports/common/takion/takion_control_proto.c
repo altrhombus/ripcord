@@ -23,6 +23,14 @@
 #define F_RES_VIDEO_HEADER 3u
 
 #define F_REQ_CLIENT_VERSION 1u
+
+/* ControlMessage's two protocol-version members, and the single field inside each. From
+ * docs/protocol/stream_control.proto - ProtocolVersionRequestPayload{repeated uint32 supportedVersions=1}
+ * and ProtocolVersionAckPayload{optional uint32 protocolVersion=1}. */
+#define F_MSG_PROTOCOL_VERSION_REQUEST 31u
+#define F_MSG_PROTOCOL_VERSION_ACK     32u
+#define F_PV_SUPPORTED_VERSIONS         1u
+#define F_PV_PROTOCOL_VERSION           1u
 #define F_REQ_SESSION_KEY    2u
 #define F_REQ_LAUNCH_SPEC    3u
 #define F_REQ_ENCRYPTED_KEY  4u
@@ -263,6 +271,95 @@ size_t takion_control_build_session_request(const takion_session_request *req,
     n += varint_write((uint64_t)payload_size, buf + n);
     n += write_session_request_payload(req, buf + n);
     return n;
+}
+
+size_t takion_control_build_protocol_version_request(const uint32_t *versions, size_t version_count,
+                                                     uint8_t *buf, size_t buf_size)
+{
+    uint8_t inner[64];
+    size_t inner_len = 0u;
+    size_t n = 0u;
+    size_t i;
+
+    if (buf == NULL || versions == NULL || version_count == 0u)
+        return 0;
+
+    /*
+     * supportedVersions is `repeated uint32` and NOT packed - the schema has no [packed=true] and this
+     * predates proto3's default, so each entry carries its own tag. Writing it packed produces a message
+     * the console parses as one enormous version number rather than as a list.
+     */
+    for (i = 0; i < version_count; i++) {
+        size_t need = varint_field_size(F_PV_SUPPORTED_VERSIONS, versions[i]);
+
+        if (inner_len + need > sizeof(inner))
+            return 0;
+        inner_len += tag_write(F_PV_SUPPORTED_VERSIONS, WT_VARINT, inner + inner_len);
+        inner_len += varint_write(versions[i], inner + inner_len);
+    }
+
+    if (varint_field_size(F_MSG_TYPE, TAKION_CONTROL_PROTOCOL_VERSION_REQUEST)
+        + tag_size(F_MSG_PROTOCOL_VERSION_REQUEST) + varint_size(inner_len) + inner_len > buf_size)
+        return 0;
+
+    n = tag_write(F_MSG_TYPE, WT_VARINT, buf);
+    n += varint_write(TAKION_CONTROL_PROTOCOL_VERSION_REQUEST, buf + n);
+    n += tag_write(F_MSG_PROTOCOL_VERSION_REQUEST, WT_LEN, buf + n);
+    n += varint_write(inner_len, buf + n);
+    memcpy(buf + n, inner, inner_len);
+    return n + inner_len;
+}
+
+int takion_control_parse_protocol_version_ack(const uint8_t *data, size_t length, uint32_t *out_version)
+{
+    size_t offset = 0u;
+    int found = 0;
+
+    if (data == NULL || out_version == NULL)
+        return 0;
+    *out_version = 0u;
+
+    while (offset < length) {
+        uint64_t tag = 0u;
+        uint32_t field;
+        unsigned wire;
+
+        if (!varint_read(data, length, &offset, &tag))
+            return 0;
+        field = (uint32_t)(tag >> 3);
+        wire = (unsigned)(tag & 7u);
+
+        if (field == F_MSG_PROTOCOL_VERSION_ACK && wire == WT_LEN) {
+            uint64_t inner_len = 0u;
+            size_t inner_end;
+
+            if (!varint_read(data, length, &offset, &inner_len)
+                || offset + (size_t)inner_len > length)
+                return 0;
+            inner_end = offset + (size_t)inner_len;
+
+            while (offset < inner_end) {
+                uint64_t inner_tag = 0u;
+                uint64_t value = 0u;
+
+                if (!varint_read(data, inner_end, &offset, &inner_tag))
+                    return 0;
+                if ((uint32_t)(inner_tag >> 3) == F_PV_PROTOCOL_VERSION
+                    && (unsigned)(inner_tag & 7u) == WT_VARINT) {
+                    if (!varint_read(data, inner_end, &offset, &value))
+                        return 0;
+                    *out_version = (uint32_t)value;
+                    found = 1;
+                } else if (!skip_value(data, inner_end, &offset, (unsigned)(inner_tag & 7u))) {
+                    return 0;
+                }
+            }
+            offset = inner_end;
+        } else if (!skip_value(data, length, &offset, wire)) {
+            return 0;
+        }
+    }
+    return found;
 }
 
 size_t takion_control_build_bare(uint32_t type, uint8_t *buf, size_t buf_size)
