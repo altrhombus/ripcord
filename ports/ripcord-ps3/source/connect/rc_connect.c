@@ -13,6 +13,7 @@
 #include "stream_header.h"
 #include "stream_demux.h"
 #include "rc_decode_probe.h"
+#include "rc_video_ps3.h"
 #include "takion_control_proto.h"
 #include "takion_session_negotiator.h"
 #include "takion_data_chunk.h"
@@ -450,6 +451,35 @@ static rc_demux_tally g_tally;
 static rc_decode_live_stats g_live_stats;
 static int g_live_open;
 
+/*
+ * The picture sink: a decoded frame goes straight onto the screen.
+ *
+ * In the decoder's callback, which is inside the demuxer's callback, which is inside the receive loop.
+ * Deep, and deliberately so - every layer's contract says its buffer is valid for the call only, so
+ * doing the work here is what avoids a copy at each level. The cost of that decision is that a slow
+ * blit stalls the receive loop, which is why it is measured rather than assumed.
+ */
+static unsigned g_blit_us_total;
+static unsigned g_blit_worst_us;
+static unsigned g_blits;
+
+static void on_picture(void *ctx, const unsigned char *y, const unsigned char *u,
+                       const unsigned char *v, int y_stride, int uv_stride, int width, int height)
+{
+    unsigned us;
+
+    (void)ctx;
+    us = rc_video_blit_yuv420(y, u, v, y_stride, uv_stride, width, height);
+    if (us == 0u)
+        return;   /* the display is not open, or the picture does not fit - not an error here */
+
+    rc_video_flip();
+    g_blits++;
+    g_blit_us_total += us;
+    if (us > g_blit_worst_us)
+        g_blit_worst_us = us;
+}
+
 static void on_video_frame(void *userdata, const uint8_t *data, size_t length, int is_keyframe)
 {
     (void)userdata;
@@ -843,7 +873,12 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
 
                     memset(&g_tally, 0, sizeof(g_tally));
                     memset(&g_live_stats, 0, sizeof(g_live_stats));
+                    g_blit_us_total = 0u;
+                    g_blit_worst_us = 0u;
+                    g_blits = 0u;
                     g_live_open = rc_decode_live_open();
+                    if (g_live_open)
+                        rc_decode_live_set_sink(on_picture, NULL);
                     stream_demux_init(&g_demux, stream_demux_packet_crypto(&g_verifier.crypto), sink);
                     if (info.video_header_length > 0u)
                         stream_demux_set_video_header(&g_demux, info.video_header,
@@ -1044,6 +1079,9 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
     out->decoded_width = g_live_stats.width;
     out->decoded_height = g_live_stats.height;
     out->decode_ticks = g_live_stats.decode_ticks;
+    out->blits = g_blits;
+    out->blit_avg_us = (g_blits > 0u) ? (g_blit_us_total / g_blits) : 0u;
+    out->blit_worst_us = g_blit_worst_us;
 
     out->verify_checked = g_verifier.checked;
     out->verify_failed = g_verifier.failed;
