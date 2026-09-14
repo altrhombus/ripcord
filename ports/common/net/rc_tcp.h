@@ -30,4 +30,25 @@ int rc_tcp_send_all(int sock, const void *data, size_t length);
  * this module does not impose one itself. */
 ssize_t rc_tcp_recv(int sock, void *buf, size_t buf_size);
 
+/*
+ * PUT A SOCKET INTO NON-BLOCKING MODE, PORTABLY - and this exists because fcntl() does not do it
+ * everywhere.
+ *
+ * On Linux and the 3DS, fcntl(fd, F_SETFL, O_NONBLOCK) is the idiom and works. On the PS3 it does not:
+ * lv2 sockets are not newlib file descriptors, so fcntl operates on a different table entirely, returns
+ * without complaint, and leaves the socket BLOCKING. PSL1GHT exposes SO_NBIO (0x1100) for the job
+ * instead.
+ *
+ * The consequence is not a failed call, which is why it took hardware to find. A socket that is still
+ * blocking makes every poll loop in halyard_control_session.c unreachable: recv() never returns, so the
+ * deadline guarding it is never evaluated, and a function whose every loop is bounded hangs anyway. On
+ * a PS3 that is a locked console needing a power cycle.
+ *
+ * SO_NBIO is only defined by PSL1GHT's headers, so this compiles to exactly the previous behaviour
+ * everywhere else and changes nothing for the 3DS, the Vita or the host suite.
+ *
+ * Returns 1 on success, 0 if neither mechanism was available or accepted.
+ */
+int rc_socket_set_nonblocking(int sock);
+
 #endif /* RC_TCP_H */
