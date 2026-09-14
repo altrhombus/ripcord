@@ -58,4 +58,39 @@ void takion_control_sealer_seal(void *ctx, uint8_t *packet, size_t length);
 /* Wipes the key material. */
 void takion_control_sealer_reset(takion_control_sealer *sealer);
 
+/*
+ * THE RECEIVE HALF.
+ *
+ * Sealing without verifying is half a mechanism: GMAC authenticates without encrypting, so a control
+ * message from anyone at all parses perfectly well, and a client that only seals is protected in one
+ * direction while accepting whatever arrives in the other. That is the gap this closes.
+ *
+ * The key position is taken FROM THE PACKET rather than from a local counter. A receiver has no business
+ * predicting where the sender is in its own byte sequence - it is told, and the tag is what makes being
+ * told safe. A forged position simply produces a tag that does not verify.
+ */
+typedef struct {
+    stream_packet_crypto crypto;
+    int enabled;
+
+    /*
+     * Counted rather than only rejected, because the useful question on a new platform is not "did one
+     * fail" but "what proportion". A handful of failures among thousands is a different finding from
+     * everything failing, and only the second means the key schedule is wrong.
+     */
+    unsigned long checked;
+    unsigned long failed;
+} takion_control_verifier;
+
+/* Arms the verifier with the RECEIVE-direction stream key and base IV. */
+void takion_control_verifier_init(takion_control_verifier *verifier,
+                                  const uint8_t aes_key[16], const uint8_t base_iv[16]);
+
+/* Matches takion_verify_fn. Returns 1 if the packet's tag is good, 0 if it is not. A packet too short to
+ * carry the fields is reported as failing - it cannot be authenticated, and treating "unauthenticatable"
+ * as "fine" is how the check gets bypassed. */
+int takion_control_verifier_check(void *ctx, const uint8_t *packet, size_t length);
+
+void takion_control_verifier_reset(takion_control_verifier *verifier);
+
 #endif /* TAKION_CONTROL_SEALER_H */
