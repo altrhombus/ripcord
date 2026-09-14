@@ -200,6 +200,14 @@ typedef struct {
      * decoded - they are not carried in the video stream.
      */
     int  sealing_on;
+
+    /*
+     * Incoming authentication, counted rather than enforced on this build. The useful reading is the
+     * proportion: a handful of failures among many is a different finding from all of them, and only
+     * the second means the receive key schedule is wrong.
+     */
+    unsigned long verify_checked;
+    unsigned long verify_failed;
     unsigned stream_info_bytes;
     int  stream_info_parsed;
     int  stream_info_acked;
