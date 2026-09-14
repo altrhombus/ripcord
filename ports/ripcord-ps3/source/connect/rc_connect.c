@@ -712,6 +712,13 @@ static unsigned g_blit_worst_us;
 static unsigned g_blits;
 
 /*
+ * WE ARE BLIND UNTIL A KEYFRAME ARRIVES, and this remembers that. Defined here, above both the periodic
+ * loop and the loss callback, because both of them need it - see the fuller note at on_video_loss.
+ */
+static int g_awaiting_keyframe;
+static void request_idr(uint64_t now);
+
+/*
  * The two things this client owes the console on a timer, checked wherever there is a moment.
  *
  * They used to sit only at the top of the hold loop, which made the drain bound a compromise: large
@@ -752,6 +759,14 @@ static void send_periodic(halyard_control_session *session, rc_connect_result *o
         }
         *next_congestion = now + RC_CONGESTION_INTERVAL_MS;
     }
+
+    /*
+     * STILL BLIND? ASK AGAIN. See g_awaiting_keyframe: the request is a demand for the thing that
+     * repairs the stream, not an acknowledgement that something broke, so one unanswered request is a
+     * reason to repeat it rather than to wait for the next loss.
+     */
+    if (g_awaiting_keyframe)
+        request_idr(now);
 
     /*
      * The stream channel's heartbeat, which is ours to SEND rather than to answer - the console's own
@@ -804,8 +819,12 @@ static void on_video_frame(void *userdata, const uint8_t *data, size_t length, i
 {
     (void)userdata;
     g_tally.video_frames++;
-    if (is_keyframe)
+    if (is_keyframe) {
         g_tally.keyframes++;
+        /* The thing we were asking for. Cleared here rather than when the request went out, because a
+         * request that produced nothing has not fixed anything. */
+        g_awaiting_keyframe = 0;
+    }
     g_tally.video_bytes += (unsigned long)length;
     if (length > (size_t)g_tally.largest_frame)
         g_tally.largest_frame = (unsigned)length;
@@ -837,6 +856,37 @@ static void on_audio_frame(void *userdata, const uint8_t *data, size_t length)
 static uint64_t g_last_idr_request_ms;
 static unsigned g_idr_requests;
 
+/*
+ * Why g_awaiting_keyframe exists, recorded where the loss is handled.
+ *
+ * Loss breaks the reference chain, and every frame after it is undecodable until the next keyframe -
+ * which the console only sends when asked. Asking ONCE per loss event is what b124 did: 4 requests for
+ * 36 events, 2 keyframes in thirty seconds, and 835 of 857 frames undecodable. Fewer loss events than
+ * the run before it, and one seventeenth the pictures.
+ *
+ * The request is not an acknowledgement that something broke, it is a demand for the thing that repairs
+ * it. An unanswered demand is a reason to repeat it.
+ */
+
+/*
+ * Asks for a keyframe, throttled. One IDR repairs the whole reference chain, so asking again while the
+ * answer is still in flight spends upstream bandwidth on a repair already on its way.
+ */
+static void request_idr(uint64_t now)
+{
+    uint8_t request[8];
+    size_t request_len;
+
+    if (now - g_last_idr_request_ms < RC_IDR_REQUEST_MIN_MS)
+        return;
+    g_last_idr_request_ms = now;
+
+    request_len = takion_control_build_bare(TAKION_CONTROL_IDR_REQUEST, request, sizeof(request));
+    if (request_len > 0u
+        && takion_channel_send(&g_stream_channel, TAKION_CHANNEL_SESSION, request, request_len))
+        g_idr_requests++;
+}
+
 static void on_video_loss(void *userdata, int first_frame_index, int last_frame_index)
 {
     uint64_t now;
@@ -863,19 +913,9 @@ static void on_video_loss(void *userdata, int first_frame_index, int last_frame_
      * lost slice while a burst is still arriving would spend upstream bandwidth on repairs already in
      * flight.
      */
+    g_awaiting_keyframe = 1;
     now = rc_time_ms();
-    if (now - g_last_idr_request_ms < RC_IDR_REQUEST_MIN_MS)
-        return;
-    g_last_idr_request_ms = now;
-
-    {
-        uint8_t request[8];
-        size_t request_len = takion_control_build_bare(TAKION_CONTROL_IDR_REQUEST,
-                                                       request, sizeof(request));
-        if (request_len > 0u
-            && takion_channel_send(&g_stream_channel, TAKION_CHANNEL_SESSION, request, request_len))
-            g_idr_requests++;
-    }
+    request_idr(now);
 }
 
 /*
@@ -1255,6 +1295,7 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
                     g_pictures_dropped = 0u;
                     g_idr_requests = 0u;
                     g_last_idr_request_ms = 0u;
+                    g_awaiting_keyframe = 0;
                     g_live_open = rc_decode_live_open();
                     if (g_live_open) {
                         rc_decode_live_set_sink(on_picture, NULL);
