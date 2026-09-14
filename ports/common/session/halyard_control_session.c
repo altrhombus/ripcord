@@ -111,7 +111,7 @@ static void arm_control_listener(const char *host, int is_ps5)
         int enable = 1;
         setsockopt(sock, SOL_SOCKET, SO_BROADCAST, &enable, sizeof(enable));
     }
-    fcntl(sock, F_SETFL, O_NONBLOCK);
+    rc_socket_set_nonblocking(sock);
 
     halyard_control_arm_build_probe(is_ps5, probe);
 
@@ -159,7 +159,7 @@ static int run_sess_init(halyard_control_session *s, const halyard_pairing_recor
         s->sock = -1;
         return 0;
     }
-    fcntl(s->sock, F_SETFL, O_NONBLOCK);
+    rc_socket_set_nonblocking(s->sock);
 
     rc_hex_encode(rec->registkey, rec->registkey_length, regist_hex);
     halyard_sess_request_init(&req, "GET", halyard_sess_path(rec->is_ps5, "init"));
@@ -219,7 +219,7 @@ static int run_sess_ctrl(halyard_control_session *s, const halyard_pairing_recor
         s->sock = -1;
         return 0;
     }
-    fcntl(s->sock, F_SETFL, O_NONBLOCK);
+    rc_socket_set_nonblocking(s->sock);
 
     halyard_sess_request_init(&req, "GET", halyard_sess_path(rec->is_ps5, "ctrl"));
     halyard_sess_request_add_header(&req, "Host", rec->host);
