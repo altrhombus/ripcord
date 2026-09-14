@@ -1534,11 +1534,11 @@ int main(void)
             if (!checked)
                 ps3_log("spu:   the conversions were not compared - the SPEs refused the test picture\n");
             else if (match)
-                ps3_log("ok    SPE and PPE conversion agree, scaled, over the full value range"
+                ps3_log("ok    SPE and PPE agree at 2x, 1.5x, 1:1 and 0.75x, over the full value range"
                         " (0x%016llx)\n", (unsigned long long)spu_hash);
             else
-                ps3_log("FAIL  SPE 0x%016llx != PPE 0x%016llx - a coefficient in the wrong lane, a shift\n"
-                        "      off by one, or the scaler mapping differently on the two sides\n",
+                ps3_log("FAIL  the conversions disagree at %s: SPE 0x%016llx != PPE 0x%016llx\n",
+                        rc_video_self_test_failure() != NULL ? rc_video_self_test_failure() : "?",
                         (unsigned long long)spu_hash, (unsigned long long)ppe_hash);
         } else {
             ps3_log("\nspu:   no SPEs for colour conversion (step %d, 0x%08X) - the PPE path stands\n",
