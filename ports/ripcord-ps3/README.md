@@ -259,6 +259,50 @@ Slices per picture measured 1–2 in the steady state (the 22-slice maximum is t
 parallelism than hoped for the entropy stage. Both dumps are 640×368, so **whether that scales at 720p is
 unmeasured `[X]`** and is the most useful next measurement.
 
+## The network track — measured, on hardware
+
+The decoder is one half of this port. The other is reaching a console at all, and it is far enough along
+to record. All of the below ran on a real PS3 against a real PS5; nothing here is argued from the source.
+
+**Discovery, wake, and the control plane.** Discovery finds the console and parses its reply. A `WAKEUP`
+from the spec's source port woke it from standby in **~12.3 s**, consistently, across every run that has
+measured it — a figure worth knowing, because a deadline sized for an already-awake console reports a
+slow console as an absent one. `ARM` → `/sess/init` → `/sess/ctrl` then open the binary control channel.
+
+**The sign-in gate, and why it is a gate.** A console whose profile is locked answers the control session
+with `LOGIN_PROMPT` (`0x0004`) and nothing else — no `SESSION_ID`, no heartbeats. This is not a courtesy
+message to skip past: a console that has not authorised the client **silently drops every Takion INIT**,
+so anything attempted past this point times out and looks like a transport fault. The reference client
+answers the prompt with a passcode, and so does this port; the passcode arrives out of band as `pin=` in
+the pairing record, the same route the registration key already travels, and is never logged.
+
+Established by controlled experiment on 2026-09-14, one build, one variable: without `pin=` the run stops
+at the prompt; with it, `SESSION_ID`.
+
+**The console's half of the control channel is readable.** The control-field cipher's counter is
+per-connection and shared across a whole *direction*, so each side counts independently: ours spends 0–4
+on the `/sess/ctrl` request fields (which is why a passcode is 5), and the console spends 0 on its own
+`/sess/ctrl` response, so its next encrypted frame is **1**. Only payload-carrying frames spend a counter
+— heartbeats and the login prompt carry nothing and spend nothing, and since both are frequent, getting
+that half wrong desynchronises almost immediately.
+
+Confirmed on hardware rather than assumed: the console's `LOGIN` (`0x0005`) verdict decrypted at counter 1
+to exactly `0x00`, "accepted". A wrong counter origin would not have produced a byte the port recognises.
+
+**Takion is up.** Senkusha first — the console gates the stream channel's `SESSION` exchange on a senkusha
+bring-up having happened — then the stream channel's own handshake on a different UDP port. Both completed
+their four-way handshake on 2026-09-14 and returned a non-zero **peer tag**, which is a number the console
+chose and cannot be manufactured at this end.
+
+The control session stays open throughout, serviced by a tick callback roughly every 20 ms. That shape is
+load-bearing and not a style choice: the console resets a session 15–30 s after heartbeat replies stop,
+the UDP waits are longer than that, and this port has one thread.
+
+**What is not done.** `SESSION_REQUEST` → `SESSION_REPLY` and the per-direction stream keys, which need the
+launch spec and ECDH. Nothing is sealed with GMAC yet, no `STREAM_INFO` is acked, and no A/V has been
+demuxed — the transport is up, which is not the same as a stream. Log rotation is implemented in
+`ports/common` but **has not yet fired on hardware `[X]`**: the log has not reached the threshold.
+
 ## Order of work
 
 Nothing in 1–4 needs a PS3.
