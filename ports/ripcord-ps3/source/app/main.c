@@ -1534,10 +1534,28 @@ int main(void)
         rc_spu_yuv_stats stats;
 
         rc_spu_yuv_stats_get(&stats);
-        if (stats.frames > 0u || stats.fallbacks > 0u)
+        if (stats.frames > 0u || stats.fallbacks > 0u) {
+            int checked = 0, match = 0;
+            uint64_t spu_hash = 0, ppe_hash = 0;
+
             ps3_log("spu:   %u frame(s) converted on %d SPE(s), %u us average, %u us worst;"
                     " %u fell back to the PPE\n",
                     stats.frames, stats.spes, stats.avg_us, stats.worst_us, stats.fallbacks);
+
+            rc_video_verify_get(&checked, &match, &spu_hash, &ppe_hash);
+            if (!checked) {
+                ps3_log("spu:   the SPE and PPE conversions were never compared\n");
+            } else if (match) {
+                ps3_log("ok    the SIMD conversion agrees with the PPE exactly (0x%016llx)\n",
+                        (unsigned long long)spu_hash);
+            } else {
+                ps3_log("FAIL  the SIMD conversion DISAGREES with the PPE\n");
+                ps3_log("      SPE 0x%016llx  PPE 0x%016llx - a coefficient in the wrong lane, a\n",
+                        (unsigned long long)spu_hash, (unsigned long long)ppe_hash);
+                ps3_log("      shift off by one, or chroma duplicated the wrong way round. The picture\n");
+                ps3_log("      would look present and subtly wrong, which a glance does not catch.\n");
+            }
+        }
     }
     rc_spu_yuv_exit();
     rc_video_close();
