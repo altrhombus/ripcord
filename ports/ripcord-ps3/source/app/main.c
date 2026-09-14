@@ -868,6 +868,22 @@ static int check_connect(void)
     ps3_log("       stage reached: %s\n", rc_connect_stage_name(stage));
 
     switch (stage) {
+    case RC_CONNECT_STREAM_KEYS:
+        if (c.login_verdict == 0)
+            ps3_log("       the console accepted the passcode (LOGIN 0x0005 -> 0x00)\n");
+        ps3_log("       senkusha  local 0x%08x  peer 0x%08x  version-ack %s, gating legs %s\n",
+                c.senkusha_local_tag, c.senkusha_peer_tag,
+                c.senkusha_version_ack ? "yes" : "NO", c.senkusha_complete ? "complete" : "INCOMPLETE");
+        ps3_log("       stream    local 0x%08x  peer 0x%08x\n",
+                c.takion_local_tag, c.takion_peer_tag);
+        ps3_log("       asked for %dx%d @ %d fps (rtt declared 0 - the echo leg is not run yet)\n",
+                c.asked_width, c.asked_height, c.asked_fps);
+        ps3_log("       SESSION_REQUEST %u bytes on %s, SESSION_REPLY %u bytes\n",
+                c.session_request_bytes, c.curve_p521 ? "P-521" : "P-256", c.session_reply_bytes);
+        ps3_log("       the reply's ECDH point verified under the handshake key - that signature\n");
+        ps3_log("       check is what stops an injected DATA chunk substituting its own key.\n");
+        ps3_log("ok    stream keys derived - the session is negotiated end to end\n");
+        return 0;
     case RC_CONNECT_TAKION_UP:
         if (c.login_verdict == 0)
             ps3_log("       the console accepted the passcode (LOGIN 0x0005 -> 0x00)\n");
@@ -875,10 +891,22 @@ static int check_connect(void)
                 c.senkusha_local_tag, c.senkusha_peer_tag);
         ps3_log("       stream    local 0x%08x  peer 0x%08x\n",
                 c.takion_local_tag, c.takion_peer_tag);
-        ps3_log("       a peer tag is the console's own number - it cannot be produced at this end,\n");
-        ps3_log("       so a non-zero one is proof the four-way handshake really completed.\n");
-        ps3_log("ok    Takion established - the transport the A/V stream rides is up\n");
-        return 0;
+        ps3_log("       senkusha gating legs: version-ack %s, keyless session %s\n",
+                c.senkusha_version_ack ? "yes" : "NO", c.senkusha_complete ? "complete" : "INCOMPLETE");
+        ps3_log("FAIL  Takion is up on both channels but the stream SESSION exchange did not finish.\n");
+        if (c.session_reply_bytes > 0u) {
+            ps3_log("      A SESSION_REPLY of %u bytes DID arrive and was refused - so this is the\n",
+                    c.session_reply_bytes);
+            ps3_log("      reply failing its checks (version, curve, or the ecdhSignature under the\n");
+            ps3_log("      handshake key), not the console staying silent.\n");
+        } else if (c.session_request_bytes > 0u) {
+            ps3_log("      SESSION_REQUEST went out (%u bytes, %s) and nothing came back. If the\n",
+                    c.session_request_bytes, c.curve_p521 ? "P-521" : "P-256");
+            ps3_log("      senkusha gating legs above are incomplete, suspect those first.\n");
+        } else {
+            ps3_log("      The request was never built - launch spec, base64 or the ECDH backend.\n");
+        }
+        return 1;
     case RC_CONNECT_SENKUSHA_UP:
         ps3_log("       senkusha  local 0x%08x  peer 0x%08x\n",
                 c.senkusha_local_tag, c.senkusha_peer_tag);
