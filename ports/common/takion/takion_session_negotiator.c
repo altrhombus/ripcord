@@ -152,6 +152,8 @@ int takion_session_negotiator_accept_reply(takion_session_negotiator *ctx,
         ok = 1;
     } else {
         ctx->last_reject_reason = TAKION_SESSION_REJECT_DERIVE;
+        ctx->last_ecdh_step = rc_ecdh_last_error_step();
+        ctx->last_ecdh_code = rc_ecdh_last_error_code();
     }
 
     memset(shared, 0, sizeof(shared));

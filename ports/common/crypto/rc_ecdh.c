@@ -29,6 +29,20 @@ size_t rc_ecdh_secret_length(unsigned curve)
     }
 }
 
+/* See the header: diagnostic only, single-threaded, overwritten by every derive. */
+static int s_last_error_step;
+static int s_last_error_code;
+
+int rc_ecdh_last_error_step(void) { return s_last_error_step; }
+int rc_ecdh_last_error_code(void) { return s_last_error_code; }
+
+static int ecdh_fail(int step, int code)
+{
+    s_last_error_step = step;
+    s_last_error_code = code;
+    return 0;
+}
+
 unsigned rc_ecdh_curve_for_public_key_length(size_t length)
 {
     if (length == RC_ECDH_P256_PUBKEY_LENGTH) {
@@ -195,23 +209,28 @@ int rc_ecdh_derive_shared(const rc_ecdh_keypair *pair,
     size_t public_length;
     int ok = 0;
 
+    int rc;
+
+    s_last_error_step = RC_ECDH_STEP_NONE;
+    s_last_error_code = 0;
+
     if (pair == NULL || peer_public_key == NULL || out_secret == NULL || rng == NULL) {
-        return 0;
+        return ecdh_fail(RC_ECDH_STEP_ARGUMENTS, 0);
     }
     /* The wire carries no curve id, so the peer key's length is what identifies its curve - and it has
      * to be the same curve we hold a private scalar on. A mismatch here is a protocol-level
      * disagreement about the negotiated version, not something to coerce. */
     if (rc_ecdh_curve_for_public_key_length(peer_public_key_length) != pair->curve) {
-        return 0;
+        return ecdh_fail(RC_ECDH_STEP_CURVE, 0);
     }
     id = group_id_for(pair->curve);
     if (id == MBEDTLS_ECP_DP_NONE) {
-        return 0;
+        return ecdh_fail(RC_ECDH_STEP_CURVE, 0);
     }
     secret_length = rc_ecdh_secret_length(pair->curve);
     public_length = rc_ecdh_public_key_length(pair->curve);
     if (out_secret_size < secret_length || pair->private_key_length == 0u) {
-        return 0;
+        return ecdh_fail(RC_ECDH_STEP_SIZES, 0);
     }
 
     mbedtls_ecp_group_init(&grp);
@@ -219,18 +238,38 @@ int rc_ecdh_derive_shared(const rc_ecdh_keypair *pair,
     mbedtls_ecp_point_init(&peer);
     mbedtls_ecp_point_init(&shared);
 
-    if (mbedtls_ecp_group_load(&grp, id) == 0
-        && mbedtls_mpi_read_binary(&d, pair->private_key, pair->private_key_length) == 0
-        && mbedtls_ecp_point_read_binary(&grp, &peer, peer_public_key, peer_public_key_length) == 0
+    /*
+     * Written as a sequence rather than a single && chain so that the step and the backend's own error
+     * code survive. The chain was shorter to read and told a console-side failure nothing it could use.
+     */
+    do {
+        rc = mbedtls_ecp_group_load(&grp, id);
+        if (rc != 0) { (void)ecdh_fail(RC_ECDH_STEP_GROUP_LOAD, rc); break; }
+
+        rc = mbedtls_mpi_read_binary(&d, pair->private_key, pair->private_key_length);
+        if (rc != 0) { (void)ecdh_fail(RC_ECDH_STEP_PRIVATE_KEY, rc); break; }
+
+        rc = mbedtls_ecp_point_read_binary(&grp, &peer, peer_public_key, peer_public_key_length);
+        if (rc != 0) { (void)ecdh_fail(RC_ECDH_STEP_PEER_READ, rc); break; }
+
         /* Reject a peer point that is not actually on the curve before multiplying by our secret
          * scalar - the invalid-curve attack this defends against leaks the private key one small
          * subgroup at a time, and "it came from the console" is not authentication. */
-        && mbedtls_ecp_check_pubkey(&grp, &peer) == 0
-        && mbedtls_ecp_mul(&grp, &shared, &d, &peer, rng, rng_ctx) == 0
+        rc = mbedtls_ecp_check_pubkey(&grp, &peer);
+        if (rc != 0) { (void)ecdh_fail(RC_ECDH_STEP_PEER_CHECK, rc); break; }
+
+        rc = mbedtls_ecp_mul(&grp, &shared, &d, &peer, rng, rng_ctx);
+        if (rc != 0) { (void)ecdh_fail(RC_ECDH_STEP_MULTIPLY, rc); break; }
+
         /* The identity has no affine X to take; write_binary would emit a single 0x00 byte and the
          * width check below would catch it, but saying so explicitly documents the case. */
-        && mbedtls_ecp_is_zero(&shared) == 0
-        && write_uncompressed(&grp, &shared, point_buf, sizeof(point_buf), public_length)) {
+        if (mbedtls_ecp_is_zero(&shared) != 0) { (void)ecdh_fail(RC_ECDH_STEP_IDENTITY, 0); break; }
+
+        if (!write_uncompressed(&grp, &shared, point_buf, sizeof(point_buf), public_length)) {
+            (void)ecdh_fail(RC_ECDH_STEP_WRITE, 0);
+            break;
+        }
+
         /* point_buf is 0x04 || X || Y at the curve's full width, leading zeros preserved - so X is
          * simply the secret_length bytes after the prefix. */
         memcpy(out_secret, point_buf + 1, secret_length);
@@ -238,7 +277,7 @@ int rc_ecdh_derive_shared(const rc_ecdh_keypair *pair,
             *out_secret_length = secret_length;
         }
         ok = 1;
-    }
+    } while (0);
 
     mbedtls_platform_zeroize(point_buf, sizeof(point_buf));
     mbedtls_ecp_point_free(&shared);
