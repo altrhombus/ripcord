@@ -342,6 +342,25 @@ static void test_reassembler(void)
     CHECK(length == sizeof(whole) && memcmp(message, whole, sizeof(whole)) == 0,
         "single-fragment message content mismatch");
 
+    /*
+     * THE LIFETIME, not the content - and it is the half that actually broke.
+     *
+     * Both headers promise the returned pointer aims at the reassembler's own buffer and stays valid
+     * until the next call. The single-fragment path did not: it handed back the caller's `payload`
+     * pointer, which in takion_channel_poll is a LOCAL receive buffer, so a complete message under
+     * about a kilobyte - the common case - was valid only until poll's frame went away.
+     *
+     * Content comparison could never catch that; the bytes are identical either way, right up until
+     * something else uses the stack. So this asserts on provenance: the message must come from inside
+     * the reassembler, and must NOT be the pointer that was passed in.
+     */
+    CHECK(message != whole,
+        "a completed message must not alias the caller's buffer - that buffer is poll's stack frame");
+    CHECK(message >= r.buffer && message + length <= r.buffer + sizeof(r.buffer),
+        "a completed message must live inside the reassembler, as both headers promise");
+
+    /* The same promise for the multi-fragment path, which always kept it. */
+
     /* Two fragments concatenate on the ending bit. */
     CHECK(takion_reassembler_first(&r, TAKION_CHANNEL_BANDWIDTH, part1, sizeof(part1), 0, &message, &length) == 0,
         "a non-ending first-fragment should report incomplete");
@@ -349,6 +368,8 @@ static void test_reassembler(void)
         "the continuation with the ending bit should complete the message");
     CHECK(channel == TAKION_CHANNEL_BANDWIDTH, "reassembled message should report the first fragment's channel");
     CHECK(length == sizeof(part1) + sizeof(part2), "reassembled length mismatch");
+    CHECK(message >= r.buffer && message + length <= r.buffer + sizeof(r.buffer),
+        "a reassembled message must live inside the reassembler too");
     CHECK(memcmp(message, part1, sizeof(part1)) == 0 && memcmp(message + sizeof(part1), part2, sizeof(part2)) == 0,
         "reassembled content mismatch");
 
