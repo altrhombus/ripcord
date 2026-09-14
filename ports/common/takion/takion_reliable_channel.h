@@ -51,6 +51,12 @@ typedef struct {
  */
 typedef void (*takion_seal_fn)(void *ctx, uint8_t *packet, size_t length);
 
+/*
+ * Checks one INCOMING packet's authentication tag. Returns 1 if it is good. Supplied by the caller for
+ * the same reason the sealer is: this layer knows nothing about the stream cipher.
+ */
+typedef int (*takion_verify_fn)(void *ctx, const uint8_t *packet, size_t length);
+
 typedef struct {
     int sock;                      /* caller-owned, non-blocking, not connect()ed (we use sendto/recvfrom) */
     struct sockaddr_in peer;
@@ -63,6 +69,11 @@ typedef struct {
     int established;
     takion_seal_fn seal;           /* NULL until the stream keys exist - see enable_sealing below */
     void *seal_ctx;
+
+    takion_verify_fn verify;       /* NULL until the stream keys exist - see enable_verification */
+    void *verify_ctx;
+    int verify_enforces;           /* 0 = count only, 1 = drop packets that fail */
+    unsigned long verify_dropped;
     takion_reassembler reassembler;
     takion_unacked_chunk unacked[TAKION_MAX_UNACKED];
 } takion_reliable_channel;
@@ -103,6 +114,22 @@ int takion_channel_connect_ticked(takion_reliable_channel *ch, int sock, struct 
  * verbatim - its key position was reserved once, when it was built.
  */
 void takion_channel_enable_sealing(takion_reliable_channel *ch, takion_seal_fn seal, void *seal_ctx);
+
+/*
+ * Switches on authentication of INCOMING packets. Call alongside enable_sealing - a client that seals
+ * without verifying is protected in one direction and credulous in the other, which is not what the
+ * mechanism is for.
+ *
+ * `enforce` decides what a failure costs. 0 counts failures and delivers the packet anyway; 1 drops it.
+ *
+ * START AT 0 ON A NEW PLATFORM, and that is not timidity. Enforcing a check that has never been observed
+ * to pass turns every mistake in the key schedule into a session that goes silent, which is the hardest
+ * shape of failure to diagnose and is indistinguishable from the console losing interest. Counting first
+ * produces a number - "0 of 214 failed" or "214 of 214" - and those two want completely different work.
+ * Move to 1 once the number says the mechanism is right.
+ */
+void takion_channel_enable_verification(takion_reliable_channel *ch, takion_verify_fn verify,
+                                        void *verify_ctx, int enforce);
 
 /*
  * Sends `payload` reliably on `channel`, fragmenting at TAKION_MAX_PAYLOAD_PER_CHUNK if needed. Returns

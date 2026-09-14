@@ -54,3 +54,48 @@ void takion_control_sealer_reset(takion_control_sealer *sealer)
     if (sealer != NULL)
         memset(sealer, 0, sizeof(*sealer));
 }
+
+void takion_control_verifier_init(takion_control_verifier *verifier,
+                                  const uint8_t aes_key[16], const uint8_t base_iv[16])
+{
+    if (verifier == NULL || aes_key == NULL || base_iv == NULL)
+        return;
+
+    memset(verifier, 0, sizeof(*verifier));
+    stream_packet_crypto_init(&verifier->crypto, aes_key, base_iv);
+    verifier->enabled = 1;
+}
+
+int takion_control_verifier_check(void *ctx, const uint8_t *packet, size_t length)
+{
+    takion_control_verifier *verifier = (takion_control_verifier *)ctx;
+    uint64_t key_pos;
+    int ok;
+
+    if (verifier == NULL || !verifier->enabled)
+        return 1; /* not armed: nothing claims to be authenticated yet */
+    if (packet == NULL || length < (size_t)(TAKION_CONTROL_KEYPOS_OFFSET + 4u)) {
+        verifier->checked++;
+        verifier->failed++;
+        return 0;
+    }
+
+    /* The sender's position, as the sender states it. See the header: the tag is what makes this safe. */
+    key_pos = ((uint64_t)packet[TAKION_CONTROL_KEYPOS_OFFSET + 0u] << 24)
+            | ((uint64_t)packet[TAKION_CONTROL_KEYPOS_OFFSET + 1u] << 16)
+            | ((uint64_t)packet[TAKION_CONTROL_KEYPOS_OFFSET + 2u] << 8)
+            | (uint64_t)packet[TAKION_CONTROL_KEYPOS_OFFSET + 3u];
+
+    ok = stream_packet_crypto_verify(&verifier->crypto, key_pos, packet, length,
+                                     (int)TAKION_CONTROL_TAG_OFFSET, 1);
+    verifier->checked++;
+    if (!ok)
+        verifier->failed++;
+    return ok;
+}
+
+void takion_control_verifier_reset(takion_control_verifier *verifier)
+{
+    if (verifier != NULL)
+        memset(verifier, 0, sizeof(*verifier));
+}
