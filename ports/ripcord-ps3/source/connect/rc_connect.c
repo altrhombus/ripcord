@@ -459,6 +459,7 @@ static int g_live_open;
  * doing the work here is what avoids a copy at each level. The cost of that decision is that a slow
  * blit stalls the receive loop, which is why it is measured rather than assumed.
  */
+static unsigned g_pictures_dropped;
 static unsigned g_blit_us_total;
 static unsigned g_blit_worst_us;
 static unsigned g_blits;
@@ -469,6 +470,21 @@ static void on_picture(void *ctx, const unsigned char *y, const unsigned char *u
     unsigned us;
 
     (void)ctx;
+
+    /*
+     * ASK BEFORE CONVERTING. If the previous flip has not landed, this picture is dropped whole - no
+     * conversion, no wait. b87 did the opposite and paid for it: it converted and vsync-waited on every
+     * frame, on the thread draining the socket, and lost 90 units where the run before lost none.
+     *
+     * A dropped frame costs one frame. A waited-on frame costs every packet that arrives during the
+     * wait, and those losses cascade - the decoder then errors on the gaps, which is where b87's 81
+     * decoder errors came from.
+     */
+    if (!rc_video_present_ready()) {
+        g_pictures_dropped++;
+        return;
+    }
+
     us = rc_video_blit_yuv420(y, u, v, y_stride, uv_stride, width, height);
     if (us == 0u)
         return;   /* the display is not open, or the picture does not fit - not an error here */
@@ -876,6 +892,7 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
                     g_blit_us_total = 0u;
                     g_blit_worst_us = 0u;
                     g_blits = 0u;
+                    g_pictures_dropped = 0u;
                     g_live_open = rc_decode_live_open();
                     if (g_live_open)
                         rc_decode_live_set_sink(on_picture, NULL);
@@ -1082,6 +1099,7 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
     out->blits = g_blits;
     out->blit_avg_us = (g_blits > 0u) ? (g_blit_us_total / g_blits) : 0u;
     out->blit_worst_us = g_blit_worst_us;
+    out->pictures_dropped = g_pictures_dropped;
 
     out->verify_checked = g_verifier.checked;
     out->verify_failed = g_verifier.failed;
