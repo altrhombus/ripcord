@@ -146,6 +146,18 @@ int rc_ecdh_keypair_from_private(unsigned curve, const uint8_t *private_key, siz
 #define RC_ECDH_STEP_IDENTITY     9
 #define RC_ECDH_STEP_WRITE       10
 
+/*
+ * Validate a peer's public point without deriving anything: load the curve, read the point, and ask the
+ * backend whether it is on the curve. Returns 1 if it is. On failure the rc_ecdh_last_error_* pair says
+ * which call objected and what it returned.
+ *
+ * This exists so a caller can ask the question in isolation. A derivation that fails tells you very
+ * little on its own - the same refusal covers the point, the group, and the environment the call was
+ * made in - and being able to put a KNOWN-GOOD point through the identical path, at the identical call
+ * depth, is what separates those.
+ */
+int rc_ecdh_check_peer_point(unsigned curve, const uint8_t *point, size_t length);
+
 int rc_ecdh_last_error_step(void);
 int rc_ecdh_last_error_code(void);
 
