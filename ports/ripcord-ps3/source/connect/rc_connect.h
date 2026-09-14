@@ -51,6 +51,9 @@ typedef enum {
     RC_CONNECT_STREAM_READY     /* sealing on, STREAM_INFO received and acked              */
 } rc_connect_stage;
 
+/* The drain bound, here rather than only in the .c so the report cannot drift from the code. */
+#define RC_AV_DRAIN_BURST 64
+
 typedef struct {
     rc_connect_stage stage;
     int  had_record;
