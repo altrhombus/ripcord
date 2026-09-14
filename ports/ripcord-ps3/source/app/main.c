@@ -384,7 +384,6 @@ static int check_csprng(void)
 
     if (!rc_random_bytes(a, sizeof(a)) || !rc_random_bytes(b, sizeof(b))) {
         ps3_log("FAIL  rc_random_bytes returned failure after init succeeded\n");
-        rc_random_exit();
         return 1;
     }
 
@@ -397,12 +396,22 @@ static int check_csprng(void)
      */
     if (memcmp(a, b, sizeof(a)) == 0) {
         ps3_log("FAIL  two 32-byte draws were identical - this is not a random source\n");
-        rc_random_exit();
         return 1;
     }
 
     ps3_log("ok    CSPRNG live: init probed an unaligned draw, two draws differ\n");
-    rc_random_exit();
+
+    /*
+     * THIS USED TO CALL rc_random_exit() HERE, AND THAT WAS A BUG worth leaving a note about.
+     *
+     * The generator is a process-wide resource, not this check's property. Tearing it down on the way out
+     * of a PROBE left s_ready clear for everything after it, so every later draw returned failure - and
+     * the failure was invisible in exactly the place it mattered: the run reported "CSPRNG live" a few
+     * lines above, and then the stream session's 16-byte handshake key could not be drawn at all.
+     *
+     * b49 spent a hardware round trip finding that, and only found it because the failing step was named
+     * rather than guessed at. The lifetime belongs to main(), which closes it beside the log channels.
+     */
     return 0;
 }
 
@@ -1150,6 +1159,9 @@ int main(void)
 
     ps3_log("\nnot covered here: the rest of the decoder. See README.md.\n");
     ps3_log("%s\n", failures == 0 ? "all checks passed" : "CHECKS FAILED");
+    /* The generator was opened by the CSPRNG check and used by everything after it - see the note
+     * there. It is closed here, with the other process-wide resources, rather than by any one check. */
+    rc_random_exit();
     lv2_log_close();
     rc_log_close();
     rc_netlog_close();
