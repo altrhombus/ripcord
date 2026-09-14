@@ -227,6 +227,22 @@ typedef struct {
     unsigned av_other;
     unsigned av_verified;
     unsigned long av_bytes;
+
+    /*
+     * Out of the demuxer: whole frames, reassembled from units and FEC-recovered where needed. The
+     * keyframe count is the one that matters most - a stream with no keyframe is a stream no decoder
+     * can start on, and it is not the same finding as no frames at all.
+     */
+    int  demux_ready;
+    unsigned video_frames;
+    unsigned keyframes;
+    unsigned audio_frames;
+    unsigned long video_frame_bytes;
+    unsigned long audio_frame_bytes;
+    unsigned corrupt_events;
+    unsigned largest_frame;
+    long units_received;
+    long units_lost;
     int      held_channel_error;
     unsigned stream_info_bytes;
     int  stream_info_parsed;
