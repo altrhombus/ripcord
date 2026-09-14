@@ -494,10 +494,40 @@ PSL1GHT exposes the PS3's own H.264 decoder (`codec/vdec.h`, `libvdec.a`, `SYSMO
 is the path to 1080p and would free the PPE almost entirely, the same shape as the 3DS port's MVD
 hardware path.
 
-**One thing the numbers hint at.** At 720p the console sent ~1.4 Mbps while the launch spec asked for
-8,000 kbps. The likely cause is unfinished business recorded above: senkusha's echo and MTU legs are not
-run, so the spec declares `rtt 0` and a default MTU, and the console's rate controller is choosing against
-figures nobody measured. PSL1GHT exposes the PS3's own H.264 decoder
+## Senkusha's measurement legs — done, and they were not the bitrate
+
+At 720p the console sent ~1.35 Mbps while the launch spec asked for 8,000 kbps. The obvious suspect was
+that the spec declared `rtt 0` and a default MTU — figures nobody had measured — so the echo and MTU legs
+were implemented against the .NET side:
+
+```
+senkusha echo: 10/10 echoes, handshake round trip 21 ms
+declared rtt 1 ms (from the echo probe), mtu 1454 (confirmed both directions)
+```
+
+Both legs work. The spec now declares measurements instead of assumptions, which is worth having on its
+own. **And the bitrate did not move** — 1.35 Mbps before, 1.35 Mbps after. The hypothesis was wrong.
+
+Three details came from the reference rather than from `ports/ripcord-3ds`, and are worth keeping:
+
+- **The declared RTT is the MINIMUM of the samples**, rejecting non-finite and negative ones. A sample can
+  only be inflated by delay, never deflated, so the smallest round trip is closest to true path time and
+  an average would report the queue instead.
+- **The sample set is seeded with the version handshake** — the purest sample available, because answering
+  a version request asks the console to do essentially no work. Safe *only* because the result is a
+  minimum.
+- The reference warns that since handshake RTT is a fallback, **a non-null RTT does not mean the echo
+  probe succeeded**. This port reports the echo count and the figure's provenance separately so that
+  ambiguity does not exist here.
+
+The MTU close is unconditional: past the open the console *is* in client-MTU mode with no other way of
+being cleared, and the .NET side records that this was once a sequential send a timeout could unwind
+past, leaving the console stuck.
+
+**What is still unexplained** is the bitrate `[X]`. The remaining candidate the reference has and this
+port does not is **congestion feedback**: a sealed 15-byte type-5 packet sent every 200 ms carrying
+received/lost unit counts, described there as being what lets "the console's rate controller adapt the
+encoder bitrate to the link". This port sends none, so the console has no evidence the link is healthy. PSL1GHT exposes the PS3's own H.264 decoder
 (`codec/vdec.h`, `libvdec.a`, `SYSMODULE_VDEC_H264`), which is the path to 1080p and would free the PPE
 almost entirely — the same shape as the 3DS port's MVD hardware path.
 
