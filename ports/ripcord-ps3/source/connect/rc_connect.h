@@ -262,6 +262,10 @@ typedef struct {
     unsigned blits;
     unsigned blit_avg_us;
     unsigned blit_worst_us;
+    int  scaled_width;
+    int  scaled_height;
+    int  display_width;
+    int  display_height;
     unsigned pictures_dropped;  /* decoded, but the display was still busy - see on_picture */
     unsigned hold_ms;           /* how long the session was held, so a rate can be computed */
     unsigned idr_requests;      /* keyframes asked for after loss - see on_video_loss */

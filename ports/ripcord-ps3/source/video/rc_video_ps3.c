@@ -46,6 +46,7 @@ static int s_gcm_module;
 static unsigned s_ready_calls;
 static unsigned s_busy_calls;
 static unsigned s_last_flip_status;
+static int s_scaled_w, s_scaled_h;
 static int s_sysutil_module;
 
 static int fail(rc_video_info *out, const char *where, int code)
@@ -298,7 +299,7 @@ void rc_video_close(void)
 /* Clamp to a byte without a branch per channel in the common case. */
 static void convert_on_ppe(const uint8_t *y, const uint8_t *u, const uint8_t *v,
                            int y_stride, int uv_stride, int width, int height,
-                           uint32_t *out_base, int stride_px);
+                           uint32_t *out_base, int stride_px, int dst_width, int dst_height);
 
 /* One-shot agreement check between the two conversions - see rc_video_blit_yuv420. */
 static int s_verified;
@@ -342,6 +343,7 @@ unsigned rc_video_blit_yuv420(const uint8_t *y, const uint8_t *u, const uint8_t 
     uint64_t t0;
     int stride_px;
     int ox, oy;
+    int dst_w, dst_h;
 
     if (back == NULL || y == NULL || u == NULL || v == NULL)
         return 0u;
@@ -349,10 +351,35 @@ unsigned rc_video_blit_yuv420(const uint8_t *y, const uint8_t *u, const uint8_t 
         return 0u;
 
     stride_px = s_info.pitch / 4;
-    ox = (s_info.width - width) / 2;
-    oy = (s_info.height - height) / 2;
-    if (ox < 0 || oy < 0)
-        return 0u;   /* a picture larger than the screen wants scaling, which this does not do */
+
+    /*
+     * FILL THE SCREEN, PRESERVING THE ASPECT RATIO.
+     *
+     * The display is whatever mode the television negotiated and the source is whatever the console
+     * agreed to send; those will rarely match, which is why this is a permanent part of the path rather
+     * than an alternative to choosing a resolution well.
+     *
+     * The scale is the SMALLER of the two ratios, so the picture fits inside the screen in both
+     * directions and is centred in whichever one has room left. Taking the larger would fill the screen
+     * by cropping, and cropping a game someone is playing is worse than a border.
+     */
+    {
+        int by_w = (s_info.width * 1024) / width;
+        int by_h = (s_info.height * 1024) / height;
+        int scale = (by_w < by_h) ? by_w : by_h;
+
+        dst_w = (width * scale) / 1024;
+        dst_h = (height * scale) / 1024;
+        dst_w &= ~1;    /* even, so the chroma mapping lands the same way on both halves of a pair */
+        dst_h &= ~1;
+    }
+    if (dst_w <= 0 || dst_h <= 0 || dst_w > s_info.width || dst_h > s_info.height)
+        return 0u;
+
+    s_scaled_w = dst_w;
+    s_scaled_h = dst_h;
+    ox = (s_info.width - dst_w) / 2;
+    oy = (s_info.height - dst_h) / 2;
 
     /*
      * THE SPEs FIRST, THE PPE AS FALLBACK.
@@ -366,7 +393,7 @@ unsigned rc_video_blit_yuv420(const uint8_t *y, const uint8_t *u, const uint8_t 
     {
         uint32_t *dst = back + (size_t)oy * (size_t)stride_px + (size_t)ox;
         unsigned spu_us = rc_spu_yuv_convert(y, u, v, y_stride, uv_stride, width, height,
-                                             dst, s_info.pitch);
+                                             dst, s_info.pitch, dst_w, dst_h);
         if (spu_us > 0u) {
             /*
              * ONCE PER RUN, CHECK THE SPEs AGAINST THE PPE.
@@ -383,9 +410,10 @@ unsigned rc_video_blit_yuv420(const uint8_t *y, const uint8_t *u, const uint8_t 
              */
             if (!s_verified) {
                 s_verified = 1;
-                s_verify_hash_spu = hash_region(dst, stride_px, width, height);
-                convert_on_ppe(y, u, v, y_stride, uv_stride, width, height, dst, stride_px);
-                s_verify_hash_ppe = hash_region(dst, stride_px, width, height);
+                s_verify_hash_spu = hash_region(dst, stride_px, dst_w, dst_h);
+                convert_on_ppe(y, u, v, y_stride, uv_stride, width, height,
+                               dst, stride_px, dst_w, dst_h);
+                s_verify_hash_ppe = hash_region(dst, stride_px, dst_w, dst_h);
                 s_verify_match = (s_verify_hash_spu == s_verify_hash_ppe);
             }
             return spu_us;
@@ -394,7 +422,7 @@ unsigned rc_video_blit_yuv420(const uint8_t *y, const uint8_t *u, const uint8_t 
 
     t0 = rc_tick();
     convert_on_ppe(y, u, v, y_stride, uv_stride, width, height,
-                   back + (size_t)oy * (size_t)stride_px + (size_t)ox, stride_px);
+                   back + (size_t)oy * (size_t)stride_px + (size_t)ox, stride_px, dst_w, dst_h);
 
     {
         uint64_t hz = rc_tick_hz();
@@ -404,54 +432,45 @@ unsigned rc_video_blit_yuv420(const uint8_t *y, const uint8_t *u, const uint8_t 
     }
 }
 
+/*
+ * The reference implementation, and it MUST scale exactly as the SPEs do - the one-shot verification
+ * compares their outputs, and a reference that framed the picture differently would report a mismatch on
+ * every run while both halves were individually correct.
+ *
+ * Same nearest-neighbour mapping, same 16.16 stepping, same constants, same order of operations.
+ */
 static void convert_on_ppe(const uint8_t *y, const uint8_t *u, const uint8_t *v,
                            int y_stride, int uv_stride, int width, int height,
-                           uint32_t *out_base, int stride_px)
+                           uint32_t *out_base, int stride_px, int dst_width, int dst_height)
 {
-    int row;
+    const unsigned step = ((unsigned)width << 16) / (unsigned)dst_width;
+    int out_row;
 
-    for (row = 0; row < height; row++) {
-        const uint8_t *yr = y + (size_t)row * (size_t)y_stride;
-        const uint8_t *ur = u + (size_t)(row >> 1) * (size_t)uv_stride;
-        const uint8_t *vr = v + (size_t)(row >> 1) * (size_t)uv_stride;
-        uint32_t *out = out_base + (size_t)row * (size_t)stride_px;
-        int col;
+    for (out_row = 0; out_row < dst_height; out_row++) {
+        int row = (int)(((long long)out_row * height) / dst_height);
+        const uint8_t *yr;
+        const uint8_t *ur;
+        const uint8_t *vr;
+        uint32_t *out = out_base + (size_t)out_row * (size_t)stride_px;
+        unsigned acc = 0u;
+        int x;
 
-        /*
-         * TWO LUMA PIXELS PER CHROMA SAMPLE, which is what 4:2:0 already means - the chroma planes are
-         * half resolution in both directions, so a pair of columns shares one sample and so does a pair
-         * of rows.
-         *
-         * The first version wrote `ur[col / 2]` inside the pixel loop: an integer divide and a fresh
-         * chroma load for every luma pixel, doing twice the chroma work and the division for nothing.
-         * Stepping the chroma pointer once per PAIR removes both, and the red/blue terms - which depend
-         * only on chroma - are computed once for the pair instead of twice.
-         */
-        for (col = 0; col + 1 < width; col += 2) {
-            int32_t d = (int32_t)*ur++ - 128;
-            int32_t e = (int32_t)*vr++ - 128;
-            int32_t r_term = 1836 * e;
-            int32_t g_term = -218 * d - 546 * e;
-            int32_t b_term = 2163 * d;
-            int32_t y0 = 1192 * ((int32_t)yr[col] - 16);
-            int32_t y1 = 1192 * ((int32_t)yr[col + 1] - 16);
+        if (row >= height)
+            row = height - 1;
+        yr = y + (size_t)row * (size_t)y_stride;
+        ur = u + (size_t)(row >> 1) * (size_t)uv_stride;
+        vr = v + (size_t)(row >> 1) * (size_t)uv_stride;
 
-            out[col] = (clamp255((y0 + r_term) >> 10) << 16)
-                     | (clamp255((y0 + g_term) >> 10) << 8)
-                     |  clamp255((y0 + b_term) >> 10);
-            out[col + 1] = (clamp255((y1 + r_term) >> 10) << 16)
-                         | (clamp255((y1 + g_term) >> 10) << 8)
-                         |  clamp255((y1 + b_term) >> 10);
-        }
-        if (col < width) {
-            /* An odd width leaves one pixel, which reuses the last chroma pair. */
-            int32_t d = (int32_t)ur[-1] - 128;
-            int32_t e = (int32_t)vr[-1] - 128;
+        for (x = 0; x < dst_width; x++) {
+            int col = (int)(acc >> 16);
+            int32_t d = (int32_t)ur[col >> 1] - 128;
+            int32_t e = (int32_t)vr[col >> 1] - 128;
             int32_t y0 = 1192 * ((int32_t)yr[col] - 16);
 
-            out[col] = (clamp255((y0 + 1836 * e) >> 10) << 16)
-                     | (clamp255((y0 - 218 * d - 546 * e) >> 10) << 8)
-                     |  clamp255((y0 + 2163 * d) >> 10);
+            out[x] = (clamp255((y0 + 1836 * e) >> 10) << 16)
+                   | (clamp255((y0 - 218 * d - 546 * e) >> 10) << 8)
+                   |  clamp255((y0 + 2163 * d) >> 10);
+            acc += step;
         }
     }
 }
@@ -466,4 +485,16 @@ void rc_video_verify_get(int *checked, int *match, uint64_t *spu_hash, uint64_t 
         *spu_hash = s_verify_hash_spu;
     if (ppe_hash != NULL)
         *ppe_hash = s_verify_hash_ppe;
+}
+
+void rc_video_scale_info(int *scaled_w, int *scaled_h, int *display_w, int *display_h)
+{
+    if (scaled_w != NULL)
+        *scaled_w = s_scaled_w;
+    if (scaled_h != NULL)
+        *scaled_h = s_scaled_h;
+    if (display_w != NULL)
+        *display_w = s_info.width;
+    if (display_h != NULL)
+        *display_h = s_info.height;
 }
