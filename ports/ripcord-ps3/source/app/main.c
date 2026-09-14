@@ -938,6 +938,8 @@ static int check_connect(void)
                 if (us > 0UL)
                     ps3_log("       %lu us per picture on the PPE - the budget at 30 fps is 33333 us\n", us);
                 if (c.blits > 0u) {
+                    ps3_log("       scaled to %dx%d on a %dx%d display\n",
+                            c.scaled_width, c.scaled_height, c.display_width, c.display_height);
                     ps3_log("       ON SCREEN: %u picture(s) blitted, %u us average, %u us worst;"
                             " %u dropped because the display was busy\n",
                             c.blits, c.blit_avg_us, c.blit_worst_us, c.pictures_dropped);
