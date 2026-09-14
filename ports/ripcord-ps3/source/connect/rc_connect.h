@@ -151,6 +151,10 @@ typedef struct {
     unsigned session_request_bytes;
     unsigned session_reply_bytes;
     int  curve_p521;
+    int  stream_version_acked;  /* the stream channel answered PROTOCOL_VERSION_ACK        */
+    unsigned stream_version;    /* the version actually used - the console's choice if it
+                                 * named one, otherwise the highest we offered. This picks
+                                 * the ECDH curve, which is why it is reported.            */
     int  reply_reject_reason;  /* TAKION_SESSION_REJECT_* - why accept_reply said no */
     int  stream_keys_derived;
     int  asked_width;
