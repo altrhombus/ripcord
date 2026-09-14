@@ -422,6 +422,39 @@ self-inflicted rather than anything the console did:
 Benign at this bitrate — yielding every 64 packets is every ~300 ms against a 1000 ms heartbeat — and
 recorded rather than tidied away, because it will matter if the bitrate rises.
 
+## Colour conversion on the SPEs
+
+The PPE converted a 960x540 picture in **11,869 us** while also spending 11,731 us decoding — 72% of a
+30 fps budget for a window occupying a quarter of the screen. The arithmetic is per-pixel with no
+dependency between pixels, which is the shape the SPEs exist for.
+
+| | µs per picture |
+|---|---|
+| PPE, scalar | 11,869 |
+| 5 SPEs, scalar | 5,884 |
+| **5 SPEs, SIMD** | **1,020** |
+
+The middle row is the instructive one. Five processors bought only 2x, because **per pixel each SPE was
+2.5x slower than the PPE**: there is no scalar unit on an SPE, so every scalar operation is a vector
+operation with the value extracted and reinserted around it, plus a branch per channel per pixel on a
+processor with no branch predictor. The parallelism was buying back what the instruction mix threw away.
+
+The vector version keeps values as 32-bit lanes and multiplies with `spu_mulo`, which takes the **odd
+halfwords** of two short vectors — on this big-endian machine, the low 16 bits of each 32-bit lane. Every
+value fits in 16 bits, so that is a 16x16 -> 32 multiply per lane with no packing. Clamping is
+`spu_cmpgt`/`spu_sel` rather than branches.
+
+**It is checked, not assumed.** The first converted frame of every run is done *both* ways and the results
+hashed and compared, because a coefficient in the wrong lane or a shift off by one gives a picture that is
+present and subtly wrong — exactly what a glance at a television does not catch.
+
+**Three shutdown lockups, and what they taught.** Two tidy teardowns froze the console: terminating SPEs
+blocked in a mailbox read (they cannot notice), then asking them to leave and joining the group. The
+teardown now writes a quit sentinel and waits for nothing — at process exit lv2 reclaims the thread group
+anyway, and cleanup that *cannot hang* is worth more here than cleanup that is thorough. More valuable
+still was the ordering fix: **the logs close before the teardown**, so a frozen console costs a reboot
+rather than the run that would explain it.
+
 **What is not done.** Incoming GMAC tags are
 **not verified `[X]`**: GMAC authenticates without encrypting, so `STREAM_INFO` parses as it stands and this
 build reads it without checking who wrote it. That is the receive half of the sealing mechanism and a real
