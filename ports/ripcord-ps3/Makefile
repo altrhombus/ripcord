@@ -163,7 +163,7 @@ CFLAGS := $(ARCH) -std=gnu99 -O2 -g \
           -DRC_NETLOG_HOST='"$(RC_NETLOG_HOST)"' -DRC_NETLOG_PORT=$(RC_NETLOG_PORT) \
           -I$(CORE) -I$(BUILD) -Isource/spu -Isource/net -Isource/media -Isource/coretest \
           -Isource/discovery -Isource/connect -I$(CORE)/discovery -I$(CORE)/session \
-          -I$(CORE)/halyard -I$(CORE)/crypto -I$(CORE)/net -I$(CORE)/takion -I$(CORE)/platform -Ispu \
+          -I$(CORE)/halyard -I$(CORE)/crypto -I$(CORE)/net -I$(CORE)/takion -I$(CORE)/stream -I$(CORE)/util -I$(CORE)/platform -Ispu \
           -I$(PSL1GHT)/ppu/include
 
 LDFLAGS := $(ARCH) -Wl,--gc-sections -L$(PSL1GHT)/ppu/lib
@@ -204,6 +204,13 @@ SOURCES := \
 	$(CORE)/takion/takion_sack_chunk.c \
 	$(CORE)/takion/takion_reassembler.c \
 	$(CORE)/takion/takion_reliable_channel.c \
+	$(CORE)/takion/takion_control_proto.c \
+	$(CORE)/takion/takion_session_negotiator.c \
+	$(CORE)/takion/senkusha_echo.c \
+	$(CORE)/session/halyard_launch_spec.c \
+	$(CORE)/stream/stream_key_schedule.c \
+	$(CORE)/crypto/rc_ecdh.c \
+	$(CORE)/util/rc_base64.c \
 	$(CORE)/util/rc_hex.c \
 	$(CORE)/util/rc_text.c \
 	source/app/main.c
@@ -259,13 +266,7 @@ CORE_TEST_SUPPORT := \
 	$(CORE)/session/halyard_sess_fields.c $(CORE)/session/halyard_sess_request.c \
 	$(CORE)/stream/fec_galois.c $(CORE)/stream/fec_reed_solomon.c \
 	$(CORE)/stream/stream_demux.c $(CORE)/stream/stream_header.c \
-	$(CORE)/stream/stream_packet_crypto.c \
-	$(CORE)/util/rc_base64.c \
-	$(CORE)/crypto/rc_ecdh.c \
-	$(CORE)/session/halyard_launch_spec.c \
-	$(CORE)/stream/stream_key_schedule.c \
-	$(CORE)/takion/takion_control_proto.c $(CORE)/takion/takion_session_negotiator.c \
-	$(CORE)/takion/senkusha_echo.c
+	$(CORE)/stream/stream_packet_crypto.c
 
 # ECDH delegates elliptic-curve arithmetic to mbedtls - rc_ecdh.h argues at length that a hand-written
 # constant-time bigint is the last thing this project should write twice. The same script the Vita port
@@ -276,6 +277,14 @@ MBEDTLS_PREFIX := third-party/mbedtls
 MBEDTLS_LIB    := $(MBEDTLS_PREFIX)/lib/libmbedcrypto.a
 ECDH_CFLAGS    := -DRC_CRYPTO_MBEDTLS -isystem $(MBEDTLS_PREFIX)/include \
                   -DMBEDTLS_CONFIG_FILE='<ripcord-mbedtls-config.h>'
+
+# APPENDED HERE, not written into CFLAGS above, and the order is the whole point: CFLAGS is a `:=`
+# assignment several hundred lines earlier, so a reference to ECDH_CFLAGS up there expands to nothing at
+# all - silently, since an empty expansion is not an error. The application links rc_ecdh.c now, so it
+# needs these, and the only safe place to say so is after ECDH_CFLAGS exists.
+#
+# CFLAGS_SDK_SOCKETS derives from CFLAGS and is defined below this line, so it inherits them too.
+CFLAGS += $(ECDH_CFLAGS)
 
 CORE_TEST_OBJS := $(BUILD)/ct_halyard_v1_constants.g.o \
                   $(addprefix $(BUILD)/ct_,$(notdir $(CORE_TEST_SUPPORT:.c=.o))) \
@@ -438,6 +447,7 @@ $(OPENH264_LIB):
 # vpath rather than per-directory rules: the basenames across these five directories are unique, and one
 # pattern rule is easier to be right about than five.
 vpath %.c $(CORE)/util $(CORE)/discovery $(CORE)/session $(CORE)/net $(CORE)/takion \
+          $(CORE)/crypto $(CORE)/stream \
           source/platform source/spu source/net source/media source/discovery source/connect source/app
 
 COBJS := $(addprefix $(BUILD)/,$(notdir $(SOURCES:.c=.o)))
