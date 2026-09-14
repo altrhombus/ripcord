@@ -401,7 +401,14 @@ static int takion_bring_up(takion_reliable_channel *channel, const char *host, u
  * shows through - it heartbeats and re-sends on its own timers - and short enough that a bring-up probe
  * still finishes. Not a streaming duration; a sampling one.
  */
-#define RC_STREAM_HOLD_MS 6000u
+/*
+ * Long enough to WATCH, not just to measure.
+ *
+ * Six seconds produced ~146 good frames and a clean set of numbers, and on a television it read as a
+ * glimpse. The measurement was never the constraint here - the console streams for as long as it is
+ * asked to, and the cost of asking for longer is only that the probe takes longer.
+ */
+#define RC_STREAM_HOLD_MS 30000u
 
 /* The client's own heartbeat cadence on the stream channel, from the reference's one second. */
 #define RC_STREAM_HEARTBEAT_MS 1000u
@@ -894,8 +901,12 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
                     g_blits = 0u;
                     g_pictures_dropped = 0u;
                     g_live_open = rc_decode_live_open();
-                    if (g_live_open)
+                    if (g_live_open) {
                         rc_decode_live_set_sink(on_picture, NULL);
+                        /* Black, in every buffer, before the first picture lands - otherwise the
+                         * stream appears inside a frame of leftover test pattern. */
+                        rc_video_clear_all(0x00000000u);
+                    }
                     stream_demux_init(&g_demux, stream_demux_packet_crypto(&g_verifier.crypto), sink);
                     if (info.video_header_length > 0u)
                         stream_demux_set_video_header(&g_demux, info.video_header,
@@ -1100,6 +1111,7 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
     out->blit_avg_us = (g_blits > 0u) ? (g_blit_us_total / g_blits) : 0u;
     out->blit_worst_us = g_blit_worst_us;
     out->pictures_dropped = g_pictures_dropped;
+    out->hold_ms = (unsigned)RC_STREAM_HOLD_MS;
 
     out->verify_checked = g_verifier.checked;
     out->verify_failed = g_verifier.failed;
