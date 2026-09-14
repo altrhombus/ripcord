@@ -282,6 +282,17 @@ static int accept_data_chunk(takion_reliable_channel *ch, int is_first, unsigned
     return complete == 1;
 }
 
+void takion_channel_enable_verification(takion_reliable_channel *ch, takion_verify_fn verify,
+                                        void *verify_ctx, int enforce)
+{
+    if (ch == NULL)
+        return;
+    ch->verify = verify;
+    ch->verify_ctx = verify_ctx;
+    ch->verify_enforces = enforce;
+    ch->verify_dropped = 0UL;
+}
+
 int takion_channel_await_control(takion_reliable_channel *ch, uint32_t want_type, unsigned timeout_ms,
                                  takion_tick_fn tick, void *tick_ctx,
                                  const uint8_t **out_message, size_t *out_length)
@@ -360,6 +371,20 @@ int takion_channel_poll(takion_reliable_channel *ch, unsigned *out_channel,
         return 0;
     if (header.verification_tag != ch->local_tag)
         return 0; /* not this association - ignore rather than trust an unverified peer */
+
+    /*
+     * The GMAC check, after the association check and before anything acts on the contents. The
+     * association tag says which connection a packet claims to belong to; only this says whether it came
+     * from the peer that owns it.
+     *
+     * In counting mode the packet still goes through, so a mechanism that is wrong shows up as a number
+     * rather than as a session that mysteriously stops - see enable_verification.
+     */
+    if (ch->verify != NULL && !ch->verify(ch->verify_ctx, recv_buf, (size_t)n)) {
+        ch->verify_dropped++;
+        if (ch->verify_enforces)
+            return 0;
+    }
 
     chunk_type = takion_chunk_type(chunk, chunk_length);
 
