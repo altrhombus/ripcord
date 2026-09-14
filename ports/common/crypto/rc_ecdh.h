@@ -158,6 +158,22 @@ int rc_ecdh_keypair_from_private(unsigned curve, const uint8_t *private_key, siz
  */
 int rc_ecdh_check_peer_point(unsigned curve, const uint8_t *point, size_t length);
 
+/*
+ * What the last derivation was actually handed, as opposed to what the caller believes it passed.
+ *
+ * A point that passes rc_ecdh_check_peer_point and fails the identical check inside
+ * rc_ecdh_derive_shared, in the same run, is either not the same point or not the same environment.
+ * A fingerprint over the bytes AS THE DERIVATION READ THEM settles which, and no amount of reading the
+ * call site does - the call site is what is in question.
+ *
+ * FNV-1a, because this is an identity check between two places in one program and not a security
+ * property; it wants to be cheap and identical on both sides, not strong.
+ */
+unsigned long rc_ecdh_last_peer_fingerprint(void);
+unsigned long rc_ecdh_fingerprint(const unsigned char *data, size_t length);
+size_t rc_ecdh_last_private_length(void);
+unsigned rc_ecdh_last_curve(void);
+
 int rc_ecdh_last_error_step(void);
 int rc_ecdh_last_error_code(void);
 
