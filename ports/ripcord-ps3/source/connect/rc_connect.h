@@ -247,6 +247,8 @@ typedef struct {
     unsigned av_audio;
     unsigned av_other;
     unsigned av_verified;
+    int  stream_rcvbuf;         /* what the platform says the receive buffer is */
+    int  stream_rcvbuf_asked;   /* ...against what was requested                 */
     unsigned av_worst_burst;    /* most datagrams taken in one drain - headroom against the bound */
     unsigned long av_bytes;
 
