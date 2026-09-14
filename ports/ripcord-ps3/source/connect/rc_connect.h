@@ -226,6 +226,7 @@ typedef struct {
     unsigned av_audio;
     unsigned av_other;
     unsigned av_verified;
+    unsigned av_worst_burst;    /* most datagrams taken in one drain - headroom against the bound */
     unsigned long av_bytes;
 
     /*
