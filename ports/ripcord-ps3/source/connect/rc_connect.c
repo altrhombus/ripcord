@@ -478,19 +478,55 @@ rc_connect_stage rc_connect(unsigned wake_timeout_ms, rc_connect_log_fn log, rc_
                  *
                  * src/Ripcord.Protocol.Halyard/Session/HalyardStreamingSession.cs is the source of truth
                  * here, and on TypeLoginPrompt it says "this user is locked, send the passcode" and
-                 * completes a gate that another task is waiting on; the console's verdict then arrives
-                 * as TypeLogin. ports/ripcord-3ds treats the same message as fatal - "this build cannot
-                 * answer one" - which is that port's limitation rather than the protocol's, and copying
-                 * it here would have carried a restriction the reference does not have.
+                 * completes a gate that another task is waiting on. ports/ripcord-3ds treats the same
+                 * message as fatal - "this build cannot answer one" - which is that port's limitation
+                 * rather than the protocol's, and copying it here would have carried a restriction the
+                 * reference does not have.
                  *
-                 * This port cannot answer one YET: ports/common has the message type and the passcode
-                 * field encoding (halyard_sess_fields.h) but no submit path, and a passcode is user
-                 * input this probe has no way to collect. So it stops - but it stops reporting a gate it
-                 * could answer, not a wall.
+                 * b39 confirmed this is the gate on hardware: one control frame, type 0x0004, no
+                 * heartbeats, no SESSION_ID. So the probe now answers it when a passcode was supplied
+                 * out of band, and still merely reports it when none was.
                  */
                 if (ev.type == HALYARD_CTRL_TYPE_LOGIN_PROMPT) {
                     out->login_prompt = 1;
-                    break;
+
+                    if (rec.login_pin[0] == '\0') {
+                        /* Nothing to answer with - report the gate rather than sit out the deadline. */
+                        break;
+                    }
+
+                    /*
+                     * ONE attempt, where the reference allows five. Its retries exist because a person is
+                     * typing and can correct a typo; this passcode came from a file, so re-sending the same
+                     * digits would only burn a counter and ask the console the same question twice.
+                     *
+                     * The counter discipline still matters and lives in ports/common: the submit takes the
+                     * next unused value (5 on a fresh session, matching the reference's "first attempt is
+                     * 5") and advances it in the same breath, so no IV is ever reused under the session key.
+                     */
+                    if (!out->login_submitted) {
+                        out->login_submitted =
+                            halyard_control_session_submit_login(&session, rec.login_pin,
+                                                                 strlen(rec.login_pin));
+                        SAY(out->login_submitted ? "passcode submitted - waiting for SESSION_ID"
+                                                 : "the passcode could not be encoded - not sent");
+                        if (!out->login_submitted)
+                            break;
+                    }
+
+                    /*
+                     * Keep waiting on the SAME deadline rather than extending it. The reference measures
+                     * the console's session-ready at ~2.3 s after a LAN submit, and the twenty seconds this
+                     * loop already had was sized for a console still waking up - so there is room, and
+                     * granting more would only slow down the "it never answered" case.
+                     *
+                     * What this port CANNOT do yet is read the console's verdict. That arrives as
+                     * TypeLogin (0x0005) carrying one byte - 0x00 accepted, 0x01 rejected - and decrypting
+                     * it needs the console's own receive-direction counter, which ports/common does not
+                     * track yet (it has the send counter only). So a wrong passcode here looks exactly like
+                     * silence, and the log must not claim otherwise.
+                     */
+                    continue;
                 }
             }
 
