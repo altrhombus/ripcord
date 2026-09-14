@@ -316,17 +316,30 @@ int rc_ecdh_derive_shared(const rc_ecdh_keypair *pair,
         rc = mbedtls_ecp_group_load(&grp, id);
         if (rc != 0) { (void)ecdh_fail(RC_ECDH_STEP_GROUP_LOAD, rc); break; }
 
-        rc = mbedtls_mpi_read_binary(&d, pair->private_key, pair->private_key_length);
-        if (rc != 0) { (void)ecdh_fail(RC_ECDH_STEP_PRIVATE_KEY, rc); break; }
-
+        /*
+         * PEER FIRST, OUR PRIVATE KEY SECOND, and the order is deliberate twice over.
+         *
+         * On its own merits: there is no reason to load a secret scalar for a point that is about to be
+         * rejected. Validate what arrived from the wire, then reach for our own key material.
+         *
+         * And as an experiment. On the PS3 this check refused a point that the identical sequence in
+         * rc_ecdh_check_peer_point accepted, in the same run, on bytes a fingerprint proved identical -
+         * and the ONE structural difference between the two was the private-key read sitting here,
+         * between the group load and the peer read. Removing it from between them is the smallest change
+         * that tests whether it was ever implicated.
+         *
+         * Reject a peer point that is not actually on the curve before multiplying by our secret scalar -
+         * the invalid-curve attack this defends against leaks the private key one small subgroup at a
+         * time, and "it came from the console" is not authentication.
+         */
         rc = mbedtls_ecp_point_read_binary(&grp, &peer, peer_public_key, peer_public_key_length);
         if (rc != 0) { (void)ecdh_fail(RC_ECDH_STEP_PEER_READ, rc); break; }
 
-        /* Reject a peer point that is not actually on the curve before multiplying by our secret
-         * scalar - the invalid-curve attack this defends against leaks the private key one small
-         * subgroup at a time, and "it came from the console" is not authentication. */
         rc = mbedtls_ecp_check_pubkey(&grp, &peer);
         if (rc != 0) { (void)ecdh_fail(RC_ECDH_STEP_PEER_CHECK, rc); break; }
+
+        rc = mbedtls_mpi_read_binary(&d, pair->private_key, pair->private_key_length);
+        if (rc != 0) { (void)ecdh_fail(RC_ECDH_STEP_PRIVATE_KEY, rc); break; }
 
         rc = mbedtls_ecp_mul(&grp, &shared, &d, &peer, rng, rng_ctx);
         if (rc != 0) { (void)ecdh_fail(RC_ECDH_STEP_MULTIPLY, rc); break; }
