@@ -42,6 +42,21 @@ void rc_log_close(void);
  * 30 lines is exactly one bottom-screen page at the console's 8x8 font (320/8 = 40 columns, 240/8 = 30
  * rows). This is a VIEW, not the record: every line still goes to the SD file, flushed, as it always has.
  */
+/*
+ * How large the log may get before rc_log_open rotates it, and why it rotates at all.
+ *
+ * The log is opened for append so a run can be compared against the ones before it - which is the whole
+ * reason it is not truncated every time. But nothing was ever reclaiming it: on hardware it reached
+ * 44 KB across fourteen runs, all of it on a console partition, and the only thing that would eventually
+ * stop it growing is the partition filling up.
+ *
+ * One previous generation is kept, because the run BEFORE last is exactly the one wanted when the last
+ * run destroyed the evidence. Two would be a filing system; zero throws away the comparison.
+ */
+#ifndef RC_LOG_MAX_BYTES
+#define RC_LOG_MAX_BYTES (128u * 1024u)
+#endif
+
 #define RC_LOG_RING_LINES 30
 #define RC_LOG_RING_COLUMNS 64
 

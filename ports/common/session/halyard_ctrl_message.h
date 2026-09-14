@@ -44,6 +44,16 @@
  * reliable "you may stream now" signal. */
 #define HALYARD_CTRL_TYPE_LOGIN          0x0005u
 
+/*
+ * LOGIN's payload: the console's one-byte verdict on the passcode.
+ *
+ * **[C]** by controlled experiment against hardware, which is also how the .NET side established it
+ * (src/Ripcord.Protocol.Halyard.Common/Control/HalyardCtrlMessage.cs): one console, one variable changed,
+ * two outcomes - the right passcode drew 0x00 and a deliberately wrong one drew 0x01.
+ */
+#define HALYARD_CTRL_LOGIN_ACCEPTED      0x00u
+#define HALYARD_CTRL_LOGIN_REJECTED      0x01u
+
 /* Console -> client: session-ready. After a login this is what gates bringing the stream up. */
 #define HALYARD_CTRL_TYPE_SESSION_ID     0x0033u
 

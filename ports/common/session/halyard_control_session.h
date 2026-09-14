@@ -34,6 +34,16 @@
 
 #define HALYARD_CONTROL_SESSION_BUFFER 4096
 
+/*
+ * How much of a frame's payload service() will decrypt for the caller.
+ *
+ * Every payload-carrying frame SPENDS a counter whether or not this decrypts it - the console's sequence
+ * does not care what we can hold - so a payload larger than this advances the counter and arrives with
+ * plaintext_length 0 rather than desynchronising everything after it. The frames anyone reads today are
+ * far smaller than this: the login verdict is one byte.
+ */
+#define HALYARD_CONTROL_PLAINTEXT_MAX 256
+
 /* How many parsed frames of history the resync diagnostic keeps - see `recent` below. */
 #define HALYARD_CONTROL_RECENT 4
 
@@ -51,12 +61,31 @@ typedef struct {
     unsigned type;                 /* the frame's message type, for MESSAGE/SESSION_READY */
     const uint8_t *payload;        /* points INTO the session's buffer; valid until the next service() */
     size_t payload_length;
+
+    /*
+     * The payload decrypted, for frames that carry one. Points into the session; same lifetime as
+     * `payload`. Zero-length means there was nothing to decrypt, the payload was larger than
+     * HALYARD_CONTROL_PLAINTEXT_MAX, or the field cipher is not established - all three are ordinary,
+     * and none of them is distinguishable here on purpose, because the caller's response to each is the
+     * same: it has no plaintext to read.
+     */
+    const uint8_t *plaintext;
+    size_t plaintext_length;
+    uint64_t counter;              /* the console-direction counter this frame was decrypted at */
 } halyard_control_event;
 
 typedef struct {
     int sock;                      /* the /sess/ctrl connection, non-blocking, kept open */
     halyard_control_field ctrl;    /* the field/streaminfo cipher for this connection */
     uint64_t next_counter;         /* the next unused cipher counter - see the header note */
+
+    /*
+     * The console's direction has its own counter, and it is NOT next_counter. See
+     * HALYARD_SESS_COUNTER_CONSOLE_START for why it starts at 1 while ours starts at 0.
+     */
+    uint64_t recv_counter;
+    uint8_t recv_plain[HALYARD_CONTROL_PLAINTEXT_MAX];
+
     int session_ready;
 
     /*
