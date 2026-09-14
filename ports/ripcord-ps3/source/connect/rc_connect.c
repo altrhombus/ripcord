@@ -859,6 +859,8 @@ static unsigned g_worst_read_gap_ms;
 static unsigned g_worst_drain_ms;
 static unsigned g_worst_decode_ms;
 static unsigned g_worst_other_ms;
+static uint64_t g_ingest_ticks;
+static unsigned g_ingest_calls;
 
 static int drain_av(halyard_control_session *session, rc_connect_result *out,
                     uint64_t *next_heartbeat, uint64_t *next_congestion)
@@ -939,7 +941,22 @@ static int drain_av(halyard_control_session *session, rc_connect_result *out,
                  * matters from here, and it already reports exactly this.
                  */
                 if (out->demux_ready) {
+                    /*
+                     * TIMED, because removing one of the two GMAC passes moved the drain from 192 ms to
+                     * 173 - about a tenth - which says the crypto was not what it cost. A bounded drain
+                     * is two syscalls and this call per packet, and at ~0.95 ms per packet something
+                     * here is an order of magnitude more expensive than it looks.
+                     *
+                     * stream_demux_ingest parses the header, verifies a GMAC, CTR-decrypts the payload,
+                     * does FEC bookkeeping and copies into the assembly buffer. Which of those dominates
+                     * is worth knowing before anything is moved to an SPE on the assumption it is the
+                     * crypto.
+                     */
+                    uint64_t t0 = rc_tick();
+
                     stream_demux_ingest(&g_demux, packet, (size_t)n);
+                    g_ingest_ticks += rc_tick() - t0;
+                    g_ingest_calls++;
                     out->av_ingested++;
                 }
             }
@@ -1500,6 +1517,8 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
                     g_worst_drain_ms = 0u;
                     g_worst_decode_ms = 0u;
                     g_worst_other_ms = 0u;
+                    g_ingest_ticks = 0u;
+                    g_ingest_calls = 0u;
                     g_live_open = rc_decode_live_open();
                     if (g_live_open) {
                         rc_decode_live_set_sink(on_picture, NULL);
@@ -1742,6 +1761,13 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
     out->worst_drain_ms = g_worst_drain_ms;
     out->worst_decode_ms = g_worst_decode_ms;
     out->worst_other_ms = g_worst_other_ms;
+    {
+        uint64_t hz = rc_tick_hz();
+
+        out->ingest_avg_us = (hz > 0u && g_ingest_calls > 0u)
+            ? (unsigned)((g_ingest_ticks * 1000000u) / hz / g_ingest_calls)
+            : 0u;
+    }
     rc_video_scale_info(&out->scaled_width, &out->scaled_height,
                         &out->display_width, &out->display_height);
     out->pictures_dropped = g_pictures_dropped;

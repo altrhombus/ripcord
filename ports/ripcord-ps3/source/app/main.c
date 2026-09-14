@@ -990,6 +990,8 @@ static int check_connect(void)
                     ps3_log("       longest gap between socket reads: %u ms"
                             " (a 122 KB buffer at this rate fills in ~400 ms)\n",
                             c.worst_read_gap_ms);
+                    ps3_log("       demux ingest: %u us per packet on average"
+                            " (header, GMAC, CTR decrypt, FEC, assembly copy)\n", c.ingest_avg_us);
                     ps3_log("       worst phase: drain %u ms, decode run %u ms, everything else %u ms\n",
                             c.worst_drain_ms, c.worst_decode_ms, c.worst_other_ms);
                     ps3_log("       frame queue: %u queued, %u dropped for overrun, deepest %u of 8\n",
