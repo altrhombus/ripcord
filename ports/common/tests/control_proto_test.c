@@ -684,6 +684,84 @@ static void run_bare_envelope(void)
     }
 }
 
+/* This file asserts by hand rather than through a macro; one local helper keeps the new runner from
+ * repeating the same six lines eleven times. */
+static void pv_check(int condition, const char *what)
+{
+    if (condition) {
+        g_passed++;
+    } else {
+        g_failed++;
+        printf("FAIL protocol-version: %s\n", what);
+    }
+}
+
+/*
+ * Version negotiation, which decides the ECDH curve and therefore decides whether a session can be
+ * established at all. A client that assumes its own top version builds a key on a curve the console may
+ * not have chosen, and nothing says so until the peer's point is rejected - after a signature over that
+ * same point has already verified, which makes it read like a crypto fault rather than a negotiation one.
+ */
+static void run_protocol_version_negotiation(void)
+{
+    static const uint32_t kVersions[] = { 9u, 10u, 11u, 13u, 14u, 15u, 16u, 17u };
+    uint8_t buf[128];
+    size_t n;
+    uint32_t type = 0u;
+    uint32_t agreed = 0xffffffffu;
+
+    n = takion_control_build_protocol_version_request(kVersions,
+                                                      sizeof(kVersions) / sizeof(kVersions[0]),
+                                                      buf, sizeof(buf));
+    pv_check(n > 0, "the version request builds");
+    pv_check(takion_control_peek_type(buf, n, &type) && type == TAKION_CONTROL_PROTOCOL_VERSION_REQUEST,
+          "...and announces itself as a PROTOCOL_VERSION_REQUEST");
+
+    /*
+     * The single-version form must be byte-identical to the literal the senkusha bring-up has always
+     * sent. That literal came from a capture, and it is the only independent check available that this
+     * encoding is right - two nested fields written by hand are exactly where a two-byte varint tag
+     * gets written as one.
+     */
+    {
+        static const uint8_t kKnown[] = { 0x08, 0x1F, 0xFA, 0x01, 0x02, 0x08, 0x09 };
+        static const uint32_t kNine[] = { 9u };
+        uint8_t one[32];
+        size_t m = takion_control_build_protocol_version_request(kNine, 1u, one, sizeof(one));
+
+        pv_check(m == sizeof(kKnown), "the one-version request is the length the capture shows");
+        pv_check(m == sizeof(kKnown) && memcmp(one, kKnown, m) == 0,
+              "...and byte-identical to it - field 31 is a TWO-byte tag, 0xFA 0x01");
+    }
+
+    /* An ack naming version 11: ControlMessage{type=32, protocolVersionAck={protocolVersion=11}} */
+    {
+        static const uint8_t kAck[] = { 0x08, 0x20, 0x82, 0x02, 0x02, 0x08, 0x0B };
+
+        pv_check(takion_control_parse_protocol_version_ack(kAck, sizeof(kAck), &agreed), "the ack parses");
+        pv_check(agreed == 11u, "...and yields the version the console chose, not the one we asked for");
+    }
+
+    /* An ack with no version field: not an error, the caller falls back to what it requested. */
+    {
+        static const uint8_t kBare[] = { 0x08, 0x20 };
+        uint32_t none = 7u;
+
+        pv_check(!takion_control_parse_protocol_version_ack(kBare, sizeof(kBare), &none),
+              "an ack carrying no version reports that it carried none");
+        pv_check(none == 0u, "...and does not leave a stale value behind");
+    }
+
+    /* Truncation is refused rather than half-read. */
+    {
+        static const uint8_t kShort[] = { 0x08, 0x20, 0x82, 0x02, 0x09, 0x08 };
+        uint32_t bad = 3u;
+
+        pv_check(!takion_control_parse_protocol_version_ack(kShort, sizeof(kShort), &bad),
+              "a truncated ack is refused");
+    }
+}
+
 int main(int argc, char **argv)
 {
     const char *path = (argc > 1) ? argv[1] : "vectors/control-proto.kat";
@@ -735,6 +813,7 @@ int main(int argc, char **argv)
     run_senkusha_echo();
     run_connect_literals();
     run_stream_info();
+    run_protocol_version_negotiation();
 
     printf("\n%d passed, %d failed\n", g_passed, g_failed);
     if (g_passed == 0) {
