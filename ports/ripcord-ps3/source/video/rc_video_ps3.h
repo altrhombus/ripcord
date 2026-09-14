@@ -97,6 +97,13 @@ unsigned rc_video_blit_yuv420(const uint8_t *y, const uint8_t *u, const uint8_t 
  * The one-shot agreement check between the SPE and PPE conversions. `checked` is 0 until a frame has
  * been converted both ways. See rc_video_blit_yuv420 for why this exists at all.
  */
+/*
+ * Converts a synthetic picture both ways and compares. Returns 1 if the comparison was actually made,
+ * 0 if the SPEs were unavailable - which is not a mismatch and the caller is told apart. Run this BEFORE
+ * streaming: it used to run on the first live frame and cost the Takion channel at 1080p.
+ */
+int rc_video_self_test(void);
+
 void rc_video_verify_get(int *checked, int *match, uint64_t *spu_hash, uint64_t *ppe_hash);
 
 /* How the flip-readiness check has been answering - see rc_video_present_ready. */
