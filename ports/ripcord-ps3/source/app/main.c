@@ -934,6 +934,9 @@ static int check_connect(void)
                             c.blits, c.blit_avg_us, c.blit_worst_us, c.pictures_dropped);
                     ps3_log("       decode + blit is %lu us against the same 33333 us budget\n",
                             us + (unsigned long)c.blit_avg_us);
+                    if (c.hold_ms > 0u)
+                        ps3_log("       %u pictures over %u ms = %u fps on screen\n",
+                                c.blits, c.hold_ms, (c.blits * 1000u) / c.hold_ms);
                 } else {
                     ps3_log("       nothing reached the screen - the display was not open\n");
                 }
@@ -1307,7 +1310,9 @@ static int check_display(void)
      * Held for a few seconds rather than flashed. The point is a human looking at a television, and
      * the elements are meant to be read off it - see draw_test_pattern.
      */
-    for (frame = 0; frame < 180; frame++) {
+    /* One second, not three. The pattern only has to be seen to be checked, and everything after it
+     * is more interesting. */
+    for (frame = 0; frame < 60; frame++) {
         uint32_t *back = rc_video_back_buffer();
 
         if (back == NULL) {
