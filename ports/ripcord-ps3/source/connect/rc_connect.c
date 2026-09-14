@@ -328,7 +328,13 @@ const char *rc_connect_stage_name(rc_connect_stage stage)
  * arrives as a burst of ~20 back-to-back datagrams that the stack drops the tail of if the buffer is
  * smaller than the burst.
  */
-#define RC_UDP_RCVBUF (256 * 1024)
+/*
+ * The receive cushion. Raised from 256 KB after real content showed 12.9% unit loss where a static
+ * screen showed none: a keyframe under motion is ~50 KB arriving back-to-back, IDR requests make those
+ * frequent, and anything the socket cannot hold while the PPE is inside an 18.9 ms decode is gone before
+ * any amount of draining can reach it. Loss that does not respond to CPU is not caused by CPU.
+ */
+#define RC_UDP_RCVBUF (1024 * 1024)
 
 /*
  * Static rather than automatic, and for the same reason rc_log's format buffer is: these are large, the
@@ -704,6 +710,63 @@ static unsigned g_pictures_dropped;
 static unsigned g_blit_us_total;
 static unsigned g_blit_worst_us;
 static unsigned g_blits;
+
+/*
+ * The two things this client owes the console on a timer, checked wherever there is a moment.
+ *
+ * They used to sit only at the top of the hold loop, which made the drain bound a compromise: large
+ * enough to clear a burst, small enough that one burst could not starve a heartbeat. Calling this from
+ * inside the drain as well costs two comparisons per packet and removes the tension, so the bound can be
+ * sized for the burst alone.
+ */
+static void send_periodic(halyard_control_session *session, rc_connect_result *out,
+                          uint64_t *next_heartbeat, uint64_t *next_congestion)
+{
+    uint64_t now = rc_time_ms();
+
+    (void)session;
+
+    /*
+     * CONGESTION FEEDBACK: what arrived and what did not. The console's rate controller adapts to it,
+     * and the counts come from the demuxer, which has been computing them all along.
+     * stream_demux_take_packet_stats RESETS on read, so each report covers its own window.
+     */
+    if (out->demux_ready && now >= *next_congestion) {
+        long got = 0, missed = 0;
+        uint8_t feedback[TAKION_CONGESTION_PACKET_SIZE];
+        size_t fn;
+
+        stream_demux_take_packet_stats(&g_demux, &got, &missed);
+        out->units_received += got;
+        out->units_lost += missed;
+
+        fn = takion_congestion_build((unsigned long)(got < 0 ? 0 : got),
+                                     (unsigned long)(missed < 0 ? 0 : missed),
+                                     feedback, sizeof(feedback));
+        if (fn > 0u) {
+            takion_control_sealer_seal_congestion(&g_sealer, feedback, fn);
+            if (sendto(g_stream_channel.sock, feedback, fn, 0,
+                       (struct sockaddr *)&g_stream_channel.peer,
+                       sizeof(g_stream_channel.peer)) >= 0)
+                out->congestion_sent++;
+        }
+        *next_congestion = now + RC_CONGESTION_INTERVAL_MS;
+    }
+
+    /*
+     * The stream channel's heartbeat, which is ours to SEND rather than to answer - the console's own
+     * need no reply. Easy to get backwards: on the control session the console asks and we reply.
+     */
+    if (now >= *next_heartbeat) {
+        uint8_t beat[8];
+        size_t beat_len = takion_control_build_bare(TAKION_CONTROL_HEARTBEAT, beat, sizeof(beat));
+
+        if (beat_len > 0u
+            && takion_channel_send(&g_stream_channel, TAKION_CHANNEL_SESSION, beat, beat_len))
+            out->heartbeats_sent++;
+        *next_heartbeat = now + RC_STREAM_HEARTBEAT_MS;
+    }
+}
 
 static void on_picture(void *ctx, const unsigned char *y, const unsigned char *u,
                        const unsigned char *v, int y_stride, int uv_stride, int width, int height)
@@ -1259,58 +1322,13 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
              *
              * Nothing has failed for want of it yet because six seconds is short. A stream is not.
              */
-            /*
-             * CONGESTION FEEDBACK: what arrived and what did not, every 200 ms.
-             *
-             * The console's rate controller adapts the encoder bitrate to what this reports, and this
-             * port has been sending none of it - so a console with no evidence the link is healthy has
-             * been behaving exactly as one would expect, holding around 1.35 Mbps against an 8000 kbps
-             * request.
-             *
-             * The counts come from the demuxer, which has been computing and discarding them all along:
-             * stream_demux_take_packet_stats RESETS on read, so each packet reports its own window and
-             * not a running total. Sent raw on the socket rather than through the reliable channel - it
-             * is a bare Takion packet of base type 5, not a DATA chunk, and it is sealed with the
-             * control sealer because the key position is one sequence shared across all of them.
-             */
-            if (out->demux_ready && rc_time_ms() >= next_congestion) {
-                long got = 0, missed = 0;
-                uint8_t feedback[TAKION_CONGESTION_PACKET_SIZE];
-                size_t fn;
-
-                stream_demux_take_packet_stats(&g_demux, &got, &missed);
-                out->units_received += got;
-                out->units_lost += missed;
-
-                fn = takion_congestion_build((unsigned long)(got < 0 ? 0 : got),
-                                             (unsigned long)(missed < 0 ? 0 : missed),
-                                             feedback, sizeof(feedback));
-                if (fn > 0u) {
-                    takion_control_sealer_seal_congestion(&g_sealer, feedback, fn);
-                    if (sendto(g_stream_channel.sock, feedback, fn, 0,
-                               (struct sockaddr *)&g_stream_channel.peer,
-                               sizeof(g_stream_channel.peer)) >= 0)
-                        out->congestion_sent++;
-                }
-                next_congestion = rc_time_ms() + RC_CONGESTION_INTERVAL_MS;
-            }
-
-            if (rc_time_ms() >= next_heartbeat) {
-                uint8_t beat[8];
-                size_t beat_len = takion_control_build_bare(TAKION_CONTROL_HEARTBEAT,
-                                                            beat, sizeof(beat));
-                if (beat_len > 0u
-                    && takion_channel_send(&g_stream_channel, TAKION_CHANNEL_SESSION, beat, beat_len))
-                    out->heartbeats_sent++;
-                next_heartbeat = rc_time_ms() + RC_STREAM_HEARTBEAT_MS;
-            }
-
             unsigned channel_id = 0u;
             const uint8_t *message = NULL;
             size_t message_length = 0u;
             int result;
             int drained;
 
+            send_periodic(session, out, &next_heartbeat, &next_congestion);
             service_control_tick(session);
 
             /*
@@ -1344,6 +1362,16 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
              */
             drained = 0;
             while (drained < RC_AV_DRAIN_BURST) {
+                /*
+                 * THE TIMERS ARE CHECKED IN HERE TOO, which is what lets the bound be generous.
+                 *
+                 * They used to live only in the outer loop, so the bound was a compromise: large enough
+                 * to drain a burst, small enough that heartbeats and congestion reports were not starved
+                 * by one. Checking them per drained packet costs two comparisons and removes the
+                 * tension, so the bound can be sized for the burst alone.
+                 */
+                send_periodic(session, out, &next_heartbeat, &next_congestion);
+
                 uint8_t peek[STREAM_HEADER_LENGTH];
                 ssize_t peeked = recvfrom(g_stream_channel.sock, peek, sizeof(peek), MSG_PEEK,
                                           NULL, NULL);

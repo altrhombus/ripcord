@@ -954,15 +954,25 @@ static int check_connect(void)
                 ps3_log("       loss with no IDR requested - every frame after the gap is undecodable\n");
             if (c.decoded_fed > 0) {
                 unsigned long hz = (unsigned long)rc_tick_hz();
-                unsigned long us = (hz > 0UL && c.decoded_pictures > 0)
-                    ? (unsigned long)((c.decode_ticks * 1000000ULL) / hz) / (unsigned long)c.decoded_pictures
+                /*
+                 * PER FRAME FED, not per picture produced.
+                 *
+                 * This divided by decoded_pictures, which is right only when every frame decodes. On a
+                 * run with 702 frames and 330 pictures it reported 40221 us and the true cost per decode
+                 * call was 18907 - it looked as though real content had made decoding twice as expensive,
+                 * when decoding had not changed at all and the failures were the story.
+                 */
+                unsigned long us = (hz > 0UL && c.decoded_fed > 0)
+                    ? (unsigned long)((c.decode_ticks * 1000000ULL) / hz) / (unsigned long)c.decoded_fed
                     : 0UL;
 
                 ps3_log("       DECODED LIVE: %d picture(s) from %d frame(s) at %dx%d, %d error(s)\n",
                         c.decoded_pictures, c.decoded_fed, c.decoded_width, c.decoded_height,
                         c.decoded_errors);
                 if (us > 0UL)
-                    ps3_log("       %lu us per picture on the PPE - the budget at 30 fps is 33333 us\n", us);
+                    ps3_log("       %lu us per decode call on the PPE (%d fed, %d produced) -"
+                            " the budget at 30 fps is 33333 us\n",
+                            us, c.decoded_fed, c.decoded_pictures);
                 if (c.blits > 0u) {
                     ps3_log("       scaled to %dx%d on a %dx%d display\n",
                             c.scaled_width, c.scaled_height, c.display_width, c.display_height);
