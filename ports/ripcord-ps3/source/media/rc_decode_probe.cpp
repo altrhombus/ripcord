@@ -174,3 +174,82 @@ extern "C" int rc_decode_probe(const char *path, int max_frames, rc_decode_probe
     free(buf);
     return ok;
 }
+
+/* ---- the live decoder ------------------------------------------------------------------------ */
+
+/*
+ * One decoder, held open across frames. See the header: re-creating it per frame would break every
+ * inter-frame, because they reference the pictures before them.
+ */
+static ISVCDecoder *g_live = 0;
+
+extern "C" int rc_decode_live_open(void)
+{
+    SDecodingParam param;
+
+    if (g_live != 0)
+        return 1;
+    if (WelsCreateDecoder(&g_live) != 0 || g_live == 0) {
+        g_live = 0;
+        return 0;
+    }
+
+    memset(&param, 0, sizeof(param));
+    param.sVideoProperty.eVideoBsType = VIDEO_BITSTREAM_AVC;
+    if (g_live->Initialize(&param) != 0) {
+        WelsDestroyDecoder(g_live);
+        g_live = 0;
+        return 0;
+    }
+    return 1;
+}
+
+extern "C" int rc_decode_live_feed(const uint8_t *access_unit, size_t length,
+                                   rc_decode_live_stats *stats)
+{
+    unsigned char *planes[3] = { 0, 0, 0 };
+    SBufferInfo info;
+    uint64_t t0;
+    int rc;
+
+    if (g_live == 0 || access_unit == 0 || length == 0 || stats == 0)
+        return 0;
+
+    memset(&info, 0, sizeof(info));
+    stats->frames_in++;
+
+    /*
+     * Fed whole, not split into NALs. stream_demux already emits a complete access unit with the video
+     * header prepended where one is needed, and DecodeFrameNoDelay accepts that directly - splitting it
+     * again here would only risk disagreeing with the demuxer about where a picture begins.
+     *
+     * The timed region is this call alone. The question is what the PPE's decode costs, not what the
+     * surrounding bookkeeping costs.
+     */
+    t0 = rc_tick();
+    rc = g_live->DecodeFrameNoDelay(access_unit, (int)length, planes, &info);
+    stats->decode_ticks += rc_tick() - t0;
+
+    if (rc != 0) {
+        stats->last_error = rc;
+        stats->errors++;
+        return 0;
+    }
+
+    if (info.iBufferStatus == 1 && planes[0] != 0) {
+        stats->width = info.UsrData.sSystemBuffer.iWidth;
+        stats->height = info.UsrData.sSystemBuffer.iHeight;
+        stats->pictures_out++;
+        return 1;
+    }
+    return 0;
+}
+
+extern "C" void rc_decode_live_close(void)
+{
+    if (g_live != 0) {
+        g_live->Uninitialize();
+        WelsDestroyDecoder(g_live);
+        g_live = 0;
+    }
+}

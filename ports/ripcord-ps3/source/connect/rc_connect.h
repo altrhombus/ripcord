@@ -243,6 +243,16 @@ typedef struct {
     unsigned largest_frame;
     long units_received;
     long units_lost;
+
+    /* The decoder, fed live from the sink. `decoded_pictures` below `decoded_fed` is normal at the
+     * start of a stream - the decoder needs its first keyframe before it can produce anything. */
+    int  decoded_fed;
+    int  decoded_pictures;
+    int  decoded_errors;
+    int  decoded_last_error;
+    int  decoded_width;
+    int  decoded_height;
+    uint64_t decode_ticks;
     int      held_channel_error;
     unsigned stream_info_bytes;
     int  stream_info_parsed;
