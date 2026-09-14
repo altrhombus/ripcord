@@ -151,6 +151,7 @@ typedef struct {
     unsigned session_request_bytes;
     unsigned session_reply_bytes;
     int  curve_p521;
+    int  reply_reject_reason;  /* TAKION_SESSION_REJECT_* - why accept_reply said no */
     int  stream_keys_derived;
     int  asked_width;
     int  asked_height;
