@@ -5,18 +5,36 @@
 #include "halyard_wake.h"
 #include "halyard_pairing_file.h"
 #include "halyard_control_session.h"
+#include "halyard_control_arm.h"
+#include "halyard_ctrl_message.h"
 #include "platform/rc_platform.h"
 
+#include <fcntl.h>
 #include <string.h>
 #include <unistd.h>
+#include <sys/select.h>
+#include <sys/time.h>
 
 #include <net/net.h>
 #include <net/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
-#ifndef RC_CONNECT_PAIRING_PATH
-#define RC_CONNECT_PAIRING_PATH "/dev_hdd0/ripcord-pairing.txt"
+/*
+ * A DIRECTORY, NOT A FILENAME, and the distinction is the whole point of this comment.
+ *
+ * halyard_pairing_file_load takes a path, runs rc_program_dir over it to get the directory part, and
+ * then appends the fixed name "pairing.txt" - the same shape rc_log_open has, because on the 3DS both
+ * are handed argv[0] and asked to find something beside the executable. A path ending in '/' names
+ * itself as its own directory, which is what makes this work.
+ *
+ * An earlier revision defined this as "/dev_hdd0/ripcord-pairing.txt" and called it a PATH. The loader
+ * would have taken the directory part and looked for /dev_hdd0/pairing.txt, found nothing, and the
+ * probe would have reported "no pairing record - skipping" with the record sitting on the console. The
+ * constant's own name was the misleading part; it is a directory and now says so.
+ */
+#ifndef RC_CONNECT_PAIRING_DIR
+#define RC_CONNECT_PAIRING_DIR "/dev_hdd0/"
 #endif
 
 /* sin_len is set because PSL1GHT's samples do. It is NOT required - rc_discover.c asked the console
@@ -38,6 +56,71 @@ static void fill_addr(struct sockaddr_in *a, const char *ip, unsigned short port
  * already known from the record, so asking it directly avoids depending on broadcast reaching it and
  * avoids waking the question of which console replied.
  */
+/*
+ * Broadcast SRCH, used only to tell two failures apart: a console that is off, and a console that has
+ * moved since the record was written. A DHCP lease outliving a pairing record is ordinary - this
+ * project's own PS3 changed address twice in a week - and the symptom is identical to an absent console
+ * unless something asks the wider question.
+ *
+ * `found_addr` receives the address that answered, so the caller can compare it with the record's
+ * WITHOUT either of them being logged.
+ */
+static int broadcast_find(char *found_addr, size_t addr_size, unsigned timeout_ms)
+{
+    const halyard_discovery_profile *profile = &halyard_discovery_profile_ps5;
+    char probe[128];
+    size_t probe_len;
+    struct sockaddr_in local, bcast;
+    int sock, on = 1, got = 0;
+    uint64_t deadline;
+
+    probe_len = halyard_discovery_build_probe(profile, probe, sizeof(probe));
+    if (probe_len == 0u)
+        return 0;
+
+    sock = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (sock < 0)
+        return 0;
+    if (setsockopt(sock, SOL_SOCKET, SO_BROADCAST, &on, (socklen_t)sizeof(on)) < 0) {
+        (void)close(sock);
+        return 0;
+    }
+
+    fill_addr(&local, NULL, 0);
+    (void)bind(sock, (struct sockaddr *)&local, (socklen_t)sizeof(local));
+
+    fill_addr(&bcast, "255.255.255.255", profile->port);
+    if (sendto(sock, probe, probe_len, 0, (struct sockaddr *)&bcast, (socklen_t)sizeof(bcast)) < 0) {
+        (void)close(sock);
+        return 0;
+    }
+
+    deadline = rc_time_ms() + (uint64_t)timeout_ms;
+    while (rc_time_ms() < deadline) {
+        char buf[1024];
+        struct sockaddr_in from;
+        socklen_t from_len = (socklen_t)sizeof(from);
+        halyard_discovered_console found;
+        ssize_t n;
+
+        memset(&from, 0, sizeof(from));
+        n = recvfrom(sock, buf, sizeof(buf) - 1u, MSG_DONTWAIT, (struct sockaddr *)&from, &from_len);
+        if (n <= 0) {
+            rc_sleep_ms(20u);
+            continue;
+        }
+        buf[n] = '\0';
+        if (halyard_discovery_parse_response(buf, (size_t)n, NULL, &found)) {
+            if (inet_ntop(AF_INET, &from.sin_addr, found_addr, (socklen_t)addr_size) != NULL)
+                got = 1;
+            break;
+        }
+    }
+
+    (void)close(sock);
+    return got;
+}
+
 static int probe_once(const char *host, unsigned short src_port, int *is_awake, unsigned timeout_ms)
 {
     const halyard_discovery_profile *profile = &halyard_discovery_profile_ps5;
@@ -135,6 +218,60 @@ static int send_wakeup(const halyard_pairing_record *rec, rc_connect_result *out
     return sent;
 }
 
+/*
+ * A TCP CONNECT WITH A DEADLINE, which ports/common's does not have.
+ *
+ * rc_tcp_connect calls connect() on a BLOCKING socket and only sets O_NONBLOCK afterwards, so a console
+ * that does not accept on the control port leaves halyard_control_session_open stuck inside it with no
+ * way out. That is what locked the console on b31. The core is otherwise careful - it polls everywhere
+ * and uses timed windows - and this one call predates that discipline.
+ *
+ * Rather than change a file every port shares on the strength of one hardware run, this pre-flights the
+ * same port from the port layer: non-blocking connect, select with a deadline, then close. If it does
+ * not accept, open() is never entered and the probe reports why instead of hanging. Fixing rc_tcp.c
+ * itself is the better long-term answer and belongs with evidence from more than one platform.
+ */
+static int tcp_port_accepts(const char *host, unsigned short port, unsigned timeout_ms)
+{
+    struct sockaddr_in addr;
+    struct timeval tv;
+    fd_set wr;
+    int sock;
+    int ok = 0;
+
+    sock = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (sock < 0)
+        return 0;
+
+    fill_addr(&addr, host, port);
+    (void)fcntl(sock, F_SETFL, O_NONBLOCK);
+
+    if (connect(sock, (struct sockaddr *)&addr, (socklen_t)sizeof(addr)) == 0) {
+        ok = 1;
+    } else {
+        FD_ZERO(&wr);
+        /* FD_SET's macros convert the descriptor through the fd_set mask type, which this port's
+         * -Wconversion objects to inside the SDK's own header. The conversion is theirs. */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wsign-conversion"
+#pragma GCC diagnostic ignored "-Wconversion"
+        FD_SET(sock, &wr);
+#pragma GCC diagnostic pop
+        tv.tv_sec = (long)(timeout_ms / 1000u);
+        tv.tv_usec = (long)((timeout_ms % 1000u) * 1000u);
+
+        if (select(sock + 1, NULL, &wr, NULL, &tv) > 0) {
+            int err = 0;
+            socklen_t len = (socklen_t)sizeof(err);
+            if (getsockopt(sock, SOL_SOCKET, SO_ERROR, &err, &len) == 0 && err == 0)
+                ok = 1;
+        }
+    }
+
+    (void)close(sock);
+    return ok;
+}
+
 const char *rc_connect_stage_name(rc_connect_stage stage)
 {
     switch (stage) {
@@ -149,7 +286,9 @@ const char *rc_connect_stage_name(rc_connect_stage stage)
     }
 }
 
-rc_connect_stage rc_connect(unsigned wake_timeout_ms, rc_connect_result *out)
+#define SAY(text) do { if (log != NULL) log(text); } while (0)
+
+rc_connect_stage rc_connect(unsigned wake_timeout_ms, rc_connect_log_fn log, rc_connect_result *out)
 {
     halyard_pairing_record rec;
     halyard_control_session session;
@@ -159,9 +298,10 @@ rc_connect_stage rc_connect(unsigned wake_timeout_ms, rc_connect_result *out)
     memset(out, 0, sizeof(*out));
     memset(&rec, 0, sizeof(rec));
 
-    /* The loader takes a path to something BESIDE the record, and derives the directory. Passing the
-     * record's own path works because the directory part is what it uses. */
-    if (!halyard_pairing_file_load(RC_CONNECT_PAIRING_PATH, &rec)) {
+    SAY("loading the pairing record");
+
+    /* The loader appends "pairing.txt" to the directory part of what it is given - see above. */
+    if (!halyard_pairing_file_load(RC_CONNECT_PAIRING_DIR, &rec)) {
         out->stage = RC_CONNECT_NO_RECORD;
         return out->stage;
     }
@@ -172,16 +312,81 @@ rc_connect_stage rc_connect(unsigned wake_timeout_ms, rc_connect_result *out)
         return out->stage;
     }
 
-    if (!probe_once(rec.host, halyard_discovery_profile_ps5.wake_search_source_port,
-                    &awake, 1500u)) {
+    /*
+     * THE inet_aton QUESTION, asked before anything can hang on the answer. See rc_connect.h: the core
+     * parses every address with inet_aton and this port never has, and the consequence of a wrong
+     * result is not an error but a blocking connect to nowhere.
+     */
+    {
+        struct in_addr by_pton, by_aton;
+
+        memset(&by_pton, 0, sizeof(by_pton));
+        memset(&by_aton, 0, sizeof(by_aton));
+
+        out->pton_ok = (inet_pton(AF_INET, rec.host, &by_pton) == 1);
+        out->aton_ok = (inet_aton(rec.host, &by_aton) != 0);
+        out->aton_matches_pton =
+            (out->pton_ok && out->aton_ok &&
+             memcmp(&by_pton, &by_aton, sizeof(by_pton)) == 0);
+
+        out->host_parsed = out->pton_ok;
+    }
+
+    /*
+     * DOES fcntl ACTUALLY SET A PS3 SOCKET NON-BLOCKING? Tested with calls that cannot block, because
+     * the way to find out by doing I/O is to hang the console, which this has now done twice.
+     *
+     * fcntl is asked to set O_NONBLOCK and then asked to read the flags back. If sockets are not newlib
+     * file descriptors here - which is what SO_NBIO existing suggests - the readback will not carry the
+     * flag, and every poll loop in ports/common that relies on it has been running against a blocking
+     * socket.
+     */
+    {
+        int probe = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
+        if (probe >= 0) {
+            int set_rc = fcntl(probe, F_SETFL, O_NONBLOCK);
+            int flags = fcntl(probe, F_GETFL, 0);
+            int on = 1;
+            int nbio_rc = setsockopt(probe, SOL_SOCKET, SO_NBIO, &on, (socklen_t)sizeof(on));
+
+            out->fcntl_set_rc = set_rc;
+            out->fcntl_readback_nonblock = (flags != -1) && ((flags & O_NONBLOCK) != 0);
+            out->so_nbio_ok = (nbio_rc == 0);
+            (void)close(probe);
+        }
+    }
+
+    SAY(out->aton_matches_pton
+        ? "inet_aton agrees with inet_pton"
+        : "inet_aton DISAGREES with inet_pton - the core parses addresses with inet_aton");
+
+    SAY("unicast SRCH to the recorded address");
+
+    if (probe_once(rec.host, halyard_discovery_profile_ps5.wake_search_source_port, &awake, 1500u)) {
+        out->unicast_replied = 1;
+    } else {
+        /*
+         * The recorded address said nothing. Ask the network at large before concluding the console is
+         * absent: if something answers a broadcast and it is NOT the recorded address, the record is
+         * stale rather than the console missing, and those need completely different fixes.
+         */
+        char seen[HALYARD_DISCOVERY_ADDRESS_MAX];
+
+        if (broadcast_find(seen, sizeof(seen), 2500u)) {
+            out->broadcast_found = 1;
+            out->broadcast_matches = (strcmp(seen, rec.host) == 0);
+        }
         out->stage = RC_CONNECT_NO_CONSOLE;
         return out->stage;
     }
 
+    /* Only meaningful once something actually answered. */
     out->was_asleep = !awake;
 
     if (!awake) {
         started = rc_time_ms();
+
+        SAY("sending WAKEUP");
 
         if (send_wakeup(&rec, out))
             out->wakeups_sent++;
@@ -206,24 +411,89 @@ rc_connect_stage rc_connect(unsigned wake_timeout_ms, rc_connect_result *out)
     out->stage = RC_CONNECT_AWAKE;
 
     /*
+     * PRE-FLIGHT BEFORE THE BLOCKING CALL. See tcp_port_accepts: the core's connect has no deadline, so
+     * entering open() against a port that will not accept is what hung b31.
+     */
+    SAY("pre-flighting the control port with a bounded TCP connect");
+
+    if (!tcp_port_accepts(rec.host, HALYARD_CONTROL_ARM_PORT, 4000u)) {
+        SAY("the control port did not accept - not entering the session open, which cannot time out");
+        return out->stage;
+    }
+    out->tcp_preflight_ok = 1;
+
+    /*
+     * REFUSE TO ENTER open() IF THE CORE WOULD PARSE THE ADDRESS DIFFERENTLY. rc_tcp_connect's connect()
+     * is blocking and unbounded, so a disagreement here is the difference between a report and a locked
+     * console. Better to stop with a finding than to reproduce the hang for a third time.
+     */
+    if (!out->aton_matches_pton) {
+        SAY("refusing to open the session: inet_aton would hand the core a different address,");
+        SAY("and its connect() is blocking with no timeout. This is the hang, not a symptom of it.");
+        return out->stage;
+    }
+
+    /*
      * The control plane: ARM, /sess/init, /sess/ctrl, then the persistent binary channel. All of it is
      * ports/common's, proven against a real PS5 from the 3DS - this contributes nothing but the call.
      */
+    SAY("opening the control session (ARM, /sess/init, /sess/ctrl)");
+
     memset(&session, 0, sizeof(session));
     if (!halyard_control_session_open(&rec, &session))
         return out->stage;
 
     out->stage = RC_CONNECT_SESSION_OPEN;
+    SAY("session open - waiting for SESSION_ID");
 
     {
-        uint64_t deadline = rc_time_ms() + 8000u;
+        /*
+         * Twenty seconds, not eight. b36 watched this console take 12.3 s merely to answer a SRCH after
+         * waking, so a window that would have been generous for an already-awake console is not
+         * necessarily generous here - and reporting "not willing to stream" about one that is still
+         * waking up is a wrong answer rather than a slow one.
+         */
+        uint64_t deadline = rc_time_ms() + 20000u;
+
         while (rc_time_ms() < deadline) {
             halyard_control_event ev;
             memset(&ev, 0, sizeof(ev));
+
             if (!halyard_control_session_service(&session, &ev)) {
                 out->session_error = (int)ev.kind;
                 break;
             }
+
+            if (ev.kind == HALYARD_CONTROL_EVENT_MESSAGE) {
+                out->frames_seen++;
+                if (out->first_type == 0u)
+                    out->first_type = ev.type;
+                out->last_type = ev.type;
+
+                if (ev.type == HALYARD_CTRL_TYPE_HEARTBEAT_REQ)
+                    out->heartbeats++;
+
+                /*
+                 * THE SIGN-IN GATE, and the reference implementation ANSWERS IT rather than giving up.
+                 *
+                 * src/Ripcord.Protocol.Halyard/Session/HalyardStreamingSession.cs is the source of truth
+                 * here, and on TypeLoginPrompt it says "this user is locked, send the passcode" and
+                 * completes a gate that another task is waiting on; the console's verdict then arrives
+                 * as TypeLogin. ports/ripcord-3ds treats the same message as fatal - "this build cannot
+                 * answer one" - which is that port's limitation rather than the protocol's, and copying
+                 * it here would have carried a restriction the reference does not have.
+                 *
+                 * This port cannot answer one YET: ports/common has the message type and the passcode
+                 * field encoding (halyard_sess_fields.h) but no submit path, and a passcode is user
+                 * input this probe has no way to collect. So it stops - but it stops reporting a gate it
+                 * could answer, not a wall.
+                 */
+                if (ev.type == HALYARD_CTRL_TYPE_LOGIN_PROMPT) {
+                    out->login_prompt = 1;
+                    break;
+                }
+            }
+
             if (ev.kind == HALYARD_CONTROL_EVENT_SESSION_READY) {
                 out->stage = RC_CONNECT_SESSION_READY;
                 break;

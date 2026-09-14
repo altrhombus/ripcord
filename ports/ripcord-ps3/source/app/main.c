@@ -803,19 +803,56 @@ static int check_discovery(void)
 #define RC_CONNECT_WAKE_TIMEOUT_MS 30000u
 #endif
 
+/* Printed the moment rc_connect enters a step that can block, so a hang names the call that did not
+ * return rather than leaving the log stopping after the previous check. */
+static void connect_progress(const char *stage_text)
+{
+    ps3_log("       .. %s\n", stage_text);
+}
+
 static int check_connect(void)
 {
     rc_connect_result c;
-    rc_connect_stage stage = rc_connect(RC_CONNECT_WAKE_TIMEOUT_MS, &c);
+    rc_connect_stage stage;
+
+    ps3_log("conn:  starting\n");
+    stage = rc_connect(RC_CONNECT_WAKE_TIMEOUT_MS, connect_progress, &c);
 
     if (stage == RC_CONNECT_NO_RECORD) {
         ps3_log("conn:  no pairing record - skipping\n");
-        ps3_log("       generate one with `ProtocolLab -- register` and copy it to the console;\n");
+        ps3_log("       generate one with `ProtocolLab -- register`, copy it to the console as\n");
+        ps3_log("       pairing.txt - that exact name, which is what the core's loader appends;\n");
         ps3_log("       it is per-console and per-account, so it never belongs in this repository.\n");
         return 0;
     }
 
-    ps3_log("conn:  record loaded; %s\n", c.was_asleep ? "console was in standby" : "console was awake");
+    /*
+     * Only claims what was observed. An earlier version printed "console was awake" off a flag that was
+     * still at its memset default when nothing had answered at all - which read as a successful probe
+     * immediately above a line saying no console answered.
+     */
+    ps3_log("conn:  record loaded; recorded address %s\n",
+            c.host_parsed ? "parses" : "IS NOT A DOTTED QUAD");
+    ps3_log("       fcntl(F_SETFL,O_NONBLOCK)=%d, reads back non-blocking: %s; SO_NBIO: %s\n",
+            c.fcntl_set_rc,
+            c.fcntl_readback_nonblock ? "yes" : "NO - sockets are not newlib fds here",
+            c.so_nbio_ok ? "accepted" : "refused");
+    ps3_log("       inet_pton: %s   inet_aton: %s   agree: %s\n",
+            c.pton_ok ? "ok" : "FAILED",
+            c.aton_ok ? "ok" : "FAILED",
+            c.aton_matches_pton ? "yes" : "NO - the core uses inet_aton everywhere");
+
+    if (c.unicast_replied)
+        ps3_log("       it answered; %s\n", c.was_asleep ? "in standby" : "awake");
+    else if (c.broadcast_found && !c.broadcast_matches)
+        ps3_log("       it did not answer, but a console answered a BROADCAST from a different\n"
+                "       address - the record is stale, not the console missing. Re-register, or\n"
+                "       give the console a reservation so its address stops moving.\n");
+    else if (c.broadcast_found)
+        ps3_log("       it did not answer a unicast SRCH, yet the same address answered a\n"
+                "       broadcast - suspect the source port this binds, not the address.\n");
+    else
+        ps3_log("       nothing answered, unicast or broadcast - console off, or another subnet\n");
 
     if (c.wakeups_sent > 0) {
         ps3_log("       wake credential derived: %s\n", c.credential_ok ? "yes" : "NO");
@@ -832,8 +869,19 @@ static int check_connect(void)
         ps3_log("ok    control session open and the console is willing to stream\n");
         return 0;
     case RC_CONNECT_SESSION_OPEN:
-        ps3_log("       session opened but no SESSION_ID within the deadline (event %d)\n",
-                c.session_error);
+        ps3_log("       %d control frame(s) while waiting; first 0x%04x, last 0x%04x, %d heartbeat(s)\n",
+                c.frames_seen, c.first_type, c.last_type, c.heartbeats);
+        if (c.login_prompt) {
+            ps3_log("       the console wants a sign-in passcode. The .NET client answers this with\n");
+            ps3_log("       LOGIN_SUBMIT; this port has the message type but no submit path and no\n");
+            ps3_log("       way to collect a passcode, so for now: sign in on the console, leave it\n");
+            ps3_log("       on the home screen, and re-run.\n");
+        } else if (c.frames_seen == 0) {
+            ps3_log("FAIL  the channel opened and the console said nothing at all - not even a\n");
+            ps3_log("      heartbeat, which it normally sends within seconds. Suspect the channel.\n");
+        } else {
+            ps3_log("FAIL  the channel is live (frames arriving) but no SESSION_ID in 20 s\n");
+        }
         return 1;
     case RC_CONNECT_AWAKE:
         ps3_log("FAIL  console is awake but the control session would not open\n");
