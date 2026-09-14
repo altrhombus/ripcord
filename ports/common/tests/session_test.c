@@ -396,6 +396,72 @@ static void test_end_to_end_field_pipeline(void)
     }
 }
 
+/*
+ * The login-submit payload, and in particular the property that cannot be seen on the wire.
+ *
+ * halyard_ctrl_message.h states it: the field counter is one running per-connection value, the five
+ * /sess/ctrl headers consume 0-4, and every retry must advance it because reusing one reuses an IV under
+ * the same key. A build that got this wrong would produce a perfectly acceptable-looking frame, the
+ * console would answer it normally, and nothing would ever complain - which is exactly the kind of
+ * defect worth a host test rather than a hardware run.
+ */
+static void test_login_submit_payload(void)
+{
+    static const uint8_t nonce[16] = {
+        0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff
+    };
+    static const uint8_t companion[16] = {
+        0x0f, 0x1e, 0x2d, 0x3c, 0x4b, 0x5a, 0x69, 0x78, 0x87, 0x96, 0xa5, 0xb4, 0xc3, 0xd2, 0xe1, 0xf0
+    };
+    halyard_control_field ctx;
+    uint8_t first[HALYARD_SESS_LOGIN_PIN_MAX];
+    uint8_t again[HALYARD_SESS_LOGIN_PIN_MAX];
+    uint8_t retry[HALYARD_SESS_LOGIN_PIN_MAX];
+    uint8_t plain[HALYARD_SESS_LOGIN_PIN_MAX];
+    size_t n;
+
+    if (halyard_control_field_init(&ctx, nonce, companion, 0, HALYARD_VERSION_SELECTOR_PS5) != 0) {
+        CHECK(0, "control field init refused - constants not bundled in this build?");
+        return;
+    }
+
+    /* The first submit uses counter 5: the five /sess/ctrl headers consumed 0-4. */
+    n = halyard_ctrl_build_login_submit(&ctx, HALYARD_SESS_COUNTER_LOGIN_PIN_START,
+                                        "1234", 4, first, sizeof(first));
+    CHECK(n == 4, "login submit payload should be as long as the passcode, got %u", (unsigned)n);
+
+    /* It is not the plaintext. A build that forgot to encrypt would still send four bytes. */
+    CHECK(memcmp(first, "1234", 4) != 0, "the passcode was sent in clear");
+
+    /* Deterministic at a given counter - the same passcode encrypts identically. */
+    n = halyard_ctrl_build_login_submit(&ctx, HALYARD_SESS_COUNTER_LOGIN_PIN_START,
+                                        "1234", 4, again, sizeof(again));
+    CHECK(n == 4 && memcmp(first, again, 4) == 0,
+          "the same passcode at the same counter should encrypt identically");
+
+    /* THE POINT OF THIS TEST: a retry advances the counter, so the ciphertext differs even though the
+     * passcode does not. Equal ciphertext here would mean a reused IV. */
+    n = halyard_ctrl_build_login_submit(&ctx, HALYARD_SESS_COUNTER_LOGIN_PIN_START + 1u,
+                                        "1234", 4, retry, sizeof(retry));
+    CHECK(n == 4 && memcmp(first, retry, 4) != 0,
+          "a retry at the next counter must not reproduce the first submit's ciphertext");
+
+    /* And it round-trips at the counter it was encrypted with. */
+    halyard_control_field_decrypt(&ctx, HALYARD_SESS_COUNTER_LOGIN_PIN_START, first, plain, 4);
+    CHECK(memcmp(plain, "1234", 4) == 0, "the payload should decrypt back to the passcode");
+
+    /* Refusals. The console accepts digits and nothing else, so anything else is refused rather than
+     * encrypted - spending a counter on a frame that can only be rejected. */
+    CHECK(halyard_ctrl_build_login_submit(&ctx, 5u, "12a4", 4, first, sizeof(first)) == 0,
+          "a non-digit passcode should be refused");
+    CHECK(halyard_ctrl_build_login_submit(&ctx, 5u, "", 0, first, sizeof(first)) == 0,
+          "an empty passcode should be refused");
+    CHECK(halyard_ctrl_build_login_submit(&ctx, 5u, "1234", 4, first, 2) == 0,
+          "a buffer too small for the payload should be refused");
+    CHECK(halyard_ctrl_build_login_submit(NULL, 5u, "1234", 4, first, sizeof(first)) == 0,
+          "a NULL cipher context should be refused");
+}
+
 int main(void)
 {
     test_base64();
@@ -406,6 +472,7 @@ int main(void)
     test_sess_response_parse();
     test_control_arm();
     test_end_to_end_field_pipeline();
+    test_login_submit_payload();
 
     printf("\n%d passed, %d failed\n", g_passed, g_failed);
     return g_failed == 0 ? 0 : 1;

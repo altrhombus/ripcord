@@ -68,6 +68,14 @@ ports/*/tests/build/
 ## is the one that does. Kept here beside the other ports/ rules rather than in the port that needed
 ## it first, so a working tree cannot lose the fetch just by standing on a branch without that port.
 ports/*/third-party/
+
+## Ripcord: per-port build output that is not under a build/ directory. These rules live on the shared
+## branch rather than only on the branch of the port that produces them - a `git add -A` run here while
+## a port's artifacts happen to be on disk will otherwise commit them, which is exactly how 2.5 MB of
+## PS3 binaries once reached this branch.
+ports/*/.buildno
+*.self
+*.pkg
 *.3dsx
 *.vpk
 *.smdh

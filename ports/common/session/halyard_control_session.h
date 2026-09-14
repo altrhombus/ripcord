@@ -126,6 +126,36 @@ int halyard_control_session_open(const halyard_pairing_record *record, halyard_c
  */
 int halyard_control_session_service(halyard_control_session *session, halyard_control_event *out_event);
 
+/*
+ * ANSWER THE SIGN-IN GATE: encrypt `pin` as a control field and send it as TYPE_LOGIN_SUBMIT.
+ *
+ * A console whose account is locked sends TYPE_LOGIN_PROMPT and then, per halyard_ctrl_message.h,
+ * "silently drops every stream handshake" until this is answered. Nothing about that is visible except a
+ * session that opens, stays healthy, and never reaches SESSION_ID - which is precisely the state
+ * ports/ripcord-ps3 reached against a real console, and could not distinguish from a slow one.
+ *
+ * PORTED FROM THE REFERENCE, NOT FROM ANOTHER PORT. src/Ripcord.Protocol.Halyard/Session/
+ * HalyardStreamingSession.cs is what this follows; ports/ripcord-3ds treats the prompt as fatal, which
+ * is that port's limitation rather than the protocol's.
+ *
+ * THE COUNTER ADVANCES ON EVERY CALL, INCLUDING RETRIES, and that is the part to be careful with. It is
+ * one running per-connection value: the five /sess/ctrl headers consumed 0-4, so the first submit is 5,
+ * and the reference is explicit that "each retry MUST advance it - a fresh IV per submit, never reused".
+ * Reusing a counter reuses an IV under the same key, which is a real key-recovery bug and looks like
+ * nothing at all on the wire. This function takes the value from the session and advances it there; no
+ * caller should be passing one in.
+ *
+ * The caller is expected to be watching for the console's answer already - TYPE_LOGIN carries its
+ * verdict and SESSION_ID means outright success. The reference arms that wait BEFORE submitting,
+ * because on a LAN the console replies in milliseconds and a result that arrives while the listener is
+ * still being set up is simply lost.
+ *
+ * `pin` is ASCII digits. Returns 1 if the frame was sent, 0 on a bad passcode, a session without
+ * established control crypto, or a send failure.
+ */
+int halyard_control_session_submit_login(halyard_control_session *session,
+                                         const char *pin, size_t pin_length);
+
 /* Sends a binary control frame. Returns 1 on success, 0 on failure. */
 int halyard_control_session_send(halyard_control_session *session, unsigned type,
                                  const uint8_t *payload, size_t payload_length);

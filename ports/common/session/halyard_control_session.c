@@ -510,6 +510,41 @@ int halyard_control_session_service(halyard_control_session *session, halyard_co
     return 1;
 }
 
+int halyard_control_session_submit_login(halyard_control_session *session,
+                                         const char *pin, size_t pin_length)
+{
+    /*
+     * Sized from the field encoding rather than from the longest passcode anyone expects: the plaintext
+     * builder is the authority on how much it needs, and a buffer chosen from a guess about PIN length
+     * is a truncation waiting for a console that asks for more digits.
+     */
+    uint8_t plain[HALYARD_SESS_LOGIN_PIN_MAX];
+    size_t plain_length;
+    uint64_t counter;
+
+    if (session == NULL || session->sock < 0 || pin == NULL)
+        return 0;
+
+    /*
+     * Take the counter and advance it in the same breath, so a retry cannot reuse one even if the caller
+     * loops. See the header: a repeated counter is a repeated IV under the same key.
+     */
+    counter = session->next_counter++;
+
+    plain_length = halyard_ctrl_build_login_submit(&session->ctrl, counter, pin, pin_length,
+                                                   plain, sizeof(plain));
+    if (plain_length == 0u)
+        return 0;
+
+    {
+        int sent = halyard_control_session_send(session, HALYARD_CTRL_TYPE_LOGIN_SUBMIT,
+                                                plain, plain_length);
+        /* The passcode was in this buffer in clear before it was encrypted in place. */
+        memset(plain, 0, sizeof(plain));
+        return sent;
+    }
+}
+
 void halyard_control_session_close(halyard_control_session *session)
 {
     if (session == NULL)

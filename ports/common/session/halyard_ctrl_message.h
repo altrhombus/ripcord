@@ -22,6 +22,9 @@
 #ifndef HALYARD_CTRL_MESSAGE_H
 #define HALYARD_CTRL_MESSAGE_H
 
+#include "../halyard/halyard_v1.h"
+#include "halyard_sess_fields.h"
+
 #include <stddef.h>
 #include <stdint.h>
 
@@ -43,6 +46,22 @@
 
 /* Console -> client: session-ready. After a login this is what gates bringing the stream up. */
 #define HALYARD_CTRL_TYPE_SESSION_ID     0x0033u
+
+/*
+ * Console -> client: the stream service is ready for its Takion association. Empty payload.
+ *
+ * PRESENT SO A PORT CAN RECOGNISE IT, NOT BECAUSE A LAN PORT SHOULD WAIT FOR IT. The reference
+ * implementation's own note is that only the rendezvous route appears to need this: there the console
+ * sends it after the client has probed the A/V leg, and the client opens the stream association within
+ * milliseconds - "whereas a LAN console answers the SESSION_REQUEST whether or not anything like this
+ * has passed", and its LAN sessions reach SESSION_ID and the probe without this ever arriving.
+ *
+ * Every port in this tree is LAN-only, so a port that blocks on this would wait forever for something
+ * the route does not send. It is here so an unexpected frame is named in a log rather than reported as
+ * an unknown type, and so the table matches the reference's. **[X]** what the console requires before
+ * sending it is unknown on the reference side too.
+ */
+#define HALYARD_CTRL_TYPE_STREAM_READY   0x0034u
 
 /* Client -> console: put the console into rest mode on this disconnect (empty payload); console acks
  * with TYPE_REST_MODE_ACK. Omit to leave the console awake. */
@@ -69,5 +88,24 @@ size_t halyard_ctrl_message_build(unsigned type, const uint8_t *payload, size_t 
  */
 size_t halyard_ctrl_message_parse(const uint8_t *data, size_t length,
                                   unsigned *out_type, const uint8_t **out_payload, size_t *out_payload_length);
+
+/*
+ * Builds the TYPE_LOGIN_SUBMIT payload: the passcode's ASCII digits, encrypted as a control field at
+ * `counter`. Returns the payload length, or 0 if the passcode is not digits, is longer than
+ * HALYARD_SESS_LOGIN_PIN_MAX, or `out` is too small.
+ *
+ * PURE, AND SEPARATE FROM SENDING IT, so the part with a security property can be tested without a
+ * socket. That property is the counter: it is one running per-connection value, the five /sess/ctrl
+ * headers consume 0-4, and the reference implementation is explicit that each retry must advance it -
+ * "a fresh IV per submit, never reused". Encrypting two passcodes at the same counter reuses an IV under
+ * one key, which is a real key-recovery bug that looks like nothing whatsoever on the wire, so it is
+ * worth a test that can run on any machine.
+ *
+ * The caller owns the counter. halyard_control_session_submit_login takes it from the session and
+ * advances it there, which is what every port should use; this exists underneath it.
+ */
+size_t halyard_ctrl_build_login_submit(const halyard_control_field *ctx, uint64_t counter,
+                                       const char *pin, size_t pin_length,
+                                       uint8_t *out, size_t out_size);
 
 #endif /* HALYARD_CTRL_MESSAGE_H */
