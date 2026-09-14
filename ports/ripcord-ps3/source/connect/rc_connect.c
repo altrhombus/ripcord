@@ -489,12 +489,60 @@ static int senkusha_legs(halyard_control_session *session, rc_connect_result *ou
 static int stream_session_exchange(const halyard_pairing_record *rec,
                                    halyard_control_session *session, rc_connect_result *out)
 {
+    /*
+     * The versions this client is willing to speak, taken from the .NET reference
+     * (src/Ripcord.Protocol.Halyard.Takion/TakionSessionNegotiator.cs). 12 is absent there and absent
+     * here; the gap is the reference's and is reproduced rather than tidied.
+     */
+    static const uint32_t kSupportedVersions[] = { 9u, 10u, 11u, 13u, 14u, 15u, 16u, 17u };
+
     uint8_t handshake_key[16];
     halyard_launch_spec_params params;
-    size_t spec_len, b64_len, request_len;
+    uint8_t version_msg[64];
+    size_t spec_len, b64_len, request_len, version_len;
     const uint8_t *reply = NULL;
     size_t reply_len = 0u;
+    uint32_t version = TAKION_CLIENT_VERSION;
     int ok = 0;
+
+    /*
+     * NEGOTIATE THE VERSION ON THIS CHANNEL FIRST, and use what the console picks.
+     *
+     * b51 found this the expensive way. The ECDH CURVE is chosen from the negotiated version, not from
+     * the one we would like - so assuming our own top version generates a key on a curve the console may
+     * not have chosen. The failure surfaces nowhere near the cause: the console's reply arrives, its
+     * ecdhSignature VERIFIES (an HMAC over whatever bytes it sent, which says nothing about the curve),
+     * and only then is its public point rejected for being on a different curve. It reads like a crypto
+     * fault and is a negotiation one.
+     *
+     * The senkusha channel's version exchange does not count for this. That one is part of senkusha's
+     * own bring-up; this is the stream channel, and the reference asks again here.
+     */
+    version_len = takion_control_build_protocol_version_request(
+        kSupportedVersions, sizeof(kSupportedVersions) / sizeof(kSupportedVersions[0]),
+        version_msg, sizeof(version_msg));
+    if (version_len > 0u
+        && takion_channel_send(&g_stream_channel, TAKION_CHANNEL_PROTOCOL_VERSION,
+                               version_msg, version_len)) {
+        const uint8_t *ack = NULL;
+        size_t ack_len = 0u;
+
+        if (takion_channel_await_control(&g_stream_channel, TAKION_CONTROL_PROTOCOL_VERSION_ACK,
+                                         RC_TAKION_REPLY_MS, service_control_tick, session,
+                                         &ack, &ack_len)) {
+            uint32_t agreed = 0u;
+
+            out->stream_version_acked = 1;
+            /*
+             * A missing version field is not an error - fall back to what we asked for, which is what
+             * the reference does. Deferring to a console that names one costs nothing and is the only
+             * thing that keeps the curve choice honest if it ever picks lower.
+             */
+            if (takion_control_parse_protocol_version_ack(ack, ack_len, &agreed) && agreed != 0u)
+                version = agreed;
+        }
+    }
+    out->stream_version = (unsigned)version;
 
     if (!rc_random_bytes(handshake_key, sizeof(handshake_key)))
         return 0;
@@ -532,7 +580,7 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
     out->launch_spec_b64_bytes = (unsigned)b64_len;
     out->stream_build_step = RC_STREAM_STEP_B64;
 
-    request_len = takion_session_negotiator_begin(&g_negotiator, TAKION_CLIENT_VERSION, handshake_key,
+    request_len = takion_session_negotiator_begin(&g_negotiator, version, handshake_key,
                                                   g_launch_spec_b64, b64_len,
                                                   rc_random_rng_callback, NULL,
                                                   g_session_request, sizeof(g_session_request));
