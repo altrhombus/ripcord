@@ -158,6 +158,9 @@ int takion_session_negotiator_accept_reply(takion_session_negotiator *ctx,
         ctx->last_reject_reason = TAKION_SESSION_REJECT_DERIVE;
         ctx->last_ecdh_step = rc_ecdh_last_error_step();
         ctx->last_ecdh_code = rc_ecdh_last_error_code();
+        ctx->last_derive_fingerprint = rc_ecdh_last_peer_fingerprint();
+        ctx->last_derive_private_length = rc_ecdh_last_private_length();
+        ctx->last_derive_curve = rc_ecdh_last_curve();
     }
 
     memset(shared, 0, sizeof(shared));

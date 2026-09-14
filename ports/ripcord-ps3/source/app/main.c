@@ -963,6 +963,13 @@ static int check_connect(void)
                 if (!c.control_point_ok)
                     ps3_log("      control failed at step %d code %d - so this is the call site, not the key\n",
                             c.control_step, c.control_code);
+                ps3_log("      derive saw fingerprint %08lx, the copy is %08lx - %s\n",
+                        c.derive_fingerprint, c.copy_fingerprint,
+                        (c.derive_fingerprint == c.copy_fingerprint)
+                            ? "SAME BYTES, so the difference is the call, not the data"
+                            : "DIFFERENT BYTES - the pointer went stale under the derivation");
+                ps3_log("      derive's view: curve %u, our private key %u bytes\n",
+                        c.derive_curve, c.derive_private_length);
                 ps3_log("      peer point, for off-console analysis:\n      ");
                 for (i = 0u; i < c.peer_key_length; i++) {
                     ps3_log("%02x", c.peer_key[i]);

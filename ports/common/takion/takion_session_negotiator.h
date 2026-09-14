@@ -110,6 +110,13 @@ typedef struct {
      * the backend's own code, unmapped - see rc_ecdh.h. */
     int last_ecdh_step;
     int last_ecdh_code;
+
+    /* What the derivation was handed, recorded inside it. Compare last_derive_fingerprint against a
+     * fingerprint of last_peer_key: equal means the same bytes reached both, and the difference is the
+     * environment rather than the data. */
+    unsigned long last_derive_fingerprint;
+    size_t last_derive_private_length;
+    unsigned last_derive_curve;
 } takion_session_negotiator;
 
 /* Maps a negotiated protocol version to its curve: 0x0d-0x11 -> P-521, anything else -> P-256. */
