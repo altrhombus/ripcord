@@ -555,8 +555,10 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
     out->stream_build_step = RC_STREAM_STEP_REPLY;
     out->session_reply_bytes = (unsigned)reply_len;
     if (!takion_session_negotiator_accept_reply(&g_negotiator, reply, reply_len,
-                                                rc_random_rng_callback, NULL))
+                                                rc_random_rng_callback, NULL)) {
+        out->reply_reject_reason = g_negotiator.last_reject_reason;
         goto done;
+    }
 
     out->stream_keys_derived = 1;
     ok = 1;
