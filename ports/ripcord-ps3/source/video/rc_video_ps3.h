@@ -27,6 +27,11 @@ typedef struct {
     int buffers;
     int ok;
     int video_state;    /* whatever videoGetState reported, recorded rather than judged - see the .c */
+
+    /* sysModuleLoad's return for each PRX the display needs. Recorded rather than judged: "already
+     * loaded" is an error return and a perfectly good outcome. */
+    int gcm_module;
+    int sysutil_module;
     int last_error;
     const char *failed_at;  /* the step that refused; NULL on success */
 } rc_video_info;
