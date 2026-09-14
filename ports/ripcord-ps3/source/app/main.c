@@ -928,12 +928,15 @@ static int check_connect(void)
                         c.decoded_errors);
                 if (us > 0UL)
                     ps3_log("       %lu us per picture on the PPE - the budget at 30 fps is 33333 us\n", us);
-                if (c.blits > 0u)
-                    ps3_log("       ON SCREEN: %u picture(s) blitted, %u us average, %u us worst\n"
-                            "       decode + blit is %lu us against the same 33333 us budget\n",
-                            c.blits, c.blit_avg_us, c.blit_worst_us, us + (unsigned long)c.blit_avg_us);
-                else
+                if (c.blits > 0u) {
+                    ps3_log("       ON SCREEN: %u picture(s) blitted, %u us average, %u us worst;"
+                            " %u dropped because the display was busy\n",
+                            c.blits, c.blit_avg_us, c.blit_worst_us, c.pictures_dropped);
+                    ps3_log("       decode + blit is %lu us against the same 33333 us budget\n",
+                            us + (unsigned long)c.blit_avg_us);
+                } else {
                     ps3_log("       nothing reached the screen - the display was not open\n");
+                }
                 if (c.decoded_errors > 0)
                     ps3_log("       last decoder error 0x%x\n", (unsigned)c.decoded_last_error);
                 if (c.decoded_pictures < c.decoded_fed)
