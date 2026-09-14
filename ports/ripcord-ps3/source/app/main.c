@@ -1569,12 +1569,21 @@ int main(void)
             }
         }
     }
-    rc_spu_yuv_exit();
-    rc_video_close();
-    rc_random_exit();
+    /*
+     * THE LOGS CLOSE FIRST, and the order is not tidiness.
+     *
+     * b107 ran the whole stream successfully and then froze in the teardown below, which meant the last
+     * thing written was whatever happened to be flushed - and the teardown is precisely where this port
+     * has now hung twice. Anything that can hang belongs AFTER the evidence is on disk, so that a frozen
+     * console costs a reboot rather than the run that explains it.
+     */
     lv2_log_close();
     rc_log_close();
     rc_netlog_close();
+
+    rc_spu_yuv_exit();
+    rc_video_close();
+    rc_random_exit();
 
     return failures == 0 ? 0 : 1;
 }
