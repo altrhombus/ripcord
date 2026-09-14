@@ -61,6 +61,15 @@ size_t halyard_sess_field_os_type_plaintext(int major, int minor, char *buf, siz
 /* RP-StartBitrate / RP-StreamingType plaintext: a 4-byte little-endian integer - see the [X] note above. */
 void halyard_sess_field_int32le_plaintext(int32_t value, uint8_t out[4]);
 
+/*
+ * A BOUND THIS PORT SET, NOT ONE THE PROTOCOL STATES. The plaintext is simply the digits, so nothing in
+ * the wire format caps their number, and no capture we hold shows the console refusing a length. C
+ * callers need a buffer size, though, and the alternative - every caller inventing one - is how a
+ * truncated passcode ends up being reported as a wrong passcode. Generous on purpose: if a console ever
+ * asks for more than this, raise it here rather than at a call site.
+ */
+#define HALYARD_SESS_LOGIN_PIN_MAX 32u
+
 /* The login passcode plaintext: its digits as ASCII characters, nothing more (e.g. "1234" -> 31 32 33
  * 34). Returns the plaintext length (equal to pin_length), or 0 if pin contains a non-digit or
  * buf_size is too small - the console will never accept anything else, so this refuses to encrypt it. */
