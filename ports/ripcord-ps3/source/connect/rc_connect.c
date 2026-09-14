@@ -298,6 +298,7 @@ rc_connect_stage rc_connect(unsigned wake_timeout_ms, rc_connect_log_fn log,
 
     memset(out, 0, sizeof(*out));
     memset(&rec, 0, sizeof(rec));
+    out->login_verdict = -1;  /* "never arrived" is the honest default, and 0 already means accepted */
 
     SAY("loading the pairing record");
 
@@ -504,6 +505,27 @@ rc_connect_stage rc_connect(unsigned wake_timeout_ms, rc_connect_log_fn log,
                     out->heartbeats++;
 
                 /*
+                 * THE CONSOLE'S VERDICT ON THE PASSCODE, which b41 could not read and so had to report
+                 * a wrong passcode and a silent console as the same thing.
+                 *
+                 * ports/common now decrypts the console's direction, so the one byte is here. The .NET
+                 * side reads plaintext[0] the same way, and established both values by controlled
+                 * experiment - see HALYARD_CTRL_LOGIN_ACCEPTED.
+                 */
+                if (ev.type == HALYARD_CTRL_TYPE_LOGIN && ev.plaintext_length > 0u) {
+                    if (ev.plaintext[0] == HALYARD_CTRL_LOGIN_ACCEPTED)
+                        out->login_verdict = 0;
+                    else if (ev.plaintext[0] == HALYARD_CTRL_LOGIN_REJECTED)
+                        out->login_verdict = 1;
+                    else
+                        out->login_verdict = 2;  /* a third value nobody has seen - say so, don't round it */
+
+                    /* A rejected passcode will not become accepted by waiting out the deadline. */
+                    if (out->login_verdict != 0)
+                        break;
+                }
+
+                /*
                  * THE SIGN-IN GATE, and the reference implementation ANSWERS IT rather than giving up.
                  *
                  * src/Ripcord.Protocol.Halyard/Session/HalyardStreamingSession.cs is the source of truth
@@ -550,11 +572,9 @@ rc_connect_stage rc_connect(unsigned wake_timeout_ms, rc_connect_log_fn log,
                      * loop already had was sized for a console still waking up - so there is room, and
                      * granting more would only slow down the "it never answered" case.
                      *
-                     * What this port CANNOT do yet is read the console's verdict. That arrives as
-                     * TypeLogin (0x0005) carrying one byte - 0x00 accepted, 0x01 rejected - and decrypting
-                     * it needs the console's own receive-direction counter, which ports/common does not
-                     * track yet (it has the send counter only). So a wrong passcode here looks exactly like
-                     * silence, and the log must not claim otherwise.
+                     * The console's verdict arrives as LOGIN (0x0005) carrying one byte, and is handled
+                     * above - ports/common decrypts the console's direction now, so a wrong passcode is
+                     * no longer indistinguishable from silence.
                      */
                     continue;
                 }
