@@ -317,6 +317,69 @@ static void run_control_verifier(void)
                "the counters distinguish some failures from all of them");
 }
 
+/*
+ * Congestion feedback. Two things are worth pinning and only the first is obvious.
+ *
+ * The layout, because it was derived from a capture and a transposed byte would be invisible. And the
+ * SHARED KEY POSITION: control DATA, SACKs and congestion packets all draw from one advancing sequence,
+ * so sealing a congestion packet must move the counter that control sealing reads. A separate counter
+ * would repeat a position, and a repeated position is a repeated GMAC nonce under one key.
+ */
+static void run_congestion(void)
+{
+    static const uint8_t key[16] = {
+        0x00,0x11,0x22,0x33,0x44,0x55,0x66,0x77,0x88,0x99,0xaa,0xbb,0xcc,0xdd,0xee,0xff
+    };
+    static const uint8_t iv[16] = {
+        0x0f,0x1e,0x2d,0x3c,0x4b,0x5a,0x69,0x78,0x87,0x96,0xa5,0xb4,0xc3,0xd2,0xe1,0xf0
+    };
+    takion_control_sealer sealer;
+    uint8_t pkt[TAKION_CONGESTION_PACKET_SIZE];
+    uint8_t control[40];
+    size_t n;
+
+    n = takion_congestion_build(351ul, 7ul, pkt, sizeof(pkt));
+    seal_check(n == TAKION_CONGESTION_PACKET_SIZE, "a congestion packet is 15 bytes");
+    seal_check(pkt[0] == 0x05u, "base type 5 at offset 0");
+    seal_check(pkt[1] == 0u && pkt[2] == 0u, "bytes 1-2 are zero, as every observed packet has them");
+    seal_check(pkt[3] == 1u && pkt[4] == 0x5fu, "received is big-endian u16 at 3 (351 = 0x015f)");
+    seal_check(pkt[5] == 0u && pkt[6] == 7u, "lost is big-endian u16 at 5");
+
+    seal_check(takion_congestion_build(0ul, 0ul, pkt, sizeof(pkt) - 1u) == 0u,
+               "a buffer too small is refused rather than partly filled");
+
+    /* Saturation, not wraparound: 70000 must not become 4464. */
+    (void)takion_congestion_build(70000ul, 70000ul, pkt, sizeof(pkt));
+    seal_check(pkt[3] == 0xffu && pkt[4] == 0xffu, "an over-large count saturates rather than wrapping");
+
+    /* The shared counter. */
+    takion_control_sealer_init(&sealer, key, iv);
+    seal_check(sealer.key_pos == 0u, "the counter starts at 0");
+
+    memset(control, 0xa5, sizeof(control));
+    takion_control_sealer_seal(&sealer, control, sizeof(control));
+    seal_check(sealer.key_pos == 48u, "a 40-byte control packet advances it to 48");
+
+    takion_control_sealer_seal_congestion(&sealer, pkt, sizeof(pkt));
+    seal_check(sealer.key_pos == 48u + 16u,
+               "and a 15-byte congestion packet advances the SAME counter, to 64 - a separate one"
+               " would repeat a GMAC nonce");
+
+    /* The congestion tag goes at 7, not at control's 5. */
+    {
+        uint8_t before[TAKION_CONGESTION_PACKET_SIZE];
+
+        (void)takion_congestion_build(1ul, 0ul, pkt, sizeof(pkt));
+        memcpy(before, pkt, sizeof(before));
+        takion_control_sealer_seal_congestion(&sealer, pkt, sizeof(pkt));
+        seal_check(memcmp(pkt + TAKION_CONGESTION_TAG_OFFSET,
+                          before + TAKION_CONGESTION_TAG_OFFSET, 4) != 0,
+                   "a tag was written at offset 7");
+        seal_check(pkt[0] == 0x05u && pkt[3] == before[3] && pkt[4] == before[4],
+                   "...and the type and counts were not disturbed by it");
+    }
+}
+
 int main(int argc, char **argv)
 {
     const char *path = (argc > 1) ? argv[1] : "vectors/stream-crypto.kat";
@@ -363,6 +426,7 @@ int main(int argc, char **argv)
 
     run_control_sealer();
     run_control_verifier();
+    run_congestion();
 
     printf("\n%d passed, %d failed\n", g_passed, g_failed);
     if (g_passed == 0) {
