@@ -137,7 +137,7 @@ int rc_spu_yuv_init(void)
 
 unsigned rc_spu_yuv_convert(const uint8_t *y, const uint8_t *u, const uint8_t *v,
                             int y_stride, int uv_stride, int width, int height,
-                            uint32_t *dst, int dst_pitch)
+                            uint32_t *dst, int dst_pitch, int dst_width, int dst_height)
 {
     uint64_t t0, deadline;
     int rows_each;
@@ -146,7 +146,9 @@ unsigned rc_spu_yuv_convert(const uint8_t *y, const uint8_t *u, const uint8_t *v
 
     if (!s_ready || s_spes <= 0 || width <= 0 || height <= 0)
         return 0u;
-    if ((unsigned)width > RC_SPU_YUV_MAX_WIDTH)
+    if ((unsigned)width > RC_SPU_YUV_MAX_WIDTH || (unsigned)dst_width > RC_SPU_YUV_MAX_DST_WIDTH)
+        return 0u;
+    if (dst_width <= 0 || dst_height <= 0)
         return 0u;
 
     t0 = rc_tick();
@@ -155,37 +157,46 @@ unsigned rc_spu_yuv_convert(const uint8_t *y, const uint8_t *u, const uint8_t *v
         s_sequence += 2u;   /* never collide with the phase values the SPE also writes */
 
     /*
-     * Strips must start on an EVEN row. 4:2:0 chroma is shared by a row pair, so a strip beginning on an
-     * odd row would take the wrong chroma line for its first row - a picture correct in bands and wrong
-     * at every boundary, which is the kind of fault that looks like a decoder problem.
+     * Strips are divided by OUTPUT row now, and the even-row rule no longer applies to them.
+     *
+     * It used to: a strip starting on an odd SOURCE row takes the wrong chroma line. With scaling the
+     * SPE computes its own source row from the output row, so every row - first in a strip or not -
+     * derives its chroma the same way. The constraint moved into the kernel where the mapping lives,
+     * which is the right place for it, and keeping a stale evenness rule here would silently misalign
+     * strips whenever the scale factor is not an integer.
      */
-    rows_each = ((height / s_spes) + 1) & ~1;
-    if (rows_each < 2)
-        rows_each = 2;
+    rows_each = (dst_height + s_spes - 1) / s_spes;
+    if (rows_each < 1)
+        rows_each = 1;
 
     outstanding = 0;
     for (i = 0; i < s_spes; i++) {
         int first = i * rows_each;
         int rows = rows_each;
 
-        if (first >= height)
+        if (first >= dst_height)
             break;
-        if (first + rows > height)
-            rows = height - first;
-        rows &= ~1;                 /* keep every strip an even number of rows */
+        if (first + rows > dst_height)
+            rows = dst_height - first;
         if (rows <= 0)
             break;
 
-        s_job[i].y_ea = EA(y + (size_t)first * (size_t)y_stride);
-        s_job[i].u_ea = EA(u + (size_t)(first / 2) * (size_t)uv_stride);
-        s_job[i].v_ea = EA(v + (size_t)(first / 2) * (size_t)uv_stride);
+        /* The planes are handed over at row ZERO. The SPE maps output rows to source rows itself, so
+         * pre-offsetting here would be the same arithmetic in two places with a chance to disagree. */
+        s_job[i].y_ea = EA(y);
+        s_job[i].u_ea = EA(u);
+        s_job[i].v_ea = EA(v);
         s_job[i].dst_ea = EA((uint8_t *)dst + (size_t)first * (size_t)dst_pitch);
         s_job[i].done_ea = EA(&s_done[(size_t)i * DONE_STRIDE_WORDS]);
         s_job[i].y_stride = (uint32_t)y_stride;
         s_job[i].uv_stride = (uint32_t)uv_stride;
         s_job[i].dst_stride = (uint32_t)dst_pitch;
-        s_job[i].width = (uint32_t)width;
-        s_job[i].rows = (uint32_t)rows;
+        s_job[i].src_width = (uint32_t)width;
+        s_job[i].src_height = (uint32_t)height;
+        s_job[i].dst_width = (uint32_t)dst_width;
+        s_job[i].dst_height = (uint32_t)dst_height;
+        s_job[i].first_dst_row = (uint32_t)first;
+        s_job[i].dst_rows = (uint32_t)rows;
         s_job[i].sequence = s_sequence;
 
         s_done[(size_t)i * DONE_STRIDE_WORDS] = 0u;

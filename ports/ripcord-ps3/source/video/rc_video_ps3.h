@@ -102,6 +102,9 @@ void rc_video_verify_get(int *checked, int *match, uint64_t *spu_hash, uint64_t 
 /* How the flip-readiness check has been answering - see rc_video_present_ready. */
 void rc_video_flip_stats(unsigned *calls, unsigned *busy, unsigned *last_status);
 
+/* The rectangle the last picture was scaled into, and the display it sits on. */
+void rc_video_scale_info(int *scaled_w, int *scaled_h, int *display_w, int *display_h);
+
 void rc_video_close(void);
 
 #endif /* RC_VIDEO_PS3_H */
