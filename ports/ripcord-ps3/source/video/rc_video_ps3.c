@@ -38,6 +38,14 @@ static int s_current;
 static rc_video_info s_info;
 static int s_open;
 static int s_gcm_module;
+/*
+ * b105 dropped 890 of 891 pictures on "the display was busy" after the first frame flipped. The raw
+ * status the check is reading is recorded so the next run says whether the flip never completes or the
+ * question is being asked wrongly - two very different faults behind one symptom.
+ */
+static unsigned s_ready_calls;
+static unsigned s_busy_calls;
+static unsigned s_last_flip_status;
 static int s_sysutil_module;
 
 static int fail(rc_video_info *out, const char *where, int code)
@@ -221,13 +229,32 @@ void rc_video_clear_all(uint32_t colour)
 
 int rc_video_present_ready(void)
 {
+    u32 status;
+
     if (!s_open)
         return 0;
+
+    status = gcmGetFlipStatus();
+    s_last_flip_status = (unsigned)status;
+    s_ready_calls++;
+
     /* Zero means the flip has completed. Reset it here, where the answer is consumed. */
-    if (gcmGetFlipStatus() != 0)
+    if (status != 0) {
+        s_busy_calls++;
         return 0;
+    }
     gcmResetFlipStatus();
     return 1;
+}
+
+void rc_video_flip_stats(unsigned *calls, unsigned *busy, unsigned *last_status)
+{
+    if (calls != NULL)
+        *calls = s_ready_calls;
+    if (busy != NULL)
+        *busy = s_busy_calls;
+    if (last_status != NULL)
+        *last_status = s_last_flip_status;
 }
 
 uint32_t *rc_video_back_buffer(void)
