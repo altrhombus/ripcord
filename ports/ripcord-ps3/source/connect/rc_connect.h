@@ -178,6 +178,10 @@ typedef struct {
     int  control_step;
     int  control_code;
     int  peer_point_ok;
+    unsigned long derive_fingerprint;  /* of the bytes derive_shared actually read   */
+    unsigned long copy_fingerprint;    /* of the copy that passes the isolated check */
+    unsigned derive_private_length;
+    unsigned derive_curve;
     int  stream_keys_derived;
     int  asked_width;
     int  asked_height;
