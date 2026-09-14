@@ -857,6 +857,32 @@ static int check_connect(void)
             c.aton_ok ? "ok" : "FAILED",
             c.aton_matches_pton ? "yes" : "NO - the core uses inet_aton everywhere");
 
+    /*
+     * THE SENKUSHA MEASUREMENTS, printed here rather than inside a stage's case.
+     *
+     * They first went into the STREAM_KEYS case, which since sealing landed is the FAILURE path - a
+     * successful run reaches STREAM_READY and skipped them entirely, so b119 took the measurements and
+     * reported none of them. The same mistake as putting the SPE init after the stage that needed it:
+     * placed where the text read well rather than where control flow goes.
+     *
+     * These happen early and matter whatever stage is reached afterwards, so they belong with the other
+     * unconditional lines above.
+     */
+    if (c.senkusha_complete) {
+        ps3_log("       senkusha echo: %u/%u echoes, handshake round trip %d ms\n",
+                c.echo_samples, 10u, c.handshake_rtt_ms);
+        ps3_log("       declared rtt %d ms (%s), mtu %d (%s)\n",
+                c.measured_rtt_ms,
+                c.measured_rtt_ms == 0 ? "nothing measured"
+                                       : (c.rtt_from_echo ? "from the echo probe"
+                                                          : "handshake fallback - the echo probe did"
+                                                            " NOT get a majority"),
+                c.measured_mtu > 0 ? c.measured_mtu : 1454,
+                (c.measured_mtu > 0) ? "confirmed both directions"
+                                     : (c.mtu_downstream ? "downstream only - declared anyway"
+                                                         : "unconfirmed - declared anyway"));
+    }
+
     if (c.unicast_replied)
         ps3_log("       it answered; %s\n", c.was_asleep ? "in standby" : "awake");
     else if (c.broadcast_found && !c.broadcast_matches)
@@ -985,19 +1011,6 @@ static int check_connect(void)
                 c.senkusha_version_ack ? "yes" : "NO", c.senkusha_complete ? "complete" : "INCOMPLETE");
         ps3_log("       stream    local 0x%08x  peer 0x%08x\n",
                 c.takion_local_tag, c.takion_peer_tag);
-        ps3_log("       asked for %dx%d @ %d fps\n", c.asked_width, c.asked_height, c.asked_fps);
-        ps3_log("       senkusha echo: %u/%u echoes, handshake round trip %d ms\n",
-                c.echo_samples, 10u, c.handshake_rtt_ms);
-        ps3_log("       declared rtt %d ms (%s), mtu %d (%s)\n",
-                c.measured_rtt_ms,
-                c.measured_rtt_ms == 0 ? "nothing measured"
-                                       : (c.rtt_from_echo ? "from the echo probe"
-                                                          : "handshake fallback - the echo probe did"
-                                                            " NOT get a majority"),
-                c.measured_mtu > 0 ? c.measured_mtu : 1454,
-                (c.measured_mtu > 0) ? "confirmed both directions"
-                                     : (c.mtu_downstream ? "downstream only - declared anyway"
-                                                         : "unconfirmed - declared anyway"));
         ps3_log("       protocol version %u (%s), so the curve is %s\n",
                 c.stream_version, c.stream_version_acked ? "the console's choice" : "ours - no ack",
                 c.curve_p521 ? "P-521" : "P-256");
