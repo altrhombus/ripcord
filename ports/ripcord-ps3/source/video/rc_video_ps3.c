@@ -269,6 +269,36 @@ void rc_video_close(void)
 }
 
 /* Clamp to a byte without a branch per channel in the common case. */
+static void convert_on_ppe(const uint8_t *y, const uint8_t *u, const uint8_t *v,
+                           int y_stride, int uv_stride, int width, int height,
+                           uint32_t *out_base, int stride_px);
+
+/* One-shot agreement check between the two conversions - see rc_video_blit_yuv420. */
+static int s_verified;
+static int s_verify_match;
+static uint64_t s_verify_hash_spu;
+static uint64_t s_verify_hash_ppe;
+
+/*
+ * FNV-1a over the converted pixels. An identity check between two implementations inside one program,
+ * not a security property: it wants to be cheap and identical on both sides, nothing more.
+ */
+static uint64_t hash_region(const uint32_t *base, int stride_px, int width, int height)
+{
+    uint64_t h = 1469598103934665603ULL;
+    int row, col;
+
+    for (row = 0; row < height; row++) {
+        const uint32_t *line = base + (size_t)row * (size_t)stride_px;
+
+        for (col = 0; col < width; col++) {
+            h ^= (uint64_t)line[col];
+            h *= 1099511628211ULL;
+        }
+    }
+    return h;
+}
+
 static inline uint32_t clamp255(int32_t v)
 {
     if (v < 0)
@@ -285,7 +315,6 @@ unsigned rc_video_blit_yuv420(const uint8_t *y, const uint8_t *u, const uint8_t 
     uint64_t t0;
     int stride_px;
     int ox, oy;
-    int row;
 
     if (back == NULL || y == NULL || u == NULL || v == NULL)
         return 0u;
@@ -308,20 +337,57 @@ unsigned rc_video_blit_yuv420(const uint8_t *y, const uint8_t *u, const uint8_t 
      * how the choice is measured rather than assumed.
      */
     {
+        uint32_t *dst = back + (size_t)oy * (size_t)stride_px + (size_t)ox;
         unsigned spu_us = rc_spu_yuv_convert(y, u, v, y_stride, uv_stride, width, height,
-                                             back + (size_t)oy * (size_t)stride_px + (size_t)ox,
-                                             s_info.pitch);
-        if (spu_us > 0u)
+                                             dst, s_info.pitch);
+        if (spu_us > 0u) {
+            /*
+             * ONCE PER RUN, CHECK THE SPEs AGAINST THE PPE.
+             *
+             * The SPE kernel is SIMD and the PPE one is scalar, and they are supposed to compute the
+             * same thing from the same constants. A mistake in the vector version - a coefficient in
+             * the wrong lane, a shift off by one, chroma duplicated the wrong way round - produces a
+             * picture that is present and subtly wrong, which is exactly the kind of fault a glance at
+             * a television does not catch.
+             *
+             * So the first converted frame is done BOTH ways and the results compared. It costs one
+             * frame's PPE conversion, once, and it is the only thing that can tell "the SPEs are fast"
+             * from "the SPEs are fast and correct".
+             */
+            if (!s_verified) {
+                s_verified = 1;
+                s_verify_hash_spu = hash_region(dst, stride_px, width, height);
+                convert_on_ppe(y, u, v, y_stride, uv_stride, width, height, dst, stride_px);
+                s_verify_hash_ppe = hash_region(dst, stride_px, width, height);
+                s_verify_match = (s_verify_hash_spu == s_verify_hash_ppe);
+            }
             return spu_us;
+        }
     }
 
     t0 = rc_tick();
+    convert_on_ppe(y, u, v, y_stride, uv_stride, width, height,
+                   back + (size_t)oy * (size_t)stride_px + (size_t)ox, stride_px);
+
+    {
+        uint64_t hz = rc_tick_hz();
+        uint64_t ticks = rc_tick() - t0;
+
+        return (hz > 0u) ? (unsigned)((ticks * 1000000u) / hz) : 0u;
+    }
+}
+
+static void convert_on_ppe(const uint8_t *y, const uint8_t *u, const uint8_t *v,
+                           int y_stride, int uv_stride, int width, int height,
+                           uint32_t *out_base, int stride_px)
+{
+    int row;
 
     for (row = 0; row < height; row++) {
         const uint8_t *yr = y + (size_t)row * (size_t)y_stride;
         const uint8_t *ur = u + (size_t)(row >> 1) * (size_t)uv_stride;
         const uint8_t *vr = v + (size_t)(row >> 1) * (size_t)uv_stride;
-        uint32_t *out = back + (size_t)(oy + row) * (size_t)stride_px + (size_t)ox;
+        uint32_t *out = out_base + (size_t)row * (size_t)stride_px;
         int col;
 
         /*
@@ -361,11 +427,16 @@ unsigned rc_video_blit_yuv420(const uint8_t *y, const uint8_t *u, const uint8_t 
                      |  clamp255((y0 + 2163 * d) >> 10);
         }
     }
+}
 
-    {
-        uint64_t hz = rc_tick_hz();
-        uint64_t ticks = rc_tick() - t0;
-
-        return (hz > 0u) ? (unsigned)((ticks * 1000000u) / hz) : 0u;
-    }
+void rc_video_verify_get(int *checked, int *match, uint64_t *spu_hash, uint64_t *ppe_hash)
+{
+    if (checked != NULL)
+        *checked = s_verified;
+    if (match != NULL)
+        *match = s_verify_match;
+    if (spu_hash != NULL)
+        *spu_hash = s_verify_hash_spu;
+    if (ppe_hash != NULL)
+        *ppe_hash = s_verify_hash_ppe;
 }
