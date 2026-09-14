@@ -29,10 +29,15 @@
  * the guide's central technique and is NOT done here - correctness first, and the measurement will say
  * whether it is worth it.
  */
-static unsigned char g_y[RC_SPU_YUV_ROWS_PER_PASS][RC_SPU_YUV_MAX_WIDTH] __attribute__((aligned(128)));
+static unsigned char g_y[RC_SPU_YUV_MAX_WIDTH] __attribute__((aligned(128)));
 static unsigned char g_u[RC_SPU_YUV_MAX_WIDTH / 2] __attribute__((aligned(128)));
 static unsigned char g_v[RC_SPU_YUV_MAX_WIDTH / 2] __attribute__((aligned(128)));
-static unsigned int  g_out[RC_SPU_YUV_ROWS_PER_PASS][RC_SPU_YUV_MAX_WIDTH] __attribute__((aligned(128)));
+
+/* One converted SOURCE line, then one scaled OUTPUT line. Two buffers rather than one because the
+ * conversion is vectorised over contiguous source pixels and the scale is a gather - trying to do both
+ * in one pass would make the expensive half scalar to suit the cheap half. */
+static unsigned int g_line[RC_SPU_YUV_MAX_WIDTH] __attribute__((aligned(128)));
+static unsigned int g_out[RC_SPU_YUV_MAX_DST_WIDTH] __attribute__((aligned(128)));
 
 static rc_spu_yuv_job g_job __attribute__((aligned(128)));
 
@@ -78,50 +83,75 @@ static inline unsigned int clamp255(int v)
     return (unsigned int)v;
 }
 
-/* One row pair, sharing one chroma row. BT.709 limited range in 10-bit fixed point - the same constants
- * the PPE uses, so a picture converted here and one converted there are the same picture. */
-static void convert_pair(unsigned int width, unsigned int rows_this_pass)
+/* One source row into g_line, vectorised. BT.709 limited range in 10-bit fixed point - the same
+ * constants the PPE uses, so a picture converted here and one converted there are the same picture. */
+static void convert_line(unsigned int width)
 {
-    unsigned int row;
+    unsigned int col = 0u;
 
-    for (row = 0u; row < rows_this_pass; row++) {
-        const unsigned char *yp = g_y[row];
-        unsigned int *outp = g_out[row];
-        unsigned int col = 0u;
+    for (; col + 3u < width; col += 4u) {
+        vec_int4 c, d, e, yy, r, g, b;
+        int d0 = (int)g_u[(col >> 1)] - 128;
+        int d1 = (int)g_u[(col >> 1) + 1u] - 128;
+        int e0 = (int)g_v[(col >> 1)] - 128;
+        int e1 = (int)g_v[(col >> 1) + 1u] - 128;
 
-        /* Four luma pixels need two chroma samples, each used twice. */
-        for (; col + 3u < width; col += 4u) {
-            vec_int4 c, d, e, yy, r, g, b;
-            int d0 = (int)g_u[(col >> 1)] - 128;
-            int d1 = (int)g_u[(col >> 1) + 1u] - 128;
-            int e0 = (int)g_v[(col >> 1)] - 128;
-            int e1 = (int)g_v[(col >> 1) + 1u] - 128;
+        c = (vec_int4){ (int)g_y[col] - 16, (int)g_y[col + 1u] - 16,
+                        (int)g_y[col + 2u] - 16, (int)g_y[col + 3u] - 16 };
+        d = (vec_int4){ d0, d0, d1, d1 };
+        e = (vec_int4){ e0, e0, e1, e1 };
 
-            c = (vec_int4){ (int)yp[col] - 16, (int)yp[col + 1u] - 16,
-                            (int)yp[col + 2u] - 16, (int)yp[col + 3u] - 16 };
-            d = (vec_int4){ d0, d0, d1, d1 };
-            e = (vec_int4){ e0, e0, e1, e1 };
+        yy = mul_coef(c, 1192);
+        r = clamp_vec(spu_rlmaska(spu_add(yy, mul_coef(e, 1836)), -10));
+        g = clamp_vec(spu_rlmaska(spu_add(yy, spu_add(mul_coef(d, -218), mul_coef(e, -546))), -10));
+        b = clamp_vec(spu_rlmaska(spu_add(yy, mul_coef(d, 2163)), -10));
 
-            yy = mul_coef(c, 1192);
-            r = clamp_vec(spu_rlmaska(spu_add(yy, mul_coef(e, 1836)), -10));
-            g = clamp_vec(spu_rlmaska(spu_add(yy, spu_add(mul_coef(d, -218), mul_coef(e, -546))), -10));
-            b = clamp_vec(spu_rlmaska(spu_add(yy, mul_coef(d, 2163)), -10));
+        *(vec_uint4 *)&g_line[col] = spu_or(spu_or(spu_sl((vec_uint4)r, 16u),
+                                                   spu_sl((vec_uint4)g, 8u)),
+                                            (vec_uint4)b);
+    }
 
-            *(vec_uint4 *)&outp[col] = spu_or(spu_or(spu_sl((vec_uint4)r, 16u),
-                                                     spu_sl((vec_uint4)g, 8u)),
-                                              (vec_uint4)b);
-        }
+    /* Whatever a width not divisible by four leaves. Scalar, because it is at most three pixels. */
+    for (; col < width; col++) {
+        int d = (int)g_u[col >> 1] - 128;
+        int e = (int)g_v[col >> 1] - 128;
+        int y0 = 1192 * ((int)g_y[col] - 16);
 
-        /* Whatever a width not divisible by four leaves. Scalar, because it is at most three pixels. */
-        for (; col < width; col++) {
-            int d = (int)g_u[col >> 1] - 128;
-            int e = (int)g_v[col >> 1] - 128;
-            int y0 = 1192 * ((int)yp[col] - 16);
+        g_line[col] = (clamp255((y0 + 1836 * e) >> 10) << 16)
+                    | (clamp255((y0 - 218 * d - 546 * e) >> 10) << 8)
+                    |  clamp255((y0 + 2163 * d) >> 10);
+    }
+}
 
-            outp[col] = (clamp255((y0 + 1836 * e) >> 10) << 16)
-                      | (clamp255((y0 - 218 * d - 546 * e) >> 10) << 8)
-                      |  clamp255((y0 + 2163 * d) >> 10);
-        }
+/*
+ * The horizontal scale: g_line (src_width pixels) into g_out (dst_width pixels), nearest neighbour.
+ *
+ * FIXED-POINT STEPPING, NOT A DIVISION PER PIXEL. The source column for output column x is
+ * x * src_width / dst_width, and computing that directly would be a divide for every pixel on the
+ * screen. Accumulating a 16.16 step is an add and a shift instead.
+ *
+ * Nearest neighbour rather than bilinear, for now and on purpose: it is exactly correct for the integer
+ * factors that matter most here (960x540 doubles to 1080p) and the measurement should say what the cheap
+ * version costs before a better one is chosen. Bilinear is roughly three times the work and is the
+ * obvious next step if the budget allows it.  [X] - not yet compared side by side on hardware.
+ */
+static void scale_line(unsigned int src_width, unsigned int dst_width)
+{
+    unsigned int step;
+    unsigned int acc = 0u;
+    unsigned int x;
+
+    if (src_width == dst_width) {
+        /* The common case once a source is chosen to match the display: no scaling at all. */
+        for (x = 0u; x < dst_width; x++)
+            g_out[x] = g_line[x];
+        return;
+    }
+
+    step = (src_width << 16) / dst_width;
+    for (x = 0u; x < dst_width; x++) {
+        g_out[x] = g_line[acc >> 16];
+        acc += step;
     }
 }
 
@@ -134,7 +164,6 @@ int main(uint64_t job_ea, uint64_t unused1, uint64_t unused2, uint64_t unused3)
     mfc_write_tag_mask(1u << TAG);
 
     for (;;) {
-        unsigned int row;
         unsigned int phase;
 
         /*
@@ -158,42 +187,60 @@ int main(uint64_t job_ea, uint64_t unused1, uint64_t unused2, uint64_t unused3)
         mfc_write_tag_mask(1u << TAG);
         (void)mfc_read_tag_status_all();
 
-        if (g_job.width > RC_SPU_YUV_MAX_WIDTH || g_job.width == 0u) {
-            /* Wider than the strip buffers. Refusing is right: converting part of a line would put a
-             * torn picture on the screen and look like a decode fault. */
+        if (g_job.src_width > RC_SPU_YUV_MAX_WIDTH || g_job.src_width == 0u
+            || g_job.dst_width > RC_SPU_YUV_MAX_DST_WIDTH || g_job.dst_width == 0u
+            || g_job.dst_height == 0u) {
+            /* Wider than the line buffers, or a degenerate rectangle. Refusing is right: converting part
+             * of a line would put a torn picture on the screen and look like a decode fault. */
             phase = RC_SPU_PHASE_ENTERED;
             mfc_put(&phase, g_job.done_ea, 4u, TAG, 0, 0);
             (void)mfc_read_tag_status_all();
             continue;
         }
 
-        for (row = 0u; row < g_job.rows; row += RC_SPU_YUV_ROWS_PER_PASS) {
-            unsigned int rows_this_pass = g_job.rows - row;
-            unsigned int luma_bytes = g_job.width;
-            unsigned int chroma_bytes = g_job.width / 2u;
-            unsigned int out_bytes = g_job.width * 4u;
-            unsigned int i;
+        /*
+         * DRIVEN BY OUTPUT ROWS, with the source row computed per row and the fetch cached.
+         *
+         * Vertical scaling falls out of which source row is fetched, so it costs nothing beyond the
+         * mapping itself. Consecutive output rows often map to the SAME source row - at 2x, every one
+         * does - and re-fetching it would double the DMA for no benefit, so the last row fetched is
+         * remembered. That is the whole of the vertical scaler.
+         */
+        {
+            unsigned int cached_y_row = 0xffffffffu;
+            unsigned int cached_uv_row = 0xffffffffu;
+            unsigned int out_row;
 
-            if (rows_this_pass > RC_SPU_YUV_ROWS_PER_PASS)
-                rows_this_pass = RC_SPU_YUV_ROWS_PER_PASS;
+            for (out_row = 0u; out_row < g_job.dst_rows; out_row++) {
+                unsigned int abs_row = g_job.first_dst_row + out_row;
+                unsigned int src_row = (unsigned int)
+                    (((unsigned long long)abs_row * g_job.src_height) / g_job.dst_height);
+                unsigned int uv_row = src_row >> 1;
 
-            /* In: the luma rows of this pass, and the single chroma row they share. */
-            for (i = 0u; i < rows_this_pass; i++) {
-                mfc_get(g_y[i], g_job.y_ea + (uint64_t)(row + i) * g_job.y_stride,
-                        luma_bytes, TAG, 0, 0);
+                if (src_row >= g_job.src_height)
+                    src_row = g_job.src_height - 1u;
+
+                if (src_row != cached_y_row) {
+                    mfc_get(g_y, g_job.y_ea + (unsigned long long)src_row * g_job.y_stride,
+                            g_job.src_width, TAG, 0, 0);
+                    cached_y_row = src_row;
+
+                    if (uv_row != cached_uv_row) {
+                        mfc_get(g_u, g_job.u_ea + (unsigned long long)uv_row * g_job.uv_stride,
+                                g_job.src_width / 2u, TAG, 0, 0);
+                        mfc_get(g_v, g_job.v_ea + (unsigned long long)uv_row * g_job.uv_stride,
+                                g_job.src_width / 2u, TAG, 0, 0);
+                        cached_uv_row = uv_row;
+                    }
+                    (void)mfc_read_tag_status_all();
+                    convert_line(g_job.src_width);
+                    scale_line(g_job.src_width, g_job.dst_width);
+                }
+
+                mfc_put(g_out, g_job.dst_ea + (unsigned long long)out_row * g_job.dst_stride,
+                        g_job.dst_width * 4u, TAG, 0, 0);
+                (void)mfc_read_tag_status_all();
             }
-            mfc_get(g_u, g_job.u_ea + (uint64_t)(row >> 1) * g_job.uv_stride, chroma_bytes, TAG, 0, 0);
-            mfc_get(g_v, g_job.v_ea + (uint64_t)(row >> 1) * g_job.uv_stride, chroma_bytes, TAG, 0, 0);
-            (void)mfc_read_tag_status_all();
-
-            convert_pair(g_job.width, rows_this_pass);
-
-            /* Out: straight into the display buffer, at the display's pitch. */
-            for (i = 0u; i < rows_this_pass; i++) {
-                mfc_put(g_out[i], g_job.dst_ea + (uint64_t)(row + i) * g_job.dst_stride,
-                        out_bytes, TAG, 0, 0);
-            }
-            (void)mfc_read_tag_status_all();
         }
 
         /*
