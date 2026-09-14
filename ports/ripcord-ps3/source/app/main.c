@@ -1279,12 +1279,15 @@ static int check_display(void)
                 info.failed_at != NULL ? info.failed_at : "unknown step",
                 info.last_error, (unsigned)info.last_error);
         ps3_log("      the step is named because \"no picture\" says nothing on its own\n");
+        ps3_log("      %d size combination(s) tried, all refused\n", info.rsx_attempts);
         ps3_log("      sysModuleLoad: GCM_SYS 0x%08X, SYSUTIL 0x%08X (non-zero may just mean\n"
                 "      already loaded - these are PRXes and nothing in them exists unloaded)\n",
                 (unsigned)info.gcm_module, (unsigned)info.sysutil_module);
         return 1;
     }
 
+    ps3_log("       rsxInit took %d attempt(s): command buffer %d bytes in a %d byte IO region\n",
+            info.rsx_attempts, info.cmd_size, info.io_size);
     ps3_log("       modules: GCM_SYS 0x%08X, SYSUTIL 0x%08X\n",
             (unsigned)info.gcm_module, (unsigned)info.sysutil_module);
     ps3_log("       %dx%d, pitch %d bytes (%d bytes/pixel), %d buffers, videoGetState reported %d\n",

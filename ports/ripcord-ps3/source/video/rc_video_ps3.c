@@ -22,9 +22,11 @@
  * Kept as an explicit multiple rather than a bare hex constant so the constraint is visible at the place
  * someone would change it.
  */
-#define RC_VIDEO_MB       (1024u * 1024u)
-#define RC_VIDEO_CB_SIZE  (1u * RC_VIDEO_MB)
-#define RC_VIDEO_IO_SIZE  (1u * RC_VIDEO_MB)
+#define RC_VIDEO_MB      (1024u * 1024u)
+
+/* The host buffer is allocated once at the largest size any attempt below asks for, so the sweep does
+ * not have to reallocate - and every attempt's IO size must fit inside it. */
+#define RC_VIDEO_IO_MAX  (2u * RC_VIDEO_MB)
 
 static gcmContextData *s_context;
 static void *s_host_addr;
@@ -84,13 +86,51 @@ int rc_video_open(rc_video_info *out)
     out->sysutil_module = s_sysutil_module;
 
     /* 1 MB alignment AND a whole number of megabytes - see RC_VIDEO_IO_SIZE. */
-    s_host_addr = memalign(RC_VIDEO_MB, RC_VIDEO_IO_SIZE);
+    s_host_addr = memalign(RC_VIDEO_MB, RC_VIDEO_IO_MAX);
     if (s_host_addr == NULL)
         return fail(out, "memalign for the RSX IO region", 0);
 
-    rc = rsxInit(&s_context, RC_VIDEO_CB_SIZE, RC_VIDEO_IO_SIZE, s_host_addr);
-    if (rc != 0 || s_context == NULL)
-        return fail(out, "rsxInit", (int)rc);
+    /*
+     * TRY SEVERAL SIZES RATHER THAN BELIEVING ONE, which is the same discipline the log-directory probe
+     * in main.c uses and for the same reason: four hypotheses about this call have now been wrong, and
+     * a sweep costs one console round trip where a guess costs one each.
+     *
+     * The leading suspect is the relationship between the two sizes. The command buffer is carved OUT of
+     * the IO region - rsxInit is documented to build a heap in what remains - and every attempt so far
+     * asked for a 1 MB command buffer inside a 1 MB region, leaving nothing for that heap. PSL1GHT's own
+     * convention is a small command buffer inside a much larger IO region.
+     *
+     * Ordered smallest-command-buffer first, so the most likely pair is also the first tried, and the
+     * one that works is reported so the next build can stop sweeping.
+     */
+    {
+        static const struct { u32 cmd; u32 io; } kAttempts[] = {
+            { 0x10000u,  1u * RC_VIDEO_MB },   /* 64 KB command buffer in 1 MB - PSL1GHT's usual shape */
+            { 0x20000u,  1u * RC_VIDEO_MB },
+            { 0x10000u,  2u * RC_VIDEO_MB },
+            { 0x80000u,  1u * RC_VIDEO_MB },
+            { 1u * RC_VIDEO_MB, 2u * RC_VIDEO_MB }
+        };
+        const int attempts = (int)(sizeof(kAttempts) / sizeof(kAttempts[0]));
+        int a;
+
+        rc = -1;
+        for (a = 0; a < attempts; a++) {
+            if (kAttempts[a].io > RC_VIDEO_IO_MAX)
+                continue;
+            s_context = NULL;
+            rc = rsxInit(&s_context, kAttempts[a].cmd, kAttempts[a].io, s_host_addr);
+            out->rsx_attempts++;
+            if (rc == 0 && s_context != NULL) {
+                out->cmd_size = (int)kAttempts[a].cmd;
+                out->io_size = (int)kAttempts[a].io;
+                break;
+            }
+            out->last_error = (int)rc;
+        }
+        if (rc != 0 || s_context == NULL)
+            return fail(out, "rsxInit (every size combination refused)", (int)rc);
+    }
 
     rc = videoGetState(0, 0, &state);
     if (rc != 0)
