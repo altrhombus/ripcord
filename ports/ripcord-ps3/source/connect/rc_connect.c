@@ -11,6 +11,7 @@
 #include "rc_stack_ps3.h"
 #include "takion_control_sealer.h"
 #include "stream_header.h"
+#include "stream_demux.h"
 #include "takion_control_proto.h"
 #include "takion_session_negotiator.h"
 #include "takion_data_chunk.h"
@@ -427,6 +428,56 @@ static takion_control_sealer g_sealer;
 static takion_control_verifier g_verifier;
 
 /*
+ * The demuxer, and a tally of what comes out of it. Static for the same frame-size reason as everything
+ * else here: its assembly buffer alone is FEC_MAX_TOTAL_UNITS * 4 KB, which is orders of magnitude past
+ * this port's 8 KB frame limit.
+ */
+static stream_demux g_demux;
+
+typedef struct {
+    unsigned video_frames;
+    unsigned keyframes;
+    unsigned audio_frames;
+    unsigned long video_bytes;
+    unsigned long audio_bytes;
+    unsigned corrupt_events;
+    unsigned largest_frame;
+} rc_demux_tally;
+
+static rc_demux_tally g_tally;
+
+static void on_video_frame(void *userdata, const uint8_t *data, size_t length, int is_keyframe)
+{
+    (void)userdata;
+    (void)data;
+    g_tally.video_frames++;
+    if (is_keyframe)
+        g_tally.keyframes++;
+    g_tally.video_bytes += (unsigned long)length;
+    if (length > (size_t)g_tally.largest_frame)
+        g_tally.largest_frame = (unsigned)length;
+}
+
+static void on_audio_frame(void *userdata, const uint8_t *data, size_t length)
+{
+    (void)userdata;
+    (void)data;
+    g_tally.audio_frames++;
+    g_tally.audio_bytes += (unsigned long)length;
+}
+
+static void on_video_loss(void *userdata, int first_frame_index, int last_frame_index)
+{
+    (void)userdata;
+    (void)first_frame_index;
+    (void)last_frame_index;
+    /* Counted, not acted on. A real client answers with CORRUPT_FRAME and asks for an IDR; this probe
+     * is measuring whether reassembly works at all, and a recovery path it cannot yet verify would only
+     * obscure that. */
+    g_tally.corrupt_events++;
+}
+
+/*
  * The senkusha legs the console GATES ON, as opposed to the ones that merely tune the stream.
  *
  * A completed senkusha handshake is not enough by itself: the console wants the PROTOCOL_VERSION
@@ -758,6 +809,28 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
             out->stream_info_bytes = (unsigned)info_len;
             memset(&info, 0, sizeof(info));
             if (takion_control_parse_stream_info(info_msg, info_len, &info) && info.has_resolution) {
+                /*
+                 * The demuxer is built HERE and not earlier, because the video header is what makes it
+                 * useful: the SPS/PPS arrive in STREAM_INFO and not in the video stream, so a demuxer
+                 * started before this one would emit frames no decoder could open.
+                 */
+                {
+                    stream_demux_sink sink;
+
+                    memset(&sink, 0, sizeof(sink));
+                    sink.userdata = NULL;
+                    sink.video_frame_ready = on_video_frame;
+                    sink.audio_frame_ready = on_audio_frame;
+                    sink.video_loss_detected = on_video_loss;
+
+                    memset(&g_tally, 0, sizeof(g_tally));
+                    stream_demux_init(&g_demux, stream_demux_packet_crypto(&g_verifier.crypto), sink);
+                    if (info.video_header_length > 0u)
+                        stream_demux_set_video_header(&g_demux, info.video_header,
+                                                      info.video_header_length);
+                    out->demux_ready = 1;
+                }
+
                 out->given_width = (int)info.width;
                 out->given_height = (int)info.height;
                 out->video_header_bytes = (unsigned)info.video_header_length;
@@ -879,6 +952,16 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
                         if (stream_packet_crypto_verify(&g_verifier.crypto, key_pos, packet, (size_t)n,
                                                         STREAM_HEADER_TAG_OFFSET, 0 /* tag only */))
                             out->av_verified++;
+
+                        /*
+                         * Into the demuxer, which verifies and decrypts again through its own crypto
+                         * seam before doing anything with the bytes. The duplicated verify above is the
+                         * probe's own measurement and is deliberately kept: it answers "does the A/V
+                         * rule hold" independently of whether reassembly works, and collapsing the two
+                         * would make one failure look like the other.
+                         */
+                        if (out->demux_ready)
+                            stream_demux_ingest(&g_demux, packet, (size_t)n);
                     }
                     rc_sleep_ms(1u);
                     continue;
@@ -920,6 +1003,15 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
             rc_sleep_ms(5u);
         }
     }
+
+    out->video_frames = g_tally.video_frames;
+    out->keyframes = g_tally.keyframes;
+    out->audio_frames = g_tally.audio_frames;
+    out->video_frame_bytes = g_tally.video_bytes;
+    out->audio_frame_bytes = g_tally.audio_bytes;
+    out->corrupt_events = g_tally.corrupt_events;
+    out->largest_frame = g_tally.largest_frame;
+    stream_demux_take_packet_stats(&g_demux, &out->units_received, &out->units_lost);
 
     out->verify_checked = g_verifier.checked;
     out->verify_failed = g_verifier.failed;

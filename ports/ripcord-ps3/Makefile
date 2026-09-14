@@ -221,6 +221,10 @@ SOURCES := \
 	$(CORE)/takion/senkusha_echo.c \
 	$(CORE)/takion/takion_control_sealer.c \
 	$(CORE)/stream/stream_packet_crypto.c \
+	$(CORE)/stream/stream_demux.c \
+	$(CORE)/stream/stream_header.c \
+	$(CORE)/stream/fec_galois.c \
+	$(CORE)/stream/fec_reed_solomon.c \
 	$(CORE)/session/halyard_launch_spec.c \
 	$(CORE)/stream/stream_key_schedule.c \
 	$(CORE)/crypto/rc_ecdh.c \
@@ -278,8 +282,6 @@ CORE_TEST_SUPPORT := \
 	$(CORE)/input/halyard_input.c \
 	$(CORE)/session/halyard_control_arm.c $(CORE)/session/halyard_ctrl_message.c \
 	$(CORE)/session/halyard_sess_fields.c $(CORE)/session/halyard_sess_request.c \
-	$(CORE)/stream/fec_galois.c $(CORE)/stream/fec_reed_solomon.c \
-	$(CORE)/stream/stream_demux.c $(CORE)/stream/stream_header.c \
 
 
 # ECDH delegates elliptic-curve arithmetic to mbedtls - rc_ecdh.h argues at length that a hand-written
