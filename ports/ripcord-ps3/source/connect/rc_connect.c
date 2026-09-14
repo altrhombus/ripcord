@@ -907,7 +907,6 @@ static int drain_av(halyard_control_session *session, rc_connect_result *out,
 
             if (n >= (ssize_t)STREAM_HEADER_LENGTH) {
                 unsigned base = (unsigned)(packet[0] & 0x0fu);
-                uint64_t key_pos;
 
                 out->av_packets++;
                 out->av_bytes += (unsigned long)n;
@@ -919,30 +918,30 @@ static int drain_av(halyard_control_session *session, rc_connect_result *out,
                     out->av_other++;
 
                 /*
-                 * THE A/V AUTHENTICATION RULE, which is NOT the control one. The key position
-                 * travels in the packet at offset 14 rather than being ours to choose, the tag
-                 * sits at offset 10, and only the TAG region is zeroed in the AAD - the key
-                 * position is NOT. Getting either half wrong makes every packet fail, which is a
-                 * much better outcome than silently decrypting noise.
+                 * THE PROBE'S OWN VERIFY IS GONE, and its removal is the point.
+                 *
+                 * It was kept deliberately: it answered "does the A/V authentication rule hold"
+                 * independently of "does reassembly work", and collapsing the two would have made one
+                 * failure look like the other. That measurement has been taken many times over - 1123 of
+                 * 1123, then 6287 of 6287, then every run since.
+                 *
+                 * What it costs is a SECOND GMAC over ~1400 bytes for every packet, on a 3.2 GHz PPE
+                 * with no AES instructions, on the one thread that has to empty a 122 KB socket buffer.
+                 * b137 timed a bounded 256-packet drain at 192 ms - three quarters of a millisecond per
+                 * packet - while the demuxer was already verifying and decrypting each one through its
+                 * own crypto seam. Paying twice for an answer we have is a diagnostic that outlived its
+                 * question and became the fault.
+                 *
+                 * The A/V rule itself is unchanged and still enforced, inside the demuxer: tag at offset
+                 * 10, key position read from the packet at 14, and only the tag zeroed in the AAD - not
+                 * the control rule. av_verified now counts what the DEMUXER accepted, which is the
+                 * demuxer's own accounting - units received against units lost - is the number that
+                 * matters from here, and it already reports exactly this.
                  */
-                key_pos = ((uint64_t)packet[STREAM_HEADER_KEY_POSITION_OFFSET + 0] << 24)
-                        | ((uint64_t)packet[STREAM_HEADER_KEY_POSITION_OFFSET + 1] << 16)
-                        | ((uint64_t)packet[STREAM_HEADER_KEY_POSITION_OFFSET + 2] << 8)
-                        | (uint64_t)packet[STREAM_HEADER_KEY_POSITION_OFFSET + 3];
-
-                if (stream_packet_crypto_verify(&g_verifier.crypto, key_pos, packet, (size_t)n,
-                                                STREAM_HEADER_TAG_OFFSET, 0 /* tag only */))
-                    out->av_verified++;
-
-                /*
-                 * Into the demuxer, which verifies and decrypts again through its own crypto
-                 * seam before doing anything with the bytes. The duplicated verify above is the
-                 * probe's own measurement and is deliberately kept: it answers "does the A/V
-                 * rule hold" independently of whether reassembly works, and collapsing the two
-                 * would make one failure look like the other.
-                 */
-                if (out->demux_ready)
+                if (out->demux_ready) {
                     stream_demux_ingest(&g_demux, packet, (size_t)n);
+                    out->av_ingested++;
+                }
             }
         }
     }
