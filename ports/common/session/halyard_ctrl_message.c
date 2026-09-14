@@ -64,3 +64,25 @@ size_t halyard_ctrl_message_parse(const uint8_t *data, size_t length,
     *out_payload_length = payload_length;
     return HALYARD_CTRL_HEADER_SIZE + (size_t)payload_length;
 }
+
+size_t halyard_ctrl_build_login_submit(const halyard_control_field *ctx, uint64_t counter,
+                                       const char *pin, size_t pin_length,
+                                       uint8_t *out, size_t out_size)
+{
+    size_t plain_length;
+
+    if (ctx == NULL || pin == NULL || out == NULL)
+        return 0;
+    if (pin_length == 0u || pin_length > HALYARD_SESS_LOGIN_PIN_MAX || pin_length > out_size)
+        return 0;
+
+    /* Refuses anything that is not digits - the console will never accept it, so encrypting it would
+     * only spend a counter and produce a rejection that looks like a wrong passcode. */
+    plain_length = halyard_sess_field_login_pin_plaintext(pin, pin_length, out, out_size);
+    if (plain_length == 0u)
+        return 0;
+
+    /* In place, which is the pattern the /sess/ctrl headers already use. */
+    halyard_control_field_encrypt(ctx, counter, out, out, plain_length);
+    return plain_length;
+}
