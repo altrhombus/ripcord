@@ -104,6 +104,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "halyard_sess_fields.h"
+
 #define HALYARD_PAIRING_HOST_MAX 64
 #define HALYARD_PAIRING_REGISTKEY_MAX 8
 #define HALYARD_PAIRING_COMPANION_LENGTH 16
@@ -132,6 +134,21 @@ typedef struct {
     int stream_width;        /* resolution asked of the console - must be on the standard ladder */
     int stream_height;
     int streaming_type;
+
+    /*
+     * THE SIGN-IN PASSCODE, and it is optional because most consoles never ask for one.
+     *
+     * A console whose user profile is locked answers the control session with LOGIN_PROMPT instead of
+     * SESSION_ID, and the reference client (src/Ripcord.Protocol.Halyard/Session/HalyardStreamingSession.cs)
+     * answers that by submitting a passcode the user types. A headless port has no one to ask, so it reads
+     * one here - the same out-of-band route the registration key already travels, in the same gitignored
+     * record. Empty means "none supplied", which is a normal state and not an error: the probe then reports
+     * the gate rather than answering it.
+     *
+     * Bounded by the field encoding rather than by a guess about passcode length, so the one bound lives in
+     * halyard_sess_fields.h beside the builder that enforces it.
+     */
+    char login_pin[HALYARD_SESS_LOGIN_PIN_MAX];
 } halyard_pairing_record;
 
 /*

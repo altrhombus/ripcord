@@ -871,11 +871,17 @@ static int check_connect(void)
     case RC_CONNECT_SESSION_OPEN:
         ps3_log("       %d control frame(s) while waiting; first 0x%04x, last 0x%04x, %d heartbeat(s)\n",
                 c.frames_seen, c.first_type, c.last_type, c.heartbeats);
-        if (c.login_prompt) {
-            ps3_log("       the console wants a sign-in passcode. The .NET client answers this with\n");
-            ps3_log("       LOGIN_SUBMIT; this port has the message type but no submit path and no\n");
-            ps3_log("       way to collect a passcode, so for now: sign in on the console, leave it\n");
-            ps3_log("       on the home screen, and re-run.\n");
+        if (c.login_prompt && c.login_submitted) {
+            ps3_log("FAIL  the console asked for a sign-in passcode, the one in the pairing record\n");
+            ps3_log("      went back to it, and no SESSION_ID followed within the deadline. This\n");
+            ps3_log("      port cannot yet read the console's verdict (that is LOGIN 0x0005, and\n");
+            ps3_log("      decrypting it needs the receive-direction counter), so a WRONG passcode\n");
+            ps3_log("      and a console that simply went quiet look identical from here. Check the\n");
+            ps3_log("      passcode before suspecting the submit.\n");
+        } else if (c.login_prompt) {
+            ps3_log("       the console wants a sign-in passcode and none was supplied. Either put\n");
+            ps3_log("       `pin=<digits>` in the pairing record beside the console, or sign in on\n");
+            ps3_log("       the console, leave it on the home screen, and re-run.\n");
         } else if (c.frames_seen == 0) {
             ps3_log("FAIL  the channel opened and the console said nothing at all - not even a\n");
             ps3_log("      heartbeat, which it normally sends within seconds. Suspect the channel.\n");
