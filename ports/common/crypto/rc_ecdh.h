@@ -119,6 +119,36 @@ int rc_ecdh_keypair_from_private(unsigned curve, const uint8_t *private_key, siz
  *
  * The secret feeds stream_key_schedule_derive_direction() as the HMAC key, unreduced and untruncated.
  */
+/*
+ * WHY THE LAST derive_shared FAILED, for diagnosis only.
+ *
+ * The derivation is a chain of half a dozen backend calls and every one of them returns a specific error
+ * code, all of which used to be collapsed into a single 0. On a console that is one round trip per
+ * guess, and the guesses are not cheap: a peer point that is well-formed and on the agreed curve can
+ * still fail to derive for reasons that have nothing to do with the protocol - an allocation the backend
+ * could not make, for instance, which is a platform fact and not a crypto one.
+ *
+ * `step` is RC_ECDH_STEP_*, `code` is the backend's own return value, verbatim and unmapped, because a
+ * translated error code is one more layer between a reader and what actually happened.
+ *
+ * Single-threaded and diagnostic: nothing in the protocol depends on these, they are overwritten by
+ * every call, and a caller that ignores them is unaffected.
+ */
+#define RC_ECDH_STEP_NONE         0
+#define RC_ECDH_STEP_ARGUMENTS    1
+#define RC_ECDH_STEP_CURVE        2
+#define RC_ECDH_STEP_SIZES        3
+#define RC_ECDH_STEP_GROUP_LOAD   4
+#define RC_ECDH_STEP_PRIVATE_KEY  5
+#define RC_ECDH_STEP_PEER_READ    6
+#define RC_ECDH_STEP_PEER_CHECK   7
+#define RC_ECDH_STEP_MULTIPLY     8  /* the expensive one - an arbitrary-point multiply */
+#define RC_ECDH_STEP_IDENTITY     9
+#define RC_ECDH_STEP_WRITE       10
+
+int rc_ecdh_last_error_step(void);
+int rc_ecdh_last_error_code(void);
+
 int rc_ecdh_derive_shared(const rc_ecdh_keypair *pair,
                           const uint8_t *peer_public_key, size_t peer_public_key_length,
                           rc_rng_fn rng, void *rng_ctx,
