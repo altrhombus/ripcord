@@ -916,10 +916,15 @@ static int check_connect(void)
                 "the ecdhSignature was not 32 bytes",
                 "the ecdhSignature DID NOT VERIFY under our handshake key - the console computed"
                 " it under a different one, which points at the launch spec's encryption",
-                "the console's public point is not on our curve, or not on the curve at all"
+                "the console's point LENGTH names a different curve than the one we used",
+                "the length agreed and the derivation still failed - this is the crypto, not"
+                " the negotiation"
             };
             int why = c.reply_reject_reason;
 
+            ps3_log("      the console's point: %u bytes, first byte 0x%02x"
+                    " (65 = P-256, 133 = P-521, 0x04 = uncompressed)\n",
+                    c.peer_key_length, c.peer_key_prefix);
             ps3_log("      protocol version %u (%s), curve %s\n",
                     c.stream_version, c.stream_version_acked ? "the console's choice" : "ours - no ack",
                     c.curve_p521 ? "P-521" : "P-256");
