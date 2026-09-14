@@ -878,6 +878,20 @@ static int check_connect(void)
     ps3_log("       stage reached: %s\n", rc_connect_stage_name(stage));
 
     switch (stage) {
+    case RC_CONNECT_STREAM_READY:
+        if (c.login_verdict == 0)
+            ps3_log("       the console accepted the passcode (LOGIN 0x0005 -> 0x00)\n");
+        ps3_log("       protocol version %u, curve %s, SESSION_REPLY %u bytes\n",
+                c.stream_version, c.curve_p521 ? "P-521" : "P-256", c.session_reply_bytes);
+        ps3_log("       GMAC sealing on - every control packet from here, SACKs included\n");
+        ps3_log("       STREAM_INFO %u bytes, acked: asked %dx%d, GIVEN %dx%d\n",
+                c.stream_info_bytes, c.asked_width, c.asked_height, c.given_width, c.given_height);
+        ps3_log("       %u-byte video header (SPS/PPS), %u-byte audio header\n",
+                c.video_header_bytes, c.audio_header_bytes);
+        if (c.given_width != c.asked_width || c.given_height != c.asked_height)
+            ps3_log("       the console chose a different resolution than requested - its choice wins\n");
+        ps3_log("ok    the console has described the stream and is ready to send it\n");
+        return 0;
     case RC_CONNECT_STREAM_KEYS:
         if (c.login_verdict == 0)
             ps3_log("       the console accepted the passcode (LOGIN 0x0005 -> 0x00)\n");
@@ -895,8 +909,13 @@ static int check_connect(void)
                 c.session_request_bytes, c.session_reply_bytes);
         ps3_log("       the reply's ECDH point verified under the handshake key - that signature\n");
         ps3_log("       check is what stops an injected DATA chunk substituting its own key.\n");
-        ps3_log("ok    stream keys derived - the session is negotiated end to end\n");
-        return 0;
+        ps3_log("       GMAC sealing: %s\n", c.sealing_on ? "on" : "NOT ARMED");
+        if (c.stream_info_bytes > 0u)
+            ps3_log("       STREAM_INFO arrived (%u bytes) but was not acked\n", c.stream_info_bytes);
+        else
+            ps3_log("       no STREAM_INFO within the wait - the console has not described the stream\n");
+        ps3_log("FAIL  keys derived, but the console never got to describing the stream\n");
+        return 1;
     case RC_CONNECT_TAKION_UP:
         if (c.login_verdict == 0)
             ps3_log("       the console accepted the passcode (LOGIN 0x0005 -> 0x00)\n");
