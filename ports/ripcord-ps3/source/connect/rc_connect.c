@@ -7,6 +7,12 @@
 #include "halyard_control_session.h"
 #include "takion_reliable_channel.h"
 #include "rc_udp.h"
+#include "takion_control_proto.h"
+#include "takion_session_negotiator.h"
+#include "takion_data_chunk.h"
+#include "halyard_launch_spec.h"
+#include "rc_base64.h"
+#include "rc_random.h"
 #include "halyard_control_arm.h"
 #include "halyard_ctrl_message.h"
 #include "platform/rc_platform.h"
@@ -286,6 +292,7 @@ const char *rc_connect_stage_name(rc_connect_stage stage)
     case RC_CONNECT_SESSION_READY: return "SESSION_ID seen - willing to stream";
     case RC_CONNECT_SENKUSHA_UP:   return "senkusha channel up, stream channel did not follow";
     case RC_CONNECT_TAKION_UP:     return "Takion established on the stream channel";
+    case RC_CONNECT_STREAM_KEYS:   return "stream keys derived - the session is negotiated";
     default:                       return "unknown";
     }
 }
@@ -366,6 +373,193 @@ static int takion_bring_up(takion_reliable_channel *channel, const char *host, u
     }
     *out_sock = sock;
     return 1;
+}
+
+/*
+ * How long to wait for each control reply on a Takion channel. The console answers these promptly when it
+ * answers at all; the generous figure is for the reply that has to cross a fragmented request.
+ */
+#define RC_TAKION_REPLY_MS 5000u
+
+/* PROTOCOL_VERSION_ACK's message type. Named because a bare 32 in a comparison says nothing. */
+#define RC_TAKION_PROTOCOL_VERSION_ACK 32u
+
+/*
+ * The declared MTU, which is a protocol figure rather than the interface's. Senkusha's MTU legs can
+ * confirm it; this port does not run them yet, so it declares the default the launch spec has always
+ * used. Declaring an unverified figure is the status quo; declaring one a probe had just disproved
+ * would be worse than not probing.
+ */
+#define RC_DECLARED_MTU 1454
+
+/*
+ * Static for the frame-size reason again, and here it is not a nicety: the launch spec is 2 KB, its
+ * base64 form is another 2.7 KB, and the SESSION_REQUEST built from them is larger still. The port
+ * compiles with -Wframe-larger-than=8192 and these three together would breach it on their own.
+ */
+static char g_launch_spec[HALYARD_LAUNCH_SPEC_MAX];
+static char g_launch_spec_b64[HALYARD_LAUNCH_SPEC_B64_MAX];
+static uint8_t g_session_request[HALYARD_LAUNCH_SPEC_B64_MAX + 512];
+static takion_session_negotiator g_negotiator;
+
+/*
+ * The senkusha legs the console GATES ON, as opposed to the ones that merely tune the stream.
+ *
+ * A completed senkusha handshake is not enough by itself: the console wants the PROTOCOL_VERSION
+ * exchange and a keyless SESSION exchange to have happened on that channel before it will answer the
+ * stream channel's real SESSION_REQUEST. ports/ripcord-3ds established which legs those are, and this
+ * follows it rather than re-deriving it.
+ *
+ * NOT DONE HERE: the echo and MTU measurement legs. Those produce the rtt and mtu the launch spec
+ * declares, and the 3DS port's note is worth repeating - it omitted the echo leg for five phases on the
+ * reasoning that it "tunes bitrate, it does not unlock anything", and both halves of that were true while
+ * the conclusion still cost it, because rtt 0 is an input the console uses. This port declares the same
+ * defaults it always has, which is the status quo rather than a regression, and the measurement is
+ * unfinished business rather than a decision.  [X]
+ */
+static int senkusha_legs(halyard_control_session *session, rc_connect_result *out)
+{
+    uint8_t payload[256];
+    size_t payload_len;
+
+    /*
+     * PROTOCOL_VERSION_REQUEST{supportedVersions=[9]}, as a literal, because building two nested protobuf
+     * fields to emit seven constant bytes is more code to be wrong in than the bytes are.
+     *
+     * The tag arithmetic is worth reading rather than trusting: field 31 length-delimited is
+     * (31 << 3) | 2 = 250, which is >= 0x80 and therefore a TWO-byte varint tag - 0xFA 0x01, not the
+     * single 0xFA that writing it out by hand produces.
+     */
+    {
+        static const uint8_t kVersionRequest[] = {
+            0x08, 0x1F,                   /* field 1 (type) varint = 31, PROTOCOL_VERSION_REQUEST */
+            0xFA, 0x01, 0x02, 0x08, 0x09  /* field 31, length 2: { field 1 varint = 9 }           */
+        };
+        memcpy(payload, kVersionRequest, sizeof(kVersionRequest));
+        payload_len = sizeof(kVersionRequest);
+    }
+
+    if (!takion_channel_send(&g_senkusha_channel, TAKION_CHANNEL_PROTOCOL_VERSION, payload, payload_len))
+        return 0;
+    if (takion_channel_await_control(&g_senkusha_channel, RC_TAKION_PROTOCOL_VERSION_ACK,
+                                     RC_TAKION_REPLY_MS, service_control_tick, session, NULL, NULL))
+        out->senkusha_version_ack = 1;
+
+    /*
+     * The KEYLESS SESSION_REQUEST: client version 9, empty session key and launch spec, four zero
+     * encryptedKey bytes, and no ECDH fields at all. This exchange carries nothing anyone needs - its
+     * entire purpose is to have happened.
+     */
+    {
+        takion_session_request request;
+        static const uint8_t kZeroKey[4] = { 0, 0, 0, 0 };
+
+        memset(&request, 0, sizeof(request));
+        request.client_version = 9;
+        request.session_key = "";
+        request.session_key_length = 0;
+        request.launch_spec_json = "";
+        request.launch_spec_json_length = 0;
+        request.encrypted_key = kZeroKey;
+        request.encrypted_key_length = sizeof(kZeroKey);
+
+        payload_len = takion_control_build_session_request(&request, payload, sizeof(payload));
+        if (payload_len == 0u)
+            return 0;
+        if (!takion_channel_send(&g_senkusha_channel, TAKION_CHANNEL_SESSION, payload, payload_len))
+            return 0;
+        if (!takion_channel_await_control(&g_senkusha_channel, TAKION_CONTROL_SESSION_REPLY,
+                                          RC_TAKION_REPLY_MS, service_control_tick, session, NULL, NULL))
+            return 0;
+    }
+
+    out->senkusha_complete = 1;
+    return 1;
+}
+
+/*
+ * SESSION_REQUEST -> SESSION_REPLY -> the four per-direction stream keys.
+ *
+ * The launch spec travels encrypted under the CONTROL session's field cipher at counter 0 and base64'd,
+ * and the 16-byte handshake key embedded in its plaintext is the same key the console signs its ECDH
+ * public point under. That signature check is the one that matters: without it, anything able to inject a
+ * DATA chunk on this channel could substitute its own public key and read the whole session.
+ * takion_session_negotiator_accept_reply performs it and refuses the reply if it fails.
+ */
+static int stream_session_exchange(const halyard_pairing_record *rec,
+                                   halyard_control_session *session, rc_connect_result *out)
+{
+    uint8_t handshake_key[16];
+    halyard_launch_spec_params params;
+    size_t spec_len, b64_len, request_len;
+    const uint8_t *reply = NULL;
+    size_t reply_len = 0u;
+    int ok = 0;
+
+    if (!rc_random_bytes(handshake_key, sizeof(handshake_key)))
+        return 0;
+
+    memset(&params, 0, sizeof(params));
+    params.width = (rec->stream_width > 0) ? rec->stream_width : 640;
+    params.height = (rec->stream_height > 0) ? rec->stream_height : 360;
+    params.fps = (rec->fps == 60) ? 60 : 30;
+    params.bitrate_kbps = (rec->stream_bitrate_kbps > 0) ? rec->stream_bitrate_kbps : 2000;
+    params.mtu = RC_DECLARED_MTU;
+    params.rtt_ms = 0;   /* unmeasured - see senkusha_legs' note on the echo leg  [X] */
+    params.is_hevc = 0;  /* H.264 only: the decoder this port proved is openh264   */
+    params.is_hdr = 0;
+
+    out->asked_width = params.width;
+    out->asked_height = params.height;
+    out->asked_fps = params.fps;
+
+    spec_len = halyard_launch_spec_build(&params, handshake_key, g_launch_spec, sizeof(g_launch_spec));
+    if (spec_len == 0u)
+        goto done;
+
+    /* AES-128-OFB under the control session's field context at counter 0. In place: OFB is symmetric and
+     * the plaintext is not wanted again. */
+    halyard_control_streaminfo_crypt(&session->ctrl, 0,
+                                     (const uint8_t *)g_launch_spec, (uint8_t *)g_launch_spec, spec_len);
+
+    b64_len = rc_base64_encode((const uint8_t *)g_launch_spec, spec_len,
+                               g_launch_spec_b64, sizeof(g_launch_spec_b64));
+    if (b64_len == 0u)
+        goto done;
+
+    request_len = takion_session_negotiator_begin(&g_negotiator, TAKION_CLIENT_VERSION, handshake_key,
+                                                  g_launch_spec_b64, b64_len,
+                                                  rc_random_rng_callback, NULL,
+                                                  g_session_request, sizeof(g_session_request));
+    if (request_len == 0u)
+        goto done;
+
+    out->session_request_bytes = (unsigned)request_len;
+    out->curve_p521 = (g_negotiator.curve == RC_ECDH_CURVE_P521);
+
+    if (!takion_channel_send(&g_stream_channel, TAKION_CHANNEL_SESSION, g_session_request, request_len))
+        goto done;
+
+    if (!takion_channel_await_control(&g_stream_channel, TAKION_CONTROL_SESSION_REPLY,
+                                      RC_TAKION_REPLY_MS, service_control_tick, session,
+                                      &reply, &reply_len))
+        goto done;
+
+    out->session_reply_bytes = (unsigned)reply_len;
+    if (!takion_session_negotiator_accept_reply(&g_negotiator, reply, reply_len,
+                                                rc_random_rng_callback, NULL))
+        goto done;
+
+    out->stream_keys_derived = 1;
+    ok = 1;
+
+done:
+    /*
+     * The handshake key does not outlive this function whatever happened. It is the key the console's
+     * signature is verified under, and there is no reason for it to sit in .bss afterwards.
+     */
+    memset(handshake_key, 0, sizeof(handshake_key));
+    return ok;
 }
 
 rc_connect_stage rc_connect(unsigned wake_timeout_ms, rc_connect_log_fn log,
@@ -691,6 +885,9 @@ rc_connect_stage rc_connect(unsigned wake_timeout_ms, rc_connect_log_fn log,
             out->senkusha_peer_tag = (unsigned)g_senkusha_channel.peer_tag;
             out->stage = RC_CONNECT_SENKUSHA_UP;
 
+            SAY("senkusha's gating legs (protocol version, keyless session)");
+            (void)senkusha_legs(&session, out);
+
             SAY("Takion handshake for the stream channel");
             if (takion_bring_up(&g_stream_channel, rec.host, RC_STREAM_PORT,
                                 RC_STREAM_ATTEMPTS, RC_STREAM_ATTEMPT_MS, &session, &stream_sock)) {
@@ -698,6 +895,9 @@ rc_connect_stage rc_connect(unsigned wake_timeout_ms, rc_connect_log_fn log,
                 out->takion_local_tag = (unsigned)g_stream_channel.local_tag;
                 out->takion_peer_tag = (unsigned)g_stream_channel.peer_tag;
                 out->stage = RC_CONNECT_TAKION_UP;
+
+                if (stream_session_exchange(&rec, &session, out))
+                    out->stage = RC_CONNECT_STREAM_KEYS;
             }
         }
 
@@ -705,6 +905,10 @@ rc_connect_stage rc_connect(unsigned wake_timeout_ms, rc_connect_log_fn log,
          * Both sockets close here. This probe stops once the transport is proven, and a channel left
          * open past the end of the run is a channel the console is still counting on.
          */
+        /* The negotiator holds four live stream keys. This probe stops here, so they are wiped
+         * rather than left in .bss for the remainder of the run. */
+        takion_session_negotiator_reset(&g_negotiator);
+
         if (stream_sock >= 0)
             (void)close(stream_sock);
         if (senkusha_sock >= 0)

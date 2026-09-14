@@ -37,7 +37,8 @@ typedef enum {
     RC_CONNECT_SESSION_OPEN,    /* the control session opened                             */
     RC_CONNECT_SESSION_READY,   /* SESSION_ID seen - the console is willing to stream      */
     RC_CONNECT_SENKUSHA_UP,     /* the senkusha Takion channel completed its handshake     */
-    RC_CONNECT_TAKION_UP        /* the stream's own Takion channel is established          */
+    RC_CONNECT_TAKION_UP,       /* the stream's own Takion channel is established          */
+    RC_CONNECT_STREAM_KEYS      /* SESSION_REPLY verified and the stream keys are derived  */
 } rc_connect_stage;
 
 typedef struct {
@@ -115,6 +116,24 @@ typedef struct {
     unsigned senkusha_peer_tag;
     unsigned takion_local_tag;
     unsigned takion_peer_tag;
+
+    /* The senkusha legs the console gates the stream's SESSION exchange on. */
+    int  senkusha_version_ack;   /* PROTOCOL_VERSION_ACK came back                             */
+    int  senkusha_complete;      /* ...and the keyless SESSION exchange completed too          */
+
+    /*
+     * The stream SESSION exchange. `stream_keys_derived` is the milestone: it means the console's
+     * SESSION_REPLY arrived, its ECDH point verified under the handshake key, and all four
+     * per-direction key/IV values exist. The byte counts are recorded because a reply that arrives
+     * and fails to verify is a different problem from one that never arrives.
+     */
+    unsigned session_request_bytes;
+    unsigned session_reply_bytes;
+    int  curve_p521;
+    int  stream_keys_derived;
+    int  asked_width;
+    int  asked_height;
+    int  asked_fps;
     int  heartbeats;         /* HEARTBEAT_REQ answered - proof the channel is live           */
 } rc_connect_result;
 
