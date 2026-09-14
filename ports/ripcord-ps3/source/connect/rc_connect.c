@@ -847,10 +847,25 @@ static void send_periodic(halyard_control_session *session, rc_connect_result *o
 static uint64_t g_last_drain_ms;
 static unsigned g_worst_read_gap_ms;
 
+/*
+ * WHICH PHASE OWNS THE GAP. b136 measured the longest interval between socket reads at 372 ms against a
+ * buffer that fills in about 400 - so the overflow is real and sitting on the edge. What it does not say
+ * is what spends that time, and the arithmetic does not obviously account for it: a bounded drain is
+ * tens of milliseconds, four decodes are sixty, and the blit is four.
+ *
+ * Something in this loop costs far more than its parts suggest, and guessing which has already cost four
+ * builds. Each phase is timed and its worst reported.
+ */
+static unsigned g_worst_drain_ms;
+static unsigned g_worst_decode_ms;
+static unsigned g_worst_other_ms;
+
 static int drain_av(halyard_control_session *session, rc_connect_result *out,
                     uint64_t *next_heartbeat, uint64_t *next_congestion)
 {
     int drained;
+
+    uint64_t drain_started;
 
     {
         uint64_t now = rc_time_ms();
@@ -861,7 +876,7 @@ static int drain_av(halyard_control_session *session, rc_connect_result *out,
             if (gap > (uint64_t)g_worst_read_gap_ms)
                 g_worst_read_gap_ms = (unsigned)gap;
         }
-        g_last_drain_ms = now;
+        drain_started = now;
     }
 
     drained = 0;
@@ -934,6 +949,15 @@ static int drain_av(halyard_control_session *session, rc_connect_result *out,
     if ((unsigned)drained > out->av_worst_burst)
         out->av_worst_burst = (unsigned)drained;
 
+    {
+        uint64_t now = rc_time_ms();
+        uint64_t spent = now - drain_started;
+
+        if (spent > (uint64_t)g_worst_drain_ms)
+            g_worst_drain_ms = (unsigned)spent;
+        /* The gap is measured from the END of a drain: that is when the socket was last emptied. */
+        g_last_drain_ms = now;
+    }
     return drained;
 }
 
@@ -1474,6 +1498,9 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
                     g_queue_worst = 0u;
                     g_last_drain_ms = 0u;
                     g_worst_read_gap_ms = 0u;
+                    g_worst_drain_ms = 0u;
+                    g_worst_decode_ms = 0u;
+                    g_worst_other_ms = 0u;
                     g_live_open = rc_decode_live_open();
                     if (g_live_open) {
                         rc_decode_live_set_sink(on_picture, NULL);
@@ -1546,6 +1573,7 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
             size_t message_length = 0u;
             int result;
             int drained;
+            uint64_t other_started;
 
             send_periodic(session, out, &next_heartbeat, &next_congestion);
             service_control_tick(session);
@@ -1605,6 +1633,7 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
              */
             {
                 int decoded_here = 0;
+                uint64_t decode_started = rc_time_ms();
 
                 while (g_live_open && g_frame_count > 0 && decoded_here < RC_DECODE_PER_PASS) {
                     int slot = g_frame_head;
@@ -1628,8 +1657,15 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
                     send_periodic(session, out, &next_heartbeat, &next_congestion);
                     (void)drain_av(session, out, &next_heartbeat, &next_congestion);
                 }
+                {
+                    unsigned spent = (unsigned)(rc_time_ms() - decode_started);
+
+                    if (spent > g_worst_decode_ms)
+                        g_worst_decode_ms = spent;
+                }
             }
 
+            other_started = rc_time_ms();
             result = takion_channel_poll(&g_stream_channel, &channel_id, &message, &message_length);
             if (result == 1) {
                 uint32_t type = 0xffffffffu;
@@ -1653,6 +1689,13 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
                 out->held_channel_error = 1;
                 break;
             }
+            {
+                unsigned spent = (unsigned)(rc_time_ms() - other_started);
+
+                if (spent > g_worst_other_ms)
+                    g_worst_other_ms = spent;
+            }
+
             /* Only when nothing arrived at all. Sleeping with data waiting is what caused the loss. */
             if (drained == 0 && result == 0)
                 rc_sleep_ms(2u);
@@ -1697,6 +1740,9 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
     out->frames_overrun = g_frames_overrun;
     out->queue_worst = g_queue_worst;
     out->worst_read_gap_ms = g_worst_read_gap_ms;
+    out->worst_drain_ms = g_worst_drain_ms;
+    out->worst_decode_ms = g_worst_decode_ms;
+    out->worst_other_ms = g_worst_other_ms;
     rc_video_scale_info(&out->scaled_width, &out->scaled_height,
                         &out->display_width, &out->display_height);
     out->pictures_dropped = g_pictures_dropped;
