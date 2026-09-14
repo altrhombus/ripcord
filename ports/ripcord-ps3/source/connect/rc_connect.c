@@ -399,6 +399,9 @@ static int takion_bring_up(takion_reliable_channel *channel, const char *host, u
  */
 #define RC_STREAM_HOLD_MS 6000u
 
+/* The client's own heartbeat cadence on the stream channel, from the reference's one second. */
+#define RC_STREAM_HEARTBEAT_MS 1000u
+
 /* PROTOCOL_VERSION_ACK's message type. Named because a bare 32 in a comparison says nothing. */
 #define RC_TAKION_PROTOCOL_VERSION_ACK 32u
 
@@ -727,8 +730,15 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
      */
     takion_control_verifier_init(&g_verifier, g_negotiator.receive_aes_key,
                                  g_negotiator.receive_base_iv);
+    /*
+     * ENFORCING NOW, and the sample is what changed. b70 held the session open and checked 14 incoming
+     * packets with 0 failures, where b69 had exactly one. A single passing 32-bit tag already settled the
+     * key schedule - chance is about one in four billion - but it said nothing about whether ALL console
+     * traffic is authenticated, and that is the question enforcement actually turns on. Fourteen for
+     * fourteen, across heartbeats and SACKs as well as STREAM_INFO, answers it.
+     */
     takion_channel_enable_verification(&g_stream_channel, takion_control_verifier_check, &g_verifier,
-                                       0 /* count, do not drop - see above */);
+                                       1 /* drop what does not authenticate */);
 
     /*
      * STREAM_INFO is the console's answer to the whole negotiation: the resolution it actually chose,
@@ -785,8 +795,30 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
      */
     {
         uint64_t deadline = rc_time_ms() + RC_STREAM_HOLD_MS;
+        uint64_t next_heartbeat = rc_time_ms();
 
         while (rc_time_ms() < deadline) {
+            /*
+             * THE STREAM CHANNEL'S OWN HEARTBEAT, which is ours to send rather than to answer.
+             *
+             * Two separate mechanisms are easy to confuse here. On the control session the CONSOLE asks
+             * and we reply; on this channel the client sends unprompted once a second and the console's
+             * own heartbeats need no answer at all - HalyardTakionStream.cs is explicit that incoming
+             * ones require nothing. b70 saw six console messages in six seconds, the last of them type
+             * 0x0003, and this port was answering none of them and sending none of its own.
+             *
+             * Nothing has failed for want of it yet because six seconds is short. A stream is not.
+             */
+            if (rc_time_ms() >= next_heartbeat) {
+                uint8_t beat[8];
+                size_t beat_len = takion_control_build_bare(TAKION_CONTROL_HEARTBEAT,
+                                                            beat, sizeof(beat));
+                if (beat_len > 0u
+                    && takion_channel_send(&g_stream_channel, TAKION_CHANNEL_SESSION, beat, beat_len))
+                    out->heartbeats_sent++;
+                next_heartbeat = rc_time_ms() + RC_STREAM_HEARTBEAT_MS;
+            }
+
             unsigned channel_id = 0u;
             const uint8_t *message = NULL;
             size_t message_length = 0u;
