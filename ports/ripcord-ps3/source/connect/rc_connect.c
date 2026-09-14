@@ -5,6 +5,8 @@
 #include "halyard_wake.h"
 #include "halyard_pairing_file.h"
 #include "halyard_control_session.h"
+#include "takion_reliable_channel.h"
+#include "rc_udp.h"
 #include "halyard_control_arm.h"
 #include "halyard_ctrl_message.h"
 #include "platform/rc_platform.h"
@@ -282,11 +284,89 @@ const char *rc_connect_stage_name(rc_connect_stage stage)
     case RC_CONNECT_AWAKE:         return "awake";
     case RC_CONNECT_SESSION_OPEN:  return "control session open";
     case RC_CONNECT_SESSION_READY: return "SESSION_ID seen - willing to stream";
+    case RC_CONNECT_SENKUSHA_UP:   return "senkusha channel up, stream channel did not follow";
+    case RC_CONNECT_TAKION_UP:     return "Takion established on the stream channel";
     default:                       return "unknown";
     }
 }
 
 #define SAY(text) do { if (log != NULL) log(text); } while (0)
+
+/*
+ * TAKION, and the two UDP ports it needs, in the order the console requires them.
+ *
+ * Senkusha (9297) first, because the console gates on it: it will not answer the stream channel's
+ * SESSION exchange unless a senkusha bring-up has happened. The stream's own Takion handshake is 9296 -
+ * a different port, and confusing the two is the obvious mistake to make.
+ */
+#define RC_SENKUSHA_PORT      9297u
+#define RC_STREAM_PORT        9296u
+#define RC_SENKUSHA_ATTEMPTS  10u
+#define RC_SENKUSHA_ATTEMPT_MS 300u
+#define RC_STREAM_ATTEMPTS    20u
+#define RC_STREAM_ATTEMPT_MS  300u
+
+/*
+ * The receive cushion, which is not about this probe at all - the handshake's datagrams are tiny. It is
+ * set now because the socket this opens is the one the A/V stream will later arrive on, and a keyframe
+ * arrives as a burst of ~20 back-to-back datagrams that the stack drops the tail of if the buffer is
+ * smaller than the burst.
+ */
+#define RC_UDP_RCVBUF (256 * 1024)
+
+/*
+ * Static rather than automatic, and for the same reason rc_log's format buffer is: these are large, the
+ * main thread's stack is finite, and rc_connect is already deep in the call graph by the time it gets
+ * here. The 3DS port reached the same conclusion for the same structures.
+ *
+ * Single-threaded, so no lock. If a second thread ever drives Takion, this needs revisiting rather than
+ * copying.
+ */
+static takion_reliable_channel g_senkusha_channel;
+static takion_reliable_channel g_stream_channel;
+
+/*
+ * THE HEARTBEAT PUMP, and the reason this whole flow is shaped around a callback.
+ *
+ * The console resets the session 15-30 s after heartbeat replies stop, and the Takion handshakes below
+ * wait far longer than that. Single-threaded, so nothing services the control channel unless this does -
+ * takion_channel_connect_ticked calls it roughly every 20 ms while it waits.
+ *
+ * halyard_control_session_service answers HEARTBEAT_REQ internally, so this deliberately does nothing
+ * with the event: the point is the call, not the result. It must not block, and it does not.
+ */
+static void service_control_tick(void *ctx)
+{
+    halyard_control_session *session = (halyard_control_session *)ctx;
+    halyard_control_event ev;
+
+    if (session == NULL)
+        return;
+    memset(&ev, 0, sizeof(ev));
+    (void)halyard_control_session_service(session, &ev);
+}
+
+/* Brings up one Takion channel. Returns 1 if the four-way handshake completed. */
+static int takion_bring_up(takion_reliable_channel *channel, const char *host, unsigned port,
+                           unsigned attempts, unsigned attempt_ms,
+                           halyard_control_session *session, int *out_sock)
+{
+    struct sockaddr_in peer;
+    int sock = rc_udp_open(host, port, &peer, RC_UDP_RCVBUF);
+
+    *out_sock = -1;
+    if (sock < 0)
+        return 0;
+
+    memset(channel, 0, sizeof(*channel));
+    if (!takion_channel_connect_ticked(channel, sock, peer, attempts, attempt_ms,
+                                       service_control_tick, session)) {
+        (void)close(sock);
+        return 0;
+    }
+    *out_sock = sock;
+    return 1;
+}
 
 rc_connect_stage rc_connect(unsigned wake_timeout_ms, rc_connect_log_fn log,
                             const char *const *dirs, int dir_count, rc_connect_result *out)
@@ -586,6 +666,49 @@ rc_connect_stage rc_connect(unsigned wake_timeout_ms, rc_connect_log_fn log,
             }
             rc_sleep_ms(10u);
         }
+    }
+
+    /*
+     * TAKION, only if the console said it is willing to stream.
+     *
+     * Attempting it earlier is not merely premature, it is misleading: a console that has not answered
+     * the sign-in gate SILENTLY DROPS every Takion INIT, so the handshake would time out and look like a
+     * transport fault rather than the authorisation fault it is. The 3DS port records the same finding.
+     *
+     * The control session stays OPEN throughout and is serviced by the tick callback - see
+     * service_control_tick. Closing it first would cost the session ~15-30 s later, in the middle of
+     * exactly the wait this is trying to measure.
+     */
+    if (out->stage == RC_CONNECT_SESSION_READY) {
+        int senkusha_sock = -1;
+        int stream_sock = -1;
+
+        SAY("senkusha bring-up on its own UDP port");
+        if (takion_bring_up(&g_senkusha_channel, rec.host, RC_SENKUSHA_PORT,
+                            RC_SENKUSHA_ATTEMPTS, RC_SENKUSHA_ATTEMPT_MS, &session, &senkusha_sock)) {
+            out->senkusha_up = 1;
+            out->senkusha_local_tag = (unsigned)g_senkusha_channel.local_tag;
+            out->senkusha_peer_tag = (unsigned)g_senkusha_channel.peer_tag;
+            out->stage = RC_CONNECT_SENKUSHA_UP;
+
+            SAY("Takion handshake for the stream channel");
+            if (takion_bring_up(&g_stream_channel, rec.host, RC_STREAM_PORT,
+                                RC_STREAM_ATTEMPTS, RC_STREAM_ATTEMPT_MS, &session, &stream_sock)) {
+                out->takion_up = 1;
+                out->takion_local_tag = (unsigned)g_stream_channel.local_tag;
+                out->takion_peer_tag = (unsigned)g_stream_channel.peer_tag;
+                out->stage = RC_CONNECT_TAKION_UP;
+            }
+        }
+
+        /*
+         * Both sockets close here. This probe stops once the transport is proven, and a channel left
+         * open past the end of the run is a channel the console is still counting on.
+         */
+        if (stream_sock >= 0)
+            (void)close(stream_sock);
+        if (senkusha_sock >= 0)
+            (void)close(senkusha_sock);
     }
 
     halyard_control_session_close(&session);

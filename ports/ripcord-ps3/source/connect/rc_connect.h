@@ -35,7 +35,9 @@ typedef enum {
     RC_CONNECT_WAKE_SENT,       /* asleep, WAKEUP sent, never woke within the deadline    */
     RC_CONNECT_AWAKE,           /* the console is awake - as far as this probe goes       */
     RC_CONNECT_SESSION_OPEN,    /* the control session opened                             */
-    RC_CONNECT_SESSION_READY    /* SESSION_ID seen - the console is willing to stream      */
+    RC_CONNECT_SESSION_READY,   /* SESSION_ID seen - the console is willing to stream      */
+    RC_CONNECT_SENKUSHA_UP,     /* the senkusha Takion channel completed its handshake     */
+    RC_CONNECT_TAKION_UP        /* the stream's own Takion channel is established          */
 } rc_connect_stage;
 
 typedef struct {
@@ -98,6 +100,21 @@ typedef struct {
      * a console that says no want different things looked at next.
      */
     int  login_verdict;      /* -1 none, 0 accepted, 1 rejected, 2 something else entirely   */
+
+    /*
+     * The two Takion channels. Senkusha (9297) is brought up first because the console gates the
+     * stream channel's SESSION exchange on it having happened; the stream channel is 9296.
+     *
+     * The tags are recorded because they are the cheapest proof the handshake was real: a four-way
+     * exchange that completed has a peer tag the console chose, which no amount of local optimism
+     * can produce.
+     */
+    int  senkusha_up;
+    int  takion_up;
+    unsigned senkusha_local_tag;
+    unsigned senkusha_peer_tag;
+    unsigned takion_local_tag;
+    unsigned takion_peer_tag;
     int  heartbeats;         /* HEARTBEAT_REQ answered - proof the channel is live           */
 } rc_connect_result;
 

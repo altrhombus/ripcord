@@ -868,11 +868,31 @@ static int check_connect(void)
     ps3_log("       stage reached: %s\n", rc_connect_stage_name(stage));
 
     switch (stage) {
+    case RC_CONNECT_TAKION_UP:
+        if (c.login_verdict == 0)
+            ps3_log("       the console accepted the passcode (LOGIN 0x0005 -> 0x00)\n");
+        ps3_log("       senkusha  local 0x%08x  peer 0x%08x\n",
+                c.senkusha_local_tag, c.senkusha_peer_tag);
+        ps3_log("       stream    local 0x%08x  peer 0x%08x\n",
+                c.takion_local_tag, c.takion_peer_tag);
+        ps3_log("       a peer tag is the console's own number - it cannot be produced at this end,\n");
+        ps3_log("       so a non-zero one is proof the four-way handshake really completed.\n");
+        ps3_log("ok    Takion established - the transport the A/V stream rides is up\n");
+        return 0;
+    case RC_CONNECT_SENKUSHA_UP:
+        ps3_log("       senkusha  local 0x%08x  peer 0x%08x\n",
+                c.senkusha_local_tag, c.senkusha_peer_tag);
+        ps3_log("FAIL  senkusha came up but the stream channel's Takion handshake did not. The\n");
+        ps3_log("      console answered on one UDP port and not the other, which is a different\n");
+        ps3_log("      problem from never answering at all.\n");
+        return 1;
     case RC_CONNECT_SESSION_READY:
         if (c.login_verdict == 0)
             ps3_log("       the console accepted the passcode (LOGIN 0x0005 -> 0x00)\n");
-        ps3_log("ok    control session open and the console is willing to stream\n");
-        return 0;
+        ps3_log("FAIL  the console is willing to stream but senkusha's Takion handshake never\n");
+        ps3_log("      completed - no INIT_ACK. The control plane is healthy, so this is the UDP\n");
+        ps3_log("      leg specifically.\n");
+        return 1;
     case RC_CONNECT_SESSION_OPEN:
         ps3_log("       %d control frame(s) while waiting; first 0x%04x, last 0x%04x, %d heartbeat(s)\n",
                 c.frames_seen, c.first_type, c.last_type, c.heartbeats);
