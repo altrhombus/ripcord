@@ -259,9 +259,26 @@ void rc_spu_yuv_stats_get(rc_spu_yuv_stats *out)
 
 void rc_spu_yuv_exit(void)
 {
-    if (!s_ready)
+    int i;
+
+    if (s_spes <= 0)
         return;
-    (void)sysSpuThreadGroupTerminate(s_group, 0);
+
+    /*
+     * ASK THEM TO LEAVE, then join. Zero is the sentinel the SPE reads as "stop" - see the kernel.
+     *
+     * The first version went straight to sysSpuThreadGroupTerminate on five threads blocked in a mailbox
+     * read, and locked the console. A blocked thread cannot notice it is being terminated; it has to be
+     * given something to wake up for. The group is still destroyed afterwards, and the join is bounded by
+     * lv2 rather than by this code, because a shutdown path that can hang is how b105 ended.
+     */
+    for (i = 0; i < s_spes; i++)
+        (void)sysSpuThreadWriteMb(s_thread[i], 0u);
+
+    {
+        u32 cause = 0, status = 0;
+        (void)sysSpuThreadGroupJoin(s_group, &cause, &status);
+    }
     (void)sysSpuThreadGroupDestroy(s_group);
     (void)sysSpuImageClose(&s_image);
     s_ready = 0;
