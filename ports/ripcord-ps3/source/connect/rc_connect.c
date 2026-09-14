@@ -414,6 +414,12 @@ static int takion_bring_up(takion_reliable_channel *channel, const char *host, u
 /* The client's own heartbeat cadence on the stream channel, from the reference's one second. */
 #define RC_STREAM_HEARTBEAT_MS 1000u
 
+/*
+ * How often the console is told what arrived. The reference's interval, and it is the rate controller's
+ * sampling period rather than an arbitrary tick - reporting less often gives it less to adapt to.
+ */
+#define RC_CONGESTION_INTERVAL_MS 200u
+
 /* The reference's own throttle. One IDR repairs the entire reference chain, so asking again while the
  * answer is still in flight buys nothing and costs upstream bandwidth. */
 #define RC_IDR_REQUEST_MIN_MS 200u
@@ -1239,6 +1245,7 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
     {
         uint64_t deadline = rc_time_ms() + RC_STREAM_HOLD_MS;
         uint64_t next_heartbeat = rc_time_ms();
+        uint64_t next_congestion = rc_time_ms() + RC_CONGESTION_INTERVAL_MS;
 
         while (rc_time_ms() < deadline) {
             /*
@@ -1252,6 +1259,42 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
              *
              * Nothing has failed for want of it yet because six seconds is short. A stream is not.
              */
+            /*
+             * CONGESTION FEEDBACK: what arrived and what did not, every 200 ms.
+             *
+             * The console's rate controller adapts the encoder bitrate to what this reports, and this
+             * port has been sending none of it - so a console with no evidence the link is healthy has
+             * been behaving exactly as one would expect, holding around 1.35 Mbps against an 8000 kbps
+             * request.
+             *
+             * The counts come from the demuxer, which has been computing and discarding them all along:
+             * stream_demux_take_packet_stats RESETS on read, so each packet reports its own window and
+             * not a running total. Sent raw on the socket rather than through the reliable channel - it
+             * is a bare Takion packet of base type 5, not a DATA chunk, and it is sealed with the
+             * control sealer because the key position is one sequence shared across all of them.
+             */
+            if (out->demux_ready && rc_time_ms() >= next_congestion) {
+                long got = 0, missed = 0;
+                uint8_t feedback[TAKION_CONGESTION_PACKET_SIZE];
+                size_t fn;
+
+                stream_demux_take_packet_stats(&g_demux, &got, &missed);
+                out->units_received += got;
+                out->units_lost += missed;
+
+                fn = takion_congestion_build((unsigned long)(got < 0 ? 0 : got),
+                                             (unsigned long)(missed < 0 ? 0 : missed),
+                                             feedback, sizeof(feedback));
+                if (fn > 0u) {
+                    takion_control_sealer_seal_congestion(&g_sealer, feedback, fn);
+                    if (sendto(g_stream_channel.sock, feedback, fn, 0,
+                               (struct sockaddr *)&g_stream_channel.peer,
+                               sizeof(g_stream_channel.peer)) >= 0)
+                        out->congestion_sent++;
+                }
+                next_congestion = rc_time_ms() + RC_CONGESTION_INTERVAL_MS;
+            }
+
             if (rc_time_ms() >= next_heartbeat) {
                 uint8_t beat[8];
                 size_t beat_len = takion_control_build_bare(TAKION_CONTROL_HEARTBEAT,
@@ -1404,7 +1447,18 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
     out->audio_frame_bytes = g_tally.audio_bytes;
     out->corrupt_events = g_tally.corrupt_events;
     out->largest_frame = g_tally.largest_frame;
-    stream_demux_take_packet_stats(&g_demux, &out->units_received, &out->units_lost);
+    {
+        /*
+         * Whatever is left in the last, partial window. ADDED rather than assigned: the congestion loop
+         * has been draining these every 200 ms, and take_packet_stats resets on read - assigning here
+         * would report only the final fragment and throw away thirty seconds of counting.
+         */
+        long got = 0, missed = 0;
+
+        stream_demux_take_packet_stats(&g_demux, &got, &missed);
+        out->units_received += got;
+        out->units_lost += missed;
+    }
 
     if (g_live_open) {
         rc_decode_live_close();
