@@ -118,6 +118,28 @@ int takion_channel_send(takion_reliable_channel *ch, unsigned channel,
  * out before calling again), 0 if nothing completed this call (the common case - call this in a loop),
  * -1 on a socket error.
  */
+/*
+ * Waits for a reliable control message of `want_type` to arrive on `ch`, calling `tick` (may be NULL)
+ * while it waits so a single-threaded caller can keep something else alive - in practice the Halyard
+ * control channel, which the console resets a session over if its heartbeats go unanswered.
+ *
+ * Returns 1 if the message arrived, 0 on timeout or channel error. Messages of other types are consumed
+ * and discarded: this is a "wait for the reply to what I just sent" primitive, and the console
+ * interleaves other traffic freely.
+ *
+ * `out_message`/`out_length` (both may be NULL) hand back the matched message, which SESSION_REPLY's
+ * caller needs - the reply is not merely an acknowledgement, it carries the console's ECDH public key.
+ * The pointer aims into the channel's own buffer and is valid until the next poll, exactly like
+ * takion_channel_poll's.
+ *
+ * Lives here rather than in a port because every port needs the same loop for the same reason, and the
+ * 3DS and PS3 versions would have differed only in which clock and sleep they called - both of which
+ * rc_platform.h already abstracts.
+ */
+int takion_channel_await_control(takion_reliable_channel *ch, uint32_t want_type, unsigned timeout_ms,
+                                 takion_tick_fn tick, void *tick_ctx,
+                                 const uint8_t **out_message, size_t *out_length);
+
 int takion_channel_poll(takion_reliable_channel *ch, unsigned *out_channel,
                         const uint8_t **out_message, size_t *out_length);
 
