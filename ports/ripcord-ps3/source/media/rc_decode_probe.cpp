@@ -182,6 +182,14 @@ extern "C" int rc_decode_probe(const char *path, int max_frames, rc_decode_probe
  * inter-frame, because they reference the pictures before them.
  */
 static ISVCDecoder *g_live = 0;
+static rc_decode_picture_fn g_picture_sink = 0;
+static void *g_picture_ctx = 0;
+
+extern "C" void rc_decode_live_set_sink(rc_decode_picture_fn fn, void *ctx)
+{
+    g_picture_sink = fn;
+    g_picture_ctx = ctx;
+}
 
 extern "C" int rc_decode_live_open(void)
 {
@@ -240,6 +248,15 @@ extern "C" int rc_decode_live_feed(const uint8_t *access_unit, size_t length,
         stats->width = info.UsrData.sSystemBuffer.iWidth;
         stats->height = info.UsrData.sSystemBuffer.iHeight;
         stats->pictures_out++;
+
+        /* Handed over while openh264 still owns the planes - see the header on their lifetime. */
+        if (g_picture_sink != 0) {
+            g_picture_sink(g_picture_ctx, planes[0], planes[1], planes[2],
+                           info.UsrData.sSystemBuffer.iStride[0],
+                           info.UsrData.sSystemBuffer.iStride[1],
+                           info.UsrData.sSystemBuffer.iWidth,
+                           info.UsrData.sSystemBuffer.iHeight);
+        }
         return 1;
     }
     return 0;
