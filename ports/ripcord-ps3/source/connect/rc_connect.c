@@ -392,6 +392,13 @@ static int takion_bring_up(takion_reliable_channel *channel, const char *host, u
  */
 #define RC_STREAM_INFO_WAIT_MS 10000u
 
+/*
+ * How long to hold the negotiated session open, watching. Long enough that the console's own cadence
+ * shows through - it heartbeats and re-sends on its own timers - and short enough that a bring-up probe
+ * still finishes. Not a streaming duration; a sampling one.
+ */
+#define RC_STREAM_HOLD_MS 6000u
+
 /* PROTOCOL_VERSION_ACK's message type. Named because a bare 32 in a comparison says nothing. */
 #define RC_TAKION_PROTOCOL_VERSION_ACK 32u
 
@@ -762,8 +769,61 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
         }
     }
 
+    /*
+     * HOLD THE SESSION OPEN AND WATCH, rather than ending the moment STREAM_INFO is acked.
+     *
+     * b69 armed incoming verification and came back with "1 checked, 0 failed". One passing 32-bit tag
+     * is strong evidence about the KEY SCHEDULE - chance would be about one in four billion - but it is
+     * a thin sample for the different question of whether everything the console sends is authenticated,
+     * and the probe was ending before anything else could arrive. A sample of one cannot distinguish
+     * "all console traffic is sealed" from "the one packet we happened to see was".
+     *
+     * So this keeps both channels serviced for a few seconds and tallies what turns up. It is also the
+     * beginning of the streaming loop rather than scaffolding: holding a session open while pumping
+     * heartbeats and draining the stream channel is exactly what the A/V leg has to do, and doing it
+     * here first means the next step inherits something that has run on hardware.
+     */
+    {
+        uint64_t deadline = rc_time_ms() + RC_STREAM_HOLD_MS;
+
+        while (rc_time_ms() < deadline) {
+            unsigned channel_id = 0u;
+            const uint8_t *message = NULL;
+            size_t message_length = 0u;
+            int result;
+
+            service_control_tick(session);
+
+            result = takion_channel_poll(&g_stream_channel, &channel_id, &message, &message_length);
+            if (result == 1) {
+                uint32_t type = 0xffffffffu;
+
+                out->held_messages++;
+                if (takion_control_peek_type(message, message_length, &type)) {
+                    out->held_last_type = (unsigned)type;
+                    /* The console re-sends STREAM_INFO if it did not hear our ack. Answering again is
+                     * cheap and silence here is expensive. */
+                    if (type == TAKION_CONTROL_STREAM_INFO) {
+                        uint8_t ack[8];
+                        size_t ack_len = takion_control_build_bare(TAKION_CONTROL_STREAM_INFO_ACK,
+                                                                   ack, sizeof(ack));
+                        if (ack_len > 0u)
+                            (void)takion_channel_send(&g_stream_channel, TAKION_CHANNEL_SESSION,
+                                                      ack, ack_len);
+                        out->held_stream_info_repeats++;
+                    }
+                }
+            } else if (result == -1) {
+                out->held_channel_error = 1;
+                break;
+            }
+            rc_sleep_ms(5u);
+        }
+    }
+
     out->verify_checked = g_verifier.checked;
     out->verify_failed = g_verifier.failed;
+    out->verify_dropped = g_stream_channel.verify_dropped;
     ok = 1;
 
 done:
