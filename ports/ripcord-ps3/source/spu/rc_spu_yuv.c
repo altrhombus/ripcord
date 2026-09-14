@@ -23,6 +23,17 @@ static sys_spu_thread_t s_thread[RC_SPU_YUV_MAX_SPES];
 static int s_spes;
 static int s_ready;
 static uint32_t s_sequence;
+static unsigned s_consecutive_failures;
+
+/*
+ * One frame time, not three. A conversion that has not finished in 25 ms has already missed its frame,
+ * and waiting longer only delays the fallback that will produce the picture.
+ */
+#define RC_SPU_YUV_DEADLINE_MS 25u
+
+/* Five consecutive misses is not a hiccup. After this the SPE path is abandoned for the rest of the
+ * run and the PPE - which is known to work - carries the stream on its own. */
+#define RC_SPU_YUV_GIVE_UP_AFTER 5u
 static rc_spu_yuv_stats s_stats;
 
 /*
@@ -187,11 +198,22 @@ unsigned rc_spu_yuv_convert(const uint8_t *y, const uint8_t *u, const uint8_t *v
         (void)sysSpuThreadWriteMb(s_thread[i], 1u);
 
     /*
-     * A DEADLINE, not an indefinite wait. An SPE that dies leaves its done word untouched, and this port
-     * has already spent runs on a console that hung with nothing to say. Falling back to the PPE costs
-     * 12 ms and a frame; waiting forever costs the session.
+     * A DEADLINE, A YIELD, AND A GIVING-UP POINT. The first version had only the first, and that was the
+     * difference between degrading and locking the console.
+     *
+     * It bounded ONE FRAME at 100 ms and spun with no sleep to do it - a hard poll of main memory from
+     * the PPE. When the SPEs stopped answering, every frame then paid 100 ms of bus-saturating spin plus
+     * a full PPE conversion, for as many frames as the session lasted. Ninety seconds of that starves
+     * the machine, which is what an unresponsive console with no video looks like. The comment above it
+     * said "a deadline, not an indefinite wait", and it was true of a frame and false of the run.
+     *
+     * So: sleep rather than spin, because the SPEs need the bus more than this loop does. A deadline of
+     * one frame time rather than three, because a conversion that has not finished in 25 ms has already
+     * lost its frame. And a consecutive-failure count, because one late frame is a hiccup while five in
+     * a row is a broken subsystem - and paying for a broken subsystem on every frame forever is the
+     * behaviour that turned a degraded picture into a dead console.
      */
-    deadline = rc_time_ms() + 100u;
+    deadline = rc_time_ms() + RC_SPU_YUV_DEADLINE_MS;
     for (;;) {
         int complete = 0;
 
@@ -203,9 +225,16 @@ unsigned rc_spu_yuv_convert(const uint8_t *y, const uint8_t *u, const uint8_t *v
             break;
         if (rc_time_ms() > deadline) {
             s_stats.fallbacks++;
+            s_consecutive_failures++;
+            if (s_consecutive_failures >= RC_SPU_YUV_GIVE_UP_AFTER) {
+                s_ready = 0;
+                s_stats.disabled = 1;
+            }
             return 0u;
         }
+        rc_sleep_ms(1u);
     }
+    s_consecutive_failures = 0;
 
     {
         uint64_t hz = rc_tick_hz();
