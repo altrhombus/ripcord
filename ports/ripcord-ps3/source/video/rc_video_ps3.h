@@ -32,6 +32,11 @@ typedef struct {
      * loaded" is an error return and a perfectly good outcome. */
     int gcm_module;
     int sysutil_module;
+
+    /* Which rsxInit size pair worked, and how many were tried - see the sweep in the .c. */
+    int rsx_attempts;
+    int cmd_size;
+    int io_size;
     int last_error;
     const char *failed_at;  /* the step that refused; NULL on success */
 } rc_video_info;
