@@ -721,6 +721,13 @@ static int g_live_open;
  * Sized in whole frames rather than bytes: eight is enough to ride out a keyframe followed by a burst of
  * inter-frames, and a slot has to hold the largest frame seen with room to spare.
  */
+/*
+ * How many queued frames to decode per pass through the loop. Enough that the decode rate is set by the
+ * PPE rather than by how often the loop happens to come round, and small enough that the socket is read
+ * again promptly - it holds 122 KB and this stream fills that in about half a second.
+ */
+#define RC_DECODE_PER_PASS 4
+
 #define RC_FRAME_QUEUE_SLOTS 8
 #define RC_FRAME_SLOT_BYTES (96 * 1024)
 
@@ -1537,16 +1544,31 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
              */
 
             /*
-             * ONE FRAME PER PASS, outside the drain. Alternating "read what is waiting" with "decode one"
-             * bounds the time the socket goes unread to a single decode instead of however many frames
-             * arrived together.
+             * DECODE SEVERAL, NOT ONE, and service the timers between them.
+             *
+             * One per pass was too few by construction. A drain takes up to 256 packets, which at ~15
+             * packets a frame is sixteen frames arriving; decoding one of them per pass caps the decode
+             * rate at the loop rate rather than at what the PPE can do. b129 measured the consequence
+             * exactly: 28.5 frames a second arriving, 21.5 dequeued, the queue pinned at 8 of 8 and 212
+             * frames dropped - while the decode work needed is 648 ms per second, which is 65% of one
+             * core. The work fits. The scheduling did not.
+             *
+             * Bounded rather than "until empty" for the reason the drain is bounded: the socket has a
+             * 122 KB buffer and must not go unread for long. send_periodic between decodes keeps the
+             * heartbeat and congestion timers honest across a run of them.
              */
-            if (g_live_open && g_frame_count > 0) {
-                int slot = g_frame_head;
+            {
+                int decoded_here = 0;
 
-                g_frame_head = (g_frame_head + 1) % RC_FRAME_QUEUE_SLOTS;
-                g_frame_count--;
-                (void)rc_decode_live_feed(g_frame_queue[slot], g_frame_length[slot], &g_live_stats);
+                while (g_live_open && g_frame_count > 0 && decoded_here < RC_DECODE_PER_PASS) {
+                    int slot = g_frame_head;
+
+                    g_frame_head = (g_frame_head + 1) % RC_FRAME_QUEUE_SLOTS;
+                    g_frame_count--;
+                    (void)rc_decode_live_feed(g_frame_queue[slot], g_frame_length[slot], &g_live_stats);
+                    decoded_here++;
+                    send_periodic(session, out, &next_heartbeat, &next_congestion);
+                }
             }
 
             result = takion_channel_poll(&g_stream_channel, &channel_id, &message, &message_length);
