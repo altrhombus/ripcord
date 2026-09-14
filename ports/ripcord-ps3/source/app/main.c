@@ -1494,14 +1494,21 @@ int main(void)
     failures += check_csprng();
     failures += check_spu();
     failures += check_core();
-    failures += check_discovery();
-    failures += check_connect();
-    failures += check_decode();
 
     /*
-     * The colour-conversion SPEs, brought up AFTER check_spu has initialised the SPU subsystem for this
-     * process. Not a check in its own right - a console that gives this program no SPEs still streams,
-     * on the PPE, at the speed the last several runs measured.
+     * THE COLOUR-CONVERSION SPEs, BEFORE THE STAGE THAT USES THEM.
+     *
+     * b99 brought these up after check_decode, which reads sensibly and runs far too late: the
+     * conversion happens inside check_connect, which is two lines above it. Five SPEs came up, converted
+     * nothing, and the blit stayed at the PPE's 11869 us - a change that did exactly nothing and looked
+     * like a change that did not work.
+     *
+     * After check_spu, because that is what initialises the SPU subsystem for this process. Before
+     * check_connect, because that is what needs them. Both constraints are on the ORDER, which is why
+     * this sits between them rather than wherever it read best.
+     *
+     * Not a check in its own right: a console that gives this program no SPEs still streams, on the PPE,
+     * at the speed the last several runs measured.
      */
     {
         int spes = rc_spu_yuv_init();
@@ -1514,6 +1521,10 @@ int main(void)
             ps3_log("\nspu:   no SPEs for colour conversion (step %d, 0x%08X) - the PPE path stands\n",
                     stats.init_failed_at, (unsigned)stats.last_error);
     }
+
+    failures += check_discovery();
+    failures += check_connect();
+    failures += check_decode();
 
     ps3_log("\nnot covered here: the rest of the decoder. See README.md.\n");
     ps3_log("%s\n", failures == 0 ? "all checks passed" : "CHECKS FAILED");
