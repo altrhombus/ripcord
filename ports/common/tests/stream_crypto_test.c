@@ -18,6 +18,7 @@
 #include "../crypto/rc_gcm.h"
 #include "../stream/stream_key_schedule.h"
 #include "../stream/stream_packet_crypto.h"
+#include "../takion/takion_control_sealer.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -167,6 +168,90 @@ static void run_packettag(char **fields, int count, int line_number)
     check_hex_equal("packettag", line_number, "tag", tag, sizeof(tag), fields[7]);
 }
 
+/* This suite is vector-driven and asserts by hand; one local helper keeps the sealer checks readable. */
+static void seal_check(int condition, const char *what)
+{
+    if (condition) {
+        g_passed++;
+    } else {
+        g_failed++;
+        printf("FAIL control-sealer: %s\n", what);
+    }
+}
+
+/*
+ * The control sealer. Three things matter and only the first is obvious.
+ *
+ * That the tag lands at offset 5 and the key position at 9 is the part anyone would test. That the key
+ * position ADVANCES BY THE PACKET'S BLOCK-ALIGNED LENGTH is the part that bites: it is a byte count, not
+ * a packet count, and a repeated position is a repeated GMAC nonce under one key - as quiet a failure as
+ * a repeated IV. And that the AAD zeroes the key-position field as well as the tag is what distinguishes
+ * the control rule from the A/V one; getting it wrong produces a tag the console silently rejects.
+ */
+static void run_control_sealer(void)
+{
+    static const uint8_t key[16] = {
+        0x00,0x11,0x22,0x33,0x44,0x55,0x66,0x77,0x88,0x99,0xaa,0xbb,0xcc,0xdd,0xee,0xff
+    };
+    static const uint8_t iv[16] = {
+        0x0f,0x1e,0x2d,0x3c,0x4b,0x5a,0x69,0x78,0x87,0x96,0xa5,0xb4,0xc3,0xd2,0xe1,0xf0
+    };
+    takion_control_sealer sealer;
+    uint8_t packet[40];
+    uint8_t first_tag[4];
+    uint32_t pos;
+
+    takion_control_sealer_init(&sealer, key, iv);
+    seal_check(sealer.key_pos == 0u, "the first packet seals at key position 0");
+
+    memset(packet, 0xa5, sizeof(packet));
+    takion_control_sealer_seal(&sealer, packet, sizeof(packet));
+
+    pos = ((uint32_t)packet[TAKION_CONTROL_KEYPOS_OFFSET + 0] << 24)
+        | ((uint32_t)packet[TAKION_CONTROL_KEYPOS_OFFSET + 1] << 16)
+        | ((uint32_t)packet[TAKION_CONTROL_KEYPOS_OFFSET + 2] << 8)
+        | (uint32_t)packet[TAKION_CONTROL_KEYPOS_OFFSET + 3];
+    seal_check(pos == 0u, "the key position is written big-endian at offset 9");
+    memcpy(first_tag, packet + TAKION_CONTROL_TAG_OFFSET, sizeof(first_tag));
+    seal_check(memcmp(first_tag, "\xa5\xa5\xa5\xa5", 4) != 0, "a tag was written at offset 5");
+
+    /* 40 bytes rounds up to 48, so the next position is 48 and not 1. */
+    seal_check(sealer.key_pos == 48u, "the position advances by the BLOCK-ALIGNED length - 40 rounds to 48, got %u");
+
+    /* An exact multiple of the block is not padded. */
+    memset(packet, 0xa5, sizeof(packet));
+    takion_control_sealer_seal(&sealer, packet, 32u);
+    seal_check(sealer.key_pos == 48u + 32u, "an exact block multiple advances by its own length");
+
+    /* The same bytes at a different position must not produce the same tag - that is the whole point of
+     * the position being in the nonce. */
+    {
+        uint8_t a[32], b[32];
+        takion_control_sealer s2;
+
+        takion_control_sealer_init(&s2, key, iv);
+        memset(a, 0x5a, sizeof(a));
+        memset(b, 0x5a, sizeof(b));
+        takion_control_sealer_seal(&s2, a, sizeof(a));
+        takion_control_sealer_seal(&s2, b, sizeof(b));
+        seal_check(memcmp(a + TAKION_CONTROL_TAG_OFFSET, b + TAKION_CONTROL_TAG_OFFSET, 4) != 0, "identical payloads at different key positions must not share a tag");
+    }
+
+    /* Too short to hold the fields: left alone rather than written past the end. */
+    {
+        uint8_t tiny[8];
+        uint64_t before;
+
+        memset(tiny, 0x3c, sizeof(tiny));
+        before = sealer.key_pos;
+        takion_control_sealer_seal(&sealer, tiny, sizeof(tiny));
+        seal_check(tiny[7] == 0x3c && sealer.key_pos == before, "a packet too short to seal is left untouched and spends no position");
+    }
+
+    takion_control_sealer_reset(&sealer);
+    seal_check(sealer.enabled == 0 && sealer.key_pos == 0u, "reset wipes the sealer");
+}
+
 int main(int argc, char **argv)
 {
     const char *path = (argc > 1) ? argv[1] : "vectors/stream-crypto.kat";
@@ -210,6 +295,8 @@ int main(int argc, char **argv)
     }
 
     fclose(file);
+
+    run_control_sealer();
 
     printf("\n%d passed, %d failed\n", g_passed, g_failed);
     if (g_passed == 0) {

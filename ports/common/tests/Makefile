@@ -141,6 +141,7 @@ STREAM_CRYPTO_SOURCES := \
 	$(CORE)/crypto/rc_gcm.c \
 	$(CORE)/stream/stream_key_schedule.c \
 	$(CORE)/stream/stream_packet_crypto.c \
+	$(CORE)/takion/takion_control_sealer.c \
 	stream_crypto_test.c
 
 # Video FEC (GF(2^8) field + systematic Cauchy Reed-Solomon). No .NET-generated vector file - the ground
