@@ -114,6 +114,11 @@ typedef struct {
     /* What the derivation was handed, recorded inside it. Compare last_derive_fingerprint against a
      * fingerprint of last_peer_key: equal means the same bytes reached both, and the difference is the
      * environment rather than the data. */
+    /* The same on-curve check, run from here immediately before the derivation - see the .c. */
+    int last_precheck_ok;
+    int last_precheck_step;
+    int last_precheck_code;
+
     unsigned long last_derive_fingerprint;
     size_t last_derive_private_length;
     unsigned last_derive_curve;

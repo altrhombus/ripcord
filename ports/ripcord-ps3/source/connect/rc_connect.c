@@ -660,6 +660,9 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
             out->peer_point_ok = rc_ecdh_check_peer_point(RC_ECDH_CURVE_P521, out->peer_key,
                                                           (size_t)out->peer_key_length);
 
+            out->precheck_ok = g_negotiator.last_precheck_ok;
+            out->precheck_step = g_negotiator.last_precheck_step;
+            out->precheck_code = g_negotiator.last_precheck_code;
             out->derive_fingerprint = g_negotiator.last_derive_fingerprint;
             out->copy_fingerprint = rc_ecdh_fingerprint(out->peer_key, (size_t)out->peer_key_length);
             out->derive_private_length = (unsigned)g_negotiator.last_derive_private_length;
