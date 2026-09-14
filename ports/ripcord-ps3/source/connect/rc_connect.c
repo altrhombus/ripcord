@@ -417,6 +417,13 @@ static int takion_bring_up(takion_reliable_channel *channel, const char *host, u
  * answer is still in flight buys nothing and costs upstream bandwidth. */
 #define RC_IDR_REQUEST_MIN_MS 200u
 
+/*
+ * How many A/V datagrams to take in one pass before yielding to the control channel. A frame is about
+ * six packets, so this is several frames of headroom for a burst while still returning often enough
+ * that heartbeats are never late.
+ */
+#define RC_AV_DRAIN_BURST 64
+
 /* PROTOCOL_VERSION_ACK's message type. Named because a bare 32 in a comparison says nothing. */
 #define RC_TAKION_PROTOCOL_VERSION_ACK 32u
 
@@ -1019,6 +1026,7 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
             const uint8_t *message = NULL;
             size_t message_length = 0u;
             int result;
+            int drained;
 
             service_control_tick(session);
 
@@ -1036,12 +1044,33 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
              * The base type is the LOW NIBBLE of the first byte. 0 is the control association; 2 and 3
              * are video and audio.
              */
-            {
+            /*
+             * DRAIN A BURST, DO NOT SLEEP BETWEEN PACKETS.
+             *
+             * This used to handle one A/V packet and then sleep a millisecond. At the ~190 packets a
+             * second this stream runs at, that is 190 ms of every second spent asleep with data
+             * waiting - on top of 24 ms per frame of decode and colour conversion. Per 33 ms frame
+             * period roughly 30 of those 33 ms were committed, so any jitter became a backlog, and the
+             * backlog became the 71 lost units and 10 loss events b91 reported where the six-second run
+             * had none. The loss was self-inflicted pacing, not the network: 5702 of 5704 packets
+             * authenticated.
+             *
+             * Bounded rather than unbounded, and that bound is not timidity either - the control
+             * channel's heartbeats and the console's own messages are serviced by the loop outside
+             * this one, and a sustained flood that never yields would starve them.
+             */
+            drained = 0;
+            while (drained < RC_AV_DRAIN_BURST) {
                 uint8_t peek[STREAM_HEADER_LENGTH];
                 ssize_t peeked = recvfrom(g_stream_channel.sock, peek, sizeof(peek), MSG_PEEK,
                                           NULL, NULL);
 
-                if (peeked > 0 && (unsigned)(peek[0] & 0x0fu) != 0u) {
+                if (peeked <= 0)
+                    break;                                   /* nothing waiting */
+                if ((unsigned)(peek[0] & 0x0fu) == 0u)
+                    break;                                   /* control - takion_channel_poll owns it */
+                drained++;
+                {
                     /* Not the control association - take it and account for it here. */
                     uint8_t packet[TAKION_MAX_PACKET];
                     ssize_t n = recvfrom(g_stream_channel.sock, packet, sizeof(packet), 0, NULL, NULL);
@@ -1085,19 +1114,19 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
                         if (out->demux_ready)
                             stream_demux_ingest(&g_demux, packet, (size_t)n);
                     }
-                    rc_sleep_ms(1u);
-                    continue;
                 }
-                /*
-                 * A negative peek is treated as "nothing waiting", not as an error, and deliberately so.
-                 * On this platform sockets are lv2 descriptors and errors surface through net_errno
-                 * rather than errno - a distinction this port has already been caught by once, when
-                 * fcntl(F_SETFL) returned -1 with nothing useful in errno. Rather than depend on a
-                 * mapping nobody here has verified, the peek stays advisory: takion_channel_poll below
-                 * does its own recvfrom and reports a genuine socket failure through its own return.
-                 */
-                (void)peeked;
             }
+            if ((unsigned)drained > out->av_worst_burst)
+                out->av_worst_burst = (unsigned)drained;
+
+            /*
+             * A negative peek is treated as "nothing waiting", not as an error, and deliberately so.
+             * On this platform sockets are lv2 descriptors and errors surface through net_errno rather
+             * than errno - a distinction this port has already been caught by once, when
+             * fcntl(F_SETFL) returned -1 with nothing useful in errno. Rather than depend on a mapping
+             * nobody here has verified, the peek stays advisory: takion_channel_poll below does its own
+             * recvfrom and reports a genuine socket failure through its own return.
+             */
 
             result = takion_channel_poll(&g_stream_channel, &channel_id, &message, &message_length);
             if (result == 1) {
@@ -1122,7 +1151,9 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
                 out->held_channel_error = 1;
                 break;
             }
-            rc_sleep_ms(5u);
+            /* Only when nothing arrived at all. Sleeping with data waiting is what caused the loss. */
+            if (drained == 0 && result == 0)
+                rc_sleep_ms(2u);
         }
     }
 
