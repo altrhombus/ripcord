@@ -46,6 +46,11 @@
 #define TAKION_CONTROL_STREAM_INFO     13u
 #define TAKION_CONTROL_STREAM_INFO_ACK 14u
 #define TAKION_CONTROL_BANDWIDTH_PROBE 12u
+
+/* The version negotiation pair. 31 is the value the senkusha bring-up already sends as a literal; 32 is
+ * what the console answers with, and its payload names the version it actually chose. */
+#define TAKION_CONTROL_PROTOCOL_VERSION_REQUEST 31u
+#define TAKION_CONTROL_PROTOCOL_VERSION_ACK     32u
 #define TAKION_CONTROL_IDR_REQUEST     25u
 
 /* Uncompressed SEC1 point sizes, for callers sizing buffers. See rc_ecdh.h for the curve selection. */
@@ -178,6 +183,24 @@ int takion_control_parse_stream_info(const uint8_t *data, size_t length,
  * STREAM_INFO_ACK-style acknowledgements use. Returns bytes written, or 0 if the buffer is too small.
  */
 size_t takion_control_build_bare(uint32_t type, uint8_t *buf, size_t buf_size);
+
+/*
+ * PROTOCOL_VERSION_REQUEST carrying the versions we are willing to speak, highest last.
+ *
+ * This matters more than it looks. The CURVE the session's ECDH runs on is chosen from the NEGOTIATED
+ * version, not the one we asked for - so a client that assumes its own top version generates a key on a
+ * curve the console may not have picked, and the mismatch does not surface until the peer's point is
+ * rejected, long after a signature over it has verified. Ask, then read the answer.
+ */
+size_t takion_control_build_protocol_version_request(const uint32_t *versions, size_t version_count,
+                                                     uint8_t *buf, size_t buf_size);
+
+/*
+ * Reads the version the console chose out of a PROTOCOL_VERSION_ACK. Returns 1 if the field was present.
+ * A missing field is not an error at this layer - the caller falls back to what it requested, which is
+ * what the .NET reference does.
+ */
+int takion_control_parse_protocol_version_ack(const uint8_t *data, size_t length, uint32_t *out_version);
 
 /*
  * Builds ControlMessage{type=BANDWIDTH_PROBE, bandwidthProbePayload={command=ECHO_COMMAND,
