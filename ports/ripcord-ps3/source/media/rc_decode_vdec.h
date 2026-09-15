@@ -48,6 +48,8 @@ void rc_decode_vdec_close(void);
 /* What the decoder's own thread saw in the buffer immediately after writing it - see rc_decode_vdec.c. */
 unsigned rc_decode_vdec_callback_luma_max(void);
 unsigned rc_decode_vdec_callback_pictures(void);
+int rc_decode_vdec_level(void);
+unsigned rc_decode_vdec_mem_size(void);
 unsigned rc_decode_vdec_picture_addr(void);
 unsigned rc_decode_vdec_first_au(uint8_t out[8]);   /* returns its length */
 
