@@ -1543,7 +1543,16 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
                     g_pictures_dropped = 0u;
                     g_idr_requests = 0u;
                     g_last_idr_request_ms = 0u;
-                    g_awaiting_keyframe = 0;
+                    /*
+                     * ARMED AT THE START, because at the start we are blind by definition: nothing has
+                     * been decoded, so there is no reference chain, and the console sends an IDR when
+                     * asked rather than on a timer. b141 is what the 0 here looked like - the crypto
+                     * rewrite took loss from 288 units to 4, which removed the only thing that had ever
+                     * set this flag. 890 frames arrived, not one of them a keyframe, no IDR was ever
+                     * requested and the decoder rejected every frame. The loss had been accidentally
+                     * standing in for a request nobody was making.
+                     */
+                    g_awaiting_keyframe = 1;
                     g_frame_head = 0;
                     g_frame_count = 0;
                     g_frames_queued = 0u;
