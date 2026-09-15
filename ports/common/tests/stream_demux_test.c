@@ -208,6 +208,61 @@ static void test_single_unit_keyframe(void)
     CHECK(state.loss_count == 0, "no loss expected for two consecutive complete frames");
 }
 
+/*
+ * A FRAME WITH MORE UNITS THAN THE OLD CAP ALLOWED.
+ *
+ * Until STREAM_DEMUX_MAX_UNITS_PER_FRAME existed, a frame wanting more than FEC_MAX_TOTAL_UNITS slots was
+ * refused outright, so no test ever built one and no console ever delivered one this code assembled.
+ * Raising the cap made them reachable for the first time, and on hardware the first thing they did was
+ * decode to black at 15 Mbps while the same build at 8 Mbps was perfect - the difference being frames of
+ * about 90 units against about 21.
+ *
+ * 96 source units, each carrying a distinct byte pattern, checked back in order. If the assembly walks
+ * its slots wrongly past 64 this fails on the bytes rather than on the count.
+ */
+static void test_frame_with_more_units_than_the_old_cap(void)
+{
+    capture_state state;
+    static uint8_t packet[256];
+    static uint8_t expect[96 * 8];
+    int units = 96;
+    int i;
+
+    reset_capture(&state);
+    stream_demux_init(&g_demux, stream_demux_passthrough_crypto(), make_sink(&state));
+
+    for (i = 0; i < units; i++) {
+        uint8_t slice[8];
+        size_t n;
+        int b;
+
+        for (b = 0; b < 8; b++)
+            slice[b] = (uint8_t)(i * 8 + b);
+        memcpy(expect + (size_t)i * 8u, slice, sizeof(slice));
+
+        n = build_video_packet(packet, sizeof(packet), 0, i, units, 0, 0, 0, slice, sizeof(slice));
+        CHECK(n > 0, "failed to build unit %d of a %d-unit frame", i, units);
+        stream_demux_ingest(&g_demux, packet, n);
+    }
+
+    /* The first unit of the next frame flushes frame 0. */
+    {
+        uint8_t slice[8];
+        size_t n;
+
+        memset(slice, 0, sizeof(slice));
+        n = build_video_packet(packet, sizeof(packet), 1, 0, 1, 0, 0, 0, slice, sizeof(slice));
+        stream_demux_ingest(&g_demux, packet, n);
+    }
+
+    CHECK(state.video_frame_count == 1, "expected one flushed frame, got %d", state.video_frame_count);
+    CHECK(state.video_length == (size_t)units * 8u,
+        "a %d-unit frame should assemble to %d bytes, got %zu", units, units * 8, state.video_length);
+    CHECK(memcmp(state.video_data, expect, (size_t)units * 8u) == 0,
+        "the assembled bytes of a %d-unit frame do not match what was sent", units);
+    CHECK(state.loss_count == 0, "a complete frame should report no loss");
+}
+
 static void test_fec_recovers_dropped_source_units(void)
 {
     const int k = 4, m = 2, total = k + m;
@@ -362,6 +417,7 @@ static void test_control_packet_passthrough(void)
 int main(void)
 {
     test_single_unit_keyframe();
+    test_frame_with_more_units_than_the_old_cap();
     test_fec_recovers_dropped_source_units();
     test_incomplete_frame_reports_loss_but_still_emits();
     test_frame_index_gap_reports_missing_frames();
