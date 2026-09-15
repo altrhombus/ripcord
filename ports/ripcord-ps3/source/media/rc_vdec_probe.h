@@ -142,6 +142,25 @@ typedef struct {
     int  diff_first_row, diff_first_col;
     uint8_t diff_reference[8];
     uint8_t diff_actual[8];
+
+    /*
+     * THE SHAPE OF THE DISAGREEMENT, not just its size. b155 found the two decoders agree on 99% of the
+     * plane, with the first difference at column 632 of 640 and a count near 8*360 - which is what a
+     * few bytes of drift per row looks like, and nothing like two different pictures. These say whether
+     * that reading holds: drift confined to the right edge gives a high min column and every row
+     * affected, while a genuinely different picture scatters across all columns.
+     */
+    int  diff_rows_affected;
+    int  diff_min_col, diff_max_col;
+    int  diff_min_row, diff_max_row;
+    long diff_in_last_16_cols;
+
+    /*
+     * If the planes are drifting, the drift is a stride this probe has not guessed. Rather than reason
+     * about it again, the reference's second row is searched for in the decoder's output: the offset it
+     * is found at IS the stride. 0 means it was not found, which would end the drift theory.
+     */
+    int found_row_stride;
 } rc_vdec_decode_result;
 
 /* Decodes up to `max_frames` pictures from the Annex-B capture at `path` using the console's decoder.

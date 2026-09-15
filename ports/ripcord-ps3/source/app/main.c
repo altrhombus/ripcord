@@ -1423,8 +1423,16 @@ static int check_vdec(void)
                         d.diff_first_row, d.diff_first_col, d.diff_first_offset);
                 log_bytes("openh264", d.diff_reference);
                 log_bytes("vdec    ", d.diff_actual);
-                ps3_log("       a first difference on a row boundary is still a layout mistake;\n"
-                        "       scattered from an early content row means different pictures.\n");
+                ps3_log("       rows affected %d of %d (rows %d..%d), columns %d..%d,"
+                        " %ld of them in the last 16 columns\n",
+                        d.diff_rows_affected, d.height, d.diff_min_row, d.diff_max_row,
+                        d.diff_min_col, d.diff_max_col, d.diff_in_last_16_cols);
+                if (d.found_row_stride > 0)
+                    ps3_log("       THE REFERENCE'S ROW 1 SITS AT OFFSET %d - that is this decoder's"
+                            " stride, and it is not %d\n", d.found_row_stride, d.width);
+                else
+                    ps3_log("       the reference's row 1 does not occur anywhere in the first 2048\n"
+                            "       bytes, so the planes are not merely offset from each other.\n");
             }
             ps3_log("       the decoder says the picture occupies %u bytes"
                     " (status %u, attr %u)\n",
