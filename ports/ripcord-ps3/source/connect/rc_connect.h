@@ -271,6 +271,7 @@ typedef struct {
     int      sps_level;          /* as declared, before any clamp */
     int      sps_max_ref;        /* level 4.2 allows 4 reference frames at 1080p */
     unsigned level_clamped;      /* SPS units whose declared level was lowered to 4.2 */
+    int      clamp_safe;         /* whether the stream's reference frames fit 4.2's DPB at all */
 
     /* Audio. See rc_audio_ps3.h - silence written is the one fault a listener can hear. */
     int      audio_ready;

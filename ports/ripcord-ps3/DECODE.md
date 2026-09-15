@@ -529,9 +529,41 @@ of currently read block"; the syscall it wraps returns an **address** holding th
 the console reports. The code discriminates at runtime — a block index is below `numBlocks`, an address
 is not — rather than picking one. Taking the header at its word would have been silent corruption.
 
-### Still open
+### 1080p — **tested, and the answer is no**
 
-- **1080p.** The budget is there — 15% of a frame at 720p — but it is untested.
+Not for want of speed. The whole decode-and-blit path costs 15% of a frame budget at 720p, and 1080p30 is
+244,800 macroblocks a second against level 4.2's ceiling of 522,240 — throughput was never the question.
+
+Three things had to be fixed before the real answer appeared, and each was worth fixing on its own:
+
+1. **The console would not grant 1080p at all** until the launch spec's `bwKbpsSent` was raised. It had
+   been 8,000 kbps throughout, not by choice but because that is the pairing record's default. It is a
+   claim the console sizes the stream against, exactly as the declared rtt and mtu are. At 30,000 the
+   request was granted.
+2. **The demuxer refused every 1080p frame**, silently. `FEC_MAX_TOTAL_UNITS` bounds what the
+   Reed-Solomon module can recover; it was also being used as the number of unit slots a frame may
+   occupy. Those coincided at 640x360 and 1280x720 (about 21 slots) and diverge badly at 1080p, which
+   needs well over a hundred. See `STREAM_DEMUX_MAX_UNITS_PER_FRAME`.
+3. **The stream declares level 5.0 and cellVdec offers at most 4.2.** b145's sweep is exact:
+   `vdecQueryAttr` accepts `10 11 12 13 20 21 22 30 31 32 40 41 42` and nothing above.
+
+The third is the wall, and the reason is the **decoded picture buffer**, not the pixel rate. The console
+encodes with **nine reference frames**. At 720p that is 32,400 macroblocks of DPB, inside level 4.0's
+32,768 — which is exactly why the 720p stream declares 4.0, and why it decodes. At 1080p the same nine
+frames need 73,440 against 4.2's 34,816.
+
+So the console is not padding its declared level; it is asking for what it uses, and this hardware cannot
+be configured to provide it. Lowering the declared level in the SPS was tried and produced black pictures,
+as it must — the number was never the constraint, the buffer behind it was. That clamp is kept but is now
+guarded by the quantity that actually decides: it fires only when the stream's own `max_num_ref_frames`
+fits the target level's DPB at the stream's own resolution, so at 1080p against this console it correctly
+does nothing.
+
+**1280x720 at 29 fps is this port's ceiling**, and it is a hardware limit rather than a missing feature.
+It would move only if the console could be asked for fewer reference frames, and no field we have
+identified does that.
+
+### Still open
 - **The fifth SPE.** The colour converter dropped from five SPEs to four to leave the decoder one. If
   `VDEC_PICFMT_ARGB32` output works, the conversion disappears and all five come back.
 - **Audio latency.** The ring reached 2,944 samples (61 ms) in a clean run. It never ran dry after the
