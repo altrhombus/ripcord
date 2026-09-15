@@ -1525,6 +1525,7 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
     params.height = (rec->stream_height > 0) ? rec->stream_height : 360;
     params.fps = (rec->fps == 60) ? 60 : 30;
     params.bitrate_kbps = (rec->stream_bitrate_kbps > 0) ? rec->stream_bitrate_kbps : 2000;
+    out->declared_bitrate_kbps = params.bitrate_kbps;
     params.mtu = (g_measured_mtu > 0) ? g_measured_mtu : RC_DECLARED_MTU;
     params.rtt_ms = g_measured_rtt_ms;   /* 0 if the echo probe did not get a majority */
     params.is_hevc = 0;  /* H.264 only: the decoder this port proved is openh264   */

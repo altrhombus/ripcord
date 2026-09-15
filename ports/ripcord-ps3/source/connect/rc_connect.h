@@ -312,7 +312,8 @@ typedef struct {
     int  display_height;
     unsigned frames_queued;     /* handed from the receive loop to the decoder            */
     unsigned frames_overrun;
-    unsigned frames_oversized;   /* too large for a queue slot - silently dropped before b166 */    /* dropped because the queue was full - we were behind    */
+    unsigned frames_oversized;   /* too large for a queue slot - silently dropped before b166 */
+    int      declared_bitrate_kbps; /* bwKbpsSent in the launch spec */    /* dropped because the queue was full - we were behind    */
     unsigned worst_drain_ms;    /* longest single drain                                    */
     unsigned worst_decode_ms;   /* longest run of decodes in one pass                      */
     unsigned worst_other_ms;
