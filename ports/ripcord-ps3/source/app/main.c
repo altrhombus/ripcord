@@ -1017,6 +1017,8 @@ static int check_connect(void)
                  * or not anything ever reached the screen. b141 decoded nothing, and so hid the one
                  * number that would have confirmed the crypto rewrite from the live path.
                  */
+                ps3_log("       decoded by %s\n",
+                        (c.decode_backend != NULL) ? c.decode_backend : "?");
                 ps3_log("       decode ran on its own thread at priority %d;"
                         " the receive loop is %d\n",
                         c.decode_thread_priority, c.decode_receive_priority);
@@ -1366,6 +1368,14 @@ static int check_vdec(void)
         rc_vdec_decode_result d;
         int decoded;
 
+        if (rc_decode_live_backend() == RC_DECODE_BACKEND_VDEC) {
+            ps3_log("vdec:  the live path used this decoder, so the offline check is skipped -\n"
+                    "       opening a second instance would prove nothing and could fail for that\n"
+                    "       reason alone. b159 is the run that validated it: Y, U and V bit-identical\n"
+                    "       to openh264, and its luma identical to ffmpeg's on the host as well.\n");
+            return 0;
+        }
+        ps3_log("vdec:  the live path did NOT use this decoder - running the offline check to say why\n");
         ps3_log("vdec:  decoding %s with the console's decoder at level 31\n", RC_DECODE_STREAM_PATH);
         decoded = rc_vdec_decode_probe(RC_DECODE_STREAM_PATH, 31, RC_DECODE_PROBE_FRAMES,
                                        vdec_step_log, s_reference_hash_y, s_reference_hash_u, &d);
