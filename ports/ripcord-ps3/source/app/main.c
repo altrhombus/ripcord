@@ -1051,6 +1051,17 @@ static int check_connect(void)
                  * or not anything ever reached the screen. b141 decoded nothing, and so hid the one
                  * number that would have confirmed the crypto rewrite from the live path.
                  */
+                if (c.sps_level > 0) {
+                    ps3_log("       the stream: profile %d, level %d, %d reference frame(s)\n",
+                            c.sps_profile, c.sps_level, c.sps_max_ref);
+                    if (c.level_clamped > 0u)
+                        ps3_log("       %u SPS unit(s) had their declared level lowered to 42 - the"
+                                " decoder offers no higher\n", c.level_clamped);
+                    if (c.sps_max_ref > 4)
+                        ps3_log("       %d reference frames EXCEEDS what level 4.2 allows at 1080p"
+                                " (4), so the clamp is not safe here and corruption is expected\n",
+                                c.sps_max_ref);
+                }
                 if (c.decode_level > 0)
                     ps3_log("       opened at H.264 level %d, reserving %u bytes;"
                             " the stream's own SPS says level %d\n",
