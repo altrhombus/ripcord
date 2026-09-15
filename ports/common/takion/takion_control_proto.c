@@ -457,6 +457,51 @@ size_t takion_control_build_echo_command(int enabled, uint8_t *buf, size_t buf_s
     return wrap_bandwidth_probe(0u /* ECHO_COMMAND */, 2u, inner, n, buf, buf_size);
 }
 
+/*
+ * A protobuf double: IEEE-754, little-endian, eight bytes. The union reinterprets the value's own bit
+ * pattern and the shifts then extract bits arithmetically, so this emits little-endian on a big-endian
+ * target as well - which is the case that matters here and the one a memcpy would get wrong.
+ */
+static size_t double_write(double value, uint8_t *out)
+{
+    union { double d; uint64_t u; } conv;
+    int i;
+
+    conv.d = value;
+    for (i = 0; i < 8; i++)
+        out[i] = (uint8_t)((conv.u >> (8 * i)) & 0xffu);
+    return 8u;
+}
+
+size_t takion_control_build_connection_quality(uint32_t target_bitrate_kbps,
+                                               double rtt_ms, double loss_percent,
+                                               uint8_t *buf, size_t buf_size)
+{
+    uint8_t payload[40];
+    size_t payload_len = 0;
+    size_t n = 0;
+
+    if (buf == NULL)
+        return 0;
+
+    payload_len += tag_write(1u, WT_VARINT, payload + payload_len);      /* targetBitrate */
+    payload_len += varint_write(target_bitrate_kbps, payload + payload_len);
+    payload_len += tag_write(5u, WT_64BIT, payload + payload_len);       /* rtt */
+    payload_len += double_write(rtt_ms, payload + payload_len);
+    payload_len += tag_write(7u, WT_64BIT, payload + payload_len);       /* lossPercent */
+    payload_len += double_write(loss_percent, payload + payload_len);
+
+    if (varint_field_size(F_MSG_TYPE, TAKION_CONTROL_CONNECTION_QUALITY) + 1u + 1u + payload_len > buf_size)
+        return 0;
+
+    n += tag_write(F_MSG_TYPE, WT_VARINT, buf + n);
+    n += varint_write(TAKION_CONTROL_CONNECTION_QUALITY, buf + n);
+    n += tag_write(17u, WT_LEN, buf + n);                                /* connectionQualityPayload */
+    n += varint_write((uint32_t)payload_len, buf + n);
+    memcpy(buf + n, payload, payload_len);
+    return n + payload_len;
+}
+
 /* ---- parsing ---- */
 
 int takion_control_peek_type(const uint8_t *data, size_t length, uint32_t *out_type)

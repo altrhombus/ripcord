@@ -131,6 +131,14 @@ typedef struct {
     int smoothing;           /* 1 = vertical pair-average in the scale (default on) */
     int scale_thread;        /* 1 = run the frame scale on a spare core - RACY, see below */
     int dump_video;          /* 1 = write the Annex-B stream to video.264 for host-side decoding */
+    /*
+     * Send CONNECTION_QUALITY (type 16) reports. Off by default, and deliberately: the targetBitrate
+     * field's units are unconfirmed - see takion_control_build_connection_quality - and being wrong by
+     * 1000x would have the console pick an absurd rate. The .NET side gates the same feature behind the
+     * same kind of opt-in for the same reason. Key `connquality` in the pairing file.
+     */
+    int connection_quality;
+
     int stream_width;        /* resolution asked of the console - must be on the standard ladder */
     int stream_height;
     int streaming_type;

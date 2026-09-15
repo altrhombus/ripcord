@@ -276,6 +276,12 @@ typedef struct {
     unsigned au_largest;         /* the largest one submitted */
     unsigned au_max_nals;
     unsigned au_max_slices;      /* how many slices a picture is split into */
+
+    /* CONNECTION_QUALITY - the client's own statement of what it can consume. Off unless the pairing
+     * record asks for it; see halyard_pairing_file.h for why. */
+    int      connquality_enabled;
+    unsigned connquality_sent;
+    int      connquality_target;  /* the last bitrate asked for, in kbps */
     unsigned first_nal_types;
 
     /* Audio. See rc_audio_ps3.h - silence written is the one fault a listener can hear. */
