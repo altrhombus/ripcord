@@ -825,6 +825,24 @@ static void connect_progress(const char *stage_text)
     ps3_log("       .. %s\n", stage_text);
 }
 
+/*
+ * Bytes as hex. TAKES A COUNT, because b156 printed sixteen bytes from the eight-byte diff arrays and
+ * the overrun read adjacent struct memory - which happened to look like an Annex-B start code and very
+ * nearly got read as data.
+ */
+static void log_bytes(const char *label, const uint8_t *bytes, int count)
+{
+    char line[80];
+    int i;
+
+    if (count > 16)
+        count = 16;
+    for (i = 0; i < count; i++)
+        (void)snprintf(line + i * 3, sizeof(line) - (size_t)(i * 3), "%02x ", bytes[i]);
+    line[count * 3] = '\0';
+    ps3_log("         %s %s\n", label, line);
+}
+
 /* Set from the connect result, since the live decoder is closed by the time this stage runs. */
 static int g_live_backend_id;
 
@@ -1027,6 +1045,13 @@ static int check_connect(void)
                     ps3_log("       the decoder's own thread saw a peak of %d over %d picture(s)"
                             " right after writing them\n",
                             c.callback_luma_max, c.callback_pictures);
+                    ps3_log("       pictures were written to 0x%08X (%s128-byte aligned)\n",
+                            c.picture_addr, (c.picture_addr & 127u) == 0u ? "" : "NOT ");
+                    if (c.first_au_len > 0u) {
+                        log_bytes("first AU", c.first_au, 8);
+                        ps3_log("         (%u bytes; Annex-B begins 00 00 00 01 or 00 00 01)\n",
+                                c.first_au_len);
+                    }
                     if (c.luma_max == 0 && c.callback_luma_max > 0)
                         ps3_log("       WRITTEN BUT NOT SEEN: the decoder filled the buffer and the\n"
                                 "       reading thread found zeros. That is visibility, not decoding.\n");
@@ -1311,23 +1336,6 @@ static unsigned bench_ns(uint64_t ticks, uint64_t hz, unsigned iterations)
  * see rc_vdec_probe.h. The output is the set the console accepts and what each wants for memory, which
  * is what the real implementation needs before it can be written honestly.
  */
-/*
- * Bytes as hex. TAKES A COUNT, because b156 printed sixteen bytes from the eight-byte diff arrays and
- * the overrun read adjacent struct memory - which happened to look like an Annex-B start code and very
- * nearly got read as data.
- */
-static void log_bytes(const char *label, const uint8_t *bytes, int count)
-{
-    char line[80];
-    int i;
-
-    if (count > 16)
-        count = 16;
-    for (i = 0; i < count; i++)
-        (void)snprintf(line + i * 3, sizeof(line) - (size_t)(i * 3), "%02x ", bytes[i]);
-    line[count * 3] = '\0';
-    ps3_log("         %s %s\n", label, line);
-}
 
 /* openh264's first-picture plane hashes, kept so check_vdec can identify the other decoder's layout by
  * reproducing them. check_decode runs first; see the stage list at the foot of main(). */
