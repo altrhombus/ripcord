@@ -99,7 +99,23 @@ extern uint64_t rc_decode_probe_hash_plane(const uint8_t *plane, int stride, int
 /* One 1080p YUV420 picture - more than either the capture or the 720p stream needs. Static, because this
  * build caps a stack frame at 8 KB. */
 #define RC_VDEC_PICTURE_BYTES (1920 * 1088 * 3 / 2)
-static uint8_t s_picture[RC_VDEC_PICTURE_BYTES];
+/*
+ * 128-BYTE ALIGNED, AND THAT IS THE POINT OF b159.
+ *
+ * b158 localised the disagreement with cellVdec completely. ffmpeg and openh264 decode this capture to
+ * bit-identical luma, so the reference is sound and vdec is the odd one out; vdec matches it exactly
+ * across columns 0..631 of every row and differs only in columns 632..639, by a large positive spike at
+ * column 632 that decays rightward, while a uniform row matches perfectly.
+ *
+ * 632 is 640 - 8, and 640 is 5 * 128. This hardware moves data in 128-byte units, so a destination that
+ * is not itself 128-byte aligned puts every row's final chunk across an alignment boundary - which is
+ * exactly where the corruption is. The probe checked that the decoder's output was tightly packed and
+ * never checked what it was being written INTO; a plain static array gets 8 or 16 byte alignment.
+ *
+ * [X] - this explains the position and shape of the fault exactly, but the fix is unconfirmed until a
+ * run says the two decoders now agree.
+ */
+static uint8_t s_picture[RC_VDEC_PICTURE_BYTES] __attribute__((aligned(128)));
 
 static rc_vdec_decode_result *s_out;
 static rc_vdec_log_fn s_log;
@@ -254,6 +270,7 @@ static u32 vdec_callback(u32 handle, u32 msgtype, u32 msgdata, u32 arg)
             if (s_out->hashes == 0) {
                 int padded = (h + 15) & ~15;
 
+                s_out->buffer_addr = (unsigned)(uintptr_t)s_picture;
                 s_out->padded_height = padded;
                 s_out->hash_y = rc_decode_probe_hash_plane(s_picture, w, w, h, FNV64_OFFSET);
                 memcpy(s_out->first_luma, s_picture, sizeof(s_out->first_luma));
