@@ -1318,6 +1318,61 @@ static int check_vdec(void)
     ps3_log("       largest appetite: %u bytes at level %d\n",
             v.largest_mem_size, v.largest_mem_level);
     ps3_log("       a 1280x720 YUV420 picture is %d bytes, for comparison\n", 1280 * 720 * 3 / 2);
+    {
+        int i;
+
+        ps3_log("       accepted:");
+        for (i = 0; i < v.level_count; i++)
+            ps3_log(" %d", v.levels[i]);
+        ps3_log("\n");
+        ps3_log("       H.264's own level_idc set is 10 11 12 13 20 21 22 30 31 32 40 41 42 -\n"
+                "       if those match, profile_level IS level_idc and this is derived, not assumed.\n");
+    }
+
+    /*
+     * AND NOW THE ONLY QUESTION THAT MATTERS: does it decode the same bytes into the same pictures?
+     * Offline, against the same capture openh264 decodes above, hashed by the same function. The live
+     * path is untouched by this - a failure here costs a run, not a session.
+     */
+    {
+        rc_vdec_decode_result d;
+        int decoded;
+
+        ps3_log("vdec:  decoding %s with the console's decoder at level 31\n", RC_DECODE_STREAM_PATH);
+        decoded = rc_vdec_decode_probe(RC_DECODE_STREAM_PATH, 31, RC_DECODE_PROBE_FRAMES, &d);
+
+        ps3_log("       reached step %d (see rc_vdec_step), wanted %u bytes of decoder memory\n",
+                d.last_step, d.mem_size);
+        if (!decoded) {
+            ps3_log("       NO PICTURES. opened=%d, aus fed=%d, last error 0x%08X\n",
+                    d.opened, d.aus_fed, (unsigned)d.last_error);
+            ps3_log("       the step number says how far it got; every [X] in rc_vdec_probe.c is a\n"
+                    "       candidate, and the open/start ones fail loudly rather than subtly.\n");
+            return 0;
+        }
+
+        ps3_log("       %d picture(s) from %d access unit(s) at %dx%d\n",
+                d.pictures_out, d.aus_fed, d.width, d.height);
+        {
+            uint64_t hz = rc_tick_hz();
+            unsigned us = (hz > 0u && d.aus_fed > 0)
+                ? (unsigned)((d.decode_ticks * 1000000u) / hz / (unsigned)d.aus_fed) : 0u;
+
+            /* Submission only - the decode itself runs on the SPEs and finishes on a callback, so this
+             * is NOT comparable to openh264's per-call number and must not be read as one. */
+            ps3_log("       %u us per vdecDecodeAu call - SUBMISSION, not decode: the work happens\n"
+                    "       on the SPEs and lands on a callback, so this is not openh264's number\n", us);
+        }
+        {
+            int i;
+
+            for (i = 0; i < d.hashes; i++)
+                ps3_log("       frame %2d  0x%016llx\n", i, (unsigned long long)d.hash[i]);
+            ps3_log("       COMPARE THESE with the dec: hashes below. Equal means the two decoders\n"
+                    "       agree on this capture, which is the evidence needed before the live path\n"
+                    "       moves onto one nobody here has run.\n");
+        }
+    }
     return 0;
 }
 
