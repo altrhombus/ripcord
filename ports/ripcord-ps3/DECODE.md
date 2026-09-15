@@ -591,6 +591,32 @@ Two faults found on the way there were real and are fixed regardless: `bwKbpsSen
 that was the pairing default rather than anyone's decision, and the demuxer refused any frame needing
 more than 64 unit slots — silently, which at 15 Mbps is most of them.
 
+### CONNECTION_QUALITY — implemented, and **not shown to do anything**
+
+The encoding is in `ports/common` (a protocol fact, matching `HalyardTakionStream` field for field) and
+the policy that decides when to send is in this port (slice count is a cellVdec property, not a Halyard
+one). It is **off by default** — `connquality=1` in the pairing record.
+
+It is off by default because its effect is unproven, and the honest record of why is worth keeping:
+
+- **b176** stepped the ask from 30,000 kbps to the 4,000 floor over 8 reports, and the video dropped from
+  ~58 MB in thirty seconds to 8.9 MB. That looked like proof the console had listened, and it was written
+  up as proof.
+- **b177** sent the same 8 reports to the same floor and the console sent the full 57.6 MB.
+
+Two runs, the same asks, opposite outcomes. The likeliest explanation for b176 is the content: the test
+screen is animated and a quiet stretch produces a low byte count on its own, which this project has been
+caught by before. So `targetBitrate`'s units remain `[X]` — unconfirmed, exactly as the .NET side has
+them — and nothing here has demonstrated the console acting on the message at all.
+
+**What does work is the launch spec's `bwKbpsSent`**, which demonstrably controls how finely the console
+slices: 8,000 gives ~21 slices a picture, 15,000 gives 65, 30,000 gives 136 and a black screen. That is
+the lever, it is set once before the stream starts, and 15,000 is the measured-good setting.
+
+One thing was tried and removed: requesting a keyframe on each throttle step. The reasoning was right —
+a stream that has changed shape needs a fresh reference — but setting `g_awaiting_keyframe` hands it to
+the repeat loop that asks every 200 ms until one arrives, turning 8 steps into 79 IDR requests.
+
 ### Still open
 - **The fifth SPE.** The colour converter dropped from five SPEs to four to leave the decoder one. If
   `VDEC_PICFMT_ARGB32` output works, the conversion disappears and all five come back.
