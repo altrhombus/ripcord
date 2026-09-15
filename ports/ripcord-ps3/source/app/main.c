@@ -1440,6 +1440,22 @@ static int check_vdec(void)
                 if (d.diff_max_delta <= 4 && d.diff_min_col >= d.width - 16)
                     ps3_log("       VERDICT: the decoders agree. What differs is the last few columns,\n"
                             "       by amounts no viewer can see. That is a usable decoder.\n");
+                {
+                    int k;
+
+                    ps3_log("       the last 16 columns, where the first 8 agree and the last 8 do not:\n");
+                    for (k = 0; k < d.edge_rows; k++) {
+                        ps3_log("       row %d:\n", d.edge_row[k]);
+                        log_bytes("openh264", d.edge_ref[k], 16);
+                        log_bytes("vdec    ", d.edge_act[k], 16);
+                    }
+                    if (d.edge_found_at >= 0)
+                        ps3_log("       vdec's last 8 also occur at column %d of openh264's row -"
+                                " it is a copy of something, not new pixels\n", d.edge_found_at);
+                    else
+                        ps3_log("       vdec's last 8 occur nowhere else in openh264's row, so they are\n"
+                                "       their own pixels rather than a repeated block\n");
+                }
                 if (d.found_row_stride > 0)
                     ps3_log("       the reference's row 1 sits at offset %d, so the stride is %d"
                             " (the picture is %d wide)\n",
