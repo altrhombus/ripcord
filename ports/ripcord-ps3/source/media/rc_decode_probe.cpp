@@ -28,6 +28,14 @@ extern "C" {
  */
 #define RC_DECODE_PROBE_MAX_BYTES (4u * 1024u * 1024u)
 
+extern "C" uint8_t rc_decode_reference_luma[RC_DECODE_REFERENCE_MAX];
+extern "C" int rc_decode_reference_width;
+extern "C" int rc_decode_reference_height;
+
+uint8_t rc_decode_reference_luma[RC_DECODE_REFERENCE_MAX];
+int rc_decode_reference_width;
+int rc_decode_reference_height;
+
 extern "C" uint64_t rc_decode_probe_hash_plane(const uint8_t *plane, int stride, int width, int height,
                                                uint64_t seed)
 {
@@ -172,6 +180,17 @@ extern "C" int rc_decode_probe(const char *path, int max_frames, rc_decode_probe
                 out->stride_uv = cs;
                 memcpy(out->first_luma, planes[0], sizeof(out->first_luma));
                 memcpy(out->second_row_luma, planes[0] + ys, sizeof(out->second_row_luma));
+
+                /* Packed, so the other decoder compares pixels rather than this one's padding. */
+                if (w > 0 && h > 0 && (long)w * (long)h <= RC_DECODE_REFERENCE_MAX) {
+                    int row;
+
+                    for (row = 0; row < h; row++)
+                        memcpy(rc_decode_reference_luma + (size_t)row * (size_t)w,
+                               planes[0] + (size_t)row * (size_t)ys, (size_t)w);
+                    rc_decode_reference_width = w;
+                    rc_decode_reference_height = h;
+                }
             }
 
             out->hash[out->hashes++] = hash;
