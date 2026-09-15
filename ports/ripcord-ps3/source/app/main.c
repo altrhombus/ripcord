@@ -903,6 +903,11 @@ static int check_connect(void)
          * declaring bwKbpsSent of 8000 - a figure that was never chosen for 1080p, it is simply the
          * pairing record's default.
          */
+        if (c.resolution_capped_from_height > 0)
+            ps3_log("       asked for %dx%d, capped to 1280x720 - nine reference frames at 1080p need\n"
+                    "       73,440 macroblocks of buffer and this decoder tops out at level 4.2's"
+                    " 34,816\n",
+                    c.resolution_capped_from_width, c.resolution_capped_from_height);
         ps3_log("       declared bandwidth %d kbps (bwKbpsSent - what the console sizes the"
                 " stream against)\n", c.declared_bitrate_kbps);
         ps3_log("       declared rtt %d ms (%s), mtu %d (%s)\n",
@@ -1109,6 +1114,10 @@ static int check_connect(void)
                             c.audio_frames_decoded, c.audio_decode_errors, c.audio_blocks);
                     ps3_log("       %u block(s) were SILENCE - the ring ran dry, which is the one"
                             " fault a listener hears\n", c.audio_silence);
+                    ps3_log("       latency: %u sample(s) held ahead of the speaker at worst"
+                            " (%u ms), trimmed %u time(s) losing %u sample(s)\n",
+                            c.audio_worst_ring, (c.audio_worst_ring * 1000u) / RC_AUDIO_SAMPLE_RATE,
+                            c.audio_trims, c.audio_trimmed);
                     ps3_log("       ring reached %u of %d samples; %u dropped to overflow;"
                             " readIndex is %s\n",
                             c.audio_worst_ring, RC_AUDIO_RING_SAMPLES, c.audio_overflows,
@@ -1469,16 +1478,40 @@ static int check_vdec(void)
         int decoded;
 
         if (g_live_backend_id == (int)RC_DECODE_BACKEND_VDEC) {
-            ps3_log("vdec:  the live path used this decoder, so the offline check is skipped -\n"
-                    "       opening a second instance would prove nothing and could fail for that\n"
-                    "       reason alone. b159 is the run that validated it: Y, U and V bit-identical\n"
-                    "       to openh264, and its luma identical to ffmpeg's on the host as well.\n");
+            /*
+             * The live path already proved this decoder correct (b159: Y, U and V bit-identical to
+             * openh264, and its luma identical to ffmpeg's on the host), so re-running that comparison
+             * proves nothing. The open question is a different one: CAN IT HAND BACK RGB?
+             *
+             * If it can, the YUV-to-RGB pass the SPEs do is unnecessary. Asked offline because the
+             * streaming path has no RGB blit, so switching format there would draw garbage to find out.
+             */
+            rc_vdec_decode_result rgb;
+
+            ps3_log("vdec:  asking the decoder for ARGB32 instead of YUV420P - if it obliges, the\n"
+                    "       colour conversion on the SPEs is work nobody needs to do\n");
+            (void)rc_vdec_decode_probe(RC_DECODE_STREAM_PATH, 31, 2, vdec_step_log,
+                                       0u, 0u, 1 /* want_rgb */, &rgb);
+            if (!rgb.rgb_requested)
+                ps3_log("       never got as far as asking (step %d)\n", rgb.last_step);
+            else if (!rgb.rgb_accepted)
+                ps3_log("       REFUSED - vdecGetPicture would not produce ARGB32 (0x%08X).\n"
+                        "       The SPE conversion stays, and so does the SPE it needs.\n",
+                        (unsigned)rgb.last_error);
+            else if (rgb.rgb_max == 0u)
+                ps3_log("       accepted but wrote nothing - bytes all zero. Accepted-and-empty is\n"
+                        "       how this decoder has failed before; treat it as a refusal.\n");
+            else
+                ps3_log("       ACCEPTED and filled, bytes range %u..%u over %d picture(s).\n"
+                        "       RGB output is real; the conversion pass can go, though scaling to the\n"
+                        "       display still cannot.\n", rgb.rgb_min, rgb.rgb_max, rgb.pictures_out);
             return 0;
         }
         ps3_log("vdec:  the live path did NOT use this decoder - running the offline check to say why\n");
         ps3_log("vdec:  decoding %s with the console's decoder at level 31\n", RC_DECODE_STREAM_PATH);
         decoded = rc_vdec_decode_probe(RC_DECODE_STREAM_PATH, 31, RC_DECODE_PROBE_FRAMES,
-                                       vdec_step_log, s_reference_hash_y, s_reference_hash_u, &d);
+                                       vdec_step_log, s_reference_hash_y, s_reference_hash_u,
+                                       0 /* want_rgb */, &d);
 
         ps3_log("       reached step %d (see rc_vdec_step), wanted %u bytes of decoder memory\n",
                 d.last_step, d.mem_size);

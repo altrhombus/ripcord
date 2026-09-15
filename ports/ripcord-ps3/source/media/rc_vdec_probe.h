@@ -195,6 +195,9 @@ typedef struct {
     int edge_found_at;
 
     unsigned buffer_addr;   /* where the picture was written, to show its alignment */
+    int      rgb_requested;
+    int      rgb_accepted;      /* vdecGetPicture returned success for ARGB32 */
+    unsigned rgb_min, rgb_max;  /* the byte range it wrote - all zero means accepted and not filled */
 } rc_vdec_decode_result;
 
 /* Decodes up to `max_frames` pictures from the Annex-B capture at `path` using the console's decoder.
@@ -206,7 +209,14 @@ typedef void (*rc_vdec_log_fn)(const char *message);
  * `reference_y` is openh264's luma hash for the first picture, used to identify the stride by sweep.
  * Pass 0 to skip that search.
  */
+/*
+ * `want_rgb` asks the decoder for VDEC_PICFMT_ARGB32 instead of YUV420P. That is the open question behind
+ * the colour converter: if the decoder can hand back RGB, the YUV-to-RGB pass on the SPEs is not needed.
+ * Asked here, offline, because the streaming path has no RGB blit and a format switch there would draw
+ * garbage to find out.
+ */
 int rc_vdec_decode_probe(const char *path, int level, int max_frames, rc_vdec_log_fn log,
-                         uint64_t reference_y, uint64_t reference_u, rc_vdec_decode_result *out);
+                         uint64_t reference_y, uint64_t reference_u, int want_rgb,
+                         rc_vdec_decode_result *out);
 
 #endif /* RC_VDEC_PROBE_H */

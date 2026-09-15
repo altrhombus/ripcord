@@ -126,6 +126,19 @@ void rc_audio_submit(const uint8_t *frame, size_t length)
     }
     if (s_fill > s_stats.worst_ring)
         s_stats.worst_ring = s_fill;
+
+    /*
+     * A backlog is latency, so it is discarded rather than played late. See RC_AUDIO_TARGET_SAMPLES for
+     * why this is a trim and not a rate loop, and why the count matters more than the event.
+     */
+    if (s_fill > RC_AUDIO_TARGET_SAMPLES + RC_AUDIO_FRAME_SAMPLES) {
+        unsigned drop = s_fill - RC_AUDIO_TARGET_SAMPLES;
+
+        s_head = (s_head + drop) % RC_AUDIO_RING_SAMPLES;
+        s_fill -= drop;
+        s_stats.trims++;
+        s_stats.trimmed_samples += drop;
+    }
 }
 
 void rc_audio_service(void)
@@ -148,7 +161,9 @@ void rc_audio_service(void)
         float *block;
         unsigned i;
 
-        if (ahead >= (unsigned)s_config.numBlocks - 2u)
+        /* Four blocks ahead, not six: the hardware ring is latency too, and the receive loop that
+         * refills it has never gone more than a couple of milliseconds without coming round. */
+        if (ahead >= RC_AUDIO_BLOCKS_AHEAD)
             break;
 
         /* Only write a whole block; a partial one would be a click. */
