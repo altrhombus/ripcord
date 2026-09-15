@@ -124,6 +124,8 @@ typedef struct {
     unsigned picture_size;       /* what the decoder itself says the picture occupies */
     unsigned picture_attr;
     unsigned picture_status;
+    uint8_t  first_luma[16];       /* see rc_decode_probe.h for why bytes and not another hash */
+    uint8_t  second_row_luma[16];  /* at the stride picture_size implies */
 } rc_vdec_decode_result;
 
 /* Decodes up to `max_frames` pictures from the Annex-B capture at `path` using the console's decoder.

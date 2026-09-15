@@ -62,6 +62,17 @@ typedef struct {
      */
     uint64_t hash_y, hash_u, hash_v;
     int      stride_y, stride_uv;
+
+    /*
+     * THE ACTUAL BYTES, because the hashes have stopped being able to say anything useful. b153 settled
+     * the layout question - vdec's picture_size of 353280 is exactly 640*368*1.5, so its planes are
+     * tightly packed at stride 640 - and then showed that no stride at all reproduces openh264's luma.
+     * Two conformant decoders differing on pixel VALUES is a different claim from differing on where
+     * those pixels sit, and sixteen bytes distinguishes "a scaled or offset version of the same picture"
+     * from "a different picture" at a glance, which no hash can.
+     */
+    uint8_t  first_luma[16];
+    uint8_t  second_row_luma[16];
 } rc_decode_probe_result;
 
 /*

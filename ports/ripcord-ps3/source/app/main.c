@@ -1293,6 +1293,17 @@ static unsigned bench_ns(uint64_t ticks, uint64_t hz, unsigned iterations)
  * see rc_vdec_probe.h. The output is the set the console accepts and what each wants for memory, which
  * is what the real implementation needs before it can be written honestly.
  */
+/* Sixteen bytes as hex, for the two decoders' first luma rows. See rc_decode_probe.h. */
+static void log_bytes(const char *label, const uint8_t *bytes)
+{
+    char line[80];
+    int i;
+
+    for (i = 0; i < 16; i++)
+        (void)snprintf(line + i * 3, sizeof(line) - (size_t)(i * 3), "%02x ", bytes[i]);
+    ps3_log("         %s %s\n", label, line);
+}
+
 /* openh264's first-picture plane hashes, kept so check_vdec can identify the other decoder's layout by
  * reproducing them. check_decode runs first; see the stage list at the foot of main(). */
 static uint64_t s_reference_hash_y;
@@ -1397,6 +1408,8 @@ static int check_vdec(void)
                     (unsigned long long)d.hash_v_at_visible);
             ps3_log("         V after %3d rows 0x%016llx\n", d.padded_height,
                     (unsigned long long)d.hash_v_at_padded);
+            log_bytes("row 0", d.first_luma);
+            log_bytes("row 1", d.second_row_luma);
             ps3_log("       the decoder says the picture occupies %u bytes"
                     " (status %u, attr %u)\n",
                     d.picture_size, d.picture_status, d.picture_attr);
@@ -1551,6 +1564,8 @@ static int check_decode(void)
     ps3_log("         Y  0x%016llx\n", (unsigned long long)r.hash_y);
     ps3_log("         U  0x%016llx\n", (unsigned long long)r.hash_u);
     ps3_log("         V  0x%016llx\n", (unsigned long long)r.hash_v);
+    log_bytes("row 0", r.first_luma);
+    log_bytes("row 1", r.second_row_luma);
     ps3_log("ok    openh264 decoded on the PPE - compare the hashes with the reference decode\n");
     return 0;
 }
