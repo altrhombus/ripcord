@@ -19,8 +19,17 @@
 #ifndef RC_VDEC_PROBE_H
 #define RC_VDEC_PROBE_H
 
+#include <stdint.h>
+
+/* The accepted profile_level values, in order, filled by rc_vdec_probe. b145 found 13 of them spanning
+ * 10 to 42, which is exactly H.264's own level_idc set - but a count and a range are an inference, and
+ * this is the list itself. */
+#define RC_VDEC_LEVELS_MAX 32
+
 typedef struct {
-    int module_load;          /* sysModuleLoad's return for the H.264 decoder module */
+    int module_load;
+    int levels[RC_VDEC_LEVELS_MAX];
+    int level_count;          /* sysModuleLoad's return for the H.264 decoder module */
     int queried;              /* how many profile_level values were tried */
     int accepted;             /* how many vdecQueryAttr accepted */
     int first_accepted;       /* the lowest accepted value, -1 if none */
@@ -36,5 +45,53 @@ typedef struct {
 
 /* Loads the module and sweeps profile_level. Returns 1 if the module loaded, whatever the sweep found. */
 int rc_vdec_probe(rc_vdec_probe_result *out);
+
+/*
+ * THE SECOND QUESTION, and the one that decides whether cellVdec is usable at all: does it decode the
+ * same bytes into the same pictures?
+ *
+ * This runs the console's decoder over the same capture rc_decode_probe feeds to openh264 and hashes the
+ * output the same way - Y, then U, then V, one running FNV-1a per picture, via the same function. Equal
+ * hashes mean the two decoders agree, which is the only evidence worth having before the live path is
+ * moved onto a decoder nobody here has run.
+ *
+ * It is deliberately OFFLINE. Nothing in the streaming path changes, and a failure costs a run rather
+ * than a session.
+ *
+ * `last_step` names the last call ATTEMPTED rather than the last that succeeded, because this hardware
+ * has locked up three times during bring-up and the log is flushed per line - if the console stops, the
+ * final line names the call it stopped in.
+ */
+typedef enum {
+    RC_VDEC_STEP_NONE = 0,
+    RC_VDEC_STEP_READ_FILE,
+    RC_VDEC_STEP_QUERY_ATTR,
+    RC_VDEC_STEP_ALLOC,
+    RC_VDEC_STEP_OPEN,
+    RC_VDEC_STEP_START_SEQUENCE,
+    RC_VDEC_STEP_DECODE_AU,
+    RC_VDEC_STEP_GET_PICTURE,
+    RC_VDEC_STEP_END_SEQUENCE,
+    RC_VDEC_STEP_CLOSE,
+    RC_VDEC_STEP_DONE
+} rc_vdec_step;
+
+typedef struct {
+    int      level;           /* the profile_level asked for */
+    unsigned mem_size;        /* what vdecQueryAttr wanted for it */
+    int      opened;
+    int      aus_fed;
+    int      pictures_out;
+    int      width, height;
+    uint64_t hash[8];         /* RC_DECODE_PROBE_FRAMES - same order, same function */
+    int      hashes;
+    int      last_error;      /* the library's own return from whatever failed */
+    int      last_step;       /* rc_vdec_step - the last call ATTEMPTED */
+    uint64_t decode_ticks;    /* feeding only; the hash is not in here */
+} rc_vdec_decode_result;
+
+/* Decodes up to `max_frames` pictures from the Annex-B capture at `path` using the console's decoder.
+ * Returns 1 if at least one picture came out. `out` is filled either way. */
+int rc_vdec_decode_probe(const char *path, int level, int max_frames, rc_vdec_decode_result *out);
 
 #endif /* RC_VDEC_PROBE_H */

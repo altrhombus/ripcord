@@ -49,6 +49,8 @@ int rc_vdec_probe(rc_vdec_probe_result *out)
         }
 
         out->accepted++;
+        if (out->level_count < RC_VDEC_LEVELS_MAX)
+            out->levels[out->level_count++] = level;
         if (out->first_accepted < 0) {
             out->first_accepted = level;
             out->first_mem_size = (unsigned)attr.mem_size;
@@ -64,4 +66,304 @@ int rc_vdec_probe(rc_vdec_probe_result *out)
     }
 
     return 1;
+}
+
+/* ---------------------------------------------------------------------------------------------------
+ * The decode test. See rc_vdec_probe.h for why it is offline and why it hashes.
+ * ------------------------------------------------------------------------------------------------ */
+
+#include "rc_decode_probe.h"
+#include "rc_h264_annexb.h"
+#include "platform/rc_platform.h"
+
+#include <malloc.h>
+#include <stdio.h>
+#include <stdlib.h>
+
+#define FNV64_OFFSET 0xcbf29ce484222325ULL
+
+/* Implemented in rc_decode_probe.cpp and shared deliberately: comparing two decoders is only meaningful
+ * if the same bytes go through the same hash. */
+extern uint64_t rc_decode_probe_hash_plane(const uint8_t *plane, int stride, int width, int height,
+                                           uint64_t seed);
+
+/*
+ * vdecQueryAttr says how much memory the decoder wants; the ALIGNMENT it wants is stated nowhere in the
+ * SDK headers. 1 MB is used on the reasoning that an over-aligned buffer cannot be wrong and the waste is
+ * irrelevant against a 10-57 MB allocation. [X] - not confirmed against the console.
+ */
+#define RC_VDEC_MEM_ALIGN (1024u * 1024u)
+
+/* One 1080p YUV420 picture - more than either the capture or the 720p stream needs. Static, because this
+ * build caps a stack frame at 8 KB. */
+#define RC_VDEC_PICTURE_BYTES (1920 * 1088 * 3 / 2)
+static uint8_t s_picture[RC_VDEC_PICTURE_BYTES];
+
+static rc_vdec_decode_result *s_out;
+
+/*
+ * The library calls this on its own PPU thread. The picture is collected here rather than by signalling
+ * another thread, because vdecGetPicture is the way to collect a picture the decoder is announcing and
+ * it is announcing it now - handing the job elsewhere would only add a buffer whose lifetime nobody
+ * has established yet.
+ */
+static u32 vdec_callback(u32 handle, u32 msgtype, u32 msgdata, u32 arg)
+{
+    (void)arg;
+
+    if (s_out == NULL)
+        return 0;
+
+    if (msgtype == VDEC_CALLBACK_PICOUT) {
+        vdecPictureFormat format;
+        u32 item_addr = 0;
+        s32 rc;
+
+        /*
+         * THE DECODER'S OWN DIMENSIONS, not the SPS's. The capture's SPS says 640x368 and openh264
+         * reports 640x360 because it applies the frame cropping - so hashing at the SPS size would
+         * compare two different pictures and call them different decoders.
+         */
+        if (vdecGetPicItem(handle, &item_addr) == 0 && item_addr != 0) {
+            const vdecPicture *pic = (const vdecPicture *)(uintptr_t)item_addr;
+
+            if (pic->codec_specific_addr != 0) {
+                const vdecH264Info *info = (const vdecH264Info *)(uintptr_t)pic->codec_specific_addr;
+
+                s_out->width = (int)info->width;
+                s_out->height = (int)info->height;
+            }
+        }
+
+        memset(&format, 0, sizeof(format));
+        format.format_type = VDEC_PICFMT_YUV420P;
+        format.color_matrix = VDEC_COLOR_MATRIX_BT709;
+        format.alpha = 0;
+
+        rc = vdecGetPicture(handle, &format, s_picture);
+        if (rc != 0) {
+            s_out->last_error = (int)rc;
+            return 0;
+        }
+
+        s_out->pictures_out++;
+        if (s_out->hashes < (int)(sizeof(s_out->hash) / sizeof(s_out->hash[0]))
+            && s_out->width > 0 && s_out->height > 0) {
+            int w = s_out->width;
+            int h = s_out->height;
+            size_t luma = (size_t)w * (size_t)h;
+            size_t chroma = (size_t)(w / 2) * (size_t)(h / 2);
+            uint64_t hash;
+
+            /* Taken to be tightly packed, Y then U then V. [X] - if it pads its rows the hashes simply
+             * will not match openh264's, and that mismatch is itself the finding. */
+            hash = rc_decode_probe_hash_plane(s_picture, w, w, h, FNV64_OFFSET);
+            hash = rc_decode_probe_hash_plane(s_picture + luma, w / 2, w / 2, h / 2, hash);
+            hash = rc_decode_probe_hash_plane(s_picture + luma + chroma, w / 2, w / 2, h / 2, hash);
+            s_out->hash[s_out->hashes++] = hash;
+        }
+    } else if (msgtype == VDEC_CALLBACK_ERROR) {
+        s_out->last_error = (int)msgdata;
+    }
+
+    return 0;
+}
+
+/*
+ * An access unit is a contiguous run of the file, so its start is the start code in front of its first
+ * NAL. rc_h264_nal.start points at the header byte, which is just after that code.
+ */
+static const uint8_t *start_code_of(const uint8_t *file, const uint8_t *nal_start)
+{
+    if ((size_t)(nal_start - file) >= 4u
+        && nal_start[-4] == 0 && nal_start[-3] == 0 && nal_start[-2] == 0 && nal_start[-1] == 1)
+        return nal_start - 4;
+    if ((size_t)(nal_start - file) >= 3u
+        && nal_start[-3] == 0 && nal_start[-2] == 0 && nal_start[-1] == 1)
+        return nal_start - 3;
+    return nal_start;
+}
+
+static s32 feed_au(u32 handle, const uint8_t *begin, const uint8_t *end, rc_vdec_decode_result *out)
+{
+    vdecAU info;
+    uint64_t t0;
+    s32 rc;
+
+    if (end <= begin)
+        return 0;
+
+    memset(&info, 0, sizeof(info));
+    info.packet_addr = (u32)(uintptr_t)begin;
+    info.packet_size = (u32)(size_t)(end - begin);
+    info.pts.low = VDEC_TS_INVALID;
+    info.pts.hi = VDEC_TS_INVALID;
+    info.dts.low = VDEC_TS_INVALID;
+    info.dts.hi = VDEC_TS_INVALID;
+
+    t0 = rc_tick();
+    rc = vdecDecodeAu(handle, VDEC_DECODER_MODE_NORMAL, &info);
+    out->decode_ticks += rc_tick() - t0;
+    if (rc == 0)
+        out->aus_fed++;
+    return rc;
+}
+
+int rc_vdec_decode_probe(const char *path, int level, int max_frames, rc_vdec_decode_result *out)
+{
+    vdecType type;
+    vdecAttr attr;
+    vdecConfig config;
+    vdecClosure closure;
+    rc_h264_annexb it;
+    rc_h264_nal nal;
+    /* 19,320 bytes - rc_h264_annexb.h says plainly that this belongs in static or heap and not on a
+     * PPU thread stack, and this build caps a frame at 8 KB for exactly that reason. */
+    static rc_h264_au au;
+    rc_h264_au_nal piece;
+    const uint8_t *au_begin = NULL;
+    uint8_t *file = NULL;
+    void *decoder_mem = NULL;
+    size_t file_size = 0;
+    u32 handle = 0;
+    FILE *f;
+    s32 rc;
+    int ok = 0;
+
+    if (out == NULL)
+        return 0;
+    memset(out, 0, sizeof(*out));
+    out->level = level;
+
+    /* ---- the capture ---- */
+    out->last_step = RC_VDEC_STEP_READ_FILE;
+    f = fopen(path, "rb");
+    if (f == NULL)
+        return 0;
+    (void)fseek(f, 0, SEEK_END);
+    {
+        long n = ftell(f);
+
+        if (n <= 0) {
+            fclose(f);
+            return 0;
+        }
+        file_size = (size_t)n;
+    }
+    (void)fseek(f, 0, SEEK_SET);
+    file = (uint8_t *)malloc(file_size);
+    if (file == NULL) {
+        fclose(f);
+        return 0;
+    }
+    if (fread(file, 1, file_size, f) != file_size) {
+        free(file);
+        fclose(f);
+        return 0;
+    }
+    fclose(f);
+
+    /* ---- what this level costs ---- */
+    out->last_step = RC_VDEC_STEP_QUERY_ATTR;
+    memset(&type, 0, sizeof(type));
+    memset(&attr, 0, sizeof(attr));
+    type.codec_type = VDEC_CODEC_TYPE_H264;
+    type.profile_level = (u32)level;
+    rc = vdecQueryAttr(&type, &attr);
+    if (rc != 0) {
+        out->last_error = (int)rc;
+        free(file);
+        return 0;
+    }
+    out->mem_size = (unsigned)attr.mem_size;
+
+    out->last_step = RC_VDEC_STEP_ALLOC;
+    decoder_mem = memalign(RC_VDEC_MEM_ALIGN, attr.mem_size);
+    if (decoder_mem == NULL) {
+        free(file);
+        return 0;
+    }
+
+    /* ---- open ---- */
+    out->last_step = RC_VDEC_STEP_OPEN;
+    memset(&config, 0, sizeof(config));
+    config.mem_addr = (u32)(uintptr_t)decoder_mem;
+    config.mem_size = attr.mem_size;
+    config.ppu_thread_prio = 1000;
+    config.ppu_thread_stack_size = 256u * 1024u;
+    config.spu_thread_prio = 200;   /* [X] - a plausible mid priority, not a confirmed one */
+    config.num_spus = 1;            /* one is what is spare; the other five convert colour */
+
+    /* On this ABI a function name already denotes its descriptor's address, so this casts that address
+     * and not code. [X] - if the library wants something else, it will fail at open rather than subtly. */
+    memset(&closure, 0, sizeof(closure));
+    closure.fn = (u32)(uintptr_t)vdec_callback;
+    closure.arg = 0;
+
+    s_out = out;
+    rc = vdecOpen(&type, &config, &closure, &handle);
+    if (rc != 0) {
+        out->last_error = (int)rc;
+        s_out = NULL;
+        free(decoder_mem);
+        free(file);
+        return 0;
+    }
+    out->opened = 1;
+
+    out->last_step = RC_VDEC_STEP_START_SEQUENCE;
+    rc = vdecStartSequence(handle);
+    if (rc != 0) {
+        out->last_error = (int)rc;
+        goto close_out;
+    }
+
+    /*
+     * THE WHOLE CAPTURE STAYS RESIDENT and every access unit points into it. vdecDecodeAu takes an
+     * address the decoder reads asynchronously, so a buffer reused between calls would need the AUDONE
+     * callback to say when it was free again. Keeping the file mapped stops that question arising at all.
+     */
+    out->last_step = RC_VDEC_STEP_DECODE_AU;
+    rc_h264_annexb_init(&it, file, file_size);
+    rc_h264_au_init(&au);
+    while (out->pictures_out < max_frames && rc_h264_annexb_next(&it, &nal)) {
+        (void)rc_h264_au_feed(&au, &nal, &piece);
+
+        if (piece.begins_access_unit) {
+            const uint8_t *here = start_code_of(file, nal.start);
+
+            if (au_begin != NULL && feed_au(handle, au_begin, here, out) != 0) {
+                out->last_error = (int)rc;
+                break;
+            }
+            au_begin = here;
+        }
+    }
+    /* The last access unit has no successor to close it. */
+    if (au_begin != NULL && out->pictures_out < max_frames)
+        (void)feed_au(handle, au_begin, file + file_size, out);
+
+    /* A bounded moment for the decoder to finish announcing. Bounded, because a wait that cannot end is
+     * how this port lost three sessions. */
+    {
+        int waited = 0;
+
+        while (out->pictures_out < max_frames && waited < 2000) {
+            rc_sleep_ms(5u);
+            waited += 5;
+        }
+    }
+
+    out->last_step = RC_VDEC_STEP_END_SEQUENCE;
+    (void)vdecEndSequence(handle);
+    ok = (out->pictures_out > 0);
+
+close_out:
+    out->last_step = RC_VDEC_STEP_CLOSE;
+    (void)vdecClose(handle);
+    s_out = NULL;
+    free(decoder_mem);
+    free(file);
+    out->last_step = RC_VDEC_STEP_DONE;
+    return ok;
 }
