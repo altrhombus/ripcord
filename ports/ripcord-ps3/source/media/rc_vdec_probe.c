@@ -306,6 +306,17 @@ static u32 vdec_callback(u32 handle, u32 msgtype, u32 msgdata, u32 arg)
                                     last_diff_row = row;
                                 }
                             }
+                            {
+                                int delta = (int)s_picture[i] - (int)rc_decode_reference_luma[i];
+
+                                if (delta < 0)
+                                    delta = -delta;
+                                if (delta > s_out->diff_max_delta)
+                                    s_out->diff_max_delta = delta;
+                                s_out->diff_delta_sum += delta;
+                                if (delta > 4)
+                                    s_out->diff_over_4++;
+                            }
                             s_out->diff_bytes++;
                         }
                     }
