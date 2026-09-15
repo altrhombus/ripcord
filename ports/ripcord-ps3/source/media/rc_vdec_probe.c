@@ -77,6 +77,7 @@ int rc_vdec_probe(rc_vdec_probe_result *out)
 #include "platform/rc_platform.h"
 
 #include <malloc.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -101,6 +102,22 @@ static uint8_t s_picture[RC_VDEC_PICTURE_BYTES];
 
 static rc_vdec_decode_result *s_out;
 static rc_vdec_log_fn s_log;
+static volatile int s_seq_done;
+
+/* Formats through the same one-line hook the steps use - see rc_vdec_probe.h for why findings are
+ * written as they happen rather than summarised at the end. */
+static void logf_line(const char *fmt, ...)
+{
+    char line[160];
+    va_list ap;
+
+    if (s_log == NULL)
+        return;
+    va_start(ap, fmt);
+    (void)vsnprintf(line, sizeof(line), fmt, ap);
+    va_end(ap);
+    s_log(line);
+}
 
 /*
  * Written BEFORE the call it names, not after. See rc_vdec_probe.h: a step recorded only on success
@@ -173,9 +190,22 @@ static u32 vdec_callback(u32 handle, u32 msgtype, u32 msgdata, u32 arg)
             hash = rc_decode_probe_hash_plane(s_picture + luma, w / 2, w / 2, h / 2, hash);
             hash = rc_decode_probe_hash_plane(s_picture + luma + chroma, w / 2, w / 2, h / 2, hash);
             s_out->hash[s_out->hashes++] = hash;
+            /*
+             * WRITTEN NOW, NOT SUMMARISED LATER. b147 decoded the capture and then hung in vdecClose,
+             * and because the hashes were printed after the probe returned, the run produced the one
+             * thing it existed to produce and lost it. A finding that does not survive the failure is
+             * not a finding.
+             */
+            logf_line("       frame %2d  0x%016llx  (%dx%d)",
+                      s_out->hashes - 1, (unsigned long long)hash, w, h);
         }
+    } else if (msgtype == VDEC_CALLBACK_SEQDONE) {
+        /* vdecEndSequence finishes here, not when it returns. b147 called vdecClose straight after
+         * EndSequence and the console stopped in Close. */
+        s_seq_done = 1;
     } else if (msgtype == VDEC_CALLBACK_ERROR) {
         s_out->last_error = (int)msgdata;
+        logf_line("       decoder reported error 0x%08X", (unsigned)msgdata);
     }
 
     return 0;
@@ -369,12 +399,39 @@ int rc_vdec_decode_probe(const char *path, int level, int max_frames,
     }
 
     step(out, RC_VDEC_STEP_END_SEQUENCE, "       .. vdecEndSequence");
+    s_seq_done = 0;
     (void)vdecEndSequence(handle);
+    {
+        int waited = 0;
+
+        while (!s_seq_done && waited < 2000) {
+            rc_sleep_ms(5u);
+            waited += 5;
+        }
+        logf_line("       .. sequence ended: SEQDONE %s after %d ms",
+                  s_seq_done ? "arrived" : "DID NOT ARRIVE", waited);
+    }
     ok = (out->pictures_out > 0);
 
 close_out:
-    step(out, RC_VDEC_STEP_CLOSE, "       .. vdecClose");
-    (void)vdecClose(handle);
+    /*
+     * ONLY IF THE DECODER SAID IT WAS FINISHED. b147 reached vdecClose and the console stopped there,
+     * with EndSequence called immediately before it - and EndSequence completes on the SEQDONE callback
+     * rather than on return, so Close was being asked to tear down a sequence still running.
+     *
+     * When SEQDONE has not arrived, Close is skipped rather than attempted. That follows the decision
+     * already recorded at the foot of rc_spu_yuv.c for the same hardware and the same class of problem:
+     * this runs as the process exits, lv2 reclaims a process's resources when it does, and cleanup that
+     * cannot hang is worth more here than cleanup that is complete. A hang costs a reboot and the rest
+     * of the log.
+     */
+    if (s_seq_done) {
+        step(out, RC_VDEC_STEP_CLOSE, "       .. vdecClose");
+        (void)vdecClose(handle);
+    } else {
+        logf_line("       .. SKIPPING vdecClose - the decoder never said the sequence ended, and"
+                  " b147 hung in exactly this call");
+    }
     s_out = NULL;
     free(decoder_mem);
     free(file);
