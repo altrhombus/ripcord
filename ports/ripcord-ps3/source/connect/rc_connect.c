@@ -1726,6 +1726,9 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
                     g_ingest_calls = 0u;
                     g_crypto_ticks = 0u;
                     g_crypto_calls = 0u;
+                    /* The stream's size decides which H.264 level the hardware decoder opens at,
+                     * and therefore how much memory it reserves. */
+                    rc_decode_live_hint((int)info.width, (int)info.height);
                     g_live_open = rc_decode_live_open();
                     if (g_live_open) {
                         rc_decode_live_set_sink(on_picture, NULL);
@@ -1960,6 +1963,7 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
     rc_video_scale_info(&out->scaled_width, &out->scaled_height,
                         &out->display_width, &out->display_height);
     out->pictures_dropped = g_pictures_dropped;
+    out->decode_backend = rc_decode_live_backend_name();
     out->decode_thread_priority = g_decode_priority;
     out->decode_receive_priority = g_decode_receive_priority;
     out->hold_ms = (unsigned)RC_STREAM_HOLD_MS;
