@@ -260,6 +260,8 @@ typedef struct {
     int  demux_ready;
     int  decode_thread_failed;   /* decoder open, but its thread would not start */
     const char *decode_backend;  /* which decoder answered - never inferred from the frame rate */
+    int  decode_backend_id;      /* rc_decode_backend, captured at open not after close */
+    int  luma_min, luma_max;     /* what the delivered pictures actually contained */
     int  decode_thread_priority; /* what it actually got, receive thread's + 1 */
     int  decode_receive_priority;
     unsigned video_frames;
