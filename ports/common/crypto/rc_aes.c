@@ -6,6 +6,21 @@
  *
  * State layout is the FIPS-197 column-major one: byte i of the block is state[row = i % 4][col = i / 4].
  * Every index below assumes that; ShiftRows in particular is unreadable under any other convention.
+ *
+ * THE STATE LIVES IN FOUR WORDS, NOT A BYTE ARRAY, AND THAT IS LOAD-BEARING. Column c is held as one
+ * big-endian uint32 with row 0 in the most significant byte. The obvious transcription of FIPS-197 keeps
+ * `uint8_t s[16]` and walks it, which reads beautifully and is ruinous on an in-order core: every step
+ * stores a byte and the next step immediately loads it back, and a store-to-load forward of the same
+ * address is precisely the case such a pipeline cannot shortcut. Measured on the PS3's PPE, the packet
+ * cipher and its GMAC together cost 837 us per ~1,400-byte packet - about 99% of the demuxer's whole
+ * per-packet budget - with the arithmetic itself accounting for a small fraction of that. Word-at-a-time
+ * keeps the state in registers, so SubBytes/ShiftRows/MixColumns never round-trip through memory.
+ *
+ * This is the same lesson rc_gcm.h records for GHASH, one layer down, and the fix has the same shape.
+ *
+ * The S-box stays a 256-byte table, deliberately: the faster-still form is a set of 4 KB "T-tables", and
+ * a table that large is materially easier to observe through the data cache. The word rewrite gets most
+ * of the win without widening that surface.
  */
 #include "rc_crypto.h"
 
@@ -32,11 +47,67 @@ static const uint8_t kSbox[256] = {
 };
 
 /* Multiply by x in GF(2^8) modulo the AES polynomial 0x11b. Branch-free so it does not leak the high bit
- * through a timing channel; the 3DS is not a threat model where that matters much, but the free version
- * is the correct habit. */
+ * through a timing channel; neither target is a threat model where that matters much, but the free
+ * version is the correct habit. */
 static uint8_t xtime(uint8_t value)
 {
     return (uint8_t)((value << 1) ^ (uint8_t)((value >> 7) * 0x1b));
+}
+
+/*
+ * xtime applied to all four bytes of a word at once. The high bits are masked off before the shift so a
+ * byte cannot carry into its neighbour, and the conditional 0x1b is reintroduced by multiplying the
+ * collected high bits (each byte now 0 or 1) by 0x1b - safe because 0x1b fits in a byte, so that
+ * multiply cannot carry either.
+ */
+static uint32_t xtime_word(uint32_t w)
+{
+    uint32_t high = w & 0x80808080u;
+    return ((w & 0x7f7f7f7fu) << 1) ^ ((high >> 7) * 0x1bu);
+}
+
+/* Rotate a word left by one byte: [a0,a1,a2,a3] -> [a1,a2,a3,a0]. FIPS-197's RotWord. */
+static uint32_t rol8(uint32_t w)
+{
+    return (w << 8) | (w >> 24);
+}
+
+static uint32_t load_be32(const uint8_t *p)
+{
+    return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) | ((uint32_t)p[2] << 8) | (uint32_t)p[3];
+}
+
+static void store_be32(uint8_t *p, uint32_t w)
+{
+    p[0] = (uint8_t)(w >> 24);
+    p[1] = (uint8_t)(w >> 16);
+    p[2] = (uint8_t)(w >> 8);
+    p[3] = (uint8_t)w;
+}
+
+/* Byte of `w` at state row `r` - row 0 is the most significant. */
+#define ROW(w, r) ((uint8_t)((w) >> (8 * (3 - (r)))))
+
+/* SubBytes over a whole word. */
+static uint32_t sub_word(uint32_t w)
+{
+    return ((uint32_t)kSbox[ROW(w, 0)] << 24) | ((uint32_t)kSbox[ROW(w, 1)] << 16) |
+           ((uint32_t)kSbox[ROW(w, 2)] << 8)  | (uint32_t)kSbox[ROW(w, 3)];
+}
+
+/*
+ * MixColumns on one column, from the same identity the byte-wise version used:
+ *   b_r = a_r ^ (a0^a1^a2^a3) ^ xtime(a_r ^ a_{r+1})
+ * `all` puts a0^a1^a2^a3 in every byte, and `pairs` puts a_r ^ a_{r+1} in byte r, so both correction
+ * terms are computed for all four rows at once.
+ */
+static uint32_t mix_column(uint32_t a)
+{
+    uint32_t rotated = rol8(a);
+    uint32_t pairs = a ^ rotated;
+    uint32_t all = pairs ^ rol8(rotated) ^ rol8(rol8(rotated));
+
+    return a ^ all ^ xtime_word(pairs);
 }
 
 void rc_aes128_init(rc_aes128 *ctx, const uint8_t key[RC_AES128_KEY_SIZE])
@@ -44,74 +115,69 @@ void rc_aes128_init(rc_aes128 *ctx, const uint8_t key[RC_AES128_KEY_SIZE])
     uint8_t rcon = 0x01;
     int i;
 
-    memcpy(ctx->round_keys, key, RC_AES128_KEY_SIZE);
+    for (i = 0; i < 4; i++)
+        ctx->round_keys[i] = load_be32(key + 4 * i);
 
-    for (i = RC_AES128_KEY_SIZE; i < 176; i += 4) {
-        uint8_t t[4];
-        int j;
+    for (i = 4; i < 44; i++) {
+        uint32_t t = ctx->round_keys[i - 1];
 
-        memcpy(t, &ctx->round_keys[i - 4], 4);
-
-        /* Once per 16 bytes, i.e. at the start of each new round key: RotWord, SubWord, XOR Rcon. */
-        if ((i % RC_AES128_KEY_SIZE) == 0) {
-            uint8_t rotated = t[0];
-            t[0] = (uint8_t)(kSbox[t[1]] ^ rcon);
-            t[1] = kSbox[t[2]];
-            t[2] = kSbox[t[3]];
-            t[3] = kSbox[rotated];
+        /* Once per round key: RotWord, SubWord, XOR Rcon into the leading byte. */
+        if ((i & 3) == 0) {
+            t = sub_word(rol8(t)) ^ ((uint32_t)rcon << 24);
             rcon = xtime(rcon); /* 01 02 04 08 10 20 40 80 1b 36 */
         }
 
-        for (j = 0; j < 4; j++)
-            ctx->round_keys[i + j] = (uint8_t)(ctx->round_keys[i - RC_AES128_KEY_SIZE + j] ^ t[j]);
+        ctx->round_keys[i] = ctx->round_keys[i - 4] ^ t;
     }
 }
+
+/*
+ * SubBytes and ShiftRows fold together: row r of the output column c is row r of the input column
+ * (c + r) mod 4, so each output word gathers one already-substituted byte from four different columns.
+ */
+#define SHIFT_ROWS_COLUMN(c0, c1, c2, c3)                    \
+    (((uint32_t)kSbox[ROW((c0), 0)] << 24) |                 \
+     ((uint32_t)kSbox[ROW((c1), 1)] << 16) |                 \
+     ((uint32_t)kSbox[ROW((c2), 2)] << 8)  |                 \
+      (uint32_t)kSbox[ROW((c3), 3)])
 
 void rc_aes128_encrypt_block(const rc_aes128 *ctx,
                              const uint8_t in[RC_AES_BLOCK_SIZE],
                              uint8_t out[RC_AES_BLOCK_SIZE])
 {
-    uint8_t s[RC_AES_BLOCK_SIZE];
+    const uint32_t *rk = ctx->round_keys;
+    uint32_t s0, s1, s2, s3;
+    uint32_t t0, t1, t2, t3;
     int round;
-    int i;
-
-    memcpy(s, in, RC_AES_BLOCK_SIZE);
 
     /* Initial AddRoundKey. */
-    for (i = 0; i < RC_AES_BLOCK_SIZE; i++)
-        s[i] ^= ctx->round_keys[i];
+    s0 = load_be32(in + 0)  ^ rk[0];
+    s1 = load_be32(in + 4)  ^ rk[1];
+    s2 = load_be32(in + 8)  ^ rk[2];
+    s3 = load_be32(in + 12) ^ rk[3];
 
-    for (round = 1; round <= 10; round++) {
-        uint8_t t;
+    for (round = 1; round <= 9; round++) {
+        t0 = SHIFT_ROWS_COLUMN(s0, s1, s2, s3);
+        t1 = SHIFT_ROWS_COLUMN(s1, s2, s3, s0);
+        t2 = SHIFT_ROWS_COLUMN(s2, s3, s0, s1);
+        t3 = SHIFT_ROWS_COLUMN(s3, s0, s1, s2);
 
-        for (i = 0; i < RC_AES_BLOCK_SIZE; i++)
-            s[i] = kSbox[s[i]];
-
-        /* ShiftRows: row r rotates left by r. Row 0 is fixed. */
-        t = s[1];  s[1] = s[5];   s[5] = s[9];   s[9] = s[13];  s[13] = t;
-        t = s[2];  s[2] = s[10];  s[10] = t;
-        t = s[6];  s[6] = s[14];  s[14] = t;
-        t = s[15]; s[15] = s[11]; s[11] = s[7]; s[7] = s[3];   s[3] = t;
-
-        /* MixColumns, omitted in the final round (FIPS-197 5.1). */
-        if (round != 10) {
-            int c;
-            for (c = 0; c < 4; c++) {
-                uint8_t *p = &s[4 * c];
-                uint8_t a0 = p[0], a1 = p[1], a2 = p[2], a3 = p[3];
-                uint8_t all = (uint8_t)(a0 ^ a1 ^ a2 ^ a3);
-
-                /* b0 = a0 ^ (a0^a1^a2^a3) ^ 2(a0^a1) == 2a0 ^ 3a1 ^ a2 ^ a3, and so on round the column. */
-                p[0] = (uint8_t)(a0 ^ all ^ xtime((uint8_t)(a0 ^ a1)));
-                p[1] = (uint8_t)(a1 ^ all ^ xtime((uint8_t)(a1 ^ a2)));
-                p[2] = (uint8_t)(a2 ^ all ^ xtime((uint8_t)(a2 ^ a3)));
-                p[3] = (uint8_t)(a3 ^ all ^ xtime((uint8_t)(a3 ^ a0)));
-            }
-        }
-
-        for (i = 0; i < RC_AES_BLOCK_SIZE; i++)
-            s[i] ^= ctx->round_keys[RC_AES_BLOCK_SIZE * round + i];
+        rk += 4;
+        s0 = mix_column(t0) ^ rk[0];
+        s1 = mix_column(t1) ^ rk[1];
+        s2 = mix_column(t2) ^ rk[2];
+        s3 = mix_column(t3) ^ rk[3];
     }
 
-    memcpy(out, s, RC_AES_BLOCK_SIZE);
+    /* Final round omits MixColumns (FIPS-197 5.1). */
+    t0 = SHIFT_ROWS_COLUMN(s0, s1, s2, s3);
+    t1 = SHIFT_ROWS_COLUMN(s1, s2, s3, s0);
+    t2 = SHIFT_ROWS_COLUMN(s2, s3, s0, s1);
+    t3 = SHIFT_ROWS_COLUMN(s3, s0, s1, s2);
+
+    rk += 4;
+    store_be32(out + 0,  t0 ^ rk[0]);
+    store_be32(out + 4,  t1 ^ rk[1]);
+    store_be32(out + 8,  t2 ^ rk[2]);
+    store_be32(out + 12, t3 ^ rk[3]);
 }

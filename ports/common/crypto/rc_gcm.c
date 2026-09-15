@@ -18,6 +18,19 @@ static void xor_block(uint8_t *target, const uint8_t *value)
  * paths are differentially tested against, so this is the "slow but certainly correct" form on both
  * sides, not a simplification unique to this port.
  */
+static uint32_t load_be32(const uint8_t *p)
+{
+    return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) | ((uint32_t)p[2] << 8) | (uint32_t)p[3];
+}
+
+static void store_be32(uint8_t *p, uint32_t w)
+{
+    p[0] = (uint8_t)(w >> 24);
+    p[1] = (uint8_t)(w >> 16);
+    p[2] = (uint8_t)(w >> 8);
+    p[3] = (uint8_t)w;
+}
+
 /* v = v * x in GF(2^128): a one-bit right shift, reduced with R = 0xE1 || 0^120 when a bit falls off. */
 static void gf128_mulx(uint8_t v[BLOCK_SIZE])
 {
@@ -56,14 +69,17 @@ static void gf128_build_tables(rc_gmac_key *gk)
 
     memcpy(cur, gk->h, BLOCK_SIZE);
     for (i = 0; i < 8; i++) {
-        memcpy(gk->table[128 >> i], cur, BLOCK_SIZE);
+        int w;
+        for (w = 0; w < 4; w++)
+            gk->table[128 >> i][w] = load_be32(cur + 4 * w);
         gf128_mulx(cur);
     }
     for (b = 1; b < 256; b++) {
         if ((b & (b - 1)) != 0) {
             int low = b & (-b);
-            memcpy(gk->table[b], gk->table[b ^ low], BLOCK_SIZE);
-            xor_block(gk->table[b], gk->table[low]);
+            int w;
+            for (w = 0; w < 4; w++)
+                gk->table[b][w] = gk->table[b ^ low][w] ^ gk->table[low][w];
         }
     }
 
@@ -92,25 +108,32 @@ static void gf128_build_tables(rc_gmac_key *gk)
  */
 static void gf128_mul_h(const rc_gmac_key *gk, uint8_t x[BLOCK_SIZE])
 {
-    uint8_t z[BLOCK_SIZE];
-    int j, i;
+    uint32_t z0 = 0, z1 = 0, z2 = 0, z3 = 0;
+    int j;
 
-    memset(z, 0, sizeof(z));
     for (j = BLOCK_SIZE - 1; j >= 0; j--) {
-        uint8_t out = z[15];
-        uint16_t r;
+        const uint32_t *t = gk->table[x[j]];
+        uint16_t r = gk->reduce[(uint8_t)z3];   /* the byte about to fall off the low end */
 
-        for (i = 15; i > 0; i--)
-            z[i] = z[i - 1];
-        z[0] = 0;
+        /* Multiply the accumulator by x^8: a one-byte right shift of the whole 128-bit value. */
+        z3 = (z3 >> 8) | (z2 << 24);
+        z2 = (z2 >> 8) | (z1 << 24);
+        z1 = (z1 >> 8) | (z0 << 24);
+        z0 = (z0 >> 8);
 
-        r = gk->reduce[out];
-        z[0] ^= (uint8_t)(r >> 8);
-        z[1] ^= (uint8_t)(r & 0xFFu);
+        /* ...plus the reduction that byte implies, which only ever lands in bytes 0 and 1. */
+        z0 ^= (uint32_t)r << 16;
 
-        xor_block(z, gk->table[x[j]]);
+        z0 ^= t[0];
+        z1 ^= t[1];
+        z2 ^= t[2];
+        z3 ^= t[3];
     }
-    memcpy(x, z, sizeof(z));
+
+    store_be32(x + 0,  z0);
+    store_be32(x + 4,  z1);
+    store_be32(x + 8,  z2);
+    store_be32(x + 12, z3);
 }
 
 static void ghash_block(uint8_t y[BLOCK_SIZE], const rc_gmac_key *gk, const uint8_t block[BLOCK_SIZE])
