@@ -1038,6 +1038,11 @@ static int check_connect(void)
                  * or not anything ever reached the screen. b141 decoded nothing, and so hid the one
                  * number that would have confirmed the crypto rewrite from the live path.
                  */
+                if (c.decode_level > 0)
+                    ps3_log("       opened at H.264 level %d, reserving %u bytes;"
+                            " the stream's own SPS says level %d\n",
+                            c.decode_level, c.decode_mem_size,
+                            (c.first_au_len >= 8u) ? (int)c.first_au[7] : 0);
                 ps3_log("       decoded by %s\n",
                         (c.decode_backend != NULL) ? c.decode_backend : "?");
                 if (c.decoded_pictures > 0) {
