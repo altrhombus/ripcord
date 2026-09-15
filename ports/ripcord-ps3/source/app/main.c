@@ -825,6 +825,9 @@ static void connect_progress(const char *stage_text)
     ps3_log("       .. %s\n", stage_text);
 }
 
+/* Set from the connect result, since the live decoder is closed by the time this stage runs. */
+static int g_live_backend_id;
+
 static int check_connect(void)
 {
     rc_connect_result c;
@@ -1019,6 +1022,13 @@ static int check_connect(void)
                  */
                 ps3_log("       decoded by %s\n",
                         (c.decode_backend != NULL) ? c.decode_backend : "?");
+                if (c.decoded_pictures > 0) {
+                    ps3_log("       delivered luma ranged %d..%d\n", c.luma_min, c.luma_max);
+                    if (c.luma_max == 0)
+                        ps3_log("       ALL ZERO - the pictures handed to the screen were black, which\n"
+                                "       is what b160's 431 successful blits actually blitted.\n");
+                }
+                g_live_backend_id = c.decode_backend_id;
                 ps3_log("       decode ran on its own thread at priority %d;"
                         " the receive loop is %d\n",
                         c.decode_thread_priority, c.decode_receive_priority);
@@ -1368,7 +1378,7 @@ static int check_vdec(void)
         rc_vdec_decode_result d;
         int decoded;
 
-        if (rc_decode_live_backend() == RC_DECODE_BACKEND_VDEC) {
+        if (g_live_backend_id == (int)RC_DECODE_BACKEND_VDEC) {
             ps3_log("vdec:  the live path used this decoder, so the offline check is skipped -\n"
                     "       opening a second instance would prove nothing and could fail for that\n"
                     "       reason alone. b159 is the run that validated it: Y, U and V bit-identical\n"
