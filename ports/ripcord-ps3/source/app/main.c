@@ -1293,14 +1293,21 @@ static unsigned bench_ns(uint64_t ticks, uint64_t hz, unsigned iterations)
  * see rc_vdec_probe.h. The output is the set the console accepts and what each wants for memory, which
  * is what the real implementation needs before it can be written honestly.
  */
-/* Sixteen bytes as hex, for the two decoders' first luma rows. See rc_decode_probe.h. */
-static void log_bytes(const char *label, const uint8_t *bytes)
+/*
+ * Bytes as hex. TAKES A COUNT, because b156 printed sixteen bytes from the eight-byte diff arrays and
+ * the overrun read adjacent struct memory - which happened to look like an Annex-B start code and very
+ * nearly got read as data.
+ */
+static void log_bytes(const char *label, const uint8_t *bytes, int count)
 {
     char line[80];
     int i;
 
-    for (i = 0; i < 16; i++)
+    if (count > 16)
+        count = 16;
+    for (i = 0; i < count; i++)
         (void)snprintf(line + i * 3, sizeof(line) - (size_t)(i * 3), "%02x ", bytes[i]);
+    line[count * 3] = '\0';
     ps3_log("         %s %s\n", label, line);
 }
 
@@ -1408,8 +1415,8 @@ static int check_vdec(void)
                     (unsigned long long)d.hash_v_at_visible);
             ps3_log("         V after %3d rows 0x%016llx\n", d.padded_height,
                     (unsigned long long)d.hash_v_at_padded);
-            log_bytes("row 0", d.first_luma);
-            log_bytes("row 1", d.second_row_luma);
+            log_bytes("row 0", d.first_luma, 16);
+            log_bytes("row 1", d.second_row_luma, 16);
             if (!d.diff_valid) {
                 ps3_log("       no reference luma to diff against (openh264 gave %dx%d)\n",
                         rc_decode_reference_width, rc_decode_reference_height);
@@ -1421,15 +1428,22 @@ static int check_vdec(void)
                         (d.diff_total > 0) ? (d.diff_bytes * 100 / d.diff_total) : 0);
                 ps3_log("       first difference at row %d col %d (offset %ld)\n",
                         d.diff_first_row, d.diff_first_col, d.diff_first_offset);
-                log_bytes("openh264", d.diff_reference);
-                log_bytes("vdec    ", d.diff_actual);
+                log_bytes("openh264", d.diff_reference, 8);
+                log_bytes("vdec    ", d.diff_actual, 8);
                 ps3_log("       rows affected %d of %d (rows %d..%d), columns %d..%d,"
                         " %ld of them in the last 16 columns\n",
                         d.diff_rows_affected, d.height, d.diff_min_row, d.diff_max_row,
                         d.diff_min_col, d.diff_max_col, d.diff_in_last_16_cols);
+                ps3_log("       largest difference %d, mean %ld/100, and %ld of them exceed 4\n",
+                        d.diff_max_delta, d.diff_delta_sum * 100 / (d.diff_bytes > 0 ? d.diff_bytes : 1),
+                        d.diff_over_4);
+                if (d.diff_max_delta <= 4 && d.diff_min_col >= d.width - 16)
+                    ps3_log("       VERDICT: the decoders agree. What differs is the last few columns,\n"
+                            "       by amounts no viewer can see. That is a usable decoder.\n");
                 if (d.found_row_stride > 0)
-                    ps3_log("       THE REFERENCE'S ROW 1 SITS AT OFFSET %d - that is this decoder's"
-                            " stride, and it is not %d\n", d.found_row_stride, d.width);
+                    ps3_log("       the reference's row 1 sits at offset %d, so the stride is %d"
+                            " (the picture is %d wide)\n",
+                            d.found_row_stride, d.found_row_stride, d.width);
                 else
                     ps3_log("       the reference's row 1 does not occur anywhere in the first 2048\n"
                             "       bytes, so the planes are not merely offset from each other.\n");
@@ -1588,8 +1602,8 @@ static int check_decode(void)
     ps3_log("         Y  0x%016llx\n", (unsigned long long)r.hash_y);
     ps3_log("         U  0x%016llx\n", (unsigned long long)r.hash_u);
     ps3_log("         V  0x%016llx\n", (unsigned long long)r.hash_v);
-    log_bytes("row 0", r.first_luma);
-    log_bytes("row 1", r.second_row_luma);
+    log_bytes("row 0", r.first_luma, 16);
+    log_bytes("row 1", r.second_row_luma, 16);
     ps3_log("ok    openh264 decoded on the PPE - compare the hashes with the reference decode\n");
     return 0;
 }
