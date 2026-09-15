@@ -74,7 +74,9 @@ unsigned rc_decode_vdec_au_max_nals(void);    /* most NAL units seen in one acce
 unsigned rc_decode_vdec_au_max_slices(void);  /* most coded slices - the shape a decoder cares about */
 unsigned rc_decode_vdec_au_last_slices(void); /* and the most recent, which is what shows a change */
 unsigned rc_decode_vdec_drop_ring_full(void); /* submissions refused because no slot was free */
-unsigned rc_decode_vdec_drop_submit(void);    /* refused by the decoder itself */
+unsigned rc_decode_vdec_drop_submit(void);    /* refused by the decoder itself, after waiting */
+int      rc_decode_vdec_drop_submit_error(void);
+unsigned rc_decode_vdec_submit_waits(void);   /* submissions that had to wait for a queue slot */
 unsigned rc_decode_vdec_drop_collect(void);   /* a picture announced and not collectable */
 
 /* 1 if a frame has been lost since the last call, which breaks the reference chain and needs a keyframe
