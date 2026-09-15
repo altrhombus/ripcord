@@ -117,6 +117,15 @@ typedef struct {
     int  last_error;       /* openh264's own return from the last failing call, 0 if none */
     int  errors;
     uint64_t decode_ticks; /* decode calls only - not the demux, not the copy */
+
+    /*
+     * A SAMPLE OF WHAT WAS ACTUALLY HANDED OVER. b160 decoded 431 pictures with no errors, converted 435
+     * frames on the SPEs, blitted 431 and flipped 431 - and the screen stayed black. Every counter in
+     * the path said it worked, because every counter was counting calls rather than content. These are
+     * the darkest and brightest luma seen in the delivered pictures: a picture of zeros is black, and a
+     * counter cannot tell you that.
+     */
+    unsigned luma_min, luma_max;
 } rc_decode_live_stats;
 
 /* Opens a decoder that stays open. Returns 1 on success. */

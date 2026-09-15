@@ -2,6 +2,7 @@
 
 #include <codec/vdec.h>
 #include <ppu-asm.h>
+#include <ppu_intrinsics.h>
 #include <sysmodule/sysmodule.h>
 
 #include <malloc.h>
@@ -42,7 +43,7 @@ static volatile int s_seq_done;
 
 /* The picture handoff: the callback writes `s_fill` and publishes it, the caller consumes it. */
 static volatile int s_ready = -1;   /* index of a finished picture, -1 if none */
-static int s_fill;
+static volatile int s_fill;
 static volatile int s_ready_w, s_ready_h;
 
 static uint32_t s_callback_opd[2] __attribute__((aligned(8)));
@@ -76,8 +77,12 @@ static u32 vdec_callback(u32 handle, u32 msgtype, u32 msgdata, u32 arg)
         if (w <= 0 || h <= 0 || (long)w * (long)h * 3 / 2 > RC_VDEC_PICTURE_BYTES)
             return 0;
 
-        /* Never write into the buffer the caller is still reading. */
-        slot = (s_ready == s_fill) ? (s_fill ^ 1) : s_fill;
+        /*
+         * Never the buffer the caller is still reading. b160's version reduced to "always slot 0", so
+         * the second buffer was never used and the consumer could be blitting the very bytes being
+         * overwritten. If a picture is published, write the other one.
+         */
+        slot = (s_ready == 0) ? 1 : 0;
 
         memset(&format, 0, sizeof(format));
         format.format_type = VDEC_PICFMT_YUV420P;
@@ -93,7 +98,15 @@ static u32 vdec_callback(u32 handle, u32 msgtype, u32 msgdata, u32 arg)
         s_fill = slot;
         s_ready_w = w;
         s_ready_h = h;
-        s_ready = slot;      /* published last - the caller reads this to decide the rest is valid */
+
+        /*
+         * THE BARRIER IS THE POINT. This runs on the library's thread and the consumer runs on the
+         * decode thread; PowerPC is weakly ordered, so without it the consumer can observe the published
+         * index before the picture data it refers to. b160 blitted 431 pictures onto a black screen with
+         * every counter in the path reporting success, which is what that looks like.
+         */
+        __lwsync();
+        s_ready = slot;      /* published last, and only after the data is visible */
         return 0;
     }
 
@@ -232,11 +245,39 @@ int rc_decode_vdec_feed(const uint8_t *access_unit, size_t length, rc_decode_liv
         int ready = s_ready;
 
         if (ready >= 0) {
-            int w = s_ready_w;
-            int h = s_ready_h;
+            int w, h;
+
+            /* Pairs with the __lwsync in the callback: the index was published after the data, so do
+             * not read the data before observing the index. */
+            __lwsync();
+            w = s_ready_w;
+            h = s_ready_h;
             const uint8_t *y = s_picture[ready];
             const uint8_t *u = y + (size_t)w * (size_t)h;
             const uint8_t *v = u + (size_t)(w / 2) * (size_t)(h / 2);
+
+            /*
+             * Sampled before it is handed on, because b160 proved that every counter in this pipeline
+             * can report success while the pixels are zeros. A few hundred samples down the middle of
+             * the picture is enough to tell a picture from a black rectangle.
+             */
+            {
+                int i;
+
+                for (i = 0; i < 256; i++) {
+                    size_t at = ((size_t)h / 2u) * (size_t)w + (size_t)(i * (w / 256));
+                    unsigned sample = y[at];
+
+                    if (stats->pictures_out == 0 && i == 0) {
+                        stats->luma_min = sample;
+                        stats->luma_max = sample;
+                    }
+                    if (sample < stats->luma_min)
+                        stats->luma_min = sample;
+                    if (sample > stats->luma_max)
+                        stats->luma_max = sample;
+                }
+            }
 
             stats->width = w;
             stats->height = h;

@@ -793,6 +793,8 @@ static unsigned g_blits;
  * WE ARE BLIND UNTIL A KEYFRAME ARRIVES, and this remembers that. Defined here, above both the periodic
  * loop and the loss callback, because both of them need it - see the fuller note at on_video_loss.
  */
+static const char *g_decode_backend = "none";
+static int g_decode_backend_id;
 static int g_awaiting_keyframe;
 static void request_idr(uint64_t now);
 
@@ -1730,6 +1732,14 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
                      * and therefore how much memory it reserves. */
                     rc_decode_live_hint((int)info.width, (int)info.height);
                     g_live_open = rc_decode_live_open();
+                    /*
+                     * RECORDED AT OPEN, not at report time. b160 read this in the reporting block, which
+                     * runs after rc_decode_live_close() has reset it, so a run decoded entirely by
+                     * cellVdec reported "decoded by none" - and the offline probe, gated on the same
+                     * stale read, then opened a second decoder for no reason.
+                     */
+                    g_decode_backend = rc_decode_live_backend_name();
+                    g_decode_backend_id = rc_decode_live_backend();
                     if (g_live_open) {
                         rc_decode_live_set_sink(on_picture, NULL);
                         /* Started only after the decoder is open and its sink is set: the thread calls
@@ -1963,7 +1973,10 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
     rc_video_scale_info(&out->scaled_width, &out->scaled_height,
                         &out->display_width, &out->display_height);
     out->pictures_dropped = g_pictures_dropped;
-    out->decode_backend = rc_decode_live_backend_name();
+    out->decode_backend = g_decode_backend;
+    out->decode_backend_id = g_decode_backend_id;
+    out->luma_min = (int)g_live_stats.luma_min;
+    out->luma_max = (int)g_live_stats.luma_max;
     out->decode_thread_priority = g_decode_priority;
     out->decode_receive_priority = g_decode_receive_priority;
     out->hold_ms = (unsigned)RC_STREAM_HOLD_MS;
