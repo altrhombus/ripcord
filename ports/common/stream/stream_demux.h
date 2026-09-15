@@ -44,14 +44,17 @@
  * before assembly began - silently, which is why 103,371 video packets became 32 frames and nobody
  * could see where they went.
  *
- * HalyardStreamDemuxer caps this at 512 and sizes its slots dynamically; this is the fixed-buffer
- * equivalent of the same number. It is overridable per port because the cost is real - 512 slots is a
- * 2 MB slot buffer - and a port streaming 640x360 into 128 MB of RAM should not pay for a resolution it
- * will never ask for. The default keeps every existing port exactly as it was.
+ * 512 is HalyardStreamDemuxer's own cap, which sizes its slots dynamically; this is the fixed-buffer
+ * equivalent of the same number, and it costs a 2 MB slot buffer.
+ *
+ * NOT OVERRIDABLE, AND THAT IS THE POINT. b168 made it a per-port -D and the console hung before it
+ * reached the network: this port's core-test objects are compiled from their own flag list rather than
+ * from CFLAGS, so stream_demux.c saw 512 while the test translation units saw 64. One struct, two sizes,
+ * one binary - writes past the end of an object the rest of the program believed was sixteen times
+ * larger. A type whose size depends on a command-line define is a trap that is set once and sprung
+ * somewhere else, so there is one number here and no way to vary it.
  */
-#ifndef STREAM_DEMUX_MAX_UNITS_PER_FRAME
-#define STREAM_DEMUX_MAX_UNITS_PER_FRAME FEC_MAX_TOTAL_UNITS
-#endif
+#define STREAM_DEMUX_MAX_UNITS_PER_FRAME 512
 #define STREAM_DEMUX_VIDEO_HEADER_CAPACITY 512
 #define STREAM_DEMUX_ASSEMBLY_CAPACITY \
     (STREAM_DEMUX_MAX_UNITS_PER_FRAME * STREAM_DEMUX_MAX_UNIT_STRIDE \
@@ -139,6 +142,14 @@ typedef struct {
 } stream_demux;
 
 /* Zeroes *demux and installs the crypto seam + callback sink. */
+/*
+ * sizeof(stream_demux) as the LIBRARY was compiled, so a caller can check it against its own. There is
+ * no way to catch a struct that two translation units disagree about at compile time in C, and b168
+ * showed what it costs at run time: the console hung before it reached the network, with nothing in the
+ * log to say why. One comparison at startup turns that into a message.
+ */
+size_t stream_demux_struct_size(void);
+
 void stream_demux_init(stream_demux *demux, stream_demux_crypto crypto, stream_demux_sink sink);
 
 /* Supplies the SPS/PPS parameter sets parsed from the console's STREAM_INFO, prepended ahead of every
