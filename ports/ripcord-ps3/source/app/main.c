@@ -1293,6 +1293,11 @@ static unsigned bench_ns(uint64_t ticks, uint64_t hz, unsigned iterations)
  * see rc_vdec_probe.h. The output is the set the console accepts and what each wants for memory, which
  * is what the real implementation needs before it can be written honestly.
  */
+/* openh264's first-picture plane hashes, kept so check_vdec can identify the other decoder's layout by
+ * reproducing them. check_decode runs first; see the stage list at the foot of main(). */
+static uint64_t s_reference_hash_y;
+static uint64_t s_reference_hash_u;
+
 static void vdec_step_log(const char *message)
 {
     ps3_log("%s\n", message);
@@ -1345,7 +1350,7 @@ static int check_vdec(void)
 
         ps3_log("vdec:  decoding %s with the console's decoder at level 31\n", RC_DECODE_STREAM_PATH);
         decoded = rc_vdec_decode_probe(RC_DECODE_STREAM_PATH, 31, RC_DECODE_PROBE_FRAMES,
-                                       vdec_step_log, &d);
+                                       vdec_step_log, s_reference_hash_y, s_reference_hash_u, &d);
 
         ps3_log("       reached step %d (see rc_vdec_step), wanted %u bytes of decoder memory\n",
                 d.last_step, d.mem_size);
@@ -1392,6 +1397,21 @@ static int check_vdec(void)
                     (unsigned long long)d.hash_v_at_visible);
             ps3_log("         V after %3d rows 0x%016llx\n", d.padded_height,
                     (unsigned long long)d.hash_v_at_padded);
+            ps3_log("       the decoder says the picture occupies %u bytes"
+                    " (status %u, attr %u)\n",
+                    d.picture_size, d.picture_status, d.picture_attr);
+            if (d.matched_stride > 0)
+                ps3_log("       STRIDE FOUND: %d bytes per luma row reproduces openh264's luma exactly\n",
+                        d.matched_stride);
+            else
+                ps3_log("       NO STRIDE from %d to 2048 reproduces openh264's luma. The difference is\n"
+                        "       then in the pixels rather than their arrangement - a colour matrix\n"
+                        "       applied to YUV output, or a different chroma siting.\n", d.width);
+            if (d.matched_luma_rows > 0)
+                ps3_log("       CHROMA FOUND: it begins after %d luma rows (visible height is %d)\n",
+                        d.matched_luma_rows, d.height);
+            else if (d.matched_stride > 0)
+                ps3_log("       chroma not located at any row count up to 2048 with that stride\n");
         }
     }
     return 0;
@@ -1525,6 +1545,8 @@ static int check_decode(void)
         ps3_log("       (this is %dx%d - 720p is ~4x the pixels)\n", r.width, r.height);
     }
 
+    s_reference_hash_y = r.hash_y;
+    s_reference_hash_u = r.hash_u;
     ps3_log("       first picture, by plane (strides: Y %d, UV %d):\n", r.stride_y, r.stride_uv);
     ps3_log("         Y  0x%016llx\n", (unsigned long long)r.hash_y);
     ps3_log("         U  0x%016llx\n", (unsigned long long)r.hash_u);
