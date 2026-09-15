@@ -2147,6 +2147,7 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
     out->callback_pictures = (int)rc_decode_vdec_callback_pictures();
     out->picture_addr = rc_decode_vdec_picture_addr();
     out->decode_level = rc_decode_vdec_level();
+    out->decode_spus = rc_decode_vdec_num_spus();
     out->sps_profile = rc_decode_vdec_sps_profile();
     out->sps_level = rc_decode_vdec_sps_level();
     out->sps_max_ref = rc_decode_vdec_sps_max_ref();

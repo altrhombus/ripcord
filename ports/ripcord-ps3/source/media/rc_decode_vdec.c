@@ -125,6 +125,7 @@ static unsigned s_drop_ring_full;
 static unsigned s_drop_submit;
 static unsigned s_drop_collect;
 static int s_drop_submit_error;
+static int s_num_spus;
 static unsigned s_submit_waits;
 
 
@@ -403,10 +404,18 @@ int rc_decode_vdec_open(int width, int height)
     config.ppu_thread_stack_size = 256u * 1024u;
     config.spu_thread_prio = 200;
     /*
-     * One SPE. rc_spu_yuv.h explains why the colour converter takes four rather than five: this group is
-     * created once and never released, so the SPE the decoder needs has to be left free from the start.
+     * TWO SPEs, because one decodes about 41 frames a second and 60 are arriving.
+     *
+     * b183 measured it rather than inferred it: of 1,747 submissions at 720p60, 1,373 came back BUSY -
+     * 907 rescued by waiting and 466 given up on - and 1,225 pictures came out. The decoder's command
+     * queue being four deep is why BUSY appears at all; being saturated is why waiting stops helping.
+     *
+     * One SPE was chosen when the stream was 30 fps and nothing had measured what it could take. Six are
+     * initialised, the colour converter holds four and never releases them, so a second was sitting idle
+     * the whole time.
      */
-    config.num_spus = 1;
+    config.num_spus = 2;
+    s_num_spus = (int)config.num_spus;
 
     memset(&closure, 0, sizeof(closure));
     /* A 32-bit {entry, toc} descriptor, not GCC's 64-bit one - see rc_vdec_probe.c for what the
@@ -443,6 +452,11 @@ unsigned rc_decode_vdec_callback_pictures(void)
 int rc_decode_vdec_level(void)
 {
     return s_level;
+}
+
+int rc_decode_vdec_num_spus(void)
+{
+    return s_num_spus;
 }
 
 unsigned rc_decode_vdec_mem_size(void)

@@ -1134,6 +1134,9 @@ static int check_connect(void)
                             c.audio_worst_ring, RC_AUDIO_RING_SAMPLES, c.audio_overflows,
                             c.audio_index_is_address ? "an ADDRESS" : "an index");
                 }
+                if (c.decode_spus > 0)
+                    ps3_log("       the decoder was given %d SPE(s); the colour converter holds the"
+                            " rest\n", c.decode_spus);
                 ps3_log("       decoded by %s\n",
                         (c.decode_backend != NULL) ? c.decode_backend : "?");
                 if (c.decoded_pictures > 0) {
