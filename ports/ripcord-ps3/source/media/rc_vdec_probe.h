@@ -193,6 +193,8 @@ typedef struct {
      * those eight bytes occurring somewhere else in the reference row. -1 if they do not.
      */
     int edge_found_at;
+
+    unsigned buffer_addr;   /* where the picture was written, to show its alignment */
 } rc_vdec_decode_result;
 
 /* Decodes up to `max_frames` pictures from the Annex-B capture at `path` using the console's decoder.
