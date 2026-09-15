@@ -71,6 +71,21 @@ static int s_sps_max_ref = -1;
 static unsigned s_level_clamped;
 static int s_clamp_safe;
 
+/*
+ * IS WHAT WE SUBMIT STILL AN ACCESS UNIT?
+ *
+ * At 8 Mbps this port decodes 873 of 875 frames perfectly; at 15 Mbps, with the same profile, the same
+ * level and the same nine reference frames, every picture comes back black. The only thing that changes
+ * is frame size - about 21 units a frame against about 90 - and the demuxer's assembly of a 96-unit
+ * frame is byte-exact on the host, so the bytes leave it intact.
+ *
+ * That leaves what happens between there and the decoder. An access unit must begin with an Annex-B
+ * start code; counting the ones that do not is the difference between "we are feeding it rubbish" and
+ * "it is being fed correctly and still produces black", and no amount of reasoning separates those.
+ */
+static unsigned s_au_bad_start;
+static unsigned s_au_largest;
+
 /* The picture handoff: the callback writes `s_fill` and publishes it, the caller consumes it. */
 static volatile int s_ready = -1;   /* index of a finished picture, -1 if none */
 static volatile int s_fill;
@@ -290,6 +305,8 @@ int rc_decode_vdec_open(int width, int height)
     s_sps_max_ref = -1;
     s_level_clamped = 0;
     s_clamp_safe = 0;
+    s_au_bad_start = 0;
+    s_au_largest = 0;
 
     if (sysModuleLoad(SYSMODULE_VDEC_H264) != 0)
         return 0;
@@ -382,6 +399,8 @@ int rc_decode_vdec_sps_level(void)   { return s_sps_level; }
 int rc_decode_vdec_sps_max_ref(void) { return s_sps_max_ref; }
 unsigned rc_decode_vdec_level_clamped(void) { return s_level_clamped; }
 int rc_decode_vdec_clamp_safe(void) { return s_clamp_safe; }
+unsigned rc_decode_vdec_au_bad_start(void) { return s_au_bad_start; }
+unsigned rc_decode_vdec_au_largest(void) { return s_au_largest; }
 
 unsigned rc_decode_vdec_picture_addr(void)
 {
@@ -417,6 +436,14 @@ int rc_decode_vdec_feed(const uint8_t *access_unit, size_t length, rc_decode_liv
 
             memcpy(s_au[slot], access_unit, length);
             clamp_level(s_au[slot], length);
+
+            if (length > s_au_largest)
+                s_au_largest = (unsigned)length;
+            if (length < 4u
+                || !((access_unit[0] == 0 && access_unit[1] == 0 && access_unit[2] == 0
+                      && access_unit[3] == 1)
+                     || (access_unit[0] == 0 && access_unit[1] == 0 && access_unit[2] == 1)))
+                s_au_bad_start++;
             if (s_first_au_len == 0u) {
                 memcpy(s_first_au, access_unit, sizeof(s_first_au));
                 s_first_au_len = (unsigned)length;
