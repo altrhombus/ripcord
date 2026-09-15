@@ -315,7 +315,11 @@ ECDH_CFLAGS    := -DRC_CRYPTO_MBEDTLS -isystem $(MBEDTLS_PREFIX)/include \
 # needs these, and the only safe place to say so is after ECDH_CFLAGS exists.
 #
 # CFLAGS_SDK_SOCKETS derives from CFLAGS and is defined below this line, so it inherits them too.
-CFLAGS += $(ECDH_CFLAGS) $(OPUS_INC)
+# 1080p frames occupy well over a hundred unit slots - see STREAM_DEMUX_MAX_UNITS_PER_FRAME in
+# ports/common/stream/stream_demux.h for why that is a different number from the FEC group size, and what
+# leaving them conflated cost. 512 matches HalyardStreamDemuxer's own cap; the slot buffer it sizes is
+# 2 MB, which this console has and the 3DS does not.
+CFLAGS += $(ECDH_CFLAGS) $(OPUS_INC) -DSTREAM_DEMUX_MAX_UNITS_PER_FRAME=512
 
 CORE_TEST_OBJS := $(BUILD)/ct_halyard_v1_constants.g.o \
                   $(addprefix $(BUILD)/ct_,$(notdir $(CORE_TEST_SUPPORT:.c=.o))) \
