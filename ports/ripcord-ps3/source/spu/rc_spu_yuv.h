@@ -46,6 +46,20 @@ typedef struct {
     unsigned fallbacks;     /* frames that timed out and went to the PPE instead */
     unsigned avg_us;
     unsigned worst_us;
+
+    /*
+     * WHERE AN SPE'S TIME GOES, summed across the SPEs of the last frame and converted from the SPU
+     * decrementer, which runs at the same timebase rc_tick_hz reports.
+     *
+     * The kernel blocks on every transfer - one tag, a status wait after each get and each put - so it
+     * is idle for the whole of each round trip. This says whether that idling or the arithmetic is the
+     * 4,945 us, and the answer decides the next change: if the arithmetic dominates, taking ARGB32 from
+     * the decoder (b179 proved it will) removes the colour pass; if the waiting dominates, that same
+     * change makes it worse, since ARGB is 4 bytes a pixel against YUV420's 1.5, and double buffering is
+     * the answer instead.
+     */
+    unsigned last_dma_us;
+    unsigned last_work_us;
     int      disabled;      /* the SPE path gave up and the PPE carried the rest of the run */
 } rc_spu_yuv_stats;
 

@@ -2134,6 +2134,17 @@ int main(void)
                     " %u fell back to the PPE\n",
                     stats.frames, stats.spes, stats.avg_us, stats.worst_us, stats.fallbacks);
 
+            /*
+             * The split that decides whether the ARGB32 route is worth building. The kernel blocks on
+             * every transfer, so waiting is idle time rather than bandwidth - and if it dominates, taking
+             * RGB from the decoder makes things worse rather than better, because ARGB is 4 bytes a
+             * pixel against YUV420's 1.5.
+             */
+            if (stats.last_dma_us > 0u || stats.last_work_us > 0u)
+                ps3_log("       last frame: %u us waiting for the MFC, %u us converting and scaling"
+                        " (summed over %d SPE(s))\n",
+                        stats.last_dma_us, stats.last_work_us, stats.spes);
+
             if (stats.disabled)
                 ps3_log("spu:   the SPE path was ABANDONED after repeated misses - the PPE carried the\n"
                         "       rest of the run, which is the outcome this is designed to produce\n");
