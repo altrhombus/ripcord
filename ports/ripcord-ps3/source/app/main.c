@@ -896,6 +896,14 @@ static int check_connect(void)
     if (c.senkusha_complete) {
         ps3_log("       senkusha echo: %u/%u echoes, handshake round trip %d ms\n",
                 c.echo_samples, 10u, c.handshake_rtt_ms);
+        /*
+         * The declared bandwidth belongs beside the rtt and mtu, because it is the same kind of claim
+         * and the console acts on all three. b166 asked for 1920x1080 and was given 1280x720 while
+         * declaring bwKbpsSent of 8000 - a figure that was never chosen for 1080p, it is simply the
+         * pairing record's default.
+         */
+        ps3_log("       declared bandwidth %d kbps (bwKbpsSent - what the console sizes the"
+                " stream against)\n", c.declared_bitrate_kbps);
         ps3_log("       declared rtt %d ms (%s), mtu %d (%s)\n",
                 c.measured_rtt_ms,
                 c.measured_rtt_ms == 0 ? "nothing measured"
