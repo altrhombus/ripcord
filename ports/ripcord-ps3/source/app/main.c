@@ -1378,6 +1378,21 @@ static int check_vdec(void)
                     "       agree on this capture, which is the evidence needed before the live path\n"
                     "       moves onto one nobody here has run.\n");
         }
+        {
+            /* b151 showed the two disagree while both report 640x360, so the first picture is pulled
+             * apart here - see rc_vdec_probe.h. The chroma is hashed at both candidate offsets; the one
+             * that matches openh264's U says where this decoder puts its planes. */
+            ps3_log("       first picture, by plane (coded height would be %d):\n", d.padded_height);
+            ps3_log("         Y              0x%016llx\n", (unsigned long long)d.hash_y);
+            ps3_log("         U after %3d rows 0x%016llx\n", d.height,
+                    (unsigned long long)d.hash_u_at_visible);
+            ps3_log("         U after %3d rows 0x%016llx\n", d.padded_height,
+                    (unsigned long long)d.hash_u_at_padded);
+            ps3_log("         V after %3d rows 0x%016llx\n", d.height,
+                    (unsigned long long)d.hash_v_at_visible);
+            ps3_log("         V after %3d rows 0x%016llx\n", d.padded_height,
+                    (unsigned long long)d.hash_v_at_padded);
+        }
     }
     return 0;
 }
@@ -1510,6 +1525,10 @@ static int check_decode(void)
         ps3_log("       (this is %dx%d - 720p is ~4x the pixels)\n", r.width, r.height);
     }
 
+    ps3_log("       first picture, by plane (strides: Y %d, UV %d):\n", r.stride_y, r.stride_uv);
+    ps3_log("         Y  0x%016llx\n", (unsigned long long)r.hash_y);
+    ps3_log("         U  0x%016llx\n", (unsigned long long)r.hash_u);
+    ps3_log("         V  0x%016llx\n", (unsigned long long)r.hash_v);
     ps3_log("ok    openh264 decoded on the PPE - compare the hashes with the reference decode\n");
     return 0;
 }
