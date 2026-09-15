@@ -83,6 +83,22 @@ typedef struct {
 int rc_decode_probe(const char *path, int max_frames, rc_decode_probe_result *out);
 
 /*
+ * THE FIRST PICTURE'S LUMA, KEPT WHOLE, so another decoder can be diffed against it rather than
+ * hashed against it.
+ *
+ * b154 printed sixteen bytes from each decoder and they were identical - 0x18, limited-range black -
+ * because the capture opens on a black frame, so the sample could not distinguish anything. A hash says
+ * only "not equal" and a corner sample says only "equal here". Neither locates a disagreement.
+ *
+ * Stored packed at `rc_decode_reference_width` bytes per row, whatever stride the decoder used, so a
+ * consumer compares pixels and not padding.
+ */
+#define RC_DECODE_REFERENCE_MAX (1280 * 720)
+extern uint8_t rc_decode_reference_luma[RC_DECODE_REFERENCE_MAX];
+extern int rc_decode_reference_width;
+extern int rc_decode_reference_height;
+
+/*
  * THE LIVE DECODER, as opposed to the file probe above.
  *
  * rc_decode_probe answers "can this hardware decode H.264, and how fast" from a capture on disk. This

@@ -260,6 +260,36 @@ static u32 vdec_callback(u32 handle, u32 msgtype, u32 msgdata, u32 arg)
                 memcpy(s_out->second_row_luma, s_picture + w, sizeof(s_out->second_row_luma));
 
                 /*
+                 * Diffed against openh264's own first picture, at this decoder's tightly packed stride -
+                 * picture_size of 353280 is exactly 640*368*1.5, so stride is the width. Where the two
+                 * first differ is the finding; four builds of hashes never got closer than "not equal".
+                 */
+                s_out->diff_first_offset = -1;
+                if (rc_decode_reference_width == w && rc_decode_reference_height == h) {
+                    long i;
+                    long total = (long)w * (long)h;
+
+                    s_out->diff_valid = 1;
+                    s_out->diff_total = total;
+                    for (i = 0; i < total; i++) {
+                        if (s_picture[i] != rc_decode_reference_luma[i]) {
+                            if (s_out->diff_first_offset < 0) {
+                                int k;
+
+                                s_out->diff_first_offset = i;
+                                s_out->diff_first_row = (int)(i / w);
+                                s_out->diff_first_col = (int)(i % w);
+                                for (k = 0; k < 8 && i + k < total; k++) {
+                                    s_out->diff_reference[k] = rc_decode_reference_luma[i + k];
+                                    s_out->diff_actual[k] = s_picture[i + k];
+                                }
+                            }
+                            s_out->diff_bytes++;
+                        }
+                    }
+                }
+
+                /*
                  * FIND THE STRIDE BY REPRODUCING A KNOWN ANSWER. openh264 decoded this same picture and
                  * its luma hash is the reference; whichever stride makes this decoder's luma hash the
                  * same is this decoder's stride. Nothing states it, and every question about where the
