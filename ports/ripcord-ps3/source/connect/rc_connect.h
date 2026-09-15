@@ -267,6 +267,10 @@ typedef struct {
     unsigned picture_addr;       /* where pictures were written - alignment is visible in it */
     int      decode_level;       /* the H.264 level the decoder was opened at */
     unsigned decode_mem_size;    /* and what that reserved */
+    int      sps_profile;        /* what the stream says about itself */
+    int      sps_level;          /* as declared, before any clamp */
+    int      sps_max_ref;        /* level 4.2 allows 4 reference frames at 1080p */
+    unsigned level_clamped;      /* SPS units whose declared level was lowered to 4.2 */
 
     /* Audio. See rc_audio_ps3.h - silence written is the one fault a listener can hear. */
     int      audio_ready;
