@@ -41,6 +41,11 @@ stream_demux_crypto stream_demux_packet_crypto(stream_packet_crypto *crypto)
     return c;
 }
 
+size_t stream_demux_struct_size(void)
+{
+    return sizeof(stream_demux);
+}
+
 void stream_demux_init(stream_demux *demux, stream_demux_crypto crypto, stream_demux_sink sink)
 {
     memset(demux, 0, sizeof(*demux));
