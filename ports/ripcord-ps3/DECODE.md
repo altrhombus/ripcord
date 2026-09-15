@@ -618,8 +618,19 @@ a stream that has changed shape needs a fresh reference — but setting `g_await
 the repeat loop that asks every 200 ms until one arrives, turning 8 steps into 79 IDR requests.
 
 ### Still open
-- **The fifth SPE.** The colour converter dropped from five SPEs to four to leave the decoder one. If
-  `VDEC_PICFMT_ARGB32` output works, the conversion disappears and all five come back.
-- **Audio latency.** The ring reached 2,944 samples (61 ms) in a clean run. It never ran dry after the
-  first block, so there is room to steer it shallower if that matters — `ripcord-3ds` does exactly that,
-  and the reasoning in its `rc_audio.h` applies here too.
+- **The fifth SPE — `ARGB32` output works.** Asked offline in b179: `vdecGetPicture` accepts
+  `VDEC_PICFMT_ARGB32` and fills the buffer (bytes 0..255 across 8 pictures). So the YUV-to-RGB pass
+  really can come out of the SPE kernel.
+  **But the conversion does not simply disappear, and this document said it would.** Scaling 1280x720 to
+  a 1920x1080 display still has to happen somewhere, so the SPE becomes a scaler rather than going idle —
+  a cheaper pass, not no pass. Two routes worth weighing before building either: keep the SPE and make it
+  scale-only, or set the display to 720p and let the television scale, which removes the pass entirely at
+  the cost of handing off scaling quality. Neither is urgent: decode and blit together cost 15% of a
+  frame budget, and no other work is waiting on an SPE.
+- ~~**Audio latency.**~~ **Tried and reverted.** About 93 ms sat between the decoder and the speaker and
+  the stream underran exactly once, on the first block, so the depth looked like waste. It is not: audio
+  arrives in network bursts and that depth is the jitter buffer. Cutting the hardware lead and trimming
+  the ring to 20 ms bounded latency at 40 ms and discarded 167,488 samples in 251 trims — 11.6% of a run,
+  stuttering throughout. The lead is back to six blocks and the trim is now a runaway guard at 100 ms
+  that normal jitter never reaches. `ripcord-3ds` steers a rate loop instead, which works there because
+  audio and the DSP share a timebase; that is the shape any future attempt should take, not a trim.

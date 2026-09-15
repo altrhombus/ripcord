@@ -131,8 +131,10 @@ void rc_audio_submit(const uint8_t *frame, size_t length)
      * A backlog is latency, so it is discarded rather than played late. See RC_AUDIO_TARGET_SAMPLES for
      * why this is a trim and not a rate loop, and why the count matters more than the event.
      */
-    if (s_fill > RC_AUDIO_TARGET_SAMPLES + RC_AUDIO_FRAME_SAMPLES) {
-        unsigned drop = s_fill - RC_AUDIO_TARGET_SAMPLES;
+    if (s_fill > RC_AUDIO_TARGET_SAMPLES) {
+        /* Down to half the ceiling, so a runaway is actually corrected rather than clipped every frame
+         * at the threshold - which is what made b179 stutter. */
+        unsigned drop = s_fill - (RC_AUDIO_TARGET_SAMPLES / 2u);
 
         s_head = (s_head + drop) % RC_AUDIO_RING_SAMPLES;
         s_fill -= drop;

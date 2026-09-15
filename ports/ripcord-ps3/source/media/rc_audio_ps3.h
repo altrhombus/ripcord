@@ -40,25 +40,27 @@
 #define RC_AUDIO_RING_SAMPLES  8192
 
 /*
- * HOW MUCH AUDIO IS ALLOWED TO SIT AHEAD OF THE SPEAKER, which is latency and nothing else.
+ * HOW MUCH AUDIO SITS AHEAD OF THE SPEAKER, and why almost none of it is worth reclaiming.
  *
- * Two buffers hold it, and the first clean run measured both: the hardware's block ring was being kept
- * six blocks ahead (1,536 samples, 32 ms) and this file's own ring reached 2,944 samples (61 ms) on top,
- * so about 93 ms of audio existed between the decoder and the speaker. None of it was needed - the run
- * underran exactly once, on the first block, before anything had been decoded at all.
+ * The first clean run held about 93 ms between the decoder and the speaker - six blocks of hardware lead
+ * at 32 ms plus a ring reaching 61 - and underran exactly once, on the first block, before anything had
+ * been decoded. That looked like 50 ms of pure waste.
  *
- * The lead is now four blocks rather than six, and the ring is trimmed to 960 samples when it drifts
- * past that. Together they bound it at about 41 ms.
+ * It was not. b179 cut the lead to four blocks and trimmed the ring to 20 ms whenever it drifted past,
+ * which bounded latency at 40 ms and discarded 167,488 samples in 251 trims - three and a half seconds
+ * of a thirty second run, 11.6% of the audio, and it stuttered throughout.
  *
- * WHY TRIM RATHER THAN STEER. ripcord-3ds steers a rate loop toward a depth, which is the better answer
- * and needs a clock relationship this port does not have: there, audio and the DSP share a timebase. Here
- * the ring only grows when the receive loop has been busy, so the depth is a backlog rather than a phase
- * error, and discarding the oldest of it is both correct and audible only once. The trims are counted,
- * because a trim every second would mean the two clocks genuinely disagree and a rate loop is the answer
- * after all.
+ * THE DEPTH IS THE JITTER BUFFER. Audio arrives in network bursts, so the ring fluctuates by design; a
+ * trim set near the normal fluctuation discards the buffering that absorbs the bursts, which is the one
+ * job it has. The earlier reasoning - "the ring only grows when the receive loop has been busy, so the
+ * depth is a backlog" - was right about why it grows and wrong that the growth is spare.
+ *
+ * So the lead is back to six blocks, and the trim is a runaway guard rather than a target: it fires only
+ * past 100 ms, which normal jitter does not reach and genuine clock drift eventually would. The counters
+ * stay, because a trim that fires regularly is still the signal that the two clocks disagree.
  */
-#define RC_AUDIO_BLOCKS_AHEAD  4u
-#define RC_AUDIO_TARGET_SAMPLES 960u   /* 20 ms */
+#define RC_AUDIO_BLOCKS_AHEAD  6u
+#define RC_AUDIO_TARGET_SAMPLES 4800u   /* 100 ms - a ceiling, not a target */
 
 typedef struct {
     int ready;                  /* the port opened and the decoder was created */
