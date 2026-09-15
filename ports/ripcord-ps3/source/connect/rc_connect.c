@@ -19,6 +19,7 @@
 #include "stream_demux.h"
 #include "senkusha_echo.h"
 #include "rc_decode_probe.h"
+#include "rc_decode_vdec.h"
 #include "rc_video_ps3.h"
 #include "takion_control_proto.h"
 #include "takion_session_negotiator.h"
@@ -1977,6 +1978,8 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
     out->decode_backend_id = g_decode_backend_id;
     out->luma_min = (int)g_live_stats.luma_min;
     out->luma_max = (int)g_live_stats.luma_max;
+    out->callback_luma_max = (int)rc_decode_vdec_callback_luma_max();
+    out->callback_pictures = (int)rc_decode_vdec_callback_pictures();
     out->decode_thread_priority = g_decode_priority;
     out->decode_receive_priority = g_decode_receive_priority;
     out->hold_ms = (unsigned)RC_STREAM_HOLD_MS;

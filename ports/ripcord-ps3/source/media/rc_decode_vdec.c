@@ -41,6 +41,18 @@ static volatile int s_au_submitted;
 static volatile int s_au_done;
 static volatile int s_seq_done;
 
+/*
+ * SAMPLED WHERE THE DECODER WROTE IT, not where the consumer read it.
+ *
+ * b161 delivered 444 pictures whose luma was 0..0, with vdecGetPicture returning success every time and
+ * the dimensions arriving correctly through the same handoff. That splits into two very different
+ * faults - the decoder not writing this buffer, or the buffer not being visible to the reading thread -
+ * and one sample taken here, immediately after the call, separates them. If this is non-zero and the
+ * consumer still sees zeros, it is visibility; if this is zero too, the write never landed here.
+ */
+static volatile unsigned s_cb_luma_max;
+static volatile unsigned s_cb_pictures;
+
 /* The picture handoff: the callback writes `s_fill` and publishes it, the caller consumes it. */
 static volatile int s_ready = -1;   /* index of a finished picture, -1 if none */
 static volatile int s_fill;
@@ -95,6 +107,20 @@ static u32 vdec_callback(u32 handle, u32 msgtype, u32 msgdata, u32 arg)
             return 0;
         }
 
+        {
+            const uint8_t *py = s_picture[slot];
+            size_t base = ((size_t)h / 2u) * (size_t)w;
+            int i;
+
+            for (i = 0; i < 256; i++) {
+                unsigned sample = py[base + (size_t)(i * (w / 256))];
+
+                if (sample > s_cb_luma_max)
+                    s_cb_luma_max = sample;
+            }
+            s_cb_pictures++;
+        }
+
         s_fill = slot;
         s_ready_w = w;
         s_ready_h = h;
@@ -143,6 +169,8 @@ int rc_decode_vdec_open(int width, int height)
     s_ready = -1;
     s_fill = 0;
     s_seq_done = 0;
+    s_cb_luma_max = 0;
+    s_cb_pictures = 0;
 
     if (sysModuleLoad(SYSMODULE_VDEC_H264) != 0)
         return 0;
@@ -195,6 +223,16 @@ int rc_decode_vdec_open(int width, int height)
 
     s_open = 1;
     return 1;
+}
+
+unsigned rc_decode_vdec_callback_luma_max(void)
+{
+    return s_cb_luma_max;
+}
+
+unsigned rc_decode_vdec_callback_pictures(void)
+{
+    return s_cb_pictures;
 }
 
 int rc_decode_vdec_feed(const uint8_t *access_unit, size_t length, rc_decode_live_stats *stats)
