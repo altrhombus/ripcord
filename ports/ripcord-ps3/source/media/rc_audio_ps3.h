@@ -39,6 +39,27 @@
  */
 #define RC_AUDIO_RING_SAMPLES  8192
 
+/*
+ * HOW MUCH AUDIO IS ALLOWED TO SIT AHEAD OF THE SPEAKER, which is latency and nothing else.
+ *
+ * Two buffers hold it, and the first clean run measured both: the hardware's block ring was being kept
+ * six blocks ahead (1,536 samples, 32 ms) and this file's own ring reached 2,944 samples (61 ms) on top,
+ * so about 93 ms of audio existed between the decoder and the speaker. None of it was needed - the run
+ * underran exactly once, on the first block, before anything had been decoded at all.
+ *
+ * The lead is now four blocks rather than six, and the ring is trimmed to 960 samples when it drifts
+ * past that. Together they bound it at about 41 ms.
+ *
+ * WHY TRIM RATHER THAN STEER. ripcord-3ds steers a rate loop toward a depth, which is the better answer
+ * and needs a clock relationship this port does not have: there, audio and the DSP share a timebase. Here
+ * the ring only grows when the receive loop has been busy, so the depth is a backlog rather than a phase
+ * error, and discarding the oldest of it is both correct and audible only once. The trims are counted,
+ * because a trim every second would mean the two clocks genuinely disagree and a rate loop is the answer
+ * after all.
+ */
+#define RC_AUDIO_BLOCKS_AHEAD  4u
+#define RC_AUDIO_TARGET_SAMPLES 960u   /* 20 ms */
+
 typedef struct {
     int ready;                  /* the port opened and the decoder was created */
     int last_error;             /* whatever failed most recently */
@@ -51,6 +72,8 @@ typedef struct {
     unsigned silence_written;   /* blocks that had to be filled with silence - the audible fault */
     unsigned ring_overflows;    /* decoded audio dropped because the ring was full */
     unsigned worst_ring;        /* deepest the ring ever got, in samples per channel */
+    unsigned trims;             /* times the backlog was discarded down to the target */
+    unsigned trimmed_samples;
 
     /* PSL1GHT names audioPortConfig.readIndex an index while cellAudio returns an address. Which it
      * turned out to be is recorded rather than assumed - see rc_audio_ps3.c. */

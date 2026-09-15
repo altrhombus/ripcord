@@ -1589,6 +1589,28 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
     memset(&params, 0, sizeof(params));
     params.width = (rec->stream_width > 0) ? rec->stream_width : 640;
     params.height = (rec->stream_height > 0) ? rec->stream_height : 360;
+
+    /*
+     * NEVER ASK FOR MORE THAN 720p, AND THE REASON IS THE REFERENCE BUFFER RATHER THAN THE PIXEL RATE.
+     *
+     * cellVdec can be opened at H.264 level 4.2 and no higher - b145 swept vdecQueryAttr and it accepts
+     * exactly 10..42. The console encodes with NINE reference frames, and level bounds the decoded
+     * picture buffer: 4.2 allows 34,816 macroblocks, nine 720p frames need 32,400 and fit, nine 1080p
+     * frames need 73,440 and do not. So the console declares level 5.0 for 1080p because it genuinely
+     * needs it, and a decoder that cannot be configured that high accepts every access unit, reports no
+     * error, and produces uniformly black pictures. b169 through b171 is that, three times.
+     *
+     * FRAME RATE IS NOT WHAT IS BEING CAPPED. 720p60 is 216,000 macroblocks a second against 4.2's
+     * ceiling of 522,240, and the reference buffer does not grow with frame rate - so 60 fps at this
+     * resolution should be inside the same level. It is untested here, and capping it would forgo
+     * something that may simply work. The cap is on size alone.
+     */
+    if (params.height > 720 || params.width > 1280) {
+        out->resolution_capped_from_width = params.width;
+        out->resolution_capped_from_height = params.height;
+        params.width = 1280;
+        params.height = 720;
+    }
     params.fps = (rec->fps == 60) ? 60 : 30;
     params.bitrate_kbps = (rec->stream_bitrate_kbps > 0) ? rec->stream_bitrate_kbps : 2000;
     out->declared_bitrate_kbps = params.bitrate_kbps;
@@ -2060,6 +2082,8 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
             out->audio_silence = a.silence_written;
             out->audio_overflows = a.ring_overflows;
             out->audio_worst_ring = a.worst_ring;
+            out->audio_trims = a.trims;
+            out->audio_trimmed = a.trimmed_samples;
             out->audio_last_error = a.last_error;
             out->audio_index_is_address = a.read_index_is_address;
         }
