@@ -125,6 +125,8 @@ static volatile int s_decoder_error;    /* what the ERROR callback said, never o
 static volatile int s_picitem_fail;     /* vdecGetPicItem refused */
 static volatile int s_getpicture_fail;  /* vdecGetPicture refused */
 static volatile int s_getpicture_error;
+static uint64_t s_reference_y;
+static uint64_t s_reference_u;
 
 /*
  * THE CALLBACK'S DESCRIPTOR, AND WHY IT IS NOT JUST THE FUNCTION'S ADDRESS.
@@ -196,6 +198,9 @@ static u32 vdec_callback(u32 handle, u32 msgtype, u32 msgdata, u32 arg)
         } else {
             const vdecPicture *pic = (const vdecPicture *)(uintptr_t)item_addr;
 
+            s_out->picture_size = (unsigned)pic->picture_size;
+            s_out->picture_attr = (unsigned)pic->attr;
+            s_out->picture_status = (unsigned)pic->status;
             if (pic->codec_specific_addr != 0) {
                 const vdecH264Info *info = (const vdecH264Info *)(uintptr_t)pic->codec_specific_addr;
 
@@ -248,23 +253,72 @@ static u32 vdec_callback(u32 handle, u32 msgtype, u32 msgdata, u32 arg)
              */
             if (s_out->hashes == 0) {
                 int padded = (h + 15) & ~15;
-                size_t luma_padded = (size_t)w * (size_t)padded;
-                size_t chroma_visible = (size_t)(w / 2) * (size_t)(h / 2);
-                size_t chroma_padded = (size_t)(w / 2) * (size_t)(padded / 2);
 
                 s_out->padded_height = padded;
                 s_out->hash_y = rc_decode_probe_hash_plane(s_picture, w, w, h, FNV64_OFFSET);
-                s_out->hash_u_at_visible =
-                    rc_decode_probe_hash_plane(s_picture + luma, w / 2, w / 2, h / 2, FNV64_OFFSET);
-                s_out->hash_v_at_visible =
-                    rc_decode_probe_hash_plane(s_picture + luma + chroma_visible,
-                                               w / 2, w / 2, h / 2, FNV64_OFFSET);
-                s_out->hash_u_at_padded =
-                    rc_decode_probe_hash_plane(s_picture + luma_padded, w / 2, w / 2, h / 2,
-                                               FNV64_OFFSET);
-                s_out->hash_v_at_padded =
-                    rc_decode_probe_hash_plane(s_picture + luma_padded + chroma_padded,
-                                               w / 2, w / 2, h / 2, FNV64_OFFSET);
+
+                /*
+                 * FIND THE STRIDE BY REPRODUCING A KNOWN ANSWER. openh264 decoded this same picture and
+                 * its luma hash is the reference; whichever stride makes this decoder's luma hash the
+                 * same is this decoder's stride. Nothing states it, and every question about where the
+                 * chroma starts depends on it.
+                 *
+                 * The range is generous on purpose - openh264 itself chose 704 for a 640-wide picture,
+                 * so "a bit more than the width" is the shape to expect, but the point of a sweep is not
+                 * to confirm what was expected.
+                 */
+                if (s_reference_y != 0u) {
+                    int candidate;
+
+                    for (candidate = w; candidate <= 2048; candidate += 16) {
+                        if ((size_t)candidate * (size_t)h > sizeof(s_picture))
+                            break;
+                        if (rc_decode_probe_hash_plane(s_picture, candidate, w, h, FNV64_OFFSET)
+                                == s_reference_y) {
+                            s_out->matched_stride = candidate;
+                            break;
+                        }
+                    }
+                }
+
+                /*
+                 * With the stride known, where the chroma begins is the same question asked again: how
+                 * many luma rows precede it. Swept against openh264's U for the same reason.
+                 */
+                if (s_out->matched_stride > 0 && s_reference_u != 0u) {
+                    int rows;
+                    int stride = s_out->matched_stride;
+
+                    for (rows = h; rows <= 2048; rows++) {
+                        size_t offset = (size_t)stride * (size_t)rows;
+
+                        if (offset + (size_t)(stride / 2) * (size_t)(h / 2) > sizeof(s_picture))
+                            break;
+                        if (rc_decode_probe_hash_plane(s_picture + offset, stride / 2, w / 2, h / 2,
+                                                       FNV64_OFFSET) == s_reference_u) {
+                            s_out->matched_luma_rows = rows;
+                            break;
+                        }
+                    }
+                }
+
+                {
+                    size_t luma_padded = (size_t)w * (size_t)padded;
+                    size_t chroma_visible = (size_t)(w / 2) * (size_t)(h / 2);
+                    size_t chroma_padded = (size_t)(w / 2) * (size_t)(padded / 2);
+
+                    s_out->hash_u_at_visible =
+                        rc_decode_probe_hash_plane(s_picture + luma, w / 2, w / 2, h / 2, FNV64_OFFSET);
+                    s_out->hash_v_at_visible =
+                        rc_decode_probe_hash_plane(s_picture + luma + chroma_visible,
+                                                   w / 2, w / 2, h / 2, FNV64_OFFSET);
+                    s_out->hash_u_at_padded =
+                        rc_decode_probe_hash_plane(s_picture + luma_padded, w / 2, w / 2, h / 2,
+                                                   FNV64_OFFSET);
+                    s_out->hash_v_at_padded =
+                        rc_decode_probe_hash_plane(s_picture + luma_padded + chroma_padded,
+                                                   w / 2, w / 2, h / 2, FNV64_OFFSET);
+                }
             }
 
             s_out->hash[s_out->hashes++] = hash;
@@ -366,8 +420,8 @@ static s32 feed_au(u32 handle, const uint8_t *begin, const uint8_t *end,
     return rc;
 }
 
-int rc_vdec_decode_probe(const char *path, int level, int max_frames,
-                         rc_vdec_log_fn log, rc_vdec_decode_result *out)
+int rc_vdec_decode_probe(const char *path, int level, int max_frames, rc_vdec_log_fn log,
+                         uint64_t reference_y, uint64_t reference_u, rc_vdec_decode_result *out)
 {
     vdecType type;
     vdecAttr attr;
@@ -394,6 +448,8 @@ int rc_vdec_decode_probe(const char *path, int level, int max_frames,
     memset(out, 0, sizeof(*out));
     out->level = level;
     s_log = log;
+    s_reference_y = reference_y;
+    s_reference_u = reference_u;
     s_au_done = 0;
     s_seq_done = 0;
     s_cb_audone = 0;
