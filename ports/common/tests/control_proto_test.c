@@ -649,6 +649,70 @@ static void run_senkusha_echo(void)
     }
 }
 
+/* memcmp against expected bytes, reported through the same path as the hex-string vectors. */
+static void check_hex_equal_bytes(const char *kind, int line_number, const char *label,
+                                  const uint8_t *actual, size_t actual_len,
+                                  const uint8_t *expect, size_t expect_len)
+{
+    if (actual_len == expect_len && memcmp(actual, expect, expect_len) == 0) {
+        g_passed++;
+        return;
+    }
+    {
+        char got[512];
+        char want[512];
+
+        to_hex(actual, actual_len < 200u ? actual_len : 200u, got);
+        to_hex(expect, expect_len < 200u ? expect_len : 200u, want);
+        printf("FAIL  %s line %d: %s\n        expected %s\n        actual   %s\n",
+               kind, line_number, label, want, got);
+        g_failed++;
+    }
+}
+
+/*
+ * CONNECTION_QUALITY's encoding, byte for byte, worked out from the field numbers rather than captured.
+ *
+ * The three fields HalyardTakionStream sends are targetBitrate (1, varint), rtt (5, double) and
+ * lossPercent (7, double), inside ConnectionQualityPayload at field 17 of a ControlMessage whose type is
+ * 16. The doubles are the part worth a test: protobuf writes them little-endian and this project builds
+ * for a big-endian target, so an encoder that memcpy'd them would pass on the development machine and
+ * emit reversed bytes on the console.
+ *
+ * 1.0 is 0x3FF0000000000000, which little-endian is 00 00 00 00 00 00 F0 3F - the same bytes reversed,
+ * and so the one value that cannot hide a byte-order mistake.
+ */
+static void run_connection_quality(void)
+{
+    static const uint8_t expect[] = {
+        0x08, 0x10,                                              /* type = 16 */
+        0x8a, 0x01, 0x15,                                        /* field 17, length 21 */
+        0x08, 0x90, 0x4e,                                        /* targetBitrate = 10000 */
+        0x29, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xf0, 0x3f,    /* rtt = 1.0 */
+        0x39, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00     /* lossPercent = 0.0 */
+    };
+    uint8_t buf[64];
+    size_t n;
+
+    n = takion_control_build_connection_quality(10000u, 1.0, 0.0, buf, sizeof(buf));
+    check_uint_equal("connquality", __LINE__, "length", (unsigned)n, (unsigned)sizeof(expect));
+    check_hex_equal_bytes("connquality", __LINE__, "bytes", buf, n, expect, sizeof(expect));
+
+    /* The type has to be readable by the same peek the receive path uses. */
+    {
+        uint32_t type = 0xffffffffu;
+
+        if (!takion_control_peek_type(buf, n, &type))
+            fail("connquality", __LINE__, "peek should parse the message it just built");
+        else
+            check_uint_equal("connquality", __LINE__, "peeked type", type,
+                             TAKION_CONTROL_CONNECTION_QUALITY);
+    }
+
+    n = takion_control_build_connection_quality(10000u, 1.0, 0.0, buf, (size_t)8);
+    check_uint_equal("connquality", __LINE__, "short buffer must report 0", (unsigned)n, 0u);
+}
+
 static void run_bare_envelope(void)
 {
     uint8_t buf[8];
@@ -808,6 +872,7 @@ int main(int argc, char **argv)
     fclose(file);
 
     run_bare_envelope();
+    run_connection_quality();
     run_echo_command();
     run_mtu_commands();
     run_senkusha_echo();

@@ -101,18 +101,7 @@ static unsigned s_au_largest;
 static unsigned s_au_max_nals;
 static unsigned s_au_max_slices;
 
-/*
- * THE SLICE COUNT THIS DECODER STOPS COPING WITH, bracketed by measurement rather than documented
- * anywhere. 65 slices in a 720p picture decode perfectly; 136 produce black pictures with no error
- * reported by anything. 128 is the obvious candidate for the real limit and 136 is just past it, but the
- * only two points actually measured are 65 and 136, so the warning fires between them rather than at a
- * number nobody has tested.
- *
- * The console slices so that each network unit decodes independently, which means slice count follows
- * units per frame and therefore the bandwidth we declare in the launch spec. That is the lever: this is
- * a reason to declare less, not a reason to decode differently.
- */
-#define RC_VDEC_SLICES_WARN 96u
+
 static unsigned s_first_nal_seen;
 static unsigned s_first_nal_types;   /* first four NAL types of the first unit, packed one per byte */
 

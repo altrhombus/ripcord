@@ -25,6 +25,7 @@ static void pairing_record_defaults(halyard_pairing_record *rec)
      * its decoder has a limit on. 15,000 is measured good there and 30,000 is not; 10,000 is inside both.
      */
     rec->stream_bitrate_kbps = 10000;
+    rec->connection_quality = 0;
     rec->skip_until_keyframe = 0;
     rec->widescreen = 1;
     rec->smoothing = 1;
@@ -99,6 +100,8 @@ int halyard_pairing_file_load(const char *argv0, halyard_pairing_record *rec)
             rec->os_minor = atoi(value);
         } else if (strcmp(line, "bitrate") == 0) {
             rec->start_bitrate = atoi(value);
+        } else if (strcmp(line, "connquality") == 0) {
+            rec->connection_quality = atoi(value);
         } else if (strcmp(line, "streambitrate") == 0) {
             rec->stream_bitrate_kbps = atoi(value);
         } else if (strcmp(line, "proberesolutions") == 0) {
