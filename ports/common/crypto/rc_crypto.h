@@ -35,8 +35,13 @@
 
 /* ---- AES-128, forward direction ---- */
 
+/*
+ * The schedule is held as 32-bit words, not bytes, and that is a performance decision rather than a
+ * stylistic one. The block function keeps its state in four word-sized registers; a byte schedule would
+ * force it to reassemble every round key from four byte loads and three shifts, 16 times per block.
+ */
 typedef struct {
-    uint8_t round_keys[176]; /* 11 round keys of 16 bytes */
+    uint32_t round_keys[44]; /* 11 round keys of 4 big-endian words */
 } rc_aes128;
 
 /* Expand a 16-byte key into the round-key schedule. Cheap, but not free: the A/V path should expand once
