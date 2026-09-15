@@ -126,6 +126,22 @@ typedef struct {
     unsigned picture_status;
     uint8_t  first_luma[16];       /* see rc_decode_probe.h for why bytes and not another hash */
     uint8_t  second_row_luma[16];  /* at the stride picture_size implies */
+
+    /*
+     * THE DIFF AGAINST openh264's FIRST LUMA PLANE. Hashes said "not equal" four builds running and a
+     * corner sample said "equal here"; neither says WHERE. These do.
+     *
+     * A first difference on a row boundary means a layout mistake still. Differences scattered from an
+     * early content row mean the two decoders decoded different pictures. A small count means they
+     * agree and something trivial differs; a count near the whole plane means they do not.
+     */
+    int diff_valid;          /* a reference was available to compare against */
+    long diff_bytes;         /* how many of the luma bytes differ */
+    long diff_total;         /* out of how many */
+    long diff_first_offset;  /* -1 if identical */
+    int  diff_first_row, diff_first_col;
+    uint8_t diff_reference[8];
+    uint8_t diff_actual[8];
 } rc_vdec_decode_result;
 
 /* Decodes up to `max_frames` pictures from the Annex-B capture at `path` using the console's decoder.

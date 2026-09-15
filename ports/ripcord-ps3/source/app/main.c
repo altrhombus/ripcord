@@ -1410,6 +1410,22 @@ static int check_vdec(void)
                     (unsigned long long)d.hash_v_at_padded);
             log_bytes("row 0", d.first_luma);
             log_bytes("row 1", d.second_row_luma);
+            if (!d.diff_valid) {
+                ps3_log("       no reference luma to diff against (openh264 gave %dx%d)\n",
+                        rc_decode_reference_width, rc_decode_reference_height);
+            } else if (d.diff_first_offset < 0) {
+                ps3_log("       LUMA IDENTICAL to openh264 over all %ld bytes\n", d.diff_total);
+            } else {
+                ps3_log("       luma differs in %ld of %ld bytes (%ld%%)\n",
+                        d.diff_bytes, d.diff_total,
+                        (d.diff_total > 0) ? (d.diff_bytes * 100 / d.diff_total) : 0);
+                ps3_log("       first difference at row %d col %d (offset %ld)\n",
+                        d.diff_first_row, d.diff_first_col, d.diff_first_offset);
+                log_bytes("openh264", d.diff_reference);
+                log_bytes("vdec    ", d.diff_actual);
+                ps3_log("       a first difference on a row boundary is still a layout mistake;\n"
+                        "       scattered from an early content row means different pictures.\n");
+            }
             ps3_log("       the decoder says the picture occupies %u bytes"
                     " (status %u, attr %u)\n",
                     d.picture_size, d.picture_status, d.picture_attr);
