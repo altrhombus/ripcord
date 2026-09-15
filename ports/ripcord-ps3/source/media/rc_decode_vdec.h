@@ -73,6 +73,13 @@ unsigned rc_decode_vdec_au_largest(void);
 unsigned rc_decode_vdec_au_max_nals(void);    /* most NAL units seen in one access unit */
 unsigned rc_decode_vdec_au_max_slices(void);  /* most coded slices - the shape a decoder cares about */
 unsigned rc_decode_vdec_au_last_slices(void); /* and the most recent, which is what shows a change */
+unsigned rc_decode_vdec_drop_ring_full(void); /* submissions refused because no slot was free */
+unsigned rc_decode_vdec_drop_submit(void);    /* refused by the decoder itself */
+unsigned rc_decode_vdec_drop_collect(void);   /* a picture announced and not collectable */
+
+/* 1 if a frame has been lost since the last call, which breaks the reference chain and needs a keyframe
+ * to repair. Reading it clears it, so the caller asks once per loss rather than once per poll. */
+int rc_decode_vdec_take_chain_broken(void);
 unsigned rc_decode_vdec_first_nal_types(void);   /* would the stream's reference frames fit level 4.2's DPB */
 unsigned rc_decode_vdec_picture_addr(void);
 unsigned rc_decode_vdec_first_au(uint8_t out[8]);   /* returns its length */

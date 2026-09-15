@@ -1059,6 +1059,10 @@ static int check_connect(void)
                 if (c.au_largest > 0u)
                     ps3_log("       largest access unit submitted %u bytes; %u had no start code\n",
                             c.au_largest, c.au_bad_start);
+                if (c.drop_ring_full + c.drop_submit + c.drop_collect > 0u)
+                    ps3_log("       frames the decoder never saw: %u (ring full), %u (refused),"
+                            " %u (not collectable)\n",
+                            c.drop_ring_full, c.drop_submit, c.drop_collect);
                 if (c.au_max_nals > 0u) {
                     ps3_log("       access units hold up to %u NAL(s), %u of them coded slices;"
                             " the first began %u %u %u %u\n",

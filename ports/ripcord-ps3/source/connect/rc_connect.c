@@ -915,6 +915,21 @@ static void send_periodic(halyard_control_session *session, rc_connect_result *o
     }
 
     /*
+     * A FRAME THE DECODER NEVER SAW BREAKS THE CHAIN, exactly as a lost packet does.
+     *
+     * b180 at 720p60 decoded 1,208 pictures of 1,779 with 489 errors and FOUR units lost on the network -
+     * so nearly all of it was frames this port dropped before the decoder, its access-unit ring being a
+     * 30 fps size. Every one of those breaks the reference chain, and nothing asked for a keyframe: three
+     * keyframes in thirty seconds, one IDR request, and a picture that went blocky and stayed blocky.
+     *
+     * This is what g_awaiting_keyframe is for, and it is worth distinguishing from b177's misuse of it.
+     * There the flag was set on every bitrate step, which is not a broken chain and produced 79 requests.
+     * Here a frame really is missing, which is the condition the flag names.
+     */
+    if (rc_decode_vdec_take_chain_broken())
+        g_awaiting_keyframe = 1;
+
+    /*
      * STILL BLIND? ASK AGAIN. See g_awaiting_keyframe: the request is a demand for the thing that
      * repairs the stream, not an acknowledgement that something broke, so one unanswered request is a
      * reason to repeat it rather than to wait for the next loss.
@@ -2142,6 +2157,9 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
     out->au_max_nals = rc_decode_vdec_au_max_nals();
     out->au_max_slices = rc_decode_vdec_au_max_slices();
     out->au_last_slices = rc_decode_vdec_au_last_slices();
+    out->drop_ring_full = rc_decode_vdec_drop_ring_full();
+    out->drop_submit = rc_decode_vdec_drop_submit();
+    out->drop_collect = rc_decode_vdec_drop_collect();
     out->first_nal_types = rc_decode_vdec_first_nal_types();
     out->decode_mem_size = rc_decode_vdec_mem_size();
     out->first_au_len = rc_decode_vdec_first_au(out->first_au);

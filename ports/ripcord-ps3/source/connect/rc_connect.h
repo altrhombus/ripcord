@@ -277,6 +277,9 @@ typedef struct {
     unsigned au_max_nals;
     unsigned au_max_slices;      /* how many slices a picture is split into, at its worst */
     unsigned au_last_slices;     /* and most recently - a max cannot show the console responding */
+    unsigned drop_ring_full;     /* frames the decoder never saw, by reason */
+    unsigned drop_submit;
+    unsigned drop_collect;
 
     /* CONNECTION_QUALITY - the client's own statement of what it can consume. Off unless the pairing
      * record asks for it; see halyard_pairing_file.h for why. */
