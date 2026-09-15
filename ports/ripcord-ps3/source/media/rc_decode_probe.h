@@ -139,6 +139,35 @@ void rc_decode_live_set_sink(rc_decode_picture_fn fn, void *ctx);
 
 void rc_decode_live_close(void);
 
+/*
+ * WHICH DECODER IS ACTUALLY RUNNING, and the two behind the seam.
+ *
+ * The console's own H.264 decoder (cellVdec, on the SPEs) is the one to use and openh264 on the PPE is
+ * the fallback, following the seam-and-stub pattern CLAUDE.md describes for the crypto: the rest of the
+ * pipeline neither knows nor cares which answered.
+ *
+ * The choice is made at open time and reported, because a silent fallback to a decoder that manages
+ * 4 fps would look exactly like the hardware one being slow.
+ *
+ * Call rc_decode_live_hint() before opening when the stream's size is known - it decides which H.264
+ * level the hardware decoder is opened at, and therefore how much memory it reserves.
+ */
+typedef enum {
+    RC_DECODE_BACKEND_NONE = 0,
+    RC_DECODE_BACKEND_VDEC,      /* cellVdec, on the SPEs */
+    RC_DECODE_BACKEND_OPENH264   /* openh264, on the PPE */
+} rc_decode_backend;
+
+void rc_decode_live_hint(int width, int height);
+rc_decode_backend rc_decode_live_backend(void);
+const char *rc_decode_live_backend_name(void);
+
+/* The openh264 backend, reached through the seam above rather than directly. */
+int  rc_decode_openh264_open(void);
+void rc_decode_openh264_set_sink(rc_decode_picture_fn fn, void *ctx);
+int  rc_decode_openh264_feed(const uint8_t *access_unit, size_t length, rc_decode_live_stats *stats);
+void rc_decode_openh264_close(void);
+
 /* The hash the caller compares against. Exposed so the development machine can compute it identically. */
 uint64_t rc_decode_probe_hash_plane(const uint8_t *plane, int stride, int width, int height,
                                     uint64_t seed);
