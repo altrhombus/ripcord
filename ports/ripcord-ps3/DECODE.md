@@ -563,6 +563,34 @@ does nothing.
 It would move only if the console could be asked for fewer reference frames, and no field we have
 identified does that.
 
+### The bitrate ceiling is a slice count — **measured, 2026-09-14**
+
+The console slices each picture so that every network unit decodes independently. Slice count therefore
+follows units per frame, which follows the bandwidth declared in the launch spec (`bwKbpsSent`) — and
+cellVdec has a limit on slices per picture that it does not advertise and does not complain about.
+
+| declared `bwKbpsSent` | slices per 720p picture | delivered | result |
+|---|---|---|---|
+| 8,000 | ~21 | 5.5 Mbps | 873 of 875 pictures, 29 fps |
+| **15,000** | **65** | **9 Mbps** | **845 of 891 pictures, 28 fps** |
+| 30,000 | 136 | 15 Mbps | every picture black, **no error reported** |
+
+128 is the obvious candidate for the real limit and 136 is just past it, but only 65 and 136 have been
+measured, so the port warns between them rather than at a number nobody has tested.
+
+**15,000 is the better setting**: same smoothness as 8,000 and nearly twice the delivered bitrate.
+
+What made this expensive to find is that every layer reported success. The bytes were correct — every
+access unit began with a start code, and a 96-unit frame assembles byte-exact on the host (there is now a
+test for that, which nothing else covered). The parameters were correct — the same profile 77, level 40
+and nine reference frames as the stream that decodes perfectly. The decoder accepted all of it, returned
+success from every call, produced a picture per frame, and every picture was black. A hardware decoder
+past an unadvertised limit does not fail; it just stops working.
+
+Two faults found on the way there were real and are fixed regardless: `bwKbpsSent` had been 8,000 because
+that was the pairing default rather than anyone's decision, and the demuxer refused any frame needing
+more than 64 unit slots — silently, which at 15 Mbps is most of them.
+
 ### Still open
 - **The fifth SPE.** The colour converter dropped from five SPEs to four to leave the decoder one. If
   `VDEC_PICFMT_ARGB32` output works, the conversion disappears and all five come back.
