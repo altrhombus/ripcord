@@ -275,7 +275,8 @@ typedef struct {
     unsigned au_bad_start;       /* access units submitted without an Annex-B start code */
     unsigned au_largest;         /* the largest one submitted */
     unsigned au_max_nals;
-    unsigned au_max_slices;      /* how many slices a picture is split into */
+    unsigned au_max_slices;      /* how many slices a picture is split into, at its worst */
+    unsigned au_last_slices;     /* and most recently - a max cannot show the console responding */
 
     /* CONNECTION_QUALITY - the client's own statement of what it can consume. Off unless the pairing
      * record asks for it; see halyard_pairing_file.h for why. */

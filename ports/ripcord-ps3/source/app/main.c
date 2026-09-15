@@ -1066,6 +1066,8 @@ static int check_connect(void)
                      * independently decodable, so this follows the bandwidth declared in the launch
                      * spec - which is the thing to lower.
                      */
+                    ps3_log("       most recently %u slice(s) a picture - the number that shows"
+                            " whether the console changed\n", c.au_last_slices);
                     if (c.connquality_enabled)
                         ps3_log("       CONNECTION_QUALITY: %u report(s) sent, last asked for"
                                 " %d kbps\n", c.connquality_sent, c.connquality_target);
