@@ -1063,6 +1063,13 @@ static int check_connect(void)
                     ps3_log("       frames the decoder never saw: %u (ring full), %u (refused),"
                             " %u (not collectable)\n",
                             c.drop_ring_full, c.drop_submit, c.drop_collect);
+                if (c.drop_submit > 0u)
+                    ps3_log("       the decoder's last refusal was 0x%08X"
+                            " (0x80610103 is BUSY - its queue is four deep)\n",
+                            (unsigned)c.drop_submit_error);
+                if (c.submit_waits > 0u)
+                    ps3_log("       %u submission(s) waited for a queue slot rather than being"
+                            " dropped\n", c.submit_waits);
                 if (c.au_max_nals > 0u) {
                     ps3_log("       access units hold up to %u NAL(s), %u of them coded slices;"
                             " the first began %u %u %u %u\n",
