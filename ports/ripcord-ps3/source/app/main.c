@@ -992,11 +992,6 @@ static int check_connect(void)
                     ps3_log("       longest gap between socket reads: %u ms"
                             " (a 122 KB buffer at this rate fills in ~400 ms)\n",
                             c.worst_read_gap_ms);
-                    ps3_log("       demux ingest: %u us per packet, of which crypto is %u us"
-                            " and everything else %u us\n",
-                            c.ingest_avg_us, c.crypto_avg_us,
-                            (c.ingest_avg_us > c.crypto_avg_us)
-                                ? c.ingest_avg_us - c.crypto_avg_us : 0u);
                     ps3_log("       worst phase: drain %u ms, decode run %u ms, everything else %u ms\n",
                             c.worst_drain_ms, c.worst_decode_ms, c.worst_other_ms);
                     ps3_log("       frame queue: %u queued, %u dropped for overrun, deepest %u of 8\n",
@@ -1007,8 +1002,25 @@ static int check_connect(void)
                         ps3_log("       %u pictures over %u ms = %u fps on screen\n",
                                 c.blits, c.hold_ms, (c.blits * 1000u) / c.hold_ms);
                 } else {
-                    ps3_log("       nothing reached the screen - the display was not open\n");
+                    /*
+                     * SAY WHAT IS KNOWN, NOT WHY. This branch used to claim "the display was not open",
+                     * which is a cause nobody here checked - in b141 the display was open and had just
+                     * drawn the test pattern, and the real reason was that the decoder produced no
+                     * pictures to blit. An over-confident diagnostic stops the next person looking.
+                     */
+                    ps3_log("       nothing reached the screen - %u picture(s) were available to blit\n",
+                            c.decoded_pictures);
                 }
+                /*
+                 * Outside the block above on purpose: this measures the RECEIVE path, which runs whether
+                 * or not anything ever reached the screen. b141 decoded nothing, and so hid the one
+                 * number that would have confirmed the crypto rewrite from the live path.
+                 */
+                ps3_log("       demux ingest: %u us per packet, of which crypto is %u us"
+                        " and everything else %u us\n",
+                        c.ingest_avg_us, c.crypto_avg_us,
+                        (c.ingest_avg_us > c.crypto_avg_us)
+                            ? c.ingest_avg_us - c.crypto_avg_us : 0u);
                 if (c.decoded_errors > 0)
                     ps3_log("       last decoder error 0x%x\n", (unsigned)c.decoded_last_error);
                 if (c.decoded_pictures < c.decoded_fed)
