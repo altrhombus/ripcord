@@ -17,7 +17,13 @@
  * room for the largest this stream has produced with margin. Every one is 128-byte aligned - see the
  * header for what happens otherwise.
  */
-#define RC_VDEC_AU_SLOTS 8
+/*
+ * SIXTEEN, because eight was a 30 fps number. At 60 fps the console delivers an access unit every 16 ms
+ * and the decoder answers AUDONE on its own schedule; b180 at 720p60 hit the ceiling constantly - 489
+ * submissions refused in thirty seconds against four units lost on the network - and every refusal is a
+ * frame the decoder never sees.
+ */
+#define RC_VDEC_AU_SLOTS 16
 /* Matches RC_FRAME_SLOT_BYTES in rc_connect.c, and for the same reason - a 1080p keyframe does not fit
  * in 96 KB with any margin worth having. */
 #define RC_VDEC_AU_BYTES (256 * 1024)
@@ -70,6 +76,7 @@ static int s_sps_level = -1;
 static int s_sps_max_ref = -1;
 static unsigned s_level_clamped;
 static int s_clamp_safe;
+static volatile int s_chain_broken;
 
 /*
  * IS WHAT WE SUBMIT STILL AN ACCESS UNIT?
@@ -104,6 +111,15 @@ static unsigned s_au_max_slices;
  * maximum is sticky: the stream thinned from 15 Mbps to 2.4 and the reported slice count stayed at its
  * opening value forever. A high-water mark answers "was it ever bad"; this answers "is it bad now". */
 static unsigned s_au_last_slices;
+
+/*
+ * WHY A FRAME WAS LOST, counted apart. b180 reported 489 "errors" at 60 fps, which could equally have
+ * been the ring refusing submissions, the decoder refusing them, or collection failing afterwards -
+ * three faults with three different fixes and one counter between them.
+ */
+static unsigned s_drop_ring_full;
+static unsigned s_drop_submit;
+static unsigned s_drop_collect;
 
 
 static unsigned s_first_nal_seen;
@@ -333,6 +349,10 @@ int rc_decode_vdec_open(int width, int height)
     s_au_max_nals = 0;
     s_au_max_slices = 0;
     s_au_last_slices = 0;
+    s_drop_ring_full = 0;
+    s_drop_submit = 0;
+    s_drop_collect = 0;
+    s_chain_broken = 0;
     s_first_nal_types = 0;
     s_first_nal_seen = 0;
 
@@ -432,6 +452,17 @@ unsigned rc_decode_vdec_au_largest(void) { return s_au_largest; }
 unsigned rc_decode_vdec_au_max_nals(void) { return s_au_max_nals; }
 unsigned rc_decode_vdec_au_max_slices(void) { return s_au_max_slices; }
 unsigned rc_decode_vdec_au_last_slices(void) { return s_au_last_slices; }
+unsigned rc_decode_vdec_drop_ring_full(void) { return s_drop_ring_full; }
+unsigned rc_decode_vdec_drop_submit(void) { return s_drop_submit; }
+unsigned rc_decode_vdec_drop_collect(void) { return s_drop_collect; }
+
+int rc_decode_vdec_take_chain_broken(void)
+{
+    int broken = s_chain_broken;
+
+    s_chain_broken = 0;
+    return broken;
+}
 unsigned rc_decode_vdec_first_nal_types(void) { return s_first_nal_types; }
 
 unsigned rc_decode_vdec_picture_addr(void)
@@ -516,13 +547,24 @@ int rc_decode_vdec_feed(const uint8_t *access_unit, size_t length, rc_decode_liv
 
             stats->frames_in++;
             t0 = rc_tick();
-            if (vdecDecodeAu(s_handle, VDEC_DECODER_MODE_NORMAL, &info) == 0)
+            if (vdecDecodeAu(s_handle, VDEC_DECODER_MODE_NORMAL, &info) == 0) {
                 s_au_submitted++;
-            else
+            } else {
+                s_drop_submit++;
                 stats->errors++;
+                s_chain_broken = 1;
+            }
             stats->decode_ticks += rc_tick() - t0;
         } else {
+            /*
+             * The ring is full: the decoder has not finished with any slot. Dropped rather than waited
+             * on, because the caller is the decode thread and blocking it stops the very deliveries that
+             * free a slot - but a dropped access unit breaks the reference chain exactly as packet loss
+             * does, so the stream needs a keyframe to recover and nothing else here will ask for one.
+             */
+            s_drop_ring_full++;
             stats->errors++;
+            s_chain_broken = 1;
         }
     }
 
