@@ -321,6 +321,45 @@ static u32 vdec_callback(u32 handle, u32 msgtype, u32 msgdata, u32 arg)
                         }
                     }
 
+                    /* Three rows with content in them, 16 columns ending at the picture's right edge. */
+                    {
+                        int want[3];
+                        int k;
+
+                        want[0] = h / 3;
+                        want[1] = h / 2;
+                        want[2] = (h * 5) / 6;
+                        for (k = 0; k < 3; k++) {
+                            const uint8_t *ref = rc_decode_reference_luma + (size_t)want[k] * (size_t)w
+                                                 + (size_t)(w - 16);
+                            const uint8_t *act = s_picture + (size_t)want[k] * (size_t)w
+                                                 + (size_t)(w - 16);
+
+                            memcpy(s_out->edge_ref[k], ref, 16);
+                            memcpy(s_out->edge_act[k], act, 16);
+                            s_out->edge_row[k] = want[k];
+                        }
+                        s_out->edge_rows = 3;
+                    }
+
+                    /* Does vdec's last 8 appear anywhere else in the reference's same row? */
+                    s_out->edge_found_at = -1;
+                    if (s_out->diff_first_row >= 0 && s_out->diff_first_row < h) {
+                        const uint8_t *ref_row = rc_decode_reference_luma
+                                                 + (size_t)s_out->diff_first_row * (size_t)w;
+                        const uint8_t *act_edge = s_picture
+                                                  + (size_t)s_out->diff_first_row * (size_t)w
+                                                  + (size_t)(w - 8);
+                        int at;
+
+                        for (at = 0; at + 8 <= w; at++) {
+                            if (memcmp(ref_row + at, act_edge, 8) == 0) {
+                                s_out->edge_found_at = at;
+                                break;
+                            }
+                        }
+                    }
+
                     /*
                      * FIND THE STRIDE BY FINDING A ROW. The reference's row 1 is 640 known bytes; where
                      * they occur in this decoder's plane is where its row 1 starts, and that offset is
