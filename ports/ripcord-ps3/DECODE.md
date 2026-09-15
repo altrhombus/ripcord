@@ -4,13 +4,21 @@ Everything else in a PS3 port is affordable — `ports/common` (on `feat/vita-po
 protocol, transport and crypto, and `rc_platform.h` asks for four functions. This document is about the
 part that is not.
 
-`ripcord-3ds` feeds Annex-B NAL units to the New 3DS's MVD block and gets pictures back; the hard part of
-video was a driver call. The PS3 has no exposed fixed-function H.264 decoder. Its Blu-ray playback is
-**software decode on the Cell SPUs**, and so is anything we do here `[X — asserted from general knowledge
-of the platform, not verified against hardware]`.
+> **This document's founding premise was wrong, and hardware said so on 2026-09-14.** It assumed the PS3
+> exposes no H.264 decoder of its own, marked `[X]` because it came from general knowledge of the platform
+> rather than from the console. It does: **cellVdec**, reached through PSL1GHT's `codec/vdec.h` and
+> `libvdec.a`, decoding on the SPEs. It is now the port's decoder, with openh264 kept as the fallback.
+> See "6. The console's own decoder" at the foot of this document for what it took to get there and what
+> it cost. Everything between here and there is still worth reading — openh264 on the PPE is a working
+> decoder, it is what proved the rest of the pipeline, and it is what the fallback path still uses — but
+> read it knowing the premise did not survive.
 
-So the decoder is ours, and two questions decide what it costs: **what licence it can be built from**, and
-**what the console actually sends**.
+`ripcord-3ds` feeds Annex-B NAL units to the New 3DS's MVD block and gets pictures back; the hard part of
+video was a driver call. The PS3 was assumed to have no exposed fixed-function H.264 decoder, with its
+Blu-ray playback taken to be **software decode on the Cell SPUs** — see the correction above.
+
+So the decoder was taken to be ours, and two questions decided what that would cost: **what licence it can
+be built from**, and **what the console actually sends**.
 
 ---
 
@@ -431,3 +439,76 @@ Steps 2 and 3 were worth doing regardless of how 5 resolved, which was the argum
 rather than with the SPU — and it held up: the front end was finished and tested before any console was
 involved. Everything in 1–6 is now confirmed, so the remaining work is the decoder itself and the two
 measurements §3 marks `[X]`: whether slice parallelism scales at 720p, and whether six SPEs aggregate.
+
+---
+
+## 6. The console's own decoder — **cellVdec, 2026-09-14**
+
+The premise at the top of this document was never checked against the console. It is wrong: PSL1GHT
+exposes `codec/vdec.h` and `libvdec.a`, and `SYSMODULE_VDEC_H264` loads. The decoder runs on the SPEs.
+
+**It is now the live decoder, with openh264 the fallback**, behind the seam already in
+`rc_decode_probe.h` — the same seam-and-stub shape `CLAUDE.md` describes for the crypto. The choice is
+made at open and logged, never inferred from the frame rate.
+
+### What it is worth
+
+Measured on the Forza Horizon 5 start screen at 1280x720, thirty seconds each:
+
+| | openh264 (PPE) | cellVdec (SPE) |
+|---|---|---|
+| pictures decoded | 124 of 843 | **887 of 889** |
+| decode errors | 711 | **0** |
+| on screen | 4 fps | **29 fps** |
+| worst decode run | 121 ms | **6 ms** |
+| frame queue depth | 8 of 8, 27 dropped | **1 of 8, 0 dropped** |
+| units lost | 157 | **6** |
+| decode + blit | 25,839 us | **5,155 us** of a 33,333 us budget |
+
+The last row is the one that matters beyond this stream: the whole path now costs 15% of a 30 fps frame
+budget, where openh264 could not fit inside it at all.
+
+### Four values no SDK header states
+
+Each cost at least one hardware run, and each is derived rather than recalled — the sweep or the
+measurement IS the derivation, which is the discipline `CLAUDE.md` asks for on protocol values and which
+applies just as well to an undocumented API.
+
+1. **`vdecType.profile_level` is H.264's `level_idc`.** Swept 0..255; the console accepts exactly
+   `10 11 12 13 20 21 22 30 31 32 40 41 42`, which is that set exactly.
+2. **The callback needs a 32-bit `{entry, toc}` descriptor**, not GCC's 64-bit ELFv1 OPD. `libvdec.a`'s
+   own PRX stubs show the shape (`lwz r0,0(r12)` / `lwz r2,4(r12)`); PSL1GHT supplies `__build_opd32`.
+   Given the 64-bit one the decoder branches to a null entry and never calls back at all.
+3. **Every buffer the decoder writes into must be 128-byte aligned.** Otherwise the last bytes of each
+   row are corrupted — visible as an 8-pixel strip down the right edge, and invisible to every counter
+   in the pipeline.
+4. **`vdecEndSequence` completes on a callback, not on return.** Calling `vdecClose` before `SEQDONE`
+   arrives hangs the console.
+
+Output planes are packed at the **display** size, `Y` then `U` then `V`, stride equal to width. The
+reported `picture_size` is larger (`640x368x1.5` for a 640x360 picture) and is a buffer requirement
+rather than a description of the layout.
+
+### How it was validated, and the one that mattered
+
+The decoder was checked against openh264 on the same capture, plane by plane, before it went anywhere
+near the screen: `Y`, `U` and `V` bit-identical. ffmpeg on the development machine then produced the same
+luma hash again, so the reference was three decoders wide rather than one.
+
+**That validation still did not prevent the last bug, and the reason is worth keeping.** The capture is
+level 3.1; the live stream is level 4.0. The decoder was opened at level 31 on the reasoning that 3.1 is
+"the level for 720p" — but H.264 levels constrain bitrate and frame rate as well as picture size, so a
+resolution cannot pick one. Opened below what the stream needs, the decoder accepted every access unit,
+returned success from every call, reported zero errors, and produced 889 uniformly **black** pictures.
+
+Five builds of careful measurement went into the buffer and the threading and never touched the cause,
+because the validation had been done against a stream that happened to fit the wrong assumption. It now
+opens at 42 — the highest the console accepts, and a decoder opened high decodes anything below it — and
+logs the level it chose beside the level the stream declares.
+
+### Still open
+
+- **Audio.** 2,997 Opus frames a run are counted and discarded.
+- **1080p.** The budget is there — 15% of a frame at 720p — but it is untested.
+- **The second SPE.** The colour converter dropped from five SPEs to four to leave the decoder one. If
+  `VDEC_PICFMT_ARGB32` output works, the conversion disappears and all five come back.
