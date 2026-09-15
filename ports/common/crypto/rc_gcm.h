@@ -46,10 +46,19 @@
  * DO NOT put one on the stack in the 3DS build - it is over the 8 KB frame limit the build enforces, and
  * for good reason (see takion_reliable_channel.h for what an oversized local does on this hardware).
  */
+/*
+ * A SECOND ROUND OF THE SAME LESSON, ON THE PS3. The table above removed the bit-serial multiply, but the
+ * replacement still kept its 128-bit accumulator in a `uint8_t[16]` and shifted it one byte at a time -
+ * roughly 560 dependent byte load/stores per 16-byte block. On the PS3's in-order PPE that pattern stalls
+ * on store-to-load forwarding at nearly every step, and the packet cipher and its GMAC together measured
+ * 837 us per ~1,400-byte packet. The accumulator is now four uint32 words held in registers, and the
+ * table is stored pre-packed as words so a lookup is four word loads rather than sixteen byte loads.
+ * See rc_aes.c's header for the same fix applied to the block cipher.
+ */
 typedef struct {
     rc_aes128 aes;
     uint8_t h[16];
-    uint8_t table[256][16];   /* table[b] = b * H, with b's MSB as the x^0 coefficient */
+    uint32_t table[256][4];   /* table[b] = b * H, big-endian words, with b's MSB as the x^0 coefficient */
     uint16_t reduce[256];     /* the reduction produced by shifting byte 15 out, bytes 0..1 only */
     uint8_t key[16];
     int ready;
