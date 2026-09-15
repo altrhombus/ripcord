@@ -207,6 +207,8 @@ SOURCES := \
 	source/media/rc_h264_bits.c \
 	source/media/rc_h264_params.c \
 	source/media/rc_vdec_probe.c \
+	source/media/rc_decode_vdec.c \
+	source/media/rc_decode_live.c \
 	source/discovery/rc_discover.c \
 	source/connect/rc_connect.c \
 	$(CORE)/discovery/halyard_discovery.c \

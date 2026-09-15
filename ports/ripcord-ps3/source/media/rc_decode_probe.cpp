@@ -215,13 +215,13 @@ static ISVCDecoder *g_live = 0;
 static rc_decode_picture_fn g_picture_sink = 0;
 static void *g_picture_ctx = 0;
 
-extern "C" void rc_decode_live_set_sink(rc_decode_picture_fn fn, void *ctx)
+extern "C" void rc_decode_openh264_set_sink(rc_decode_picture_fn fn, void *ctx)
 {
     g_picture_sink = fn;
     g_picture_ctx = ctx;
 }
 
-extern "C" int rc_decode_live_open(void)
+extern "C" int rc_decode_openh264_open(void)
 {
     SDecodingParam param;
 
@@ -242,7 +242,7 @@ extern "C" int rc_decode_live_open(void)
     return 1;
 }
 
-extern "C" int rc_decode_live_feed(const uint8_t *access_unit, size_t length,
+extern "C" int rc_decode_openh264_feed(const uint8_t *access_unit, size_t length,
                                    rc_decode_live_stats *stats)
 {
     unsigned char *planes[3] = { 0, 0, 0 };
@@ -292,7 +292,7 @@ extern "C" int rc_decode_live_feed(const uint8_t *access_unit, size_t length,
     return 0;
 }
 
-extern "C" void rc_decode_live_close(void)
+extern "C" void rc_decode_openh264_close(void)
 {
     if (g_live != 0) {
         g_live->Uninitialize();
