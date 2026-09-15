@@ -100,6 +100,10 @@ static unsigned s_au_largest;
  */
 static unsigned s_au_max_nals;
 static unsigned s_au_max_slices;
+/* The MOST RECENT count as well as the highest. b176 could not show the console responding because the
+ * maximum is sticky: the stream thinned from 15 Mbps to 2.4 and the reported slice count stayed at its
+ * opening value forever. A high-water mark answers "was it ever bad"; this answers "is it bad now". */
+static unsigned s_au_last_slices;
 
 
 static unsigned s_first_nal_seen;
@@ -328,6 +332,7 @@ int rc_decode_vdec_open(int width, int height)
     s_au_largest = 0;
     s_au_max_nals = 0;
     s_au_max_slices = 0;
+    s_au_last_slices = 0;
     s_first_nal_types = 0;
     s_first_nal_seen = 0;
 
@@ -426,6 +431,7 @@ unsigned rc_decode_vdec_au_bad_start(void) { return s_au_bad_start; }
 unsigned rc_decode_vdec_au_largest(void) { return s_au_largest; }
 unsigned rc_decode_vdec_au_max_nals(void) { return s_au_max_nals; }
 unsigned rc_decode_vdec_au_max_slices(void) { return s_au_max_slices; }
+unsigned rc_decode_vdec_au_last_slices(void) { return s_au_last_slices; }
 unsigned rc_decode_vdec_first_nal_types(void) { return s_first_nal_types; }
 
 unsigned rc_decode_vdec_picture_addr(void)
@@ -486,6 +492,7 @@ int rc_decode_vdec_feed(const uint8_t *access_unit, size_t length, rc_decode_liv
                 s_first_nal_seen = 1u;
                 if (nals > s_au_max_nals)
                     s_au_max_nals = nals;
+                s_au_last_slices = slices;
                 if (slices > s_au_max_slices)
                     s_au_max_slices = slices;
             }

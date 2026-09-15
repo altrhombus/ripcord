@@ -898,6 +898,20 @@ static void send_periodic(halyard_control_session *session, rc_connect_result *o
                 && takion_channel_send(&g_stream_channel, TAKION_CHANNEL_SESSION, msg, mn)) {
                 out->connquality_sent++;
                 out->connquality_target = (int)g_connquality_target;
+
+                /*
+                 * AND ASK FOR A KEYFRAME, because the stream is about to change shape.
+                 *
+                 * b176 is why. The asks worked - the console went from 15 Mbps to 2.4 - and every picture
+                 * stayed black, because the decoder had already been poisoned by the 136-slice frames
+                 * that prompted the asks, and nothing gave it a point to resynchronise on afterwards.
+                 * Two keyframes arrived in thirty seconds and both were unusable when they did.
+                 *
+                 * g_awaiting_keyframe is cleared when a keyframe ARRIVES, which is the wrong test here:
+                 * one arrived and could not be decoded. A stream that has just changed shape needs a
+                 * fresh reference whatever the old one did.
+                 */
+                g_awaiting_keyframe = 1;
             }
         }
         g_next_connquality = now + RC_CONNQUALITY_INTERVAL_MS;
@@ -2106,6 +2120,7 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
     out->au_largest = rc_decode_vdec_au_largest();
     out->au_max_nals = rc_decode_vdec_au_max_nals();
     out->au_max_slices = rc_decode_vdec_au_max_slices();
+    out->au_last_slices = rc_decode_vdec_au_last_slices();
     out->first_nal_types = rc_decode_vdec_first_nal_types();
     out->decode_mem_size = rc_decode_vdec_mem_size();
     out->first_au_len = rc_decode_vdec_first_au(out->first_au);
