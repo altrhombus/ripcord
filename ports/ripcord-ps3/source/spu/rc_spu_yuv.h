@@ -21,10 +21,22 @@
 
 /*
  * Six SPEs are physically present on a PS3 and one is reserved by the hypervisor, leaving six usable of
- * which lv2 will give a normal process rather fewer. Asking for five and accepting what arrives is more
- * robust than asserting a number the firmware has opinions about.
+ * which lv2 will give a normal process rather fewer. Asking for this many and accepting what arrives is
+ * more robust than asserting a number the firmware has opinions about.
+ *
+ * FOUR, NOT FIVE, AND ONE IS DELIBERATELY LEFT UNCLAIMED. cellVdec runs its decoder on the SPEs -
+ * vdecConfig has a num_spus field - so a build that means to use the console's own H.264 decoder cannot
+ * also hold every SPE for colour conversion. This group is created once and never released: the teardown
+ * at the foot of rc_spu_yuv.c writes a quit sentinel and deliberately does NOT destroy the group,
+ * because sysSpuThreadGroupDestroy and sysSpuThreadGroupTerminate each locked this console during b105
+ * and b107. So the SPE that vdec needs has to be left free from the start; there is no giving one back
+ * later.
+ *
+ * b146 hung somewhere inside the vdec probe with all five held. That does not prove this was the cause -
+ * the instrumentation that was supposed to name the call did not survive the hang, which is fixed
+ * separately - but leaving vdec an SPE is required by the design either way, not a guess at the fix.
  */
-#define RC_SPU_YUV_MAX_SPES 5
+#define RC_SPU_YUV_MAX_SPES 4
 
 typedef struct {
     int  spes;              /* how many actually came up; 0 means the PPE path is the only path */
