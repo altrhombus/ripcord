@@ -17,7 +17,14 @@ static void pairing_record_defaults(halyard_pairing_record *rec)
     rec->os_major = 10;
     rec->os_minor = 0;
     rec->start_bitrate = 10000;
-    rec->stream_bitrate_kbps = 8000;
+    /*
+     * 10,000 matches RipcordSettings.BitrateKbps, which is the .NET client's own default and the number
+     * this project has actually settled on. 8,000 was a guess made when ports/common targeted smaller
+     * consoles. It goes into the launch spec as bwKbpsSent - a claim the console sizes the stream
+     * against - and on the PS3 that claim also decides how finely the console slices each picture, which
+     * its decoder has a limit on. 15,000 is measured good there and 30,000 is not; 10,000 is inside both.
+     */
+    rec->stream_bitrate_kbps = 10000;
     rec->skip_until_keyframe = 0;
     rec->widescreen = 1;
     rec->smoothing = 1;
