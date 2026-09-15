@@ -28,6 +28,19 @@
 
 #include "rc_decode_probe.h"
 
+/*
+ * THE SLICE COUNT THIS DECODER STOPS COPING WITH, bracketed by measurement rather than documented
+ * anywhere. 65 slices in a 720p picture decode perfectly; 136 produce black pictures with no error
+ * reported by anything. 128 is the obvious candidate for the real limit and 136 is just past it, but the
+ * only two points actually measured are 65 and 136, so the warning fires between them rather than at a
+ * number nobody has tested.
+ *
+ * The console slices so that each network unit decodes independently, which means slice count follows
+ * units per frame and therefore the bandwidth we declare in the launch spec. That is the lever: this is
+ * a reason to declare less, not a reason to decode differently.
+ */
+#define RC_VDEC_SLICES_WARN 96u
+
 /* 1 if the module loads and the decoder can be opened for a picture this size. */
 int  rc_decode_vdec_open(int width, int height);
 void rc_decode_vdec_set_sink(rc_decode_picture_fn fn, void *ctx);

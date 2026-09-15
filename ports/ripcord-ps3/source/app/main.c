@@ -1066,6 +1066,12 @@ static int check_connect(void)
                      * independently decodable, so this follows the bandwidth declared in the launch
                      * spec - which is the thing to lower.
                      */
+                    if (c.connquality_enabled)
+                        ps3_log("       CONNECTION_QUALITY: %u report(s) sent, last asked for"
+                                " %d kbps\n", c.connquality_sent, c.connquality_target);
+                    else if (c.au_max_slices >= 96u)
+                        ps3_log("       CONNECTION_QUALITY is off - set connquality=1 in the pairing"
+                                " record to let the client ask for less\n");
                     if (c.au_max_slices >= 96u)
                         ps3_log("       THAT IS A LOT OF SLICES. 65 per picture decode on this"
                                 " hardware and 136 do not - the decoder\n"
