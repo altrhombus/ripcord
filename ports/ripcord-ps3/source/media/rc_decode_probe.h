@@ -52,6 +52,16 @@ typedef struct {
      */
     uint64_t decode_ticks;
     uint64_t hash_ticks;
+
+    /*
+     * THE FIRST FRAME, SPLIT BY PLANE. The combined hash above answers "do these two decoders agree"
+     * with one number, which is right until they disagree - then it cannot say whether the luma differs
+     * or only the chroma's position does. cellVdec and openh264 disagreed on b151 while both reported
+     * 640x360, and the difference between "wrong pixels" and "right pixels at the wrong offset" is the
+     * whole diagnosis.
+     */
+    uint64_t hash_y, hash_u, hash_v;
+    int      stride_y, stride_uv;
 } rc_decode_probe_result;
 
 /*
