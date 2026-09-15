@@ -100,6 +100,18 @@ extern uint64_t rc_decode_probe_hash_plane(const uint8_t *plane, int stride, int
 static uint8_t s_picture[RC_VDEC_PICTURE_BYTES];
 
 static rc_vdec_decode_result *s_out;
+static rc_vdec_log_fn s_log;
+
+/*
+ * Written BEFORE the call it names, not after. See rc_vdec_probe.h: a step recorded only on success
+ * names nothing when the call hangs, which is the one case worth instrumenting.
+ */
+static void step(rc_vdec_decode_result *out, int which, const char *what)
+{
+    out->last_step = which;
+    if (s_log != NULL)
+        s_log(what);
+}
 
 /*
  * The library calls this on its own PPU thread. The picture is collected here rather than by signalling
@@ -209,7 +221,8 @@ static s32 feed_au(u32 handle, const uint8_t *begin, const uint8_t *end, rc_vdec
     return rc;
 }
 
-int rc_vdec_decode_probe(const char *path, int level, int max_frames, rc_vdec_decode_result *out)
+int rc_vdec_decode_probe(const char *path, int level, int max_frames,
+                         rc_vdec_log_fn log, rc_vdec_decode_result *out)
 {
     vdecType type;
     vdecAttr attr;
@@ -234,9 +247,10 @@ int rc_vdec_decode_probe(const char *path, int level, int max_frames, rc_vdec_de
         return 0;
     memset(out, 0, sizeof(*out));
     out->level = level;
+    s_log = log;
 
     /* ---- the capture ---- */
-    out->last_step = RC_VDEC_STEP_READ_FILE;
+    step(out, RC_VDEC_STEP_READ_FILE, "       .. reading the capture");
     f = fopen(path, "rb");
     if (f == NULL)
         return 0;
@@ -264,7 +278,7 @@ int rc_vdec_decode_probe(const char *path, int level, int max_frames, rc_vdec_de
     fclose(f);
 
     /* ---- what this level costs ---- */
-    out->last_step = RC_VDEC_STEP_QUERY_ATTR;
+    step(out, RC_VDEC_STEP_QUERY_ATTR, "       .. vdecQueryAttr");
     memset(&type, 0, sizeof(type));
     memset(&attr, 0, sizeof(attr));
     type.codec_type = VDEC_CODEC_TYPE_H264;
@@ -277,7 +291,7 @@ int rc_vdec_decode_probe(const char *path, int level, int max_frames, rc_vdec_de
     }
     out->mem_size = (unsigned)attr.mem_size;
 
-    out->last_step = RC_VDEC_STEP_ALLOC;
+    step(out, RC_VDEC_STEP_ALLOC, "       .. allocating the decoder's memory");
     decoder_mem = memalign(RC_VDEC_MEM_ALIGN, attr.mem_size);
     if (decoder_mem == NULL) {
         free(file);
@@ -285,7 +299,7 @@ int rc_vdec_decode_probe(const char *path, int level, int max_frames, rc_vdec_de
     }
 
     /* ---- open ---- */
-    out->last_step = RC_VDEC_STEP_OPEN;
+    step(out, RC_VDEC_STEP_OPEN, "       .. vdecOpen  <- if the log stops here, this is the call");
     memset(&config, 0, sizeof(config));
     config.mem_addr = (u32)(uintptr_t)decoder_mem;
     config.mem_size = attr.mem_size;
@@ -311,7 +325,7 @@ int rc_vdec_decode_probe(const char *path, int level, int max_frames, rc_vdec_de
     }
     out->opened = 1;
 
-    out->last_step = RC_VDEC_STEP_START_SEQUENCE;
+    step(out, RC_VDEC_STEP_START_SEQUENCE, "       .. vdecStartSequence");
     rc = vdecStartSequence(handle);
     if (rc != 0) {
         out->last_error = (int)rc;
@@ -323,7 +337,7 @@ int rc_vdec_decode_probe(const char *path, int level, int max_frames, rc_vdec_de
      * address the decoder reads asynchronously, so a buffer reused between calls would need the AUDONE
      * callback to say when it was free again. Keeping the file mapped stops that question arising at all.
      */
-    out->last_step = RC_VDEC_STEP_DECODE_AU;
+    step(out, RC_VDEC_STEP_DECODE_AU, "       .. feeding access units");
     rc_h264_annexb_init(&it, file, file_size);
     rc_h264_au_init(&au);
     while (out->pictures_out < max_frames && rc_h264_annexb_next(&it, &nal)) {
@@ -354,16 +368,16 @@ int rc_vdec_decode_probe(const char *path, int level, int max_frames, rc_vdec_de
         }
     }
 
-    out->last_step = RC_VDEC_STEP_END_SEQUENCE;
+    step(out, RC_VDEC_STEP_END_SEQUENCE, "       .. vdecEndSequence");
     (void)vdecEndSequence(handle);
     ok = (out->pictures_out > 0);
 
 close_out:
-    out->last_step = RC_VDEC_STEP_CLOSE;
+    step(out, RC_VDEC_STEP_CLOSE, "       .. vdecClose");
     (void)vdecClose(handle);
     s_out = NULL;
     free(decoder_mem);
     free(file);
-    out->last_step = RC_VDEC_STEP_DONE;
+    step(out, RC_VDEC_STEP_DONE, "       .. done");
     return ok;
 }

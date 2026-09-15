@@ -1293,6 +1293,11 @@ static unsigned bench_ns(uint64_t ticks, uint64_t hz, unsigned iterations)
  * see rc_vdec_probe.h. The output is the set the console accepts and what each wants for memory, which
  * is what the real implementation needs before it can be written honestly.
  */
+static void vdec_step_log(const char *message)
+{
+    ps3_log("%s\n", message);
+}
+
 static int check_vdec(void)
 {
     rc_vdec_probe_result v;
@@ -1339,7 +1344,8 @@ static int check_vdec(void)
         int decoded;
 
         ps3_log("vdec:  decoding %s with the console's decoder at level 31\n", RC_DECODE_STREAM_PATH);
-        decoded = rc_vdec_decode_probe(RC_DECODE_STREAM_PATH, 31, RC_DECODE_PROBE_FRAMES, &d);
+        decoded = rc_vdec_decode_probe(RC_DECODE_STREAM_PATH, 31, RC_DECODE_PROBE_FRAMES,
+                                       vdec_step_log, &d);
 
         ps3_log("       reached step %d (see rc_vdec_step), wanted %u bytes of decoder memory\n",
                 d.last_step, d.mem_size);
@@ -1838,9 +1844,14 @@ int main(void)
 
     failures += check_discovery();
     failures += check_connect();
-    failures += check_vdec();
     failures += check_crypto_speed();
     failures += check_decode();
+    /*
+     * LAST, because it is the stage that can hang. b146 stopped inside it and took the crypto and decode
+     * results with it - those had already run, but the console froze before anything after this point
+     * could be written. A stage that might not return belongs after every stage that must.
+     */
+    failures += check_vdec();
 
     ps3_log("\nnot covered here: the rest of the decoder. See README.md.\n");
     ps3_log("%s\n", failures == 0 ? "all checks passed" : "CHECKS FAILED");
