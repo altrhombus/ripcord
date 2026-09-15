@@ -69,6 +69,7 @@ static int s_sps_profile = -1;
 static int s_sps_level = -1;
 static int s_sps_max_ref = -1;
 static unsigned s_level_clamped;
+static int s_clamp_safe;
 
 /* The picture handoff: the callback writes `s_fill` and publishes it, the caller consumes it. */
 static volatile int s_ready = -1;   /* index of a finished picture, -1 if none */
@@ -78,29 +79,50 @@ static volatile int s_ready_w, s_ready_h;
 static uint32_t s_callback_opd[2] __attribute__((aligned(8)));
 
 /*
- * THE DECODER TOPS OUT AT LEVEL 4.2 AND THE CONSOLE DECLARES 5.0.
+ * THE DECODER TOPS OUT AT LEVEL 4.2, AND WHETHER THAT MATTERS DEPENDS ON THE DECODED PICTURE BUFFER.
  *
  * b145's sweep found vdecQueryAttr accepts exactly the level_idc values 10..42, so 4.2 is the highest
- * configuration cellVdec offers. b169's 1080p stream declares level 5.0 in its SPS, and a decoder opened
- * below what a stream declares does not complain - it accepts every access unit, reports no error, and
- * produces uniformly black pictures. That is the same signature b163 showed at 720p.
+ * configuration cellVdec offers. A decoder opened below what a stream declares does not complain - it
+ * accepts every access unit, reports no error, and produces uniformly black pictures, which is the
+ * signature b163 found at 720p and b169 found again at 1080p.
  *
- * The declared level is not what the content needs. 1080p30 is 244,800 macroblocks a second against
- * level 4.2's ceiling of 522,240, and 8,160 macroblocks a frame against 8,704 - it fits 4.2 with room
- * spare. The console is simply declaring more headroom than it uses.
+ * Lowering the declared level is sound ONLY when the content genuinely fits the lower one, and the
+ * binding constraint is not the macroblock rate. b170 got that wrong: 1080p30 is 244,800 macroblocks a
+ * second against 4.2's ceiling of 522,240 and 8,160 a frame against 8,704, so on throughput it fits
+ * easily - and it still decoded black, because level also bounds the DECODED PICTURE BUFFER and the
+ * console uses NINE reference frames.
  *
- * So the declared level is lowered to 42 in the SPS before the access unit is submitted. This is a claim
- * about the bitstream, not a change to it: no coded data is touched, only the number the decoder gates
- * on.
+ * Nine frames is 32,400 macroblocks of DPB at 720p, inside level 4.0's 32,768, which is exactly why the
+ * console declares 4.0 there and why 720p works. At 1080p the same nine frames need 73,440 against
+ * 4.2's 34,816. The console is not padding its declared level; it is asking for what it uses, and this
+ * hardware cannot be configured to provide it.
  *
- * WHERE THIS CAN GO WRONG, AND IT IS NOT HYPOTHETICAL. Level also bounds the decoded picture buffer, and
- * that IS a real constraint rather than a formality: 4.2 allows 34,816 macroblocks of DPB, which at
- * 8,160 per frame is four reference frames, where 5.0 allows thirteen. A stream using more than four
- * would decode wrongly rather than not at all. max_num_ref_frames is read from the same SPS and logged
- * beside the level for exactly that reason - if the picture comes back corrupt rather than black, that
- * number says why, and this clamp is the thing to remove.
+ * So the clamp stays, and it is guarded by the thing that actually decides: it fires only when the
+ * stream's own max_num_ref_frames fits the target level's DPB at the stream's own resolution. At 1080p
+ * against this console it will not fire, which is the correct answer rather than a missing feature.
  */
 #define RC_VDEC_MAX_LEVEL 42
+
+/* Reference frames level 4.2's DPB holds at a given frame size. Table A-1's MaxDpbMbs for 4.2. */
+#define RC_VDEC_MAX_DPB_MBS 34816u
+
+static int clamp_is_safe(const rc_h264_sps *sps)
+{
+    unsigned mbs;
+    unsigned frames;
+
+    if (sps->coded_width == 0u || sps->coded_height == 0u)
+        return 0;
+
+    mbs = (sps->coded_width / 16u) * (sps->coded_height / 16u);
+    if (mbs == 0u)
+        return 0;
+
+    frames = RC_VDEC_MAX_DPB_MBS / mbs;
+    if (frames > 16u)
+        frames = 16u;                      /* the format's own ceiling */
+    return sps->max_num_ref_frames <= frames;
+}
 
 static void clamp_level(uint8_t *au, size_t length)
 {
@@ -109,27 +131,29 @@ static void clamp_level(uint8_t *au, size_t length)
 
     rc_h264_annexb_init(&it, au, length);
     while (rc_h264_annexb_next(&it, &nal)) {
+        rc_h264_sps sps;
         uint8_t *level_byte;
 
         if (nal.type != 7 || nal.payload_size < 3u)   /* 7 is an SPS */
             continue;
+        if (!rc_h264_sps_parse(nal.payload, nal.payload_size, &sps))
+            continue;
 
         if (s_sps_profile < 0) {
-            rc_h264_sps sps;
-
             s_sps_profile = (int)nal.payload[0];
             s_sps_level = (int)nal.payload[2];
-            if (rc_h264_sps_parse(nal.payload, nal.payload_size, &sps))
-                s_sps_max_ref = (int)sps.max_num_ref_frames;
+            s_sps_max_ref = (int)sps.max_num_ref_frames;
+            s_clamp_safe = clamp_is_safe(&sps);
         }
 
-        /* payload is profile_idc, constraint_set flags, level_idc - the third byte. The cast is of a
-         * pointer into the caller's own copy of the access unit, which this function owns. */
+        if (nal.payload[2] <= RC_VDEC_MAX_LEVEL || !clamp_is_safe(&sps))
+            continue;
+
+        /* payload is profile_idc, constraint flags, level_idc - the third byte. The cast is of a pointer
+         * into this file's own copy of the access unit. No coded data is touched. */
         level_byte = (uint8_t *)(uintptr_t)(nal.payload + 2);
-        if (*level_byte > RC_VDEC_MAX_LEVEL) {
-            *level_byte = RC_VDEC_MAX_LEVEL;
-            s_level_clamped++;
-        }
+        *level_byte = RC_VDEC_MAX_LEVEL;
+        s_level_clamped++;
     }
 }
 
@@ -265,6 +289,7 @@ int rc_decode_vdec_open(int width, int height)
     s_sps_level = -1;
     s_sps_max_ref = -1;
     s_level_clamped = 0;
+    s_clamp_safe = 0;
 
     if (sysModuleLoad(SYSMODULE_VDEC_H264) != 0)
         return 0;
@@ -356,6 +381,7 @@ int rc_decode_vdec_sps_profile(void) { return s_sps_profile; }
 int rc_decode_vdec_sps_level(void)   { return s_sps_level; }
 int rc_decode_vdec_sps_max_ref(void) { return s_sps_max_ref; }
 unsigned rc_decode_vdec_level_clamped(void) { return s_level_clamped; }
+int rc_decode_vdec_clamp_safe(void) { return s_clamp_safe; }
 
 unsigned rc_decode_vdec_picture_addr(void)
 {
