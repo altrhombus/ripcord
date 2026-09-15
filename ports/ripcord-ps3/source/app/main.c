@@ -1019,6 +1019,9 @@ static int check_connect(void)
                             c.worst_drain_ms, c.worst_decode_ms, c.worst_other_ms);
                     ps3_log("       frame queue: %u queued, %u dropped for overrun, deepest %u of 8\n",
                             c.frames_queued, c.frames_overrun, c.queue_worst);
+                    if (c.frames_oversized > 0u)
+                        ps3_log("       %u frame(s) TOO LARGE for a slot and dropped - raise"
+                                " RC_FRAME_SLOT_BYTES\n", c.frames_oversized);
                     ps3_log("       decode + blit is %lu us against the same 33333 us budget\n",
                             us + (unsigned long)c.blit_avg_us);
                     if (c.hold_ms > 0u)
