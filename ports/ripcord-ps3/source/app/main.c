@@ -71,6 +71,7 @@
 #include "rc_spu_phase.h"
 #include "rc_netlog.h"
 #include "rc_decode_probe.h"
+#include "rc_vdec_probe.h"
 #include "rc_core_tests.h"
 #include "rc_discover.h"
 #include "rc_connect.h"
@@ -1281,6 +1282,45 @@ static unsigned bench_ns(uint64_t ticks, uint64_t hz, unsigned iterations)
     return (unsigned)((ticks * 1000000000u) / hz / iterations);
 }
 
+/*
+ * Does this console expose its own H.264 decoder, and on what terms?
+ *
+ * b144 made the case for asking: with the receive path finally clean the console tripled its bitrate,
+ * and openh264 on the PPE went from ~37 ms per successful decode to somewhere near 70-83 ms, which is a
+ * 12-14 fps ceiling on a 30 fps stream. cellVdec runs on the SPEs instead.
+ *
+ * vdecType.profile_level has no constant in any SDK header, so this sweeps it rather than guessing -
+ * see rc_vdec_probe.h. The output is the set the console accepts and what each wants for memory, which
+ * is what the real implementation needs before it can be written honestly.
+ */
+static int check_vdec(void)
+{
+    rc_vdec_probe_result v;
+
+    if (!rc_vdec_probe(&v)) {
+        ps3_log("vdec:  SYSMODULE_VDEC_H264 did not load (0x%08X)\n", (unsigned)v.module_load);
+        ps3_log("       not a failure of this build - it means the hardware decoder is not reachable\n"
+                "       this way, and the PPE decoder stays the only path.\n");
+        return 0;
+    }
+
+    ps3_log("vdec:  module loaded; swept %d profile_level value(s)\n", v.queried);
+    if (v.accepted == 0) {
+        ps3_log("       NONE accepted. Last rejection was 0x%08X.\n", (unsigned)v.last_error);
+        ps3_log("       the sweep is the derivation, so this says the value is not a plain 0..255 -\n"
+                "       it is packed, or the query wants something else set first.\n");
+        return 0;
+    }
+
+    ps3_log("       %d accepted, from %d to %d\n", v.accepted, v.first_accepted, v.last_accepted);
+    ps3_log("       lowest accepted (%d): %u bytes, cmd depth %u, version %u.%u\n",
+            v.first_accepted, v.first_mem_size, v.cmd_depth, v.ver_major, v.ver_minor);
+    ps3_log("       largest appetite: %u bytes at level %d\n",
+            v.largest_mem_size, v.largest_mem_level);
+    ps3_log("       a 1280x720 YUV420 picture is %d bytes, for comparison\n", 1280 * 720 * 3 / 2);
+    return 0;
+}
+
 static int check_crypto_speed(void)
 {
     /* rc_gmac_key carries ~5 KB of tables - far too much for a stack frame on this port. */
@@ -1743,6 +1783,7 @@ int main(void)
 
     failures += check_discovery();
     failures += check_connect();
+    failures += check_vdec();
     failures += check_crypto_speed();
     failures += check_decode();
 
