@@ -267,6 +267,17 @@ typedef struct {
     unsigned picture_addr;       /* where pictures were written - alignment is visible in it */
     int      decode_level;       /* the H.264 level the decoder was opened at */
     unsigned decode_mem_size;    /* and what that reserved */
+
+    /* Audio. See rc_audio_ps3.h - silence written is the one fault a listener can hear. */
+    int      audio_ready;
+    unsigned audio_frames_decoded;
+    unsigned audio_decode_errors;
+    unsigned audio_blocks;
+    unsigned audio_silence;
+    unsigned audio_overflows;
+    unsigned audio_worst_ring;
+    int      audio_last_error;
+    int      audio_index_is_address;
     unsigned first_au_len;
     uint8_t  first_au[8];        /* what was submitted: Annex-B starts 00 00 00 01 or 00 00 01 */
     int  decode_thread_priority; /* what it actually got, receive thread's + 1 */

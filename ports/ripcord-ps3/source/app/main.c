@@ -71,6 +71,7 @@
 #include "rc_spu_phase.h"
 #include "rc_netlog.h"
 #include "rc_decode_probe.h"
+#include "rc_audio_ps3.h"
 #include "rc_vdec_probe.h"
 #include "rc_core_tests.h"
 #include "rc_discover.h"
@@ -1043,6 +1044,20 @@ static int check_connect(void)
                             " the stream's own SPS says level %d\n",
                             c.decode_level, c.decode_mem_size,
                             (c.first_au_len >= 8u) ? (int)c.first_au[7] : 0);
+                if (!c.audio_ready) {
+                    ps3_log("       AUDIO NOT RUNNING (error %d) - the stream played without it\n",
+                            c.audio_last_error);
+                } else {
+                    ps3_log("       audio: %u frame(s) decoded, %u error(s); %u block(s) to the"
+                            " hardware\n",
+                            c.audio_frames_decoded, c.audio_decode_errors, c.audio_blocks);
+                    ps3_log("       %u block(s) were SILENCE - the ring ran dry, which is the one"
+                            " fault a listener hears\n", c.audio_silence);
+                    ps3_log("       ring reached %u of %d samples; %u dropped to overflow;"
+                            " readIndex is %s\n",
+                            c.audio_worst_ring, RC_AUDIO_RING_SAMPLES, c.audio_overflows,
+                            c.audio_index_is_address ? "an ADDRESS" : "an index");
+                }
                 ps3_log("       decoded by %s\n",
                         (c.decode_backend != NULL) ? c.decode_backend : "?");
                 if (c.decoded_pictures > 0) {

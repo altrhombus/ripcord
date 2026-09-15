@@ -20,6 +20,7 @@
 #include "senkusha_echo.h"
 #include "rc_decode_probe.h"
 #include "rc_decode_vdec.h"
+#include "rc_audio_ps3.h"
 #include "rc_video_ps3.h"
 #include "takion_control_proto.h"
 #include "takion_session_negotiator.h"
@@ -1258,9 +1259,15 @@ static void decode_thread_stop(void)
 static void on_audio_frame(void *userdata, const uint8_t *data, size_t length)
 {
     (void)userdata;
-    (void)data;
     g_tally.audio_frames++;
     g_tally.audio_bytes += (unsigned long)length;
+
+    /*
+     * Decoded here, on the receive thread, which is where this callback already runs. Opus is about 1%
+     * of a frame's work - it does not need a thread, and this port has spent three console lockups
+     * learning what a casually added one costs. See rc_audio_ps3.h.
+     */
+    rc_audio_submit(data, length);
 }
 
 static uint64_t g_last_idr_request_ms;
@@ -1731,6 +1738,9 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
                     g_crypto_calls = 0u;
                     /* The stream's size decides which H.264 level the hardware decoder opens at,
                      * and therefore how much memory it reserves. */
+                    /* Audio is optional: if the port will not open the stream continues without it,
+                     * which is better than failing a session over sound. */
+                    out->audio_ready = rc_audio_init();
                     rc_decode_live_hint((int)info.width, (int)info.height);
                     g_live_open = rc_decode_live_open();
                     /*
@@ -1912,6 +1922,12 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
                     g_worst_other_ms = spent;
             }
 
+            /*
+             * The hardware's block ring holds 42 ms and this loop comes round far faster, so topping it
+             * up here needs no pacing of its own - see rc_audio_ps3.h for why there is no audio thread.
+             */
+            rc_audio_service();
+
             /* Only when nothing arrived at all. Sleeping with data waiting is what caused the loss. */
             if (drained == 0 && result == 0)
                 rc_sleep_ms(2u);
@@ -1940,6 +1956,20 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
 
     if (g_live_open) {
         /* Before the decoder closes, because the thread is inside it. */
+        {
+            rc_audio_stats a;
+
+            rc_audio_stats_get(&a);
+            out->audio_frames_decoded = a.frames_decoded;
+            out->audio_decode_errors = a.decode_errors;
+            out->audio_blocks = a.blocks_written;
+            out->audio_silence = a.silence_written;
+            out->audio_overflows = a.ring_overflows;
+            out->audio_worst_ring = a.worst_ring;
+            out->audio_last_error = a.last_error;
+            out->audio_index_is_address = a.read_index_is_address;
+        }
+        rc_audio_shutdown();
         decode_thread_stop();
         rc_decode_live_close();
         g_live_open = 0;
