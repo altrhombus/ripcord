@@ -1464,6 +1464,8 @@ static int check_vdec(void)
                     ps3_log("       the reference's row 1 does not occur anywhere in the first 2048\n"
                             "       bytes, so the planes are not merely offset from each other.\n");
             }
+            ps3_log("       the output buffer is at 0x%08X (%s128-byte aligned)\n",
+                    d.buffer_addr, (d.buffer_addr & 127u) == 0u ? "" : "NOT ");
             ps3_log("       the decoder says the picture occupies %u bytes"
                     " (status %u, attr %u)\n",
                     d.picture_size, d.picture_status, d.picture_attr);
