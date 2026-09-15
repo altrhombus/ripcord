@@ -187,7 +187,7 @@ LDFLAGS := $(ARCH) -Wl,--gc-sections -L$(PSL1GHT)/ppu/lib
 # -lsysmodule is not optional beside -lnet: netInitialize() calls sysModuleLoad, and without it the link
 # fails on that symbol rather than on anything mentioning networking. PSL1GHT's network samples all pair
 # the two - `LIBS := -lnet -lsysmodule` - which is the fastest place to have learned it.
-LIBS := -lrsx -lgcm_sys -lsysutil -lvdec -lnet -lsysmodule -lpthread -lrt -llv2
+LIBS := -lrsx -lgcm_sys -lsysutil -lvdec -laudio -lnet -lsysmodule -lpthread -lrt -llv2
 
 # The platform seam plus the two core utilities the bring-up program needs. rc_random_ps3.c joined this
 # list on 2026-09-11, when the CSPRNG call was confirmed against real headers; before that its ABSENCE
@@ -209,6 +209,7 @@ SOURCES := \
 	source/media/rc_vdec_probe.c \
 	source/media/rc_decode_vdec.c \
 	source/media/rc_decode_live.c \
+	source/media/rc_audio_ps3.c \
 	source/discovery/rc_discover.c \
 	source/connect/rc_connect.c \
 	$(CORE)/discovery/halyard_discovery.c \
@@ -246,6 +247,13 @@ SOURCES := \
 # NOT UNDER $(BUILD). `make clean` wiped it once, and rebuilding costs a 57 MB fetch and 35 compiles -
 # a clean of this port's own objects has no business destroying a verified third-party dependency. It
 # lives beside them instead, gitignored, and `make distclean` is what removes it deliberately.
+# OPUS, the audio decoder, on the same terms: fetched and built by tools/build-opus.sh into a gitignored
+# directory, never vendored. BSD-3-Clause, which keeps the permissive-only line DECODE.md section 1 sets
+# out. ps3dev's portlibs carry libogg, FLAC and two SDL mixers and no Opus, so it has to be built.
+OPUS_DIR ?= third-party/opus
+OPUS_LIB := $(OPUS_DIR)/lib/libopus.a
+OPUS_INC := -I$(OPUS_DIR)/include/opus
+
 OPENH264_DIR ?= third-party/openh264
 OPENH264_LIB := $(OPENH264_DIR)/libopenh264dec.a
 OPENH264_SRC := $(OPENH264_DIR)/openh264-2.6.0
@@ -307,7 +315,7 @@ ECDH_CFLAGS    := -DRC_CRYPTO_MBEDTLS -isystem $(MBEDTLS_PREFIX)/include \
 # needs these, and the only safe place to say so is after ECDH_CFLAGS exists.
 #
 # CFLAGS_SDK_SOCKETS derives from CFLAGS and is defined below this line, so it inherits them too.
-CFLAGS += $(ECDH_CFLAGS)
+CFLAGS += $(ECDH_CFLAGS) $(OPUS_INC)
 
 CORE_TEST_OBJS := $(BUILD)/ct_halyard_v1_constants.g.o \
                   $(addprefix $(BUILD)/ct_,$(notdir $(CORE_TEST_SUPPORT:.c=.o))) \
@@ -524,7 +532,8 @@ CFLAGS_SDK_SOCKETS := $(CFLAGS) -Wno-sign-conversion -include sys/time.h
 #
 # It is a LIST and not a wildcard on purpose: the relaxation drops a real warning class, so a file joins
 # it deliberately or not at all. rc_stack_ps3.o is here for a different header than the others - it calls
-# a thread syscall rather than a socket one - but the cause is identical: PSL1GHT's inline lv2 wrappers
+# a thread syscall rather than a socket one, and rc_audio_ps3.o for the audio ones - but the cause is
+# identical in each case: PSL1GHT's inline lv2 wrappers
 # convert int to u64, and that is the SDK's code, not this port's. Note rc_connect.o is here now - it always included <net/socket.h>, but it
 # included <sys/time.h> first and so happened not to need this, which is a fact about the order of its
 # own include block rather than anything durable.
@@ -535,6 +544,7 @@ SDK_SOCKET_OBJS := \
 	$(BUILD)/rc_connect.o \
 	$(BUILD)/takion_reliable_channel.o \
 	$(BUILD)/rc_stack_ps3.o \
+	$(BUILD)/rc_audio_ps3.o \
 	$(BUILD)/rc_video_ps3.o \
 	$(BUILD)/rc_spu_yuv.o
 
@@ -547,7 +557,7 @@ $(BUILD)/%.o: %.c | $(BUILD)/rc_build_id.h $(BUILD)/rc_spu_symbols.h $(BUILD)/$(
 $(BUILD)/$(APP).elf: $(COBJS) $(BUILD)/$(SPU_NAME)_bin.o $(BUILD)/$(SPU2_NAME)_bin.o $(BUILD)/rc_decode_probe.o $(CORE_TEST_OBJS)
 	@mkdir -p $(@D)
 	$(CXX) $(LDFLAGS) -o $@ $(COBJS) $(BUILD)/$(SPU_NAME)_bin.o $(BUILD)/$(SPU2_NAME)_bin.o \
-	       $(BUILD)/rc_decode_probe.o $(CORE_TEST_OBJS) $(OPENH264_LIB) $(MBEDTLS_LIB) $(LIBS)
+	       $(BUILD)/rc_decode_probe.o $(CORE_TEST_OBJS) $(OPENH264_LIB) $(OPUS_LIB) $(MBEDTLS_LIB) $(LIBS)
 
 # THE PREPARED ELF - strip, then sprxlinker. BOTH STEPS, IN THAT ORDER, AND THE SECOND ONE IS NOT
 # OPTIONAL: leaving it out is what made the first three hardware runs produce no output at all.
