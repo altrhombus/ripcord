@@ -900,18 +900,15 @@ static void send_periodic(halyard_control_session *session, rc_connect_result *o
                 out->connquality_target = (int)g_connquality_target;
 
                 /*
-                 * AND ASK FOR A KEYFRAME, because the stream is about to change shape.
+                 * NO KEYFRAME REQUEST HERE, and b177 is why it was tried and removed.
                  *
-                 * b176 is why. The asks worked - the console went from 15 Mbps to 2.4 - and every picture
-                 * stayed black, because the decoder had already been poisoned by the 136-slice frames
-                 * that prompted the asks, and nothing gave it a point to resynchronise on afterwards.
-                 * Two keyframes arrived in thirty seconds and both were unusable when they did.
-                 *
-                 * g_awaiting_keyframe is cleared when a keyframe ARRIVES, which is the wrong test here:
-                 * one arrived and could not be decoded. A stream that has just changed shape needs a
-                 * fresh reference whatever the old one did.
+                 * The reasoning was sound - a stream that has changed shape needs a fresh reference -
+                 * and the implementation was not. Setting g_awaiting_keyframe hands the flag to the
+                 * "still blind? ask again" loop above, which repeats every 200 ms until a keyframe
+                 * arrives; eight throttle steps became 79 IDR requests and 16 keyframes in thirty
+                 * seconds. Asking for a keyframe once is a reasonable thing to want, and this flag is
+                 * not the way to ask for it once.
                  */
-                g_awaiting_keyframe = 1;
             }
         }
         g_next_connquality = now + RC_CONNQUALITY_INTERVAL_MS;
