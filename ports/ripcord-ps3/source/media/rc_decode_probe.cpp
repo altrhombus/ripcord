@@ -163,6 +163,15 @@ extern "C" int rc_decode_probe(const char *path, int max_frames, rc_decode_probe
             hash = rc_decode_probe_hash_plane(planes[1], cs, w / 2, h / 2, hash);
             hash = rc_decode_probe_hash_plane(planes[2], cs, w / 2, h / 2, hash);
 
+            /* First frame only - enough to localise a disagreement, see rc_decode_probe.h. */
+            if (out->hashes == 0) {
+                out->hash_y = rc_decode_probe_hash_plane(planes[0], ys, w, h, FNV64_OFFSET);
+                out->hash_u = rc_decode_probe_hash_plane(planes[1], cs, w / 2, h / 2, FNV64_OFFSET);
+                out->hash_v = rc_decode_probe_hash_plane(planes[2], cs, w / 2, h / 2, FNV64_OFFSET);
+                out->stride_y = ys;
+                out->stride_uv = cs;
+            }
+
             out->hash[out->hashes++] = hash;
             out->hash_ticks += rc_tick() - t0;
             ok = 1;

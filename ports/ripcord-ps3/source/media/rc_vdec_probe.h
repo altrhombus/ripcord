@@ -92,6 +92,20 @@ typedef struct {
     int      last_error;      /* the library's own return from whatever failed */
     int      last_step;       /* rc_vdec_step - the last call ATTEMPTED */
     uint64_t decode_ticks;    /* feeding only; the hash is not in here */
+
+    /*
+     * THE FIRST PICTURE, PULLED APART. b151 proved the decoder works - 14 pictures, no errors - and that
+     * its output does not hash the same as openh264's, with both reporting 640x360. The combined hash
+     * cannot say why. These can: the luma hashed on its own, and the chroma hashed at two candidate
+     * offsets, because the capture's SPS is 640x368 and a decoder that keeps 368 rows starts its U plane
+     * at 640*368 while this probe was reading it at 640*360.
+     */
+    uint64_t hash_y;
+    uint64_t hash_u_at_visible;  /* U assuming the planes follow the 360 visible rows */
+    uint64_t hash_u_at_padded;   /* U assuming they follow the 368 coded rows */
+    uint64_t hash_v_at_visible;
+    uint64_t hash_v_at_padded;
+    int      padded_height;      /* what the 16-aligned height would be */
 } rc_vdec_decode_result;
 
 /* Decodes up to `max_frames` pictures from the Annex-B capture at `path` using the console's decoder.

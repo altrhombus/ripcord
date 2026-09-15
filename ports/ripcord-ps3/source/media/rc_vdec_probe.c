@@ -240,6 +240,33 @@ static u32 vdec_callback(u32 handle, u32 msgtype, u32 msgdata, u32 arg)
              * and a callback that has never once been invoked is not the place to find out whether it
              * can. The loop drains this after every submission.
              */
+            /*
+             * First picture only: the same planes hashed separately, and the chroma hashed at both the
+             * visible-height and coded-height offsets. Whichever of those matches openh264's U says
+             * where this decoder actually puts its planes - which is a fact to be read off a run rather
+             * than reasoned about from the header, since nothing states it.
+             */
+            if (s_out->hashes == 0) {
+                int padded = (h + 15) & ~15;
+                size_t luma_padded = (size_t)w * (size_t)padded;
+                size_t chroma_visible = (size_t)(w / 2) * (size_t)(h / 2);
+                size_t chroma_padded = (size_t)(w / 2) * (size_t)(padded / 2);
+
+                s_out->padded_height = padded;
+                s_out->hash_y = rc_decode_probe_hash_plane(s_picture, w, w, h, FNV64_OFFSET);
+                s_out->hash_u_at_visible =
+                    rc_decode_probe_hash_plane(s_picture + luma, w / 2, w / 2, h / 2, FNV64_OFFSET);
+                s_out->hash_v_at_visible =
+                    rc_decode_probe_hash_plane(s_picture + luma + chroma_visible,
+                                               w / 2, w / 2, h / 2, FNV64_OFFSET);
+                s_out->hash_u_at_padded =
+                    rc_decode_probe_hash_plane(s_picture + luma_padded, w / 2, w / 2, h / 2,
+                                               FNV64_OFFSET);
+                s_out->hash_v_at_padded =
+                    rc_decode_probe_hash_plane(s_picture + luma_padded + chroma_padded,
+                                               w / 2, w / 2, h / 2, FNV64_OFFSET);
+            }
+
             s_out->hash[s_out->hashes++] = hash;
         }
     } else if (msgtype == VDEC_CALLBACK_AUDONE) {
