@@ -86,6 +86,22 @@ static int s_clamp_safe;
 static unsigned s_au_bad_start;
 static unsigned s_au_largest;
 
+/*
+ * WHAT IS INSIDE THE ACCESS UNITS, since their outsides are provably fine.
+ *
+ * b172: every one of 893 units began with a start code, the largest was 112 KB against a 256 KB buffer,
+ * the profile, level and reference count matched the stream that decodes perfectly at a lower bitrate,
+ * and all 893 pictures came back black. The bytes are correct and the decoder still cannot use them, so
+ * the remaining difference has to be in the structure of the unit rather than its size.
+ *
+ * Slice count is the candidate worth counting first: a frame split into many slices is a different shape
+ * of work from one split into few, hardware decoders have limits there that software ones do not, and
+ * nothing in this port has ever looked.
+ */
+static unsigned s_au_max_nals;
+static unsigned s_au_max_slices;
+static unsigned s_first_nal_types;   /* first four NAL types of the first unit, packed one per byte */
+
 /* The picture handoff: the callback writes `s_fill` and publishes it, the caller consumes it. */
 static volatile int s_ready = -1;   /* index of a finished picture, -1 if none */
 static volatile int s_fill;
@@ -307,6 +323,9 @@ int rc_decode_vdec_open(int width, int height)
     s_clamp_safe = 0;
     s_au_bad_start = 0;
     s_au_largest = 0;
+    s_au_max_nals = 0;
+    s_au_max_slices = 0;
+    s_first_nal_types = 0;
 
     if (sysModuleLoad(SYSMODULE_VDEC_H264) != 0)
         return 0;
@@ -401,6 +420,9 @@ unsigned rc_decode_vdec_level_clamped(void) { return s_level_clamped; }
 int rc_decode_vdec_clamp_safe(void) { return s_clamp_safe; }
 unsigned rc_decode_vdec_au_bad_start(void) { return s_au_bad_start; }
 unsigned rc_decode_vdec_au_largest(void) { return s_au_largest; }
+unsigned rc_decode_vdec_au_max_nals(void) { return s_au_max_nals; }
+unsigned rc_decode_vdec_au_max_slices(void) { return s_au_max_slices; }
+unsigned rc_decode_vdec_first_nal_types(void) { return s_first_nal_types; }
 
 unsigned rc_decode_vdec_picture_addr(void)
 {
@@ -439,6 +461,26 @@ int rc_decode_vdec_feed(const uint8_t *access_unit, size_t length, rc_decode_liv
 
             if (length > s_au_largest)
                 s_au_largest = (unsigned)length;
+
+            {
+                rc_h264_annexb scan;
+                rc_h264_nal one;
+                unsigned nals = 0;
+                unsigned slices = 0;
+
+                rc_h264_annexb_init(&scan, s_au[slot], length);
+                while (rc_h264_annexb_next(&scan, &one)) {
+                    if (nals < 4u && s_first_nal_types == 0u)
+                        s_first_nal_types |= ((unsigned)one.type & 0xffu) << (8u * (3u - nals));
+                    nals++;
+                    if (one.type == 1u || one.type == 5u)   /* coded slices */
+                        slices++;
+                }
+                if (nals > s_au_max_nals)
+                    s_au_max_nals = nals;
+                if (slices > s_au_max_slices)
+                    s_au_max_slices = slices;
+            }
             if (length < 4u
                 || !((access_unit[0] == 0 && access_unit[1] == 0 && access_unit[2] == 0
                       && access_unit[3] == 1)

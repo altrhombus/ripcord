@@ -56,7 +56,10 @@ int rc_decode_vdec_sps_max_ref(void);   /* level 4.2 allows 4 reference frames a
 unsigned rc_decode_vdec_level_clamped(void);
 int rc_decode_vdec_clamp_safe(void);
 unsigned rc_decode_vdec_au_bad_start(void);  /* submitted units not beginning with a start code */
-unsigned rc_decode_vdec_au_largest(void);   /* would the stream's reference frames fit level 4.2's DPB */
+unsigned rc_decode_vdec_au_largest(void);
+unsigned rc_decode_vdec_au_max_nals(void);    /* most NAL units seen in one access unit */
+unsigned rc_decode_vdec_au_max_slices(void);  /* most coded slices - the shape a decoder cares about */
+unsigned rc_decode_vdec_first_nal_types(void);   /* would the stream's reference frames fit level 4.2's DPB */
 unsigned rc_decode_vdec_picture_addr(void);
 unsigned rc_decode_vdec_first_au(uint8_t out[8]);   /* returns its length */
 
