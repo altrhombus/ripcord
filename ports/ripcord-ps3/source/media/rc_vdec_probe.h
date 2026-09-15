@@ -58,9 +58,13 @@ int rc_vdec_probe(rc_vdec_probe_result *out);
  * It is deliberately OFFLINE. Nothing in the streaming path changes, and a failure costs a run rather
  * than a session.
  *
- * `last_step` names the last call ATTEMPTED rather than the last that succeeded, because this hardware
- * has locked up three times during bring-up and the log is flushed per line - if the console stops, the
- * final line names the call it stopped in.
+ * EVERY STEP IS LOGGED AS IT IS ATTEMPTED, through the caller's own log function, and that is the whole
+ * point rather than a convenience. b146 recorded the step in the struct below and printed it after the
+ * call returned - which names nothing at all when the call never returns, which is precisely the case
+ * the field existed for. The console hung and the last line in the log was the one printed before the
+ * probe started. A record that only survives success is not instrumentation.
+ *
+ * rc_log flushes per line, so a line written before a call is on disk before that call can hang.
  */
 typedef enum {
     RC_VDEC_STEP_NONE = 0,
@@ -92,6 +96,10 @@ typedef struct {
 
 /* Decodes up to `max_frames` pictures from the Annex-B capture at `path` using the console's decoder.
  * Returns 1 if at least one picture came out. `out` is filled either way. */
-int rc_vdec_decode_probe(const char *path, int level, int max_frames, rc_vdec_decode_result *out);
+/* Called with one already-formatted line per step attempted. Must write through to storage - see above. */
+typedef void (*rc_vdec_log_fn)(const char *message);
+
+int rc_vdec_decode_probe(const char *path, int level, int max_frames,
+                         rc_vdec_log_fn log, rc_vdec_decode_result *out);
 
 #endif /* RC_VDEC_PROBE_H */
