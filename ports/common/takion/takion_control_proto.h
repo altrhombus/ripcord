@@ -52,6 +52,7 @@
 #define TAKION_CONTROL_PROTOCOL_VERSION_REQUEST 31u
 #define TAKION_CONTROL_PROTOCOL_VERSION_ACK     32u
 #define TAKION_CONTROL_IDR_REQUEST     25u
+#define TAKION_CONTROL_CONNECTION_QUALITY 16u
 
 /* Uncompressed SEC1 point sizes, for callers sizing buffers. See rc_ecdh.h for the curve selection. */
 #define TAKION_ECDH_PUBKEY_MAX 133u
@@ -233,6 +234,27 @@ size_t takion_control_build_echo_command(int enabled, uint8_t *buf, size_t buf_s
  */
 size_t takion_control_build_mtu_command(uint32_t id, uint32_t mtu_req, uint32_t num,
                                         uint8_t *buf, size_t buf_size);
+/*
+ * CONNECTION_QUALITY (type 16) - the client to server half of rate control.
+ *
+ * The console's encoder decides its own rate, and congestion reports only tell it what was lost. This is
+ * how it learns what the client actually WANTS, which is a different thing: a client may be losing
+ * nothing and still be unable to use what it is being sent. HalyardTakionStream.SendConnectionQualityAsync
+ * builds the same three fields - targetBitrate (1, varint), rtt (5, double) and lossPercent (7, double) -
+ * inside ConnectionQualityPayload at field 17.
+ *
+ * `rtt_ms` and `loss_percent` are IEEE-754 doubles, written little-endian as protobuf requires, which is
+ * not this target's byte order and is the reason they go through a shift loop rather than a memcpy.
+ *
+ * [X] THE UNITS OF targetBitrate ARE NOT CONFIRMED. kbps is sent to match the launch spec's bwKbpsSent,
+ * and bps is equally plausible; being wrong by 1000x would have the console pick an absurd rate. The
+ * .NET side carries the same caveat and gates the feature behind an opt-in for it, and callers here
+ * should do the same until a capture settles it.
+ */
+size_t takion_control_build_connection_quality(uint32_t target_bitrate_kbps,
+                                               double rtt_ms, double loss_percent,
+                                               uint8_t *buf, size_t buf_size);
+
 size_t takion_control_build_client_mtu_command(uint32_t id, uint32_t mtu_req, int state,
                                                uint8_t *buf, size_t buf_size);
 

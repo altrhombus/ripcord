@@ -436,6 +436,24 @@ static int g_stream_rcvbuf;
  */
 #define RC_CONGESTION_INTERVAL_MS 200u
 
+/*
+ * How often a CONNECTION_QUALITY report may go out, and how far it steps the ask down.
+ *
+ * Two seconds because this is not congestion control - the console already gets loss every 200 ms. It is
+ * a statement about what this CLIENT can consume, which changes slowly and only when the console changes
+ * how it slices. A step rather than a jump so the console can settle: overshooting downward costs
+ * picture quality nobody asked to lose.
+ */
+#define RC_CONNQUALITY_INTERVAL_MS 2000u
+#define RC_CONNQUALITY_STEP_PERCENT 75u
+#define RC_CONNQUALITY_FLOOR_KBPS 4000u
+
+/* See the CONNECTION_QUALITY block in send_periodic for why this policy lives in the port. */
+static int g_connquality_enabled;
+static unsigned g_connquality_target;
+static uint64_t g_next_connquality;
+
+
 /* The reference's own throttle. One IDR repairs the entire reference chain, so asking again while the
  * answer is still in flight buys nothing and costs upstream bandwidth. */
 #define RC_IDR_REQUEST_MIN_MS 200u
@@ -847,6 +865,42 @@ static void send_periodic(halyard_control_session *session, rc_connect_result *o
                 out->congestion_sent++;
         }
         *next_congestion = now + RC_CONGESTION_INTERVAL_MS;
+    }
+
+    /*
+     * ASK FOR LESS WHEN THE PICTURES ARE TOO FINELY SLICED FOR THIS DECODER.
+     *
+     * The protocol half of this lives in ports/common; the POLICY is here, because what triggers it is a
+     * property of cellVdec and not of Halyard. 65 slices in a 720p picture decode on this hardware and
+     * 136 do not, and the console slices so that each network unit stands alone - so slice count follows
+     * the bitrate it is sending. Another port would throttle for entirely different reasons, or not at
+     * all, which is exactly why this does not belong in the shared layer.
+     *
+     * Congestion feedback cannot express this. It reports what was lost, and nothing is being lost: the
+     * link is fine and the decoder simply cannot use what arrives. That gap is what CONNECTION_QUALITY
+     * is for.
+     */
+    if (g_connquality_enabled && out->demux_ready && now >= g_next_connquality) {
+        unsigned slices = rc_decode_vdec_au_max_slices();
+
+        if (slices >= RC_VDEC_SLICES_WARN && g_connquality_target > RC_CONNQUALITY_FLOOR_KBPS) {
+            uint8_t msg[48];
+            size_t mn;
+
+            g_connquality_target = (g_connquality_target * RC_CONNQUALITY_STEP_PERCENT) / 100u;
+            if (g_connquality_target < RC_CONNQUALITY_FLOOR_KBPS)
+                g_connquality_target = RC_CONNQUALITY_FLOOR_KBPS;
+
+            mn = takion_control_build_connection_quality(g_connquality_target,
+                                                         (double)out->measured_rtt_ms,
+                                                         0.0, msg, sizeof(msg));
+            if (mn > 0u
+                && takion_channel_send(&g_stream_channel, TAKION_CHANNEL_SESSION, msg, mn)) {
+                out->connquality_sent++;
+                out->connquality_target = (int)g_connquality_target;
+            }
+        }
+        g_next_connquality = now + RC_CONNQUALITY_INTERVAL_MS;
     }
 
     /*
@@ -1288,6 +1342,7 @@ static void on_audio_frame(void *userdata, const uint8_t *data, size_t length)
 
 static uint64_t g_last_idr_request_ms;
 static unsigned g_idr_requests;
+
 
 /*
  * Why g_awaiting_keyframe exists, recorded where the loss is handled.
@@ -1739,6 +1794,16 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
                      * standing in for a request nobody was making.
                      */
                     g_awaiting_keyframe = 1;
+                    /*
+                     * Starts at what the launch spec declared, since that is what the console is sizing
+                     * the stream against; every step down is relative to the claim that produced the
+                     * slicing.
+                     */
+                    g_connquality_enabled = (rec->connection_quality != 0);
+                    g_connquality_target = (unsigned)((rec->stream_bitrate_kbps > 0)
+                                                      ? rec->stream_bitrate_kbps : 10000);
+                    g_next_connquality = rc_time_ms() + RC_CONNQUALITY_INTERVAL_MS;
+                    out->connquality_enabled = g_connquality_enabled;
                     g_frame_head = 0;
                     g_frame_count = 0;
                     g_frames_queued = 0u;
