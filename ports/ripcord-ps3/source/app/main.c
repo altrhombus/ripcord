@@ -1054,12 +1054,26 @@ static int check_connect(void)
                 if (c.au_largest > 0u)
                     ps3_log("       largest access unit submitted %u bytes; %u had no start code\n",
                             c.au_largest, c.au_bad_start);
-                if (c.au_max_nals > 0u)
+                if (c.au_max_nals > 0u) {
                     ps3_log("       access units hold up to %u NAL(s), %u of them coded slices;"
                             " the first began %u %u %u %u\n",
                             c.au_max_nals, c.au_max_slices,
                             (c.first_nal_types >> 24) & 0xffu, (c.first_nal_types >> 16) & 0xffu,
                             (c.first_nal_types >> 8) & 0xffu, c.first_nal_types & 0xffu);
+                    /*
+                     * Said plainly, because the alternative is a black screen and no error anywhere.
+                     * 65 slices decode; 136 do not. The console slices to make each network unit
+                     * independently decodable, so this follows the bandwidth declared in the launch
+                     * spec - which is the thing to lower.
+                     */
+                    if (c.au_max_slices >= 96u)
+                        ps3_log("       THAT IS A LOT OF SLICES. 65 per picture decode on this"
+                                " hardware and 136 do not - the decoder\n"
+                                "       reports no error either way, it simply produces black. The"
+                                " console slices finely enough for\n"
+                                "       each network unit to stand alone, so this follows the %d kbps"
+                                " declared above: lower it.\n", c.declared_bitrate_kbps);
+                }
                 if (c.sps_level > 0) {
                     ps3_log("       the stream: profile %d, level %d, %d reference frame(s)\n",
                             c.sps_profile, c.sps_level, c.sps_max_ref);
