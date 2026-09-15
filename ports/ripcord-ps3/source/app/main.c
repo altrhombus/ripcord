@@ -1051,6 +1051,9 @@ static int check_connect(void)
                  * or not anything ever reached the screen. b141 decoded nothing, and so hid the one
                  * number that would have confirmed the crypto rewrite from the live path.
                  */
+                if (c.au_largest > 0u)
+                    ps3_log("       largest access unit submitted %u bytes; %u had no start code\n",
+                            c.au_largest, c.au_bad_start);
                 if (c.sps_level > 0) {
                     ps3_log("       the stream: profile %d, level %d, %d reference frame(s)\n",
                             c.sps_profile, c.sps_level, c.sps_max_ref);

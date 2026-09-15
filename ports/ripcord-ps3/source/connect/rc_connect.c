@@ -2037,6 +2037,8 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
     out->sps_max_ref = rc_decode_vdec_sps_max_ref();
     out->level_clamped = rc_decode_vdec_level_clamped();
     out->clamp_safe = rc_decode_vdec_clamp_safe();
+    out->au_bad_start = rc_decode_vdec_au_bad_start();
+    out->au_largest = rc_decode_vdec_au_largest();
     out->decode_mem_size = rc_decode_vdec_mem_size();
     out->first_au_len = rc_decode_vdec_first_au(out->first_au);
     out->decode_thread_priority = g_decode_priority;
