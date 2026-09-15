@@ -161,6 +161,15 @@ typedef struct {
      * is found at IS the stride. 0 means it was not found, which would end the drift theory.
      */
     int found_row_stride;
+
+    /*
+     * HOW BIG the differences are, which is what decides whether they matter. b156 localised them to
+     * columns 632..639 and showed one sample differing by exactly 1. A handful of least-significant bits
+     * at the right edge is invisible; anything large is a real decode fault wearing the same shape.
+     */
+    int  diff_max_delta;
+    long diff_delta_sum;
+    long diff_over_4;
 } rc_vdec_decode_result;
 
 /* Decodes up to `max_frames` pictures from the Annex-B capture at `path` using the console's decoder.
