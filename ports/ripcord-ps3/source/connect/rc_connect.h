@@ -279,6 +279,8 @@ typedef struct {
     unsigned au_last_slices;     /* and most recently - a max cannot show the console responding */
     unsigned drop_ring_full;     /* frames the decoder never saw, by reason */
     unsigned drop_submit;
+    int      drop_submit_error;
+    unsigned submit_waits;
     unsigned drop_collect;
 
     /* CONNECTION_QUALITY - the client's own statement of what it can consume. Off unless the pairing

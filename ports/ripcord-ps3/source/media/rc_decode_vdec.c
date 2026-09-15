@@ -24,6 +24,10 @@
  * frame the decoder never sees.
  */
 #define RC_VDEC_AU_SLOTS 16
+
+/* How long a submission may wait for the decoder's four-deep command queue. Bounded, and small against
+ * a 16 ms frame at 60 fps; this hardware punishes an unbounded wait. */
+#define RC_VDEC_SUBMIT_WAIT_MS 6
 /* Matches RC_FRAME_SLOT_BYTES in rc_connect.c, and for the same reason - a 1080p keyframe does not fit
  * in 96 KB with any margin worth having. */
 #define RC_VDEC_AU_BYTES (256 * 1024)
@@ -120,6 +124,8 @@ static unsigned s_au_last_slices;
 static unsigned s_drop_ring_full;
 static unsigned s_drop_submit;
 static unsigned s_drop_collect;
+static int s_drop_submit_error;
+static unsigned s_submit_waits;
 
 
 static unsigned s_first_nal_seen;
@@ -352,6 +358,8 @@ int rc_decode_vdec_open(int width, int height)
     s_drop_ring_full = 0;
     s_drop_submit = 0;
     s_drop_collect = 0;
+    s_drop_submit_error = 0;
+    s_submit_waits = 0;
     s_chain_broken = 0;
     s_first_nal_types = 0;
     s_first_nal_seen = 0;
@@ -454,6 +462,8 @@ unsigned rc_decode_vdec_au_max_slices(void) { return s_au_max_slices; }
 unsigned rc_decode_vdec_au_last_slices(void) { return s_au_last_slices; }
 unsigned rc_decode_vdec_drop_ring_full(void) { return s_drop_ring_full; }
 unsigned rc_decode_vdec_drop_submit(void) { return s_drop_submit; }
+int rc_decode_vdec_drop_submit_error(void) { return s_drop_submit_error; }
+unsigned rc_decode_vdec_submit_waits(void) { return s_submit_waits; }
 unsigned rc_decode_vdec_drop_collect(void) { return s_drop_collect; }
 
 int rc_decode_vdec_take_chain_broken(void)
@@ -547,12 +557,38 @@ int rc_decode_vdec_feed(const uint8_t *access_unit, size_t length, rc_decode_liv
 
             stats->frames_in++;
             t0 = rc_tick();
-            if (vdecDecodeAu(s_handle, VDEC_DECODER_MODE_NORMAL, &info) == 0) {
-                s_au_submitted++;
-            } else {
-                s_drop_submit++;
-                stats->errors++;
-                s_chain_broken = 1;
+            {
+                /*
+                 * BUSY IS BACK-PRESSURE, NOT A FAILURE, and b182 is what treating it as one costs: 468
+                 * submissions refused in thirty seconds at 60 fps, with the ring never full and five
+                 * units lost on the network. The decoder's own command queue is four deep - b145 read
+                 * cmd_depth from vdecQueryAttr - so at 16 ms a frame it is routinely still working when
+                 * the next one arrives.
+                 *
+                 * The offline probe has always retried here; the live path counted and dropped, and
+                 * every drop is a frame the decoder never sees and a reference chain to repair. A few
+                 * milliseconds of waiting costs nothing against a 16 ms frame, and this thread's only
+                 * other job - handing over a finished picture - happens further down the same call.
+                 */
+                s32 rc = vdecDecodeAu(s_handle, VDEC_DECODER_MODE_NORMAL, &info);
+                int waited = 0;
+
+                while (rc == (s32)VDEC_ERROR_BUSY && waited < RC_VDEC_SUBMIT_WAIT_MS) {
+                    rc_sleep_ms(1u);
+                    waited++;
+                    rc = vdecDecodeAu(s_handle, VDEC_DECODER_MODE_NORMAL, &info);
+                }
+                if (waited > 0)
+                    s_submit_waits++;
+
+                if (rc == 0) {
+                    s_au_submitted++;
+                } else {
+                    s_drop_submit++;
+                    s_drop_submit_error = (int)rc;
+                    stats->errors++;
+                    s_chain_broken = 1;
+                }
             }
             stats->decode_ticks += rc_tick() - t0;
         } else {
