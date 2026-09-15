@@ -268,6 +268,7 @@ static u32 vdec_callback(u32 handle, u32 msgtype, u32 msgdata, u32 arg)
                 if (rc_decode_reference_width == w && rc_decode_reference_height == h) {
                     long i;
                     long total = (long)w * (long)h;
+                    int last_diff_row = -1;
 
                     s_out->diff_valid = 1;
                     s_out->diff_total = total;
@@ -284,7 +285,47 @@ static u32 vdec_callback(u32 handle, u32 msgtype, u32 msgdata, u32 arg)
                                     s_out->diff_actual[k] = s_picture[i + k];
                                 }
                             }
+                            if (s_out->diff_bytes == 0) {
+                                s_out->diff_min_col = (int)(i % w);
+                                s_out->diff_max_col = (int)(i % w);
+                                s_out->diff_min_row = (int)(i / w);
+                            }
+                            {
+                                int col = (int)(i % w);
+                                int row = (int)(i / w);
+
+                                if (col < s_out->diff_min_col)
+                                    s_out->diff_min_col = col;
+                                if (col > s_out->diff_max_col)
+                                    s_out->diff_max_col = col;
+                                s_out->diff_max_row = row;
+                                if (col >= w - 16)
+                                    s_out->diff_in_last_16_cols++;
+                                if (row != last_diff_row) {
+                                    s_out->diff_rows_affected++;
+                                    last_diff_row = row;
+                                }
+                            }
                             s_out->diff_bytes++;
+                        }
+                    }
+
+                    /*
+                     * FIND THE STRIDE BY FINDING A ROW. The reference's row 1 is 640 known bytes; where
+                     * they occur in this decoder's plane is where its row 1 starts, and that offset is
+                     * its stride. This asks the buffer instead of asking me.
+                     */
+                    if (s_out->diff_bytes > 0 && h > 1) {
+                        int candidate;
+
+                        for (candidate = 1; candidate <= 2048; candidate++) {
+                            if ((size_t)candidate + (size_t)w > sizeof(s_picture))
+                                break;
+                            if (memcmp(s_picture + candidate,
+                                       rc_decode_reference_luma + w, (size_t)w) == 0) {
+                                s_out->found_row_stride = candidate;
+                                break;
+                            }
                         }
                     }
                 }
