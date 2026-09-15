@@ -103,6 +103,7 @@ static uint8_t s_picture[RC_VDEC_PICTURE_BYTES];
 static rc_vdec_decode_result *s_out;
 static rc_vdec_log_fn s_log;
 static volatile int s_seq_done;
+static volatile int s_au_done;   /* access units the decoder has finished reading */
 
 /* Formats through the same one-line hook the steps use - see rc_vdec_probe.h for why findings are
  * written as they happen rather than summarised at the end. */
@@ -199,6 +200,10 @@ static u32 vdec_callback(u32 handle, u32 msgtype, u32 msgdata, u32 arg)
             logf_line("       frame %2d  0x%016llx  (%dx%d)",
                       s_out->hashes - 1, (unsigned long long)hash, w, h);
         }
+    } else if (msgtype == VDEC_CALLBACK_AUDONE) {
+        /* A queue slot has freed. The queue is only cmd_depth deep - b145 reported 4 - which is why
+         * this has to be counted rather than ignored. */
+        s_au_done++;
     } else if (msgtype == VDEC_CALLBACK_SEQDONE) {
         /* vdecEndSequence finishes here, not when it returns. b147 called vdecClose straight after
          * EndSequence and the console stopped in Close. */
@@ -226,14 +231,32 @@ static const uint8_t *start_code_of(const uint8_t *file, const uint8_t *nal_star
     return nal_start;
 }
 
-static s32 feed_au(u32 handle, const uint8_t *begin, const uint8_t *end, rc_vdec_decode_result *out)
+/*
+ * THE QUEUE IS FOUR DEEP, AND THAT IS THE WHOLE STORY OF b148.
+ *
+ * vdecQueryAttr reports cmd_depth - 4 on this console - and vdecDecodeAu is asynchronous: an access unit
+ * occupies a slot until the decoder says AUDONE. b148 submitted them as fast as the parser produced them,
+ * so the fifth was refused, the loop broke, and the run reported five access units, no pictures and no
+ * error. The missing error was a separate bug; the missing flow control is this one.
+ *
+ * So this waits for a slot before submitting, and treats a BUSY refusal as back-pressure to retry rather
+ * than a failure to give up on. Both waits are bounded, because this hardware punishes an unbounded one.
+ */
+static s32 feed_au(u32 handle, const uint8_t *begin, const uint8_t *end,
+                   rc_vdec_decode_result *out, unsigned depth)
 {
     vdecAU info;
     uint64_t t0;
     s32 rc;
+    int waited = 0;
 
     if (end <= begin)
         return 0;
+
+    while ((out->aus_fed - s_au_done) >= (int)depth && waited < 2000) {
+        rc_sleep_ms(1u);
+        waited++;
+    }
 
     memset(&info, 0, sizeof(info));
     info.packet_addr = (u32)(uintptr_t)begin;
@@ -245,7 +268,13 @@ static s32 feed_au(u32 handle, const uint8_t *begin, const uint8_t *end, rc_vdec
 
     t0 = rc_tick();
     rc = vdecDecodeAu(handle, VDEC_DECODER_MODE_NORMAL, &info);
+    while (rc == (s32)VDEC_ERROR_BUSY && waited < 2000) {
+        rc_sleep_ms(1u);
+        waited++;
+        rc = vdecDecodeAu(handle, VDEC_DECODER_MODE_NORMAL, &info);
+    }
     out->decode_ticks += rc_tick() - t0;
+
     if (rc == 0)
         out->aus_fed++;
     return rc;
@@ -278,6 +307,8 @@ int rc_vdec_decode_probe(const char *path, int level, int max_frames,
     memset(out, 0, sizeof(*out));
     out->level = level;
     s_log = log;
+    s_au_done = 0;
+    s_seq_done = 0;
 
     /* ---- the capture ---- */
     step(out, RC_VDEC_STEP_READ_FILE, "       .. reading the capture");
@@ -376,16 +407,25 @@ int rc_vdec_decode_probe(const char *path, int level, int max_frames,
         if (piece.begins_access_unit) {
             const uint8_t *here = start_code_of(file, nal.start);
 
-            if (au_begin != NULL && feed_au(handle, au_begin, here, out) != 0) {
-                out->last_error = (int)rc;
-                break;
+            if (au_begin != NULL) {
+                /* feed_au's OWN return. b148 assigned a stale `rc` here, so the one error that stopped
+                 * the run was reported as zero and the run looked like a success that produced nothing. */
+                s32 frc = feed_au(handle, au_begin, here, out, attr.cmd_depth);
+
+                if (frc != 0) {
+                    out->last_error = (int)frc;
+                    logf_line("       vdecDecodeAu refused access unit %d with 0x%08X"
+                              " (%d submitted, %d finished)",
+                              out->aus_fed, (unsigned)frc, out->aus_fed, s_au_done);
+                    break;
+                }
             }
             au_begin = here;
         }
     }
     /* The last access unit has no successor to close it. */
     if (au_begin != NULL && out->pictures_out < max_frames)
-        (void)feed_au(handle, au_begin, file + file_size, out);
+        (void)feed_au(handle, au_begin, file + file_size, out, attr.cmd_depth);
 
     /* A bounded moment for the decoder to finish announcing. Bounded, because a wait that cannot end is
      * how this port lost three sessions. */
@@ -399,6 +439,8 @@ int rc_vdec_decode_probe(const char *path, int level, int max_frames,
     }
 
     step(out, RC_VDEC_STEP_END_SEQUENCE, "       .. vdecEndSequence");
+    logf_line("       .. %d access unit(s) submitted, %d finished, %d picture(s) so far",
+              out->aus_fed, s_au_done, out->pictures_out);
     s_seq_done = 0;
     (void)vdecEndSequence(handle);
     {
