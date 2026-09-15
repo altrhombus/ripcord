@@ -16,7 +16,9 @@
  * header for what happens otherwise.
  */
 #define RC_VDEC_AU_SLOTS 8
-#define RC_VDEC_AU_BYTES (96 * 1024)
+/* Matches RC_FRAME_SLOT_BYTES in rc_connect.c, and for the same reason - a 1080p keyframe does not fit
+ * in 96 KB with any margin worth having. */
+#define RC_VDEC_AU_BYTES (256 * 1024)
 #define RC_VDEC_PICTURE_BYTES (1920 * 1088 * 3 / 2)
 #define RC_VDEC_MEM_ALIGN (1024u * 1024u)
 

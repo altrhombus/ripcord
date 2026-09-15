@@ -729,7 +729,13 @@ static int g_live_open;
  * inter-frames, and a slot has to hold the largest frame seen with room to spare.
  */
 #define RC_FRAME_QUEUE_SLOTS 8
-#define RC_FRAME_SLOT_BYTES (96 * 1024)
+/*
+ * A WHOLE FRAME, SIZED FOR 1080p. 96 KB was comfortable for 720p, whose largest frame measured 51 KB -
+ * but a 1080p keyframe carries 2.25x the pixels and there is no headroom in that. The demuxer can
+ * assemble about a megabyte (STREAM_DEMUX_ASSEMBLY_CAPACITY), so this was the first thing that would
+ * have clipped, and it would have clipped SILENTLY: the guard below simply skipped anything larger.
+ */
+#define RC_FRAME_SLOT_BYTES (256 * 1024)
 
 static uint8_t g_frame_queue[RC_FRAME_QUEUE_SLOTS][RC_FRAME_SLOT_BYTES];
 static size_t g_frame_length[RC_FRAME_QUEUE_SLOTS];
@@ -737,6 +743,7 @@ static int g_frame_head;
 static int g_frame_count;
 static unsigned g_frames_queued;
 static unsigned g_frames_overrun;
+static unsigned g_frames_oversized;
 static unsigned g_queue_worst;
 
 /*
@@ -1109,6 +1116,15 @@ static void on_video_frame(void *userdata, const uint8_t *data, size_t length, i
      * The demuxer's contract says these bytes live only for this call, which is exactly why the copy is
      * the price of decoding anywhere else.
      */
+    /*
+     * COUNTED, NOT JUST SKIPPED. A frame too large for a slot used to fall out of this `if` and vanish -
+     * no counter, no log line, and at 1080p that would have looked exactly like a decoder that drops
+     * keyframes. This session has already spent five builds on a fault that every counter reported as
+     * success; a silent drop is the same mistake waiting to happen.
+     */
+    if (length > RC_FRAME_SLOT_BYTES)
+        g_frames_oversized++;
+
     if (g_live_open && length > 0u && length <= RC_FRAME_SLOT_BYTES) {
         int slot;
 
@@ -1726,6 +1742,7 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
                     g_frame_count = 0;
                     g_frames_queued = 0u;
                     g_frames_overrun = 0u;
+                    g_frames_oversized = 0u;
                     g_queue_worst = 0u;
                     g_last_drain_ms = 0u;
                     g_worst_read_gap_ms = 0u;
@@ -1986,6 +2003,7 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
     out->blit_worst_us = g_blit_worst_us;
     out->frames_queued = g_frames_queued;
     out->frames_overrun = g_frames_overrun;
+    out->frames_oversized = g_frames_oversized;
     out->queue_worst = g_queue_worst;
     out->worst_read_gap_ms = g_worst_read_gap_ms;
     out->worst_drain_ms = g_worst_drain_ms;
