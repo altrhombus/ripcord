@@ -39,6 +39,13 @@ static unsigned char g_v[RC_SPU_YUV_MAX_WIDTH / 2] __attribute__((aligned(128)))
 static unsigned int g_line[RC_SPU_YUV_MAX_WIDTH] __attribute__((aligned(128)));
 static unsigned int g_out[RC_SPU_YUV_MAX_DST_WIDTH] __attribute__((aligned(128)));
 
+/* Sequence first, so the PPE's existing poll on the first word is unchanged; the two tick counts ride
+ * along in the same 16-byte transfer. The MFC accepts 1, 2, 4, 8 or a multiple of 16 - see the note in
+ * rc_spu_yuv_job.h - and 16 is the smallest that carries three words. */
+static volatile unsigned int g_report[4] __attribute__((aligned(16)));
+static unsigned int dma_ticks;
+static unsigned int work_ticks;
+
 static rc_spu_yuv_job g_job __attribute__((aligned(128)));
 
 /*
@@ -206,7 +213,23 @@ int main(uint64_t job_ea, uint64_t unused1, uint64_t unused2, uint64_t unused3)
          * does - and re-fetching it would double the DMA for no benefit, so the last row fetched is
          * remembered. That is the whole of the vertical scaler.
          */
+        dma_ticks = 0u;
+        work_ticks = 0u;
         {
+            /*
+             * WHERE THE TIME GOES, split between waiting for the MFC and doing the arithmetic.
+             *
+             * This loop blocks on every transfer - one tag, mfc_read_tag_status_all after each get and
+             * each put - so the SPE is idle for the whole of every round trip. At 1280x720 into
+             * 1920x1080 that is roughly 270 blocking puts and 180 blocking gets per SPE per frame, and
+             * the conversion measures 4,945 us a frame without anyone knowing which half that is.
+             *
+             * It decides the next change. If the arithmetic dominates, dropping the YUV-to-RGB pass (the
+             * decoder can output ARGB32 - b179 confirmed it) is worth doing. If the waiting dominates,
+             * that same change makes things WORSE, because ARGB source is 4 bytes a pixel against
+             * YUV420's 1.5 - and double buffering is the answer instead, which is what IBM's Cell
+             * programming guide spends a chapter on.
+             */
             unsigned int cached_y_row = 0xffffffffu;
             unsigned int cached_uv_row = 0xffffffffu;
             unsigned int out_row;
@@ -221,6 +244,8 @@ int main(uint64_t job_ea, uint64_t unused1, uint64_t unused2, uint64_t unused3)
                     src_row = g_job.src_height - 1u;
 
                 if (src_row != cached_y_row) {
+                    unsigned int t0;
+
                     mfc_get(g_y, g_job.y_ea + (unsigned long long)src_row * g_job.y_stride,
                             g_job.src_width, TAG, 0, 0);
                     cached_y_row = src_row;
@@ -232,14 +257,26 @@ int main(uint64_t job_ea, uint64_t unused1, uint64_t unused2, uint64_t unused3)
                                 g_job.src_width / 2u, TAG, 0, 0);
                         cached_uv_row = uv_row;
                     }
+                    /* The decrementer counts DOWN, so elapsed is before-minus-after. */
+                    t0 = spu_read_decrementer();
                     (void)mfc_read_tag_status_all();
+                    dma_ticks += t0 - spu_read_decrementer();
+
+                    t0 = spu_read_decrementer();
                     convert_line(g_job.src_width);
                     scale_line(g_job.src_width, g_job.dst_width);
+                    work_ticks += t0 - spu_read_decrementer();
                 }
 
-                mfc_put(g_out, g_job.dst_ea + (unsigned long long)out_row * g_job.dst_stride,
-                        g_job.dst_width * 4u, TAG, 0, 0);
-                (void)mfc_read_tag_status_all();
+                {
+                    unsigned int t0;
+
+                    mfc_put(g_out, g_job.dst_ea + (unsigned long long)out_row * g_job.dst_stride,
+                            g_job.dst_width * 4u, TAG, 0, 0);
+                    t0 = spu_read_decrementer();
+                    (void)mfc_read_tag_status_all();
+                    dma_ticks += t0 - spu_read_decrementer();
+                }
             }
         }
 
@@ -247,8 +284,12 @@ int main(uint64_t job_ea, uint64_t unused1, uint64_t unused2, uint64_t unused3)
          * The sequence number goes back rather than a constant, so the PPE can tell this frame's
          * completion from the previous frame's flag left in the same word.
          */
+        g_report[0] = g_job.sequence;
+        g_report[1] = dma_ticks;
+        g_report[2] = work_ticks;
+        g_report[3] = 0u;
         phase = g_job.sequence;
-        mfc_put(&phase, g_job.done_ea, 4u, TAG, 0, 0);
+        mfc_put((void *)g_report, g_job.done_ea, 16u, TAG, 0, 0);
         (void)mfc_read_tag_status_all();
     }
     /* not reached */

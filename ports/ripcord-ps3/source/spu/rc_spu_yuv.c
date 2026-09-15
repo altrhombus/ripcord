@@ -252,6 +252,19 @@ unsigned rc_spu_yuv_convert(const uint8_t *y, const uint8_t *u, const uint8_t *v
         uint64_t ticks = rc_tick() - t0;
         unsigned us = (hz > 0u) ? (unsigned)((ticks * 1000000u) / hz) : 0u;
 
+        /* The SPEs report {sequence, dma_ticks, work_ticks} in their done block; sum this frame's. */
+        {
+            uint64_t dma = 0, work = 0;
+            int k;
+
+            for (k = 0; k < s_spes; k++) {
+                dma += s_done[(size_t)k * DONE_STRIDE_WORDS + 1u];
+                work += s_done[(size_t)k * DONE_STRIDE_WORDS + 2u];
+            }
+            s_stats.last_dma_us = (hz > 0u) ? (unsigned)((dma * 1000000u) / hz) : 0u;
+            s_stats.last_work_us = (hz > 0u) ? (unsigned)((work * 1000000u) / hz) : 0u;
+        }
+
         s_stats.frames++;
         s_stats.avg_us = (s_stats.frames > 1u)
             ? (unsigned)(((uint64_t)s_stats.avg_us * (s_stats.frames - 1u) + us) / s_stats.frames)
