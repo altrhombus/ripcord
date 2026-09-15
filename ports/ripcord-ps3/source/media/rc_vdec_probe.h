@@ -106,6 +106,24 @@ typedef struct {
     uint64_t hash_v_at_visible;
     uint64_t hash_v_at_padded;
     int      padded_height;      /* what the 16-aligned height would be */
+
+    /*
+     * THE STRIDE, DERIVED RATHER THAN ASSUMED. b152 showed the two decoders disagree on the LUMA, not
+     * just the chroma, and printed the reason in passing: openh264's own strides are 704 and 352 for a
+     * 640-wide picture. It pads, and this probe was reading vdec's output as though stride equalled
+     * width. If vdec pads too then every row after the first is read misaligned, which corrupts Y and
+     * makes any question about chroma offsets meaningless.
+     *
+     * No SDK header states the stride, so it is swept against openh264's known-good luma hash - the same
+     * method that turned profile_level from a guess into the level_idc set. `matched_stride` is the one
+     * that reproduces the reference, or 0 if nothing in the range does, which would mean the difference
+     * is in the pixels rather than their arrangement.
+     */
+    int      matched_stride;
+    int      matched_luma_rows;  /* rows of luma before the chroma begins, once the stride is known */
+    unsigned picture_size;       /* what the decoder itself says the picture occupies */
+    unsigned picture_attr;
+    unsigned picture_status;
 } rc_vdec_decode_result;
 
 /* Decodes up to `max_frames` pictures from the Annex-B capture at `path` using the console's decoder.
@@ -113,7 +131,11 @@ typedef struct {
 /* Called with one already-formatted line per step attempted. Must write through to storage - see above. */
 typedef void (*rc_vdec_log_fn)(const char *message);
 
-int rc_vdec_decode_probe(const char *path, int level, int max_frames,
-                         rc_vdec_log_fn log, rc_vdec_decode_result *out);
+/*
+ * `reference_y` is openh264's luma hash for the first picture, used to identify the stride by sweep.
+ * Pass 0 to skip that search.
+ */
+int rc_vdec_decode_probe(const char *path, int level, int max_frames, rc_vdec_log_fn log,
+                         uint64_t reference_y, uint64_t reference_u, rc_vdec_decode_result *out);
 
 #endif /* RC_VDEC_PROBE_H */
