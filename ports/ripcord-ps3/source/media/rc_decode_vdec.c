@@ -57,6 +57,8 @@ static volatile unsigned s_cb_pictures;
 static uint8_t s_first_au[8];
 static unsigned s_first_au_len;
 static unsigned s_picture_addr;
+static int s_level;
+static unsigned s_mem_size;
 
 /* The picture handoff: the callback writes `s_fill` and publishes it, the caller consumes it. */
 static volatile int s_ready = -1;   /* index of a finished picture, -1 if none */
@@ -176,6 +178,13 @@ int rc_decode_vdec_open(int width, int height)
     vdecConfig config;
     vdecClosure closure;
 
+    /*
+     * The size is no longer what picks the level - see below - but it is still checked, because a
+     * picture larger than the output buffers would be written past their end.
+     */
+    if ((long)width * (long)height * 3 / 2 > RC_VDEC_PICTURE_BYTES)
+        return 0;
+
     if (s_open)
         return 1;
 
@@ -194,13 +203,26 @@ int rc_decode_vdec_open(int width, int height)
     memset(&attr, 0, sizeof(attr));
     type.codec_type = VDEC_CODEC_TYPE_H264;
     /*
-     * level_idc, derived in b145 by sweeping the value the SDK does not name. 31 covers 1280x720 and 42
-     * covers 1920x1080; asking for more than the stream needs only reserves more memory.
+     * THE HIGHEST LEVEL THE CONSOLE ACCEPTS, AND NOT ONE CHOSEN FROM THE RESOLUTION.
+     *
+     * b163 is why. The decoder was opened at level 31 for a 1280x720 stream, on the reasoning that 3.1
+     * is the level for 720p - and the stream's own SPS says 0x28, level 4.0. H.264 levels constrain
+     * bitrate and frame rate as well as picture size, so a resolution cannot pick one. Given a
+     * configuration below what the stream needs, the decoder accepted every access unit, reported no
+     * error at all, and produced 889 uniformly black pictures. The offline capture really was level 31,
+     * which is exactly why the probe worked and the live path did not.
+     *
+     * 42 is the highest of the thirteen values b145's sweep found the console accepts, and a decoder
+     * opened high decodes anything below it. The cost is memory reserved up front - level 40 asked for
+     * 57 MB against level 31's 33 MB - which is worth paying to never make this mistake again from a
+     * number that looked like it could be inferred.
      */
-    type.profile_level = (height > 720 || width > 1280) ? 42u : 31u;
+    type.profile_level = 42u;
 
     if (vdecQueryAttr(&type, &attr) != 0)
         return 0;
+    s_level = (int)type.profile_level;
+    s_mem_size = (unsigned)attr.mem_size;
 
     s_memory = memalign(RC_VDEC_MEM_ALIGN, attr.mem_size);
     if (s_memory == NULL)
@@ -248,6 +270,16 @@ unsigned rc_decode_vdec_callback_luma_max(void)
 unsigned rc_decode_vdec_callback_pictures(void)
 {
     return s_cb_pictures;
+}
+
+int rc_decode_vdec_level(void)
+{
+    return s_level;
+}
+
+unsigned rc_decode_vdec_mem_size(void)
+{
+    return s_mem_size;
 }
 
 unsigned rc_decode_vdec_picture_addr(void)
