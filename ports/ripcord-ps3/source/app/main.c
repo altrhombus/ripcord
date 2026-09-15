@@ -1057,9 +1057,11 @@ static int check_connect(void)
                     if (c.level_clamped > 0u)
                         ps3_log("       %u SPS unit(s) had their declared level lowered to 42 - the"
                                 " decoder offers no higher\n", c.level_clamped);
-                    if (c.sps_max_ref > 4)
-                        ps3_log("       %d reference frames EXCEEDS what level 4.2 allows at 1080p"
-                                " (4), so the clamp is not safe here and corruption is expected\n",
+                    if (!c.clamp_safe && c.sps_level > 42)
+                        ps3_log("       %d reference frames do NOT fit level 4.2's decoded picture"
+                                " buffer at this size, so the declared level is left alone -\n"
+                                "       this hardware cannot be configured to decode this stream.\n"
+                                "       It is the reference count that blocks it, not the pixel rate.\n",
                                 c.sps_max_ref);
                 }
                 if (c.decode_level > 0)
