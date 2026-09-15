@@ -55,6 +55,8 @@
 #include "platform/rc_platform.h"
 #include "util/rc_log.h"
 #include "util/rc_random.h"
+#include "crypto/rc_crypto.h"
+#include "crypto/rc_gcm.h"
 #include "rc_stack_ps3.h"
 #include "rc_video_ps3.h"
 #include "rc_spu_yuv.h"
@@ -1226,6 +1228,128 @@ static int check_connect(void)
     }
 }
 
+/*
+ * WHAT THIS MEASURES AND WHY IT IS A STAGE RATHER THAN A NOTE.
+ *
+ * b140 split the demuxer's 829 us per packet into "crypto 837 us, everything else 11 us", which named the
+ * cipher as the cost but not the reason for it. The reason turned out to be the shape of the code rather
+ * than the amount of arithmetic: both AES and GHASH kept their state in a `uint8_t[16]` on the stack, and
+ * the PPE is in-order, so every step stored a byte and the next step stalled reloading it. Both now keep
+ * their state in 32-bit registers (see rc_aes.c and rc_gcm.h).
+ *
+ * This stage times the primitives directly so the next build's number is attributable to them and not
+ * inferred from a live stream, where loss, decode and scheduling all move at once. The per-packet line at
+ * the end is the quantity that actually matters: one GMAC plus one CTR pass over a full-MTU packet, which
+ * is exactly what the demuxer's crypto seam does per A/V packet.
+ *
+ * It is a measurement, not a correctness test - but it opens with FIPS-197 C.1 anyway, because a word
+ * rewrite is exactly the kind of change that a big-endian toolchain could break in a way the host suite
+ * (little-endian) would never see.
+ */
+#define RC_CRYPTO_BENCH_PACKET 1400
+#define RC_CRYPTO_BENCH_BLOCKS 2000
+#define RC_CRYPTO_BENCH_PASSES 200
+
+static unsigned bench_us(uint64_t ticks, uint64_t hz, unsigned iterations)
+{
+    if (hz == 0u || iterations == 0u)
+        return 0u;
+    return (unsigned)((ticks * 1000000u) / hz / iterations);
+}
+
+static unsigned bench_ns(uint64_t ticks, uint64_t hz, unsigned iterations)
+{
+    if (hz == 0u || iterations == 0u)
+        return 0u;
+    return (unsigned)((ticks * 1000000000u) / hz / iterations);
+}
+
+static int check_crypto_speed(void)
+{
+    /* rc_gmac_key carries ~5 KB of tables - far too much for a stack frame on this port. */
+    static rc_gmac_key gk;
+    static uint8_t buffer[RC_CRYPTO_BENCH_PACKET];
+
+    /* FIPS-197 C.1: the one published AES-128 vector, checked here on the console's own toolchain. */
+    static const uint8_t kFipsKey[16] = {
+        0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+        0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f
+    };
+    static const uint8_t kFipsPlain[16] = {
+        0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77,
+        0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff
+    };
+    static const uint8_t kFipsCipher[16] = {
+        0x69, 0xc4, 0xe0, 0xd8, 0x6a, 0x7b, 0x04, 0x30,
+        0xd8, 0xcd, 0xb7, 0x80, 0x70, 0xb4, 0xc5, 0x5a
+    };
+
+    rc_aes128 aes;
+    uint8_t block[16];
+    uint8_t nonce[16];
+    uint8_t tag[16];
+    uint64_t hz = rc_tick_hz();
+    uint64_t t0;
+    uint64_t block_ticks, ctr_ticks, gmac_ticks, init_ticks;
+    unsigned aes_ns, gmac_ns, ctr_us, gmac_us, init_us, packet_us;
+    int i;
+
+    rc_aes128_init(&aes, kFipsKey);
+    rc_aes128_encrypt_block(&aes, kFipsPlain, block);
+    if (memcmp(block, kFipsCipher, sizeof(block)) != 0) {
+        ps3_log("FAIL  AES-128 does not match FIPS-197 C.1 on this target\n");
+        ps3_log("      the word-at-a-time rewrite is wrong here even though the host suite passes -\n");
+        ps3_log("      suspect the big-endian load/store helpers in rc_aes.c.\n");
+        return 1;
+    }
+
+    for (i = 0; i < RC_CRYPTO_BENCH_PACKET; i++)
+        buffer[i] = (uint8_t)i;
+    memset(nonce, 0x5a, sizeof(nonce));
+
+    /* One block of the forward permutation, with the schedule already expanded. */
+    t0 = rc_tick();
+    for (i = 0; i < RC_CRYPTO_BENCH_BLOCKS; i++)
+        rc_aes128_encrypt_block(&aes, block, block);
+    block_ticks = rc_tick() - t0;
+
+    /* A full-MTU CTR pass - the payload half of what the demuxer does per packet. */
+    t0 = rc_tick();
+    for (i = 0; i < RC_CRYPTO_BENCH_PASSES; i++)
+        rc_aes128_ctr(kFipsKey, nonce, buffer, buffer, sizeof(buffer), 1);
+    ctr_ticks = rc_tick() - t0;
+
+    /* Building the GHASH tables: once per key rotation, so this is amortised over ~650 packets. */
+    t0 = rc_tick();
+    for (i = 0; i < RC_CRYPTO_BENCH_PASSES; i++)
+        rc_gmac_key_init(&gk, kFipsKey);
+    init_ticks = rc_tick() - t0;
+
+    /* A full-MTU GMAC under a prepared key - the tag half. */
+    t0 = rc_tick();
+    for (i = 0; i < RC_CRYPTO_BENCH_PASSES; i++)
+        rc_gmac_with_key(&gk, nonce, sizeof(nonce), buffer, sizeof(buffer), tag);
+    gmac_ticks = rc_tick() - t0;
+
+    aes_ns = bench_ns(block_ticks, hz, RC_CRYPTO_BENCH_BLOCKS);
+    ctr_us = bench_us(ctr_ticks, hz, RC_CRYPTO_BENCH_PASSES);
+    gmac_us = bench_us(gmac_ticks, hz, RC_CRYPTO_BENCH_PASSES);
+    init_us = bench_us(init_ticks, hz, RC_CRYPTO_BENCH_PASSES);
+    /* GHASH processes one 16-byte block per multiply; %d bytes is that many blocks plus the length block. */
+    gmac_ns = bench_ns(gmac_ticks, hz, RC_CRYPTO_BENCH_PASSES * (RC_CRYPTO_BENCH_PACKET / 16));
+    packet_us = ctr_us + gmac_us;
+
+    ps3_log("cryp:  AES-128 matches FIPS-197 C.1\n");
+    ps3_log("cryp:  one AES block          %u ns\n", aes_ns);
+    ps3_log("cryp:  one GHASH block        %u ns\n", gmac_ns);
+    ps3_log("cryp:  CTR over %d bytes    %u us\n", RC_CRYPTO_BENCH_PACKET, ctr_us);
+    ps3_log("cryp:  GMAC over %d bytes   %u us\n", RC_CRYPTO_BENCH_PACKET, gmac_us);
+    ps3_log("cryp:  GHASH table build      %u us (once per ~650 packets, not per packet)\n", init_us);
+    ps3_log("cryp:  => one A/V packet      %u us of crypto\n", packet_us);
+    ps3_log("cryp:  b140 measured 837 us per packet through the demuxer's crypto seam\n");
+    return 0;
+}
+
 static int check_decode(void)
 {
     rc_decode_probe_result r;
@@ -1602,6 +1726,7 @@ int main(void)
 
     failures += check_discovery();
     failures += check_connect();
+    failures += check_crypto_speed();
     failures += check_decode();
 
     ps3_log("\nnot covered here: the rest of the decoder. See README.md.\n");
