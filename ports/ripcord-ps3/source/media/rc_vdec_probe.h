@@ -170,6 +170,29 @@ typedef struct {
     int  diff_max_delta;
     long diff_delta_sum;
     long diff_over_4;
+
+    /*
+     * THE EDGE ITSELF, from three rows with real content in them.
+     *
+     * b157 killed the easy explanations: the differences are large (up to 165), so not rounding; they sit
+     * only in columns 632..639, so not drift; and the capture's SPS crops 8 rows off the BOTTOM and
+     * nothing off the sides, so not cropping. Rows 0..23 agree completely, including those columns, which
+     * makes it content-dependent rather than structural.
+     *
+     * What is left is to look at the pixels. Sixteen columns from each decoder, so the last eight sit
+     * beside the eight before them that agree.
+     */
+    uint8_t edge_ref[3][16];
+    uint8_t edge_act[3][16];
+    int     edge_row[3];
+    int     edge_rows;
+
+    /*
+     * And one specific question worth answering while looking: is vdec's edge a COPY of something else in
+     * the same row? A decoder that replicates its last good block, or is off by a block, would show up as
+     * those eight bytes occurring somewhere else in the reference row. -1 if they do not.
+     */
+    int edge_found_at;
 } rc_vdec_decode_result;
 
 /* Decodes up to `max_frames` pictures from the Annex-B capture at `path` using the console's decoder.
