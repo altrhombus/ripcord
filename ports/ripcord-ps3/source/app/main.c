@@ -72,6 +72,7 @@
 #include "rc_netlog.h"
 #include "rc_decode_probe.h"
 #include "rc_audio_ps3.h"
+#include "stream/stream_demux.h"
 #include "rc_vdec_probe.h"
 #include "rc_core_tests.h"
 #include "rc_discover.h"
@@ -1968,6 +1969,19 @@ int main(void)
     failures += check_monotonic();
     failures += check_csprng();
     failures += check_spu();
+    /*
+     * BEFORE ANYTHING USES IT. stream_demux is over 4 MB and its size comes from a header; if this
+     * translation unit and the library disagree about it, every write through the struct lands in the
+     * wrong place. b168 hung exactly there, in the core suites, with no output to say so.
+     */
+    if (stream_demux_struct_size() != sizeof(stream_demux)) {
+        ps3_log("FAIL  stream_demux is %lu bytes here and %lu bytes in the library - the two were\n"
+                "      compiled against different headers or flags, and nothing that touches the\n"
+                "      demuxer can be trusted. See STREAM_DEMUX_MAX_UNITS_PER_FRAME.\n",
+                (unsigned long)sizeof(stream_demux),
+                (unsigned long)stream_demux_struct_size());
+        failures++;
+    }
     failures += check_core();
 
     /*
