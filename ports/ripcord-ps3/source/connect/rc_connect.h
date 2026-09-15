@@ -274,6 +274,9 @@ typedef struct {
     int      clamp_safe;         /* whether the stream's reference frames fit 4.2's DPB at all */
     unsigned au_bad_start;       /* access units submitted without an Annex-B start code */
     unsigned au_largest;         /* the largest one submitted */
+    unsigned au_max_nals;
+    unsigned au_max_slices;      /* how many slices a picture is split into */
+    unsigned first_nal_types;
 
     /* Audio. See rc_audio_ps3.h - silence written is the one fault a listener can hear. */
     int      audio_ready;
