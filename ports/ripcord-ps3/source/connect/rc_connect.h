@@ -258,6 +258,9 @@ typedef struct {
      * can start on, and it is not the same finding as no frames at all.
      */
     int  demux_ready;
+    int  decode_thread_failed;   /* decoder open, but its thread would not start */
+    int  decode_thread_priority; /* what it actually got, receive thread's + 1 */
+    int  decode_receive_priority;
     unsigned video_frames;
     unsigned keyframes;
     unsigned audio_frames;
