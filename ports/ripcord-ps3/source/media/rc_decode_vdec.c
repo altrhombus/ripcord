@@ -53,6 +53,11 @@ static volatile int s_seq_done;
 static volatile unsigned s_cb_luma_max;
 static volatile unsigned s_cb_pictures;
 
+/* The first access unit submitted, and where pictures are written - both to be read rather than assumed. */
+static uint8_t s_first_au[8];
+static unsigned s_first_au_len;
+static unsigned s_picture_addr;
+
 /* The picture handoff: the callback writes `s_fill` and publishes it, the caller consumes it. */
 static volatile int s_ready = -1;   /* index of a finished picture, -1 if none */
 static volatile int s_fill;
@@ -108,19 +113,29 @@ static u32 vdec_callback(u32 handle, u32 msgtype, u32 msgdata, u32 arg)
         }
 
         {
+            /*
+             * A GRID OVER THE WHOLE PICTURE, not one row across the middle. b162's sample was a single
+             * row and its being zero was read as "the buffer is empty" - which assumes that row has
+             * content in it. Sixty-four rows by sixty-four columns cannot all be black in a game's
+             * start screen, so this answers the question the row could not.
+             */
             const uint8_t *py = s_picture[slot];
-            size_t base = ((size_t)h / 2u) * (size_t)w;
-            int i;
+            int gy, gx;
 
-            for (i = 0; i < 256; i++) {
-                unsigned sample = py[base + (size_t)(i * (w / 256))];
+            for (gy = 0; gy < 64; gy++) {
+                size_t base = (size_t)(gy * (h / 64)) * (size_t)w;
 
-                if (sample > s_cb_luma_max)
-                    s_cb_luma_max = sample;
+                for (gx = 0; gx < 64; gx++) {
+                    unsigned sample = py[base + (size_t)(gx * (w / 64))];
+
+                    if (sample > s_cb_luma_max)
+                        s_cb_luma_max = sample;
+                }
             }
             s_cb_pictures++;
         }
 
+        s_picture_addr = (unsigned)(uintptr_t)s_picture[slot];
         s_fill = slot;
         s_ready_w = w;
         s_ready_h = h;
@@ -235,6 +250,17 @@ unsigned rc_decode_vdec_callback_pictures(void)
     return s_cb_pictures;
 }
 
+unsigned rc_decode_vdec_picture_addr(void)
+{
+    return s_picture_addr;
+}
+
+unsigned rc_decode_vdec_first_au(uint8_t out[8])
+{
+    memcpy(out, s_first_au, sizeof(s_first_au));
+    return s_first_au_len;
+}
+
 int rc_decode_vdec_feed(const uint8_t *access_unit, size_t length, rc_decode_live_stats *stats)
 {
     int delivered = 0;
@@ -257,6 +283,10 @@ int rc_decode_vdec_feed(const uint8_t *access_unit, size_t length, rc_decode_liv
             uint64_t t0;
 
             memcpy(s_au[slot], access_unit, length);
+            if (s_first_au_len == 0u) {
+                memcpy(s_first_au, access_unit, sizeof(s_first_au));
+                s_first_au_len = (unsigned)length;
+            }
 
             memset(&info, 0, sizeof(info));
             info.packet_addr = (u32)(uintptr_t)s_au[slot];

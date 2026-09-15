@@ -264,6 +264,9 @@ typedef struct {
     int  luma_min, luma_max;     /* what the delivered pictures actually contained */
     int  callback_luma_max;      /* and what the decoder's own thread saw right after writing */
     int  callback_pictures;
+    unsigned picture_addr;       /* where pictures were written - alignment is visible in it */
+    unsigned first_au_len;
+    uint8_t  first_au[8];        /* what was submitted: Annex-B starts 00 00 00 01 or 00 00 01 */
     int  decode_thread_priority; /* what it actually got, receive thread's + 1 */
     int  decode_receive_priority;
     unsigned video_frames;
