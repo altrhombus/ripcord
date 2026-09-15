@@ -1,6 +1,11 @@
 /* See rc_connect.h. Nothing in this file logs or returns anything from the pairing record. */
 #include "rc_connect.h"
 
+#include <sys/thread.h>
+#include <sys/mutex.h>
+#include <sys/cond.h>
+#include <lv2/thread.h>
+
 #include "halyard_discovery.h"
 #include "halyard_wake.h"
 #include "halyard_pairing_file.h"
@@ -721,13 +726,6 @@ static int g_live_open;
  * Sized in whole frames rather than bytes: eight is enough to ride out a keyframe followed by a burst of
  * inter-frames, and a slot has to hold the largest frame seen with room to spare.
  */
-/*
- * How many queued frames to decode per pass through the loop. Enough that the decode rate is set by the
- * PPE rather than by how often the loop happens to come round, and small enough that the socket is read
- * again promptly - it holds 122 KB and this stream fills that in about half a second.
- */
-#define RC_DECODE_PER_PASS 4
-
 #define RC_FRAME_QUEUE_SLOTS 8
 #define RC_FRAME_SLOT_BYTES (96 * 1024)
 
@@ -738,6 +736,45 @@ static int g_frame_count;
 static unsigned g_frames_queued;
 static unsigned g_frames_overrun;
 static unsigned g_queue_worst;
+
+/*
+ * THE DECODER RUNS ON ITS OWN THREAD, AND THE REASON IS b142.
+ *
+ * Decoding inline in the receive loop was a deliberate choice once, and the note above the queue records
+ * why: doing the work where the buffer is valid avoids a copy at every layer. The crypto rewrite changed
+ * the arithmetic underneath that choice. With ingest down to 84 us per packet, decode is the only large
+ * cost left - 21,774 us per call at 720p - and b142 measured the consequence directly: a 270 ms decode
+ * run, a 94 ms gap between socket reads, a drain burst of 118 packets where b141 saw 6, and 157 units
+ * lost to a 124,800-byte socket buffer that nobody was emptying. The frame queue sat pinned at 8 of 8.
+ *
+ * None of that is the decoder being slow. It is the decoder and the socket sharing a thread.
+ *
+ * THREE CHOICES HERE ARE DELIBERATE:
+ *
+ * The consumer COPIES the frame out of the ring while holding the lock, then decodes outside it. The
+ * alternative - decoding in place - lets the producer evict and overwrite the slot mid-decode once the
+ * ring wraps. The copy averages ~8 KB against a 21,774 us decode, which is not a cost worth a race.
+ *
+ * The wait has a TIMEOUT rather than being infinite. The thread therefore notices the quit flag by
+ * itself within 50 ms and cannot be wedged by a signal that arrives at the wrong moment. This port has
+ * already lost three sessions to shutdown lockups; a teardown path that depends on a wakeup being
+ * delivered is not one to write a fourth time.
+ *
+ * The priority is READ from the receive thread rather than assumed, and set one step below it. Draining
+ * the socket promptly is the whole point of the change, so the thread that does it must win. A hard-coded
+ * number would be a guess about a scheduler this port has never measured.
+ */
+#define RC_DECODE_THREAD_STACK (256u * 1024u)
+#define RC_DECODE_WAIT_US      50000ull
+
+static sys_ppu_thread_t g_decode_thread;
+static sys_mutex_t g_decode_mutex;
+static sys_cond_t g_decode_cond;
+static int g_decode_thread_up;
+static volatile int g_decode_quit;
+static int g_decode_priority;
+static int g_decode_receive_priority;
+static uint8_t g_decode_buf[RC_FRAME_SLOT_BYTES];
 
 /*
  * The picture sink: a decoded frame goes straight onto the screen.
@@ -1071,6 +1108,10 @@ static void on_video_frame(void *userdata, const uint8_t *data, size_t length, i
     if (g_live_open && length > 0u && length <= RC_FRAME_SLOT_BYTES) {
         int slot;
 
+        /* The decoder thread is the other user of this ring - see the note by g_decode_thread. */
+        if (g_decode_thread_up)
+            (void)sysMutexLock(g_decode_mutex, 0);
+
         if (g_frame_count == RC_FRAME_QUEUE_SLOTS) {
             /*
              * Behind. The OLDEST goes, not the newest: the newest is the one closest to live, and
@@ -1090,7 +1131,125 @@ static void on_video_frame(void *userdata, const uint8_t *data, size_t length, i
         g_frames_queued++;
         if ((unsigned)g_frame_count > g_queue_worst)
             g_queue_worst = (unsigned)g_frame_count;
+
+        if (g_decode_thread_up) {
+            (void)sysMutexUnlock(g_decode_mutex);
+            /* Signalled outside the lock: the woken thread would only block re-acquiring it. */
+            (void)sysCondSignal(g_decode_cond);
+        }
     }
+}
+
+/*
+ * The consumer. Takes one frame per turn, copies it out under the lock, and decodes with the lock
+ * released so the receive thread is never kept waiting on a 21 ms decode.
+ */
+static void decode_thread_entry(void *arg)
+{
+    (void)arg;
+
+    for (;;) {
+        size_t length = 0u;
+        uint64_t started;
+
+        (void)sysMutexLock(g_decode_mutex, 0);
+        while (g_frame_count == 0 && !g_decode_quit)
+            (void)sysCondWait(g_decode_cond, RC_DECODE_WAIT_US);
+
+        if (g_frame_count > 0) {
+            int slot = g_frame_head;
+
+            length = g_frame_length[slot];
+            if (length > sizeof(g_decode_buf))
+                length = 0u;          /* cannot happen - the producer bounds it - but do not trust it */
+            else
+                memcpy(g_decode_buf, g_frame_queue[slot], length);
+
+            g_frame_head = (g_frame_head + 1) % RC_FRAME_QUEUE_SLOTS;
+            g_frame_count--;
+        }
+        (void)sysMutexUnlock(g_decode_mutex);
+
+        if (length == 0u) {
+            if (g_decode_quit)
+                break;              /* asked to stop, and the queue is empty */
+            continue;
+        }
+
+        started = rc_time_ms();
+        (void)rc_decode_live_feed(g_decode_buf, length, &g_live_stats);
+        {
+            unsigned spent = (unsigned)(rc_time_ms() - started);
+
+            if (spent > g_worst_decode_ms)
+                g_worst_decode_ms = spent;
+        }
+    }
+
+    sysThreadExit(0);
+}
+
+static int decode_thread_start(void)
+{
+    sys_mutex_attr_t mattr;
+    sys_cond_attr_t cattr;
+    sys_ppu_thread_t self;
+    s32 priority = 1001;
+    static char name[] = "rc_decode";
+
+    g_decode_quit = 0;
+
+    /* One step below whoever is draining the socket, measured rather than assumed - a larger number is
+     * a lower priority on this scheduler. */
+    if (sysThreadGetId(&self) == 0) {
+        s32 mine = 0;
+
+        if (sysThreadGetPriority(self, &mine) == 0) {
+            priority = (mine < 3000) ? mine + 1 : mine;
+            g_decode_receive_priority = (int)mine;
+        }
+    }
+
+    sysMutexAttrInitialize(mattr);
+    if (sysMutexCreate(&g_decode_mutex, &mattr) != 0)
+        return 0;
+
+    sysCondAttrInitialize(cattr);
+    if (sysCondCreate(&g_decode_cond, g_decode_mutex, &cattr) != 0) {
+        (void)sysMutexDestroy(g_decode_mutex);
+        return 0;
+    }
+
+    if (sysThreadCreate(&g_decode_thread, decode_thread_entry, NULL, priority,
+                        RC_DECODE_THREAD_STACK, THREAD_JOINABLE, name) != 0) {
+        (void)sysCondDestroy(g_decode_cond);
+        (void)sysMutexDestroy(g_decode_mutex);
+        return 0;
+    }
+
+    g_decode_thread_up = 1;
+    g_decode_priority = (int)priority;
+    return 1;
+}
+
+static void decode_thread_stop(void)
+{
+    u64 retval = 0;
+
+    if (!g_decode_thread_up)
+        return;
+
+    /* Set under the lock so a consumer about to wait sees it; the timeout means a missed signal costs
+     * 50 ms rather than the session. */
+    (void)sysMutexLock(g_decode_mutex, 0);
+    g_decode_quit = 1;
+    (void)sysMutexUnlock(g_decode_mutex);
+    (void)sysCondSignal(g_decode_cond);
+
+    (void)sysThreadJoin(g_decode_thread, &retval);
+    (void)sysCondDestroy(g_decode_cond);
+    (void)sysMutexDestroy(g_decode_mutex);
+    g_decode_thread_up = 0;
 }
 
 static void on_audio_frame(void *userdata, const uint8_t *data, size_t length)
@@ -1570,6 +1729,10 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
                     g_live_open = rc_decode_live_open();
                     if (g_live_open) {
                         rc_decode_live_set_sink(on_picture, NULL);
+                        /* Started only after the decoder is open and its sink is set: the thread calls
+                         * straight into both. */
+                        if (!decode_thread_start())
+                            out->decode_thread_failed = 1;
                         /* Black, in every buffer, before the first picture lands - otherwise the
                          * stream appears inside a frame of leftover test pattern. */
                         rc_video_clear_all(0x00000000u);
@@ -1690,52 +1853,19 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
              */
 
             /*
-             * DECODE SEVERAL, NOT ONE, and service the timers between them.
+             * THE DECODE THAT USED TO BE HERE NOW RUNS ON ITS OWN THREAD - see decode_thread_entry.
              *
-             * One per pass was too few by construction. A drain takes up to 256 packets, which at ~15
-             * packets a frame is sixteen frames arriving; decoding one of them per pass caps the decode
-             * rate at the loop rate rather than at what the PPE can do. b129 measured the consequence
-             * exactly: 28.5 frames a second arriving, 21.5 dequeued, the queue pinned at 8 of 8 and 212
-             * frames dropped - while the decode work needed is 648 ms per second, which is 65% of one
-             * core. The work fits. The scheduling did not.
+             * The history is worth keeping, because each step was right about the problem in front of it
+             * and the last one is a different problem. One decode per pass tied the decode rate to the
+             * loop rate (b129: 28.5 frames arriving, 21.5 dequeued, 212 dropped). Four per pass with only
+             * the timers serviced between left the socket unread for 76 ms and loss went from 1.3% to
+             * 6.6% (b130). Draining after every decode fixed that, and b142 shows what is left of it: a
+             * 270 ms decode run and a 94 ms gap between reads, because a 21,774 us decode on this thread
+             * is 21,774 us during which nothing empties a 124,800-byte buffer.
              *
-             * Bounded rather than "until empty" for the reason the drain is bounded: the socket has a
-             * 122 KB buffer and must not go unread for long. send_periodic between decodes keeps the
-             * heartbeat and congestion timers honest across a run of them.
+             * Bounding the work per pass was always a way of sharing one thread between two jobs that
+             * both want it continuously. Two threads is the answer that does not need tuning.
              */
-            {
-                int decoded_here = 0;
-                uint64_t decode_started = rc_time_ms();
-
-                while (g_live_open && g_frame_count > 0 && decoded_here < RC_DECODE_PER_PASS) {
-                    int slot = g_frame_head;
-
-                    g_frame_head = (g_frame_head + 1) % RC_FRAME_QUEUE_SLOTS;
-                    g_frame_count--;
-                    (void)rc_decode_live_feed(g_frame_queue[slot], g_frame_length[slot], &g_live_stats);
-                    decoded_here++;
-
-                    /*
-                     * READ THE SOCKET AFTER EVERY DECODE, not just around the run of them.
-                     *
-                     * b130 decoded four per pass with only the timers serviced between, which is 76 ms
-                     * of a 122 KB buffer going unread - and loss went from 1.3% back to 6.6%. Servicing
-                     * a timer is not the same as emptying a queue, and that is the whole difference
-                     * between this version and the last.
-                     *
-                     * One decode is 19 to 23 ms, or about 6 KB at this rate. That is the longest the
-                     * socket now goes unattended.
-                     */
-                    send_periodic(session, out, &next_heartbeat, &next_congestion);
-                    (void)drain_av(session, out, &next_heartbeat, &next_congestion);
-                }
-                {
-                    unsigned spent = (unsigned)(rc_time_ms() - decode_started);
-
-                    if (spent > g_worst_decode_ms)
-                        g_worst_decode_ms = spent;
-                }
-            }
 
             other_started = rc_time_ms();
             result = takion_channel_poll(&g_stream_channel, &channel_id, &message, &message_length);
@@ -1795,6 +1925,8 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
     }
 
     if (g_live_open) {
+        /* Before the decoder closes, because the thread is inside it. */
+        decode_thread_stop();
         rc_decode_live_close();
         g_live_open = 0;
     }
@@ -1828,6 +1960,8 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
     rc_video_scale_info(&out->scaled_width, &out->scaled_height,
                         &out->display_width, &out->display_height);
     out->pictures_dropped = g_pictures_dropped;
+    out->decode_thread_priority = g_decode_priority;
+    out->decode_receive_priority = g_decode_receive_priority;
     out->hold_ms = (unsigned)RC_STREAM_HOLD_MS;
     out->idr_requests = g_idr_requests;
 

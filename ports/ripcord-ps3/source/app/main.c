@@ -1016,6 +1016,11 @@ static int check_connect(void)
                  * or not anything ever reached the screen. b141 decoded nothing, and so hid the one
                  * number that would have confirmed the crypto rewrite from the live path.
                  */
+                ps3_log("       decode ran on its own thread at priority %d;"
+                        " the receive loop is %d\n",
+                        c.decode_thread_priority, c.decode_receive_priority);
+                if (c.decode_thread_failed)
+                    ps3_log("       WARNING: the decoder thread would not start - decode did not run\n");
                 ps3_log("       demux ingest: %u us per packet, of which crypto is %u us"
                         " and everything else %u us\n",
                         c.ingest_avg_us, c.crypto_avg_us,
