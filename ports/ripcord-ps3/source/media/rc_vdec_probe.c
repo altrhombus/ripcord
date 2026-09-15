@@ -107,6 +107,26 @@ static volatile int s_seq_done;
 static volatile int s_au_done;   /* access units the decoder has finished reading */
 
 /*
+ * A CENSUS OF WHAT THE DECODER SAYS, because up to b150 this probe could not tell several very different
+ * failures apart. last_error was written both by the decoder's own ERROR callback and by our submit being
+ * refused, and the refusal came last, so whatever the decoder had said was overwritten. Worse, a PICOUT
+ * whose vdecGetPicture failed returned early without counting anything, which reads exactly like a PICOUT
+ * that never arrived.
+ *
+ * These are counted separately and none of them is inferred from another.
+ */
+static volatile int s_cb_audone;
+static volatile int s_cb_picout;
+static volatile int s_cb_seqdone;
+static volatile int s_cb_error;
+static volatile int s_cb_other;
+static volatile unsigned s_cb_other_type;
+static volatile int s_decoder_error;    /* what the ERROR callback said, never our own refusals */
+static volatile int s_picitem_fail;     /* vdecGetPicItem refused */
+static volatile int s_getpicture_fail;  /* vdecGetPicture refused */
+static volatile int s_getpicture_error;
+
+/*
  * THE CALLBACK'S DESCRIPTOR, AND WHY IT IS NOT JUST THE FUNCTION'S ADDRESS.
  *
  * b149 fed 16 access units, finished none, and never saw a single callback of any kind. The decoder was
@@ -161,6 +181,7 @@ static u32 vdec_callback(u32 handle, u32 msgtype, u32 msgdata, u32 arg)
         return 0;
 
     if (msgtype == VDEC_CALLBACK_PICOUT) {
+        s_cb_picout++;
         vdecPictureFormat format;
         u32 item_addr = 0;
         s32 rc;
@@ -170,7 +191,9 @@ static u32 vdec_callback(u32 handle, u32 msgtype, u32 msgdata, u32 arg)
          * reports 640x360 because it applies the frame cropping - so hashing at the SPS size would
          * compare two different pictures and call them different decoders.
          */
-        if (vdecGetPicItem(handle, &item_addr) == 0 && item_addr != 0) {
+        if (vdecGetPicItem(handle, &item_addr) != 0 || item_addr == 0) {
+            s_picitem_fail++;
+        } else {
             const vdecPicture *pic = (const vdecPicture *)(uintptr_t)item_addr;
 
             if (pic->codec_specific_addr != 0) {
@@ -188,7 +211,10 @@ static u32 vdec_callback(u32 handle, u32 msgtype, u32 msgdata, u32 arg)
 
         rc = vdecGetPicture(handle, &format, s_picture);
         if (rc != 0) {
-            s_out->last_error = (int)rc;
+            /* Counted, not merged into last_error - a refused collection is a different fact from a
+             * refused submission, and b150 could not tell them apart. */
+            s_getpicture_fail++;
+            s_getpicture_error = (int)rc;
             return 0;
         }
 
@@ -217,15 +243,21 @@ static u32 vdec_callback(u32 handle, u32 msgtype, u32 msgdata, u32 arg)
             s_out->hash[s_out->hashes++] = hash;
         }
     } else if (msgtype == VDEC_CALLBACK_AUDONE) {
+        s_cb_audone++;
         /* A queue slot has freed. The queue is only cmd_depth deep - b145 reported 4 - which is why
          * this has to be counted rather than ignored. */
         s_au_done++;
     } else if (msgtype == VDEC_CALLBACK_SEQDONE) {
         /* vdecEndSequence finishes here, not when it returns. b147 called vdecClose straight after
          * EndSequence and the console stopped in Close. */
+        s_cb_seqdone++;
         s_seq_done = 1;
     } else if (msgtype == VDEC_CALLBACK_ERROR) {
-        s_out->last_error = (int)msgdata;
+        s_cb_error++;
+        s_decoder_error = (int)msgdata;
+    } else {
+        s_cb_other++;
+        s_cb_other_type = msgtype;
     }
 
     return 0;
@@ -278,7 +310,9 @@ static s32 feed_au(u32 handle, const uint8_t *begin, const uint8_t *end,
     if (end <= begin)
         return 0;
 
-    while ((out->aus_fed - s_au_done) >= (int)depth && waited < 2000) {
+    /* 200 ms, not 2000: if the decoder is not consuming, seventeen two-second waits turn a failed run
+     * into half a minute of nothing. A working decoder frees a slot far inside this. */
+    while ((out->aus_fed - s_au_done) >= (int)depth && waited < 200) {
         rc_sleep_ms(1u);
         waited++;
     }
@@ -293,7 +327,7 @@ static s32 feed_au(u32 handle, const uint8_t *begin, const uint8_t *end,
 
     t0 = rc_tick();
     rc = vdecDecodeAu(handle, VDEC_DECODER_MODE_NORMAL, &info);
-    while (rc == (s32)VDEC_ERROR_BUSY && waited < 2000) {
+    while (rc == (s32)VDEC_ERROR_BUSY && waited < 200) {
         rc_sleep_ms(1u);
         waited++;
         rc = vdecDecodeAu(handle, VDEC_DECODER_MODE_NORMAL, &info);
@@ -335,6 +369,16 @@ int rc_vdec_decode_probe(const char *path, int level, int max_frames,
     s_log = log;
     s_au_done = 0;
     s_seq_done = 0;
+    s_cb_audone = 0;
+    s_cb_picout = 0;
+    s_cb_seqdone = 0;
+    s_cb_error = 0;
+    s_cb_other = 0;
+    s_cb_other_type = 0;
+    s_decoder_error = 0;
+    s_picitem_fail = 0;
+    s_getpicture_fail = 0;
+    s_getpicture_error = 0;
 
     /* ---- the capture ---- */
     step(out, RC_VDEC_STEP_READ_FILE, "       .. reading the capture");
@@ -510,6 +554,12 @@ close_out:
     s_out = NULL;
     free(decoder_mem);
     free(file);
+    logf_line("       callbacks: AUDONE %d, PICOUT %d, SEQDONE %d, ERROR %d, other %d (type %u)",
+              s_cb_audone, s_cb_picout, s_cb_seqdone, s_cb_error, s_cb_other,
+              (unsigned)s_cb_other_type);
+    logf_line("       decoder's own error 0x%08X; GetPicItem refused %d, GetPicture refused %d (0x%08X)",
+              (unsigned)s_decoder_error, s_picitem_fail, s_getpicture_fail,
+              (unsigned)s_getpicture_error);
     step(out, RC_VDEC_STEP_DONE, "       .. done");
     return ok;
 }
