@@ -506,9 +506,34 @@ because the validation had been done against a stream that happened to fit the w
 opens at 42 — the highest the console accepts, and a decoder opened high decodes anything below it — and
 logs the level it chose beside the level the stream declares.
 
+### Audio — **working, 2026-09-14**
+
+48 kHz stereo Opus in 10 ms frames, decoded by libopus on the PPE and played through PSL1GHT's audio
+port. `tools/build-opus.sh` builds it on the same terms as openh264: pinned, hash-verified, fetched at
+build time, never vendored. BSD-3-Clause, so section 1's permissive-only line is unchanged.
+
+First run on hardware: **2,999 frames decoded, 0 errors, 5,615 blocks to the hardware, 1 silence block**
+— the first one, before the ring had filled — and no ring overflows. 5,615 × 256 samples over thirty
+seconds is 47.9 kHz, which is the 48 kHz it claims.
+
+Two mismatches, one ring: Opus emits 480 samples per channel and the port takes fixed blocks of 256, and
+frames arrive when packets do while the port wants one every 5.33 ms forever.
+
+**There is no audio thread.** Opus is about 1% of a frame's work, the port's block ring holds 42 ms, and
+the receive loop comes round far faster — so it is decoded in the demuxer callback already running there
+and the blocks are topped up from the same loop. Three console lockups in this port have come from
+threads added casually, and `ripcord-3ds` reached the same conclusion independently.
+
+**One value the SDK gets wrong in its own header.** PSL1GHT declares `audioPortConfig.readIndex` as "index
+of currently read block"; the syscall it wraps returns an **address** holding that index, which is what
+the console reports. The code discriminates at runtime — a block index is below `numBlocks`, an address
+is not — rather than picking one. Taking the header at its word would have been silent corruption.
+
 ### Still open
 
-- **Audio.** 2,997 Opus frames a run are counted and discarded.
 - **1080p.** The budget is there — 15% of a frame at 720p — but it is untested.
-- **The second SPE.** The colour converter dropped from five SPEs to four to leave the decoder one. If
+- **The fifth SPE.** The colour converter dropped from five SPEs to four to leave the decoder one. If
   `VDEC_PICFMT_ARGB32` output works, the conversion disappears and all five come back.
+- **Audio latency.** The ring reached 2,944 samples (61 ms) in a clean run. It never ran dry after the
+  first block, so there is room to steer it shallower if that matters — `ripcord-3ds` does exactly that,
+  and the reasoning in its `rc_audio.h` applies here too.
