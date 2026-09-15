@@ -32,9 +32,30 @@
 #define STREAM_DEMUX_OPUS_CODEC 5
 
 #define STREAM_DEMUX_MAX_UNIT_STRIDE 4096
+
+/*
+ * UNITS PER FRAME, WHICH IS NOT THE SAME NUMBER AS THE FEC GROUP SIZE, and conflating the two is what
+ * kept 1080p from working at all.
+ *
+ * FEC_MAX_TOTAL_UNITS bounds what fec_reed_solomon.c can RECOVER - k+m against its fixed working
+ * buffers. The slots a frame occupies is a different quantity that merely happens to have been smaller
+ * on every stream this code had seen: 640x360 needs a handful and 1280x720 measured about 21, both
+ * comfortably inside 64. A 1920x1080 frame needs well over a hundred, and the frame was then abandoned
+ * before assembly began - silently, which is why 103,371 video packets became 32 frames and nobody
+ * could see where they went.
+ *
+ * HalyardStreamDemuxer caps this at 512 and sizes its slots dynamically; this is the fixed-buffer
+ * equivalent of the same number. It is overridable per port because the cost is real - 512 slots is a
+ * 2 MB slot buffer - and a port streaming 640x360 into 128 MB of RAM should not pay for a resolution it
+ * will never ask for. The default keeps every existing port exactly as it was.
+ */
+#ifndef STREAM_DEMUX_MAX_UNITS_PER_FRAME
+#define STREAM_DEMUX_MAX_UNITS_PER_FRAME FEC_MAX_TOTAL_UNITS
+#endif
 #define STREAM_DEMUX_VIDEO_HEADER_CAPACITY 512
 #define STREAM_DEMUX_ASSEMBLY_CAPACITY \
-    (FEC_MAX_TOTAL_UNITS * STREAM_DEMUX_MAX_UNIT_STRIDE + STREAM_DEMUX_VIDEO_HEADER_CAPACITY)
+    (STREAM_DEMUX_MAX_UNITS_PER_FRAME * STREAM_DEMUX_MAX_UNIT_STRIDE \
+     + STREAM_DEMUX_VIDEO_HEADER_CAPACITY)
 
 /*
  * The crypto seam (same shape as IHalyardSessionCrypto's seam-and-stub pattern - see CLAUDE.md): verify +
@@ -105,12 +126,15 @@ typedef struct {
     int fec_received;
     int unit_padded_size;
     int unit_stride;
-    uint8_t slot_buf[FEC_MAX_TOTAL_UNITS * STREAM_DEMUX_MAX_UNIT_STRIDE];
-    uint8_t slot_present[FEC_MAX_TOTAL_UNITS];
-    int slot_data_size[FEC_MAX_TOTAL_UNITS];
+    uint8_t slot_buf[STREAM_DEMUX_MAX_UNITS_PER_FRAME * STREAM_DEMUX_MAX_UNIT_STRIDE];
+    uint8_t slot_present[STREAM_DEMUX_MAX_UNITS_PER_FRAME];
+    int slot_data_size[STREAM_DEMUX_MAX_UNITS_PER_FRAME];
 
     long stat_units_received;
     long stat_units_lost;
+    /* Frames refused because they wanted more slots than STREAM_DEMUX_MAX_UNITS_PER_FRAME. Counted
+     * because this used to be a bare `return` - see that constant's note. */
+    long stat_frames_too_many_units;
     long auth_failures;
 } stream_demux;
 

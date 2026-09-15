@@ -2023,6 +2023,7 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
     rc_video_scale_info(&out->scaled_width, &out->scaled_height,
                         &out->display_width, &out->display_height);
     out->pictures_dropped = g_pictures_dropped;
+    out->frames_too_many_units = g_demux.stat_frames_too_many_units;
     out->decode_backend = g_decode_backend;
     out->decode_backend_id = g_decode_backend_id;
     out->luma_min = (int)g_live_stats.luma_min;

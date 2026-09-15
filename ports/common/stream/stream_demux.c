@@ -175,8 +175,15 @@ static void allocate_frame(stream_demux *demux, const stream_header *header, int
     source = stream_header_source_units(header);
     fec = header->parity_units > 1 ? header->parity_units : 1;
     slots = source + fec;
-    if (source <= 0 || slots > FEC_MAX_TOTAL_UNITS)
+    if (source <= 0)
         return;
+    if (slots > STREAM_DEMUX_MAX_UNITS_PER_FRAME) {
+        /* Counted, not just refused. A frame that wants more slots than this build provides is a
+         * configuration answer - raise STREAM_DEMUX_MAX_UNITS_PER_FRAME - and used to look exactly like
+         * a network that had lost everything. */
+        demux->stat_frames_too_many_units++;
+        return;
+    }
 
     /* Source units carry a 2-byte size-extension ADDED to the transmitted size to get the common coded
      * unit length all units share for FEC; parity units are already exactly that length. Both arrival
@@ -242,7 +249,8 @@ static int first_source_slice_is_idr(const stream_demux *demux)
      * thing worth being unconditionally safe about - but it should not be mistaken for a diagnosis.
      */
     if (!demux->frame_allocated || demux->unit_stride <= 0
-        || demux->source_expected <= 0 || demux->source_expected > FEC_MAX_TOTAL_UNITS) {
+        || demux->source_expected <= 0
+        || demux->source_expected > STREAM_DEMUX_MAX_UNITS_PER_FRAME) {
         return 0;
     }
 
@@ -298,7 +306,13 @@ static void flush_video_frame(stream_demux *demux)
         demux->stat_units_lost += expected_units - received_units;
 
     /* Recover missing source units from the parity units when enough total units survived. */
-    if (demux->source_received < demux->source_expected &&
+    /*
+     * Recovery is bounded by what the Reed-Solomon module can hold, which is a smaller number than the
+     * slots a frame may occupy. A group too large to recover is left alone rather than handed to a
+     * function whose buffers cannot take it; the frame is still assembled from whatever arrived.
+     */
+    if (demux->source_expected + demux->fec_expected <= FEC_MAX_TOTAL_UNITS &&
+        demux->source_received < demux->source_expected &&
         demux->source_received + demux->fec_received >= demux->source_expected &&
         fec_reed_solomon_decode(demux->slot_buf, (size_t)demux->unit_padded_size, (size_t)demux->unit_stride,
             demux->source_expected, demux->fec_expected, demux->slot_present)) {
