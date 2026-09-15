@@ -256,6 +256,8 @@ static u32 vdec_callback(u32 handle, u32 msgtype, u32 msgdata, u32 arg)
 
                 s_out->padded_height = padded;
                 s_out->hash_y = rc_decode_probe_hash_plane(s_picture, w, w, h, FNV64_OFFSET);
+                memcpy(s_out->first_luma, s_picture, sizeof(s_out->first_luma));
+                memcpy(s_out->second_row_luma, s_picture + w, sizeof(s_out->second_row_luma));
 
                 /*
                  * FIND THE STRIDE BY REPRODUCING A KNOWN ANSWER. openh264 decoded this same picture and

@@ -170,6 +170,8 @@ extern "C" int rc_decode_probe(const char *path, int max_frames, rc_decode_probe
                 out->hash_v = rc_decode_probe_hash_plane(planes[2], cs, w / 2, h / 2, FNV64_OFFSET);
                 out->stride_y = ys;
                 out->stride_uv = cs;
+                memcpy(out->first_luma, planes[0], sizeof(out->first_luma));
+                memcpy(out->second_row_luma, planes[0] + ys, sizeof(out->second_row_luma));
             }
 
             out->hash[out->hashes++] = hash;
