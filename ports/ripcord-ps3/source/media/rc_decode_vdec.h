@@ -62,6 +62,7 @@ void rc_decode_vdec_close(void);
 unsigned rc_decode_vdec_callback_luma_max(void);
 unsigned rc_decode_vdec_callback_pictures(void);
 int rc_decode_vdec_level(void);
+int rc_decode_vdec_num_spus(void);   /* SPEs the decoder was opened with */
 unsigned rc_decode_vdec_mem_size(void);
 int rc_decode_vdec_sps_profile(void);
 int rc_decode_vdec_sps_level(void);     /* as the stream declared it, before any clamp */

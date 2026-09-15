@@ -266,6 +266,7 @@ typedef struct {
     int  callback_pictures;
     unsigned picture_addr;       /* where pictures were written - alignment is visible in it */
     int      decode_level;       /* the H.264 level the decoder was opened at */
+    int      decode_spus;        /* and how many SPEs it was given */
     unsigned decode_mem_size;    /* and what that reserved */
     int      sps_profile;        /* what the stream says about itself */
     int      sps_level;          /* as declared, before any clamp */
