@@ -1,6 +1,7 @@
 #include "rc_vdec_probe.h"
 
 #include <codec/vdec.h>
+#include <ppu-asm.h>
 #include <sysmodule/sysmodule.h>
 
 #include <string.h>
@@ -105,6 +106,21 @@ static rc_vdec_log_fn s_log;
 static volatile int s_seq_done;
 static volatile int s_au_done;   /* access units the decoder has finished reading */
 
+/*
+ * THE CALLBACK'S DESCRIPTOR, AND WHY IT IS NOT JUST THE FUNCTION'S ADDRESS.
+ *
+ * b149 fed 16 access units, finished none, and never saw a single callback of any kind. The decoder was
+ * branching to nothing: vdecClosure.fn was being given the address of the ELFv1 function descriptor GCC
+ * emits, whose fields are 64-bit, while the firmware reads a descriptor of two 32-BIT words. Its own PRX
+ * import stubs show the shape plainly - lwz r0,0(r12) for the entry and lwz r2,4(r12) for the TOC. Given
+ * a 64-bit descriptor it reads the high half of the entry pointer, which for a 32-bit address is zero.
+ *
+ * PSL1GHT supplies __build_opd32 for precisely this, so this is the SDK's own answer rather than a
+ * second guess at one: it copies the 64-bit entry and TOC down into a two-word 32-bit descriptor and
+ * returns its address.
+ */
+static uint32_t s_callback_opd[2] __attribute__((aligned(8)));
+
 /* Formats through the same one-line hook the steps use - see rc_vdec_probe.h for why findings are
  * written as they happen rather than summarised at the end. */
 static void logf_line(const char *fmt, ...)
@@ -190,15 +206,15 @@ static u32 vdec_callback(u32 handle, u32 msgtype, u32 msgdata, u32 arg)
             hash = rc_decode_probe_hash_plane(s_picture, w, w, h, FNV64_OFFSET);
             hash = rc_decode_probe_hash_plane(s_picture + luma, w / 2, w / 2, h / 2, hash);
             hash = rc_decode_probe_hash_plane(s_picture + luma + chroma, w / 2, w / 2, h / 2, hash);
-            s_out->hash[s_out->hashes++] = hash;
             /*
-             * WRITTEN NOW, NOT SUMMARISED LATER. b147 decoded the capture and then hung in vdecClose,
-             * and because the hashes were printed after the probe returned, the run produced the one
-             * thing it existed to produce and lost it. A finding that does not survive the failure is
-             * not a finding.
+             * STORED HERE, PRINTED BY THE FEEDING THREAD. The hashes still have to be written as they
+             * land rather than summarised at the end - b147 lost a whole run's findings to a hang after
+             * the decode - but this runs on the library's own thread, and ps3_log formats, writes a file
+             * and sends a datagram. None of that has ever run anywhere but the main thread on this port,
+             * and a callback that has never once been invoked is not the place to find out whether it
+             * can. The loop drains this after every submission.
              */
-            logf_line("       frame %2d  0x%016llx  (%dx%d)",
-                      s_out->hashes - 1, (unsigned long long)hash, w, h);
+            s_out->hash[s_out->hashes++] = hash;
         }
     } else if (msgtype == VDEC_CALLBACK_AUDONE) {
         /* A queue slot has freed. The queue is only cmd_depth deep - b145 reported 4 - which is why
@@ -210,7 +226,6 @@ static u32 vdec_callback(u32 handle, u32 msgtype, u32 msgdata, u32 arg)
         s_seq_done = 1;
     } else if (msgtype == VDEC_CALLBACK_ERROR) {
         s_out->last_error = (int)msgdata;
-        logf_line("       decoder reported error 0x%08X", (unsigned)msgdata);
     }
 
     return 0;
@@ -220,6 +235,16 @@ static u32 vdec_callback(u32 handle, u32 msgtype, u32 msgdata, u32 arg)
  * An access unit is a contiguous run of the file, so its start is the start code in front of its first
  * NAL. rc_h264_nal.start points at the header byte, which is just after that code.
  */
+/* Prints whatever the callback has stored since the last call. Runs on the feeding thread. */
+static void drain_hashes(rc_vdec_decode_result *out, int *printed)
+{
+    while (*printed < out->hashes) {
+        logf_line("       frame %2d  0x%016llx  (%dx%d)",
+                  *printed, (unsigned long long)out->hash[*printed], out->width, out->height);
+        (*printed)++;
+    }
+}
+
 static const uint8_t *start_code_of(const uint8_t *file, const uint8_t *nal_start)
 {
     if ((size_t)(nal_start - file) >= 4u
@@ -298,6 +323,7 @@ int rc_vdec_decode_probe(const char *path, int level, int max_frames,
     void *decoder_mem = NULL;
     size_t file_size = 0;
     u32 handle = 0;
+    int printed = 0;
     FILE *f;
     s32 rc;
     int ok = 0;
@@ -372,8 +398,10 @@ int rc_vdec_decode_probe(const char *path, int level, int max_frames,
     /* On this ABI a function name already denotes its descriptor's address, so this casts that address
      * and not code. [X] - if the library wants something else, it will fail at open rather than subtly. */
     memset(&closure, 0, sizeof(closure));
-    closure.fn = (u32)(uintptr_t)vdec_callback;
+    closure.fn = (u32)__build_opd32(vdec_callback, s_callback_opd);
     closure.arg = 0;
+    logf_line("       .. callback descriptor at 0x%08X (entry 0x%08X, toc 0x%08X)",
+              (unsigned)closure.fn, (unsigned)s_callback_opd[0], (unsigned)s_callback_opd[1]);
 
     s_out = out;
     rc = vdecOpen(&type, &config, &closure, &handle);
@@ -401,7 +429,9 @@ int rc_vdec_decode_probe(const char *path, int level, int max_frames,
     step(out, RC_VDEC_STEP_DECODE_AU, "       .. feeding access units");
     rc_h264_annexb_init(&it, file, file_size);
     rc_h264_au_init(&au);
+    printed = 0;
     while (out->pictures_out < max_frames && rc_h264_annexb_next(&it, &nal)) {
+        drain_hashes(out, &printed);
         (void)rc_h264_au_feed(&au, &nal, &piece);
 
         if (piece.begins_access_unit) {
@@ -433,9 +463,11 @@ int rc_vdec_decode_probe(const char *path, int level, int max_frames,
         int waited = 0;
 
         while (out->pictures_out < max_frames && waited < 2000) {
+            drain_hashes(out, &printed);
             rc_sleep_ms(5u);
             waited += 5;
         }
+        drain_hashes(out, &printed);
     }
 
     step(out, RC_VDEC_STEP_END_SEQUENCE, "       .. vdecEndSequence");
@@ -452,6 +484,7 @@ int rc_vdec_decode_probe(const char *path, int level, int max_frames,
         }
         logf_line("       .. sequence ended: SEQDONE %s after %d ms",
                   s_seq_done ? "arrived" : "DID NOT ARRIVE", waited);
+        drain_hashes(out, &printed);
     }
     ok = (out->pictures_out > 0);
 
