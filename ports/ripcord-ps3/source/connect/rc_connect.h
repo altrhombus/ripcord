@@ -283,6 +283,10 @@ typedef struct {
     int      connquality_enabled;
     unsigned connquality_sent;
     int      connquality_target;  /* the last bitrate asked for, in kbps */
+
+    /* Non-zero when the pairing record asked for more than this decoder's reference buffer can hold. */
+    int      resolution_capped_from_width;
+    int      resolution_capped_from_height;
     unsigned first_nal_types;
 
     /* Audio. See rc_audio_ps3.h - silence written is the one fault a listener can hear. */
@@ -293,6 +297,8 @@ typedef struct {
     unsigned audio_silence;
     unsigned audio_overflows;
     unsigned audio_worst_ring;
+    unsigned audio_trims;
+    unsigned audio_trimmed;
     int      audio_last_error;
     int      audio_index_is_address;
     unsigned first_au_len;

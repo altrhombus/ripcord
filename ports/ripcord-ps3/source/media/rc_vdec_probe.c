@@ -118,6 +118,7 @@ extern uint64_t rc_decode_probe_hash_plane(const uint8_t *plane, int stride, int
 static uint8_t s_picture[RC_VDEC_PICTURE_BYTES] __attribute__((aligned(128)));
 
 static rc_vdec_decode_result *s_out;
+static int s_want_rgb;
 static rc_vdec_log_fn s_log;
 static volatile int s_seq_done;
 static volatile int s_au_done;   /* access units the decoder has finished reading */
@@ -226,11 +227,31 @@ static u32 vdec_callback(u32 handle, u32 msgtype, u32 msgdata, u32 arg)
         }
 
         memset(&format, 0, sizeof(format));
-        format.format_type = VDEC_PICFMT_YUV420P;
+        format.format_type = s_want_rgb ? VDEC_PICFMT_ARGB32 : VDEC_PICFMT_YUV420P;
         format.color_matrix = VDEC_COLOR_MATRIX_BT709;
-        format.alpha = 0;
+        format.alpha = 0xff;
 
         rc = vdecGetPicture(handle, &format, s_picture);
+        if (s_want_rgb) {
+            /* The question is only whether it is accepted and filled; correctness against openh264 is a
+             * different comparison and needs a converter this probe does not have. */
+            s_out->rgb_requested = 1;
+            s_out->rgb_accepted = (rc == 0);
+            if (rc == 0) {
+                /* s_out->width/height, not w/h: those are scoped to the GetPicItem block above. */
+                size_t n = (size_t)s_out->width * (size_t)s_out->height * 4u;
+                size_t at;
+
+                s_out->rgb_min = 255u;
+                s_out->rgb_max = 0u;
+                for (at = 0; at < n; at += 997u) {   /* a prime stride, so no channel is favoured */
+                    if (s_picture[at] < s_out->rgb_min)
+                        s_out->rgb_min = s_picture[at];
+                    if (s_picture[at] > s_out->rgb_max)
+                        s_out->rgb_max = s_picture[at];
+                }
+            }
+        }
         if (rc != 0) {
             /* Counted, not merged into last_error - a refused collection is a different fact from a
              * refused submission, and b150 could not tell them apart. */
@@ -561,7 +582,8 @@ static s32 feed_au(u32 handle, const uint8_t *begin, const uint8_t *end,
 }
 
 int rc_vdec_decode_probe(const char *path, int level, int max_frames, rc_vdec_log_fn log,
-                         uint64_t reference_y, uint64_t reference_u, rc_vdec_decode_result *out)
+                         uint64_t reference_y, uint64_t reference_u, int want_rgb,
+                         rc_vdec_decode_result *out)
 {
     vdecType type;
     vdecAttr attr;
@@ -590,6 +612,7 @@ int rc_vdec_decode_probe(const char *path, int level, int max_frames, rc_vdec_lo
     s_log = log;
     s_reference_y = reference_y;
     s_reference_u = reference_u;
+    s_want_rgb = want_rgb;
     s_au_done = 0;
     s_seq_done = 0;
     s_cb_audone = 0;
