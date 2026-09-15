@@ -1024,7 +1024,13 @@ static int check_connect(void)
                         (c.decode_backend != NULL) ? c.decode_backend : "?");
                 if (c.decoded_pictures > 0) {
                     ps3_log("       delivered luma ranged %d..%d\n", c.luma_min, c.luma_max);
-                    if (c.luma_max == 0)
+                    ps3_log("       the decoder's own thread saw a peak of %d over %d picture(s)"
+                            " right after writing them\n",
+                            c.callback_luma_max, c.callback_pictures);
+                    if (c.luma_max == 0 && c.callback_luma_max > 0)
+                        ps3_log("       WRITTEN BUT NOT SEEN: the decoder filled the buffer and the\n"
+                                "       reading thread found zeros. That is visibility, not decoding.\n");
+                    else if (c.luma_max == 0)
                         ps3_log("       ALL ZERO - the pictures handed to the screen were black, which\n"
                                 "       is what b160's 431 successful blits actually blitted.\n");
                 }

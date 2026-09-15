@@ -262,6 +262,8 @@ typedef struct {
     const char *decode_backend;  /* which decoder answered - never inferred from the frame rate */
     int  decode_backend_id;      /* rc_decode_backend, captured at open not after close */
     int  luma_min, luma_max;     /* what the delivered pictures actually contained */
+    int  callback_luma_max;      /* and what the decoder's own thread saw right after writing */
+    int  callback_pictures;
     int  decode_thread_priority; /* what it actually got, receive thread's + 1 */
     int  decode_receive_priority;
     unsigned video_frames;

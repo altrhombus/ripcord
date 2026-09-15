@@ -45,4 +45,8 @@ void rc_decode_vdec_set_sink(rc_decode_picture_fn fn, void *ctx);
 int  rc_decode_vdec_feed(const uint8_t *access_unit, size_t length, rc_decode_live_stats *stats);
 void rc_decode_vdec_close(void);
 
+/* What the decoder's own thread saw in the buffer immediately after writing it - see rc_decode_vdec.c. */
+unsigned rc_decode_vdec_callback_luma_max(void);
+unsigned rc_decode_vdec_callback_pictures(void);
+
 #endif /* RC_DECODE_VDEC_H */
