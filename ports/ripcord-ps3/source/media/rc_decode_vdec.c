@@ -100,6 +100,7 @@ static unsigned s_au_largest;
  */
 static unsigned s_au_max_nals;
 static unsigned s_au_max_slices;
+static unsigned s_first_nal_seen;
 static unsigned s_first_nal_types;   /* first four NAL types of the first unit, packed one per byte */
 
 /* The picture handoff: the callback writes `s_fill` and publishes it, the caller consumes it. */
@@ -326,6 +327,7 @@ int rc_decode_vdec_open(int width, int height)
     s_au_max_nals = 0;
     s_au_max_slices = 0;
     s_first_nal_types = 0;
+    s_first_nal_seen = 0;
 
     if (sysModuleLoad(SYSMODULE_VDEC_H264) != 0)
         return 0;
@@ -470,12 +472,16 @@ int rc_decode_vdec_feed(const uint8_t *access_unit, size_t length, rc_decode_liv
 
                 rc_h264_annexb_init(&scan, s_au[slot], length);
                 while (rc_h264_annexb_next(&scan, &one)) {
-                    if (nals < 4u && s_first_nal_types == 0u)
+                    /* Only for the first access unit, and only its first four NALs. The guard is on the
+                     * unit rather than on the packed value, which b173 got wrong: testing the value
+                     * meant the second NAL was never recorded once the first had made it non-zero. */
+                    if (s_first_nal_seen == 0u && nals < 4u)
                         s_first_nal_types |= ((unsigned)one.type & 0xffu) << (8u * (3u - nals));
                     nals++;
                     if (one.type == 1u || one.type == 5u)   /* coded slices */
                         slices++;
                 }
+                s_first_nal_seen = 1u;
                 if (nals > s_au_max_nals)
                     s_au_max_nals = nals;
                 if (slices > s_au_max_slices)
