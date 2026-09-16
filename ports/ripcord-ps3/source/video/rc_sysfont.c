@@ -29,6 +29,10 @@ extern s32 fontSetScalePixel(font *f, f32 w, f32 h);
  * through, and the flags come from the stubs rather than from a constant anyone here could write down.
  */
 extern void fontFTGetStubRevisionFlags(u64 *revisionFlags);
+extern void fontGetStubRevisionFlags(u64 *revisionFlags);
+extern s32 fontInitializeWithRevision(u64 revision, fontConfig *config);
+extern s32 fontEnd(void);
+extern s32 fontEndLibrary(const fontLibrary *lib);
 extern s32 fontInitLibraryFreeTypeWithRevision(u64 revision, fontLibraryConfigFT *config,
                                                const fontLibrary **lib);
 
@@ -91,6 +95,7 @@ static int s_ascent;
 static float s_size;
 static char s_policy[48] = "?";
 static char s_face[32] = "?";
+static char s_revmode[16] = "?";
 
 static int fail(const char *step, int rc)
 {
@@ -98,30 +103,41 @@ static int fail(const char *step, int rc)
     return 0;
 }
 
-int rc_sysfont_open(float pixels)
+/*
+ * ONE ATTEMPT AT THE WHOLE CHAIN, at a given interface revision.
+ *
+ * It is the whole chain rather than one call because the mismatch does not surface where it is made.
+ * PSL1GHT's fontInit initialises with the BASE font stub's revision alone and never mentions the
+ * FreeType stub, so the font system comes up without FreeType declared - and the FT library then
+ * initialises happily on its own revision, and the refusal lands two calls later at
+ * fontCreateRenderer with 0x80540002 and a buffering policy that had nothing to do with it. b248 swept
+ * all five policies and was refused five times, which is what said the policy was never the question.
+ *
+ * So the revision is swept instead, and each attempt is torn down before the next: initialising twice
+ * without an intervening fontEnd is its own refusal, and would hide the answer behind a second fault.
+ */
+static int attempt(u64 revision, float pixels)
 {
     fontConfig config;
     fontLibraryConfigFT ftconfig;
     fontRendererConfigFT rconfig;
     fontType type;
     fontHorizontalLayout layout;
-    u64 ft_revision = 0ull;
     s32 rc;
-
-    if (s_ready)
-        return 1;
 
     /*
      * THREE MODULES, AND THE ORDER MATTERS. FREETYPE underpins FONTFT which underpins FONT; loading
      * them the other way round returns success and then fails at the first glyph.
      */
-    if (sysModuleLoad(SYSMODULE_FREETYPE) != 0)
-        return fail("SYSMODULE_FREETYPE", 0);
-    if (sysModuleLoad(SYSMODULE_FONTFT) != 0)
-        return fail("SYSMODULE_FONTFT", 0);
-    if (sysModuleLoad(SYSMODULE_FONT) != 0)
-        return fail("SYSMODULE_FONT", 0);
-    s_modules = 1;
+    if (!s_modules) {
+        if (sysModuleLoad(SYSMODULE_FREETYPE) != 0)
+            return fail("SYSMODULE_FREETYPE", 0);
+        if (sysModuleLoad(SYSMODULE_FONTFT) != 0)
+            return fail("SYSMODULE_FONTFT", 0);
+        if (sysModuleLoad(SYSMODULE_FONT) != 0)
+            return fail("SYSMODULE_FONT", 0);
+        s_modules = 1;
+    }
 
     memset(&config, 0, sizeof(config));
     config.fileCache.buffer = s_file_cache;
@@ -129,9 +145,9 @@ int rc_sysfont_open(float pixels)
     config.userFontEntryMax = 0;
     config.userFontEntries = NULL;
     config.flags = 0;
-    rc = fontInit(&config);
+    rc = fontInitializeWithRevision(revision, &config);
     if (rc != 0)
-        return fail("fontInit", rc);
+        return fail("fontInitializeWithRevision", rc);
 
     fontLibraryConfigFT_initialize(&ftconfig);
     ftconfig.memoryIF.object = NULL;
@@ -144,8 +160,9 @@ int rc_sysfont_open(float pixels)
     ftconfig.memoryIF.calloc_func =
         (fontCallocCallback)(uintptr_t)(u32)__build_opd32(font_calloc, s_opd_calloc);
 
-    fontFTGetStubRevisionFlags(&ft_revision);
-    rc = fontInitLibraryFreeTypeWithRevision(ft_revision, &ftconfig, &s_lib);
+    /* The same revision the font system came up under - a library initialised against a different one
+     * than the system that will be asked to render through it is exactly the mismatch above. */
+    rc = fontInitLibraryFreeTypeWithRevision(revision, &ftconfig, &s_lib);
     if (rc != 0)
         return fail("fontInitLibraryFreeTypeWithRevision", rc);
 
@@ -246,9 +263,47 @@ int rc_sysfont_open(float pixels)
 
     s_size = pixels;
     s_ready = 1;
-    snprintf(s_status, sizeof(s_status), "ready - %s, %d px, ascent %d, %s",
-             s_face, (int)pixels, s_ascent, s_policy);
     return 1;
+}
+
+int rc_sysfont_open(float pixels)
+{
+    u64 base_rev = 0ull, ft_rev = 0ull;
+    unsigned m;
+
+    if (s_ready)
+        return 1;
+
+    fontGetStubRevisionFlags(&base_rev);
+    fontFTGetStubRevisionFlags(&ft_rev);
+
+    {
+        /*
+         * The OR is tried first because it is what the API's shape implies - a system that will be
+         * asked to render through FreeType should be told so at initialisation. The others follow
+         * because that is an inference rather than anything documented, and being wrong about it
+         * should cost a refused call rather than another trip to the console.
+         */
+        const u64 modes[3] = { base_rev | ft_rev, ft_rev, base_rev };
+        static const char *const names[3] = { "base|FT", "FT only", "base only" };
+
+        for (m = 0u; m < 3u; m++) {
+            if (attempt(modes[m], pixels)) {
+                snprintf(s_revmode, sizeof(s_revmode), "%s", names[m]);
+                snprintf(s_status, sizeof(s_status), "ready - %s, %d px, ascent %d, %s, rev %s",
+                         s_face, (int)pixels, s_ascent, s_policy, s_revmode);
+                return 1;
+            }
+            /* Torn down before the next: initialising twice without this is its own refusal, and
+             * would hide the answer behind a second fault. */
+            if (s_lib != NULL) {
+                (void)fontEndLibrary(s_lib);
+                s_lib = NULL;
+            }
+            (void)fontEnd();
+        }
+    }
+    return 0;
 }
 
 const char *rc_sysfont_status(void)
