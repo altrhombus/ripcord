@@ -462,6 +462,7 @@ static int g_stream_is_hevc;
 static halyard_input_writer g_input;
 static uint64_t g_next_input_poll;
 static uint64_t g_last_input_state_ms;
+static unsigned g_chord_edges_seen;
 static int g_stream_channel_ready;
 
 /* Defined below, between its two callers - the YUV and the packed-RGB present paths. */
@@ -982,6 +983,20 @@ static void send_input(rc_connect_result *out)
          * nothing, which is what an absent controller means.
          */
         return;
+    }
+
+    /*
+     * The chord is watched for a CHANGE in its completion count rather than for a held state, so a long
+     * hold toggles once and this loop does not have to track when a press stops being new.
+     */
+    {
+        unsigned edges = rc_pad_chord_edges();
+
+        if (edges != g_chord_edges_seen) {
+            g_chord_edges_seen = edges;
+            rc_overlay_show(!rc_overlay_shown());
+            out->overlay_toggles++;
+        }
     }
 
     now = rc_time_ms();
@@ -2545,7 +2560,14 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
                         out->hardware_scale = rec->hardware_scale;
 
                         rc_overlay_set_system_font(rec->system_font);
-                        rc_overlay_set(rec->diagnostics);
+                        /*
+                         * PREPARED ALWAYS, SHOWN ON REQUEST. The atlas and the panel are built here
+                         * whether or not the overlay starts visible, because building them when the
+                         * toggle is pressed would do it on the decode thread mid-stream - which is the
+                         * b256 stall, and would strike exactly when someone wants the numbers.
+                         */
+                        rc_overlay_set(1);
+                        rc_overlay_show(rec->diagnostics);
                         out->diagnostics = rec->diagnostics;
                         out->overlay_system_font = rc_overlay_using_system_font();
                         snprintf(out->overlay_font_status, sizeof(out->overlay_font_status), "%s",
