@@ -26,7 +26,13 @@ static void pairing_record_defaults(halyard_pairing_record *rec)
      */
     rec->stream_bitrate_kbps = 10000;
     rec->connection_quality = 0;
-    rec->decoder_rgb = 0;
+    /*
+     * ON by default now that it has run. The decoder's own colour conversion removes a third of the
+     * SPE's arithmetic - 16,444 us a frame to 10,876 - for no measured cost, and the picture was checked
+     * on hardware. `decoderrgb=0` turns it off, which is the escape hatch for a decoder that will not
+     * produce ARGB32; a port whose decoder cannot is unaffected, since only the vdec backend reads it.
+     */
+    rec->decoder_rgb = 1;
     rec->skip_until_keyframe = 0;
     rec->widescreen = 1;
     rec->smoothing = 1;
