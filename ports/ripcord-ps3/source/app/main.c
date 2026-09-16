@@ -1025,29 +1025,38 @@ static int check_connect(void)
                             c.scaled_width, c.scaled_height, c.display_width, c.display_height);
                     {
                         /*
-                         * THE MODE, AND WHAT THIS PORT DOES NOT HANDLE ABOUT IT. Said every run, so a
-                         * fault in an untested output mode names itself instead of being described as
-                         * "it looks a bit odd". Only 1080p60 progressive has ever been run.
+                         * THE MODE, said every run. Five were walked in b282 - 1080p, 1080i, 720p and
+                         * 480p in both aspects - and it is worth recording what that settled, because
+                         * two of the three things this used to warn about turned out not to be faults.
+                         *
+                         * INTERLACE IS FINE. This warned that motion would comb, on the reasoning that
+                         * the buffer is a progressive frame and nothing here filters. It does not: the
+                         * display hardware is told the negotiated mode by videoConfigure and generates
+                         * the fields itself, which is what every PS3 game that renders progressive and
+                         * outputs 1080i relies on. 1080i looked no different from 1080p. The warning is
+                         * gone rather than softened - a diagnostic that cries wolf costs more than one
+                         * that says nothing.
+                         *
+                         * NON-SQUARE PIXELS WERE REAL and are now FIXED rather than warned about, in
+                         * fit_into_display. The numbers are kept here because they are what a future
+                         * regression would look like: 480p 16:9 drew a 2.11:1 picture from a 1.78:1
+                         * source and 480p 4:3 drew 1.58:1. Both were reported as looking fine, which is
+                         * why this was found by arithmetic and not by eye.
                          */
-                        int sq = (c.display_width * 9 == c.display_height * 16)
-                              || (c.display_width * 3 == c.display_height * 4
-                                  && c.display_aspect == 1);
-
                         ps3_log("       mode: %s, %s, refresh mask 0x%02X\n",
-                                c.display_scan_mode == 1 ? "progressive" : "INTERLACED",
+                                c.display_scan_mode == 1 ? "progressive" : "interlaced",
                                 c.display_aspect == 2 ? "16:9"
                                     : (c.display_aspect == 1 ? "4:3" : "aspect auto"),
                                 (unsigned)c.display_refresh);
-                        if (c.display_scan_mode != 1)
-                            ps3_log("       INTERLACED and nothing here filters for it - motion will"
-                                    " comb. libRESC is the fix.\n");
-                        if (!sq)
-                            ps3_log("       PIXELS ARE NOT SQUARE at this size and the fit scales by"
-                                    " pixel COUNT - the picture\n"
-                                    "       geometry will be wrong. libRESC is the fix.\n");
+                        /*
+                         * 50 Hz stays a warning because it is the one of the three that has NOT been
+                         * tested - no PAL console here - and a 60 fps stream genuinely has no
+                         * whole-number relationship with a 50 Hz display.
+                         */
                         if ((c.display_refresh & 0x02) != 0 && (c.display_refresh & 0x05) == 0)
-                            ps3_log("       50 Hz ONLY - a 60 fps stream has no whole-number"
-                                    " relationship with this display.\n");
+                            ps3_log("       50 Hz ONLY, and UNTESTED - a 60 fps stream has no"
+                                    " whole-number relationship with this\n"
+                                    "       display and nothing here converts one to the other.\n");
                     }
                     ps3_log("       ON SCREEN: %u picture(s) blitted, %u us average, %u us worst;"
                             " %u dropped because the display was busy\n",

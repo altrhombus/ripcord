@@ -417,6 +417,10 @@ void rc_video_close(void)
     s_info.ok = 0;
 }
 
+/* Defined below, beside the blits that use it - see its note on non-square pixels. */
+static void fit_into_display(int src_width, int src_height,
+                             int *dst_w, int *dst_h, int *ox, int *oy);
+
 /* Clamp to a byte without a branch per channel in the common case. */
 static void convert_on_ppe(const uint8_t *y, const uint8_t *u, const uint8_t *v,
                            int y_stride, int uv_stride, int width, int height,
@@ -564,23 +568,12 @@ unsigned rc_video_blit_argb32(const uint8_t *argb, int src_stride, int width, in
         return 0u;
 
     stride_px = s_info.pitch / 4;
-    {
-        int by_w = (s_info.width * 1024) / width;
-        int by_h = (s_info.height * 1024) / height;
-        int scale = (by_w < by_h) ? by_w : by_h;
-
-        dst_w = (width * scale) / 1024;
-        dst_h = (height * scale) / 1024;
-        dst_w &= ~1;
-        dst_h &= ~1;
-    }
-    if (dst_w <= 0 || dst_h <= 0 || dst_w > s_info.width || dst_h > s_info.height)
+    fit_into_display(width, height, &dst_w, &dst_h, &ox, &oy);
+    if (dst_w <= 0 || dst_h <= 0)
         return 0u;
 
     s_scaled_w = dst_w;
     s_scaled_h = dst_h;
-    ox = (s_info.width - dst_w) / 2;
-    oy = (s_info.height - dst_h) / 2;
 
     /*
      * THE RSX ROUTE, WHICH STILL NEEDS THE SPEs - just not for any arithmetic.
@@ -611,6 +604,77 @@ unsigned rc_video_blit_argb32(const uint8_t *argb, int src_stride, int width, in
     }
 }
 
+/*
+ * FIT THE SOURCE INTO THE DISPLAY BUFFER, ACCOUNTING FOR PIXELS THAT ARE NOT SQUARE.
+ *
+ * The earlier version scaled by pixel COUNT, which is right only when a buffer pixel is as wide as it
+ * is tall. At 1080p and 720p it is, which is why this went unnoticed through the whole port: those
+ * buffers are 16:9 in pixels AND 16:9 on the screen. A 720x480 buffer is neither - it is 3:2 in pixels
+ * and displayed as 4:3 or as 16:9, so its pixels are 11% taller or 19% wider than square, and a
+ * picture fitted by count comes out wrong by exactly that much. b282 measured it in both:
+ *
+ *   480p 16:9 - drew 720x404, which appears as 2.11:1 against a 1.78:1 source  (+19%)
+ *   480p 4:3  - drew 720x404, which appears as 1.58:1                          (-11%)
+ *
+ * Neither is dramatic, and both were reported as looking fine on a television, which is the honest
+ * reason to fix it from the arithmetic rather than by eye: an 11% error makes circles into ovals and
+ * nothing announces it.
+ *
+ * The maths is one ratio. The drawn rectangle must have a BUFFER-SPACE aspect of the source's aspect
+ * divided by the pixel aspect, and the pixel aspect is the display's shape over the buffer's shape. In
+ * integers to avoid a float unit for something exact, and in 64 bits because the products reach 2.4e10
+ * at 1080p.
+ *
+ * VIDEO_ASPECT_AUTO is treated as square, which is what the port already assumed. It is the one case
+ * where the console has not said, and inventing a correction from nothing would be worse than the
+ * behaviour that has always worked.
+ */
+static void fit_into_display(int src_width, int src_height,
+                             int *dst_w, int *dst_h, int *ox, int *oy)
+{
+    long long num, den;
+    int disp_w = 16, disp_h = 9;
+    int w, h;
+
+    if (s_info.aspect == VIDEO_ASPECT_4_3) {
+        disp_w = 4;
+        disp_h = 3;
+    } else if (s_info.aspect != VIDEO_ASPECT_16_9) {
+        /* Unstated: assume the buffer's own shape is the shape it is shown at. */
+        disp_w = s_info.width;
+        disp_h = s_info.height;
+    }
+
+    num = (long long)src_width * (long long)s_info.width * (long long)disp_h;
+    den = (long long)src_height * (long long)s_info.height * (long long)disp_w;
+    if (num <= 0 || den <= 0) {
+        *dst_w = 0;
+        *dst_h = 0;
+        return;
+    }
+
+    if ((long long)s_info.width * den <= (long long)s_info.height * num) {
+        w = s_info.width;
+        h = (int)(((long long)s_info.width * den) / num);
+    } else {
+        h = s_info.height;
+        w = (int)(((long long)s_info.height * num) / den);
+    }
+
+    /* Even, so the chroma mapping lands the same way on both halves of a pair. */
+    w &= ~1;
+    h &= ~1;
+    if (w > s_info.width)
+        w = s_info.width;
+    if (h > s_info.height)
+        h = s_info.height;
+
+    *dst_w = w;
+    *dst_h = h;
+    *ox = (s_info.width - w) / 2;
+    *oy = (s_info.height - h) / 2;
+}
+
 unsigned rc_video_blit_yuv420(const uint8_t *y, const uint8_t *u, const uint8_t *v,
                               int y_stride, int uv_stride, int width, int height)
 {
@@ -638,23 +702,12 @@ unsigned rc_video_blit_yuv420(const uint8_t *y, const uint8_t *u, const uint8_t 
      * directions and is centred in whichever one has room left. Taking the larger would fill the screen
      * by cropping, and cropping a game someone is playing is worse than a border.
      */
-    {
-        int by_w = (s_info.width * 1024) / width;
-        int by_h = (s_info.height * 1024) / height;
-        int scale = (by_w < by_h) ? by_w : by_h;
-
-        dst_w = (width * scale) / 1024;
-        dst_h = (height * scale) / 1024;
-        dst_w &= ~1;    /* even, so the chroma mapping lands the same way on both halves of a pair */
-        dst_h &= ~1;
-    }
-    if (dst_w <= 0 || dst_h <= 0 || dst_w > s_info.width || dst_h > s_info.height)
+    fit_into_display(width, height, &dst_w, &dst_h, &ox, &oy);
+    if (dst_w <= 0 || dst_h <= 0)
         return 0u;
 
     s_scaled_w = dst_w;
     s_scaled_h = dst_h;
-    ox = (s_info.width - dst_w) / 2;
-    oy = (s_info.height - dst_h) / 2;
 
     /*
      * THE SPEs FIRST, THE PPE AS FALLBACK.
@@ -894,23 +947,12 @@ unsigned rc_video_blit_rsx_offset(uint32_t src_offset, int width, int height)
     if (!s_open || !s_rsx_scale || width <= 0 || height <= 0)
         return 0u;
 
-    {
-        int by_w = (s_info.width * 1024) / width;
-        int by_h = (s_info.height * 1024) / height;
-        int scale = (by_w < by_h) ? by_w : by_h;
-
-        dst_w = (width * scale) / 1024;
-        dst_h = (height * scale) / 1024;
-        dst_w &= ~1;
-        dst_h &= ~1;
-    }
-    if (dst_w <= 0 || dst_h <= 0 || dst_w > s_info.width || dst_h > s_info.height)
+    fit_into_display(width, height, &dst_w, &dst_h, &ox, &oy);
+    if (dst_w <= 0 || dst_h <= 0)
         return 0u;
 
     s_scaled_w = dst_w;
     s_scaled_h = dst_h;
-    ox = (s_info.width - dst_w) / 2;
-    oy = (s_info.height - dst_h) / 2;
 
     return blit_argb32_on_rsx_from(src_offset, width, height, dst_w, dst_h, ox, oy, s_rsx_linear);
 }
