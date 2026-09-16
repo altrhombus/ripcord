@@ -739,34 +739,54 @@ index the accumulator computes, and the SPU has no vector gather. The prediction
 right answer changed when the other half got faster, and double buffering is where the next win is if one
 is ever wanted.
 
-### Bilinear upscaling — **built, measured, and off by default**
+### Upscaling — **three modes built and measured; nearest is the default**
 
-`bilinear=1` in the pairing record. It works; it costs too much for 60 fps.
+`bilinear=` in the pairing record selects the scaler, and it is a user-facing option rather than a build
+switch: 0 nearest neighbour, 1 interpolate along the row only, 2 full bilinear. All three work. Only 0
+fits 60 fps.
 
-| | per SPE, one frame | summed over 3 |
-|---|---|---|
-| nearest neighbour | 3,017 us | 4,173 us of arithmetic |
-| bilinear | **21,038 us** | **62,489 us** |
+| mode | per SPE, one frame | summed over 3 | on screen |
+|---|---|---|---|
+| 0 nearest neighbour | 3,017 us | 4,173 us of arithmetic | 59 fps |
+| 1 row-only | 10,992 us | 30,078 us | 52 fps |
+| 2 full bilinear | 21,038 us | 62,489 us | 29 fps |
 
-A 60 fps frame allows 16,667 us, so bilinear does not fit and the pipeline halves to 29 fps. At 30 fps it
-fits inside 63% of the budget, which is where it is usable as written.
+A 60 fps frame allows 16,667 us. Mode 2 does not fit and the pipeline halves; at 30 fps it fits inside
+63% of the budget, which is where it is usable as written. Mode 1 does fit, on paper — and still costs
+eight frames a second, because the cost is per strip against a 25 ms deadline and the SPEs stop being
+early enough to hide behind the decode.
 
-Two attempts were needed and the first is worth keeping in view. Written scalar - nine interpolations a
-pixel, each extracting a byte from a word and putting one back - it missed the 25 ms strip deadline so
-completely that not one stream frame was converted and nothing reached the screen. Vectorised, with a
-pixel's four channels unpacked into 32-bit lanes and interpolated as one vector, it converts every frame
-with no fallbacks. That fixed the deadline; it did not make it cheap.
+**What the modes actually buy, watched on a television rather than measured:** mode 1 makes small text
+legible and removes the column doubling a 1.5x scale makes most visible. But both interpolating modes
+looked *blockier* than nearest during hard cuts and fast motion, consistently. That is not the scaler
+failing — it is the frame rate it costs. Slower conversion means more submissions waiting for a queue
+slot and more refusals, the encoder answers with IDR requests, and the recovery is what reads as blocks.
+The measured run at mode 1 refused 6 frames and asked for 109 IDRs in 30 seconds. Interpolation trades
+spatial detail for temporal stability, and at 720p60 on this hardware the temporal side is worth more.
+
+Two attempts were needed for mode 2 and the first is worth keeping in view. Written scalar — nine
+interpolations a pixel, each extracting a byte from a word and putting one back — it missed the 25 ms
+strip deadline so completely that not one stream frame was converted and nothing reached the screen.
+Vectorised, with a pixel's four channels unpacked into 32-bit lanes and interpolated as one vector, it
+converts every frame with no fallbacks. That fixed the deadline; it did not make it cheap.
+
+**One optimisation was tried on mode 1 and measured worse, which is why it is not here.** Driving the
+loop by source pixel instead of output pixel, carrying the right-hand neighbour into the next pixel's
+left, halves the gathers on a 1.5x scale — and cost 22%: 13,362 us against 10,992, 37,873 us of
+arithmetic against 30,078. The version it replaced already cached on "did the source index change", so
+the saved work was small, and paying for it with a second unpredictable branch inside the inner loop is
+a bad trade on a core with no branch prediction. Reverted. The general lesson for this kernel: on the
+SPU, removing a branch is worth more than removing an unpack.
 
 The arithmetic was checked on the development machine against exact bilinear over 200,000 random inputs:
 1.98 levels of worst-case error truncating, 1.00 with the lerp rounded, never outside 0..255. That host
-check is the ONLY correctness evidence this path has - `rc_video_self_test` compares the SPE against the
-PPE and there is no PPE bilinear to compare against.
+check is the ONLY correctness evidence these paths have — `rc_video_self_test` compares the SPE against
+the PPE and there is no PPE bilinear to compare against.
 
-What would make it fit at 60 fps is processing four output pixels in parallel lanes rather than one
-pixel's four channels, which needs the gather done with shuffles out of two quadwords per row. That is a
-much larger rewrite than this one. Horizontal-only interpolation is the cheaper middle - one vector lerp
-a pixel instead of three, two unpacks instead of four - and would remove the column doubling that a 1.5x
-scale makes most visible, at perhaps a third of the cost.
+What would make interpolation fit at 60 fps is processing four output pixels in parallel lanes rather
+than one pixel's four channels, which needs the gather done with shuffles out of two quadwords per row.
+That is a much larger rewrite than either attempt here, and it is the only route left that changes the
+answer.
 
 ### Still open
 - **The fifth SPE — `ARGB32` output works.** Asked offline in b179: `vdecGetPicture` accepts
