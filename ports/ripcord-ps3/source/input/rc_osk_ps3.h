@@ -37,6 +37,17 @@ typedef enum {
  * NUL-terminated ASCII. Returns a status rather than a bool because "cancelled" and "could not be
  * shown" are different things to tell someone about.
  */
+/*
+ * WHAT TO DRAW BEHIND THE KEYBOARD, and it is not decoration.
+ *
+ * A system dialog here composites into the APPLICATION'S flip stream rather than drawing itself onto
+ * the screen, so an application that stops presenting while one is up stops it appearing at all. The
+ * hook is called once a frame and is expected to draw something and flip. Without one this falls back
+ * to flipping whatever is already in the buffer, which is enough to make the dialog visible but will
+ * show whatever was last drawn behind it.
+ */
+void rc_osk_set_present_hook(void (*present)(void));
+
 rc_osk_status rc_osk_ask(rc_osk_kind kind, const char *prompt, const char *initial,
                          char *out, size_t out_size);
 
