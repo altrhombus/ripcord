@@ -19,6 +19,13 @@
 
 static rc_session_state s_state;
 
+/* Drawn behind the keyboard, once a frame, so the dialog has something to composite over and the
+ * viewer can still see which question is being asked. See rc_osk_set_present_hook. */
+static void present_behind_keyboard(void)
+{
+    rc_status_screen_draw(&s_state);
+}
+
 static void show(rc_phase phase, const char *headline, const char *detail, const char *hint)
 {
     rc_session_set(&s_state, phase, headline, detail, hint);
@@ -82,6 +89,7 @@ int rc_pair_run(const char *host)
     char pin_text[16];
 
     rc_session_state_reset(&s_state);
+    rc_osk_set_present_hook(present_behind_keyboard);
     memset(&params, 0, sizeof(params));
 
     /*
