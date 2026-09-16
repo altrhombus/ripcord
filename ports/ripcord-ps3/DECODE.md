@@ -950,48 +950,72 @@ and would have quietly thrown away the fraction; it was caught only because the 
 beside the decoded value, which is the argument for logging both.
 
 
-### The console's own typeface — **six runs, not working, and what was eliminated**
+### The console's own typeface — **working, via FreeType and not via cellFont**
 
-The overlay is set in fonts drawn by hand in this repository. That was a fallback while the platform's
-own font was brought up, and it is now the answer: `cellFont` will not produce a renderer on this
-console through PSL1GHT's bindings. `systemfont=1` in the pairing record still tries, and is off by
-default because asking costs fifteen refused firmware calls at start-up and buys a known answer.
+The overlay is set in Rodin Regular, the face the XMB itself uses. It is read from
+`/dev_flash/data/font/SCE-PS3-RD-R-LATIN.TTF` with the FreeType portlib. Nothing is redistributed: the
+file stays on the console and is read at runtime exactly as `cellFont` would have read it internally.
 
-What the API offers is genuinely worth wanting - `fontOpenFontset` with
-`FONT_TYPE_NEWRODIN_GOTHIC_LATIN_SET` is New Rodin, the face the XMB itself is set in, antialiased and
-scalable, supplied by firmware with nothing redistributed. This is a record of why it is not being used.
+**`cellFont` was the obvious route and it does not work here.** `fontOpenFontset` with
+`FONT_TYPE_NEWRODIN_GOTHIC_LATIN_SET` asks the firmware for the same face and never gets past creating
+a renderer. Six runs eliminated the causes one at a time:
 
-| build | failed at | what it eliminated |
+| build | failed at | eliminated |
 |---|---|---|
-| b241 | `fontInitLibraryFreeType`, 0x80540002 | the plain entry takes no revision, and the memory interface was null |
-| b243 | *(report not captured)* | — |
-| b246 | `fontCreateRenderer`, 0x80540002 | **the revision and the 32-bit callback descriptors were right** — the library now initialises |
-| b248 | `fontCreateRenderer`, 0x80540002 | five buffering policies, all refused identically: the policy is not the question |
-| b251 | `fontCreateRenderer`, 0x80540002 | three interface revisions x five policies, all refused identically |
-| b252 | `fontCreateRenderer`, 0x80540002 | `SYSMODULE_FREETYPE_TT` loaded as well; no change |
+| b241 | `fontInitLibraryFreeType` | the plain entry takes no revision; the memory interface was null |
+| b246 | `fontCreateRenderer` | **the revision and the 32-bit callback descriptors were right** - the library initialises |
+| b248 | `fontCreateRenderer` | five buffering policies, refused identically |
+| b251 | `fontCreateRenderer` | three interface revisions x five policies, refused identically |
+| b252 | `fontCreateRenderer` | `SYSMODULE_FREETYPE_TT` loaded as well; no change |
 
-**Two of those runs bought real ground.** PSL1GHT's `fontInit` initialises with the BASE font stub's
-revision alone and never mentions the FreeType stub, and the memory-interface callbacks handed to a PRX
-need 32-bit descriptors exactly as `vdecClosure.fn` did. Both are fixed and both moved the failure
-forward. The remaining three bought only eliminations.
+Two of those are worth keeping regardless of the outcome. PSL1GHT's `fontInit` initialises with the
+BASE font stub's revision alone and never mentions the FreeType stub. And a callback handed to a PRX
+needs a 32-bit descriptor - `__build_opd32` - exactly as `vdecClosure.fn` did in b149. **That is the
+second time this platform's 64-bit function descriptors have cost days**, and it is written at both
+call sites now.
 
-**The decisive observation is that the code never varies.** Fifteen combinations of revision and
-buffering policy return 0x80540002 identically - which is why the sweep now reports every DISTINCT code
-it saw rather than the last one. One code across every shape of argument says the arguments were never
-what was wrong, and that should have redirected this two runs earlier than it did.
+**The decisive observation was that the code never varied**, and the reporting did not say so until
+b252: a single code printed for fifteen refusals reads exactly like one refusal. One code across every
+shape of argument says the arguments were never what was wrong. That should have redirected this two
+runs earlier than it did, and the sweep now reports every DISTINCT code it saw.
 
-**What is left is speculative and was not spent on.** `fontOpenFontFile` against a path in flash, which
-is the firmware-contents dependency this was meant to avoid and is fragile across versions; or that
-PSL1GHT's `fontCreateRenderer` stub is wired to an entry this firmware does not export, which cannot be
-checked from here. Anyone picking this up should start by getting ANY PSL1GHT font sample to draw a
-glyph on this console - if none does, the binding is the fault and not the call sequence.
+#### What the working route needed
 
-**What was gained anyway.** The drawn fonts got the work that made them worth keeping: a proportional
-face with real lower case and descenders for words, the monospaced one kept for figures so a column of
-numbers holds still, both at a size meant to be read across a room, and a panel laid out by measuring
-rather than by hand-written pixel offsets. Those changes were made to accommodate a font that never
-arrived, and all of them stand on their own.
+`b255` asked the one question the plan turned on before anything was built on it - whether a packaged
+homebrew may read `/dev_flash` at all - and got both I/O routes, the right file size and a `00 01 00 00`
+TrueType magic. The probe reported the first four bytes rather than just "it opened", because a path
+that opens and returns something else is a different fault from one that does not.
 
+**Then the first implementation cost the session.** Calling `FT_LOAD_RENDER` whenever a character was
+wanted produced a **1,483 ms stall inside one panel rebuild**, 3,237 of 3,534 frames dropped for
+overrun, 299 keyframes requested and 2 fps on screen - while the blit itself stayed at 2 us, so none of
+it was presentation. Three things compounded, and the first is why the others mattered:
+
+- **the rebuild runs on the decode thread**, which also drains the socket and feeds the decoder, so a
+  stall there is not slow drawing but a stopped pipeline;
+- **measuring a run rasterised it**, and right-aligned text is measured and then drawn, so half the
+  work was thrown away;
+- **two sizes meant repeated `FT_Set_Pixel_Sizes`**, rescaling the face underneath all of it.
+
+The printable ASCII is now rendered into an atlas at both sizes when the overlay opens - during session
+setup, off the decode thread - and FreeType is closed immediately afterwards. Drawing is a table lookup
+and a memcpy. 62 KB of atlas, and the present path is unchanged at 59 fps with an empty queue.
+
+#### Two details that are not obvious
+
+**Tabular figures.** A proportional face gives `1` a narrower advance than `8`, so a figure that ticks
+changes width and drags everything after it - which is why the panel was originally set in two faces.
+Synthesising a tabular set costs one number per size (the widest digit's advance) and drawing each
+digit centred in a cell that wide. Centred, because a narrow `1` against the left of a wide cell reads
+as a gap in the number, which is worse than the jitter it replaces.
+
+**Design pixels.** The panel was a fixed 760 pixels wide - 40% of a 1080p screen, 59% of a 720p one and
+WIDER THAN a 720x480 one, at which point the blit refuses the rectangle and the overlay is silently not
+drawn. Every measurement is now against 1920x1080 and converted, including the two font sizes the atlas
+is built at. One-pixel borders stay one pixel: scaling a hairline either doubles it or deletes it.
+
+The hand-drawn fonts remain as the fallback and are still what runs if the TTF cannot be opened.
+`systemfont=0` forces them.
 
 ### Still open
 - **The fifth SPE — `ARGB32` output works.** Asked offline in b179: `vdecGetPicture` accepts
