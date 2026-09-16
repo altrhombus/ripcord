@@ -1241,7 +1241,21 @@ static void on_picture_rgb(void *ctx, const unsigned char *argb, int stride, int
             g_blit_worst_wait_ms = waited;
     }
 
-    us = rc_video_blit_argb32(argb, stride, width, height);
+    /*
+     * NO COPY AT ALL when the decoder wrote its picture where the RSX can read it. The scaled blit is
+     * then the entire present path: no SPE, no staging buffer, and nothing on this core touching a
+     * pixel. Falls back to the copying path on a zero, which is what it answers when the RSX scaler is
+     * not selected.
+     */
+    us = 0u;
+    if (rc_decode_vdec_picture_in_vram()) {
+        uint32_t off = rc_decode_vdec_delivered_offset();
+
+        if (off != 0u)
+            us = rc_video_blit_rsx_offset(off, width, height);
+    }
+    if (us == 0u)
+        us = rc_video_blit_argb32(argb, stride, width, height);
     if (us == 0u) {
         g_rgb_scale_failed++;
         return;
@@ -1955,6 +1969,17 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
                      * which is better than failing a session over sound. */
                     out->audio_ready = rc_audio_init();
                     rc_decode_live_hint((int)info.width, (int)info.height);
+                    /*
+                     * BEFORE THE OPEN, because that is where the picture slots are fixed. This sat
+                     * after it for one edit and would have shipped as "asked for RSX memory, got main
+                     * memory, measured no difference" - a silent fallback reporting a working system.
+                     *
+                     * ONLY WITH RGB OUTPUT, and that condition is hard rather than cautious: the YUV
+                     * path has the SPEs READ the picture to convert it, and a Cell read from RSX memory
+                     * is roughly two orders of magnitude slower than a write. Planes there would be the
+                     * per-frame PPE sampler mistake again, three million times a frame.
+                     */
+                    rc_decode_vdec_want_vram(rec->hardware_scale && rec->decoder_rgb);
                     g_live_open = rc_decode_live_open();
                     /*
                      * RECORDED AT OPEN, not at report time. b160 read this in the reporting block, which
@@ -2310,6 +2335,7 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
     out->decode_receive_priority = g_decode_receive_priority;
     out->hold_ms = g_hold_ms;
     rc_video_rsx_scale_stats(&out->rsx_scale_available, &out->rsx_blits, &out->rsx_refused);
+    out->picture_in_vram = rc_decode_vdec_picture_in_vram();
     rc_thermal_sample(&out->thermal);   /* the closing sample - see the note where the hold opens */
     out->idr_requests = g_idr_requests;
 

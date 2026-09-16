@@ -9,6 +9,7 @@
 #include <string.h>
 
 #include "platform/rc_platform.h"
+#include "rc_video_ps3.h"
 #include "rc_h264_annexb.h"
 #include "rc_h264_params.h"
 
@@ -75,7 +76,34 @@ static uint8_t s_au[RC_VDEC_AU_SLOTS][RC_VDEC_AU_BYTES] __attribute__((aligned(1
  * costs 12.5 MB against two's 6.3, which this console has and a half-rate stream is not worth.
  */
 #define RC_VDEC_PICTURE_SLOTS 4
-static uint8_t s_picture[RC_VDEC_PICTURE_SLOTS][RC_VDEC_PICTURE_BYTES] __attribute__((aligned(128)));
+
+/*
+ * How many pictures the two content samplers look at. They exist to tell a picture from a black
+ * rectangle, which is a question about whether the pipeline EVER works, not about this frame - see the
+ * note at the callback's grid for what leaving them on every frame cost.
+ */
+#define RC_VDEC_SAMPLE_PICTURES 8u
+static uint8_t s_picture_main[RC_VDEC_PICTURE_SLOTS][RC_VDEC_PICTURE_BYTES] __attribute__((aligned(128)));
+
+/*
+ * WHERE THE DECODER PUTS ITS PICTURES, and it is not always main memory.
+ *
+ * When the RSX does the scaling it has to read the picture, and it can only read its own local memory.
+ * Decoding into main memory means something must move 3.7 MB a frame across to it first - a pass that
+ * does no arithmetic at all and still cost 1,880 us of SPE time in b208, nearly all of it waiting for
+ * the MFC. Decoding straight into RSX memory deletes the pass rather than making it quicker.
+ *
+ * s_picture points at whichever was obtained. The static array above is the fallback and is always
+ * allocated, because failing to get RSX memory must not mean failing to decode.
+ *
+ * THE DIRECTION OF TRAVEL IS THE WHOLE POINT. The Cell writes this quickly and reads it roughly two
+ * orders of magnitude more slowly, so nothing on the PPE may sample the picture per frame - see
+ * RC_VDEC_SAMPLE_PICTURES, which is why the two content grids now stop after the first few.
+ */
+static uint8_t *s_picture[RC_VDEC_PICTURE_SLOTS];
+static uint32_t s_picture_offset[RC_VDEC_PICTURE_SLOTS];
+static int s_picture_in_vram;
+static int s_want_vram;
 
 static u32 s_handle;
 static void *s_memory;
@@ -173,6 +201,8 @@ static unsigned s_first_nal_types;   /* first four NAL types of the first unit, 
 /* The picture ring: the callback fills at the tail, the caller drains from the head. */
 static volatile unsigned s_pic_head;
 static volatile unsigned s_pic_tail;
+static uint32_t s_pic_offset_of[RC_VDEC_PICTURE_SLOTS];
+static uint32_t s_delivered_offset;
 static volatile int s_pic_w[RC_VDEC_PICTURE_SLOTS];
 static volatile int s_pic_h[RC_VDEC_PICTURE_SLOTS];
 static unsigned s_pic_overwritten;
@@ -320,13 +350,19 @@ static u32 vdec_callback(u32 handle, u32 msgtype, u32 msgdata, u32 arg)
             return 0;
         }
 
-        {
-            /*
-             * A GRID OVER THE WHOLE PICTURE, not one row across the middle. b162's sample was a single
-             * row and its being zero was read as "the buffer is empty" - which assumes that row has
-             * content in it. Sixty-four rows by sixty-four columns cannot all be black in a game's
-             * start screen, so this answers the question the row could not.
-             */
+        /*
+         * ONLY FOR THE FIRST FEW PICTURES, and that is a correction rather than a tuning.
+         *
+         * This grid answers "did any content ever arrive", which b160 through b162 needed and which is
+         * settled within a second of the first picture. It was left running on every picture for the
+         * rest of the session: 4,096 PPE loads a frame at 60 fps, reading a buffer nothing else on this
+         * core touches, so every one of them is a cache miss.
+         *
+         * It became load-bearing when the picture moved into RSX local memory, where a Cell read is
+         * roughly two orders of magnitude slower than a write. A diagnostic that cost something
+         * invisible in main memory would have cost the frame rate there.
+         */
+        if (s_cb_pictures < RC_VDEC_SAMPLE_PICTURES) {
             const uint8_t *py = s_picture[slot];
             int gy, gx;
 
@@ -344,6 +380,7 @@ static u32 vdec_callback(u32 handle, u32 msgtype, u32 msgdata, u32 arg)
         }
 
         s_picture_addr = (unsigned)(uintptr_t)s_picture[slot];
+        s_pic_offset_of[slot] = s_picture_offset[slot];
         s_pic_w[slot] = w;
         s_pic_h[slot] = h;
 
@@ -454,6 +491,43 @@ int rc_decode_vdec_open(int width, int height)
         return 0;
     s_level = (int)type.profile_level;
     s_mem_size = (unsigned)attr.mem_size;
+
+    {
+        int i;
+
+        /*
+         * The fallback is wired first and unconditionally, so every later failure has somewhere to land
+         * rather than a null pointer to find out about during a callback.
+         */
+        for (i = 0; i < RC_VDEC_PICTURE_SLOTS; i++) {
+            s_picture[i] = s_picture_main[i];
+            s_picture_offset[i] = 0u;
+        }
+        s_picture_in_vram = 0;
+
+        if (s_want_vram) {
+            uint8_t *p[RC_VDEC_PICTURE_SLOTS];
+            uint32_t off[RC_VDEC_PICTURE_SLOTS];
+            int got = 0;
+
+            for (i = 0; i < RC_VDEC_PICTURE_SLOTS; i++) {
+                p[i] = (uint8_t *)rc_video_alloc_rsx(RC_VDEC_PICTURE_BYTES, &off[i]);
+                if (p[i] == NULL)
+                    break;
+                got++;
+            }
+            /* ALL OR NOTHING. Half the slots in RSX memory and half in main would mean the blit path
+             * has to ask per picture where this one came from, and the answer would be right until it
+             * was not. PSL1GHT's RSX heap has no free, so the partial allocation is simply left. */
+            if (got == RC_VDEC_PICTURE_SLOTS) {
+                for (i = 0; i < RC_VDEC_PICTURE_SLOTS; i++) {
+                    s_picture[i] = p[i];
+                    s_picture_offset[i] = off[i];
+                }
+                s_picture_in_vram = 1;
+            }
+        }
+    }
 
     s_memory = memalign(RC_VDEC_MEM_ALIGN, attr.mem_size);
     if (s_memory == NULL)
@@ -717,9 +791,10 @@ int rc_decode_vdec_feed(const uint8_t *access_unit, size_t length, rc_decode_liv
         /*
          * Sampled before it is handed on, because b160 proved every counter in this pipeline can report
          * success while the pixels are zeros. A grid down the middle tells a picture from a black
-         * rectangle.
+         * rectangle - and, like the grid in the callback, it only has to do so once. See the note there
+         * for why reading the picture on the PPE stopped being free.
          */
-        {
+        if (stats->pictures_out < (int)RC_VDEC_SAMPLE_PICTURES) {
             int i;
 
             for (i = 0; i < 256; i++) {
@@ -740,6 +815,7 @@ int rc_decode_vdec_feed(const uint8_t *access_unit, size_t length, rc_decode_liv
         stats->width = w;
         stats->height = h;
         stats->pictures_out++;
+        s_delivered_offset = s_pic_offset_of[slot];
         if (s_rgb_sink != NULL)
             s_rgb_sink(s_rgb_sink_ctx, y, w * 4, w, h);
         else if (s_sink != NULL)
@@ -781,4 +857,27 @@ void rc_decode_vdec_close(void)
     s_open = 0;
     s_sink = NULL;
     s_stats = NULL;
+}
+
+/*
+ * Ask for the pictures to be decoded into RSX local memory. Must be called before open - the slots are
+ * fixed there - and it is only a request: rc_decode_vdec_picture_in_vram says what happened.
+ */
+void rc_decode_vdec_want_vram(int on)
+{
+    s_want_vram = on;
+}
+
+int rc_decode_vdec_picture_in_vram(void)
+{
+    return s_picture_in_vram;
+}
+
+/*
+ * The RSX offset of the picture currently being delivered - valid only inside a sink callback, which is
+ * the only moment anything is. Zero when the pictures are in main memory.
+ */
+uint32_t rc_decode_vdec_delivered_offset(void)
+{
+    return s_delivered_offset;
 }

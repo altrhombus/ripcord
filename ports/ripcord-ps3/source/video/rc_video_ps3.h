@@ -115,6 +115,20 @@ unsigned rc_video_blit_argb32(const uint8_t *argb, int src_stride, int width, in
  */
 void rc_video_set_rsx_scale(int on, int linear);
 
+/*
+ * A block of RSX local memory, with the offset the RSX knows it by. For a caller that wants the RSX to
+ * read what it writes, and ONLY for that: the Cell writes this memory quickly and reads it roughly two
+ * orders of magnitude more slowly, so anything that samples the contents on the PPE does not belong in
+ * here. NULL if the display is not open or the heap refused.
+ */
+void *rc_video_alloc_rsx(size_t bytes, uint32_t *offset);
+
+/*
+ * Scale straight out of memory the caller already holds an offset for, with no copy at all. Returns 0
+ * if the RSX scaler is not selected, in which case the caller still owns getting the picture up.
+ */
+unsigned rc_video_blit_rsx_offset(uint32_t src_offset, int width, int height);
+
 /* available is 0 when the staging buffer could not be allocated, in which case nothing else is useful. */
 void rc_video_rsx_scale_stats(int *available, unsigned *blits, unsigned *refused);
 
