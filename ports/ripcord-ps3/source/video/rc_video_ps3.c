@@ -277,6 +277,23 @@ int rc_video_open(rc_video_info *out)
     return 1;
 }
 
+void rc_video_clear_back(uint32_t colour)
+{
+    uint32_t *back = rc_video_back_buffer();
+    int row, stride_px;
+
+    if (back == NULL)
+        return;
+    stride_px = s_info.pitch / 4;
+    for (row = 0; row < s_info.height; row++) {
+        int col;
+        uint32_t *p = back + (size_t)row * (size_t)stride_px;
+
+        for (col = 0; col < s_info.width; col++)
+            p[col] = colour;
+    }
+}
+
 void rc_video_clear_all(uint32_t colour)
 {
     int i;
