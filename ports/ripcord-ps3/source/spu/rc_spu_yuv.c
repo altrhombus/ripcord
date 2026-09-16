@@ -309,9 +309,9 @@ static unsigned rc_spu_yuv_dispatch(const uint8_t *y, const uint8_t *u, const ui
     }
 }
 
-void rc_spu_yuv_set_bilinear(int enabled)
+void rc_spu_yuv_set_bilinear(int mode)
 {
-    s_bilinear = enabled ? 1 : 0;
+    s_bilinear = (mode < 0) ? 0 : ((mode > 2) ? 2 : mode);
 }
 
 void rc_spu_yuv_stats_get(rc_spu_yuv_stats *out)
