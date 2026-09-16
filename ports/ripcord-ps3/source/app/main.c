@@ -2258,9 +2258,27 @@ int main(void)
             {
                 unsigned calls = 0, busy = 0, last = 0;
 
+                unsigned stall = rc_video_flip_worst_stall_ms();
+
                 rc_video_flip_stats(&calls, &busy, &last);
                 ps3_log("vid:   flip-ready asked %u time(s), %u said busy, last raw status %u\n",
                         calls, busy, last);
+
+                /*
+                 * SAID OUT LOUD, because the counts above do not distinguish the two cases and one of
+                 * them is not a video fault at all. b232 queued an instruction the RSX could not run,
+                 * its command processor stopped, and every flip after the first stayed pending for
+                 * sixty seconds - reported as 55,094 busy calls, which is equally what a merely
+                 * overloaded display would produce. A flip that has not completed in seconds means the
+                 * GPU stopped: nothing else on this path takes seconds.
+                 */
+                if (stall >= 2000u)
+                    ps3_log("vid:   THE DISPLAY WAS BUSY FOR %u ms WITHOUT A BREAK - a flip that never\n"
+                            "       completes means the RSX stopped executing, not that it was slow.\n"
+                            "       Look at the last command queued before the picture stopped.\n",
+                            stall);
+                else if (stall > 0u)
+                    ps3_log("vid:   longest unbroken busy stretch %u ms\n", stall);
             }
 
         }

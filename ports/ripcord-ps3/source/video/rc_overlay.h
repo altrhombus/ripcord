@@ -13,23 +13,24 @@
 #include <stdint.h>
 
 /*
- * THE PALETTE, IN STRAIGHT (NOT PREMULTIPLIED) ARGB. The top byte is opacity and the drawing code
- * premultiplies on the way into the bitmap, because that is the form the RSX's blend wants and doing
- * it here would make every constant unreadable.
+ * THE PALETTE. The top byte is carried but the panel is OPAQUE - see rc_video_overlay_blit for why
+ * translucency is closed off, and what it cost to find out.
  *
  * Blues and greys rather than the pure black and white the first version used: a black panel over a
- * dark game disappears and a white-on-black one glares over a bright one. These sit above both.
+ * dark game disappears and a white-on-black one glares over a bright one. These sit above both, and
+ * the body is a touch lighter than it would be if it were see-through, so it reads as a deliberate
+ * panel rather than as a hole in the picture.
  */
-#define RC_OV_PANEL    0xC80E1014u   /* the body, deliberately see-through                */
-#define RC_OV_HEADER   0xE81B2129u   /* the title bar, more solid so the name stays legible */
-#define RC_OV_EDGE     0xE02A323Cu
+#define RC_OV_PANEL    0xFF12161Cu   /* the body                                            */
+#define RC_OV_HEADER   0xFF1B2129u   /* the title bar, lifted so the name separates from it  */
+#define RC_OV_EDGE     0xFF39434Fu
 #define RC_OV_ACCENT   0xFF4A9EFFu
 #define RC_OV_TEXT     0xFFE6EAEFu
 #define RC_OV_LABEL    0xFF8A94A0u   /* field names - present but not competing with the values */
 #define RC_OV_GOOD     0xFF5FD08Au
 #define RC_OV_WARN     0xFFF0C04Au
 #define RC_OV_BAD      0xFFF06060u
-#define RC_OV_TRACK    0x902A323Cu   /* the empty part of a sparkline                       */
+#define RC_OV_TRACK    0xFF232B34u   /* the empty part of a sparkline                       */
 
 void rc_overlay_set(int on);
 int  rc_overlay_on(void);
