@@ -3,6 +3,7 @@
 
 #include "rc_log.h"
 #include "rc_platform.h"
+#include "rc_video_ps3.h"
 
 #include <sys/memory.h>
 #include <sysutil/osk.h>
@@ -15,7 +16,7 @@
  * address they have to go and look up, is not in a hurry and should not be timed out mid-word. This
  * only exists so a dialog that never reports back cannot hang the program forever.
  */
-#define RC_OSK_TIMEOUT_MS 180000u
+#define RC_OSK_TIMEOUT_MS 120000u
 
 /*
  * The dialog needs a memory container of its own. A megabyte is what the SDK's own samples use; sizing
@@ -31,6 +32,17 @@ static u16 s_initial[RC_OSK_MAX_CHARS + 1];
 static u16 s_result[RC_OSK_MAX_CHARS + 1];
 
 static unsigned s_container_bytes;
+
+/*
+ * What to draw behind the keyboard, each frame it is up. See the pump loop: the dialog is composited
+ * into the application's own presentation, so something has to keep presenting.
+ */
+static void (*s_present)(void);
+
+void rc_osk_set_present_hook(void (*present)(void))
+{
+    s_present = present;
+}
 static volatile int s_done;
 static volatile int s_cancelled;
 
@@ -205,12 +217,27 @@ rc_osk_status rc_osk_ask(rc_osk_kind kind, const char *prompt, const char *initi
     }
 
     /*
-     * PUMP UNTIL IT SAYS IT IS FINISHED. sysUtilCheckCallback is what actually delivers the events
-     * above; without it the dialog appears, accepts input, and never tells anyone.
+     * PUMP, AND KEEP PRESENTING. Two things, and b308 proved the second is not optional.
+     *
+     * sysUtilCheckCallback is what delivers the events above; without it the dialog accepts input and
+     * never tells anyone. That much was there.
+     *
+     * WHAT WAS MISSING IS THE FLIP. A system dialog on this machine does not draw itself onto the
+     * screen - it composites into the APPLICATION'S flip stream, so an application that stops
+     * presenting stops the dialog appearing at all. b308 raised it successfully and then sat in a loop
+     * that called nothing but the callback pump, so nothing was ever shown and the three-minute
+     * timeout read as a hang.
+     *
+     * The hook is the caller's because this file has no idea what should be behind the keyboard. It
+     * draws and flips; here that is one call a frame.
      */
     deadline = rc_time_ms() + RC_OSK_TIMEOUT_MS;
     while (!s_done && rc_time_ms() < deadline) {
         sysUtilCheckCallback();
+        if (s_present != NULL)
+            s_present();
+        else
+            rc_video_flip();
         rc_sleep_ms(16u);
     }
 
