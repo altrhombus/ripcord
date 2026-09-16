@@ -198,6 +198,13 @@ typedef struct {
     int      rgb_requested;
     int      rgb_accepted;      /* vdecGetPicture returned success for ARGB32 */
     unsigned rgb_min, rgb_max;  /* the byte range it wrote - all zero means accepted and not filled */
+    /*
+     * THE FIRST PIXEL, WHICH DECIDES THE RANGE. The capture opens on black, and in this stream black is
+     * limited-range Y=0x18. A decoder converting limited to full gives RGB 9 (1.164 * (24 - 16)); one
+     * treating the input as already full-range gives 24, and every level above it is lifted the same
+     * way - which is what a picture that looks slightly too bright would be.
+     */
+    uint8_t  rgb_first[8];
 } rc_vdec_decode_result;
 
 /* Decodes up to `max_frames` pictures from the Annex-B capture at `path` using the console's decoder.
