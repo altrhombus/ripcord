@@ -21,6 +21,8 @@ static int s_hint_width = 1280;
 static int s_hint_height = 720;
 static rc_decode_picture_fn s_sink;
 static void *s_sink_ctx;
+static rc_decode_picture_rgb_fn s_rgb_sink;
+static void *s_rgb_sink_ctx;
 
 void rc_decode_live_hint(int width, int height)
 {
@@ -44,8 +46,20 @@ const char *rc_decode_live_backend_name(void)
     }
 }
 
+/*
+ * Only the hardware decoder can produce packed RGB, so this is forwarded to it and never to openh264 -
+ * which is why it is set BEFORE opening: the format is chosen at open, and the fallback ignores it.
+ */
+void rc_decode_live_set_rgb_sink(rc_decode_picture_rgb_fn fn, void *ctx)
+{
+    s_rgb_sink = fn;
+    s_rgb_sink_ctx = ctx;
+    rc_decode_vdec_set_rgb_sink(fn, ctx);
+}
+
 int rc_decode_live_open(void)
 {
+    rc_decode_vdec_set_rgb_sink(s_rgb_sink, s_rgb_sink_ctx);
     if (rc_decode_vdec_open(s_hint_width, s_hint_height)) {
         s_backend = RC_DECODE_BACKEND_VDEC;
         if (s_sink != NULL)

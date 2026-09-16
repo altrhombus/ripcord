@@ -337,6 +337,54 @@ static inline uint32_t clamp255(int32_t v)
     return (uint32_t)v;
 }
 
+/*
+ * The same placement and scaling as rc_video_blit_yuv420, for a picture the decoder has already turned
+ * into packed 32-bit RGB. Only the conversion is absent, which is the whole point: b185 measured the
+ * SPE spending 16,444 us a frame converting and scaling against 1,667 us waiting for the MFC.
+ *
+ * NO PPE FALLBACK HERE, and that is deliberate rather than an omission. The YUV path keeps one because
+ * the PPE converter is the implementation that is known to work and a silent failure would be worse than
+ * a slow frame. There is no PPE scaler to fall back TO - so if the SPEs cannot do it, the caller is told
+ * (0) and the decoder seam can go back to asking for YUV, which is a decision for the caller and not
+ * something to paper over here.
+ */
+unsigned rc_video_blit_argb32(const uint8_t *argb, int src_stride, int width, int height)
+{
+    uint32_t *back = rc_video_back_buffer();
+    int stride_px;
+    int ox, oy;
+    int dst_w, dst_h;
+
+    if (back == NULL || argb == NULL || width <= 0 || height <= 0)
+        return 0u;
+
+    stride_px = s_info.pitch / 4;
+    {
+        int by_w = (s_info.width * 1024) / width;
+        int by_h = (s_info.height * 1024) / height;
+        int scale = (by_w < by_h) ? by_w : by_h;
+
+        dst_w = (width * scale) / 1024;
+        dst_h = (height * scale) / 1024;
+        dst_w &= ~1;
+        dst_h &= ~1;
+    }
+    if (dst_w <= 0 || dst_h <= 0 || dst_w > s_info.width || dst_h > s_info.height)
+        return 0u;
+
+    s_scaled_w = dst_w;
+    s_scaled_h = dst_h;
+    ox = (s_info.width - dst_w) / 2;
+    oy = (s_info.height - dst_h) / 2;
+
+    {
+        uint32_t *dst = back + (size_t)oy * (size_t)stride_px + (size_t)ox;
+
+        return rc_spu_yuv_convert_argb(argb, src_stride, width, height,
+                                       dst, s_info.pitch, dst_w, dst_h);
+    }
+}
+
 unsigned rc_video_blit_yuv420(const uint8_t *y, const uint8_t *u, const uint8_t *v,
                               int y_stride, int uv_stride, int width, int height)
 {

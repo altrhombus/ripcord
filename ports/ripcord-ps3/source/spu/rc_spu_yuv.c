@@ -47,6 +47,11 @@ static rc_spu_yuv_stats s_stats;
 static rc_spu_yuv_job *s_job;
 static volatile uint32_t *s_done;
 
+static unsigned rc_spu_yuv_dispatch(const uint8_t *y, const uint8_t *u, const uint8_t *v,
+                                    int y_stride, int uv_stride, int width, int height,
+                                    uint32_t *dst, int dst_pitch, int dst_width, int dst_height,
+                                    int source_argb);
+
 #define DONE_STRIDE_WORDS 32   /* 128 bytes */
 
 static int fail_init(int step, int rc)
@@ -135,9 +140,30 @@ int rc_spu_yuv_init(void)
     return s_spes;
 }
 
+/*
+ * The packed-RGB entry: the same dispatch with the colour conversion switched off in the kernel. Shares
+ * every other decision - strip division, deadline, fallback - because none of them depend on the source
+ * format. See rc_spu_yuv_job.h's source_argb for why this is worth having.
+ */
+unsigned rc_spu_yuv_convert_argb(const uint8_t *argb, int src_stride, int width, int height,
+                                 uint32_t *dst, int dst_pitch, int dst_width, int dst_height)
+{
+    return rc_spu_yuv_dispatch(argb, NULL, NULL, src_stride, 0, width, height,
+                               dst, dst_pitch, dst_width, dst_height, 1);
+}
+
 unsigned rc_spu_yuv_convert(const uint8_t *y, const uint8_t *u, const uint8_t *v,
                             int y_stride, int uv_stride, int width, int height,
                             uint32_t *dst, int dst_pitch, int dst_width, int dst_height)
+{
+    return rc_spu_yuv_dispatch(y, u, v, y_stride, uv_stride, width, height,
+                               dst, dst_pitch, dst_width, dst_height, 0);
+}
+
+static unsigned rc_spu_yuv_dispatch(const uint8_t *y, const uint8_t *u, const uint8_t *v,
+                                    int y_stride, int uv_stride, int width, int height,
+                                    uint32_t *dst, int dst_pitch, int dst_width, int dst_height,
+                                    int source_argb)
 {
     uint64_t t0, deadline;
     int rows_each;
@@ -198,6 +224,10 @@ unsigned rc_spu_yuv_convert(const uint8_t *y, const uint8_t *u, const uint8_t *v
         s_job[i].first_dst_row = (uint32_t)first;
         s_job[i].dst_rows = (uint32_t)rows;
         s_job[i].sequence = s_sequence;
+        s_job[i].source_argb = (uint32_t)source_argb;
+        s_job[i].pad[0] = 0u;
+        s_job[i].pad[1] = 0u;
+        s_job[i].pad[2] = 0u;
 
         s_done[(size_t)i * DONE_STRIDE_WORDS] = 0u;
         outstanding++;

@@ -139,6 +139,13 @@ typedef struct {
      */
     int connection_quality;
 
+    /*
+     * Ask the decoder for packed RGB rather than YUV planes where it can produce it. A platform
+     * question rather than a protocol one - it exists here because this is where a port's stream
+     * settings live. Key `decoderrgb`.
+     */
+    int decoder_rgb;
+
     int stream_width;        /* resolution asked of the console - must be on the standard ladder */
     int stream_height;
     int streaming_type;
