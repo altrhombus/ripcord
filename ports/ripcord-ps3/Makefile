@@ -173,7 +173,7 @@ CFLAGS := $(ARCH) -std=gnu99 -O2 -g \
           -DRC_PS3_APPID='"$(APPID)"' \
           -DRC_NETLOG_HOST='"$(RC_NETLOG_HOST)"' -DRC_NETLOG_PORT=$(RC_NETLOG_PORT) \
           -I$(CORE) -I$(BUILD) -Isource/platform -Isource/video -Isource/spu -Isource/net -Isource/media -Isource/coretest \
-          -Isource/discovery -Isource/connect -Isource/input -I$(CORE)/discovery -I$(CORE)/session \
+          -Isource/discovery -Isource/connect -Isource/input -I$(CORE)/discovery -I$(CORE)/session -I$(CORE)/input \
           -I$(CORE)/halyard -I$(CORE)/crypto -I$(CORE)/net -I$(CORE)/takion -I$(CORE)/stream -I$(CORE)/util -I$(CORE)/platform -Ispu \
           -I$(PSL1GHT)/ppu/include
 
@@ -192,7 +192,7 @@ LDFLAGS := $(ARCH) -Wl,--gc-sections -L$(PSL1GHT)/ppu/lib -L$(PORTLIBS)/lib
 # -lsysmodule is not optional beside -lnet: netInitialize() calls sysModuleLoad, and without it the link
 # fails on that symbol rather than on anything mentioning networking. PSL1GHT's network samples all pair
 # the two - `LIBS := -lnet -lsysmodule` - which is the fastest place to have learned it.
-LIBS := -lfreetype -lz -lrsx -lgcm_sys -lsysutil -lvdec -laudio -lnet -lsysmodule -lpthread -lrt -llv2
+LIBS := -lfreetype -lz -lio -lrsx -lgcm_sys -lsysutil -lvdec -laudio -lnet -lsysmodule -lpthread -lrt -llv2
 
 # The platform seam plus the two core utilities the bring-up program needs. rc_random_ps3.c joined this
 # list on 2026-09-11, when the CSPRNG call was confirmed against real headers; before that its ABSENCE
@@ -508,9 +508,15 @@ $(OPENH264_LIB):
 #
 # vpath rather than per-directory rules: the basenames across these five directories are unique, and one
 # pattern rule is easier to be right about than five.
+#
+# EVERY source directory has to appear here. A new one that is added to SOURCES and forgotten here does
+# not produce a compile error - make reports "No rule to make target", stops, and leaves the PREVIOUS
+# package sitting in place, which then uploads and installs perfectly and runs the old build. Adding
+# source/input cost exactly that: three builds that reported a new number and shipped the old binary.
 vpath %.c source/video $(CORE)/util $(CORE)/discovery $(CORE)/session $(CORE)/net $(CORE)/takion \
           $(CORE)/crypto $(CORE)/stream \
-          source/platform source/spu source/net source/media source/discovery source/connect source/app
+          source/platform source/spu source/net source/media source/discovery source/connect \
+          source/app source/input
 
 COBJS := $(addprefix $(BUILD)/,$(notdir $(SOURCES:.c=.o)))
 
