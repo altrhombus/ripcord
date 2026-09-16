@@ -239,12 +239,22 @@ int rc_video_present_ready(void)
     s_last_flip_status = (unsigned)status;
     s_ready_calls++;
 
-    /* Zero means the flip has completed. Reset it here, where the answer is consumed. */
+    /*
+     * ASKING MUST NOT CONSUME THE ANSWER.
+     *
+     * This used to reset the status here, on the reasoning that the answer is consumed where it is read.
+     * It is not: the caller can still decline to flip - if the conversion fails there is nothing to show
+     * - and then no flip ever completes, the status never returns to zero, and EVERY later picture is
+     * reported busy. b195 is that: one failed scale, and 1,058 decoded pictures found the display busy
+     * for the rest of the run.
+     *
+     * The reset belongs with the flip, which is the act that makes a new answer possible, and is now
+     * done there.
+     */
     if (status != 0) {
         s_busy_calls++;
         return 0;
     }
-    gcmResetFlipStatus();
     return 1;
 }
 
@@ -276,6 +286,13 @@ void rc_video_flip(void)
 
     if (gcmSetFlip(s_context, (u8)back) != 0)
         return;
+
+    /*
+     * Paired with rc_video_present_ready, which only asks. Resetting here - once a flip is actually
+     * queued - means a caller that decides not to flip leaves the display exactly as it found it, and
+     * the status returns to zero when this flip completes rather than never.
+     */
+    gcmResetFlipStatus();
     rsxFlushBuffer(s_context);
     gcmSetWaitFlip(s_context);
 
