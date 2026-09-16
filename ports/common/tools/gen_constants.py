@@ -15,12 +15,16 @@ the next build rather than on the next time somebody remembers.
 Parsing JSON on an ARM11 at 268 MHz to reach a lookup table would also be silly, which is the other half of
 the reason this is a build step and not runtime code.
 
-Only the CONTROL-plane constants are emitted.  The registration tables in the same bundle drive PIN
-pairing, which this port deliberately does not do -- ripcord-3ds consumes a pairing record produced by a
-desktop Ripcord install (see the README), so the registration path never runs on the handheld and its
-constants have no business being in the binary.
+WHAT IS EMITTED IS NOW A CHOICE THE CALLER MAKES.  The control-plane constants are always emitted.  The
+registration tables, which drive PIN pairing, are emitted only with --registration.
 
-Usage:  gen_constants.py <bundle.json> <output.c>
+That switch exists because the first port to use this could not register at all: ripcord-3ds consumes a
+pairing record produced by a desktop Ripcord install, so the registration path never ran on the handheld
+and its constants had no business in the binary.  A port that DOES register needs them, and the right
+answer is a flag rather than emitting them everywhere -- every byte in a binary that nothing can reach is
+a byte somebody has to justify.
+
+Usage:  gen_constants.py [--registration] <bundle.json> <output.c>
 """
 
 import json
@@ -28,6 +32,8 @@ import sys
 
 KDF_TABLE_LENGTH = 512
 CONTEXT_KEY_LENGTH = 16
+REGISTRATION_TABLE_LENGTH = 512
+MATERIAL_WRAP_TABLE_LENGTH = 512
 
 
 def unhex(name, value, expected_length=None):
@@ -60,8 +66,13 @@ def emit_array(name, data, length):
 
 
 def main(argv):
-    if len(argv) != 3:
-        raise SystemExit("usage: gen_constants.py <bundle.json> <output.c>")
+    args = list(argv[1:])
+    want_registration = "--registration" in args
+    if want_registration:
+        args.remove("--registration")
+    if len(args) != 2:
+        raise SystemExit("usage: gen_constants.py [--registration] <bundle.json> <output.c>")
+    argv = [argv[0]] + args
 
     bundle_path, output_path = argv[1], argv[2]
 
@@ -78,6 +89,17 @@ def main(argv):
     ps4_kdf1 = unhex("ps4KdfTable1", bundle.get("ps4KdfTable1"), KDF_TABLE_LENGTH)
     ps4_kdf2 = unhex("ps4KdfTable2", bundle.get("ps4KdfTable2"), KDF_TABLE_LENGTH)
 
+    regist = unhex("registrationTable", bundle.get("registrationTable"),
+                   REGISTRATION_TABLE_LENGTH)
+    wrap = unhex("materialWrapTable", bundle.get("materialWrapTable"),
+                 MATERIAL_WRAP_TABLE_LENGTH)
+    ps4_regist = unhex("ps4RegistrationTable", bundle.get("ps4RegistrationTable"),
+                       REGISTRATION_TABLE_LENGTH)
+    ps4_wrap = unhex("ps4MaterialWrapTable", bundle.get("ps4MaterialWrapTable"),
+                     MATERIAL_WRAP_TABLE_LENGTH)
+    context_key = unhex("contextKey", bundle.get("contextKey"), CONTEXT_KEY_LENGTH)
+    selector_offset = bundle.get("selectorOffset")
+
     context_keys = bundle.get("contextKeys") or {}
     codec_in_high = unhex("codecInHigh", context_keys.get("codecInHigh"), CONTEXT_KEY_LENGTH)
     selector_one = unhex("selectorOne", context_keys.get("selectorOne"), CONTEXT_KEY_LENGTH)
@@ -92,6 +114,16 @@ def main(argv):
         for value in (kdf1, kdf2, codec_in_high, selector_one, selector_zero, fallback_zero)
     )
     has_ps4 = ps4_kdf1 is not None and ps4_kdf2 is not None
+
+    # Registration needs all five together or none of them: a partial set would build, link, and fail at
+    # the one moment a user is standing in front of the console typing a PIN.
+    registration_complete = all(
+        value is not None
+        for value in (regist, wrap, context_key)
+    ) and isinstance(selector_offset, int)
+    if want_registration and not registration_complete:
+        raise SystemExit("--registration asked for, but the bundle is missing registration constants")
+    has_ps4_registration = ps4_regist is not None and ps4_wrap is not None
 
     parts = [
         "/*",
@@ -127,12 +159,40 @@ def main(argv):
         "",
     ]
 
+    if want_registration:
+        parts += [
+            "/* Registration - emitted because this port performs PIN pairing itself. */",
+            f"const int halyard_v1_registration_bundled = {1 if registration_complete else 0};",
+            f"const int halyard_v1_has_ps4_registration = {1 if has_ps4_registration else 0};",
+            f"const int halyard_v1_selector_offset = {selector_offset};",
+            "",
+            emit_array("halyard_v1_registration_table", regist, REGISTRATION_TABLE_LENGTH),
+            "",
+            emit_array("halyard_v1_material_wrap_table", wrap, MATERIAL_WRAP_TABLE_LENGTH),
+            "",
+            emit_array("halyard_v1_ps4_registration_table", ps4_regist, REGISTRATION_TABLE_LENGTH),
+            "",
+            emit_array("halyard_v1_ps4_material_wrap_table", ps4_wrap, MATERIAL_WRAP_TABLE_LENGTH),
+            "",
+            emit_array("halyard_v1_registration_context_key", context_key, CONTEXT_KEY_LENGTH),
+            "",
+        ]
+    else:
+        parts += [
+            "/* Registration constants deliberately NOT emitted - see the module docstring. */",
+            "const int halyard_v1_registration_bundled = 0;",
+            "const int halyard_v1_has_ps4_registration = 0;",
+            "const int halyard_v1_selector_offset = 0;",
+            "",
+        ]
+
     with open(output_path, "w", encoding="utf-8") as handle:
         handle.write("\n".join(parts))
 
     status = "complete" if control_complete else "INCOMPLETE (control constants missing)"
     ps4_status = "with PS4 tables" if has_ps4 else "PS5 only"
-    print(f"gen_constants: wrote {output_path} - {status}, {ps4_status}")
+    reg_status = "with registration" if want_registration else "control only"
+    print(f"gen_constants: wrote {output_path} - {status}, {ps4_status}, {reg_status}")
 
     if not control_complete:
         raise SystemExit(

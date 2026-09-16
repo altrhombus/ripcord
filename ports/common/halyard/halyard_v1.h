@@ -48,6 +48,32 @@ extern const uint8_t halyard_v1_ctx_selector_one[HALYARD_CONTEXT_KEY_LENGTH];
 extern const uint8_t halyard_v1_ctx_selector_zero[HALYARD_CONTEXT_KEY_LENGTH];
 extern const uint8_t halyard_v1_ctx_fallback_zero[HALYARD_CONTEXT_KEY_LENGTH];
 
+/*
+ * REGISTRATION, which is the PIN-pairing half of the bundle and is emitted only for ports that perform
+ * it - gen_constants.py takes --registration. A port that consumes a pairing record made elsewhere links
+ * these as zero and `halyard_v1_registration_bundled` says so, because a table of zeros that silently
+ * produces a wrong key is worse than a symbol that is honestly absent.
+ *
+ * Every byte here is covered by the same NOTICE argument as the control tables: identical for every
+ * console and every account, and a client cannot register without them. Nothing per-console, per-account
+ * or per-session appears here - the PIN is typed by the user and the pairing record comes back from the
+ * console.
+ */
+#define HALYARD_REGISTRATION_TABLE_LENGTH   512
+#define HALYARD_MATERIAL_WRAP_TABLE_LENGTH  512
+
+extern const int halyard_v1_registration_bundled;
+extern const int halyard_v1_has_ps4_registration;
+
+/* Where the PIN selects its variant within the registration table. */
+extern const int halyard_v1_selector_offset;
+
+extern const uint8_t halyard_v1_registration_table[HALYARD_REGISTRATION_TABLE_LENGTH];
+extern const uint8_t halyard_v1_material_wrap_table[HALYARD_MATERIAL_WRAP_TABLE_LENGTH];
+extern const uint8_t halyard_v1_ps4_registration_table[HALYARD_REGISTRATION_TABLE_LENGTH];
+extern const uint8_t halyard_v1_ps4_material_wrap_table[HALYARD_MATERIAL_WRAP_TABLE_LENGTH];
+extern const uint8_t halyard_v1_registration_context_key[HALYARD_CONTEXT_KEY_LENGTH];
+
 /* ---- Control-session key derivation ---- */
 
 /*
