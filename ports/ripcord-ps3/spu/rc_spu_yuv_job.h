@@ -68,7 +68,7 @@ typedef struct {
     uint32_t source_argb;
 
     /*
-     * 1 to interpolate between the four surrounding source pixels rather than take the nearest.
+     * 0 nearest, 1 interpolate along the row only, 2 interpolate in both directions.
      *
      * A user-facing choice rather than a better default: bilinear costs several times what nearest does
      * and softens as well as smooths, and at 1280x720 into 1920x1080 - a 1.5x scale where two output
@@ -78,11 +78,10 @@ typedef struct {
      * Only the packed-RGB path honours it. The plane path would need two CONVERTED lines rather than two
      * fetched ones, and it is no longer the path the stream takes.
      *
-     * [X] TOO SLOW TO USE AS WRITTEN. b195 missed the 25 ms strip deadline with it on, so not one stream
-     * frame was converted and nothing reached the screen. Nine interpolations a pixel, each pulling a
-     * byte out of a word and putting one back, is more than this SPU manages in the time a frame allows.
-     * The scalar version was written to be measured rather than shipped, and the measurement says it
-     * needs the channels unpacked into 16-bit lanes with four pixels done at once before it is usable.
+     * MODE 2 DOES NOT FIT 60 fps. Measured at 21,038 us an SPE for a frame against a 16,667 us budget,
+     * so it halves the frame rate; it fits inside 63% of a 30 fps budget and is kept for that. Mode 1 is
+     * the cheaper two thirds of the idea - one source row rather than two - and inherits the nearest
+     * path's ability to store a computed line twice when two output rows share a source row.
      */
     uint32_t bilinear;
     uint32_t pad[2];         /* keeps this a multiple of 16, which the MFC requires - see the header */
