@@ -15,3 +15,4 @@ int halyard_control_arm_is_reply(int is_ps5, const uint8_t *data, size_t length)
         return 0;
     return memcmp(data, expect, HALYARD_CONTROL_ARM_PROBE_SIZE) == 0;
 }
+

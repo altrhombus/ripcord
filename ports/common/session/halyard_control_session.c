@@ -26,8 +26,6 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-#define ARM_REPLY_WINDOW_MS 2000
-#define ARM_SETTLE_MS 200
 #define SESS_RESPONSE_TIMEOUT_MS 5000u
 
 static void buffer_consume(halyard_control_session *s, size_t n)
@@ -98,47 +96,10 @@ static size_t wait_for_response(halyard_control_session *s, halyard_sess_respons
  */
 static void arm_control_listener(const char *host, int is_ps5)
 {
-    int sock;
-    char probe[HALYARD_CONTROL_ARM_PROBE_SIZE];
-    struct sockaddr_in unicast, broadcast;
-    uint64_t start_ms;
-
-    sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-    if (sock < 0)
-        return;
-
-    {
-        int enable = 1;
-        setsockopt(sock, SOL_SOCKET, SO_BROADCAST, &enable, sizeof(enable));
-    }
-    rc_socket_set_nonblocking(sock);
-
-    halyard_control_arm_build_probe(is_ps5, probe);
-
-    memset(&unicast, 0, sizeof(unicast));
-    unicast.sin_family = AF_INET;
-    unicast.sin_port = htons(HALYARD_CONTROL_ARM_PORT);
-    inet_aton(host, &unicast.sin_addr);
-
-    broadcast = unicast;
-    broadcast.sin_addr.s_addr = INADDR_BROADCAST;
-
-    sendto(sock, probe, sizeof(probe), 0, (struct sockaddr *)&unicast, sizeof(unicast));
-    sendto(sock, probe, sizeof(probe), 0, (struct sockaddr *)&broadcast, sizeof(broadcast));
-
-    start_ms = rc_time_ms();
-    while (rc_time_ms() - start_ms < ARM_REPLY_WINDOW_MS) {
-        uint8_t buf[16];
-        ssize_t n = recvfrom(sock, buf, sizeof(buf), 0, NULL, NULL);
-        if (n > 0 && halyard_control_arm_is_reply(is_ps5, buf, (size_t)n)) {
-            rc_log("control listener armed (got %s)\n", is_ps5 ? "RES3" : "RES2");
-            break;
-        }
-        rc_sleep_ms(20); /* 20 ms */
-    }
-
-    close(sock);
-    rc_sleep_ms(ARM_SETTLE_MS);
+    /* The probe itself moved to halyard_control_arm.c when registration turned out to need the same
+     * one - see the note there on why it is not optional for either path. */
+    if (halyard_control_arm_probe(host, is_ps5))
+        rc_log("control listener armed (got %s)\n", is_ps5 ? "RES3" : "RES2");
 }
 
 /* /sess/init: presents RP-Registkey in plaintext, returns the console's RP-Nonce. 1 on success. */
