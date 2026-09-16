@@ -20,6 +20,8 @@
  *   hardwarescale=0            (optional - 1 scales on the GPU instead of the CPU, where the port has
  *                               one; `bilinear` then costs nothing, since the filter is wired)
  *   diagnostics=0              (optional - 1 draws the diagnostics overlay over the stream)
+ *   systemfont=0               (optional - 1 tries the platform's own font for the overlay. Known to
+ *                               fail on the PS3; see that port's DECODE.md before spending time on it)
  *   videoformat=bgr565         (optional - "bgr565" or "rgb565"; see below)
  *   widescreen=1               (optional - 800x240 top screen; on by default, see below)
  *   smoothing=1                (optional - average the two source rows the vertical squeeze straddles)
@@ -159,6 +161,13 @@ typedef struct {
      * something looks wrong, which is not a moment anyone can rebuild for.
      */
     int diagnostics;
+
+    /*
+     * Try the platform's own font for the overlay instead of the port's drawn one. OFF BY DEFAULT and
+     * that is a finding rather than a preference - see the port's notes on what was tried. Kept as a
+     * setting so a future attempt costs one line in this file rather than a rebuild.
+     */
+    int system_font;
     int video_rgb565;        /* 1 = ask MVD for RGB565 instead of BGR565 */
     int skip_until_keyframe; /* 1 = drop every frame after a loss until the next IDR */
     int widescreen;          /* 1 = 800x240 top screen (default); 0 = 400x240 */
