@@ -43,9 +43,20 @@ int  rc_overlay_on(void);
  * look different enough that "which font is this" is otherwise guessed from the screen. */
 int  rc_overlay_using_system_font(void);
 
-/* The bitmap's size, so the caller can lay out against it without duplicating the constants. */
+/*
+ * DESIGN PIXELS TO REAL ONES. Every measurement in the panel's layout is against a 1920x1080 screen;
+ * this converts one. A fixed pixel layout is 40% of a 1080p screen, 59% of a 720p one and wider than a
+ * 720x480 one - at which point the blit refuses the rectangle and the overlay is silently not there.
+ */
+int rc_overlay_px(int design);
+
+/* The panel's real size, after that conversion. */
 int rc_overlay_width(void);
 int rc_overlay_height(void);
+
+/* How far below a run's top edge its baseline sits, so two sizes on one row can be aligned by their
+ * baselines rather than by their boxes. */
+int rc_overlay_ascent(int scale);
 
 /*
  * Starts a rebuild. 0 means "not yet" - the bitmap still holds the last text and the caller should go

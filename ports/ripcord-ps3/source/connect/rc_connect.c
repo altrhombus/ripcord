@@ -1326,14 +1326,19 @@ static void on_picture(void *ctx, const unsigned char *y, const unsigned char *u
  * numbers end on a fixed edge rather than starting at one, so a frame rate going 59 -> 9 does not shift
  * everything after it. A number that moves while you read it is a number you read twice.
  */
-#define OV_PAD      20
-#define OV_HEAD_H   48
-#define OV_LABEL_X  (OV_PAD + 4)
-#define OV_VALUE_X  186
-#define OV_NUM_R    330     /* right edge of the value column */
-#define OV_SPARK_X  354
-#define OV_SPARK_W  240
-#define OV_ROW_H    34
+/*
+ * DESIGN PIXELS, against a 1920x1080 screen. rc_overlay_px converts each to whatever the television
+ * actually negotiated - see the note on it, and note that a fixed pixel layout is wider than a
+ * 720x480 screen, at which point the overlay silently is not drawn at all.
+ */
+#define OV_PAD      rc_overlay_px(20)
+#define OV_HEAD_H   rc_overlay_px(48)
+#define OV_LABEL_X  rc_overlay_px(24)
+#define OV_VALUE_X  rc_overlay_px(186)
+#define OV_NUM_R    rc_overlay_px(330)     /* right edge of the value column */
+#define OV_SPARK_X  rc_overlay_px(354)
+#define OV_SPARK_W  rc_overlay_px(240)
+#define OV_ROW_H    rc_overlay_px(34)
 
 static void draw_overlay(void)
 {
@@ -1345,6 +1350,7 @@ static void draw_overlay(void)
     unsigned series_n = 0u;
     unsigned i;
     int y;
+    int small_drop;
 
     if (!rc_overlay_on())
         return;
@@ -1369,6 +1375,13 @@ static void draw_overlay(void)
     }
 
     now = overlay_latest();
+
+    /*
+     * How far to drop the small text so it shares a baseline with the large figure beside it. The rows
+     * used a hand-chosen +5, which is the same top-versus-baseline mistake the header had: two runs
+     * whose boxes line up do not have their letters on the same line.
+     */
+    small_drop = rc_overlay_ascent(2) - rc_overlay_ascent(1);
 
     /*
      * OLDEST TO NEWEST, SKIPPING THE ONE IN PROGRESS. The ring's order is not the reading order, and a
@@ -1401,7 +1414,7 @@ static void draw_overlay(void)
     /* ---- panel ------------------------------------------------------------------------------- */
     rc_overlay_rect(0, 0, rc_overlay_width(), rc_overlay_height(), RC_OV_PANEL);
     rc_overlay_rect(0, 0, rc_overlay_width(), OV_HEAD_H, RC_OV_HEADER);
-    rc_overlay_rect(0, 0, 7, OV_HEAD_H, RC_OV_ACCENT);
+    rc_overlay_rect(0, 0, rc_overlay_px(7), OV_HEAD_H, RC_OV_ACCENT);
     rc_overlay_rect(0, OV_HEAD_H, rc_overlay_width(), 1, RC_OV_EDGE);
     /* A one-pixel edge on all four sides, so the panel has a boundary over a bright picture as well as
      * over a dark one. */
@@ -1410,12 +1423,25 @@ static void draw_overlay(void)
     rc_overlay_rect(0, 0, 1, rc_overlay_height(), RC_OV_EDGE);
     rc_overlay_rect(rc_overlay_width() - 1, 0, 1, rc_overlay_height(), RC_OV_EDGE);
 
-    rc_overlay_text(OV_PAD, 6, 2, RC_OV_TEXT, "Ripcord");
-    rc_overlay_num(OV_PAD + 150, 18, 1, RC_OV_LABEL, RC_PS3_BUILD_ID);
-    rc_overlay_text_right(rc_overlay_width() - OV_PAD, 14, 1, RC_OV_LABEL, "PlayStation 3");
+    /*
+     * ONE BASELINE, TWO SIZES. These were placed by their top edges with hand-chosen y values, so the
+     * boxes lined up and the letters did not - the name sat a few pixels above the build id beside it.
+     * Each run is now placed at (baseline - its own ascent), which is what "on the same line" means.
+     */
+    {
+        int base = rc_overlay_px(34);
+        int big = rc_overlay_ascent(2);
+        int small = rc_overlay_ascent(1);
+        int at = OV_PAD;
+
+        at += rc_overlay_text(at, base - big, 2, RC_OV_TEXT, "Ripcord");
+        rc_overlay_num(at + rc_overlay_px(12), base - small, 1, RC_OV_LABEL, RC_PS3_BUILD_ID);
+        rc_overlay_text_right(rc_overlay_width() - OV_PAD, base - small, 1, RC_OV_LABEL,
+                              "PlayStation 3");
+    }
 
     /* ---- what the stream is ------------------------------------------------------------------ */
-    y = OV_HEAD_H + 14;
+    y = OV_HEAD_H + rc_overlay_px(14);
     rc_overlay_text(OV_LABEL_X, y + 2, 1, RC_OV_LABEL, "Stream");
     if (g_stream_is_hevc) {
         rc_overlay_text(OV_VALUE_X, y, 1, RC_OV_BAD, "HEVC - this decoder is H.264 only");
@@ -1426,7 +1452,7 @@ static void draw_overlay(void)
 
         at += rc_overlay_num(at, y, 1, RC_OV_TEXT, "%dx%d @%d",
                              g_live_stats.width, g_live_stats.height, g_overlay_asked_fps);
-        rc_overlay_text(at + 20, y, 1, RC_OV_TEXT, "H.264 hardware");
+        rc_overlay_text(at + rc_overlay_px(20), y, 1, RC_OV_TEXT, "H.264 hardware");
     }
 
     y += OV_ROW_H;
@@ -1434,24 +1460,29 @@ static void draw_overlay(void)
     {
         int at = OV_VALUE_X;
 
-        at += rc_overlay_text(at, y, 1, RC_OV_LABEL, "%s scaler, %s, asked for ",
+        /*
+         * Measured and shortened rather than trusted to fit. "asked for 20000 kbps" spelled out ran
+         * past the right edge at 1080p and would have run further at every smaller size, because the
+         * panel shrinks with the screen and the sentence does not.
+         */
+        at += rc_overlay_text(at, y, 1, RC_OV_LABEL, "%s scaler, %s, ",
                               g_overlay_hw_scale ? "RSX" : "SPE",
                               rc_decode_vdec_picture_in_vram() ? "zero copy" : "one copy");
         at += rc_overlay_num(at, y, 1, RC_OV_LABEL, "%d", g_overlay_asked_kbps);
-        rc_overlay_text(at + 6, y, 1, RC_OV_LABEL, " kbps");
+        rc_overlay_text(at + rc_overlay_px(4), y, 1, RC_OV_LABEL, " kbps asked");
     }
 
-    y += OV_ROW_H - 2;
+    y += OV_ROW_H - rc_overlay_px(2);
     rc_overlay_rect(OV_PAD, y, rc_overlay_width() - OV_PAD * 2, 1, RC_OV_EDGE);
 
     /* ---- the live figures -------------------------------------------------------------------- */
-    y += 12;
-    rc_overlay_text(OV_LABEL_X, y + 5, 1, RC_OV_LABEL, "Frames/s");
+    y += rc_overlay_px(12);
+    rc_overlay_text(OV_LABEL_X, y + small_drop, 1, RC_OV_LABEL, "Frames/s");
     rc_overlay_num_right(OV_NUM_R, y, 2,
                          now->frames >= 55u ? RC_OV_GOOD
                                             : (now->frames >= 40u ? RC_OV_WARN : RC_OV_BAD),
                          "%u", now->frames);
-    rc_overlay_bars(OV_SPARK_X, y, OV_SPARK_W, 20, fps_series, series_n,
+    rc_overlay_bars(OV_SPARK_X, y, OV_SPARK_W, rc_overlay_px(20), fps_series, series_n,
                     (peak_fps > 60u) ? peak_fps : 60u, RC_OV_ACCENT);
     /*
      * The label is placed from the NUMBER'S measured width rather than from a guess at it. These three
@@ -1461,40 +1492,40 @@ static void draw_overlay(void)
     {
         int w = rc_overlay_num_width(1, "%u", low_fps);
 
-        rc_overlay_text_right(rc_overlay_width() - OV_PAD - w - 10, y + 5, 1, RC_OV_LABEL, "low");
-        rc_overlay_num_right(rc_overlay_width() - OV_PAD, y + 5, 1, RC_OV_LABEL, "%u", low_fps);
+        rc_overlay_text_right(rc_overlay_width() - OV_PAD - w - rc_overlay_px(10), y + small_drop, 1, RC_OV_LABEL, "low");
+        rc_overlay_num_right(rc_overlay_width() - OV_PAD, y + small_drop, 1, RC_OV_LABEL, "%u", low_fps);
     }
 
-    y += OV_ROW_H + 4;
-    rc_overlay_text(OV_LABEL_X, y + 5, 1, RC_OV_LABEL, "Mbit/s");
+    y += OV_ROW_H + rc_overlay_px(4);
+    rc_overlay_text(OV_LABEL_X, y + small_drop, 1, RC_OV_LABEL, "Mbit/s");
     rc_overlay_num_right(OV_NUM_R, y, 2, RC_OV_TEXT, "%lu.%lu",
                          (now->bytes * 8ul) / 1000000ul, ((now->bytes * 8ul) / 100000ul) % 10ul);
-    rc_overlay_bars(OV_SPARK_X, y, OV_SPARK_W, 20, mbps_series, series_n,
+    rc_overlay_bars(OV_SPARK_X, y, OV_SPARK_W, rc_overlay_px(20), mbps_series, series_n,
                     (unsigned)((peak_bytes * 8ul) / 100000ul), RC_OV_GOOD);
     {
         unsigned long whole = (peak_bytes * 8ul) / 1000000ul;
         unsigned long tenth = ((peak_bytes * 8ul) / 100000ul) % 10ul;
         int w = rc_overlay_num_width(1, "%lu.%lu", whole, tenth);
 
-        rc_overlay_text_right(rc_overlay_width() - OV_PAD - w - 10, y + 5, 1, RC_OV_LABEL, "peak");
-        rc_overlay_num_right(rc_overlay_width() - OV_PAD, y + 5, 1, RC_OV_LABEL, "%lu.%lu",
+        rc_overlay_text_right(rc_overlay_width() - OV_PAD - w - rc_overlay_px(10), y + small_drop, 1, RC_OV_LABEL, "peak");
+        rc_overlay_num_right(rc_overlay_width() - OV_PAD, y + small_drop, 1, RC_OV_LABEL, "%lu.%lu",
                              whole, tenth);
     }
 
-    y += OV_ROW_H + 4;
-    rc_overlay_text(OV_LABEL_X, y + 5, 1, RC_OV_LABEL, "Lost/s");
+    y += OV_ROW_H + rc_overlay_px(4);
+    rc_overlay_text(OV_LABEL_X, y + small_drop, 1, RC_OV_LABEL, "Lost/s");
     rc_overlay_num_right(OV_NUM_R, y, 2, peak_lost > 0u ? RC_OV_WARN : RC_OV_TEXT, "%u", now->lost);
     {
         int w = rc_overlay_num_width(1, "%u", peak_lost);
 
-        rc_overlay_text_right(rc_overlay_width() - OV_PAD - w - 10, y + 5, 1, RC_OV_LABEL, "peak");
-        rc_overlay_num_right(rc_overlay_width() - OV_PAD, y + 5, 1, RC_OV_LABEL, "%u", peak_lost);
+        rc_overlay_text_right(rc_overlay_width() - OV_PAD - w - rc_overlay_px(10), y + small_drop, 1, RC_OV_LABEL, "peak");
+        rc_overlay_num_right(rc_overlay_width() - OV_PAD, y + small_drop, 1, RC_OV_LABEL, "%u", peak_lost);
     }
 
     /* ---- timing and faults ------------------------------------------------------------------- */
-    y += OV_ROW_H + 2;
+    y += OV_ROW_H + rc_overlay_px(2);
     rc_overlay_rect(OV_PAD, y, rc_overlay_width() - OV_PAD * 2, 1, RC_OV_EDGE);
-    y += 14;
+    y += rc_overlay_px(14);
 
     {
         unsigned long hz = (unsigned long)rc_tick_hz();
@@ -1507,10 +1538,10 @@ static void draw_overlay(void)
 
         rc_overlay_text(OV_LABEL_X, y, 1, RC_OV_LABEL, "Time");
         at += rc_overlay_num(at, y, 1, RC_OV_TEXT, "%u", decode_us);
-        at += rc_overlay_text(at + 6, y, 1, RC_OV_LABEL, " us decode") + 6;
-        at += rc_overlay_num(at + 20, y, 1, RC_OV_TEXT, "%u",
-                             g_blits ? (unsigned)(g_blit_us_total / g_blits) : 0u) + 20;
-        rc_overlay_text(at + 6, y, 1, RC_OV_LABEL, " us present");
+        at += rc_overlay_text(at + rc_overlay_px(6), y, 1, RC_OV_LABEL, " us decode") + rc_overlay_px(6);
+        at += rc_overlay_num(at + rc_overlay_px(20), y, 1, RC_OV_TEXT, "%u",
+                             g_blits ? (unsigned)(g_blit_us_total / g_blits) : 0u) + rc_overlay_px(20);
+        rc_overlay_text(at + rc_overlay_px(6), y, 1, RC_OV_LABEL, " us present");
     }
 
     /*
@@ -1532,12 +1563,12 @@ static void draw_overlay(void)
 
         rc_overlay_text(OV_LABEL_X, y, 1, RC_OV_LABEL, "Since start");
         at += rc_overlay_num(at, y, 1, c, "%u", g_idr_requests);
-        at += rc_overlay_text(at + 6, y, 1, RC_OV_LABEL, " keyframes,") + 6;
-        at += rc_overlay_num(at + 12, y, 1, c, "%u", g_frames_overrun) + 12;
-        at += rc_overlay_text(at + 6, y, 1, RC_OV_LABEL, " overrun,") + 6;
-        at += rc_overlay_num(at + 12, y, 1, c, "%u",
-                             a.decode_errors + a.silence_written) + 12;
-        rc_overlay_text(at + 6, y, 1, RC_OV_LABEL, " audio");
+        at += rc_overlay_text(at + rc_overlay_px(6), y, 1, RC_OV_LABEL, " keyframes,") + rc_overlay_px(6);
+        at += rc_overlay_num(at + rc_overlay_px(12), y, 1, c, "%u", g_frames_overrun) + rc_overlay_px(12);
+        at += rc_overlay_text(at + rc_overlay_px(6), y, 1, RC_OV_LABEL, " overrun,") + rc_overlay_px(6);
+        at += rc_overlay_num(at + rc_overlay_px(12), y, 1, c, "%u",
+                             a.decode_errors + a.silence_written) + rc_overlay_px(12);
+        rc_overlay_text(at + rc_overlay_px(6), y, 1, RC_OV_LABEL, " audio");
     }
 
     rc_overlay_end();
