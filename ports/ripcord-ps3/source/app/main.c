@@ -59,6 +59,7 @@
 #include "crypto/rc_gcm.h"
 #include "rc_stack_ps3.h"
 #include "rc_video_ps3.h"
+#include "rc_status_screen.h"
 #include "rc_spu_yuv.h"
 
 /*
@@ -2376,6 +2377,22 @@ int main(void)
 
     ps3_log("\nnot covered here: the rest of the decoder. See README.md.\n");
     ps3_log("%s\n", failures == 0 ? "all checks passed" : "CHECKS FAILED");
+
+    /*
+     * THE SESSION'S OUTCOME, PUT BACK ON THE SCREEN LAST.
+     *
+     * It was drawn when it happened and then painted over: three more checks run after the connect one,
+     * and they draw test patterns and decode probes. So the thing a viewer most wants to read was the
+     * one thing guaranteed to be gone by the time they looked.
+     *
+     * Redrawing it here costs nothing and makes it the last thing on screen, which is where it stays.
+     */
+    {
+        const rc_session_state *session = rc_connect_session_state();
+
+        if (rc_status_screen_wants_draw(session) && session->headline[0] != '\0')
+            rc_status_screen_draw(session);
+    }
     /* The generator was opened by the CSPRNG check and used by everything after it - see the note
      * there. It is closed here, with the other process-wide resources, rather than by any one check. */
     {

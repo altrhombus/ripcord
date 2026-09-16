@@ -449,13 +449,26 @@ static unsigned g_hold_ms = RC_STREAM_HOLD_MS;
  */
 static rc_session_state g_session;
 
+/*
+ * How long a finished session's card is held before anything else is allowed to draw.
+ *
+ * Only for the states that END something. A progress card is replaced by the next progress card and
+ * wants no dwell at all; a failure is the last thing that will be said for a while and was previously
+ * on screen for whatever fraction of a second passed before the next check painted over it.
+ */
+#define RC_SESSION_DWELL_MS 3000u
+
 static void say(rc_phase phase, const char *headline, const char *detail, const char *hint)
 {
     unsigned before = g_session.revision;
 
     rc_session_set(&g_session, phase, headline, detail, hint);
-    if (g_session.revision != before && rc_status_screen_wants_draw(&g_session))
-        rc_status_screen_draw(&g_session);
+    if (g_session.revision == before || !rc_status_screen_wants_draw(&g_session))
+        return;
+
+    rc_status_screen_draw(&g_session);
+    if (phase == RC_PHASE_FAILED || phase == RC_PHASE_ENDED)
+        rc_sleep_ms(RC_SESSION_DWELL_MS);
 }
 
 const rc_session_state *rc_connect_session_state(void)
