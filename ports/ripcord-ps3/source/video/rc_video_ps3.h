@@ -102,6 +102,10 @@ unsigned rc_video_blit_yuv420(const uint8_t *y, const uint8_t *u, const uint8_t 
  * 0 if the SPEs were unavailable - which is not a mismatch and the caller is told apart. Run this BEFORE
  * streaming: it used to run on the first live frame and cost the Takion channel at 1080p.
  */
+/* A picture the decoder already packed as 32-bit RGB: scaled and placed, never converted. Returns
+ * microseconds, or 0 if the SPEs could not do it - there is no PPE scaler to fall back to. */
+unsigned rc_video_blit_argb32(const uint8_t *argb, int src_stride, int width, int height);
+
 int rc_video_self_test(void);
 
 /* Which scale factor disagreed, or NULL if none did. */

@@ -45,6 +45,9 @@
 int  rc_decode_vdec_open(int width, int height);
 void rc_decode_vdec_set_sink(rc_decode_picture_fn fn, void *ctx);
 
+/* Setting this switches the decoder's output format to ARGB32 at the next open. */
+void rc_decode_vdec_set_rgb_sink(rc_decode_picture_rgb_fn fn, void *ctx);
+
 /*
  * Submits one access unit and delivers at most one finished picture to the sink. Returns 1 if a picture
  * was delivered.
