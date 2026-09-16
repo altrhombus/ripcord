@@ -79,6 +79,7 @@ unsigned rc_decode_vdec_drop_submit(void);    /* refused by the decoder itself, 
 int      rc_decode_vdec_drop_submit_error(void);
 unsigned rc_decode_vdec_submit_waits(void);   /* submissions that had to wait for a queue slot */
 unsigned rc_decode_vdec_drop_collect(void);   /* a picture announced and not collectable */
+unsigned rc_decode_vdec_pictures_overwritten(void); /* decoded, then replaced before it was taken */
 
 /* 1 if a frame has been lost since the last call, which breaks the reference chain and needs a keyframe
  * to repair. Reading it clears it, so the caller asks once per loss rather than once per poll. */
