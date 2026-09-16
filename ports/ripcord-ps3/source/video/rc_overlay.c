@@ -44,7 +44,7 @@
 #include "platform/rc_platform.h"
 
 #define RC_OV_W            760
-#define RC_OV_H            330
+#define RC_OV_H            352
 #define RC_OV_REBUILD_MS   250u
 
 static int s_on;
@@ -245,7 +245,7 @@ static void blend_px(uint32_t *dst, uint32_t argb, unsigned cov)
  */
 static float size_for(int scale)
 {
-    return (scale >= 2) ? 38.0f : 26.0f;
+    return (scale >= 2) ? 34.0f : 24.0f;
 }
 
 static void draw_sys(int x, int y, int scale, uint32_t argb, const char *text)
@@ -330,10 +330,38 @@ static int text_width(const char *text, int scale)
     return prop_width(text, scale * 2);
 }
 
+/* The same, for a figure - which is a different width, because tabular cells are wider than the
+ * digits in them. Measuring and drawing have to agree or right-aligned numbers drift. */
+static int num_width(const char *text, int scale)
+{
+    int w;
+
+    if (!s_sysfont)
+        return (int)strlen(text) * (RC_FONT_W + 1) * scale * 2;
+    rc_sysfont_set_size(size_for(scale));
+    rc_sysfont_set_tabular(1);
+    w = rc_sysfont_render(NULL, 0, 0, 0, 0, text);
+    rc_sysfont_set_tabular(0);
+    return w;
+}
+
+/*
+ * Figures. In the system face they are drawn tabular - fixed cells - so the panel is set in ONE
+ * typeface and the numbers still hold still. The drawn fallback has no proportional digits to make
+ * tabular, so it keeps the monospaced 5x7, which is what that face is for.
+ */
 static void draw_mono(int x, int y, int scale, uint32_t argb, const char *text)
 {
-    uint32_t c = premul(argb);
+    uint32_t c;
     int i;
+
+    if (s_sysfont) {
+        rc_sysfont_set_tabular(1);
+        draw_sys(x, y, scale, argb, text);
+        rc_sysfont_set_tabular(0);
+        return;
+    }
+    c = premul(argb);
 
     /* Stepped up for the same reason as the drawn proportional face - see draw_prop. */
     scale *= 2;
@@ -378,7 +406,7 @@ int rc_overlay_num_width(int scale, const char *fmt, ...)
     va_start(ap, fmt);
     (void)vsnprintf(text, sizeof(text), fmt, ap);
     va_end(ap);
-    return (int)strlen(text) * (RC_FONT_W + 1) * scale * 2;
+    return num_width(text, scale);
 }
 
 int rc_overlay_num(int x, int y, int scale, uint32_t argb, const char *fmt, ...)
@@ -392,7 +420,7 @@ int rc_overlay_num(int x, int y, int scale, uint32_t argb, const char *fmt, ...)
     (void)vsnprintf(text, sizeof(text), fmt, ap);
     va_end(ap);
     draw_mono(x, y, scale, argb, text);
-    return (int)strlen(text) * (RC_FONT_W + 1) * scale * 2;
+    return num_width(text, scale);
 }
 
 /*
@@ -409,7 +437,7 @@ void rc_overlay_num_right(int x, int y, int scale, uint32_t argb, const char *fm
     va_start(ap, fmt);
     (void)vsnprintf(text, sizeof(text), fmt, ap);
     va_end(ap);
-    draw_mono(x - (int)strlen(text) * (RC_FONT_W + 1) * scale * 2, y, scale, argb, text);
+    draw_mono(x - num_width(text, scale), y, scale, argb, text);
 }
 
 void rc_overlay_bars(int x, int y, int w, int h, const unsigned *v, unsigned n, unsigned max,

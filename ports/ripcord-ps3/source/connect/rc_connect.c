@@ -1333,7 +1333,7 @@ static void on_picture(void *ctx, const unsigned char *y, const unsigned char *u
 #define OV_NUM_R    330     /* right edge of the value column */
 #define OV_SPARK_X  354
 #define OV_SPARK_W  240
-#define OV_ROW_H    32
+#define OV_ROW_H    34
 
 static void draw_overlay(void)
 {
@@ -1424,7 +1424,7 @@ static void draw_overlay(void)
          * renegotiates; the words around it are not. */
         int at = OV_VALUE_X;
 
-        at += rc_overlay_num(at, y + 1, 1, RC_OV_TEXT, "%dx%d @%d",
+        at += rc_overlay_num(at, y, 1, RC_OV_TEXT, "%dx%d @%d",
                              g_live_stats.width, g_live_stats.height, g_overlay_asked_fps);
         rc_overlay_text(at + 20, y, 1, RC_OV_TEXT, "H.264 hardware");
     }
@@ -1437,7 +1437,7 @@ static void draw_overlay(void)
         at += rc_overlay_text(at, y, 1, RC_OV_LABEL, "%s scaler, %s, asked for ",
                               g_overlay_hw_scale ? "RSX" : "SPE",
                               rc_decode_vdec_picture_in_vram() ? "zero copy" : "one copy");
-        at += rc_overlay_num(at, y + 1, 1, RC_OV_LABEL, "%d", g_overlay_asked_kbps);
+        at += rc_overlay_num(at, y, 1, RC_OV_LABEL, "%d", g_overlay_asked_kbps);
         rc_overlay_text(at + 6, y, 1, RC_OV_LABEL, " kbps");
     }
 
@@ -1484,7 +1484,6 @@ static void draw_overlay(void)
     y += OV_ROW_H + 4;
     rc_overlay_text(OV_LABEL_X, y + 5, 1, RC_OV_LABEL, "Lost/s");
     rc_overlay_num_right(OV_NUM_R, y, 2, peak_lost > 0u ? RC_OV_WARN : RC_OV_TEXT, "%u", now->lost);
-    rc_overlay_text(OV_SPARK_X, y + 5, 1, RC_OV_LABEL, "units dropped by the network");
     {
         int w = rc_overlay_num_width(1, "%u", peak_lost);
 
@@ -1495,7 +1494,7 @@ static void draw_overlay(void)
     /* ---- timing and faults ------------------------------------------------------------------- */
     y += OV_ROW_H + 2;
     rc_overlay_rect(OV_PAD, y, rc_overlay_width() - OV_PAD * 2, 1, RC_OV_EDGE);
-    y += 10;
+    y += 14;
 
     {
         unsigned long hz = (unsigned long)rc_tick_hz();
@@ -1507,9 +1506,9 @@ static void draw_overlay(void)
         int at = OV_VALUE_X;
 
         rc_overlay_text(OV_LABEL_X, y, 1, RC_OV_LABEL, "Time");
-        at += rc_overlay_num(at, y + 1, 1, RC_OV_TEXT, "%u", decode_us);
+        at += rc_overlay_num(at, y, 1, RC_OV_TEXT, "%u", decode_us);
         at += rc_overlay_text(at + 6, y, 1, RC_OV_LABEL, " us decode") + 6;
-        at += rc_overlay_num(at + 20, y + 1, 1, RC_OV_TEXT, "%u",
+        at += rc_overlay_num(at + 20, y, 1, RC_OV_TEXT, "%u",
                              g_blits ? (unsigned)(g_blit_us_total / g_blits) : 0u) + 20;
         rc_overlay_text(at + 6, y, 1, RC_OV_LABEL, " us present");
     }
@@ -1519,7 +1518,7 @@ static void draw_overlay(void)
      * an overrun that happened thirty seconds ago and stopped is still worth knowing happened - it is
      * the difference between a stream that is healthy and one that recovered.
      */
-    y += 16;
+    y += OV_ROW_H;
     {
         rc_audio_stats a;
         int bad;
@@ -1532,11 +1531,11 @@ static void draw_overlay(void)
         uint32_t c = bad ? RC_OV_WARN : RC_OV_LABEL;
 
         rc_overlay_text(OV_LABEL_X, y, 1, RC_OV_LABEL, "Since start");
-        at += rc_overlay_num(at, y + 1, 1, c, "%u", g_idr_requests);
+        at += rc_overlay_num(at, y, 1, c, "%u", g_idr_requests);
         at += rc_overlay_text(at + 6, y, 1, RC_OV_LABEL, " keyframes,") + 6;
-        at += rc_overlay_num(at + 12, y + 1, 1, c, "%u", g_frames_overrun) + 12;
+        at += rc_overlay_num(at + 12, y, 1, c, "%u", g_frames_overrun) + 12;
         at += rc_overlay_text(at + 6, y, 1, RC_OV_LABEL, " overrun,") + 6;
-        at += rc_overlay_num(at + 12, y + 1, 1, c, "%u",
+        at += rc_overlay_num(at + 12, y, 1, c, "%u",
                              a.decode_errors + a.silence_written) + 12;
         rc_overlay_text(at + 6, y, 1, RC_OV_LABEL, " audio");
     }

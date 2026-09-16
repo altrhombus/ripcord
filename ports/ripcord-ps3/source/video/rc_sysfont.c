@@ -74,8 +74,19 @@ static rc_sf_glyph s_glyph[RC_SF_SIZES][RC_SF_COUNT];
 static unsigned char s_arena[RC_SF_SIZES][RC_SF_ARENA];
 static unsigned s_arena_used[RC_SF_SIZES];
 static int s_px[RC_SF_SIZES];
+/*
+ * THE WIDEST DIGIT'S ADVANCE, per size, which is what makes proportional numerals hold still.
+ *
+ * A proportional face gives '1' a narrower advance than '8', so a figure that ticks from 11 to 88
+ * changes width and drags everything after it - which is the whole reason the panel was setting
+ * numbers in a second, monospaced face. It does not have to: a digit drawn into a fixed cell the width
+ * of the widest digit, centred in it, is a tabular figure, and real faces ship exactly this as a
+ * separate set. Synthesising it costs one number per size and lets the panel be set in one typeface.
+ */
+static short s_digit_cell[RC_SF_SIZES];
 static int s_ascent_px[RC_SF_SIZES];
 static int s_slot;           /* which size rc_sysfont_set_size selected */
+static int s_tabular;        /* digits in fixed cells - see s_digit_cell */
 static int s_sizes_built;
 
 static int fail(const char *step, int rc)
@@ -152,6 +163,18 @@ static int build_size(int slot, int pixels)
         }
         s_arena_used[slot] += need;
     }
+
+    {
+        unsigned d;
+
+        s_digit_cell[slot] = 0;
+        for (d = (unsigned)'0'; d <= (unsigned)'9'; d++) {
+            short a = s_glyph[slot][d - RC_SF_FIRST].advance;
+
+            if (a > s_digit_cell[slot])
+                s_digit_cell[slot] = a;
+        }
+    }
     return 1;
 }
 
@@ -222,6 +245,15 @@ int rc_sysfont_ascent(void)
     return s_ready ? s_ascent_px[s_slot] : 0;
 }
 
+/*
+ * Digits in fixed cells, for a column of figures that must not shuffle as the figures change. Sticky
+ * like the size, because measuring and drawing are two calls and they have to agree.
+ */
+void rc_sysfont_set_tabular(int on)
+{
+    s_tabular = on;
+}
+
 void rc_sysfont_set_size(float pixels)
 {
     int want;
@@ -258,8 +290,19 @@ int rc_sysfont_render(unsigned char *cov, int cov_w, int cov_h, int x, int basel
          * like everything else, so every right-aligned run was rasterised twice and half of it thrown
          * away - which is half of why a rebuild took 1,483 ms.
          */
+        {
+            int cell = 0;
+            int pad = 0;
+
+            if (s_tabular && c >= '0' && c <= '9') {
+                cell = s_digit_cell[s_slot];
+                /* Centred in its cell rather than left-aligned: a narrow 1 hugging the left of a wide
+                 * cell reads as a gap in the number, which is worse than the jitter this replaces. */
+                pad = (cell - g->advance) / 2;
+            }
+
         if (cov != NULL && g->w > 0) {
-            int ox = pen + g->left;
+            int ox = pen + pad + g->left;
             int oy = baseline - g->top;
 
             for (gy = 0; gy < g->h; gy++) {
@@ -285,7 +328,8 @@ int rc_sysfont_render(unsigned char *cov, int cov_w, int cov_h, int x, int basel
                 }
             }
         }
-        pen += g->advance;
+            pen += (cell > 0) ? cell : g->advance;
+        }
     }
 
     return pen - x;
