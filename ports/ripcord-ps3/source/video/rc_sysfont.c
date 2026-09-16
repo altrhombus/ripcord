@@ -178,7 +178,7 @@ static int build_size(int slot, int pixels)
     return 1;
 }
 
-int rc_sysfont_open(float pixels)
+int rc_sysfont_open(float body_px, float heading_px)
 {
     unsigned i;
     int rc = -1;
@@ -207,7 +207,14 @@ int rc_sysfont_open(float pixels)
      * The two sizes the panel uses. They are built here rather than on demand because on demand means
      * on the decode thread, and that is what b256 cost a session to establish.
      */
-    if (!build_size(0, (int)pixels) || !build_size(1, (int)(pixels * 1.46f))) {
+    /*
+     * BOTH SIZES ARE GIVEN, not one and a ratio. The caller derives them from the display - a panel
+     * designed at 1080p is set at two thirds of that on a 720p screen - and a multiplier here would
+     * have quietly ignored the second of them. b265 built its atlas at a hardcoded 26 and 37 while the
+     * layout asked for 24 and 34, which happened to work at 1080p and would have left the type at full
+     * size on every smaller display.
+     */
+    if (!build_size(0, (int)body_px) || !build_size(1, (int)heading_px)) {
         FT_Done_Face(s_face);
         s_face = NULL;
         FT_Done_FreeType(s_lib);

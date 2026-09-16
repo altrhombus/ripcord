@@ -24,11 +24,13 @@
 #include <stdint.h>
 
 /*
- * Brings up the system font at `pixels` em size. 0 if anything refused, and the caller must then use
+ * Brings up the system font and renders its atlas at the TWO sizes the caller will use. Both are
+ * given rather than one and a ratio, because the caller derives them from the display and a ratio here
+ * would silently ignore that. 0 if anything refused, and the caller must then use
  * its own font - every step is reported through rc_sysfont_status() so a refusal names itself rather
  * than arriving as "the text looks wrong".
  */
-int rc_sysfont_open(float pixels);
+int rc_sysfont_open(float body_px, float heading_px);
 
 /* One of: "not tried", "ready", or the step that failed with its error code. Never NULL. */
 const char *rc_sysfont_status(void);
