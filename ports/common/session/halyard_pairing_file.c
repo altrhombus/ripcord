@@ -33,6 +33,7 @@ static void pairing_record_defaults(halyard_pairing_record *rec)
      * produce ARGB32; a port whose decoder cannot is unaffected, since only the vdec backend reads it.
      */
     rec->decoder_rgb = 1;
+    rec->bilinear_upscale = 0;
     rec->skip_until_keyframe = 0;
     rec->widescreen = 1;
     rec->smoothing = 1;
@@ -107,6 +108,8 @@ int halyard_pairing_file_load(const char *argv0, halyard_pairing_record *rec)
             rec->os_minor = atoi(value);
         } else if (strcmp(line, "bitrate") == 0) {
             rec->start_bitrate = atoi(value);
+        } else if (strcmp(line, "bilinear") == 0) {
+            rec->bilinear_upscale = atoi(value);
         } else if (strcmp(line, "decoderrgb") == 0) {
             rec->decoder_rgb = atoi(value);
         } else if (strcmp(line, "connquality") == 0) {

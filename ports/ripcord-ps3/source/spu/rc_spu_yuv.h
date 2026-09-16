@@ -90,6 +90,10 @@ unsigned rc_spu_yuv_convert(const uint8_t *y, const uint8_t *u, const uint8_t *v
 unsigned rc_spu_yuv_convert_argb(const uint8_t *argb, int src_stride, int width, int height,
                                  uint32_t *dst, int dst_pitch, int dst_width, int dst_height);
 
+/* Interpolate between source pixels rather than taking the nearest. Honoured by the packed-RGB path
+ * only; see the note on `bilinear` in rc_spu_yuv_job.h for why it is a choice and not a default. */
+void rc_spu_yuv_set_bilinear(int enabled);
+
 void rc_spu_yuv_stats_get(rc_spu_yuv_stats *out);
 void rc_spu_yuv_exit(void);
 

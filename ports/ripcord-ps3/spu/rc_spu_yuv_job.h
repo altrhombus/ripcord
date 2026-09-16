@@ -66,7 +66,20 @@ typedef struct {
      * same byte order, so the alpha lands in the byte the display ignores.
      */
     uint32_t source_argb;
-    uint32_t pad[3];         /* keeps this a multiple of 16, which the MFC requires - see the header */
+
+    /*
+     * 1 to interpolate between the four surrounding source pixels rather than take the nearest.
+     *
+     * A user-facing choice rather than a better default: bilinear costs several times what nearest does
+     * and softens as well as smooths, and at 1280x720 into 1920x1080 - a 1.5x scale where two output
+     * pixels in three are duplicates - which looks better is a matter of taste rather than of
+     * measurement. Nearest stays the default because it is what every frame so far has been drawn with.
+     *
+     * Only the packed-RGB path honours it. The plane path would need two CONVERTED lines rather than two
+     * fetched ones, and it is no longer the path the stream takes.
+     */
+    uint32_t bilinear;
+    uint32_t pad[2];         /* keeps this a multiple of 16, which the MFC requires - see the header */
 } rc_spu_yuv_job;
 
 #endif /* RC_SPU_YUV_JOB_H */

@@ -287,6 +287,7 @@ typedef struct {
     unsigned blit_worst_wait_ms;  /* longest wait for the display to free a buffer */
     unsigned rgb_scale_failed;    /* packed-RGB pictures the SPEs could not scale */
     int      decoder_rgb;         /* the decoder was asked for RGB rather than planes */
+    int      bilinear_upscale;    /* the viewer asked for a smoothed upscale */
 
     /* CONNECTION_QUALITY - the client's own statement of what it can consume. Off unless the pairing
      * record asks for it; see halyard_pairing_file.h for why. */
