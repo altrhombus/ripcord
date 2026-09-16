@@ -1064,6 +1064,13 @@ static int check_connect(void)
                  * If the two columns disagree with a plausible idle temperature, the decoding is what is
                  * wrong, not the console.
                  */
+                if (c.stream_is_hevc) {
+                    ps3_log("       CODEC: the console sent HEVC and this decoder handles H.264 only -"
+                            " every video frame was dropped\n"
+                            "       (audio is unaffected; the launch spec asks for \"avc\", so this"
+                            " means the ask was not honoured)\n");
+                }
+
                 if (c.hardware_scale) {
                     /*
                      * Said plainly because the two paths are indistinguishable on a television when the
