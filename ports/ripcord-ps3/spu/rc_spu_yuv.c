@@ -168,6 +168,15 @@ int main(uint64_t job_ea, uint64_t unused1, uint64_t unused2, uint64_t unused3)
     (void)unused2;
     (void)unused3;
 
+    /*
+     * START THE DECREMENTER. It does not run until it is written, so reading it without this returns the
+     * same value every time and every elapsed figure comes out zero - which is exactly what b182 and
+     * b183 reported, and why the DMA-versus-compute split never printed. It counts DOWN from whatever is
+     * written, at the same timebase rc_tick_hz reports, so a large start value gives a long run before
+     * it wraps.
+     */
+    spu_write_decrementer(0xffffffffu);
+
     mfc_write_tag_mask(1u << TAG);
 
     for (;;) {
