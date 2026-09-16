@@ -65,6 +65,7 @@ static uint64_t s_next_rebuild;
 #define RC_OV_COV_H 72
 static unsigned char s_cov[RC_OV_W * RC_OV_COV_H];
 static int s_sysfont;
+static int s_want_sysfont;
 
 int rc_overlay_width(void)  { return RC_OV_W; }
 int rc_overlay_height(void) { return RC_OV_H; }
@@ -114,6 +115,11 @@ void rc_overlay_rect(int x, int y, int w, int h, uint32_t argb)
     }
 }
 
+void rc_overlay_set_system_font(int on)
+{
+    s_want_sysfont = on;
+}
+
 void rc_overlay_set(int on)
 {
     s_on = on;
@@ -127,8 +133,13 @@ void rc_overlay_set(int on)
          * than at start-up so a font library that refuses costs an overlay nobody had yet rather than
          * a session: everything below falls back glyph for glyph.
          */
-        if (s_ready)
-            s_sysfont = rc_sysfont_open(18.0f);
+        /*
+         * OPT-IN, AND OFF BY DEFAULT BECAUSE IT DOES NOT WORK HERE. See rc_sysfont.c for the six runs
+         * that established that. Asking anyway costs fifteen refused firmware calls at start-up and
+         * buys a known answer, so it is only asked when someone says to.
+         */
+        if (s_ready && s_want_sysfont)
+            s_sysfont = rc_sysfont_open(26.0f);
     }
 }
 

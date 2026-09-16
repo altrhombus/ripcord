@@ -950,6 +950,49 @@ and would have quietly thrown away the fraction; it was caught only because the 
 beside the decoded value, which is the argument for logging both.
 
 
+### The console's own typeface — **six runs, not working, and what was eliminated**
+
+The overlay is set in fonts drawn by hand in this repository. That was a fallback while the platform's
+own font was brought up, and it is now the answer: `cellFont` will not produce a renderer on this
+console through PSL1GHT's bindings. `systemfont=1` in the pairing record still tries, and is off by
+default because asking costs fifteen refused firmware calls at start-up and buys a known answer.
+
+What the API offers is genuinely worth wanting - `fontOpenFontset` with
+`FONT_TYPE_NEWRODIN_GOTHIC_LATIN_SET` is New Rodin, the face the XMB itself is set in, antialiased and
+scalable, supplied by firmware with nothing redistributed. This is a record of why it is not being used.
+
+| build | failed at | what it eliminated |
+|---|---|---|
+| b241 | `fontInitLibraryFreeType`, 0x80540002 | the plain entry takes no revision, and the memory interface was null |
+| b243 | *(report not captured)* | — |
+| b246 | `fontCreateRenderer`, 0x80540002 | **the revision and the 32-bit callback descriptors were right** — the library now initialises |
+| b248 | `fontCreateRenderer`, 0x80540002 | five buffering policies, all refused identically: the policy is not the question |
+| b251 | `fontCreateRenderer`, 0x80540002 | three interface revisions x five policies, all refused identically |
+| b252 | `fontCreateRenderer`, 0x80540002 | `SYSMODULE_FREETYPE_TT` loaded as well; no change |
+
+**Two of those runs bought real ground.** PSL1GHT's `fontInit` initialises with the BASE font stub's
+revision alone and never mentions the FreeType stub, and the memory-interface callbacks handed to a PRX
+need 32-bit descriptors exactly as `vdecClosure.fn` did. Both are fixed and both moved the failure
+forward. The remaining three bought only eliminations.
+
+**The decisive observation is that the code never varies.** Fifteen combinations of revision and
+buffering policy return 0x80540002 identically - which is why the sweep now reports every DISTINCT code
+it saw rather than the last one. One code across every shape of argument says the arguments were never
+what was wrong, and that should have redirected this two runs earlier than it did.
+
+**What is left is speculative and was not spent on.** `fontOpenFontFile` against a path in flash, which
+is the firmware-contents dependency this was meant to avoid and is fragile across versions; or that
+PSL1GHT's `fontCreateRenderer` stub is wired to an entry this firmware does not export, which cannot be
+checked from here. Anyone picking this up should start by getting ANY PSL1GHT font sample to draw a
+glyph on this console - if none does, the binding is the fault and not the call sequence.
+
+**What was gained anyway.** The drawn fonts got the work that made them worth keeping: a proportional
+face with real lower case and descenders for words, the monospaced one kept for figures so a column of
+numbers holds still, both at a size meant to be read across a room, and a panel laid out by measuring
+rather than by hand-written pixel offsets. Those changes were made to accommodate a font that never
+arrived, and all of them stand on their own.
+
+
 ### Still open
 - **The fifth SPE — `ARGB32` output works.** Asked offline in b179: `vdecGetPicture` accepts
   `VDEC_PICFMT_ARGB32` and fills the buffer (bytes 0..255 across 8 pictures). So the YUV-to-RGB pass

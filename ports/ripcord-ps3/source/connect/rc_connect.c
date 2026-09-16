@@ -2350,6 +2350,7 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
                         rc_video_set_rsx_scale(rec->hardware_scale, rec->bilinear_upscale != 0);
                         out->hardware_scale = rec->hardware_scale;
 
+                        rc_overlay_set_system_font(rec->system_font);
                         rc_overlay_set(rec->diagnostics);
                         out->diagnostics = rec->diagnostics;
                         out->overlay_system_font = rc_overlay_using_system_font();
