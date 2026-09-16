@@ -162,3 +162,77 @@ int halyard_pairing_file_load(const char *argv0, halyard_pairing_record *rec)
     }
     return 1;
 }
+
+/* Hex, lower case, no separators - the form the loader's rc_hex_decode expects back. */
+static void write_hex(FILE *f, const char *name, const uint8_t *bytes, size_t length)
+{
+    size_t i;
+
+    if (length == 0u)
+        return;
+    fprintf(f, "%s=", name);
+    for (i = 0; i < length; i++)
+        fprintf(f, "%02x", bytes[i]);
+    fputc('\n', f);
+}
+
+int halyard_pairing_file_save(const char *argv0, const halyard_pairing_record *rec)
+{
+    char path[512];
+    FILE *f;
+
+    if (rec == NULL)
+        return 0;
+
+    rc_program_dir(argv0, path, sizeof(path));
+    strncat(path, "pairing.txt", sizeof(path) - strlen(path) - 1);
+
+    f = fopen(path, "w");
+    if (f == NULL) {
+        /*
+         * The path is logged and the CONTENTS never are. That distinction is the whole discipline here:
+         * knowing which file could not be written is what someone needs, and the thing inside it is
+         * exactly what must not appear in a log that gets pasted into a bug report.
+         */
+        rc_log("\x1b[31mFAIL\x1b[0m could not write %s\n", path);
+        return 0;
+    }
+
+    fprintf(f, "# Written by ripcord after pairing. Keep this file; it identifies this client to the\n"
+               "# console and cannot be recovered without pairing again.\n");
+    fprintf(f, "host=%s\n", rec->host);
+    fprintf(f, "platform=%s\n", rec->is_ps5 ? "ps5" : "ps4");
+    write_hex(f, "registkey", rec->registkey, rec->registkey_length);
+    write_hex(f, "companion", rec->companion, sizeof(rec->companion));
+    if (rec->device_id_length > 0u)
+        write_hex(f, "deviceid", rec->device_id, rec->device_id_length);
+
+    /*
+     * The settings are written back so a pairing does not silently reset choices somebody made. They
+     * are only meaningful if the caller LOADED the record first - see the header.
+     */
+    fprintf(f, "osmajor=%d\n", rec->os_major);
+    fprintf(f, "osminor=%d\n", rec->os_minor);
+    fprintf(f, "bitrate=%d\n", rec->start_bitrate);
+    fprintf(f, "streambitrate=%d\n", rec->stream_bitrate_kbps);
+    fprintf(f, "fps=%d\n", rec->fps);
+    if (rec->stream_width > 0)
+        fprintf(f, "streamwidth=%d\n", rec->stream_width);
+    if (rec->stream_height > 0)
+        fprintf(f, "streamheight=%d\n", rec->stream_height);
+    fprintf(f, "decoderrgb=%d\n", rec->decoder_rgb);
+    fprintf(f, "bilinear=%d\n", rec->bilinear_upscale);
+    fprintf(f, "hardwarescale=%d\n", rec->hardware_scale);
+    fprintf(f, "diagnostics=%d\n", rec->diagnostics);
+    fprintf(f, "systemfont=%d\n", rec->system_font);
+    if (rec->hold_seconds > 0)
+        fprintf(f, "holdseconds=%d\n", rec->hold_seconds);
+    if (rec->connection_quality)
+        fprintf(f, "connquality=%d\n", rec->connection_quality);
+
+    if (fclose(f) != 0) {
+        rc_log("\x1b[31mFAIL\x1b[0m could not finish writing %s\n", path);
+        return 0;
+    }
+    return 1;
+}
