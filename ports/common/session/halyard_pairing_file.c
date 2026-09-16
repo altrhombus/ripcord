@@ -128,10 +128,6 @@ int halyard_pairing_file_load(const char *argv0, halyard_pairing_record *rec)
             rec->diagnostics = atoi(value);
         } else if (strcmp(line, "systemfont") == 0) {
             rec->system_font = atoi(value);
-        } else if (strcmp(line, "useragent") == 0) {
-            strncpy(rec->user_agent, value, sizeof(rec->user_agent) - 1);
-        } else if (strcmp(line, "ostype") == 0) {
-            strncpy(rec->os_type, value, sizeof(rec->os_type) - 1);
         } else if (strcmp(line, "videoformat") == 0) {
             rec->video_rgb565 = (strcmp(value, "rgb565") == 0);
         } else if (strcmp(line, "skipuntilkeyframe") == 0) {

@@ -22,9 +22,6 @@
  *   diagnostics=0              (optional - 1 draws the diagnostics overlay over the stream)
  *   systemfont=0               (optional - 1 tries the platform's own font for the overlay. Known to
  *                               fail on the PS3; see that port's DECODE.md before spending time on it)
- *   useragent=remoteplay Windows  (optional - the plaintext User-Agent header)
- *   ostype=Win10.0             (optional - the encrypted RP-OSType field, overriding the
- *                               "Win<osmajor>.<osminor>" that is otherwise built from the two above)
  *   videoformat=bgr565         (optional - "bgr565" or "rgb565"; see below)
  *   widescreen=1               (optional - 800x240 top screen; on by default, see below)
  *   smoothing=1                (optional - average the two source rows the vertical squeeze straddles)
@@ -171,23 +168,6 @@ typedef struct {
      * setting so a future attempt costs one line in this file rather than a rebuild.
      */
     int system_font;
-
-    /*
-     * WHAT THE CONSOLE IS TOLD THIS CLIENT IS. Both default to exactly what the .NET client sends, so
-     * leaving them alone changes nothing.
-     *
-     * Two fields carry it and they travel differently. `user_agent` is a plaintext HTTP header on
-     * /sess/init and /sess/ctrl; `os_type` is the RP-OSType field, encrypted, and its plaintext has
-     * always been built as "Win<major>.<minor>" from os_major/os_minor. Setting os_type overrides that
-     * whole string rather than its numbers.
-     *
-     * They are settable because the console's own remote-play list names the device that connected, and
-     * every session this project has ever opened appears there as a PC. WHICH of these two it reads,
-     * and what it does with a value it does not recognise, is unknown and is exactly what a pairing
-     * record that can vary one at a time is for. [X]
-     */
-    char user_agent[64];
-    char os_type[32];
     int video_rgb565;        /* 1 = ask MVD for RGB565 instead of BGR565 */
     int skip_until_keyframe; /* 1 = drop every frame after a loss until the next IDR */
     int widescreen;          /* 1 = 800x240 top screen (default); 0 = 400x240 */
