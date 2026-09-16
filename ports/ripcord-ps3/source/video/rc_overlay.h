@@ -74,6 +74,14 @@ int rc_overlay_ascent(int scale);
  * straight to rc_overlay_end() to queue the copy.
  */
 int  rc_overlay_begin(void);
+
+/*
+ * The same, for a caller that is drawing because something CHANGED rather than because a frame went
+ * past: no throttle, no `shown` gate. Pair with rc_overlay_end_now. See the notes in the .c.
+ */
+void rc_overlay_set_origin(int x, int y);
+int  rc_overlay_begin_now(void);
+void rc_overlay_end_now(void);
 void rc_overlay_rect(int x, int y, int w, int h, uint32_t argb);
 
 /*
