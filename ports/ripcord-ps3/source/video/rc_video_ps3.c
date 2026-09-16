@@ -425,8 +425,8 @@ static inline uint32_t clamp255(int32_t v)
  * second. If a 720p source comes out torn or truncated, splitting the blit into horizontal strips is
  * the answer and this is the note that says so.
  */
-static unsigned blit_argb32_on_rsx(int src_stride, int width, int height,
-                                   int dst_w, int dst_h, int ox, int oy, int linear)
+static unsigned blit_argb32_on_rsx_from(u32 src_offset, int width, int height,
+                                        int dst_w, int dst_h, int ox, int oy, int linear)
 {
     gcmTransferScale scale;
     gcmTransferSurface surface;
@@ -466,11 +466,9 @@ static unsigned blit_argb32_on_rsx(int src_stride, int width, int height,
     scale.pitch = (u16)(width * 4);
     scale.origin = GCM_TRANSFER_ORIGIN_CORNER;
     scale.interp = linear ? GCM_TRANSFER_INTERPOLATOR_LINEAR : GCM_TRANSFER_INTERPOLATOR_NEAREST;
-    scale.offset = s_stage_offset;
+    scale.offset = src_offset;
     scale.inX = 0;
     scale.inY = 0;
-
-    (void)src_stride;
 
     rsxSetTransferScaleMode(s_context, GCM_TRANSFER_LOCAL_TO_LOCAL, GCM_TRANSFER_SURFACE);
     rsxSetTransferScaleSurface(s_context, &scale, &surface);
@@ -537,8 +535,8 @@ unsigned rc_video_blit_argb32(const uint8_t *argb, int src_stride, int width, in
         unsigned copy_us = rc_spu_yuv_convert_argb(argb, src_stride, width, height,
                                                    s_stage, (int)(width * 4), width, height);
         if (copy_us > 0u)
-            return copy_us + blit_argb32_on_rsx(src_stride, width, height,
-                                                dst_w, dst_h, ox, oy, s_rsx_linear);
+            return copy_us + blit_argb32_on_rsx_from(s_stage_offset, width, height,
+                                                     dst_w, dst_h, ox, oy, s_rsx_linear);
         s_rsx_refused++;
     }
 
@@ -792,6 +790,66 @@ int rc_video_self_test(void)
 const char *rc_video_self_test_failure(void)
 {
     return s_verify_failed_case;
+}
+
+/*
+ * A block of RSX local memory, for a caller that wants the RSX to read what it writes.
+ *
+ * Offered rather than done here because the caller that needs it is the decoder, and the decoder has no
+ * business knowing what a gcm offset is. It gets a pointer and an offset; what those mean is this
+ * file's problem.
+ *
+ * THE COST OF GETTING THIS WRONG IS ASYMMETRIC. Writes from the Cell into this memory are fast and
+ * reads from it are roughly two orders of magnitude slower, so a buffer allocated here must be written
+ * by the Cell and read by the RSX, never the other way round. Anything that samples it on the PPE
+ * belongs somewhere else.
+ */
+void *rc_video_alloc_rsx(size_t bytes, uint32_t *offset)
+{
+    void *p;
+    u32 off = 0;
+
+    if (!s_open || offset == NULL || bytes == 0u)
+        return NULL;
+    p = rsxMemalign(128, (u32)bytes);
+    if (p == NULL)
+        return NULL;
+    if (rsxAddressToOffset(p, &off) != 0)
+        return NULL;
+    *offset = (uint32_t)off;
+    return p;
+}
+
+/*
+ * The same scaled blit, from memory the caller already has an offset for - so the picture is scaled
+ * straight out of where the decoder left it and nothing copies it first.
+ */
+unsigned rc_video_blit_rsx_offset(uint32_t src_offset, int width, int height)
+{
+    int dst_w, dst_h, ox, oy;
+
+    if (!s_open || !s_rsx_scale || width <= 0 || height <= 0)
+        return 0u;
+
+    {
+        int by_w = (s_info.width * 1024) / width;
+        int by_h = (s_info.height * 1024) / height;
+        int scale = (by_w < by_h) ? by_w : by_h;
+
+        dst_w = (width * scale) / 1024;
+        dst_h = (height * scale) / 1024;
+        dst_w &= ~1;
+        dst_h &= ~1;
+    }
+    if (dst_w <= 0 || dst_h <= 0 || dst_w > s_info.width || dst_h > s_info.height)
+        return 0u;
+
+    s_scaled_w = dst_w;
+    s_scaled_h = dst_h;
+    ox = (s_info.width - dst_w) / 2;
+    oy = (s_info.height - dst_h) / 2;
+
+    return blit_argb32_on_rsx_from(src_offset, width, height, dst_w, dst_h, ox, oy, s_rsx_linear);
 }
 
 /*

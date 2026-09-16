@@ -91,4 +91,18 @@ unsigned rc_decode_vdec_first_nal_types(void);   /* would the stream's reference
 unsigned rc_decode_vdec_picture_addr(void);
 unsigned rc_decode_vdec_first_au(uint8_t out[8]);   /* returns its length */
 
+/*
+ * Decode into RSX local memory rather than main memory, so the RSX can scale the picture where it lies
+ * instead of something copying it there first. Ask before open; ..._picture_in_vram reports what was
+ * actually obtained, since the request can be refused and decoding still has to work.
+ *
+ * NOTHING ON THE PPE MAY SAMPLE THE PICTURE PER FRAME once this is on - Cell reads from that memory are
+ * roughly two orders of magnitude slower than writes.
+ */
+void rc_decode_vdec_want_vram(int on);
+int rc_decode_vdec_picture_in_vram(void);
+
+/* The delivered picture's RSX offset. Valid only inside a sink callback; 0 when it is in main memory. */
+uint32_t rc_decode_vdec_delivered_offset(void);
+
 #endif /* RC_DECODE_VDEC_H */
