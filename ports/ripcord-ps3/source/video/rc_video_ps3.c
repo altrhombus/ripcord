@@ -30,8 +30,39 @@
  * not have to reallocate - and every attempt's IO size must fit inside it. */
 #define RC_VIDEO_IO_MAX  (2u * RC_VIDEO_MB)
 
+/* The RSX scaler's staging buffer, sized for the largest source this port will ever be handed. */
+#define RC_VIDEO_STAGE_W     1920u
+#define RC_VIDEO_STAGE_H     1088u
+#define RC_VIDEO_STAGE_BYTES (RC_VIDEO_STAGE_W * RC_VIDEO_STAGE_H * 4u)
+
 static gcmContextData *s_context;
 static void *s_host_addr;
+
+/*
+ * THE STAGING BUFFER FOR THE RSX SCALER, and the reason the picture cannot simply be blitted from where
+ * the decoder left it: rsxAddressToOffset answers for RSX-addressable memory, and the decoder's output
+ * is ordinary main memory. So the picture is put here 1:1 first - no conversion, no scale, which is a
+ * straight DMA - and the RSX 2D engine does the scaling out of it.
+ *
+ * Sized for a 1920x1088 source so a stream that is not 720p does not have to reallocate mid-session.
+ *
+ * ONE BUFFER IS ENOUGH, AND THE REASON IS NOT IN THIS FILE. The RSX reads it asynchronously, so writing
+ * the next picture into it while the last blit is still running would tear - and nothing here prevents
+ * that. What prevents it is the caller's order: it waits on rc_video_present_ready before converting a
+ * picture, that call is true only once the previous FLIP has completed, and the flip was queued into the
+ * same command buffer AFTER the blit. The RSX executes in order, so a completed flip means a finished
+ * blit.
+ *
+ * Which means: if a caller is ever changed to blit without waiting for the previous flip, this needs a
+ * second buffer on the same change. That dependency runs between two files and is invisible in both.
+ */
+static uint32_t *s_stage;
+static u32 s_stage_offset;
+static int s_stage_ok;
+static unsigned s_rsx_blits;
+static unsigned s_rsx_refused;
+static int s_rsx_scale;      /* set by rc_video_set_rsx_scale - off until asked for */
+static int s_rsx_linear;
 static uint32_t *s_buffer[RC_VIDEO_BUFFERS];
 static u32 s_offset[RC_VIDEO_BUFFERS];
 static int s_current;
@@ -187,6 +218,16 @@ int rc_video_open(rc_video_info *out)
             return fail(out, "gcmSetDisplayBuffer", i);
         memset(s_buffer[i], 0, size);
     }
+
+    /*
+     * The staging buffer is allocated alongside the display buffers and a failure is NOT fatal: the SPE
+     * path does not need it, and refusing to open the display because an optional scaler could not get
+     * memory would trade a working picture for no picture at all.
+     */
+    s_stage = (uint32_t *)rsxMemalign(128, RC_VIDEO_STAGE_BYTES);
+    s_stage_ok = (s_stage != NULL && rsxAddressToOffset(s_stage, &s_stage_offset) == 0);
+    if (s_stage_ok)
+        memset(s_stage, 0, RC_VIDEO_STAGE_BYTES);
 
     gcmResetFlipStatus();
     s_current = 0;
@@ -365,6 +406,92 @@ static inline uint32_t clamp255(int32_t v)
  * (0) and the decoder seam can go back to asking for YUV, which is a decision for the caller and not
  * something to paper over here.
  */
+/*
+ * THE RSX DOES THE SCALING.
+ *
+ * Everything the SPEs were built to do here - colour conversion, scaling, and the copy into the display
+ * buffer - the RSX has fixed-function hardware for, and until now it did nothing in this program but
+ * scan out. rsxSetTransferScaleSurface is the 2D engine's scaled blit: arbitrary source and destination
+ * rectangles, and a bilinear interpolator that costs nothing because it is wired rather than executed.
+ *
+ * WHAT THIS IS NOT. It does not make the picture arrive faster and it will not change the fan (b204
+ * measured the machine silent at this load either way - see DECODE.md). What it buys is the SPE time
+ * back, a transfer of 1280x720 rather than 1920x1080, and smooth upscaling for free where the SPE cost
+ * 21,038 us a frame to do the same thing.
+ *
+ * THE SOURCE WIDTH IS THE RISK. This hardware's scaled-image object is documented in places as limited
+ * to a 1024-pixel source, and 1280 is wider. Nothing here works around that, deliberately: a workaround
+ * for a limit nobody has hit would be untestable, and the failure is visible on a television within a
+ * second. If a 720p source comes out torn or truncated, splitting the blit into horizontal strips is
+ * the answer and this is the note that says so.
+ */
+static unsigned blit_argb32_on_rsx(int src_stride, int width, int height,
+                                   int dst_w, int dst_h, int ox, int oy, int linear)
+{
+    gcmTransferScale scale;
+    gcmTransferSurface surface;
+    uint64_t t0 = rc_tick();
+
+    surface.format = GCM_TRANSFER_SURFACE_FORMAT_A8R8G8B8;
+    surface.pitch = (u16)s_info.pitch;
+    surface._pad0[0] = 0;
+    surface._pad0[1] = 0;
+    surface.offset = s_offset[s_current ^ 1];
+
+    scale.conversion = GCM_TRANSFER_CONVERSION_TRUNCATE;
+    /* X8R8G8B8 rather than A8R8G8B8: the decoder fills the alpha byte and the display ignores it, so
+     * asking the blit to respect it would be asking about a channel nobody wrote meaningfully. */
+    scale.format = GCM_TRANSFER_SCALE_FORMAT_X8R8G8B8;
+    scale.operation = GCM_TRANSFER_OPERATION_SRCCOPY;
+
+    /* The clip is the whole screen. The letterbox is expressed by the OUTPUT rectangle instead, so the
+     * borders keep whatever cleared them rather than being part of this blit. */
+    scale.clipX = 0;
+    scale.clipY = 0;
+    scale.clipW = (u16)s_info.width;
+    scale.clipH = (u16)s_info.height;
+
+    scale.outX = (s16)ox;
+    scale.outY = (s16)oy;
+    scale.outW = (u16)dst_w;
+    scale.outH = (u16)dst_h;
+
+    /* SOURCE OVER DESTINATION, which is the direction that reads backwards: the ratio says how much
+     * source each output pixel consumes, so upscaling makes it less than one. */
+    scale.ratioX = rsxGetFixedSint32((float)width / (float)dst_w);
+    scale.ratioY = rsxGetFixedSint32((float)height / (float)dst_h);
+
+    scale.inW = (u16)width;
+    scale.inH = (u16)height;
+    scale.pitch = (u16)(width * 4);
+    scale.origin = GCM_TRANSFER_ORIGIN_CORNER;
+    scale.interp = linear ? GCM_TRANSFER_INTERPOLATOR_LINEAR : GCM_TRANSFER_INTERPOLATOR_NEAREST;
+    scale.offset = s_stage_offset;
+    scale.inX = 0;
+    scale.inY = 0;
+
+    (void)src_stride;
+
+    rsxSetTransferScaleMode(s_context, GCM_TRANSFER_LOCAL_TO_LOCAL, GCM_TRANSFER_SURFACE);
+    rsxSetTransferScaleSurface(s_context, &scale, &surface);
+    s_rsx_blits++;
+
+    /*
+     * NOT FLUSHED AND NOT WAITED ON. The flip is queued into the same command buffer afterwards and the
+     * RSX executes it in order, so the picture is complete before it is shown without anything here
+     * blocking the thread that is also draining a socket. This is the whole point of handing the work
+     * to a command processor rather than doing it.
+     */
+    {
+        uint64_t hz = rc_tick_hz();
+        uint64_t ticks = rc_tick() - t0;
+
+        /* Never zero on success: the caller reads 0 as "this path did not run". */
+        unsigned us = (hz > 0u) ? (unsigned)((ticks * 1000000u) / hz) : 0u;
+        return (us > 0u) ? us : 1u;
+    }
+}
+
 unsigned rc_video_blit_argb32(const uint8_t *argb, int src_stride, int width, int height)
 {
     uint32_t *back = rc_video_back_buffer();
@@ -393,6 +520,27 @@ unsigned rc_video_blit_argb32(const uint8_t *argb, int src_stride, int width, in
     s_scaled_h = dst_h;
     ox = (s_info.width - dst_w) / 2;
     oy = (s_info.height - dst_h) / 2;
+
+    /*
+     * THE RSX ROUTE, WHICH STILL NEEDS THE SPEs - just not for any arithmetic.
+     *
+     * The picture is in main memory where the decoder left it and the 2D engine reads RSX-addressable
+     * memory, so something has to move it. The SPEs do that 1:1: same width, same height, no conversion
+     * and no scaling, which reduces their job to a straight DMA and drops the transfer from 1920x1080
+     * to the source size. The scaling - and the interpolation, which cost 21,038 us an SPE frame to do
+     * in software - then happens on hardware built for it.
+     *
+     * If the staging buffer was refused at open, or the SPEs are not up, this falls through to the SPE
+     * scaler exactly as before. A missing optional path must never mean a missing picture.
+     */
+    if (s_rsx_scale && s_stage_ok) {
+        unsigned copy_us = rc_spu_yuv_convert_argb(argb, src_stride, width, height,
+                                                   s_stage, (int)(width * 4), width, height);
+        if (copy_us > 0u)
+            return copy_us + blit_argb32_on_rsx(src_stride, width, height,
+                                                dst_w, dst_h, ox, oy, s_rsx_linear);
+        s_rsx_refused++;
+    }
 
     {
         uint32_t *dst = back + (size_t)oy * (size_t)stride_px + (size_t)ox;
@@ -644,4 +792,25 @@ int rc_video_self_test(void)
 const char *rc_video_self_test_failure(void)
 {
     return s_verify_failed_case;
+}
+
+/*
+ * Selects the RSX scaler and its filter. Separate from rc_video_open because the choice comes from the
+ * pairing record, which is read after the display is up, and because leaving it off by default means a
+ * build that cannot do this still behaves exactly as the one before it.
+ */
+void rc_video_set_rsx_scale(int on, int linear)
+{
+    s_rsx_scale = on;
+    s_rsx_linear = linear;
+}
+
+void rc_video_rsx_scale_stats(int *available, unsigned *blits, unsigned *refused)
+{
+    if (available != NULL)
+        *available = s_stage_ok;
+    if (blits != NULL)
+        *blits = s_rsx_blits;
+    if (refused != NULL)
+        *refused = s_rsx_refused;
 }

@@ -1064,6 +1064,24 @@ static int check_connect(void)
                  * If the two columns disagree with a plausible idle temperature, the decoding is what is
                  * wrong, not the console.
                  */
+                if (c.hardware_scale) {
+                    /*
+                     * Said plainly because the two paths are indistinguishable on a television when the
+                     * fallback is working, which is exactly when it matters that the log is not.
+                     */
+                    if (!c.rsx_scale_available)
+                        ps3_log("       SCALER: the RSX was asked for and has no staging buffer -"
+                                " every frame went to the SPEs\n");
+                    else if (c.rsx_refused > 0u)
+                        ps3_log("       SCALER: RSX for %u frame(s), %u fell back to the SPEs\n",
+                                c.rsx_blits, c.rsx_refused);
+                    else
+                        ps3_log("       SCALER: RSX, %u frame(s), no fallbacks - the SPEs moved the"
+                                " picture and did no arithmetic\n", c.rsx_blits);
+                } else {
+                    ps3_log("       SCALER: SPE (bilinear mode %d)\n", c.bilinear_upscale);
+                }
+
                 if (c.thermal.samples >= 2u) {
                     /*
                      * THE SIGN IS TAKEN FROM THE DELTA, NOT FROM ITS INTEGER PART. b203 printed a Cell
