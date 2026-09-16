@@ -146,17 +146,54 @@ static void scale_line(unsigned int src_width, unsigned int dst_width)
 {
     unsigned int step;
     unsigned int acc = 0u;
-    unsigned int x;
+    unsigned int x = 0u;
 
+    /*
+     * FOUR OUTPUT PIXELS PER STORE, AND THE STORE IS THE POINT.
+     *
+     * This SPU has no scalar store: writing one 32-bit word to local store is a read-modify-write of the
+     * whole 16-byte quadword, so the obvious `g_out[x] = g_line[idx]` costs a load, a rotate, an insert
+     * and a store for every pixel. Building four in a register and storing one quadword removes three of
+     * every four of those.
+     *
+     * The GATHER cannot be vectorised the same way - each output picks a source pixel at an index the
+     * accumulator computes, and the SPU has no vector gather - so the reads stay one at a time. That is
+     * why this is four-at-a-time rather than properly SIMD, and why the gain is a fraction rather than a
+     * factor.
+     */
     if (src_width == dst_width) {
-        /* The common case once a source is chosen to match the display: no scaling at all. */
-        for (x = 0u; x < dst_width; x++)
+        /* No scaling at all: a straight quadword copy, with whatever the width leaves over done singly. */
+        const vec_uint4 *in = (const vec_uint4 *)g_line;
+        vec_uint4 *out = (vec_uint4 *)g_out;
+        unsigned int quads = dst_width >> 2;
+
+        for (x = 0u; x < quads; x++)
+            out[x] = in[x];
+        for (x = quads << 2; x < dst_width; x++)
             g_out[x] = g_line[x];
         return;
     }
 
     step = (src_width << 16) / dst_width;
-    for (x = 0u; x < dst_width; x++) {
+
+    for (; x + 4u <= dst_width; x += 4u) {
+        vec_uint4 v = spu_splats(0u);
+
+        v = spu_insert(g_line[acc >> 16], v, 0);
+        acc += step;
+        v = spu_insert(g_line[acc >> 16], v, 1);
+        acc += step;
+        v = spu_insert(g_line[acc >> 16], v, 2);
+        acc += step;
+        v = spu_insert(g_line[acc >> 16], v, 3);
+        acc += step;
+
+        /* g_out is 128-byte aligned and x is a multiple of four, so this is a natural quadword store. */
+        *(vec_uint4 *)&g_out[x] = v;
+    }
+
+    /* At most three pixels, which is not worth a special case beyond this one. */
+    for (; x < dst_width; x++) {
         g_out[x] = g_line[acc >> 16];
         acc += step;
     }
