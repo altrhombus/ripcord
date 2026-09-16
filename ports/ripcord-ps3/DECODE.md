@@ -1131,6 +1131,53 @@ nobody touched produce identical evidence.
 The transition count went from 34 to 486 for comparable use, which is the analog levels being sent
 rather than discarded.
 
+### Output modes — **walked, and libRESC is not needed**
+
+Five modes in b282: 1080p, 1080i, 720p, 480p at 16:9 and 480p at 4:3. All five ran at 59 fps and all
+five were reported as looking fine on the television. What the logs say is more interesting than that,
+because two of the three faults this port expected are not faults.
+
+| mode | drawn | reported | verdict |
+|---|---|---|---|
+| 1080p | 1920x1080 | progressive, 16:9 | correct |
+| **1080i** | 1920x1080 | **interlaced**, 16:9 | **correct - see below** |
+| 720p | 1280x720 | progressive, 16:9 | correct, and 1:1 - no scaling at all |
+| 480p 16:9 | 720x404 | progressive, 16:9 | **wrong by +19%** |
+| 480p 4:3 | 720x404 | progressive, 4:3 | **wrong by -11%** |
+
+**INTERLACE IS HANDLED BY THE HARDWARE.** This port expected combing, on the reasoning that the buffer
+is a progressive frame and nothing here filters for fields. It does not comb: `videoConfigure` is told
+the negotiated mode and the display hardware generates the fields itself, which is what every PS3 game
+that renders progressive and outputs 1080i relies on. 1080i was indistinguishable from 1080p. The
+warning that predicted otherwise has been removed rather than softened, because a diagnostic that cries
+wolf costs more than one that says nothing.
+
+**NON-SQUARE PIXELS WERE REAL, AND THE FIX IS TEN LINES RATHER THAN A LIBRARY.** The fit scaled by pixel
+COUNT, which is right only where a buffer pixel is as wide as it is tall. At 1080p and 720p it is -
+those buffers are 16:9 in pixels and 16:9 on the screen - which is why this survived the entire port
+unnoticed. A 720x480 buffer is 3:2 in pixels and shown as 4:3 or 16:9, so a picture fitted by count
+comes out wrong by exactly that difference:
+
+```
+480p 16:9   drew 720x404, which appears as 2.11:1 from a 1.78:1 source   (+19%)
+480p 4:3    drew 720x404, which appears as 1.58:1                        (-11%)
+```
+
+`fit_into_display` now derives the drawn rectangle from the source's aspect divided by the pixel aspect,
+in 64-bit integers. It draws the whole 720x480 buffer at 16:9 and letterboxes to 720x360 at 4:3, which
+is correct in both. The same function replaced three copies of the old arithmetic, which is how a fix in
+one of them would previously have missed the other two.
+
+**Both 480p results were reported as looking fine.** An 11% aspect error makes circles into ovals and
+announces itself to nobody; it was found by computing what the drawn rectangle would appear as, not by
+looking. That is the argument for the mode line existing at all.
+
+**What is left of the libRESC case:** 50 Hz, untested, because there is no PAL console here. A 60 fps
+stream has no whole-number relationship with a 50 Hz display and nothing here converts one to the other.
+That is the only one of the three that remains, and it is the one libRESC would genuinely be for.
+Interlaced SD - 480i and 576i - is also untested and needs composite or component cables rather than
+HDMI.
+
 ### Still open
 - ~~**The fifth SPE.**~~ **Answered, and more completely than the question assumed.** The worry was that
   freeing the colour pass would only turn an SPE into a scaler rather than idling it. It idled all three:
