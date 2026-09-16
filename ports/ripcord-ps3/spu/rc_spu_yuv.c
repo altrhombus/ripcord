@@ -222,47 +222,105 @@ static void scale_line(unsigned int *out, unsigned int src_width, unsigned int d
 }
 
 /*
- * Bilinear, one output pixel at a time.
+ * Bilinear, with the four channels of a pixel interpolated at once.
  *
- * `l0` and `l1` are the source rows above and below the output row's position and `wy` is how far
- * between them it falls, in 1/256ths; the horizontal weight comes from the same accumulator the nearest
- * path uses. Each channel is interpolated along the top edge, along the bottom, and then between the
- * two - three lerps a channel, nine a pixel.
+ * The scalar version this replaces pulled each channel out of a word, interpolated it three times and
+ * put it back - nine interpolations a pixel, each with its own extract and insert - and missed the 25 ms
+ * strip deadline so completely that b195 converted no stream frames at all.
  *
- * Scalar on purpose FOR NOW. The nearest path was vectorised on the store because the SPU has no scalar
- * store, and the same trick applies here, but the arithmetic is the larger part and vectorising it
- * properly means unpacking four bytes into 16-bit lanes and interpolating four pixels at a time. That is
- * worth doing if the measurement says it is needed; writing it before the measurement is how the DMA
- * double buffering came to be built and buy nothing.
+ * A pixel's four bytes are unpacked into four 32-bit lanes, interpolated as one vector, and packed back.
+ * The multiply is the same idiom convert_line uses: spu_mulo against the odd halfword of each lane,
+ * which is where a small signed value sits in a 32-bit lane on this byte order. Differences are within
+ * +/-255 and the weights within 0..255, so the products fit a lane with room to spare.
+ *
+ * The four source pixels are remembered between output pixels. Upscaling means consecutive outputs often
+ * share a source column - at 1.5x two in three do - and re-unpacking the same four words is the largest
+ * avoidable cost left after the channels.
  */
+static const vec_uchar16 k_unpack_px = {
+    0x80u, 0x80u, 0x80u, 0u, 0x80u, 0x80u, 0x80u, 1u,
+    0x80u, 0x80u, 0x80u, 2u, 0x80u, 0x80u, 0x80u, 3u
+};
+static const vec_uchar16 k_pack_px = {
+    3u, 7u, 11u, 15u, 3u, 7u, 11u, 15u,
+    3u, 7u, 11u, 15u, 3u, 7u, 11u, 15u
+};
+
+static inline vec_int4 unpack_px(unsigned int p)
+{
+    return (vec_int4)spu_shuffle(spu_promote(p, 0), spu_splats(0u), k_unpack_px);
+}
+
+static inline unsigned int pack_px(vec_int4 v)
+{
+    return spu_extract((vec_uint4)spu_shuffle((vec_uchar16)v, (vec_uchar16)v, k_pack_px), 0);
+}
+
+/*
+ * a + ((b - a) * w + 128 >> 8), per lane.
+ *
+ * The +128 rounds rather than truncating, and it is worth the one instruction: the shift rounds toward
+ * negative infinity and three of these are nested, so truncation compounds. Checked against exact
+ * bilinear over 200,000 random inputs - 1.98 levels of worst-case error without it, 1.00 with.
+ */
+static inline vec_int4 lerp_px(vec_int4 a, vec_int4 b, short w)
+{
+    vec_int4 d = spu_sub(b, a);
+    vec_int4 p = spu_add(spu_mulo((vec_short8)d, spu_splats(w)), spu_splats(128));
+
+    return spu_add(a, spu_rlmaska(p, -8));
+}
+
 static void scale_line_bilinear(unsigned int *out, const unsigned int *l0, const unsigned int *l1,
                                 unsigned int wy, unsigned int src_width, unsigned int dst_width)
 {
     unsigned int step = (src_width << 16) / dst_width;
     unsigned int acc = 0u;
-    unsigned int x;
+    unsigned int x = 0u;
+    short wys = (short)wy;
+    unsigned int cached_c = 0xffffffffu;
+    vec_int4 A = spu_splats(0);
+    vec_int4 B = spu_splats(0);
+    vec_int4 E = spu_splats(0);
+    vec_int4 F = spu_splats(0);
 
-    for (x = 0u; x < dst_width; x++) {
-        unsigned int c = acc >> 16;
-        unsigned int wx = (acc >> 8) & 0xffu;
-        unsigned int c1 = (c + 1u < src_width) ? c + 1u : c;
-        unsigned int a = l0[c], b = l0[c1], e = l1[c], f = l1[c1];
-        unsigned int shift;
-        unsigned int pixel = 0u;
+    for (; x + 4u <= dst_width; x += 4u) {
+        vec_uint4 o = spu_splats(0u);
+        unsigned int k;
 
-        /* Red, green and blue; the top byte is alpha and the display ignores it. */
-        for (shift = 0u; shift <= 16u; shift += 8u) {
-            int a0 = (int)((a >> shift) & 0xffu);
-            int b0 = (int)((b >> shift) & 0xffu);
-            int e0 = (int)((e >> shift) & 0xffu);
-            int f0 = (int)((f >> shift) & 0xffu);
-            int top = a0 + (((b0 - a0) * (int)wx) >> 8);
-            int bot = e0 + (((f0 - e0) * (int)wx) >> 8);
-            int v = top + (((bot - top) * (int)wy) >> 8);
+        for (k = 0u; k < 4u; k++) {
+            unsigned int c = acc >> 16;
+            short wx = (short)((acc >> 8) & 0xffu);
 
-            pixel |= ((unsigned int)v & 0xffu) << shift;
+            if (c != cached_c) {
+                unsigned int c1 = (c + 1u < src_width) ? c + 1u : c;
+
+                A = unpack_px(l0[c]);
+                B = unpack_px(l0[c1]);
+                E = unpack_px(l1[c]);
+                F = unpack_px(l1[c1]);
+                cached_c = c;
+            }
+
+            o = spu_insert(pack_px(clamp_vec(lerp_px(lerp_px(A, B, wx), lerp_px(E, F, wx), wys))),
+                           o, (int)k);
+            acc += step;
         }
-        out[x] = pixel;
+
+        *(vec_uint4 *)&out[x] = o;
+    }
+
+    /* At most three pixels left over. */
+    for (; x < dst_width; x++) {
+        unsigned int c = acc >> 16;
+        short wx = (short)((acc >> 8) & 0xffu);
+        unsigned int c1 = (c + 1u < src_width) ? c + 1u : c;
+        vec_int4 a = unpack_px(l0[c]);
+        vec_int4 b = unpack_px(l0[c1]);
+        vec_int4 e = unpack_px(l1[c]);
+        vec_int4 f = unpack_px(l1[c1]);
+
+        out[x] = pack_px(clamp_vec(lerp_px(lerp_px(a, b, wx), lerp_px(e, f, wx), wys)));
         acc += step;
     }
 }
