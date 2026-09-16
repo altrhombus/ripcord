@@ -23,6 +23,8 @@
 #include "rc_audio_ps3.h"
 #include "rc_spu_yuv.h"
 #include "rc_video_ps3.h"
+#include "rc_pad_ps3.h"
+#include "halyard_input.h"
 #include "rc_overlay.h"
 #include "rc_sysfont.h"
 #include <stdio.h>
@@ -439,6 +441,19 @@ static unsigned g_hold_ms = RC_STREAM_HOLD_MS;
 /* Set once the parameter sets are classified - see where it is assigned for why this is a drop rather
  * than a disconnection. */
 static int g_stream_is_hevc;
+
+/*
+ * Input cadences. The poll is fast because a controller that is sampled slowly feels broken in a way
+ * no amount of smoothness elsewhere makes up for; the state keepalive is slow because it exists only
+ * so the console keeps hearing from a pad that is not moving.
+ */
+#define RC_INPUT_POLL_INTERVAL_MS   8u
+#define RC_INPUT_STATE_INTERVAL_MS  200u
+
+static halyard_input_writer g_input;
+static uint64_t g_next_input_poll;
+static uint64_t g_last_input_state_ms;
+static int g_stream_channel_ready;
 
 /* Defined below, between its two callers - the YUV and the packed-RGB present paths. */
 static void draw_overlay(void);
@@ -923,12 +938,92 @@ static void request_idr(uint64_t now);
  * inside the drain as well costs two comparisons per packet and removes the tension, so the bound can be
  * sized for the burst alone.
  */
+/*
+ * CONTROLLER INPUT, UP THE STREAM CHANNEL.
+ *
+ * Two packets and two cadences. A HISTORY packet (type 1) goes whenever a button transitioned, and
+ * carries the last several transitions rather than only the new one - they are CUMULATIVE and the
+ * console tracks button state from them, so a dropped packet would otherwise lose a transition
+ * permanently and leave a button held forever. A STATE packet (type 6) is the analog snapshot, sent
+ * when anything moved or every 200 ms regardless, because the console wants to keep hearing from a
+ * controller that is merely still.
+ *
+ * SENT FROM THE PERIODIC TICK, NOT THE DRAIN, and ripcord-3ds spent two phases learning why: input is
+ * a wall-clock activity like the heartbeat, while the drain's period depends on how much video is
+ * arriving. Tying the poll to the drain makes the controller laggy exactly when the picture is busy,
+ * which is exactly when it is being used.
+ *
+ * The sealer does the encryption and the tag together - see takion_control_sealer_seal_input for why
+ * those cannot be separated, and for why input must share the sealer's key position rather than count
+ * its own.
+ */
+static void send_input(rc_connect_result *out)
+{
+    halyard_input_state in;
+    uint8_t packet[HALYARD_INPUT_MAX_PACKET];
+    size_t payload_len;
+    uint64_t now;
+
+    if (!g_stream_channel_ready)
+        return;
+    if (!rc_pad_read(&in)) {
+        /*
+         * Nothing sent when no pad is connected. Neutral is a position - sticks centred, nothing
+         * pressed - and telling the console that repeatedly is a different statement from saying
+         * nothing, which is what an absent controller means.
+         */
+        return;
+    }
+
+    now = rc_time_ms();
+
+    payload_len = halyard_input_build_history_payload(&g_input, &in,
+                                                      packet + HALYARD_INPUT_HEADER_LENGTH,
+                                                      sizeof(packet) - HALYARD_INPUT_HEADER_LENGTH);
+    if (payload_len > 0u) {
+        size_t total = HALYARD_INPUT_HEADER_LENGTH + payload_len;
+
+        (void)halyard_input_write_header(0x01u, g_input.history_seq++, packet, sizeof(packet));
+        takion_control_sealer_seal_input(&g_sealer, packet, total, HALYARD_INPUT_HEADER_LENGTH);
+        if (sendto(g_stream_channel.sock, packet, total, 0,
+                   (struct sockaddr *)&g_stream_channel.peer,
+                   sizeof(g_stream_channel.peer)) >= 0)
+            out->input_history_packets++;
+    }
+
+    if (memcmp(&in, &g_input.previous, sizeof(in)) != 0
+        || now - g_last_input_state_ms >= RC_INPUT_STATE_INTERVAL_MS) {
+        size_t total;
+
+        payload_len = halyard_input_build_state_payload(&in, packet + HALYARD_INPUT_HEADER_LENGTH,
+                                                        sizeof(packet) - HALYARD_INPUT_HEADER_LENGTH);
+        total = HALYARD_INPUT_HEADER_LENGTH + payload_len;
+        (void)halyard_input_write_header(0x06u, g_input.state_seq++, packet, sizeof(packet));
+        takion_control_sealer_seal_input(&g_sealer, packet, total, HALYARD_INPUT_HEADER_LENGTH);
+        if (sendto(g_stream_channel.sock, packet, total, 0,
+                   (struct sockaddr *)&g_stream_channel.peer,
+                   sizeof(g_stream_channel.peer)) >= 0)
+            out->input_state_packets++;
+        g_last_input_state_ms = now;
+    }
+
+    /* Updated once both payloads are built, not between them: the history diff and the state's
+     * change test are both against the same previous frame. */
+    g_input.previous = in;
+    g_input.have_previous = 1;
+}
+
 static void send_periodic(halyard_control_session *session, rc_connect_result *out,
                           uint64_t *next_heartbeat, uint64_t *next_congestion)
 {
     uint64_t now = rc_time_ms();
 
     (void)session;
+
+    if (now >= g_next_input_poll) {
+        send_input(out);
+        g_next_input_poll = now + RC_INPUT_POLL_INTERVAL_MS;
+    }
 
     /*
      * CONGESTION FEEDBACK: what arrived and what did not. The console's rate controller adapts to it,
@@ -2273,6 +2368,15 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
      * a separate job and is not done here [X].
      */
     takion_control_sealer_init(&g_sealer, g_negotiator.send_aes_key, g_negotiator.send_base_iv);
+    /*
+     * Input becomes sendable at exactly the moment the sealer is armed, and not before: an input
+     * packet sent unsealed would be dropped by the console, and one sent with a key position from
+     * before agreement would be sealed under the wrong key.
+     */
+    halyard_input_writer_init(&g_input);
+    g_next_input_poll = 0u;
+    g_last_input_state_ms = 0u;
+    g_stream_channel_ready = 1;
     takion_channel_enable_sealing(&g_stream_channel, takion_control_sealer_seal, &g_sealer);
     out->sealing_on = 1;
 
@@ -2382,6 +2486,9 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
                     /* Audio is optional: if the port will not open the stream continues without it,
                      * which is better than failing a session over sound. */
                     out->audio_ready = rc_audio_init();
+                    /* Not fatal if it refuses: a stream you cannot steer is worth more than no
+                     * stream, and the report says which happened. */
+                    (void)rc_pad_open();
                     rc_decode_live_hint((int)info.width, (int)info.height);
                     /*
                      * BEFORE THE OPEN, because that is where the picture slots are fixed. This sat
@@ -2781,6 +2888,7 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
     out->hold_ms = g_hold_ms;
     rc_video_rsx_scale_stats(&out->rsx_scale_available, &out->rsx_blits, &out->rsx_refused);
     out->picture_in_vram = rc_decode_vdec_picture_in_vram();
+    rc_pad_stats(&out->pad_connected, &out->pad_reads, &out->pad_changes);
     rc_thermal_sample(&out->thermal);   /* the closing sample - see the note where the hold opens */
     out->idr_requests = g_idr_requests;
 

@@ -173,7 +173,7 @@ CFLAGS := $(ARCH) -std=gnu99 -O2 -g \
           -DRC_PS3_APPID='"$(APPID)"' \
           -DRC_NETLOG_HOST='"$(RC_NETLOG_HOST)"' -DRC_NETLOG_PORT=$(RC_NETLOG_PORT) \
           -I$(CORE) -I$(BUILD) -Isource/platform -Isource/video -Isource/spu -Isource/net -Isource/media -Isource/coretest \
-          -Isource/discovery -Isource/connect -I$(CORE)/discovery -I$(CORE)/session \
+          -Isource/discovery -Isource/connect -Isource/input -I$(CORE)/discovery -I$(CORE)/session \
           -I$(CORE)/halyard -I$(CORE)/crypto -I$(CORE)/net -I$(CORE)/takion -I$(CORE)/stream -I$(CORE)/util -I$(CORE)/platform -Ispu \
           -I$(PSL1GHT)/ppu/include
 
@@ -203,6 +203,7 @@ SOURCES := \
 	$(CORE)/util/rc_program_dir.c \
 	source/platform/rc_platform_ps3.c \
 	source/platform/rc_thermal.c \
+	source/input/rc_pad_ps3.c \
 	source/platform/rc_random_ps3.c \
 	source/platform/rc_stack_ps3.c \
 	source/video/rc_video_ps3.c \

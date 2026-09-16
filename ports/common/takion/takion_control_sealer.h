@@ -72,8 +72,33 @@ void takion_control_sealer_seal(void *ctx, uint8_t *packet, size_t length);
 #define TAKION_CONGESTION_TAG_OFFSET    7u
 #define TAKION_CONGESTION_KEYPOS_OFFSET 11u
 
+#define TAKION_INPUT_KEYPOS_OFFSET      4u
+#define TAKION_INPUT_TAG_OFFSET         8u
+
 void takion_control_sealer_seal_congestion(takion_control_sealer *sealer,
                                            uint8_t *packet, size_t length);
+
+/*
+ * CONTROLLER INPUT, which is a third shape again and MUST use this sealer for the same reason
+ * congestion does: one advancing key position for every outgoing sealed packet, so no GMAC nonce is
+ * ever spent twice under one key.
+ *
+ * Its offsets are key position at 4 and tag at 8 - both different from control's and congestion's -
+ * and its AAD rule matches A/V rather than control: only the TAG is zeroed, not the key-position
+ * field. Three shapes, three rules, and nothing about any of them is inferable from the others.
+ *
+ * IT ALSO ENCRYPTS, which the other two do not. Spec 6.3 is explicit that input payloads are AES-CTR
+ * encrypted, and the .NET side and ripcord-3ds both learned it the same expensive way: a plaintext
+ * payload is faithfully DECRYPTED by the console into noise, so a button press arrives as something
+ * else entirely, at an unpredictable moment, having passed authentication the whole way. Encrypting
+ * here rather than at the call site means the tag is computed over the ciphertext that actually goes on
+ * the wire - sealing first would authenticate a payload nobody will ever see.
+ *
+ * `payload_offset` is where the encrypted part begins (HALYARD_INPUT_HEADER_LENGTH for both packet
+ * types).
+ */
+void takion_control_sealer_seal_input(takion_control_sealer *sealer,
+                                      uint8_t *packet, size_t length, size_t payload_offset);
 
 /* Wipes the key material. */
 /*
