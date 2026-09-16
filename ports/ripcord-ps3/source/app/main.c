@@ -1075,9 +1075,13 @@ static int check_connect(void)
                     else if (c.rsx_refused > 0u)
                         ps3_log("       SCALER: RSX for %u frame(s), %u fell back to the SPEs\n",
                                 c.rsx_blits, c.rsx_refused);
+                    else if (c.picture_in_vram)
+                        ps3_log("       SCALER: RSX, %u frame(s), no fallbacks and NO COPY - the"
+                                " decoder wrote where the RSX reads\n", c.rsx_blits);
                     else
                         ps3_log("       SCALER: RSX, %u frame(s), no fallbacks - the SPEs moved the"
-                                " picture and did no arithmetic\n", c.rsx_blits);
+                                " picture and did no arithmetic (RSX memory was NOT used for the"
+                                " decode)\n", c.rsx_blits);
                 } else {
                     ps3_log("       SCALER: SPE (bilinear mode %d)\n", c.bilinear_upscale);
                 }
