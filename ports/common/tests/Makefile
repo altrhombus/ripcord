@@ -83,6 +83,7 @@ ECDH_TARGET := $(BUILD)/ecdh_test
 CONTROL_PROTO_TARGET := $(BUILD)/control_proto_test
 INPUT_TARGET := $(BUILD)/input_test
 REGISTRATION_TARGET := $(BUILD)/registration_test
+REGIST_FLOW_TARGET := $(BUILD)/regist_flow_test
 REGISTRATION_VECTORS := vectors/registration-crypto.kat
 
 # A SECOND generated constants file, with --registration. The rest of this suite deliberately builds
@@ -224,7 +225,7 @@ REGISTRATION_SOURCES := \
 all: check
 
 check: $(TARGET) $(VECTORS) $(DISCOVERY_TARGET) $(SESSION_TARGET) $(TAKION_TARGET) $(STREAM_CRYPTO_TARGET) $(STREAM_VECTORS) $(FEC_TARGET) $(STREAM_HEADER_TARGET) $(STREAM_DEMUX_TARGET) $(ECDH_TARGET) $(SESSION_VECTORS) $(CONTROL_PROTO_TARGET) $(PROTO_VECTORS) $(INPUT_TARGET) \
-         $(REGISTRATION_TARGET) $(REGISTRATION_VECTORS)
+         $(REGISTRATION_TARGET) $(REGISTRATION_VECTORS) $(REGIST_FLOW_TARGET)
 	./$(TARGET) $(VECTORS)
 	./$(DISCOVERY_TARGET)
 	./$(SESSION_TARGET)
@@ -237,6 +238,7 @@ check: $(TARGET) $(VECTORS) $(DISCOVERY_TARGET) $(SESSION_TARGET) $(TAKION_TARGE
 	./$(CONTROL_PROTO_TARGET) $(PROTO_VECTORS)
 	./$(INPUT_TARGET)
 	./$(REGISTRATION_TARGET) $(REGISTRATION_VECTORS)
+	./$(REGIST_FLOW_TARGET) $(REGIST_FLOW_TARGET)
 
 build: $(TARGET) $(DISCOVERY_TARGET) $(SESSION_TARGET) $(TAKION_TARGET) $(STREAM_CRYPTO_TARGET) $(FEC_TARGET) $(STREAM_HEADER_TARGET) $(STREAM_DEMUX_TARGET) $(ECDH_TARGET) $(CONTROL_PROTO_TARGET)
 
@@ -309,6 +311,27 @@ $(INPUT_TARGET): $(INPUT_SOURCES)
 $(REGISTRATION_GENERATED): $(BUNDLE) $(CORE)/tools/gen_constants.py
 	@mkdir -p $(@D)
 	$(PYTHON) $(CORE)/tools/gen_constants.py --registration $(BUNDLE) $@
+
+REGIST_FLOW_SOURCES := \
+	$(CORE)/halyard/halyard_registration.c \
+	$(CORE)/halyard/halyard_control_crypto.c \
+	$(CORE)/crypto/rc_aes.c \
+	$(CORE)/crypto/rc_sha256.c \
+	$(CORE)/crypto/rc_modes.c \
+	$(CORE)/session/halyard_regist_message.c \
+	$(CORE)/session/halyard_regist_flow.c \
+	$(CORE)/session/halyard_control_arm.c \
+	$(CORE)/session/halyard_control_probe.c \
+	$(CORE)/net/rc_tcp.c \
+	$(CORE)/util/rc_base64.c \
+	$(CORE)/util/rc_hex.c \
+	rc_platform_host.c \
+	regist_flow_test.c
+
+$(REGIST_FLOW_TARGET): $(REGIST_FLOW_SOURCES) $(REGISTRATION_GENERATED)
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) -D_GNU_SOURCE $(INCLUDES) -I$(CORE)/session -I$(CORE)/util -I$(CORE)/net \
+	    -o $@ $(REGIST_FLOW_SOURCES) $(REGISTRATION_GENERATED) -lpthread
 
 $(REGISTRATION_TARGET): $(REGISTRATION_SOURCES) $(REGISTRATION_GENERATED)
 	@mkdir -p $(@D)
