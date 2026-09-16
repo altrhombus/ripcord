@@ -45,10 +45,22 @@ int rc_overlay_height(void);
  */
 int  rc_overlay_begin(void);
 void rc_overlay_rect(int x, int y, int w, int h, uint32_t argb);
-void rc_overlay_text(int x, int y, int scale, uint32_t argb, const char *fmt, ...);
 
-/* Text whose RIGHT edge lands on x, for a column of numbers that should not jitter as digits change. */
+/*
+ * TWO FONTS, AND WHICH ONE TO USE IS A QUESTION ABOUT THE TEXT, NOT ABOUT TASTE.
+ *
+ * _text is proportional, with real lower case and descenders, and is for WORDS - labels, headings,
+ * anything whose job is to be read.
+ *
+ * _num is the monospaced 5x7, and is for anything that CHANGES. A column of figures has to hold still
+ * while the figures change: a digit one pixel narrower than its neighbour shuffles the whole row every
+ * time it ticks, and a number that moves while you read it is a number you read twice. Prefer
+ * _num_right for those, so the digits grow leftwards from a fixed edge.
+ */
+void rc_overlay_text(int x, int y, int scale, uint32_t argb, const char *fmt, ...);
 void rc_overlay_text_right(int x, int y, int scale, uint32_t argb, const char *fmt, ...);
+void rc_overlay_num(int x, int y, int scale, uint32_t argb, const char *fmt, ...);
+void rc_overlay_num_right(int x, int y, int scale, uint32_t argb, const char *fmt, ...);
 
 /*
  * A sparkline: `n` values drawn as columns left to right, scaled against `max`. Zero-height bars still

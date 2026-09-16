@@ -16,6 +16,12 @@
  * reading first. Translucency is not this code's job: the panel is written as premultiplied ARGB and
  * the RSX blends it against the picture when it copies, which is the one place the read is free.
  *
+ * TWO FONTS, ON PURPOSE. Words are set in the proportional face and anything that MOVES is set in the
+ * monospaced one and right-aligned. A column of figures has to hold still while the figures change: a
+ * digit one pixel narrower than its neighbour makes the whole row shuffle every time it ticks, and a
+ * number that moves while you read it is a number you read twice. Fixed pitch is wrong for the words
+ * for the opposite reason - it reads like a teletype, and every label here is prose.
+ *
  * THE TEXT IS REBUILT A FEW TIMES A SECOND, NOT EVERY FRAME. All of it is rates and totals nobody reads
  * at 60 Hz. The COPY is queued every frame, because the picture blit clears the back buffer each time.
  */
@@ -26,6 +32,7 @@
 #include <string.h>
 
 #include "rc_font5x7.h"
+#include "rc_font_prop.h"
 #include "rc_video_ps3.h"
 #include "platform/rc_platform.h"
 
@@ -99,22 +106,21 @@ void rc_overlay_set(int on)
     }
 }
 
-static void draw_char(int x, int y, int scale, char c, uint32_t premul_colour)
+/*
+ * One glyph, from rows of bits. `msb` is the mask for the leftmost column - the two fonts pack from
+ * opposite ends of the byte (5 wide in the low bits, up to 8 wide from the top) and passing the mask in
+ * is cheaper than making them agree, which would mean rewriting one of the tables.
+ */
+static void draw_bits(int x, int y, int scale, const unsigned char *rows, int nrows, int width,
+                      unsigned msb, uint32_t premul_colour)
 {
-    const unsigned char *g;
     int gy, gx, sy, sx;
 
-    if (c >= 'a' && c <= 'z')
-        c = (char)(c - 'a' + 'A');
-    if (c < RC_FONT_FIRST || c > RC_FONT_LAST)
-        return;
-    g = kFont5x7[c - RC_FONT_FIRST];
+    for (gy = 0; gy < nrows; gy++) {
+        unsigned char bits = rows[gy];
 
-    for (gy = 0; gy < RC_FONT_H; gy++) {
-        unsigned char bits = g[gy];
-
-        for (gx = 0; gx < RC_FONT_W; gx++) {
-            if ((bits & (0x10u >> gx)) == 0u)
+        for (gx = 0; gx < width; gx++) {
+            if ((bits & (msb >> gx)) == 0u)
                 continue;
             for (sy = 0; sy < scale; sy++) {
                 int py = y + gy * scale + sy;
@@ -133,13 +139,58 @@ static void draw_char(int x, int y, int scale, char c, uint32_t premul_colour)
     }
 }
 
-static void draw_string(int x, int y, int scale, uint32_t argb, const char *text)
+/* Monospaced 5x7, for numbers. See the note at the top of this file for why there are two. */
+static void draw_mono_char(int x, int y, int scale, char c, uint32_t premul_colour)
+{
+    if (c >= 'a' && c <= 'z')
+        c = (char)(c - 'a' + 'A');
+    if (c < RC_FONT_FIRST || c > RC_FONT_LAST)
+        return;
+    draw_bits(x, y, scale, kFont5x7[c - RC_FONT_FIRST], RC_FONT_H, RC_FONT_W, 0x10u, premul_colour);
+}
+
+/* Proportional, for words. Returns the advance so a caller can lay out a run of them. */
+static int draw_prop_char(int x, int y, int scale, char c, uint32_t premul_colour)
+{
+    const rc_prop_glyph *g;
+
+    if (c < RC_PROP_FIRST || c > RC_PROP_LAST)
+        c = '?';
+    g = &kFontProp[c - RC_PROP_FIRST];
+    draw_bits(x, y, scale, g->row, RC_PROP_ROWS, g->width, 0x80u, premul_colour);
+    return ((int)g->width + RC_PROP_GAP) * scale;
+}
+
+static int prop_width(const char *text, int scale)
+{
+    int w = 0, i;
+
+    for (i = 0; text[i] != '\0'; i++) {
+        char c = text[i];
+
+        if (c < RC_PROP_FIRST || c > RC_PROP_LAST)
+            c = '?';
+        w += ((int)kFontProp[c - RC_PROP_FIRST].width + RC_PROP_GAP) * scale;
+    }
+    return w;
+}
+
+static void draw_prop(int x, int y, int scale, uint32_t argb, const char *text)
+{
+    uint32_t c = premul(argb);
+    int i;
+
+    for (i = 0; text[i] != '\0'; i++)
+        x += draw_prop_char(x, y, scale, text[i], c);
+}
+
+static void draw_mono(int x, int y, int scale, uint32_t argb, const char *text)
 {
     uint32_t c = premul(argb);
     int i;
 
     for (i = 0; text[i] != '\0'; i++) {
-        draw_char(x, y, scale, text[i], c);
+        draw_mono_char(x, y, scale, text[i], c);
         x += (RC_FONT_W + 1) * scale;
     }
 }
@@ -154,23 +205,50 @@ void rc_overlay_text(int x, int y, int scale, uint32_t argb, const char *fmt, ..
     va_start(ap, fmt);
     (void)vsnprintf(text, sizeof(text), fmt, ap);
     va_end(ap);
-    draw_string(x, y, scale, argb, text);
+    draw_prop(x, y, scale, argb, text);
 }
 
 void rc_overlay_text_right(int x, int y, int scale, uint32_t argb, const char *fmt, ...)
 {
     char text[96];
     va_list ap;
-    int len;
 
     if (!s_ready)
         return;
     va_start(ap, fmt);
     (void)vsnprintf(text, sizeof(text), fmt, ap);
     va_end(ap);
+    draw_prop(x - prop_width(text, scale), y, scale, argb, text);
+}
 
-    len = (int)strlen(text);
-    draw_string(x - len * (RC_FONT_W + 1) * scale, y, scale, argb, text);
+void rc_overlay_num(int x, int y, int scale, uint32_t argb, const char *fmt, ...)
+{
+    char text[96];
+    va_list ap;
+
+    if (!s_ready)
+        return;
+    va_start(ap, fmt);
+    (void)vsnprintf(text, sizeof(text), fmt, ap);
+    va_end(ap);
+    draw_mono(x, y, scale, argb, text);
+}
+
+/*
+ * The one that matters for a figure that changes: the RIGHT edge lands on x, so digits grow leftwards
+ * and everything after the number stays where it was. See the two-font note at the top of the file.
+ */
+void rc_overlay_num_right(int x, int y, int scale, uint32_t argb, const char *fmt, ...)
+{
+    char text[96];
+    va_list ap;
+
+    if (!s_ready)
+        return;
+    va_start(ap, fmt);
+    (void)vsnprintf(text, sizeof(text), fmt, ap);
+    va_end(ap);
+    draw_mono(x - (int)strlen(text) * (RC_FONT_W + 1) * scale, y, scale, argb, text);
 }
 
 void rc_overlay_bars(int x, int y, int w, int h, const unsigned *v, unsigned n, unsigned max,
