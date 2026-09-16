@@ -617,6 +617,53 @@ One thing was tried and removed: requesting a keyframe on each throttle step. Th
 a stream that has changed shape needs a fresh reference — but setting `g_awaiting_keyframe` hands it to
 the repeat loop that asks every 200 ms until one arrives, turning 8 steps into 79 IDR requests.
 
+### 720p60 — **working, 58 fps, 2026-09-15**
+
+Level 4.2 bounds the decoded picture buffer, not the frame rate: nine reference frames at 720p need
+32,400 macroblocks either way, and 720p60 is 216,000 macroblocks a second against a 522,240 ceiling. The
+console grants it and declares level 40, so the cap this port applies is on SIZE alone.
+
+Getting 60 fps onto the screen took five separate limits, every one of them a constant or a policy that
+was correct when it was written and had stopped being correct:
+
+| build | limit | what it was |
+|---|---|---|
+| b182 | `RC_VDEC_AU_SLOTS` 8 | a 30 fps number; frames arrive twice as often |
+| b182 | dropped frames never asked for a keyframe | the chain broke and stayed broken |
+| b183 | `BUSY` treated as failure | it is back-pressure; the decoder's queue is 4 deep |
+| b184 | `num_spus = 1` | one SPE decodes ~41 fps; a sixth sat idle |
+| b186 | two picture buffers, one published slot | 1,777 decoded, 960 delivered |
+| b187 | the blit dropped rather than waiting | 1,777 decoded, 1,128 shown |
+
+The last one is the clearest case of a stale rationale. `on_picture` refused to wait for the display
+because waiting blocked the thread draining the socket — true, and measured, in b87. Decode and blit have
+had their own thread since b144, so the cost of waiting became "a decode thread pauses for a vsync",
+which the picture ring exists to absorb. It waits now, bounded at 25 ms, and the longest wait observed is
+15 — one vsync.
+
+**Result: 1,748 of 1,769 frames decoded, all 1,748 shown, 0 dropped at the display, 2 units lost, audio
+clean.** What remains is 17 submissions still refused after the 6 ms BUSY wait, which is the decoder
+briefly saturated and costs about 1% of frames.
+
+### The SPE colour pass is compute, not DMA — **measured, and it overturned the prediction**
+
+```
+last frame: 1,667 us waiting for the MFC, 16,444 us converting and scaling (summed over 4 SPEs)
+```
+
+Reading the kernel suggests the opposite. It uses one DMA tag and blocks on every transfer — roughly 270
+blocking puts and 180 blocking gets per SPE per frame — so the obvious conclusion is that it is stalled on
+DMA, that double buffering is the fix, and that taking `ARGB32` from the decoder would make things worse
+by inflating transfers 2.7x. **Waiting is 9% of it.**
+
+So the conversion is the cost, `ARGB32` output (accepted and filled, b179) is the right optimisation, and
+double buffering would buy almost nothing. Scaling still has to happen, so the SPE becomes a scale-only
+pass rather than going idle — but that pass is most of 16 ms, and at 60 fps that is the headroom worth
+having.
+
+Worth noting the instrument was wrong first: the SPU decrementer does not run until it is written, so
+b182 and b183 reported zero for both halves and printed nothing at all.
+
 ### Still open
 - **The fifth SPE — `ARGB32` output works.** Asked offline in b179: `vdecGetPicture` accepts
   `VDEC_PICFMT_ARGB32` and fills the buffer (bytes 0..255 across 8 pictures). So the YUV-to-RGB pass
