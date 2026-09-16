@@ -191,8 +191,8 @@ LDFLAGS := $(ARCH) -Wl,--gc-sections -L$(PSL1GHT)/ppu/lib -L$(PORTLIBS)/lib
 # come from it, and it is the first PS3 code in this port to open a socket at all.
 # -lsysmodule is not optional beside -lnet: netInitialize() calls sysModuleLoad, and without it the link
 # fails on that symbol rather than on anything mentioning networking. PSL1GHT's network samples all pair
-# the two - `LIBS := -lnet -lsysmodule` - which is the fastest place to have learned it.
-LIBS := -lfreetype -lz -lio -lrsx -lgcm_sys -lsysutil -lvdec -laudio -lnet -lsysmodule -lpthread -lrt -llv2
+# the two - `LIBS := -lnetctl -lnet -lsysmodule` - which is the fastest place to have learned it.
+LIBS := -lfreetype -lz -lio -lrsx -lgcm_sys -lsysutil -lvdec -laudio -lnetctl -lnet -lsysmodule -lpthread -lrt -llv2
 
 # The platform seam plus the two core utilities the bring-up program needs. rc_random_ps3.c joined this
 # list on 2026-09-11, when the CSPRNG call was confirmed against real headers; before that its ABSENCE
@@ -204,6 +204,7 @@ SOURCES := \
 	source/platform/rc_platform_ps3.c \
 	source/platform/rc_thermal.c \
 	source/input/rc_pad_ps3.c \
+	source/input/rc_osk_ps3.c \
 	$(CORE)/ui/rc_session_state.c \
 	source/platform/rc_random_ps3.c \
 	source/platform/rc_stack_ps3.c \
@@ -223,10 +224,14 @@ SOURCES := \
 	source/media/rc_audio_ps3.c \
 	source/discovery/rc_discover.c \
 	source/connect/rc_connect.c \
+	source/connect/rc_pair_ps3.c \
 	$(CORE)/discovery/halyard_discovery.c \
 	$(CORE)/discovery/halyard_wake.c \
 	$(CORE)/session/halyard_pairing_file.c \
 	$(CORE)/session/halyard_control_probe.c \
+	$(CORE)/session/halyard_regist_flow.c \
+	$(CORE)/session/halyard_regist_message.c \
+	$(CORE)/halyard/halyard_registration.c \
 	$(CORE)/session/halyard_control_session.c \
 	$(CORE)/net/rc_tcp.c \
 	$(CORE)/net/rc_udp.c \
@@ -517,7 +522,7 @@ $(OPENH264_LIB):
 # package sitting in place, which then uploads and installs perfectly and runs the old build. Adding
 # source/input cost exactly that: three builds that reported a new number and shipped the old binary.
 vpath %.c source/video $(CORE)/util $(CORE)/discovery $(CORE)/session $(CORE)/net $(CORE)/takion \
-          $(CORE)/crypto $(CORE)/stream \
+          $(CORE)/crypto $(CORE)/stream $(CORE)/halyard \
           source/platform source/spu source/net source/media source/discovery source/connect \
           source/app source/input $(CORE)/ui
 
