@@ -115,6 +115,28 @@ int halyard_registration_scatter(const uint8_t wrapped[16], uint8_t *context, si
     return 1;
 }
 
+int halyard_registration_field_init(struct halyard_control_field_tag *field, int is_ps5,
+                                    const uint8_t *context, size_t context_length,
+                                    uint32_t passcode, const uint8_t material[16])
+{
+    if (field == NULL || material == NULL)
+        return 0;
+    if (!halyard_registration_derive_key(is_ps5, context, context_length, passcode, field->key))
+        return 0;
+
+    memcpy(field->material, material, HALYARD_MATERIAL_LENGTH);
+    /*
+     * NOT A FIFTH KEY. Registration's field-cipher context key is the control plane's selector_one for a
+     * PS5 and selector_zero for a PS4 - see the note in halyard_v1.h. The bundle stores the PS5 one
+     * twice under two names and the build checks the copies agree, so reading it from here carries no
+     * risk of using the other one by mistake.
+     */
+    memcpy(field->context_key,
+           is_ps5 ? halyard_v1_ctx_selector_one : halyard_v1_ctx_selector_zero,
+           HALYARD_CONTEXT_KEY_LENGTH);
+    return 1;
+}
+
 int halyard_registration_gather(const uint8_t *context, size_t context_length, uint8_t out_wrapped[16])
 {
     if (context == NULL || out_wrapped == NULL

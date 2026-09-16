@@ -72,7 +72,14 @@ extern const uint8_t halyard_v1_registration_table[HALYARD_REGISTRATION_TABLE_LE
 extern const uint8_t halyard_v1_material_wrap_table[HALYARD_MATERIAL_WRAP_TABLE_LENGTH];
 extern const uint8_t halyard_v1_ps4_registration_table[HALYARD_REGISTRATION_TABLE_LENGTH];
 extern const uint8_t halyard_v1_ps4_material_wrap_table[HALYARD_MATERIAL_WRAP_TABLE_LENGTH];
-extern const uint8_t halyard_v1_registration_context_key[HALYARD_CONTEXT_KEY_LENGTH];
+
+/*
+ * Registration's field-cipher context key is NOT a fifth key. It is halyard_v1_ctx_selector_one for a
+ * PS5 and halyard_v1_ctx_selector_zero for a PS4 - the same two the control plane already uses. The
+ * bundle stores the PS5 one twice under two names, which NOTICE records, and emitting a third copy into
+ * the binary would only create something to keep in sync. gen_constants.py checks the two are equal at
+ * build time rather than trusting it.
+ */
 
 /* ---- Control-session key derivation ---- */
 
@@ -118,7 +125,8 @@ void halyard_field_iv_derive(const uint8_t context_key[HALYARD_CONTEXT_KEY_LENGT
 
 /* ---- The field and streaminfo ciphers ---- */
 
-typedef struct {
+/* Tagged so halyard_registration.h can forward-declare it without including this whole header. */
+typedef struct halyard_control_field_tag {
     uint8_t key[HALYARD_KEY_LENGTH];
     uint8_t material[HALYARD_MATERIAL_LENGTH];
     uint8_t context_key[HALYARD_CONTEXT_KEY_LENGTH];

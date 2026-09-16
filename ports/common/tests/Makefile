@@ -214,6 +214,9 @@ INPUT_SOURCES := \
 
 REGISTRATION_SOURCES := \
 	$(CORE)/halyard/halyard_registration.c \
+	$(CORE)/session/halyard_regist_message.c \
+	$(CORE)/util/rc_base64.c \
+	$(CORE)/util/rc_hex.c \
 	registration_test.c
 
 .PHONY: all check build clean constants
@@ -309,7 +312,8 @@ $(REGISTRATION_GENERATED): $(BUNDLE) $(CORE)/tools/gen_constants.py
 
 $(REGISTRATION_TARGET): $(REGISTRATION_SOURCES) $(REGISTRATION_GENERATED)
 	@mkdir -p $(@D)
-	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $(REGISTRATION_SOURCES) $(REGISTRATION_GENERATED)
+	$(CC) $(CFLAGS) $(INCLUDES) -I$(CORE)/session -I$(CORE)/util -o $@ $(REGISTRATION_SOURCES) \
+	    $(REGISTRATION_GENERATED)
 
 # Not a rule that generates it: the emitter is a .NET project and quietly shelling out to `dotnet` from a
 # C makefile would be a surprising amount of machinery to hide behind `make`. Say what to run instead.

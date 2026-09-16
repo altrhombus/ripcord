@@ -20,6 +20,7 @@
  */
 #include "../halyard/halyard_registration.h"
 #include "../halyard/halyard_v1.h"
+#include "../session/halyard_regist_message.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -54,6 +55,114 @@ static int unhex(const char *text, uint8_t *out, size_t out_size, size_t *out_le
     }
     *out_length = n / 2u;
     return 1;
+}
+
+/*
+ * THE MESSAGE LAYER, which carries no secret and needs no tables - that is the whole reason it is a
+ * separate file from the key exchange. Every fixture below is synthetic.
+ */
+static void test_message(void)
+{
+    char field[256];
+    uint8_t request[512];
+    size_t n;
+
+    /* The request field, whose Np-AccountId is a base64'd LITTLE-endian u64 for a numeric id. */
+    n = halyard_regist_field_plaintext("1234567890123456", field, sizeof(field));
+    check(n > 0, "field plaintext built", __LINE__);
+    check(strstr(field, "Client-Type: " HALYARD_REGIST_CLIENT_TYPE_HEX "\r\n") == field,
+          "Client-Type leads the field", __LINE__);
+    check(strstr(field, "\r\nNp-AccountId: ") != NULL, "Np-AccountId follows it", __LINE__);
+    /* 1234567890123456 little-endian is c0 ba 8a 3c d5 62 04 00, which base64s to wLqKPNViBAA=. */
+    check(strstr(field, "Np-AccountId: wLqKPNViBAA=\r\n") != NULL,
+          "numeric id is a base64 LITTLE-endian u64", __LINE__);
+
+    /* The request head. Uppercase HOST with no port, no Content-Type, no Np-AccountId header. */
+    {
+        const uint8_t body[4] = { 0xde, 0xad, 0xbe, 0xef };
+
+        n = halyard_regist_build_request(1, "192.0.2.5", body, sizeof(body), request, sizeof(request));
+        check(n > sizeof(body), "request built", __LINE__);
+        request[n - sizeof(body)] = '\0';   /* terminate the head for strstr; the body follows it */
+        check(strstr((char *)request, "POST /sie/ps5/rp/sess/rgst HTTP/1.1\r\n") == (char *)request,
+              "PS5 path on the request line", __LINE__);
+        check(strstr((char *)request, "\r\nHOST: 192.0.2.5\r\n") != NULL,
+              "uppercase HOST, no port", __LINE__);
+        check(strstr((char *)request, "\r\nContent-Length: 4\r\n") != NULL, "content length",
+              __LINE__);
+        check(strstr((char *)request, "\r\nRP-Version: 1.0\r\n") != NULL, "PS5 RP-Version", __LINE__);
+        check(strstr((char *)request, "Content-Type") == NULL, "no Content-Type", __LINE__);
+        check(strstr((char *)request, "Np-AccountId") == NULL,
+              "the account id is NOT a header - it is inside the encrypted body", __LINE__);
+
+        n = halyard_regist_build_request(0, "192.0.2.5", body, sizeof(body), request, sizeof(request));
+        request[n - sizeof(body)] = '\0';
+        check(strstr((char *)request, "POST /sie/ps4/rp/sess/rgst") == (char *)request,
+              "PS4 path", __LINE__);
+        check(strstr((char *)request, "\r\nRP-Version: 10.0\r\n") != NULL, "PS4 RP-Version", __LINE__);
+    }
+
+    /* Splitting a refusal, and keeping the console's own explanation of it. */
+    {
+        static const char refusal[] =
+            "HTTP/1.1 403 Forbidden\r\n"
+            "RP-Application-Reason: 80108bff\r\n"
+            "Content-Length: 0\r\n"
+            "\r\n";
+        int status = 0;
+        const uint8_t *body = NULL;
+        size_t body_length = 0;
+        char reason[32];
+
+        check(halyard_regist_split_response((const uint8_t *)refusal, sizeof(refusal) - 1,
+                                            &status, &body, &body_length, reason, sizeof(reason)),
+              "refusal parsed", __LINE__);
+        check(status == 403, "status recovered", __LINE__);
+        check(strcmp(reason, "80108bff") == 0,
+              "the console's own reason is kept - without it every refusal reads alike", __LINE__);
+        check(body_length == 0, "empty body", __LINE__);
+    }
+
+    /* And a success, whose body is the (here already decrypted) pairing record. */
+    {
+        static const char ok[] =
+            "HTTP/1.1 200 OK\r\n"
+            "Content-Length: 64\r\n"
+            "\r\n"
+            "PS5-RegistKey: 3161326233633464\r\n"
+            "RP-Key: 000102030405060708090a0b0c0d0e0f\r\n"
+            "RP-KeyType: 2\r\n";
+        int status = 0;
+        const uint8_t *body = NULL;
+        size_t body_length = 0;
+        halyard_regist_record rec;
+
+        check(halyard_regist_split_response((const uint8_t *)ok, sizeof(ok) - 1,
+                                            &status, &body, &body_length, NULL, 0),
+              "success parsed", __LINE__);
+        check(status == 200, "200", __LINE__);
+        check(halyard_regist_parse_record(body, body_length, &rec), "record parsed", __LINE__);
+        check(rec.is_ps5 == 1, "family comes from which RegistKey field the console used", __LINE__);
+        check(rec.key_type == 2, "key type", __LINE__);
+        check(rec.registration_key_length == 8, "registkey is hex-DECODED to 8 bytes", __LINE__);
+        /*
+         * The decoded bytes are themselves the ASCII "1a2b3c4d". Storing the 16-character hex string
+         * instead double-encodes it and /sess/init is answered with a 403 - the exact failure this
+         * check exists to prevent.
+         */
+        check(memcmp(rec.registration_key, "1a2b3c4d", 8) == 0,
+              "and the 8 bytes are the ASCII the console meant", __LINE__);
+        check(rec.companion[0] == 0x00 && rec.companion[15] == 0x0f, "companion decoded", __LINE__);
+    }
+
+    /* A reply missing either required field is not a pairing record. */
+    {
+        static const char partial[] = "PS5-RegistKey: 3161326233633464\r\n";
+        halyard_regist_record rec;
+
+        check(!halyard_regist_parse_record((const uint8_t *)partial, sizeof(partial) - 1, &rec),
+              "a record with no RP-Key is refused", __LINE__);
+    }
 }
 
 int main(int argc, char **argv)
@@ -142,6 +251,8 @@ int main(int argc, char **argv)
         printf("FAIL: no vectors were read from %s\n", path);
         g_failed++;
     }
+
+    test_message();
 
     printf("\n%d passed, %d failed (%d vector(s))\n", g_passed, g_failed, vectors);
     return g_failed == 0 ? 0 : 1;
