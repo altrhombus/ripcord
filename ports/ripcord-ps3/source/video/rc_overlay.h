@@ -36,7 +36,18 @@
  * Off by default on this port - it does not work here, and DECODE.md records what was eliminated. */
 void rc_overlay_set_system_font(int on);
 
+/*
+ * PREPARE the overlay: allocate its panel and build its font atlas. Expensive, and safe only where a
+ * few milliseconds do not matter - call it at session set-up, not from the present path. See the note
+ * in the .c for what doing it lazily cost.
+ */
 void rc_overlay_set(int on);
+
+/* SHOW or hide it. Cheap, and safe to call from anywhere - it only decides whether to draw. */
+void rc_overlay_show(int on);
+int  rc_overlay_shown(void);
+
+/* Prepared AND shown, which is what the present path actually wants to know. */
 int  rc_overlay_on(void);
 
 /* 1 when the console's own face opened, 0 when the drawn fallback is in use. Worth reporting: the two

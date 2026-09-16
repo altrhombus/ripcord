@@ -99,9 +99,33 @@ static float size_for(int scale);
 int rc_overlay_width(void)  { return s_w; }
 int rc_overlay_height(void) { return s_h; }
 
+/*
+ * PREPARED AND SHOWN ARE DIFFERENT QUESTIONS, and separating them is what makes a runtime toggle safe.
+ *
+ * Preparing means allocating two megabytes of panel and rasterising an atlas of a couple of hundred
+ * glyphs. Doing that when someone presses the toggle would do it ON THE DECODE THREAD, mid-stream,
+ * which is precisely the b256 fault: 1,483 ms inside one rebuild and 2 fps. So preparation happens once
+ * at session set-up whether or not the overlay is wanted, and the toggle only decides whether to draw.
+ *
+ * The cost of preparing something nobody asked for is memory that is there anyway and a few
+ * milliseconds before the stream starts. The cost of the alternative is a visible stall every time
+ * someone wants to see the numbers - which is, by definition, when something already looks wrong.
+ */
+static int s_shown;
+
+void rc_overlay_show(int on)
+{
+    s_shown = on;
+}
+
+int rc_overlay_shown(void)
+{
+    return s_shown;
+}
+
 int rc_overlay_on(void)
 {
-    return s_on && s_ready;
+    return s_on && s_ready && s_shown;
 }
 
 /*
@@ -183,9 +207,8 @@ void rc_overlay_set(int on)
          * a session: everything below falls back glyph for glyph.
          */
         /*
-         * OPT-IN, AND OFF BY DEFAULT BECAUSE IT DOES NOT WORK HERE. See rc_sysfont.c for the six runs
-         * that established that. Asking anyway costs fifteen refused firmware calls at start-up and
-         * buys a known answer, so it is only asked when someone says to.
+         * The console's own face, read out of /dev_flash with FreeType. Opt-in only because the
+         * hand-drawn fallback is the thing that cannot fail to load; see rc_sysfont.c.
          */
         if (s_ready && s_want_sysfont)
             s_sysfont = rc_sysfont_open(size_for(1), size_for(2));
