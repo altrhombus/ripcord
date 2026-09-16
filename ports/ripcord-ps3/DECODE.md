@@ -714,6 +714,31 @@ Scaling on three SPEs costs 4,943 us a frame against 3,969 on four, which the bu
 us of arithmetic is now entirely the scaler, still scalar - one output pixel per iteration through a
 16.16 accumulator - and vectorising it is the next win if one is ever needed.
 
+### The scaler, vectorised — **2026-09-15**
+
+With the conversion gone the SPE's whole cost was the scaler, written one output pixel at a time. That is
+expensive for a reason particular to this machine: **the SPU has no scalar store.** Writing one 32-bit
+word to local store is a read-modify-write of the entire 16-byte quadword, so `g_out[x] = g_line[idx]`
+cost a load, a rotate, an insert and a store per pixel. Four are now built in a register and stored as
+one quadword.
+
+| | before | after |
+|---|---|---|
+| SPE scaling | 10,876 us | **4,386 us** |
+| SPE wall clock | 4,943 us | **2,961 us** |
+| blit | 4,079 us | **3,056 us** |
+| decode + blit | 4,779 us | **3,128 us**, 9.4% of a 60 fps frame |
+| on screen | 58 fps | **59 fps**, 1,781 of 1,785 frames, zero errors |
+
+The gather is untouched and cannot be vectorised the same way — each output pixel picks a source at an
+index the accumulator computes, and the SPU has no vector gather. The prediction attached to that was
+"a fraction rather than a factor", and it was wrong: the store dominated, and the scaling term fell 2.5x.
+
+**It also inverted the DMA question.** Waiting for the MFC was 1,667 us against 16,444 us of arithmetic —
+9%, which is why double buffering was measured and rejected. It is now 4,007 us against 4,386 — 48%. The
+right answer changed when the other half got faster, and double buffering is where the next win is if one
+is ever wanted.
+
 ### Still open
 - **The fifth SPE — `ARGB32` output works.** Asked offline in b179: `vdecGetPicture` accepts
   `VDEC_PICFMT_ARGB32` and fills the buffer (bytes 0..255 across 8 pictures). So the YUV-to-RGB pass
