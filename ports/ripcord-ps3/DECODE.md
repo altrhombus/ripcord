@@ -823,6 +823,9 @@ memory and the 2D engine reads RSX-addressable memory, so something has to move 
 690 us of stores - which is the shape of a pass that only moves bytes, and which says where the next
 win is: if the decoder wrote its pictures into RSX local memory itself, this pass would not exist.
 
+**It does not exist. See the section below** - b216 took that step and the pass, and the SPEs with it,
+went away entirely.
+
 **The documented 1024-pixel source limit did not appear.** This hardware's scaled-image object is
 described in places as limited to a 1024-wide source and 1280 is wider; nothing works around it and
 nothing needed to. If a wider source ever does tear, horizontal strips are the answer.
@@ -847,6 +850,58 @@ encoder is asked for keyframes, and the recovery is what is seen.
 The guard now lives in the SPE kernel, not only at the call site. A null operation should not be
 expensive, and a caller that forgets should not be the only thing standing between it and the frame
 budget.
+
+
+### Decoding into RSX memory — **the present path is now 113 us, and nothing copies a pixel**
+
+b208 left the SPEs with one job: moving 3.7 MB a frame from the decoder's main-memory buffer to
+somewhere the RSX could read. Allocating the decoder's four picture slots from RSX local memory
+instead deletes the job rather than making it quicker - cellVdec writes where the 2D engine already
+reads, and the scaled blit becomes the entire present path.
+
+At 720p60, same bitrate, same 60-second hold, comparable traffic (101,951 units against b208's 97,947):
+
+| | SPE scaler (b204) | RSX + SPE copy (b208) | **RSX, no copy (b216)** |
+|---|---|---|---|
+| SPE time a frame | 3,013 us | 1,880 us | **4 frames all session** |
+| blit | — | 2,038 us | **3 us**, 145 worst |
+| decode + blit | 3,204 us | 2,134 us | **113 us** |
+| per decode call | 110 us | 110 us | **110 us** |
+| worst decode run | 26 ms | 26 ms | **1 ms** |
+| queue deepest / overruns | 1 of 8 / 0 | 1 of 8 / 0 | **1 of 8 / 0** |
+| IDRs in 60 s | — | 1 | **1** |
+| on screen | 59 fps | 59 fps | **59 fps** |
+| filter | nearest | bilinear | **bilinear** |
+
+**Of a 16,667 us frame at 60 fps the video path now costs 113 us - 0.68%.** The blit is 3 microseconds
+because that is how long it takes to write the command; the RSX does the work afterwards and nothing
+waits for it. Three SPEs are free, and 110 of those 113 us are the decode call, which is the one part
+of this that was never ours to make faster.
+
+**The risk this was taken on did not materialise.** If `vdecGetPicture` had copied on the PPE, writing
+into RSX memory would have shown up as a rise in the decode call. It is 110 us in all three runs, to
+the microsecond - the decoder hands the picture over by DMA, so where the buffer lives costs it
+nothing.
+
+#### What had to change first, and it was reads both times
+
+**The picture was sampled on the PPE every frame, twice.** A 64x64 grid in the callback and 256 points
+in the drain: 4,096 loads a frame on a buffer nothing else on that core touches, so every one of them
+misses. They exist to tell a picture from a black rectangle, which b160 through b162 needed and which
+is settled within a second of the first picture. In main memory the cost was invisible and they were
+left running for the rest of every session. From RSX memory, where a Cell read is roughly two orders of
+magnitude slower than a write, they would have taken the frame rate. Both stop after eight pictures
+now, and the general form of the lesson is that **a diagnostic left on after it has answered its
+question is a cost waiting for a change of context to make it visible.**
+
+**And it is conditional on RGB output, hard rather than cautious.** The YUV path has the SPEs read the
+picture to convert it. Putting planes in RSX memory would be the same mistake as the per-frame
+samplers, three million times a frame.
+
+The allocation is all or nothing - four slots in RSX memory or four in main, never a mix, because a mix
+would make the blit path ask per picture where that one came from and the answer would be right until
+it was not. The fallback is wired first and unconditionally, and the log names which memory was used,
+because the failure mode of this change is a silent fallback that reports itself as a working system.
 
 
 ### Heat and fan noise — **measured, and it kills one of the arguments for moving to the RSX**
