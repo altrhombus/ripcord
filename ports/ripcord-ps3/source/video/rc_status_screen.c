@@ -3,6 +3,7 @@
 
 #include <stddef.h>
 
+#include "rc_log.h"
 #include "rc_overlay.h"
 #include "rc_video_ps3.h"
 
@@ -33,8 +34,15 @@ void rc_status_screen_draw(const rc_session_state *state)
     x = (info.width - rc_overlay_width()) / 2;
     y = (info.height - rc_overlay_height()) / 2;
 
-    if (!rc_overlay_begin_now())
+    if (!rc_overlay_begin_now()) {
+        /*
+         * SAID, RATHER THAN RETURNED SILENTLY. This declining quietly is what made three pairing
+         * attempts look like a blank screen with no explanation anywhere: the card was asked for every
+         * time and never drawn, and nothing recorded that.
+         */
+        rc_log("ui:    cannot draw - the overlay is not prepared\n");
         return;
+    }
 
     /*
      * A FAILURE IS COLOURED AND NOTHING ELSE IS. Progress is the normal case, and a screen that shouts
