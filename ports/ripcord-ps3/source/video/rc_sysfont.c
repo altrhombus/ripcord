@@ -97,9 +97,40 @@ static char s_policy[48] = "?";
 static char s_face[32] = "?";
 static char s_revmode[16] = "?";
 
+/*
+ * EVERY DISTINCT CODE THE SWEEP SAW, not just the last one.
+ *
+ * b248 and b251 both reported a single code for fifteen refused attempts, which left "they all failed
+ * the same way" and "the last one failed this way" indistinguishable - and those mean different
+ * things. One code across every shape of argument says the arguments are not what is wrong.
+ */
+static unsigned s_codes[6];
+static unsigned s_code_count;
+
+static void note_code(unsigned code)
+{
+    unsigned i;
+
+    for (i = 0u; i < s_code_count; i++) {
+        if (s_codes[i] == code)
+            return;
+    }
+    if (s_code_count < sizeof(s_codes) / sizeof(s_codes[0]))
+        s_codes[s_code_count++] = code;
+}
+
 static int fail(const char *step, int rc)
 {
-    snprintf(s_status, sizeof(s_status), "%s refused (0x%08X)", step, (unsigned)rc);
+    int at = snprintf(s_status, sizeof(s_status), "%s refused (0x%08X)", step, (unsigned)rc);
+
+    if (s_code_count > 1u) {
+        unsigned i;
+
+        at += snprintf(s_status + at, sizeof(s_status) - (size_t)at, " [also");
+        for (i = 0u; i < s_code_count && at < (int)sizeof(s_status) - 12; i++)
+            at += snprintf(s_status + at, sizeof(s_status) - (size_t)at, " %08X", s_codes[i]);
+        (void)snprintf(s_status + at, sizeof(s_status) - (size_t)at, "]");
+    }
     return 0;
 }
 
@@ -132,6 +163,17 @@ static int attempt(u64 revision, float pixels)
     if (!s_modules) {
         if (sysModuleLoad(SYSMODULE_FREETYPE) != 0)
             return fail("SYSMODULE_FREETYPE", 0);
+        /*
+         * THE SECOND FREETYPE MODULE, which is not a typo for the first. SYSMODULE_FREETYPE (0x1b) and
+         * SYSMODULE_FREETYPE_TT (0x40) are separate, and the renderer is the TrueType half - which is
+         * the thing fontCreateRenderer creates. Fifteen combinations of revision and buffering policy
+         * were refused identically before this was noticed, all of them arguing about the arguments to
+         * a call whose library may simply not have been resident.
+         *
+         * Not fatal if it refuses: it is absent on some firmware, and the attempt below then fails the
+         * way it already did rather than failing earlier and less informatively.
+         */
+        (void)sysModuleLoad(SYSMODULE_FREETYPE_TT);
         if (sysModuleLoad(SYSMODULE_FONTFT) != 0)
             return fail("SYSMODULE_FONTFT", 0);
         if (sysModuleLoad(SYSMODULE_FONT) != 0)
@@ -209,6 +251,7 @@ static int attempt(u64 revision, float pixels)
                 snprintf(s_policy, sizeof(s_policy), "%s", kPolicies[i].what);
                 break;
             }
+            note_code((unsigned)rc);
         }
         if (rc != 0)
             return fail("fontCreateRenderer (every policy refused)", rc);
