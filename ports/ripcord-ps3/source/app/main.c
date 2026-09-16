@@ -856,6 +856,13 @@ static int check_connect(void)
     ps3_log("conn:  starting\n");
     stage = rc_connect(RC_CONNECT_WAKE_TIMEOUT_MS, connect_progress, g_log_dirs, LOG_DIR_COUNT, &c);
 
+    /*
+     * SAID ON THE TELEVISION, not only in this log. Whatever happened, the screen now carries a
+     * sentence about it and, where there is one, something the viewer can do - rather than the black
+     * screen every failure used to produce.
+     */
+    rc_connect_report_outcome(stage, c.stream_stalled);
+
     if (stage == RC_CONNECT_NO_RECORD) {
         ps3_log("conn:  no pairing record - skipping\n");
         ps3_log("       generate one with `ProtocolLab -- register`, copy it to the console as\n");

@@ -18,6 +18,7 @@
 #ifndef RC_VIDEO_PS3_H
 #define RC_VIDEO_PS3_H
 
+#include <stddef.h>
 #include <stdint.h>
 
 typedef struct {
@@ -82,6 +83,9 @@ int rc_video_info_get(rc_video_info *out);
  * looked like on a television, and it reads as "a glimpse in the middle" rather than as a stream.
  */
 void rc_video_clear_all(uint32_t colour);
+
+/* Just the buffer about to be drawn into. Clearing both would blank whatever is currently on screen. */
+void rc_video_clear_back(uint32_t colour);
 
 int rc_video_present_ready(void);
 

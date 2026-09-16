@@ -173,7 +173,7 @@ CFLAGS := $(ARCH) -std=gnu99 -O2 -g \
           -DRC_PS3_APPID='"$(APPID)"' \
           -DRC_NETLOG_HOST='"$(RC_NETLOG_HOST)"' -DRC_NETLOG_PORT=$(RC_NETLOG_PORT) \
           -I$(CORE) -I$(BUILD) -Isource/platform -Isource/video -Isource/spu -Isource/net -Isource/media -Isource/coretest \
-          -Isource/discovery -Isource/connect -Isource/input -I$(CORE)/discovery -I$(CORE)/session -I$(CORE)/input \
+          -Isource/discovery -Isource/connect -Isource/input -I$(CORE)/discovery -I$(CORE)/session -I$(CORE)/input -I$(CORE)/ui -I$(CORE)/net \
           -I$(CORE)/halyard -I$(CORE)/crypto -I$(CORE)/net -I$(CORE)/takion -I$(CORE)/stream -I$(CORE)/util -I$(CORE)/platform -Ispu \
           -I$(PSL1GHT)/ppu/include
 
@@ -204,10 +204,12 @@ SOURCES := \
 	source/platform/rc_platform_ps3.c \
 	source/platform/rc_thermal.c \
 	source/input/rc_pad_ps3.c \
+	$(CORE)/ui/rc_session_state.c \
 	source/platform/rc_random_ps3.c \
 	source/platform/rc_stack_ps3.c \
 	source/video/rc_video_ps3.c \
 	source/video/rc_overlay.c \
+	source/video/rc_status_screen.c \
 	source/video/rc_sysfont.c \
 	source/spu/rc_spu.c \
 	source/spu/rc_spu_yuv.c \
@@ -224,6 +226,7 @@ SOURCES := \
 	$(CORE)/discovery/halyard_discovery.c \
 	$(CORE)/discovery/halyard_wake.c \
 	$(CORE)/session/halyard_pairing_file.c \
+	$(CORE)/session/halyard_control_probe.c \
 	$(CORE)/session/halyard_control_session.c \
 	$(CORE)/net/rc_tcp.c \
 	$(CORE)/net/rc_udp.c \
@@ -516,7 +519,7 @@ $(OPENH264_LIB):
 vpath %.c source/video $(CORE)/util $(CORE)/discovery $(CORE)/session $(CORE)/net $(CORE)/takion \
           $(CORE)/crypto $(CORE)/stream \
           source/platform source/spu source/net source/media source/discovery source/connect \
-          source/app source/input
+          source/app source/input $(CORE)/ui
 
 COBJS := $(addprefix $(BUILD)/,$(notdir $(SOURCES:.c=.o)))
 
@@ -557,6 +560,7 @@ CFLAGS_SDK_SOCKETS := $(CFLAGS) -Wno-sign-conversion -include sys/time.h
 # own include block rather than anything durable.
 SDK_SOCKET_OBJS := \
 	$(BUILD)/halyard_control_session.o \
+	$(BUILD)/halyard_control_probe.o \
 	$(BUILD)/rc_tcp.o \
 	$(BUILD)/rc_udp.o \
 	$(BUILD)/rc_connect.o \
