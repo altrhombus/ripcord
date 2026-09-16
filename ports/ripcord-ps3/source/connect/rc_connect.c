@@ -21,6 +21,7 @@
 #include "rc_decode_probe.h"
 #include "rc_decode_vdec.h"
 #include "rc_audio_ps3.h"
+#include "rc_spu_yuv.h"
 #include "rc_video_ps3.h"
 #include "takion_control_proto.h"
 #include "takion_session_negotiator.h"
@@ -1966,6 +1967,8 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
                          * it is new, since the YUV path is the one with a thousand frames behind it.
                          */
                         g_decoder_rgb = rec->decoder_rgb;
+                        rc_spu_yuv_set_bilinear(rec->bilinear_upscale);
+                        out->bilinear_upscale = rec->bilinear_upscale;
                         if (g_decoder_rgb)
                             rc_decode_live_set_rgb_sink(on_picture_rgb, NULL);
                         /* Started only after the decoder is open and its sink is set: the thread calls
