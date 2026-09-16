@@ -392,7 +392,8 @@ typedef struct {
     int      pad_analog_triggers;/* a shoulder reported a level that was neither off nor full on */
     unsigned pad_changes;        /* times a pad connected or went away */
 
-    int      diagnostics;        /* the overlay was asked for */
+    int      diagnostics;        /* the overlay was asked for at start */
+    unsigned overlay_toggles;    /* times the chord flipped it during the session */
     int      overlay_system_font;/* the console's own face opened, rather than the drawn fallback */
     char     overlay_font_status[96];
     int      stream_is_hevc;     /* the console sent HEVC; cellVdec decodes H.264 only */
