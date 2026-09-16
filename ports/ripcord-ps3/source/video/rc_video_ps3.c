@@ -875,15 +875,61 @@ unsigned rc_video_blit_rsx_offset(uint32_t src_offset, int width, int height)
  */
 void rc_video_overlay_blit(uint32_t src_offset, int src_pitch, int w, int h, int x, int y)
 {
+    gcmTransferScale scale;
+    gcmTransferSurface surface;
+
     if (!s_open || w <= 0 || h <= 0)
         return;
     if (x < 0 || y < 0 || x + w > s_info.width || y + h > s_info.height)
         return;
 
-    rsxSetTransferImage(s_context, GCM_TRANSFER_LOCAL_TO_LOCAL,
-                        s_offset[s_current ^ 1], (u32)s_info.pitch, (u32)x, (u32)y,
-                        src_offset, (u32)src_pitch, 0, 0,
-                        (u32)w, (u32)h, 4);
+    /*
+     * THE SCALED BLIT AT 1:1, FOR ITS BLEND RATHER THAN ITS SCALING.
+     *
+     * rsxSetTransferImage would copy this more directly and cannot blend - it is a memory-to-memory
+     * rectangle and nothing else. Translucency has to happen where the destination can be read cheaply,
+     * and the only thing on this machine for which that is true is the RSX: a Cell read from its
+     * memory is roughly two orders of magnitude slower than a write, so compositing the panel on the
+     * PPE would cost 435 KB of those reads a frame.
+     *
+     * The bitmap is written as PREMULTIPLIED ARGB, which is what BLEND_PREMULT wants - colour already
+     * scaled by its own alpha, so the blend is one multiply against the destination instead of two.
+     *
+     * UNPROVEN AS OF THIS BUILD. Every other part of this path has run on hardware; the blend operation
+     * has not. If the panel comes out opaque the operation was ignored and the picture is still
+     * correct; if it comes out wrong, this line is the one to change, and SRCCOPY with an opaque
+     * palette is the fallback that is known to work.
+     */
+    surface.format = GCM_TRANSFER_SURFACE_FORMAT_A8R8G8B8;
+    surface.pitch = (u16)s_info.pitch;
+    surface._pad0[0] = 0;
+    surface._pad0[1] = 0;
+    surface.offset = s_offset[s_current ^ 1];
+
+    scale.conversion = GCM_TRANSFER_CONVERSION_TRUNCATE;
+    scale.format = GCM_TRANSFER_SCALE_FORMAT_A8R8G8B8;
+    scale.operation = GCM_TRANSFER_OPERATION_BLEND_PREMULT;
+    scale.clipX = 0;
+    scale.clipY = 0;
+    scale.clipW = (u16)s_info.width;
+    scale.clipH = (u16)s_info.height;
+    scale.outX = (s16)x;
+    scale.outY = (s16)y;
+    scale.outW = (u16)w;
+    scale.outH = (u16)h;
+    scale.ratioX = rsxGetFixedSint32(1.0f);
+    scale.ratioY = rsxGetFixedSint32(1.0f);
+    scale.inW = (u16)w;
+    scale.inH = (u16)h;
+    scale.pitch = (u16)src_pitch;
+    scale.origin = GCM_TRANSFER_ORIGIN_CORNER;
+    scale.interp = GCM_TRANSFER_INTERPOLATOR_NEAREST;   /* 1:1 - anything else would only soften it */
+    scale.offset = src_offset;
+    scale.inX = 0;
+    scale.inY = 0;
+
+    rsxSetTransferScaleMode(s_context, GCM_TRANSFER_LOCAL_TO_LOCAL, GCM_TRANSFER_SURFACE);
+    rsxSetTransferScaleSurface(s_context, &scale, &surface);
 }
 
 /*

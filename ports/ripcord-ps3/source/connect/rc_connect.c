@@ -1310,12 +1310,39 @@ static void on_picture(void *ctx, const unsigned char *y, const unsigned char *u
  * would need a history buffer per metric; this is the version that exists, and the log still carries
  * the peaks.
  */
+/*
+ * THE PANEL.
+ *
+ * Laid out here rather than in rc_overlay.c because what belongs on it is a question about this port's
+ * pipeline, while how to put a pixel down is not. The overlay file owns the bitmap and the primitives;
+ * this owns the answer to "what would someone want to know at the moment the picture looks wrong".
+ *
+ * The shape follows the .NET client's diagnostics report - what was asked for, what arrived, what is
+ * happening now - so a fault described against one client is recognisable on the other.
+ *
+ * TWO COLUMNS AND RIGHT-ALIGNED NUMBERS. The labels sit at one x and the values at another, and the
+ * numbers end on a fixed edge rather than starting at one, so a frame rate going 59 -> 9 does not shift
+ * everything after it. A number that moves while you read it is a number you read twice.
+ */
+#define OV_PAD      16
+#define OV_HEAD_H   34
+#define OV_LABEL_X  (OV_PAD + 2)
+#define OV_VALUE_X  128
+#define OV_NUM_R    236     /* right edge of the value column */
+#define OV_SPARK_X  252
+#define OV_SPARK_W  180
+#define OV_ROW_H    22
+
 static void draw_overlay(void)
 {
     const rc_overlay_bucket *now;
     unsigned peak_fps = 0u, low_fps = 0xffffffffu, peak_lost = 0u;
     unsigned long peak_bytes = 0ul;
+    unsigned fps_series[RC_OVERLAY_WINDOW];
+    unsigned mbps_series[RC_OVERLAY_WINDOW];
+    unsigned series_n = 0u;
     unsigned i;
+    int y;
 
     if (!rc_overlay_on())
         return;
@@ -1334,52 +1361,106 @@ static void draw_overlay(void)
      * returning early here would show the overlay on one frame in fifteen, which reads as flicker
      * rather than as a bug.
      */
-    if (!rc_overlay_begin(11)) {
+    if (!rc_overlay_begin()) {
         rc_overlay_end();
         return;
     }
 
     now = overlay_latest();
-    for (i = 0u; i < RC_OVERLAY_WINDOW; i++) {
-        /* The bucket in progress is skipped in both directions: it always reads low, and a "low fps"
-         * that is really "this second is not over" would be the first thing anyone chased. */
-        if (i == g_win_slot)
+
+    /*
+     * OLDEST TO NEWEST, SKIPPING THE ONE IN PROGRESS. The ring's order is not the reading order, and a
+     * sparkline drawn in ring order is a plausible-looking lie with a discontinuity wherever the write
+     * head happens to be. The bucket still filling is left out of the series and the extremes alike:
+     * it always reads low, and an fps that dips every time you look at it would be the first thing
+     * anyone chased.
+     */
+    for (i = 1u; i <= RC_OVERLAY_WINDOW; i++) {
+        unsigned at = (g_win_slot + i) % RC_OVERLAY_WINDOW;
+
+        if (at == g_win_slot)
             continue;
-        if (g_win[i].frames > peak_fps)
-            peak_fps = g_win[i].frames;
-        if (g_win[i].frames < low_fps)
-            low_fps = g_win[i].frames;
-        if (g_win[i].bytes > peak_bytes)
-            peak_bytes = g_win[i].bytes;
-        if (g_win[i].lost > peak_lost)
-            peak_lost = g_win[i].lost;
+        fps_series[series_n] = g_win[at].frames;
+        mbps_series[series_n] = (unsigned)((g_win[at].bytes * 8ul) / 100000ul);   /* tenths of a Mbps */
+        series_n++;
+
+        if (g_win[at].frames > peak_fps)
+            peak_fps = g_win[at].frames;
+        if (g_win[at].frames < low_fps)
+            low_fps = g_win[at].frames;
+        if (g_win[at].bytes > peak_bytes)
+            peak_bytes = g_win[at].bytes;
+        if (g_win[at].lost > peak_lost)
+            peak_lost = g_win[at].lost;
     }
     if (low_fps == 0xffffffffu)
         low_fps = 0u;
 
-    rc_overlay_line(RC_OVERLAY_WHITE, "RIPCORD %s   PS3", RC_PS3_BUILD_ID);
-    rc_overlay_line(RC_OVERLAY_DIM,   "ASKED %dX%d @%d %dKBPS AVC",
-                    g_overlay_asked_w, g_overlay_asked_h, g_overlay_asked_fps,
-                    g_overlay_asked_kbps);
-    rc_overlay_line(RC_OVERLAY_DIM,   "GOT   %dX%d %s",
-                    g_live_stats.width, g_live_stats.height,
-                    g_stream_is_hevc ? "HEVC-CANNOT DECODE" : "H.264 HW");
-    rc_overlay_line(RC_OVERLAY_DIM,   "SCALE %s %s",
-                    g_overlay_hw_scale ? "RSX" : "SPE",
-                    rc_decode_vdec_picture_in_vram() ? "ZERO COPY" : "COPIED");
-    rc_overlay_line(RC_OVERLAY_DIM,   "LAST 30 SECONDS - NOW / WORST");
+    /* ---- panel ------------------------------------------------------------------------------- */
+    rc_overlay_rect(0, 0, rc_overlay_width(), rc_overlay_height(), RC_OV_PANEL);
+    rc_overlay_rect(0, 0, rc_overlay_width(), OV_HEAD_H, RC_OV_HEADER);
+    rc_overlay_rect(0, 0, 5, OV_HEAD_H, RC_OV_ACCENT);
+    rc_overlay_rect(0, OV_HEAD_H, rc_overlay_width(), 1, RC_OV_EDGE);
+    /* A one-pixel edge on all four sides, so the panel has a boundary over a bright picture as well as
+     * over a dark one. */
+    rc_overlay_rect(0, 0, rc_overlay_width(), 1, RC_OV_EDGE);
+    rc_overlay_rect(0, rc_overlay_height() - 1, rc_overlay_width(), 1, RC_OV_EDGE);
+    rc_overlay_rect(0, 0, 1, rc_overlay_height(), RC_OV_EDGE);
+    rc_overlay_rect(rc_overlay_width() - 1, 0, 1, rc_overlay_height(), RC_OV_EDGE);
 
-    /* Frame rate is the one worth colouring: it is what a person is already judging by eye, and the
-     * overlay exists to say whether the eye is right. WORST rather than peak, because nobody has ever
-     * needed to know the best second. */
-    rc_overlay_line(now->frames >= 55u ? RC_OVERLAY_GOOD
-                                       : (now->frames >= 40u ? RC_OVERLAY_WARN : RC_OVERLAY_BAD),
-                    "FPS   %u / %u", now->frames, low_fps);
-    rc_overlay_line(RC_OVERLAY_WHITE, "MBPS  %lu.%lu / %lu.%lu",
-                    (now->bytes * 8ul) / 1000000ul, ((now->bytes * 8ul) / 100000ul) % 10ul,
-                    (peak_bytes * 8ul) / 1000000ul, ((peak_bytes * 8ul) / 100000ul) % 10ul);
-    rc_overlay_line(peak_lost > 0u ? RC_OVERLAY_WARN : RC_OVERLAY_DIM,
-                    "LOST  %u / %u UNITS/S", now->lost, peak_lost);
+    rc_overlay_text(OV_PAD, 10, 2, RC_OV_TEXT, "RIPCORD");
+    rc_overlay_text(OV_PAD + 108, 12, 1, RC_OV_LABEL, RC_PS3_BUILD_ID);
+    rc_overlay_text_right(rc_overlay_width() - OV_PAD, 12, 1, RC_OV_LABEL, "PLAYSTATION 3");
+
+    /* ---- what the stream is ------------------------------------------------------------------ */
+    y = OV_HEAD_H + 14;
+    rc_overlay_text(OV_LABEL_X, y, 1, RC_OV_LABEL, "STREAM");
+    rc_overlay_text(OV_VALUE_X, y - 3, 2,
+                    g_stream_is_hevc ? RC_OV_BAD : RC_OV_TEXT,
+                    g_stream_is_hevc ? "HEVC - CANNOT DECODE"
+                                     : "%DX%D @%D H.264",
+                    g_live_stats.width, g_live_stats.height, g_overlay_asked_fps);
+
+    y += OV_ROW_H;
+    rc_overlay_text(OV_LABEL_X, y, 1, RC_OV_LABEL, "PATH");
+    rc_overlay_text(OV_VALUE_X, y - 3, 1, RC_OV_LABEL, "%s SCALER   %s   %D KBPS ASKED",
+                    g_overlay_hw_scale ? "RSX" : "SPE",
+                    rc_decode_vdec_picture_in_vram() ? "ZERO COPY" : "COPIED",
+                    g_overlay_asked_kbps);
+
+    y += OV_ROW_H - 2;
+    rc_overlay_rect(OV_PAD, y, rc_overlay_width() - OV_PAD * 2, 1, RC_OV_EDGE);
+
+    /* ---- the live figures -------------------------------------------------------------------- */
+    y += 12;
+    rc_overlay_text(OV_LABEL_X, y + 3, 1, RC_OV_LABEL, "FPS");
+    rc_overlay_text_right(OV_NUM_R, y, 2,
+                          now->frames >= 55u ? RC_OV_GOOD
+                                             : (now->frames >= 40u ? RC_OV_WARN : RC_OV_BAD),
+                          "%u", now->frames);
+    rc_overlay_bars(OV_SPARK_X, y, OV_SPARK_W, 14, fps_series, series_n,
+                    (peak_fps > 60u) ? peak_fps : 60u, RC_OV_ACCENT);
+    rc_overlay_text_right(rc_overlay_width() - OV_PAD, y + 4, 1, RC_OV_LABEL, "LOW %u", low_fps);
+
+    y += OV_ROW_H + 4;
+    rc_overlay_text(OV_LABEL_X, y + 3, 1, RC_OV_LABEL, "MBPS");
+    rc_overlay_text_right(OV_NUM_R, y, 2, RC_OV_TEXT, "%lu.%lu",
+                          (now->bytes * 8ul) / 1000000ul, ((now->bytes * 8ul) / 100000ul) % 10ul);
+    rc_overlay_bars(OV_SPARK_X, y, OV_SPARK_W, 14, mbps_series, series_n,
+                    (unsigned)((peak_bytes * 8ul) / 100000ul), RC_OV_GOOD);
+    rc_overlay_text_right(rc_overlay_width() - OV_PAD, y + 4, 1, RC_OV_LABEL, "PK %lu.%lu",
+                          (peak_bytes * 8ul) / 1000000ul, ((peak_bytes * 8ul) / 100000ul) % 10ul);
+
+    y += OV_ROW_H + 4;
+    rc_overlay_text(OV_LABEL_X, y + 3, 1, RC_OV_LABEL, "LOST");
+    rc_overlay_text_right(OV_NUM_R, y, 2, peak_lost > 0u ? RC_OV_WARN : RC_OV_TEXT,
+                          "%u", now->lost);
+    rc_overlay_text(OV_SPARK_X, y + 4, 1, RC_OV_LABEL, "UNITS/S     PEAK %u", peak_lost);
+
+    /* ---- timing and faults ------------------------------------------------------------------- */
+    y += OV_ROW_H + 2;
+    rc_overlay_rect(OV_PAD, y, rc_overlay_width() - OV_PAD * 2, 1, RC_OV_EDGE);
+    y += 10;
 
     {
         unsigned long hz = (unsigned long)rc_tick_hz();
@@ -1388,25 +1469,29 @@ static void draw_overlay(void)
                          / (unsigned long long)g_live_stats.frames_in)
             : 0u;
 
-        rc_overlay_line(RC_OVERLAY_WHITE, "TIME  %uUS DECODE  %uUS BLIT",
+        rc_overlay_text(OV_LABEL_X, y, 1, RC_OV_LABEL, "TIME");
+        rc_overlay_text(OV_VALUE_X, y, 1, RC_OV_TEXT, "%u US DECODE    %u US PRESENT",
                         decode_us, g_blits ? (unsigned)(g_blit_us_total / g_blits) : 0u);
     }
 
     /*
      * FAULTS STAY CUMULATIVE, and that is the deliberate other half of the window. An IDR request or
-     * an overrun that happened thirty seconds ago and stopped is still something worth knowing
-     * happened - it is the difference between "this stream is healthy" and "this stream recovered".
+     * an overrun that happened thirty seconds ago and stopped is still worth knowing happened - it is
+     * the difference between a stream that is healthy and one that recovered.
      */
+    y += 16;
     {
         rc_audio_stats a;
+        int bad;
 
         rc_audio_stats_get(&a);
-        rc_overlay_line(g_idr_requests > 8u || g_frames_overrun > 0u ? RC_OVERLAY_WARN
-                                                                    : RC_OVERLAY_DIM,
-                        "SINCE START  %u IDR  %u OVERRUN", g_idr_requests, g_frames_overrun);
-        rc_overlay_line(a.decode_errors > 0u || a.silence_written > 0u ? RC_OVERLAY_WARN
-                                                                      : RC_OVERLAY_DIM,
-                        "AUDIO %u ERR  %u SILENT", a.decode_errors, a.silence_written);
+        bad = (g_idr_requests > 8u || g_frames_overrun > 0u
+               || a.decode_errors > 0u || a.silence_written > 0u);
+
+        rc_overlay_text(OV_LABEL_X, y, 1, RC_OV_LABEL, "SINCE");
+        rc_overlay_text(OV_VALUE_X, y, 1, bad ? RC_OV_WARN : RC_OV_LABEL,
+                        "%u IDR   %u OVERRUN   %u AUDIO ERR   %u SILENT",
+                        g_idr_requests, g_frames_overrun, a.decode_errors, a.silence_written);
     }
 
     rc_overlay_end();
