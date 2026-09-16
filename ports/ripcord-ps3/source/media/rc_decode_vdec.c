@@ -476,7 +476,16 @@ int rc_decode_vdec_open(int width, int height)
      * initialised, the colour converter holds four and never releases them, so a second was sitting idle
      * the whole time.
      */
-    config.num_spus = 2;
+    /*
+     * THREE. Two decodes 720p60 well enough that only the largest frames refuse - twelve of 1,770 in
+     * b190, every one on a transition, and a refusal breaks the reference chain and shows as a block of
+     * wrong picture until a keyframe repairs it.
+     *
+     * The third comes from the colour converter, which can spare it now that the decoder produces RGB
+     * and it only scales. That is the payoff from the ARGB32 change: not a smaller number on a graph but
+     * an SPE moved to the side of the pipeline that was short of one.
+     */
+    config.num_spus = 3;
     s_num_spus = (int)config.num_spus;
 
     memset(&closure, 0, sizeof(closure));
