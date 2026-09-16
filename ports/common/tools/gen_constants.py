@@ -97,14 +97,25 @@ def main(argv):
                        REGISTRATION_TABLE_LENGTH)
     ps4_wrap = unhex("ps4MaterialWrapTable", bundle.get("ps4MaterialWrapTable"),
                      MATERIAL_WRAP_TABLE_LENGTH)
-    context_key = unhex("contextKey", bundle.get("contextKey"), CONTEXT_KEY_LENGTH)
     selector_offset = bundle.get("selectorOffset")
+
+    context_key = unhex("contextKey", bundle.get("contextKey"), CONTEXT_KEY_LENGTH)
 
     context_keys = bundle.get("contextKeys") or {}
     codec_in_high = unhex("codecInHigh", context_keys.get("codecInHigh"), CONTEXT_KEY_LENGTH)
     selector_one = unhex("selectorOne", context_keys.get("selectorOne"), CONTEXT_KEY_LENGTH)
     selector_zero = unhex("selectorZero", context_keys.get("selectorZero"), CONTEXT_KEY_LENGTH)
     fallback_zero = unhex("fallbackZero", context_keys.get("fallbackZero"), CONTEXT_KEY_LENGTH)
+
+    # The bundle's top-level contextKey is BYTE-IDENTICAL to contextKeys.selectorOne, which NOTICE says
+    # explicitly ("the registration context key is one of the four, stored twice under different
+    # names"), and registration reads the latter rather than carrying a third copy. Verified rather than
+    # assumed: if the two ever drifted, registration would use the wrong field IV, which corrupts exactly
+    # the first 16 bytes of the encrypted field -- where "Client-Type: " sits -- and the console answers
+    # 403 with nothing about why.
+    if context_key is not None and selector_one is not None and context_key != selector_one:
+        raise SystemExit(
+            "contextKey and contextKeys.selectorOne differ; registration would use the wrong field IV")
 
     # The PS5 pair and all four context keys are the minimum for a PS5 session.  Anything less and the
     # session would silently fall back to no encryption on the .NET side; here it must be a hard, named
@@ -119,7 +130,7 @@ def main(argv):
     # the one moment a user is standing in front of the console typing a PIN.
     registration_complete = all(
         value is not None
-        for value in (regist, wrap, context_key)
+        for value in (regist, wrap, context_key, selector_one, selector_zero)
     ) and isinstance(selector_offset, int)
     if want_registration and not registration_complete:
         raise SystemExit("--registration asked for, but the bundle is missing registration constants")
@@ -173,8 +184,6 @@ def main(argv):
             emit_array("halyard_v1_ps4_registration_table", ps4_regist, REGISTRATION_TABLE_LENGTH),
             "",
             emit_array("halyard_v1_ps4_material_wrap_table", ps4_wrap, MATERIAL_WRAP_TABLE_LENGTH),
-            "",
-            emit_array("halyard_v1_registration_context_key", context_key, CONTEXT_KEY_LENGTH),
             "",
         ]
     else:
