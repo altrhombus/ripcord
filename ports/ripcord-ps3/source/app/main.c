@@ -1071,6 +1071,19 @@ static int check_connect(void)
                             " means the ask was not honoured)\n");
                 }
 
+                /*
+                 * SAID EVERY RUN, not only when something went wrong. Input is the one part of this
+                 * pipeline with no picture to check it against: a controller that does nothing looks
+                 * exactly like a controller nobody touched, and the two counts apart tell them apart.
+                 */
+                if (!c.pad_connected && c.pad_reads == 0u)
+                    ps3_log("       INPUT: no controller was seen on any port\n");
+                else
+                    ps3_log("       INPUT: %u poll(s) answered, %u state and %u transition packet(s)"
+                            " sent, %u connect/disconnect(s)\n",
+                            c.pad_reads, c.input_state_packets, c.input_history_packets,
+                            c.pad_changes);
+
                 if (c.diagnostics) {
                     /*
                      * WHICH FACE, said rather than left to the eye. The console's own and the drawn

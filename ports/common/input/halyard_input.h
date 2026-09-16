@@ -23,10 +23,11 @@
  * STATE (type 6) is a periodic analog snapshot, fixed 0x1c bytes. HISTORY (type 1) carries button
  * transitions only when something changes, newest event first.
  *
- * WHAT A 3DS CANNOT SEND. No motion sensors on the original hardware and no touchpad, so the six motion
- * fields go out at their captured resting values and orientation at a fixed identity - the spec notes a
- * pad without a motion sensor may do exactly this. L3/R3 have no button; L2/R2 are digital here rather
- * than analog, so they send 0x00 or 0xff instead of a level.
+ * WHAT A GIVEN PAD CANNOT SEND is the front end's business, not this file's. The six motion fields go out
+ * at their captured resting values and orientation at a fixed identity unless a caller supplies better -
+ * the spec notes a pad without a motion sensor may do exactly this. L2/R2 are still sent as 0x00 or 0xff
+ * rather than a level, which is the one place this is behind HalyardInputPacketWriter.cs; every button
+ * the .NET writer knows about now has a bit here, including the stick clicks.
  */
 #ifndef HALYARD_INPUT_H
 #define HALYARD_INPUT_H
@@ -65,6 +66,15 @@ typedef struct {
 #define HALYARD_PAD_OPTIONS    (1u << 12)
 #define HALYARD_PAD_CREATE     (1u << 13)
 #define HALYARD_PAD_PS         (1u << 14)
+/*
+ * THE STICK CLICKS, added when a port arrived that has them.
+ *
+ * They were absent because the first port to use this was a 3DS, whose hardware has no stick to click -
+ * and a gap in the shared layer that exists for one front end's hardware is a gap for every front end
+ * after it. HalyardInputPacketWriter.cs has carried both codes all along.
+ */
+#define HALYARD_PAD_L3         (1u << 15)
+#define HALYARD_PAD_R3         (1u << 16)
 
 /*
  * How many recent events every history packet repeats.
