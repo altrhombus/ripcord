@@ -1054,6 +1054,30 @@ static int check_connect(void)
                             c.decoded_pictures);
                 }
                 /*
+                 * THE THERMAL BASELINE. One fan serves the Cell and the RSX, so both readings are
+                 * printed together and neither is interesting alone - the question this answers is
+                 * whether moving the conversion and scaling off three SPEs and on to the RSX makes the
+                 * machine quieter, and that is settled by the pair, before and after.
+                 *
+                 * The raw word is printed beside the degrees because the decoding is UNCONFIRMED: the
+                 * top byte is understood to hold whole degrees Celsius and nothing here has verified it.
+                 * If the two columns disagree with a plausible idle temperature, the decoding is what is
+                 * wrong, not the console.
+                 */
+                if (c.thermal.available) {
+                    ps3_log("       TEMPERATURE over %u sample(s): Cell %u -> %u C, peak %u;"
+                            " RSX %u -> %u C, peak %u\n",
+                            c.thermal.samples,
+                            c.thermal.cell_first, c.thermal.cell_last, c.thermal.cell_peak,
+                            c.thermal.rsx_first, c.thermal.rsx_last, c.thermal.rsx_peak);
+                    ps3_log("       last raw sensor words 0x%08X (Cell) 0x%08X (RSX) - the degrees"
+                            " above are the top byte, which is ASSUMED\n",
+                            c.thermal.cell_raw_last, c.thermal.rsx_raw_last);
+                } else {
+                    ps3_log("       TEMPERATURE unavailable - syscall 383 did not answer\n");
+                }
+
+                /*
                  * Outside the block above on purpose: this measures the RECEIVE path, which runs whether
                  * or not anything ever reached the screen. b141 decoded nothing, and so hid the one
                  * number that would have confirmed the crypto rewrite from the live path.
