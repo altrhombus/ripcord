@@ -1143,6 +1143,8 @@ static int check_connect(void)
                 if (c.decode_spus > 0)
                     ps3_log("       the decoder was given %d SPE(s); the colour converter holds the"
                             " rest\n", c.decode_spus);
+                ps3_log("       upscaled with %s\n",
+                        c.bilinear_upscale ? "bilinear interpolation" : "nearest neighbour");
                 if (c.decoder_rgb)
                     ps3_log("       the decoder was asked for packed RGB - the SPEs scale it and do"
                             " not convert it\n");

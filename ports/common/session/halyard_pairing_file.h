@@ -146,6 +146,13 @@ typedef struct {
      */
     int decoder_rgb;
 
+    /*
+     * Smooth the upscale to the display instead of repeating pixels. A viewer's preference, not a
+     * correctness matter: interpolating softens as well as smooths, and which looks better at a given
+     * scale is a matter of taste. Key `bilinear`, off by default.
+     */
+    int bilinear_upscale;
+
     int stream_width;        /* resolution asked of the console - must be on the standard ladder */
     int stream_height;
     int streaming_type;
