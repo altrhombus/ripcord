@@ -1,6 +1,7 @@
 /* See rc_session_state.h. */
 #include "rc_session_state.h"
 
+#include "rc_log.h"
 #include "rc_platform.h"
 
 #include <string.h>
@@ -59,6 +60,23 @@ void rc_session_set(rc_session_state *state, rc_phase phase,
     memcpy(state->hint, new_hint, sizeof(new_hint));
     state->changed_ms = rc_time_ms();
     state->revision++;
+
+    /*
+     * SAID IN THE LOG AS WELL AS ON THE SCREEN, and b302 is why this is not optional.
+     *
+     * The screen was the point of this file, so the first version only drew. Then a pairing attempt
+     * failed before it reached any of its own logging, the card it drew was replaced within a second
+     * by the next thing the harness did, and the log recorded nothing at all - the state that existed
+     * precisely to explain a failure explained it to a television nobody was recording.
+     *
+     * A screen is where the person is; a log is where the evidence is. Both, always.
+     */
+    rc_log("ui:    %s - %s%s%s%s%s\n", rc_phase_name(state->phase), state->headline,
+           state->detail[0] != '\0' ? " (" : "", state->detail,
+           state->detail[0] != '\0' ? ")" : "",
+           state->hint[0] != '\0' ? "" : "");
+    if (state->hint[0] != '\0')
+        rc_log("ui:      -> %s\n", state->hint);
 }
 
 void rc_session_progress(rc_session_state *state, rc_phase phase, const char *headline)
