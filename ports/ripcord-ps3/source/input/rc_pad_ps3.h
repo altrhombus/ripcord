@@ -28,8 +28,9 @@ int rc_pad_open(void);
  */
 int rc_pad_read(halyard_input_state *out);
 
-/* Whether a pad is present, how many polls answered, and how many times that changed - for the report. */
-void rc_pad_stats(int *connected, unsigned *reads, unsigned *changes);
+/* Whether a pad is present, how many polls answered, how many of those carried NEW data, and how many
+ * times presence changed. Reads and fresh are separate on purpose - see rc_pad_stats in the .c. */
+void rc_pad_stats(int *connected, unsigned *reads, unsigned *fresh, unsigned *changes);
 
 void rc_pad_close(void);
 

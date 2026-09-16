@@ -388,6 +388,7 @@ typedef struct {
     unsigned input_history_packets; /* button transitions sent        */
     int      pad_connected;
     unsigned pad_reads;
+    unsigned pad_fresh;          /* of those, polls that carried NEW pad data */
     unsigned pad_changes;        /* times a pad connected or went away */
 
     int      diagnostics;        /* the overlay was asked for */
