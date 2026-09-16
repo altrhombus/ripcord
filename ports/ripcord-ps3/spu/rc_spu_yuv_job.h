@@ -77,6 +77,12 @@ typedef struct {
      *
      * Only the packed-RGB path honours it. The plane path would need two CONVERTED lines rather than two
      * fetched ones, and it is no longer the path the stream takes.
+     *
+     * [X] TOO SLOW TO USE AS WRITTEN. b195 missed the 25 ms strip deadline with it on, so not one stream
+     * frame was converted and nothing reached the screen. Nine interpolations a pixel, each pulling a
+     * byte out of a word and putting one back, is more than this SPU manages in the time a frame allows.
+     * The scalar version was written to be measured rather than shipped, and the measurement says it
+     * needs the channels unpacked into 16-bit lanes with four pixels done at once before it is usable.
      */
     uint32_t bilinear;
     uint32_t pad[2];         /* keeps this a multiple of 16, which the MFC requires - see the header */
