@@ -2918,6 +2918,15 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
     out->decode_receive_priority = g_decode_receive_priority;
     out->hold_ms = g_hold_ms;
     rc_video_rsx_scale_stats(&out->rsx_scale_available, &out->rsx_blits, &out->rsx_refused);
+    {
+        rc_video_info vi;
+
+        if (rc_video_info_get(&vi)) {
+            out->display_aspect = vi.aspect;
+            out->display_scan_mode = vi.scan_mode;
+            out->display_refresh = vi.refresh_rates;
+        }
+    }
     out->picture_in_vram = rc_decode_vdec_picture_in_vram();
     rc_pad_stats(&out->pad_connected, &out->pad_reads, &out->pad_fresh, &out->pad_changes);
     out->pad_analog_triggers = rc_pad_analog_triggers_seen();
