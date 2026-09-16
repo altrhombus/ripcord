@@ -50,6 +50,9 @@ int rc_video_open(rc_video_info *out);
 /* The back buffer: `pitch` bytes per line, `height` lines, XRGB8888. NULL if the display is not open. */
 uint32_t *rc_video_back_buffer(void);
 
+/* The open display's geometry. 0 if it is not open, in which case nothing in `out` is touched. */
+int rc_video_info_get(rc_video_info *out);
+
 /*
  * Is the previous flip finished, so the back buffer is safe to write?
  *

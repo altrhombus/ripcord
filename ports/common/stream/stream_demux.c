@@ -472,3 +472,8 @@ void stream_demux_take_packet_stats(stream_demux *demux, long *out_received, lon
     demux->stat_units_received = 0;
     demux->stat_units_lost = 0;
 }
+
+int stream_demux_video_is_hevc(const stream_demux *demux)
+{
+    return (demux != NULL) ? demux->video_is_hevc : 0;
+}

@@ -19,6 +19,7 @@
  *                               Minutes are what a thermal comparison needs; seconds do for frame rate)
  *   hardwarescale=0            (optional - 1 scales on the GPU instead of the CPU, where the port has
  *                               one; `bilinear` then costs nothing, since the filter is wired)
+ *   diagnostics=0              (optional - 1 draws the diagnostics overlay over the stream)
  *   videoformat=bgr565         (optional - "bgr565" or "rgb565"; see below)
  *   widescreen=1               (optional - 800x240 top screen; on by default, see below)
  *   smoothing=1                (optional - average the two source rows the vertical squeeze straddles)
@@ -151,6 +152,13 @@ typedef struct {
      * nearest goes away.
      */
     int hardware_scale;
+
+    /*
+     * Show the diagnostics overlay on the stream. A setting because it is meant to become a toggle the
+     * user reaches for mid-session rather than a build flag: the numbers are most wanted at the moment
+     * something looks wrong, which is not a moment anyone can rebuild for.
+     */
+    int diagnostics;
     int video_rgb565;        /* 1 = ask MVD for RGB565 instead of BGR565 */
     int skip_until_keyframe; /* 1 = drop every frame after a loss until the next IDR */
     int widescreen;          /* 1 = 800x240 top screen (default); 0 = 400x240 */
