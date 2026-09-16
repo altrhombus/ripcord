@@ -1064,15 +1064,23 @@ static int check_connect(void)
                  * If the two columns disagree with a plausible idle temperature, the decoding is what is
                  * wrong, not the console.
                  */
-                if (c.thermal.available) {
-                    ps3_log("       TEMPERATURE over %u sample(s): Cell %u -> %u C, peak %u;"
-                            " RSX %u -> %u C, peak %u\n",
-                            c.thermal.samples,
-                            c.thermal.cell_first, c.thermal.cell_last, c.thermal.cell_peak,
-                            c.thermal.rsx_first, c.thermal.rsx_last, c.thermal.rsx_peak);
-                    ps3_log("       last raw sensor words 0x%08X (Cell) 0x%08X (RSX) - the degrees"
-                            " above are the top byte, which is ASSUMED\n",
+                if (c.thermal.samples >= 2u) {
+                    ps3_log("       TEMPERATURE across the hold: Cell %u.%u -> %u.%u C (%+d.%u),"
+                            " RSX %u.%u -> %u.%u C (%+d.%u)\n",
+                            c.thermal.cell_first / 10u, c.thermal.cell_first % 10u,
+                            c.thermal.cell_last / 10u, c.thermal.cell_last % 10u,
+                            ((int)c.thermal.cell_last - (int)c.thermal.cell_first) / 10,
+                            (unsigned)(abs((int)c.thermal.cell_last - (int)c.thermal.cell_first) % 10),
+                            c.thermal.rsx_first / 10u, c.thermal.rsx_first % 10u,
+                            c.thermal.rsx_last / 10u, c.thermal.rsx_last % 10u,
+                            ((int)c.thermal.rsx_last - (int)c.thermal.rsx_first) / 10,
+                            (unsigned)(abs((int)c.thermal.rsx_last - (int)c.thermal.rsx_first) % 10));
+                    ps3_log("       closing raw sensor words 0x%08X (Cell) 0x%08X (RSX);"
+                            " one fan serves both, so the PAIR is the reading\n",
                             c.thermal.cell_raw_last, c.thermal.rsx_raw_last);
+                } else if (c.thermal.available) {
+                    ps3_log("       TEMPERATURE: only %u sample - the closing read did not happen\n",
+                            c.thermal.samples);
                 } else {
                     ps3_log("       TEMPERATURE unavailable - syscall 383 did not answer\n");
                 }

@@ -848,13 +848,6 @@ static void send_periodic(halyard_control_session *session, rc_connect_result *o
     (void)session;
 
     /*
-     * The thermal sample rides the congestion tick rather than getting a timer of its own. It is two
-     * syscalls, it is not on the video path, and a reading a second over a 30-second hold is already
-     * more resolution than a fan curve has.
-     */
-    rc_thermal_sample(&out->thermal);
-
-    /*
      * CONGESTION FEEDBACK: what arrived and what did not. The console's rate controller adapts to it,
      * and the counts come from the demuxer, which has been computing them all along.
      * stream_demux_take_packet_stats RESETS on read, so each report covers its own window.
@@ -2036,9 +2029,26 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
      * here first means the next step inherits something that has run on hardware.
      */
     {
-        uint64_t deadline = rc_time_ms() + RC_STREAM_HOLD_MS;
-        uint64_t next_heartbeat = rc_time_ms();
-        uint64_t next_congestion = rc_time_ms() + RC_CONGESTION_INTERVAL_MS;
+        uint64_t deadline;
+        uint64_t next_heartbeat;
+        uint64_t next_congestion;
+
+        /*
+         * BOTH THERMAL SAMPLES ARE TAKEN OUTSIDE THE HOLD, and b202 is why. Sampling once a second from
+         * inside the loop cost 28 ms a reading - syscall 383 is a hypervisor round trip to a hardware
+         * sensor, not a register read - which stalled the drain for 4.4 seconds, lost 3,896 units of
+         * 4,175 and put 4 fps on the screen.
+         *
+         * Two samples still answer the question. Temperature under a sustained load rises towards a
+         * steady state and does not come back down inside a run, so the reading after the hold IS the
+         * peak, and the one before it is the baseline to subtract. What was lost with the per-second
+         * sampling is the shape of the curve, which no fan responds to anyway.
+         */
+        rc_thermal_sample(&out->thermal);
+
+        deadline = rc_time_ms() + RC_STREAM_HOLD_MS;
+        next_heartbeat = rc_time_ms();
+        next_congestion = rc_time_ms() + RC_CONGESTION_INTERVAL_MS;
 
         while (rc_time_ms() < deadline) {
             /*
@@ -2267,6 +2277,7 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
     out->decode_thread_priority = g_decode_priority;
     out->decode_receive_priority = g_decode_receive_priority;
     out->hold_ms = (unsigned)RC_STREAM_HOLD_MS;
+    rc_thermal_sample(&out->thermal);   /* the closing sample - see the note where the hold opens */
     out->idr_requests = g_idr_requests;
 
     out->verify_checked = g_verifier.checked;
