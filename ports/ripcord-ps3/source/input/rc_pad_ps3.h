@@ -39,6 +39,14 @@ void rc_pad_stats(int *connected, unsigned *reads, unsigned *fresh, unsigned *ch
  */
 int rc_pad_analog_triggers_seen(void);
 
+/*
+ * How many times the diagnostics chord has been completed. The caller watches this for a change rather
+ * than being told "pressed", so neither side has to agree on when a press stops being new. The chord's
+ * buttons are removed from the state rc_pad_read returns while it is held - see the .c for which
+ * buttons, why those, and what it does not fix.
+ */
+unsigned rc_pad_chord_edges(void);
+
 void rc_pad_close(void);
 
 #endif /* RC_PAD_PS3_H */
