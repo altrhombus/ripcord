@@ -112,7 +112,6 @@ rc_osk_status rc_osk_ask(rc_osk_kind kind, const char *prompt, const char *initi
     sys_mem_container_t container = 0;
     oskParam param;
     oskInputFieldInfo field;
-    oskPoint point;
     uint64_t deadline;
     rc_osk_status status = RC_OSK_UNAVAILABLE;
 
@@ -163,20 +162,6 @@ rc_osk_status rc_osk_ask(rc_osk_kind kind, const char *prompt, const char *initi
     widen(initial, s_initial, RC_OSK_MAX_CHARS + 1u);
     memset(s_result, 0, sizeof(s_result));
 
-    memset(&param, 0, sizeof(param));
-    /*
-     * A KEYPAD FOR A PIN AND A FULL KEYBOARD FOR EVERYTHING ELSE. Not decoration: the PIN is eight
-     * digits read off another screen and typed with a controller, and offering the letters as well
-     * makes that several times slower for no gain.
-     */
-    param.allowedPanels = (kind == RC_OSK_NUMBERS) ? OSK_PANEL_TYPE_NUMERAL
-                                                   : (OSK_PANEL_TYPE_ALPHABET | OSK_PANEL_TYPE_NUMERAL);
-    param.firstViewPanel = (kind == RC_OSK_NUMBERS) ? OSK_PANEL_TYPE_NUMERAL : OSK_PANEL_TYPE_ALPHABET;
-    point.x = 0.0f;
-    point.y = 0.0f;
-    param.controlPoint = point;
-    param.prohibitFlags = OSK_PROHIBIT_RETURN;   /* single-line answers; a newline is never wanted */
-
     memset(&field, 0, sizeof(field));
     field.message = s_message;
     field.startText = s_initial;
@@ -184,7 +169,6 @@ rc_osk_status rc_osk_ask(rc_osk_kind kind, const char *prompt, const char *initi
 
     s_done = 0;
     s_cancelled = 0;
-    s_container_bytes = 0u;
 
     {
         s32 rc = sysUtilRegisterCallback(SYSUTIL_EVENT_SLOT0, osk_event, NULL);
@@ -197,23 +181,90 @@ rc_osk_status rc_osk_ask(rc_osk_kind kind, const char *prompt, const char *initi
         }
     }
 
-    oskSetLayoutMode(OSK_LAYOUTMODE_HORIZONTAL_ALIGN_CENTER | OSK_LAYOUTMODE_VERTICAL_ALIGN_CENTER);
-    oskSetInitialInputDevice(OSK_DEVICE_PAD);
-
+    /*
+     * THE WHOLE CONFIGURATION IS SWEPT, because b304 established that one of these is wrong and not
+     * which. oskLoadAsync answered 0x8002B504 - a parameter error - against a param struct whose four
+     * fields were all set, which means the fault is in what was NOT said rather than in what was.
+     *
+     * The candidates, in the order they are tried:
+     *
+     *   The key layout was never declared at all. oskSetKeyLayoutOption says which panels the dialog
+     *   may show, and nothing here called it - the most likely single omission, so it leads.
+     *
+     *   oskSetLayoutMode may not belong to this dialog. It sits beside oskSetSeparateWindowOption in
+     *   the header, which suggests it is for the windowed variants, and setting it for a standard
+     *   dialog could be exactly the parameter being objected to.
+     *
+     *   The panel set may need to be the default rather than a chosen pair.
+     *
+     * Each attempt is a complete configuration rather than one varied field, because the failure is a
+     * single code with no indication of which argument it means - so knowing that a whole shape works
+     * is worth more than narrowing one axis per trip to the console.
+     */
     {
-        s32 rc = oskLoadAsync(container, &param, &field);
+        static const struct {
+            const char *what;
+            int set_key_layout;
+            int set_layout_mode;
+            int default_panels;
+        } kAttempts[] = {
+            { "key layout declared",                  1, 0, 0 },
+            { "key layout declared, default panels",  1, 0, 1 },
+            { "key layout and layout mode",           1, 1, 0 },
+            { "default panels only",                  0, 0, 1 },
+            { "as b304 had it",                       0, 1, 0 },
+        };
+        unsigned i;
+        s32 rc = -1;
+
+        for (i = 0u; i < sizeof(kAttempts) / sizeof(kAttempts[0]); i++) {
+            oskPoint point;
+
+            memset(&param, 0, sizeof(param));
+            if (kAttempts[i].default_panels) {
+                param.allowedPanels = OSK_PANEL_TYPE_DEFAULT;
+                param.firstViewPanel = OSK_PANEL_TYPE_DEFAULT;
+            } else {
+                param.allowedPanels = (kind == RC_OSK_NUMBERS)
+                    ? OSK_PANEL_TYPE_NUMERAL
+                    : (OSK_PANEL_TYPE_ALPHABET | OSK_PANEL_TYPE_NUMERAL);
+                param.firstViewPanel = (kind == RC_OSK_NUMBERS) ? OSK_PANEL_TYPE_NUMERAL
+                                                                : OSK_PANEL_TYPE_ALPHABET;
+            }
+            point.x = 0.0f;
+            point.y = 0.0f;
+            param.controlPoint = point;
+            param.prohibitFlags = OSK_PROHIBIT_RETURN;
+
+            if (kAttempts[i].set_key_layout) {
+                /* Both layouts allowed whatever the panel choice: declaring only the one being asked
+                 * for is a second thing that could be objected to, and this sweep varies one idea at a
+                 * time. */
+                oskSetKeyLayoutOption(OSK_10KEY_PANEL | OSK_FULLKEY_PANEL);
+            }
+            if (kAttempts[i].set_layout_mode) {
+                oskSetLayoutMode(OSK_LAYOUTMODE_HORIZONTAL_ALIGN_CENTER
+                                 | OSK_LAYOUTMODE_VERTICAL_ALIGN_CENTER);
+            }
+            oskSetInitialInputDevice(OSK_DEVICE_PAD);
+            oskSetDeviceMask(OSK_DEVICE_MASK_PAD);
+
+            rc = oskLoadAsync(container, &param, &field);
+            if (rc == 0) {
+                rc_log("osk:   dialog raised - %s\n", kAttempts[i].what);
+                break;
+            }
+            rc_log("osk:   refused (0x%08X) - %s\n", (unsigned)rc, kAttempts[i].what);
+        }
 
         if (rc != 0) {
-            rc_log("osk:   oskLoadAsync refused (0x%08X) - panels 0x%08X first 0x%08X max %d\n",
-                   (unsigned)rc, (unsigned)param.allowedPanels, (unsigned)param.firstViewPanel,
-                   (int)field.maxLength);
             sysUtilUnregisterCallback(SYSUTIL_EVENT_SLOT0);
             if (s_container_bytes != 0u)
                 sysMemContainerDestroy(container);
             return RC_OSK_UNAVAILABLE;
         }
     }
-    rc_log("osk:   dialog raised, waiting for the user\n");
+
 
     /*
      * PUMP UNTIL IT SAYS IT IS FINISHED. sysUtilCheckCallback is what actually delivers the events
