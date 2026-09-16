@@ -15,6 +15,8 @@
  *   streambitrate=8000         (optional - the launch spec's bwKbpsSent, in kbps)
  *   skipuntilkeyframe=0        (optional - 1 restores the old drop-everything-after-loss behaviour)
  *   fps=30                     (optional - 30 or 60)
+ *   holdseconds=30             (optional - how long to hold the stream; 0 keeps the port default.
+ *                               Minutes are what a thermal comparison needs; seconds do for frame rate)
  *   videoformat=bgr565         (optional - "bgr565" or "rgb565"; see below)
  *   widescreen=1               (optional - 800x240 top screen; on by default, see below)
  *   smoothing=1                (optional - average the two source rows the vertical squeeze straddles)
@@ -125,6 +127,16 @@ typedef struct {
     int stream_bitrate_kbps;
     int probe_resolutions;   /* 1 = sweep resolutions and exit, instead of streaming */
     int fps;                 /* 30 or 60 */
+    /*
+     * How long to hold the stream open, in SECONDS. 0 keeps each port's own default.
+     *
+     * A setting rather than a constant because the two things measured over a hold have very different
+     * time constants. Frame rate and loss settle in seconds; TEMPERATURE does not - a console's fan
+     * responds over minutes, so a 30-second hold reports the start of a curve and calls it a result.
+     * Being able to ask for five minutes without a rebuild is the difference between comparing two
+     * thermal numbers and guessing at them.
+     */
+    int hold_seconds;
     int video_rgb565;        /* 1 = ask MVD for RGB565 instead of BGR565 */
     int skip_until_keyframe; /* 1 = drop every frame after a loss until the next IDR */
     int widescreen;          /* 1 = 800x240 top screen (default); 0 = 400x240 */
