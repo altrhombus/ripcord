@@ -41,6 +41,13 @@ int rc_sysfont_ascent(void);
 void rc_sysfont_set_size(float pixels);
 
 /*
+ * Draw digits in a fixed cell the width of the widest digit, centred - a tabular figure. Without it a
+ * proportional face gives '1' a narrower advance than '8', so a number that ticks changes width and
+ * drags everything after it. With it, one typeface can set both the words and the figures.
+ */
+void rc_sysfont_set_tabular(int on);
+
+/*
  * Renders `text` into an 8-bit coverage buffer, left edge at x, baseline at `baseline`. Returns the
  * advance in pixels - the width the run occupied - so a caller can centre or right-align it by
  * measuring first with a NULL buffer.
