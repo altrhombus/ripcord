@@ -147,9 +147,10 @@ typedef struct {
     int decoder_rgb;
 
     /*
-     * Smooth the upscale to the display instead of repeating pixels. A viewer's preference, not a
-     * correctness matter: interpolating softens as well as smooths, and which looks better at a given
-     * scale is a matter of taste. Key `bilinear`, off by default.
+     * Smooth the upscale to the display instead of repeating pixels: 0 nearest, 1 along the row only,
+     * 2 in both directions. A viewer's preference rather than a correctness matter - interpolating
+     * softens as well as smooths - and 2 costs more than a 60 fps frame allows on the PS3, so 1 is the
+     * one that buys something at full rate. Key `bilinear`, 0 by default.
      */
     int bilinear_upscale;
 

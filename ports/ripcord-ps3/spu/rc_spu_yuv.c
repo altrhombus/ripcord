@@ -271,6 +271,65 @@ static inline vec_int4 lerp_px(vec_int4 a, vec_int4 b, short w)
     return spu_add(a, spu_rlmaska(p, -8));
 }
 
+/*
+ * Horizontal interpolation only: smooth across a row, nearest between rows.
+ *
+ * WHY THIS EXISTS ALONGSIDE THE FULL VERSION. Full bilinear measured 21,038 us an SPE for a frame
+ * against a 16,667 us budget at 60 fps - it works and does not fit. This is the cheaper two thirds of
+ * the idea: one source row instead of two, so two gathers a pixel instead of four and one interpolation
+ * instead of three.
+ *
+ * It also inherits the structure the nearest path uses, which is the larger saving. With one source row
+ * a computed output line can be stored twice when two output rows map to the same source row - one in
+ * three at 1.5x - and the full version cannot, because every output row sits at a different distance
+ * between its two rows.
+ *
+ * What it removes is the column doubling, which at a 1.5x horizontal scale is where the repetition is
+ * most visible. Rows are still duplicated.
+ *
+ * No clamp: one interpolation between two values already in 0..255, with the lerp rounded, cannot leave
+ * the range. a=0,b=255,w=255 gives 254 and a=255,b=0,w=255 gives 1.
+ */
+static void scale_line_h(unsigned int *out, unsigned int src_width, unsigned int dst_width)
+{
+    unsigned int step = (src_width << 16) / dst_width;
+    unsigned int acc = 0u;
+    unsigned int x = 0u;
+    unsigned int cached_c = 0xffffffffu;
+    vec_int4 A = spu_splats(0);
+    vec_int4 B = spu_splats(0);
+
+    for (; x + 4u <= dst_width; x += 4u) {
+        vec_uint4 o = spu_splats(0u);
+        unsigned int k;
+
+        for (k = 0u; k < 4u; k++) {
+            unsigned int c = acc >> 16;
+            short wx = (short)((acc >> 8) & 0xffu);
+
+            if (c != cached_c) {
+                unsigned int c1 = (c + 1u < src_width) ? c + 1u : c;
+
+                A = unpack_px(g_line[c]);
+                B = unpack_px(g_line[c1]);
+                cached_c = c;
+            }
+            o = spu_insert(pack_px(lerp_px(A, B, wx)), o, (int)k);
+            acc += step;
+        }
+        *(vec_uint4 *)&out[x] = o;
+    }
+
+    for (; x < dst_width; x++) {
+        unsigned int c = acc >> 16;
+        short wx = (short)((acc >> 8) & 0xffu);
+        unsigned int c1 = (c + 1u < src_width) ? c + 1u : c;
+
+        out[x] = pack_px(lerp_px(unpack_px(g_line[c]), unpack_px(g_line[c1]), wx));
+        acc += step;
+    }
+}
+
 static void scale_line_bilinear(unsigned int *out, const unsigned int *l0, const unsigned int *l1,
                                 unsigned int wy, unsigned int src_width, unsigned int dst_width)
 {
@@ -432,7 +491,7 @@ int main(uint64_t job_ea, uint64_t unused1, uint64_t unused2, uint64_t unused3)
                 if (src_row >= g_job.src_height)
                     src_row = g_job.src_height - 1u;
 
-                if (g_job.source_argb && g_job.bilinear) {
+                if (g_job.source_argb && g_job.bilinear == 2u) {
                     /*
                      * Every output row is recomputed, because every one sits at a different distance
                      * between its two source rows - there is no "same source row, reuse the result"
@@ -514,7 +573,10 @@ int main(uint64_t job_ea, uint64_t unused1, uint64_t unused2, uint64_t unused3)
                     }
 
                     t0 = spu_read_decrementer();
-                    scale_line(g_out[ob], g_job.src_width, g_job.dst_width);
+                    if (g_job.bilinear == 1u)
+                        scale_line_h(g_out[ob], g_job.src_width, g_job.dst_width);
+                    else
+                        scale_line(g_out[ob], g_job.src_width, g_job.dst_width);
                     work_ticks += t0 - spu_read_decrementer();
                 } else if (src_row != cached_y_row) {
                     ob ^= 1u;
