@@ -1,352 +1,102 @@
-/* See rc_sysfont.h - especially the note on coverage and on why the drawn font stays. */
+/*
+ * ripcord-ps3 - the console's own typeface, read as a font file rather than through cellFont.
+ *
+ * WHY NOT cellFont. The obvious route is fontOpenFontset with FONT_TYPE_NEWRODIN_GOTHIC_LATIN_SET,
+ * which asks the firmware for the same face the XMB uses. It refuses to produce a renderer on this
+ * console through PSL1GHT's bindings - six hardware runs eliminated the interface revision, the
+ * renderer's buffering policy, the callback descriptors and a missing module, and all fifteen
+ * combinations returned an identical 0x80540002. DECODE.md records it in full.
+ *
+ * WHAT THIS DOES INSTEAD. The faces are ordinary TrueType files in /dev_flash/data/font, and b255
+ * confirmed a packaged homebrew can read them: 38,388 bytes and a 00 01 00 00 magic, through both the
+ * lv2 syscalls and newlib. SCE-PS3-RD-R-LATIN.TTF is Rodin Regular, which is what the menus are set
+ * in. The FreeType portlib parses it. Nothing is redistributed - the file stays on the console and is
+ * read at runtime exactly as cellFont would have read it - and FreeType has a reference and a tutorial
+ * where cellFont has a header with a typo in it.
+ *
+ * COVERAGE, NOT PIXELS. FT_LOAD_RENDER gives an 8-bit antialiased bitmap, which the caller composites
+ * in whatever colour it wants. That is what makes the antialiasing real, and it is why the overlay's
+ * panel lives in main memory: blending needs the destination read, and a Cell read from RSX memory is
+ * roughly two orders of magnitude slower than a write.
+ */
 #include "rc_sysfont.h"
 
-#include <font/font.h>
-#include <font/fontFT.h>
-#include <font/fontset.h>
-#include <sysmodule/sysmodule.h>
+#include <ft2build.h>
+#include FT_FREETYPE_H
 
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 
-#include <ppu-asm.h>
-
-/*
- * PSL1GHT's font.h declares this as `fontontSetScalePixel` - a typo in the header, against an export
- * that is spelled correctly in the library. Declared here so the call links; changing the SDK header
- * would be a change nobody else building this tree would have.
- */
-extern s32 fontSetScalePixel(font *f, f32 w, f32 h);
-
-/*
- * THE REVISIONED ENTRY POINTS, and the plain ones are why b241 saw no new font.
- *
- * fontInit already does this for the base library - it asks the stub for its revision flags and calls
- * fontInitializeWithRevision. PSL1GHT provides no such wrapper for the FreeType half, so the obvious
- * fontInitLibraryFreeType gets called instead, with no revision at all, and the firmware answers
- * 0x80540002. Both halves have to be told which revision of the interface they are being called
- * through, and the flags come from the stubs rather than from a constant anyone here could write down.
- */
-extern void fontFTGetStubRevisionFlags(u64 *revisionFlags);
-extern void fontGetStubRevisionFlags(u64 *revisionFlags);
-extern s32 fontInitializeWithRevision(u64 revision, fontConfig *config);
-extern s32 fontEnd(void);
-extern s32 fontEndLibrary(const fontLibrary *lib);
-extern s32 fontInitLibraryFreeTypeWithRevision(u64 revision, fontLibraryConfigFT *config,
-                                               const fontLibrary **lib);
-
-/*
- * THE ALLOCATOR THE FONT LIBRARY CALLS BACK INTO, and it needs 32-BIT DESCRIPTORS.
- *
- * cellFont is a PRX. A function pointer handed to it is called from 32-bit code, and GCC's ELFv1
- * descriptor is 64-bit - the same mismatch that made vdecClosure.fn silently never fire in b149, which
- * took four builds to find because nothing reports it. It is written down here rather than rediscovered
- * a third time: ANY callback given to a firmware library on this platform needs __build_opd32.
- *
- * The callbacks themselves are the C library's, because the font library's appetite is its own business
- * and a fixed arena would only move the failure to whichever glyph overran it.
- */
-static uint32_t s_opd_malloc[2] __attribute__((aligned(8)));
-static uint32_t s_opd_free[2] __attribute__((aligned(8)));
-static uint32_t s_opd_realloc[2] __attribute__((aligned(8)));
-static uint32_t s_opd_calloc[2] __attribute__((aligned(8)));
-
-static void *font_malloc(void *object, u32 size)
-{
-    (void)object;
-    return malloc(size);
-}
-
-static void font_free(void *object, void *ptr)
-{
-    (void)object;
-    free(ptr);
-}
-
-static void *font_realloc(void *object, void *p, u32 size)
-{
-    (void)object;
-    return realloc(p, size);
-}
-
-static void *font_calloc(void *object, u32 num, u32 size)
-{
-    (void)object;
-    return calloc(num, size);
-}
-
-/*
- * The cache the font library is told it may use. cellFont wants a buffer for glyph expansion and a
- * separate one for the renderer; both are sized from the SDK's own sample values rather than derived,
- * because nothing here knows what the library does with them and guessing smaller is how a font
- * library starts failing on the character you did not test.
- */
-static uint32_t s_file_cache[1024 * 16];
-static uint8_t  s_renderer_buf[1024 * 512] __attribute__((aligned(16)));
-
-static const fontLibrary *s_lib;
-static fontRenderer s_renderer;
-static font s_font;
+static FT_Library s_lib;
+static FT_Face s_face;
 static int s_ready;
-static int s_modules;
-static char s_status[96] = "not tried";
+static char s_status[112] = "not tried";
 static int s_ascent;
 static float s_size;
-static char s_policy[48] = "?";
-static char s_face[32] = "?";
-static char s_revmode[16] = "?";
-
-/*
- * EVERY DISTINCT CODE THE SWEEP SAW, not just the last one.
- *
- * b248 and b251 both reported a single code for fifteen refused attempts, which left "they all failed
- * the same way" and "the last one failed this way" indistinguishable - and those mean different
- * things. One code across every shape of argument says the arguments are not what is wrong.
- */
-static unsigned s_codes[6];
-static unsigned s_code_count;
-
-static void note_code(unsigned code)
-{
-    unsigned i;
-
-    for (i = 0u; i < s_code_count; i++) {
-        if (s_codes[i] == code)
-            return;
-    }
-    if (s_code_count < sizeof(s_codes) / sizeof(s_codes[0]))
-        s_codes[s_code_count++] = code;
-}
 
 static int fail(const char *step, int rc)
 {
-    int at = snprintf(s_status, sizeof(s_status), "%s refused (0x%08X)", step, (unsigned)rc);
-
-    if (s_code_count > 1u) {
-        unsigned i;
-
-        at += snprintf(s_status + at, sizeof(s_status) - (size_t)at, " [also");
-        for (i = 0u; i < s_code_count && at < (int)sizeof(s_status) - 12; i++)
-            at += snprintf(s_status + at, sizeof(s_status) - (size_t)at, " %08X", s_codes[i]);
-        (void)snprintf(s_status + at, sizeof(s_status) - (size_t)at, "]");
-    }
+    snprintf(s_status, sizeof(s_status), "%s refused (%d)", step, rc);
     return 0;
 }
 
 /*
- * ONE ATTEMPT AT THE WHOLE CHAIN, at a given interface revision.
- *
- * It is the whole chain rather than one call because the mismatch does not surface where it is made.
- * PSL1GHT's fontInit initialises with the BASE font stub's revision alone and never mentions the
- * FreeType stub, so the font system comes up without FreeType declared - and the FT library then
- * initialises happily on its own revision, and the refusal lands two calls later at
- * fontCreateRenderer with 0x80540002 and a buffering policy that had nothing to do with it. b248 swept
- * all five policies and was refused five times, which is what said the policy was never the question.
- *
- * So the revision is swept instead, and each attempt is torn down before the next: initialising twice
- * without an intervening fontEnd is its own refusal, and would hide the answer behind a second fault.
+ * The faces worth having, in order. Rodin Regular first because it IS the XMB's Latin face; New Rodin
+ * JP after it because that set carries Latin too and is present on firmware where the Latin-only file
+ * might not be. Swept rather than assumed for the reason the fontset sweep existed: which files a given
+ * firmware carries is not knowable from here, and a missing one opens exactly like a corrupt one.
  */
-static int attempt(u64 revision, float pixels)
+static const struct {
+    const char *what;
+    const char *path;
+} kFaces[] = {
+    { "Rodin Regular",     "/dev_flash/data/font/SCE-PS3-RD-R-LATIN.TTF" },
+    { "New Rodin (JP set)", "/dev_flash/data/font/SCE-PS3-NR-R-JPN.TTF" },
+    { "Seurat Regular",    "/dev_flash/data/font/SCE-PS3-SR-R-LATIN.TTF" },
+};
+
+static void note_metrics(void)
 {
-    fontConfig config;
-    fontLibraryConfigFT ftconfig;
-    fontRendererConfigFT rconfig;
-    fontType type;
-    fontHorizontalLayout layout;
-    s32 rc;
-
     /*
-     * THREE MODULES, AND THE ORDER MATTERS. FREETYPE underpins FONTFT which underpins FONT; loading
-     * them the other way round returns success and then fails at the first glyph.
+     * The ascent is asked for rather than taken as a fraction of the em, because it is not one: a
+     * face's baseline sits where the face says it does, and at every size. FreeType reports it in
+     * 26.6 fixed point, hence the shift.
      */
-    if (!s_modules) {
-        if (sysModuleLoad(SYSMODULE_FREETYPE) != 0)
-            return fail("SYSMODULE_FREETYPE", 0);
-        /*
-         * THE SECOND FREETYPE MODULE, which is not a typo for the first. SYSMODULE_FREETYPE (0x1b) and
-         * SYSMODULE_FREETYPE_TT (0x40) are separate, and the renderer is the TrueType half - which is
-         * the thing fontCreateRenderer creates. Fifteen combinations of revision and buffering policy
-         * were refused identically before this was noticed, all of them arguing about the arguments to
-         * a call whose library may simply not have been resident.
-         *
-         * Not fatal if it refuses: it is absent on some firmware, and the attempt below then fails the
-         * way it already did rather than failing earlier and less informatively.
-         */
-        (void)sysModuleLoad(SYSMODULE_FREETYPE_TT);
-        if (sysModuleLoad(SYSMODULE_FONTFT) != 0)
-            return fail("SYSMODULE_FONTFT", 0);
-        if (sysModuleLoad(SYSMODULE_FONT) != 0)
-            return fail("SYSMODULE_FONT", 0);
-        s_modules = 1;
-    }
-
-    memset(&config, 0, sizeof(config));
-    config.fileCache.buffer = s_file_cache;
-    config.fileCache.size = sizeof(s_file_cache);
-    config.userFontEntryMax = 0;
-    config.userFontEntries = NULL;
-    config.flags = 0;
-    rc = fontInitializeWithRevision(revision, &config);
-    if (rc != 0)
-        return fail("fontInitializeWithRevision", rc);
-
-    fontLibraryConfigFT_initialize(&ftconfig);
-    ftconfig.memoryIF.object = NULL;
-    ftconfig.memoryIF.malloc_func =
-        (fontMallocCallback)(uintptr_t)(u32)__build_opd32(font_malloc, s_opd_malloc);
-    ftconfig.memoryIF.free_func =
-        (fontFreeCallback)(uintptr_t)(u32)__build_opd32(font_free, s_opd_free);
-    ftconfig.memoryIF.realloc_func =
-        (fontReallocCallback)(uintptr_t)(u32)__build_opd32(font_realloc, s_opd_realloc);
-    ftconfig.memoryIF.calloc_func =
-        (fontCallocCallback)(uintptr_t)(u32)__build_opd32(font_calloc, s_opd_calloc);
-
-    /* The same revision the font system came up under - a library initialised against a different one
-     * than the system that will be asked to render through it is exactly the mismatch above. */
-    rc = fontInitLibraryFreeTypeWithRevision(revision, &ftconfig, &s_lib);
-    if (rc != 0)
-        return fail("fontInitLibraryFreeTypeWithRevision", rc);
-
-    /*
-     * THE RENDERER'S BUFFERING POLICY IS SWEPT, NOT GUESSED.
-     *
-     * b246 got past the library and was refused here with the same 0x80540002, and the policy is five
-     * numbers with no documented relationship between them - whether the buffer may be supplied or must
-     * be allocated, whether expandSize may be zero, whether maxSize may equal initSize. That is four or
-     * five plausible shapes and, taken one per build, four or five hardware runs to walk.
-     *
-     * So they are all tried here and the one that is accepted is reported, exactly as rsxInit's sizes
-     * and vdecQueryAttr's levels were swept rather than reasoned about. The cost is a few refused calls
-     * during start-up; the alternative is a week of single-hypothesis builds.
-     */
-    {
-        static const struct {
-            const char *what;
-            int own_buffer;
-            u32 init, max, expand, reset;
-        } kPolicies[] = {
-            { "library-allocated, expanding",  0, 512u * 1024u, 2048u * 1024u, 128u * 1024u,
-              512u * 1024u },
-            { "library-allocated, fixed",      0, 512u * 1024u,  512u * 1024u, 0u, 0u },
-            { "library-allocated, all zero",   0, 0u, 0u, 0u, 0u },
-            { "caller-supplied, fixed",        1, sizeof(s_renderer_buf), sizeof(s_renderer_buf), 0u,
-              0u },
-            { "caller-supplied, expanding",    1, sizeof(s_renderer_buf), sizeof(s_renderer_buf),
-              64u * 1024u, 128u * 1024u },
-        };
-        unsigned i;
-
-        rc = -1;
-        for (i = 0u; i < sizeof(kPolicies) / sizeof(kPolicies[0]); i++) {
-            memset(&rconfig, 0, sizeof(rconfig));
-            rconfig.bufferingPolicy.buffer = kPolicies[i].own_buffer ? s_renderer_buf : NULL;
-            rconfig.bufferingPolicy.initSize = kPolicies[i].init;
-            rconfig.bufferingPolicy.maxSize = kPolicies[i].max;
-            rconfig.bufferingPolicy.expandSize = kPolicies[i].expand;
-            rconfig.bufferingPolicy.resetSize = kPolicies[i].reset;
-
-            rc = fontCreateRenderer(s_lib, (fontRendererConfig *)&rconfig, &s_renderer);
-            if (rc == 0) {
-                snprintf(s_policy, sizeof(s_policy), "%s", kPolicies[i].what);
-                break;
-            }
-            note_code((unsigned)rc);
-        }
-        if (rc != 0)
-            return fail("fontCreateRenderer (every policy refused)", rc);
-    }
-
-    /*
-     * AND THE FONTSET IS SWEPT FOR THE SAME REASON. New Rodin latin is the XMB's own face and the one
-     * worth having, but which sets a given firmware actually carries is not something this can know,
-     * and a missing set refuses exactly like a malformed argument does. The preferred one is tried
-     * first and the rest are fallbacks in descending order of how much they look like the menus.
-     */
-    {
-        static const struct {
-            const char *what;
-            u32 type;
-        } kSets[] = {
-            { "New Rodin gothic latin", FONT_TYPE_NEWRODIN_GOTHIC_LATIN_SET },
-            { "New Rodin gothic JP",    FONT_TYPE_NEWRODIN_GOTHIC_JP_SET },
-            { "Rodin sans serif",       FONT_TYPE_RODIN_SANS_SERIF_LATIN },
-            { "Matisse serif",          FONT_TYPE_MATISSE_SERIF_LATIN },
-        };
-        unsigned i;
-
-        rc = -1;
-        for (i = 0u; i < sizeof(kSets) / sizeof(kSets[0]); i++) {
-            type.type = kSets[i].type;
-            type.map = 0u;
-            rc = fontOpenFontset(s_lib, &type, &s_font);
-            if (rc == 0) {
-                snprintf(s_face, sizeof(s_face), "%s", kSets[i].what);
-                break;
-            }
-        }
-        if (rc != 0)
-            return fail("fontOpenFontset (every fontset refused)", rc);
-    }
-
-    rc = fontBindRenderer(&s_font, &s_renderer);
-    if (rc != 0)
-        return fail("fontBindRenderer", rc);
-
-    rc = fontSetScalePixel(&s_font, pixels, pixels);
-    if (rc != 0)
-        return fail("fontSetScalePixel", rc);
-
-    /* The ascent is asked for rather than assumed to be some fraction of the em, because it is not: a
-     * face's baseline sits where the face says it does. */
-    if (fontGetHorizontalLayout(&s_font, &layout) == 0)
-        s_ascent = (int)(layout.baseLineY + 0.5f);
-    else
-        s_ascent = (int)(pixels * 0.8f);
-
-    s_size = pixels;
-    s_ready = 1;
-    return 1;
+    s_ascent = (int)(s_face->size->metrics.ascender >> 6);
 }
 
 int rc_sysfont_open(float pixels)
 {
-    u64 base_rev = 0ull, ft_rev = 0ull;
-    unsigned m;
+    unsigned i;
+    int rc;
 
     if (s_ready)
         return 1;
 
-    fontGetStubRevisionFlags(&base_rev);
-    fontFTGetStubRevisionFlags(&ft_rev);
+    rc = FT_Init_FreeType(&s_lib);
+    if (rc != 0)
+        return fail("FT_Init_FreeType", rc);
 
-    {
-        /*
-         * The OR is tried first because it is what the API's shape implies - a system that will be
-         * asked to render through FreeType should be told so at initialisation. The others follow
-         * because that is an inference rather than anything documented, and being wrong about it
-         * should cost a refused call rather than another trip to the console.
-         */
-        const u64 modes[3] = { base_rev | ft_rev, ft_rev, base_rev };
-        static const char *const names[3] = { "base|FT", "FT only", "base only" };
-
-        for (m = 0u; m < 3u; m++) {
-            if (attempt(modes[m], pixels)) {
-                snprintf(s_revmode, sizeof(s_revmode), "%s", names[m]);
-                snprintf(s_status, sizeof(s_status), "ready - %s, %d px, ascent %d, %s, rev %s",
-                         s_face, (int)pixels, s_ascent, s_policy, s_revmode);
+    for (i = 0u; i < sizeof(kFaces) / sizeof(kFaces[0]); i++) {
+        rc = FT_New_Face(s_lib, kFaces[i].path, 0, &s_face);
+        if (rc == 0) {
+            rc = FT_Set_Pixel_Sizes(s_face, 0, (FT_UInt)pixels);
+            if (rc == 0) {
+                s_size = pixels;
+                note_metrics();
+                s_ready = 1;
+                snprintf(s_status, sizeof(s_status), "ready - %s, %d px, ascent %d",
+                         kFaces[i].what, (int)pixels, s_ascent);
                 return 1;
             }
-            /* Torn down before the next: initialising twice without this is its own refusal, and
-             * would hide the answer behind a second fault. */
-            if (s_lib != NULL) {
-                (void)fontEndLibrary(s_lib);
-                s_lib = NULL;
-            }
-            (void)fontEnd();
+            FT_Done_Face(s_face);
+            s_face = NULL;
         }
     }
-    return 0;
+
+    FT_Done_FreeType(s_lib);
+    s_lib = NULL;
+    return fail("FT_New_Face (no system face opened)", rc);
 }
 
 const char *rc_sysfont_status(void)
@@ -359,56 +109,67 @@ int rc_sysfont_ascent(void)
     return s_ascent;
 }
 
-/*
- * Changes the em size on the open face. One font instance rather than one per size: the library
- * rescales on demand and a second instance would double the cache for a panel that uses exactly two
- * sizes. The ascent moves with it, which is why it is re-asked rather than scaled arithmetically - a
- * face's baseline is where the face says it is, at every size.
- */
 void rc_sysfont_set_size(float pixels)
 {
-    fontHorizontalLayout layout;
-
     if (!s_ready || pixels == s_size)
         return;
-    if (fontSetScalePixel(&s_font, pixels, pixels) != 0)
+    if (FT_Set_Pixel_Sizes(s_face, 0, (FT_UInt)pixels) != 0)
         return;
     s_size = pixels;
-    if (fontGetHorizontalLayout(&s_font, &layout) == 0)
-        s_ascent = (int)(layout.baseLineY + 0.5f);
+    note_metrics();
 }
 
 int rc_sysfont_render(unsigned char *cov, int cov_w, int cov_h, int x, int baseline,
                       const char *text)
 {
-    fontRenderSurface surface;
-    float pen = (float)x;
+    int pen = x;
     int i;
 
     if (!s_ready || text == NULL)
         return 0;
 
-    /*
-     * A NULL buffer MEASURES instead of drawing. Right-aligning or centring a proportional run needs
-     * its width before it is placed, and asking the metrics for it is the only way to know - there is
-     * no per-glyph width table to add up the way there is for the drawn font.
-     */
-    if (cov != NULL)
-        fontRenderSurfaceInit(&surface, cov, cov_w, 1, cov_w, cov_h);
-
     for (i = 0; text[i] != '\0'; i++) {
-        fontGlyphMetrics metrics;
-        u32 code = (u32)(unsigned char)text[i];
+        FT_GlyphSlot g;
+        int gx, gy;
 
-        if (cov != NULL) {
-            if (fontRenderCharGlyphImageHorizontal(&s_font, code, &surface, pen, (float)baseline,
-                                                   &metrics, NULL) != 0)
-                continue;
-        } else if (fontGetCharGlyphMetrics(&s_font, code, &metrics) != 0) {
+        if (FT_Load_Char(s_face, (FT_ULong)(unsigned char)text[i], FT_LOAD_RENDER) != 0)
             continue;
+        g = s_face->glyph;
+
+        /*
+         * A NULL buffer MEASURES instead of drawing. Right-aligning or centring a proportional run
+         * needs its width before it is placed, and there is no per-glyph width table to add up the way
+         * there is for the drawn font - the face has to be asked.
+         */
+        if (cov != NULL && g->bitmap.buffer != NULL) {
+            int ox = pen + g->bitmap_left;
+            int oy = baseline - g->bitmap_top;
+
+            for (gy = 0; gy < (int)g->bitmap.rows; gy++) {
+                const unsigned char *src = g->bitmap.buffer + (size_t)gy * (size_t)g->bitmap.pitch;
+                int py = oy + gy;
+
+                if (py < 0 || py >= cov_h)
+                    continue;
+                for (gx = 0; gx < (int)g->bitmap.width; gx++) {
+                    int px = ox + gx;
+
+                    if (px < 0 || px >= cov_w)
+                        continue;
+                    /*
+                     * Taken as the MAXIMUM rather than assigned. Glyphs in a run can overlap by a pixel
+                     * where one's bearing reaches under its neighbour, and overwriting there would cut
+                     * a notch out of whichever was drawn first.
+                     */
+                    if (src[gx] > cov[(size_t)py * (size_t)cov_w + (size_t)px])
+                        cov[(size_t)py * (size_t)cov_w + (size_t)px] = src[gx];
+                }
+            }
         }
-        pen += metrics.horizontal.advance;
+
+        /* 26.6 fixed point, like every metric FreeType reports. */
+        pen += (int)(g->advance.x >> 6);
     }
 
-    return (int)(pen - (float)x + 0.5f);
+    return pen - x;
 }
