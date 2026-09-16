@@ -664,6 +664,35 @@ having.
 Worth noting the instrument was wrong first: the SPU decrementer does not run until it is written, so
 b182 and b183 reported zero for both halves and printed nothing at all.
 
+### The decoder converts the colour; the SPEs only scale — **measured, 2026-09-15**
+
+`vdecGetPicture` will produce `VDEC_PICFMT_ARGB32`, so the YUV-to-RGB pass on the SPEs is work nobody has
+to do. Enabled with `decoderrgb=1` in the pairing record.
+
+| | YUV420 in | ARGB32 in |
+|---|---|---|
+| SPE, converting and scaling | 16,444 us | **10,876 us** |
+| SPE, waiting for the MFC | 1,667 us | 1,892 us |
+| blit, wall clock | 5,091 us | **4,075 us** |
+| decode + blit | 5,229 us | **4,207 us** |
+| on screen | 58 fps | 58 fps |
+
+The conversion was a third of the SPE's arithmetic and it is gone. What remains — 10,876 us — is the
+scaler alone, which is still scalar: one output pixel per iteration through a 16.16 accumulator. That is
+the next thing to vectorise if the budget ever matters, and at 25% of a 60 fps frame it does not yet.
+
+The change was small because of the kernel's shape: `convert_line` fills a 32-bit-per-pixel line buffer
+and `scale_line` maps it to the output, so a packed-RGB row IS that buffer's contents and is DMA'd
+straight into it. The packing needed no swizzle either — `convert_line` writes `0x00RRGGBB` and the
+decoder's ARGB32 is `0xAARRGGBB` in the same byte order, so the alpha lands in the byte the display
+ignores.
+
+**It cost one hard lockup to get here, from a mistake worth naming.** `RC_VDEC_PICTURE_BYTES` was sized
+`1920*1088*3/2`, a YUV420 picture. Packed RGB is four bytes a pixel, so the decoder wrote half a megabyte
+past the end of every slot into the next one. The bound that should have caught it computed the YUV size
+too, so it passed every time. Buffers are now sized for the widest format and the bound takes the
+bytes-per-pixel of the format actually asked for.
+
 ### Still open
 - **The fifth SPE — `ARGB32` output works.** Asked offline in b179: `vdecGetPicture` accepts
   `VDEC_PICFMT_ARGB32` and fills the buffer (bytes 0..255 across 8 pictures). So the YUV-to-RGB pass
