@@ -17,6 +17,8 @@
  *   fps=30                     (optional - 30 or 60)
  *   holdseconds=30             (optional - how long to hold the stream; 0 keeps the port default.
  *                               Minutes are what a thermal comparison needs; seconds do for frame rate)
+ *   hardwarescale=0            (optional - 1 scales on the GPU instead of the CPU, where the port has
+ *                               one; `bilinear` then costs nothing, since the filter is wired)
  *   videoformat=bgr565         (optional - "bgr565" or "rgb565"; see below)
  *   widescreen=1               (optional - 800x240 top screen; on by default, see below)
  *   smoothing=1                (optional - average the two source rows the vertical squeeze straddles)
@@ -137,6 +139,18 @@ typedef struct {
      * thermal numbers and guessing at them.
      */
     int hold_seconds;
+
+    /*
+     * Scale on the GPU rather than on the CPU cores. 0 keeps the port's own scaler, 1 asks the platform
+     * to use whatever fixed-function scaler it has.
+     *
+     * A setting rather than a straight replacement because it is the video path and a picture is the one
+     * thing a stream client cannot be without: the port that implements this keeps its old scaler and
+     * falls back to it. `bilinear` still chooses the filter - on a hardware scaler the interpolation is
+     * wired rather than executed, so mode 1 and mode 2 cost the same as mode 0 and the reason to prefer
+     * nearest goes away.
+     */
+    int hardware_scale;
     int video_rgb565;        /* 1 = ask MVD for RGB565 instead of BGR565 */
     int skip_until_keyframe; /* 1 = drop every frame after a loss until the next IDR */
     int widescreen;          /* 1 = 800x240 top screen (default); 0 = 400x240 */
