@@ -250,18 +250,41 @@ static float size_for(int scale)
 
 static void draw_sys(int x, int y, int scale, uint32_t argb, const char *text)
 {
-    int base;
+    int base, w, x0, x1;
+    int row, col, h;
 
     rc_sysfont_set_size(size_for(scale));
     base = rc_sysfont_ascent();
-    int row, col, h;
 
-    memset(s_cov, 0, sizeof(s_cov));
-    (void)rc_sysfont_render(s_cov, RC_OV_W, RC_OV_COV_H, x, base, text);
+    /*
+     * ONLY THE COLUMNS THIS RUN TOUCHES ARE CLEARED AND COMPOSITED.
+     *
+     * Measuring is free now that the glyphs are an atlas, so the run's width is known before it is
+     * drawn - and clearing the whole 760-pixel band for a six-character label, twenty times a rebuild,
+     * is most of a megabyte of memset and a million pixel tests to put a few thousand pixels down.
+     * That was affordable before only because nothing else was competing; this runs on the thread that
+     * drains the socket.
+     */
+    w = rc_sysfont_render(NULL, 0, 0, 0, 0, text);
+    x0 = x - 2;
+    x1 = x + w + 2;
+    if (x0 < 0)
+        x0 = 0;
+    if (x1 > RC_OV_W)
+        x1 = RC_OV_W;
+    if (x1 <= x0)
+        return;
 
     h = RC_OV_COV_H;
     if (y + h > RC_OV_H)
         h = RC_OV_H - y;
+    if (h <= 0)
+        return;
+
+    for (row = 0; row < RC_OV_COV_H; row++)
+        memset(s_cov + (size_t)row * RC_OV_W + (size_t)x0, 0, (size_t)(x1 - x0));
+
+    (void)rc_sysfont_render(s_cov, RC_OV_W, RC_OV_COV_H, x, base, text);
 
     for (row = 0; row < h; row++) {
         const unsigned char *src = s_cov + (size_t)row * RC_OV_W;
@@ -269,7 +292,7 @@ static void draw_sys(int x, int y, int scale, uint32_t argb, const char *text)
 
         if (y + row < 0)
             continue;
-        for (col = 0; col < RC_OV_W; col++) {
+        for (col = x0; col < x1; col++) {
             if (src[col] != 0u)
                 blend_px(&dst[col], argb, src[col]);
         }
