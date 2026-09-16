@@ -7,7 +7,10 @@
 #include <sysmodule/sysmodule.h>
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+
+#include <ppu-asm.h>
 
 /*
  * PSL1GHT's font.h declares this as `fontontSetScalePixel` - a typo in the header, against an export
@@ -15,6 +18,59 @@
  * would be a change nobody else building this tree would have.
  */
 extern s32 fontSetScalePixel(font *f, f32 w, f32 h);
+
+/*
+ * THE REVISIONED ENTRY POINTS, and the plain ones are why b241 saw no new font.
+ *
+ * fontInit already does this for the base library - it asks the stub for its revision flags and calls
+ * fontInitializeWithRevision. PSL1GHT provides no such wrapper for the FreeType half, so the obvious
+ * fontInitLibraryFreeType gets called instead, with no revision at all, and the firmware answers
+ * 0x80540002. Both halves have to be told which revision of the interface they are being called
+ * through, and the flags come from the stubs rather than from a constant anyone here could write down.
+ */
+extern void fontFTGetStubRevisionFlags(u64 *revisionFlags);
+extern s32 fontInitLibraryFreeTypeWithRevision(u64 revision, fontLibraryConfigFT *config,
+                                               const fontLibrary **lib);
+
+/*
+ * THE ALLOCATOR THE FONT LIBRARY CALLS BACK INTO, and it needs 32-BIT DESCRIPTORS.
+ *
+ * cellFont is a PRX. A function pointer handed to it is called from 32-bit code, and GCC's ELFv1
+ * descriptor is 64-bit - the same mismatch that made vdecClosure.fn silently never fire in b149, which
+ * took four builds to find because nothing reports it. It is written down here rather than rediscovered
+ * a third time: ANY callback given to a firmware library on this platform needs __build_opd32.
+ *
+ * The callbacks themselves are the C library's, because the font library's appetite is its own business
+ * and a fixed arena would only move the failure to whichever glyph overran it.
+ */
+static uint32_t s_opd_malloc[2] __attribute__((aligned(8)));
+static uint32_t s_opd_free[2] __attribute__((aligned(8)));
+static uint32_t s_opd_realloc[2] __attribute__((aligned(8)));
+static uint32_t s_opd_calloc[2] __attribute__((aligned(8)));
+
+static void *font_malloc(void *object, u32 size)
+{
+    (void)object;
+    return malloc(size);
+}
+
+static void font_free(void *object, void *ptr)
+{
+    (void)object;
+    free(ptr);
+}
+
+static void *font_realloc(void *object, void *p, u32 size)
+{
+    (void)object;
+    return realloc(p, size);
+}
+
+static void *font_calloc(void *object, u32 num, u32 size)
+{
+    (void)object;
+    return calloc(num, size);
+}
 
 /*
  * The cache the font library is told it may use. cellFont wants a buffer for glyph expansion and a
@@ -47,6 +103,7 @@ int rc_sysfont_open(float pixels)
     fontRendererConfigFT rconfig;
     fontType type;
     fontHorizontalLayout layout;
+    u64 ft_revision = 0ull;
     s32 rc;
 
     if (s_ready)
@@ -75,9 +132,20 @@ int rc_sysfont_open(float pixels)
         return fail("fontInit", rc);
 
     fontLibraryConfigFT_initialize(&ftconfig);
-    rc = fontInitLibraryFreeType(&ftconfig, &s_lib);
+    ftconfig.memoryIF.object = NULL;
+    ftconfig.memoryIF.malloc_func =
+        (fontMallocCallback)(uintptr_t)(u32)__build_opd32(font_malloc, s_opd_malloc);
+    ftconfig.memoryIF.free_func =
+        (fontFreeCallback)(uintptr_t)(u32)__build_opd32(font_free, s_opd_free);
+    ftconfig.memoryIF.realloc_func =
+        (fontReallocCallback)(uintptr_t)(u32)__build_opd32(font_realloc, s_opd_realloc);
+    ftconfig.memoryIF.calloc_func =
+        (fontCallocCallback)(uintptr_t)(u32)__build_opd32(font_calloc, s_opd_calloc);
+
+    fontFTGetStubRevisionFlags(&ft_revision);
+    rc = fontInitLibraryFreeTypeWithRevision(ft_revision, &ftconfig, &s_lib);
     if (rc != 0)
-        return fail("fontInitLibraryFreeType", rc);
+        return fail("fontInitLibraryFreeTypeWithRevision", rc);
 
     memset(&rconfig, 0, sizeof(rconfig));
     rconfig.bufferingPolicy.buffer = s_renderer_buf;
