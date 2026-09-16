@@ -89,6 +89,8 @@ static int s_modules;
 static char s_status[96] = "not tried";
 static int s_ascent;
 static float s_size;
+static char s_policy[48] = "?";
+static char s_face[32] = "?";
 
 static int fail(const char *step, int rc)
 {
@@ -147,23 +149,85 @@ int rc_sysfont_open(float pixels)
     if (rc != 0)
         return fail("fontInitLibraryFreeTypeWithRevision", rc);
 
-    memset(&rconfig, 0, sizeof(rconfig));
-    rconfig.bufferingPolicy.buffer = s_renderer_buf;
-    rconfig.bufferingPolicy.initSize = sizeof(s_renderer_buf);
-    rconfig.bufferingPolicy.maxSize = sizeof(s_renderer_buf);
-    rconfig.bufferingPolicy.expandSize = 0;
-    rconfig.bufferingPolicy.resetSize = 0;
-    rc = fontCreateRenderer(s_lib, (fontRendererConfig *)&rconfig, &s_renderer);
-    if (rc != 0)
-        return fail("fontCreateRenderer", rc);
+    /*
+     * THE RENDERER'S BUFFERING POLICY IS SWEPT, NOT GUESSED.
+     *
+     * b246 got past the library and was refused here with the same 0x80540002, and the policy is five
+     * numbers with no documented relationship between them - whether the buffer may be supplied or must
+     * be allocated, whether expandSize may be zero, whether maxSize may equal initSize. That is four or
+     * five plausible shapes and, taken one per build, four or five hardware runs to walk.
+     *
+     * So they are all tried here and the one that is accepted is reported, exactly as rsxInit's sizes
+     * and vdecQueryAttr's levels were swept rather than reasoned about. The cost is a few refused calls
+     * during start-up; the alternative is a week of single-hypothesis builds.
+     */
+    {
+        static const struct {
+            const char *what;
+            int own_buffer;
+            u32 init, max, expand, reset;
+        } kPolicies[] = {
+            { "library-allocated, expanding",  0, 512u * 1024u, 2048u * 1024u, 128u * 1024u,
+              512u * 1024u },
+            { "library-allocated, fixed",      0, 512u * 1024u,  512u * 1024u, 0u, 0u },
+            { "library-allocated, all zero",   0, 0u, 0u, 0u, 0u },
+            { "caller-supplied, fixed",        1, sizeof(s_renderer_buf), sizeof(s_renderer_buf), 0u,
+              0u },
+            { "caller-supplied, expanding",    1, sizeof(s_renderer_buf), sizeof(s_renderer_buf),
+              64u * 1024u, 128u * 1024u },
+        };
+        unsigned i;
 
-    /* New Rodin latin - the XMB's own face. The map selects the character map within the set; 0 is the
-     * default one and is what every sample uses. */
-    type.type = FONT_TYPE_NEWRODIN_GOTHIC_LATIN_SET;
-    type.map = 0u;
-    rc = fontOpenFontset(s_lib, &type, &s_font);
-    if (rc != 0)
-        return fail("fontOpenFontset", rc);
+        rc = -1;
+        for (i = 0u; i < sizeof(kPolicies) / sizeof(kPolicies[0]); i++) {
+            memset(&rconfig, 0, sizeof(rconfig));
+            rconfig.bufferingPolicy.buffer = kPolicies[i].own_buffer ? s_renderer_buf : NULL;
+            rconfig.bufferingPolicy.initSize = kPolicies[i].init;
+            rconfig.bufferingPolicy.maxSize = kPolicies[i].max;
+            rconfig.bufferingPolicy.expandSize = kPolicies[i].expand;
+            rconfig.bufferingPolicy.resetSize = kPolicies[i].reset;
+
+            rc = fontCreateRenderer(s_lib, (fontRendererConfig *)&rconfig, &s_renderer);
+            if (rc == 0) {
+                snprintf(s_policy, sizeof(s_policy), "%s", kPolicies[i].what);
+                break;
+            }
+        }
+        if (rc != 0)
+            return fail("fontCreateRenderer (every policy refused)", rc);
+    }
+
+    /*
+     * AND THE FONTSET IS SWEPT FOR THE SAME REASON. New Rodin latin is the XMB's own face and the one
+     * worth having, but which sets a given firmware actually carries is not something this can know,
+     * and a missing set refuses exactly like a malformed argument does. The preferred one is tried
+     * first and the rest are fallbacks in descending order of how much they look like the menus.
+     */
+    {
+        static const struct {
+            const char *what;
+            u32 type;
+        } kSets[] = {
+            { "New Rodin gothic latin", FONT_TYPE_NEWRODIN_GOTHIC_LATIN_SET },
+            { "New Rodin gothic JP",    FONT_TYPE_NEWRODIN_GOTHIC_JP_SET },
+            { "Rodin sans serif",       FONT_TYPE_RODIN_SANS_SERIF_LATIN },
+            { "Matisse serif",          FONT_TYPE_MATISSE_SERIF_LATIN },
+        };
+        unsigned i;
+
+        rc = -1;
+        for (i = 0u; i < sizeof(kSets) / sizeof(kSets[0]); i++) {
+            type.type = kSets[i].type;
+            type.map = 0u;
+            rc = fontOpenFontset(s_lib, &type, &s_font);
+            if (rc == 0) {
+                snprintf(s_face, sizeof(s_face), "%s", kSets[i].what);
+                break;
+            }
+        }
+        if (rc != 0)
+            return fail("fontOpenFontset (every fontset refused)", rc);
+    }
 
     rc = fontBindRenderer(&s_font, &s_renderer);
     if (rc != 0)
@@ -182,8 +246,8 @@ int rc_sysfont_open(float pixels)
 
     s_size = pixels;
     s_ready = 1;
-    snprintf(s_status, sizeof(s_status), "ready (New Rodin, %d px, ascent %d)",
-             (int)pixels, s_ascent);
+    snprintf(s_status, sizeof(s_status), "ready - %s, %d px, ascent %d, %s",
+             s_face, (int)pixels, s_ascent, s_policy);
     return 1;
 }
 
