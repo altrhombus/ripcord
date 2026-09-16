@@ -1143,6 +1143,12 @@ static int check_connect(void)
                 if (c.decode_spus > 0)
                     ps3_log("       the decoder was given %d SPE(s); the colour converter holds the"
                             " rest\n", c.decode_spus);
+                if (c.decoder_rgb)
+                    ps3_log("       the decoder was asked for packed RGB - the SPEs scale it and do"
+                            " not convert it\n");
+                if (c.rgb_scale_failed > 0u)
+                    ps3_log("       %u picture(s) the SPEs could not scale and there is no PPE scaler"
+                            " to fall back to - go back to YUV\n", c.rgb_scale_failed);
                 ps3_log("       decoded by %s\n",
                         (c.decode_backend != NULL) ? c.decode_backend : "?");
                 if (c.decoded_pictures > 0) {

@@ -74,6 +74,10 @@ unsigned rc_spu_yuv_convert(const uint8_t *y, const uint8_t *u, const uint8_t *v
                             int y_stride, int uv_stride, int width, int height,
                             uint32_t *dst, int dst_pitch, int dst_width, int dst_height);
 
+/* The same, for a picture the decoder has already converted to packed 32-bit RGB. Scales only. */
+unsigned rc_spu_yuv_convert_argb(const uint8_t *argb, int src_stride, int width, int height,
+                                 uint32_t *dst, int dst_pitch, int dst_width, int dst_height);
+
 void rc_spu_yuv_stats_get(rc_spu_yuv_stats *out);
 void rc_spu_yuv_exit(void);
 

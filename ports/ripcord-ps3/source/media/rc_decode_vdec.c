@@ -60,6 +60,8 @@ static int s_open;
 
 static rc_decode_picture_fn s_sink;
 static void *s_sink_ctx;
+static rc_decode_picture_rgb_fn s_rgb_sink;
+static void *s_rgb_sink_ctx;
 static rc_decode_live_stats *s_stats;
 
 /* The access-unit ring. The decoder consumes in order, so AUDONE frees the oldest. */
@@ -275,9 +277,11 @@ static u32 vdec_callback(u32 handle, u32 msgtype, u32 msgdata, u32 arg)
         slot = (int)(s_pic_tail % (unsigned)RC_VDEC_PICTURE_SLOTS);
 
         memset(&format, 0, sizeof(format));
-        format.format_type = VDEC_PICFMT_YUV420P;
+        /* Whichever sink is set decides the format; the decoder does the colour conversion when it can,
+         * which is the whole reason for the RGB path. */
+        format.format_type = (s_rgb_sink != NULL) ? VDEC_PICFMT_ARGB32 : VDEC_PICFMT_YUV420P;
         format.color_matrix = VDEC_COLOR_MATRIX_BT709;
-        format.alpha = 0;
+        format.alpha = 0xff;
 
         if (vdecGetPicture(handle, &format, s_picture[slot]) != 0) {
             if (s_stats != NULL)
@@ -339,6 +343,12 @@ void rc_decode_vdec_set_sink(rc_decode_picture_fn fn, void *ctx)
 {
     s_sink = fn;
     s_sink_ctx = ctx;
+}
+
+void rc_decode_vdec_set_rgb_sink(rc_decode_picture_rgb_fn fn, void *ctx)
+{
+    s_rgb_sink = fn;
+    s_rgb_sink_ctx = ctx;
 }
 
 int rc_decode_vdec_open(int width, int height)
@@ -689,7 +699,9 @@ int rc_decode_vdec_feed(const uint8_t *access_unit, size_t length, rc_decode_liv
         stats->width = w;
         stats->height = h;
         stats->pictures_out++;
-        if (s_sink != NULL)
+        if (s_rgb_sink != NULL)
+            s_rgb_sink(s_rgb_sink_ctx, y, w * 4, w, h);
+        else if (s_sink != NULL)
             s_sink(s_sink_ctx, y, u, v, w, w / 2, w, h);
 
         s_pic_head++;
