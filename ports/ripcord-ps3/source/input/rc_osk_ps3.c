@@ -119,45 +119,6 @@ rc_osk_status rc_osk_ask(rc_osk_kind kind, const char *prompt, const char *initi
         return RC_OSK_UNAVAILABLE;
     out[0] = '\0';
 
-    /*
-     * EACH STEP SAYS WHICH ONE IT WAS. There are four ways to fail to raise this dialog and they need
-     * different fixes - a memory container refused is not a callback slot taken is not a load refused.
-     * b302 reported none of them and cost a run to establish only that something had.
-     *
-     * AND THE CONTAINER IS SWEPT RATHER THAN ASSUMED. This binary carries 54 MB of BSS - the decoder's
-     * picture slots alone are 33 - so a megabyte carved out of what is left may simply not be there,
-     * and the sizes a dialog will accept are not documented anywhere reachable. Three are tried in
-     * descending order, and then no container at all, which some of this SDK's calls take to mean "use
-     * the process's own memory". The one that worked is named in the log.
-     *
-     * Swept rather than guessed for the reason cellFont cost six runs: one hypothesis per hardware
-     * trip is a bad exchange rate when the alternative is four calls.
-     */
-    {
-        static const unsigned kSizes[] = { 1024u * 1024u, 512u * 1024u, 256u * 1024u, 0u };
-        unsigned i;
-        s32 rc = -1;
-
-        for (i = 0u; i < sizeof(kSizes) / sizeof(kSizes[0]); i++) {
-            if (kSizes[i] == 0u) {
-                /* No container. Not a size of zero - the absence of one. */
-                container = 0;
-                rc = 0;
-                rc_log("osk:   no memory container (every size was refused)\n");
-                break;
-            }
-            rc = sysMemContainerCreate(&container, kSizes[i]);
-            if (rc == 0) {
-                s_container_bytes = kSizes[i];
-                rc_log("osk:   memory container of %u bytes\n", kSizes[i]);
-                break;
-            }
-            rc_log("osk:   sysMemContainerCreate(%u) refused (0x%08X)\n", kSizes[i], (unsigned)rc);
-        }
-        if (rc != 0)
-            return RC_OSK_UNAVAILABLE;
-    }
-
     widen(prompt, s_message, RC_OSK_MAX_CHARS + 1u);
     widen(initial, s_initial, RC_OSK_MAX_CHARS + 1u);
     memset(s_result, 0, sizeof(s_result));
@@ -169,102 +130,79 @@ rc_osk_status rc_osk_ask(rc_osk_kind kind, const char *prompt, const char *initi
 
     s_done = 0;
     s_cancelled = 0;
+    s_container_bytes = 0u;
 
     {
         s32 rc = sysUtilRegisterCallback(SYSUTIL_EVENT_SLOT0, osk_event, NULL);
 
         if (rc != 0) {
             rc_log("osk:   sysUtilRegisterCallback refused (0x%08X)\n", (unsigned)rc);
-            if (s_container_bytes != 0u)
-                sysMemContainerDestroy(container);
             return RC_OSK_UNAVAILABLE;
         }
     }
 
     /*
-     * THE WHOLE CONFIGURATION IS SWEPT, because b304 established that one of these is wrong and not
-     * which. oskLoadAsync answered 0x8002B504 - a parameter error - against a param struct whose four
-     * fields were all set, which means the fault is in what was NOT said rather than in what was.
+     * THE CONTAINER SIZE IS PART OF THE LOAD SWEEP, and separating them is what made b306 useless.
      *
-     * The candidates, in the order they are tried:
+     * b304 swept container sizes DOWNWARD - a megabyte, then a half, then a quarter - on the reasoning
+     * that a binary with 54 MB of BSS might not have a megabyte to spare. The first size succeeded, so
+     * that sweep proved only that a container can be created. b306 then varied five parameter shapes
+     * against that one container and all five were refused identically.
      *
-     *   The key layout was never declared at all. oskSetKeyLayoutOption says which panels the dialog
-     *   may show, and nothing here called it - the most likely single omission, so it leads.
+     * The error is 0x8002B504, a PARAMETER error, and a container that is too SMALL is a bad parameter
+     * just as surely as a missing flag is. Sweeping only downward could never have found it, and
+     * choosing the size before the load sweep meant no shape tried afterwards could have helped.
      *
-     *   oskSetLayoutMode may not belong to this dialog. It sits beside oskSetSeparateWindowOption in
-     *   the header, which suggests it is for the windowed variants, and setting it for a standard
-     *   dialog could be exactly the parameter being objected to.
-     *
-     *   The panel set may need to be the default rather than a chosen pair.
-     *
-     * Each attempt is a complete configuration rather than one varied field, because the failure is a
-     * single code with no indication of which argument it means - so knowing that a whole shape works
-     * is worth more than narrowing one axis per trip to the console.
+     * So size is the outer loop and it goes UP: eight megabytes down to one. The general form is worth
+     * keeping - when a call rejects an argument and will not say which, an axis swept in one direction
+     * is an axis half tested.
      */
     {
-        static const struct {
-            const char *what;
-            int set_key_layout;
-            int set_layout_mode;
-            int default_panels;
-        } kAttempts[] = {
-            { "key layout declared",                  1, 0, 0 },
-            { "key layout declared, default panels",  1, 0, 1 },
-            { "key layout and layout mode",           1, 1, 0 },
-            { "default panels only",                  0, 0, 1 },
-            { "as b304 had it",                       0, 1, 0 },
+        static const unsigned kSizes[] = {
+            8u * 1024u * 1024u, 4u * 1024u * 1024u, 2u * 1024u * 1024u, 1024u * 1024u
         };
         unsigned i;
         s32 rc = -1;
 
-        for (i = 0u; i < sizeof(kAttempts) / sizeof(kAttempts[0]); i++) {
+        for (i = 0u; i < sizeof(kSizes) / sizeof(kSizes[0]) && rc != 0; i++) {
             oskPoint point;
 
-            memset(&param, 0, sizeof(param));
-            if (kAttempts[i].default_panels) {
-                param.allowedPanels = OSK_PANEL_TYPE_DEFAULT;
-                param.firstViewPanel = OSK_PANEL_TYPE_DEFAULT;
-            } else {
-                param.allowedPanels = (kind == RC_OSK_NUMBERS)
-                    ? OSK_PANEL_TYPE_NUMERAL
-                    : (OSK_PANEL_TYPE_ALPHABET | OSK_PANEL_TYPE_NUMERAL);
-                param.firstViewPanel = (kind == RC_OSK_NUMBERS) ? OSK_PANEL_TYPE_NUMERAL
-                                                                : OSK_PANEL_TYPE_ALPHABET;
+            if (sysMemContainerCreate(&container, kSizes[i]) != 0) {
+                rc_log("osk:   no container of %u bytes\n", kSizes[i]);
+                continue;
             }
+
+            memset(&param, 0, sizeof(param));
+            param.allowedPanels = (kind == RC_OSK_NUMBERS)
+                ? OSK_PANEL_TYPE_NUMERAL
+                : (OSK_PANEL_TYPE_ALPHABET | OSK_PANEL_TYPE_NUMERAL);
+            param.firstViewPanel = (kind == RC_OSK_NUMBERS) ? OSK_PANEL_TYPE_NUMERAL
+                                                            : OSK_PANEL_TYPE_ALPHABET;
             point.x = 0.0f;
             point.y = 0.0f;
             param.controlPoint = point;
             param.prohibitFlags = OSK_PROHIBIT_RETURN;
 
-            if (kAttempts[i].set_key_layout) {
-                /* Both layouts allowed whatever the panel choice: declaring only the one being asked
-                 * for is a second thing that could be objected to, and this sweep varies one idea at a
-                 * time. */
-                oskSetKeyLayoutOption(OSK_10KEY_PANEL | OSK_FULLKEY_PANEL);
-            }
-            if (kAttempts[i].set_layout_mode) {
-                oskSetLayoutMode(OSK_LAYOUTMODE_HORIZONTAL_ALIGN_CENTER
-                                 | OSK_LAYOUTMODE_VERTICAL_ALIGN_CENTER);
-            }
+            oskSetKeyLayoutOption(OSK_10KEY_PANEL | OSK_FULLKEY_PANEL);
             oskSetInitialInputDevice(OSK_DEVICE_PAD);
             oskSetDeviceMask(OSK_DEVICE_MASK_PAD);
 
             rc = oskLoadAsync(container, &param, &field);
             if (rc == 0) {
-                rc_log("osk:   dialog raised - %s\n", kAttempts[i].what);
+                s_container_bytes = kSizes[i];
+                rc_log("osk:   dialog raised with a %u byte container\n", kSizes[i]);
                 break;
             }
-            rc_log("osk:   refused (0x%08X) - %s\n", (unsigned)rc, kAttempts[i].what);
+            rc_log("osk:   refused (0x%08X) with a %u byte container\n", (unsigned)rc, kSizes[i]);
+            sysMemContainerDestroy(container);
+            container = 0;
         }
 
         if (rc != 0) {
             sysUtilUnregisterCallback(SYSUTIL_EVENT_SLOT0);
-            if (s_container_bytes != 0u)
-                sysMemContainerDestroy(container);
             return RC_OSK_UNAVAILABLE;
         }
     }
-
 
     /*
      * PUMP UNTIL IT SAYS IT IS FINISHED. sysUtilCheckCallback is what actually delivers the events
