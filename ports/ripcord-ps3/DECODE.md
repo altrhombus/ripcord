@@ -578,7 +578,42 @@ cellVdec has a limit on slices per picture that it does not advertise and does n
 128 is the obvious candidate for the real limit and 136 is just past it, but only 65 and 136 have been
 measured, so the port warns between them rather than at a number nobody has tested.
 
-**15,000 is the better setting**: same smoothness as 8,000 and nearly twice the delivered bitrate.
+#### There is an EARLIER ceiling, and it is the decoder rather than the slicing — **measured, b281**
+
+Stepping 20,000 to 25,000 did not move the slice count at all: 68 a picture either way. What moved was
+everything downstream of it.
+
+| | 20,000 (b276) | 25,000 (b281) |
+|---|---|---|
+| delivered | 11.7 Mbps | **14.0 Mbps** |
+| largest access unit | 63,363 | 95,265 |
+| **per decode call** | **106 us** | **996 us** |
+| submissions that waited for a queue slot | — | **374** |
+| frame queue, deepest of 8 | 2 | **8** |
+| dropped for overrun | 0 | 4 |
+| keyframes requested | 1 | **33** |
+| slices a picture | 68 | 68 |
+| on screen | 59 fps | 59 fps |
+
+**A 20% rise in bitrate cost 9.4x the decode time**, and the reason it is so disproportionate is that
+the figure includes backpressure: the measurement wraps the feed call, and a feed that waits for
+cellVdec's four-deep queue is counted as decoding. So the number is honest about what it is - the
+decoder saturated, submissions blocked, the frame queue filled behind them, and the encoder was asked
+for 33 keyframes in a minute where one had been enough.
+
+**Frame rate is not the symptom and would not have found this.** It stayed at 59 in both. What a viewer
+sees is the occasional recovery after a dropped frame, which is exactly the "seemed to struggle a
+little" this was reported as.
+
+So there are TWO ceilings, at different heights and with different manners:
+
+- **~22-25,000 kbps: the decoder's throughput.** Degrades gracefully - queue pressure, keyframe
+  requests, the odd overrun.
+- **~30,000 kbps: the slice count.** Does not degrade at all; the decoder accepts everything, reports
+  no error and produces black.
+
+**20,000 remains the setting.** It delivers 11.7 Mbps with one keyframe request a minute and an empty
+queue, and the 2.3 Mbps that 25,000 buys is paid for in recoveries.
 
 What made this expensive to find is that every layer reported success. The bytes were correct — every
 access unit began with a start code, and a 96-unit frame assembles byte-exact on the host (there is now a
@@ -611,7 +646,8 @@ them — and nothing here has demonstrated the console acting on the message at 
 
 **What does work is the launch spec's `bwKbpsSent`**, which demonstrably controls how finely the console
 slices: 8,000 gives ~21 slices a picture, 15,000 gives 65, 30,000 gives 136 and a black screen. That is
-the lever, it is set once before the stream starts, and 15,000 is the measured-good setting.
+the lever and it is set once before the stream starts. **20,000 is the measured-good setting** - see the
+two ceilings above; 25,000 saturates the decoder without slicing any more finely.
 
 One thing was tried and removed: requesting a keyframe on each throttle step. The reasoning was right —
 a stream that has changed shape needs a fresh reference — but setting `g_awaiting_keyframe` hands it to
