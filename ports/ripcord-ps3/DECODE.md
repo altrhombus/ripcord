@@ -739,11 +739,16 @@ index the accumulator computes, and the SPU has no vector gather. The prediction
 right answer changed when the other half got faster, and double buffering is where the next win is if one
 is ever wanted.
 
-### Upscaling — **three modes built and measured; nearest is the default**
+### Upscaling on the SPEs — **superseded by the RSX scaler below; kept for what it measured**
 
 `bilinear=` in the pairing record selects the scaler, and it is a user-facing option rather than a build
 switch: 0 nearest neighbour, 1 interpolate along the row only, 2 full bilinear. All three work. Only 0
 fits 60 fps.
+
+**This section is history now.** `hardwarescale=1` gives the scaling to the RSX, where interpolation is
+free and the whole 0/1/2 ladder stops meaning anything - the filter is a wire, so mode 1 exists for a
+problem the hardware does not have. What is kept here is the measurement, because it is the evidence
+that the ladder was never a quality choice but a budget one.
 
 | mode | per SPE, one frame | summed over 3 | on screen |
 |---|---|---|---|
@@ -787,6 +792,62 @@ What would make interpolation fit at 60 fps is processing four output pixels in 
 than one pixel's four channels, which needs the gather done with shuffles out of two quadwords per row.
 That is a much larger rewrite than either attempt here, and it is the only route left that changes the
 answer.
+
+### The RSX scales it now — **a third of the cost, and the interpolation is free**
+
+`hardwarescale=1` in the pairing record. `rsxSetTransferScaleSurface` is the RSX 2D engine's scaled
+blit: arbitrary source and destination rectangles and a bilinear interpolator that costs nothing
+because it is wired rather than executed. Until b207 the RSX did nothing in this program but scan out,
+while three SPEs did colour conversion, scaling and the copy into the display buffer — all three of
+which it has fixed-function silicon for.
+
+Measured against the SPE scaler at the same bitrate and the same 60-second hold:
+
+| | SPE scaler (b204) | RSX (b208) |
+|---|---|---|
+| SPE time a frame | 3,013 us | **1,880 us** |
+| of which arithmetic, summed over 3 | 4,174 us | **690 us** |
+| decode + blit | 3,204 us | **2,134 us** |
+| frame queue, deepest of 8 | 1 | **1** |
+| on screen | 59 fps | **59 fps** |
+| filter | nearest | **bilinear** |
+
+The last row is the one that matters. Bilinear on the SPEs cost 21,038 us a frame and halved the frame
+rate to 29; on the RSX it is the same price as nearest, because the interpolator is a wire. The whole
+0/1/2 scaler ladder exists only because the SPEs were doing the GPU's job, and it can go once this path
+is the only one.
+
+**The SPEs are still in the path and no longer compute anything.** The decoder's picture is in main
+memory and the 2D engine reads RSX-addressable memory, so something has to move it; the SPEs do that
+1:1. What is left of their time is almost entirely the transfer - 2,429 us waiting for the MFC against
+690 us of stores - which is the shape of a pass that only moves bytes, and which says where the next
+win is: if the decoder wrote its pictures into RSX local memory itself, this pass would not exist.
+
+**The documented 1024-pixel source limit did not appear.** This hardware's scaled-image object is
+described in places as limited to a 1024-wide source and 1280 is wider; nothing works around it and
+nothing needed to. If a wider source ever does tear, horizontal strips are the answer.
+
+**What it does not buy is a quieter console.** See the thermal section above: b204 measured the machine
+silent at this load, and b208 did not change that. The case for this change was never heat.
+
+#### The 1:1 interpolation that b207 paid for
+
+b207 shipped with the RSX scaling and `bilinear` still wired to the SPEs, so they interpolated a copy.
+At matching widths every output pixel lands exactly on a source pixel with weight zero: the
+interpolator returns its input and bills for the work. It charged **6,957 us a frame to copy** a picture
+the same SPEs had been converting AND scaling for 3,013. b198's mode-1 measurement predicts 7,328 us at
+that size, which accounts for all of it and leaves nothing for the new path to have caused.
+
+The cost was not the microseconds. At 7,115 us the present path was 43% of a 60 fps budget, and the
+second session tipped over - queue at 8 of 8, 132 frames dropped for overrun, **147 IDRs requested
+against the next run's 1** - which on a television is blockiness during transitions that gets worse as
+it goes. Same mechanism as the SPE upscaler modes: something eats the budget, frames are dropped, the
+encoder is asked for keyframes, and the recovery is what is seen.
+
+The guard now lives in the SPE kernel, not only at the call site. A null operation should not be
+expensive, and a caller that forgets should not be the only thing standing between it and the frame
+budget.
+
 
 ### Heat and fan noise — **measured, and it kills one of the arguments for moving to the RSX**
 
