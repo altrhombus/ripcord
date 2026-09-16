@@ -235,6 +235,29 @@ int rc_video_open(rc_video_info *out)
     gcmResetFlipStatus();
     s_current = 0;
 
+    /*
+     * WHAT THE TELEVISION ACTUALLY NEGOTIATED, recorded rather than inferred from how it looks.
+     *
+     * The whole port has only ever run at 1080p60 progressive with square pixels, and three of this
+     * file's assumptions are invisible until it does not:
+     *
+     *   INTERLACE. The buffer is a progressive frame and the RSX scans out fields from it. Nothing here
+     *   filters, so motion combs.
+     *
+     *   PIXEL ASPECT. The fit below scales by PIXEL COUNT, which is right only when pixels are square.
+     *   At 720x480 they are not - that buffer is displayed as 4:3 or as 16:9 - so a 1280x720 source
+     *   fitted by count comes out geometrically wrong in either.
+     *
+     *   REFRESH. 50 Hz means a 60 fps stream has no whole-number relationship with the display and
+     *   nothing here converts one to the other.
+     *
+     * libRESC exists to solve all three and has not been built. Reporting the mode is what turns "does
+     * it look odd" into "it is interlaced, 4:3, at 50 Hz, and here is which of those it is".
+     */
+    s_info.aspect = (int)state.displayMode.aspect;
+    s_info.scan_mode = (int)state.displayMode.scanMode;
+    s_info.refresh_rates = (int)state.displayMode.refreshRates;
+
     s_info.width = (int)resolution.width;
     s_info.height = (int)resolution.height;
     s_info.pitch = (int)config.pitch;

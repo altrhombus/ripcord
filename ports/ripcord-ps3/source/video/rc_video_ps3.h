@@ -28,6 +28,15 @@ typedef struct {
     int ok;
     int video_state;    /* whatever videoGetState reported, recorded rather than judged - see the .c */
 
+    /*
+     * The negotiated mode, as the television asked for it. VIDEO_ASPECT_*, VIDEO_SCANMODE_* and the
+     * VIDEO_REFRESH_* bitfield. Recorded because three of this file's assumptions - square pixels,
+     * progressive scan-out and a 60 Hz display - are invisible until one of them is false.
+     */
+    int aspect;
+    int scan_mode;
+    int refresh_rates;
+
     /* sysModuleLoad's return for each PRX the display needs. Recorded rather than judged: "already
      * loaded" is an error return and a perfectly good outcome. */
     int gcm_module;
