@@ -43,8 +43,8 @@
 #include "rc_video_ps3.h"
 #include "platform/rc_platform.h"
 
-#define RC_OV_W            560
-#define RC_OV_H            248
+#define RC_OV_W            760
+#define RC_OV_H            330
 #define RC_OV_REBUILD_MS   250u
 
 static int s_on;
@@ -62,7 +62,7 @@ static uint64_t s_next_rebuild;
  * Coverage from the system font, one line's worth. Cleared per run rather than per rebuild, because a
  * run has to be composited in its own colour and runs overlap on a line.
  */
-#define RC_OV_COV_H 56
+#define RC_OV_COV_H 72
 static unsigned char s_cov[RC_OV_W * RC_OV_COV_H];
 static int s_sysfont;
 
@@ -234,7 +234,7 @@ static void blend_px(uint32_t *dst, uint32_t argb, unsigned cov)
  */
 static float size_for(int scale)
 {
-    return (scale >= 2) ? 30.0f : 19.0f;
+    return (scale >= 2) ? 38.0f : 26.0f;
 }
 
 static void draw_sys(int x, int y, int scale, uint32_t argb, const char *text)
@@ -274,7 +274,14 @@ static void draw_prop(int x, int y, int scale, uint32_t argb, const char *text)
         draw_sys(x, y, scale, argb, text);
         return;
     }
+    /*
+     * THE DRAWN FONT IS STEPPED UP TO MATCH. `scale` is written for the system face, where 1 means
+     * body text at 26 px; the same 1 through the drawn 9-row face is 9 px, which is unreadable across
+     * a room - and across a room is where this is read. Doubling keeps one set of layout constants
+     * describing both faces instead of two sets that have to be kept in step.
+     */
     c = premul(argb);
+    scale *= 2;
     for (i = 0; text[i] != '\0'; i++)
         x += draw_prop_char(x, y, scale, text[i], c);
 }
@@ -286,7 +293,7 @@ static int text_width(const char *text, int scale)
         rc_sysfont_set_size(size_for(scale));
         return rc_sysfont_render(NULL, 0, 0, 0, 0, text);
     }
-    return prop_width(text, scale);
+    return prop_width(text, scale * 2);
 }
 
 static void draw_mono(int x, int y, int scale, uint32_t argb, const char *text)
@@ -294,6 +301,8 @@ static void draw_mono(int x, int y, int scale, uint32_t argb, const char *text)
     uint32_t c = premul(argb);
     int i;
 
+    /* Stepped up for the same reason as the drawn proportional face - see draw_prop. */
+    scale *= 2;
     for (i = 0; text[i] != '\0'; i++) {
         draw_mono_char(x, y, scale, text[i], c);
         x += (RC_FONT_W + 1) * scale;
@@ -353,7 +362,7 @@ void rc_overlay_num_right(int x, int y, int scale, uint32_t argb, const char *fm
     va_start(ap, fmt);
     (void)vsnprintf(text, sizeof(text), fmt, ap);
     va_end(ap);
-    draw_mono(x - (int)strlen(text) * (RC_FONT_W + 1) * scale, y, scale, argb, text);
+    draw_mono(x - (int)strlen(text) * (RC_FONT_W + 1) * scale * 2, y, scale, argb, text);
 }
 
 void rc_overlay_bars(int x, int y, int w, int h, const unsigned *v, unsigned n, unsigned max,
