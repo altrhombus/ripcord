@@ -309,6 +309,14 @@ void rc_video_flip_stats(unsigned *calls, unsigned *busy, unsigned *last_status)
         *last_status = s_last_flip_status;
 }
 
+int rc_video_info_get(rc_video_info *out)
+{
+    if (!s_open || out == NULL)
+        return 0;
+    *out = s_info;
+    return 1;
+}
+
 uint32_t *rc_video_back_buffer(void)
 {
     if (!s_open)

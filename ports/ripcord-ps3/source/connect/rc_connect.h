@@ -384,6 +384,8 @@ typedef struct {
     int      rsx_scale_available;/* whether the staging buffer existed to do it with */
     unsigned rsx_blits;
     unsigned rsx_refused;        /* asked for, could not run, fell back to the SPE scaler */
+    int      diagnostics;        /* the overlay was asked for */
+    int      stream_is_hevc;     /* the console sent HEVC; cellVdec decodes H.264 only */
     int      picture_in_vram;    /* the decoder wrote where the RSX could read it - no copy at all */
 } rc_connect_result;
 
