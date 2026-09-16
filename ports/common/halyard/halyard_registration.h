@@ -68,4 +68,27 @@ int halyard_registration_unwrap_material(int is_ps5, const uint8_t wrapped[16],
 int halyard_registration_scatter(const uint8_t wrapped[16], uint8_t *context, size_t context_length);
 int halyard_registration_gather(const uint8_t *context, size_t context_length, uint8_t out_wrapped[16]);
 
+/*
+ * THE REQUEST BODY: a 0x1e0-byte random context carrying the wrapped material, followed by the encrypted
+ * Client-Type / Np-AccountId field. One transport key protects both directions, so the caller keeps the
+ * context and the material to decrypt the reply with.
+ *
+ * The field cipher is the CONTROL plane's, unchanged - same AES-128-CFB128 over the same IV derivation.
+ * Only its three inputs differ: the key comes from the PIN rather than the session KDF, the material is
+ * the one wrapped into the context, and the context key is selector_one (PS5) or selector_zero (PS4).
+ * That is why there is no registration cipher here, only a way to fill in halyard_control_field.
+ */
+#define HALYARD_REGISTRATION_CONTEXT_LENGTH 0x1e0
+#define HALYARD_REGISTRATION_FIELD_COUNTER  0u
+
+struct halyard_control_field_tag;
+
+/*
+ * Fills `field` for a registration exchange. `material` is the 16 random bytes the caller also wrapped
+ * into the context. Returns 0 if the tables are absent or the context is too short.
+ */
+int halyard_registration_field_init(struct halyard_control_field_tag *field, int is_ps5,
+                                    const uint8_t *context, size_t context_length,
+                                    uint32_t passcode, const uint8_t material[16]);
+
 #endif /* HALYARD_REGISTRATION_H */
