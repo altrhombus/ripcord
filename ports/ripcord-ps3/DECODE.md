@@ -1069,10 +1069,31 @@ The report prints polls and fresh-data polls **separately**, because their being
 healthy case. One number made "polled 7,500 times, 59 with new data" read identically to "polled 59
 times", and only one of those is a fault - the same shape of mistake as the build check.
 
-#### Still behind the .NET writer
-L2 and R2 go out digital. The shared state struct carries no trigger level and a DualShock 3's
-shoulders are pressure-sensitive, so this is a real gap rather than a hardware limit. The history packet
-already uses the 3-byte analog event form for both, with 0x00 or 0xff in it - only the level is missing.
+#### The shoulders are analog
+
+```
+INPUT: 13767 poll(s), 687 with new data; 715 state and 486 transition packet(s) sent
+INPUT: shoulders are ANALOG - a partial level was seen
+```
+
+Every three-byte history code carries 0x00 or 0xff except 0x86 and 0x87, which carry a LEVEL - cap48
+establishes that independently by counting 57 and 52 distinct values for them across one session.
+Diffing them as bits threw most of that away: half-squeezed and fully buried both arrived as 0xff, and
+every movement between the two arrived as nothing at all.
+
+They are diffed on their level now, which SUBSUMES the bit - a level is a boolean that also says how
+much. A front end with digital shoulders sets the bit, leaves the level zero and still works; where both
+are present the level wins, being the more specific statement of the same fact. `ripcord-3ds` needed no
+change.
+
+**Pressure has to be asked for.** Without `ioPadSetPortSetting(port, PAD_SETTINGS_PRESS_ON)` the PRE_
+fields read zero - and zero is what an untouched trigger reads too, so the writer's digital fallback
+takes over and everything LOOKS right while every trigger arrives fully on or fully off. The report says
+whether a partial level was ever actually seen, because a port that refused pressure and a controller
+nobody touched produce identical evidence.
+
+The transition count went from 34 to 486 for comparable use, which is the analog levels being sent
+rather than discarded.
 
 ### Still open
 - ~~**The fifth SPE.**~~ **Answered, and more completely than the question assumed.** The worry was that
