@@ -2898,6 +2898,7 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
     rc_video_rsx_scale_stats(&out->rsx_scale_available, &out->rsx_blits, &out->rsx_refused);
     out->picture_in_vram = rc_decode_vdec_picture_in_vram();
     rc_pad_stats(&out->pad_connected, &out->pad_reads, &out->pad_fresh, &out->pad_changes);
+    out->pad_analog_triggers = rc_pad_analog_triggers_seen();
     rc_thermal_sample(&out->thermal);   /* the closing sample - see the note where the hold opens */
     out->idr_requests = g_idr_requests;
 

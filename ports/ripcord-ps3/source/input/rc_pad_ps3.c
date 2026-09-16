@@ -74,6 +74,9 @@ static int16_t deadzone(int16_t v)
 static halyard_input_state s_last;
 static int s_have_last;
 static unsigned s_fresh;
+/* Set once a shoulder reports a level that is neither off nor fully on - the only evidence that
+ * pressure was actually granted, since a refusal reads exactly like a trigger nobody touched. */
+static int s_analog_seen;
 
 int rc_pad_read(halyard_input_state *out)
 {
@@ -93,6 +96,14 @@ int rc_pad_read(halyard_input_state *out)
         if (!s_connected) {
             s_connected = 1;
             s_changes++;
+            /*
+             * PRESSURE HAS TO BE ASKED FOR, and asking is the whole of what makes the shoulders analog.
+             * Without this the PRE_ fields read zero - and zero is indistinguishable from "not pressed",
+             * so the writer's digital fallback takes over and everything LOOKS right while every trigger
+             * arrives fully on or fully off. Re-asked on each connect, because the setting belongs to
+             * the port and a pad that was unplugged and returned is a new port state.
+             */
+            (void)ioPadSetPortSetting(port, PAD_SETTINGS_PRESS_ON);
         }
         s_reads++;
 
@@ -122,6 +133,18 @@ int rc_pad_read(halyard_input_state *out)
                 | (data.BTN_START    ? HALYARD_PAD_OPTIONS    : 0u)
                 | (data.BTN_SELECT   ? HALYARD_PAD_CREATE     : 0u);
 
+            /*
+             * The shoulders as LEVELS. The pressure fields are documented 0x0000-0x00FF, so they are
+             * already the range the wire wants. The button bits above are still set and the writer
+             * prefers the level where both are present - which means a pad without pressure, or one
+             * whose pressure was refused, degrades to digital instead of to nothing.
+             */
+            s_last.left_trigger = (uint8_t)(data.PRE_L2 & 0xffu);
+            s_last.right_trigger = (uint8_t)(data.PRE_R2 & 0xffu);
+            if ((s_last.left_trigger > 0u && s_last.left_trigger < 0xffu)
+                || (s_last.right_trigger > 0u && s_last.right_trigger < 0xffu))
+                s_analog_seen = 1;
+
             s_last.left_x = deadzone(axis(data.ANA_L_H));
             s_last.left_y = deadzone(axis(data.ANA_L_V));
             s_last.right_x = deadzone(axis(data.ANA_R_H));
@@ -141,6 +164,11 @@ int rc_pad_read(halyard_input_state *out)
         s_have_last = 0;
     }
     return 0;
+}
+
+int rc_pad_analog_triggers_seen(void)
+{
+    return s_analog_seen;
 }
 
 void rc_pad_stats(int *connected, unsigned *reads, unsigned *fresh, unsigned *changes)

@@ -1076,9 +1076,9 @@ static int check_connect(void)
                  * pipeline with no picture to check it against: a controller that does nothing looks
                  * exactly like a controller nobody touched, and the two counts apart tell them apart.
                  */
-                if (!c.pad_connected && c.pad_reads == 0u)
+                if (!c.pad_connected && c.pad_reads == 0u) {
                     ps3_log("       INPUT: no controller was seen on any port\n");
-                else
+                } else {
                     /*
                      * READS AND FRESH ARE SEPARATE, and b271 is why. The pad reports only when it has
                      * something to say, so most polls carry nothing new - which is normal. Printing one
@@ -1089,6 +1089,17 @@ static int check_connect(void)
                             " packet(s) sent; %u connect/disconnect(s)\n",
                             c.pad_reads, c.pad_fresh, c.input_state_packets,
                             c.input_history_packets, c.pad_changes);
+                    /*
+                     * Reported rather than assumed, because a port that refused pressure sensitivity
+                     * returns zeros - which is exactly what an untouched trigger returns. "Analog
+                     * works" and "analog silently does not" are the same observation without this,
+                     * and the writer's digital fallback makes the second one look fine.
+                     */
+                    ps3_log("       INPUT: shoulders are %s\n",
+                            c.pad_analog_triggers ? "ANALOG - a partial level was seen"
+                                                  : "digital so far - no partial level seen, which"
+                                                    " means either untouched or pressure refused");
+                }
 
                 if (c.diagnostics) {
                     /*

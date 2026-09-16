@@ -32,8 +32,6 @@ static const struct { uint32_t flag; uint8_t code; int state_in_code; } kButtonM
     { HALYARD_PAD_DPAD_RIGHT, 0x83u, 0 },   /* t=89.1s */
     { HALYARD_PAD_L1,         0x84u, 0 },   /* t=91.4s */
     { HALYARD_PAD_R1,         0x85u, 0 },   /* t=92.5s */
-    { HALYARD_PAD_L2,         0x86u, 0 },   /* analog on a real pad; digital here */
-    { HALYARD_PAD_R2,         0x87u, 0 },
     { HALYARD_PAD_OPTIONS,    0x8cu, 1 },   /* t=119.6s */
     { HALYARD_PAD_CREATE,     0x8du, 1 },   /* t=124.0s */
     { HALYARD_PAD_PS,         0x8eu, 1 },   /* t=0.0s - opened the session */
@@ -41,6 +39,33 @@ static const struct { uint32_t flag; uint8_t code; int state_in_code; } kButtonM
     { HALYARD_PAD_R3,         0x90u, 1 },   /* t=115.8s */
 };
 #define BUTTON_MAP_COUNT (sizeof(kButtonMap) / sizeof(kButtonMap[0]))
+
+/*
+ * L2 AND R2 ARE NOT IN THAT TABLE, and they used to be.
+ *
+ * Every other three-byte code carries 0x00 or 0xff and nothing else; 0x86 and 0x87 carry a LEVEL, which
+ * cap48 established independently by counting 57 and 52 distinct values for them across one session.
+ * Diffing them as bits therefore threw away most of what they say: a trigger squeezed halfway and a
+ * trigger buried both arrived as the same 0xff, and everything between one and the other arrived as
+ * nothing at all.
+ *
+ * They are diffed on their level instead, which subsumes the bit - a level is a boolean that also says
+ * how much.
+ */
+#define L2_CODE 0x86u
+#define R2_CODE 0x87u
+
+/*
+ * A front end with digital shoulders sets the BIT and leaves the level zero; one with analog shoulders
+ * sets the level. This resolves the two into the one thing the wire wants, so neither kind of caller has
+ * to know which it is.
+ */
+static uint8_t trigger_level(uint8_t level, uint32_t buttons, uint32_t flag)
+{
+    if (level != 0u)
+        return level;
+    return (buttons & flag) != 0u ? 0xffu : 0x00u;
+}
 
 void halyard_input_writer_init(halyard_input_writer *w)
 {
@@ -133,8 +158,17 @@ size_t halyard_input_build_history_payload(halyard_input_writer *w,
         return 0;
 
     changed = w->previous.buttons ^ state->buttons;
-    if (changed == 0u)
-        return 0;
+    {
+        uint8_t l2 = trigger_level(state->left_trigger, state->buttons, HALYARD_PAD_L2);
+        uint8_t r2 = trigger_level(state->right_trigger, state->buttons, HALYARD_PAD_R2);
+        uint8_t prev_l2 = trigger_level(w->previous.left_trigger, w->previous.buttons,
+                                        HALYARD_PAD_L2);
+        uint8_t prev_r2 = trigger_level(w->previous.right_trigger, w->previous.buttons,
+                                        HALYARD_PAD_R2);
+
+        if (changed == 0u && l2 == prev_l2 && r2 == prev_r2)
+            return 0;
+    }
 
     /* Record this frame's transitions, newest last so the most recent ends up at the head. */
     for (i = 0; i < BUTTON_MAP_COUNT; i++) {
@@ -158,6 +192,34 @@ size_t halyard_input_build_history_payload(halyard_input_writer *w,
         }
         push_event(w, event, length);
         fresh = 1;
+    }
+
+    /*
+     * The triggers after the buttons. Nothing depends on the order between two events in the same
+     * frame; doing them last only keeps it deterministic.
+     */
+    {
+        uint8_t l2 = trigger_level(state->left_trigger, state->buttons, HALYARD_PAD_L2);
+        uint8_t r2 = trigger_level(state->right_trigger, state->buttons, HALYARD_PAD_R2);
+        uint8_t was_l2 = trigger_level(w->previous.left_trigger, w->previous.buttons,
+                                       HALYARD_PAD_L2);
+        uint8_t was_r2 = trigger_level(w->previous.right_trigger, w->previous.buttons,
+                                       HALYARD_PAD_R2);
+        uint8_t event[HALYARD_INPUT_EVENT_MAX];
+
+        event[0] = 0x80u;
+        if (l2 != was_l2) {
+            event[1] = L2_CODE;
+            event[2] = l2;
+            push_event(w, event, 3u);
+            fresh = 1;
+        }
+        if (r2 != was_r2) {
+            event[1] = R2_CODE;
+            event[2] = r2;
+            push_event(w, event, 3u);
+            fresh = 1;
+        }
     }
 
     if (!fresh)
