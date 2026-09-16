@@ -120,6 +120,8 @@ int halyard_pairing_file_load(const char *argv0, halyard_pairing_record *rec)
             rec->probe_resolutions = atoi(value);
         } else if (strcmp(line, "fps") == 0) {
             rec->fps = atoi(value);
+        } else if (strcmp(line, "holdseconds") == 0) {
+            rec->hold_seconds = atoi(value);
         } else if (strcmp(line, "videoformat") == 0) {
             rec->video_rgb565 = (strcmp(value, "rgb565") == 0);
         } else if (strcmp(line, "skipuntilkeyframe") == 0) {

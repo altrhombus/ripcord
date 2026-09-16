@@ -428,6 +428,10 @@ static int g_stream_rcvbuf;
  */
 #define RC_STREAM_HOLD_MS 30000u
 
+/* What the hold ACTUALLY ran for - the constant above is only the default when the pairing record does
+ * not say. Reported rather than assumed, because every rate in the summary divides by it. */
+static unsigned g_hold_ms = RC_STREAM_HOLD_MS;
+
 /* The client's own heartbeat cadence on the stream channel, from the reference's one second. */
 #define RC_STREAM_HEARTBEAT_MS 1000u
 
@@ -2032,6 +2036,7 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
         uint64_t deadline;
         uint64_t next_heartbeat;
         uint64_t next_congestion;
+        uint64_t hold_ms;
 
         /*
          * BOTH THERMAL SAMPLES ARE TAKEN OUTSIDE THE HOLD, and b202 is why. Sampling once a second from
@@ -2046,7 +2051,19 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
          */
         rc_thermal_sample(&out->thermal);
 
-        deadline = rc_time_ms() + RC_STREAM_HOLD_MS;
+        /*
+         * holdseconds in the pairing record, because the two things measured across a hold settle at
+         * very different rates: frame rate and loss are steady within seconds, while a fan responds
+         * over minutes, so 30 seconds reports the beginning of a thermal curve and calls it a result.
+         * Clamped to an hour so a typo cannot hang the console in a loop with no way out but the power
+         * switch.
+         */
+        hold_ms = (rec->hold_seconds > 0)
+                      ? (uint64_t)(rec->hold_seconds > 3600 ? 3600 : rec->hold_seconds) * 1000ULL
+                      : (uint64_t)RC_STREAM_HOLD_MS;
+        g_hold_ms = (unsigned)hold_ms;
+
+        deadline = rc_time_ms() + hold_ms;
         next_heartbeat = rc_time_ms();
         next_congestion = rc_time_ms() + RC_CONGESTION_INTERVAL_MS;
 
@@ -2276,7 +2293,7 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
     out->first_au_len = rc_decode_vdec_first_au(out->first_au);
     out->decode_thread_priority = g_decode_priority;
     out->decode_receive_priority = g_decode_receive_priority;
-    out->hold_ms = (unsigned)RC_STREAM_HOLD_MS;
+    out->hold_ms = g_hold_ms;
     rc_thermal_sample(&out->thermal);   /* the closing sample - see the note where the hold opens */
     out->idr_requests = g_idr_requests;
 
