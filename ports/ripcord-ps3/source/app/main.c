@@ -1102,7 +1102,7 @@ static int check_connect(void)
                 }
 
                 if (c.overlay_toggles > 0u)
-                    ps3_log("       INPUT: the diagnostics chord (Options+Create+L3) was used %u"
+                    ps3_log("       INPUT: the diagnostics chord (Options+Create) was used %u"
                             " time(s)\n", c.overlay_toggles);
 
                 if (c.diagnostics || c.overlay_toggles > 0u) {

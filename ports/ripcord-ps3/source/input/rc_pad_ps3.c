@@ -2,6 +2,8 @@
 #include "rc_pad_ps3.h"
 
 #include <io/pad.h>
+
+#include "platform/rc_platform.h"
 #include <string.h>
 
 #define RC_PAD_PORTS 7
@@ -79,6 +81,14 @@ static unsigned s_fresh;
 static int s_analog_seen;
 static int s_chord_held;
 static unsigned s_chord_edges;
+static uint64_t s_pending_since;
+
+/*
+ * How long a chord button is withheld while waiting for its partner. Long enough for two thumbs to
+ * arrive together without hurrying, short enough that a press which turns out to be ordinary is late
+ * rather than lost.
+ */
+#define RC_CHORD_WINDOW_MS 250u
 
 int rc_pad_read(halyard_input_state *out)
 {
@@ -158,35 +168,58 @@ int rc_pad_read(halyard_input_state *out)
             return 0;   /* connected but has not yet said anything - nothing truthful to send */
 
         /*
-         * THE DIAGNOSTICS CHORD, detected here and REMOVED from what goes to the console.
+         * THE DIAGNOSTICS CHORD: Options + Create, held together.
          *
-         * Start + Select + L3. Chosen against two constraints rather than for comfort: it must be a
-         * combination no game asks for, and it must not collide with the .NET client's exit gesture,
-         * which is Start + Select + L1 + R1 and is reserved here for when this port grows one. Neither
-         * is a subset of the other - exit needs the shoulders and never L3, this needs L3 and never the
-         * shoulders - so holding one cannot trip the other.
+         * Two buttons rather than three, because three was awkward to press with the same hands that
+         * are holding the controller. Both are menu buttons, which matters twice over: no game asks for
+         * them together, and neither is latency-sensitive - which is what makes the hold-back below
+         * affordable.
          *
-         * L3 + R3 was the obvious quick chord and is exactly what RipcordSettings warns against: plenty
-         * of games bind it.
+         * L3 is out of it deliberately. It was in the first version and it is a sprint or a crouch in
+         * most games, so delaying it by a fifth of a second to see whether a chord forms would be felt.
+         * Delaying Options or Create is not.
          *
-         * WHAT THIS DOES NOT FIX, said plainly: the three buttons are only swallowed once all three are
-         * held, so whichever was pressed first has already gone out as an ordinary press. For Options,
-         * Create and a stick click that is a pause menu at worst, which is why those three and not a
-         * face button. Holding the presses back for a hundred milliseconds to see whether a chord
-         * forms would close it, at the cost of that much latency on three buttons - worth doing if it
-         * ever becomes annoying, and not worth the complexity before then.
+         * HELD BACK, NOT JUST SWALLOWED, and this is the fix rather than a refinement. The first
+         * version removed the chord's buttons only once ALL of them were down, so whichever was pressed
+         * first had already gone out as an ordinary press - and Create on a PS5 is the screenshot
+         * button, so reaching for the overlay took a burst of screenshots with it. "A pause menu at
+         * worst" was wrong.
+         *
+         * So a press of either button is now withheld for RC_CHORD_WINDOW_MS. If the other arrives
+         * inside that window the pair is swallowed and nothing reaches the console; if it does not, the
+         * press is released and travels normally, a fifth of a second late. A tap of Create still takes
+         * a screenshot. Only a deliberate pair does not.
+         *
+         * A fumbled chord - one button, a long pause, then the other - still toggles, and still leaks
+         * the first button, because after the window it has genuinely been sent. That is the honest
+         * edge of this design and it costs one stray menu press, not a burst of them.
          */
         {
-            const uint32_t chord = HALYARD_PAD_OPTIONS | HALYARD_PAD_CREATE | HALYARD_PAD_L3;
-            int held = (s_last.buttons & chord) == chord;
+            const uint32_t chord = HALYARD_PAD_OPTIONS | HALYARD_PAD_CREATE;
+            uint32_t held = s_last.buttons & chord;
+            uint32_t suppress = 0u;
+            uint64_t now = rc_time_ms();
 
-            if (held && !s_chord_held)
-                s_chord_edges++;        /* rising edge - the caller acts on the count changing */
-            s_chord_held = held;
+            if (held == chord) {
+                if (!s_chord_held)
+                    s_chord_edges++;    /* rising edge - the caller acts on the count changing */
+                s_chord_held = 1;
+                suppress = chord;
+                s_pending_since = 0u;
+            } else {
+                s_chord_held = 0;
+                if (held != 0u) {
+                    if (s_pending_since == 0u)
+                        s_pending_since = now;
+                    if (now - s_pending_since < RC_CHORD_WINDOW_MS)
+                        suppress = held;
+                } else {
+                    s_pending_since = 0u;
+                }
+            }
 
             *out = s_last;
-            if (held)
-                out->buttons &= ~chord;
+            out->buttons &= ~suppress;
             return 1;
         }
     }
