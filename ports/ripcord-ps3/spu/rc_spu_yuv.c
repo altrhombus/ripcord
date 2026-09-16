@@ -252,7 +252,26 @@ int main(uint64_t job_ea, uint64_t unused1, uint64_t unused2, uint64_t unused3)
                 if (src_row >= g_job.src_height)
                     src_row = g_job.src_height - 1u;
 
-                if (src_row != cached_y_row) {
+                if (src_row != cached_y_row && g_job.source_argb) {
+                    /*
+                     * Packed RGB: the source row IS the line buffer's contents, so it is fetched
+                     * straight into it and convert_line is not called at all. Sizes stay MFC-legal
+                     * because a row is src_width * 4 bytes and the stride is a whole number of pixels.
+                     */
+                    unsigned int t0;
+
+                    mfc_get(g_line, g_job.y_ea + (unsigned long long)src_row * g_job.y_stride,
+                            g_job.src_width * 4u, TAG, 0, 0);
+                    cached_y_row = src_row;
+
+                    t0 = spu_read_decrementer();
+                    (void)mfc_read_tag_status_all();
+                    dma_ticks += t0 - spu_read_decrementer();
+
+                    t0 = spu_read_decrementer();
+                    scale_line(g_job.src_width, g_job.dst_width);
+                    work_ticks += t0 - spu_read_decrementer();
+                } else if (src_row != cached_y_row) {
                     unsigned int t0;
 
                     mfc_get(g_y, g_job.y_ea + (unsigned long long)src_row * g_job.y_stride,

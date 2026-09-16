@@ -816,6 +816,8 @@ static uint8_t g_decode_buf[RC_FRAME_SLOT_BYTES];
 #define RC_BLIT_WAIT_MS 25u
 static unsigned g_blit_worst_wait_ms;
 static unsigned g_pictures_dropped;
+static unsigned g_rgb_scale_failed;
+static int g_decoder_rgb;
 static unsigned g_blit_us_total;
 static unsigned g_blit_worst_us;
 static unsigned g_blits;
@@ -1194,6 +1196,51 @@ static void on_picture(void *ctx, const unsigned char *y, const unsigned char *u
     us = rc_video_blit_yuv420(y, u, v, y_stride, uv_stride, width, height);
     if (us == 0u)
         return;   /* the display is not open, or the picture does not fit - not an error here */
+
+    rc_video_flip();
+    g_blits++;
+    g_blit_us_total += us;
+    if (us > g_blit_worst_us)
+        g_blit_worst_us = us;
+}
+
+/*
+ * The packed-RGB sink. Same shape as on_picture without the conversion: the decoder has already done it,
+ * which is the point - b185 measured the SPE spending 16,444 us a frame converting and scaling against
+ * 1,667 us waiting for the MFC, so the conversion is what there is to remove.
+ *
+ * If the SPE scale returns 0 the picture is dropped rather than converted on the PPE, because there is
+ * no PPE scaler. That is counted, and a run where it is non-zero is a run that should go back to YUV.
+ */
+static void on_picture_rgb(void *ctx, const unsigned char *argb, int stride, int width, int height)
+{
+    unsigned us;
+
+    (void)ctx;
+
+    if (!g_live_open)
+        return;
+
+    {
+        unsigned waited = 0u;
+
+        while (!rc_video_present_ready()) {
+            if (waited >= RC_BLIT_WAIT_MS) {
+                g_pictures_dropped++;
+                return;
+            }
+            rc_sleep_ms(1u);
+            waited++;
+        }
+        if (waited > g_blit_worst_wait_ms)
+            g_blit_worst_wait_ms = waited;
+    }
+
+    us = rc_video_blit_argb32(argb, stride, width, height);
+    if (us == 0u) {
+        g_rgb_scale_failed++;
+        return;
+    }
 
     rc_video_flip();
     g_blits++;
@@ -1859,6 +1906,7 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
                     g_blits = 0u;
                     g_pictures_dropped = 0u;
                     g_blit_worst_wait_ms = 0u;
+                    g_rgb_scale_failed = 0u;
                     g_idr_requests = 0u;
                     g_last_idr_request_ms = 0u;
                     /*
@@ -1913,6 +1961,13 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
                     g_decode_backend_id = rc_decode_live_backend();
                     if (g_live_open) {
                         rc_decode_live_set_sink(on_picture, NULL);
+                        /*
+                         * Asking the decoder for RGB removes the SPE's colour pass; it is opt-in while
+                         * it is new, since the YUV path is the one with a thousand frames behind it.
+                         */
+                        g_decoder_rgb = rec->decoder_rgb;
+                        if (g_decoder_rgb)
+                            rc_decode_live_set_rgb_sink(on_picture_rgb, NULL);
                         /* Started only after the decoder is open and its sink is set: the thread calls
                          * straight into both. */
                         if (!decode_thread_start())
@@ -2168,6 +2223,8 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
                         &out->display_width, &out->display_height);
     out->pictures_dropped = g_pictures_dropped;
     out->blit_worst_wait_ms = g_blit_worst_wait_ms;
+    out->rgb_scale_failed = g_rgb_scale_failed;
+    out->decoder_rgb = g_decoder_rgb;
     out->frames_too_many_units = g_demux.stat_frames_too_many_units;
     out->decode_backend = g_decode_backend;
     out->decode_backend_id = g_decode_backend_id;

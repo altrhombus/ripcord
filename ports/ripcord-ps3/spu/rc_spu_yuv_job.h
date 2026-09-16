@@ -53,6 +53,20 @@ typedef struct {
     uint32_t first_dst_row;  /* this strip's first row within that rect                       */
     uint32_t dst_rows;       /* rows in this strip                                            */
     uint32_t sequence;
+
+    /*
+     * 1 when y_ea points at a packed 32-bit RGB picture rather than three planes, in which case the
+     * source row is DMA'd straight into the line buffer and the colour conversion is skipped entirely.
+     *
+     * The decoder can produce this itself - VDEC_PICFMT_ARGB32, confirmed accepted and filled in b179 -
+     * and b185 measured why it is worth taking: of the SPE's time, 1,667 us a frame goes on waiting for
+     * the MFC and 16,444 us on converting and scaling. The conversion is the cost, not the transfers.
+     *
+     * The packing matches: convert_line writes 0x00RRGGBB and the decoder's ARGB32 is 0xAARRGGBB in the
+     * same byte order, so the alpha lands in the byte the display ignores.
+     */
+    uint32_t source_argb;
+    uint32_t pad[3];         /* keeps this a multiple of 16, which the MFC requires - see the header */
 } rc_spu_yuv_job;
 
 #endif /* RC_SPU_YUV_JOB_H */

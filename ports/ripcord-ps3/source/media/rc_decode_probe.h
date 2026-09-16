@@ -167,6 +167,15 @@ typedef enum {
     RC_DECODE_BACKEND_OPENH264   /* openh264, on the PPE */
 } rc_decode_backend;
 
+/*
+ * A picture already packed as 32-bit RGB, which only the hardware decoder can produce. Set this and the
+ * vdec backend asks for ARGB32 instead of YUV420P and calls here rather than the plane sink; leave it
+ * null and nothing changes. openh264 has no such output and always uses the plane sink.
+ */
+typedef void (*rc_decode_picture_rgb_fn)(void *ctx, const unsigned char *argb, int stride,
+                                         int width, int height);
+void rc_decode_live_set_rgb_sink(rc_decode_picture_rgb_fn fn, void *ctx);
+
 void rc_decode_live_hint(int width, int height);
 rc_decode_backend rc_decode_live_backend(void);
 const char *rc_decode_live_backend_name(void);

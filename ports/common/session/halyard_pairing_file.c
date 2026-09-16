@@ -26,6 +26,7 @@ static void pairing_record_defaults(halyard_pairing_record *rec)
      */
     rec->stream_bitrate_kbps = 10000;
     rec->connection_quality = 0;
+    rec->decoder_rgb = 0;
     rec->skip_until_keyframe = 0;
     rec->widescreen = 1;
     rec->smoothing = 1;
@@ -100,6 +101,8 @@ int halyard_pairing_file_load(const char *argv0, halyard_pairing_record *rec)
             rec->os_minor = atoi(value);
         } else if (strcmp(line, "bitrate") == 0) {
             rec->start_bitrate = atoi(value);
+        } else if (strcmp(line, "decoderrgb") == 0) {
+            rec->decoder_rgb = atoi(value);
         } else if (strcmp(line, "connquality") == 0) {
             rec->connection_quality = atoi(value);
         } else if (strcmp(line, "streambitrate") == 0) {
