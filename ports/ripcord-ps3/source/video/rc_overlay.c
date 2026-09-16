@@ -43,9 +43,35 @@
 #include "rc_video_ps3.h"
 #include "platform/rc_platform.h"
 
-#define RC_OV_W            760
-#define RC_OV_H            352
+/*
+ * THE PANEL IS DESIGNED AT 1080p AND BUILT AT WHATEVER THE TELEVISION NEGOTIATED.
+ *
+ * Every measurement here and in the layout is a "design pixel" against a 1920x1080 screen, and
+ * rc_overlay_px converts one to a real one. Without that the panel is a fixed 760 pixels wide: 40% of
+ * a 1080p screen, 59% of a 720p one, and WIDER THAN a 720x480 one - at which point
+ * rc_video_overlay_blit refuses the rectangle and the overlay silently is not there. A diagnostic that
+ * disappears on the displays least able to spare the bandwidth is worse than no diagnostic.
+ *
+ * Scaling the bitmap on the way to the screen would have been less code and would have softened every
+ * glyph. The atlas is built once at open, so building it at the right size instead costs nothing.
+ */
+#define RC_OV_DESIGN_W     760
+#define RC_OV_DESIGN_H     352
+#define RC_OV_DESIGN_SCR_H 1080
 #define RC_OV_REBUILD_MS   250u
+
+/* Big enough for the design size at 1080p; anything smaller uses less of it. */
+#define RC_OV_MAX_W        RC_OV_DESIGN_W
+#define RC_OV_MAX_H        RC_OV_DESIGN_H
+
+static int s_scr_h = RC_OV_DESIGN_SCR_H;
+static int s_w = RC_OV_DESIGN_W;
+static int s_h = RC_OV_DESIGN_H;
+
+int rc_overlay_px(int design)
+{
+    return (design * s_scr_h) / RC_OV_DESIGN_SCR_H;
+}
 
 static int s_on;
 static int s_x = 48;
@@ -63,12 +89,12 @@ static uint64_t s_next_rebuild;
  * run has to be composited in its own colour and runs overlap on a line.
  */
 #define RC_OV_COV_H 72
-static unsigned char s_cov[RC_OV_W * RC_OV_COV_H];
+static unsigned char s_cov[RC_OV_MAX_W * RC_OV_COV_H];
 static int s_sysfont;
 static int s_want_sysfont;
 
-int rc_overlay_width(void)  { return RC_OV_W; }
-int rc_overlay_height(void) { return RC_OV_H; }
+int rc_overlay_width(void)  { return s_w; }
+int rc_overlay_height(void) { return s_h; }
 
 int rc_overlay_on(void)
 {
@@ -102,13 +128,13 @@ void rc_overlay_rect(int x, int y, int w, int h, uint32_t argb)
         return;
     if (x < 0) { w += x; x = 0; }
     if (y < 0) { h += y; y = 0; }
-    if (x + w > RC_OV_W) w = RC_OV_W - x;
-    if (y + h > RC_OV_H) h = RC_OV_H - y;
+    if (x + w > s_w) w = s_w - x;
+    if (y + h > s_h) h = s_h - y;
     if (w <= 0 || h <= 0)
         return;
 
     for (row = 0; row < h; row++) {
-        uint32_t *p = s_bitmap + (size_t)(y + row) * RC_OV_W + (size_t)x;
+        uint32_t *p = s_bitmap + (size_t)(y + row) * (size_t)s_w + (size_t)x;
 
         for (col = 0; col < w; col++)
             p[col] = c;
@@ -122,10 +148,30 @@ void rc_overlay_set_system_font(int on)
 
 void rc_overlay_set(int on)
 {
+    rc_video_info info;
+
     s_on = on;
     if (on && !s_ready) {
-        s_bitmap = (uint32_t *)memalign(128, (size_t)RC_OV_W * RC_OV_H * 4u);
-        s_vram = (uint32_t *)rc_video_alloc_rsx((size_t)RC_OV_W * RC_OV_H * 4u, &s_offset);
+        /*
+         * The display's height drives everything: the atlas sizes, the panel, and the layout the
+         * caller computes through rc_overlay_px. Read once at open because it cannot change without
+         * the display being reopened, and the atlas is built here.
+         */
+        if (rc_video_info_get(&info) && info.height > 0) {
+            s_scr_h = info.height;
+            s_x = rc_overlay_px(48);
+            s_y = rc_overlay_px(32);
+            s_w = rc_overlay_px(RC_OV_DESIGN_W);
+            s_h = rc_overlay_px(RC_OV_DESIGN_H);
+            if (s_w > info.width - s_x * 2)
+                s_w = info.width - s_x * 2;
+            if (s_h > info.height - s_y * 2)
+                s_h = info.height - s_y * 2;
+        }
+        if (s_w <= 0 || s_h <= 0)
+            return;
+        s_bitmap = (uint32_t *)memalign(128, (size_t)s_w * (size_t)s_h * 4u);
+        s_vram = (uint32_t *)rc_video_alloc_rsx((size_t)s_w * (size_t)s_h * 4u, &s_offset);
         s_ready = (s_bitmap != NULL && s_vram != NULL);
 
         /*
@@ -169,11 +215,11 @@ static void draw_bits(int x, int y, int scale, const unsigned char *rows, int nr
                 int px = x + gx * scale;
                 uint32_t *p;
 
-                if (py < 0 || py >= RC_OV_H)
+                if (py < 0 || py >= s_h)
                     continue;
-                p = s_bitmap + (size_t)py * RC_OV_W;
+                p = s_bitmap + (size_t)py * (size_t)s_w;
                 for (sx = 0; sx < scale; sx++) {
-                    if (px + sx >= 0 && px + sx < RC_OV_W)
+                    if (px + sx >= 0 && px + sx < s_w)
                         p[px + sx] = premul_colour;
                 }
             }
@@ -243,9 +289,10 @@ static void blend_px(uint32_t *dst, uint32_t argb, unsigned cov)
  * the parameter rather than adding a second one means the layout code did not have to change when the
  * face did.
  */
+/* Design pixels, converted like every other measurement here. */
 static float size_for(int scale)
 {
-    return (scale >= 2) ? 34.0f : 24.0f;
+    return (float)rc_overlay_px((scale >= 2) ? 34 : 24);
 }
 
 static void draw_sys(int x, int y, int scale, uint32_t argb, const char *text)
@@ -270,25 +317,25 @@ static void draw_sys(int x, int y, int scale, uint32_t argb, const char *text)
     x1 = x + w + 2;
     if (x0 < 0)
         x0 = 0;
-    if (x1 > RC_OV_W)
-        x1 = RC_OV_W;
+    if (x1 > s_w)
+        x1 = s_w;
     if (x1 <= x0)
         return;
 
     h = RC_OV_COV_H;
-    if (y + h > RC_OV_H)
-        h = RC_OV_H - y;
+    if (y + h > s_h)
+        h = s_h - y;
     if (h <= 0)
         return;
 
     for (row = 0; row < RC_OV_COV_H; row++)
-        memset(s_cov + (size_t)row * RC_OV_W + (size_t)x0, 0, (size_t)(x1 - x0));
+        memset(s_cov + (size_t)row * (size_t)s_w + (size_t)x0, 0, (size_t)(x1 - x0));
 
-    (void)rc_sysfont_render(s_cov, RC_OV_W, RC_OV_COV_H, x, base, text);
+    (void)rc_sysfont_render(s_cov, s_w, RC_OV_COV_H, x, base, text);
 
     for (row = 0; row < h; row++) {
-        const unsigned char *src = s_cov + (size_t)row * RC_OV_W;
-        uint32_t *dst = s_bitmap + (size_t)(y + row) * RC_OV_W;
+        const unsigned char *src = s_cov + (size_t)row * (size_t)s_w;
+        uint32_t *dst = s_bitmap + (size_t)(y + row) * (size_t)s_w;
 
         if (y + row < 0)
             continue;
@@ -471,6 +518,20 @@ void rc_overlay_bars(int x, int y, int w, int h, const unsigned *v, unsigned n, 
     }
 }
 
+/*
+ * The baseline offset for a size, so two sizes on one row can share a baseline instead of sharing a
+ * top edge. Aligning tops is what made "Ripcord" and the build id sit at different heights in the
+ * header: their boxes lined up and their letters did not.
+ */
+int rc_overlay_ascent(int scale)
+{
+    if (s_sysfont) {
+        rc_sysfont_set_size(size_for(scale));
+        return rc_sysfont_ascent();
+    }
+    return RC_FONT_H * scale * 2;
+}
+
 int rc_overlay_begin(void)
 {
     uint64_t now;
@@ -489,7 +550,7 @@ int rc_overlay_begin(void)
      * the corners it leaves alone stay see-through - which is what makes a rounded corner possible at
      * all when nothing here can read what is underneath.
      */
-    rc_overlay_rect(0, 0, RC_OV_W, RC_OV_H, 0x00000000u);
+    rc_overlay_rect(0, 0, s_w, s_h, 0x00000000u);
     return 1;
 }
 
@@ -504,8 +565,8 @@ void rc_overlay_end(void)
      * writes to VRAM for a picture that is identical fourteen times out of fifteen.
      */
     if (s_rebuilt) {
-        memcpy(s_vram, s_bitmap, (size_t)RC_OV_W * RC_OV_H * 4u);
+        memcpy(s_vram, s_bitmap, (size_t)s_w * (size_t)s_h * 4u);
         s_rebuilt = 0;
     }
-    rc_video_overlay_blit(s_offset, RC_OV_W * 4, RC_OV_W, RC_OV_H, s_x, s_y);
+    rc_video_overlay_blit(s_offset, s_w * 4, s_w, s_h, s_x, s_y);
 }
