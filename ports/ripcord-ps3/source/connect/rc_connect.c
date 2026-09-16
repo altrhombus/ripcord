@@ -1973,6 +1973,14 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
                         g_decoder_rgb = rec->decoder_rgb;
                         rc_spu_yuv_set_bilinear(rec->bilinear_upscale);
                         out->bilinear_upscale = rec->bilinear_upscale;
+                        /*
+                         * Both scalers read `bilinear`, and on the RSX any non-zero value means the same
+                         * thing: its interpolator has two settings, not three. The SPE's cheaper
+                         * row-only mode exists only because full interpolation did not fit a 60 fps
+                         * budget in software, and that is not a problem the hardware has.
+                         */
+                        rc_video_set_rsx_scale(rec->hardware_scale, rec->bilinear_upscale != 0);
+                        out->hardware_scale = rec->hardware_scale;
                         if (g_decoder_rgb)
                             rc_decode_live_set_rgb_sink(on_picture_rgb, NULL);
                         /* Started only after the decoder is open and its sink is set: the thread calls
@@ -2294,6 +2302,7 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
     out->decode_thread_priority = g_decode_priority;
     out->decode_receive_priority = g_decode_receive_priority;
     out->hold_ms = g_hold_ms;
+    rc_video_rsx_scale_stats(&out->rsx_scale_available, &out->rsx_blits, &out->rsx_refused);
     rc_thermal_sample(&out->thermal);   /* the closing sample - see the note where the hold opens */
     out->idr_requests = g_idr_requests;
 

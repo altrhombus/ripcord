@@ -106,6 +106,18 @@ unsigned rc_video_blit_yuv420(const uint8_t *y, const uint8_t *u, const uint8_t 
  * microseconds, or 0 if the SPEs could not do it - there is no PPE scaler to fall back to. */
 unsigned rc_video_blit_argb32(const uint8_t *argb, int src_stride, int width, int height);
 
+/*
+ * Hand the scaling to the RSX's 2D engine instead of the SPEs. `linear` picks its interpolator -
+ * bilinear where the SPE path charged 21,038 us a frame for the same thing, nearest otherwise.
+ *
+ * Off until called, and it falls back on its own if the staging buffer was refused at open. See
+ * blit_argb32_on_rsx in the .c for what this does and does not buy.
+ */
+void rc_video_set_rsx_scale(int on, int linear);
+
+/* available is 0 when the staging buffer could not be allocated, in which case nothing else is useful. */
+void rc_video_rsx_scale_stats(int *available, unsigned *blits, unsigned *refused);
+
 int rc_video_self_test(void);
 
 /* Which scale factor disagreed, or NULL if none did. */

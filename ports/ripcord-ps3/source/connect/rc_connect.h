@@ -379,6 +379,11 @@ typedef struct {
      * chips, so what matters is the pair, not either reading on its own. See rc_thermal.h.
      */
     rc_thermal_record thermal;
+
+    int      hardware_scale;     /* what was asked for */
+    int      rsx_scale_available;/* whether the staging buffer existed to do it with */
+    unsigned rsx_blits;
+    unsigned rsx_refused;        /* asked for, could not run, fell back to the SPE scaler */
 } rc_connect_result;
 
 /*
