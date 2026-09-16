@@ -36,7 +36,19 @@
  * the instrumentation that was supposed to name the call did not survive the hang, which is fixed
  * separately - but leaving vdec an SPE is required by the design either way, not a guess at the fix.
  */
-#define RC_SPU_YUV_MAX_SPES 4
+/*
+ * THREE, because this no longer converts anything.
+ *
+ * It was five while it did YUV-to-RGB and scaling, then four to leave the decoder an SPE, then the
+ * decoder took a second. Now the decoder produces RGB itself and this only scales - 10,876 us a frame
+ * across the group against 16,444 before - so the group can give one back to the side that still cannot
+ * keep up: b190 still refused twelve submissions, all of them on the large frames of a transition, and
+ * refusing one breaks the reference chain.
+ *
+ * Three SPEs scaling costs about 3,600 us each against 2,700, which the frame budget has room for. Two
+ * decoding against three does not, which is where the blockiness comes from.
+ */
+#define RC_SPU_YUV_MAX_SPES 3
 
 typedef struct {
     int  spes;              /* how many actually came up; 0 means the PPE path is the only path */
