@@ -197,6 +197,7 @@ SOURCES := \
 	$(CORE)/util/rc_log.c \
 	$(CORE)/util/rc_program_dir.c \
 	source/platform/rc_platform_ps3.c \
+	source/platform/rc_thermal.c \
 	source/platform/rc_random_ps3.c \
 	source/platform/rc_stack_ps3.c \
 	source/video/rc_video_ps3.c \
