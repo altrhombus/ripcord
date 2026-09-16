@@ -11,10 +11,15 @@
  * counter said the frame had been drawn. The bitmap is copied over the picture by a command issued
  * after it, which is an ordering the hardware keeps instead of one this code has to win.
  *
- * THE BITMAP IS IN RSX MEMORY AND IS ONLY EVER WRITTEN. Writes there are fast and reads are roughly two
- * orders of magnitude slower, so there is no blending here, no read-modify-write and no clearing by
- * reading first. Translucency is not this code's job: the panel is written as premultiplied ARGB and
- * the RSX blends it against the picture when it copies, which is the one place the read is free.
+ * THE PANEL IS BUILT IN MAIN MEMORY AND COPIED TO RSX MEMORY WHEN IT CHANGES, which is a reversal.
+ * It used to be built directly in RSX memory under a rule that it may only ever be written, because a
+ * Cell read from there is roughly two orders of magnitude slower than a write. That rule made
+ * antialiasing impossible - blending a glyph's coverage over a background IS a read - and antialiasing
+ * is most of what separates the console's own typeface from a hand-drawn bitmap.
+ *
+ * So the drawing happens where reads are cheap and the result is copied across on rebuild: 555 KB,
+ * four times a second, in the direction that is fast. The per-frame path is unchanged - the RSX copies
+ * the same VRAM bitmap over the picture every frame either way.
  *
  * TWO FONTS, ON PURPOSE. Words are set in the proportional face and anything that MOVES is set in the
  * monospaced one and right-aligned. A column of figures has to hold still while the figures change: a
@@ -29,10 +34,12 @@
 
 #include <stdarg.h>
 #include <stdio.h>
+#include <malloc.h>
 #include <string.h>
 
 #include "rc_font5x7.h"
 #include "rc_font_prop.h"
+#include "rc_sysfont.h"
 #include "rc_video_ps3.h"
 #include "platform/rc_platform.h"
 
@@ -44,10 +51,20 @@ static int s_on;
 static int s_x = 48;
 static int s_y = 40;
 
-static uint32_t *s_bitmap;
+static uint32_t *s_bitmap;      /* main memory - drawn into, read from, blended in          */
+static uint32_t *s_vram;        /* RSX memory  - what the per-frame copy actually reads     */
 static uint32_t s_offset;
 static int s_ready;
+static int s_rebuilt;           /* a rebuild happened this frame and owes the RSX a copy    */
 static uint64_t s_next_rebuild;
+
+/*
+ * Coverage from the system font, one line's worth. Cleared per run rather than per rebuild, because a
+ * run has to be composited in its own colour and runs overlap on a line.
+ */
+#define RC_OV_COV_H 56
+static unsigned char s_cov[RC_OV_W * RC_OV_COV_H];
+static int s_sysfont;
 
 int rc_overlay_width(void)  { return RC_OV_W; }
 int rc_overlay_height(void) { return RC_OV_H; }
@@ -101,9 +118,23 @@ void rc_overlay_set(int on)
 {
     s_on = on;
     if (on && !s_ready) {
-        s_bitmap = (uint32_t *)rc_video_alloc_rsx((size_t)RC_OV_W * RC_OV_H * 4u, &s_offset);
-        s_ready = (s_bitmap != NULL);
+        s_bitmap = (uint32_t *)memalign(128, (size_t)RC_OV_W * RC_OV_H * 4u);
+        s_vram = (uint32_t *)rc_video_alloc_rsx((size_t)RC_OV_W * RC_OV_H * 4u, &s_offset);
+        s_ready = (s_bitmap != NULL && s_vram != NULL);
+
+        /*
+         * The console's own face if it will open, the drawn one if it will not. Asked for here rather
+         * than at start-up so a font library that refuses costs an overlay nobody had yet rather than
+         * a session: everything below falls back glyph for glyph.
+         */
+        if (s_ready)
+            s_sysfont = rc_sysfont_open(18.0f);
     }
+}
+
+int rc_overlay_using_system_font(void)
+{
+    return s_sysfont;
 }
 
 /*
@@ -175,13 +206,87 @@ static int prop_width(const char *text, int scale)
     return w;
 }
 
+/*
+ * One pixel of antialiased text: the glyph's coverage says how much of the run's colour to put over
+ * what is already there. This is the read the panel moved out of RSX memory for.
+ */
+static void blend_px(uint32_t *dst, uint32_t argb, unsigned cov)
+{
+    unsigned inv = 255u - cov;
+    uint32_t d = *dst;
+    unsigned r = ((((argb >> 16) & 0xffu) * cov) + (((d >> 16) & 0xffu) * inv)) / 255u;
+    unsigned g = ((((argb >> 8) & 0xffu) * cov) + (((d >> 8) & 0xffu) * inv)) / 255u;
+    unsigned b = (((argb & 0xffu) * cov) + ((d & 0xffu) * inv)) / 255u;
+
+    *dst = 0xff000000u | (r << 16) | (g << 8) | b;
+}
+
+/*
+ * A run in the console's own face. The coverage buffer is one line tall and the run is rendered at a
+ * baseline inside it, then composited at `y`, which is the TOP of the line - callers lay out against
+ * boxes, not against a baseline they cannot see.
+ */
+/*
+ * `scale` carries over from the drawn font, where it meant "multiply every pixel". Here it selects a
+ * size instead, and the two sizes are the two the panel uses - a heading and everything else. Keeping
+ * the parameter rather than adding a second one means the layout code did not have to change when the
+ * face did.
+ */
+static float size_for(int scale)
+{
+    return (scale >= 2) ? 30.0f : 19.0f;
+}
+
+static void draw_sys(int x, int y, int scale, uint32_t argb, const char *text)
+{
+    int base;
+
+    rc_sysfont_set_size(size_for(scale));
+    base = rc_sysfont_ascent();
+    int row, col, h;
+
+    memset(s_cov, 0, sizeof(s_cov));
+    (void)rc_sysfont_render(s_cov, RC_OV_W, RC_OV_COV_H, x, base, text);
+
+    h = RC_OV_COV_H;
+    if (y + h > RC_OV_H)
+        h = RC_OV_H - y;
+
+    for (row = 0; row < h; row++) {
+        const unsigned char *src = s_cov + (size_t)row * RC_OV_W;
+        uint32_t *dst = s_bitmap + (size_t)(y + row) * RC_OV_W;
+
+        if (y + row < 0)
+            continue;
+        for (col = 0; col < RC_OV_W; col++) {
+            if (src[col] != 0u)
+                blend_px(&dst[col], argb, src[col]);
+        }
+    }
+}
+
 static void draw_prop(int x, int y, int scale, uint32_t argb, const char *text)
 {
-    uint32_t c = premul(argb);
+    uint32_t c;
     int i;
 
+    if (s_sysfont) {
+        draw_sys(x, y, scale, argb, text);
+        return;
+    }
+    c = premul(argb);
     for (i = 0; text[i] != '\0'; i++)
         x += draw_prop_char(x, y, scale, text[i], c);
+}
+
+/* Measured through whichever face is in use, so right-alignment does not depend on which one opened. */
+static int text_width(const char *text, int scale)
+{
+    if (s_sysfont) {
+        rc_sysfont_set_size(size_for(scale));
+        return rc_sysfont_render(NULL, 0, 0, 0, 0, text);
+    }
+    return prop_width(text, scale);
 }
 
 static void draw_mono(int x, int y, int scale, uint32_t argb, const char *text)
@@ -218,7 +323,7 @@ void rc_overlay_text_right(int x, int y, int scale, uint32_t argb, const char *f
     va_start(ap, fmt);
     (void)vsnprintf(text, sizeof(text), fmt, ap);
     va_end(ap);
-    draw_prop(x - prop_width(text, scale), y, scale, argb, text);
+    draw_prop(x - text_width(text, scale), y, scale, argb, text);
 }
 
 void rc_overlay_num(int x, int y, int scale, uint32_t argb, const char *fmt, ...)
@@ -293,6 +398,7 @@ int rc_overlay_begin(void)
     if (now < s_next_rebuild)
         return 0;
     s_next_rebuild = now + RC_OV_REBUILD_MS;
+    s_rebuilt = 1;
 
     /*
      * Cleared to fully transparent rather than to the panel colour. The caller paints the panel, and
@@ -307,5 +413,15 @@ void rc_overlay_end(void)
 {
     if (!s_on || !s_ready)
         return;
+
+    /*
+     * The copy across happens only when the panel actually changed. It is 555 KB in the direction the
+     * Cell is fast at, four times a second - and doing it every frame instead would be 33 MB/s of
+     * writes to VRAM for a picture that is identical fourteen times out of fifteen.
+     */
+    if (s_rebuilt) {
+        memcpy(s_vram, s_bitmap, (size_t)RC_OV_W * RC_OV_H * 4u);
+        s_rebuilt = 0;
+    }
     rc_video_overlay_blit(s_offset, RC_OV_W * 4, RC_OV_W, RC_OV_H, s_x, s_y);
 }

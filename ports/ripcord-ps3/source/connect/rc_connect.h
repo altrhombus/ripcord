@@ -385,6 +385,8 @@ typedef struct {
     unsigned rsx_blits;
     unsigned rsx_refused;        /* asked for, could not run, fell back to the SPE scaler */
     int      diagnostics;        /* the overlay was asked for */
+    int      overlay_system_font;/* the console's own face opened, rather than the drawn fallback */
+    char     overlay_font_status[96];
     int      stream_is_hevc;     /* the console sent HEVC; cellVdec decodes H.264 only */
     int      picture_in_vram;    /* the decoder wrote where the RSX could read it - no copy at all */
 } rc_connect_result;

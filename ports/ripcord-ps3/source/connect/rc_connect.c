@@ -24,6 +24,8 @@
 #include "rc_spu_yuv.h"
 #include "rc_video_ps3.h"
 #include "rc_overlay.h"
+#include "rc_sysfont.h"
+#include <stdio.h>
 #include "rc_build_id.h"
 #include "takion_control_proto.h"
 #include "takion_session_negotiator.h"
@@ -2321,6 +2323,9 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
 
                         rc_overlay_set(rec->diagnostics);
                         out->diagnostics = rec->diagnostics;
+                        out->overlay_system_font = rc_overlay_using_system_font();
+                        snprintf(out->overlay_font_status, sizeof(out->overlay_font_status), "%s",
+                                 rc_sysfont_status());
                         g_overlay_t0 = rc_time_ms();
                         g_overlay_asked_w = out->asked_width;
                         g_overlay_asked_h = out->asked_height;

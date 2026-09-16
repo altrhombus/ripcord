@@ -35,6 +35,10 @@
 void rc_overlay_set(int on);
 int  rc_overlay_on(void);
 
+/* 1 when the console's own face opened, 0 when the drawn fallback is in use. Worth reporting: the two
+ * look different enough that "which font is this" is otherwise guessed from the screen. */
+int  rc_overlay_using_system_font(void);
+
 /* The bitmap's size, so the caller can lay out against it without duplicating the constants. */
 int rc_overlay_width(void);
 int rc_overlay_height(void);
