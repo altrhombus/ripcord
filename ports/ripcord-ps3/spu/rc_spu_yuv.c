@@ -23,6 +23,24 @@
 #define TAG 0u
 
 /*
+ * TWO MORE TAGS, ONE PER OUTPUT BUFFER, SO A STORE NEED NOT BE WAITED ON.
+ *
+ * The loop used a single tag and blocked after every transfer, which was the right shape while the
+ * arithmetic dominated: b185 measured 1,667 us of waiting against 16,444 us of converting and scaling,
+ * 9%, and double buffering was proposed, measured and rejected on exactly that number.
+ *
+ * Removing the colour conversion and vectorising the scaler changed the answer. b193 measures 4,007 us
+ * of waiting against 4,386 us of work - 48% - so the waiting is now worth removing, and the stores are
+ * the larger half of it: at 720p into 1080p each SPE issues about 360 puts of 7,680 bytes against 240
+ * gets of 5,120.
+ *
+ * With two output buffers a put need only be waited on before its buffer is written again, which is two
+ * source rows later rather than immediately.
+ */
+#define TAG_PUT0 1u
+#define TAG_PUT1 2u
+
+/*
  * Local store is 256 KB for this program, its stack and every buffer below. At the maximum width this
  * is sized for, one pass costs: 2 luma rows (2 x 1280), one chroma row pair (2 x 640), and 2 output rows
  * (2 x 1280 x 4) = 13,824 bytes. Two of everything would allow overlapping DMA with compute, which is
@@ -37,7 +55,7 @@ static unsigned char g_v[RC_SPU_YUV_MAX_WIDTH / 2] __attribute__((aligned(128)))
  * conversion is vectorised over contiguous source pixels and the scale is a gather - trying to do both
  * in one pass would make the expensive half scalar to suit the cheap half. */
 static unsigned int g_line[RC_SPU_YUV_MAX_WIDTH] __attribute__((aligned(128)));
-static unsigned int g_out[RC_SPU_YUV_MAX_DST_WIDTH] __attribute__((aligned(128)));
+static unsigned int g_out[2][RC_SPU_YUV_MAX_DST_WIDTH] __attribute__((aligned(128)));
 
 /* Sequence first, so the PPE's existing poll on the first word is unchanged; the two tick counts ride
  * along in the same 16-byte transfer. The MFC accepts 1, 2, 4, 8 or a multiple of 16 - see the note in
@@ -142,7 +160,7 @@ static void convert_line(unsigned int width)
  * version costs before a better one is chosen. Bilinear is roughly three times the work and is the
  * obvious next step if the budget allows it.  [X] - not yet compared side by side on hardware.
  */
-static void scale_line(unsigned int src_width, unsigned int dst_width)
+static void scale_line(unsigned int *out, unsigned int src_width, unsigned int dst_width)
 {
     unsigned int step;
     unsigned int acc = 0u;
@@ -164,13 +182,13 @@ static void scale_line(unsigned int src_width, unsigned int dst_width)
     if (src_width == dst_width) {
         /* No scaling at all: a straight quadword copy, with whatever the width leaves over done singly. */
         const vec_uint4 *in = (const vec_uint4 *)g_line;
-        vec_uint4 *out = (vec_uint4 *)g_out;
+        vec_uint4 *outv = (vec_uint4 *)out;
         unsigned int quads = dst_width >> 2;
 
         for (x = 0u; x < quads; x++)
-            out[x] = in[x];
+            outv[x] = in[x];
         for (x = quads << 2; x < dst_width; x++)
-            g_out[x] = g_line[x];
+            out[x] = g_line[x];
         return;
     }
 
@@ -188,13 +206,13 @@ static void scale_line(unsigned int src_width, unsigned int dst_width)
         v = spu_insert(g_line[acc >> 16], v, 3);
         acc += step;
 
-        /* g_out is 128-byte aligned and x is a multiple of four, so this is a natural quadword store. */
-        *(vec_uint4 *)&g_out[x] = v;
+        /* The buffer is 128-byte aligned and x is a multiple of four: a natural quadword store. */
+        *(vec_uint4 *)&out[x] = v;
     }
 
     /* At most three pixels, which is not worth a special case beyond this one. */
     for (; x < dst_width; x++) {
-        g_out[x] = g_line[acc >> 16];
+        out[x] = g_line[acc >> 16];
         acc += step;
     }
 }
@@ -276,7 +294,18 @@ int main(uint64_t job_ea, uint64_t unused1, uint64_t unused2, uint64_t unused3)
              * YUV420's 1.5 - and double buffering is the answer instead, which is what IBM's Cell
              * programming guide spends a chapter on.
              */
+            /*
+             * The output buffer alternates only when a row is RECOMPUTED. Consecutive output rows often
+             * map to the same source row - at 2x every one does - and those are stored from the same
+             * buffer twice, which is safe because nothing rewrites it in between. Alternating on every
+             * row instead would store a buffer that had not been filled.
+             */
+            unsigned int ob = 1u;
+            unsigned int put_issued[2];
             unsigned int cached_y_row = 0xffffffffu;
+
+            put_issued[0] = 0u;
+            put_issued[1] = 0u;
             unsigned int cached_uv_row = 0xffffffffu;
             unsigned int out_row;
 
@@ -290,6 +319,7 @@ int main(uint64_t job_ea, uint64_t unused1, uint64_t unused2, uint64_t unused3)
                     src_row = g_job.src_height - 1u;
 
                 if (src_row != cached_y_row && g_job.source_argb) {
+                    ob ^= 1u;
                     /*
                      * Packed RGB: the source row IS the line buffer's contents, so it is fetched
                      * straight into it and convert_line is not called at all. Sizes stay MFC-legal
@@ -305,10 +335,20 @@ int main(uint64_t job_ea, uint64_t unused1, uint64_t unused2, uint64_t unused3)
                     (void)mfc_read_tag_status_all();
                     dma_ticks += t0 - spu_read_decrementer();
 
+                    /* Only now, before this buffer is overwritten, does its last store have to be
+                     * finished with. */
+                    if (put_issued[ob]) {
+                        t0 = spu_read_decrementer();
+                        mfc_write_tag_mask(1u << (TAG_PUT0 + ob));
+                        (void)mfc_read_tag_status_all();
+                        dma_ticks += t0 - spu_read_decrementer();
+                    }
+
                     t0 = spu_read_decrementer();
-                    scale_line(g_job.src_width, g_job.dst_width);
+                    scale_line(g_out[ob], g_job.src_width, g_job.dst_width);
                     work_ticks += t0 - spu_read_decrementer();
                 } else if (src_row != cached_y_row) {
+                    ob ^= 1u;
                     unsigned int t0;
 
                     mfc_get(g_y, g_job.y_ea + (unsigned long long)src_row * g_job.y_stride,
@@ -324,25 +364,41 @@ int main(uint64_t job_ea, uint64_t unused1, uint64_t unused2, uint64_t unused3)
                     }
                     /* The decrementer counts DOWN, so elapsed is before-minus-after. */
                     t0 = spu_read_decrementer();
+                    mfc_write_tag_mask(1u << TAG);
                     (void)mfc_read_tag_status_all();
                     dma_ticks += t0 - spu_read_decrementer();
+
+                    if (put_issued[ob]) {
+                        t0 = spu_read_decrementer();
+                        mfc_write_tag_mask(1u << (TAG_PUT0 + ob));
+                        (void)mfc_read_tag_status_all();
+                        dma_ticks += t0 - spu_read_decrementer();
+                    }
 
                     t0 = spu_read_decrementer();
                     convert_line(g_job.src_width);
-                    scale_line(g_job.src_width, g_job.dst_width);
+                    scale_line(g_out[ob], g_job.src_width, g_job.dst_width);
                     work_ticks += t0 - spu_read_decrementer();
                 }
 
-                {
-                    unsigned int t0;
-
-                    mfc_put(g_out, g_job.dst_ea + (unsigned long long)out_row * g_job.dst_stride,
-                            g_job.dst_width * 4u, TAG, 0, 0);
-                    t0 = spu_read_decrementer();
-                    (void)mfc_read_tag_status_all();
-                    dma_ticks += t0 - spu_read_decrementer();
-                }
+                /* Issued and left to run. Nothing waits on it until this buffer is written again. */
+                mfc_put(g_out[ob], g_job.dst_ea + (unsigned long long)out_row * g_job.dst_stride,
+                        g_job.dst_width * 4u, TAG_PUT0 + ob, 0, 0);
+                put_issued[ob] = 1u;
             }
+        }
+
+        /*
+         * EVERY STORE MUST LAND BEFORE THE STRIP IS CALLED FINISHED. The puts are no longer waited on
+         * where they are issued, so the last one or two are still in flight here - and the PPE takes the
+         * sequence word as permission to blit, which would then race the tail of its own picture.
+         */
+        {
+            unsigned int t0 = spu_read_decrementer();
+
+            mfc_write_tag_mask((1u << TAG_PUT0) | (1u << TAG_PUT1));
+            (void)mfc_read_tag_status_all();
+            dma_ticks += t0 - spu_read_decrementer();
         }
 
         /*
@@ -354,6 +410,7 @@ int main(uint64_t job_ea, uint64_t unused1, uint64_t unused2, uint64_t unused3)
         g_report[2] = work_ticks;
         g_report[3] = 0u;
         phase = g_job.sequence;
+        mfc_write_tag_mask(1u << TAG);
         mfc_put((void *)g_report, g_job.done_ea, 16u, TAG, 0, 0);
         (void)mfc_read_tag_status_all();
     }
