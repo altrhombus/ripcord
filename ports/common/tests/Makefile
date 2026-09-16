@@ -82,6 +82,13 @@ STREAM_DEMUX_TARGET := $(BUILD)/stream_demux_test
 ECDH_TARGET := $(BUILD)/ecdh_test
 CONTROL_PROTO_TARGET := $(BUILD)/control_proto_test
 INPUT_TARGET := $(BUILD)/input_test
+REGISTRATION_TARGET := $(BUILD)/registration_test
+REGISTRATION_VECTORS := vectors/registration-crypto.kat
+
+# A SECOND generated constants file, with --registration. The rest of this suite deliberately builds
+# without the registration tables - that is the shape ripcord-3ds links - and checking the registration
+# arithmetic needs them, so the two coexist rather than one being turned on for everybody.
+REGISTRATION_GENERATED := $(BUILD)/halyard_v1_constants_reg.g.c
 
 INCLUDES  := -I$(CORE)/crypto -I$(CORE)/halyard -I$(CORE)/platform
 
@@ -205,11 +212,16 @@ INPUT_SOURCES := \
 	$(CORE)/input/halyard_input.c \
 	input_test.c
 
+REGISTRATION_SOURCES := \
+	$(CORE)/halyard/halyard_registration.c \
+	registration_test.c
+
 .PHONY: all check build clean constants
 
 all: check
 
-check: $(TARGET) $(VECTORS) $(DISCOVERY_TARGET) $(SESSION_TARGET) $(TAKION_TARGET) $(STREAM_CRYPTO_TARGET) $(STREAM_VECTORS) $(FEC_TARGET) $(STREAM_HEADER_TARGET) $(STREAM_DEMUX_TARGET) $(ECDH_TARGET) $(SESSION_VECTORS) $(CONTROL_PROTO_TARGET) $(PROTO_VECTORS) $(INPUT_TARGET)
+check: $(TARGET) $(VECTORS) $(DISCOVERY_TARGET) $(SESSION_TARGET) $(TAKION_TARGET) $(STREAM_CRYPTO_TARGET) $(STREAM_VECTORS) $(FEC_TARGET) $(STREAM_HEADER_TARGET) $(STREAM_DEMUX_TARGET) $(ECDH_TARGET) $(SESSION_VECTORS) $(CONTROL_PROTO_TARGET) $(PROTO_VECTORS) $(INPUT_TARGET) \
+         $(REGISTRATION_TARGET) $(REGISTRATION_VECTORS)
 	./$(TARGET) $(VECTORS)
 	./$(DISCOVERY_TARGET)
 	./$(SESSION_TARGET)
@@ -221,6 +233,7 @@ check: $(TARGET) $(VECTORS) $(DISCOVERY_TARGET) $(SESSION_TARGET) $(TAKION_TARGE
 	./$(ECDH_TARGET) $(SESSION_VECTORS)
 	./$(CONTROL_PROTO_TARGET) $(PROTO_VECTORS)
 	./$(INPUT_TARGET)
+	./$(REGISTRATION_TARGET) $(REGISTRATION_VECTORS)
 
 build: $(TARGET) $(DISCOVERY_TARGET) $(SESSION_TARGET) $(TAKION_TARGET) $(STREAM_CRYPTO_TARGET) $(FEC_TARGET) $(STREAM_HEADER_TARGET) $(STREAM_DEMUX_TARGET) $(ECDH_TARGET) $(CONTROL_PROTO_TARGET)
 
@@ -289,6 +302,14 @@ $(CONTROL_PROTO_TARGET): $(CONTROL_PROTO_SOURCES)
 $(INPUT_TARGET): $(INPUT_SOURCES)
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) -o $@ $(INPUT_SOURCES)
+
+$(REGISTRATION_GENERATED): $(BUNDLE) $(CORE)/tools/gen_constants.py
+	@mkdir -p $(@D)
+	$(PYTHON) $(CORE)/tools/gen_constants.py --registration $(BUNDLE) $@
+
+$(REGISTRATION_TARGET): $(REGISTRATION_SOURCES) $(REGISTRATION_GENERATED)
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $(REGISTRATION_SOURCES) $(REGISTRATION_GENERATED)
 
 # Not a rule that generates it: the emitter is a .NET project and quietly shelling out to `dotnet` from a
 # C makefile would be a surprising amount of machinery to hide behind `make`. Say what to run instead.
