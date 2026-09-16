@@ -47,6 +47,9 @@ void rc_overlay_set(int on);
 void rc_overlay_show(int on);
 int  rc_overlay_shown(void);
 
+/* Whether the bitmap and atlas exist. Nothing can be drawn before rc_overlay_set has succeeded. */
+int  rc_overlay_prepared(void);
+
 /* Prepared AND shown, which is what the present path actually wants to know. */
 int  rc_overlay_on(void);
 

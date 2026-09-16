@@ -61,6 +61,7 @@
 #include "rc_video_ps3.h"
 #include "rc_status_screen.h"
 #include "rc_pair_ps3.h"
+#include "rc_overlay.h"
 #include "rc_spu_yuv.h"
 
 /*
@@ -2079,6 +2080,22 @@ static int check_display(void)
     ps3_log("       %dx%d, pitch %d bytes (%d bytes/pixel), %d buffers, videoGetState reported %d\n",
             info.width, info.height, info.pitch,
             info.width > 0 ? info.pitch / info.width : 0, info.buffers, info.video_state);
+
+    /*
+     * THE OVERLAY IS PREPARED HERE, as soon as there is a display to prepare it against.
+     *
+     * It used to be prepared deep inside the stream setup, which meant it existed only on runs that
+     * got as far as streaming. Every other run - and in particular every PAIRING run, which by
+     * definition has no pairing record and never reaches that code - had no bitmap, no font atlas, and
+     * a status screen that silently drew nothing. That is why three pairing attempts in a row showed a
+     * test pattern and then a blank screen: the cards were being asked for and were quietly declined.
+     *
+     * Preparing it early costs a couple of megabytes and a font atlas before the first frame, and it
+     * means anything that wants to say something to the viewer can, from the moment the display is up.
+     */
+    rc_overlay_set_system_font(1);
+    rc_overlay_set(1);
+    ps3_log("       overlay: %s\n", rc_overlay_prepared() ? "ready" : "NOT PREPARED - no cards can be drawn");
 
     /*
      * Held for a few seconds rather than flashed. The point is a human looking at a television, and
