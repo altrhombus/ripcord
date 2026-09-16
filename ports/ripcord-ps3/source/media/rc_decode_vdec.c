@@ -31,7 +31,18 @@
 /* Matches RC_FRAME_SLOT_BYTES in rc_connect.c, and for the same reason - a 1080p keyframe does not fit
  * in 96 KB with any margin worth having. */
 #define RC_VDEC_AU_BYTES (256 * 1024)
-#define RC_VDEC_PICTURE_BYTES (1920 * 1088 * 3 / 2)
+/*
+ * SIZED FOR THE WIDEST FORMAT, WHICH IS RGB AND NOT YUV.
+ *
+ * This was 1920*1088*3/2 - a YUV420 picture - and b188 asked the decoder for ARGB32 without resizing it.
+ * Packed RGB is four bytes a pixel against YUV420's one and a half, so at 1280x720 vdecGetPicture wrote
+ * 3,686,400 bytes into a 3,133,440 byte slot: half a megabyte past the end of every picture, into the
+ * next slot and beyond. The console locked up immediately and stayed locked.
+ *
+ * The guard below did not catch it because it tested the YUV size too. Both are fixed together; a bound
+ * that does not know which format it is bounding is not a bound.
+ */
+#define RC_VDEC_PICTURE_BYTES (1920 * 1088 * 4)
 #define RC_VDEC_MEM_ALIGN (1024u * 1024u)
 
 static uint8_t s_au[RC_VDEC_AU_SLOTS][RC_VDEC_AU_BYTES] __attribute__((aligned(128)));
@@ -138,6 +149,7 @@ static unsigned s_au_last_slices;
 static unsigned s_drop_ring_full;
 static unsigned s_drop_submit;
 static unsigned s_drop_collect;
+static unsigned s_drop_too_large;
 static int s_drop_submit_error;
 static int s_num_spus;
 static unsigned s_submit_waits;
@@ -260,8 +272,15 @@ static u32 vdec_callback(u32 handle, u32 msgtype, u32 msgdata, u32 arg)
                 h = (int)info->height;
             }
         }
-        if (w <= 0 || h <= 0 || (long)w * (long)h * 3 / 2 > RC_VDEC_PICTURE_BYTES)
-            return 0;
+        /* Against the size of the format actually being requested - see RC_VDEC_PICTURE_BYTES. */
+        {
+            long needed = (long)w * (long)h * ((s_rgb_sink != NULL) ? 4 : 3) / ((s_rgb_sink != NULL) ? 1 : 2);
+
+            if (w <= 0 || h <= 0 || needed > RC_VDEC_PICTURE_BYTES) {
+                s_drop_too_large++;
+                return 0;
+            }
+        }
 
         /*
          * Never the buffer the caller is still reading. b160's version reduced to "always slot 0", so
@@ -362,7 +381,7 @@ int rc_decode_vdec_open(int width, int height)
      * The size is no longer what picks the level - see below - but it is still checked, because a
      * picture larger than the output buffers would be written past their end.
      */
-    if ((long)width * (long)height * 3 / 2 > RC_VDEC_PICTURE_BYTES)
+    if ((long)width * (long)height * 4 > RC_VDEC_PICTURE_BYTES)
         return 0;
 
     if (s_open)
@@ -389,6 +408,7 @@ int rc_decode_vdec_open(int width, int height)
     s_drop_ring_full = 0;
     s_drop_submit = 0;
     s_drop_collect = 0;
+    s_drop_too_large = 0;
     s_drop_submit_error = 0;
     s_submit_waits = 0;
     s_chain_broken = 0;
@@ -508,7 +528,7 @@ unsigned rc_decode_vdec_drop_ring_full(void) { return s_drop_ring_full; }
 unsigned rc_decode_vdec_drop_submit(void) { return s_drop_submit; }
 int rc_decode_vdec_drop_submit_error(void) { return s_drop_submit_error; }
 unsigned rc_decode_vdec_submit_waits(void) { return s_submit_waits; }
-unsigned rc_decode_vdec_drop_collect(void) { return s_drop_collect; }
+unsigned rc_decode_vdec_drop_collect(void) { return s_drop_collect + s_drop_too_large; }
 unsigned rc_decode_vdec_pictures_overwritten(void) { return s_pic_overwritten; }
 
 int rc_decode_vdec_take_chain_broken(void)
