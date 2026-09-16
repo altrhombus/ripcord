@@ -1065,16 +1065,23 @@ static int check_connect(void)
                  * wrong, not the console.
                  */
                 if (c.thermal.samples >= 2u) {
-                    ps3_log("       TEMPERATURE across the hold: Cell %u.%u -> %u.%u C (%+d.%u),"
-                            " RSX %u.%u -> %u.%u C (%+d.%u)\n",
+                    /*
+                     * THE SIGN IS TAKEN FROM THE DELTA, NOT FROM ITS INTEGER PART. b203 printed a Cell
+                     * fall of 0.5 C as "+0.5": C truncates -5/10 towards zero, so %+d saw 0 and signed
+                     * it positive, and every delta between -0.9 and -0.1 came out backwards - which is
+                     * exactly the range this measurement lives in. Sign once, magnitudes after.
+                     */
+                    int cd = (int)c.thermal.cell_last - (int)c.thermal.cell_first;
+                    int rd = (int)c.thermal.rsx_last - (int)c.thermal.rsx_first;
+
+                    ps3_log("       TEMPERATURE across the hold: Cell %u.%u -> %u.%u C (%s%d.%d),"
+                            " RSX %u.%u -> %u.%u C (%s%d.%d)\n",
                             c.thermal.cell_first / 10u, c.thermal.cell_first % 10u,
                             c.thermal.cell_last / 10u, c.thermal.cell_last % 10u,
-                            ((int)c.thermal.cell_last - (int)c.thermal.cell_first) / 10,
-                            (unsigned)(abs((int)c.thermal.cell_last - (int)c.thermal.cell_first) % 10),
+                            cd < 0 ? "-" : "+", abs(cd) / 10, abs(cd) % 10,
                             c.thermal.rsx_first / 10u, c.thermal.rsx_first % 10u,
                             c.thermal.rsx_last / 10u, c.thermal.rsx_last % 10u,
-                            ((int)c.thermal.rsx_last - (int)c.thermal.rsx_first) / 10,
-                            (unsigned)(abs((int)c.thermal.rsx_last - (int)c.thermal.rsx_first) % 10));
+                            rd < 0 ? "-" : "+", abs(rd) / 10, abs(rd) % 10);
                     ps3_log("       closing raw sensor words 0x%08X (Cell) 0x%08X (RSX);"
                             " one fan serves both, so the PAIR is the reading\n",
                             c.thermal.cell_raw_last, c.thermal.rsx_raw_last);
