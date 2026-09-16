@@ -848,6 +848,13 @@ static void send_periodic(halyard_control_session *session, rc_connect_result *o
     (void)session;
 
     /*
+     * The thermal sample rides the congestion tick rather than getting a timer of its own. It is two
+     * syscalls, it is not on the video path, and a reading a second over a 30-second hold is already
+     * more resolution than a fan curve has.
+     */
+    rc_thermal_sample(&out->thermal);
+
+    /*
      * CONGESTION FEEDBACK: what arrived and what did not. The console's rate controller adapts to it,
      * and the counts come from the demuxer, which has been computing them all along.
      * stream_demux_take_packet_stats RESETS on read, so each report covers its own window.
