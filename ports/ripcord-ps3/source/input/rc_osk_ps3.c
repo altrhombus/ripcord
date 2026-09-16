@@ -1,6 +1,7 @@
 /* See rc_osk_ps3.h. */
 #include "rc_osk_ps3.h"
 
+#include "rc_log.h"
 #include "rc_platform.h"
 
 #include <sys/memory.h>
@@ -29,6 +30,7 @@ static u16 s_message[RC_OSK_MAX_CHARS + 1];
 static u16 s_initial[RC_OSK_MAX_CHARS + 1];
 static u16 s_result[RC_OSK_MAX_CHARS + 1];
 
+static unsigned s_container_bytes;
 static volatile int s_done;
 static volatile int s_cancelled;
 
@@ -118,8 +120,44 @@ rc_osk_status rc_osk_ask(rc_osk_kind kind, const char *prompt, const char *initi
         return RC_OSK_UNAVAILABLE;
     out[0] = '\0';
 
-    if (sysMemContainerCreate(&container, RC_OSK_CONTAINER_BYTES) != 0)
-        return RC_OSK_UNAVAILABLE;
+    /*
+     * EACH STEP SAYS WHICH ONE IT WAS. There are four ways to fail to raise this dialog and they need
+     * different fixes - a memory container refused is not a callback slot taken is not a load refused.
+     * b302 reported none of them and cost a run to establish only that something had.
+     *
+     * AND THE CONTAINER IS SWEPT RATHER THAN ASSUMED. This binary carries 54 MB of BSS - the decoder's
+     * picture slots alone are 33 - so a megabyte carved out of what is left may simply not be there,
+     * and the sizes a dialog will accept are not documented anywhere reachable. Three are tried in
+     * descending order, and then no container at all, which some of this SDK's calls take to mean "use
+     * the process's own memory". The one that worked is named in the log.
+     *
+     * Swept rather than guessed for the reason cellFont cost six runs: one hypothesis per hardware
+     * trip is a bad exchange rate when the alternative is four calls.
+     */
+    {
+        static const unsigned kSizes[] = { 1024u * 1024u, 512u * 1024u, 256u * 1024u, 0u };
+        unsigned i;
+        s32 rc = -1;
+
+        for (i = 0u; i < sizeof(kSizes) / sizeof(kSizes[0]); i++) {
+            if (kSizes[i] == 0u) {
+                /* No container. Not a size of zero - the absence of one. */
+                container = 0;
+                rc = 0;
+                rc_log("osk:   no memory container (every size was refused)\n");
+                break;
+            }
+            rc = sysMemContainerCreate(&container, kSizes[i]);
+            if (rc == 0) {
+                s_container_bytes = kSizes[i];
+                rc_log("osk:   memory container of %u bytes\n", kSizes[i]);
+                break;
+            }
+            rc_log("osk:   sysMemContainerCreate(%u) refused (0x%08X)\n", kSizes[i], (unsigned)rc);
+        }
+        if (rc != 0)
+            return RC_OSK_UNAVAILABLE;
+    }
 
     widen(prompt, s_message, RC_OSK_MAX_CHARS + 1u);
     widen(initial, s_initial, RC_OSK_MAX_CHARS + 1u);
@@ -146,20 +184,36 @@ rc_osk_status rc_osk_ask(rc_osk_kind kind, const char *prompt, const char *initi
 
     s_done = 0;
     s_cancelled = 0;
+    s_container_bytes = 0u;
 
-    if (sysUtilRegisterCallback(SYSUTIL_EVENT_SLOT0, osk_event, NULL) != 0) {
-        sysMemContainerDestroy(container);
-        return RC_OSK_UNAVAILABLE;
+    {
+        s32 rc = sysUtilRegisterCallback(SYSUTIL_EVENT_SLOT0, osk_event, NULL);
+
+        if (rc != 0) {
+            rc_log("osk:   sysUtilRegisterCallback refused (0x%08X)\n", (unsigned)rc);
+            if (s_container_bytes != 0u)
+                sysMemContainerDestroy(container);
+            return RC_OSK_UNAVAILABLE;
+        }
     }
 
     oskSetLayoutMode(OSK_LAYOUTMODE_HORIZONTAL_ALIGN_CENTER | OSK_LAYOUTMODE_VERTICAL_ALIGN_CENTER);
     oskSetInitialInputDevice(OSK_DEVICE_PAD);
 
-    if (oskLoadAsync(container, &param, &field) != 0) {
-        sysUtilUnregisterCallback(SYSUTIL_EVENT_SLOT0);
-        sysMemContainerDestroy(container);
-        return RC_OSK_UNAVAILABLE;
+    {
+        s32 rc = oskLoadAsync(container, &param, &field);
+
+        if (rc != 0) {
+            rc_log("osk:   oskLoadAsync refused (0x%08X) - panels 0x%08X first 0x%08X max %d\n",
+                   (unsigned)rc, (unsigned)param.allowedPanels, (unsigned)param.firstViewPanel,
+                   (int)field.maxLength);
+            sysUtilUnregisterCallback(SYSUTIL_EVENT_SLOT0);
+            if (s_container_bytes != 0u)
+                sysMemContainerDestroy(container);
+            return RC_OSK_UNAVAILABLE;
+        }
     }
+    rc_log("osk:   dialog raised, waiting for the user\n");
 
     /*
      * PUMP UNTIL IT SAYS IT IS FINISHED. sysUtilCheckCallback is what actually delivers the events
@@ -172,10 +226,14 @@ rc_osk_status rc_osk_ask(rc_osk_kind kind, const char *prompt, const char *initi
     }
 
     sysUtilUnregisterCallback(SYSUTIL_EVENT_SLOT0);
-    sysMemContainerDestroy(container);
+    if (s_container_bytes != 0u)
+        sysMemContainerDestroy(container);
 
-    if (!s_done)
+    if (!s_done) {
+        rc_log("osk:   no completion event in %u ms - the callback is not being delivered\n",
+               (unsigned)RC_OSK_TIMEOUT_MS);
         return RC_OSK_TIMED_OUT;
+    }
     if (s_cancelled)
         return RC_OSK_CANCELLED;
     status = narrow(s_result, out, out_size) ? RC_OSK_OK : RC_OSK_TOO_LONG;
