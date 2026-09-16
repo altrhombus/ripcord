@@ -224,4 +224,22 @@ typedef struct {
  */
 int halyard_pairing_file_load(const char *argv0, halyard_pairing_record *out_record);
 
+/*
+ * Writes the record back to "pairing.txt" beside `argv0`. Returns 1 on success.
+ *
+ * FOR REGISTRATION TO PERSIST WHAT IT EARNED. A pairing record is the whole product of standing in
+ * front of a console typing a PIN, and one that is not written down means doing it again.
+ *
+ * IT WRITES SECRETS AND IS THE ONLY THING HERE THAT MAY. registkey and companion are tied to one
+ * console and one account - the wrong side of the generic-versus-personal line, and never logged,
+ * never printed, never sent anywhere. They go in this file because that is what the file is for, and
+ * nothing else in this port writes them anywhere at all.
+ *
+ * EXISTING SETTINGS SURVIVE because the record carries them: a caller loads, registers, and saves the
+ * same struct, so a bitrate or a resolution somebody chose is still there afterwards. Saving a record
+ * that was never loaded writes the defaults, which is correct for a first pairing and wrong for
+ * anything else - so load first.
+ */
+int halyard_pairing_file_save(const char *argv0, const halyard_pairing_record *record);
+
 #endif /* HALYARD_PAIRING_FILE_H */

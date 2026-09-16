@@ -60,6 +60,7 @@
 #include "rc_stack_ps3.h"
 #include "rc_video_ps3.h"
 #include "rc_status_screen.h"
+#include "rc_pair_ps3.h"
 #include "rc_spu_yuv.h"
 
 /*
@@ -863,6 +864,24 @@ static int check_connect(void)
      * screen every failure used to produce.
      */
     rc_connect_report_outcome(stage, c.stream_stalled);
+
+    if (stage == RC_CONNECT_NO_RECORD) {
+        /*
+         * NO RECORD IS THE MOMENT TO OFFER PAIRING, not a reason to give up. It is the one failure
+         * with an obvious next action, and asking a user to go and run a desktop tool is only
+         * reasonable while the console cannot do it itself. It can now.
+         *
+         * A successful pairing retries the connect once, because the thing somebody wanted when they
+         * typed a PIN was to stream - not to be told it worked and dropped back to a log.
+         */
+        ps3_log("conn:  no pairing record - offering to pair\n");
+        if (rc_pair_run(NULL)) {
+            ps3_log("conn:  paired; retrying the connection\n");
+            stage = rc_connect(RC_CONNECT_WAKE_TIMEOUT_MS, connect_progress, g_log_dirs, LOG_DIR_COUNT,
+                               &c);
+            rc_connect_report_outcome(stage, c.stream_stalled);
+        }
+    }
 
     if (stage == RC_CONNECT_NO_RECORD) {
         ps3_log("conn:  no pairing record - skipping\n");
