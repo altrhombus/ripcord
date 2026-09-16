@@ -1265,8 +1265,17 @@ static void draw_overlay(void)
 
     if (!rc_overlay_on())
         return;
-    if (!rc_overlay_begin(11))
+
+    /*
+     * BEGIN CAN DECLINE AND END STILL HAS TO RUN. The text is rebuilt a few times a second and the
+     * COPY is queued every frame, because the picture blit overwrites the back buffer each time -
+     * returning early here would show the overlay on one frame in fifteen, which reads as flicker
+     * rather than as a bug.
+     */
+    if (!rc_overlay_begin(11)) {
+        rc_overlay_end();
         return;
+    }
 
     elapsed_ms = (unsigned long)(rc_time_ms() - g_overlay_t0);
     if (elapsed_ms > 0ul) {

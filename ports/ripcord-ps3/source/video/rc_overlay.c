@@ -9,8 +9,17 @@
  * IT IS DRAWN BY THE PPE, INTO RSX MEMORY, AND THAT IS THE ONE THING TO BE CAREFUL ABOUT. Writes that
  * way are fast and reads are roughly two orders of magnitude slower, so this only ever writes: no
  * blending, no read-modify-write, no clearing by reading first. A solid background box is written as
- * solid pixels, and the glyphs are written over it. Twenty lines of 5x7 text at 2x is about 250 KB of
- * stores a frame, which is why it is drawn only when it is being shown.
+ * solid pixels, and the glyphs are written over it.
+ *
+ * IT DRAWS INTO ITS OWN BITMAP, NOT INTO THE BACK BUFFER, and b225 is why. Drawing into the back buffer
+ * put the text there with the PPE immediately after the picture blit had been QUEUED - so the RSX ran
+ * the picture afterwards and painted over every pixel of it. Nothing appeared, on a path where every
+ * counter said the frame had been drawn. The bitmap is copied over the picture by a command issued
+ * after it, which is an ordering the hardware keeps instead of one this code has to win.
+ *
+ * THE TEXT IS REBUILT A FEW TIMES A SECOND, NOT EVERY FRAME. All of it is rates and totals that no one
+ * can read at 60 Hz, and rebuilding costs a few hundred KB of stores. The COPY is queued every frame,
+ * because the picture blit overwrites the back buffer each time.
  */
 #include "rc_overlay.h"
 
@@ -20,23 +29,43 @@
 
 #include "rc_font5x7.h"
 #include "rc_video_ps3.h"
+#include "platform/rc_platform.h"
 
-#define RC_OVERLAY_SCALE   2
-#define RC_OVERLAY_PAD     8
-#define RC_OVERLAY_LINE    (RC_FONT_H * RC_OVERLAY_SCALE + 2)
-#define RC_OVERLAY_MAX_COLS 60
+#define RC_OVERLAY_SCALE    2
+#define RC_OVERLAY_PAD      8
+#define RC_OVERLAY_LINE     (RC_FONT_H * RC_OVERLAY_SCALE + 2)
+#define RC_OVERLAY_MAX_COLS 44
+#define RC_OVERLAY_W        (RC_OVERLAY_MAX_COLS * (RC_FONT_W + 1) * RC_OVERLAY_SCALE \
+                             + RC_OVERLAY_PAD * 2)
+#define RC_OVERLAY_LINES    12
+#define RC_OVERLAY_BOX_H    (RC_OVERLAY_LINES * RC_OVERLAY_LINE + RC_OVERLAY_PAD * 2)
+#define RC_OVERLAY_REBUILD_MS 250u
 
 static int s_on;
-static int s_x = 24;
-static int s_y = 24;
+static int s_x = 32;
+static int s_y = 32;
 static int s_cursor;
-static int s_widest;
+
+/* The bitmap, in RSX memory so the copy can be a command rather than a store. */
 static uint32_t *s_target;
-static int s_stride_px;
+static uint32_t s_offset;
+static int s_stride_px = RC_OVERLAY_W;
+static int s_ready;
+static uint64_t s_next_rebuild;
+
+/* Defined below; rc_overlay_set clears the bitmap the moment it gets one. */
+static void fill(uint32_t *base, int stride_px, int x, int y, int w, int h, uint32_t colour);
 
 void rc_overlay_set(int on)
 {
     s_on = on;
+    if (on && !s_ready) {
+        s_target = (uint32_t *)rc_video_alloc_rsx((size_t)RC_OVERLAY_W * RC_OVERLAY_BOX_H * 4u,
+                                                  &s_offset);
+        s_ready = (s_target != NULL);
+        if (s_ready)
+            fill(s_target, s_stride_px, 0, 0, RC_OVERLAY_W, RC_OVERLAY_BOX_H, 0x00141414u);
+    }
 }
 
 int rc_overlay_on(void)
@@ -63,33 +92,21 @@ static void fill(uint32_t *base, int stride_px, int x, int y, int w, int h, uint
 
 int rc_overlay_begin(int lines)
 {
-    rc_video_info info;
-    int box_w, box_h;
+    uint64_t now;
 
-    if (!s_on)
-        return 0;
-    s_target = rc_video_back_buffer();
-    if (s_target == NULL)
-        return 0;
-    if (!rc_video_info_get(&info) || info.pitch <= 0)
+    (void)lines;
+    if (!s_on || !s_ready)
         return 0;
 
-    s_stride_px = info.pitch / 4;
-    box_w = RC_OVERLAY_MAX_COLS * (RC_FONT_W + 1) * RC_OVERLAY_SCALE + RC_OVERLAY_PAD * 2;
-    box_h = lines * RC_OVERLAY_LINE + RC_OVERLAY_PAD * 2;
-
-    if (s_x + box_w > info.width)
-        box_w = info.width - s_x;
-    if (s_y + box_h > info.height)
-        box_h = info.height - s_y;
-    if (box_w <= 0 || box_h <= 0)
-        return 0;
+    now = rc_time_ms();
+    if (now < s_next_rebuild)
+        return 0;   /* the bitmap still holds the last text; the caller queues the copy regardless */
+    s_next_rebuild = now + RC_OVERLAY_REBUILD_MS;
 
     /* Dark grey rather than black: over a dark game a black box is invisible and the text appears to
      * float, which makes it harder to read, not easier. */
-    fill(s_target, s_stride_px, s_x, s_y, box_w, box_h, 0x00141414u);
+    fill(s_target, s_stride_px, 0, 0, RC_OVERLAY_W, RC_OVERLAY_BOX_H, 0x00141414u);
     s_cursor = 0;
-    s_widest = box_w;
     return 1;
 }
 
@@ -135,15 +152,24 @@ void rc_overlay_line(uint32_t colour, const char *fmt, ...)
     (void)vsnprintf(text, sizeof(text), fmt, ap);
     va_end(ap);
 
-    x = s_x + RC_OVERLAY_PAD;
+    if (s_cursor >= RC_OVERLAY_LINES)
+        return;
+
+    x = RC_OVERLAY_PAD;
     for (i = 0; text[i] != '\0' && i < RC_OVERLAY_MAX_COLS; i++) {
-        draw_char(x, s_y + RC_OVERLAY_PAD + s_cursor * RC_OVERLAY_LINE, text[i], colour);
+        draw_char(x, RC_OVERLAY_PAD + s_cursor * RC_OVERLAY_LINE, text[i], colour);
         x += (RC_FONT_W + 1) * RC_OVERLAY_SCALE;
     }
     s_cursor++;
 }
 
+/*
+ * Queued every frame whether or not the text was rebuilt, because the picture blit overwrites the whole
+ * back buffer each time. Must be called after the picture has been queued - see rc_video_overlay_blit.
+ */
 void rc_overlay_end(void)
 {
-    s_target = NULL;
+    if (!s_on || !s_ready)
+        return;
+    rc_video_overlay_blit(s_offset, RC_OVERLAY_W * 4, RC_OVERLAY_W, RC_OVERLAY_BOX_H, s_x, s_y);
 }
