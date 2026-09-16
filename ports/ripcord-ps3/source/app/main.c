@@ -1079,10 +1079,16 @@ static int check_connect(void)
                 if (!c.pad_connected && c.pad_reads == 0u)
                     ps3_log("       INPUT: no controller was seen on any port\n");
                 else
-                    ps3_log("       INPUT: %u poll(s) answered, %u state and %u transition packet(s)"
-                            " sent, %u connect/disconnect(s)\n",
-                            c.pad_reads, c.input_state_packets, c.input_history_packets,
-                            c.pad_changes);
+                    /*
+                     * READS AND FRESH ARE SEPARATE, and b271 is why. The pad reports only when it has
+                     * something to say, so most polls carry nothing new - which is normal. Printing one
+                     * number for both made "polled 7,500 times, 59 of them new" indistinguishable from
+                     * "polled 59 times", and the second is a fault while the first is not.
+                     */
+                    ps3_log("       INPUT: %u poll(s), %u with new data; %u state and %u transition"
+                            " packet(s) sent; %u connect/disconnect(s)\n",
+                            c.pad_reads, c.pad_fresh, c.input_state_packets,
+                            c.input_history_packets, c.pad_changes);
 
                 if (c.diagnostics) {
                     /*

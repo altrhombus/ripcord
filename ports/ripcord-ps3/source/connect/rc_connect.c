@@ -443,11 +443,20 @@ static unsigned g_hold_ms = RC_STREAM_HOLD_MS;
 static int g_stream_is_hevc;
 
 /*
- * Input cadences. The poll is fast because a controller that is sampled slowly feels broken in a way
- * no amount of smoothness elsewhere makes up for; the state keepalive is slow because it exists only
- * so the console keeps hearing from a pad that is not moving.
+ * Input cadences, and the two are answering different questions.
+ *
+ * THE POLL is 4 ms - 250 Hz - which is deliberately FASTER than any pad reports. A gate of G ms adds
+ * G/2 of latency on average and G at worst, entirely on top of whatever the pad and the network cost,
+ * and it buys nothing once it is quicker than the source: a poll that finds nothing new is two
+ * syscalls. Sampling above the pad's rate means the only delay left is the pad's own, which is the
+ * definition of as fast as this can go. It is cheap to make it faster and it is not cheap to notice
+ * that it was not.
+ *
+ * THE KEEPALIVE is 200 ms and matches HalyardInputPacketWriter.cs. It is not a latency figure: a state
+ * packet goes out the moment anything actually moves, and this only covers a controller that is
+ * perfectly still, so the console keeps hearing that it is still there.
  */
-#define RC_INPUT_POLL_INTERVAL_MS   8u
+#define RC_INPUT_POLL_INTERVAL_MS   4u
 #define RC_INPUT_STATE_INTERVAL_MS  200u
 
 static halyard_input_writer g_input;
@@ -2888,7 +2897,7 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
     out->hold_ms = g_hold_ms;
     rc_video_rsx_scale_stats(&out->rsx_scale_available, &out->rsx_blits, &out->rsx_refused);
     out->picture_in_vram = rc_decode_vdec_picture_in_vram();
-    rc_pad_stats(&out->pad_connected, &out->pad_reads, &out->pad_changes);
+    rc_pad_stats(&out->pad_connected, &out->pad_reads, &out->pad_fresh, &out->pad_changes);
     rc_thermal_sample(&out->thermal);   /* the closing sample - see the note where the hold opens */
     out->idr_requests = g_idr_requests;
 

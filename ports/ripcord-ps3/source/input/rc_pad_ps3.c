@@ -54,6 +54,27 @@ static int16_t deadzone(int16_t v)
     return (v > -RC_PAD_DEADZONE && v < RC_PAD_DEADZONE) ? 0 : v;
 }
 
+/*
+ * A ZERO-LENGTH READ MEANS "NOTHING NEW", NOT "NOTHING THERE", and getting that backwards is what b271
+ * shipped.
+ *
+ * ioPadGetData fills `len` only when the pad has reported since the last call. Polling at 125 Hz
+ * against a pad that reports far less often, and only when something changes, means most calls come
+ * back empty - and treating each one as an absent controller produced 59 answered polls in sixty
+ * seconds and 118 connect/disconnect events, which is the pad apparently vanishing and returning
+ * between every pair of frames.
+ *
+ * It cost more than the counters. A poll that reported "no pad" sent NOTHING - so the 200 ms state
+ * keepalive never ran, and the console heard from the controller about once a second.
+ *
+ * Presence is now decided by info.status alone, which is the field that actually answers it, and the
+ * last good reading is held and re-sent while the pad has nothing new to say. That is also the truth:
+ * a stick that has not moved is still where it was.
+ */
+static halyard_input_state s_last;
+static int s_have_last;
+static unsigned s_fresh;
+
 int rc_pad_read(halyard_input_state *out)
 {
     padInfo info;
@@ -68,8 +89,6 @@ int rc_pad_read(halyard_input_state *out)
     for (port = 0u; port < (u32)RC_PAD_PORTS; port++) {
         if (info.status[port] == 0)
             continue;
-        if (ioPadGetData(port, &data) != 0 || data.len == 0)
-            continue;
 
         if (!s_connected) {
             s_connected = 1;
@@ -77,50 +96,63 @@ int rc_pad_read(halyard_input_state *out)
         }
         s_reads++;
 
-        memset(out, 0, sizeof(*out));
-        out->buttons =
-              (data.BTN_CROSS    ? HALYARD_PAD_CROSS      : 0u)
-            | (data.BTN_CIRCLE   ? HALYARD_PAD_CIRCLE     : 0u)
-            | (data.BTN_SQUARE   ? HALYARD_PAD_SQUARE     : 0u)
-            | (data.BTN_TRIANGLE ? HALYARD_PAD_TRIANGLE   : 0u)
-            | (data.BTN_UP       ? HALYARD_PAD_DPAD_UP    : 0u)
-            | (data.BTN_DOWN     ? HALYARD_PAD_DPAD_DOWN  : 0u)
-            | (data.BTN_LEFT     ? HALYARD_PAD_DPAD_LEFT  : 0u)
-            | (data.BTN_RIGHT    ? HALYARD_PAD_DPAD_RIGHT : 0u)
-            | (data.BTN_L1       ? HALYARD_PAD_L1         : 0u)
-            | (data.BTN_R1       ? HALYARD_PAD_R1         : 0u)
-            | (data.BTN_L2       ? HALYARD_PAD_L2         : 0u)
-            | (data.BTN_R2       ? HALYARD_PAD_R2         : 0u)
-            | (data.BTN_L3       ? HALYARD_PAD_L3         : 0u)
-            | (data.BTN_R3       ? HALYARD_PAD_R3         : 0u)
-            /*
-             * START is Options and SELECT is Create. The PS5 renamed both, and the console is told the
-             * new names' codes; a DualShock 3 has the old buttons in the same places, so this maps by
-             * position rather than by name.
-             */
-            | (data.BTN_START    ? HALYARD_PAD_OPTIONS    : 0u)
-            | (data.BTN_SELECT   ? HALYARD_PAD_CREATE     : 0u);
+        if (ioPadGetData(port, &data) == 0 && data.len > 0) {
+            s_fresh++;
+            memset(&s_last, 0, sizeof(s_last));
+            s_last.buttons =
+                  (data.BTN_CROSS    ? HALYARD_PAD_CROSS      : 0u)
+                | (data.BTN_CIRCLE   ? HALYARD_PAD_CIRCLE     : 0u)
+                | (data.BTN_SQUARE   ? HALYARD_PAD_SQUARE     : 0u)
+                | (data.BTN_TRIANGLE ? HALYARD_PAD_TRIANGLE   : 0u)
+                | (data.BTN_UP       ? HALYARD_PAD_DPAD_UP    : 0u)
+                | (data.BTN_DOWN     ? HALYARD_PAD_DPAD_DOWN  : 0u)
+                | (data.BTN_LEFT     ? HALYARD_PAD_DPAD_LEFT  : 0u)
+                | (data.BTN_RIGHT    ? HALYARD_PAD_DPAD_RIGHT : 0u)
+                | (data.BTN_L1       ? HALYARD_PAD_L1         : 0u)
+                | (data.BTN_R1       ? HALYARD_PAD_R1         : 0u)
+                | (data.BTN_L2       ? HALYARD_PAD_L2         : 0u)
+                | (data.BTN_R2       ? HALYARD_PAD_R2         : 0u)
+                | (data.BTN_L3       ? HALYARD_PAD_L3         : 0u)
+                | (data.BTN_R3       ? HALYARD_PAD_R3         : 0u)
+                /*
+                 * START is Options and SELECT is Create. The PS5 renamed both, and the console is told
+                 * the new names' codes; a DualShock 3 has the old buttons in the same places, so this
+                 * maps by position rather than by name.
+                 */
+                | (data.BTN_START    ? HALYARD_PAD_OPTIONS    : 0u)
+                | (data.BTN_SELECT   ? HALYARD_PAD_CREATE     : 0u);
 
-        out->left_x = deadzone(axis(data.ANA_L_H));
-        out->left_y = deadzone(axis(data.ANA_L_V));
-        out->right_x = deadzone(axis(data.ANA_R_H));
-        out->right_y = deadzone(axis(data.ANA_R_V));
+            s_last.left_x = deadzone(axis(data.ANA_L_H));
+            s_last.left_y = deadzone(axis(data.ANA_L_V));
+            s_last.right_x = deadzone(axis(data.ANA_R_H));
+            s_last.right_y = deadzone(axis(data.ANA_R_V));
+            s_have_last = 1;
+        }
+
+        if (!s_have_last)
+            return 0;   /* connected but has not yet said anything - nothing truthful to send */
+        *out = s_last;
         return 1;
     }
 
     if (s_connected) {
         s_connected = 0;
         s_changes++;
+        s_have_last = 0;
     }
     return 0;
 }
 
-void rc_pad_stats(int *connected, unsigned *reads, unsigned *changes)
+void rc_pad_stats(int *connected, unsigned *reads, unsigned *fresh, unsigned *changes)
 {
     if (connected != NULL)
         *connected = s_connected;
     if (reads != NULL)
         *reads = s_reads;
+    /* Separately from reads, because the two being far apart is the normal and healthy case and their
+     * being EQUAL would mean the pad is reporting on every poll. Conflating them is what hid b271. */
+    if (fresh != NULL)
+        *fresh = s_fresh;
     if (changes != NULL)
         *changes = s_changes;
 }
