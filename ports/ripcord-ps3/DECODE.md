@@ -693,6 +693,27 @@ past the end of every slot into the next one. The bound that should have caught 
 too, so it passed every time. Buffers are now sized for the widest format and the bound takes the
 bytes-per-pixel of the format actually asked for.
 
+### The decoder's colour is byte-exact, and the SPE split is 3/3 — **2026-09-15**
+
+Two questions the RGB path left open, both now answered on hardware.
+
+**Is the conversion right?** The capture's first pixel is `Y=24 U=133 V=125`. The SPE kernel's own BT.709
+limited-range arithmetic gives `R=3 G=9 B=19`; a decoder leaving the input at full range would give
+`24 24 24` and lift every level above it. The decoder returns `ff 03 09 13` — alpha, then exactly those
+three values. Same conversion, same channel order, no shift.
+
+**Where do the SPEs go?** Three each. The converter held four while it converted and scaled; it only
+scales now, so it gave one to the decoder — which had been refusing about a dozen submissions a run, all
+on the large frames of a transition, and a refusal breaks the reference chain. That was the visible
+blockiness and it is gone.
+
+The cleanest run so far: **1,753 pictures of 1,778 frames, zero decode errors, 58 fps, two IDR requests
+and six lost units in thirty seconds.**
+
+Scaling on three SPEs costs 4,943 us a frame against 3,969 on four, which the budget absorbs. The 10,876
+us of arithmetic is now entirely the scaler, still scalar - one output pixel per iteration through a
+16.16 accumulator - and vectorising it is the next win if one is ever needed.
+
 ### Still open
 - **The fifth SPE — `ARGB32` output works.** Asked offline in b179: `vdecGetPicture` accepts
   `VDEC_PICFMT_ARGB32` and fills the buffer (bytes 0..255 across 8 pictures). So the YUV-to-RGB pass
