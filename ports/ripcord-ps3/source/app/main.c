@@ -1023,6 +1023,32 @@ static int check_connect(void)
                 if (c.blits > 0u) {
                     ps3_log("       scaled to %dx%d on a %dx%d display\n",
                             c.scaled_width, c.scaled_height, c.display_width, c.display_height);
+                    {
+                        /*
+                         * THE MODE, AND WHAT THIS PORT DOES NOT HANDLE ABOUT IT. Said every run, so a
+                         * fault in an untested output mode names itself instead of being described as
+                         * "it looks a bit odd". Only 1080p60 progressive has ever been run.
+                         */
+                        int sq = (c.display_width * 9 == c.display_height * 16)
+                              || (c.display_width * 3 == c.display_height * 4
+                                  && c.display_aspect == 1);
+
+                        ps3_log("       mode: %s, %s, refresh mask 0x%02X\n",
+                                c.display_scan_mode == 1 ? "progressive" : "INTERLACED",
+                                c.display_aspect == 2 ? "16:9"
+                                    : (c.display_aspect == 1 ? "4:3" : "aspect auto"),
+                                (unsigned)c.display_refresh);
+                        if (c.display_scan_mode != 1)
+                            ps3_log("       INTERLACED and nothing here filters for it - motion will"
+                                    " comb. libRESC is the fix.\n");
+                        if (!sq)
+                            ps3_log("       PIXELS ARE NOT SQUARE at this size and the fit scales by"
+                                    " pixel COUNT - the picture\n"
+                                    "       geometry will be wrong. libRESC is the fix.\n");
+                        if ((c.display_refresh & 0x02) != 0 && (c.display_refresh & 0x05) == 0)
+                            ps3_log("       50 Hz ONLY - a 60 fps stream has no whole-number"
+                                    " relationship with this display.\n");
+                    }
                     ps3_log("       ON SCREEN: %u picture(s) blitted, %u us average, %u us worst;"
                             " %u dropped because the display was busy\n",
                             c.blits, c.blit_avg_us, c.blit_worst_us, c.pictures_dropped);
