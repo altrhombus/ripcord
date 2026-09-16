@@ -2120,6 +2120,67 @@ int main(void)
             (chosen < LOG_DIR_COUNT) ? g_log_dirs[chosen] : "- ENOSYS everywhere, see main.c");
     ps3_log("\n");
 
+    /*
+     * CAN THIS PROGRAM READ THE SYSTEM FONTS?
+     *
+     * The console keeps its typefaces as ordinary TrueType files in /dev_flash/data/font, and
+     * SCE-PS3-RD-R-LATIN.TTF is Rodin Regular - the face the XMB is set in. Reading one with the
+     * FreeType portlib is the route left after cellFont refused to produce a renderer six times
+     * (DECODE.md has the full elimination), and it is a far better documented one.
+     *
+     * The whole plan turns on a question nobody here can answer from a desk: whether a packaged
+     * homebrew may read /dev_flash at all. FTP can, but that is the FTP server's privileges and not
+     * this program's. So it is asked BEFORE anything is built on it, in the same shape as the
+     * writable-directory probe above and for the same reason - one run settles it, and finding out
+     * afterwards would mean discovering it underneath a font library.
+     *
+     * Both I/O routes are tried because they have disagreed before: this port exists in a build where
+     * newlib returned ENOSYS everywhere and the lv2 syscalls were fine.
+     */
+    {
+        static const char *const kFonts[] = {
+            "/dev_flash/data/font/SCE-PS3-RD-R-LATIN.TTF",   /* Rodin Regular - the XMB's face */
+            "/dev_flash/data/font/SCE-PS3-NR-R-JPN.TTF",     /* New Rodin, Latin inside the JP set */
+        };
+        unsigned f;
+
+        ps3_log("font:  can this program read the system typefaces?\n");
+        for (f = 0u; f < sizeof(kFonts) / sizeof(kFonts[0]); f++) {
+            unsigned char head[8];
+            int lv2_ok = 0, std_ok = 0;
+            long long size = -1;
+            s32 fd = -1;
+            u64 got = 0ull;
+            FILE *fp;
+
+            if (sysLv2FsOpen(kFonts[f], SYS_O_RDONLY, &fd, 0, NULL, 0) == 0) {
+                lv2_ok = 1;
+                if (sysLv2FsRead(fd, head, sizeof(head), &got) != 0)
+                    got = 0ull;
+                sysLv2FsClose(fd);
+            }
+
+            fp = fopen(kFonts[f], "rb");
+            if (fp != NULL) {
+                std_ok = 1;
+                if (fseek(fp, 0, SEEK_END) == 0)
+                    size = ftell(fp);
+                fclose(fp);
+            }
+
+            /*
+             * The first four bytes are reported, not just "it opened". A TrueType file begins
+             * 00 01 00 00 (or "true"/"ttcf"), and a path that opens and hands back something else is a
+             * different fault from a path that does not open - the sort of distinction that cost this
+             * port days when a decoder accepted everything and produced black.
+             */
+            ps3_log("       [%c] lv2  [%c] stdio  %lld bytes  first %02X %02X %02X %02X  %s\n",
+                    lv2_ok ? 'x' : ' ', std_ok ? 'x' : ' ', size,
+                    head[0], head[1], head[2], head[3], kFonts[f]);
+        }
+        ps3_log("\n");
+    }
+
     ps3_log("log:   writable-directory probe, in preference order\n");
     for (i = 0; i < LOG_DIR_COUNT; i++) {
         int fop = dir_accepts_a_file(g_log_dirs[i], "ps3-bringup.log");
