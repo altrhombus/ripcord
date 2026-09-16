@@ -559,16 +559,6 @@ int rc_overlay_ascent(int scale)
 }
 
 /*
- * Where the panel lands on screen. The diagnostics overlay wants a corner; a status card wants the
- * middle. Both are the same bitmap and the same copy, so this is the only difference between them.
- */
-void rc_overlay_set_origin(int x, int y)
-{
-    s_x = x;
-    s_y = y;
-}
-
-/*
  * A rebuild that ignores the throttle.
  *
  * The throttle exists because the diagnostics panel is redrawn from a 60 Hz present path and its
@@ -612,13 +602,19 @@ int rc_overlay_begin(void)
  * nothing when it is hidden; a status card is drawn because something asked for it, not because a
  * toggle is on.
  */
-void rc_overlay_end_now(void)
+void rc_overlay_end_now(int x, int y)
 {
     if (!s_ready)
         return;
     memcpy(s_vram, s_bitmap, (size_t)s_w * (size_t)s_h * 4u);
     s_rebuilt = 0;
-    rc_video_overlay_blit(s_offset, s_w * 4, s_w, s_h, s_x, s_y);
+    /*
+     * THE POSITION IS AN ARGUMENT, NOT STATE, and it is that way because making it state was a bug.
+     * The status card set a shared origin to centre itself and never put it back, so the diagnostics
+     * overlay - which wants the top left - moved to the middle for the rest of the session. Two callers
+     * wanting different positions is not a reason for either to mutate the other's.
+     */
+    rc_video_overlay_blit(s_offset, s_w * 4, s_w, s_h, x, y);
 }
 
 void rc_overlay_end(void)
