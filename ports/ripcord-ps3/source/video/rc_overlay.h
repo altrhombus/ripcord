@@ -32,6 +32,10 @@
 #define RC_OV_BAD      0xFFF06060u
 #define RC_OV_TRACK    0xFF232B34u   /* the empty part of a sparkline                       */
 
+/* Ask for the platform's own font. Must be called BEFORE rc_overlay_set, which is where it is tried.
+ * Off by default on this port - it does not work here, and DECODE.md records what was eliminated. */
+void rc_overlay_set_system_font(int on);
+
 void rc_overlay_set(int on);
 int  rc_overlay_on(void);
 
