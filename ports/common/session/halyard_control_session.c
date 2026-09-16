@@ -164,7 +164,9 @@ static int run_sess_init(halyard_control_session *s, const halyard_pairing_recor
     rc_hex_encode(rec->registkey, rec->registkey_length, regist_hex);
     halyard_sess_request_init(&req, "GET", halyard_sess_path(rec->is_ps5, "init"));
     halyard_sess_request_add_header(&req, "Host", rec->host);
-    halyard_sess_request_add_header(&req, "User-Agent", "remoteplay Windows");
+    halyard_sess_request_add_header(&req, "User-Agent",
+                                    (rec->user_agent[0] != '\0') ? rec->user_agent
+                                                                 : "remoteplay Windows");
     halyard_sess_request_add_header(&req, "Connection", "close");
     halyard_sess_request_add_header(&req, "RP-Registkey", regist_hex);
     halyard_sess_request_add_header(&req, "RP-Version", halyard_sess_version(rec->is_ps5));
@@ -223,7 +225,9 @@ static int run_sess_ctrl(halyard_control_session *s, const halyard_pairing_recor
 
     halyard_sess_request_init(&req, "GET", halyard_sess_path(rec->is_ps5, "ctrl"));
     halyard_sess_request_add_header(&req, "Host", rec->host);
-    halyard_sess_request_add_header(&req, "User-Agent", "remoteplay Windows");
+    halyard_sess_request_add_header(&req, "User-Agent",
+                                    (rec->user_agent[0] != '\0') ? rec->user_agent
+                                                                 : "remoteplay Windows");
     halyard_sess_request_add_header(&req, "Connection", "keep-alive");
     halyard_sess_request_add_header(&req, "RP-Version", halyard_sess_version(rec->is_ps5));
     halyard_sess_request_add_header(&req, "RP-ControllerType", "0");
@@ -249,8 +253,25 @@ static int run_sess_ctrl(halyard_control_session *s, const halyard_pairing_recor
         rc_base64_encode(plain32, sizeof(plain32), did_b64, sizeof(did_b64));
         halyard_sess_request_add_header(&req, "RP-Did", did_b64);
 
-        os_plain_len = halyard_sess_field_os_type_plaintext(rec->os_major, rec->os_minor,
-                                                           os_text, sizeof(os_text));
+        /*
+         * The override replaces the whole string, not its numbers. RP-OSType's plaintext has always
+         * been "Win<major>.<minor>", and the thing worth varying is the part that is not a number -
+         * the console's own remote-play list names every session this project has opened as a PC, and
+         * this field is the most likely place it reads that from. [X]
+         */
+        if (rec->os_type[0] != '\0') {
+            size_t os_len = strlen(rec->os_type);
+
+            if (os_len + 1u <= sizeof(os_text)) {
+                memcpy(os_text, rec->os_type, os_len + 1u);   /* the NUL is part of the plaintext */
+                os_plain_len = os_len + 1u;
+            } else {
+                os_plain_len = 0u;
+            }
+        } else {
+            os_plain_len = halyard_sess_field_os_type_plaintext(rec->os_major, rec->os_minor,
+                                                               os_text, sizeof(os_text));
+        }
         halyard_control_field_encrypt(&s->ctrl, HALYARD_SESS_COUNTER_OS_TYPE,
             (const uint8_t *)os_text, (uint8_t *)os_text, os_plain_len);
         rc_base64_encode((const uint8_t *)os_text, os_plain_len, os_b64, sizeof(os_b64));
