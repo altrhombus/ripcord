@@ -408,7 +408,10 @@ $(BUILD)/$(SPU_NAME)_bin.o: $(BUILD)/$(SPU_NAME).bin
 
 # Regenerated, and the counter bumped, whenever a source file changes - so an unchanged tree rebuilt
 # twice keeps its number rather than inflating it.
-$(BUILD)/rc_build_id.h: $(SOURCES)
+# THE SPU SOURCES COUNT TOO. They were missing, so a change to an SPE kernel produced a new binary under
+# an OLD build id - and the XMB title is how a stale install is spotted, which makes an id that does not
+# move the one thing that must not happen. b185 was uploaded labelled b184 for exactly this reason.
+$(BUILD)/rc_build_id.h: $(SOURCES) $(SPU_SOURCES) $(SPU2_SOURCES) $(CXXSOURCES)
 	@mkdir -p $(@D)
 	@n=$$(( $$(cat $(BUILDNO_FILE) 2>/dev/null || echo 0) + 1 )); \
 	 echo $$n > $(BUILDNO_FILE); \
