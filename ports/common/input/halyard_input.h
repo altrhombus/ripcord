@@ -25,9 +25,9 @@
  *
  * WHAT A GIVEN PAD CANNOT SEND is the front end's business, not this file's. The six motion fields go out
  * at their captured resting values and orientation at a fixed identity unless a caller supplies better -
- * the spec notes a pad without a motion sensor may do exactly this. L2/R2 are still sent as 0x00 or 0xff
- * rather than a level, which is the one place this is behind HalyardInputPacketWriter.cs; every button
- * the .NET writer knows about now has a bit here, including the stick clicks.
+ * the spec notes a pad without a motion sensor may do exactly this. Everything else
+ * HalyardInputPacketWriter.cs can express is expressible here: every button it knows about has a bit,
+ * including the stick clicks, and L2/R2 carry a level rather than a boolean.
  */
 #ifndef HALYARD_INPUT_H
 #define HALYARD_INPUT_H
@@ -47,6 +47,18 @@ typedef struct {
     uint32_t buttons;   /* HALYARD_PAD_* bits */
     int16_t left_x, left_y;
     int16_t right_x, right_y;
+
+    /*
+     * L2 and R2 AS LEVELS, 0..255. The shoulders are analog on every PlayStation pad and the wire has
+     * always carried a level for them: cap48 shows codes 0x86 and 0x87 taking 57 and 52 DISTINCT values
+     * across one session, where every other three-byte code only ever carries 0x00 or 0xff.
+     *
+     * A front end with digital shoulders may leave these zero and set HALYARD_PAD_L2/R2 instead; the
+     * writer treats a set bit with a zero level as fully pressed. A front end with analog shoulders sets
+     * the level and the bit is then redundant. The LEVEL wins where both are present, because it is the
+     * more specific statement of the same fact.
+     */
+    uint8_t left_trigger, right_trigger;
 } halyard_input_state;
 
 /* Button bits. Names are the PlayStation control's, because that is what goes on the wire; the 3DS

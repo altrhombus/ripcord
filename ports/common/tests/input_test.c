@@ -153,6 +153,61 @@ static void test_history_resend(void)
     }
 }
 
+/*
+ * THE TRIGGERS, which are the one part of the history that is not a boolean.
+ *
+ * Codes 0x86 and 0x87 carry a LEVEL - cap48 shows them taking 57 and 52 distinct values where every
+ * other three-byte code only ever carries 0x00 or 0xff. That makes two things worth pinning: that a
+ * mid-travel level survives to the wire rather than being flattened to pressed, and that a front end
+ * with only a digital shoulder still works by setting the bit.
+ */
+static void test_triggers(void)
+{
+    halyard_input_writer w;
+    halyard_input_state s;
+    uint8_t buf[64];
+    size_t n;
+
+    halyard_input_writer_init(&w);
+    memset(&s, 0, sizeof(s));
+    w.previous = s;
+    w.have_previous = 1;
+
+    /* A level the bit form cannot express. */
+    s.left_trigger = 0x5a;
+    n = halyard_input_build_history_payload(&w, &s, buf, sizeof(buf));
+    check(n == 3, "a trigger movement is one 3-byte event");
+    check(buf[0] == 0x80 && buf[1] == 0x86, "left trigger is code 0x86");
+    check(buf[2] == 0x5a, "the LEVEL reaches the wire, not a flattened 0xff");
+    w.previous = s;
+
+    /* Same button, different level: still a transition. Diffing this as a bit would send nothing. */
+    s.left_trigger = 0x5b;
+    n = halyard_input_build_history_payload(&w, &s, buf, sizeof(buf));
+    check(n >= 3 && buf[2] == 0x5b, "a change of level is a transition");
+    w.previous = s;
+
+    /* Released. */
+    s.left_trigger = 0x00;
+    n = halyard_input_build_history_payload(&w, &s, buf, sizeof(buf));
+    check(n >= 3 && buf[1] == 0x86 && buf[2] == 0x00, "release sends level zero");
+    w.previous = s;
+
+    /* A digital front end sets the BIT and no level; it must still read as fully pressed. */
+    s.buttons = HALYARD_PAD_R2;
+    n = halyard_input_build_history_payload(&w, &s, buf, sizeof(buf));
+    check(n >= 3 && buf[1] == 0x87 && buf[2] == 0xff,
+          "a set bit with no level is a full press");
+    w.previous = s;
+
+    /* And the level wins over the bit where both are present. */
+    memset(&s, 0, sizeof(s));
+    s.buttons = HALYARD_PAD_R2;
+    s.right_trigger = 0x20;
+    n = halyard_input_build_history_payload(&w, &s, buf, sizeof(buf));
+    check(n >= 3 && buf[1] == 0x87 && buf[2] == 0x20, "the level wins over the bit");
+}
+
 static void test_header(void)
 {
     uint8_t buf[16];
@@ -173,6 +228,7 @@ int main(void)
     test_state_payload();
     test_history_events();
     test_history_resend();
+    test_triggers();
     test_header();
     printf("\n%d passed, %d failed\n", g_passed, g_failed);
     return g_failed == 0 ? 0 : 1;
