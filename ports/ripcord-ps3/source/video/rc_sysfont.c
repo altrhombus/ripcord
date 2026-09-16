@@ -18,6 +18,24 @@
  * in whatever colour it wants. That is what makes the antialiasing real, and it is why the overlay's
  * panel lives in main memory: blending needs the destination read, and a Cell read from RSX memory is
  * roughly two orders of magnitude slower than a write.
+ *
+ * EVERY GLYPH IS RASTERISED ONCE, AT START-UP, AND NEVER AGAIN. b256 did it the obvious way - call
+ * FT_LOAD_RENDER whenever a character is wanted - and cost the session: a 1,483 ms stall inside one
+ * panel rebuild, 3,237 of 3,534 frames dropped for overrun, 299 keyframes requested and 2 fps on
+ * screen. Three things compounded.
+ *
+ *   The rebuild runs on the DECODE THREAD, which also drains the socket and feeds the decoder, so a
+ *   stall there is not slow drawing - it is a stopped pipeline.
+ *
+ *   Measuring a run rasterised it. Right-aligned text is measured and then drawn, so every one of
+ *   those glyphs was rendered twice and half the work thrown away.
+ *
+ *   And the panel uses two sizes, so FT_Set_Pixel_Sizes was called several times per rebuild, which
+ *   rescales the face underneath all of it.
+ *
+ * So the printable ASCII is rendered into an atlas at each size when the overlay opens - before the
+ * stream starts, off the decode thread - and everything after that is a memcpy and a table lookup.
+ * Drawing does not touch FreeType at all.
  */
 #include "rc_sysfont.h"
 
@@ -31,8 +49,34 @@ static FT_Library s_lib;
 static FT_Face s_face;
 static int s_ready;
 static char s_status[112] = "not tried";
-static int s_ascent;
-static float s_size;
+static const char *s_face_name = "?";
+
+/*
+ * THE ATLAS. Two sizes, printable ASCII, rendered once. A glyph is its coverage plus the four numbers
+ * needed to place it: where its box sits relative to the pen and baseline, and how far the pen moves
+ * afterwards. All of them are what FreeType reported at the size it was rendered for - none is derived
+ * from another, because a face's metrics are its own at every size.
+ */
+#define RC_SF_FIRST   32
+#define RC_SF_LAST    126
+#define RC_SF_COUNT   (RC_SF_LAST - RC_SF_FIRST + 1)
+#define RC_SF_SIZES   2
+#define RC_SF_ARENA   (192u * 1024u)
+
+typedef struct {
+    short w, h;
+    short left, top;
+    short advance;
+    unsigned int at;     /* offset into the size's arena */
+} rc_sf_glyph;
+
+static rc_sf_glyph s_glyph[RC_SF_SIZES][RC_SF_COUNT];
+static unsigned char s_arena[RC_SF_SIZES][RC_SF_ARENA];
+static unsigned s_arena_used[RC_SF_SIZES];
+static int s_px[RC_SF_SIZES];
+static int s_ascent_px[RC_SF_SIZES];
+static int s_slot;           /* which size rc_sysfont_set_size selected */
+static int s_sizes_built;
 
 static int fail(const char *step, int rc)
 {
@@ -55,20 +99,66 @@ static const struct {
     { "Seurat Regular",    "/dev_flash/data/font/SCE-PS3-SR-R-LATIN.TTF" },
 };
 
-static void note_metrics(void)
+/*
+ * Renders the printable ASCII at one size into that size's arena. Called only from rc_sysfont_open, so
+ * it happens during session setup rather than in the middle of a frame.
+ */
+static int build_size(int slot, int pixels)
 {
-    /*
-     * The ascent is asked for rather than taken as a fraction of the em, because it is not one: a
-     * face's baseline sits where the face says it does, and at every size. FreeType reports it in
-     * 26.6 fixed point, hence the shift.
-     */
-    s_ascent = (int)(s_face->size->metrics.ascender >> 6);
+    unsigned code;
+
+    if (FT_Set_Pixel_Sizes(s_face, 0, (FT_UInt)pixels) != 0)
+        return 0;
+
+    s_px[slot] = pixels;
+    /* Asked for rather than taken as a fraction of the em, because it is not one: a face's baseline
+     * sits where the face says it does, at every size. 26.6 fixed point, hence the shift. */
+    s_ascent_px[slot] = (int)(s_face->size->metrics.ascender >> 6);
+    s_arena_used[slot] = 0u;
+
+    for (code = RC_SF_FIRST; code <= RC_SF_LAST; code++) {
+        rc_sf_glyph *g = &s_glyph[slot][code - RC_SF_FIRST];
+        FT_GlyphSlot slotp;
+        unsigned need;
+        int row;
+
+        memset(g, 0, sizeof(*g));
+        if (FT_Load_Char(s_face, (FT_ULong)code, FT_LOAD_RENDER) != 0)
+            continue;
+        slotp = s_face->glyph;
+
+        g->advance = (short)(slotp->advance.x >> 6);
+        g->left = (short)slotp->bitmap_left;
+        g->top = (short)slotp->bitmap_top;
+        g->w = (short)slotp->bitmap.width;
+        g->h = (short)slotp->bitmap.rows;
+
+        need = (unsigned)g->w * (unsigned)g->h;
+        if (need == 0u || slotp->bitmap.buffer == NULL)
+            continue;
+        if (s_arena_used[slot] + need > RC_SF_ARENA) {
+            /* Out of arena. The glyph keeps its advance so the run still spaces correctly and simply
+             * draws nothing - a gap is a better failure than a wrong layout. */
+            g->w = 0;
+            g->h = 0;
+            continue;
+        }
+
+        g->at = s_arena_used[slot];
+        for (row = 0; row < g->h; row++) {
+            memcpy(s_arena[slot] + g->at + (size_t)row * (size_t)g->w,
+                   slotp->bitmap.buffer + (size_t)row * (size_t)slotp->bitmap.pitch,
+                   (size_t)g->w);
+        }
+        s_arena_used[slot] += need;
+    }
+    return 1;
 }
 
 int rc_sysfont_open(float pixels)
 {
     unsigned i;
-    int rc;
+    int rc = -1;
 
     if (s_ready)
         return 1;
@@ -80,23 +170,46 @@ int rc_sysfont_open(float pixels)
     for (i = 0u; i < sizeof(kFaces) / sizeof(kFaces[0]); i++) {
         rc = FT_New_Face(s_lib, kFaces[i].path, 0, &s_face);
         if (rc == 0) {
-            rc = FT_Set_Pixel_Sizes(s_face, 0, (FT_UInt)pixels);
-            if (rc == 0) {
-                s_size = pixels;
-                note_metrics();
-                s_ready = 1;
-                snprintf(s_status, sizeof(s_status), "ready - %s, %d px, ascent %d",
-                         kFaces[i].what, (int)pixels, s_ascent);
-                return 1;
-            }
-            FT_Done_Face(s_face);
-            s_face = NULL;
+            s_face_name = kFaces[i].what;
+            break;
         }
     }
+    if (s_face == NULL) {
+        FT_Done_FreeType(s_lib);
+        s_lib = NULL;
+        return fail("FT_New_Face (no system face opened)", rc);
+    }
 
+    /*
+     * The two sizes the panel uses. They are built here rather than on demand because on demand means
+     * on the decode thread, and that is what b256 cost a session to establish.
+     */
+    if (!build_size(0, (int)pixels) || !build_size(1, (int)(pixels * 1.46f))) {
+        FT_Done_Face(s_face);
+        s_face = NULL;
+        FT_Done_FreeType(s_lib);
+        s_lib = NULL;
+        return fail("FT_Set_Pixel_Sizes while building the atlas", 0);
+    }
+    s_sizes_built = 2;
+    s_slot = 0;
+
+    /*
+     * FreeType is finished with. Everything after this is a table lookup and a memcpy, so the face and
+     * the library are closed rather than left open holding their caches - a megabyte of arena for the
+     * glyphs is the whole cost of the overlay's text from here on.
+     */
+    FT_Done_Face(s_face);
+    s_face = NULL;
     FT_Done_FreeType(s_lib);
     s_lib = NULL;
-    return fail("FT_New_Face (no system face opened)", rc);
+
+    s_ready = 1;
+    snprintf(s_status, sizeof(s_status),
+             "ready - %s, %d and %d px, ascent %d, atlas %u+%u bytes",
+             s_face_name, s_px[0], s_px[1], s_ascent_px[0],
+             s_arena_used[0], s_arena_used[1]);
+    return 1;
 }
 
 const char *rc_sysfont_status(void)
@@ -106,17 +219,20 @@ const char *rc_sysfont_status(void)
 
 int rc_sysfont_ascent(void)
 {
-    return s_ascent;
+    return s_ready ? s_ascent_px[s_slot] : 0;
 }
 
 void rc_sysfont_set_size(float pixels)
 {
-    if (!s_ready || pixels == s_size)
+    int want;
+
+    if (!s_ready)
         return;
-    if (FT_Set_Pixel_Sizes(s_face, 0, (FT_UInt)pixels) != 0)
-        return;
-    s_size = pixels;
-    note_metrics();
+    /* Nearest of the two built, rather than rebuilding: a size that was not prepared cannot be drawn
+     * without going back to FreeType, which is the thing this exists to avoid. */
+    want = ((int)pixels >= (s_px[0] + s_px[1]) / 2) ? 1 : 0;
+    if (want < s_sizes_built)
+        s_slot = want;
 }
 
 int rc_sysfont_render(unsigned char *cov, int cov_w, int cov_h, int x, int baseline,
@@ -129,46 +245,47 @@ int rc_sysfont_render(unsigned char *cov, int cov_w, int cov_h, int x, int basel
         return 0;
 
     for (i = 0; text[i] != '\0'; i++) {
-        FT_GlyphSlot g;
+        unsigned char c = (unsigned char)text[i];
+        const rc_sf_glyph *g;
         int gx, gy;
 
-        if (FT_Load_Char(s_face, (FT_ULong)(unsigned char)text[i], FT_LOAD_RENDER) != 0)
-            continue;
-        g = s_face->glyph;
+        if (c < RC_SF_FIRST || c > RC_SF_LAST)
+            c = '?';
+        g = &s_glyph[s_slot][c - RC_SF_FIRST];
 
         /*
-         * A NULL buffer MEASURES instead of drawing. Right-aligning or centring a proportional run
-         * needs its width before it is placed, and there is no per-glyph width table to add up the way
-         * there is for the drawn font - the face has to be asked.
+         * A NULL buffer MEASURES, and measuring is now free. In b256 it went through FT_LOAD_RENDER
+         * like everything else, so every right-aligned run was rasterised twice and half of it thrown
+         * away - which is half of why a rebuild took 1,483 ms.
          */
-        if (cov != NULL && g->bitmap.buffer != NULL) {
-            int ox = pen + g->bitmap_left;
-            int oy = baseline - g->bitmap_top;
+        if (cov != NULL && g->w > 0) {
+            int ox = pen + g->left;
+            int oy = baseline - g->top;
 
-            for (gy = 0; gy < (int)g->bitmap.rows; gy++) {
-                const unsigned char *src = g->bitmap.buffer + (size_t)gy * (size_t)g->bitmap.pitch;
+            for (gy = 0; gy < g->h; gy++) {
+                const unsigned char *src = s_arena[s_slot] + g->at + (size_t)gy * (size_t)g->w;
                 int py = oy + gy;
+                unsigned char *dst;
 
                 if (py < 0 || py >= cov_h)
                     continue;
-                for (gx = 0; gx < (int)g->bitmap.width; gx++) {
+                dst = cov + (size_t)py * (size_t)cov_w;
+                for (gx = 0; gx < g->w; gx++) {
                     int px = ox + gx;
 
                     if (px < 0 || px >= cov_w)
                         continue;
                     /*
-                     * Taken as the MAXIMUM rather than assigned. Glyphs in a run can overlap by a pixel
-                     * where one's bearing reaches under its neighbour, and overwriting there would cut
-                     * a notch out of whichever was drawn first.
+                     * The MAXIMUM rather than an assignment. Glyphs in a run overlap by a pixel where
+                     * one's bearing reaches under its neighbour, and overwriting there cuts a notch out
+                     * of whichever was drawn first.
                      */
-                    if (src[gx] > cov[(size_t)py * (size_t)cov_w + (size_t)px])
-                        cov[(size_t)py * (size_t)cov_w + (size_t)px] = src[gx];
+                    if (src[gx] > dst[px])
+                        dst[px] = src[gx];
                 }
             }
         }
-
-        /* 26.6 fixed point, like every metric FreeType reports. */
-        pen += (int)(g->advance.x >> 6);
+        pen += g->advance;
     }
 
     return pen - x;
