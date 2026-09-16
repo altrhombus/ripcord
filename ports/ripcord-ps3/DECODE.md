@@ -788,6 +788,52 @@ than one pixel's four channels, which needs the gather done with shuffles out of
 That is a much larger rewrite than either attempt here, and it is the only route left that changes the
 answer.
 
+### Heat and fan noise — **measured, and it kills one of the arguments for moving to the RSX**
+
+The case for taking colour conversion and scaling off three SPEs and giving them to the RSX had a
+thermal limb: a fixed-function blit unit should draw less than three SIMD cores doing the same work in
+software, the Cell-to-RSX transfer falls from 8.3 MB a frame to 3.7, and the machine should therefore
+run quieter. Every part of that is still true and **the conclusion does not follow**, because there is
+no noise to remove.
+
+Syscall 383 reads the Cell and RSX sensors. b204 held one session for four minutes:
+
+| | start | end | change |
+|---|---|---|---|
+| Cell | 63.0 C | 67.0 C | **+4.0** |
+| RSX | 64.0 C | 64.2 C | **+0.2** |
+
+with 14,360 pictures at 59 fps, 401,508 units received, 79 lost, one IDR requested in four minutes.
+**The fan never became audible.** Over 30 seconds the Cell had moved +2.2 and +1.5 in two earlier
+sessions, so at four minutes it is decelerating towards a steady state somewhere near 67-68 C - well
+under where this hardware's fan curve steps up.
+
+**What the numbers say is exactly what the argument predicted, and it does not matter.** The work is
+being done on the Cell and the RSX is close to idle, so moving work across would indeed cool one and
+warm the other. The listener would hear the same thing either way: nothing. Anyone reaching for the
+"it will be quieter" justification should stop here - **it was tested and the premise was false, because
+the machine is already silent at this load.** If anything the reading argues the other way: there is
+thermal headroom on the Cell that nothing is using.
+
+The other reasons to move to the RSX are untouched by this and are why it is still worth doing: it
+returns three SPEs, it makes bilinear upscaling free, it cuts the Cell-to-RSX transfer, and through
+libRESC it fixes interlaced, PAL and standard-definition output, which nothing else here addresses.
+None of those is about heat.
+
+**Two things about the measurement itself, both learned the hard way.**
+
+Syscall 383 costs about **14 ms a read** - it is a hypervisor round trip to a hardware sensor, not a
+register read. b202 sampled both sensors once per iteration of the A/V loop by mistake and took 1,052
+samples in 30 seconds: the drain stalled for 4.4 seconds, 3,896 units of 4,175 were lost and 4 fps
+reached the screen. Both samples are now taken outside the hold, and nothing may call it from the A/V
+path at any interval.
+
+The sensor word is **8.8 fixed point in its top half**, not whole degrees in the top byte. The raw words
+0x3FC30000 and 0x40400000 are 63.76 C and 64.25 C. This file's first version assumed the top byte alone
+and would have quietly thrown away the fraction; it was caught only because the raw word was logged
+beside the decoded value, which is the argument for logging both.
+
+
 ### Still open
 - **The fifth SPE — `ARGB32` output works.** Asked offline in b179: `vdecGetPicture` accepts
   `VDEC_PICFMT_ARGB32` and fills the buffer (bytes 0..255 across 8 pictures). So the YUV-to-RGB pass
