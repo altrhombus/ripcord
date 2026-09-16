@@ -132,6 +132,13 @@ void *rc_video_alloc_rsx(size_t bytes, uint32_t *offset);
  */
 unsigned rc_video_blit_rsx_offset(uint32_t src_offset, int width, int height);
 
+/*
+ * Queue an unscaled copy of an RSX-memory bitmap over whatever is in the back buffer. Must be called
+ * AFTER the picture has been queued: it is a command, so it lands behind the picture in the same
+ * buffer, which is the only ordering that holds when the RSX is doing the drawing.
+ */
+void rc_video_overlay_blit(uint32_t src_offset, int src_pitch, int w, int h, int x, int y);
+
 /* available is 0 when the staging buffer could not be allocated, in which case nothing else is useful. */
 void rc_video_rsx_scale_stats(int *available, unsigned *blits, unsigned *refused);
 
