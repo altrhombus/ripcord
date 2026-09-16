@@ -861,6 +861,32 @@ unsigned rc_video_blit_rsx_offset(uint32_t src_offset, int width, int height)
 }
 
 /*
+ * Queue an unscaled copy of the overlay bitmap over the picture.
+ *
+ * SEPARATE FROM DRAWING IT, and that separation is the whole fix. b225 drew the overlay with the PPE
+ * straight into the back buffer immediately after the picture blit had been QUEUED - so the RSX
+ * executed the picture afterwards and painted over the text, every frame, and nothing appeared. Issuing
+ * it as a command puts it behind the picture in the same buffer, where the ordering is the hardware's
+ * to keep rather than a race to lose.
+ *
+ * rsxSetTransferImage rather than the scaled blit: the bitmap is already the size it will be drawn at,
+ * and an unscaled rectangular copy is both cheaper and free of the interpolator's edge behaviour on a
+ * box with hard edges.
+ */
+void rc_video_overlay_blit(uint32_t src_offset, int src_pitch, int w, int h, int x, int y)
+{
+    if (!s_open || w <= 0 || h <= 0)
+        return;
+    if (x < 0 || y < 0 || x + w > s_info.width || y + h > s_info.height)
+        return;
+
+    rsxSetTransferImage(s_context, GCM_TRANSFER_LOCAL_TO_LOCAL,
+                        s_offset[s_current ^ 1], (u32)s_info.pitch, (u32)x, (u32)y,
+                        src_offset, (u32)src_pitch, 0, 0,
+                        (u32)w, (u32)h, 4);
+}
+
+/*
  * Selects the RSX scaler and its filter. Separate from rc_video_open because the choice comes from the
  * pairing record, which is read after the display is up, and because leaving it off by default means a
  * build that cannot do this still behaves exactly as the one before it.
