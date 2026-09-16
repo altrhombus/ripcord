@@ -169,4 +169,14 @@ void stream_demux_ingest(stream_demux *demux, const uint8_t *packet, size_t pack
  * the same thread that calls stream_demux_ingest, or add their own locking. */
 void stream_demux_take_packet_stats(stream_demux *demux, long *out_received, long *out_lost);
 
+/*
+ * Whether the out-of-band parameter sets describe HEVC rather than H.264.
+ *
+ * For a port whose decoder handles one and not the other. The classification is already made when the
+ * header is set - see looks_like_hevc_parameter_sets, and the note there on why slice headers cannot be
+ * used for this - so asking costs nothing, and a port that cannot decode what arrived is much better
+ * off saying so than feeding it to a decoder that will accept it and produce black.
+ */
+int stream_demux_video_is_hevc(const stream_demux *demux);
+
 #endif /* STREAM_DEMUX_H */

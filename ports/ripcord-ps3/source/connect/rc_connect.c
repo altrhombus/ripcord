@@ -23,6 +23,8 @@
 #include "rc_audio_ps3.h"
 #include "rc_spu_yuv.h"
 #include "rc_video_ps3.h"
+#include "rc_overlay.h"
+#include "rc_build_id.h"
 #include "takion_control_proto.h"
 #include "takion_session_negotiator.h"
 #include "takion_data_chunk.h"
@@ -431,6 +433,28 @@ static int g_stream_rcvbuf;
 /* What the hold ACTUALLY ran for - the constant above is only the default when the pairing record does
  * not say. Reported rather than assumed, because every rate in the summary divides by it. */
 static unsigned g_hold_ms = RC_STREAM_HOLD_MS;
+
+/* Set once the parameter sets are classified - see where it is assigned for why this is a drop rather
+ * than a disconnection. */
+static int g_stream_is_hevc;
+
+/* Defined below, between its two callers - the YUV and the packed-RGB present paths. */
+static void draw_overlay(void);
+
+/*
+ * What the overlay reports that is not already a live counter: the asks, which are settled once when
+ * the stream opens, and the clock the rates are measured against. Copied here rather than read from
+ * rc_connect_result because that struct is filled at the END of a session and the overlay runs during
+ * one.
+ */
+static uint64_t g_overlay_t0;
+static int g_overlay_asked_w, g_overlay_asked_h, g_overlay_asked_fps, g_overlay_asked_kbps;
+static int g_overlay_hw_scale;
+static unsigned long g_overlay_units_lost;
+
+/* Declared with the overlay's other state because draw_overlay reads it and sits above where the IDR
+ * logic defines the rest of its own. */
+static unsigned g_idr_requests;
 
 /* The client's own heartbeat cadence on the stream channel, from the reference's one second. */
 #define RC_STREAM_HEARTBEAT_MS 1000u
@@ -864,6 +888,7 @@ static void send_periodic(halyard_control_session *session, rc_connect_result *o
         stream_demux_take_packet_stats(&g_demux, &got, &missed);
         out->units_received += got;
         out->units_lost += missed;
+        g_overlay_units_lost = (unsigned long)out->units_lost;
 
         fn = takion_congestion_build((unsigned long)(got < 0 ? 0 : got),
                                      (unsigned long)(missed < 0 ? 0 : missed),
@@ -1202,6 +1227,8 @@ static void on_picture(void *ctx, const unsigned char *y, const unsigned char *u
     if (us == 0u)
         return;   /* the display is not open, or the picture does not fit - not an error here */
 
+    draw_overlay();
+
     rc_video_flip();
     g_blits++;
     g_blit_us_total += us;
@@ -1217,6 +1244,84 @@ static void on_picture(void *ctx, const unsigned char *y, const unsigned char *u
  * If the SPE scale returns 0 the picture is dropped rather than converted on the PPE, because there is
  * no PPE scaler. That is counted, and a run where it is non-zero is a run that should go back to YUV.
  */
+/*
+ * WHAT THE OVERLAY SAYS, and it is deliberately the same set of questions the .NET client's diagnostics
+ * report answers - what was asked for, what arrived, and what is happening now - so that a fault
+ * described on one client is recognisable on the other.
+ *
+ * Everything here is read from counters this port already keeps. Nothing is computed for the overlay
+ * alone, and nothing here touches the picture: the numbers are all in main memory, which matters
+ * because the buffer being drawn ON is RSX memory and must only be written.
+ *
+ * The rates are over the whole session rather than a sliding window. A window would read better and
+ * would need a history buffer per metric; this is the version that exists, and the log still carries
+ * the peaks.
+ */
+static void draw_overlay(void)
+{
+    unsigned long elapsed_ms;
+    unsigned fps = 0u;
+    unsigned long mbps_x10 = 0ul;
+
+    if (!rc_overlay_on())
+        return;
+    if (!rc_overlay_begin(11))
+        return;
+
+    elapsed_ms = (unsigned long)(rc_time_ms() - g_overlay_t0);
+    if (elapsed_ms > 0ul) {
+        fps = (unsigned)((unsigned long)g_blits * 1000ul / elapsed_ms);
+        mbps_x10 = (g_tally.video_bytes / 1000ul) * 80ul / elapsed_ms;
+    }
+
+    rc_overlay_line(RC_OVERLAY_WHITE, "RIPCORD %s   PS3", RC_PS3_BUILD_ID);
+    rc_overlay_line(RC_OVERLAY_DIM,   "ASKED  %dX%d @%d  %d KBPS  AVC",
+                    g_overlay_asked_w, g_overlay_asked_h, g_overlay_asked_fps,
+                    g_overlay_asked_kbps);
+    rc_overlay_line(RC_OVERLAY_DIM,   "GOT    %DX%D  %s",
+                    g_live_stats.width, g_live_stats.height,
+                    g_stream_is_hevc ? "HEVC - CANNOT DECODE" : "H.264 HARDWARE");
+    rc_overlay_line(RC_OVERLAY_DIM,   "SCALE  %s  %s",
+                    g_overlay_hw_scale ? "RSX" : "SPE",
+                    rc_decode_vdec_picture_in_vram() ? "ZERO COPY" : "COPIED");
+    rc_overlay_line(RC_OVERLAY_WHITE, "");
+
+    /* Frame rate is the one number worth colouring: it is the one a person is already judging by eye,
+     * and the overlay exists to say whether the eye is right. */
+    rc_overlay_line(fps >= 55u ? RC_OVERLAY_GOOD : (fps >= 40u ? RC_OVERLAY_WARN : RC_OVERLAY_BAD),
+                    "FPS    %u   (%u BLITTED)", fps, g_blits);
+    rc_overlay_line(RC_OVERLAY_WHITE, "RATE   %lu.%lu MBPS  %lu FRAMES",
+                    mbps_x10 / 10ul, mbps_x10 % 10ul, (unsigned long)g_tally.video_frames);
+    {
+        unsigned long hz = (unsigned long)rc_tick_hz();
+        unsigned decode_us = (hz > 0ul && g_live_stats.frames_in > 0)
+            ? (unsigned)(((g_live_stats.decode_ticks * 1000000ull) / hz)
+                         / (unsigned long long)g_live_stats.frames_in)
+            : 0u;
+
+        rc_overlay_line(RC_OVERLAY_WHITE, "DECODE %u US   BLIT %u US",
+                        decode_us, g_blits ? (unsigned)(g_blit_us_total / g_blits) : 0u);
+    }
+
+    /* Loss and IDR requests together, because one causes the other and seeing them apart is what made
+     * the blockiness in b207 look like a network fault when it was a budget fault. */
+    rc_overlay_line(g_idr_requests > 8u ? RC_OVERLAY_WARN : RC_OVERLAY_DIM,
+                    "LOST   %lu UNITS   IDR ASKED %u",
+                    (unsigned long)g_overlay_units_lost, g_idr_requests);
+    rc_overlay_line(g_frames_overrun > 0u ? RC_OVERLAY_WARN : RC_OVERLAY_DIM,
+                    "QUEUE  %u DEEP   %u OVERRUN", g_queue_worst, g_frames_overrun);
+    {
+        rc_audio_stats a;
+
+        rc_audio_stats_get(&a);
+        rc_overlay_line(a.silence_written > 0u ? RC_OVERLAY_WARN : RC_OVERLAY_DIM,
+                        "AUDIO  %u FRAMES  %u ERR  %u SILENT",
+                        a.frames_decoded, a.decode_errors, a.silence_written);
+    }
+
+    rc_overlay_end();
+}
+
 static void on_picture_rgb(void *ctx, const unsigned char *argb, int stride, int width, int height)
 {
     unsigned us;
@@ -1261,6 +1366,8 @@ static void on_picture_rgb(void *ctx, const unsigned char *argb, int stride, int
         return;
     }
 
+    draw_overlay();
+
     rc_video_flip();
     g_blits++;
     g_blit_us_total += us;
@@ -1281,6 +1388,14 @@ static void on_video_frame(void *userdata, const uint8_t *data, size_t length, i
     g_tally.video_bytes += (unsigned long)length;
     if (length > (size_t)g_tally.largest_frame)
         g_tally.largest_frame = (unsigned)length;
+
+    /*
+     * Counted and dropped, never fed. cellVdec would take these and return success - see the note where
+     * this is classified. The tally keeps running so the report can say how much arrived, which is the
+     * difference between "the stream is HEVC" and "the stream stopped".
+     */
+    if (g_stream_is_hevc)
+        return;
 
     /*
      * COPIED, NOT DECODED. The reasoning that put the decode here was sound and the conclusion was
@@ -1461,7 +1576,6 @@ static void on_audio_frame(void *userdata, const uint8_t *data, size_t length)
 }
 
 static uint64_t g_last_idr_request_ms;
-static unsigned g_idr_requests;
 
 
 /*
@@ -2013,6 +2127,15 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
                          */
                         rc_video_set_rsx_scale(rec->hardware_scale, rec->bilinear_upscale != 0);
                         out->hardware_scale = rec->hardware_scale;
+
+                        rc_overlay_set(rec->diagnostics);
+                        out->diagnostics = rec->diagnostics;
+                        g_overlay_t0 = rc_time_ms();
+                        g_overlay_asked_w = out->asked_width;
+                        g_overlay_asked_h = out->asked_height;
+                        g_overlay_asked_fps = out->asked_fps;
+                        g_overlay_asked_kbps = out->declared_bitrate_kbps;
+                        g_overlay_hw_scale = rec->hardware_scale;
                         if (g_decoder_rgb)
                             rc_decode_live_set_rgb_sink(on_picture_rgb, NULL);
                         /* Started only after the decoder is open and its sink is set: the thread calls
@@ -2034,6 +2157,23 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
                         stream_demux_set_video_header(&g_demux, info.video_header,
                                                       info.video_header_length);
                     out->demux_ready = 1;
+
+                    /*
+                     * HEVC IS REFUSED LOUDLY RATHER THAN DECODED BADLY.
+                     *
+                     * The launch spec asks for "avc" and both console families honour it, so this has
+                     * never fired. It exists because of what the failure would look like if it ever
+                     * did: cellVdec decodes H.264 and nothing else, and handing it HEVC would not make
+                     * it complain - b169 through b171 are three runs of a decoder that accepted every
+                     * access unit, reported no error and produced uniformly black pictures, and that
+                     * cost days. The demuxer already classifies the stream from the parameter sets,
+                     * which is the one place the two codecs cannot be confused, so the answer is free.
+                     *
+                     * The stream is NOT torn down. Audio decodes independently and a session with
+                     * sound and a diagnosis on the screen is worth more than a disconnection.
+                     */
+                    out->stream_is_hevc = stream_demux_video_is_hevc(&g_demux);
+                    g_stream_is_hevc = out->stream_is_hevc;
                 }
 
                 out->given_width = (int)info.width;
@@ -2244,6 +2384,7 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
         stream_demux_take_packet_stats(&g_demux, &got, &missed);
         out->units_received += got;
         out->units_lost += missed;
+        g_overlay_units_lost = (unsigned long)out->units_lost;
     }
 
     if (g_live_open) {
