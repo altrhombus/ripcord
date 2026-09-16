@@ -5,10 +5,9 @@
  * transition history, the sealing and the encryption - is in ports/common and in the sealer, where it
  * is shared with every other front end and with the .NET client that derived it.
  *
- * WHAT THIS PAD CAN AND CANNOT SEND. A DualShock 3 has both stick clicks, which the shared layer only
- * gained when this port needed them. It has pressure-sensitive shoulders, which are still sent as a
- * digital 0x00/0xff because the shared state struct carries no level - the one place this is behind
- * the .NET writer. And its PS button never reaches an application: the system claims it, so
+ * WHAT THIS PAD CAN AND CANNOT SEND. A DualShock 3 has both stick clicks and pressure-sensitive
+ * shoulders, and the shared layer gained the bits for the first and a level for the second when this
+ * port needed them. Its PS button never reaches an application: the system claims it, so
  * HALYARD_PAD_PS is never set from here, and a user wanting the console's own menu has the real one in
  * front of them.
  */
@@ -31,6 +30,14 @@ int rc_pad_read(halyard_input_state *out);
 /* Whether a pad is present, how many polls answered, how many of those carried NEW data, and how many
  * times presence changed. Reads and fresh are separate on purpose - see rc_pad_stats in the .c. */
 void rc_pad_stats(int *connected, unsigned *reads, unsigned *fresh, unsigned *changes);
+
+/*
+ * Whether a shoulder has ever reported a level that is neither off nor fully on. That is the only
+ * evidence pressure sensitivity was actually granted: a port that refused it reports zeros, which is
+ * exactly what an untouched trigger reports, so "it works" and "it silently does not" are otherwise the
+ * same observation.
+ */
+int rc_pad_analog_triggers_seen(void);
 
 void rc_pad_close(void);
 

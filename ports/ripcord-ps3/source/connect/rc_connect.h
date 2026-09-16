@@ -389,6 +389,7 @@ typedef struct {
     int      pad_connected;
     unsigned pad_reads;
     unsigned pad_fresh;          /* of those, polls that carried NEW pad data */
+    int      pad_analog_triggers;/* a shoulder reported a level that was neither off nor full on */
     unsigned pad_changes;        /* times a pad connected or went away */
 
     int      diagnostics;        /* the overlay was asked for */
