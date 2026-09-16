@@ -1059,6 +1059,10 @@ static int check_connect(void)
                 if (c.au_largest > 0u)
                     ps3_log("       largest access unit submitted %u bytes; %u had no start code\n",
                             c.au_largest, c.au_bad_start);
+                if (c.pictures_overwritten > 0u)
+                    ps3_log("       %u decoded picture(s) were replaced before being taken - the ring\n"
+                            "       of %d is not deep enough for the way they arrive\n",
+                            c.pictures_overwritten, 4);
                 if (c.drop_ring_full + c.drop_submit + c.drop_collect > 0u)
                     ps3_log("       frames the decoder never saw: %u (ring full), %u (refused),"
                             " %u (not collectable)\n",

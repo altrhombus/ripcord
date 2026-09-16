@@ -40,7 +40,19 @@ static uint8_t s_au[RC_VDEC_AU_SLOTS][RC_VDEC_AU_BYTES] __attribute__((aligned(1
  * Two output buffers, so the decoder can be filling one while the caller is still blitting the other.
  * One would mean dropping a picture whenever the blit and the decode overlap, which at 30 fps they will.
  */
-static uint8_t s_picture[2][RC_VDEC_PICTURE_BYTES] __attribute__((aligned(128)));
+/*
+ * FOUR PICTURES, NOT TWO, AND A RING RATHER THAN A SINGLE PUBLISHED SLOT.
+ *
+ * b185 decoded 1,788 frames with zero errors and delivered 960 of them. Nothing was dropped by the
+ * decoder; they were overwritten here. Two buffers with one "ready" index means a picture announced
+ * while the previous is still unconsumed replaces it, and at 60 fps announcements arrive in bursts, so
+ * slightly under half never reached the screen.
+ *
+ * A ring lets the decoder run ahead a few pictures and lets the consumer take everything waiting. Four
+ * costs 12.5 MB against two's 6.3, which this console has and a half-rate stream is not worth.
+ */
+#define RC_VDEC_PICTURE_SLOTS 4
+static uint8_t s_picture[RC_VDEC_PICTURE_SLOTS][RC_VDEC_PICTURE_BYTES] __attribute__((aligned(128)));
 
 static u32 s_handle;
 static void *s_memory;
@@ -132,10 +144,12 @@ static unsigned s_submit_waits;
 static unsigned s_first_nal_seen;
 static unsigned s_first_nal_types;   /* first four NAL types of the first unit, packed one per byte */
 
-/* The picture handoff: the callback writes `s_fill` and publishes it, the caller consumes it. */
-static volatile int s_ready = -1;   /* index of a finished picture, -1 if none */
-static volatile int s_fill;
-static volatile int s_ready_w, s_ready_h;
+/* The picture ring: the callback fills at the tail, the caller drains from the head. */
+static volatile unsigned s_pic_head;
+static volatile unsigned s_pic_tail;
+static volatile int s_pic_w[RC_VDEC_PICTURE_SLOTS];
+static volatile int s_pic_h[RC_VDEC_PICTURE_SLOTS];
+static unsigned s_pic_overwritten;
 
 static uint32_t s_callback_opd[2] __attribute__((aligned(8)));
 
@@ -252,7 +266,13 @@ static u32 vdec_callback(u32 handle, u32 msgtype, u32 msgdata, u32 arg)
          * the second buffer was never used and the consumer could be blitting the very bytes being
          * overwritten. If a picture is published, write the other one.
          */
-        slot = (s_ready == 0) ? 1 : 0;
+        /* The tail of the ring. If it has caught the head, the OLDEST waiting picture goes - the
+         * newest is the one closest to live - and it is counted rather than lost in silence. */
+        if (s_pic_tail - s_pic_head >= (unsigned)RC_VDEC_PICTURE_SLOTS) {
+            s_pic_head++;
+            s_pic_overwritten++;
+        }
+        slot = (int)(s_pic_tail % (unsigned)RC_VDEC_PICTURE_SLOTS);
 
         memset(&format, 0, sizeof(format));
         format.format_type = VDEC_PICFMT_YUV420P;
@@ -289,9 +309,8 @@ static u32 vdec_callback(u32 handle, u32 msgtype, u32 msgdata, u32 arg)
         }
 
         s_picture_addr = (unsigned)(uintptr_t)s_picture[slot];
-        s_fill = slot;
-        s_ready_w = w;
-        s_ready_h = h;
+        s_pic_w[slot] = w;
+        s_pic_h[slot] = h;
 
         /*
          * THE BARRIER IS THE POINT. This runs on the library's thread and the consumer runs on the
@@ -300,7 +319,7 @@ static u32 vdec_callback(u32 handle, u32 msgtype, u32 msgdata, u32 arg)
          * every counter in the path reporting success, which is what that looks like.
          */
         __lwsync();
-        s_ready = slot;      /* published last, and only after the data is visible */
+        s_pic_tail++;        /* published last, and only after the data is visible */
         return 0;
     }
 
@@ -341,8 +360,9 @@ int rc_decode_vdec_open(int width, int height)
 
     s_au_submitted = 0;
     s_au_done = 0;
-    s_ready = -1;
-    s_fill = 0;
+    s_pic_head = 0;
+    s_pic_tail = 0;
+    s_pic_overwritten = 0;
     s_seq_done = 0;
     s_cb_luma_max = 0;
     s_cb_pictures = 0;
@@ -479,6 +499,7 @@ unsigned rc_decode_vdec_drop_submit(void) { return s_drop_submit; }
 int rc_decode_vdec_drop_submit_error(void) { return s_drop_submit_error; }
 unsigned rc_decode_vdec_submit_waits(void) { return s_submit_waits; }
 unsigned rc_decode_vdec_drop_collect(void) { return s_drop_collect; }
+unsigned rc_decode_vdec_pictures_overwritten(void) { return s_pic_overwritten; }
 
 int rc_decode_vdec_take_chain_broken(void)
 {
@@ -618,54 +639,63 @@ int rc_decode_vdec_feed(const uint8_t *access_unit, size_t length, rc_decode_liv
         }
     }
 
-    /* Whatever the decoder has finished, handed to the sink on this thread. */
-    {
-        int ready = s_ready;
+    /*
+     * EVERYTHING the decoder has finished, not just the newest, handed to the sink on this thread.
+     *
+     * b185 is why this is a loop. 1,788 frames decoded without a single error and 960 reached the
+     * screen: announcements arrive in bursts at 60 fps, and taking one per call left the rest to be
+     * overwritten. Draining costs a blit apiece - about 5 ms - which fits because the decoder only ever
+     * runs a few pictures ahead.
+     */
+    while (s_pic_head != s_pic_tail) {
+        unsigned slot = s_pic_head % (unsigned)RC_VDEC_PICTURE_SLOTS;
+        const uint8_t *y;
+        const uint8_t *u;
+        const uint8_t *v;
+        int w, h;
 
-        if (ready >= 0) {
-            int w, h;
+        /* Pairs with the __lwsync in the callback: the tail was published after the data, so do not
+         * read the data before observing the tail. */
+        __lwsync();
+        w = s_pic_w[slot];
+        h = s_pic_h[slot];
+        y = s_picture[slot];
+        u = y + (size_t)w * (size_t)h;
+        v = u + (size_t)(w / 2) * (size_t)(h / 2);
 
-            /* Pairs with the __lwsync in the callback: the index was published after the data, so do
-             * not read the data before observing the index. */
-            __lwsync();
-            w = s_ready_w;
-            h = s_ready_h;
-            const uint8_t *y = s_picture[ready];
-            const uint8_t *u = y + (size_t)w * (size_t)h;
-            const uint8_t *v = u + (size_t)(w / 2) * (size_t)(h / 2);
+        /*
+         * Sampled before it is handed on, because b160 proved every counter in this pipeline can report
+         * success while the pixels are zeros. A grid down the middle tells a picture from a black
+         * rectangle.
+         */
+        {
+            int i;
 
-            /*
-             * Sampled before it is handed on, because b160 proved that every counter in this pipeline
-             * can report success while the pixels are zeros. A few hundred samples down the middle of
-             * the picture is enough to tell a picture from a black rectangle.
-             */
-            {
-                int i;
+            for (i = 0; i < 256; i++) {
+                size_t at = ((size_t)h / 2u) * (size_t)w + (size_t)(i * (w / 256));
+                unsigned sample = y[at];
 
-                for (i = 0; i < 256; i++) {
-                    size_t at = ((size_t)h / 2u) * (size_t)w + (size_t)(i * (w / 256));
-                    unsigned sample = y[at];
-
-                    if (stats->pictures_out == 0 && i == 0) {
-                        stats->luma_min = sample;
-                        stats->luma_max = sample;
-                    }
-                    if (sample < stats->luma_min)
-                        stats->luma_min = sample;
-                    if (sample > stats->luma_max)
-                        stats->luma_max = sample;
+                if (stats->pictures_out == 0 && i == 0) {
+                    stats->luma_min = sample;
+                    stats->luma_max = sample;
                 }
+                if (sample < stats->luma_min)
+                    stats->luma_min = sample;
+                if (sample > stats->luma_max)
+                    stats->luma_max = sample;
             }
-
-            stats->width = w;
-            stats->height = h;
-            stats->pictures_out++;
-            if (s_sink != NULL)
-                s_sink(s_sink_ctx, y, u, v, w, w / 2, w, h);
-            s_ready = -1;
-            delivered = 1;
         }
+
+        stats->width = w;
+        stats->height = h;
+        stats->pictures_out++;
+        if (s_sink != NULL)
+            s_sink(s_sink_ctx, y, u, v, w, w / 2, w, h);
+
+        s_pic_head++;
+        delivered = 1;
     }
+
     return delivered;
 }
 
