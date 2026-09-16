@@ -1971,7 +1971,14 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
                          * it is new, since the YUV path is the one with a thousand frames behind it.
                          */
                         g_decoder_rgb = rec->decoder_rgb;
-                        rc_spu_yuv_set_bilinear(rec->bilinear_upscale);
+                        /*
+                         * WHOEVER SCALES OWNS THE FILTER. With the RSX scaling, the SPE pass is a 1:1
+                         * copy and interpolating it would be a null operation at full price - b207 did
+                         * exactly that and charged 6,957 us a frame to copy a picture the SPEs had been
+                         * converting AND scaling for 3,013. The kernel now refuses it at 1:1 as well;
+                         * this says the intent rather than relying on that.
+                         */
+                        rc_spu_yuv_set_bilinear(rec->hardware_scale ? 0 : rec->bilinear_upscale);
                         out->bilinear_upscale = rec->bilinear_upscale;
                         /*
                          * Both scalers read `bilinear`, and on the RSX any non-zero value means the same

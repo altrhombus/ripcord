@@ -491,7 +491,11 @@ int main(uint64_t job_ea, uint64_t unused1, uint64_t unused2, uint64_t unused3)
                 if (src_row >= g_job.src_height)
                     src_row = g_job.src_height - 1u;
 
-                if (g_job.source_argb && g_job.bilinear == 2u) {
+                /* Both dimensions have to differ for mode 2 to be doing anything - see the note on
+                 * the 1:1 skip below, which b207 paid for. */
+                if (g_job.source_argb && g_job.bilinear == 2u
+                    && (g_job.dst_width != g_job.src_width
+                        || g_job.dst_height != g_job.src_height)) {
                     /*
                      * Every output row is recomputed, because every one sits at a different distance
                      * between its two source rows - there is no "same source row, reuse the result"
@@ -573,7 +577,15 @@ int main(uint64_t job_ea, uint64_t unused1, uint64_t unused2, uint64_t unused3)
                     }
 
                     t0 = spu_read_decrementer();
-                    if (g_job.bilinear == 1u)
+                    /*
+                     * INTERPOLATION IS SKIPPED AT 1:1, and b207 is why it is skipped HERE rather than
+                     * left to the caller. When the widths match, every output pixel lands exactly on a
+                     * source pixel with weight zero, so the interpolators return the input and cost the
+                     * full price for it: the SPE charged 6,957 us a frame to copy a picture it had
+                     * charged 3,013 us to convert AND scale. A null operation should not be expensive,
+                     * and a caller that forgets should not be the only thing preventing it.
+                     */
+                    if (g_job.bilinear == 1u && g_job.dst_width != g_job.src_width)
                         scale_line_h(g_out[ob], g_job.src_width, g_job.dst_width);
                     else
                         scale_line(g_out[ob], g_job.src_width, g_job.dst_width);
