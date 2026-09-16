@@ -50,6 +50,37 @@ void takion_control_sealer_seal_congestion(takion_control_sealer *sealer, uint8_
             TAKION_CONGESTION_TAG_OFFSET, TAKION_CONGESTION_KEYPOS_OFFSET);
 }
 
+/* See the header. Separate from seal_at because input differs in all three of the things seal_at
+ * fixes: where the fields live, what the AAD zeroes, and whether the payload is encrypted at all. */
+void takion_control_sealer_seal_input(takion_control_sealer *sealer, uint8_t *packet, size_t length,
+                                      size_t payload_offset)
+{
+    uint64_t key_pos;
+    size_t remainder;
+    size_t aligned;
+
+    if (sealer == NULL || !sealer->enabled || packet == NULL)
+        return;
+    if (length < TAKION_INPUT_TAG_OFFSET + 4u || payload_offset > length)
+        return;
+
+    key_pos = sealer->key_pos;
+    remainder = length % 16u;
+    aligned = length + ((remainder == 0u) ? 0u : (16u - remainder));
+    sealer->key_pos += (uint64_t)aligned;
+
+    packet[TAKION_INPUT_KEYPOS_OFFSET + 0u] = (uint8_t)(key_pos >> 24);
+    packet[TAKION_INPUT_KEYPOS_OFFSET + 1u] = (uint8_t)(key_pos >> 16);
+    packet[TAKION_INPUT_KEYPOS_OFFSET + 2u] = (uint8_t)(key_pos >> 8);
+    packet[TAKION_INPUT_KEYPOS_OFFSET + 3u] = (uint8_t)key_pos;
+
+    /* ENCRYPT, THEN SEAL. The order is the whole point - see the header. */
+    stream_packet_crypto_crypt_payload(&sealer->crypto, key_pos,
+                                       packet + payload_offset, length - payload_offset);
+    (void)stream_packet_crypto_seal(&sealer->crypto, key_pos, packet, length,
+                                    (int)TAKION_INPUT_TAG_OFFSET, 0);
+}
+
 void takion_control_sealer_seal(void *ctx, uint8_t *packet, size_t length)
 {
     takion_control_sealer *sealer = (takion_control_sealer *)ctx;

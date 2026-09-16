@@ -384,6 +384,12 @@ typedef struct {
     int      rsx_scale_available;/* whether the staging buffer existed to do it with */
     unsigned rsx_blits;
     unsigned rsx_refused;        /* asked for, could not run, fell back to the SPE scaler */
+    unsigned input_state_packets;   /* analog snapshots sent          */
+    unsigned input_history_packets; /* button transitions sent        */
+    int      pad_connected;
+    unsigned pad_reads;
+    unsigned pad_changes;        /* times a pad connected or went away */
+
     int      diagnostics;        /* the overlay was asked for */
     int      overlay_system_font;/* the console's own face opened, rather than the drawn fallback */
     char     overlay_font_status[96];
