@@ -1071,6 +1071,16 @@ static int check_connect(void)
                             " means the ask was not honoured)\n");
                 }
 
+                if (c.diagnostics) {
+                    /*
+                     * WHICH FACE, said rather than left to the eye. The console's own and the drawn
+                     * fallback look different enough to tell apart on a television and not different
+                     * enough to be sure, and "the overlay looked a bit rough" is not a bug report the
+                     * next person can act on.
+                     */
+                    ps3_log("       OVERLAY font: %s\n", c.overlay_font_status);
+                }
+
                 if (c.hardware_scale) {
                     /*
                      * Said plainly because the two paths are indistinguishable on a television when the
