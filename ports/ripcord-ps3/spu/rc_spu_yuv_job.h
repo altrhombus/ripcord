@@ -6,7 +6,7 @@
  *
  * SIZE IS A MULTIPLE OF 16 AND DELIBERATELY SO. The MFC refuses transfers whose size is not 1, 2, 4, 8 or
  * a multiple of 16, and IBM's Cell Broadband Engine Programmers Guide gives a worked example of a control
- * block that fails for exactly this reason. This is 64 bytes exactly; anything added must keep it so, and
+ * block that fails for exactly this reason. This is 96 bytes exactly; anything added must keep it so, and
  * the guide's advice is to pad explicitly rather than to count on the fields happening to line up.
  */
 #ifndef RC_SPU_YUV_JOB_H
@@ -33,7 +33,7 @@
  * and a source row - the SPE computes it - so offsetting the pointers on the PPE would be doing the same
  * arithmetic in two places and getting to disagree about it.
  *
- * 80 bytes, a multiple of 16, which the MFC requires of a transfer size. Anything added must keep it so.
+ * 96 bytes, a multiple of 16, which the MFC requires of a transfer size. Anything added must keep it so.
  */
 typedef struct {
     uint64_t y_ea;           /* luma plane at row 0                                          */
@@ -86,5 +86,17 @@ typedef struct {
     uint32_t bilinear;
     uint32_t pad[2];         /* keeps this a multiple of 16, which the MFC requires - see the header */
 } rc_spu_yuv_job;
+
+/*
+ * THE MULTIPLE-OF-16 RULE, ENFORCED RATHER THAN ASKED FOR.
+ *
+ * The comment at the top of this file has said "anything added must keep it so" through three size
+ * changes, and nothing checked: the block went 64 -> 80 -> 96 bytes while both comments still claimed
+ * the first number. An MFC transfer of a size that is not 1, 2, 4, 8 or a multiple of 16 does not fail
+ * loudly on this hardware - it is where a hang comes from - so the check belongs in the compiler, where
+ * the next field to be added trips it. The negative-array-size form is used because both toolchains
+ * compile this as C89 and neither has _Static_assert there.
+ */
+typedef char rc_spu_yuv_job_size_is_a_multiple_of_16[(sizeof(rc_spu_yuv_job) % 16u) == 0u ? 1 : -1];
 
 #endif /* RC_SPU_YUV_JOB_H */
