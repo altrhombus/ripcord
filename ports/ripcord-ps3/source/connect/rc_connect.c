@@ -1408,54 +1408,62 @@ static void draw_overlay(void)
     rc_overlay_rect(0, 0, 1, rc_overlay_height(), RC_OV_EDGE);
     rc_overlay_rect(rc_overlay_width() - 1, 0, 1, rc_overlay_height(), RC_OV_EDGE);
 
-    rc_overlay_text(OV_PAD, 10, 2, RC_OV_TEXT, "RIPCORD");
-    rc_overlay_text(OV_PAD + 108, 12, 1, RC_OV_LABEL, RC_PS3_BUILD_ID);
-    rc_overlay_text_right(rc_overlay_width() - OV_PAD, 12, 1, RC_OV_LABEL, "PLAYSTATION 3");
+    rc_overlay_text(OV_PAD, 8, 2, RC_OV_TEXT, "Ripcord");
+    rc_overlay_num(OV_PAD + 104, 15, 1, RC_OV_LABEL, RC_PS3_BUILD_ID);
+    rc_overlay_text_right(rc_overlay_width() - OV_PAD, 13, 1, RC_OV_LABEL, "PlayStation 3");
 
     /* ---- what the stream is ------------------------------------------------------------------ */
-    y = OV_HEAD_H + 14;
-    rc_overlay_text(OV_LABEL_X, y, 1, RC_OV_LABEL, "STREAM");
-    rc_overlay_text(OV_VALUE_X, y - 3, 2,
-                    g_stream_is_hevc ? RC_OV_BAD : RC_OV_TEXT,
-                    g_stream_is_hevc ? "HEVC - CANNOT DECODE"
-                                     : "%DX%D @%D H.264",
-                    g_live_stats.width, g_live_stats.height, g_overlay_asked_fps);
+    y = OV_HEAD_H + 12;
+    rc_overlay_text(OV_LABEL_X, y + 2, 1, RC_OV_LABEL, "Stream");
+    if (g_stream_is_hevc) {
+        rc_overlay_text(OV_VALUE_X, y, 1, RC_OV_BAD, "HEVC - this decoder is H.264 only");
+    } else {
+        /* The geometry is monospaced because it is read as a value, and it changes if the console ever
+         * renegotiates; the words around it are not. */
+        rc_overlay_num(OV_VALUE_X, y + 1, 1, RC_OV_TEXT, "%dx%d @%d",
+                       g_live_stats.width, g_live_stats.height, g_overlay_asked_fps);
+        rc_overlay_text(OV_VALUE_X + 116, y, 1, RC_OV_TEXT, "H.264 hardware");
+    }
 
     y += OV_ROW_H;
-    rc_overlay_text(OV_LABEL_X, y, 1, RC_OV_LABEL, "PATH");
-    rc_overlay_text(OV_VALUE_X, y - 3, 1, RC_OV_LABEL, "%s SCALER   %s   %D KBPS ASKED",
+    rc_overlay_text(OV_LABEL_X, y + 2, 1, RC_OV_LABEL, "Path");
+    rc_overlay_text(OV_VALUE_X, y, 1, RC_OV_LABEL, "%s scaler, %s, asked for",
                     g_overlay_hw_scale ? "RSX" : "SPE",
-                    rc_decode_vdec_picture_in_vram() ? "ZERO COPY" : "COPIED",
-                    g_overlay_asked_kbps);
+                    rc_decode_vdec_picture_in_vram() ? "zero copy" : "one copy");
+    rc_overlay_num(OV_VALUE_X + 240, y + 1, 1, RC_OV_LABEL, "%d", g_overlay_asked_kbps);
+    rc_overlay_text(OV_VALUE_X + 282, y, 1, RC_OV_LABEL, "kbps");
 
     y += OV_ROW_H - 2;
     rc_overlay_rect(OV_PAD, y, rc_overlay_width() - OV_PAD * 2, 1, RC_OV_EDGE);
 
     /* ---- the live figures -------------------------------------------------------------------- */
     y += 12;
-    rc_overlay_text(OV_LABEL_X, y + 3, 1, RC_OV_LABEL, "FPS");
-    rc_overlay_text_right(OV_NUM_R, y, 2,
-                          now->frames >= 55u ? RC_OV_GOOD
-                                             : (now->frames >= 40u ? RC_OV_WARN : RC_OV_BAD),
-                          "%u", now->frames);
+    rc_overlay_text(OV_LABEL_X, y + 5, 1, RC_OV_LABEL, "Frames/s");
+    rc_overlay_num_right(OV_NUM_R, y, 2,
+                         now->frames >= 55u ? RC_OV_GOOD
+                                            : (now->frames >= 40u ? RC_OV_WARN : RC_OV_BAD),
+                         "%u", now->frames);
     rc_overlay_bars(OV_SPARK_X, y, OV_SPARK_W, 14, fps_series, series_n,
                     (peak_fps > 60u) ? peak_fps : 60u, RC_OV_ACCENT);
-    rc_overlay_text_right(rc_overlay_width() - OV_PAD, y + 4, 1, RC_OV_LABEL, "LOW %u", low_fps);
+    rc_overlay_text_right(rc_overlay_width() - OV_PAD - 22, y + 5, 1, RC_OV_LABEL, "low");
+    rc_overlay_num_right(rc_overlay_width() - OV_PAD, y + 5, 1, RC_OV_LABEL, "%u", low_fps);
 
     y += OV_ROW_H + 4;
-    rc_overlay_text(OV_LABEL_X, y + 3, 1, RC_OV_LABEL, "MBPS");
-    rc_overlay_text_right(OV_NUM_R, y, 2, RC_OV_TEXT, "%lu.%lu",
-                          (now->bytes * 8ul) / 1000000ul, ((now->bytes * 8ul) / 100000ul) % 10ul);
+    rc_overlay_text(OV_LABEL_X, y + 5, 1, RC_OV_LABEL, "Mbit/s");
+    rc_overlay_num_right(OV_NUM_R, y, 2, RC_OV_TEXT, "%lu.%lu",
+                         (now->bytes * 8ul) / 1000000ul, ((now->bytes * 8ul) / 100000ul) % 10ul);
     rc_overlay_bars(OV_SPARK_X, y, OV_SPARK_W, 14, mbps_series, series_n,
                     (unsigned)((peak_bytes * 8ul) / 100000ul), RC_OV_GOOD);
-    rc_overlay_text_right(rc_overlay_width() - OV_PAD, y + 4, 1, RC_OV_LABEL, "PK %lu.%lu",
-                          (peak_bytes * 8ul) / 1000000ul, ((peak_bytes * 8ul) / 100000ul) % 10ul);
+    rc_overlay_text_right(rc_overlay_width() - OV_PAD - 34, y + 5, 1, RC_OV_LABEL, "peak");
+    rc_overlay_num_right(rc_overlay_width() - OV_PAD, y + 5, 1, RC_OV_LABEL, "%lu.%lu",
+                         (peak_bytes * 8ul) / 1000000ul, ((peak_bytes * 8ul) / 100000ul) % 10ul);
 
     y += OV_ROW_H + 4;
-    rc_overlay_text(OV_LABEL_X, y + 3, 1, RC_OV_LABEL, "LOST");
-    rc_overlay_text_right(OV_NUM_R, y, 2, peak_lost > 0u ? RC_OV_WARN : RC_OV_TEXT,
-                          "%u", now->lost);
-    rc_overlay_text(OV_SPARK_X, y + 4, 1, RC_OV_LABEL, "UNITS/S     PEAK %u", peak_lost);
+    rc_overlay_text(OV_LABEL_X, y + 5, 1, RC_OV_LABEL, "Lost/s");
+    rc_overlay_num_right(OV_NUM_R, y, 2, peak_lost > 0u ? RC_OV_WARN : RC_OV_TEXT, "%u", now->lost);
+    rc_overlay_text(OV_SPARK_X, y + 5, 1, RC_OV_LABEL, "units dropped by the network");
+    rc_overlay_text_right(rc_overlay_width() - OV_PAD - 22, y + 5, 1, RC_OV_LABEL, "pk");
+    rc_overlay_num_right(rc_overlay_width() - OV_PAD, y + 5, 1, RC_OV_LABEL, "%u", peak_lost);
 
     /* ---- timing and faults ------------------------------------------------------------------- */
     y += OV_ROW_H + 2;
@@ -1469,9 +1477,12 @@ static void draw_overlay(void)
                          / (unsigned long long)g_live_stats.frames_in)
             : 0u;
 
-        rc_overlay_text(OV_LABEL_X, y, 1, RC_OV_LABEL, "TIME");
-        rc_overlay_text(OV_VALUE_X, y, 1, RC_OV_TEXT, "%u US DECODE    %u US PRESENT",
-                        decode_us, g_blits ? (unsigned)(g_blit_us_total / g_blits) : 0u);
+        rc_overlay_text(OV_LABEL_X, y, 1, RC_OV_LABEL, "Time");
+        rc_overlay_num(OV_VALUE_X, y + 1, 1, RC_OV_TEXT, "%u", decode_us);
+        rc_overlay_text(OV_VALUE_X + 40, y, 1, RC_OV_LABEL, "us decode");
+        rc_overlay_num(OV_VALUE_X + 132, y + 1, 1, RC_OV_TEXT, "%u",
+                       g_blits ? (unsigned)(g_blit_us_total / g_blits) : 0u);
+        rc_overlay_text(OV_VALUE_X + 172, y, 1, RC_OV_LABEL, "us present");
     }
 
     /*
@@ -1488,10 +1499,15 @@ static void draw_overlay(void)
         bad = (g_idr_requests > 8u || g_frames_overrun > 0u
                || a.decode_errors > 0u || a.silence_written > 0u);
 
-        rc_overlay_text(OV_LABEL_X, y, 1, RC_OV_LABEL, "SINCE");
-        rc_overlay_text(OV_VALUE_X, y, 1, bad ? RC_OV_WARN : RC_OV_LABEL,
-                        "%u IDR   %u OVERRUN   %u AUDIO ERR   %u SILENT",
-                        g_idr_requests, g_frames_overrun, a.decode_errors, a.silence_written);
+        rc_overlay_text(OV_LABEL_X, y, 1, RC_OV_LABEL, "Since start");
+        rc_overlay_num(OV_VALUE_X, y + 1, 1, bad ? RC_OV_WARN : RC_OV_LABEL, "%u", g_idr_requests);
+        rc_overlay_text(OV_VALUE_X + 40, y, 1, RC_OV_LABEL, "keyframes asked,");
+        rc_overlay_num(OV_VALUE_X + 178, y + 1, 1, bad ? RC_OV_WARN : RC_OV_LABEL, "%u",
+                       g_frames_overrun);
+        rc_overlay_text(OV_VALUE_X + 218, y, 1, RC_OV_LABEL, "overrun,");
+        rc_overlay_num(OV_VALUE_X + 286, y + 1, 1, bad ? RC_OV_WARN : RC_OV_LABEL, "%u",
+                       a.decode_errors + a.silence_written);
+        rc_overlay_text(OV_VALUE_X + 326, y, 1, RC_OV_LABEL, "audio");
     }
 
     rc_overlay_end();
