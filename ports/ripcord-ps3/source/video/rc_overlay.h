@@ -61,10 +61,22 @@ void rc_overlay_rect(int x, int y, int w, int h, uint32_t argb);
  * time it ticks, and a number that moves while you read it is a number you read twice. Prefer
  * _num_right for those, so the digits grow leftwards from a fixed edge.
  */
-void rc_overlay_text(int x, int y, int scale, uint32_t argb, const char *fmt, ...);
+/*
+ * BOTH RETURN THE ADVANCE, so a caller chains `x += rc_overlay_text(x, ...)` rather than writing down
+ * where the next piece goes. The first version of the panel used hand-measured pixel offsets for every
+ * run that mixed words and figures; they were measured against one font at one size, and the first
+ * time either changed the labels started cutting into the numbers beside them. An offset that has to
+ * be recomputed by hand whenever anything moves is a bug with a delay on it.
+ */
+int rc_overlay_text(int x, int y, int scale, uint32_t argb, const char *fmt, ...);
+int rc_overlay_num(int x, int y, int scale, uint32_t argb, const char *fmt, ...);
+
+/* Right-aligned: the text ENDS at x. For a figure that changes, so it grows leftwards from a fixed edge. */
 void rc_overlay_text_right(int x, int y, int scale, uint32_t argb, const char *fmt, ...);
-void rc_overlay_num(int x, int y, int scale, uint32_t argb, const char *fmt, ...);
 void rc_overlay_num_right(int x, int y, int scale, uint32_t argb, const char *fmt, ...);
+
+/* What rc_overlay_num WOULD occupy, without drawing it - for reserving room to its left. */
+int rc_overlay_num_width(int scale, const char *fmt, ...);
 
 /*
  * A sparkline: `n` values drawn as columns left to right, scaled against `max`. Zero-height bars still

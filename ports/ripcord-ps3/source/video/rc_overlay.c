@@ -309,17 +309,18 @@ static void draw_mono(int x, int y, int scale, uint32_t argb, const char *text)
     }
 }
 
-void rc_overlay_text(int x, int y, int scale, uint32_t argb, const char *fmt, ...)
+int rc_overlay_text(int x, int y, int scale, uint32_t argb, const char *fmt, ...)
 {
     char text[96];
     va_list ap;
 
     if (!s_ready)
-        return;
+        return 0;
     va_start(ap, fmt);
     (void)vsnprintf(text, sizeof(text), fmt, ap);
     va_end(ap);
     draw_prop(x, y, scale, argb, text);
+    return text_width(text, scale);
 }
 
 void rc_overlay_text_right(int x, int y, int scale, uint32_t argb, const char *fmt, ...)
@@ -335,17 +336,29 @@ void rc_overlay_text_right(int x, int y, int scale, uint32_t argb, const char *f
     draw_prop(x - text_width(text, scale), y, scale, argb, text);
 }
 
-void rc_overlay_num(int x, int y, int scale, uint32_t argb, const char *fmt, ...)
+int rc_overlay_num_width(int scale, const char *fmt, ...)
+{
+    char text[96];
+    va_list ap;
+
+    va_start(ap, fmt);
+    (void)vsnprintf(text, sizeof(text), fmt, ap);
+    va_end(ap);
+    return (int)strlen(text) * (RC_FONT_W + 1) * scale * 2;
+}
+
+int rc_overlay_num(int x, int y, int scale, uint32_t argb, const char *fmt, ...)
 {
     char text[96];
     va_list ap;
 
     if (!s_ready)
-        return;
+        return 0;
     va_start(ap, fmt);
     (void)vsnprintf(text, sizeof(text), fmt, ap);
     va_end(ap);
     draw_mono(x, y, scale, argb, text);
+    return (int)strlen(text) * (RC_FONT_W + 1) * scale * 2;
 }
 
 /*
