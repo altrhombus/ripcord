@@ -2683,7 +2683,8 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
                          * toggle is pressed would do it on the decode thread mid-stream - which is the
                          * b256 stall, and would strike exactly when someone wants the numbers.
                          */
-                        rc_overlay_set(1);
+                        /* Prepared at start-up now, beside the display - see main.c. Only visibility
+                         * is decided here, because only that is the record's to say. */
                         rc_overlay_show(rec->diagnostics);
                         out->diagnostics = rec->diagnostics;
                         out->overlay_system_font = rc_overlay_using_system_font();

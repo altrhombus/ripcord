@@ -123,6 +123,13 @@ int rc_overlay_shown(void)
     return s_shown;
 }
 
+/* Whether the bitmap and atlas exist at all. Distinct from `shown`: something can be prepared and
+ * hidden, and only one of those two can be fixed by asking for it. */
+int rc_overlay_prepared(void)
+{
+    return s_ready;
+}
+
 int rc_overlay_on(void)
 {
     return s_on && s_ready && s_shown;
