@@ -448,6 +448,59 @@ static void draw_overlay(void);
  * one.
  */
 static uint64_t g_overlay_t0;
+
+/*
+ * A THIRTY-SECOND WINDOW, because a running total stops being information.
+ *
+ * The first overlay showed cumulative frames, bytes and audio frames since the session began. Twenty
+ * seconds in, every one of those is a large number that changes slowly and says nothing about now -
+ * and "now" is the entire reason to put numbers on the screen rather than in the log. The .NET client
+ * reports its live figures as `latest / peak` over the last thirty seconds and this matches it, so a
+ * fault described against one client reads the same way on the other.
+ *
+ * One bucket a second, thirty of them, oldest overwritten. The totals are kept too: cumulative is the
+ * right shape for FAULTS - an IDR request or an overrun that happened and stopped mattering is still
+ * something you want to know happened - and the wrong shape for rates.
+ */
+#define RC_OVERLAY_WINDOW 30u
+
+typedef struct {
+    unsigned frames;        /* blitted in this second   */
+    unsigned long bytes;    /* video bytes in this second */
+    unsigned lost;          /* units lost in this second  */
+} rc_overlay_bucket;
+
+static rc_overlay_bucket g_win[RC_OVERLAY_WINDOW];
+static unsigned g_win_slot;
+static uint64_t g_win_next;
+static unsigned long g_win_last_bytes;
+static unsigned long g_win_last_lost;
+
+/* Rolls the window on if a second has passed. Called from the present path, so it must be cheap and
+ * must not care about being called at an irregular rate. */
+static void overlay_tick(void)
+{
+    uint64_t now = rc_time_ms();
+
+    if (g_win_next == 0u) {
+        g_win_next = now + 1000u;
+        return;
+    }
+    while (now >= g_win_next) {
+        g_win_slot = (g_win_slot + 1u) % RC_OVERLAY_WINDOW;
+        g_win[g_win_slot].frames = 0u;
+        g_win[g_win_slot].bytes = 0ul;
+        g_win[g_win_slot].lost = 0u;
+        g_win_next += 1000u;
+    }
+}
+
+/* The most recently COMPLETED second, not the one in progress - a bucket still filling always reads
+ * low, and an fps that dips every time you look at it is worse than no fps at all. */
+static const rc_overlay_bucket *overlay_latest(void)
+{
+    return &g_win[(g_win_slot + RC_OVERLAY_WINDOW - 1u) % RC_OVERLAY_WINDOW];
+}
 static int g_overlay_asked_w, g_overlay_asked_h, g_overlay_asked_fps, g_overlay_asked_kbps;
 static int g_overlay_hw_scale;
 static unsigned long g_overlay_units_lost;
@@ -1259,12 +1312,21 @@ static void on_picture(void *ctx, const unsigned char *y, const unsigned char *u
  */
 static void draw_overlay(void)
 {
-    unsigned long elapsed_ms;
-    unsigned fps = 0u;
-    unsigned long mbps_x10 = 0ul;
+    const rc_overlay_bucket *now;
+    unsigned peak_fps = 0u, low_fps = 0xffffffffu, peak_lost = 0u;
+    unsigned long peak_bytes = 0ul;
+    unsigned i;
 
     if (!rc_overlay_on())
         return;
+
+    /* Fed every frame; the bitmap behind it is only rebuilt a few times a second. */
+    overlay_tick();
+    g_win[g_win_slot].frames++;
+    g_win[g_win_slot].bytes += (unsigned long)(g_tally.video_bytes - g_win_last_bytes);
+    g_win_last_bytes = (unsigned long)g_tally.video_bytes;
+    g_win[g_win_slot].lost += (unsigned)(g_overlay_units_lost - g_win_last_lost);
+    g_win_last_lost = g_overlay_units_lost;
 
     /*
      * BEGIN CAN DECLINE AND END STILL HAS TO RUN. The text is rebuilt a few times a second and the
@@ -1277,30 +1339,48 @@ static void draw_overlay(void)
         return;
     }
 
-    elapsed_ms = (unsigned long)(rc_time_ms() - g_overlay_t0);
-    if (elapsed_ms > 0ul) {
-        fps = (unsigned)((unsigned long)g_blits * 1000ul / elapsed_ms);
-        mbps_x10 = (g_tally.video_bytes / 1000ul) * 80ul / elapsed_ms;
+    now = overlay_latest();
+    for (i = 0u; i < RC_OVERLAY_WINDOW; i++) {
+        /* The bucket in progress is skipped in both directions: it always reads low, and a "low fps"
+         * that is really "this second is not over" would be the first thing anyone chased. */
+        if (i == g_win_slot)
+            continue;
+        if (g_win[i].frames > peak_fps)
+            peak_fps = g_win[i].frames;
+        if (g_win[i].frames < low_fps)
+            low_fps = g_win[i].frames;
+        if (g_win[i].bytes > peak_bytes)
+            peak_bytes = g_win[i].bytes;
+        if (g_win[i].lost > peak_lost)
+            peak_lost = g_win[i].lost;
     }
+    if (low_fps == 0xffffffffu)
+        low_fps = 0u;
 
     rc_overlay_line(RC_OVERLAY_WHITE, "RIPCORD %s   PS3", RC_PS3_BUILD_ID);
-    rc_overlay_line(RC_OVERLAY_DIM,   "ASKED  %dX%d @%d  %d KBPS  AVC",
+    rc_overlay_line(RC_OVERLAY_DIM,   "ASKED %dX%d @%d %dKBPS AVC",
                     g_overlay_asked_w, g_overlay_asked_h, g_overlay_asked_fps,
                     g_overlay_asked_kbps);
-    rc_overlay_line(RC_OVERLAY_DIM,   "GOT    %DX%D  %s",
+    rc_overlay_line(RC_OVERLAY_DIM,   "GOT   %dX%d %s",
                     g_live_stats.width, g_live_stats.height,
-                    g_stream_is_hevc ? "HEVC - CANNOT DECODE" : "H.264 HARDWARE");
-    rc_overlay_line(RC_OVERLAY_DIM,   "SCALE  %s  %s",
+                    g_stream_is_hevc ? "HEVC-CANNOT DECODE" : "H.264 HW");
+    rc_overlay_line(RC_OVERLAY_DIM,   "SCALE %s %s",
                     g_overlay_hw_scale ? "RSX" : "SPE",
                     rc_decode_vdec_picture_in_vram() ? "ZERO COPY" : "COPIED");
-    rc_overlay_line(RC_OVERLAY_WHITE, "");
+    rc_overlay_line(RC_OVERLAY_DIM,   "LAST 30 SECONDS - NOW / WORST");
 
-    /* Frame rate is the one number worth colouring: it is the one a person is already judging by eye,
-     * and the overlay exists to say whether the eye is right. */
-    rc_overlay_line(fps >= 55u ? RC_OVERLAY_GOOD : (fps >= 40u ? RC_OVERLAY_WARN : RC_OVERLAY_BAD),
-                    "FPS    %u   (%u BLITTED)", fps, g_blits);
-    rc_overlay_line(RC_OVERLAY_WHITE, "RATE   %lu.%lu MBPS  %lu FRAMES",
-                    mbps_x10 / 10ul, mbps_x10 % 10ul, (unsigned long)g_tally.video_frames);
+    /* Frame rate is the one worth colouring: it is what a person is already judging by eye, and the
+     * overlay exists to say whether the eye is right. WORST rather than peak, because nobody has ever
+     * needed to know the best second. */
+    rc_overlay_line(now->frames >= 55u ? RC_OVERLAY_GOOD
+                                       : (now->frames >= 40u ? RC_OVERLAY_WARN : RC_OVERLAY_BAD),
+                    "FPS   %u / %u", now->frames, low_fps);
+    rc_overlay_line(RC_OVERLAY_WHITE, "MBPS  %lu.%lu / %lu.%lu",
+                    (now->bytes * 8ul) / 1000000ul, ((now->bytes * 8ul) / 100000ul) % 10ul,
+                    (peak_bytes * 8ul) / 1000000ul, ((peak_bytes * 8ul) / 100000ul) % 10ul);
+    rc_overlay_line(peak_lost > 0u ? RC_OVERLAY_WARN : RC_OVERLAY_DIM,
+                    "LOST  %u / %u UNITS/S", now->lost, peak_lost);
+
     {
         unsigned long hz = (unsigned long)rc_tick_hz();
         unsigned decode_us = (hz > 0ul && g_live_stats.frames_in > 0)
@@ -1308,24 +1388,25 @@ static void draw_overlay(void)
                          / (unsigned long long)g_live_stats.frames_in)
             : 0u;
 
-        rc_overlay_line(RC_OVERLAY_WHITE, "DECODE %u US   BLIT %u US",
+        rc_overlay_line(RC_OVERLAY_WHITE, "TIME  %uUS DECODE  %uUS BLIT",
                         decode_us, g_blits ? (unsigned)(g_blit_us_total / g_blits) : 0u);
     }
 
-    /* Loss and IDR requests together, because one causes the other and seeing them apart is what made
-     * the blockiness in b207 look like a network fault when it was a budget fault. */
-    rc_overlay_line(g_idr_requests > 8u ? RC_OVERLAY_WARN : RC_OVERLAY_DIM,
-                    "LOST   %lu UNITS   IDR ASKED %u",
-                    (unsigned long)g_overlay_units_lost, g_idr_requests);
-    rc_overlay_line(g_frames_overrun > 0u ? RC_OVERLAY_WARN : RC_OVERLAY_DIM,
-                    "QUEUE  %u DEEP   %u OVERRUN", g_queue_worst, g_frames_overrun);
+    /*
+     * FAULTS STAY CUMULATIVE, and that is the deliberate other half of the window. An IDR request or
+     * an overrun that happened thirty seconds ago and stopped is still something worth knowing
+     * happened - it is the difference between "this stream is healthy" and "this stream recovered".
+     */
     {
         rc_audio_stats a;
 
         rc_audio_stats_get(&a);
-        rc_overlay_line(a.silence_written > 0u ? RC_OVERLAY_WARN : RC_OVERLAY_DIM,
-                        "AUDIO  %u FRAMES  %u ERR  %u SILENT",
-                        a.frames_decoded, a.decode_errors, a.silence_written);
+        rc_overlay_line(g_idr_requests > 8u || g_frames_overrun > 0u ? RC_OVERLAY_WARN
+                                                                    : RC_OVERLAY_DIM,
+                        "SINCE START  %u IDR  %u OVERRUN", g_idr_requests, g_frames_overrun);
+        rc_overlay_line(a.decode_errors > 0u || a.silence_written > 0u ? RC_OVERLAY_WARN
+                                                                      : RC_OVERLAY_DIM,
+                        "AUDIO %u ERR  %u SILENT", a.decode_errors, a.silence_written);
     }
 
     rc_overlay_end();
