@@ -1017,16 +1017,68 @@ is built at. One-pixel borders stay one pixel: scaling a hairline either doubles
 The hand-drawn fonts remain as the fallback and are still what runs if the TTF cannot be opened.
 `systemfont=0` forces them.
 
+### Controller input — **working, 228 Hz**
+
+A DualShock 3 goes up the stream channel. `ports/common` has carried the input writer since the 3DS
+port and this port compiled it for its self-test and never called it; it does now.
+
+```
+INPUT: 13708 poll(s), 35 with new data; 311 state and 34 transition packet(s) sent; 1 connect/disconnect
+```
+
+13,708 polls over sixty seconds is 228 Hz against a 4 ms gate, and 311 state packets is the 200 ms
+keepalive (300 of them) plus the handful where something actually moved.
+
+**Polled from the periodic tick, not the drain.** `ripcord-3ds` spent two phases establishing that
+input is a wall-clock activity like the heartbeat while the drain's period depends on how much video is
+arriving - so polling from the drain makes the controller laggy exactly when the picture is busy, which
+is exactly when it is being used.
+
+**The sealer gained an input variant rather than this port sealing its own.** Input is a third packet
+shape with a third set of offsets - key position at 4, tag at 8 - and an AAD rule that matches A/V
+rather than control, and it is the only one of the three whose payload is ENCRYPTED. That is not
+tidiness: the outgoing key position is ONE advancing sequence shared by control, SACKs, congestion and
+input, and a path with a counter of its own would repeat a position, which is a repeated GMAC nonce
+under one key.
+
+**`ports/common` gained L3 and R3**, which were missing because the first front end to use it was a 3DS
+and a 3DS has no stick to click. `HalyardInputPacketWriter.cs` has carried both codes all along. A gap
+that exists for one front end's hardware is a gap for every front end after it.
+
+#### Two faults on the way, and the first was not in the code
+
+b271 built, uploaded, installed and ran b268. `source/input` was added to SOURCES and not to the
+Makefile's vpath, so make stopped with "No rule to make target" and **left the previous package in
+place** - which then uploaded cleanly and installed cleanly. The check that should have caught it was a
+grep of make's output for the word "error", which that message does not contain.
+
+The lesson is not to grep for more words. A build's success is its EXIT STATUS. `tools/ship.sh` now
+builds under `set -e` and refuses to upload unless the build id compiled into the binary matches the one
+written into PARAM.SFO - the title the XMB shows, and therefore the thing the whole staleness convention
+rests on. **A package whose title names a build it does not contain is worse than a failed build,
+because it looks like a successful one all the way through to the television.**
+
+Then b271 ran its buttons at about 1 Hz. `ioPadGetData` fills `len` only when the pad has reported since
+the last call, so most polls come back empty - which is normal, and treating each as an absent
+controller was not. It reset the presence flag 118 times in a minute, and worse, a poll that decided
+there was no pad sent NOTHING, so the keepalive never ran. Presence comes from `info.status` alone now
+and the last good reading is held while the pad has nothing new to say, which is also just true: a stick
+that has not moved is still where it was.
+
+The report prints polls and fresh-data polls **separately**, because their being far apart is the
+healthy case. One number made "polled 7,500 times, 59 with new data" read identically to "polled 59
+times", and only one of those is a fault - the same shape of mistake as the build check.
+
+#### Still behind the .NET writer
+L2 and R2 go out digital. The shared state struct carries no trigger level and a DualShock 3's
+shoulders are pressure-sensitive, so this is a real gap rather than a hardware limit. The history packet
+already uses the 3-byte analog event form for both, with 0x00 or 0xff in it - only the level is missing.
+
 ### Still open
-- **The fifth SPE — `ARGB32` output works.** Asked offline in b179: `vdecGetPicture` accepts
-  `VDEC_PICFMT_ARGB32` and fills the buffer (bytes 0..255 across 8 pictures). So the YUV-to-RGB pass
-  really can come out of the SPE kernel.
-  **But the conversion does not simply disappear, and this document said it would.** Scaling 1280x720 to
-  a 1920x1080 display still has to happen somewhere, so the SPE becomes a scaler rather than going idle —
-  a cheaper pass, not no pass. Two routes worth weighing before building either: keep the SPE and make it
-  scale-only, or set the display to 720p and let the television scale, which removes the pass entirely at
-  the cost of handing off scaling quality. Neither is urgent: decode and blit together cost 15% of a
-  frame budget, and no other work is waiting on an SPE.
+- ~~**The fifth SPE.**~~ **Answered, and more completely than the question assumed.** The worry was that
+  freeing the colour pass would only turn an SPE into a scaler rather than idling it. It idled all three:
+  the RSX scales, the decoder writes where the RSX reads, and no SPE is in the video path at all. See
+  the sections above.
 - ~~**Audio latency.**~~ **Tried and reverted.** About 93 ms sat between the decoder and the speaker and
   the stream underran exactly once, on the first block, so the depth looked like waste. It is not: audio
   arrives in network bursts and that depth is the jitter buffer. Cutting the hardware lead and trimming
