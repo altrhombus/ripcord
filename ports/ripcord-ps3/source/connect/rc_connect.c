@@ -24,6 +24,8 @@
 #include "rc_spu_yuv.h"
 #include "rc_video_ps3.h"
 #include "rc_pad_ps3.h"
+#include "rc_session_state.h"
+#include "rc_status_screen.h"
 #include "halyard_input.h"
 #include "rc_overlay.h"
 #include "rc_sysfont.h"
@@ -438,6 +440,91 @@ static int g_stream_rcvbuf;
  * not say. Reported rather than assumed, because every rate in the summary divides by it. */
 static unsigned g_hold_ms = RC_STREAM_HOLD_MS;
 
+/*
+ * WHAT THE PERSON IN FRONT OF THE TELEVISION IS TOLD.
+ *
+ * Kept here because this file is the one that knows why things stopped. Every phase change is drawn
+ * immediately rather than queued: these are rare, and the whole point of them is to appear at the
+ * moment the thing they describe happens.
+ */
+static rc_session_state g_session;
+
+static void say(rc_phase phase, const char *headline, const char *detail, const char *hint)
+{
+    unsigned before = g_session.revision;
+
+    rc_session_set(&g_session, phase, headline, detail, hint);
+    if (g_session.revision != before && rc_status_screen_wants_draw(&g_session))
+        rc_status_screen_draw(&g_session);
+}
+
+const rc_session_state *rc_connect_session_state(void)
+{
+    return &g_session;
+}
+
+/*
+ * THE SAME OUTCOME, FOR SOMEONE WHO IS NOT READING A LOG.
+ *
+ * rc_connect_stage_name says what happened and is written for whoever is debugging this. That is the
+ * wrong register for a television: "senkusha channel up, stream channel did not follow" is precise and
+ * tells a viewer nothing they can act on.
+ *
+ * So each stage also gets a headline, a detail and - the part that matters - a HINT. Where a stage has
+ * no useful hint that is said plainly rather than filled with advice that sounds helpful and is not;
+ * "try again" on a fault nobody can influence is worse than silence, because it implies the fault is
+ * the viewer's to fix.
+ */
+void rc_connect_report_outcome(rc_connect_stage stage, int stalled)
+{
+    if (stalled)
+        return;             /* the stall already said something more specific than any of this */
+
+    switch (stage) {
+    case RC_CONNECT_NO_RECORD:
+        say(RC_PHASE_FAILED, "Not paired with a console",
+            "No pairing record was found",
+            "Pair with the console first");
+        break;
+    case RC_CONNECT_BAD_RECORD:
+        say(RC_PHASE_FAILED, "The pairing is unusable",
+            "The record is present but malformed",
+            "Pair with the console again");
+        break;
+    case RC_CONNECT_NO_CONSOLE:
+        say(RC_PHASE_FAILED, "The console did not answer",
+            "Nothing replied at the recorded address",
+            "Check the console is on the same network and its address has not changed");
+        break;
+    case RC_CONNECT_WAKE_SENT:
+        say(RC_PHASE_FAILED, "The console did not wake",
+            "A wake request was sent and went unanswered",
+            "Turn the console on, or enable waking from rest mode in its settings");
+        break;
+    case RC_CONNECT_AWAKE:
+    case RC_CONNECT_SESSION_OPEN:
+        say(RC_PHASE_FAILED, "The console refused the session",
+            "It answered, then would not start Remote Play",
+            "Check Remote Play is enabled on the console and no one else is using it");
+        break;
+    case RC_CONNECT_SESSION_READY:
+    case RC_CONNECT_SENKUSHA_UP:
+    case RC_CONNECT_TAKION_UP:
+    case RC_CONNECT_STREAM_KEYS:
+        say(RC_PHASE_FAILED, "The stream did not start",
+            "The session was agreed but no video followed",
+            "Try again; if it repeats, restart the console's Remote Play");
+        break;
+    case RC_CONNECT_STREAM_READY:
+        say(RC_PHASE_ENDED, "Session ended", NULL, NULL);
+        break;
+    default:
+        say(RC_PHASE_FAILED, "Something went wrong", rc_connect_stage_name(stage), NULL);
+        break;
+    }
+}
+
+
 /* Set once the parameter sets are classified - see where it is assigned for why this is a drop rather
  * than a disconnection. */
 static int g_stream_is_hevc;
@@ -456,10 +543,21 @@ static int g_stream_is_hevc;
  * packet goes out the moment anything actually moves, and this only covers a controller that is
  * perfectly still, so the console keeps hearing that it is still there.
  */
+/*
+ * How long without a picture counts as the stream having stopped. Generous enough that a slow keyframe
+ * or a congested second cannot trip it - the frame queue is eight deep and a bad second still delivers
+ * something - and short enough that a viewer is told rather than left looking at a still frame.
+ */
+#define RC_STREAM_STALL_MS          4000u
+
 #define RC_INPUT_POLL_INTERVAL_MS   4u
 #define RC_INPUT_STATE_INTERVAL_MS  200u
 
 static halyard_input_writer g_input;
+/* When the last picture reached the screen. A stream that stops does not close the socket, so this is
+ * the only thing that notices - see the stall check in the hold loop. */
+static uint64_t g_last_picture_ms;
+
 static uint64_t g_next_input_poll;
 static uint64_t g_last_input_state_ms;
 static unsigned g_chord_edges_seen;
@@ -1405,6 +1503,9 @@ static void on_picture(void *ctx, const unsigned char *y, const unsigned char *u
 
     rc_video_flip();
     g_blits++;
+    g_last_picture_ms = rc_time_ms();
+    if (g_session.phase != RC_PHASE_STREAMING)
+        say(RC_PHASE_STREAMING, "Streaming", NULL, NULL);
     g_blit_us_total += us;
     if (us > g_blit_worst_us)
         g_blit_worst_us = us;
@@ -1789,6 +1890,9 @@ static void on_picture_rgb(void *ctx, const unsigned char *argb, int stride, int
 
     rc_video_flip();
     g_blits++;
+    g_last_picture_ms = rc_time_ms();
+    if (g_session.phase != RC_PHASE_STREAMING)
+        say(RC_PHASE_STREAMING, "Streaming", NULL, NULL);
     g_blit_us_total += us;
     if (us > g_blit_worst_us)
         g_blit_worst_us = us;
@@ -2688,6 +2792,9 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
         deadline = rc_time_ms() + hold_ms;
         next_heartbeat = rc_time_ms();
         next_congestion = rc_time_ms() + RC_CONGESTION_INTERVAL_MS;
+        g_last_picture_ms = rc_time_ms();
+
+        say(RC_PHASE_CONNECTING, "Connecting", "Waiting for the console to send video", NULL);
 
         while (rc_time_ms() < deadline) {
             /*
@@ -2709,6 +2816,25 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
             uint64_t other_started;
 
             send_periodic(session, out, &next_heartbeat, &next_congestion);
+
+            /*
+             * A STREAM THAT STOPS DOES NOT CLOSE THE SOCKET, which is why nothing noticed it before.
+             * Quitting the game on the console, or the console going to sleep, simply ends the flow of
+             * pictures - the association stays up, the heartbeats keep being answered, and this loop
+             * would run out its whole hold showing the last frame or a black screen with no explanation
+             * anywhere the viewer can see.
+             *
+             * Counted from the last PICTURE rather than the last packet, because the packets do not
+             * stop: audio and control keep arriving from a console that has stopped sending video.
+             */
+            if (g_session.phase == RC_PHASE_STREAMING
+                && rc_time_ms() - g_last_picture_ms > RC_STREAM_STALL_MS) {
+                say(RC_PHASE_FAILED, "The stream stopped",
+                    "The console stopped sending video",
+                    "Check the console is awake and Remote Play is still running");
+                out->stream_stalled = 1;
+                break;
+            }
             service_control_tick(session);
 
             /*

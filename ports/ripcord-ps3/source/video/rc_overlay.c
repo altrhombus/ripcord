@@ -558,6 +558,33 @@ int rc_overlay_ascent(int scale)
     return RC_FONT_H * scale * 2;
 }
 
+/*
+ * Where the panel lands on screen. The diagnostics overlay wants a corner; a status card wants the
+ * middle. Both are the same bitmap and the same copy, so this is the only difference between them.
+ */
+void rc_overlay_set_origin(int x, int y)
+{
+    s_x = x;
+    s_y = y;
+}
+
+/*
+ * A rebuild that ignores the throttle.
+ *
+ * The throttle exists because the diagnostics panel is redrawn from a 60 Hz present path and its
+ * numbers are rates nobody reads at that speed. A status card is drawn when the state CHANGES, which is
+ * rare and is exactly when waiting a quarter of a second would be wrong - the change is the thing the
+ * viewer is waiting to see.
+ */
+int rc_overlay_begin_now(void)
+{
+    if (!s_ready)
+        return 0;
+    rc_overlay_rect(0, 0, s_w, s_h, 0x00000000u);
+    s_rebuilt = 1;
+    return 1;
+}
+
 int rc_overlay_begin(void)
 {
     uint64_t now;
@@ -578,6 +605,20 @@ int rc_overlay_begin(void)
      */
     rc_overlay_rect(0, 0, s_w, s_h, 0x00000000u);
     return 1;
+}
+
+/*
+ * The copy, without the `shown` gate. rc_overlay_end is for the diagnostics panel and correctly does
+ * nothing when it is hidden; a status card is drawn because something asked for it, not because a
+ * toggle is on.
+ */
+void rc_overlay_end_now(void)
+{
+    if (!s_ready)
+        return;
+    memcpy(s_vram, s_bitmap, (size_t)s_w * (size_t)s_h * 4u);
+    s_rebuilt = 0;
+    rc_video_overlay_blit(s_offset, s_w * 4, s_w, s_h, s_x, s_y);
 }
 
 void rc_overlay_end(void)

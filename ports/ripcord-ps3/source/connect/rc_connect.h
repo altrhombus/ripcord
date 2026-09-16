@@ -25,6 +25,7 @@
 #include <stdint.h>
 
 #include "rc_thermal.h"
+#include "rc_session_state.h"
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -396,6 +397,7 @@ typedef struct {
     unsigned overlay_toggles;    /* times the chord flipped it during the session */
     int      overlay_system_font;/* the console's own face opened, rather than the drawn fallback */
     char     overlay_font_status[96];
+    int      stream_stalled;     /* the console stopped sending video before the hold ended */
     int      stream_is_hevc;     /* the console sent HEVC; cellVdec decodes H.264 only */
     int      display_aspect;
     int      display_scan_mode;
@@ -430,6 +432,16 @@ rc_connect_stage rc_connect(unsigned wake_timeout_ms, rc_connect_log_fn log,
 
 /* For the caller's report. Never includes anything from the pairing record. */
 const char *rc_connect_stage_name(rc_connect_stage stage);
+
+/* What the session is doing and, when it stops, why - for a front end to put on the screen. */
+const rc_session_state *rc_connect_session_state(void);
+
+/*
+ * Turns the stage rc_connect returned into something a viewer can read, and puts it on the screen.
+ * `stalled` suppresses it, because a stream that stopped mid-session has already said something more
+ * specific than any stage name could.
+ */
+void rc_connect_report_outcome(rc_connect_stage stage, int stalled);
 
 #ifdef __cplusplus
 }
