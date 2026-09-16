@@ -93,6 +93,9 @@ static unsigned char s_cov[RC_OV_MAX_W * RC_OV_COV_H];
 static int s_sysfont;
 static int s_want_sysfont;
 
+/* Defined below; rc_overlay_set needs both of the panel's sizes to build the atlas with. */
+static float size_for(int scale);
+
 int rc_overlay_width(void)  { return s_w; }
 int rc_overlay_height(void) { return s_h; }
 
@@ -185,7 +188,7 @@ void rc_overlay_set(int on)
          * buys a known answer, so it is only asked when someone says to.
          */
         if (s_ready && s_want_sysfont)
-            s_sysfont = rc_sysfont_open(26.0f);
+            s_sysfont = rc_sysfont_open(size_for(1), size_for(2));
     }
 }
 

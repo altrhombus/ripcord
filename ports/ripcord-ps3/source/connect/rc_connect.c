@@ -1340,6 +1340,33 @@ static void on_picture(void *ctx, const unsigned char *y, const unsigned char *u
 #define OV_SPARK_W  rc_overlay_px(240)
 #define OV_ROW_H    rc_overlay_px(34)
 
+/*
+ * A BITRATE IN THE UNIT SOMEONE WOULD SAY IT IN.
+ *
+ * The launch spec carries kbps because that is what the wire field is, and 20000 on a panel next to a
+ * live figure reading 11.9 invites the reader to do the conversion themselves and to get it wrong.
+ * Both are the same quantity and both should be in the same unit.
+ *
+ * Writes into `out` and returns the unit, so the number can be set as a figure - tabular, right
+ * aligned - and the unit as a word beside it, which is the split the rest of the panel uses.
+ */
+static const char *bitrate_text(int kbps, char *out, size_t out_size)
+{
+    if (kbps >= 1000) {
+        int whole = kbps / 1000;
+        int tenth = (kbps % 1000) / 100;
+
+        /* No trailing .0 - "20" reads as a round number and "20.0" reads as a measurement. */
+        if (tenth == 0)
+            snprintf(out, out_size, "%d", whole);
+        else
+            snprintf(out, out_size, "%d.%d", whole, tenth);
+        return " Mbit/s asked";
+    }
+    snprintf(out, out_size, "%d", kbps);
+    return " kbit/s asked";
+}
+
 static void draw_overlay(void)
 {
     const rc_overlay_bucket *now;
@@ -1347,6 +1374,7 @@ static void draw_overlay(void)
     unsigned long peak_bytes = 0ul;
     unsigned fps_series[RC_OVERLAY_WINDOW];
     unsigned mbps_series[RC_OVERLAY_WINDOW];
+    unsigned lost_series[RC_OVERLAY_WINDOW];
     unsigned series_n = 0u;
     unsigned i;
     int y;
@@ -1397,6 +1425,7 @@ static void draw_overlay(void)
             continue;
         fps_series[series_n] = g_win[at].frames;
         mbps_series[series_n] = (unsigned)((g_win[at].bytes * 8ul) / 100000ul);   /* tenths of a Mbps */
+        lost_series[series_n] = g_win[at].lost;
         series_n++;
 
         if (g_win[at].frames > peak_fps)
@@ -1468,8 +1497,13 @@ static void draw_overlay(void)
         at += rc_overlay_text(at, y, 1, RC_OV_LABEL, "%s scaler, %s, ",
                               g_overlay_hw_scale ? "RSX" : "SPE",
                               rc_decode_vdec_picture_in_vram() ? "zero copy" : "one copy");
-        at += rc_overlay_num(at, y, 1, RC_OV_LABEL, "%d", g_overlay_asked_kbps);
-        rc_overlay_text(at + rc_overlay_px(4), y, 1, RC_OV_LABEL, " kbps asked");
+        {
+            char rate[16];
+            const char *unit = bitrate_text(g_overlay_asked_kbps, rate, sizeof(rate));
+
+            at += rc_overlay_num(at, y, 1, RC_OV_LABEL, "%s", rate);
+            rc_overlay_text(at + rc_overlay_px(4), y, 1, RC_OV_LABEL, "%s", unit);
+        }
     }
 
     y += OV_ROW_H - rc_overlay_px(2);
@@ -1515,6 +1549,20 @@ static void draw_overlay(void)
     y += OV_ROW_H + rc_overlay_px(4);
     rc_overlay_text(OV_LABEL_X, y + small_drop, 1, RC_OV_LABEL, "Lost/s");
     rc_overlay_num_right(OV_NUM_R, y, 2, peak_lost > 0u ? RC_OV_WARN : RC_OV_TEXT, "%u", now->lost);
+    /*
+     * THREE ROWS, THREE SPARKLINES. Two of three having a graph made the eye ask what was different
+     * about the third, and the answer was nothing - the data was already in the window.
+     *
+     * A flat empty line is the point rather than a waste of it: loss is normally zero, and thirty
+     * seconds of visibly nothing is a stronger statement than a 0 that could have been a 4 a moment
+     * ago. The bars keep their track so a clean second reads as low rather than as missing.
+     *
+     * Scaled against its own peak, not a fixed ceiling, because there is no natural maximum for loss
+     * the way 60 is for frames - two lost units matter if the last thirty seconds lost none.
+     */
+    rc_overlay_bars(OV_SPARK_X, y, OV_SPARK_W, rc_overlay_px(20), lost_series, series_n,
+                    (peak_lost > 0u) ? peak_lost : 1u,
+                    peak_lost > 0u ? RC_OV_WARN : RC_OV_TRACK);
     {
         int w = rc_overlay_num_width(1, "%u", peak_lost);
 
