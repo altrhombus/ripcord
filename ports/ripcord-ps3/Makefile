@@ -187,7 +187,7 @@ LDFLAGS := $(ARCH) -Wl,--gc-sections -L$(PSL1GHT)/ppu/lib
 # -lsysmodule is not optional beside -lnet: netInitialize() calls sysModuleLoad, and without it the link
 # fails on that symbol rather than on anything mentioning networking. PSL1GHT's network samples all pair
 # the two - `LIBS := -lnet -lsysmodule` - which is the fastest place to have learned it.
-LIBS := -lrsx -lgcm_sys -lsysutil -lvdec -laudio -lnet -lsysmodule -lpthread -lrt -llv2
+LIBS := -lrsx -lgcm_sys -lsysutil -lvdec -laudio -lfont -lfontFT -lnet -lsysmodule -lpthread -lrt -llv2
 
 # The platform seam plus the two core utilities the bring-up program needs. rc_random_ps3.c joined this
 # list on 2026-09-11, when the CSPRNG call was confirmed against real headers; before that its ABSENCE
@@ -202,6 +202,7 @@ SOURCES := \
 	source/platform/rc_stack_ps3.c \
 	source/video/rc_video_ps3.c \
 	source/video/rc_overlay.c \
+	source/video/rc_sysfont.c \
 	source/spu/rc_spu.c \
 	source/spu/rc_spu_yuv.c \
 	source/net/rc_netlog.c \
