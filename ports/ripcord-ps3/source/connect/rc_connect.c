@@ -811,6 +811,10 @@ static uint8_t g_decode_buf[RC_FRAME_SLOT_BYTES];
  * doing the work here is what avoids a copy at each level. The cost of that decision is that a slow
  * blit stalls the receive loop, which is why it is measured rather than assumed.
  */
+/* Longer than a 60 Hz vsync with margin, short enough that a stalled display cannot wedge the decode
+ * thread. A picture still waiting past this is stale anyway - the next one is already decoded. */
+#define RC_BLIT_WAIT_MS 25u
+static unsigned g_blit_worst_wait_ms;
 static unsigned g_pictures_dropped;
 static unsigned g_blit_us_total;
 static unsigned g_blit_worst_us;
@@ -1158,9 +1162,33 @@ static void on_picture(void *ctx, const unsigned char *y, const unsigned char *u
      * wait, and those losses cascade - the decoder then errors on the gaps, which is where b87's 81
      * decoder errors came from.
      */
-    if (!rc_video_present_ready()) {
-        g_pictures_dropped++;
-        return;
+    /*
+     * WAIT BRIEFLY FOR THE DISPLAY RATHER THAN DROPPING THE PICTURE - and the reasoning above is kept
+     * because it was right when it was written and is not any more.
+     *
+     * It describes this running on the thread that drains the socket, where a wait cost every packet
+     * arriving during it. Since b144 the decode and blit have had their OWN thread; the receive loop
+     * keeps draining regardless, which is the whole point of that split. What remains of the old cost is
+     * a decode thread that pauses until the flip completes, and the picture ring in front of it exists
+     * exactly to absorb that.
+     *
+     * b186 is what dropping costs now: 1,777 pictures decoded without an error and 649 thrown away here,
+     * which is 37 fps on screen from a 60 fps stream. A flip completes every vsync, so a bounded wait
+     * turns those drops into paced blits.
+     */
+    {
+        unsigned waited = 0u;
+
+        while (!rc_video_present_ready()) {
+            if (waited >= RC_BLIT_WAIT_MS) {
+                g_pictures_dropped++;
+                return;
+            }
+            rc_sleep_ms(1u);
+            waited++;
+        }
+        if (waited > g_blit_worst_wait_ms)
+            g_blit_worst_wait_ms = waited;
     }
 
     us = rc_video_blit_yuv420(y, u, v, y_stride, uv_stride, width, height);
@@ -1830,6 +1858,7 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
                     g_blit_worst_us = 0u;
                     g_blits = 0u;
                     g_pictures_dropped = 0u;
+                    g_blit_worst_wait_ms = 0u;
                     g_idr_requests = 0u;
                     g_last_idr_request_ms = 0u;
                     /*
@@ -2138,6 +2167,7 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
     rc_video_scale_info(&out->scaled_width, &out->scaled_height,
                         &out->display_width, &out->display_height);
     out->pictures_dropped = g_pictures_dropped;
+    out->blit_worst_wait_ms = g_blit_worst_wait_ms;
     out->frames_too_many_units = g_demux.stat_frames_too_many_units;
     out->decode_backend = g_decode_backend;
     out->decode_backend_id = g_decode_backend_id;

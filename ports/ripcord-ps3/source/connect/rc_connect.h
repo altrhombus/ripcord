@@ -284,6 +284,7 @@ typedef struct {
     unsigned submit_waits;
     unsigned drop_collect;
     unsigned pictures_overwritten;
+    unsigned blit_worst_wait_ms;  /* longest wait for the display to free a buffer */
 
     /* CONNECTION_QUALITY - the client's own statement of what it can consume. Off unless the pairing
      * record asks for it; see halyard_pairing_file.h for why. */
