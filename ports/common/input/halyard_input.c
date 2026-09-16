@@ -37,6 +37,8 @@ static const struct { uint32_t flag; uint8_t code; int state_in_code; } kButtonM
     { HALYARD_PAD_OPTIONS,    0x8cu, 1 },   /* t=119.6s */
     { HALYARD_PAD_CREATE,     0x8du, 1 },   /* t=124.0s */
     { HALYARD_PAD_PS,         0x8eu, 1 },   /* t=0.0s - opened the session */
+    { HALYARD_PAD_L3,         0x8fu, 1 },   /* t=114.5s */
+    { HALYARD_PAD_R3,         0x90u, 1 },   /* t=115.8s */
 };
 #define BUTTON_MAP_COUNT (sizeof(kButtonMap) / sizeof(kButtonMap[0]))
 
