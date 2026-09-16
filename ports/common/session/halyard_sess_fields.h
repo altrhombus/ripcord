@@ -69,6 +69,19 @@ void halyard_sess_field_did_plaintext(const uint8_t *device_id, size_t device_id
  * the console has only ever been observed accepting this field, and there is no evidence changing it
  * would do anything but add risk.
  */
+/*
+ * RP-OSType's plaintext: "Win<major>.<minor>" with a trailing NUL.
+ *
+ * THE "Win" IS NOT DECORATION AND IS NOT OURS TO CHANGE. **[V]** The console's own remote-play list
+ * names every session this project opens as a PC, so both this field and the plaintext `User-Agent:
+ * remoteplay Windows` header were made settable to find out which one it reads. The console VALIDATES
+ * BOTH: a value it does not recognise is rejected and the session does not open.
+ *
+ * So the device name is not a string the client chooses. Whatever the console shows is selected from a
+ * set it already knows, and getting a PS3 to appear as anything other than a PC would mean finding a
+ * value in that set - not inventing one. The experiment is recorded here rather than the code, because
+ * the code it needed was reverted and the finding is the part worth keeping.
+ */
 size_t halyard_sess_field_os_type_plaintext(int major, int minor, char *buf, size_t buf_size);
 
 /* RP-StartBitrate / RP-StreamingType plaintext: a 4-byte little-endian integer - see the [X] note above. */
