@@ -201,6 +201,7 @@ SOURCES := \
 	source/platform/rc_random_ps3.c \
 	source/platform/rc_stack_ps3.c \
 	source/video/rc_video_ps3.c \
+	source/video/rc_overlay.c \
 	source/spu/rc_spu.c \
 	source/spu/rc_spu_yuv.c \
 	source/net/rc_netlog.c \
