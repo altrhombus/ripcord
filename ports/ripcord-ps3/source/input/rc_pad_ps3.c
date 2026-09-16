@@ -77,6 +77,8 @@ static unsigned s_fresh;
 /* Set once a shoulder reports a level that is neither off nor fully on - the only evidence that
  * pressure was actually granted, since a refusal reads exactly like a trigger nobody touched. */
 static int s_analog_seen;
+static int s_chord_held;
+static unsigned s_chord_edges;
 
 int rc_pad_read(halyard_input_state *out)
 {
@@ -154,8 +156,39 @@ int rc_pad_read(halyard_input_state *out)
 
         if (!s_have_last)
             return 0;   /* connected but has not yet said anything - nothing truthful to send */
-        *out = s_last;
-        return 1;
+
+        /*
+         * THE DIAGNOSTICS CHORD, detected here and REMOVED from what goes to the console.
+         *
+         * Start + Select + L3. Chosen against two constraints rather than for comfort: it must be a
+         * combination no game asks for, and it must not collide with the .NET client's exit gesture,
+         * which is Start + Select + L1 + R1 and is reserved here for when this port grows one. Neither
+         * is a subset of the other - exit needs the shoulders and never L3, this needs L3 and never the
+         * shoulders - so holding one cannot trip the other.
+         *
+         * L3 + R3 was the obvious quick chord and is exactly what RipcordSettings warns against: plenty
+         * of games bind it.
+         *
+         * WHAT THIS DOES NOT FIX, said plainly: the three buttons are only swallowed once all three are
+         * held, so whichever was pressed first has already gone out as an ordinary press. For Options,
+         * Create and a stick click that is a pause menu at worst, which is why those three and not a
+         * face button. Holding the presses back for a hundred milliseconds to see whether a chord
+         * forms would close it, at the cost of that much latency on three buttons - worth doing if it
+         * ever becomes annoying, and not worth the complexity before then.
+         */
+        {
+            const uint32_t chord = HALYARD_PAD_OPTIONS | HALYARD_PAD_CREATE | HALYARD_PAD_L3;
+            int held = (s_last.buttons & chord) == chord;
+
+            if (held && !s_chord_held)
+                s_chord_edges++;        /* rising edge - the caller acts on the count changing */
+            s_chord_held = held;
+
+            *out = s_last;
+            if (held)
+                out->buttons &= ~chord;
+            return 1;
+        }
     }
 
     if (s_connected) {
@@ -164,6 +197,16 @@ int rc_pad_read(halyard_input_state *out)
         s_have_last = 0;
     }
     return 0;
+}
+
+/*
+ * The number of times the chord has been COMPLETED, not whether it is held. A count lets the caller act
+ * on a change without this file knowing what the chord is for, and without either side having to agree
+ * on when a press stops being new.
+ */
+unsigned rc_pad_chord_edges(void)
+{
+    return s_chord_edges;
 }
 
 int rc_pad_analog_triggers_seen(void)

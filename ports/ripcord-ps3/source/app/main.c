@@ -1101,7 +1101,11 @@ static int check_connect(void)
                                                     " means either untouched or pressure refused");
                 }
 
-                if (c.diagnostics) {
+                if (c.overlay_toggles > 0u)
+                    ps3_log("       INPUT: the diagnostics chord (Options+Create+L3) was used %u"
+                            " time(s)\n", c.overlay_toggles);
+
+                if (c.diagnostics || c.overlay_toggles > 0u) {
                     /*
                      * WHICH FACE, said rather than left to the eye. The console's own and the drawn
                      * fallback look different enough to tell apart on a television and not different
