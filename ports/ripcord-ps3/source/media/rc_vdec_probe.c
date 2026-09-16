@@ -242,6 +242,7 @@ static u32 vdec_callback(u32 handle, u32 msgtype, u32 msgdata, u32 arg)
                 size_t n = (size_t)s_out->width * (size_t)s_out->height * 4u;
                 size_t at;
 
+                memcpy(s_out->rgb_first, s_picture, sizeof(s_out->rgb_first));
                 s_out->rgb_min = 255u;
                 s_out->rgb_max = 0u;
                 for (at = 0; at < n; at += 997u) {   /* a prime stride, so no channel is favoured */

@@ -1527,10 +1527,18 @@ static int check_vdec(void)
             else if (rgb.rgb_max == 0u)
                 ps3_log("       accepted but wrote nothing - bytes all zero. Accepted-and-empty is\n"
                         "       how this decoder has failed before; treat it as a refusal.\n");
-            else
+            else {
+                log_bytes("first pixels", rgb.rgb_first, 8);
+                /* The capture's first pixel is Y=24 U=133 V=125, not neutral grey, so the three
+                 * channels differ and the test is sharper for it. */
+                ps3_log("       expected R=3 G=9 B=19 for BT.709 limited range, or 24 24 24 if the"
+                        " decoder leaves it\n"
+                        "       full range - in which case every level is lifted and the picture reads"
+                        " bright.\n");
                 ps3_log("       ACCEPTED and filled, bytes range %u..%u over %d picture(s).\n"
                         "       RGB output is real; the conversion pass can go, though scaling to the\n"
                         "       display still cannot.\n", rgb.rgb_min, rgb.rgb_max, rgb.pictures_out);
+            }
             return 0;
         }
         ps3_log("vdec:  the live path did NOT use this decoder - running the offline check to say why\n");
