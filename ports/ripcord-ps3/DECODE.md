@@ -739,6 +739,35 @@ index the accumulator computes, and the SPU has no vector gather. The prediction
 right answer changed when the other half got faster, and double buffering is where the next win is if one
 is ever wanted.
 
+### Bilinear upscaling — **built, measured, and off by default**
+
+`bilinear=1` in the pairing record. It works; it costs too much for 60 fps.
+
+| | per SPE, one frame | summed over 3 |
+|---|---|---|
+| nearest neighbour | 3,017 us | 4,173 us of arithmetic |
+| bilinear | **21,038 us** | **62,489 us** |
+
+A 60 fps frame allows 16,667 us, so bilinear does not fit and the pipeline halves to 29 fps. At 30 fps it
+fits inside 63% of the budget, which is where it is usable as written.
+
+Two attempts were needed and the first is worth keeping in view. Written scalar - nine interpolations a
+pixel, each extracting a byte from a word and putting one back - it missed the 25 ms strip deadline so
+completely that not one stream frame was converted and nothing reached the screen. Vectorised, with a
+pixel's four channels unpacked into 32-bit lanes and interpolated as one vector, it converts every frame
+with no fallbacks. That fixed the deadline; it did not make it cheap.
+
+The arithmetic was checked on the development machine against exact bilinear over 200,000 random inputs:
+1.98 levels of worst-case error truncating, 1.00 with the lerp rounded, never outside 0..255. That host
+check is the ONLY correctness evidence this path has - `rc_video_self_test` compares the SPE against the
+PPE and there is no PPE bilinear to compare against.
+
+What would make it fit at 60 fps is processing four output pixels in parallel lanes rather than one
+pixel's four channels, which needs the gather done with shuffles out of two quadwords per row. That is a
+much larger rewrite than this one. Horizontal-only interpolation is the cheaper middle - one vector lerp
+a pixel instead of three, two unpacks instead of four - and would remove the column doubling that a 1.5x
+scale makes most visible, at perhaps a third of the cost.
+
 ### Still open
 - **The fifth SPE — `ARGB32` output works.** Asked offline in b179: `vdecGetPicture` accepts
   `VDEC_PICFMT_ARGB32` and fills the buffer (bytes 0..255 across 8 pictures). So the YUV-to-RGB pass
