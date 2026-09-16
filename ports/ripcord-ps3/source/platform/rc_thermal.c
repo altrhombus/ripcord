@@ -23,12 +23,12 @@ LV2_SYSCALL rc_sys_get_temperature(u64 device, u64 word_ea)
     return_to_user_prog(s32);
 }
 
-int rc_thermal_read(unsigned device, unsigned *celsius, unsigned *raw)
+int rc_thermal_read(unsigned device, unsigned *celsius_x10, unsigned *raw)
 {
     unsigned int word = 0u;
     int rc;
 
-    if (celsius == NULL || raw == NULL)
+    if (celsius_x10 == NULL || raw == NULL)
         return 0;
 
     rc = (int)rc_sys_get_temperature((u64)device, (u64)(uintptr_t)&word);
@@ -36,13 +36,16 @@ int rc_thermal_read(unsigned device, unsigned *celsius, unsigned *raw)
         return 0;
 
     /*
-     * Top byte, whole degrees - see the header. A reading outside 0..127 is refused rather than
-     * reported: it would mean the decoding is wrong, and a wrong number in a thermal log is worse than
-     * no number, because it is the kind of thing that gets quoted later.
+     * 8.8 fixed point in the top half - see the header for the two readings that settled it. The
+     * multiply happens before the shift so the fraction survives: 0x3FC3 * 10 / 256 is 638, not 630.
+     *
+     * A reading outside 0..127 C is refused rather than reported. It would mean the decoding is wrong,
+     * and a wrong number in a thermal log is worse than no number, because it is the kind of thing that
+     * gets quoted back later without its caveat.
      */
     *raw = word;
-    *celsius = (word >> 24) & 0xffu;
-    if (*celsius > 127u)
+    *celsius_x10 = (((word >> 16) & 0xffffu) * 10u) / 256u;
+    if (*celsius_x10 > 1270u)
         return 0;
     return 1;
 }
@@ -59,12 +62,10 @@ void rc_thermal_reset(rc_thermal_record *rec)
         p[i] = 0u;
 }
 
-static void note(unsigned value, unsigned *first, unsigned *peak, unsigned *last, unsigned samples)
+static void note(unsigned value, unsigned *first, unsigned *last, unsigned samples)
 {
     if (samples == 0u)
         *first = value;
-    if (value > *peak)
-        *peak = value;
     *last = value;
 }
 
@@ -79,8 +80,8 @@ void rc_thermal_sample(rc_thermal_record *rec)
     if (!rc_thermal_read(RC_THERMAL_RSX, &rsx_c, &rsx_raw))
         return;
 
-    note(cell_c, &rec->cell_first, &rec->cell_peak, &rec->cell_last, rec->samples);
-    note(rsx_c, &rec->rsx_first, &rec->rsx_peak, &rec->rsx_last, rec->samples);
+    note(cell_c, &rec->cell_first, &rec->cell_last, rec->samples);
+    note(rsx_c, &rec->rsx_first, &rec->rsx_last, rec->samples);
     rec->cell_raw_last = cell_raw;
     rec->rsx_raw_last = rsx_raw;
     rec->samples++;
