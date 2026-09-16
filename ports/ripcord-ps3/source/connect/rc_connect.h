@@ -24,6 +24,7 @@
 
 #include <stdint.h>
 
+#include "rc_thermal.h"
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -371,6 +372,13 @@ typedef struct {
     int  asked_height;
     int  asked_fps;
     int  heartbeats;         /* HEARTBEAT_REQ answered - proof the channel is live           */
+
+    /*
+     * Cell and RSX temperature over the session, sampled once a second. Here rather than alongside the
+     * SPE statistics because the question it answers is about the whole machine: one fan serves both
+     * chips, so what matters is the pair, not either reading on its own. See rc_thermal.h.
+     */
+    rc_thermal_record thermal;
 } rc_connect_result;
 
 /*
