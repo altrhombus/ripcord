@@ -177,7 +177,12 @@ CFLAGS := $(ARCH) -std=gnu99 -O2 -g \
           -I$(CORE)/halyard -I$(CORE)/crypto -I$(CORE)/net -I$(CORE)/takion -I$(CORE)/stream -I$(CORE)/util -I$(CORE)/platform -Ispu \
           -I$(PSL1GHT)/ppu/include
 
-LDFLAGS := $(ARCH) -Wl,--gc-sections -L$(PSL1GHT)/ppu/lib
+# ps3dev's portlibs carry a standalone FreeType. It is used to read the console's OWN typefaces out of
+# /dev_flash/data/font at runtime - see source/video/rc_sysfont.c for why that is the route rather than
+# cellFont, and note that no font data is redistributed: the files stay on the console.
+PORTLIBS := $(PS3DEV)/portlibs/ppu
+
+LDFLAGS := $(ARCH) -Wl,--gc-sections -L$(PSL1GHT)/ppu/lib -L$(PORTLIBS)/lib
 
 # [X] The minimum PSL1GHT libraries for a program that does nothing but keep time and write a file.
 # Sockets, video and the SPU job manager are added when the phase that needs them arrives, deliberately
@@ -187,7 +192,7 @@ LDFLAGS := $(ARCH) -Wl,--gc-sections -L$(PSL1GHT)/ppu/lib
 # -lsysmodule is not optional beside -lnet: netInitialize() calls sysModuleLoad, and without it the link
 # fails on that symbol rather than on anything mentioning networking. PSL1GHT's network samples all pair
 # the two - `LIBS := -lnet -lsysmodule` - which is the fastest place to have learned it.
-LIBS := -lrsx -lgcm_sys -lsysutil -lvdec -laudio -lfont -lfontFT -lnet -lsysmodule -lpthread -lrt -llv2
+LIBS := -lfreetype -lz -lrsx -lgcm_sys -lsysutil -lvdec -laudio -lnet -lsysmodule -lpthread -lrt -llv2
 
 # The platform seam plus the two core utilities the bring-up program needs. rc_random_ps3.c joined this
 # list on 2026-09-11, when the CSPRNG call was confirmed against real headers; before that its ABSENCE
@@ -318,7 +323,7 @@ ECDH_CFLAGS    := -DRC_CRYPTO_MBEDTLS -isystem $(MBEDTLS_PREFIX)/include \
 # needs these, and the only safe place to say so is after ECDH_CFLAGS exists.
 #
 # CFLAGS_SDK_SOCKETS derives from CFLAGS and is defined below this line, so it inherits them too.
-CFLAGS += $(ECDH_CFLAGS) $(OPUS_INC)
+CFLAGS += $(ECDH_CFLAGS) $(OPUS_INC) -isystem $(PORTLIBS)/include -isystem $(PORTLIBS)/include/freetype2
 
 CORE_TEST_OBJS := $(BUILD)/ct_halyard_v1_constants.g.o \
                   $(addprefix $(BUILD)/ct_,$(notdir $(CORE_TEST_SUPPORT:.c=.o))) \
