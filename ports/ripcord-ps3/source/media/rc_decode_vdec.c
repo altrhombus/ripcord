@@ -25,9 +25,21 @@
  */
 #define RC_VDEC_AU_SLOTS 16
 
-/* How long a submission may wait for the decoder's four-deep command queue. Bounded, and small against
- * a 16 ms frame at 60 fps; this hardware punishes an unbounded wait. */
-#define RC_VDEC_SUBMIT_WAIT_MS 6
+/*
+ * How long a submission may wait for the decoder's four-deep command queue - ONE FRAME at 60 fps.
+ *
+ * 6 ms was a number picked for being obviously small. The trade is one-sided and it argues for a whole
+ * frame: giving up costs that frame AND breaks the reference chain, so everything after it is wrong
+ * until a keyframe arrives, while waiting costs at most the frame. Dropping is only better if the
+ * decoder is permanently behind, and it is not - b189 refused 11 submissions in 1,772.
+ *
+ * The refusals cluster on big transitions, where the frames are large and the decoder takes longest,
+ * which is exactly where a broken chain is most visible. That is the residual blockiness.
+ *
+ * Still bounded, because this hardware punishes an unbounded wait, and the rings in front of and behind
+ * this absorb a frame's delay without dropping anything.
+ */
+#define RC_VDEC_SUBMIT_WAIT_MS 16
 /* Matches RC_FRAME_SLOT_BYTES in rc_connect.c, and for the same reason - a 1080p keyframe does not fit
  * in 96 KB with any margin worth having. */
 #define RC_VDEC_AU_BYTES (256 * 1024)
