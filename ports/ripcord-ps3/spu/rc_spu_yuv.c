@@ -55,6 +55,10 @@ static unsigned char g_v[RC_SPU_YUV_MAX_WIDTH / 2] __attribute__((aligned(128)))
  * conversion is vectorised over contiguous source pixels and the scale is a gather - trying to do both
  * in one pass would make the expensive half scalar to suit the cheap half. */
 static unsigned int g_line[RC_SPU_YUV_MAX_WIDTH] __attribute__((aligned(128)));
+
+/* A second source row, for bilinear: the two rows either side of an output row's position. Swapped by
+ * pointer as the mapping advances, so a row already fetched is never fetched twice. */
+static unsigned int g_line_b[RC_SPU_YUV_MAX_WIDTH] __attribute__((aligned(128)));
 static unsigned int g_out[2][RC_SPU_YUV_MAX_DST_WIDTH] __attribute__((aligned(128)));
 
 /* Sequence first, so the PPE's existing poll on the first word is unchanged; the two tick counts ride
@@ -217,6 +221,52 @@ static void scale_line(unsigned int *out, unsigned int src_width, unsigned int d
     }
 }
 
+/*
+ * Bilinear, one output pixel at a time.
+ *
+ * `l0` and `l1` are the source rows above and below the output row's position and `wy` is how far
+ * between them it falls, in 1/256ths; the horizontal weight comes from the same accumulator the nearest
+ * path uses. Each channel is interpolated along the top edge, along the bottom, and then between the
+ * two - three lerps a channel, nine a pixel.
+ *
+ * Scalar on purpose FOR NOW. The nearest path was vectorised on the store because the SPU has no scalar
+ * store, and the same trick applies here, but the arithmetic is the larger part and vectorising it
+ * properly means unpacking four bytes into 16-bit lanes and interpolating four pixels at a time. That is
+ * worth doing if the measurement says it is needed; writing it before the measurement is how the DMA
+ * double buffering came to be built and buy nothing.
+ */
+static void scale_line_bilinear(unsigned int *out, const unsigned int *l0, const unsigned int *l1,
+                                unsigned int wy, unsigned int src_width, unsigned int dst_width)
+{
+    unsigned int step = (src_width << 16) / dst_width;
+    unsigned int acc = 0u;
+    unsigned int x;
+
+    for (x = 0u; x < dst_width; x++) {
+        unsigned int c = acc >> 16;
+        unsigned int wx = (acc >> 8) & 0xffu;
+        unsigned int c1 = (c + 1u < src_width) ? c + 1u : c;
+        unsigned int a = l0[c], b = l0[c1], e = l1[c], f = l1[c1];
+        unsigned int shift;
+        unsigned int pixel = 0u;
+
+        /* Red, green and blue; the top byte is alpha and the display ignores it. */
+        for (shift = 0u; shift <= 16u; shift += 8u) {
+            int a0 = (int)((a >> shift) & 0xffu);
+            int b0 = (int)((b >> shift) & 0xffu);
+            int e0 = (int)((e >> shift) & 0xffu);
+            int f0 = (int)((f >> shift) & 0xffu);
+            int top = a0 + (((b0 - a0) * (int)wx) >> 8);
+            int bot = e0 + (((f0 - e0) * (int)wx) >> 8);
+            int v = top + (((bot - top) * (int)wy) >> 8);
+
+            pixel |= ((unsigned int)v & 0xffu) << shift;
+        }
+        out[x] = pixel;
+        acc += step;
+    }
+}
+
 int main(uint64_t job_ea, uint64_t unused1, uint64_t unused2, uint64_t unused3)
 {
     (void)unused1;
@@ -300,6 +350,12 @@ int main(uint64_t job_ea, uint64_t unused1, uint64_t unused2, uint64_t unused3)
              * buffer twice, which is safe because nothing rewrites it in between. Alternating on every
              * row instead would store a buffer that had not been filled.
              */
+            /* Bilinear needs the two rows either side of the output row's position; these track which
+             * rows the two line buffers hold so an already-fetched row is never fetched twice. */
+            unsigned int *pa = g_line;
+            unsigned int *pb = g_line_b;
+            unsigned int loaded_a = 0xffffffffu;
+            unsigned int loaded_b = 0xffffffffu;
             unsigned int ob = 1u;
             unsigned int put_issued[2];
             unsigned int cached_y_row = 0xffffffffu;
@@ -318,7 +374,62 @@ int main(uint64_t job_ea, uint64_t unused1, uint64_t unused2, uint64_t unused3)
                 if (src_row >= g_job.src_height)
                     src_row = g_job.src_height - 1u;
 
-                if (src_row != cached_y_row && g_job.source_argb) {
+                if (g_job.source_argb && g_job.bilinear) {
+                    /*
+                     * Every output row is recomputed, because every one sits at a different distance
+                     * between its two source rows - there is no "same source row, reuse the result"
+                     * case the way there is for nearest.
+                     */
+                    unsigned long long vpos =
+                        (((unsigned long long)abs_row * g_job.src_height) << 16) / g_job.dst_height;
+                    unsigned int r = (unsigned int)(vpos >> 16);
+                    unsigned int wy = (unsigned int)((vpos >> 8) & 0xffu);
+                    unsigned int r1;
+                    unsigned int t0;
+
+                    if (r >= g_job.src_height)
+                        r = g_job.src_height - 1u;
+                    r1 = (r + 1u < g_job.src_height) ? r + 1u : r;
+
+                    if (loaded_a != r) {
+                        if (loaded_b == r) {
+                            /* The row below has become the row above: swap rather than re-fetch. */
+                            unsigned int *swap = pa;
+
+                            pa = pb;
+                            pb = swap;
+                            loaded_a = r;
+                            loaded_b = 0xffffffffu;
+                        } else {
+                            mfc_get(pa, g_job.y_ea + (unsigned long long)r * g_job.y_stride,
+                                    g_job.src_width * 4u, TAG, 0, 0);
+                            loaded_a = r;
+                            loaded_b = 0xffffffffu;
+                        }
+                    }
+                    if (loaded_b != r1) {
+                        mfc_get(pb, g_job.y_ea + (unsigned long long)r1 * g_job.y_stride,
+                                g_job.src_width * 4u, TAG, 0, 0);
+                        loaded_b = r1;
+                    }
+
+                    t0 = spu_read_decrementer();
+                    mfc_write_tag_mask(1u << TAG);
+                    (void)mfc_read_tag_status_all();
+                    dma_ticks += t0 - spu_read_decrementer();
+
+                    ob ^= 1u;
+                    if (put_issued[ob]) {
+                        t0 = spu_read_decrementer();
+                        mfc_write_tag_mask(1u << (TAG_PUT0 + ob));
+                        (void)mfc_read_tag_status_all();
+                        dma_ticks += t0 - spu_read_decrementer();
+                    }
+
+                    t0 = spu_read_decrementer();
+                    scale_line_bilinear(g_out[ob], pa, pb, wy, g_job.src_width, g_job.dst_width);
+                    work_ticks += t0 - spu_read_decrementer();
+                } else if (src_row != cached_y_row && g_job.source_argb) {
                     ob ^= 1u;
                     /*
                      * Packed RGB: the source row IS the line buffer's contents, so it is fetched

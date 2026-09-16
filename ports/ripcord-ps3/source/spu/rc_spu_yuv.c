@@ -47,6 +47,10 @@ static rc_spu_yuv_stats s_stats;
 static rc_spu_yuv_job *s_job;
 static volatile uint32_t *s_done;
 
+/* Which upscale the user asked for. A setting rather than a tuning knob - see the note on `bilinear` in
+ * rc_spu_yuv_job.h for why neither choice is simply better. */
+static int s_bilinear;
+
 static unsigned rc_spu_yuv_dispatch(const uint8_t *y, const uint8_t *u, const uint8_t *v,
                                     int y_stride, int uv_stride, int width, int height,
                                     uint32_t *dst, int dst_pitch, int dst_width, int dst_height,
@@ -225,9 +229,9 @@ static unsigned rc_spu_yuv_dispatch(const uint8_t *y, const uint8_t *u, const ui
         s_job[i].dst_rows = (uint32_t)rows;
         s_job[i].sequence = s_sequence;
         s_job[i].source_argb = (uint32_t)source_argb;
+        s_job[i].bilinear = (uint32_t)s_bilinear;
         s_job[i].pad[0] = 0u;
         s_job[i].pad[1] = 0u;
-        s_job[i].pad[2] = 0u;
 
         s_done[(size_t)i * DONE_STRIDE_WORDS] = 0u;
         outstanding++;
@@ -303,6 +307,11 @@ static unsigned rc_spu_yuv_dispatch(const uint8_t *y, const uint8_t *u, const ui
             s_stats.worst_us = us;
         return (us > 0u) ? us : 1u;   /* 0 is reserved for "did not convert" */
     }
+}
+
+void rc_spu_yuv_set_bilinear(int enabled)
+{
+    s_bilinear = enabled ? 1 : 0;
 }
 
 void rc_spu_yuv_stats_get(rc_spu_yuv_stats *out)
