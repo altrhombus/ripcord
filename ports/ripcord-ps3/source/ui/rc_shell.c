@@ -1627,8 +1627,15 @@ static void paint_ui(void)
      */
     (void)rc_overlay_text(sx(SH_MARGIN), sy(SH_WORD_Y), 3, RC_OV_TEXT, "%s", "Ripcord");
     rc_overlay_blend_rect(sx(SH_MARGIN), sy(SH_RULE_Y), sx(112), sy(3), s_accent);
+    /*
+     * THE VERSION, SAID THE WAY THE MACHINE SAYS IT. This read "b448" - our own build counter - while
+     * the XMB showed 4.48 for the same binary, so the one place somebody checks whether the thing they
+     * just installed is the thing running disagreed with the place they installed it from. Both come
+     * from the same counter now and are formatted the same way; the raw id survives in the log, where
+     * a run is found by grepping for it.
+     */
     rc_overlay_text_right(s_scr_w - sx(SH_MARGIN), sy(SH_WORD_Y + 22), 1, RC_OV_LABEL, "%s",
-                          RC_PS3_BUILD_ID);
+                          RC_PS3_VERSION);
 
     if (s_menu.subtitle[0] != '\0')
         (void)rc_overlay_text(sx(SH_MARGIN), sy(SH_RULE_Y + 22), 1, RC_OV_LABEL, "%s",
