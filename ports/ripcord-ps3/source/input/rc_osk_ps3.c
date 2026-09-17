@@ -14,9 +14,6 @@
 
 #include <string.h>
 
-/* PSL1GHT declares the plain wrapper but not the Ex form its own wrapper forwards to. Declared here
- * rather than added to the SDK header, which every other port shares. */
-extern s32 sysUtilRegisterCallbackEx(s32 slot, sysutilCallback cb, void *usrdata);
 
 /*
  * How long to wait for the user. Generous: someone typing an eight-digit PIN off another screen, or an
@@ -38,7 +35,6 @@ static u16 s_message[RC_OSK_MAX_CHARS + 1];
 static u16 s_initial[RC_OSK_MAX_CHARS + 1];
 static u16 s_result[RC_OSK_MAX_CHARS + 1];
 
-static uint32_t s_opd_ex[2] __attribute__((aligned(8)));
 static unsigned s_container_bytes;
 
 /*
@@ -52,6 +48,7 @@ void rc_osk_set_present_hook(void (*present)(void))
     s_present = present;
 }
 static volatile int s_done;
+static volatile int s_finished;   /* the user closed it; the text has not been collected yet */
 static volatile int s_cancelled;
 
 const char *rc_osk_status_text(rc_osk_status status)
@@ -108,57 +105,42 @@ static int narrow(const u16 *in, char *out, size_t out_size)
 static volatile unsigned s_events[RC_OSK_EVENT_LOG];
 static volatile unsigned s_event_count;
 
-static void handle_event(u64 status, unsigned tag);
+static void handle_event(u64 status);
 
-/* Slot 0, registered the ordinary way - the wrapper PSL1GHT provides. */
+/* The one callback. Events are recorded and flags set; nothing here touches the dialog - see
+ * handle_event for what doing so cost. */
 static void osk_event(u64 status, u64 param, void *user)
 {
     (void)param;
     (void)user;
-    handle_event(status, 0x0000u);
+    handle_event(status);
 }
 
-/*
- * Slot 1, registered through sysUtilRegisterCallbackEx with a 32-BIT DESCRIPTOR.
- *
- * An A/B in one run rather than a hypothesis a build. PSL1GHT's sysUtilRegisterCallback does not pass
- * the pointer through untouched - it adds 16 to it and forwards to the Ex form - and this platform has
- * twice now needed __build_opd32 for a function handed to a PRX (vdecClosure.fn, and the font
- * library's allocator). Whether that wrapper's arithmetic is the right adaptation is not something
- * this can read off a disassembly with confidence, so both are registered and the event log says which
- * one delivers. The tag distinguishes them.
- */
-static void osk_event_ex(u64 status, u64 param, void *user)
-{
-    (void)param;
-    (void)user;
-    handle_event(status, 0x1000u);
-}
-
-static void handle_event(u64 status, unsigned tag)
+static void handle_event(u64 status)
 {
     if (s_event_count < RC_OSK_EVENT_LOG)
-        s_events[s_event_count] = (unsigned)status | tag;
+        s_events[s_event_count] = (unsigned)status;
     s_event_count++;
 
+    /*
+     * THIS ONLY RECORDS. Nothing here calls back into the OSK, and b315 is why.
+     *
+     * The first version collected the text and tore the dialog down from inside this function, which
+     * is a system callback. Two things went wrong with that. It ran twice, because two callbacks were
+     * registered during the A/B and each did the teardown. And calling a dialog's own API from inside
+     * its event delivery is asking the library to re-enter itself - which is the likeliest reason
+     * UNLOADED never arrived and the pump waited out its whole timeout.
+     *
+     * So the flags are set here and the work happens in the loop, where calling into the SDK is
+     * ordinary.
+     */
     switch (status) {
     case SYSUTIL_OSK_INPUT_CANCELED:
         s_cancelled = 1;
+        s_finished = 1;
         break;
     case SYSUTIL_OSK_DONE:
-        /*
-         * THE TEXT IS COLLECTED HERE, not after unloading. oskGetInputText reads the dialog's own
-         * buffer, and that buffer belongs to a dialog which is about to be torn down.
-         */
-        {
-            oskCallbackReturnParam result;
-
-            memset(&result, 0, sizeof(result));
-            result.str = s_result;
-            if (oskGetInputText(&result) != 0 || result.res != OSK_OK)
-                s_cancelled = 1;
-        }
-        oskUnloadAsync(NULL);
+        s_finished = 1;
         break;
     case SYSUTIL_OSK_UNLOADED:
         s_done = 1;
@@ -191,6 +173,7 @@ rc_osk_status rc_osk_ask(rc_osk_kind kind, const char *prompt, const char *initi
     field.maxLength = (s32)((out_size - 1u < RC_OSK_MAX_CHARS) ? out_size - 1u : RC_OSK_MAX_CHARS);
 
     s_done = 0;
+    s_finished = 0;
     s_cancelled = 0;
     s_container_bytes = 0u;
     s_event_count = 0u;
@@ -202,12 +185,13 @@ rc_osk_status rc_osk_ask(rc_osk_kind kind, const char *prompt, const char *initi
             rc_log("osk:   sysUtilRegisterCallback refused (0x%08X)\n", (unsigned)rc);
             return RC_OSK_UNAVAILABLE;
         }
-        /* The second half of the A/B - see osk_event_ex. Not fatal if it refuses; slot 0 stands. */
-        rc = sysUtilRegisterCallbackEx(SYSUTIL_EVENT_SLOT1,
-                                       (sysutilCallback)(uintptr_t)(u32)__build_opd32(osk_event_ex,
-                                                                                      s_opd_ex),
-                                       NULL);
-        rc_log("osk:   slot1 via Ex with a 32-bit descriptor: 0x%08X\n", (unsigned)rc);
+        /*
+         * ONE REGISTRATION. b315 registered two - the plain wrapper and the Ex form with a 32-bit
+         * descriptor - to settle whether this platform's usual descriptor trap applied here. It does
+         * not: every event arrived on BOTH, so PSL1GHT's wrapper adapts the pointer correctly and the
+         * A/B is finished with. It also did harm, which is the note worth keeping: two registrations
+         * meant the DONE handler ran twice, and it was a handler that tore the dialog down.
+         */
     }
 
     /*
@@ -289,17 +273,42 @@ rc_osk_status rc_osk_ask(rc_osk_kind kind, const char *prompt, const char *initi
      * draws and flips; here that is one call a frame.
      */
     deadline = rc_time_ms() + RC_OSK_TIMEOUT_MS;
-    while (!s_done && rc_time_ms() < deadline) {
-        sysUtilCheckCallback();
-        if (s_present != NULL)
-            s_present();
-        else
-            rc_video_flip();
-        rc_sleep_ms(16u);
+    {
+        int collected = 0;
+
+        while (!s_done && rc_time_ms() < deadline) {
+            sysUtilCheckCallback();
+
+            /*
+             * COLLECTED AND TORN DOWN HERE, once, outside the callback. The text is read before the
+             * unload because oskGetInputText reads the dialog's own buffer and the unload takes it
+             * away.
+             */
+            if (s_finished && !collected) {
+                oskCallbackReturnParam result;
+
+                collected = 1;
+                memset(&result, 0, sizeof(result));
+                result.str = s_result;
+                if (oskGetInputText(&result) != 0 || result.res != OSK_OK)
+                    s_cancelled = 1;
+
+                memset(&result, 0, sizeof(result));
+                result.str = s_result;
+                /* A real structure rather than NULL: this is an out-parameter the library may write,
+                 * and handing it nowhere to write is a way to be refused. */
+                oskUnloadAsync(&result);
+            }
+
+            if (s_present != NULL)
+                s_present();
+            else
+                rc_video_flip();
+            rc_sleep_ms(16u);
+        }
     }
 
     sysUtilUnregisterCallback(SYSUTIL_EVENT_SLOT0);
-    sysUtilUnregisterCallback(SYSUTIL_EVENT_SLOT1);
     if (s_container_bytes != 0u)
         sysMemContainerDestroy(container);
 
