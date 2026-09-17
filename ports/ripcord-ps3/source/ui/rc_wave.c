@@ -31,7 +31,13 @@ static const struct { short hue; unsigned char sat; const char *name; } RC_WAVE_
 };
 
 static int s_month;
+static int s_forced_month = -1;   /* see rc_wave_test_set_month - negative means "ask the clock" */
 static unsigned s_last_us;
+
+void rc_wave_test_set_month(int month)
+{
+    s_forced_month = (month >= 0 && month < 12) ? month : -1;
+}
 
 /* A quarter-period sine table. 8.8 fixed point, 0..256 over 0..90 degrees. */
 #define RC_WAVE_SINE_STEPS 256
@@ -87,10 +93,14 @@ void rc_wave_open(void)
         build_sine();
 
     s_month = 0;
-    now = time(NULL);
-    lt = localtime(&now);
-    if (lt != NULL && lt->tm_mon >= 0 && lt->tm_mon < 12)
-        s_month = lt->tm_mon;
+    if (s_forced_month >= 0) {
+        s_month = s_forced_month;
+    } else {
+        now = time(NULL);
+        lt = localtime(&now);
+        if (lt != NULL && lt->tm_mon >= 0 && lt->tm_mon < 12)
+            s_month = lt->tm_mon;
+    }
 
     /*
      * LOGGED, because a colour in a photograph is otherwise unmatchable to a decision. "It looked
@@ -131,10 +141,57 @@ static uint32_t hsv(int h, int s, int v)
     return 0xff000000u | (uint32_t)((r << 16) | (g << 8) | b);
 }
 
+/*
+ * THE ACCENT IS DESATURATED UNTIL IT CAN BE READ, AND NO FURTHER.
+ *
+ * It sets the family tag on a card, the rule under the wordmark and the value in a settings row - all at
+ * the body size, all on the card's near-black fill. So it is not a colour choice, it is a legibility
+ * requirement with a colour preference attached, and one hue per month means twelve chances to get it
+ * wrong in a way nobody sees for eleven months.
+ *
+ * Two of them WERE wrong. September's purple came out at 4.20:1 against the card and December's blue at
+ * 3.82:1, against the 4.5:1 that WCAG asks for body text - because luminance is mostly green, and a hue
+ * with no green in it is dark however bright you ask for it. Neither was visible to anybody: one is a
+ * month nobody had launched in and the other had not come round yet. tests/wave_test.c found both.
+ *
+ * Saturation is what gives: dropping it mixes in white and lifts every channel, where raising the value
+ * cannot help a channel that is already at its ceiling. It comes down in steps until the colour is light
+ * enough, so a hue that was fine keeps exactly the saturation it always had and only the ones that need
+ * it are touched.
+ *
+ * The luminance here approximates sRGB's gamma as a square rather than the standard's 2.4. It is
+ * monotonic, which is all a threshold needs, and it keeps this file free of floating point - the test
+ * checks the real WCAG figure, which is the number that matters, and the threshold below is set so
+ * every month clears it with room.
+ */
+static unsigned linearise(unsigned c)
+{
+    return (c * c) / 255u;
+}
+
+/* 0-255, the same weighting WCAG uses. */
+static unsigned accent_luminance(uint32_t rgb)
+{
+    return (2126u * linearise((rgb >> 16) & 0xffu)
+          + 7152u * linearise((rgb >> 8) & 0xffu)
+          +  722u * linearise(rgb & 0xffu)) / 10000u;
+}
+
+#define RC_WAVE_ACCENT_MIN_LUM 60u   /* about 4.8:1 on the card - see the note above */
+
 uint32_t rc_wave_accent(void)
 {
+    int sat = 190;
+    uint32_t c;
+
     /* Brighter and more saturated than the background it sits on - it has to carry small text. */
-    return hsv(RC_WAVE_MONTH[s_month].hue, 190, 245);
+    for (;;) {
+        c = hsv(RC_WAVE_MONTH[s_month].hue, sat, 245);
+        if (accent_luminance(c) >= RC_WAVE_ACCENT_MIN_LUM || sat <= 60)
+            break;
+        sat -= 5;
+    }
+    return c;
 }
 
 /*

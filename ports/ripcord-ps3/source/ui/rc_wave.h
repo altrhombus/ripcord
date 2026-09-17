@@ -60,6 +60,21 @@ void rc_wave_row(uint32_t *dst, int w, int y);
 const uint32_t *rc_wave_small(int *w, int *h, int *stride_px);
 void rc_wave_motes_row(uint32_t *dst, int w, int y);
 
+/*
+ * TEST ONLY, AND HERE RATHER THAN NOWHERE FOR A REASON.
+ *
+ * The month comes from the clock, so eleven twelfths of this design is invisible on any given day and
+ * SHELL-DESIGN.md's plan for reviewing it was to move the console's clock twelve times. That is a dozen
+ * reboots to answer a question that is arithmetic - and it is the kind of check nobody repeats, which is
+ * exactly when a table of twelve hand-picked colours gets edited.
+ *
+ * So the month can be forced, and tests/wave_test.c asserts what the design states in prose: every
+ * month stays dark enough to be a background, every accent carries small text on a card, and no two
+ * consecutive months are too close to tell apart. A negative value hands the decision back to the clock,
+ * which is where it sits for every build that is not a test.
+ */
+void rc_wave_test_set_month(int month);
+
 /* How long the last fill took. The number that decides what the next stage can afford. */
 unsigned rc_wave_last_us(void);
 
