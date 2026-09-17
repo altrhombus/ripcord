@@ -68,6 +68,17 @@ int rc_decode_vdec_level(void);
 int rc_decode_vdec_num_spus(void);   /* SPEs the decoder was opened with */
 unsigned rc_decode_vdec_mem_size(void);
 int rc_decode_vdec_sps_profile(void);
+
+/*
+ * WHAT THE STREAM SAYS ABOUT ITS OWN COLOUR, from the first SPS. -1 means the stream did not say.
+ *
+ * Worth reading because cellVdec takes a colour MATRIX and no range input at all: it applies one range
+ * assumption, and the usual one is limited (16-235) expanded to 0-255. A console sending full range
+ * would then be expanded twice, and the first thing that shows is highlights clipping early. These
+ * report; they do not act.
+ */
+int rc_decode_vdec_sps_full_range(void);   /* 0 limited, 1 full, -1 not stated */
+int rc_decode_vdec_sps_matrix(void);       /* 1 BT.709, 5/6 BT.601, 2 unspecified, -1 not stated */
 int rc_decode_vdec_sps_level(void);     /* as the stream declared it, before any clamp */
 int rc_decode_vdec_sps_max_ref(void);   /* level 4.2 allows 4 reference frames at 1080p */
 unsigned rc_decode_vdec_level_clamped(void);
