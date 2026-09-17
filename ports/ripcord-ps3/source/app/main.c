@@ -2101,11 +2101,19 @@ static int check_display(void)
     ps3_log("       overlay: %s\n", rc_overlay_prepared() ? "ready" : "NOT PREPARED - no cards can be drawn");
 
     /*
-     * Held for a few seconds rather than flashed. The point is a human looking at a television, and
-     * the elements are meant to be read off it - see draw_test_pattern.
+     * THE TEST PATTERN IS RETIRED, and this is the note that says why rather than a deletion nobody can
+     * account for.
+     *
+     * It answered four questions - the buffer's true extent, the byte order, the pitch applied per
+     * line, and the full grey range - and all four have been answered for hundreds of builds. What it
+     * is now is a second of colour bars between somebody pressing start and the thing they came for,
+     * on every single launch.
+     *
+     * The function is still here and still compiled. Build with -DRC_PS3_TEST_PATTERN to bring it back,
+     * which is what to do the next time the display code is touched in a way that could move any of
+     * those four answers.
      */
-    /* One second, not three. The pattern only has to be seen to be checked, and everything after it
-     * is more interesting. */
+#ifdef RC_PS3_TEST_PATTERN
     for (frame = 0; frame < 60; frame++) {
         uint32_t *back = rc_video_back_buffer();
 
@@ -2117,7 +2125,18 @@ static int check_display(void)
         draw_test_pattern(back, info.width, info.height, info.pitch, frame);
         rc_video_flip();
     }
+#else
+    /* The back buffer is still checked for, because everything after this draws into it. */
+    if (rc_video_back_buffer() == NULL) {
+        ps3_log("FAIL  no back buffer after the display opened\n");
+        rc_video_close();
+        return 1;
+    }
+    (void)frame;
+    (void)draw_test_pattern;
+#endif
 
+#ifdef RC_PS3_TEST_PATTERN
     ps3_log("ok    %d frames drawn and flipped. WHAT TO LOOK FOR:\n", frame);
     ps3_log("      a white border one pixel inside every edge  - the buffer's true extent\n");
     ps3_log("      red, green, blue bars left to right         - byte order and pixel format\n");
@@ -2128,6 +2147,9 @@ static int check_display(void)
     ps3_log("       overscan eats the first and the second is near-invisible over the bars. The\n");
     ps3_log("       bars landing in the right thirds already proves the pitch: a wrong one skews\n");
     ps3_log("       every line progressively and could not look tidy.)\n");
+#else
+    ps3_log("ok    display open; the test pattern is retired - build -DRC_PS3_TEST_PATTERN for it\n");
+#endif
     /*
      * LEFT OPEN on purpose. The connect stage puts live frames on this screen, and closing the display
      * here would mean bringing it up twice - the one call in this port with a history of refusing.
