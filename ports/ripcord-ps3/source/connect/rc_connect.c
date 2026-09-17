@@ -13,6 +13,10 @@
 #include "takion_reliable_channel.h"
 #include "rc_udp.h"
 #include "rc_ecdh.h"
+#include <sysutil/sysutil.h>
+
+#include "rc_log.h"
+#include "rc_platform_ps3.h"
 #include "rc_stack_ps3.h"
 #include "takion_control_sealer.h"
 #include "stream_header.h"
@@ -2794,6 +2798,7 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
         uint64_t next_heartbeat;
         uint64_t next_congestion;
         uint64_t hold_ms;
+        uint64_t next_sysutil;
 
         /*
          * BOTH THERMAL SAMPLES ARE TAKEN OUTSIDE THE HOLD, and b202 is why. Sampling once a second from
@@ -2821,6 +2826,14 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
         g_hold_ms = (unsigned)hold_ms;
 
         deadline = rc_time_ms() + hold_ms;
+        /*
+         * WHEN TO NEXT ASK THE SYSTEM WHETHER IT WANTS US GONE. Ten times a second, not every pass:
+         * this loop turns over as fast as the socket gives it work, and rc_connect.c's standing rule is
+         * that nothing gets added to the drain without knowing what it costs. A tenth of a second is
+         * imperceptible to somebody who has just chosen Quit and is two orders of magnitude cheaper
+         * than asking on every iteration.
+         */
+        next_sysutil = rc_time_ms();
         next_heartbeat = rc_time_ms();
         next_congestion = rc_time_ms() + RC_CONGESTION_INTERVAL_MS;
         g_last_picture_ms = rc_time_ms();
@@ -2845,6 +2858,30 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
             int result;
             int drained;
             uint64_t other_started;
+
+            /*
+             * THE XMB CAN ASK FOR THIS PROGRAM MID-STREAM, AND NOTHING HERE WAS LISTENING.
+             *
+             * Choosing Quit from the PS menu does not kill the process: lv2 raises SYSUTIL_EXIT_GAME
+             * through the registered callback, waits for the program to leave, and force-terminates it
+             * when it does not - with the RSX holding a context, an SPU thread group running that is
+             * deliberately never destroyed, sockets open and a decoder mid-picture. Three beeps and a
+             * reboot. The shell answered this from b373; this path never called sysUtilCheckCallback at
+             * all, so the request was not merely ignored, it was never delivered.
+             *
+             * Leaving by `break` is the whole of the fix: the hold ends the way it ends when its time is
+             * up, the tallies below are collected, the teardown runs in its usual order, and main()
+             * closes the logs before anything that can hang.
+             */
+            if (rc_time_ms() >= next_sysutil) {
+                next_sysutil = rc_time_ms() + 100u;
+                sysUtilCheckCallback();
+                if (rc_ps3_exit_requested()) {
+                    rc_log("conn:  the XMB asked this program to quit - ending the stream\n"
+                           "       cleanly rather than being force-terminated\n");
+                    break;
+                }
+            }
 
             send_periodic(session, out, &next_heartbeat, &next_congestion);
 
@@ -3272,6 +3309,13 @@ answered:
         /* Poll SRCH until is_awake flips. Readiness is observed, never acknowledged. */
         while (rc_time_ms() - started < (uint64_t)wake_timeout_ms) {
             rc_sleep_ms(500u);
+            /* Twenty seconds is long enough to be asked to quit inside; this loop already sleeps, so
+             * asking costs nothing. See the note in the hold loop below. */
+            sysUtilCheckCallback();
+            if (rc_ps3_exit_requested()) {
+                out->stage = RC_CONNECT_WAKE_SENT;
+                return out->stage;
+            }
             out->polls++;
             if (probe_once(rec.host, halyard_discovery_profile_ps5.wake_search_source_port,
                            &awake, 800u) && awake) {
@@ -3334,6 +3378,11 @@ answered:
         while (rc_time_ms() < deadline) {
             halyard_control_event ev;
             memset(&ev, 0, sizeof(ev));
+
+            /* Same again: twenty seconds is long enough to be asked to quit inside. */
+            sysUtilCheckCallback();
+            if (rc_ps3_exit_requested())
+                break;
 
             if (!halyard_control_session_service(&session, &ev)) {
                 out->session_error = (int)ev.kind;
