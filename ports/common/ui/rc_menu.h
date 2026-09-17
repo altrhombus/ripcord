@@ -24,7 +24,12 @@
 #define RC_MENU_LABEL_MAX 40
 #define RC_MENU_VALUE_MAX 40
 #define RC_MENU_NOTE_MAX  80
-#define RC_MENU_ITEMS_MAX 14
+/*
+ * Raised from 14 when the home screen gained a list of PAIRED consoles alongside the discovered ones:
+ * eight paired, four more on the network and four commands is sixteen, and a menu that silently stops
+ * adding rows loses whichever console was unlucky.
+ */
+#define RC_MENU_ITEMS_MAX 20
 
 typedef struct {
     int  id;
