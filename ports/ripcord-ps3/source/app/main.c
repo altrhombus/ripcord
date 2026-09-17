@@ -1180,7 +1180,9 @@ static int check_connect(void)
                             c.ps_presses_sent);
                 if (c.menu_disconnect)
                     ps3_log("       INPUT: Disconnect was chosen in that menu - the session ended\n"
-                            "              because somebody asked it to, not because anything failed\n");
+                            "              because somebody asked it to, not because anything failed\n"
+                            "              (the console was asked to %s)\n",
+                            c.rest_requested ? "go to rest" : "stay awake");
 
                 if (c.diagnostics || c.overlay_toggles > 0u) {
                     /*
