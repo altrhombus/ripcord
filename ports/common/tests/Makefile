@@ -85,6 +85,7 @@ INPUT_TARGET := $(BUILD)/input_test
 REGISTRATION_TARGET := $(BUILD)/registration_test
 REGIST_FLOW_TARGET := $(BUILD)/regist_flow_test
 MENU_TARGET := $(BUILD)/menu_test
+ACCOUNT_ID_TARGET := $(BUILD)/account_id_test
 REGISTRATION_VECTORS := vectors/registration-crypto.kat
 
 # A SECOND generated constants file, with --registration. The rest of this suite deliberately builds
@@ -226,7 +227,7 @@ REGISTRATION_SOURCES := \
 all: check
 
 check: $(TARGET) $(VECTORS) $(DISCOVERY_TARGET) $(SESSION_TARGET) $(TAKION_TARGET) $(STREAM_CRYPTO_TARGET) $(STREAM_VECTORS) $(FEC_TARGET) $(STREAM_HEADER_TARGET) $(STREAM_DEMUX_TARGET) $(ECDH_TARGET) $(SESSION_VECTORS) $(CONTROL_PROTO_TARGET) $(PROTO_VECTORS) $(INPUT_TARGET) \
-         $(REGISTRATION_TARGET) $(REGISTRATION_VECTORS) $(REGIST_FLOW_TARGET) $(MENU_TARGET)
+         $(REGISTRATION_TARGET) $(REGISTRATION_VECTORS) $(REGIST_FLOW_TARGET) $(MENU_TARGET) $(ACCOUNT_ID_TARGET)
 	./$(TARGET) $(VECTORS)
 	./$(DISCOVERY_TARGET)
 	./$(SESSION_TARGET)
@@ -241,6 +242,7 @@ check: $(TARGET) $(VECTORS) $(DISCOVERY_TARGET) $(SESSION_TARGET) $(TAKION_TARGE
 	./$(REGISTRATION_TARGET) $(REGISTRATION_VECTORS)
 	./$(REGIST_FLOW_TARGET) $(REGIST_FLOW_TARGET)
 	./$(MENU_TARGET)
+	./$(ACCOUNT_ID_TARGET)
 
 build: $(TARGET) $(DISCOVERY_TARGET) $(SESSION_TARGET) $(TAKION_TARGET) $(STREAM_CRYPTO_TARGET) $(FEC_TARGET) $(STREAM_HEADER_TARGET) $(STREAM_DEMUX_TARGET) $(ECDH_TARGET) $(CONTROL_PROTO_TARGET)
 
@@ -344,6 +346,16 @@ MENU_SOURCES := \
 $(MENU_TARGET): $(MENU_SOURCES)
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) -o $@ $(MENU_SOURCES)
+
+# Reading an account id somebody typed. Self-contained for the same reason the menu is: what it decides
+# is arithmetic over a string, and the cost of it being wrong is a registration nobody can diagnose.
+ACCOUNT_ID_SOURCES := \
+	$(CORE)/session/halyard_account_id.c \
+	account_id_test.c
+
+$(ACCOUNT_ID_TARGET): $(ACCOUNT_ID_SOURCES)
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) -o $@ $(ACCOUNT_ID_SOURCES)
 
 $(REGISTRATION_TARGET): $(REGISTRATION_SOURCES) $(REGISTRATION_GENERATED)
 	@mkdir -p $(@D)

@@ -234,6 +234,7 @@ SOURCES := \
 	$(CORE)/session/halyard_control_probe.c \
 	$(CORE)/session/halyard_regist_flow.c \
 	$(CORE)/session/halyard_regist_message.c \
+	$(CORE)/session/halyard_account_id.c \
 	$(CORE)/halyard/halyard_registration.c \
 	$(CORE)/session/halyard_control_session.c \
 	$(CORE)/net/rc_tcp.c \

@@ -1335,6 +1335,27 @@ refuses for reasons it does not explain. Pre-filled, a wrong one is a wrong numb
 instead of nineteen digits is the whole win. A remembered value still beats a derived one, because it is
 confirmed and this is not.
 
+**When the console cannot answer, the screen says the thing worth saying.** The read has four ways to
+fail and only one of them matters to the person standing there: `CURRENT_USER_HAS_NP_ACCOUNT` returning
+zero means this PS3 is not signed in to PSN, and a PS3 that signs in hands the number over by itself.
+Somebody who does not know their account id and has no way to find it is otherwise stopped here for
+good; saying "sign in on this PS3 and Ripcord will fill this in" turns a dead end into a two-minute
+errand with no PC involved.
+
+**And what gets typed is read before it travels.** A 64-bit id is quoted in decimal, in hex and as the
+base64 of its eight bytes, and `halyard_regist_message` encodes an all-decimal one as a number and
+anything else as its own UTF-8 characters - so hex typed into that box goes out as the text `1a2b...`
+and comes back as a refusal the console does not explain, in front of someone re-checking a number that
+was right all along. `ports/common/session/halyard_account_id.c` normalises decimal and hex to decimal,
+*names* the base64 form rather than guessing at a byte order this project has not confirmed, and refuses
+anything else with a reason. Sixteen decimal digits is the ambiguous case and is read as decimal; there
+is a test that says so, because the other reading is a silently different number.
+
+**The `.rif` hypothesis was wrong, and the search is what showed it.** `exdata` was inside the walked
+tree and carried nothing - exactly one file on the console held the value. So there is no second place
+to fall back to on a console that has been signed out, which is what makes the "sign in" message above
+the whole of the answer rather than a nicety.
+
 **Nothing logs the value, in any form** — not the id, not the bytes near it, not filenames, since an
 exdata filename is a content id that names something somebody bought. What the probe reports is a
 directory, a file index, an offset and a byte order.
