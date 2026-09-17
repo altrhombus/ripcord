@@ -49,6 +49,11 @@ void rc_osk_set_present_hook(void (*present)(void))
 }
 static volatile int s_done;
 static volatile int s_finished;   /* the user closed it; the text has not been collected yet */
+
+/* The unload's own return structure, and the buffer it may fill - see where it is passed. Static
+ * because the unload is asynchronous and may write to it after the call returns. */
+static oskCallbackReturnParam s_unload_result;
+static u16 s_unload_text[RC_OSK_MAX_CHARS + 1];
 static volatile int s_cancelled;
 
 const char *rc_osk_status_text(rc_osk_status status)
@@ -286,18 +291,46 @@ rc_osk_status rc_osk_ask(rc_osk_kind kind, const char *prompt, const char *initi
              */
             if (s_finished && !collected) {
                 oskCallbackReturnParam result;
+                s32 got;
 
                 collected = 1;
                 memset(&result, 0, sizeof(result));
                 result.str = s_result;
-                if (oskGetInputText(&result) != 0 || result.res != OSK_OK)
+                /*
+                 * `len` set BEFORE the call as well as read after it. Whether it is an out-parameter
+                 * or an in-out capacity is not stated anywhere reachable, and setting it costs nothing
+                 * if it is the former - where leaving it zero would be fatal if it is the latter.
+                 */
+                result.len = (s32)RC_OSK_MAX_CHARS;
+                got = oskGetInputText(&result);
+
+                /*
+                 * THE TWO FAILURES ARE REPORTED SEPARATELY, because collapsing them is what made b318
+                 * say "cancelled" about a dialog the user had accepted. A call that refused and a call
+                 * that succeeded while reporting a result other than OK are different faults, and one
+                 * flag for both says nothing about which.
+                 *
+                 * res is OSK_OK, OSK_CANCELED, OSK_ABORT or OSK_NO_TEXT - and the last of those is a
+                 * dialog that came back empty, which is not the same as one that was dismissed.
+                 */
+                rc_log("osk:   getInputText -> 0x%08X, res %d, len %d\n",
+                       (unsigned)got, (int)result.res, (int)result.len);
+                if (got != 0 || result.res != OSK_OK)
                     s_cancelled = 1;
 
-                memset(&result, 0, sizeof(result));
-                result.str = s_result;
-                /* A real structure rather than NULL: this is an out-parameter the library may write,
-                 * and handing it nowhere to write is a way to be refused. */
-                oskUnloadAsync(&result);
+                /*
+                 * THE UNLOAD'S RETURN PARAMETER MAY BE WHERE THE TEXT ACTUALLY IS.
+                 *
+                 * oskUnloadAsync takes an oskCallbackReturnParam, which is the same structure
+                 * oskGetInputText fills - so the library may intend the result to come back from the
+                 * teardown rather than from a separate read, and this port has no documentation
+                 * saying which. Both are captured into separate structures and both are reported;
+                 * whichever says OK is the one used.
+                 */
+                memset(&s_unload_result, 0, sizeof(s_unload_result));
+                s_unload_result.str = s_unload_text;
+                s_unload_result.len = (s32)RC_OSK_MAX_CHARS;
+                oskUnloadAsync(&s_unload_result);
             }
 
             if (s_present != NULL)
@@ -329,6 +362,19 @@ rc_osk_status rc_osk_ask(rc_osk_kind kind, const char *prompt, const char *initi
                 rc_log(" 0x%04X", s_events[i]);
             rc_log("\n");
         }
+    }
+
+    rc_log("osk:   unload -> res %d, len %d\n", (int)s_unload_result.res, (int)s_unload_result.len);
+
+    /*
+     * If the read refused but the teardown reported a result, take the teardown's. Recorded as a
+     * finding rather than written as the only path, because which one the library intends is exactly
+     * what is not known - and a run where both work is as informative as one where only one does.
+     */
+    if (s_cancelled && s_unload_result.res == OSK_OK && s_unload_result.len > 0) {
+        rc_log("osk:   the TEARDOWN carried the text, not the read\n");
+        memcpy(s_result, s_unload_text, sizeof(s_result));
+        s_cancelled = 0;
     }
 
     if (!s_done) {
