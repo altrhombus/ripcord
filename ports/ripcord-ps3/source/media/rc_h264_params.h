@@ -80,6 +80,28 @@ typedef struct {
     uint32_t crop_left, crop_right, crop_top, crop_bottom;  /* in crop units, not pixels */
     int vui_parameters_present_flag;
 
+    /*
+     * THE COLOUR SIGNALLING, AND WHY A DECODER THAT IGNORES IT CAN STILL BE WRONG.
+     *
+     * cellVdec converts to ARGB itself and takes only a matrix (BT.601 or BT.709) - it has no range
+     * input at all, so it applies one assumption, and the near-universal one is that the source is
+     * LIMITED range (luma 16-235) to be expanded to 0-255. If the console actually sends FULL range,
+     * that expansion happens to material that is already expanded, and the result is exactly the
+     * symptom a bright scene shows first: highlights clipping early, sand and sun reading too bright,
+     * everything else looking about right.
+     *
+     * So these are read to find out which it is. -1 means the stream did not say, which is itself the
+     * answer H.264 defines a default for: absent video_signal_type means full_range 0 and matrix 2
+     * ("unspecified"). They are recorded rather than acted on - what to DO about a mismatch is a
+     * separate question, and one worth asking only once this says there is one.
+     */
+    int video_signal_type_present_flag;
+    int video_full_range_flag;      /* -1 not stated; 0 limited (16-235); 1 full (0-255) */
+    int colour_description_present_flag;
+    int matrix_coefficients;        /* -1 not stated; 1 BT.709, 5/6 BT.601, 2 unspecified */
+    int colour_primaries;           /* -1 not stated */
+    int transfer_characteristics;   /* -1 not stated */
+
     /* Derived, in luma samples, before cropping is applied. A decoder allocates this; the display size
      * is smaller when frame_cropping_flag is set, which is how 640x368 coded carries 640x360 shown. */
     uint32_t coded_width;

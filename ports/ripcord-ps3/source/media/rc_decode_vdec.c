@@ -143,6 +143,10 @@ static unsigned s_mem_size;
 static int s_sps_profile = -1;
 static int s_sps_level = -1;
 static int s_sps_max_ref = -1;
+/* What the stream says about its own colour, taken from the first SPS - see rc_h264_params.h for why
+ * this is worth knowing when the decoder takes no range input. -1 throughout means "not stated". */
+static int s_sps_full_range = -1;
+static int s_sps_matrix = -1;
 static unsigned s_level_clamped;
 static int s_clamp_safe;
 static volatile int s_chain_broken;
@@ -274,6 +278,8 @@ static void clamp_level(uint8_t *au, size_t length)
             s_sps_profile = (int)nal.payload[0];
             s_sps_level = (int)nal.payload[2];
             s_sps_max_ref = (int)sps.max_num_ref_frames;
+            s_sps_full_range = sps.video_full_range_flag;
+            s_sps_matrix = sps.matrix_coefficients;
             s_clamp_safe = clamp_is_safe(&sps);
         }
 
@@ -447,6 +453,8 @@ int rc_decode_vdec_open(int width, int height)
     s_sps_profile = -1;
     s_sps_level = -1;
     s_sps_max_ref = -1;
+    s_sps_full_range = -1;
+    s_sps_matrix = -1;
     s_level_clamped = 0;
     s_clamp_safe = 0;
     s_au_bad_start = 0;
@@ -612,6 +620,8 @@ unsigned rc_decode_vdec_mem_size(void)
 int rc_decode_vdec_sps_profile(void) { return s_sps_profile; }
 int rc_decode_vdec_sps_level(void)   { return s_sps_level; }
 int rc_decode_vdec_sps_max_ref(void) { return s_sps_max_ref; }
+int rc_decode_vdec_sps_full_range(void) { return s_sps_full_range; }
+int rc_decode_vdec_sps_matrix(void) { return s_sps_matrix; }
 unsigned rc_decode_vdec_level_clamped(void) { return s_level_clamped; }
 int rc_decode_vdec_clamp_safe(void) { return s_clamp_safe; }
 unsigned rc_decode_vdec_au_bad_start(void) { return s_au_bad_start; }

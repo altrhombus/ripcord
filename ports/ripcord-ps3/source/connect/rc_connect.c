@@ -3442,6 +3442,8 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
     out->drop_collect = rc_decode_vdec_drop_collect();
     out->pictures_overwritten = rc_decode_vdec_pictures_overwritten();
     out->first_nal_types = rc_decode_vdec_first_nal_types();
+    out->sps_full_range = rc_decode_vdec_sps_full_range();
+    out->sps_matrix = rc_decode_vdec_sps_matrix();
     out->decode_mem_size = rc_decode_vdec_mem_size();
     out->first_au_len = rc_decode_vdec_first_au(out->first_au);
     out->decode_thread_priority = g_decode_priority;
