@@ -18,6 +18,7 @@
 #include "rc_overlay.h"
 #include "rc_pad_ps3.h"
 #include "rc_pair_ps3.h"
+#include "rc_thermal.h"
 #include "rc_platform.h"
 #include "rc_video_ps3.h"
 
@@ -780,6 +781,40 @@ static int s_cards = 1;
 static unsigned s_drawn_revision;
 static int s_drawn_hint = -1;
 static int s_drawn_valid;
+static void pump_input(void);
+static uint64_t s_ui_at;
+static unsigned s_ui_us, s_ui_worst_us, s_frames;
+/*
+ * WHAT A FRAME ACTUALLY COSTS, AND WHY THE FIRST VERSION OF THIS LIED.
+ *
+ * b363 and b366 reported "15 fps" and "10 fps" from frames divided by the time the shell was open. That
+ * is not a frame rate. The shell blocks for a second and a half inside a discovery broadcast, and for
+ * as long as somebody takes inside the pairing prompts and the on-screen keyboard - none of which draws
+ * a frame, all of which is on that clock. The two numbers differed by a third because the person
+ * holding the controller spent longer in a sub-screen, and nothing about the drawing had changed at all.
+ * It also sent me looking for fifty milliseconds a frame that were never there.
+ *
+ * So the interval between successive draws is measured directly, and an interval longer than a fifth of
+ * a second is discarded as "the shell was doing something else" rather than averaged in. The components
+ * are summed rather than sampled, because the last frame's cost is not the typical one and the spread
+ * here is wide.
+ *
+ * And the whole of draw() is timed as well as its parts, so the parts can be checked against the whole.
+ * The gap between them is the flip wait, which is the one cost that SHOULD be there - it is the frame
+ * rate being held to the refresh - and telling it apart from an unmeasured cost needs both numbers.
+ */
+static uint64_t s_draw_at;           /* rc_tick() at the top of this draw */
+static uint64_t s_frame_at;          /* rc_tick() at the start of the previous draw */
+static uint64_t s_sum_frame, s_sum_draw, s_sum_wave, s_sum_ui, s_sum_vram, s_sum_wait;
+static unsigned s_intervals;         /* frames whose interval counted towards s_sum_frame */
+static unsigned s_worst_frame_us;
+static unsigned s_vram_us, s_vram_worst_us;
+static rc_thermal_record s_thermal;
+
+static unsigned us_since(uint64_t t)
+{
+    return (unsigned)(((rc_tick() - t) * 1000000u) / rc_tick_hz());
+}
 
 static void draw(int can_forget)
 {
@@ -801,11 +836,26 @@ static void draw(int can_forget)
      * socket. Here there is nothing else to do. Bounded, because b232 left the RSX stopped with every
      * flip pending forever - a menu that waits for a flip that will never complete is a hang.
      */
+    s_draw_at = rc_tick();
     {
         uint64_t give_up = now + 100u;
+        uint64_t wait_at = rc_tick();
 
-        while (!rc_video_present_ready() && rc_time_ms() < give_up)
-            usleep(2000);
+        /*
+         * PUMPED BEFORE THE TEST, NOT ONLY INSIDE IT. While the frame cost 40 ms the flip was never
+         * ready and this loop always ran, so the pad got looked at; the moment the frame fits in a
+         * refresh the loop stops running and the ONLY poll left in the pass is the one at the top of
+         * rc_shell_run. Making the menu fast would have made it less responsive, which is not a
+         * trade-off anybody would choose on purpose.
+         */
+        pump_input();
+        while (!rc_video_present_ready() && rc_time_ms() < give_up) {
+            /* The wait is the best place in the loop to be watching the pad: it is time this thread
+             * has nothing else to do with, and it is most of the gap a press used to fall into. */
+            pump_input();
+            usleep(1000);
+        }
+        s_sum_wait += us_since(wait_at);
     }
 
     /*
@@ -836,8 +886,18 @@ static void draw(int can_forget)
      * handed to the RSX.
      */
     pixels = rc_overlay_pixels(&pitch);
+    s_px = pixels;
+    s_pitch = pitch;
     if (pixels != NULL)
         rc_wave_draw(pixels, s_scr_w, s_scr_h, pitch, now);
+    s_ui_at = rc_tick();
+
+    /*
+     * AND AGAIN HERE, because the background is still the longest single thing in the frame and a
+     * button pressed and released inside it would otherwise leave no trace - rc_pad_read reports the
+     * pad's state now, not what it did while this thread was busy. See the note above poll_edges.
+     */
+    pump_input();
 
     /* The wordmark, and a short rule under it in this month's colour. */
     (void)rc_overlay_text(sx(SH_MARGIN), sy(SH_WORD_Y), 3, RC_OV_TEXT, "%s", "RIPCORD");
@@ -896,9 +956,51 @@ static void draw(int can_forget)
     }
 
     draw_hints(can_forget, 1);
+    pump_input();
 
-    rc_overlay_end_now(0, 0, s_scr_w, s_scr_h);
+    /*
+     * WHAT EACH HALF COSTS, kept apart. "The menu is slow" is not a finding; "the background is 7 ms and
+     * the cards are 19" names which one to fix, and the first version of this measured only the
+     * background and drew the conclusion about the wrong half.
+     */
+    s_ui_us = (unsigned)(((rc_tick() - s_ui_at) * 1000000u) / rc_tick_hz());
+    if (s_ui_us > s_ui_worst_us)
+        s_ui_worst_us = s_ui_us;
+    s_frames++;
+
+    {
+        uint64_t at = rc_tick();
+
+        rc_overlay_end_now(0, 0, s_scr_w, s_scr_h);
+        /* The copy to video memory, measured apart from the drawing. It is 8 MB across a bus the PPE
+         * is not fast at, it is not optional, and it is the half that no amount of work on the shapes
+         * or the background would ever move. */
+        s_vram_us = us_since(at);
+        if (s_vram_us > s_vram_worst_us)
+            s_vram_worst_us = s_vram_us;
+        s_sum_vram += s_vram_us;
+    }
     rc_video_flip();
+
+    s_sum_wave += rc_wave_last_us();
+    s_sum_ui += s_ui_us;
+    s_sum_draw += us_since(s_draw_at);
+
+    /*
+     * THE INTERVAL, WHICH IS THE ONLY NUMBER THAT IS A FRAME RATE. Measured from the top of one draw to
+     * the top of the next, and dropped when the shell went off to do something that does not draw.
+     */
+    if (s_frame_at != 0u) {
+        unsigned gap = (unsigned)(((s_draw_at - s_frame_at) * 1000000u) / rc_tick_hz());
+
+        if (gap < 200000u) {
+            s_sum_frame += gap;
+            s_intervals++;
+            if (gap > s_worst_frame_us)
+                s_worst_frame_us = gap;
+        }
+    }
+    s_frame_at = s_draw_at;
 }
 
 /* ------------------------------------------------------------------------------------------------
@@ -912,16 +1014,53 @@ static void draw(int can_forget)
  * held" opens six things per press. Repeat is on the d-pad only - a held Cross must never fire twice,
  * which is how a confirmation gets past somebody.
  */
-static uint32_t read_edges(void)
+/*
+ * EDGES ARRIVING BETWEEN DRAWS ARE KEPT, and this is why a press used to need repeating.
+ *
+ * The loop was: poll the pad once, act, draw. Drawing waits for the flip and then fills the screen, so
+ * the pad was being READ about ten times a second - and rc_pad_read reports the pad's state right now,
+ * not what it did in between. A press and release inside one of those gaps left no trace at all. It is
+ * not a slow menu, it is a menu that never saw the button.
+ *
+ * So polling is separated from drawing. pump_input runs while waiting for the flip, at whatever rate
+ * the loop can manage, and ORs every edge it sees into a pending mask that the next pass consumes. A
+ * press cannot now fall between two looks no matter how long the drawing takes.
+ */
+static uint32_t s_pending;
+
+static uint32_t poll_edges(void);
+
+static void pump_input(void)
+{
+    s_pending |= poll_edges();
+}
+
+static uint32_t take_edges(void)
+{
+    uint32_t edges = s_pending | poll_edges();
+
+    s_pending = 0u;
+    return edges;
+}
+
+static uint32_t poll_edges(void)
 {
     const uint32_t directions = HALYARD_PAD_DPAD_UP | HALYARD_PAD_DPAD_DOWN |
                                 HALYARD_PAD_DPAD_LEFT | HALYARD_PAD_DPAD_RIGHT;
     halyard_input_state pad;
-    uint32_t now = 0u, edges, held;
+    uint32_t now, edges, held;
     uint64_t t = rc_time_ms();
 
-    if (rc_pad_read(&pad))
-        now = pad.buttons;
+    /*
+     * A READ THAT FAILED IS NOT A PAD WITH NOTHING HELD. rc_pad_read returns 0 for a pad that has not
+     * yet reported as well as for one that is gone, and treating that as all-buttons-up releases
+     * whatever is actually held - so the next successful read looks like a fresh press of a button
+     * nobody touched, and a held direction restarts its repeat delay on every hiccup. The last known
+     * state is the honest answer: a button nobody has told us about is where it was.
+     */
+    if (!rc_pad_read(&pad))
+        return 0u;
+    now = pad.buttons;
 
     edges = now & ~s_prev_buttons;
     held = now & directions;
@@ -947,6 +1086,7 @@ static void forget_held(void)
 
     s_prev_buttons = rc_pad_read(&pad) ? pad.buttons : 0u;
     s_repeat_at = 0u;
+    s_pending = 0u;
 }
 
 /* ------------------------------------------------------------------------------------------------
@@ -1165,7 +1305,7 @@ static int confirm_forget(int index)
         uint32_t edges;
 
         sysUtilCheckCallback();
-        edges = read_edges();
+        edges = take_edges();
 
         if (edges & HALYARD_PAD_DPAD_UP)
             (void)rc_menu_move(&s_menu, -1);
@@ -1369,7 +1509,7 @@ static void run_settings(void)
         uint32_t edges;
 
         sysUtilCheckCallback();
-        edges = read_edges();
+        edges = take_edges();
 
         if (edges & HALYARD_PAD_DPAD_UP)
             (void)rc_menu_move(&s_menu, -1);
@@ -1415,7 +1555,7 @@ static int run_options(const char *const *dirs, int dir_count)
         uint32_t edges;
 
         sysUtilCheckCallback();
-        edges = read_edges();
+        edges = take_edges();
 
         if (edges & HALYARD_PAD_DPAD_UP)
             (void)rc_menu_move(&s_menu, -1);
@@ -1483,6 +1623,15 @@ rc_shell_action rc_shell_run(const char *const *dirs, int dir_count)
     }
 
     read_enter_button();
+    /*
+     * A BASELINE BEFORE THE MENU HAS DRAWN ANYTHING, and its pair is taken at close. rc_thermal.h is
+     * explicit that this costs about 14 ms a read and must never be called from a frame path; these are
+     * the two calls it describes, one on either side of everything being measured. The question it
+     * answers is the one that decides how far this shell is allowed to go: whether a menu that redraws
+     * the screen sixty times a second is a thing somebody's living room can hear.
+     */
+    rc_thermal_reset(&s_thermal);
+    rc_thermal_sample(&s_thermal);
     rc_wave_open();
     s_accent = rc_wave_accent();
     load_record(dirs, dir_count);
@@ -1504,7 +1653,7 @@ rc_shell_action rc_shell_run(const char *const *dirs, int dir_count)
         int id;
 
         sysUtilCheckCallback();
-        edges = read_edges();
+        edges = take_edges();
 
         /* A row of cards moves sideways. Up and down are accepted too, because somebody will press
          * them and doing nothing at all reads as the menu being stuck. */
@@ -1570,8 +1719,27 @@ rc_shell_action rc_shell_run(const char *const *dirs, int dir_count)
             draw(s_set.count > 0);
     }
 
-    rc_log("shell: the background fill took %u us a frame across %dx%d\n",
-           rc_wave_last_us(), s_scr_w, s_scr_h);
+    if (s_intervals > 0u && s_frames > 0u) {
+        unsigned mean = (unsigned)(s_sum_frame / s_intervals);
+
+        rc_thermal_sample(&s_thermal);
+        rc_log("shell: %u frame(s) at %dx%d - %u us a frame (worst %u) = %u fps\n",
+               s_frames, s_scr_w, s_scr_h, mean, s_worst_frame_us,
+               mean > 0u ? 1000000u / mean : 0u);
+        rc_log("shell:   of which draw %u us: background %u, drawing %u, to video memory %u,"
+               " waiting for the flip %u\n",
+               (unsigned)(s_sum_draw / s_frames), (unsigned)(s_sum_wave / s_frames),
+               (unsigned)(s_sum_ui / s_frames), (unsigned)(s_sum_vram / s_frames),
+               (unsigned)(s_sum_wait / s_frames));
+        rc_log("shell:   worst single drawing pass %u us, worst copy %u us\n",
+               s_ui_worst_us, s_vram_worst_us);
+        if (s_thermal.available)
+            rc_log("shell:   Cell %u.%u C on the way in, %u.%u C on the way out; RSX %u.%u -> %u.%u\n",
+                   s_thermal.cell_first / 10u, s_thermal.cell_first % 10u,
+                   s_thermal.cell_last / 10u, s_thermal.cell_last % 10u,
+                   s_thermal.rsx_first / 10u, s_thermal.rsx_first % 10u,
+                   s_thermal.rsx_last / 10u, s_thermal.rsx_last % 10u);
+    }
     rc_log("shell: closing - %s\n", action == RC_SHELL_CONNECT ? "connecting" : "quitting");
     return action;
 }
