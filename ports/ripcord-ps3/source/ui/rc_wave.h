@@ -49,6 +49,17 @@ void rc_wave_draw(uint32_t *dst, int w, int h, int stride_px, uint64_t ms);
 void rc_wave_begin(int w, int h, uint64_t ms);
 void rc_wave_row(uint32_t *dst, int w, int y);
 
+/*
+ * THE SMALL BUFFER ITSELF, for a caller that can expand it faster than rc_wave_row can - an SPE. Valid
+ * only between rc_wave_begin and the next one, 128-byte aligned with a row stride that is a multiple of
+ * 16, because the MFC requires both. NULL before the first rc_wave_begin.
+ *
+ * The motes are NOT in it: they are drawn at full size, so a caller expanding the buffer itself has to
+ * put them on afterwards with rc_wave_motes_row. rc_wave_row does both and needs neither call.
+ */
+const uint32_t *rc_wave_small(int *w, int *h, int *stride_px);
+void rc_wave_motes_row(uint32_t *dst, int w, int y);
+
 /* How long the last fill took. The number that decides what the next stage can afford. */
 unsigned rc_wave_last_us(void);
 
