@@ -2247,6 +2247,13 @@ int main(void)
     ps3_log("If that build id is not the one `make` just printed, the console is running a stale\n");
     ps3_log("install and nothing below this line means anything.\n\n");
 
+    /*
+     * REGISTERED BEFORE ANYTHING ELSE RUNS, because the XMB can ask for this program at any point after
+     * it starts and the answer has to be a clean exit rather than a force-termination. See
+     * rc_platform_ps3.h: until this existed, every quit from the PS menu took the console down with it.
+     */
+    rc_ps3_exit_watch();
+
     /* The table, logged rather than merely acted on. This is the first thing a PS3 has ever been asked
      * about this port, and "which directories may a packaged homebrew write to" is worth answering once
      * and keeping. */
