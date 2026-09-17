@@ -867,7 +867,7 @@ static int check_connect(void)
      * sentence about it and, where there is one, something the viewer can do - rather than the black
      * screen every failure used to produce.
      */
-    rc_connect_report_outcome(stage, c.stream_stalled);
+    rc_connect_report_outcome(stage, &c);
 
     if (stage == RC_CONNECT_NO_RECORD) {
         /*
@@ -883,7 +883,7 @@ static int check_connect(void)
             ps3_log("conn:  paired; retrying the connection\n");
             stage = rc_connect(RC_CONNECT_WAKE_TIMEOUT_MS, connect_progress, g_log_dirs, LOG_DIR_COUNT,
                                &c);
-            rc_connect_report_outcome(stage, c.stream_stalled);
+            rc_connect_report_outcome(stage, &c);
         }
     }
 
@@ -1172,8 +1172,15 @@ static int check_connect(void)
                 }
 
                 if (c.overlay_toggles > 0u)
-                    ps3_log("       INPUT: the diagnostics chord (Options+Create) was used %u"
+                    ps3_log("       INPUT: the in-session menu (SELECT+START) was opened %u"
                             " time(s)\n", c.overlay_toggles);
+                if (c.ps_presses_sent > 0u)
+                    ps3_log("       INPUT: the PS button was sent to the console %u time(s) - the\n"
+                            "              system eats the real press, so this is the only route\n",
+                            c.ps_presses_sent);
+                if (c.menu_disconnect)
+                    ps3_log("       INPUT: Disconnect was chosen in that menu - the session ended\n"
+                            "              because somebody asked it to, not because anything failed\n");
 
                 if (c.diagnostics || c.overlay_toggles > 0u) {
                     /*
@@ -1379,8 +1386,15 @@ static int check_connect(void)
         } else {
             ps3_log("       demux was never started - no video header to start it with\n");
         }
-        ps3_log("       held the session %u ms: %u message(s), last type 0x%04x%s\n",
-                c.hold_ms, c.held_messages, c.held_last_type,
+        /* The session runs until something ends it, so how long it ran and WHY it stopped are two
+         * separate facts and both are wanted - a four-second session is a different story depending on
+         * which of these ended it. */
+        ps3_log("       held the session %u ms (%s): %u message(s), last type 0x%04x%s\n",
+                c.hold_ms,
+                c.menu_disconnect ? "Disconnect was chosen"
+                                  : c.stream_stalled ? "the console stopped sending"
+                                                     : "ended by the XMB, a fault or holdseconds",
+                c.held_messages, c.held_last_type,
                 c.held_channel_error ? ", CHANNEL ERROR" : "");
         if (c.held_stream_info_repeats > 0u)
             ps3_log("       the console re-sent STREAM_INFO %u time(s) - it did not hear an ack\n",
@@ -2484,19 +2498,55 @@ int main(void)
      * asked to leave, and making them watch a decoder self-test first is not a reasonable reading of
      * that. They still run in full on the path that streams, which is where their findings are wanted.
      */
-    if (rc_shell_run(g_log_dirs, LOG_DIR_COUNT) == RC_SHELL_CONNECT) {
-        failures += check_connect();
-        failures += check_crypto_speed();
-        failures += check_decode();
+    /*
+     * AND IT COMES BACK, which it did not before.
+     *
+     * This was one pass: the shell ran, a session ran, and the program left for the XMB. That reads as
+     * the application closing itself every time a stream ends - including when it ends because the
+     * console refused the connection, which is the moment somebody most wants to be back where they can
+     * try the other console or fix the setting. A menu you are ejected from is not a menu.
+     *
+     * So the two alternate for as long as somebody wants them to. Every exit from the loop is a
+     * deliberate one: Quit to the XMB from the shell (RC_SHELL_QUIT), or Quit from the PS menu at any
+     * point, which rc_ps3_exit_requested reports and which must not be answered by opening a menu.
+     *
+     * A FAILED CONNECT IS NOT AN EXIT. check_connect has already put the reason on the television and
+     * held it there, so returning here lands on the home screen with the failure just read.
+     */
+    {
+        int streamed = 0;
+
+        while (!rc_ps3_exit_requested()
+               && rc_shell_run(g_log_dirs, LOG_DIR_COUNT) == RC_SHELL_CONNECT) {
+            streamed = 1;
+            failures += check_connect();
+        }
+
+        if (!streamed)
+            ps3_log("shell: closed without connecting\n");
+
         /*
-         * LAST, because it is the stage that can hang. b146 stopped inside it and took the crypto and
-         * decode results with it - those had already run, but the console froze before anything after
-         * this point could be written. A stage that might not return belongs after every stage that
-         * must.
+         * THE BRING-UP CHECKS RUN ONCE, ON THE WAY OUT, and that is a move rather than a demotion.
+         *
+         * They used to sit between the session and the program ending, which was the right place while
+         * the program ended there. Inside the loop they would run between every session and the menu
+         * coming back - several seconds of test patterns and decoder probes in the middle of somebody
+         * going back to pick a different console.
+         *
+         * Their findings are wanted from a run that streamed, which is what `streamed` records; the
+         * program is on its way out by the time they draw, so what they paint over is nothing.
          */
-        failures += check_vdec();
-    } else {
-        ps3_log("shell: closed without connecting\n");
+        if (streamed) {
+            failures += check_crypto_speed();
+            failures += check_decode();
+            /*
+             * LAST, because it is the stage that can hang. b146 stopped inside it and took the crypto
+             * and decode results with it - those had already run, but the console froze before anything
+             * after this point could be written. A stage that might not return belongs after every
+             * stage that must.
+             */
+            failures += check_vdec();
+        }
     }
 
     ps3_log("\nnot covered here: the rest of the decoder. See README.md.\n");

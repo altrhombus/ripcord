@@ -238,7 +238,7 @@ typedef struct {
     unsigned long verify_failed;
     unsigned long verify_dropped;
 
-    /* What turned up while the session was held open - see RC_STREAM_HOLD_MS. */
+    /* What turned up while the session was held open - for as long as it ran; see hold_ms. */
     unsigned held_messages;
     unsigned held_last_type;
     unsigned held_stream_info_repeats;
@@ -400,10 +400,17 @@ typedef struct {
     unsigned pad_changes;        /* times a pad connected or went away */
 
     int      diagnostics;        /* the overlay was asked for at start */
-    unsigned overlay_toggles;    /* times the chord flipped it during the session */
+    unsigned overlay_toggles;    /* times the chord opened the in-session menu */
+    /* Times the PS button was synthesised from that menu. The system consumes the real press before any
+     * application sees it, so this is the only way one reaches the console - and a count is how a run
+     * says whether the path was exercised at all. */
+    unsigned ps_presses_sent;
+    /* Disconnect was chosen in that menu. Distinguishes the session a person ENDED from every other way
+     * one can stop, which otherwise all arrive at the caller looking like the stream having failed. */
+    int      menu_disconnect;
     int      overlay_system_font;/* the console's own face opened, rather than the drawn fallback */
     char     overlay_font_status[96];
-    int      stream_stalled;     /* the console stopped sending video before the hold ended */
+    int      stream_stalled;     /* the console stopped sending video while the session was up */
     int      stream_is_hevc;     /* the console sent HEVC; cellVdec decodes H.264 only */
     int      display_aspect;
     int      display_scan_mode;
@@ -447,7 +454,15 @@ const rc_session_state *rc_connect_session_state(void);
  * `stalled` suppresses it, because a stream that stopped mid-session has already said something more
  * specific than any stage name could.
  */
-void rc_connect_report_outcome(rc_connect_stage stage, int stalled);
+/*
+ * Puts the outcome on the television. Takes the whole result rather than the stage alone, because
+ * several of the ways a session can end are indistinguishable by stage and are the opposite of each
+ * other to a viewer: a person choosing Disconnect and a console refusing to start both leave from
+ * RC_CONNECT_STREAM_READY, and a cancelled sign-in leaves from RC_CONNECT_SESSION_OPEN looking exactly
+ * like a console that would not talk. Anything that has already said something more specific is left
+ * alone - see the flags it reads.
+ */
+void rc_connect_report_outcome(rc_connect_stage stage, const rc_connect_result *result);
 
 #ifdef __cplusplus
 }
