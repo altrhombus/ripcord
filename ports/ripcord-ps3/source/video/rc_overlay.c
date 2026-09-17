@@ -42,6 +42,8 @@
 #include "rc_log.h"
 #include "rc_sysfont.h"
 #include "rc_video_ps3.h"
+/* For HALYARD_PAD_*: rc_overlay_glyph takes the same button bits a caller tests input against. */
+#include "halyard_input.h"
 #include "platform/rc_platform.h"
 
 /*
@@ -283,6 +285,128 @@ void rc_overlay_blend_rect(int x, int y, int w, int h, uint32_t argb)
         for (col = 0; col < w; col++)
             blend_px(&p[col], argb, alpha);
     }
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * THE BUTTON GLYPHS.
+ *
+ * Same principle rc_shell.c draws its footer on: an exact distance to the shape's outline, so the
+ * diagonals of a cross come out as clean lines rather than as stairs. It is a second implementation
+ * rather than a shared one because the shell's rasteriser is built around its own cached layer - its
+ * sub-pixel grid, its ink-bounds recording, its own pixel writer - and none of that exists here. What
+ * is shared is the arithmetic, which is short, and the two are independently checkable by looking at
+ * them. If a third caller ever wants these, that is the moment to move the shell's version down here.
+ * ------------------------------------------------------------------------------------------------ */
+
+#define OV_SUB      64      /* sub-pixel steps per pixel, for the distance arithmetic */
+#define OV_SUB_HALF 32
+
+/*
+ * Integer square root, Newton from a power-of-four seed. The seed MUST be a power of four: seeded at
+ * 1<<15 this answers sqrt(2v) and saturates, which in the shell drew corners at the wrong radius for
+ * three builds before anyone could name what was wrong with them.
+ */
+static int ov_isqrt(int v)
+{
+    int g = 1 << 30;
+    int r = 0;
+
+    if (v <= 0)
+        return 0;
+    while (g > v)
+        g >>= 2;
+    while (g != 0) {
+        if (v >= r + g) {
+            v -= r + g;
+            r = (r >> 1) + g;
+        } else {
+            r >>= 1;
+        }
+        g >>= 2;
+    }
+    return r;
+}
+
+/* Coverage from a signed distance in OV_SUB-ths of a pixel: negative is inside the stroke. */
+static unsigned ov_cov(int d)
+{
+    if (d <= -OV_SUB_HALF)
+        return 255u;
+    if (d >= OV_SUB_HALF)
+        return 0u;
+    return (unsigned)((OV_SUB_HALF - d) * 255 / OV_SUB);
+}
+
+int rc_overlay_glyph(uint32_t button, int x, int y, int size, uint32_t argb)
+{
+    unsigned alpha = (argb >> 24) & 0xffu;
+    uint32_t rgb = argb & 0x00FFFFFFu;
+    int half = (size * OV_SUB) / 2;
+    int stroke = (size * OV_SUB * 11) / 100;   /* 11% of the box, which reads at ten feet */
+    int radius = (size * OV_SUB * 36) / 100;
+    int row, col;
+
+    if (!s_ready || size <= 0 || alpha == 0u)
+        return size > 0 ? size : 0;
+    if (button != HALYARD_PAD_CIRCLE && button != HALYARD_PAD_CROSS)
+        return size;
+    if (stroke < OV_SUB)
+        stroke = OV_SUB;
+
+    for (row = 0; row < size; row++) {
+        int vy = row * OV_SUB + OV_SUB_HALF - half;
+        int py = y + row;
+        uint32_t *p;
+
+        if (py < 0 || py >= s_h)
+            continue;
+        p = s_dst + (size_t)py * (size_t)s_dst_pitch;
+        if (s_ink != NULL)
+            s_ink(py, x, x + size);
+
+        for (col = 0; col < size; col++) {
+            int vx = col * OV_SUB + OV_SUB_HALF - half;
+            int px = x + col;
+            int d;
+            unsigned c;
+
+            if (px < 0 || px >= s_w)
+                continue;
+
+            if (button == HALYARD_PAD_CIRCLE) {
+                int dist = ov_isqrt(vx * vx + vy * vy) - radius;
+
+                if (dist < 0)
+                    dist = -dist;
+                d = dist - stroke / 2;
+            } else {
+                /*
+                 * Two bars through the centre at forty-five degrees. The perpendicular distance to
+                 * such a line is |vx -+ vy| / sqrt(2), and 181/256 is that divisor. The bars are then
+                 * cut to length, so the cross is a cross and not two full-width diagonals.
+                 */
+                int a = vx - vy, b = vx + vy;
+                int da, db, ext;
+
+                if (a < 0) a = -a;
+                if (b < 0) b = -b;
+                da = (a * 181) / 256;
+                db = (b * 181) / 256;
+                d = (da < db) ? da : db;
+                ext = (vx < 0 ? -vx : vx);
+                if ((vy < 0 ? -vy : vy) > ext)
+                    ext = (vy < 0 ? -vy : vy);
+                if (ext - radius > d - stroke / 2)
+                    d = ext - radius + stroke / 2;
+                d -= stroke / 2;
+            }
+
+            c = ov_cov(d);
+            if (c != 0u)
+                blend_px(&p[px], rgb, (alpha * c) / 255u);
+        }
+    }
+    return size;
 }
 
 void rc_overlay_set_system_font(int on)
