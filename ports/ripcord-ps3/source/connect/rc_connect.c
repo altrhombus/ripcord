@@ -3789,8 +3789,15 @@ answered:
     if (!awake) {
         started = rc_time_ms();
 
+        /*
+         * NO ESTIMATE, and that is the settled position rather than an omission. This used to promise
+         * "a few seconds from rest"; b36 watched this console take 12.3 s merely to answer a SRCH after
+         * waking, which is not a few. A promise the console can miss turns an ordinary wait into
+         * something going wrong, and the count below already says how long it has actually been - which
+         * is the honest version of the same reassurance.
+         */
         say(RC_PHASE_WAKING, "Waking the console",
-            rec.name[0] != '\0' ? rec.name : NULL, "This takes a few seconds from rest");
+            rec.name[0] != '\0' ? rec.name : NULL, NULL);
         SAY("sending WAKEUP");
 
         if (send_wakeup(&rec, out))
@@ -3810,7 +3817,7 @@ answered:
              */
             snprintf(waited, sizeof(waited), "%u seconds so far",
                      (unsigned)((rc_time_ms() - started) / 1000u));
-            say(RC_PHASE_WAKING, "Waking the console", waited, "This takes a few seconds from rest");
+            say(RC_PHASE_WAKING, "Waking the console", waited, NULL);
             /* Twenty seconds is long enough to be asked to quit inside; this loop already sleeps, so
              * asking costs nothing. See the note in the hold loop below. */
             sysUtilCheckCallback();
