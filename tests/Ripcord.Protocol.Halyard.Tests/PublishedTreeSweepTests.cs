@@ -97,6 +97,29 @@ public class PublishedTreeSweepTests
         ["ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"] =
             "the base64 alphabet itself, in the 3DS port's encoder - RFC 4648 table 1, not a value",
 
+        // The PS3 port's arrivals. Four of the six are values chosen precisely BECAUSE they are
+        // recognisable - a counting pattern, a float whose bytes are its own reverse - which is the
+        // property that makes a leak detector look at them twice.
+        ["10111213202122303132404142"] =
+            "the H.264 level_idc values cellVdec accepts, swept 0..255 on hardware - the published "
+            + "level ladder of ITU-T H.264 Annex A, identical on every PS3",
+        ["3FF0000000000000"] =
+            "IEEE-754 1.0, big-endian. Chosen in control_proto_test.c as the one double whose little-"
+            + "endian form is its own reverse, so it cannot hide a byte-order mistake",
+        ["000000000000F03F"] =
+            "that same 1.0, little-endian - the two halves of the byte-order test, and the reason the "
+            + "value was picked",
+        ["c0ba8a3cd5620400"] =
+            "the little-endian u64 of the account id 1234567890123456, which IsSyntheticFiller already "
+            + "names as filler - this is that same made-up id after the encoder under test ran on it",
+        ["81985529216486895"] =
+            "0x0123456789ABCDEF in decimal. All-digits, so it reads as hex to the detector; the test "
+            + "declaring it says it is a counting pattern so nothing there resembles anybody's account",
+        ["1a2b"] =
+            "the leading hex of this project's own synthetic registration key, quoted as the fragment "
+            + "\"1a2b...\" in prose explaining that a hex account id typed into the box travels as its "
+            + "characters. The full value is allowlisted above; the ellipsis is what draws the detector",
+
     };
 
     /// <summary>
@@ -117,6 +140,14 @@ public class PublishedTreeSweepTests
         ["2001:db8a::"] =
             "the RFC 3849 near-miss from the contract table, quoted in the commit message that added it - "
             + "documentation-adjacent by construction and routed nowhere",
+        ["00000001674d4028"] =
+            "an Annex-B start code and the SPS header behind it - profile 77, level 0x28 - quoted in the "
+            + "message that opened vdec at the level the stream declares. Codec structure, and the same "
+            + "eight bytes lead every stream of that shape",
+        ["a8d751ecc65d1be8"] =
+            "a digest of one decoded luma plane, quoted as the point at which ffmpeg and openh264 agreed "
+            + "bit-for-bit. A one-way hash of picture content from our own capture: it names no console, "
+            + "account or session, and its only use is that two decoders produced the same one",
     };
     // </sweep:fixtures>
 
@@ -273,7 +304,8 @@ public class PublishedTreeSweepTests
     private static readonly string[] TextExtensions =
         [".md", ".cs", ".c", ".h", ".cpp", ".hpp", ".idl", ".def", ".json", ".yml", ".yaml", ".xaml",
          ".py", ".props", ".targets", ".csproj", ".vcxproj", ".slnx", ".proto", ".sh", ".ps1",
-         ".editorconfig", ".gitattributes", ".appxmanifest", ".manifest", ".svg", ".resx", ".resw"];
+         ".editorconfig", ".gitattributes", ".appxmanifest", ".manifest", ".svg", ".resx", ".resw",
+         ".html"];
 
     private static readonly string[] NamedFiles = ["NOTICE", "LICENSE", ".gitignore", "Makefile"];
 
@@ -285,6 +317,12 @@ public class PublishedTreeSweepTests
     /// <c>data:</c> URIs and editor-inserted author strings — exactly the class widening the corpus existed
     /// for. It is in <see cref="TextExtensions"/> now, and
     /// <see cref="EveryCommittedTextFile_IsSwept"/> no longer takes this list's word for it.</para>
+    ///
+    /// <para><c>.html</c> arrived unclassified with <c>ports/ripcord-ps3/shell-mockup.html</c> — 553 lines
+    /// of committed UTF-8 carrying prose, colour values and design notes, which the corpus never opened
+    /// because the extension was on neither list. The same answer as <c>.svg</c>, for the same reason: it
+    /// is text a person wrote, so it is swept. A mockup is exactly the kind of file that acquires a real
+    /// address while nobody is thinking of it as source.</para>
     ///
     /// <para><c>.pcapng</c> and <c>.bin</c> were also here, which gave a committed capture a route
     /// <em>past</em> the corpus guard as "declared binary". Capture types are on
