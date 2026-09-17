@@ -80,6 +80,7 @@
 #include "rc_core_tests.h"
 #include "rc_discover.h"
 #include "rc_connect.h"
+#include "rc_shell.h"
 
 #include "../platform/rc_platform_ps3.h"
 
@@ -2401,15 +2402,35 @@ int main(void)
     }
 
     failures += check_discovery();
-    failures += check_connect();
-    failures += check_crypto_speed();
-    failures += check_decode();
+
     /*
-     * LAST, because it is the stage that can hang. b146 stopped inside it and took the crypto and decode
-     * results with it - those had already run, but the console froze before anything after this point
-     * could be written. A stage that might not return belongs after every stage that must.
+     * THE FRONT DOOR, and everything below it now runs because somebody asked for it.
+     *
+     * Up to here this program has been a list of checks that ran themselves: it read one console's
+     * address out of a text file put on the machine over FTP, connected to it, and reported to a log
+     * fetched afterwards from another computer. That is the right shape for finding out whether a
+     * decoder works and the wrong shape for using the thing - there was no way to choose a console, no
+     * way to change a setting, and the only signal that anything had gone wrong was a black screen.
+     *
+     * THE CHECKS AFTER IT GO WITH IT. check_crypto_speed, check_decode and check_vdec draw test
+     * patterns and probe the decoder for several seconds each; somebody who chose "Quit to the XMB"
+     * asked to leave, and making them watch a decoder self-test first is not a reasonable reading of
+     * that. They still run in full on the path that streams, which is where their findings are wanted.
      */
-    failures += check_vdec();
+    if (rc_shell_run(g_log_dirs, LOG_DIR_COUNT) == RC_SHELL_CONNECT) {
+        failures += check_connect();
+        failures += check_crypto_speed();
+        failures += check_decode();
+        /*
+         * LAST, because it is the stage that can hang. b146 stopped inside it and took the crypto and
+         * decode results with it - those had already run, but the console froze before anything after
+         * this point could be written. A stage that might not return belongs after every stage that
+         * must.
+         */
+        failures += check_vdec();
+    } else {
+        ps3_log("shell: closed without connecting\n");
+    }
 
     ps3_log("\nnot covered here: the rest of the decoder. See README.md.\n");
     ps3_log("%s\n", failures == 0 ? "all checks passed" : "CHECKS FAILED");

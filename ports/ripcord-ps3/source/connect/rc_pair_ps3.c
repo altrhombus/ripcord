@@ -44,7 +44,7 @@ static rc_session_state s_state;
  * Applied only when there was no record to load. A record that exists says what its owner chose, and
  * re-pairing is not the moment to overrule them.
  */
-static void apply_ps3_defaults(halyard_pairing_record *record)
+void rc_pair_apply_port_defaults(halyard_pairing_record *record)
 {
     record->stream_width = 1280;
     record->stream_height = 720;
@@ -159,6 +159,11 @@ static int local_address(const char *console_host, char *out, size_t out_size)
  */
 #define RC_PAIR_DIR "/dev_hdd0/game/" RC_PS3_APPID "/USRDIR/"
 
+const char *rc_pair_record_dir(void)
+{
+    return RC_PAIR_DIR;
+}
+
 int rc_pair_run(const char *host)
 {
     halyard_pairing_record record;
@@ -175,7 +180,7 @@ int rc_pair_run(const char *host)
      * saves defaults, which is right for a first pairing and wrong for every later one.
      */
     if (!halyard_pairing_file_load(RC_PAIR_DIR, &record))
-        apply_ps3_defaults(&record);
+        rc_pair_apply_port_defaults(&record);
 
     show(RC_PHASE_PAIRING, "Pairing", "Enter the console's address", NULL);
     if (!ask(RC_OSK_TEXT, "Console IP address",

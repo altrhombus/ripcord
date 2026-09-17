@@ -64,9 +64,24 @@ int  rc_overlay_using_system_font(void);
  */
 int rc_overlay_px(int design);
 
-/* The panel's real size, after that conversion. */
+/*
+ * THE SURFACE, IN DESIGN PIXELS - the whole bitmap, before rc_overlay_px converts it for the screen in
+ * front of it. Here rather than in the .c because a caller that lays out against the surface has to be
+ * able to check at COMPILE TIME that its last row is on it: every primitive below clips silently, so a
+ * layout that runs off the bottom is invisible in the code and invisible on the television.
+ */
+#define RC_OV_SURFACE_W 960
+#define RC_OV_SURFACE_H 600
+
+/*
+ * THE PANEL and THE SURFACE are different sizes. The panel is the region the diagnostics overlay and
+ * the status card lay out against; the surface is the whole bitmap, which is larger so that a menu can
+ * share this file's font, blending and blit rather than carrying a second copy of all three.
+ */
 int rc_overlay_width(void);
 int rc_overlay_height(void);
+int rc_overlay_surface_width(void);
+int rc_overlay_surface_height(void);
 
 /* How far below a run's top edge its baseline sits, so two sizes on one row can be aligned by their
  * baselines rather than by their boxes. */
@@ -86,7 +101,7 @@ int  rc_overlay_begin_now(void);
 
 /* The position is an argument rather than shared state - see the note in the .c for what making it
  * state cost the diagnostics overlay. */
-void rc_overlay_end_now(int x, int y);
+void rc_overlay_end_now(int x, int y, int w, int h);
 void rc_overlay_rect(int x, int y, int w, int h, uint32_t argb);
 
 /*
