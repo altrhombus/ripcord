@@ -20,6 +20,7 @@
 #include "rc_pair_ps3.h"
 #include "rc_thermal.h"
 #include "rc_platform.h"
+#include "rc_platform_ps3.h"
 #include "rc_video_ps3.h"
 
 /* ------------------------------------------------------------------------------------------------
@@ -1504,6 +1505,10 @@ static int confirm_forget(int index)
         uint32_t edges;
 
         sysUtilCheckCallback();
+        /* The XMB asked us to go. Leave by the ordinary route so main()'s teardown runs - see
+         * rc_platform_ps3.h on what happens to a program that does not. */
+        if (rc_ps3_exit_requested())
+            break;
         edges = take_edges();
 
         if (edges & HALYARD_PAD_DPAD_UP)
@@ -1708,6 +1713,10 @@ static void run_settings(void)
         uint32_t edges;
 
         sysUtilCheckCallback();
+        /* The XMB asked us to go. Leave by the ordinary route so main()'s teardown runs - see
+         * rc_platform_ps3.h on what happens to a program that does not. */
+        if (rc_ps3_exit_requested())
+            break;
         edges = take_edges();
 
         if (edges & HALYARD_PAD_DPAD_UP)
@@ -1754,6 +1763,10 @@ static int run_options(const char *const *dirs, int dir_count)
         uint32_t edges;
 
         sysUtilCheckCallback();
+        /* The XMB asked us to go. Leave by the ordinary route so main()'s teardown runs - see
+         * rc_platform_ps3.h on what happens to a program that does not. */
+        if (rc_ps3_exit_requested())
+            break;
         edges = take_edges();
 
         if (edges & HALYARD_PAD_DPAD_UP)
@@ -1852,6 +1865,10 @@ rc_shell_action rc_shell_run(const char *const *dirs, int dir_count)
         int id;
 
         sysUtilCheckCallback();
+        /* The XMB asked us to go. Leave by the ordinary route so main()'s teardown runs - see
+         * rc_platform_ps3.h on what happens to a program that does not. */
+        if (rc_ps3_exit_requested())
+            break;
         edges = take_edges();
 
         /* A row of cards moves sideways. Up and down are accepted too, because somebody will press
