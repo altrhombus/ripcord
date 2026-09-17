@@ -353,7 +353,8 @@ typedef struct {
     int  display_width;
     int  display_height;
     unsigned frames_queued;     /* handed from the receive loop to the decoder            */
-    unsigned frames_overrun;    /* dropped because the queue was full - we were behind       */
+    unsigned frames_overrun;
+    unsigned frames_skipped;     /* arrived, and deliberately not shown - see skip_until_keyframe */    /* dropped because the queue was full - we were behind       */
     unsigned frames_oversized;  /* too large for a queue slot - dropped in silence before b166 */
     long     frames_too_many_units; /* refused by the demuxer for wanting too many unit slots  */
     int      declared_bitrate_kbps; /* bwKbpsSent - what the console sizes the stream against  */
@@ -418,6 +419,9 @@ typedef struct {
     /* The console was asked to go to rest on the way out, which only happens when somebody chose it
      * from the disconnect question. Reported because the console acts on it after we are gone. */
     int      rest_requested;
+    /* The "wait for a clean picture after a loss" setting, as it applied to this run, beside the count
+     * of what it actually cost - see frames_skipped. */
+    int      skip_until_keyframe;
     /* The sign-in gate ended the attempt, and has already said how on the television: cancelled at the
      * keyboard, or every passcode refused. Stops the generic outcome below overwriting the specific
      * reason with "the console refused the session", which is both wrong and unactionable. */
