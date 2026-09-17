@@ -622,11 +622,29 @@ static void draw_overlay(void);
  * menu could not.
  */
 /*
- * The most rows any one page of this menu has. There is no Resume entry: Circle backs out of every
- * page, which is what Circle does everywhere else on this machine, and a row that duplicates the button
- * somebody already knows is a row they have to read past to reach the ones that do something.
+ * THE MENU'S TWO PAGES, AND THEIR ROWS.
+ *
+ * At file scope because the count and the text have to agree and they were in different places: the
+ * cursor asked a function how many rows there were while the drawing read a local array, so adding a
+ * row to one without the other would have walked off the end of it. One table each, and the count is
+ * taken from the table.
+ *
+ * There is no Resume entry: Circle backs out of every page, which is what Circle does everywhere else
+ * on this machine, and a row that duplicates a button somebody already knows is a row they read past to
+ * reach the ones that do something.
  */
-#define RC_MENU_MAX_ROWS 3
+static const char *const kMenuRows[] = {
+    "Send the PS button to the console",
+    "Diagnostics overlay",
+    "Disconnect",
+};
+static const char *const kRestRows[] = {
+    "Disconnect, leave the console on",
+    "Disconnect and put the console to rest",
+};
+#define RC_MENU_ROW_COUNT ((int)(sizeof(kMenuRows) / sizeof(kMenuRows[0])))
+#define RC_REST_ROW_COUNT ((int)(sizeof(kRestRows) / sizeof(kRestRows[0])))
+
 #define RC_MENU_PS_MS 120u   /* a momentary press - see the note where it is sent */
 
 static int g_menu_open;
@@ -695,7 +713,7 @@ static void draw_session_menu(void);
 /* How many rows the current page has. Both the cursor and the drawing ask, so neither can disagree. */
 static int menu_rows(void)
 {
-    return g_menu_page == 0 ? 3 : 2;
+    return (g_menu_page == 0) ? RC_MENU_ROW_COUNT : RC_REST_ROW_COUNT;
 }
 
 /*
@@ -1853,16 +1871,7 @@ static void menu_geometry(int *out_w, int *out_h, int *out_rows)
 /* Rasterises the panel. Only called when something on it has changed - see g_menu_drawn. */
 static void paint_session_menu(void)
 {
-    static const char *const kMenu[3] = {
-        "Send the PS button to the console",
-        "Diagnostics overlay",
-        "Disconnect",
-    };
-    static const char *const kRest[2] = {
-        "Disconnect, leave the console on",
-        "Disconnect and put the console to rest",
-    };
-    const char *const *rows = (g_menu_page == 0) ? kMenu : kRest;
+    const char *const *rows = (g_menu_page == 0) ? kMenuRows : kRestRows;
     const char *title = (g_menu_page == 0) ? "Ripcord" : "Disconnect";
     /*
      * The Disconnect row says what it will DO, because with a standing preference it no longer always
@@ -4059,6 +4068,20 @@ answered:
                 }
 
                 say(RC_PHASE_CONNECTING, "Signing in", "Sending the passcode", NULL);
+
+                /*
+                 * THE SESSION CAN DIE WHILE SOMEBODY IS TYPING. The keyboard blocks for as long as it
+                 * takes, and signin_pump is servicing the connection underneath it - so by the time a
+                 * passcode comes back the console may have gone. Checked before the submit, because
+                 * submit_login's only failure signal is a bool and reporting a dead connection as
+                 * "that passcode could not be encoded" sends somebody to correct digits that were fine.
+                 */
+                if (g_signin.dead) {
+                    SAY("the control session ended while the passcode was being typed");
+                    say(RC_PHASE_FAILED, "The console closed the connection",
+                        "It ended while the passcode was being entered", "Try connecting again");
+                    break;
+                }
 
                 out->login_verdict = -1;
                 g_signin.verdict_new = 0;
