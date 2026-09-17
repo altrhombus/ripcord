@@ -206,10 +206,19 @@ typedef char rc_wave_levels_fit[(46 + 38 + 26) < 256 ? 1 : -1];
  * in b232. Everything here stays in main memory; see rc_overlay.c.
  */
 #define RC_WAVE_SHRINK 4
-#define RC_WAVE_SMALL_W (RC_WAVE_MAX_W / RC_WAVE_SHRINK + 1)
+/*
+ * 484, NOT 481, AND ALIGNED TO 128 - both so an SPE can be given this buffer.
+ *
+ * The MFC refuses a transfer whose size is not 1, 2, 4, 8 or a multiple of 16, and a strided transfer
+ * needs every ROW to satisfy that too. 481 pixels is 1,924 bytes, which is not; 484 is 1,936, which is.
+ * The extra three columns are never written or read - they cost twelve bytes a row and remove a class of
+ * failure that on this hardware is a hang rather than an error. See rc_spu_yuv_job.h, where the same
+ * rule is enforced by the compiler for the same reason.
+ */
+#define RC_WAVE_SMALL_W (((RC_WAVE_MAX_W / RC_WAVE_SHRINK + 1) + 3) & ~3)
 #define RC_WAVE_SMALL_H (RC_WAVE_MAX_H / RC_WAVE_SHRINK + 1)
 
-static uint32_t s_small[RC_WAVE_SMALL_W * RC_WAVE_SMALL_H];
+static uint32_t s_small[RC_WAVE_SMALL_W * RC_WAVE_SMALL_H] __attribute__((aligned(128)));
 
 /*
  * The mean of two packed pixels without unpacking them: the bits they share, plus half the bits they do
