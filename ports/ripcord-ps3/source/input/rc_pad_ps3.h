@@ -40,12 +40,13 @@ void rc_pad_stats(int *connected, unsigned *reads, unsigned *fresh, unsigned *ch
 int rc_pad_analog_triggers_seen(void);
 
 /*
- * How many times the diagnostics chord has been completed. The caller watches this for a change rather
- * than being told "pressed", so neither side has to agree on when a press stops being new.
+ * How many times the in-session menu's chord - SELECT and START together - has been completed. The
+ * caller watches this for a change rather than being told "pressed", so neither side has to agree on
+ * when a press stops being new.
  *
  * A press of either chord button is WITHHELD briefly while waiting for its partner, so reaching for the
- * overlay does not send the buttons on the way - which on a PS5 meant Create taking screenshots. See
- * the .c for which buttons, why those, and the one edge it does not close.
+ * menu does not send the buttons on the way - SELECT arrives at a PS5 as Create, which is its
+ * screenshot button. See the .c for which buttons, why those, and the one edge it does not close.
  */
 unsigned rc_pad_chord_edges(void);
 

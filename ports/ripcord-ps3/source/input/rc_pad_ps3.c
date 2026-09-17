@@ -161,9 +161,9 @@ int rc_pad_read(halyard_input_state *out)
                 | (data.BTN_L3       ? HALYARD_PAD_L3         : 0u)
                 | (data.BTN_R3       ? HALYARD_PAD_R3         : 0u)
                 /*
-                 * START is Options and SELECT is Create. The PS5 renamed both, and the console is told
-                 * the new names' codes; a DualShock 3 has the old buttons in the same places, so this
-                 * maps by position rather than by name.
+                 * START travels as Options and SELECT as Create. The PS5 renamed both, and the console
+                 * is told the new names' codes; a DualShock 3 has the old buttons in the same places, so
+                 * this maps by position rather than by name.
                  */
                 | (data.BTN_START    ? HALYARD_PAD_OPTIONS    : 0u)
                 | (data.BTN_SELECT   ? HALYARD_PAD_CREATE     : 0u);
@@ -191,7 +191,14 @@ int rc_pad_read(halyard_input_state *out)
             return 0;   /* connected but has not yet said anything - nothing truthful to send */
 
         /*
-         * THE DIAGNOSTICS CHORD: Options + Create, held together.
+         * THE IN-SESSION MENU'S CHORD: SELECT + START, held together.
+         *
+         * NAMED FOR THE PAD IN SOMEBODY'S HANDS. This runs on a DualShock 3, whose two menu buttons are
+         * SELECT and START; the PS5 renamed the same positions Create and Options, and those are the
+         * codes that go on the wire, which is why the constants below read the other way round. Where
+         * this file talks about what a player presses it says SELECT and START, and where it talks about
+         * what the console receives it says Create and Options. Getting those the wrong way round is how
+         * the log came to tell somebody to press two buttons their controller does not have.
          *
          * Two buttons rather than three, because three was awkward to press with the same hands that
          * are holding the controller. Both are menu buttons, which matters twice over: no game asks for
@@ -200,18 +207,18 @@ int rc_pad_read(halyard_input_state *out)
          *
          * L3 is out of it deliberately. It was in the first version and it is a sprint or a crouch in
          * most games, so delaying it by a fifth of a second to see whether a chord forms would be felt.
-         * Delaying Options or Create is not.
+         * Delaying SELECT or START is not.
          *
          * HELD BACK, NOT JUST SWALLOWED, and this is the fix rather than a refinement. The first
          * version removed the chord's buttons only once ALL of them were down, so whichever was pressed
-         * first had already gone out as an ordinary press - and Create on a PS5 is the screenshot
-         * button, so reaching for the overlay took a burst of screenshots with it. "A pause menu at
-         * worst" was wrong.
+         * first had already gone out as an ordinary press - and SELECT arrives at the PS5 as Create,
+         * which is its screenshot button, so reaching for the menu took a burst of screenshots with it.
+         * "A pause menu at worst" was wrong.
          *
          * So a press of either button is now withheld for RC_CHORD_WINDOW_MS. If the other arrives
          * inside that window the pair is swallowed and nothing reaches the console; if it does not, the
-         * press is released and travels normally, a fifth of a second late. A tap of Create still takes
-         * a screenshot. Only a deliberate pair does not.
+         * press is released and travels normally, a fifth of a second late. A lone tap of SELECT still
+         * takes a screenshot on the console. Only a deliberate pair does not.
          *
          * A fumbled chord - one button, a long pause, then the other - still toggles, and still leaks
          * the first button, because after the window it has genuinely been sent. That is the honest
@@ -237,8 +244,8 @@ int rc_pad_read(halyard_input_state *out)
                  * what makes that true of the second one. Without it, releasing one thumb a moment
                  * before the other left the remaining button looking like a fresh lone press - so it
                  * re-armed the hold-back, and then the release replayed it. Every use of the
-                 * diagnostics chord would have ended with a stray Options press behind it, which on
-                 * this port's menu is the options screen opening every time the overlay is toggled.
+                 * chord would have ended with a stray START press behind it, which on this port's own
+                 * menu is the options screen opening every time the in-session menu is used.
                  */
                 s_chord_held = 0;
                 suppress = held;
