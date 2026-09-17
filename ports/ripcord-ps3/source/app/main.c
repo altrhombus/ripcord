@@ -2413,15 +2413,28 @@ int main(void)
      */
     {
         halyard_pairing_record rec;
-        rc_account_probe account;
+        char account_id[24];
         int loaded = 0;
         int dir;
 
-        ps3_log("\nacct:  looking for this console's own copy of the PSN account id\n");
+        ps3_log("\nacct:  can this console tell us its own PSN account id?\n");
         for (dir = 0; dir < LOG_DIR_COUNT && !loaded; dir++)
             loaded = halyard_pairing_file_load(g_log_dirs[dir], &rec);
 
-        rc_account_probe_run(loaded ? rec.account_id : NULL, &account);
+        /*
+         * THE SEARCH RUNS ONLY WHEN THE DIRECT READ FAILED, which is the case it is actually for. It
+         * cost a few hundred file reads to establish where the value lives; repeating that at every
+         * launch would be paying the cost of an answer we already have. But a console that keeps it
+         * somewhere else - a different firmware, a different user layout - is exactly the situation
+         * where "where did it move to" is the question, and there the search is the only thing that
+         * can answer it. It needs a known-good value to look for, so it needs a pairing record.
+         */
+        if (rc_account_read(account_id, sizeof(account_id)) != RC_ACCOUNT_OK && loaded) {
+            rc_account_probe account;
+
+            ps3_log("acct:  the direct read failed - searching for where this console keeps it\n");
+            rc_account_probe_run(rec.account_id, &account);
+        }
     }
 
     /*
