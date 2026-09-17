@@ -35,6 +35,7 @@ static void pairing_record_defaults(halyard_pairing_record *rec)
     rec->decoder_rgb = 1;
     rec->bilinear_upscale = 0;
     rec->skip_until_keyframe = 0;
+    rec->rest_on_disconnect = 0;   /* ask, which is the field's own default - see it */
     rec->widescreen = 1;
     rec->smoothing = 1;
     rec->scale_thread = 0;
@@ -70,6 +71,7 @@ static void copy_shared_settings(halyard_pairing_record *dst, const halyard_pair
     dst->system_font = src->system_font;
     dst->video_rgb565 = src->video_rgb565;
     dst->skip_until_keyframe = src->skip_until_keyframe;
+    dst->rest_on_disconnect = src->rest_on_disconnect;
     dst->widescreen = src->widescreen;
     dst->smoothing = src->smoothing;
     dst->scale_thread = src->scale_thread;
@@ -237,6 +239,8 @@ int halyard_pairing_file_load_set(const char *argv0, halyard_pairing_set *set)
             shared.video_rgb565 = (strcmp(value, "rgb565") == 0);
         } else if (strcmp(line, "skipuntilkeyframe") == 0) {
             shared.skip_until_keyframe = atoi(value);
+        } else if (strcmp(line, "restondisconnect") == 0) {
+            shared.rest_on_disconnect = atoi(value);
         } else if (strcmp(line, "widescreen") == 0) {
             shared.widescreen = atoi(value);
         } else if (strcmp(line, "dumpvideo") == 0) {
@@ -509,6 +513,8 @@ int halyard_pairing_file_save_set(const char *argv0, const halyard_pairing_set *
         fprintf(f, "holdseconds=%d\n", shared->hold_seconds);
     if (shared->connection_quality)
         fprintf(f, "connquality=%d\n", shared->connection_quality);
+    fprintf(f, "skipuntilkeyframe=%d\n", shared->skip_until_keyframe);
+    fprintf(f, "restondisconnect=%d\n", shared->rest_on_disconnect);
 
     for (i = 0; i < set->count; i++) {
         const halyard_pairing_record *rec = &set->console[i];
