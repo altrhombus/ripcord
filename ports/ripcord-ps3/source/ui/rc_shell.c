@@ -1593,6 +1593,48 @@ static void draw(int can_forget)
          * about three milliseconds of the thing it is measuring. The raw counter is added up here and
          * turned into microseconds when the shell closes.
          */
+        /*
+         * TRIED AND REVERTED: EXPANDING THE BACKGROUND ON THE BORROWED SPE SCALER.
+         *
+         * rc_spu_yuv already holds three SPE threads, up before this shell runs and kept for the
+         * decoder; since the decoder began producing RGB they do nothing but scale, which is what
+         * expanding the quarter-size buffer is. Borrowing them rather than making a group was the right
+         * shape - that group is deliberately never destroyed, so a second one would be SPEs the decoder
+         * never gets back.
+         *
+         * IT IS THE COST THAT KILLS IT. That scaler is general: it computes a source coordinate and a
+         * pair of weights per output pixel, for any ratio. rc_spu_yuv_job.h records mode 2 - interpolate
+         * in both directions, which a smooth background needs - at 21,038 us an SPE for a frame, while
+         * the streaming path's measured 2,992 us is mode 0, nearest. This expansion is a FOUR times
+         * ratio, so its only weights are 0, 1/4, 1/2 and 3/4 and every one is reachable by halving
+         * twice; the PPE does the whole screen in 11,343 us doing exactly that. A general scaler is
+         * about seven times more expensive than the special case, and no arrangement of the call fixes
+         * that.
+         *
+         * AND IT BROKE THE THING IT WAS MEANT NOT TO TOUCH. Missing the 25 ms deadline five times in a
+         * row sets s_ready = 0 inside rc_spu_yuv, for the rest of the process - so a menu that asked for
+         * the scaler and did not get it left the DECODER without one too. Exactly the impact on
+         * streaming this was supposed to avoid, arrived at from the other direction.
+         *
+         * The SPE route is still open, and it needs a kernel written for a 4x expansion rather than a
+         * borrowed general one. rc_wave_small exists for that: aligned, padded to a multiple of 16
+         * bytes a row, and ready to be handed to an MFC.
+         */
+        /*
+         * THE EXPANSION ON THE SPEs, WHEN THERE ARE ANY - AND NOTHING IS CREATED TO GET THEM.
+         *
+         * rc_spu_yuv already holds three SPE threads, brought up before this shell runs and kept for the
+         * decoder's colour path; since the decoder began producing RGB they do nothing but bilinear
+         * scaling, which is exactly what expanding the wave's quarter-size buffer is. So this borrows
+         * the group rather than making one - which matters more than the speed does, because that group
+         * is deliberately never destroyed (destroying it locked this console in b105 and again in b107),
+         * and a second one would be SPEs the decoder never gets back. Nothing here has to be cleaned up
+         * before a stream starts, because nothing here was taken.
+         *
+         * It is synchronous and it refuses rather than hangs: a zero return means the SPEs did not
+         * finish inside their deadline and the PPE does the frame, which is the same contract the stream
+         * path has always had.
+         */
         for (y = 0; y < s_scr_h; y++) {
             uint32_t *row = pixels + (size_t)y * (size_t)pitch;
             uint64_t at = rc_tick(), mid;
