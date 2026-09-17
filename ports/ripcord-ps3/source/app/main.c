@@ -1395,8 +1395,9 @@ static int check_connect(void)
         ps3_log("       held the session %u ms (%s): %u message(s), last type 0x%04x%s\n",
                 c.hold_ms,
                 c.menu_disconnect ? "Disconnect was chosen"
+                                  : c.xmb_quit ? "Quit was chosen from the PS menu"
                                   : c.stream_stalled ? "the console stopped sending"
-                                                     : "ended by the XMB, a fault or holdseconds",
+                                                     : "a fault, or holdseconds ran out",
                 c.held_messages, c.held_last_type,
                 c.held_channel_error ? ", CHANNEL ERROR" : "");
         if (c.held_stream_info_repeats > 0u)
