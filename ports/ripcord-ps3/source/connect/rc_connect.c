@@ -655,6 +655,23 @@ static int g_menu_quit;
 /* ...and whether the console was asked to rest on the way out. See where the goodbye is sent. */
 static int g_menu_rest;
 
+/*
+ * THE STANDING PREFERENCE, from the pairing record: 0 ask, 1 rest, 2 leave awake. When it is not "ask"
+ * the question is not put - somebody who has said what they want every time should not be asked again,
+ * and the menu still shows which way it will go on the Disconnect row itself.
+ */
+static int g_rest_pref;
+
+/*
+ * Whether to stop showing pictures after a loss until a clean one arrives. Off by default, and the
+ * description on the settings row says why that is the right default here: this port ALREADY asks the
+ * console for a fresh picture the moment a chain breaks, and repeats until one comes. That repairs the
+ * stream; this only decides what is on the television in the meantime - a second or two of artefacts,
+ * or a second or two of nothing. Neither is obviously better and the answer is a matter of taste, which
+ * is what makes it a setting rather than a fix.
+ */
+static int g_skip_until_keyframe;
+
 static void draw_session_menu(void);
 
 /* How many rows the current page has. Both the cursor and the drawing ask, so neither can disagree. */
@@ -1065,6 +1082,9 @@ static int g_frame_head;
 static int g_frame_count;
 static unsigned g_frames_queued;
 static unsigned g_frames_overrun;
+/* Pictures that arrived and were deliberately not shown - see the gate in on_video_frame. Reported so
+ * that a setting nobody remembers changing cannot silently account for a gap on the television. */
+static unsigned g_frames_skipped;
 static unsigned g_frames_oversized;
 static unsigned g_queue_worst;
 
@@ -1260,11 +1280,20 @@ static void send_input(rc_connect_result *out)
                 /*
                  * LAST IN THE LIST on purpose. It is the one entry here that cannot be undone by
                  * pressing it again, and the row the cursor starts on sends a PS press - so the
-                 * destructive one sits as far from the default as the list allows. It does not act:
-                 * it asks, on the second page.
+                 * destructive one sits as far from the default as the list allows.
+                 *
+                 * It asks only when the setting says to ask. Somebody who chose "rest the console" or
+                 * "leave it on" has already answered, and putting the question anyway would make a
+                 * preference that changes nothing - which is worse than not having one.
                  */
-                g_menu_page = 1;
-                g_menu_row = 0;
+                if (g_rest_pref == 0) {
+                    g_menu_page = 1;
+                    g_menu_row = 0;
+                } else {
+                    g_menu_rest = (g_rest_pref == 1);
+                    g_menu_quit = 1;
+                    g_menu_open = 0;
+                }
                 break;
             }
         }
@@ -1786,11 +1815,18 @@ static const char *bitrate_text(int kbps, char *out, size_t out_size)
  */
 static void draw_session_menu(void)
 {
+    /*
+     * The Disconnect row says what it will DO, because with a standing preference it no longer always
+     * does the same thing and the question that used to reveal that is skipped.
+     */
     static const char *const kMenu[3] = {
         "Send the PS button to the console",
         "Diagnostics overlay",
         "Disconnect",
     };
+    const char *disconnect = (g_rest_pref == 1) ? "Disconnect and rest the console"
+                           : (g_rest_pref == 2) ? "Disconnect"
+                                                : "Disconnect...";
     static const char *const kRest[2] = {
         "Disconnect, leave the console on",
         "Disconnect and put the console to rest",
@@ -1830,7 +1866,8 @@ static void draw_session_menu(void)
     for (i = 0; i < n; i++) {
         if (i == g_menu_row)
             rc_overlay_blend_rect(pad / 2, y - rc_overlay_px(6), w - pad, row_h, 0x402D7DF6u);
-        (void)rc_overlay_text(pad, y, 1, (i == g_menu_row) ? RC_OV_TEXT : RC_OV_LABEL, "%s", rows[i]);
+        (void)rc_overlay_text(pad, y, 1, (i == g_menu_row) ? RC_OV_TEXT : RC_OV_LABEL, "%s",
+                              (g_menu_page == 0 && i == 2) ? disconnect : rows[i]);
         if (g_menu_page == 0 && i == 1)
             rc_overlay_text_right(w - pad, y, 1, rc_overlay_shown() ? RC_OV_GOOD : RC_OV_TRACK,
                                   "%s", rc_overlay_shown() ? "on" : "off");
@@ -2179,6 +2216,22 @@ static void on_video_frame(void *userdata, const uint8_t *data, size_t length, i
 {
     (void)userdata;
     g_tally.video_frames++;
+
+    /*
+     * DROP EVERYTHING UNTIL A CLEAN PICTURE, when asked to. Counted as arrived first, because it did
+     * arrive - the stream is healthy and it is this end choosing not to show it.
+     *
+     * The frames after a broken chain reference pictures the decoder no longer has, so what they
+     * produce is somewhere between artefacts and garbage. Showing them is not wrong, which is why this
+     * is off by default: the IDR request has already gone out and usually lands within a second, and a
+     * second of artefacts recovers into a moving picture while a second of nothing is a freeze. Which
+     * of those reads worse is taste, and on a lossy link it is taste that changes.
+     */
+    if (g_skip_until_keyframe && g_awaiting_keyframe && !is_keyframe) {
+        g_frames_skipped++;
+        return;
+    }
+
     if (is_keyframe) {
         g_tally.keyframes++;
         /* The thing we were asking for. Cleared here rather than when the request went out, because a
@@ -2875,6 +2928,7 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
                     g_frame_count = 0;
                     g_frames_queued = 0u;
                     g_frames_overrun = 0u;
+                    g_frames_skipped = 0u;
                     g_frames_oversized = 0u;
                     g_queue_worst = 0u;
                     g_last_drain_ms = 0u;
@@ -3338,6 +3392,7 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
     out->blit_worst_us = g_blit_worst_us;
     out->frames_queued = g_frames_queued;
     out->frames_overrun = g_frames_overrun;
+    out->frames_skipped = g_frames_skipped;
     out->frames_oversized = g_frames_oversized;
     out->queue_worst = g_queue_worst;
     out->worst_read_gap_ms = g_worst_read_gap_ms;
@@ -3626,6 +3681,10 @@ rc_connect_stage rc_connect(unsigned wake_timeout_ms, rc_connect_log_fn log,
     g_menu_prev_buttons = 0u;
     g_menu_quit = 0;
     g_menu_rest = 0;
+    /* The two standing preferences. Defaulted here and overwritten from the record once it loads, so a
+     * connect that fails before the record is read still has defined behaviour. */
+    g_rest_pref = 0;
+    g_skip_until_keyframe = 0;
     g_ps_until = 0u;
     g_ps_sent = 0u;
 
@@ -3666,6 +3725,16 @@ rc_connect_stage rc_connect(unsigned wake_timeout_ms, rc_connect_log_fn log,
         }
     }
     out->had_record = 1;
+
+    /*
+     * THE TWO STANDING PREFERENCES, taken from the record the moment it loads. They belong to the
+     * person rather than to the stream, so they are read here rather than alongside the stream options
+     * at STREAM_INFO - the rest preference in particular has to be right even for a session that never
+     * reaches a picture.
+     */
+    g_rest_pref = rec.rest_on_disconnect;
+    g_skip_until_keyframe = (rec.skip_until_keyframe != 0);
+    out->skip_until_keyframe = g_skip_until_keyframe;
 
     if (rec.registkey_length == 0u) {
         out->stage = RC_CONNECT_BAD_RECORD;
