@@ -35,9 +35,11 @@
 #include <stdint.h>
 
 #include <sys/systime.h>
+#include <sysutil/sysutil.h>
 
 #include "platform/rc_platform.h"
 
+#include "rc_log.h"
 #include "rc_platform_ps3.h"
 
 /*
@@ -155,3 +157,34 @@ uint64_t rc_ps3_timebase_hz_expected(void)
  * clocks. That file carries the argument, what was confirmed and how, and the two things about the call
  * that are still [X].
  */
+
+/* See the header: an XMB quit that nothing answers is a force-termination, not a clean exit. */
+
+static volatile int s_exit_requested;
+
+static void ps3_sysutil_event(u64 status, u64 param, void *user)
+{
+    (void)param;
+    (void)user;
+    if (status == SYSUTIL_EXIT_GAME)
+        s_exit_requested = 1;
+}
+
+void rc_ps3_exit_watch(void)
+{
+    s32 rc = sysUtilRegisterCallback(SYSUTIL_EVENT_SLOT1, ps3_sysutil_event, NULL);
+
+    /*
+     * Reported rather than checked: a console that will not let us hear about the quit still runs, it
+     * just goes back to behaving the way every build before this one did. Saying so is what stops the
+     * next person diagnosing the reboot from scratch.
+     */
+    if (rc != 0)
+        rc_log("plat:  sysUtilRegisterCallback refused (0x%08X) - an XMB quit will not be clean\n",
+               (unsigned)rc);
+}
+
+int rc_ps3_exit_requested(void)
+{
+    return s_exit_requested;
+}
