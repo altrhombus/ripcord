@@ -642,124 +642,132 @@ static void rounded_shape(int x, int y, int w, int h, int r, int t, uint32_t arg
 }
 
 /*
- * THE GLOW, AS ONE FALLOFF RATHER THAN AS FOUR RINGS.
+ * THE GLOW, AS ONE FALLOFF RATHER THAN AS FOUR RINGS - AND CAPTURED, NOT DRAWN.
  *
  * The first version stacked four concentric rounded rectangles at a falling alpha. On a photograph that
- * is a halo; on a television it is four bands, because four steps is what four shapes give you, and the
- * banding is the same "I can see how this was drawn" the corners had. The distance function answers it
- * properly: alpha falls as the square of how far outside the card a pixel is, which is continuous and
- * is one pass instead of four.
+ * is a halo; on a television it is four bands, because four steps is what four shapes give you. The
+ * distance function answers it properly: alpha falls as the square of how far outside the card a pixel
+ * is, which is continuous and is one pass instead of four.
  *
- * AND THEN IT COST 21,666 us A FRAME, which is a third of the drawing for a soft edge nobody looks at
- * directly. The falloff was written the obvious way - (fade * fade) / reach / reach per pixel - and
- * `reach` is a run-time value, so that is TWO integer divisions by a non-constant on every one of two
- * hundred thousand pixels. The compiler cannot strength-reduce those the way it does a division by 255.
+ * IT DOES NOT GO INTO THE CACHED LAYER, because it breathes. The layer is rebuilt when the interface
+ * changes, which is a cursor move; anything that changes every frame cannot live in it. So the shape is
+ * rasterised ONCE into a coverage mask - which is what it really is, one colour at a varying alpha - and
+ * each frame multiplies that mask by a single scalar. Rasterising is the expensive half and it happens
+ * on a rebuild; the per-frame half is a byte, a multiply and a blend.
  *
- * The falloff only ever depends on the distance, of which there are `reach` possible values, so it is a
- * table built once per call: about sixteen hundred divisions instead of four hundred thousand.
+ * The mask is a box around the card rather than a screen, because that is all it can ever cover.
+ *
+ * ITS INSIDE IS STILL NOT PAINTED. The card covers exactly the region where the distance is negative,
+ * and what showed through was the glow's own alpha - at most 64 of 255 - through the twelve percent the
+ * card's fill lets past. One pixel of overlap is kept so the card's antialiased edge has something to
+ * sit on.
  */
-#define SH_GLOW_MAX 2048
+#define SH_GLOW_MAX      2048
+#define SH_GLOW_MASK_W    540
+#define SH_GLOW_MASK_H    640
 
-static void rounded_glow(int x, int y, int w, int h, int r, int spread, uint32_t argb)
+static unsigned char s_glow_mask[SH_GLOW_MASK_W * SH_GLOW_MASK_H];
+static short s_glow_lo[SH_GLOW_MASK_H], s_glow_hi[SH_GLOW_MASK_H];
+static int s_glow_x, s_glow_y, s_glow_w, s_glow_h;
+static uint32_t s_glow_rgb;
+static int s_glow_live;
+
+static void glow_capture(int x, int y, int w, int h, int r, int spread, uint32_t argb)
 {
     static unsigned char fall[SH_GLOW_MAX];
     unsigned alpha = (argb >> 24) & 0xffu;
-    uint32_t rgb = argb & 0x00FFFFFFu;
     sh_rrect box;
     int reach = spread * SH_SUB;
     int row, i, lo, hi;
 
-    if (w <= 0 || h <= 0 || alpha == 0u || spread <= 0 || s_px == NULL)
+    s_glow_live = 0;
+    if (w <= 0 || h <= 0 || alpha == 0u || spread <= 0)
         return;
     if (reach > SH_GLOW_MAX)
         reach = SH_GLOW_MAX;
+
+    s_glow_x = x - spread;
+    s_glow_y = y - spread;
+    s_glow_w = w + spread * 2;
+    s_glow_h = h + spread * 2;
+    /* Too large for the mask is not a failure worth handling twice: the card simply goes unlit. */
+    if (s_glow_w > SH_GLOW_MASK_W || s_glow_h > SH_GLOW_MASK_H)
+        return;
+    s_glow_rgb = argb & 0x00FFFFFFu;
     rrect_set(&box, x, y, w, h, r);
 
+    /*
+     * The falloff, as a table. Written the obvious way it is (fade * fade) / reach / reach per pixel,
+     * and `reach` is a RUN-TIME value - two integer divisions by a non-constant on every pixel, which
+     * the compiler cannot strength-reduce the way it does a division by 255.
+     */
     for (i = 0; i < reach; i++) {
         int fade = reach - i;
 
         fall[i] = (unsigned char)((alpha * (unsigned)((fade * fade) / reach)) / (unsigned)reach);
     }
 
-    lo = x - spread;
-    hi = x + w + spread;
-    if (lo < 0) lo = 0;
-    if (hi > s_scr_w) hi = s_scr_w;
+    memset(s_glow_mask, 0, (size_t)s_glow_h * SH_GLOW_MASK_W);
+    for (i = 0; i < s_glow_h; i++) {
+        s_glow_lo[i] = 0;
+        s_glow_hi[i] = 0;
+    }
 
-    for (row = y - spread; row <= y + h + spread; row++) {
-        uint32_t *dst;
-        int dy, col, flat_lo, flat_hi;
+    lo = s_glow_x;
+    hi = s_glow_x + s_glow_w;
 
-        if (row < 0 || row >= s_scr_h)
-            continue;
-        dy = rrect_dy(&box, row);
+    for (row = s_glow_y; row < s_glow_y + s_glow_h; row++) {
+        unsigned char *m = s_glow_mask + (size_t)(row - s_glow_y) * SH_GLOW_MASK_W;
+        int dy = rrect_dy(&box, row);
+        int col, first = -1, last = -1;
+
         if (dy - box.r >= reach)
             continue;
-        dst = s_px + (size_t)row * (size_t)s_pitch;
-        /*
-         * THE WIDEST THING ON THE ROW, AND THE ONE THAT WAS NOT SAYING SO.
-         *
-         * A glow reaches `spread` beyond the card on every side, so it sets the row's bounds wherever
-         * it appears. Leaving this out did not lose the glow - it is drawn into the layer either way -
-         * it lost the COMPOSITE's permission to look at it, so the parts of the glow outside whatever
-         * else happened to be on that row were never read back. The result reads as a glow with square
-         * corners, present on the side facing the other card and absent on the outside, and visible
-         * along the bottom only where the word "standby" happened to widen the row.
-         */
-        layer_note_ink(row, lo, hi);
-
-        /* The straight band, where the distance is the row's alone - the same decomposition
-         * rounded_shape uses, and for the same reason. */
-        flat_lo = (box.cx - box.hw) / SH_SUB;
-        flat_hi = (box.cx + box.hw) / SH_SUB;
-        if (flat_lo < lo) flat_lo = lo;
-        if (flat_hi > hi) flat_hi = hi;
-        /*
-         * THE INSIDE IS NOT PAINTED AT ALL, and that is most of the glow's pixels.
-         *
-         * A glow is drawn immediately before the card that casts it, and the card covers exactly the
-         * region where this distance is negative. What showed through was the glow's own alpha - at
-         * most 64 of 255 - seen through the twelve percent the card's fill lets past: about three
-         * percent of a colour that is already nearly the background. Skipping it takes the glow from
-         * the whole card plus its surround to a band around the edge, which is the only part anybody
-         * has ever seen. One pixel of overlap is kept so the card's own antialiased edge still has
-         * something to sit on.
-         */
-        if (dy - box.r < -SH_SUB && flat_hi > flat_lo) {
-            /* An interior row: the straight band is under the card, so only its two ends matter. */
-            if (flat_lo > lo)
-                for (col = lo; col < flat_lo; col++) {
-                    int d = rrect_dist(&box, col, dy);
-
-                    if (d < reach && d >= -SH_SUB)
-                        blend_one(&dst[col], rgb, fall[d < 0 ? 0 : d]);
-                }
-            for (col = flat_hi; col < hi; col++) {
-                int d = rrect_dist(&box, col, dy);
-
-                if (d < reach && d >= -SH_SUB)
-                    blend_one(&dst[col], rgb, fall[d < 0 ? 0 : d]);
-            }
-            continue;
-        }
-
-        if (flat_hi > flat_lo) {
-            int d = dy - box.r;
-
-            /* Constant across the span, so this one IS a job for the table. */
-            blend_span(dst, flat_lo, flat_hi, rgb, fall[d < 0 ? 0 : d]);
-        }
 
         for (col = lo; col < hi; col++) {
-            int d;
+            int d = rrect_dist(&box, col, dy);
+            unsigned a;
 
-            if (col >= flat_lo && col < flat_hi)
-                continue;
-            d = rrect_dist(&box, col, dy);
             if (d >= reach || d < -SH_SUB)
                 continue;
-            blend_one(&dst[col], rgb, fall[d < 0 ? 0 : d]);
+            a = fall[d < 0 ? 0 : d];
+            if (a == 0u)
+                continue;
+            m[col - s_glow_x] = (unsigned char)a;
+            if (first < 0)
+                first = col - s_glow_x;
+            last = col - s_glow_x;
         }
+        if (first >= 0) {
+            s_glow_lo[row - s_glow_y] = (short)first;
+            s_glow_hi[row - s_glow_y] = (short)(last + 1);
+        }
+    }
+    s_glow_live = 1;
+}
+
+/* One row of the captured glow over whatever is already there, at `scale` of its rasterised alpha. */
+static void glow_row(uint32_t *dst, int y, unsigned scale)
+{
+    const unsigned char *m;
+    int my = y - s_glow_y;
+    int mx, from, to;
+
+    if (!s_glow_live || my < 0 || my >= s_glow_h)
+        return;
+    from = s_glow_lo[my];
+    to = s_glow_hi[my];
+    if (to <= from)
+        return;
+    m = s_glow_mask + (size_t)my * SH_GLOW_MASK_W;
+
+    for (mx = from; mx < to; mx++) {
+        int px = s_glow_x + mx;
+        unsigned a = m[mx];
+
+        if (a == 0u || px < 0 || px >= s_scr_w)
+            continue;
+        blend_one(&dst[px], s_glow_rgb, div255(a * scale));
     }
 }
 
@@ -887,6 +895,40 @@ static int pill(const char *label, int x, int y, int h, uint32_t argb)
 
 /* ------------------------------------------------------------------------------------------------ */
 
+/*
+ * THE STATUS PIPS, held aside for the same reason as the glow: they move.
+ *
+ * ONLY THE GREEN ONE BREATHES, which is not what SHELL-DESIGN.md asked for and is the better call.
+ *
+ * The plan was a slow breathe on a console in STANDBY - "a console you must wake looks asleep". On a
+ * screen it turned out to be the wrong way round: amber already says "not ready" by being amber, and
+ * moving it as well makes the thing you cannot use the most animated thing on the card. Green moving
+ * gently says "this is awake and waiting for you", which is the one piece of information somebody is
+ * actually looking for. So amber sits still and green breathes, slowly and shallowly - it is saying
+ * "alive", not "look at me".
+ */
+#define SH_PIPS 4
+static struct { int x, y, d, ready; } s_pip[SH_PIPS];
+static int s_pip_count;
+
+/*
+ * A breath: `lo` to `hi` and back over `period`, eased at both ends so it turns rather than bounces.
+ * Smoothstep on a triangle - and the easing is the whole difference between something breathing and
+ * something blinking.
+ */
+static unsigned breathe(uint64_t ms, unsigned period, unsigned lo, unsigned hi)
+{
+    unsigned t = (unsigned)(ms % (uint64_t)period);
+    unsigned v = (t * 512u) / period;
+    unsigned e;
+
+    if (v > 511u) v = 511u;
+    v = (v < 256u) ? v : (511u - v);          /* a triangle, 0..255 */
+    e = (v * v * (765u - 2u * v)) / 65025u;   /* 3v^2 - 2v^3, eased at both ends */
+    if (e > 255u) e = 255u;
+    return lo + ((hi - lo) * e) / 255u;
+}
+
 static void draw_card(const rc_menu_item *item, int x, int y, int w, int h, int selected)
 {
     int r = sy(22);
@@ -896,10 +938,10 @@ static void draw_card(const rc_menu_item *item, int x, int y, int w, int h, int 
     if (selected) {
         /*
          * THE GLOW IS WHAT MAKES IT "PICKED UP" RATHER THAN "HIGHLIGHTED" - one continuous falloff off
-         * the card's own outline. See rounded_glow on why this stopped being four stacked rectangles.
+         * the card's own outline, captured here and breathed over it each frame. See glow_capture.
          */
         s_shape_at = rc_tick();
-        rounded_glow(x, y, w, h, r, sy(26), 0x40000000u | (s_accent & 0x00FFFFFFu));
+        glow_capture(x, y, w, h, r, sy(26), 0x40000000u | (s_accent & 0x00FFFFFFu));
         s_sum_glow += us_since(s_shape_at);
     }
 
@@ -959,7 +1001,19 @@ static void draw_card(const rc_menu_item *item, int x, int y, int w, int h, int 
         int standby = (strcmp(item->value, "standby") == 0);
 
         if (ready || standby) {
-            rounded_shape(px, py, d, d, d / 2, 0, ready ? RC_OV_GOOD : RC_OV_WARN);
+            /*
+             * RECORDED, NOT DRAWN - it breathes, and the layer is not rebuilt per frame. Two hundred
+             * and fifty pixels put straight on the screen after everything else is cheaper than any
+             * arrangement that keeps it in the cache, and it sits on top of the card, so last is also
+             * the right order.
+             */
+            if (s_pip_count < SH_PIPS) {
+                s_pip[s_pip_count].x = px;
+                s_pip[s_pip_count].y = py;
+                s_pip[s_pip_count].d = d;
+                s_pip[s_pip_count].ready = ready;
+                s_pip_count++;
+            }
             px += d + sx(14);
         }
         (void)rc_overlay_text(px, rc_overlay_text_y(py, d, 1), 1, RC_OV_LABEL, "%s", item->value);
@@ -1231,6 +1285,9 @@ static void paint_ui(int can_forget)
 {
     int i;
 
+    s_pip_count = 0;
+    s_glow_live = 0;
+
     (void)rc_overlay_text_cost(NULL, NULL, 1);
     s_shape_at = rc_tick();
 
@@ -1447,6 +1504,7 @@ static void draw(int can_forget)
     uint32_t *pixels;
     int pitch = 0;
     uint64_t now = rc_time_ms();
+    unsigned glow_scale;
     int y;
 
     if (!rc_video_info_get(&info))
@@ -1499,6 +1557,12 @@ static void draw(int can_forget)
         s_cards != s_layer_cards || s_layer_w != s_scr_w || s_layer_h != s_scr_h)
         build_layer(can_forget);
 
+    /*
+     * WHAT MOVES THIS FRAME. Three numbers, read once here so every part of the frame agrees about
+     * where in its breath it is - and so the periods are visible together rather than scattered.
+     */
+    glow_scale = breathe(now, 4200u, 172u, 255u);
+
     s_ui_at = rc_tick();
     rc_wave_begin(s_scr_w, s_scr_h, now);
 
@@ -1536,6 +1600,11 @@ static void draw(int can_forget)
             rc_wave_row(row, s_scr_w, y);
             mid = rc_tick();
             s_ticks_rows += mid - at;
+            /*
+             * UNDER THE CARD AND OVER THE BACKGROUND, which is the order it is lit in - so it goes
+             * between the two rather than into either.
+             */
+            glow_row(row, y, glow_scale);
             if (s_lrow_hi[y] > s_lrow_lo[y]) {
                 composite_row(row, y);
                 s_ticks_comp += rc_tick() - mid;
@@ -1552,6 +1621,23 @@ static void draw(int can_forget)
         for (y = 0; y < s_scr_h; y++)
             rc_wave_row(pixels + (size_t)y * (size_t)pitch, s_scr_w, y);
         paint_ui(can_forget);
+        for (y = 0; y < s_scr_h; y++)
+            glow_row(pixels + (size_t)y * (size_t)pitch, y, glow_scale);
+    }
+    /*
+     * THE PIPS, LAST, because they sit on top of the card and because they are the one thing here small
+     * enough that drawing it per frame never needed a cache in the first place.
+     */
+    if (s_pip_count > 0) {
+        s_px = pixels;
+        s_pitch = pitch;
+        for (y = 0; y < s_pip_count; y++) {
+            const int d = s_pip[y].d;
+            unsigned a = s_pip[y].ready ? breathe(now, 4600u, 188u, 255u) : 255u;
+            uint32_t c = (s_pip[y].ready ? RC_OV_GOOD : RC_OV_WARN) & 0x00FFFFFFu;
+
+            rounded_shape(s_pip[y].x, s_pip[y].y, d, d, d / 2, 0, (a << 24) | c);
+        }
     }
     pump_input();
 
