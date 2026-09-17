@@ -397,19 +397,130 @@ static int rrect_dist(const sh_rrect *s, int col, int dy)
 /*
  * One rounded rectangle, filled when `t` is 0 and outlined otherwise.
  */
+/*
+ * A SPAN AT A TIME, NOT A PIXEL AT A TIME - and the reason is a property of this shape rather than an
+ * optimisation trick.
+ *
+ * b370 timed the parts of the drawing and settled where the frame goes: of 67,199 us, the text is 2,629
+ * and the rounded rectangles are 63,695. Every guess before that had been aimed at the text, on the
+ * strength of SHELL-DESIGN.md's warning about rasterising glyphs sixty times a second - which is sound
+ * advice about a cost that turns out to be four percent of this screen.
+ *
+ * At 42,029 us for roughly 620,000 pixels the fill was taking about 217 cycles each, which is an order
+ * of magnitude more than a blend costs. It was computing a distance function per pixel across the whole
+ * card, and the distance function is the expensive part - but look at what it returns. Inside the
+ * straight vertical band, which for a 360-wide card with a 22-pixel radius is 87 percent of every row,
+ * the horizontal term is clamped to zero and the distance is dy - r: a function of the ROW alone. Every
+ * pixel in that span gets the same coverage, and the whole per-pixel calculation was re-deriving one
+ * answer three hundred times a row.
+ *
+ * So each row is now three pieces: a left edge, a flat middle, and a right edge. The middle is one
+ * constant coverage and a tight blend with the multiply-by-alpha hoisted out; only the edges - about
+ * twenty pixels a side, where the corner arc lives - pay for a distance and a square root.
+ *
+ * This holds for the outline as well as the fill: an outline's coverage in that band is min of two
+ * functions of the same dy, which is still constant across the span.
+ */
+
+/* Exact division by 255 for a value already in 0..65535 - what a blend of two eight-bit terms produces.
+ * The compiler turns / 255u into a multiply and a shift anyway; this says so once, where it is read. */
+static unsigned div255(unsigned v)
+{
+    v += 128u;
+    return (v + (v >> 8)) >> 8;
+}
+
+/*
+ * ASKING FOR THE LINE BEFORE THE LOOP NEEDS IT.
+ *
+ * b371 took the arithmetic out of this loop and the shapes went from 42,029 us to 16,582 - better, and
+ * nothing like as much better as the work removed. What is left is about 186 cycles a blended pixel,
+ * which is not arithmetic at any plausible rate; it is the shape of the access. A blend READS the pixel
+ * it is about to write, the surface is eight megabytes so nothing is in cache, and the store depends on
+ * the load - so an in-order core stops dead on each one and waits for main memory.
+ *
+ * That also explains the thing that did not add up earlier: taking most of the work out barely moved
+ * the number, because the work was never what was being paid for.
+ *
+ * dcbt asks for a line without waiting for it. Issued far enough ahead, the miss for pixel x is already
+ * in flight while the loop is still working on x - 128, so the stalls overlap instead of queueing. It
+ * is a hint with no architectural effect: a wrong address costs nothing and faults nothing, which is
+ * why the bound below is about not wasting one rather than about safety.
+ *
+ * Note this is the OPPOSITE case to the dcbz in rc_wave.c, which did not help. There the surface was
+ * being written in full and never read, so there was nothing to wait for. Here every pixel is read.
+ */
+#if defined(__powerpc__) || defined(__PPC__) || defined(__powerpc64__)
+#define sh_prefetch(p) __asm__ __volatile__("dcbt 0,%0" : : "r"(p))
+#else
+#define sh_prefetch(p) ((void)(p))
+#endif
+
+/* A 128-byte line is 32 pixels; four lines ahead keeps roughly four misses in flight, which is about
+ * what this core will hold open at once. */
+#define SH_PF_STEP  32
+#define SH_PF_AHEAD 128
+
+/*
+ * One horizontal run at a single alpha. The globals are read ONCE here rather than per pixel: s_px and
+ * s_pitch are file-scope, the loop stores through s_px, and the compiler has to assume a store might
+ * reach them - so every iteration of the old per-pixel path reloaded all four before it could work out
+ * where the next pixel was.
+ */
+static void blend_span(uint32_t *row, int x0, int x1, uint32_t rgb, unsigned a)
+{
+    unsigned inv, sr, sg, sb;
+    int x;
+
+    if (a == 0u || x1 <= x0)
+        return;
+    if (a >= 255u) {
+        uint32_t c = 0xff000000u | rgb;
+
+        /* No read, so nothing to wait for and nothing to prefetch. */
+        for (x = x0; x < x1; x++)
+            row[x] = c;
+        return;
+    }
+    inv = 255u - a;
+    sr = ((rgb >> 16) & 0xffu) * a;     /* the source's contribution, which does not vary */
+    sg = ((rgb >> 8) & 0xffu) * a;
+    sb = (rgb & 0xffu) * a;
+
+    for (x = x0; x < x1; x++) {
+        uint32_t d;
+
+        if (((x - x0) % SH_PF_STEP) == 0 && x + SH_PF_AHEAD < x1)
+            sh_prefetch(&row[x + SH_PF_AHEAD]);
+
+        d = row[x];
+        row[x] = 0xff000000u
+               | (div255(sr + ((d >> 16) & 0xffu) * inv) << 16)
+               | (div255(sg + ((d >> 8) & 0xffu) * inv) << 8)
+               |  div255(sb + (d & 0xffu) * inv);
+    }
+}
+
 static void rounded_shape(int x, int y, int w, int h, int r, int t, uint32_t argb)
 {
     unsigned alpha = (argb >> 24) & 0xffu;
     uint32_t rgb = argb & 0x00FFFFFFu;
     sh_rrect box;
     int row, t_sub = t * SH_SUB;
+    int lo = x - 1, hi = x + w + 1;
 
     if (w <= 0 || h <= 0 || alpha == 0u || s_px == NULL)
         return;
     rrect_set(&box, x, y, w, h, r);
+    if (lo < 0) lo = 0;
+    if (hi > s_scr_w) hi = s_scr_w;
+    if (hi <= lo)
+        return;
 
     for (row = y - 1; row <= y + h; row++) {
-        int dy, col;
+        uint32_t *dst;
+        int dy, col, flat_lo, flat_hi;
+        unsigned flat;
 
         if (row < 0 || row >= s_scr_h)
             continue;
@@ -418,11 +529,35 @@ static void rounded_shape(int x, int y, int w, int h, int r, int t, uint32_t arg
         if (dy - box.r >= SH_SUB_HALF && t == 0)
             continue;
 
-        for (col = x - 1; col <= x + w; col++) {
+        dst = s_px + (size_t)row * (size_t)s_pitch;
+
+        /*
+         * The straight band, where the horizontal term is zero by construction and the distance is the
+         * row's alone. box.hw is the half-width with the corner radius already removed, so this is
+         * exactly the range over which that is true.
+         */
+        flat_lo = (box.cx - box.hw) / SH_SUB;
+        flat_hi = (box.cx + box.hw) / SH_SUB;
+        if (flat_lo < lo) flat_lo = lo;
+        if (flat_hi > hi) flat_hi = hi;
+
+        if (t <= 0) {
+            flat = cov_from(dy - box.r);
+        } else {
+            unsigned outer = cov_from(dy - box.r);
+            unsigned inner = cov_from(-((dy - box.r) + t_sub));
+
+            flat = (outer < inner) ? outer : inner;
+        }
+        if (flat_hi > flat_lo)
+            blend_span(dst, flat_lo, flat_hi, rgb, div255(alpha * flat));
+
+        /* The two ends, where the corner arc lives and a square root is genuinely needed. */
+        for (col = lo; col < hi; col++) {
             int d;
             unsigned c;
 
-            if (col < 0 || col >= s_scr_w)
+            if (col >= flat_lo && col < flat_hi)
                 continue;
             d = rrect_dist(&box, col, dy);
 
@@ -435,7 +570,7 @@ static void rounded_shape(int x, int y, int w, int h, int r, int t, uint32_t arg
                 c = (outer < inner) ? outer : inner;
             }
             if (c != 0u)
-                blend_at(col, row, rgb, (alpha * c) / 255u);
+                blend_span(dst, col, col + 1, rgb, div255(alpha * c));
         }
     }
 }
@@ -445,46 +580,81 @@ static void rounded_shape(int x, int y, int w, int h, int r, int t, uint32_t arg
  *
  * The first version stacked four concentric rounded rectangles at a falling alpha. On a photograph that
  * is a halo; on a television it is four bands, because four steps is what four shapes give you, and the
- * banding is the same "I can see how this was drawn" the corners had.
+ * banding is the same "I can see how this was drawn" the corners had. The distance function answers it
+ * properly: alpha falls as the square of how far outside the card a pixel is, which is continuous and
+ * is one pass instead of four.
  *
- * The distance function already in hand answers it properly: alpha falls as the square of how far
- * outside the card a pixel is, which is continuous, is one pass rather than four, and - since it paints
- * the surround rather than the card four times over - is a third of the pixels.
+ * AND THEN IT COST 21,666 us A FRAME, which is a third of the drawing for a soft edge nobody looks at
+ * directly. The falloff was written the obvious way - (fade * fade) / reach / reach per pixel - and
+ * `reach` is a run-time value, so that is TWO integer divisions by a non-constant on every one of two
+ * hundred thousand pixels. The compiler cannot strength-reduce those the way it does a division by 255.
+ *
+ * The falloff only ever depends on the distance, of which there are `reach` possible values, so it is a
+ * table built once per call: about sixteen hundred divisions instead of four hundred thousand.
  */
+#define SH_GLOW_MAX 2048
+
 static void rounded_glow(int x, int y, int w, int h, int r, int spread, uint32_t argb)
 {
+    static unsigned char fall[SH_GLOW_MAX];
     unsigned alpha = (argb >> 24) & 0xffu;
     uint32_t rgb = argb & 0x00FFFFFFu;
     sh_rrect box;
     int reach = spread * SH_SUB;
-    int row;
+    int row, i, lo, hi;
 
     if (w <= 0 || h <= 0 || alpha == 0u || spread <= 0 || s_px == NULL)
         return;
+    if (reach > SH_GLOW_MAX)
+        reach = SH_GLOW_MAX;
     rrect_set(&box, x, y, w, h, r);
 
+    for (i = 0; i < reach; i++) {
+        int fade = reach - i;
+
+        fall[i] = (unsigned char)((alpha * (unsigned)((fade * fade) / reach)) / (unsigned)reach);
+    }
+
+    lo = x - spread;
+    hi = x + w + spread;
+    if (lo < 0) lo = 0;
+    if (hi > s_scr_w) hi = s_scr_w;
+
     for (row = y - spread; row <= y + h + spread; row++) {
-        int dy, col;
+        uint32_t *dst;
+        int dy, col, flat_lo, flat_hi;
 
         if (row < 0 || row >= s_scr_h)
             continue;
         dy = rrect_dy(&box, row);
         if (dy - box.r >= reach)
             continue;
+        dst = s_px + (size_t)row * (size_t)s_pitch;
 
-        for (col = x - spread; col <= x + w + spread; col++) {
-            int d, fade;
+        /* The straight band, where the distance is the row's alone - the same decomposition
+         * rounded_shape uses, and for the same reason. */
+        flat_lo = (box.cx - box.hw) / SH_SUB;
+        flat_hi = (box.cx + box.hw) / SH_SUB;
+        if (flat_lo < lo) flat_lo = lo;
+        if (flat_hi > hi) flat_hi = hi;
+        if (flat_hi > flat_lo) {
+            int d = dy - box.r;
 
-            if (col < 0 || col >= s_scr_w)
+            blend_span(dst, flat_lo, flat_hi, rgb, fall[d < 0 ? 0 : d]);
+        }
+
+        for (col = lo; col < hi; col++) {
+            int d;
+            unsigned a;
+
+            if (col >= flat_lo && col < flat_hi)
                 continue;
             d = rrect_dist(&box, col, dy);
             if (d >= reach)
                 continue;
-            if (d < 0)
-                d = 0;      /* the card itself is drawn over this; a flat peak under it is free */
-            fade = reach - d;
-            blend_at(col, row, rgb,
-                     (alpha * (unsigned)((fade * fade) / reach)) / (unsigned)reach);
+            a = fall[d < 0 ? 0 : d];   /* the card is drawn over the inside; a flat peak there is free */
+            if (a != 0u)
+                blend_span(dst, col, col + 1, rgb, a);
         }
     }
 }
@@ -828,10 +998,6 @@ static unsigned s_worst_frame_us;
 static unsigned s_vram_us, s_vram_worst_us;
 static rc_thermal_record s_thermal;
 
-static unsigned us_since(uint64_t t)
-{
-    return (unsigned)(((rc_tick() - t) * 1000000u) / rc_tick_hz());
-}
 
 static void draw(int can_forget)
 {
