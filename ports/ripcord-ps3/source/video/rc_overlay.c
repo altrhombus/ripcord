@@ -61,12 +61,14 @@
 #define RC_OV_REBUILD_MS   250u
 
 /* Big enough for the design size at 1080p; anything smaller uses less of it. */
-#define RC_OV_MAX_W        RC_OV_DESIGN_W
-#define RC_OV_MAX_H        RC_OV_DESIGN_H
+#define RC_OV_MAX_W        RC_OV_SURFACE_W
+#define RC_OV_MAX_H        RC_OV_SURFACE_H
 
 static int s_scr_h = RC_OV_DESIGN_SCR_H;
-static int s_w = RC_OV_DESIGN_W;
-static int s_h = RC_OV_DESIGN_H;
+static int s_w = RC_OV_SURFACE_W;   /* the bitmap */
+static int s_h = RC_OV_SURFACE_H;
+static int s_panel_w = RC_OV_DESIGN_W;
+static int s_panel_h = RC_OV_DESIGN_H;
 
 int rc_overlay_px(int design)
 {
@@ -96,8 +98,13 @@ static int s_want_sysfont;
 /* Defined below; rc_overlay_set needs both of the panel's sizes to build the atlas with. */
 static float size_for(int scale);
 
-int rc_overlay_width(void)  { return s_w; }
-int rc_overlay_height(void) { return s_h; }
+/* The PANEL - what the diagnostics overlay and the status card lay out against. */
+int rc_overlay_width(void)  { return s_panel_w; }
+int rc_overlay_height(void) { return s_panel_h; }
+
+/* The SURFACE - the whole bitmap, which is larger. A menu uses this. */
+int rc_overlay_surface_width(void)  { return s_w; }
+int rc_overlay_surface_height(void) { return s_h; }
 
 /*
  * PREPARED AND SHOWN ARE DIFFERENT QUESTIONS, and separating them is what makes a runtime toggle safe.
@@ -195,8 +202,10 @@ void rc_overlay_set(int on)
             s_scr_h = info.height;
             s_x = rc_overlay_px(48);
             s_y = rc_overlay_px(32);
-            s_w = rc_overlay_px(RC_OV_DESIGN_W);
-            s_h = rc_overlay_px(RC_OV_DESIGN_H);
+            s_w = rc_overlay_px(RC_OV_SURFACE_W);
+            s_h = rc_overlay_px(RC_OV_SURFACE_H);
+            s_panel_w = rc_overlay_px(RC_OV_DESIGN_W);
+            s_panel_h = rc_overlay_px(RC_OV_DESIGN_H);
             if (s_w > info.width - s_x * 2)
                 s_w = info.width - s_x * 2;
             if (s_h > info.height - s_y * 2)
@@ -609,19 +618,32 @@ int rc_overlay_begin(void)
  * nothing when it is hidden; a status card is drawn because something asked for it, not because a
  * toggle is on.
  */
-void rc_overlay_end_now(int x, int y)
+void rc_overlay_end_now(int x, int y, int w, int h)
 {
     if (!s_ready)
         return;
-    memcpy(s_vram, s_bitmap, (size_t)s_w * (size_t)s_h * 4u);
-    s_rebuilt = 0;
+    if (w <= 0 || w > s_w)
+        w = s_w;
+    if (h <= 0 || h > s_h)
+        h = s_h;
+    /*
+     * Copied only when something was actually drawn. A caller that redraws because a frame went past
+     * rather than because anything moved - a menu nobody is touching - reaches this with the bitmap
+     * unchanged, and the surface is 2.3 MB. rc_overlay_end has always been gated this way; this one
+     * was not, and the shell is the first caller that runs at the flip rate.
+     */
+    if (s_rebuilt) {
+        memcpy(s_vram, s_bitmap, (size_t)s_w * (size_t)s_h * 4u);
+        s_rebuilt = 0;
+    }
     /*
      * THE POSITION IS AN ARGUMENT, NOT STATE, and it is that way because making it state was a bug.
      * The status card set a shared origin to centre itself and never put it back, so the diagnostics
      * overlay - which wants the top left - moved to the middle for the rest of the session. Two callers
      * wanting different positions is not a reason for either to mutate the other's.
      */
-    rc_video_overlay_blit(s_offset, s_w * 4, s_w, s_h, x, y);
+    /* Only the region the caller drew. The surface is bigger than most of its users. */
+    rc_video_overlay_blit(s_offset, s_w * 4, w, h, x, y);
 }
 
 void rc_overlay_end(void)
@@ -638,5 +660,5 @@ void rc_overlay_end(void)
         memcpy(s_vram, s_bitmap, (size_t)s_w * (size_t)s_h * 4u);
         s_rebuilt = 0;
     }
-    rc_video_overlay_blit(s_offset, s_w * 4, s_w, s_h, s_x, s_y);
+    rc_video_overlay_blit(s_offset, s_w * 4, s_panel_w, s_panel_h, s_x, s_y);
 }
