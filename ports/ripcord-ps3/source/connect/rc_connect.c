@@ -637,6 +637,24 @@ static int g_menu_open;
  * gamepad, so it is two rows that each say what they do.
  */
 static int g_menu_page;
+
+/*
+ * WHAT THE MENU LAST DREW, so it is rasterised when it CHANGES rather than when a frame goes past.
+ *
+ * b455 found this from the outside: with the menu up, pictures were dropped for queue overrun and
+ * keyframes re-requested - 12 overruns and 31 IDR requests across four openings, with zero loss events,
+ * so nothing was lost on the network. The diagnostics overlay, which is a busier panel, cost nothing at
+ * all. The difference is the throttle: rc_overlay_begin gates a rebuild to a few a second and returns 0
+ * in between, while rc_overlay_begin_now never does - it is for a caller drawing because something
+ * changed. This one was calling it every frame, so every frame cleared the whole panel and re-ran every
+ * text run and the glyph's per-pixel square root, on the thread that also drains the socket and feeds
+ * the decoder.
+ *
+ * The blit still happens every frame, because the picture underneath is redrawn and would otherwise
+ * wipe the menu; only the drawing is skipped. rc_overlay_end_now already declines to copy a bitmap
+ * nothing touched.
+ */
+static int g_menu_drawn;
 static int g_menu_row;
 static uint32_t g_menu_prev_buttons;
 static uint64_t g_ps_until;
@@ -1212,6 +1230,7 @@ static void send_input(rc_connect_result *out)
             g_menu_open = !g_menu_open;
             g_menu_page = 0;
             g_menu_row = 0;
+            g_menu_drawn = -1;      /* opening is a change, even onto the same page and row */
             g_menu_prev_buttons = in.buttons;
             out->overlay_toggles++;
         }
@@ -1813,20 +1832,32 @@ static const char *bitrate_text(int kbps, char *out, size_t out_size)
  * this menu's entries, so they are never wanted at once - and because that panel is the one surface
  * already proven to composite over a live picture every frame.
  */
-static void draw_session_menu(void)
+/*
+ * THE PANEL'S GEOMETRY, worked out in one place because three things read it: the fill, the blit, and
+ * the row layout. It used to be the same expression written twice, and neither copy counted the line at
+ * the bottom - so the hint was drawn below the panel it belongs to and cut off.
+ */
+static void menu_geometry(int *out_w, int *out_h, int *out_rows)
 {
-    /*
-     * The Disconnect row says what it will DO, because with a standing preference it no longer always
-     * does the same thing and the question that used to reveal that is skipped.
-     */
+    int n = menu_rows();
+
+    *out_rows = n;
+    *out_w = rc_overlay_width();
+    *out_h = rc_overlay_px(24)                    /* top padding                  */
+           + rc_overlay_px(44)                    /* the title's own advance      */
+           + rc_overlay_px(46) * n                /* the rows                     */
+           + rc_overlay_px(4) + rc_overlay_px(46) /* the hint, in a row's own box */
+           + rc_overlay_px(24);                   /* bottom padding               */
+}
+
+/* Rasterises the panel. Only called when something on it has changed - see g_menu_drawn. */
+static void paint_session_menu(void)
+{
     static const char *const kMenu[3] = {
         "Send the PS button to the console",
         "Diagnostics overlay",
         "Disconnect",
     };
-    const char *disconnect = (g_rest_pref == 1) ? "Disconnect and rest the console"
-                           : (g_rest_pref == 2) ? "Disconnect"
-                                                : "Disconnect...";
     static const char *const kRest[2] = {
         "Disconnect, leave the console on",
         "Disconnect and put the console to rest",
@@ -1834,34 +1865,28 @@ static void draw_session_menu(void)
     const char *const *rows = (g_menu_page == 0) ? kMenu : kRest;
     const char *title = (g_menu_page == 0) ? "Ripcord" : "Disconnect";
     /*
+     * The Disconnect row says what it will DO, because with a standing preference it no longer always
+     * does the same thing and the question that used to reveal that is skipped.
+     */
+    const char *disconnect = (g_rest_pref == 1) ? "Disconnect and rest the console"
+                           : (g_rest_pref == 2) ? "Disconnect"
+                                                : "Disconnect...";
+    /*
      * WHAT CIRCLE DOES, AS THE BUTTON RATHER THAN AS ITS NAME. It is the way out of both pages and the
      * reason there is no Resume row, so it has to be on screen - and the shell's footer already
-     * established how this machine says such a thing: the shape, then the word. Spelling "Circle" out
-     * in a sentence was this panel disagreeing with the rest of the application about its own idiom.
+     * established how this machine says such a thing: the shape, then the word.
      */
     const char *hint = (g_menu_page == 0) ? "Resume" : "Back";
-    int n = menu_rows();
-    int w = rc_overlay_width();
     int pad = rc_overlay_px(24);
     int row_h = rc_overlay_px(46);
-    int title_h = rc_overlay_px(44);
-    /*
-     * THE PANEL'S HEIGHT, WORKED OUT ONCE. It used to be the same expression written twice - for the
-     * fill and for the blit - and neither of them counted the line at the bottom, so the hint was drawn
-     * below the panel it belongs to and the bottom of it was cut off. Two copies of a formula that has
-     * to agree with a layout is how that happens; one variable that the layout and both users read is
-     * how it stops. The hint gets a full row's box, which is what every other line here gets.
-     */
-    int h = pad + title_h + row_h * n + rc_overlay_px(4) + row_h + pad;
-    int y = pad;
-    int i;
+    int w, h, n, y, i;
 
-    if (!rc_overlay_begin_now())
-        return;
+    menu_geometry(&w, &h, &n);
+    y = pad;
 
     rc_overlay_rect(0, 0, w, h, 0xE80E1218u);
     (void)rc_overlay_text(pad, y, 2, RC_OV_TEXT, "%s", title);
-    y += title_h;
+    y += rc_overlay_px(44);
 
     for (i = 0; i < n; i++) {
         if (i == g_menu_row)
@@ -1875,7 +1900,7 @@ static void draw_session_menu(void)
     }
 
     /*
-     * The glyph is a square box `size` on a side and the word is centred against that box rather than
+     * The glyph is a square box `g` on a side and the word is centred against that box rather than
      * nudged down by a constant, which is what rc_overlay_text_y is for. Chained off the width the
      * glyph reports, so the spacing cannot drift from the shape.
      */
@@ -1893,7 +1918,31 @@ static void draw_session_menu(void)
             (void)rc_overlay_text(gx + rc_overlay_px(36), rc_overlay_text_y(gy, g, 1), 1,
                                   RC_OV_TRACK, "%s", "the session is still running");
     }
+}
 
+static void draw_session_menu(void)
+{
+    /*
+     * EVERYTHING THIS PANEL SHOWS, AS ONE NUMBER. Only these four can change what is on it; if none has,
+     * the cached bitmap is blitted again and nothing is drawn. See g_menu_drawn for what drawing it
+     * every frame cost.
+     */
+    int state = (g_menu_page * 4096) + (g_menu_row * 64) + (g_rest_pref * 8)
+              + (rc_overlay_shown() ? 1 : 0);
+    int w, h, n;
+
+    menu_geometry(&w, &h, &n);
+
+    if (state != g_menu_drawn && rc_overlay_begin_now()) {
+        g_menu_drawn = state;
+        paint_session_menu();
+    }
+
+    /*
+     * BLITTED EVERY FRAME EITHER WAY, because the picture underneath is redrawn each time and would
+     * otherwise wipe this. rc_overlay_end_now already declines to re-copy a bitmap nothing touched, so
+     * the frames that skipped the drawing skip that too.
+     */
     rc_overlay_end_now(rc_overlay_px(48), rc_overlay_px(32), w, h);
 }
 
@@ -3680,6 +3729,7 @@ rc_connect_stage rc_connect(unsigned wake_timeout_ms, rc_connect_log_fn log,
     g_menu_open = 0;
     g_menu_page = 0;
     g_menu_row = 0;
+    g_menu_drawn = -1;
     g_menu_prev_buttons = 0u;
     g_menu_quit = 0;
     g_menu_rest = 0;
