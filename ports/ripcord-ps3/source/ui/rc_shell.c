@@ -2,6 +2,7 @@
 #include "rc_shell.h"
 
 #include <malloc.h>
+#include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -1071,6 +1072,9 @@ static void draw_card(const rc_menu_item *item, int x, int y, int w, int h, int 
              * destination rather than riding along. The card is on its way to exactly that spot.
              */
             if (!s_sprite_building && s_pip_count < SH_PIPS) {
+                /* Kept in slot coordinates. Which one belongs to the card that moves is a question
+                 * about the SELECTION, which changes without this ever being rebuilt - so it is asked
+                 * at drawing time instead, by seeing which pip falls inside the selected card's slot. */
                 s_pip[s_pip_count].x = px;
                 s_pip[s_pip_count].y = py;
                 s_pip[s_pip_count].d = d;
@@ -1792,6 +1796,94 @@ static int sprite_rebuild_from_menu(void)
     return 1;
 }
 
+/* ------------------------------------------------------------------------------------------------
+ * THE TROPHY CARD
+ *
+ * A panel that slides in from the top right, holds, and slides out. It is an instantly recognisable
+ * piece of this console's vocabulary, and the thing it is FOR is that the shell already has answers
+ * worth announcing: how many consoles replied, that a pairing took, that a console somebody is looking
+ * at has woken up. Before this they went to the log, which is on another machine.
+ *
+ * SHELL-DESIGN.md groups this with the title sequence under "the moment". The title sequence is dropped
+ * - it is the menu asking for credit - and this is not the same kind of thing at all: it is the machine
+ * answering a question somebody asked. That is why one went and this stayed.
+ *
+ * IT IS DRAWN LIVE, like everything else here that moves. A rounded panel and one line of text is about
+ * a millisecond and a half, and caching it to slide it would be machinery for a thing that is on screen
+ * for three seconds at a time.
+ *
+ * A QUEUE, NOT A SLOT. Two things can happen at once - a refresh finding a console awake while a pairing
+ * finishes - and the second must not cut the first off mid-sentence. Three deep: more than that and the
+ * person has walked away.
+ */
+#define SH_TOAST_MAX      3
+#define SH_TOAST_IN_MS   320u
+#define SH_TOAST_HOLD_MS 2600u
+#define SH_TOAST_OUT_MS  280u
+
+static struct {
+    char text[56];
+    uint32_t accent;
+} s_toast[SH_TOAST_MAX];
+static int s_toast_count;
+static uint64_t s_toast_at;
+
+static void toast(uint32_t accent, const char *fmt, ...)
+{
+    va_list ap;
+
+    if (s_toast_count >= SH_TOAST_MAX)
+        return;
+    va_start(ap, fmt);
+    (void)vsnprintf(s_toast[s_toast_count].text, sizeof(s_toast[0].text), fmt, ap);
+    va_end(ap);
+    s_toast[s_toast_count].accent = accent;
+    if (s_toast_count == 0)
+        s_toast_at = rc_time_ms();
+    s_toast_count++;
+}
+
+static void draw_toast(uint64_t now)
+{
+    int w = sx(520), h = sy(92), margin = sx(SH_MARGIN);
+    int rest_x = s_scr_w - margin - w;
+    int y = sy(58);
+    unsigned dt;
+    int x, i;
+
+    if (s_toast_count <= 0)
+        return;
+    dt = (now >= s_toast_at) ? (unsigned)(now - s_toast_at) : 0u;
+
+    if (dt < SH_TOAST_IN_MS) {
+        /* In from off the right edge, easing to a stop - the same curve the cursor uses. */
+        int t = (int)((dt * 255u) / SH_TOAST_IN_MS);
+
+        x = s_scr_w - ((s_scr_w - rest_x) * ease_out_cubic(t)) / 255;
+    } else if (dt < SH_TOAST_IN_MS + SH_TOAST_HOLD_MS) {
+        x = rest_x;
+    } else if (dt < SH_TOAST_IN_MS + SH_TOAST_HOLD_MS + SH_TOAST_OUT_MS) {
+        int t = (int)(((dt - SH_TOAST_IN_MS - SH_TOAST_HOLD_MS) * 255u) / SH_TOAST_OUT_MS);
+
+        x = rest_x + ((s_scr_w - rest_x) * t) / 255;
+    } else {
+        /* Done. Shuffle the queue down and start the next one now rather than on the next event. */
+        for (i = 1; i < s_toast_count; i++)
+            s_toast[i - 1] = s_toast[i];
+        s_toast_count--;
+        s_toast_at = now;
+        return;
+    }
+
+    rounded(x, y, w, h, sy(14), 0xEE0E1218u, 1);
+    rounded_edge(x, y, w, h, sy(14), sy(2), 0x40FFFFFFu);
+    /* A stripe in the message's own colour, which is the whole of what tells good from bad at a glance
+     * from the far side of a room. */
+    rounded(x + sx(16), y + sy(16), sx(6), h - sy(32), sy(3), s_toast[0].accent, 1);
+    (void)rc_overlay_text(x + sx(38), rc_overlay_text_y(y, h, 2), 2, RC_OV_TEXT, "%s",
+                          s_toast[0].text);
+}
+
 static void paint_live(int can_forget)
 {
     /*
@@ -2195,14 +2287,38 @@ static void draw(int can_forget)
     if (s_pip_count > 0) {
         s_px = pixels;
         s_pitch = pitch;
+        /*
+         * THE SELECTED CARD'S PIP RIDES WITH IT.
+         *
+         * Pips are recorded once, at each card's resting slot, which keeps the list independent of which
+         * card is chosen - and that is what lets a cursor move rebuild nothing. But the chosen card then
+         * RISES out of its slot and the pip stayed behind, which was reported from a sofa as the green
+         * dot not moving with the card. It is true of the sideways sweep too; the rise is simply where
+         * it shows.
+         *
+         * So the one pip inside the selected card's resting slot is offset by however far the sprite has
+         * travelled from it. No extra state, and it costs a rectangle test per pip per frame.
+         */
+        int slot_x = s_sel_x, slot_y = s_sel_y + s_lift;
+        int ride_x = s_draw_x - slot_x, ride_y = s_draw_y - slot_y;
+
         for (y = 0; y < s_pip_count; y++) {
             const int d = s_pip[y].d;
+            int ox = 0, oy = 0;
+
+            if (s_sprite_live && s_pip[y].x >= slot_x && s_pip[y].x < slot_x + s_card_w &&
+                s_pip[y].y >= slot_y && s_pip[y].y < slot_y + s_card_h) {
+                ox = ride_x;
+                oy = ride_y;
+            }
             unsigned a = s_pip[y].ready ? breathe(now, 4600u, 188u, 255u) : 255u;
             uint32_t c = (s_pip[y].ready ? RC_OV_GOOD : RC_OV_WARN) & 0x00FFFFFFu;
 
-            rounded_shape(s_pip[y].x, s_pip[y].y, d, d, d / 2, 0, (a << 24) | c);
+            rounded_shape(s_pip[y].x + ox, s_pip[y].y + oy, d, d, d / 2, 0, (a << 24) | c);
         }
     }
+    /* Over everything, because it is the one thing on screen that is asking to be read. */
+    draw_toast(now);
     pump_input();
 
     s_ui_us = (unsigned)(((rc_tick() - s_ui_at) * 1000000u) / rc_tick_hz());
@@ -2496,6 +2612,25 @@ static void refresh_tick(void)
     if (!scan_differs())
         return;
 
+    /*
+     * ANNOUNCED ONLY WHEN A CONSOLE WAKES, which is the one change somebody is plausibly waiting for.
+     * A console going to sleep, or a name being learned, is not news worth a panel sliding across the
+     * screen every ten seconds - and the card itself already says both.
+     */
+    {
+        int i, j;
+
+        for (i = 0; i < s_scan_found && i < RC_DISCOVER_MAX; i++) {
+            if (!s_scan.console[i].is_awake)
+                continue;
+            for (j = 0; j < s_found_count && j < RC_DISCOVER_MAX; j++)
+                if (strcmp(s_scan.console[i].address, s_found.console[j].address) == 0)
+                    break;
+            if (j < s_found_count && j < RC_DISCOVER_MAX && !s_found.console[j].is_awake)
+                toast(RC_OV_GOOD, "%s is ready", s_scan.console[i].host_name);
+        }
+    }
+
     s_found = s_scan;
     s_found_count = s_scan_found;
     adopt_names();
@@ -2510,7 +2645,13 @@ static void refresh_tick(void)
     rc_log("shell: a console's status changed - the cards were rebuilt\n");
 }
 
-static void search(void)
+/*
+ * `announce` is 0 for the search this shell runs on the way in. That one's answer is the card row
+ * itself, which appears a moment later and says the same thing in more detail - a panel sliding across
+ * to report a console somebody has had paired for weeks is the menu talking for the sake of it. An
+ * explicit "search the network" is a question somebody asked, and gets an answer.
+ */
+static void search(int announce)
 {
     int i;
 
@@ -2521,6 +2662,12 @@ static void search(void)
     s_found_count = rc_discover(SH_DISCOVER_MS, &s_found);
     s_searched = 1;
     adopt_names();
+    if (announce) {
+        if (s_found_count > 0)
+            toast(RC_OV_GOOD, "Found %d console%s", s_found_count, s_found_count == 1 ? "" : "s");
+        else
+            toast(RC_OV_WARN, "No console answered");
+    }
     rc_log("shell: %d console(s) answered\n", s_found_count);
     for (i = 0; i < s_found_count; i++) {
         /* The name and the state, never the address - a log leaves this console and that line is the
@@ -2936,7 +3083,7 @@ static int run_options(const char *const *dirs, int dir_count)
         if (edges & s_enter) {
             switch (rc_menu_selected_id(&s_menu)) {
             case SH_ID_SEARCH:
-                search();
+                search(1);
                 build_options();
                 (void)rc_menu_select_id(&s_menu, SH_ID_SEARCH);
                 forget_held();
@@ -3015,7 +3162,7 @@ rc_shell_action rc_shell_run(const char *const *dirs, int dir_count)
      * It costs the broadcast's deadline before the first card appears, and `search` puts "Searching for
      * consoles" on the television first, so the wait is something happening rather than a blank screen.
      */
-    search();
+    search(0);
     build_home();
     forget_held();
     s_scan_next = rc_time_ms() + SH_REFRESH_MS;
@@ -3060,13 +3207,17 @@ rc_shell_action rc_shell_run(const char *const *dirs, int dir_count)
 
                 /* Its address and its name are already known, so the one question a broadcast can
                  * answer is not asked again. */
-                (void)rc_pair_run(s_found.console[found].address, s_found.console[found].host_name,
-                                    s_found.console[found].host_id);
+                if (rc_pair_run(s_found.console[found].address, s_found.console[found].host_name,
+                                s_found.console[found].host_id))
+                    toast(RC_OV_GOOD, "Paired with %s",
+                          s_found.console[found].host_name[0] != '\0'
+                              ? s_found.console[found].host_name : "the console");
                 load_record(dirs, dir_count);
                 build_home();
                 forget_held();
             } else if (id == SH_ID_PAIR_NEW) {
-                (void)rc_pair_run(NULL, NULL, NULL);
+                if (rc_pair_run(NULL, NULL, NULL))
+                    toast(RC_OV_GOOD, "Paired");
                 load_record(dirs, dir_count);
                 build_home();
                 forget_held();
@@ -3079,7 +3230,14 @@ rc_shell_action rc_shell_run(const char *const *dirs, int dir_count)
          */
         if ((edges & HALYARD_PAD_TRIANGLE) && id >= SH_ID_PAIRED_BASE &&
             id < SH_ID_PAIRED_BASE + HALYARD_PAIRING_MAX_CONSOLES && s_set.count > 0) {
-            (void)confirm_forget(id - SH_ID_PAIRED_BASE);
+            {
+                int at = id - SH_ID_PAIRED_BASE;
+                char name[HALYARD_PAIRING_NAME_MAX];
+
+                snprintf(name, sizeof(name), "%s", s_set.console[at].name);
+                if (confirm_forget(at))
+                    toast(RC_OV_WARN, "Forgot %s", name[0] != '\0' ? name : "that console");
+            }
             build_home();
             forget_held();
         }
