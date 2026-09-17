@@ -404,6 +404,204 @@ static void expand_row(uint32_t *out, int w, const uint32_t *a, const uint32_t *
 }
 
 /*
+ * MOTES, AND WHY THEY ARE DRAWN AT A QUARTER SIZE ON PURPOSE.
+ *
+ * The XMB's background has slow drifting points of light in it, and a nod to them is the cheapest
+ * recognisable thing this screen can carry. They go into the SMALL buffer, before the expansion - which
+ * is not a shortcut, it is the better picture: a mote one pixel across at 480 wide becomes a soft
+ * four-pixel bloom once the bilinear expansion has been over it, where the same mote drawn at full size
+ * would be a hard dot. The blur is free and it is what makes them read as light rather than as pixels.
+ *
+ * It is also almost nothing to compute. Forty motes over a 481x271 buffer is a few hundred pixels a
+ * frame against the two million the expansion writes.
+ *
+ * ADDITIVE, AND CLAMPED. They brighten what is under them rather than replacing it, so a mote crossing
+ * a ribbon reads as being in the same light as the ribbon. The drift is slow, upward and slightly
+ * sideways, and they wrap - nobody watches one long enough for the wrap to be visible, and the
+ * alternative is a spawn schedule that has to be tuned.
+ */
+/*
+ * MOTES THAT LEAVE THE RIBBON, AND HAVE A DEPTH.
+ *
+ * Two reversals live here and both were corrections from looking at a television.
+ *
+ * FIRST, THEY ARE DRAWN AT FULL SIZE. They went into the small buffer so the 4x expansion would soften
+ * them for nothing - and a two-pixel splat at 480 wide becomes an eight-pixel smear on screen, which
+ * moving looks like something too fast for the shutter. Free blur is only free if blur is what you
+ * wanted. Sixteen motes at a few dozen pixels each is nothing against the two million the expansion
+ * writes, so they are drawn properly instead.
+ *
+ * SECOND, THEY RISE FROM THE MIDDLE RATHER THAN THE FLOOR. Every mote starting at the bottom and
+ * travelling up reads as carbonation in a glass, which is a different thing from the XMB's background
+ * and a busier one. Its points of light leave the ribbon - some up, some down - and live a while. So
+ * each is born in the band the ribbons occupy, picks a direction, fades in, drifts, and fades out.
+ *
+ * AND THEY HAVE A DEPTH, which is the part that makes it read as air rather than as dots. A far mote is
+ * small, bright and slow; a near one is large, dim and quick. That is three numbers off one - the tent
+ * kernel's radius, the peak brightness, and the speed - and the brightness falls as the SQUARE of the
+ * radius, because a mote's total light is its peak times its area and the near ones should not be
+ * brighter for being bigger. What comes out is a soft translucent blob for near and a crisp point for
+ * far, which is the out-of-focus effect without anything that could be called a blur.
+ *
+ * The kernel is evaluated against the sub-pixel position, which is what keeps the motion smooth: a mote
+ * placed on whole pixels hops, and at this size a hop is the whole dot.
+ */
+#define RC_WAVE_MOTES 26
+
+/* The band they are born in, in percent of the height - where the ribbons actually are. */
+#define RC_WAVE_MOTE_BAND_TOP 50
+#define RC_WAVE_MOTE_BAND_BOT 74
+
+static struct {
+    int x, y;          /* 16.16 fixed point, in FULL-SIZE pixels */
+    int vx, vy;        /* per second, same units                 */
+    int age, life;     /* milliseconds                           */
+    short level;       /* peak brightness at the centre, 0-255   */
+    short slope;       /* the tent's steepness: SMALLER is wider, softer and nearer */
+    short draw;        /* level faded for age - this frame's     */
+} s_mote[RC_WAVE_MOTES];
+static int s_motes_ready;
+static uint64_t s_mote_ms;
+
+/* A small deterministic sequence - the motes want to be scattered, not random, and a table would be
+ * eighteen lines of numbers nobody can check. */
+static unsigned mote_rand(unsigned *state)
+{
+    *state = (*state * 1664525u) + 1013904223u;
+    return (*state >> 16) & 0x7fffu;
+}
+
+static unsigned s_mote_seed = 0x5eed1234u;
+
+static void mote_spawn(int i, int w, int h, int stagger)
+{
+    int top = (h * RC_WAVE_MOTE_BAND_TOP) / 100;
+    int bot = (h * RC_WAVE_MOTE_BAND_BOT) / 100;
+    int depth = (int)(mote_rand(&s_mote_seed) % 256u);   /* 0 far, 255 near */
+    int up = (mote_rand(&s_mote_seed) & 1u) != 0u;
+
+    s_mote[i].x = (int)(mote_rand(&s_mote_seed) % (unsigned)w) << 16;
+    s_mote[i].y = (top + (int)(mote_rand(&s_mote_seed) % (unsigned)(bot - top))) << 16;
+
+    /* Near ones move faster, which is the parallax half of the depth. 65,536 is a pixel a second. */
+    s_mote[i].vy = (6 + (depth * 16) / 255) * 65536;
+    if (up)
+        s_mote[i].vy = -s_mote[i].vy;
+    s_mote[i].vx = ((int)(mote_rand(&s_mote_seed) % 7u) - 3) * 65536;
+
+    /*
+     * Radius 1.5 px far to 3.5 near; the slope is 256/radius. The peak falls as the square of the
+     * radius so the total light is about the same either way - a near mote is not brighter for being
+     * bigger, it is fainter and wider, which is what out-of-focus looks like.
+     */
+    s_mote[i].slope = (short)(170 - (depth * 97) / 255);
+    s_mote[i].level = (short)(92 - (depth * 72) / 255);
+
+    s_mote[i].life = 9000 + (int)(mote_rand(&s_mote_seed) % 7000u);
+    /* At start-up they must not all be born together, or they breathe in unison for the first minute. */
+    s_mote[i].age = stagger ? (int)(mote_rand(&s_mote_seed) % (unsigned)s_mote[i].life) : 0;
+}
+
+static void motes_update(int w, int h, uint64_t ms)
+{
+    unsigned elapsed;
+    int i;
+
+    if (!s_motes_ready) {
+        for (i = 0; i < RC_WAVE_MOTES; i++)
+            mote_spawn(i, w, h, 1);
+        s_motes_ready = 1;
+    }
+
+    /* Clamped: a first frame, or a clock that jumped, must not teleport every mote across the screen. */
+    elapsed = (s_mote_ms == 0u || ms < s_mote_ms) ? 0u : (unsigned)(ms - s_mote_ms);
+    if (elapsed > 200u)
+        elapsed = 200u;
+    s_mote_ms = ms;
+
+    for (i = 0; i < RC_WAVE_MOTES; i++) {
+        int level, t;
+
+        s_mote[i].age += (int)elapsed;
+        if (s_mote[i].age >= s_mote[i].life) {
+            mote_spawn(i, w, h, 0);
+            continue;
+        }
+        s_mote[i].x += (int)(((int64_t)s_mote[i].vx * (int)elapsed) / 1000);
+        s_mote[i].y += (int)(((int64_t)s_mote[i].vy * (int)elapsed) / 1000);
+        if (s_mote[i].x < 0)
+            s_mote[i].x += w << 16;
+        if (s_mote[i].x >= (w << 16))
+            s_mote[i].x -= w << 16;
+
+        /* In over the first fifth of its life, out over the last third. Nothing appears or vanishes. */
+        level = s_mote[i].level;
+        t = (s_mote[i].age * 255) / s_mote[i].life;
+        if (t < 51)
+            level = (level * t) / 51;
+        else if (t > 170)
+            level = (level * (255 - t)) / 85;
+        s_mote[i].draw = (short)level;
+    }
+}
+
+/* One axis of the tent, for an offset of `step` whole pixels against a fraction in 256ths. */
+static int mote_weight(int step, int frac, int slope)
+{
+    int t = step * 256 - frac;
+
+    if (t < 0)
+        t = -t;
+    t = 256 - (t * slope) / 256;
+    return (t < 0) ? 0 : t;
+}
+
+static void motes_row(uint32_t *dst, int w, int y)
+{
+    int i;
+
+    for (i = 0; i < RC_WAVE_MOTES; i++) {
+        int cy, cx, fx, fy, dy, wy, dx;
+
+        if (s_mote[i].draw <= 0)
+            continue;
+        cy = s_mote[i].y >> 16;
+        dy = y - cy;
+        if (dy < -3 || dy > 4)
+            continue;
+        fy = (s_mote[i].y >> 8) & 0xff;
+        wy = mote_weight(dy, fy, s_mote[i].slope);
+        if (wy <= 0)
+            continue;
+
+        cx = s_mote[i].x >> 16;
+        fx = (s_mote[i].x >> 8) & 0xff;
+
+        for (dx = -3; dx <= 4; dx++) {
+            int px = cx + dx;
+            int wx = mote_weight(dx, fx, s_mote[i].slope);
+            unsigned add, r, g, b;
+            uint32_t c;
+
+            if (px < 0 || px >= w || wx <= 0)
+                continue;
+            add = (unsigned)((s_mote[i].draw * wx * wy) >> 16);
+            if (add == 0u)
+                continue;
+
+            c = dst[px];
+            r = ((c >> 16) & 0xffu) + add;
+            g = ((c >> 8) & 0xffu) + add;
+            b = (c & 0xffu) + add;
+            if (r > 255u) r = 255u;
+            if (g > 255u) g = 255u;
+            if (b > 255u) b = 255u;
+            dst[px] = 0xff000000u | (r << 16) | (g << 8) | b;
+        }
+    }
+}
+
+/*
  * BEGIN AND ROW, RATHER THAN ONE CALL THAT FILLS A SCREEN.
  *
  * The shell no longer wants the background written into the surface and then read back to blend the
@@ -441,7 +639,27 @@ void rc_wave_begin(int w, int h, uint64_t ms)
     if (s_sh < 2) s_sh = 2;
 
     wave_fill(s_small, s_sw + 1, s_sh + 1, RC_WAVE_SMALL_W, ms);
+    motes_update(w, h, ms);
     s_last_us = (unsigned)(((rc_tick() - s_row_t0) * 1000000u) / rc_tick_hz());
+}
+
+const uint32_t *rc_wave_small(int *w, int *h, int *stride_px)
+{
+    if (s_sw <= 0)
+        return NULL;
+    if (w != NULL) *w = s_sw + 1;
+    if (h != NULL) *h = s_sh + 1;
+    if (stride_px != NULL) *stride_px = RC_WAVE_SMALL_W;
+    return s_small;
+}
+
+void rc_wave_motes_row(uint32_t *dst, int w, int y)
+{
+    if (dst == NULL || w <= 0)
+        return;
+    if (w > RC_WAVE_MAX_W)
+        w = RC_WAVE_MAX_W;
+    motes_row(dst, w, y);
 }
 
 void rc_wave_row(uint32_t *dst, int w, int y)
@@ -460,6 +678,7 @@ void rc_wave_row(uint32_t *dst, int w, int y)
 
     expand_row(dst, w, s_small + (size_t)sy * RC_WAVE_SMALL_W,
                s_small + (size_t)(sy + 1) * RC_WAVE_SMALL_W, s_sw, fy);
+    motes_row(dst, w, y);
 }
 
 void rc_wave_draw(uint32_t *dst, int w, int h, int stride_px, uint64_t ms)
