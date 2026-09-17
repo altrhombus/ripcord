@@ -45,15 +45,26 @@ RANDOM_SOURCES := \
 
 CORE := $(PORT_ROOT)/../common
 
+# THE BACKGROUND'S TWELVE COLOURS. rc_wave.c is plain arithmetic over a pixel buffer - no PSL1GHT, no
+# display - so the one piece of this shell nobody can review by looking at it on any given day can be
+# asserted here instead. It needs the host platform seam ports/common/tests already has, for the clock
+# rc_wave times itself with, and a stub for rc_log because nothing here wants the output.
+WAVE_TARGET := $(BUILD)/wave_test
+WAVE_SOURCES := \
+	$(PORT_ROOT)/source/ui/rc_wave.c \
+	$(CORE)/tests/rc_platform_host.c \
+	wave_test.c
+
 .PHONY: all check build clean
 
 all: check
 
-check: $(H264_TARGET) $(RANDOM_TARGET)
+check: $(H264_TARGET) $(RANDOM_TARGET) $(WAVE_TARGET)
 	./$(H264_TARGET)
 	./$(RANDOM_TARGET)
+	./$(WAVE_TARGET)
 
-build: $(H264_TARGET) $(RANDOM_TARGET)
+build: $(H264_TARGET) $(RANDOM_TARGET) $(WAVE_TARGET)
 
 $(H264_TARGET): $(H264_SOURCES)
 	@mkdir -p $(@D)
@@ -62,6 +73,11 @@ $(H264_TARGET): $(H264_SOURCES)
 $(RANDOM_TARGET): $(RANDOM_SOURCES) stub-sdk/lv2/system.h
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) -I stub-sdk -I $(CORE) -o $@ $(RANDOM_SOURCES)
+
+$(WAVE_TARGET): $(WAVE_SOURCES)
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) -I $(PORT_ROOT)/source/ui -I $(CORE)/util -I $(CORE)/platform \
+		-o $@ $(WAVE_SOURCES) -lm
 
 clean:
 	rm -rf $(BUILD)
