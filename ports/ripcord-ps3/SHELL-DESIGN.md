@@ -229,7 +229,13 @@ What it settles:
   to copy, which it has done since b228.
 - **`dcbz`, `dcbt` and removing the arithmetic each moved the blend from 217 cycles a pixel to about 140
   and no further.** On this core, for this loop, the arithmetic was never what was being waited for.
-- **The SPEs were not needed.** They remain the route if a future version wants 60.
+- **The SPEs were not needed, and cannot be borrowed.** rc_spu_yuv's three threads are up before this
+  shell runs and do nothing but scale, so using them looked free. Their scaler is GENERAL - a source
+  coordinate and two weights per output pixel - and mode 2 costs 21,038 us an SPE against the PPE's
+  11,343 for the whole screen, because a 4x expansion's weights are only 0, 1/4, 1/2 and 3/4. Worse,
+  five missed deadlines set `s_ready = 0` for the rest of the process, so the menu failing to use the
+  scaler left the DECODER without one. The route needs a kernel written for this ratio, not a borrowed
+  one; `rc_wave_small` is aligned and padded ready for it.
 
 **And on the fan.** A full streaming session moves the Cell +1.0 C; this menu moves it +0.5 to +2.0 C
 across a run, against a PPE that used to be saturated for 99 ms and then spin. The shell samples the
@@ -246,8 +252,14 @@ built.
 
 1. **Foundation** — the wave (Route A), the card row, the single description line, options tucked
    away. Static. This alone is most of the transformation. **Landed b360-b367.**
-2. **Motion** — eased cursor, card spring, entry stagger, breathing pip.
+2. **Motion** — eased cursor, card spring, entry stagger, breathing pip. **Breathing pip and glow
+   landed b396-b405**; the eased cursor, card spring and entry stagger are not done. Note the pip was
+   reversed: GREEN breathes and amber does not, because amber already says "not ready" by being amber
+   and animating it makes the thing you cannot use the liveliest thing on the card.
 3. **The moment** — title sequence and the trophy card.
 4. **Sound** — three tones, and the settings toggle for them.
-5. **Polish** — button glyphs, the seasonal hue checked across a year by moving the clock, and a
-   decision on Route B.
+5. **Polish** — button glyphs (**landed**), the seasonal hue checked across a year by moving the clock
+   (not done), and a decision on Route B (**taken: the interface is a cached layer, for cache reasons
+   rather than the ones this document gives**). Motes in the wave landed here too - born in the ribbon
+   band, drifting out, with a depth that makes far ones small, bright and slow and near ones large, dim
+   and quick.
