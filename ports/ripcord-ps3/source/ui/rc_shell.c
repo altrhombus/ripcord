@@ -1620,7 +1620,12 @@ static void paint_ui(void)
     s_shape_at = rc_tick();
 
     /* The wordmark, and a short rule under it in this month's colour. */
-    (void)rc_overlay_text(sx(SH_MARGIN), sy(SH_WORD_Y), 3, RC_OV_TEXT, "%s", "RIPCORD");
+    /*
+     * "Ripcord", not "RIPCORD". Set in capitals it reads as a product shouting its own name, which is
+     * the register of a splash screen rather than of a machine's own software - and this screen's whole
+     * argument is that it belongs to the console rather than to us.
+     */
+    (void)rc_overlay_text(sx(SH_MARGIN), sy(SH_WORD_Y), 3, RC_OV_TEXT, "%s", "Ripcord");
     rc_overlay_blend_rect(sx(SH_MARGIN), sy(SH_RULE_Y), sx(112), sy(3), s_accent);
     rc_overlay_text_right(s_scr_w - sx(SH_MARGIN), sy(SH_WORD_Y + 22), 1, RC_OV_LABEL, "%s",
                           RC_PS3_BUILD_ID);
