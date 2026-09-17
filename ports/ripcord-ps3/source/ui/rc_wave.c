@@ -222,33 +222,22 @@ static uint32_t avg2(uint32_t a, uint32_t b)
 }
 
 /*
- * ESTABLISHING A CACHE LINE INSTEAD OF FETCHING IT, which is the difference between writing this
- * surface once and moving it twice.
+ * TRIED AND REJECTED: dcbz. RECORDED BECAUSE THE RESULT RULES SOMETHING OUT.
  *
- * b363 measured the small fill plus this expansion at 12,612 us - for two million pixels that is about
- * six nanoseconds each, which is far more than the arithmetic can account for (three averages and a
- * store per four pixels). The copy to video memory measured 10,976 us for the same eight megabytes, and
- * two completely different pieces of code arriving at the same number is the tell: neither is limited
- * by what it computes, both are limited by moving eight megabytes.
+ * b363 measured the small fill plus this expansion at 12,612 us. For two million pixels that is about
+ * six nanoseconds each, far more than the arithmetic accounts for - three averages and a store per four
+ * pixels - and the copy to video memory measured 10,976 us for the same eight megabytes. Two unrelated
+ * pieces of code arriving at the same number looked like the tell for a shared limit: moving the bytes.
  *
- * A store to a cache line the processor does not hold has to READ that line from memory first, so that
- * the part of it not being written survives - which doubles the traffic for a buffer that is going to
- * be overwritten in full. `dcbz` says "this line is now mine and it is zero", with no read: the Cell
- * Broadband Engine Programmer's Guide gives it as the way to write a large buffer without paying for
- * the fetch of data that is about to be discarded.
+ * The standard remedy for a buffer that is overwritten in full is dcbz, which claims a cache line as
+ * zeroed without first reading the data that is about to be discarded - halving the traffic, if the
+ * fetch is what costs. b366 put one dcbz every 128 bytes across this loop and measured 13,774 us: very
+ * slightly WORSE, which is the instruction's own cost showing through with nothing saved behind it.
  *
- * The line is 128 bytes, which is 32 pixels, and this loop writes strictly left to right - so one dcbz
- * every 32 pixels covers exactly the bytes about to be stored and nothing beyond them. It is only
- * correct while BOTH of those hold: a partial line, or a write that skips about, would zero data that
- * nothing then rewrites. Hence the guard at the call site rather than inside here.
+ * So the line fetch is not what this is paying for, and whatever the ceiling is, it is not one a store
+ * pattern can be arranged around. That is worth knowing before anybody tries it again, and it is part
+ * of why the next move for this file is the SPEs rather than another pass over the PPE code.
  */
-#if defined(__powerpc__) || defined(__PPC__) || defined(__powerpc64__)
-#define RC_WAVE_LINE_PX 32
-#define rc_wave_claim_line(p) __asm__ __volatile__("dcbz 0,%0" : : "r"(p) : "memory")
-#else
-#define RC_WAVE_LINE_PX 32
-#define rc_wave_claim_line(p) ((void)(p))
-#endif
 
 /* The wave itself, at whatever size it is asked for. Every dimension below is proportional, so this is
  * the same picture at 480 wide as at 1920 - which is what makes drawing it small legitimate. */
@@ -370,8 +359,7 @@ static void wave_fill(uint32_t *dst, int w, int h, int stride_px, uint64_t ms)
  * One output row, four-times bilinear from two source rows. `fy` is which of the four vertical phases
  * this row is; phase 0 needs no vertical work at all, which is a quarter of the screen for free.
  */
-static void expand_row(uint32_t *out, int w, const uint32_t *a, const uint32_t *b, int sw, int fy,
-                       int claim)
+static void expand_row(uint32_t *out, int w, const uint32_t *a, const uint32_t *b, int sw, int fy)
 {
     static uint32_t tmp[RC_WAVE_SMALL_W];
     const uint32_t *src;
@@ -392,10 +380,6 @@ static void expand_row(uint32_t *out, int w, const uint32_t *a, const uint32_t *
     for (i = 0; i < sw && x + 4 <= w; i++) {
         uint32_t t0 = src[i], t1 = src[i + 1];
         uint32_t m = avg2(t0, t1);
-
-        /* Only on a line this loop will fill completely - see rc_wave_claim_line. */
-        if (claim && (x % RC_WAVE_LINE_PX) == 0 && x + RC_WAVE_LINE_PX <= w)
-            rc_wave_claim_line(&out[x]);
 
         out[x] = t0;
         out[x + 1] = avg2(t0, m);
@@ -445,24 +429,14 @@ void rc_wave_draw(uint32_t *dst, int w, int h, int stride_px, uint64_t ms)
 
     wave_fill(s_small, sw + 1, sh + 1, RC_WAVE_SMALL_W, ms);
 
-    /*
-     * dcbz is only safe on rows that START on a cache line, because it claims a whole line and the loop
-     * only rewrites from the row's first pixel onwards. Checked once here rather than trusted: this
-     * function takes a destination and a stride from its caller and has no business assuming either.
-     */
-    {
-        int claim = (((uintptr_t)dst & (RC_WAVE_LINE_PX * 4u - 1u)) == 0u)
-                    && ((stride_px % RC_WAVE_LINE_PX) == 0);
+    for (y = 0; y < h; y++) {
+        int sy = y / RC_WAVE_SHRINK;
+        int fy = y % RC_WAVE_SHRINK;
 
-        for (y = 0; y < h; y++) {
-            int sy = y / RC_WAVE_SHRINK;
-            int fy = y % RC_WAVE_SHRINK;
-
-            if (sy > sh - 1) { sy = sh - 1; fy = RC_WAVE_SHRINK - 1; }
-            expand_row(dst + (size_t)y * (size_t)stride_px, w,
-                       s_small + (size_t)sy * RC_WAVE_SMALL_W,
-                       s_small + (size_t)(sy + 1) * RC_WAVE_SMALL_W, sw, fy, claim);
-        }
+        if (sy > sh - 1) { sy = sh - 1; fy = RC_WAVE_SHRINK - 1; }
+        expand_row(dst + (size_t)y * (size_t)stride_px, w,
+                   s_small + (size_t)sy * RC_WAVE_SMALL_W,
+                   s_small + (size_t)(sy + 1) * RC_WAVE_SMALL_W, sw, fy);
     }
 
     s_last_us = (unsigned)(((rc_tick() - t0) * 1000000u) / rc_tick_hz());
