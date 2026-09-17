@@ -226,120 +226,251 @@ static void read_enter_button(void)
 /* ------------------------------------------------------------------------------------------------ */
 
 /*
- * SHAPES, WITH THEIR EDGES ANTIALIASED, and that is the difference between "drawn" and "hand-drawn".
+ * SHAPES, BY DISTANCE RATHER THAN BY SAMPLING - and the difference is visible on a television.
  *
- * The first version stepped squares along a diagonal to make a cross and left the corners off every
- * rounded rectangle, which on a television read exactly as what it was. These rasterise properly: for
- * each pixel, nine sub-positions are tested against the shape and the count becomes coverage, which is
- * then blended. Nine samples a pixel is a lot per pixel and nothing at all in total - a button glyph is
- * twenty-eight pixels square, and the cards are redrawn only when the cursor moves.
+ * The previous version tested nine sub-positions per pixel against the shape and counted them. That is
+ * the textbook answer and it was wrong here for three reasons. Nine samples give nine levels of
+ * coverage, so a curve gets a stepped edge rather than a smooth one. The corner test was built from
+ * distances to the four straight sides, which meets itself at forty-five degrees and leaves a wedge -
+ * the "weird artifacting". And sampling is a THRESHOLD, so a corner pixel sitting near the boundary
+ * flips between counts as the background moves under it, which is exactly the shimmer.
+ *
+ * A rounded rectangle has an exact distance function, so this asks for the distance instead:
+ *
+ *     dx = max(|px - cx| - (w/2 - r), 0)
+ *     dy = max(|py - cy| - (h/2 - r), 0)
+ *      d = sqrt(dx*dx + dy*dy) - r
+ *
+ * Negative inside, zero on the edge, and correct in the corners because the corner IS a circle by
+ * construction. Coverage comes straight off it as a one-pixel ramp, which is smooth, continuous, and -
+ * the part that kills the shimmer - depends only on the geometry. The same pixel gets the same coverage
+ * on every frame no matter what is behind it.
+ *
+ * It is also far cheaper: one square root per corner pixel instead of nine inside-tests per pixel, and
+ * the straight edges need no square root at all.
+ *
+ * AND THEN IT WAS STILL WRONG, because the square root underneath it was. b360 drew this and the
+ * corners still read as "a line, then a corner, then another line" - which is the exact symptom of the
+ * arc and the straight edges not meeting. They did not: isqrt_i seeded its search at 1<<15, which is
+ * not a power of four, so the digit-by-digit algorithm underneath it was answering sqrt(2v) - and, for
+ * anything above 65535, saturating at 510 regardless of the input. A corner 22 pixels across feeds it
+ * values into six figures, so the arc it drew was a chamfer of the wrong radius joined to the straight
+ * edges at a step.
+ *
+ * The seed is now 1<<30, which IS a power of four and is the largest that fits an int. The lesson is
+ * the cheap one: the formula was right for two builds, and the four-line helper under it was never
+ * checked against the thing it claims to compute.
  */
-#define SH_SS 3   /* sub-samples per axis */
 
-/* Integer square root. Used to find a circle's x at a given y without floating point. */
+/*
+ * SUB-PIXEL RESOLUTION, and it is the AA quality as well as the geometry's.
+ *
+ * Coverage is a one-pixel ramp read off the distance, so the number of distinct alphas an edge can take
+ * is exactly the number of distance steps in a pixel. At sixteenths that is sixteen, which is visibly
+ * stepped on a slow curve at television size. Sixty-fourths costs nothing - the distances are clamped
+ * to the corner radius, so the squares stay small - and gives sixty-four.
+ */
+#define SH_SUB      64
+#define SH_SUB_HALF (SH_SUB / 2)
+
+/* Integer square root, exact. The seed must be a power of four; see above for what it costs when not. */
 static int isqrt_i(int v)
 {
-    int r = 0, b = 1 << 15;
+    unsigned rem, root = 0u, b = 1u << 30;
 
     if (v <= 0)
         return 0;
-    while (b > v)
+    rem = (unsigned)v;
+    while (b > rem)
         b >>= 2;
-    while (b != 0) {
-        if (v >= r + b) {
-            v -= r + b;
-            r = (r >> 1) + b;
+    while (b != 0u) {
+        if (rem >= root + b) {
+            rem -= root + b;
+            root = (root >> 1) + b;
         } else {
-            r >>= 1;
+            root >>= 1;
         }
         b >>= 2;
     }
-    return r;
+    return (int)root;
 }
 
 /*
- * How far inside the rectangle its rounded corner pulls the edge at this row, in 1/SH_SS units. Exact
- * rather than approximated: the previous chord approximation was most of why the corners looked wrong.
+ * The surface, held while drawing so a pixel costs a store rather than a call.
+ *
+ * rc_overlay_blend_rect is the right shape for a panel and the wrong one for a shape being antialiased:
+ * called once per pixel it re-does the clip, the bounds and the loop setup two hundred thousand times a
+ * frame. Everything below writes through this instead, and the clip happens once per row.
  */
-static int corner_inset(int row_ss, int h_ss, int r_ss)
-{
-    int dy;
+static uint32_t *s_px;
+static int s_pitch;
 
-    if (row_ss < r_ss)
-        dy = r_ss - row_ss;
-    else if (row_ss >= h_ss - r_ss)
-        dy = row_ss - (h_ss - r_ss) + 1;
-    else
-        return 0;
-    return r_ss - isqrt_i(r_ss * r_ss - dy * dy);
+static void blend_at(int x, int y, uint32_t rgb, unsigned a)
+{
+    uint32_t *p;
+    uint32_t d;
+    unsigned inv;
+
+    if (a == 0u || s_px == NULL || x < 0 || y < 0 || x >= s_scr_w || y >= s_scr_h)
+        return;
+    if (a >= 255u) {
+        s_px[(size_t)y * (size_t)s_pitch + (size_t)x] = 0xff000000u | (rgb & 0x00FFFFFFu);
+        return;
+    }
+    p = &s_px[(size_t)y * (size_t)s_pitch + (size_t)x];
+    d = *p;
+    inv = 255u - a;
+    *p = 0xff000000u
+       | (((((rgb >> 16) & 0xffu) * a + ((d >> 16) & 0xffu) * inv) / 255u) << 16)
+       | (((((rgb >> 8) & 0xffu) * a + ((d >> 8) & 0xffu) * inv) / 255u) << 8)
+       | ((((rgb & 0xffu) * a + (d & 0xffu) * inv) / 255u));
+}
+
+/* Coverage from a signed distance in SH_SUB-ths of a pixel: a one-pixel ramp centred on the edge. */
+static unsigned cov_from(int d)
+{
+    if (d <= -SH_SUB_HALF)
+        return 255u;
+    if (d >= SH_SUB_HALF)
+        return 0u;
+    return (unsigned)((SH_SUB_HALF - d) * 255 / SH_SUB);
 }
 
 /*
- * One rounded rectangle, filled or outlined, with antialiased edges. `t` of 0 fills it; anything else is
- * the stroke width. Coverage is accumulated per pixel across SH_SS x SH_SS sub-rows and sub-columns.
+ * The signed distance to a rounded rectangle, in SH_SUB-ths of a pixel, for the pixel centre at
+ * (col,row). Split out because the fill, the outline and the glow are three readings of one shape and
+ * having three copies of the formula is how the three stopped agreeing.
+ */
+typedef struct { int cx, cy, hw, hh, r; } sh_rrect;
+
+static void rrect_set(sh_rrect *s, int x, int y, int w, int h, int r)
+{
+    if (r * 2 > w) r = w / 2;
+    if (r * 2 > h) r = h / 2;
+    if (r < 0) r = 0;
+    s->cx = (x * 2 + w) * SH_SUB_HALF;
+    s->cy = (y * 2 + h) * SH_SUB_HALF;
+    s->hw = (w * SH_SUB) / 2 - r * SH_SUB;
+    s->hh = (h * SH_SUB) / 2 - r * SH_SUB;
+    s->r = r * SH_SUB;
+}
+
+/* The row's vertical term, computed once per row rather than once per pixel. */
+static int rrect_dy(const sh_rrect *s, int row)
+{
+    int py = row * SH_SUB + SH_SUB_HALF;
+    int dy = (py > s->cy ? py - s->cy : s->cy - py) - s->hh;
+
+    return dy < 0 ? 0 : dy;
+}
+
+static int rrect_dist(const sh_rrect *s, int col, int dy)
+{
+    int px = col * SH_SUB + SH_SUB_HALF;
+    int dx = (px > s->cx ? px - s->cx : s->cx - px) - s->hw;
+
+    if (dx < 0)
+        dx = 0;
+    /* The square root is only needed in a corner, where both axes are outside the straight part. Along
+     * an edge one of them is zero and the distance is the other one. */
+    if (dx == 0)
+        return dy - s->r;
+    if (dy == 0)
+        return dx - s->r;
+    return isqrt_i(dx * dx + dy * dy) - s->r;
+}
+
+/*
+ * One rounded rectangle, filled when `t` is 0 and outlined otherwise.
  */
 static void rounded_shape(int x, int y, int w, int h, int r, int t, uint32_t argb)
 {
     unsigned alpha = (argb >> 24) & 0xffu;
+    uint32_t rgb = argb & 0x00FFFFFFu;
+    sh_rrect box;
+    int row, t_sub = t * SH_SUB;
+
+    if (w <= 0 || h <= 0 || alpha == 0u || s_px == NULL)
+        return;
+    rrect_set(&box, x, y, w, h, r);
+
+    for (row = y - 1; row <= y + h; row++) {
+        int dy, col;
+
+        if (row < 0 || row >= s_scr_h)
+            continue;
+        dy = rrect_dy(&box, row);
+        /* Nothing on this row can be inside if it is already further out than the radius allows. */
+        if (dy - box.r >= SH_SUB_HALF && t == 0)
+            continue;
+
+        for (col = x - 1; col <= x + w; col++) {
+            int d;
+            unsigned c;
+
+            if (col < 0 || col >= s_scr_w)
+                continue;
+            d = rrect_dist(&box, col, dy);
+
+            if (t <= 0) {
+                c = cov_from(d);
+            } else {
+                unsigned outer = cov_from(d);
+                unsigned inner = cov_from(-(d + t_sub));
+
+                c = (outer < inner) ? outer : inner;
+            }
+            if (c != 0u)
+                blend_at(col, row, rgb, (alpha * c) / 255u);
+        }
+    }
+}
+
+/*
+ * THE GLOW, AS ONE FALLOFF RATHER THAN AS FOUR RINGS.
+ *
+ * The first version stacked four concentric rounded rectangles at a falling alpha. On a photograph that
+ * is a halo; on a television it is four bands, because four steps is what four shapes give you, and the
+ * banding is the same "I can see how this was drawn" the corners had.
+ *
+ * The distance function already in hand answers it properly: alpha falls as the square of how far
+ * outside the card a pixel is, which is continuous, is one pass rather than four, and - since it paints
+ * the surround rather than the card four times over - is a third of the pixels.
+ */
+static void rounded_glow(int x, int y, int w, int h, int r, int spread, uint32_t argb)
+{
+    unsigned alpha = (argb >> 24) & 0xffu;
+    uint32_t rgb = argb & 0x00FFFFFFu;
+    sh_rrect box;
+    int reach = spread * SH_SUB;
     int row;
 
-    if (w <= 0 || h <= 0 || alpha == 0u)
+    if (w <= 0 || h <= 0 || alpha == 0u || spread <= 0 || s_px == NULL)
         return;
-    if (r * 2 > w) r = w / 2;
-    if (r * 2 > h) r = h / 2;
+    rrect_set(&box, x, y, w, h, r);
 
-    for (row = 0; row < h; row++) {
-        int sub, col;
-        /* Coverage for this pixel row, one entry per column, 0..SH_SS*SH_SS. */
-        static unsigned char cov[1920];
-        int lo = w, hi = 0;
+    for (row = y - spread; row <= y + h + spread; row++) {
+        int dy, col;
 
-        if (w > (int)sizeof(cov))
-            return;
-        memset(cov, 0, (size_t)w);
+        if (row < 0 || row >= s_scr_h)
+            continue;
+        dy = rrect_dy(&box, row);
+        if (dy - box.r >= reach)
+            continue;
 
-        for (sub = 0; sub < SH_SS; sub++) {
-            int row_ss = row * SH_SS + sub;
-            int inset = corner_inset(row_ss, h * SH_SS, r * SH_SS);
-            int left_ss = inset;
-            int right_ss = w * SH_SS - inset;
-            int i;
+        for (col = x - spread; col <= x + w + spread; col++) {
+            int d, fade;
 
-            if (right_ss <= left_ss)
+            if (col < 0 || col >= s_scr_w)
                 continue;
-
-            for (i = left_ss; i < right_ss; i++) {
-                int px = i / SH_SS;
-
-                if (t > 0) {
-                    /* Outline: keep only what is within `t` of an edge, on any side. */
-                    int from_left = i - left_ss;
-                    int from_right = right_ss - 1 - i;
-                    int from_top = row_ss;
-                    int from_bottom = h * SH_SS - 1 - row_ss;
-                    int ts = t * SH_SS;
-
-                    if (from_left >= ts && from_right >= ts && from_top >= ts && from_bottom >= ts)
-                        continue;
-                }
-                cov[px] = (unsigned char)(cov[px] + 1u);
-                if (px < lo) lo = px;
-                if (px > hi) hi = px;
-            }
-        }
-
-        for (col = lo; col <= hi && col < w; col++) {
-            unsigned c = cov[col];
-
-            if (c == 0u)
+            d = rrect_dist(&box, col, dy);
+            if (d >= reach)
                 continue;
-            {
-                unsigned a = (alpha * c) / (SH_SS * SH_SS);
-
-                if (a > 0u)
-                    rc_overlay_blend_rect(x + col, y + row, 1, 1,
-                                          (a << 24) | (argb & 0x00FFFFFFu));
-            }
+            if (d < 0)
+                d = 0;      /* the card itself is drawn over this; a flat peak under it is free */
+            fade = reach - d;
+            blend_at(col, row, rgb,
+                     (alpha * (unsigned)((fade * fade) / reach)) / (unsigned)reach);
         }
     }
 }
@@ -356,95 +487,94 @@ static void rounded_edge(int x, int y, int w, int h, int r, int t, uint32_t argb
 }
 
 /*
- * THE BUTTON GLYPHS. Four primitives, and they say "console" faster than any amount of layout - which
- * is the entire reason they are here rather than the letters X and O. Same sub-sampled rasteriser as
- * the rectangles, so a diagonal comes out as a clean line rather than a staircase.
- *
- * Returns the width consumed, so a row of hints is laid out by chaining rather than by hand-measured
- * offsets - which is how the last one ended up off-centre.
+ * THE BUTTON GLYPHS, on the same principle: an exact distance to the shape's outline, so the diagonals
+ * of a cross come out as clean lines and the triangle's edges stop where they meet instead of running
+ * past each other. Returns the width consumed, so a row of hints is laid out by chaining rather than by
+ * hand-measured offsets - which is how the last one ended up off-centre.
  */
 static int glyph(uint32_t button, int x, int y, int size, uint32_t argb)
 {
     unsigned alpha = (argb >> 24) & 0xffu;
-    int half = (size * SH_SS) / 2;
-    int stroke = (size * SH_SS * 11) / 100;   /* 11% of the box, which reads at ten feet */
-    int radius = (size * SH_SS * 38) / 100;
-    int row;
+    uint32_t rgb = argb & 0x00FFFFFFu;
+    int half = (size * SH_SUB) / 2;
+    int stroke = (size * SH_SUB * 11) / 100;   /* 11% of the box, which reads at ten feet */
+    int radius = (size * SH_SUB * 36) / 100;
+    int row, col;
 
-    if (size <= 0 || alpha == 0u)
-        return 0;
-    if (stroke < SH_SS)
-        stroke = SH_SS;
+    if (size <= 0 || alpha == 0u || s_px == NULL)
+        return size;
+    if (stroke < SH_SUB)
+        stroke = SH_SUB;
 
     for (row = 0; row < size; row++) {
-        static unsigned char cov[256];
-        int sub, col;
-
-        if (size > (int)sizeof(cov))
-            return size;
-        memset(cov, 0, (size_t)size);
-
-        for (sub = 0; sub < SH_SS; sub++) {
-            int vy = row * SH_SS + sub - half;
-            int i;
-
-            for (i = 0; i < size * SH_SS; i++) {
-                int vx = i - half;
-                int inside = 0;
-
-                if (button == HALYARD_PAD_CROSS) {
-                    /* Two diagonal bars. The perpendicular distance to a 45-degree line through the
-                     * origin is |vx -+ vy| / sqrt(2), and the sqrt is folded into the comparison. */
-                    int d1 = vx - vy, d2 = vx + vy;
-
-                    if (d1 < 0) d1 = -d1;
-                    if (d2 < 0) d2 = -d2;
-                    inside = ((d1 * 100) / 141 < stroke || (d2 * 100) / 141 < stroke)
-                             && vx > -radius - stroke && vx < radius + stroke
-                             && vy > -radius - stroke && vy < radius + stroke;
-                } else if (button == HALYARD_PAD_CIRCLE) {
-                    int d = isqrt_i(vx * vx + vy * vy) - radius;
-
-                    if (d < 0) d = -d;
-                    inside = (d * 2 < stroke);
-                } else if (button == HALYARD_PAD_TRIANGLE) {
-                    /*
-                     * Three edges of an equilateral triangle, each an inequality, and the glyph is what
-                     * lies inside all three but outside the same three moved inwards. No line ever
-                     * extends past where the next one starts, which is what was wrong before.
-                     */
-                    int top = -radius, bot = (radius * 3) / 4;
-                    int e1 = (vy - top) * 60 - (vx * 100);    /* the left edge  */
-                    int e2 = (vy - top) * 60 + (vx * 100);    /* the right edge */
-                    int e3 = bot - vy;                        /* the base       */
-                    int m = stroke * 100;
-
-                    inside = (e1 >= 0 && e2 >= 0 && e3 >= 0)
-                             && (e1 < m || e2 < m || e3 * 100 < m);
-                } else {
-                    int ax = vx < 0 ? -vx : vx;
-                    int ay = vy < 0 ? -vy : vy;
-                    int outer = (radius * 9) / 10;
-
-                    inside = (ax <= outer && ay <= outer)
-                             && (ax > outer - stroke || ay > outer - stroke);
-                }
-
-                if (inside) {
-                    col = i / SH_SS;
-                    cov[col] = (unsigned char)(cov[col] + 1u);
-                }
-            }
-        }
+        int vy = row * SH_SUB + SH_SUB_HALF - half;
 
         for (col = 0; col < size; col++) {
-            unsigned a;
+            int vx = col * SH_SUB + SH_SUB_HALF - half;
+            int d = 1 << 24;   /* distance to the stroke's centre line, positive outside */
+            unsigned c;
 
-            if (cov[col] == 0u)
+            if (button == HALYARD_PAD_CROSS) {
+                /*
+                 * Two bars through the centre at forty-five degrees. The perpendicular distance to
+                 * such a line is |vx -+ vy| / sqrt(2), and 181/256 is that divisor.
+                 */
+                int a = vx - vy, b = vx + vy;
+                int da, db, ext;
+
+                if (a < 0) a = -a;
+                if (b < 0) b = -b;
+                da = (a * 181) / 256;
+                db = (b * 181) / 256;
+                d = (da < db) ? da : db;
+                /* Cut the bars to length, so the cross is a cross and not two full-width diagonals. */
+                ext = (vx < 0 ? -vx : vx);
+                if ((vy < 0 ? -vy : vy) > ext)
+                    ext = (vy < 0 ? -vy : vy);
+                if (ext - radius > d - stroke / 2)
+                    d = ext - radius + stroke / 2;
+                d -= stroke / 2;
+            } else if (button == HALYARD_PAD_CIRCLE) {
+                int dist = isqrt_i(vx * vx + vy * vy) - radius;
+
+                if (dist < 0) dist = -dist;
+                d = dist - stroke / 2;
+            } else if (button == HALYARD_PAD_TRIANGLE) {
+                /*
+                 * Three half-planes, each giving the signed distance OUTSIDE one edge. The distance to
+                 * the triangle is the largest of the three, so nothing can run past a corner - a corner
+                 * is exactly where two of them agree. The stroke is the band just inside that boundary,
+                 * the same two-sided form the rounded rectangle's outline uses.
+                 */
+                int apex = -radius;
+                int base = (radius * 7) / 10;
+                int out_left  = -((vy - apex) * 50 - vx * 87) / 100;
+                int out_right = -((vy - apex) * 50 + vx * 87) / 100;
+                int out_base  = vy - base;
+                int outside = out_base;
+                unsigned outer, inner;
+
+                if (out_left > outside) outside = out_left;
+                if (out_right > outside) outside = out_right;
+
+                outer = cov_from(outside);
+                inner = cov_from(-(outside + stroke));
+                c = (outer < inner) ? outer : inner;
+                if (c != 0u)
+                    blend_at(x + col, y + row, rgb, (alpha * c) / 255u);
                 continue;
-            a = (alpha * cov[col]) / (SH_SS * SH_SS);
-            if (a > 0u)
-                rc_overlay_blend_rect(x + col, y + row, 1, 1, (a << 24) | (argb & 0x00FFFFFFu));
+            } else {
+                int ax = (vx < 0 ? -vx : vx) - radius;
+                int ay = (vy < 0 ? -vy : vy) - radius;
+                int dist = (ax > ay) ? ax : ay;
+
+                if (dist < 0) dist = -dist;
+                d = dist - stroke / 2;
+            }
+
+            c = cov_from(d);
+            if (c != 0u)
+                blend_at(x + col, y + row, rgb, (alpha * c) / 255u);
         }
     }
     return size;
@@ -475,19 +605,10 @@ static void draw_card(const rc_menu_item *item, int x, int y, int w, int h, int 
 
     if (selected) {
         /*
-         * THE GLOW IS WHAT MAKES IT "PICKED UP" RATHER THAN "HIGHLIGHTED". Four concentric rounded
-         * rectangles at a falling alpha, which on a dark background reads as light spilling off the
-         * card. It is cheaper than it looks: at this size it is a few thousand blended pixels.
+         * THE GLOW IS WHAT MAKES IT "PICKED UP" RATHER THAN "HIGHLIGHTED" - one continuous falloff off
+         * the card's own outline. See rounded_glow on why this stopped being four stacked rectangles.
          */
-        int g;
-
-        for (g = 4; g >= 1; g--) {
-            int spread = sy(6) * g;
-            uint32_t a = (uint32_t)(0x16u / (unsigned)g) << 24;
-
-            rounded(x - spread, y - spread, w + spread * 2, h + spread * 2, r + spread,
-                    a | (s_accent & 0x00FFFFFFu), 1);
-        }
+        rounded_glow(x, y, w, h, r, sy(26), 0x40000000u | (s_accent & 0x00FFFFFFu));
     }
 
     rounded(x, y, w, h, r, selected ? 0xE00E1218u : 0xB00A0D12u, 1);
