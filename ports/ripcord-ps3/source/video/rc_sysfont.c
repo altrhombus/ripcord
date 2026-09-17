@@ -95,6 +95,18 @@ static int s_px[RC_SF_SIZES];
  */
 static short s_digit_cell[RC_SF_SIZES];
 static int s_ascent_px[RC_SF_SIZES];
+/*
+ * THE CAP HEIGHT, WHICH IS THE ONE TO CENTRE A LABEL ON.
+ *
+ * The ascent is where the baseline sits below the top of the LINE, and a line reserves room for accents
+ * and for descenders that a word like "START" does not have. Centring a run by its line box therefore
+ * hangs it high inside a pill or a row by exactly the space those unused parts take - which is what it
+ * did, and it reads as the text having slipped upwards rather than as a metric being the wrong one.
+ *
+ * Capitals are what these labels are made of, so the height of a capital is what gets centred. Measured
+ * off 'H' rather than taken as a fraction of the em, for the same reason the ascent is.
+ */
+static int s_cap_px[RC_SF_SIZES];
 static int s_slot;           /* which size rc_sysfont_set_size selected */
 static int s_tabular;        /* digits in fixed cells - see s_digit_cell */
 static int s_sizes_built;
@@ -135,6 +147,11 @@ static int build_size(int slot, int pixels)
     /* Asked for rather than taken as a fraction of the em, because it is not one: a face's baseline
      * sits where the face says it does, at every size. 26.6 fixed point, hence the shift. */
     s_ascent_px[slot] = (int)(s_face->size->metrics.ascender >> 6);
+    /* See s_cap_px. A face with no 'H' is not one of these, but the ascent is a safe stand-in. */
+    if (FT_Load_Char(s_face, (FT_ULong)'H', FT_LOAD_DEFAULT) == 0)
+        s_cap_px[slot] = (int)(s_face->glyph->metrics.horiBearingY >> 6);
+    if (s_cap_px[slot] <= 0)
+        s_cap_px[slot] = s_ascent_px[slot];
     s_arena_used[slot] = 0u;
 
     for (code = RC_SF_FIRST; code <= RC_SF_LAST; code++) {
@@ -247,9 +264,9 @@ int rc_sysfont_open(float body_px, float heading_px, float display_px)
 
     s_ready = 1;
     snprintf(s_status, sizeof(s_status),
-             "ready - %s, %d and %d px, ascent %d, atlas %u+%u bytes",
-             s_face_name, s_px[0], s_px[1], s_ascent_px[0],
-             s_arena_used[0], s_arena_used[1]);
+             "ready - %s, %d/%d/%d px, ascent %d, cap %d, atlas %u+%u+%u bytes",
+             s_face_name, s_px[0], s_px[1], s_px[2], s_ascent_px[0], s_cap_px[0],
+             s_arena_used[0], s_arena_used[1], s_arena_used[2]);
     return 1;
 }
 
@@ -263,6 +280,11 @@ int rc_sysfont_ascent(void)
     return s_ready ? s_ascent_px[s_slot] : 0;
 }
 
+int rc_sysfont_cap_height(void)
+{
+    return s_ready ? s_cap_px[s_slot] : 0;
+}
+
 /*
  * Digits in fixed cells, for a column of figures that must not shuffle as the figures change. Sticky
  * like the size, because measuring and drawing are two calls and they have to agree.
@@ -274,15 +296,30 @@ void rc_sysfont_set_tabular(int on)
 
 void rc_sysfont_set_size(float pixels)
 {
-    int want;
+    int want = 0, best = -1, i;
 
     if (!s_ready)
         return;
-    /* Nearest of the two built, rather than rebuilding: a size that was not prepared cannot be drawn
-     * without going back to FreeType, which is the thing this exists to avoid. */
-    want = ((int)pixels >= (s_px[0] + s_px[1]) / 2) ? 1 : 0;
-    if (want < s_sizes_built)
-        s_slot = want;
+    /*
+     * NEAREST OF THE SIZES ACTUALLY BUILT, rather than rebuilding: a size that was not prepared cannot
+     * be drawn without going back to FreeType, which is the thing this exists to avoid.
+     *
+     * It used to compare against the midpoint of the first TWO and so could only ever return 0 or 1 -
+     * which meant the third size, built at open and paid for in arena, was unreachable, and the shell's
+     * display type was quietly set at the heading size. A midpoint test does not generalise past two
+     * options; a nearest-of-all search does, and does not have to be revisited for a fourth.
+     */
+    for (i = 0; i < s_sizes_built && i < RC_SF_SIZES; i++) {
+        int d = (int)pixels - s_px[i];
+
+        if (d < 0)
+            d = -d;
+        if (best < 0 || d < best) {
+            best = d;
+            want = i;
+        }
+    }
+    s_slot = want;
 }
 
 int rc_sysfont_render(unsigned char *cov, int cov_w, int cov_h, int x, int baseline,

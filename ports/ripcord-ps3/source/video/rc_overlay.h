@@ -83,6 +83,19 @@ int rc_overlay_surface_height(void);
  * baselines rather than by their boxes. */
 int rc_overlay_ascent(int scale);
 
+/* The height of a capital at this scale. */
+int rc_overlay_cap_height(int scale);
+
+/*
+ * THE y TO HAND rc_overlay_text SO A LABEL SITS CENTRED IN A BOX, given the box's top and height.
+ *
+ * Every caller that wanted this was doing it by subtracting a guessed constant from the box height, and
+ * every one of those guesses was the line height rather than the height of the letters - so the text in
+ * a pill and the text in a list row both hung high by the space a descender would have used. It is one
+ * calculation and it belongs where the metrics are, not in four layout sites with four constants.
+ */
+int rc_overlay_text_y(int box_y, int box_h, int scale);
+
 /*
  * Starts a rebuild. 0 means "not yet" - the bitmap still holds the last text and the caller should go
  * straight to rc_overlay_end() to queue the copy.
