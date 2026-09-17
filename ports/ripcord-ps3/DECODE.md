@@ -1247,6 +1247,55 @@ that set them and wrong here. The PS3 applies its own measured configuration whe
 to load: 720p60, 20,000 kbps, RGB from the decoder, RSX scaling, bilinear, the system font. Only when
 there is no record - one that exists says what its owner chose.
 
+### The UX shell — **b331, first build**
+
+Everything before this was a bring-up harness that ran itself. It read one console's address out of a
+text file put on the machine over FTP, connected to it, and reported to a log fetched afterwards from
+another computer. That is the right shape for finding out whether a decoder works and the wrong shape
+for using the thing: no way to choose a console, no way to change a setting, and no signal that anything
+had gone wrong except a black screen.
+
+**The surface and the panel are now different sizes.** `rc_overlay` was built around one rectangle —
+760x352 design pixels, the diagnostics panel — and a menu wants more room than that. Separating the
+*bitmap* (960x600) from the *panel* is what lets the menu share the font atlas, the blending and the
+queued blit rather than carrying a second copy of all three, which on this machine is not a thrift
+argument: blending means reading what is already there, and reads from RSX memory are about a hundred
+times slower than writes, so anything with antialiased text has to be drawn on a surface in main memory.
+`rc_overlay_end_now` now takes the region to blit, and — new — skips the 2.3 MB copy to video memory when
+nothing was actually redrawn. `rc_overlay_end` had always been gated that way; this one had not, and the
+shell is the first caller that runs at the flip rate.
+
+**The list arithmetic is in `ports/common/ui/rc_menu.c` and is tested on a host.** Every bug a menu model
+can have is a cursor that ends up somewhere the person did not put it, and every one of them is invisible
+in a screenshot and obvious in front of a television: a disabled row that takes the highlight reads as a
+broken X button; a wrap that skips the last row hides an option; a list where nothing can be chosen must
+not loop forever looking for something that can, because on a console that is a hang at the menu with no
+terminal to find out why. `menu_test` is thirteenth suite in `ports/common/tests` and covers exactly
+those, including the all-disabled case.
+
+**Two things this port learned the hard way are now compile-time checks rather than comments.** The
+layout constants are written out and asserted against `RC_OV_SURFACE_H`, because the derived version put
+the button hints 22 design pixels below the bottom of the surface, where every primitive in `rc_overlay`
+clips them away silently. And the shell waits for the previous flip before queuing another — which the
+streaming path deliberately does not do, since there a pending flip means *skip a frame* rather than
+*block the thread draining a socket*. The wait is bounded at 100 ms: b232 left the RSX stopped with every
+flip pending forever, and a menu that waits for a flip that will never complete is a hang.
+
+**What the settings screen offers is narrow on purpose.** Every value on it is one this console was
+measured at — 640x360/960x540/1280x720, 30 or 60, 2 to 30 Mbps, RSX or SPE scaling, the two smoothing
+modes that fit in a frame. 1920x1080 is deliberately absent: cellVdec opens at level 4.2, whose DPB is
+not large enough for it, so the option would produce a decoder that opens and then fails on the first
+picture — and the person who picked it would conclude the client is broken. For the same reason there is
+no typeface row: the atlas is built once, when the overlay is prepared, which happens before this screen
+can be reached, so a control there would move a field in the record and change nothing anyone could see.
+A setting that appears to do nothing is worse than an absent one.
+
+**Settings are saved to the same file pairing writes the keys to**, found through the same ordered
+directory list `rc_connect` searches. Two answers to "where does this program keep its record" in one
+program is how a setting gets written somewhere nothing reads — which looks exactly like a setting that
+is ignored. `rc_pair_record_dir()` and `rc_pair_apply_port_defaults()` exist so there is one answer to
+each question.
+
 ### Still open
 - ~~**The fifth SPE.**~~ **Answered, and more completely than the question assumed.** The worry was that
   freeing the colour pass would only turn an SPE into a scaler rather than idling it. It idled all three:

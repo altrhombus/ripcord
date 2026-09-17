@@ -80,6 +80,6 @@ void rc_status_screen_draw(const rc_session_state *state)
      * under an error message reads as a fault in the message rather than in the stream.
      */
     rc_video_clear_back(0x00000000u);
-    rc_overlay_end_now(x, y);
+    rc_overlay_end_now(x, y, rc_overlay_width(), rc_overlay_height());
     rc_video_flip();
 }

@@ -84,6 +84,7 @@ CONTROL_PROTO_TARGET := $(BUILD)/control_proto_test
 INPUT_TARGET := $(BUILD)/input_test
 REGISTRATION_TARGET := $(BUILD)/registration_test
 REGIST_FLOW_TARGET := $(BUILD)/regist_flow_test
+MENU_TARGET := $(BUILD)/menu_test
 REGISTRATION_VECTORS := vectors/registration-crypto.kat
 
 # A SECOND generated constants file, with --registration. The rest of this suite deliberately builds
@@ -225,7 +226,7 @@ REGISTRATION_SOURCES := \
 all: check
 
 check: $(TARGET) $(VECTORS) $(DISCOVERY_TARGET) $(SESSION_TARGET) $(TAKION_TARGET) $(STREAM_CRYPTO_TARGET) $(STREAM_VECTORS) $(FEC_TARGET) $(STREAM_HEADER_TARGET) $(STREAM_DEMUX_TARGET) $(ECDH_TARGET) $(SESSION_VECTORS) $(CONTROL_PROTO_TARGET) $(PROTO_VECTORS) $(INPUT_TARGET) \
-         $(REGISTRATION_TARGET) $(REGISTRATION_VECTORS) $(REGIST_FLOW_TARGET)
+         $(REGISTRATION_TARGET) $(REGISTRATION_VECTORS) $(REGIST_FLOW_TARGET) $(MENU_TARGET)
 	./$(TARGET) $(VECTORS)
 	./$(DISCOVERY_TARGET)
 	./$(SESSION_TARGET)
@@ -239,6 +240,7 @@ check: $(TARGET) $(VECTORS) $(DISCOVERY_TARGET) $(SESSION_TARGET) $(TAKION_TARGE
 	./$(INPUT_TARGET)
 	./$(REGISTRATION_TARGET) $(REGISTRATION_VECTORS)
 	./$(REGIST_FLOW_TARGET) $(REGIST_FLOW_TARGET)
+	./$(MENU_TARGET)
 
 build: $(TARGET) $(DISCOVERY_TARGET) $(SESSION_TARGET) $(TAKION_TARGET) $(STREAM_CRYPTO_TARGET) $(FEC_TARGET) $(STREAM_HEADER_TARGET) $(STREAM_DEMUX_TARGET) $(ECDH_TARGET) $(CONTROL_PROTO_TARGET)
 
@@ -332,6 +334,16 @@ $(REGIST_FLOW_TARGET): $(REGIST_FLOW_SOURCES) $(REGISTRATION_GENERATED)
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) -D_GNU_SOURCE $(INCLUDES) -I$(CORE)/session -I$(CORE)/util -I$(CORE)/net \
 	    -o $@ $(REGIST_FLOW_SOURCES) $(REGISTRATION_GENERATED) -lpthread
+
+# The menu model. No vectors, no bundle, no sockets - it is arithmetic over a fixed array, which is
+# exactly why it is here rather than inside a port where it could only be checked on a television.
+MENU_SOURCES := \
+	$(CORE)/ui/rc_menu.c \
+	menu_test.c
+
+$(MENU_TARGET): $(MENU_SOURCES)
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) -o $@ $(MENU_SOURCES)
 
 $(REGISTRATION_TARGET): $(REGISTRATION_SOURCES) $(REGISTRATION_GENERATED)
 	@mkdir -p $(@D)
