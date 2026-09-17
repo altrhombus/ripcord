@@ -379,6 +379,34 @@ size_t takion_control_build_bare(uint32_t type, uint8_t *buf, size_t buf_size)
     return n;
 }
 
+size_t takion_control_build_disconnect(const char *reason, uint8_t *buf, size_t buf_size)
+{
+    size_t reason_len = (reason != NULL) ? strlen(reason) : 0u;
+    size_t payload_len = len_field_size(F_DISC_REASON, reason_len);
+    size_t total = varint_field_size(F_MSG_TYPE, TAKION_CONTROL_DISCONNECT)
+                 + len_field_size(F_MSG_DISCONNECT, payload_len);
+    size_t n;
+
+    if (buf == NULL || total > buf_size) {
+        return 0;
+    }
+
+    n = tag_write(F_MSG_TYPE, WT_VARINT, buf);
+    n += varint_write(TAKION_CONTROL_DISCONNECT, buf + n);
+
+    n += tag_write(F_MSG_DISCONNECT, WT_LEN, buf + n);
+    n += varint_write((uint64_t)payload_len, buf + n);
+
+    /* The required reason, present even when empty - see the header. */
+    n += tag_write(F_DISC_REASON, WT_LEN, buf + n);
+    n += varint_write((uint64_t)reason_len, buf + n);
+    if (reason_len > 0u) {
+        memcpy(buf + n, reason, reason_len);
+        n += reason_len;
+    }
+    return n;
+}
+
 /*
  * Wraps an already-encoded sub-command in BandwidthProbePayload{command, <field_no>=inner} and then in
  * ControlMessage{type=BANDWIDTH_PROBE, bandwidthProbePayload=inner}. Returns bytes written, 0 if short.

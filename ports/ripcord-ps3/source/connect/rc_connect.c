@@ -3953,8 +3953,39 @@ answered:
         }
 
         /*
-         * Both sockets close here. This probe stops once the transport is proven, and a channel left
-         * open past the end of the run is a channel the console is still counting on.
+         * SAY GOODBYE BEFORE CLOSING ANYTHING, which this port did not do at all.
+         *
+         * Every way a session ended here ended the same way from the console's side: the pictures stop
+         * and, a moment later, two sockets close. The console has to time the session out and decide
+         * for itself whether we crashed or left - and that is what a person quitting from the PS menu
+         * saw, a "nope out" rather than a disconnection.
+         *
+         * The vendor's client sends a Takion DISCONNECT at session end, on the stream channel, while
+         * the connections are still up (cap48/cap52). HalyardStreamingSession.cs does the same and is
+         * emphatic that it is BEST-EFFORT: a console that never sees it is no worse off than it was
+         * before this existed, so nothing here is checked and nothing waits.
+         *
+         * WHAT THIS DELIBERATELY DOES NOT DO is rest the console. cap52 isolated that as a separate
+         * frame on the binary control channel; the DISCONNECT is byte-identical with and without it.
+         * Sending one here would put somebody's console to sleep when they only quit the app, which is
+         * a decision for a setting rather than a teardown.
+         */
+        if (out->takion_up) {
+            uint8_t bye[16];
+            size_t bye_len = takion_control_build_disconnect(NULL, bye, sizeof(bye));
+
+            if (bye_len > 0u
+                && takion_channel_send(&g_stream_channel, TAKION_CHANNEL_SESSION, bye, bye_len)) {
+                out->disconnect_sent = 1;
+                SAY("said goodbye to the console (Takion DISCONNECT)");
+            } else {
+                SAY("the goodbye could not be sent - closing anyway, which the console handles");
+            }
+        }
+
+        /*
+         * Both sockets close here. A channel left open past the end of the run is a channel the console
+         * is still counting on.
          */
         /* The negotiator holds four live stream keys. This probe stops here, so they are wiped
          * rather than left in .bss for the remainder of the run. */

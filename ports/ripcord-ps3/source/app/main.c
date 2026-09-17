@@ -1389,6 +1389,9 @@ static int check_connect(void)
         /* The session runs until something ends it, so how long it ran and WHY it stopped are two
          * separate facts and both are wanted - a four-second session is a different story depending on
          * which of these ended it. */
+        ps3_log("       goodbye to the console: %s\n",
+                c.disconnect_sent ? "sent - the console was told, rather than left to time us out"
+                                  : "NOT sent - the console had to notice the sockets close");
         ps3_log("       held the session %u ms (%s): %u message(s), last type 0x%04x%s\n",
                 c.hold_ms,
                 c.menu_disconnect ? "Disconnect was chosen"

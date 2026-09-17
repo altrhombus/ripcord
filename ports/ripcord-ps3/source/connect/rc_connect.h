@@ -408,6 +408,10 @@ typedef struct {
     /* Disconnect was chosen in that menu. Distinguishes the session a person ENDED from every other way
      * one can stop, which otherwise all arrive at the caller looking like the stream having failed. */
     int      menu_disconnect;
+    /* A Takion DISCONNECT went to the console before the sockets closed. Reported because its absence
+     * is invisible from this end - the teardown looks identical either way, and the difference is only
+     * ever felt on the console. */
+    int      disconnect_sent;
     /* The sign-in gate ended the attempt, and has already said how on the television: cancelled at the
      * keyboard, or every passcode refused. Stops the generic outcome below overwriting the specific
      * reason with "the console refused the session", which is both wrong and unactionable. */
