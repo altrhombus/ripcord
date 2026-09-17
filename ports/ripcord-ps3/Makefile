@@ -208,6 +208,7 @@ SOURCES := \
 	$(CORE)/ui/rc_session_state.c \
 	$(CORE)/ui/rc_menu.c \
 	source/ui/rc_shell.c \
+	source/ui/rc_wave.c \
 	source/platform/rc_random_ps3.c \
 	source/platform/rc_stack_ps3.c \
 	source/video/rc_video_ps3.c \
