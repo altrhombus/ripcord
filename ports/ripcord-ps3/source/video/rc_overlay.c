@@ -361,8 +361,16 @@ int rc_overlay_glyph(uint32_t button, int x, int y, int size, uint32_t argb)
         if (py < 0 || py >= s_h)
             continue;
         p = s_dst + (size_t)py * (size_t)s_dst_pitch;
-        if (s_ink != NULL)
-            s_ink(py, x, x + size);
+        if (s_ink != NULL) {
+            /* Conservative is fine - the contract says so - but OFF THE SURFACE is not: a caller
+             * recording ink bounds indexes its rows by these, and a negative column is an index out of
+             * its array rather than a wide one. The columns below are clipped the same way. */
+            int ink0 = (x < 0) ? 0 : x;
+            int ink1 = (x + size > s_w) ? s_w : x + size;
+
+            if (ink1 > ink0)
+                s_ink(py, ink0, ink1);
+        }
 
         for (col = 0; col < size; col++) {
             int vx = col * OV_SUB + OV_SUB_HALF - half;
