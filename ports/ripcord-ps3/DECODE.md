@@ -1178,6 +1178,75 @@ That is the only one of the three that remains, and it is the one libRESC would 
 Interlaced SD - 480i and 576i - is also untested and needs composite or component cables rather than
 HDMI.
 
+### Pairing, from the console — **working, b324**
+
+The port pairs itself now. It asks three questions on the television with the system keyboard, performs
+the PIN key exchange, and writes the record it gets back; a successful pairing retries the connection,
+so the run that pairs is the run that streams. Before this a pairing record had to be produced by
+`ProtocolLab` on a PC and copied over by hand, which made the port unusable by anyone not already
+running the desktop client.
+
+```
+ui:    pairing - Pairing (Enter the console's address)
+pair:  our address on the route to the console is <client-ip>
+pair:  registering with <console-ip>
+pair:  paired with <console-ip>
+ui:    connecting -> streaming -> ended
+```
+
+**Nothing in the key exchange had to be discovered.** The registration tables were already in the
+committed bundle and the generator simply never emitted them - a 3DS pairs on a PC, so the port that
+wrote the generator had no use for them. The C was checked against 24 known-answer vectors from the
+.NET implementation, then against a fake console on loopback, before it ever met hardware; it worked
+first time it was allowed to.
+
+#### What the OSK cost, and what it taught
+
+Nine builds, and none of the faults was in the protocol.
+
+| build | what happened | what it established |
+|---|---|---|
+| b302 | nothing on screen | the state existed but only DREW - no log, no evidence |
+| b304 | container swept downward, all fine | the container creates; the load still refuses |
+| b306 | five parameter shapes, all refused identically | not the panels, the key layout or the layout mode |
+| b308 | **8 MB container works** | the refusal meant TOO SMALL - the sweep was backwards |
+| b309 | dialog raised, invisible | a system dialog composites into the APP's flip stream |
+| b311 | nothing drawn at all | the overlay was prepared inside the stream path only |
+| b315 | events arrive on both registrations | the 32-bit descriptor trap does NOT apply here |
+| b318 | LOADED, DONE, no UNLOADED | tearing the dialog down from inside its own callback |
+| b320 | "cancelled" on an accepted dialog | one flag for two failures, again |
+| b324 | paired | — |
+
+**Three of those were my own diagnostics failing rather than the code.** b302 drew a card and logged
+nothing. b306's sweep varied the wrong axis. b320 set one flag from two conditions, so a refused read
+and a non-OK result arrived as the same word. The pattern is the same one this port keeps finding: **a
+diagnostic that cannot separate two failures is decoration.**
+
+**And two were hard platform facts worth keeping:**
+
+`oskGetInputText` returns `OSK_NO_TEXT` on a dialog the user has just filled in and accepted. **[V]**
+The string arrives in the `oskCallbackReturnParam` handed to `oskUnloadAsync`. Confirmed across three
+prompts.
+
+A system dialog does not draw itself onto the screen - it composites into the **application's** flip
+stream, so an application that stops presenting stops the dialog appearing. The pump loop must keep
+presenting, and what it presents is the caller's business.
+
+#### This PS3's own address
+
+The registration request's `HOST` header carries the address of the client speaking, and it is asked of
+a UDP socket routed at the console rather than of the network stack in general - which gives the
+address on the interface that actually reaches it, and is the right answer on a machine with two.
+`netCtlGetInfo` is the fallback and needs `netCtlInit` first, which b322 did not do.
+
+#### Defaults are per-port now
+
+The first machine this ever paired streamed at 29 fps, because a record written from scratch inherited
+`ports/common`'s defaults - 960x540 at 30 fps with software scaling, which are correct for the port
+that set them and wrong here. The PS3 applies its own measured configuration when there is no record
+to load: 720p60, 20,000 kbps, RGB from the decoder, RSX scaling, bilinear, the system font. Only when
+there is no record - one that exists says what its owner chose.
+
 ### Still open
 - ~~**The fifth SPE.**~~ **Answered, and more completely than the question assumed.** The worry was that
   freeing the colour pass would only turn an SPE into a scaler rather than idling it. It idled all three:
