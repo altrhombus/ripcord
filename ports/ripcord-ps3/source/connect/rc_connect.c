@@ -1957,7 +1957,8 @@ static void draw_overlay(void)
         int at = OV_PAD;
 
         at += rc_overlay_text(at, base - big, 2, RC_OV_TEXT, "Ripcord");
-        rc_overlay_num(at + rc_overlay_px(12), base - small, 1, RC_OV_LABEL, RC_PS3_BUILD_ID);
+        /* The version as the XMB states it, not our build counter - see the note in rc_shell.c. */
+        rc_overlay_num(at + rc_overlay_px(12), base - small, 1, RC_OV_LABEL, RC_PS3_VERSION);
         rc_overlay_text_right(rc_overlay_width() - OV_PAD, base - small, 1, RC_OV_LABEL,
                               "PlayStation 3");
     }
