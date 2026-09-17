@@ -831,8 +831,15 @@ static void forget_held(void)
  * address we already have keys for, that name is adopted and written down, and the card stops saying
  * 192.168 anything.
  *
- * It does NOT re-address a console whose lease moved - that is the other half of the same problem and
- * needs the stable device id discovery also returns. See the note in rc_connect on stale records.
+ * AND ITS ID, WHICH IS THE PART THAT SURVIVES THE ADDRESS CHANGING. A record written before this port
+ * stored one has a host and nothing else that identifies the console, so the first time it moves the
+ * only way back is to pair it again. The id is learned here, quietly, on any broadcast where a paired
+ * address answers - which means the repair happens on an ordinary visit to the menu, before it is
+ * needed, rather than during the failure it prevents.
+ *
+ * A CONSOLE ALREADY MATCHED BY ID IS RE-ADDRESSED TOO. Once an id is on file, a console answering from
+ * somewhere new is recognisable, and the record follows it. That is the other half of the problem the
+ * previous version of this comment said it did not solve.
  */
 static void adopt_names(void)
 {
@@ -841,15 +848,35 @@ static void adopt_names(void)
 
     for (i = 0; i < s_found_count && i < RC_DISCOVER_MAX; i++) {
         const char *found = s_found.console[i].host_name;
-        int at = halyard_pairing_set_find(&s_set, s_found.console[i].address);
+        const char *id = s_found.console[i].host_id;
+        const char *addr = s_found.console[i].address;
+        int at = halyard_pairing_set_find(&s_set, addr);
 
-        if (at < 0 || found[0] == '\0')
+        /*
+         * Matched by id FIRST, because that is the match that is still right when the address is not.
+         * Falling back to the address covers the record that has no id yet - which is the record this
+         * loop is about to give one to.
+         */
+        if (at < 0)
+            at = halyard_pairing_set_find_id(&s_set, id);
+        if (at < 0)
             continue;
-        if (strcmp(s_set.console[at].name, found) == 0)
-            continue;
-        snprintf(s_set.console[at].name, sizeof(s_set.console[at].name), "%s", found);
-        rc_log("shell: learned a paired console's name from the network\n");
-        changed = 1;
+
+        if (id[0] != '\0' && strcmp(s_set.console[at].console_id, id) != 0) {
+            snprintf(s_set.console[at].console_id, sizeof(s_set.console[at].console_id), "%s", id);
+            rc_log("shell: learned a paired console's own id from the network\n");
+            changed = 1;
+        }
+        if (addr[0] != '\0' && strcmp(s_set.console[at].host, addr) != 0) {
+            snprintf(s_set.console[at].host, sizeof(s_set.console[at].host), "%s", addr);
+            rc_log("shell: a paired console moved - its record now points at where it answered\n");
+            changed = 1;
+        }
+        if (found[0] != '\0' && strcmp(s_set.console[at].name, found) != 0) {
+            snprintf(s_set.console[at].name, sizeof(s_set.console[at].name), "%s", found);
+            rc_log("shell: learned a paired console's name from the network\n");
+            changed = 1;
+        }
     }
     if (changed) {
         s_dirty = 1;
@@ -1273,7 +1300,7 @@ static int run_options(const char *const *dirs, int dir_count)
                 forget_held();
                 break;
             case SH_ID_PAIR_NEW:
-                (void)rc_pair_run(NULL, NULL);
+                (void)rc_pair_run(NULL, NULL, NULL);
                 load_record(dirs, dir_count);
                 running = 0;
                 break;
@@ -1376,12 +1403,13 @@ rc_shell_action rc_shell_run(const char *const *dirs, int dir_count)
 
                 /* Its address and its name are already known, so the one question a broadcast can
                  * answer is not asked again. */
-                (void)rc_pair_run(s_found.console[found].address, s_found.console[found].host_name);
+                (void)rc_pair_run(s_found.console[found].address, s_found.console[found].host_name,
+                                    s_found.console[found].host_id);
                 load_record(dirs, dir_count);
                 build_home();
                 forget_held();
             } else if (id == SH_ID_PAIR_NEW) {
-                (void)rc_pair_run(NULL, NULL);
+                (void)rc_pair_run(NULL, NULL, NULL);
                 load_record(dirs, dir_count);
                 build_home();
                 forget_held();

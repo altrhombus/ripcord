@@ -188,6 +188,38 @@ static void test_settings_can_be_applied_from_outside_the_set(void)
     check(set.count == 2, "a null argument does nothing rather than something");
 }
 
+static void test_a_console_that_moved_is_found_by_its_own_id(void)
+{
+    halyard_pairing_set set;
+
+    /* Two consoles, one of which carries the id discovery gave it. */
+    write_file("\n[console]\nhost=10.0.0.1\nconsoleid=AABBCCDDEEFF\nname=Front room\n"
+               "registkey=" FAKE_REGISTKEY "\ncompanion=" FAKE_COMPANION "\n"
+               "\n[console]\nhost=10.0.0.2\nregistkey=" FAKE_REGISTKEY "\ncompanion=" FAKE_COMPANION "\n");
+    check(halyard_pairing_file_load_set(g_dir, &set) == 2, "two consoles");
+    check(strcmp(set.console[0].console_id, "AABBCCDDEEFF") == 0, "the console id came through");
+    check(halyard_pairing_set_find_id(&set, "AABBCCDDEEFF") == 0, "and finds its console");
+    check(halyard_pairing_set_find_id(&set, "NOSUCHID") == -1, "an id that is not there finds nothing");
+    check(halyard_pairing_set_find_id(&set, "") == -1, "and neither does an empty one");
+    check(halyard_pairing_set_find_id(&set, NULL) == -1, "nor no id at all");
+
+    /* Its lease moved. Nothing about the console changed, so nothing but the address should. */
+    check(halyard_pairing_file_readdress(g_dir, "AABBCCDDEEFF", "10.0.0.77") == 1,
+          "the record is re-addressed");
+    check(halyard_pairing_file_load_set(g_dir, &set) == 2, "and still holds both consoles");
+    check(strcmp(set.console[0].host, "10.0.0.77") == 0, "the moved one points at where it answered");
+    check(strcmp(set.console[0].name, "Front room") == 0, "and kept its name");
+    check(set.console[0].registkey_length == 8u,
+          "and its KEYS, which belong to the console and not to where it was sitting");
+    check(strcmp(set.console[1].host, "10.0.0.2") == 0, "the other console was not touched");
+
+    check(halyard_pairing_file_readdress(g_dir, "AABBCCDDEEFF", "10.0.0.77") == 0,
+          "re-addressing to where it already is writes nothing");
+    check(halyard_pairing_file_readdress(g_dir, "NOSUCHID", "10.0.0.9") == 0,
+          "and an id we do not hold changes nothing");
+    check(halyard_pairing_file_readdress(g_dir, "AABBCCDDEEFF", "") == 0, "nor does an empty address");
+}
+
 static void test_remove(void)
 {
     halyard_pairing_set set;
@@ -303,6 +335,7 @@ int main(int argc, char **argv)
     test_upsert_replaces_rather_than_duplicates();
     test_a_settings_change_reaches_every_console();
     test_settings_can_be_applied_from_outside_the_set();
+    test_a_console_that_moved_is_found_by_its_own_id();
     test_remove();
     test_incomplete_entries_are_dropped_not_offered();
     test_a_full_set_refuses_rather_than_dropping_somebody();

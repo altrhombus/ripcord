@@ -69,6 +69,12 @@ typedef struct {
     int  unicast_replied;    /* the recorded address answered SRCH                                 */
     int  broadcast_found;    /* SOME console answered a broadcast, when the recorded one did not    */
     int  broadcast_matches;  /* ...and it is the address in the record. 0 here means a stale record */
+    /*
+     * The stale record was FIXED rather than just diagnosed: the console that answered proved its
+     * identity with the id in the record, so the record now points at where it actually is. Reported
+     * because somebody should be told their console moved even though nothing went wrong.
+     */
+    int  readdressed;
     int  credential_ok;      /* the wake credential derived from the registration key      */
     int  wake_source_bound;  /* the WAKEUP went out from the source port the spec names    */
     int  wakeups_sent;
