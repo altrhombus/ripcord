@@ -422,6 +422,10 @@ typedef struct {
     /* The "wait for a clean picture after a loss" setting, as it applied to this run, beside the count
      * of what it actually cost - see frames_skipped. */
     int      skip_until_keyframe;
+    /* What the console's own SPS says about colour. -1 means it did not say. See rc_decode_vdec.h for
+     * why this is worth knowing when the decoder has no range input. */
+    int      sps_full_range;
+    int      sps_matrix;
     /* The sign-in gate ended the attempt, and has already said how on the television: cancelled at the
      * keyboard, or every passcode refused. Stops the generic outcome below overwriting the specific
      * reason with "the console refused the session", which is both wrong and unactionable. */

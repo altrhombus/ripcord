@@ -53,6 +53,16 @@ int rc_h264_sps_parse(const uint8_t *payload, size_t size, rc_h264_sps *out)
     int flag;
 
     memset(out, 0, sizeof(*out));
+    /*
+     * "NOT STATED" IS -1, NOT 0, and the memset above cannot express it: zero is a real value for every
+     * one of these - video_full_range_flag 0 means LIMITED range, which is the opposite of not knowing.
+     * A caller that read 0 from an unparsed VUI would conclude the stream had told it something.
+     */
+    out->video_full_range_flag = -1;
+    out->matrix_coefficients = -1;
+    out->colour_primaries = -1;
+    out->transfer_characteristics = -1;
+
     rc_h264_bits_init(&br, payload, size);
 
     if (!rc_h264_bits_u(&br, 8u, &out->profile_idc)) { return 0; }
@@ -133,9 +143,55 @@ int rc_h264_sps_parse(const uint8_t *payload, size_t size, rc_h264_sps *out)
     }
 
     if (!rc_h264_bits_flag(&br, &out->vui_parameters_present_flag)) { return 0; }
-    /* VUI is not parsed. It carries timing and bitstream-restriction hints a decoder can run without,
-     * and its HRD sub-structures are long. Nothing below needs it; if frame rate is ever wanted from the
-     * stream rather than from the launch spec, this is where it would come from. */
+
+    /*
+     * THE VUI, AS FAR AS THE COLOUR SIGNALLING AND NO FURTHER.
+     *
+     * Everything wanted here sits in the first three of the VUI's fields (E.1.1), ahead of the timing
+     * and HRD sub-structures that make the rest of it long. So it is walked exactly that far and then
+     * abandoned - which costs a handful of reads and avoids implementing hrd_parameters to reach a
+     * flag that precedes it.
+     *
+     * A FAILED READ IS NOT A FAILED PARSE. These are diagnostic; the coded size below is what callers
+     * depend on and it was already known before this point. So a short or malformed VUI leaves the
+     * fields at "not stated" and the function still succeeds, rather than rejecting a parameter set a
+     * decoder would have accepted.
+     */
+    if (out->vui_parameters_present_flag) {
+        int aspect_present = 0, overscan_present = 0;
+        uint32_t idc = 0u, ignored = 0u;
+
+        do {
+            if (!rc_h264_bits_flag(&br, &aspect_present)) break;
+            if (aspect_present) {
+                if (!rc_h264_bits_u(&br, 8u, &idc)) break;
+                if (idc == 255u) {          /* Extended_SAR carries the ratio inline */
+                    if (!rc_h264_bits_u(&br, 16u, &ignored)) break;
+                    if (!rc_h264_bits_u(&br, 16u, &ignored)) break;
+                }
+            }
+            if (!rc_h264_bits_flag(&br, &overscan_present)) break;
+            if (overscan_present && !rc_h264_bits_flag(&br, (int *)&ignored)) break;
+
+            if (!rc_h264_bits_flag(&br, &out->video_signal_type_present_flag)) break;
+            if (!out->video_signal_type_present_flag) break;
+
+            if (!rc_h264_bits_u(&br, 3u, &ignored)) break;      /* video_format */
+            if (!rc_h264_bits_flag(&br, &out->video_full_range_flag)) {
+                out->video_full_range_flag = -1;
+                break;
+            }
+            if (!rc_h264_bits_flag(&br, &out->colour_description_present_flag)) break;
+            if (!out->colour_description_present_flag) break;
+
+            if (!rc_h264_bits_u(&br, 8u, &idc)) break;
+            out->colour_primaries = (int)idc;
+            if (!rc_h264_bits_u(&br, 8u, &idc)) break;
+            out->transfer_characteristics = (int)idc;
+            if (!rc_h264_bits_u(&br, 8u, &idc)) break;
+            out->matrix_coefficients = (int)idc;
+        } while (0);
+    }
 
     /* sec 7.4.2.1.1: a frame is 2 map units tall when frame_mbs_only_flag is 0. */
     out->coded_width = out->pic_width_in_mbs * 16u;
