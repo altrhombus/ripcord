@@ -26,8 +26,14 @@ typedef enum {
 } rc_osk_status;
 
 typedef enum {
-    RC_OSK_TEXT = 0,      /* a full keyboard - addresses, account ids */
-    RC_OSK_NUMBERS        /* a keypad - PINs */
+    RC_OSK_TEXT = 0,      /* a full keyboard, letters first - addresses */
+    RC_OSK_NUMBERS,       /* a keypad only - PINs, which are always eight digits */
+    /*
+     * Digits first, letters still reachable. For a PSN account id, which is a nineteen-digit number in
+     * every case this port has seen but is not guaranteed to be one - so starting on the keypad saves
+     * the typing without making the other case impossible.
+     */
+    RC_OSK_DIGITS_FIRST
 } rc_osk_kind;
 
 /*

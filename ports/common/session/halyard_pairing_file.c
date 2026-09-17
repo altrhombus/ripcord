@@ -128,6 +128,8 @@ int halyard_pairing_file_load(const char *argv0, halyard_pairing_record *rec)
             rec->diagnostics = atoi(value);
         } else if (strcmp(line, "systemfont") == 0) {
             rec->system_font = atoi(value);
+        } else if (strcmp(line, "accountid") == 0) {
+            strncpy(rec->account_id, value, sizeof(rec->account_id) - 1);
         } else if (strcmp(line, "videoformat") == 0) {
             rec->video_rgb565 = (strcmp(value, "rgb565") == 0);
         } else if (strcmp(line, "skipuntilkeyframe") == 0) {
@@ -225,6 +227,8 @@ int halyard_pairing_file_save(const char *argv0, const halyard_pairing_record *r
     fprintf(f, "hardwarescale=%d\n", rec->hardware_scale);
     fprintf(f, "diagnostics=%d\n", rec->diagnostics);
     fprintf(f, "systemfont=%d\n", rec->system_font);
+    if (rec->account_id[0] != '\0')
+        fprintf(f, "accountid=%s\n", rec->account_id);
     if (rec->hold_seconds > 0)
         fprintf(f, "holdseconds=%d\n", rec->hold_seconds);
     if (rec->connection_quality)
