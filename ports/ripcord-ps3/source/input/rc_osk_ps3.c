@@ -53,6 +53,17 @@ void rc_osk_set_present_hook(void (*present)(void))
 {
     s_present = present;
 }
+
+/*
+ * What the caller must not stop doing while this blocks - a control session's heartbeats, in the one
+ * case there is. See the header for why a keyboard can otherwise cost a caller its connection.
+ */
+static void (*s_pump)(void);
+
+void rc_osk_set_pump_hook(void (*pump)(void))
+{
+    s_pump = pump;
+}
 static volatile int s_done;
 static volatile int s_finished;   /* the user closed it; the text has not been collected yet */
 
@@ -338,6 +349,14 @@ rc_osk_status rc_osk_ask(rc_osk_kind kind, const char *prompt, const char *initi
                 s_unload_result.len = (s32)RC_OSK_MAX_CHARS;
                 oskUnloadAsync(&s_unload_result);
             }
+
+            /*
+             * BEFORE THE FRAME, not after it. The present hook draws and flips, and a flip waits for
+             * the display - so a pump behind it would be serviced at the tail of a vertical blank
+             * rather than as often as this loop turns over.
+             */
+            if (s_pump != NULL)
+                s_pump();
 
             if (s_present != NULL)
                 s_present();

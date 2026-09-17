@@ -54,6 +54,20 @@ typedef enum {
  */
 void rc_osk_set_present_hook(void (*present)(void));
 
+/*
+ * WHAT TO KEEP ALIVE WHILE THE KEYBOARD IS UP, which is a different question from what to draw.
+ *
+ * This blocks, and somebody typing a passcode can take half a minute over it. A caller that holds a
+ * connection open across the call has that whole time taken away from it - and the console's control
+ * session disconnects a client that stops answering its heartbeats within a few seconds, so asking for
+ * a passcode would reliably destroy the session the passcode was for.
+ *
+ * So the hook is called on every pass of the wait loop, before the frame is presented, and is expected
+ * to do whatever the caller must not stop doing. It must not block: the keyboard's own responsiveness
+ * is this loop's rate. NULL, the default, means there is nothing to keep alive.
+ */
+void rc_osk_set_pump_hook(void (*pump)(void));
+
 rc_osk_status rc_osk_ask(rc_osk_kind kind, const char *prompt, const char *initial,
                          char *out, size_t out_size);
 
