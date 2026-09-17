@@ -118,6 +118,12 @@ int  rc_overlay_begin_now(void);
  */
 int  rc_overlay_begin_surface(int clear);
 
+/*
+ * How long every text run since the last reset took, and how many there were. For telling "the drawing
+ * is slow" apart from "the TEXT is slow", which are different fixes.
+ */
+void rc_overlay_text_cost(unsigned *us, unsigned *runs, int reset);
+
 /* The position is an argument rather than shared state - see the note in the .c for what making it
  * state cost the diagnostics overlay. */
 void rc_overlay_end_now(int x, int y, int w, int h);
