@@ -67,12 +67,13 @@ typedef char sh_layout_fits[(SH_ROW_TOP + SH_ROWS_MAX * SH_ROW_H <= SH_FOOTER_Y 
  * rather than by this file - see rc_menu.h on why rows are addressed by id and not by index.
  */
 enum {
-    SH_ID_CONNECT = 1,
-    SH_ID_PAIR_NEW,
+    SH_ID_PAIR_NEW = 1,
     SH_ID_SEARCH,
     SH_ID_SETTINGS,
     SH_ID_QUIT,
     SH_ID_BACK,
+    SH_ID_FORGET_YES,
+    SH_ID_FORGET_NO,
 
     SH_ID_RESOLUTION = 20,
     SH_ID_FPS,
@@ -81,7 +82,8 @@ enum {
     SH_ID_SMOOTHING,
     SH_ID_DIAGNOSTICS,
 
-    SH_ID_CONSOLE_BASE = 100   /* + the index into s_found */
+    SH_ID_CONSOLE_BASE = 100,  /* + the index into s_found - a console that answered and is not paired */
+    SH_ID_PAIRED_BASE  = 200   /* + the index into s_set    - one this PS3 already has keys for       */
 };
 
 static rc_menu s_menu;
@@ -89,9 +91,23 @@ static rc_discover_result s_found;
 static int s_found_count;
 static int s_searched;              /* a broadcast has been run at least once this session */
 
-static halyard_pairing_record s_record;
-static int s_have_record;
+/*
+ * THE WHOLE LIST, not one console. The file used to hold exactly one, so pairing a second destroyed the
+ * first one's keys - see halyard_pairing_file.h. `s_settings` is a record of its own because a PS3 with
+ * nothing paired still has settings to hold and no entry to hold them in.
+ */
+static halyard_pairing_set s_set;
+static halyard_pairing_record s_settings;
 static const char *s_record_dir;    /* where it was loaded from, so it is saved back to the same place */
+
+/*
+ * WHETHER ANYTHING ACTUALLY CHANGED, because the file being written holds the only copy of material
+ * that cannot be regenerated without standing in front of a console reading a PIN off its screen. A
+ * write truncates before it writes, so every unnecessary one is a window in which a power cut costs
+ * somebody a trip to another room. Launching the shell and picking the console that was already
+ * selected should not open that window at all.
+ */
+static int s_dirty;
 
 static int s_first_row;             /* the top of the visible window - see ensure_visible */
 static uint32_t s_prev_buttons;
@@ -109,28 +125,36 @@ static uint64_t s_repeat_at;
 static void load_record(const char *const *dirs, int dir_count)
 {
     int i;
+    int loaded = 0;
 
-    memset(&s_record, 0, sizeof(s_record));
-    s_have_record = 0;
+    memset(&s_set, 0, sizeof(s_set));
+    s_set.selected = -1;
     s_record_dir = NULL;
 
-    for (i = 0; i < dir_count && !s_have_record; i++) {
-        if (halyard_pairing_file_load(dirs[i], &s_record)) {
-            s_have_record = 1;
+    for (i = 0; i < dir_count && !loaded; i++) {
+        if (halyard_pairing_file_load_set(dirs[i], &s_set) > 0) {
+            loaded = 1;
             s_record_dir = dirs[i];
         }
     }
-    if (!s_have_record) {
+
+    s_dirty = 0;
+    if (loaded) {
+        /* Identical in every entry by construction, so any of them carries the settings. */
+        s_settings = s_set.console[0];
+        rc_log("shell: %d console(s) paired\n", s_set.count);
+    } else {
         /*
          * The loader defaults every optional field whether or not it found a file - but to ports/common's
          * defaults, which are a 3DS's. Overwritten here with this port's measured ones so the settings
          * screen opens showing what an unpaired PS3 would actually stream at, rather than 960x540 at 30.
          */
-        rc_pair_apply_port_defaults(&s_record);
+        memset(&s_set, 0, sizeof(s_set));
+        s_set.selected = -1;
+        memset(&s_settings, 0, sizeof(s_settings));
+        rc_pair_apply_port_defaults(&s_settings);
         s_record_dir = rc_pair_record_dir();
-        rc_log("shell: no pairing record yet\n");
-    } else {
-        rc_log("shell: pairing record loaded\n");
+        rc_log("shell: nothing paired yet\n");
     }
 }
 
@@ -138,8 +162,25 @@ static void save_record(void)
 {
     const char *dir = (s_record_dir != NULL) ? s_record_dir : rc_pair_record_dir();
 
-    if (halyard_pairing_file_save(dir, &s_record))
-        rc_log("shell: settings saved\n");
+    /*
+     * SETTINGS LIVE WITH THE CONSOLES, so there is nowhere to put them until there is at least one. Said
+     * rather than failing quietly: somebody who changed a setting before pairing anything would
+     * otherwise watch it not take, with nothing anywhere explaining why. The port's own defaults are
+     * applied at the first pairing regardless, and they are better than a half-explored settings screen.
+     */
+    if (s_set.count <= 0) {
+        rc_log("shell: nothing is paired, so there is nowhere to save settings yet\n");
+        return;
+    }
+    if (!s_dirty) {
+        rc_log("shell: nothing changed - the pairing file is left alone\n");
+        return;
+    }
+    halyard_pairing_set_apply_settings(&s_set, &s_settings);
+    if (halyard_pairing_file_save_set(dir, &s_set)) {
+        s_dirty = 0;
+        rc_log("shell: saved (%d console(s))\n", s_set.count);
+    }
     else
         rc_log("shell: settings could NOT be saved\n");
 }
@@ -397,66 +438,88 @@ static void search(void)
     }
 }
 
-/* Whether a discovered console is the one the record is already paired with. */
-static int is_paired_console(int index)
+/* Where a discovered console sits in the paired list, or -1 when this PS3 has no keys for it. */
+static int paired_index_of(int found_index)
 {
-    return s_have_record && s_record.host[0] != '\0' &&
-           strcmp(s_found.console[index].address, s_record.host) == 0;
+    return halyard_pairing_set_find(&s_set, s_found.console[found_index].address);
+}
+
+/* What a paired console answered with, or -1 when nothing did. */
+static int awake_state_of(const char *host)
+{
+    int i;
+
+    for (i = 0; i < s_found_count && i < RC_DISCOVER_MAX; i++) {
+        if (strcmp(s_found.console[i].address, host) == 0)
+            return s_found.console[i].is_awake;
+    }
+    return -1;
 }
 
 static void build_home(void)
 {
     char subtitle[RC_MENU_NOTE_MAX];
     char value[RC_MENU_VALUE_MAX];
-    char label[RC_MENU_LABEL_MAX];
+    int unpaired = 0;
     int row, i;
 
-    if (!s_searched)
+    for (i = 0; i < s_found_count && i < RC_DISCOVER_MAX; i++) {
+        if (paired_index_of(i) < 0)
+            unpaired++;
+    }
+
+    if (s_set.count == 0)
         snprintf(subtitle, sizeof(subtitle), "%s",
-                 s_have_record ? "One console is paired with this PS3"
-                               : "No console is paired with this PS3 yet");
-    else if (s_found_count == 1)
-        snprintf(subtitle, sizeof(subtitle), "One console answered on this network");
+                 s_searched && unpaired > 0
+                     ? "Nothing paired yet - pick a console below to link it"
+                     : "No console is paired with this PS3 yet");
+    else if (s_set.count == 1)
+        snprintf(subtitle, sizeof(subtitle), "One console paired%s",
+                 unpaired > 0 ? ", and another answered on this network" : "");
     else
-        snprintf(subtitle, sizeof(subtitle), "%d consoles answered on this network", s_found_count);
+        snprintf(subtitle, sizeof(subtitle), "%d consoles paired%s", s_set.count,
+                 unpaired > 0 ? ", and more answered on this network" : "");
 
     rc_menu_reset(&s_menu, "Ripcord", subtitle);
 
     /*
-     * THE PAIRED CONSOLE FIRST, and it is on the screen even when it did not answer - a console in
-     * standby on a different switch is still the one this PS3 is paired with, and a home screen that
-     * hides it while it is asleep is a home screen that looks empty most of the time.
+     * THE PAIRED CONSOLES FIRST, AND ALL OF THEM, whether or not they answered. One in standby in
+     * another room is still a console this PS3 can wake and stream from, and a home screen that hides
+     * what did not reply is a home screen that looks empty most of the time.
      */
-    if (s_have_record) {
-        int awake = -1;
+    for (i = 0; i < s_set.count; i++) {
+        const halyard_pairing_record *rec = &s_set.console[i];
+        int awake = awake_state_of(rec->host);
 
-        for (i = 0; i < s_found_count; i++) {
-            if (is_paired_console(i))
-                awake = s_found.console[i].is_awake;
-        }
-        snprintf(label, sizeof(label), "%s", "Start streaming");
         snprintf(value, sizeof(value), "%s",
                  (awake < 0) ? (s_searched ? "not seen" : "paired") : (awake ? "ready" : "standby"));
-        (void)rc_menu_add(&s_menu, SH_ID_CONNECT, label, value,
-                          (awake == 0) ? "It is in standby - Ripcord will wake it first"
-                                       : "Connect to the console this PS3 is paired with");
-    } else {
-        row = rc_menu_add(&s_menu, SH_ID_CONNECT, "Start streaming", "not paired",
+        /*
+         * The NAME if discovery gave us one and the address otherwise. An address is not a thing anybody
+         * chooses from a list, but it is better than a row that says nothing, and a console paired by
+         * hand before this port stored names has only that.
+         */
+        (void)rc_menu_add(&s_menu, SH_ID_PAIRED_BASE + i,
+                          rec->name[0] != '\0' ? rec->name : rec->host, value,
+                          (awake == 0) ? "In standby - Ripcord will wake it first"
+                                       : "Press X to stream from this console");
+    }
+
+    if (s_set.count == 0) {
+        row = rc_menu_add(&s_menu, SH_ID_PAIRED_BASE, "Start streaming", "not paired",
                           "Pair with a console first - there is nothing to connect to yet");
         rc_menu_set_enabled(&s_menu, row, 0);
     }
 
-    /* Anything that answered and is NOT the paired one. Cross pairs with it, with the address filled
+    /* Anything that answered and this PS3 has no keys for. Cross pairs with it, with the address filled
      * in already, which is the one part of pairing a broadcast can do for you. */
     for (i = 0; i < s_found_count && i < RC_DISCOVER_MAX; i++) {
-        if (is_paired_console(i))
+        if (paired_index_of(i) >= 0)
             continue;
-        snprintf(label, sizeof(label), "%s",
-                 s_found.console[i].host_name[0] != '\0' ? s_found.console[i].host_name
-                                                         : "A PlayStation");
         snprintf(value, sizeof(value), "%s", s_found.console[i].is_awake ? "ready" : "standby");
-        (void)rc_menu_add(&s_menu, SH_ID_CONSOLE_BASE + i, label, value,
-                          "Not paired yet - press X to link this PS3 to it");
+        (void)rc_menu_add(&s_menu, SH_ID_CONSOLE_BASE + i,
+                          s_found.console[i].host_name[0] != '\0' ? s_found.console[i].host_name
+                                                                  : "A PlayStation",
+                          value, "Not paired yet - press X to link this PS3 to it");
     }
 
     (void)rc_menu_add(&s_menu, SH_ID_SEARCH, "Search the network", NULL,
@@ -467,6 +530,66 @@ static void build_home(void)
                       "Picture size, frame rate and how much bandwidth to ask for");
     (void)rc_menu_add(&s_menu, SH_ID_QUIT, "Quit to the XMB", NULL,
                       "Close Ripcord and go back to the menu");
+}
+
+/*
+ * FORGETTING A CONSOLE IS CONFIRMED, because it cannot be undone from here: the keys it throws away are
+ * the whole product of standing in front of that console reading a PIN off its screen, and getting them
+ * back means doing it again. Triangle is one button, and one button is not enough between somebody and
+ * a trip to another room.
+ */
+static int confirm_forget(int index)
+{
+    char question[RC_MENU_NOTE_MAX];
+    const halyard_pairing_record *rec;
+    int answered = 0;
+    int forget = 0;
+
+    if (index < 0 || index >= s_set.count)
+        return 0;
+    rec = &s_set.console[index];
+    snprintf(question, sizeof(question), "Forget %s?",
+             rec->name[0] != '\0' ? rec->name : rec->host);
+
+    rc_menu_reset(&s_menu, "Forget this console", question);
+    (void)rc_menu_add(&s_menu, SH_ID_FORGET_NO, "Keep it", NULL, "Go back and change nothing");
+    (void)rc_menu_add(&s_menu, SH_ID_FORGET_YES, "Forget it", NULL,
+                      "This PS3 will need its PIN again to stream from it");
+    s_first_row = 0;
+    forget_held();
+
+    while (!answered) {
+        uint32_t edges;
+
+        sysUtilCheckCallback();
+        edges = read_edges();
+
+        if (edges & HALYARD_PAD_DPAD_UP)
+            (void)rc_menu_move(&s_menu, -1);
+        if (edges & HALYARD_PAD_DPAD_DOWN)
+            (void)rc_menu_move(&s_menu, 1);
+        if (edges & HALYARD_PAD_CROSS) {
+            forget = (rc_menu_selected_id(&s_menu) == SH_ID_FORGET_YES);
+            answered = 1;
+        }
+        /* Circle is the safe answer, which is why "Keep it" is also the row the cursor starts on. */
+        if (edges & HALYARD_PAD_CIRCLE)
+            answered = 1;
+
+        draw("X  choose      O  keep it");
+    }
+
+    if (forget) {
+        rc_log("shell: forgetting a paired console (%d of %d)\n", index + 1, s_set.count);
+        (void)halyard_pairing_set_remove(&s_set, index);
+        s_dirty = 1;
+        if (s_set.count > 0)
+            save_record();
+        else
+            rc_log("shell: nothing is paired now - the record file is left as it is\n");
+    }
+    forget_held();
+    return forget;
 }
 
 /* ------------------------------------------------------------------------------------------------
@@ -514,8 +637,8 @@ static void step_resolution(int delta)
     int at = SH_COUNT(SH_RESOLUTIONS) - 1, i;
 
     for (i = 0; i < SH_COUNT(SH_RESOLUTIONS); i++) {
-        if (SH_RESOLUTIONS[i].w == s_record.stream_width &&
-            SH_RESOLUTIONS[i].h == s_record.stream_height)
+        if (SH_RESOLUTIONS[i].w == s_settings.stream_width &&
+            SH_RESOLUTIONS[i].h == s_settings.stream_height)
             at = i;
     }
     at += delta;
@@ -523,8 +646,8 @@ static void step_resolution(int delta)
         at = 0;
     else if (at < 0)
         at = SH_COUNT(SH_RESOLUTIONS) - 1;
-    s_record.stream_width = SH_RESOLUTIONS[at].w;
-    s_record.stream_height = SH_RESOLUTIONS[at].h;
+    s_settings.stream_width = SH_RESOLUTIONS[at].w;
+    s_settings.stream_height = SH_RESOLUTIONS[at].h;
 }
 
 /* kbps as somebody would say it out loud. 20000 is "20 Mbps"; 2500 would be "2.5 Mbps". */
@@ -544,24 +667,24 @@ static void refresh_settings_values(void)
     for (i = 0; i < s_menu.count; i++) {
         switch (s_menu.item[i].id) {
         case SH_ID_RESOLUTION:
-            snprintf(text, sizeof(text), "%dx%d", s_record.stream_width, s_record.stream_height);
+            snprintf(text, sizeof(text), "%dx%d", s_settings.stream_width, s_settings.stream_height);
             break;
         case SH_ID_FPS:
-            snprintf(text, sizeof(text), "%d fps", s_record.fps);
+            snprintf(text, sizeof(text), "%d fps", s_settings.fps);
             break;
         case SH_ID_BITRATE:
-            bitrate_text(s_record.stream_bitrate_kbps, text, sizeof(text));
+            bitrate_text(s_settings.stream_bitrate_kbps, text, sizeof(text));
             break;
         case SH_ID_SCALER:
-            snprintf(text, sizeof(text), "%s", s_record.hardware_scale ? "RSX" : "SPE cores");
+            snprintf(text, sizeof(text), "%s", s_settings.hardware_scale ? "RSX" : "SPE cores");
             break;
         case SH_ID_SMOOTHING:
             snprintf(text, sizeof(text), "%s",
-                     (s_record.bilinear_upscale == 0) ? "Sharp"
-                   : (s_record.bilinear_upscale == 1) ? "Smooth" : "Smooth both ways");
+                     (s_settings.bilinear_upscale == 0) ? "Sharp"
+                   : (s_settings.bilinear_upscale == 1) ? "Smooth" : "Smooth both ways");
             break;
         case SH_ID_DIAGNOSTICS:
-            snprintf(text, sizeof(text), "%s", s_record.diagnostics ? "On" : "Off");
+            snprintf(text, sizeof(text), "%s", s_settings.diagnostics ? "On" : "Off");
             break;
         default:
             continue;
@@ -614,18 +737,19 @@ static int adjust(int delta)
 
     switch (item->id) {
     case SH_ID_RESOLUTION:   step_resolution(delta); break;
-    case SH_ID_FPS:          s_record.fps = step_list(SH_RATES, SH_COUNT(SH_RATES), s_record.fps,
+    case SH_ID_FPS:          s_settings.fps = step_list(SH_RATES, SH_COUNT(SH_RATES), s_settings.fps,
                                                       delta); break;
-    case SH_ID_BITRATE:      s_record.stream_bitrate_kbps =
+    case SH_ID_BITRATE:      s_settings.stream_bitrate_kbps =
                                  step_list(SH_BITRATES, SH_COUNT(SH_BITRATES),
-                                           s_record.stream_bitrate_kbps, delta); break;
-    case SH_ID_SCALER:       s_record.hardware_scale = !s_record.hardware_scale; break;
-    case SH_ID_SMOOTHING:    s_record.bilinear_upscale =
-                                 (s_record.bilinear_upscale + (delta > 0 ? 1 : 2)) % 3; break;
-    case SH_ID_DIAGNOSTICS:  s_record.diagnostics = !s_record.diagnostics; break;
+                                           s_settings.stream_bitrate_kbps, delta); break;
+    case SH_ID_SCALER:       s_settings.hardware_scale = !s_settings.hardware_scale; break;
+    case SH_ID_SMOOTHING:    s_settings.bilinear_upscale =
+                                 (s_settings.bilinear_upscale + (delta > 0 ? 1 : 2)) % 3; break;
+    case SH_ID_DIAGNOSTICS:  s_settings.diagnostics = !s_settings.diagnostics; break;
     default:                 return 0;
     }
     refresh_settings_values();
+    s_dirty = 1;
     return 1;
 }
 
@@ -715,11 +839,6 @@ rc_shell_action rc_shell_run(const char *const *dirs, int dir_count)
             int id = rc_menu_selected_id(&s_menu);
 
             switch (id) {
-            case SH_ID_CONNECT:
-                action = RC_SHELL_CONNECT;
-                running = 0;
-                break;
-
             case SH_ID_SEARCH:
                 search();
                 build_home();
@@ -730,9 +849,9 @@ rc_shell_action rc_shell_run(const char *const *dirs, int dir_count)
             case SH_ID_PAIR_NEW:
                 /*
                  * rc_pair_run owns the whole flow including its own screens, and leaves its outcome on
-                 * the television. The record is reloaded afterwards because pairing wrote one.
+                 * the television. The list is reloaded afterwards because pairing added to it.
                  */
-                (void)rc_pair_run(NULL);
+                (void)rc_pair_run(NULL, NULL);
                 load_record(dirs, dir_count);
                 build_home();
                 forget_held();
@@ -750,10 +869,26 @@ rc_shell_action rc_shell_run(const char *const *dirs, int dir_count)
                 break;
 
             default:
-                if (id >= SH_ID_CONSOLE_BASE && id < SH_ID_CONSOLE_BASE + RC_DISCOVER_MAX) {
-                    /* Its address is already known, so the one question a broadcast can answer is not
-                     * asked again. */
-                    (void)rc_pair_run(s_found.console[id - SH_ID_CONSOLE_BASE].address);
+                if (id >= SH_ID_PAIRED_BASE && id < SH_ID_PAIRED_BASE + HALYARD_PAIRING_MAX_CONSOLES) {
+                    /*
+                     * CHOSEN, WRITTEN DOWN, AND ONLY THEN CONNECTED. rc_connect reads the file rather
+                     * than taking an argument, so the choice has to reach the file before this returns -
+                     * otherwise picking the second console on the list streams from the first.
+                     */
+                    if (s_set.selected != id - SH_ID_PAIRED_BASE) {
+                        halyard_pairing_set_select(&s_set, id - SH_ID_PAIRED_BASE);
+                        s_dirty = 1;
+                    }
+                    save_record();
+                    action = RC_SHELL_CONNECT;
+                    running = 0;
+                } else if (id >= SH_ID_CONSOLE_BASE && id < SH_ID_CONSOLE_BASE + RC_DISCOVER_MAX) {
+                    int found = id - SH_ID_CONSOLE_BASE;
+
+                    /* Its address and its name are already known, so the one question a broadcast can
+                     * answer is not asked again. */
+                    (void)rc_pair_run(s_found.console[found].address,
+                                      s_found.console[found].host_name);
                     load_record(dirs, dir_count);
                     build_home();
                     forget_held();
@@ -762,8 +897,23 @@ rc_shell_action rc_shell_run(const char *const *dirs, int dir_count)
             }
         }
 
+        /*
+         * TRIANGLE FORGETS, and only on a console this PS3 actually has keys for. On any other row it
+         * does nothing at all rather than the nearest destructive thing.
+         */
+        if (edges & HALYARD_PAD_TRIANGLE) {
+            int id = rc_menu_selected_id(&s_menu);
+
+            if (id >= SH_ID_PAIRED_BASE && id < SH_ID_PAIRED_BASE + HALYARD_PAIRING_MAX_CONSOLES &&
+                s_set.count > 0) {
+                (void)confirm_forget(id - SH_ID_PAIRED_BASE);
+                build_home();
+                forget_held();
+            }
+        }
+
         if (running)
-            draw("X  select");
+            draw(s_set.count > 0 ? "X  select      /\\  forget a console" : "X  select");
     }
 
     rc_log("shell: closing - %s\n", action == RC_SHELL_CONNECT ? "connecting" : "quitting");

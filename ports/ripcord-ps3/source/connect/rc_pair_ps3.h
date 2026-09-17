@@ -37,9 +37,14 @@ void rc_pair_apply_port_defaults(halyard_pairing_record *record);
  * Runs the whole thing: three prompts, the registration exchange, and the write. Returns 1 when a
  * pairing record was written.
  *
- * `host` pre-fills the address prompt when discovery already found one; NULL leaves it empty. The
- * session state carries what happened either way, and is left on the screen.
+ * `host` pre-fills the address prompt when discovery already found one; NULL leaves it empty. `name` is
+ * what discovery called it, stored so a list of paired consoles can be read by a human - NULL is fine
+ * and leaves the address to stand in for it. The session state carries what happened either way, and is
+ * left on the screen.
+ *
+ * THE CONSOLES ALREADY PAIRED ARE KEPT. This adds one or replaces the entry at the same address; it no
+ * longer overwrites the file, which is what used to destroy the previous console's keys silently.
  */
-int rc_pair_run(const char *host);
+int rc_pair_run(const char *host, const char *name);
 
 #endif /* RC_PAIR_PS3_H */

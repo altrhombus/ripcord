@@ -86,6 +86,7 @@ REGISTRATION_TARGET := $(BUILD)/registration_test
 REGIST_FLOW_TARGET := $(BUILD)/regist_flow_test
 MENU_TARGET := $(BUILD)/menu_test
 ACCOUNT_ID_TARGET := $(BUILD)/account_id_test
+PAIRING_SET_TARGET := $(BUILD)/pairing_set_test
 REGISTRATION_VECTORS := vectors/registration-crypto.kat
 
 # A SECOND generated constants file, with --registration. The rest of this suite deliberately builds
@@ -227,7 +228,7 @@ REGISTRATION_SOURCES := \
 all: check
 
 check: $(TARGET) $(VECTORS) $(DISCOVERY_TARGET) $(SESSION_TARGET) $(TAKION_TARGET) $(STREAM_CRYPTO_TARGET) $(STREAM_VECTORS) $(FEC_TARGET) $(STREAM_HEADER_TARGET) $(STREAM_DEMUX_TARGET) $(ECDH_TARGET) $(SESSION_VECTORS) $(CONTROL_PROTO_TARGET) $(PROTO_VECTORS) $(INPUT_TARGET) \
-         $(REGISTRATION_TARGET) $(REGISTRATION_VECTORS) $(REGIST_FLOW_TARGET) $(MENU_TARGET) $(ACCOUNT_ID_TARGET)
+         $(REGISTRATION_TARGET) $(REGISTRATION_VECTORS) $(REGIST_FLOW_TARGET) $(MENU_TARGET) $(ACCOUNT_ID_TARGET) $(PAIRING_SET_TARGET)
 	./$(TARGET) $(VECTORS)
 	./$(DISCOVERY_TARGET)
 	./$(SESSION_TARGET)
@@ -243,6 +244,7 @@ check: $(TARGET) $(VECTORS) $(DISCOVERY_TARGET) $(SESSION_TARGET) $(TAKION_TARGE
 	./$(REGIST_FLOW_TARGET) $(REGIST_FLOW_TARGET)
 	./$(MENU_TARGET)
 	./$(ACCOUNT_ID_TARGET)
+	./$(PAIRING_SET_TARGET) $(BUILD)
 
 build: $(TARGET) $(DISCOVERY_TARGET) $(SESSION_TARGET) $(TAKION_TARGET) $(STREAM_CRYPTO_TARGET) $(FEC_TARGET) $(STREAM_HEADER_TARGET) $(STREAM_DEMUX_TARGET) $(ECDH_TARGET) $(CONTROL_PROTO_TARGET)
 
@@ -356,6 +358,20 @@ ACCOUNT_ID_SOURCES := \
 $(ACCOUNT_ID_TARGET): $(ACCOUNT_ID_SOURCES)
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) -o $@ $(ACCOUNT_ID_SOURCES)
+
+# The paired-console list. Unlike the two above this one touches the filesystem, because what it has to
+# prove is about a FILE - that one written before sections existed still loads, and that adding a console
+# keeps the others. It is given a scratch directory to work in rather than writing beside the sources.
+PAIRING_SET_SOURCES := \
+	$(CORE)/session/halyard_pairing_file.c \
+	$(CORE)/util/rc_hex.c \
+	$(CORE)/util/rc_log.c \
+	$(CORE)/util/rc_program_dir.c \
+	pairing_set_test.c
+
+$(PAIRING_SET_TARGET): $(PAIRING_SET_SOURCES)
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) -I$(CORE)/util -o $@ $(PAIRING_SET_SOURCES)
 
 $(REGISTRATION_TARGET): $(REGISTRATION_SOURCES) $(REGISTRATION_GENERATED)
 	@mkdir -p $(@D)

@@ -115,12 +115,20 @@
 #include "halyard_sess_fields.h"
 
 #define HALYARD_PAIRING_HOST_MAX 64
+#define HALYARD_PAIRING_NAME_MAX 32
 #define HALYARD_PAIRING_REGISTKEY_MAX 8
 #define HALYARD_PAIRING_COMPANION_LENGTH 16
 #define HALYARD_PAIRING_DEVICE_ID_MAX 16
 
 typedef struct {
     char host[HALYARD_PAIRING_HOST_MAX];
+
+    /*
+     * What discovery called it, kept so a list of paired consoles can be read by a human. Never goes on
+     * the wire and is not identity - the console is addressed by `host` and proved by the keys below.
+     * It is here because "192.168.1.42" and "192.168.1.43" is not a menu anybody can choose from.
+     */
+    char name[HALYARD_PAIRING_NAME_MAX];
     int is_ps5;
     uint8_t registkey[HALYARD_PAIRING_REGISTKEY_MAX];
     size_t registkey_length;
@@ -230,9 +238,86 @@ typedef struct {
 } halyard_pairing_record;
 
 /*
- * Loads the record from "pairing.txt" beside `argv0`. Returns 1 if host, registkey and companion were
- * all present and well-formed; 0 otherwise, having logged why. Optional fields are defaulted whether or
- * not the load succeeds.
+ * MORE THAN ONE CONSOLE, AND WHAT IS SHARED BETWEEN THEM.
+ *
+ * The file used to hold exactly one console, which meant pairing a second one silently destroyed the
+ * first one's keys - and getting them back means standing in front of that console reading a PIN off it
+ * again. `Ripcord.Core`'s IPairedConsoleStore has been a list with Upsert and Remove throughout; this is
+ * ports/common catching up to the source of truth rather than inventing something.
+ *
+ * THE SPLIT IS THE SAME ONE .NET MAKES. Per console: its address, its name, its family, and the keys
+ * that identify this client to it. Shared: everything else - the account id, the picture size, the frame
+ * rate, every toggle. A person does not want one frame rate for the PS5 in the front room and another
+ * for the one upstairs; they want the settings they chose.
+ *
+ * SO THE SETTINGS ARE STORED ONCE AND HELD MANY TIMES. Every entry below is a complete
+ * halyard_pairing_record, and the shared fields are IDENTICAL IN ALL OF THEM - the loader copies them
+ * into each entry and the writer takes them from the selected one. That is a deliberate trade: the
+ * duplication is in memory only and is regenerated on every load, and in exchange every existing caller
+ * keeps taking the one struct it already takes, with no notion of a set at all.
+ */
+#define HALYARD_PAIRING_MAX_CONSOLES 8
+
+typedef struct {
+    halyard_pairing_record console[HALYARD_PAIRING_MAX_CONSOLES];
+    int count;
+
+    /*
+     * Which one a session would use. -1 when there is none, which is the ordinary state before anything
+     * has been paired and is not an error.
+     */
+    int selected;
+} halyard_pairing_set;
+
+/*
+ * Loads every console from "pairing.txt" beside `argv0`. Returns the number of usable entries, which is
+ * 0 for a missing or unusable file - `out` is filled with defaults either way, so a caller with nothing
+ * paired still has somewhere sensible to start from.
+ *
+ * A FILE WRITTEN BEFORE THIS EXISTED STILL LOADS. Console keys appearing before any [console] line are
+ * read as the first console, which is exactly the old single-console layout. Nobody has to migrate
+ * anything, and there is a test that says so.
+ */
+int halyard_pairing_file_load_set(const char *argv0, halyard_pairing_set *out);
+
+/* Writes the whole set back. Returns 1 on success. Same rules as the single-record save below. */
+int halyard_pairing_file_save_set(const char *argv0, const halyard_pairing_set *set);
+
+/* The index of the console at `host`, or -1. Matching is by address, which is what the file records. */
+int halyard_pairing_set_find(const halyard_pairing_set *set, const char *host);
+
+/*
+ * Adds `rec` or replaces the entry with the same host, and selects it. Returns its index, or -1 when
+ * the set is full - which is refused rather than silently dropping somebody's oldest console.
+ *
+ * The record's SHARED fields become the set's, because a caller that loaded, changed a setting and
+ * upserted means the change.
+ */
+int halyard_pairing_set_upsert(halyard_pairing_set *set, const halyard_pairing_record *rec);
+
+/* Forgets one console. Returns 1 if it was there. The selection moves to a neighbour, or to -1. */
+int halyard_pairing_set_remove(halyard_pairing_set *set, int index);
+
+/*
+ * Copies the shared settings out of `from` into every console in the set - what a settings screen does
+ * when it is finished. Exposed because a front end with nothing paired yet still has to hold settings
+ * somewhere, and that somewhere is a record of its own until there is a set to put them in.
+ */
+void halyard_pairing_set_apply_settings(halyard_pairing_set *set, const halyard_pairing_record *from);
+
+/* Selects by index. Out of range selects nothing, which is a state rather than a failure. */
+void halyard_pairing_set_select(halyard_pairing_set *set, int index);
+
+/* The selected record, or NULL. */
+const halyard_pairing_record *halyard_pairing_set_selected(const halyard_pairing_set *set);
+
+/*
+ * Loads the SELECTED console's record from "pairing.txt" beside `argv0`. Returns 1 if host, registkey
+ * and companion were all present and well-formed; 0 otherwise, having logged why. Optional fields are
+ * defaulted whether or not the load succeeds.
+ *
+ * Unchanged for every caller that had one console: it is halyard_pairing_file_load_set followed by
+ * taking the selected entry.
  */
 int halyard_pairing_file_load(const char *argv0, halyard_pairing_record *out_record);
 
@@ -251,6 +336,11 @@ int halyard_pairing_file_load(const char *argv0, halyard_pairing_record *out_rec
  * same struct, so a bitrate or a resolution somebody chose is still there afterwards. Saving a record
  * that was never loaded writes the defaults, which is correct for a first pairing and wrong for
  * anything else - so load first.
+ *
+ * AND EXISTING CONSOLES SURVIVE TOO, which they did not before. This reads the file, adds or replaces
+ * the entry with the same host, selects it, and writes the whole set back. A caller pairing a second
+ * console therefore keeps the first, without knowing a set exists - which is the point, because the
+ * version of this that did not do that destroyed the first console's keys and said nothing.
  */
 int halyard_pairing_file_save(const char *argv0, const halyard_pairing_record *record);
 
