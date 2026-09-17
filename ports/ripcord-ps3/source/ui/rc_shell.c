@@ -1,8 +1,10 @@
 /* See rc_shell.h. */
 #include "rc_shell.h"
 
+#include <malloc.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
@@ -307,6 +309,13 @@ static int isqrt_i(int v)
 static uint32_t *s_px;
 static int s_pitch;
 
+/* Defined with the layer, below. Every shape reports the rows it may touch, so nothing has to read the
+ * finished layer back to find out where the interface is. */
+static void layer_note_ink(int y, int x0, int x1);
+
+/* Defined with the other blends, below. */
+static void blend_one(uint32_t *p, uint32_t rgb, unsigned a);
+
 /*
  * INSIDE THE DRAWING, because "drawing is 67 ms" names a half and not a cause. The estimate for these
  * parts came to about ten milliseconds all told; being wrong by six times means something here is doing
@@ -320,25 +329,21 @@ static unsigned us_since(uint64_t t)
     return (unsigned)(((rc_tick() - t) * 1000000u) / rc_tick_hz());
 }
 
+/*
+ * A bounds-checked single pixel, for the glyphs - which are drawn by testing every pixel of a small box
+ * rather than by walking spans, so there is nothing to hoist.
+ *
+ * IT FORCED THE ALPHA TO 255 UNTIL b387, and that was wrong the moment the shapes started drawing into
+ * a transparent layer instead of onto an opaque screen: every partially-covered pixel of a cross, a
+ * triangle or a pill's outline came out fully opaque, so each glyph carried a dark box the width of its
+ * own antialiasing. Missed because the other two blends were converted together and this one is called
+ * from one place.
+ */
 static void blend_at(int x, int y, uint32_t rgb, unsigned a)
 {
-    uint32_t *p;
-    uint32_t d;
-    unsigned inv;
-
     if (a == 0u || s_px == NULL || x < 0 || y < 0 || x >= s_scr_w || y >= s_scr_h)
         return;
-    if (a >= 255u) {
-        s_px[(size_t)y * (size_t)s_pitch + (size_t)x] = 0xff000000u | (rgb & 0x00FFFFFFu);
-        return;
-    }
-    p = &s_px[(size_t)y * (size_t)s_pitch + (size_t)x];
-    d = *p;
-    inv = 255u - a;
-    *p = 0xff000000u
-       | (((((rgb >> 16) & 0xffu) * a + ((d >> 16) & 0xffu) * inv) / 255u) << 16)
-       | (((((rgb >> 8) & 0xffu) * a + ((d >> 8) & 0xffu) * inv) / 255u) << 8)
-       | ((((rgb & 0xffu) * a + (d & 0xffu) * inv) / 255u));
+    blend_one(&s_px[(size_t)y * (size_t)s_pitch + (size_t)x], rgb, a);
 }
 
 /* Coverage from a signed distance in SH_SUB-ths of a pixel: a one-pixel ramp centred on the edge. */
@@ -462,9 +467,9 @@ static unsigned div255(unsigned v)
  * span after another at the same two values: the fill is rebuilt once for the shape rather than once a
  * row. They are three kilobytes all told, which stays in L1 alongside everything else in this loop.
  */
-static uint32_t s_lut_r[256], s_lut_g[256], s_lut_b[256];
-static uint32_t s_lut_rgb = 1u;      /* an impossible colour - the top byte is never set here */
-static unsigned s_lut_a = 256u;      /* and an impossible alpha, so the first call always builds */
+static uint32_t s_lut_r[256], s_lut_g[256], s_lut_b[256], s_lut_a[256];
+static uint32_t s_lut_key_rgb = 1u;  /* an impossible colour - the top byte is never set here */
+static unsigned s_lut_key_a = 256u;  /* and an impossible alpha, so the first call always builds */
 
 static void blend_lut_for(uint32_t rgb, unsigned a)
 {
@@ -474,17 +479,21 @@ static void blend_lut_for(uint32_t rgb, unsigned a)
     unsigned sb = (rgb & 0xffu) * a;
     int v;
 
-    if (rgb == s_lut_rgb && a == s_lut_a)
+    if (rgb == s_lut_key_rgb && a == s_lut_key_a)
         return;
     for (v = 0; v < 256; v++) {
         unsigned d = (unsigned)v * inv;
+        unsigned ao = a + div255((unsigned)v * inv);
 
+        if (ao > 255u)
+            ao = 255u;
         s_lut_r[v] = div255(sr + d) << 16;
         s_lut_g[v] = div255(sg + d) << 8;
         s_lut_b[v] = div255(sb + d);
+        s_lut_a[v] = ao << 24;     /* the layer accumulates coverage; the surface is already 255 */
     }
-    s_lut_rgb = rgb;
-    s_lut_a = a;
+    s_lut_key_rgb = rgb;
+    s_lut_key_a = a;
 }
 
 /*
@@ -508,7 +517,7 @@ static void blend_lut_for(uint32_t rgb, unsigned a)
 static void blend_one(uint32_t *p, uint32_t rgb, unsigned a)
 {
     uint32_t d;
-    unsigned inv;
+    unsigned inv, ao;
 
     if (a == 0u)
         return;
@@ -518,7 +527,15 @@ static void blend_one(uint32_t *p, uint32_t rgb, unsigned a)
     }
     d = *p;
     inv = 255u - a;
-    *p = 0xff000000u
+    /*
+     * The alpha is COMPUTED, not forced. These same functions draw the cached layer, which starts
+     * transparent and has to accumulate coverage; on the opaque surface the arithmetic arrives back at
+     * 255 by itself, so one path serves both. See the layer's note further down.
+     */
+    ao = a + div255(((d >> 24) & 0xffu) * inv);
+    if (ao > 255u)
+        ao = 255u;
+    *p = (ao << 24)
        | (div255(((rgb >> 16) & 0xffu) * a + ((d >> 16) & 0xffu) * inv) << 16)
        | (div255(((rgb >> 8) & 0xffu) * a + ((d >> 8) & 0xffu) * inv) << 8)
        |  div255((rgb & 0xffu) * a + (d & 0xffu) * inv);
@@ -542,7 +559,7 @@ static void blend_span(uint32_t *row, int x0, int x1, uint32_t rgb, unsigned a)
     for (x = x0; x < x1; x++) {
         uint32_t d = row[x];
 
-        row[x] = 0xff000000u
+        row[x] = s_lut_a[d >> 24]
                | s_lut_r[(d >> 16) & 0xffu]
                | s_lut_g[(d >> 8) & 0xffu]
                | s_lut_b[d & 0xffu];
@@ -578,6 +595,7 @@ static void rounded_shape(int x, int y, int w, int h, int r, int t, uint32_t arg
             continue;
 
         dst = s_px + (size_t)row * (size_t)s_pitch;
+        layer_note_ink(row, lo, hi);
 
         /*
          * The straight band, where the horizontal term is zero by construction and the distance is the
@@ -767,6 +785,8 @@ static int glyph(uint32_t button, int x, int y, int size, uint32_t argb)
 
     for (row = 0; row < size; row++) {
         int vy = row * SH_SUB + SH_SUB_HALF - half;
+
+        layer_note_ink(y + row, x, x + size);
 
         for (col = 0; col < size; col++) {
             int vx = col * SH_SUB + SH_SUB_HALF - half;
@@ -1040,9 +1060,6 @@ static void draw_list(void)
  */
 static int s_cards = 1;
 
-static unsigned s_drawn_revision;
-static int s_drawn_hint = -1;
-static int s_drawn_valid;
 static void pump_input(void);
 static uint64_t s_ui_at;
 static unsigned s_ui_us, s_ui_worst_us, s_frames;
@@ -1074,88 +1091,133 @@ static unsigned s_vram_us, s_vram_worst_us;
 static rc_thermal_record s_thermal;
 
 
-static void draw(int can_forget)
+/* ------------------------------------------------------------------------------------------------
+ * THE INTERFACE IS DRAWN ONCE AND COMPOSITED, NOT REDRAWN OVER A MOVING BACKGROUND
+ *
+ * Four attempts to make the blending cheaper - dcbz, dcbt, removing the arithmetic, removing the
+ * multiplies - left it at about 140 cycles a blended pixel, having started at 217. The arithmetic was
+ * never what it was waiting for. What it was waiting for is the shape of the access: every blended
+ * pixel READ the surface before writing it, the surface is eight megabytes, nothing of it is ever in
+ * cache, and an in-order core stops dead on each dependent load.
+ *
+ * The background, by contrast, only ever WRITES its surface, and costs about 21 cycles a pixel doing
+ * it. The difference between those two numbers is the whole of this design.
+ *
+ * So the surface stops being read. The interface is drawn once into a layer of its own and kept until
+ * something about it changes - which is on a cursor move, not on a frame - and each frame is then one
+ * pass down the screen:
+ *
+ *     the background's row is expanded into a single-row buffer, which stays in cache;
+ *     the layer's ink for that row is composited onto it, also in cache;
+ *     the finished row is stored to the surface, once, sequentially.
+ *
+ * The surface therefore receives exactly one streaming store per frame and no reads at all, which is
+ * the access pattern the background has already demonstrated this core is good at.
+ *
+ * THE LAYER HOLDS PREMULTIPLIED COLOUR. Compositing it is then out = layer.rgb + under * (255 - a),
+ * with no division by the alpha and no special case for a pixel that is fully covered. rc_overlay
+ * draws into it with the same arithmetic it uses on the surface - see the note above its blend_px.
+ *
+ * AND MOST ROWS HAVE ALMOST NOTHING ON THEM. A row's leftmost and rightmost ink is recorded when the
+ * layer is built, so compositing walks that span rather than the screen; rows with no ink at all are
+ * skipped entirely, and on this screen that is most of them.
+ */
+
+/* The largest surface rc_overlay will ever hand out; see RC_OV_MAX_W/H there. The layer and the row
+ * buffer are sized against it rather than against the current display, so a mode change reallocates
+ * nothing and cannot overrun either. */
+#define SH_MAX_W 1920
+#define SH_MAX_H 1088
+
+static uint32_t *s_layer;              /* premultiplied ARGB - the interface, with no background */
+/*
+ * ONE SPAN A ROW. b382 split each row into two runs so a header row would not composite the empty
+ * middle of the screen between the wordmark and the build id; it measured no difference at all, so the
+ * second run and its gap search are gone again rather than kept for the story they tell.
+ */
+static short s_lrow_lo[SH_MAX_H], s_lrow_hi[SH_MAX_H];
+static int s_layer_fresh;
+static int s_layer_w, s_layer_h;
+
+/* What the layer was built for. Any of these changing is what makes it stale. */
+static unsigned s_layer_revision;
+static int s_layer_hint = -1;
+static int s_layer_cards = -1;
+static int s_layer_valid;
+
+static uint64_t s_sum_layer;
+static unsigned s_layer_builds;
+/*
+ * The two halves of the frame's pass, kept apart. b380 folded the background's expansion, a line copy
+ * and the composite into one number and it went the wrong way; having to guess which third was
+ * responsible is what that cost.
+ */
+static uint64_t s_ticks_rows, s_ticks_comp;
+
+static int layer_ensure(void)
 {
-    rc_video_info info;
-    uint32_t *pixels;
-    int pitch = 0;
-    uint64_t now = rc_time_ms();
-    int redraw;
-    int i;
-
-    if (!rc_video_info_get(&info))
-        return;
-    s_scr_w = rc_overlay_surface_width();
-    s_scr_h = rc_overlay_surface_height();
-
-    /*
-     * WAIT FOR THE LAST FLIP BEFORE QUEUING ANOTHER, which the streaming path does not do and must not:
-     * there, a flip that has not landed means skip a frame, because the thread is also draining a
-     * socket. Here there is nothing else to do. Bounded, because b232 left the RSX stopped with every
-     * flip pending forever - a menu that waits for a flip that will never complete is a hang.
-     */
-    s_draw_at = rc_tick();
-    {
-        uint64_t give_up = now + 100u;
-        uint64_t wait_at = rc_tick();
-
+    if (s_layer != NULL && s_layer_w == s_scr_w && s_layer_h == s_scr_h)
+        return 1;
+    if (s_scr_w <= 0 || s_scr_h <= 0 || s_scr_w > SH_MAX_W || s_scr_h > SH_MAX_H)
+        return 0;
+    free(s_layer);
+    s_layer = (uint32_t *)memalign(128, (size_t)s_scr_w * (size_t)s_scr_h * 4u);
+    if (s_layer == NULL) {
         /*
-         * PUMPED BEFORE THE TEST, NOT ONLY INSIDE IT. While the frame cost 40 ms the flip was never
-         * ready and this loop always ran, so the pad got looked at; the moment the frame fits in a
-         * refresh the loop stops running and the ONLY poll left in the pass is the one at the top of
-         * rc_shell_run. Making the menu fast would have made it less responsive, which is not a
-         * trade-off anybody would choose on purpose.
+         * SAID, AND THEN LIVED WITH. Without the layer the shell still draws - build_layer simply
+         * aims at the surface as every build before this one did - so a console short of memory gets
+         * the old frame rate rather than no menu.
          */
-        pump_input();
-        while (!rc_video_present_ready() && rc_time_ms() < give_up) {
-            /* The wait is the best place in the loop to be watching the pad: it is time this thread
-             * has nothing else to do with, and it is most of the gap a press used to fall into. */
-            pump_input();
-            usleep(1000);
-        }
-        s_sum_wait += us_since(wait_at);
+        rc_log("shell: no memory for the interface layer - drawing straight to the screen\n");
+        s_layer_w = s_layer_h = 0;
+        return 0;
     }
+    s_layer_w = s_scr_w;
+    s_layer_h = s_scr_h;
+    s_layer_valid = 0;
+    s_layer_fresh = 1;
+    return 1;
+}
 
-    /*
-     * THE BACKGROUND MOVES, so every frame is a redraw. The first version rebuilt it on a 90 ms timer
-     * because the fill measured 85,342 us on hardware - five frames - and a background that blocks for
-     * five frames is not ambient, it steps. With the divides and the branches gone from the inner loop
-     * it is asked for on every flip; what that actually costs is logged when the shell closes, because
-     * "it is fast enough now" is a claim and the log is the evidence.
-     */
-    redraw = 1;
-    if (!redraw) {
-        rc_overlay_end_now(0, 0, s_scr_w, s_scr_h);
-        rc_video_flip();
+/*
+ * WHERE THE INK IS, RECORDED AS IT IS LAID DOWN.
+ *
+ * b380 found this out afterwards by reading the finished layer back - eight megabytes, twice, on the
+ * one path that has to be quick. A rebuild measured 36,023 us, which is a stall of nearly two frames
+ * every time the cursor moves, and it is a thing somebody feels rather than measures.
+ *
+ * Both halves of the drawing already know: rc_overlay through its ink hook, and the shapes here at the
+ * top of each row's loop. The bounds are deliberately conservative - the full extent a row COULD touch
+ * rather than what it did - because one comparison per row is free and being wrong the other way would
+ * lose part of the picture.
+ */
+static int s_layer_building;
+
+static void layer_note_ink(int y, int x0, int x1)
+{
+    if (!s_layer_building || y < 0 || y >= s_layer_h)
+        return;
+    if (x0 < 0) x0 = 0;
+    if (x1 > s_layer_w) x1 = s_layer_w;
+    if (x1 <= x0)
+        return;
+    if (s_lrow_hi[y] <= s_lrow_lo[y]) {
+        s_lrow_lo[y] = (short)x0;
+        s_lrow_hi[y] = (short)x1;
         return;
     }
+    if (x0 < s_lrow_lo[y]) s_lrow_lo[y] = (short)x0;
+    if (x1 > s_lrow_hi[y]) s_lrow_hi[y] = (short)x1;
+}
 
-    /* No clear: the background below writes every pixel of the surface, and clearing it to black
-     * first is two million stores spent on a colour that is never seen. */
-    if (!rc_overlay_begin_surface(0))
-        return;
-    s_drawn_revision = s_menu.revision;
-    s_drawn_hint = can_forget;
-    s_drawn_valid = 1;
-
-    /*
-     * THE BACKGROUND, WRITTEN STRAIGHT INTO THE SURFACE. Everything after this blends over it in main
-     * memory and one opaque copy reaches the screen - see rc_overlay.c on why a blend must never be
-     * handed to the RSX.
-     */
-    pixels = rc_overlay_pixels(&pitch);
-    s_px = pixels;
-    s_pitch = pitch;
-    if (pixels != NULL)
-        rc_wave_draw(pixels, s_scr_w, s_scr_h, pitch, now);
-    s_ui_at = rc_tick();
-
-    /*
-     * AND AGAIN HERE, because the background is still the longest single thing in the frame and a
-     * button pressed and released inside it would otherwise leave no trace - rc_pad_read reports the
-     * pad's state now, not what it did while this thread was busy. See the note above poll_edges.
-     */
-    pump_input();
+/*
+ * Everything the interface is made of, painted into whatever s_px and rc_overlay's target currently
+ * point at. Split out so the layer and the no-layer fallback below are the same drawing rather than two
+ * that have to be kept in step.
+ */
+static void paint_ui(int can_forget)
+{
+    int i;
 
     (void)rc_overlay_text_cost(NULL, NULL, 1);
     s_shape_at = rc_tick();
@@ -1237,6 +1299,200 @@ static void draw(int can_forget)
      * the cards are 19" names which one to fix, and the first version of this measured only the
      * background and drew the conclusion about the wrong half.
      */
+
+}
+
+static void build_layer(int can_forget)
+{
+    uint64_t at = rc_tick();
+    int y;
+
+    if (!layer_ensure())
+        return;
+
+    /*
+     * CLEARED WHERE THERE WAS INK, NOT EVERYWHERE. A full memset is eight megabytes to erase a few
+     * hundred thousand pixels of interface; the rest of the layer has been transparent since it was
+     * allocated and stays that way. s_layer_fresh covers the one case where that is not true - a buffer
+     * straight from memalign, whose contents are nobody's guess.
+     */
+    if (s_layer_fresh) {
+        memset(s_layer, 0, (size_t)s_layer_w * (size_t)s_layer_h * 4u);
+        s_layer_fresh = 0;
+    } else {
+        for (y = 0; y < s_layer_h; y++)
+            if (s_lrow_hi[y] > s_lrow_lo[y])
+                memset(s_layer + (size_t)y * (size_t)s_layer_w + s_lrow_lo[y], 0,
+                       (size_t)(s_lrow_hi[y] - s_lrow_lo[y]) * 4u);
+    }
+    for (y = 0; y < s_layer_h; y++) {
+        s_lrow_lo[y] = 0;
+        s_lrow_hi[y] = 0;
+    }
+
+    s_px = s_layer;
+    s_pitch = s_layer_w;
+    s_layer_building = 1;
+    rc_overlay_target(s_layer, s_layer_w);
+    rc_overlay_set_ink_hook(layer_note_ink);
+
+    paint_ui(can_forget);
+
+    rc_overlay_set_ink_hook(NULL);
+    rc_overlay_target(NULL, 0);
+    s_layer_building = 0;
+
+    s_layer_revision = s_menu.revision;
+    s_layer_hint = can_forget;
+    s_layer_cards = s_cards;
+    s_layer_valid = 1;
+    s_sum_layer += us_since(at);
+    s_layer_builds++;
+}
+
+/* out = layer + under * (1 - layer alpha), the layer being premultiplied. */
+static void composite_span(uint32_t *line, const uint32_t *src, int x, int end)
+{
+    for (; x < end; x++) {
+        uint32_t L = src[x];
+        unsigned a = L >> 24;
+        uint32_t u;
+        unsigned inv;
+
+        if (a == 0u)
+            continue;
+        if (a >= 255u) {
+            line[x] = 0xff000000u | (L & 0x00FFFFFFu);
+            continue;
+        }
+        u = line[x];
+        inv = 255u - a;
+        line[x] = 0xff000000u
+                | ((((L >> 16) & 0xffu) + div255(((u >> 16) & 0xffu) * inv)) << 16)
+                | ((((L >> 8) & 0xffu) + div255(((u >> 8) & 0xffu) * inv)) << 8)
+                |  (((L & 0xffu) + div255((u & 0xffu) * inv)));
+    }
+}
+
+static void composite_row(uint32_t *line, int y)
+{
+    composite_span(line, s_layer + (size_t)y * (size_t)s_layer_w, s_lrow_lo[y], s_lrow_hi[y]);
+}
+
+static void draw(int can_forget)
+{
+    rc_video_info info;
+    uint32_t *pixels;
+    int pitch = 0;
+    uint64_t now = rc_time_ms();
+    int y;
+
+    if (!rc_video_info_get(&info))
+        return;
+    s_scr_w = rc_overlay_surface_width();
+    s_scr_h = rc_overlay_surface_height();
+
+    /*
+     * WAIT FOR THE LAST FLIP BEFORE QUEUING ANOTHER, which the streaming path does not do and must not:
+     * there, a flip that has not landed means skip a frame, because the thread is also draining a
+     * socket. Here there is nothing else to do. Bounded, because b232 left the RSX stopped with every
+     * flip pending forever - a menu that waits for a flip that will never complete is a hang.
+     */
+    s_draw_at = rc_tick();
+    {
+        uint64_t give_up = now + 100u;
+        uint64_t wait_at = rc_tick();
+
+        /*
+         * PUMPED BEFORE THE TEST, NOT ONLY INSIDE IT. While the frame cost 40 ms the flip was never
+         * ready and this loop always ran, so the pad got looked at; the moment the frame fits in a
+         * refresh the loop stops running and the ONLY poll left in the pass is the one at the top of
+         * rc_shell_run. Making the menu fast would have made it less responsive, which is not a
+         * trade-off anybody would choose on purpose.
+         */
+        pump_input();
+        while (!rc_video_present_ready() && rc_time_ms() < give_up) {
+            /* The wait is the best place in the loop to be watching the pad: it is time this thread
+             * has nothing else to do with, and it is most of the gap a press used to fall into. */
+            pump_input();
+            usleep(1000);
+        }
+        s_sum_wait += us_since(wait_at);
+    }
+
+    /* No clear: the pass below writes every pixel of the surface, and clearing it to black first is
+     * two million stores spent on a colour that is never seen. */
+    if (!rc_overlay_begin_surface(0))
+        return;
+    pixels = rc_overlay_pixels(&pitch);
+    if (pixels == NULL)
+        return;
+
+    /*
+     * REBUILT ONLY WHEN THE INTERFACE ITSELF CHANGED, which is a cursor move rather than a frame. The
+     * menu's revision counts every mutation INCLUDING the selection moving, so it answers this on its
+     * own; the other two are state the menu does not know about.
+     */
+    if (!s_layer_valid || s_menu.revision != s_layer_revision || can_forget != s_layer_hint ||
+        s_cards != s_layer_cards || s_layer_w != s_scr_w || s_layer_h != s_scr_h)
+        build_layer(can_forget);
+
+    s_ui_at = rc_tick();
+    rc_wave_begin(s_scr_w, s_scr_h, now);
+
+    /*
+     * AND AGAIN HERE, because a button pressed and released while this thread is busy would otherwise
+     * leave no trace - rc_pad_read reports the pad's state now, not what it did in between. See the
+     * note above poll_edges.
+     */
+    pump_input();
+
+    if (s_layer != NULL && s_layer_valid) {
+        /*
+         * STRAIGHT INTO THE SURFACE, NOT THROUGH A LINE BUFFER.
+         *
+         * b380 expanded each row into a single-row buffer, composited there, and then copied the
+         * finished row out - on the reasoning that the row would stay in cache and the surface would
+         * receive nothing but a streaming store. The copy is what that costs: eight megabytes read back
+         * out of the line buffer and eight megabytes stored, on top of the eight already written INTO
+         * it. It measured 46,559 us against 19,091 for simply drawing the interface every frame.
+         *
+         * The row is in cache either way. A row is 7,680 bytes and the L2 is half a megabyte, so the
+         * row rc_wave_row has just written is still there when the composite reads it back - which is
+         * the whole benefit the line buffer was supposed to provide, already paid for and free.
+         */
+        /*
+         * TICKS ACCUMULATED, CONVERTED ONCE. us_since divides by rc_tick_hz(), and two of those per row
+         * for two timers is four thousand 64-bit divisions a frame - which is instrumentation costing
+         * about three milliseconds of the thing it is measuring. The raw counter is added up here and
+         * turned into microseconds when the shell closes.
+         */
+        for (y = 0; y < s_scr_h; y++) {
+            uint32_t *row = pixels + (size_t)y * (size_t)pitch;
+            uint64_t at = rc_tick(), mid;
+
+            rc_wave_row(row, s_scr_w, y);
+            mid = rc_tick();
+            s_ticks_rows += mid - at;
+            if (s_lrow_hi[y] > s_lrow_lo[y]) {
+                composite_row(row, y);
+                s_ticks_comp += rc_tick() - mid;
+            }
+        }
+    } else {
+        /*
+         * NO LAYER - the console refused the memory for it. This is the way every build before b376
+         * worked: the background straight into the surface, then the interface blended over it. Slower,
+         * correct, and the reason layer_ensure reports rather than fails.
+         */
+        s_px = pixels;
+        s_pitch = pitch;
+        for (y = 0; y < s_scr_h; y++)
+            rc_wave_row(pixels + (size_t)y * (size_t)pitch, s_scr_w, y);
+        paint_ui(can_forget);
+    }
+    pump_input();
+
     s_ui_us = (unsigned)(((rc_tick() - s_ui_at) * 1000000u) / rc_tick_hz());
     if (s_ui_us > s_ui_worst_us)
         s_ui_worst_us = s_ui_us;
@@ -2011,6 +2267,7 @@ rc_shell_action rc_shell_run(const char *const *dirs, int dir_count)
 
     if (s_intervals > 0u && s_frames > 0u) {
         unsigned mean = (unsigned)(s_sum_frame / s_intervals);
+        unsigned n = s_layer_builds ? s_layer_builds : 1u;
 
         rc_thermal_sample(&s_thermal);
         rc_log("shell: %u frame(s) at %dx%d - %u us a frame (worst %u) = %u fps\n",
@@ -2023,11 +2280,16 @@ rc_shell_action rc_shell_run(const char *const *dirs, int dir_count)
                (unsigned)(s_sum_wait / s_frames));
         rc_log("shell:   worst single drawing pass %u us, worst copy %u us\n",
                s_ui_worst_us, s_vram_worst_us);
-        rc_log("shell:   inside the drawing: header %u, cards %u (glow %u, card shapes %u),"
+        rc_log("shell:   of the drawing: background rows %u us, compositing the interface %u us\n",
+               (unsigned)((s_ticks_rows * 1000000u) / rc_tick_hz() / s_frames),
+               (unsigned)((s_ticks_comp * 1000000u) / rc_tick_hz() / s_frames));
+        rc_log("shell:   the interface layer was rebuilt %u time(s), %u us each\n",
+               s_layer_builds, s_layer_builds ? (unsigned)(s_sum_layer / s_layer_builds) : 0u);
+        rc_log("shell:   inside a rebuild: header %u, cards %u (glow %u, card shapes %u),"
                " hints %u; text everywhere %u\n",
-               (unsigned)(s_sum_header / s_frames), (unsigned)(s_sum_cards / s_frames),
-               (unsigned)(s_sum_glow / s_frames), (unsigned)(s_sum_shape / s_frames),
-               (unsigned)(s_sum_hints / s_frames), (unsigned)(s_sum_text / s_frames));
+               (unsigned)(s_sum_header / n), (unsigned)(s_sum_cards / n),
+               (unsigned)(s_sum_glow / n), (unsigned)(s_sum_shape / n),
+               (unsigned)(s_sum_hints / n), (unsigned)(s_sum_text / n));
         if (s_thermal.available)
             rc_log("shell:   Cell %u.%u C on the way in, %u.%u C on the way out; RSX %u.%u -> %u.%u\n",
                    s_thermal.cell_first / 10u, s_thermal.cell_first % 10u,

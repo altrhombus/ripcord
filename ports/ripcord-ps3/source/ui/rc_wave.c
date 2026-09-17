@@ -403,12 +403,25 @@ static void expand_row(uint32_t *out, int w, const uint32_t *a, const uint32_t *
     }
 }
 
-void rc_wave_draw(uint32_t *dst, int w, int h, int stride_px, uint64_t ms)
-{
-    uint64_t t0 = rc_tick();
-    int sw, sh, y;
+/*
+ * BEGIN AND ROW, RATHER THAN ONE CALL THAT FILLS A SCREEN.
+ *
+ * The shell no longer wants the background written into the surface and then read back to blend the
+ * interface over it: that read-modify-write against eight megabytes is what four separate attempts at
+ * the inner loop failed to make cheaper. It wants one row at a time, in a buffer small enough to stay
+ * in cache while the interface is composited onto it, and then one sequential store of the finished
+ * row. This file supplies the row; see rc_shell.c for the rest of that pass.
+ *
+ * The small buffer is built once per frame by rc_wave_begin, which is where nearly all the arithmetic
+ * lives; rc_wave_row is an expansion and nothing else.
+ */
+static int s_sw, s_sh;
+static uint64_t s_row_t0;
 
-    if (dst == NULL || w <= 0 || h <= 0)
+void rc_wave_begin(int w, int h, uint64_t ms)
+{
+    s_row_t0 = rc_tick();
+    if (w <= 0 || h <= 0)
         return;
     if (w > RC_WAVE_MAX_W)
         w = RC_WAVE_MAX_W;
@@ -422,22 +435,46 @@ void rc_wave_draw(uint32_t *dst, int w, int h, int stride_px, uint64_t ms)
      * pixels interpolate towards a neighbour that has to exist. Generating it is cheaper than teaching
      * the inner loop to notice it is at the edge.
      */
-    sw = w / RC_WAVE_SHRINK;
-    sh = h / RC_WAVE_SHRINK;
-    if (sw < 2) sw = 2;
-    if (sh < 2) sh = 2;
+    s_sw = w / RC_WAVE_SHRINK;
+    s_sh = h / RC_WAVE_SHRINK;
+    if (s_sw < 2) s_sw = 2;
+    if (s_sh < 2) s_sh = 2;
 
-    wave_fill(s_small, sw + 1, sh + 1, RC_WAVE_SMALL_W, ms);
+    wave_fill(s_small, s_sw + 1, s_sh + 1, RC_WAVE_SMALL_W, ms);
+    s_last_us = (unsigned)(((rc_tick() - s_row_t0) * 1000000u) / rc_tick_hz());
+}
 
-    for (y = 0; y < h; y++) {
-        int sy = y / RC_WAVE_SHRINK;
-        int fy = y % RC_WAVE_SHRINK;
+void rc_wave_row(uint32_t *dst, int w, int y)
+{
+    int sy, fy;
 
-        if (sy > sh - 1) { sy = sh - 1; fy = RC_WAVE_SHRINK - 1; }
-        expand_row(dst + (size_t)y * (size_t)stride_px, w,
-                   s_small + (size_t)sy * RC_WAVE_SMALL_W,
-                   s_small + (size_t)(sy + 1) * RC_WAVE_SMALL_W, sw, fy);
-    }
+    if (dst == NULL || w <= 0 || s_sw <= 0)
+        return;
+    if (w > RC_WAVE_MAX_W)
+        w = RC_WAVE_MAX_W;
+
+    sy = y / RC_WAVE_SHRINK;
+    fy = y % RC_WAVE_SHRINK;
+    if (sy > s_sh - 1) { sy = s_sh - 1; fy = RC_WAVE_SHRINK - 1; }
+    if (sy < 0) { sy = 0; fy = 0; }
+
+    expand_row(dst, w, s_small + (size_t)sy * RC_WAVE_SMALL_W,
+               s_small + (size_t)(sy + 1) * RC_WAVE_SMALL_W, s_sw, fy);
+}
+
+void rc_wave_draw(uint32_t *dst, int w, int h, int stride_px, uint64_t ms)
+{
+    uint64_t t0 = rc_tick();
+    int y;
+
+    if (dst == NULL || w <= 0 || h <= 0)
+        return;
+    if (h > RC_WAVE_MAX_H)
+        h = RC_WAVE_MAX_H;
+
+    rc_wave_begin(w, h, ms);
+    for (y = 0; y < h; y++)
+        rc_wave_row(dst + (size_t)y * (size_t)stride_px, w, y);
 
     s_last_us = (unsigned)(((rc_tick() - t0) * 1000000u) / rc_tick_hz());
 }

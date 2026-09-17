@@ -987,7 +987,42 @@ unsigned rc_video_blit_rsx_offset(uint32_t src_offset, int width, int height)
  * and an unscaled rectangular copy is both cheaper and free of the interpolator's edge behaviour on a
  * box with hard edges.
  */
-void rc_video_overlay_blit(uint32_t src_offset, int src_pitch, int w, int h, int x, int y)
+/*
+ * MAP MAIN MEMORY SO THE RSX CAN READ IT, which is what makes the overlay's copy go away.
+ *
+ * The overlay has to be drawn in main memory - blending reads the destination, and a PPE read from the
+ * RSX's own memory is about two orders of magnitude slower than a write, which is the whole reason
+ * rc_overlay keeps a bitmap at all. What followed from that was an eight-megabyte copy into video
+ * memory every frame, purely so the 2D engine had something it could reach.
+ *
+ * It does not need the copy; it needs an IO address. gcmMapMainMemory hands the RSX a window onto a
+ * buffer that stays exactly where it is, and the same transfer then reads it with
+ * GCM_TRANSFER_MAIN_TO_LOCAL instead of LOCAL_TO_LOCAL.
+ *
+ * NOT THE b232 HAZARD, and the distinction is the one that mattered there. b232 asked the 2D engine to
+ * BLEND, which it will not do and which stopped the command processor. This asks it to copy, which is
+ * what it has been doing since b228; only where it reads from changes.
+ *
+ * The address must be megabyte-aligned and the length a whole number of megabytes - the same rule
+ * rsxInit's IO region follows, and for the same reason. Refusal is reported and is not fatal: the
+ * caller keeps its copy.
+ */
+int rc_video_map_main(const void *addr, size_t bytes, uint32_t *offset)
+{
+    u32 off = 0;
+    s32 rc;
+
+    if (!s_open || addr == NULL || bytes == 0u || offset == NULL)
+        return 0;
+    rc = gcmMapMainMemory(addr, (u32)bytes, &off);
+    if (rc != 0)
+        return 0;
+    *offset = (uint32_t)off;
+    return 1;
+}
+
+void rc_video_overlay_blit(uint32_t src_offset, int src_pitch, int w, int h, int x, int y,
+                           int from_main)
 {
     if (!s_open || w <= 0 || h <= 0)
         return;
@@ -1013,7 +1048,23 @@ void rc_video_overlay_blit(uint32_t src_offset, int src_pitch, int w, int h, int
      * rsxSetTransferImage cannot blend. It is a memory-to-memory rectangle, it has run on hardware
      * since b228, and it is what this uses.
      */
-    rsxSetTransferImage(s_context, GCM_TRANSFER_LOCAL_TO_LOCAL,
+    /*
+     * THE WRITES HAVE TO BE FINISHED BEFORE THE RSX IS TOLD TO LOOK.
+     *
+     * While this copied out of video memory the question never arose: the PPE's memcpy completed before
+     * the command was queued, and the RSX read a buffer nothing else was touching. Reading main memory
+     * directly puts the PPE's stores and the RSX's reads on either side of a race - and a store sitting
+     * in the cache when the transfer runs shows up as a piece of the PREVIOUS frame, in a band the width
+     * of a cache line, in whatever part of the screen was drawn last.
+     *
+     * `sync` waits for every prior store to reach the point where the rest of the machine can see it.
+     * It is issued once a frame, against a transfer of eight megabytes, so its cost does not signify.
+     */
+    if (from_main)
+        __asm__ __volatile__("sync" : : : "memory");
+
+    rsxSetTransferImage(s_context,
+                        from_main ? GCM_TRANSFER_MAIN_TO_LOCAL : GCM_TRANSFER_LOCAL_TO_LOCAL,
                         s_offset[s_current ^ 1], (u32)s_info.pitch, (u32)x, (u32)y,
                         src_offset, (u32)src_pitch, 0, 0,
                         (u32)w, (u32)h, 4);

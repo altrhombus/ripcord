@@ -39,6 +39,7 @@
 
 #include "rc_font5x7.h"
 #include "rc_font_prop.h"
+#include "rc_log.h"
 #include "rc_sysfont.h"
 #include "rc_video_ps3.h"
 #include "platform/rc_platform.h"
@@ -92,6 +93,42 @@ static int s_x = 48;
 static int s_y = 40;
 
 static uint32_t *s_bitmap;      /* main memory - drawn into, read from, blended in          */
+
+/*
+ * WHERE THE TEXT ACTUALLY LANDS, which is no longer always the surface.
+ *
+ * The shell draws its whole interface once into a cached LAYER and composites that over the moving
+ * background every frame, rather than re-drawing it onto the background sixty times a second - see
+ * rc_shell.c. Text is most of what a layer contains, so this file has to be able to aim somewhere else.
+ *
+ * It is a destination and a pitch, not a mode: the compositing arithmetic below is the same either way.
+ * The only thing that differs is that a layer starts transparent and accumulates an alpha, where the
+ * surface starts opaque and stays opaque - and writing the alpha out properly covers both, because a
+ * blend onto an opaque destination arrives at 255 on its own.
+ */
+/* An IO window onto s_bitmap, when the RSX would accept one - see rc_video_map_main. */
+static uint32_t s_main_offset;
+static int s_from_main;
+
+#define RC_OV_MB (1024u * 1024u)
+
+static uint32_t *s_dst;
+static int s_dst_pitch;
+
+/*
+ * WHERE THE INK LANDED, told rather than looked for.
+ *
+ * A caller keeping a cached layer has to know which part of each row has anything on it, or every frame
+ * composites the whole screen. Finding out afterwards means reading the layer back - eight megabytes,
+ * on the one path that is supposed to be rare and quick. This file already knows the answer as it
+ * draws, so it says so.
+ */
+static void (*s_ink)(int y, int x0, int x1);
+
+void rc_overlay_set_ink_hook(void (*hook)(int y, int x0, int x1))
+{
+    s_ink = hook;
+}
 static uint32_t *s_vram;        /* RSX memory  - what the per-frame copy actually reads     */
 static uint32_t s_offset;
 static int s_ready;
@@ -118,6 +155,12 @@ int rc_overlay_height(void) { return s_panel_h; }
 /* The SURFACE - the whole bitmap, which is larger. A menu uses this. */
 int rc_overlay_surface_width(void)  { return s_w; }
 int rc_overlay_surface_height(void) { return s_h; }
+
+void rc_overlay_target(uint32_t *px, int pitch)
+{
+    s_dst = (px != NULL) ? px : s_bitmap;
+    s_dst_pitch = (px != NULL && pitch > 0) ? pitch : s_w;
+}
 
 uint32_t *rc_overlay_pixels(int *pitch_px)
 {
@@ -197,8 +240,10 @@ void rc_overlay_rect(int x, int y, int w, int h, uint32_t argb)
         return;
 
     for (row = 0; row < h; row++) {
-        uint32_t *p = s_bitmap + (size_t)(y + row) * (size_t)s_w + (size_t)x;
+        uint32_t *p = s_dst + (size_t)(y + row) * (size_t)s_dst_pitch + (size_t)x;
 
+        if (s_ink != NULL)
+            s_ink(y + row, x, x + w);
         for (col = 0; col < w; col++)
             p[col] = c;
     }
@@ -231,8 +276,10 @@ void rc_overlay_blend_rect(int x, int y, int w, int h, uint32_t argb)
         return;
 
     for (row = 0; row < h; row++) {
-        uint32_t *p = s_bitmap + (size_t)(y + row) * (size_t)s_w + (size_t)x;
+        uint32_t *p = s_dst + (size_t)(y + row) * (size_t)s_dst_pitch + (size_t)x;
 
+        if (s_ink != NULL)
+            s_ink(y + row, x, x + w);
         for (col = 0; col < w; col++)
             blend_px(&p[col], argb, alpha);
     }
@@ -273,9 +320,31 @@ void rc_overlay_set(int on)
         }
         if (s_w <= 0 || s_h <= 0)
             return;
-        s_bitmap = (uint32_t *)memalign(128, (size_t)s_w * (size_t)s_h * 4u);
-        s_vram = (uint32_t *)rc_video_alloc_rsx((size_t)s_w * (size_t)s_h * 4u, &s_offset);
-        s_ready = (s_bitmap != NULL && s_vram != NULL);
+        /*
+         * MEGABYTE-ALIGNED AND A WHOLE NUMBER OF MEGABYTES, so the RSX can be given a window onto it.
+         * See rc_video_map_main: if the mapping is accepted, the 2D engine reads this buffer where it
+         * stands and the eight-megabyte copy into video memory every frame stops happening. It cost
+         * 10,884 us a frame, which was 29 percent of the budget for a copy that exists only because
+         * nothing had asked the RSX to look at main memory.
+         *
+         * The alignment costs a little padding and nothing else, so it is done unconditionally: a
+         * refusal then falls back to the copy without needing a second allocation.
+         */
+        {
+            size_t want = (size_t)s_w * (size_t)s_h * 4u;
+            size_t mapped = (want + (RC_OV_MB - 1u)) & ~(size_t)(RC_OV_MB - 1u);
+
+            s_bitmap = (uint32_t *)memalign(RC_OV_MB, mapped);
+            s_vram = (uint32_t *)rc_video_alloc_rsx(want, &s_offset);
+            s_ready = (s_bitmap != NULL && s_vram != NULL);
+            if (s_ready && rc_video_map_main(s_bitmap, mapped, &s_main_offset))
+                s_from_main = 1;
+            rc_log("overlay: the RSX %s read the bitmap where it is - the per-frame copy is %s\n",
+                   s_from_main ? "will" : "will NOT",
+                   s_from_main ? "gone" : "still needed");
+        }
+        s_dst = s_bitmap;
+        s_dst_pitch = s_w;
 
         /*
          * The console's own face if it will open, the drawn one if it will not. Asked for here rather
@@ -319,7 +388,7 @@ static void draw_bits(int x, int y, int scale, const unsigned char *rows, int nr
 
                 if (py < 0 || py >= s_h)
                     continue;
-                p = s_bitmap + (size_t)py * (size_t)s_w;
+                p = s_dst + (size_t)py * (size_t)s_dst_pitch;
                 for (sx = 0; sx < scale; sx++) {
                     if (px + sx >= 0 && px + sx < s_w)
                         p[px + sx] = premul_colour;
@@ -369,15 +438,27 @@ static int prop_width(const char *text, int scale)
  * One pixel of antialiased text: the glyph's coverage says how much of the run's colour to put over
  * what is already there. This is the read the panel moved out of RSX memory for.
  */
+/*
+ * THE ALPHA IS WRITTEN RATHER THAN ASSUMED, and that one change is what lets the same arithmetic serve
+ * the opaque surface and a transparent layer.
+ *
+ * The colour maths is unchanged: a layer holds PREMULTIPLIED colour, so a source's contribution is
+ * src * cov and what is already there contributes dst * (255 - cov), which is exactly the blend that
+ * was here. Only the top byte differs - and computing it costs nothing on the surface, because a
+ * destination that is already opaque arrives back at 255 by itself.
+ */
 static void blend_px(uint32_t *dst, uint32_t argb, unsigned cov)
 {
     unsigned inv = 255u - cov;
     uint32_t d = *dst;
+    unsigned a = cov + (((d >> 24) & 0xffu) * inv) / 255u;
     unsigned r = ((((argb >> 16) & 0xffu) * cov) + (((d >> 16) & 0xffu) * inv)) / 255u;
     unsigned g = ((((argb >> 8) & 0xffu) * cov) + (((d >> 8) & 0xffu) * inv)) / 255u;
     unsigned b = (((argb & 0xffu) * cov) + ((d & 0xffu) * inv)) / 255u;
 
-    *dst = 0xff000000u | (r << 16) | (g << 8) | b;
+    if (a > 255u)
+        a = 255u;
+    *dst = (a << 24) | (r << 16) | (g << 8) | b;
 }
 
 /*
@@ -454,10 +535,12 @@ static void draw_sys(int x, int y, int scale, uint32_t argb, const char *text)
 
     for (row = 0; row < h; row++) {
         const unsigned char *src = s_cov + (size_t)row * (size_t)s_w;
-        uint32_t *dst = s_bitmap + (size_t)(y + row) * (size_t)s_w;
+        uint32_t *dst = s_dst + (size_t)(y + row) * (size_t)s_dst_pitch;
 
         if (y + row < 0)
             continue;
+        if (s_ink != NULL)
+            s_ink(y + row, x0, x1);
         for (col = x0; col < x1; col++) {
             if (src[col] != 0u)
                 blend_px(&dst[col], argb, src[col]);
@@ -772,7 +855,8 @@ void rc_overlay_end_now(int x, int y, int w, int h)
      * was not, and the shell is the first caller that runs at the flip rate.
      */
     if (s_rebuilt) {
-        memcpy(s_vram, s_bitmap, (size_t)s_w * (size_t)s_h * 4u);
+        if (!s_from_main)
+            memcpy(s_vram, s_bitmap, (size_t)s_w * (size_t)s_h * 4u);
         s_rebuilt = 0;
     }
     /*
@@ -782,7 +866,8 @@ void rc_overlay_end_now(int x, int y, int w, int h)
      * wanting different positions is not a reason for either to mutate the other's.
      */
     /* Only the region the caller drew. The surface is bigger than most of its users. */
-    rc_video_overlay_blit(s_offset, s_w * 4, w, h, x, y);
+    rc_video_overlay_blit(s_from_main ? s_main_offset : s_offset, s_w * 4, w, h, x, y,
+                          s_from_main);
 }
 
 void rc_overlay_end(void)
@@ -796,8 +881,10 @@ void rc_overlay_end(void)
      * writes to VRAM for a picture that is identical fourteen times out of fifteen.
      */
     if (s_rebuilt) {
-        memcpy(s_vram, s_bitmap, (size_t)s_w * (size_t)s_h * 4u);
+        if (!s_from_main)
+            memcpy(s_vram, s_bitmap, (size_t)s_w * (size_t)s_h * 4u);
         s_rebuilt = 0;
     }
-    rc_video_overlay_blit(s_offset, s_w * 4, s_panel_w, s_panel_h, s_x, s_y);
+    rc_video_overlay_blit(s_from_main ? s_main_offset : s_offset, s_w * 4,
+                          s_panel_w, s_panel_h, s_x, s_y, s_from_main);
 }
