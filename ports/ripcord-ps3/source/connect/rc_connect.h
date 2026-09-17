@@ -412,6 +412,9 @@ typedef struct {
      * is invisible from this end - the teardown looks identical either way, and the difference is only
      * ever felt on the console. */
     int      disconnect_sent;
+    /* Quit was chosen from the PS menu while the stream was up. The third of the three deliberate
+     * endings, and the only one that was previously indistinguishable from a fault in the summary. */
+    int      xmb_quit;
     /* The sign-in gate ended the attempt, and has already said how on the television: cancelled at the
      * keyboard, or every passcode refused. Stops the generic outcome below overwriting the specific
      * reason with "the console refused the session", which is both wrong and unactionable. */
