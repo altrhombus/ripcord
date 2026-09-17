@@ -186,6 +186,21 @@ int takion_control_parse_stream_info(const uint8_t *data, size_t length,
 size_t takion_control_build_bare(uint32_t type, uint8_t *buf, size_t buf_size);
 
 /*
+ * THE GRACEFUL GOODBYE the vendor's client sends at the end of a session, and the reason it is not a
+ * bare message: DisconnectPayload.reason is a REQUIRED string, so a DISCONNECT with no payload is not a
+ * valid message of that type. An empty reason is still a present field - two bytes inside a two-byte
+ * sub-message - which is what the reference sends and what this builds when `reason` is NULL or empty.
+ *
+ * Worth being precise about what this does and does not do. cap52 isolated it by diffing a rest-off
+ * against a rest-on disconnect: the DISCONNECT is byte-identical either way and does NOT carry the rest
+ * bit, so this is the polite close and nothing more. Resting the console is a separate frame on the
+ * binary control channel (HALYARD_CTRL_TYPE_REST_MODE).
+ *
+ * Returns bytes written, or 0 if the buffer is too small or the reason will not fit.
+ */
+size_t takion_control_build_disconnect(const char *reason, uint8_t *buf, size_t buf_size);
+
+/*
  * PROTOCOL_VERSION_REQUEST carrying the versions we are willing to speak, highest last.
  *
  * This matters more than it looks. The CURVE the session's ECDH runs on is chosen from the NEGOTIATED

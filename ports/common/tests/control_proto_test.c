@@ -748,6 +748,61 @@ static void run_bare_envelope(void)
     }
 }
 
+/*
+ * THE GOODBYE, which cannot be a bare envelope and is the whole reason it has its own builder.
+ *
+ * DisconnectPayload.reason is a REQUIRED string, so a DISCONNECT carrying no payload is not a valid
+ * message of that type - it would encode cleanly here and be rejected on the wire, which is the class of
+ * bug this file exists to catch. The round trip through the parser is what proves the payload is really
+ * there: takion_control_parse_disconnect reads the reason out, and an empty one still has to be FOUND
+ * rather than defaulted, so a builder that dropped the field would fail this even though peek_type
+ * would still say DISCONNECT.
+ */
+static void run_disconnect(void)
+{
+    uint8_t buf[64];
+    size_t written;
+    uint32_t type = 0xffffffffu;
+    const char *reason = NULL;
+    size_t reason_len = 999u;
+
+    /* The empty reason the reference sends. */
+    written = takion_control_build_disconnect(NULL, buf, sizeof(buf));
+    if (written == 0 || !takion_control_peek_type(buf, written, &type)
+        || type != TAKION_CONTROL_DISCONNECT) {
+        g_failed++;
+        printf("FAIL disconnect: the envelope did not round-trip\n");
+    } else {
+        g_passed++;
+    }
+    if (!takion_control_parse_disconnect(buf, written, &reason, &reason_len)
+        || reason_len != 0u) {
+        g_failed++;
+        printf("FAIL disconnect: the required empty reason was not present\n");
+    } else {
+        g_passed++;
+    }
+
+    /* And one with something in it, so the length prefix is exercised rather than only the zero case. */
+    reason = NULL;
+    reason_len = 999u;
+    written = takion_control_build_disconnect("bye", buf, sizeof(buf));
+    if (!takion_control_parse_disconnect(buf, written, &reason, &reason_len)
+        || reason_len != 3u || memcmp(reason, "bye", 3) != 0) {
+        g_failed++;
+        printf("FAIL disconnect: the reason did not survive the round trip\n");
+    } else {
+        g_passed++;
+    }
+
+    if (takion_control_build_disconnect(NULL, buf, 3) != 0) {
+        g_failed++;
+        printf("FAIL disconnect: built into a buffer too small to hold it\n");
+    } else {
+        g_passed++;
+    }
+}
+
 /* This file asserts by hand rather than through a macro; one local helper keeps the new runner from
  * repeating the same six lines eleven times. */
 static void pv_check(int condition, const char *what)
@@ -872,6 +927,7 @@ int main(int argc, char **argv)
     fclose(file);
 
     run_bare_envelope();
+    run_disconnect();
     run_connection_quality();
     run_echo_command();
     run_mtu_commands();
