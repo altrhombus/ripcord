@@ -17,6 +17,22 @@
 #ifndef RC_PAIR_PS3_H
 #define RC_PAIR_PS3_H
 
+#include "halyard_pairing_file.h"
+
+/*
+ * WHERE THE PAIRING RECORD LIVES. Exposed so the shell writes settings to the same file pairing writes
+ * the keys to - two answers to that question in one program is how a setting gets saved somewhere
+ * nothing reads, which looks exactly like a setting that is ignored.
+ */
+const char *rc_pair_record_dir(void);
+
+/*
+ * THIS PORT'S MEASURED DEFAULTS, for a record that was never loaded. ports/common defaults to a 3DS's
+ * settings, which is right for the port that set them and produced a 29 fps first session here - see
+ * the .c for every number and what it was measured against.
+ */
+void rc_pair_apply_port_defaults(halyard_pairing_record *record);
+
 /*
  * Runs the whole thing: three prompts, the registration exchange, and the write. Returns 1 when a
  * pairing record was written.
