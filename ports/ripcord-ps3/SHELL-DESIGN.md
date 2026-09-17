@@ -252,12 +252,27 @@ built.
 
 1. **Foundation** — the wave (Route A), the card row, the single description line, options tucked
    away. Static. This alone is most of the transformation. **Landed b360-b367.**
-2. **Motion** — eased cursor, card spring, entry stagger, breathing pip. **Breathing pip and glow
-   landed b396-b405**; the eased cursor, card spring and entry stagger are not done. Note the pip was
-   reversed: GREEN breathes and amber does not, because amber already says "not ready" by being amber
-   and animating it makes the thing you cannot use the liveliest thing on the card.
-3. **The moment** — title sequence and the trophy card.
-4. **Sound** — three tones, and the settings toggle for them.
+2. **Motion** — **landed b396-b428**, except the entry stagger, which is dropped (see below). The card
+   rises into its slot with an overshoot and the glow sweeps between cards in 200 ms; the pip breathes.
+   Two deliberate departures from what is written above: the pip breathes on GREEN rather than on
+   standby, because amber already says "not ready" by being amber and animating it makes the thing you
+   *cannot* use the liveliest thing on the card; and the card **rises** rather than scaling, because a
+   card that changes size moves its own text and that shift landing on the first frame of an animation
+   is what made four successive attempts feel jerky.
+3. **The moment** — the title sequence is **dropped**. The trophy card is still worth having.
+
+   This document already argued against itself here: "the title moment is the thing most likely to be
+   regretted", and the brief's own measure of success is that "somebody who has used this twice stops
+   noticing it". A wordmark that flies in every launch is the opposite of that — it is the menu asking
+   for credit, on a screen whose entire job is to be passed through in two button presses. Decided on
+   2026-09-17, after seeing the rest of stage 2 on a television: the shell already reads as authored,
+   and the title moment would have been the point where confident turned into pleased with itself.
+
+   The trophy card is a different thing and stays open. "Found 2 consoles", "Could not reach Upstairs" —
+   that is the machine answering a question somebody asked, in this console's own vocabulary, and it
+   reuses `rc_status_screen` rather than adding anything.
+4. **Sound** — three tones, and the settings toggle for them. Not started, and still a good idea: a soft
+   tick under a cursor is most of why a console menu feels like one.
 5. **Polish** — button glyphs (**landed**), the seasonal hue checked across a year by moving the clock
    (not done), and a decision on Route B (**taken: the interface is a cached layer, for cache reasons
    rather than the ones this document gives**). Motes in the wave landed here too - born in the ribbon
