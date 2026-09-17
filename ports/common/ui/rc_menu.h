@@ -24,6 +24,7 @@
 #define RC_MENU_LABEL_MAX 40
 #define RC_MENU_VALUE_MAX 40
 #define RC_MENU_NOTE_MAX  80
+#define RC_MENU_TAG_MAX   8
 /*
  * Raised from 14 when the home screen gained a list of PAIRED consoles alongside the discovered ones:
  * eight paired, four more on the network and four commands is sixteen, and a menu that silently stops
@@ -35,7 +36,14 @@ typedef struct {
     int  id;
     char label[RC_MENU_LABEL_MAX];
     char value[RC_MENU_VALUE_MAX];  /* the right-hand column; empty for a plain row */
-    char note[RC_MENU_NOTE_MAX];    /* a second line under the label, for the selected row */
+    char note[RC_MENU_NOTE_MAX];    /* what this row is FOR, shown once wherever the front end puts it */
+
+    /*
+     * A short badge - "PS5", "PS4". Separate from the label because it is not part of the name and a
+     * front end may want it somewhere else entirely, or nowhere: a handheld with one line per row has
+     * no room for it, and a television with a card per console has an obvious place.
+     */
+    char tag[RC_MENU_TAG_MAX];
 
     /*
      * A row that cannot be chosen is still SHOWN. "Connect" with no pairing record belongs on the screen
@@ -73,6 +81,7 @@ int rc_menu_add(rc_menu *menu, int id, const char *label, const char *value, con
 void rc_menu_set_enabled(rc_menu *menu, int index, int enabled);
 void rc_menu_set_adjustable(rc_menu *menu, int index, int adjustable);
 void rc_menu_set_value(rc_menu *menu, int index, const char *value);
+void rc_menu_set_tag(rc_menu *menu, int index, const char *tag);
 void rc_menu_set_note(rc_menu *menu, int index, const char *note);
 
 /*
