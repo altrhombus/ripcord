@@ -57,7 +57,15 @@ SFO            := $(PS3DEV)/bin/sfo
 PKG            := $(PS3DEV)/bin/pkg
 PKG_FINALIZE   := $(PS3DEV)/bin/package_finalize
 SFOXML         := $(PS3DEV)/bin/sfo.xml
-ICON0          := $(PS3DEV)/bin/ICON0.PNG
+
+# THE ICON THE XMB SHOWS. Drawn from brand/ripcord-tile.svg by tools/make-icon.py rather than copied
+# from $(PS3DEV)/bin/ICON0.PNG, which is PSL1GHT's placeholder and says PSL1GHT - so every screenshot of
+# this port on a television advertised the wrong project. The generator needs python3 and nothing else;
+# see its header for why it does not use brand/generate-assets.ps1.
+# Deferred rather than immediate: $(BUILD) is defined further down, and := here expanded it
+# to nothing, which made the target /ICON0.PNG and the failure a permission error at the
+# root of the filesystem.
+ICON0           = $(BUILD)/ICON0.PNG
 
 # The identity the console files this under. APPID is what creates /dev_hdd0/game/RIPC00003/ on install;
 # CONTENTID follows the UP0001-<appid>_00-<16 chars> shape that $(PSL1GHT)/ppu_rules uses for its own
@@ -637,7 +645,11 @@ $(APP).self: $(BUILD)/$(APP).ready.elf
 # The steps are PSL1GHT's own, from the %.pkg rule in $(PSL1GHT)/ppu_rules, spelled out here rather than
 # inherited because this Makefile deliberately does not include ppu_rules - it sets its own warning and
 # architecture flags and including that file would quietly replace them.
-$(APP).pkg: $(BUILD)/$(APP).ready.elf
+$(ICON0): tools/make-icon.py ../../brand/ripcord-tile.svg
+	@mkdir -p $(BUILD)
+	python3 tools/make-icon.py $@
+
+$(APP).pkg: $(BUILD)/$(APP).ready.elf $(ICON0)
 	@rm -rf $(BUILD)/pkg
 	@mkdir -p $(BUILD)/pkg/USRDIR
 	cp $(ICON0) $(BUILD)/pkg/ICON0.PNG
