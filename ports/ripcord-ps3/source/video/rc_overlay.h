@@ -124,6 +124,22 @@ int  rc_overlay_begin_surface(int clear);
  */
 void rc_overlay_text_cost(unsigned *us, unsigned *runs, int reset);
 
+/*
+ * AIM THE DRAWING SOMEWHERE OTHER THAN THE SURFACE, or back at it with NULL.
+ *
+ * The shell builds its whole interface once into a cached layer and composites that over the moving
+ * background each frame; text is most of what such a layer holds. The destination must be at least as
+ * large as the surface. See the note in the .c: the compositing arithmetic is the same either way.
+ */
+void rc_overlay_target(uint32_t *px, int pitch);
+
+/*
+ * Called for each row a drawing operation puts ink on, with the row and the half-open column range.
+ * NULL turns it off. For a caller keeping a cached layer: knowing this as it is drawn is what saves
+ * reading the layer back afterwards to find out. Bounds are conservative, never tight.
+ */
+void rc_overlay_set_ink_hook(void (*hook)(int y, int x0, int x1));
+
 /* The position is an argument rather than shared state - see the note in the .c for what making it
  * state cost the diagnostics overlay. */
 void rc_overlay_end_now(int x, int y, int w, int h);

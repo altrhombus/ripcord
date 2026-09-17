@@ -37,6 +37,18 @@ const char *rc_wave_month(void);
  */
 void rc_wave_draw(uint32_t *dst, int w, int h, int stride_px, uint64_t ms);
 
+/*
+ * THE SAME PICTURE, A ROW AT A TIME - for a caller that wants to composite something over each row
+ * while it is still in cache rather than write the whole screen and then read it all back.
+ *
+ * rc_wave_begin does the frame's work and must be called first; rc_wave_row is then an expansion into
+ * whatever buffer the caller gives it, which is expected to be one row long and to stay hot. `y` is a
+ * row of the FULL-SIZE picture, and rows may be asked for in any order, though in practice they are
+ * asked for in the order they are drawn.
+ */
+void rc_wave_begin(int w, int h, uint64_t ms);
+void rc_wave_row(uint32_t *dst, int w, int y);
+
 /* How long the last fill took. The number that decides what the next stage can afford. */
 unsigned rc_wave_last_us(void);
 
