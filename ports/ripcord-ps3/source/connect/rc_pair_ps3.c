@@ -3,6 +3,7 @@
 
 #include "halyard_pairing_file.h"
 #include "rc_account_ps3.h"
+#include "halyard_account_id.h"
 #include "halyard_regist_flow.h"
 #include "rc_log.h"
 #include "rc_osk_ps3.h"
@@ -208,20 +209,53 @@ int rc_pair_run(const char *host)
      */
     {
         const char *prefill = (record.account_id[0] != '\0') ? record.account_id : NULL;
-        char from_console[24];
+        char from_console[HALYARD_ACCOUNT_ID_TEXT_MAX];
+        char typed[64];
+        const char *hint = NULL;
+        halyard_account_id_status parsed;
 
-        if (prefill == NULL && rc_account_read(from_console, sizeof(from_console)) == RC_ACCOUNT_OK) {
-            prefill = from_console;
-            rc_log("pair:  the account id came from this PS3 - check it before continuing\n");
-            show(RC_PHASE_PAIRING, "Pairing", "Enter your PSN account id",
-                 "This PS3's own account id is filled in - check it and press Start");
-        } else {
-            show(RC_PHASE_PAIRING, "Pairing", "Enter your PSN account id", NULL);
+        if (prefill == NULL) {
+            rc_account_status found = rc_account_read(from_console, sizeof(from_console));
+
+            if (found == RC_ACCOUNT_OK) {
+                prefill = from_console;
+                hint = "This PS3's own account id is filled in - check it and press Start";
+                rc_log("pair:  the account id came from this PS3 - check it before continuing\n");
+            } else if (found == RC_ACCOUNT_NO_NP) {
+                /*
+                 * THE ONE FAILURE WITH AN EASY WAY OUT, and it is worth more than any other message on
+                 * this screen. A person who does not know their account id and has no way to find it is
+                 * stopped here for good - but this console will hand it over the moment it is signed in,
+                 * and signing a PS3 in to PSN is something its owner already knows how to do. Saying so
+                 * turns a dead end into a two-minute errand.
+                 */
+                hint = "Sign in to PSN on this PS3 and Ripcord will fill this in by itself";
+            } else {
+                hint = "Ripcord could not read it from this PS3 - enter it yourself";
+            }
+            rc_log("pair:  account id from the console: %s\n", rc_account_status_text(found));
         }
 
-        if (!ask(RC_OSK_DIGITS_FIRST, "PSN account id", prefill,
-                 params.account_id, sizeof(params.account_id), "the account id is needed"))
+        show(RC_PHASE_PAIRING, "Pairing", "Enter your PSN account id", hint);
+        if (!ask(RC_OSK_DIGITS_FIRST, "PSN account id", prefill, typed, sizeof(typed),
+                 "the account id is needed"))
             return 0;
+
+        /*
+         * READ BEFORE IT TRAVELS. An account id is a 64-bit number and guides quote it in three bases;
+         * halyard_regist_message encodes an all-decimal one as a number and anything else as its own
+         * characters, so hex typed into this box goes out as the text "1a2b..." and comes back as a
+         * refusal the console does not explain. See halyard_account_id.h.
+         */
+        parsed = halyard_account_id_normalise(typed, params.account_id, sizeof(params.account_id));
+        if (parsed != HALYARD_ACCOUNT_ID_OK) {
+            rc_log("pair:  the account id was not usable - %s\n",
+                   halyard_account_id_status_text(parsed));
+            show(RC_PHASE_FAILED, "That account id cannot be used",
+                 halyard_account_id_status_text(parsed),
+                 "Start pairing again and enter it as a plain number");
+            return 0;
+        }
     }
 
     show(RC_PHASE_PAIRING, "Pairing",
