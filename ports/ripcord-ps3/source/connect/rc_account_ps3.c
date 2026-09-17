@@ -286,3 +286,171 @@ void rc_account_probe_run(const char *known_account_id, rc_account_probe *out)
                "       'not in what was searched', not 'not on this console'\n",
                out->files_too_big, out->read_errors);
 }
+
+/* ------------------------------------------------------------------------------------------------
+ * The reader, now that the search has answered where to look.
+ */
+
+/*
+ * A DEGENERATE-VALUE GUARD, DELIBERATELY NOT A FORMAT CLAIM.
+ *
+ * [X] Every account id this project has seen is nineteen decimal digits, but that is an observation over
+ * a handful of accounts and is documented nowhere - so the bound here is set far below it rather than at
+ * it. What it has to catch is the file being absent in all but name: zeroed after a sign-out, or some
+ * other 248 bytes entirely. What it must NOT do is reject a real id that happens to be shorter than the
+ * ones seen so far, because a wrong rejection sends somebody back to typing nineteen digits with no
+ * explanation. Sixteen digits is comfortably under any observed id and comfortably over any counter.
+ *
+ * A rejection is reported, not swallowed - rc_account_status_text names this case - so if the bound is
+ * ever wrong it says so on the screen instead of looking like the console has no account.
+ */
+#define RC_ACC_MIN_PLAUSIBLE 1000000000000000ull
+
+const char *rc_account_status_text(rc_account_status status)
+{
+    switch (status) {
+    case RC_ACCOUNT_OK:          return "read from this console";
+    case RC_ACCOUNT_NO_NP:       return "this PS3 is not signed in to PlayStation Network";
+    case RC_ACCOUNT_NO_USER:     return "the signed-in user's storage was not found";
+    case RC_ACCOUNT_NO_FILE:     return "this PS3 has no cached account id";
+    case RC_ACCOUNT_IMPLAUSIBLE: return "what was there does not look like an account id";
+    }
+    return "?";
+}
+
+/* Reads a whole small file. Returns the byte count, 0 on any failure. */
+static size_t read_small(const char *path, unsigned char *buf, size_t size)
+{
+    sysFSStat st;
+    s32 fd = -1;
+    u64 got = 0u;
+
+    if (sysLv2FsStat(path, &st) != 0 || (u64)st.st_size == 0u || (u64)st.st_size > (u64)size)
+        return 0;
+    if (sysLv2FsOpen(path, SYS_O_RDONLY, &fd, 0, NULL, 0) != 0)
+        return 0;
+    if (sysLv2FsRead(fd, buf, (u64)st.st_size, &got) != 0)
+        got = 0u;
+    (void)sysLv2FsClose(fd);
+    return (size_t)got;
+}
+
+/* Trailing whitespace and NULs off a stored name, so a comparison is about the name and not about how
+ * the file happened to be terminated. */
+static void trim(char *text)
+{
+    size_t n = strlen(text);
+
+    while (n > 0u && (text[n - 1u] == '\n' || text[n - 1u] == '\r' || text[n - 1u] == ' '))
+        text[--n] = '\0';
+}
+
+/* The eight bytes at the front of np_cache.dat, as a decimal string. */
+static rc_account_status read_np_cache(const char *user_dir, char *out, size_t size)
+{
+    unsigned char raw[8];
+    char path[128];
+    unsigned long long value = 0ull;
+    int i;
+
+    snprintf(path, sizeof(path), "%s/np_cache.dat", user_dir);
+    if (read_small(path, raw, sizeof(raw)) < sizeof(raw))
+        return RC_ACCOUNT_NO_FILE;
+
+    for (i = 0; i < 8; i++)
+        value = (value << 8) | (unsigned long long)raw[i];
+
+    if (value < RC_ACC_MIN_PLAUSIBLE)
+        return RC_ACCOUNT_IMPLAUSIBLE;
+    if (snprintf(out, size, "%llu", value) <= 0)
+        return RC_ACCOUNT_IMPLAUSIBLE;
+    return RC_ACCOUNT_OK;
+}
+
+rc_account_status rc_account_read(char *out, size_t size)
+{
+    char current_user[SYSUTIL_SYSTEMPARAM_CURRENT_USERNAME_SIZE + 1];
+    char only_dir[64];
+    rc_account_status status = RC_ACCOUNT_NO_USER;
+    s32 value = 0;
+    s32 dir = -1;
+    int candidates = 0;
+
+    if (out == NULL || size < 21u)
+        return RC_ACCOUNT_NO_USER;
+    out[0] = '\0';
+    only_dir[0] = '\0';
+
+    /*
+     * ASKED FIRST, because it turns every empty result below into an explanation. A console with no
+     * PSN account has no np_cache.dat and nothing is wrong with it.
+     */
+    if (sysUtilGetSystemParamInt(SYSUTIL_SYSTEMPARAM_ID_CURRENT_USER_HAS_NP_ACCOUNT, &value) == 0 &&
+        value == 0)
+        return RC_ACCOUNT_NO_NP;
+
+    current_user[0] = '\0';
+    if (sysUtilGetSystemParamString(SYSUTIL_SYSTEMPARAM_ID_CURRENT_USERNAME, current_user,
+                                    (u32)sizeof(current_user) - 1u) != 0)
+        current_user[0] = '\0';
+    current_user[sizeof(current_user) - 1u] = '\0';
+    trim(current_user);
+
+    if (sysLv2FsOpenDir("/dev_hdd0/home", &dir) != 0)
+        return RC_ACCOUNT_NO_USER;
+
+    for (;;) {
+        sysFSDirent entry;
+        u64 read = 0u;
+        char user_dir[64];
+        char name_path[96];
+        unsigned char stored[64];
+        size_t got;
+
+        if (sysLv2FsReadDir(dir, &entry, &read) != 0 || read == 0u)
+            break;
+        entry.d_name[sizeof(entry.d_name) - 1u] = '\0';
+        if (entry.d_type != RC_ACC_DT_DIR || entry.d_name[0] < '0' || entry.d_name[0] > '9')
+            continue;
+        if (snprintf(user_dir, sizeof(user_dir), "/dev_hdd0/home/%.16s", entry.d_name) >=
+            (int)sizeof(user_dir))
+            continue;
+
+        candidates++;
+        if (only_dir[0] == '\0')
+            snprintf(only_dir, sizeof(only_dir), "%s", user_dir);
+
+        if (current_user[0] == '\0')
+            continue;
+
+        snprintf(name_path, sizeof(name_path), "%s/localusername", user_dir);
+        got = read_small(name_path, stored, sizeof(stored) - 1u);
+        if (got == 0u)
+            continue;
+        stored[got] = '\0';
+        trim((char *)stored);
+
+        if (strcmp((const char *)stored, current_user) == 0) {
+            status = read_np_cache(user_dir, out, size);
+            candidates = -1;   /* matched by name - the fallback below must not second-guess it */
+            break;
+        }
+    }
+    (void)sysLv2FsCloseDir(dir);
+
+    /*
+     * THE FALLBACK IS ONLY SAFE WHEN THERE IS NOTHING TO GET WRONG. One local user means the signed-in
+     * one is that user, whatever the name comparison did. Two would mean guessing between accounts, and
+     * a client that silently registers under the wrong person's account is not a client anyone can
+     * debug - so with two it declines and says which step failed.
+     */
+    if (candidates == 1) {
+        status = read_np_cache(only_dir, out, size);
+        rc_log("acct:  one local user and no name match - read from it anyway\n");
+    }
+
+    /* The VALUE is never logged, here or anywhere. Its length is safe and says the read worked. */
+    rc_log("acct:  %s%s\n", rc_account_status_text(status),
+           (status == RC_ACCOUNT_OK) ? " (an account id of the expected length)" : "");
+    return status;
+}

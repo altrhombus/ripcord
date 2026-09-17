@@ -28,6 +28,36 @@
 
 #include <stddef.h>
 
+/*
+ * ANSWERED, b335: /dev_hdd0/home/<user>/np_cache.dat, 248 bytes, the account id as a BIG-endian
+ * uint64 at offset 0. The search below found it by looking for a number the pairing record already
+ * had, which is why there is no hypothesis here to be wrong about.
+ *
+ * WHICH USER, THOUGH. A console can have several local users and only one of them is signed in. The
+ * documented API gives the current user's NAME and not the numeric directory it lives in, so the two
+ * are matched through `localusername` - the plain-text file each user directory carries. That is a
+ * documented parameter and a documented file rather than an assumption about directory numbering,
+ * which on a console with three users would otherwise pick somebody else's account.
+ */
+typedef enum {
+    RC_ACCOUNT_OK = 0,
+    RC_ACCOUNT_NO_NP,          /* the console says this user has no PSN account linked */
+    RC_ACCOUNT_NO_USER,        /* no local user directory matched the signed-in user   */
+    RC_ACCOUNT_NO_FILE,        /* ...it had no np_cache.dat, or it could not be read   */
+    RC_ACCOUNT_IMPLAUSIBLE     /* it was read and does not look like an account id     */
+} rc_account_status;
+
+/*
+ * Reads this console's own PSN account id as a decimal string. `out` needs 21 bytes.
+ *
+ * NOTHING HERE LOGS THE VALUE and neither should any caller: it identifies an account. It is written
+ * into the pairing record, which is the one file in this port allowed to hold material of that kind.
+ */
+rc_account_status rc_account_read(char *out, size_t size);
+
+/* For a caller putting the reason on a screen. Never NULL. */
+const char *rc_account_status_text(rc_account_status status);
+
 #define RC_ACCOUNT_HIT_PATH_MAX 96
 
 typedef struct {
