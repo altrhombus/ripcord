@@ -116,6 +116,7 @@
 
 #define HALYARD_PAIRING_HOST_MAX 64
 #define HALYARD_PAIRING_NAME_MAX 32
+#define HALYARD_PAIRING_CONSOLE_ID_MAX 32
 #define HALYARD_PAIRING_REGISTKEY_MAX 8
 #define HALYARD_PAIRING_COMPANION_LENGTH 16
 #define HALYARD_PAIRING_DEVICE_ID_MAX 16
@@ -129,6 +130,21 @@ typedef struct {
      * It is here because "192.168.1.42" and "192.168.1.43" is not a menu anybody can choose from.
      */
     char name[HALYARD_PAIRING_NAME_MAX];
+
+    /*
+     * THE CONSOLE'S OWN ID, WHICH IS THE ONLY STABLE THING ABOUT IT.
+     *
+     * `host` is an address, and an address is a DHCP lease rather than a promise - a console that is
+     * turned off over a weekend comes back on a different one, and every stored record then points at
+     * nothing. Discovery returns an id that does not move, so a record that carries one can be
+     * re-addressed by asking the network who is who, instead of failing with "no console answered" and
+     * sending somebody to re-pair a console that is sitting there working.
+     *
+     * Empty for a record written before this existed, or one paired by hand from a typed address. That
+     * is a normal state: it just means this console cannot be found again if it moves, until the next
+     * time it is seen and the id is learned.
+     */
+    char console_id[HALYARD_PAIRING_CONSOLE_ID_MAX];
     int is_ps5;
     uint8_t registkey[HALYARD_PAIRING_REGISTKEY_MAX];
     size_t registkey_length;
@@ -285,6 +301,16 @@ int halyard_pairing_file_save_set(const char *argv0, const halyard_pairing_set *
 
 /* The index of the console at `host`, or -1. Matching is by address, which is what the file records. */
 int halyard_pairing_set_find(const halyard_pairing_set *set, const char *host);
+
+/* The same, by the console's own id - which survives the address changing. -1 if unknown or absent. */
+int halyard_pairing_set_find_id(const halyard_pairing_set *set, const char *console_id);
+
+/*
+ * Points a stored console at a new address, found by its own id. Returns 1 if a record was changed and
+ * written. For a console whose lease moved: the alternative is telling somebody to pair it again, and
+ * pairing again means walking to it and reading a PIN off its screen for no reason at all.
+ */
+int halyard_pairing_file_readdress(const char *argv0, const char *console_id, const char *new_host);
 
 /*
  * Adds `rec` or replaces the entry with the same host, and selects it. Returns its index, or -1 when

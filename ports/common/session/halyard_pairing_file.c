@@ -167,7 +167,7 @@ int halyard_pairing_file_load_set(const char *argv0, halyard_pairing_set *set)
         if (strcmp(line, "host") == 0 || strcmp(line, "name") == 0 ||
             strcmp(line, "platform") == 0 || strcmp(line, "registkey") == 0 ||
             strcmp(line, "companion") == 0 || strcmp(line, "deviceid") == 0 ||
-            strcmp(line, "pin") == 0) {
+            strcmp(line, "consoleid") == 0 || strcmp(line, "pin") == 0) {
             if (current < 0) {
                 if (parsed == 0)
                     current = parsed++;
@@ -180,6 +180,8 @@ int halyard_pairing_file_load_set(const char *argv0, halyard_pairing_set *set)
                 strncpy(rec->host, value, sizeof(rec->host) - 1);
             } else if (strcmp(line, "name") == 0) {
                 strncpy(rec->name, value, sizeof(rec->name) - 1);
+            } else if (strcmp(line, "consoleid") == 0) {
+                strncpy(rec->console_id, value, sizeof(rec->console_id) - 1);
             } else if (strcmp(line, "platform") == 0) {
                 rec->is_ps5 = (strcmp(value, "ps4") != 0);
             } else if (strcmp(line, "registkey") == 0) {
@@ -315,6 +317,46 @@ int halyard_pairing_set_find(const halyard_pairing_set *set, const char *host)
             return i;
     }
     return -1;
+}
+
+int halyard_pairing_set_find_id(const halyard_pairing_set *set, const char *console_id)
+{
+    int i;
+
+    if (set == NULL || console_id == NULL || console_id[0] == '\0')
+        return -1;
+    for (i = 0; i < set->count; i++) {
+        if (set->console[i].console_id[0] != '\0' &&
+            strcmp(set->console[i].console_id, console_id) == 0)
+            return i;
+    }
+    return -1;
+}
+
+int halyard_pairing_file_readdress(const char *argv0, const char *console_id, const char *new_host)
+{
+    halyard_pairing_set set;
+    int at;
+
+    if (console_id == NULL || new_host == NULL || new_host[0] == '\0')
+        return 0;
+    if (halyard_pairing_file_load_set(argv0, &set) <= 0)
+        return 0;
+
+    at = halyard_pairing_set_find_id(&set, console_id);
+    if (at < 0)
+        return 0;
+    if (strcmp(set.console[at].host, new_host) == 0)
+        return 0;   /* already right - not a failure, just nothing to do */
+
+    /*
+     * The ADDRESS changes and nothing else does. In particular the keys do not: they belong to the
+     * console, not to where it happens to be sitting on the network this week.
+     */
+    strncpy(set.console[at].host, new_host, sizeof(set.console[at].host) - 1);
+    set.console[at].host[sizeof(set.console[at].host) - 1] = '\0';
+    rc_log("pairing: a paired console moved - its record now points at where it answered\n");
+    return halyard_pairing_file_save_set(argv0, &set);
 }
 
 void halyard_pairing_set_select(halyard_pairing_set *set, int index)
@@ -475,6 +517,8 @@ int halyard_pairing_file_save_set(const char *argv0, const halyard_pairing_set *
         fprintf(f, "host=%s\n", rec->host);
         if (rec->name[0] != '\0')
             fprintf(f, "name=%s\n", rec->name);
+        if (rec->console_id[0] != '\0')
+            fprintf(f, "consoleid=%s\n", rec->console_id);
         fprintf(f, "platform=%s\n", rec->is_ps5 ? "ps5" : "ps4");
         write_hex(f, "registkey", rec->registkey, rec->registkey_length);
         write_hex(f, "companion", rec->companion, sizeof(rec->companion));
