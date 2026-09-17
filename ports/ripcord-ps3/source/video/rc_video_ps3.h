@@ -150,7 +150,20 @@ unsigned rc_video_blit_rsx_offset(uint32_t src_offset, int width, int height);
  * AFTER the picture has been queued: it is a command, so it lands behind the picture in the same
  * buffer, which is the only ordering that holds when the RSX is doing the drawing.
  */
-void rc_video_overlay_blit(uint32_t src_offset, int src_pitch, int w, int h, int x, int y);
+/*
+ * Queues a copy of an overlay bitmap over the picture. `from_main` says the source is main memory that
+ * rc_video_map_main has given the RSX a window onto, rather than the RSX's own memory - which lets a
+ * caller that must draw in main memory skip copying its surface across every frame. See the .c.
+ */
+void rc_video_overlay_blit(uint32_t src_offset, int src_pitch, int w, int h, int x, int y,
+                           int from_main);
+
+/*
+ * Gives the RSX an IO window onto a buffer in main memory and reports its offset. `addr` must be
+ * megabyte-aligned and `bytes` a whole number of megabytes. 0 if the mapping was refused, in which case
+ * the caller keeps doing whatever it did before.
+ */
+int rc_video_map_main(const void *addr, size_t bytes, uint32_t *offset);
 
 /* available is 0 when the staging buffer could not be allocated, in which case nothing else is useful. */
 void rc_video_rsx_scale_stats(int *available, unsigned *blits, unsigned *refused);
