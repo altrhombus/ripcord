@@ -566,6 +566,7 @@ CFLAGS_SDK_SOCKETS := $(CFLAGS) -Wno-sign-conversion -include sys/time.h
 SDK_SOCKET_OBJS := \
 	$(BUILD)/halyard_control_session.o \
 	$(BUILD)/halyard_control_probe.o \
+	$(BUILD)/rc_pair_ps3.o \
 	$(BUILD)/rc_tcp.o \
 	$(BUILD)/rc_udp.o \
 	$(BUILD)/rc_connect.o \
