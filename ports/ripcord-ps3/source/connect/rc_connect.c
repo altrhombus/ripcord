@@ -3244,6 +3244,21 @@ rc_connect_stage rc_connect(unsigned wake_timeout_ms, rc_connect_log_fn log,
         ? "inet_aton agrees with inet_pton"
         : "inet_aton DISAGREES with inet_pton - the core parses addresses with inet_aton");
 
+    /*
+     * SAY IT ON THE TELEVISION, NOT ONLY IN THE LOG.
+     *
+     * SAY writes to a callback that ends up in a file on another machine. Between somebody pressing
+     * Cross and the first say() - which was down at the hold loop - this path probes an address, sends a
+     * WAKEUP, polls for up to twenty seconds, pre-flights a TCP port, opens a control session, runs
+     * senkusha and negotiates keys, with NOTHING on screen. Reported as "after selecting a console,
+     * nothing happens until the console connects", which is exactly what it looked like.
+     *
+     * Each stage now names itself, in the console's own words rather than the protocol's: somebody
+     * waiting is owed what is being attempted, not which datagram is in flight. The names come from the
+     * Windows client's vocabulary, which has had the same argument already.
+     */
+    say(RC_PHASE_DISCOVERING, "Connecting",
+        rec.name[0] != '\0' ? rec.name : "Looking for the console", NULL);
     SAY("unicast SRCH to the recorded address");
 
     if (probe_once(rec.host, halyard_discovery_profile_ps5.wake_search_source_port, &awake, 1500u)) {
@@ -3299,6 +3314,8 @@ answered:
     if (!awake) {
         started = rc_time_ms();
 
+        say(RC_PHASE_WAKING, "Waking the console",
+            rec.name[0] != '\0' ? rec.name : NULL, "This takes a few seconds from rest");
         SAY("sending WAKEUP");
 
         if (send_wakeup(&rec, out))
@@ -3308,7 +3325,17 @@ answered:
 
         /* Poll SRCH until is_awake flips. Readiness is observed, never acknowledged. */
         while (rc_time_ms() - started < (uint64_t)wake_timeout_ms) {
+            char waited[48];
+
             rc_sleep_ms(500u);
+            /*
+             * A COUNT, because a screen that says the same thing for twenty seconds is indistinguishable
+             * from one that has stopped. This is the longest wait in the whole flow and the one where
+             * somebody is most likely to conclude it has hung and pull the plug.
+             */
+            snprintf(waited, sizeof(waited), "%u seconds so far",
+                     (unsigned)((rc_time_ms() - started) / 1000u));
+            say(RC_PHASE_WAKING, "Waking the console", waited, "This takes a few seconds from rest");
             /* Twenty seconds is long enough to be asked to quit inside; this loop already sleeps, so
              * asking costs nothing. See the note in the hold loop below. */
             sysUtilCheckCallback();
@@ -3334,6 +3361,7 @@ answered:
      * PRE-FLIGHT BEFORE THE BLOCKING CALL. See tcp_port_accepts: the core's connect has no deadline, so
      * entering open() against a port that will not accept is what hung b31.
      */
+    say(RC_PHASE_CONNECTING, "Connecting", "Reaching the console", NULL);
     SAY("pre-flighting the control port with a bounded TCP connect");
 
     if (!tcp_port_accepts(rec.host, HALYARD_CONTROL_ARM_PORT, 4000u)) {
@@ -3357,6 +3385,7 @@ answered:
      * The control plane: ARM, /sess/init, /sess/ctrl, then the persistent binary channel. All of it is
      * ports/common's, proven against a real PS5 from the 3DS - this contributes nothing but the call.
      */
+    say(RC_PHASE_CONNECTING, "Connecting", "Asking for a session", NULL);
     SAY("opening the control session (ARM, /sess/init, /sess/ctrl)");
 
     memset(&session, 0, sizeof(session));
@@ -3505,9 +3534,11 @@ answered:
             out->senkusha_peer_tag = (unsigned)g_senkusha_channel.peer_tag;
             out->stage = RC_CONNECT_SENKUSHA_UP;
 
+            say(RC_PHASE_CONNECTING, "Connecting", "Measuring the link", NULL);
             SAY("senkusha's gating legs (protocol version, keyless session)");
             (void)senkusha_legs(&session, out);
 
+            say(RC_PHASE_CONNECTING, "Connecting", "Setting up the stream", NULL);
             SAY("Takion handshake for the stream channel");
             if (takion_bring_up(&g_stream_channel, rec.host, RC_STREAM_PORT,
                                 RC_STREAM_ATTEMPTS, RC_STREAM_ATTEMPT_MS, &session, &stream_sock)) {

@@ -90,7 +90,16 @@ BUILD_NO      = $(shell cat $(BUILDNO_FILE) 2>/dev/null || echo 0)
 # Recursively expanded (=, not :=) on purpose: the number is read when the packaging recipe RUNS, which
 # is after the compile step has bumped it. A := here would bake in the previous build's number and
 # produce exactly the mismatch this exists to detect.
-TITLE     = Ripcord bring-up b$(BUILD_NO)
+# THE NAME ON THE XMB IS THE NAME OF THE PROGRAM, and the build number is its VERSION - which is the
+# field the console already has for exactly this and shows in the same panel.
+#
+# It used to be "Ripcord bring-up b362", which put a developer's counter in the place a person reads the
+# name of the thing they are about to launch.
+#
+# APP_VER is an NN.NN string, so the number goes in losslessly: take the dot out of the version and you
+# have the build. b432 is 04.32. That is the whole encoding, it is monotonic, and it holds to b9999.
+TITLE     = Ripcord
+APP_VER    = $(shell printf '%02d.%02d' $$(( $(BUILD_NO) / 100 )) $$(( $(BUILD_NO) % 100 )))
 APPID     := RIPC00003
 CONTENTID := UP0001-$(APPID)_00-0000000000000000
 
@@ -649,12 +658,17 @@ $(ICON0): tools/make-icon.py ../../brand/ripcord-tile.svg
 	@mkdir -p $(BUILD)
 	python3 tools/make-icon.py $@
 
-$(APP).pkg: $(BUILD)/$(APP).ready.elf $(ICON0)
+# THE MAKEFILE IS A PREREQUISITE, because the packaging rules are as much a part of the package as the
+# binary is. Changing how PARAM.SFO is written and then having make decide the package was up to date is
+# how a build ships with the previous build's metadata - which ship.sh caught the first time this rule
+# changed, and should not have had to.
+$(APP).pkg: $(BUILD)/$(APP).ready.elf $(ICON0) Makefile
 	@rm -rf $(BUILD)/pkg
 	@mkdir -p $(BUILD)/pkg/USRDIR
 	cp $(ICON0) $(BUILD)/pkg/ICON0.PNG
 	$(SELF_NPDRM) $< $(BUILD)/pkg/USRDIR/EBOOT.BIN $(CONTENTID) > /dev/null
-	$(SFO) --title "$(TITLE)" --appid "$(APPID)" -f $(SFOXML) $(BUILD)/pkg/PARAM.SFO
+	@sed 's/01\.00/$(APP_VER)/g' $(SFOXML) > $(BUILD)/sfo.xml
+	$(SFO) --title "$(TITLE)" --appid "$(APPID)" -f $(BUILD)/sfo.xml $(BUILD)/pkg/PARAM.SFO
 	$(PKG) --contentid $(CONTENTID) $(BUILD)/pkg/ $@ > /dev/null
 	@cp $@ $(APP).gnpdrm.pkg
 	$(PKG_FINALIZE) $(APP).gnpdrm.pkg
