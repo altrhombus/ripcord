@@ -309,9 +309,36 @@ static int isqrt_i(int v)
 static uint32_t *s_px;
 static int s_pitch;
 
-/* Defined with the layer, below. Every shape reports the rows it may touch, so nothing has to read the
- * finished layer back to find out where the interface is. */
-static void layer_note_ink(int y, int x0, int x1);
+/*
+ * WHERE THE DRAWING IS ALLOWED TO REACH, which is NOT the same question as how big the screen is - and
+ * conflating them is what b417 shipped.
+ *
+ * sx() and sy() scale a design laid out against 1920x1080 to whatever the television is, so they have to
+ * read the real display. Clipping asks something else entirely: what are the bounds of the buffer being
+ * drawn into. Those agree for every caller except one - the selected card, which is rendered into a
+ * sprite about 412 pixels wide - and setting s_scr_w to the sprite's width to make the clipping right
+ * made sx() divide every layout measurement by a screen four times too narrow. The card came out with
+ * its padding, its lift and its text in the wrong places, which on screen was a second copy of the card
+ * offset from the one underneath it.
+ */
+static int s_clip_w, s_clip_h;
+
+/*
+ * WHERE A SHAPE PUT INK, TOLD TO WHICHEVER BUFFER IS BEING DRAWN INTO.
+ *
+ * Every shape reports the rows it may touch, so nothing has to read a finished buffer back to find out
+ * where the interface is. There are now TWO such buffers - the cached layer and the selected card's
+ * sprite - and b421 shipped with the shapes reporting unconditionally to the layer's. Which meant the
+ * sprite's bounds covered only its TEXT, because text reports through rc_overlay's hook and happened to
+ * be aimed correctly; the card's own fill and outline were recorded into the LAYER's bounds, in the
+ * sprite's coordinates.
+ *
+ * What that looks like on a television is the sprite compositing its text and nothing else: the card
+ * underneath shows through everywhere the sprite did not claim, so an opaque card reads as a translucent
+ * one, the plus sign appears twice, and the glow hugs a card edge that is eighteen pixels from the one
+ * you can see. Every symptom of the last three builds is this.
+ */
+static void note_ink(int y, int x0, int x1);
 
 /* Defined with the other blends, below. */
 static void blend_one(uint32_t *p, uint32_t rgb, unsigned a);
@@ -321,7 +348,13 @@ static void blend_one(uint32_t *p, uint32_t rgb, unsigned a);
  * parts came to about ten milliseconds all told; being wrong by six times means something here is doing
  * work nobody has accounted for, and the only way to find out which is to time the pieces separately.
  */
-static uint64_t s_sum_glow, s_sum_shape, s_sum_text, s_sum_cards, s_sum_hints, s_sum_header;
+/*
+ * The glow and the card shapes are timed inside draw_card, which now runs for the layer's cards AND for
+ * the sprite - so dividing them by the LAYER's rebuild count reported figures several times the truth.
+ * They are per card drawn, and counted as such.
+ */
+static uint64_t s_sum_glow, s_sum_shape, s_sum_text, s_sum_cards, s_sum_header;
+static unsigned s_cards_drawn;
 static uint64_t s_shape_at;
 
 static unsigned us_since(uint64_t t)
@@ -341,7 +374,7 @@ static unsigned us_since(uint64_t t)
  */
 static void blend_at(int x, int y, uint32_t rgb, unsigned a)
 {
-    if (a == 0u || s_px == NULL || x < 0 || y < 0 || x >= s_scr_w || y >= s_scr_h)
+    if (a == 0u || s_px == NULL || x < 0 || y < 0 || x >= s_clip_w || y >= s_clip_h)
         return;
     blend_one(&s_px[(size_t)y * (size_t)s_pitch + (size_t)x], rgb, a);
 }
@@ -578,7 +611,7 @@ static void rounded_shape(int x, int y, int w, int h, int r, int t, uint32_t arg
         return;
     rrect_set(&box, x, y, w, h, r);
     if (lo < 0) lo = 0;
-    if (hi > s_scr_w) hi = s_scr_w;
+    if (hi > s_clip_w) hi = s_clip_w;
     if (hi <= lo)
         return;
 
@@ -587,7 +620,7 @@ static void rounded_shape(int x, int y, int w, int h, int r, int t, uint32_t arg
         int dy, col, flat_lo, flat_hi;
         unsigned flat;
 
-        if (row < 0 || row >= s_scr_h)
+        if (row < 0 || row >= s_clip_h)
             continue;
         dy = rrect_dy(&box, row);
         /* Nothing on this row can be inside if it is already further out than the radius allows. */
@@ -595,7 +628,7 @@ static void rounded_shape(int x, int y, int w, int h, int r, int t, uint32_t arg
             continue;
 
         dst = s_px + (size_t)row * (size_t)s_pitch;
-        layer_note_ink(row, lo, hi);
+        note_ink(row, lo, hi);
 
         /*
          * The straight band, where the horizontal term is zero by construction and the distance is the
@@ -715,6 +748,8 @@ static void glow_capture(int x, int y, int w, int h, int r, int spread, uint32_t
 
     lo = s_glow_x;
     hi = s_glow_x + s_glow_w;
+    if (lo < 0) lo = 0;
+    if (hi > s_clip_w) hi = s_clip_w;
 
     for (row = s_glow_y; row < s_glow_y + s_glow_h; row++) {
         unsigned char *m = s_glow_mask + (size_t)(row - s_glow_y) * SH_GLOW_MASK_W;
@@ -805,7 +840,7 @@ static int glyph(uint32_t button, int x, int y, int size, uint32_t argb)
     for (row = 0; row < size; row++) {
         int vy = row * SH_SUB + SH_SUB_HALF - half;
 
-        layer_note_ink(y + row, x, x + size);
+        note_ink(y + row, x, x + size);
 
         for (col = 0; col < size; col++) {
             int vx = col * SH_SUB + SH_SUB_HALF - half;
@@ -910,6 +945,8 @@ static int pill(const char *label, int x, int y, int h, uint32_t argb)
 #define SH_PIPS 4
 static struct { int x, y, d, ready; } s_pip[SH_PIPS];
 static int s_pip_count;
+/* Defined with the sprite, below: 1 while the selected card is being rendered into it. */
+static int s_sprite_building;
 
 /*
  * A breath: `lo` to `hi` and back over `period`, eased at both ends so it turns rather than bounces.
@@ -935,6 +972,7 @@ static void draw_card(const rc_menu_item *item, int x, int y, int w, int h, int 
     int pad = sy(34);
     uint32_t name_colour = item->enabled ? RC_OV_TEXT : RC_OV_LABEL;
 
+    s_cards_drawn++;
     if (selected) {
         /*
          * THE GLOW IS WHAT MAKES IT "PICKED UP" RATHER THAN "HIGHLIGHTED" - one continuous falloff off
@@ -946,7 +984,20 @@ static void draw_card(const rc_menu_item *item, int x, int y, int w, int h, int 
     }
 
     s_shape_at = rc_tick();
-    rounded(x, y, w, h, r, selected ? 0xE00E1218u : 0xB00A0D12u, 1);
+    /*
+     * THE MOVING CARD IS OPAQUE, and it has to be.
+     *
+     * The card is translucent by design - 88 percent, so a little of the background shows through it.
+     * That was fine while it was drawn straight onto the wave. It is not fine now: the same card is also
+     * in the cached layer in its unselected form, at its slot, and this one sits a lift above it - so
+     * twelve percent of a card eighteen pixels lower shows through this one. On a television that is
+     * double-vision text and an outline that does not line up with the glow around it. The strip the
+     * two do not share is handled the other way round, by not compositing the layer there at all.
+     *
+     * What is lost is twelve percent of a dark blue wave behind a near-black card, which is a handful of
+     * levels nobody can see. What is gained is the card looking like one card.
+     */
+    rounded(x, y, w, h, r, s_sprite_building ? 0xFF0E1218u : (selected ? 0xE00E1218u : 0xB00A0D12u), 1);
     rounded_edge(x, y, w, h, r, sy(2), selected ? s_accent : 0x30FFFFFFu);
     s_sum_shape += us_since(s_shape_at);
 
@@ -1007,7 +1058,19 @@ static void draw_card(const rc_menu_item *item, int x, int y, int w, int h, int 
              * arrangement that keeps it in the cache, and it sits on top of the card, so last is also
              * the right order.
              */
-            if (s_pip_count < SH_PIPS) {
+            /*
+             * RECORDED FOR EVERY CARD AT ITS RESTING SLOT, and not at all by the sprite.
+             *
+             * A pip is a sixteen-pixel dot drawn live, on top of everything, so it breathes. Making the
+             * selected card's travel with it needed the sprite to own one - and then a cursor move had
+             * to add one and take one away, which is state that has to be right on a path where getting
+             * it wrong shows as a dot in the wrong place. Every card keeping its own, where the card
+             * rests, is selection-independent and therefore free: a cursor move changes nothing here.
+             *
+             * What it costs is that during the two hundred milliseconds of a slide the pip waits at the
+             * destination rather than riding along. The card is on its way to exactly that spot.
+             */
+            if (!s_sprite_building && s_pip_count < SH_PIPS) {
                 s_pip[s_pip_count].x = px;
                 s_pip[s_pip_count].y = py;
                 s_pip[s_pip_count].d = d;
@@ -1207,6 +1270,13 @@ static int s_layer_w, s_layer_h;
 
 /* What the layer was built for. Any of these changing is what makes it stale. */
 static unsigned s_layer_revision;
+static int s_layer_selected = -1;
+/*
+ * The shell's own count of how many times the menu's CONTENT changed, as opposed to which row of it is
+ * chosen. rc_menu's revision cannot tell those apart - it counts both - and the card row needs to,
+ * because one of them costs a layer rebuild and the other must not.
+ */
+static unsigned s_content_rev;
 static int s_layer_hint = -1;
 static int s_layer_cards = -1;
 static int s_layer_valid;
@@ -1219,6 +1289,9 @@ static unsigned s_layer_builds;
  * responsible is what that cost.
  */
 static uint64_t s_ticks_rows, s_ticks_comp;
+/* Set while the cursor is still settling - the log reports it so "it looked smooth" has a number. */
+static int s_moving;
+static unsigned s_moving_frames;
 
 static int layer_ensure(void)
 {
@@ -1281,12 +1354,263 @@ static void layer_note_ink(int y, int x0, int x1)
  * point at. Split out so the layer and the no-layer fallback below are the same drawing rather than two
  * that have to be kept in step.
  */
-static void paint_ui(int can_forget)
+/* ------------------------------------------------------------------------------------------------
+ * THE SELECTED CARD, AS A SPRITE THAT MOVES
+ *
+ * SHELL-DESIGN.md: "Cursor between cards, ~200 ms, ease-out-cubic - the eye follows a moving thing; it
+ * has to re-find a jumping one." And the card itself picked up, which is "the whole character - the
+ * difference between highlighted and picked up".
+ *
+ * WHAT MOVES IS THE GLOW, not the card - see the note in draw() on why sliding the card was the wrong
+ * reading of that line, and felt it. The sprite exists because the selected card cannot live in the
+ * cached layer: it is taller and brighter than its neighbours, so a cursor move would otherwise rebuild
+ * nineteen milliseconds of layer on the frame an animation starts.
+ *
+ * AND ITS OTHER RULE, WHICH DECIDES THE SHAPE OF THIS: "Response is instant; only the picture settles."
+ * The press is acted on the frame it arrives - rc_menu_move happens immediately, the selection IS the
+ * new one, and rc_connect would be handed the new console if Cross followed a tenth of a second later.
+ * What eases is where the sprite is DRAWN. A menu that makes you wait for an animation before it accepts
+ * the next press is the worst thing a console menu does, and nothing here can do it.
+ *
+ * The overshoot is on the lift rather than on a scale. The document asks for 1.08 with 4% over, and a
+ * scale means resampling a 360x450 sprite every frame; the card rising past its resting height and
+ * settling back reads as the same thing - a thing picked up - for a subtraction.
+ */
+#define SH_SPRITE_MAX_W 520
+#define SH_SPRITE_MAX_H 620
+#define SH_SLIDE_MS     200u    /* across, ease-out-cubic  */
+#define SH_LIFT_MS      260u    /* up, with an overshoot   */
+
+static uint32_t *s_sprite;
+static short s_sprow_lo[SH_SPRITE_MAX_H], s_sprow_hi[SH_SPRITE_MAX_H];
+static int s_sprite_w, s_sprite_h, s_sprite_live, s_sprite_pad;
+static int s_sprite_checks;
+static int s_draw_x, s_draw_y, s_sprite_placed;
+static int s_sel_x, s_sel_y;            /* where the sprite belongs at rest */
+static int s_lift;                      /* how far above its slot that is */
+static int s_card_w, s_card_h;          /* the card inside the sprite, without its glow margin */
+
+/*
+ * THE SPRITE OWNS ITS SLOT, and the layer must not draw inside it.
+ *
+ * The selected card is the same size as its neighbours and sits a lift ABOVE its slot. The layer holds
+ * every card unselected, at its slot - so the copy underneath the selected one sticks out by exactly
+ * that lift at the bottom, and an opaque sprite covering its own rect does not cover that strip. What
+ * reached the television was the card's border, then a gap, then the glow ring: the border was the
+ * layer's card, eighteen pixels lower than the one it belonged to.
+ *
+ * The strip has to show the BACKGROUND, so there is nothing the sprite can paint over it. The layer
+ * simply does not get composited there. The suppressed rect is the card's own width - the gap between
+ * cards is wider than the glow's margin, so this can never reach a neighbour.
+ */
+static int s_sup_lo, s_sup_hi, s_sup_top, s_sup_bot;
+static int s_from_x, s_from_y;          /* where it was when the cursor last moved */
+static uint64_t s_move_at;              /* when that was; 0 means it has never moved */
+static int s_glow_base_x, s_glow_base_y;
+
+/* Ink bounds for the sprite are filled the same way the layer's are - see layer_note_ink. */
+static void sprite_note_ink(int y, int x0, int x1)
+{
+    if (!s_sprite_building || y < 0 || y >= s_sprite_h)
+        return;
+    if (x0 < 0) x0 = 0;
+    if (x1 > s_sprite_w) x1 = s_sprite_w;
+    if (x1 <= x0)
+        return;
+    if (s_sprow_hi[y] <= s_sprow_lo[y]) {
+        s_sprow_lo[y] = (short)x0;
+        s_sprow_hi[y] = (short)x1;
+        return;
+    }
+    if (x0 < s_sprow_lo[y]) s_sprow_lo[y] = (short)x0;
+    if (x1 > s_sprow_hi[y]) s_sprow_hi[y] = (short)x1;
+}
+
+/*
+ * The sprite is the card PLUS the room its glow needs on every side, and the card is drawn inset by
+ * that much - so the glow, which is captured in whatever coordinates the card was drawn in, lands
+ * inside the buffer instead of being clipped to the card's own edge. It also means one number moves
+ * both: the glow's mask is offset by the sprite's position each frame and stays with the card that
+ * casts it.
+ */
+static void note_ink(int y, int x0, int x1)
+{
+    if (s_sprite_building)
+        sprite_note_ink(y, x0, x1);
+    else
+        layer_note_ink(y, x0, x1);
+}
+
+static void sprite_capture(const rc_menu_item *item, int cw, int chl, int pad)
+{
+    uint32_t *keep_px = s_px;
+    int keep_pitch = s_pitch, y;
+    int w = cw + pad * 2, h = chl + pad * 2;
+
+    s_sprite_live = 0;
+    s_sprite_pad = pad;
+    if (w <= 0 || h <= 0 || w > SH_SPRITE_MAX_W || h > SH_SPRITE_MAX_H)
+        return;
+    if (s_sprite == NULL) {
+        s_sprite = (uint32_t *)memalign(128, (size_t)SH_SPRITE_MAX_W * SH_SPRITE_MAX_H * 4u);
+        if (s_sprite == NULL) {
+            rc_log("shell: no memory for the selected card - it will not move\n");
+            return;
+        }
+    }
+    s_sprite_w = w;
+    s_sprite_h = h;
+    memset(s_sprite, 0, (size_t)w * (size_t)h * 4u);
+    for (y = 0; y < h; y++) {
+        s_sprow_lo[y] = 0;
+        s_sprow_hi[y] = 0;
+    }
+
+    /*
+     * Drawn at the ORIGIN of its own buffer, so where it ends up on screen is decided per frame rather
+     * than baked in. The glow is captured against the card's resting place and offset by the same
+     * amount, which keeps the light with the card it belongs to.
+     */
+    s_px = s_sprite;
+    s_pitch = s_sprite_w;
+    s_clip_w = s_sprite_w;      /* the buffer's bounds - NOT the screen's; see s_clip_w */
+    s_clip_h = s_sprite_h;
+    s_sprite_building = 1;
+    rc_overlay_target(s_sprite, s_sprite_w);
+    rc_overlay_set_ink_hook(sprite_note_ink);
+
+    draw_card(item, pad, pad, cw, chl, 1);
+    /* Captured in the sprite's own coordinates; the frame adds where the sprite is. */
+    s_glow_base_x = s_glow_x;
+    s_glow_base_y = s_glow_y;
+
+    rc_overlay_set_ink_hook(s_layer_building ? layer_note_ink : NULL);
+    rc_overlay_target(s_layer_building ? s_layer : NULL, s_layer_w);
+    s_sprite_building = 0;
+    s_px = keep_px;
+    s_pitch = keep_pitch;
+    s_clip_w = s_scr_w;
+    s_clip_h = s_scr_h;
+    s_sprite_live = 1;
+
+    /*
+     * THE SAME INVARIANT AS THE LAYER'S, ON THE BUFFER THE LAYER'S CHECK CANNOT SEE.
+     *
+     * layer_verify would not have caught b421: the shapes were reporting the sprite's ink into the
+     * LAYER's bounds, which only ever WIDENED them, so the layer stayed self-consistent and the sprite
+     * was never examined by anything. A check that covers one of two buffers is a check that says the
+     * interface is fine while half of it is not.
+     */
+    if (s_sprite_checks < 2) {
+        int x, bad = 0;
+
+        s_sprite_checks++;
+        for (y = 0; y < s_sprite_h && !bad; y++) {
+            const uint32_t *row = s_sprite + (size_t)y * (size_t)s_sprite_w;
+
+            for (x = 0; x < s_sprite_w; x++) {
+                if ((row[x] >> 24) == 0u)
+                    continue;
+                if (x >= s_sprow_lo[y] && x < s_sprow_hi[y])
+                    continue;
+                rc_log("shell: SPRITE INK OUTSIDE ITS BOUNDS at row %d column %d, recorded %d..%d\n",
+                       y, x, (int)s_sprow_lo[y], (int)s_sprow_hi[y]);
+                bad = 1;
+                break;
+            }
+        }
+        if (!bad)
+            rc_log("shell: the selected card's ink is inside the bounds it reported\n");
+    }
+}
+
+/* out = sprite (premultiplied) + under * (1 - a), for one row, offset to wherever it is this frame. */
+static void sprite_row(uint32_t *line, int y, int ox, int oy)
+{
+    const uint32_t *src;
+    int sy2 = y - oy, x;
+
+    if (!s_sprite_live || sy2 < 0 || sy2 >= s_sprite_h)
+        return;
+    src = s_sprite + (size_t)sy2 * (size_t)s_sprite_w;
+
+    for (x = s_sprow_lo[sy2]; x < s_sprow_hi[sy2]; x++) {
+        int px = ox + x;
+        uint32_t L = src[x];
+        unsigned a = L >> 24;
+        uint32_t u;
+        unsigned inv;
+
+        if (a == 0u || px < 0 || px >= s_scr_w)
+            continue;
+        if (a >= 255u) {
+            line[px] = 0xff000000u | (L & 0x00FFFFFFu);
+            continue;
+        }
+        u = line[px];
+        inv = 255u - a;
+        line[px] = 0xff000000u
+                 | ((((L >> 16) & 0xffu) + div255(((u >> 16) & 0xffu) * inv)) << 16)
+                 | ((((L >> 8) & 0xffu) + div255(((u >> 8) & 0xffu) * inv)) << 8)
+                 |  (((L & 0xffu) + div255((u & 0xffu) * inv)));
+    }
+}
+
+/* t in 0..255 -> eased 0..255. Out-cubic settles; out-back goes past and comes home. */
+static int ease_out_cubic(int t)
+{
+    int u = 255 - t;
+
+    return 255 - (u * u / 255) * u / 255;
+}
+
+static int ease_out_back(int t)
+{
+    int u = 255 - t;
+    int c = (u * u / 255);
+
+    /* 1 - u^2 * (1.9*u - 0.9) - a little past the mark, then back. */
+    return 255 - (c * ((485 * u) / 255 - 230)) / 255;
+}
+
+/* Where the sprite should be drawn this frame, and whether it is still moving. */
+static int sprite_where(uint64_t now, int *ox, int *oy)
+{
+    unsigned dt;
+    int tx, ty, moving = 0;
+
+    *ox = s_sel_x;
+    *oy = s_sel_y;
+    if (s_move_at == 0u || now < s_move_at)
+        return 0;
+
+    dt = (unsigned)(now - s_move_at);
+    tx = (dt >= SH_SLIDE_MS) ? 255 : (int)((dt * 255u) / SH_SLIDE_MS);
+    ty = (dt >= SH_LIFT_MS) ? 255 : (int)((dt * 255u) / SH_LIFT_MS);
+    if (tx < 255 || ty < 255)
+        moving = 1;
+
+    *ox = s_from_x + ((s_sel_x - s_from_x) * ease_out_cubic(tx)) / 255;
+    *oy = s_from_y + ((s_sel_y - s_from_y) * ease_out_back(ty)) / 255;
+    return moving;
+}
+
+static int cards_geometry(int n, int *cw, int *ch, int *gap, int *x0);
+static int sprite_rebuild_from_menu(void);
+
+/* The hint row used to be drawn here and takes `can_forget` with it - see paint_live. */
+static void paint_ui(void)
 {
     int i;
 
     s_pip_count = 0;
     s_glow_live = 0;
+    /*
+     * AND THE SPRITE DIES WITH THE SCREEN THAT MADE IT. It is only ever built by the card row, so a
+     * screen without one - the options list, the settings - must not go on compositing the last card
+     * the home screen had. b417 did, and the selected console's name sat over the settings.
+     */
+    s_sprite_live = 0;
 
     (void)rc_overlay_text_cost(NULL, NULL, 1);
     s_shape_at = rc_tick();
@@ -1313,48 +1637,35 @@ static void paint_ui(int can_forget)
      */
     {
         int n = s_menu.count;
-        int cw = sx(SH_CARD_W), ch = sy(SH_CARD_H), gap = sx(SH_CARD_GAP);
-        int total;
-        int x0;
+        int cw, ch, gap, x0;
 
-        if (n > 0) {
-            while (n * cw + (n - 1) * gap > s_scr_w - sx(SH_MARGIN)) {
-                cw = cw * 9 / 10;
-                gap = gap * 9 / 10;
-                ch = ch * 9 / 10;
-                if (cw < sx(120))
-                    break;
-            }
-            total = n * cw + (n - 1) * gap;
-            x0 = (s_scr_w - total) / 2;
+        if (cards_geometry(n, &cw, &ch, &gap, &x0)) {
 
+            /*
+             * EVERY CARD UNSELECTED, INTO THE LAYER; THE SELECTED ONE INTO A SPRITE OF ITS OWN.
+             *
+             * The layer is rebuilt when the interface changes, which is what a cursor move IS - so a
+             * cursor that eases between cards would rebuild it sixty times a second at nineteen
+             * milliseconds a go, and the motion meant to look smooth would be the one thing that made
+             * it stutter. The same problem the glow had, and the same answer: what moves comes out.
+             *
+             * So the layer holds the row at rest and the selected card is rendered once into a sprite
+             * that is blitted at an eased position each frame. Sliding it costs a composite over its own
+             * area; re-rasterising its text would cost the rebuild. Underneath it, at its destination
+             * slot, is that same card drawn unselected - which is exactly what should be showing while
+             * the sprite is still on its way there.
+             */
             for (i = 0; i < n; i++) {
-                int selected = (i == s_menu.selected);
-                int lift = selected ? sy(SH_SELECT_LIFT) : 0;
                 int x = x0 + i * (cw + gap);
-                int y = sy(SH_CARD_MID) - ch / 2 - lift;
+                int y = sy(SH_CARD_MID) - ch / 2;
 
-                draw_card(&s_menu.item[i], x, y, cw, ch + lift, selected);
+                draw_card(&s_menu.item[i], x, y, cw, ch, 0);
             }
+            (void)sprite_rebuild_from_menu();
         }
     }
 
     s_sum_cards += us_since(s_shape_at);
-    s_shape_at = rc_tick();
-
-    /*
-     * ONE DESCRIPTION LINE, IN A FIXED PLACE, changing with the focus. The XMB does this and it is
-     * right: the explanation lives somewhere the eye learns once instead of on every row.
-     */
-    {
-        const rc_menu_item *item = rc_menu_selected(&s_menu);
-
-        if (item != NULL && item->note[0] != '\0')
-            (void)rc_overlay_text(sx(SH_MARGIN), sy(SH_DESC_Y), 2, RC_OV_TEXT, "%s", item->note);
-    }
-
-    draw_hints(can_forget, 1);
-    s_sum_hints += us_since(s_shape_at);
     {
         unsigned tus = 0u;
 
@@ -1411,6 +1722,107 @@ static void layer_verify(void)
         rc_log("shell: the layer's ink is inside the bounds it reported\n");
 }
 
+/*
+ * WHAT CHANGES WITH THE CURSOR BUT DOES NOT MOVE WITH IT, drawn straight onto the screen every frame.
+ *
+ * The description line and the hint row both read the SELECTION, so leaving them in the cached layer
+ * meant every cursor move rebuilt it - and a rebuild is the better part of twenty milliseconds landing
+ * on exactly the frame an animation is starting. What reached the television was a slide that lurched
+ * on its first step and then ran smoothly, which is the worst possible distribution of that cost.
+ *
+ * They are a line of text and a row of glyphs: about one and a half milliseconds a frame to draw, every
+ * frame, against nineteen on the frames where it used to matter most. With them out, the card row's
+ * layer depends on the LIST and not on which of it is chosen, so moving the cursor rebuilds the sprite
+ * alone.
+ */
+/*
+ * The row's measurements, in one place, because two callers need them and a layout they disagreed about
+ * would put the sprite somewhere the card underneath it is not.
+ */
+static int cards_geometry(int n, int *cw, int *ch, int *gap, int *x0)
+{
+    int w = sx(SH_CARD_W), h = sy(SH_CARD_H), g = sx(SH_CARD_GAP);
+
+    if (n <= 0)
+        return 0;
+    while (n * w + (n - 1) * g > s_scr_w - sx(SH_MARGIN)) {
+        w = w * 9 / 10;
+        g = g * 9 / 10;
+        h = h * 9 / 10;
+        if (w < sx(120))
+            break;
+    }
+    *cw = w;
+    *ch = h;
+    *gap = g;
+    *x0 = (s_scr_w - (n * w + (n - 1) * g)) / 2;
+    return 1;
+}
+
+/* Where the selected card rests, and its sprite. Returns 0 when there is no card to be selected. */
+static int sprite_rebuild_from_menu(void)
+{
+    int n = s_menu.count, cw, ch, gap, x0, lift;
+
+    if (!s_cards || s_menu.selected < 0 || s_menu.selected >= n)
+        return 0;
+    if (!cards_geometry(n, &cw, &ch, &gap, &x0))
+        return 0;
+
+    /*
+     * THE SAME SIZE AS ITS NEIGHBOURS, SITTING HIGHER - not taller.
+     *
+     * It used to be drawn taller by its lift, growing upward from a fixed bottom. That put the card's
+     * text nine pixels from where the unselected version of the same card has it, so ANY transition
+     * between the two moved the text as well as the card, and that shift landing on the first frame of
+     * an animation is what made every version of this feel jerky. Reported from a sofa, correctly,
+     * before it was understood here.
+     *
+     * A pure translation has no such discontinuity: the layer's copy and the sprite's copy are laid out
+     * identically, so the swap changes only brightness and outline - and the card can then be RISEN into
+     * place, which is the "picked up" the design asks for and could not have while it was also growing.
+     */
+    lift = sy(SH_SELECT_LIFT);
+    s_lift = lift;
+    s_card_w = cw;
+    s_card_h = ch;
+    s_sel_x = x0 + s_menu.selected * (cw + gap);
+    s_sel_y = sy(SH_CARD_MID) - ch / 2 - lift;
+    sprite_capture(&s_menu.item[s_menu.selected], cw, ch, sy(26));
+    return 1;
+}
+
+static void paint_live(int can_forget)
+{
+    /*
+     * ONE DESCRIPTION LINE, IN A FIXED PLACE, changing with the focus. The XMB does this and it is
+     * right: the explanation lives somewhere the eye learns once instead of on every row.
+     */
+    const rc_menu_item *item = rc_menu_selected(&s_menu);
+
+    if (item != NULL && item->note[0] != '\0')
+        (void)rc_overlay_text(sx(SH_MARGIN), sy(SH_DESC_Y), 2, RC_OV_TEXT, "%s", item->note);
+    draw_hints(can_forget, 1);
+}
+
+/*
+ * A CURSOR MOVE REBUILDS THE SPRITE AND NOTHING ELSE - four milliseconds against nineteen, and it is
+ * the four that lands on the frame an animation begins.
+ */
+static void rebuild_sprite(void)
+{
+    int was_x = s_sel_x, was_y = s_sel_y;
+
+    if (!sprite_rebuild_from_menu())
+        return;
+    if (s_sprite_placed && (s_sel_x != was_x || s_sel_y != was_y)) {
+        s_from_x = s_draw_x;
+        s_from_y = s_draw_y;
+        s_move_at = rc_time_ms();
+    }
+    s_layer_selected = s_menu.selected;
+}
+
 static void build_layer(int can_forget)
 {
     uint64_t at = rc_tick();
@@ -1450,7 +1862,26 @@ static void build_layer(int can_forget)
     rc_overlay_target(s_layer, s_layer_w);
     rc_overlay_set_ink_hook(layer_note_ink);
 
-    paint_ui(can_forget);
+    {
+        int was_x = s_sel_x, was_y = s_sel_y;
+
+        paint_ui();
+
+        /*
+         * THE CURSOR MOVED, so the sprite starts from where it VISIBLY is rather than from the slot it
+         * nominally left - which is what makes a second press during the slide continue the movement
+         * instead of restarting it from a card the eye never saw it at.
+         */
+        if (s_sprite_placed && (s_sel_x != was_x || s_sel_y != was_y)) {
+            s_from_x = s_draw_x;
+            s_from_y = s_draw_y;
+            s_move_at = rc_time_ms();
+        } else if (!s_sprite_placed) {
+            s_draw_x = s_sel_x;
+            s_draw_y = s_sel_y;
+            s_sprite_placed = 1;
+        }
+    }
 
     rc_overlay_set_ink_hook(NULL);
     rc_overlay_target(NULL, 0);
@@ -1461,7 +1892,8 @@ static void build_layer(int can_forget)
         layer_verify();
     }
 
-    s_layer_revision = s_menu.revision;
+    s_layer_revision = s_cards ? s_content_rev : s_menu.revision;
+    s_layer_selected = s_menu.selected;
     s_layer_hint = can_forget;
     s_layer_cards = s_cards;
     s_layer_valid = 1;
@@ -1495,7 +1927,16 @@ static void composite_span(uint32_t *line, const uint32_t *src, int x, int end)
 
 static void composite_row(uint32_t *line, int y)
 {
-    composite_span(line, s_layer + (size_t)y * (size_t)s_layer_w, s_lrow_lo[y], s_lrow_hi[y]);
+    const uint32_t *src = s_layer + (size_t)y * (size_t)s_layer_w;
+    int lo = s_lrow_lo[y], hi = s_lrow_hi[y];
+
+    if (y < s_sup_top || y >= s_sup_bot || s_sup_hi <= s_sup_lo) {
+        composite_span(line, src, lo, hi);
+        return;
+    }
+    /* The selected card's slot: everything but. */
+    composite_span(line, src, lo, (hi < s_sup_lo) ? hi : s_sup_lo);
+    composite_span(line, src, (lo > s_sup_hi) ? lo : s_sup_hi, hi);
 }
 
 static void draw(int can_forget)
@@ -1511,6 +1952,8 @@ static void draw(int can_forget)
         return;
     s_scr_w = rc_overlay_surface_width();
     s_scr_h = rc_overlay_surface_height();
+    s_clip_w = s_scr_w;
+    s_clip_h = s_scr_h;
 
     /*
      * WAIT FOR THE LAST FLIP BEFORE QUEUING ANOTHER, which the streaming path does not do and must not:
@@ -1553,15 +1996,82 @@ static void draw(int can_forget)
      * menu's revision counts every mutation INCLUDING the selection moving, so it answers this on its
      * own; the other two are state the menu does not know about.
      */
-    if (!s_layer_valid || s_menu.revision != s_layer_revision || can_forget != s_layer_hint ||
-        s_cards != s_layer_cards || s_layer_w != s_scr_w || s_layer_h != s_scr_h)
+    /*
+     * THE CARD ROW'S LAYER DOES NOT DEPEND ON WHICH CARD IS SELECTED - every card is in it unselected,
+     * and the chosen one is the sprite. So a cursor move rebuilds nothing here. A LIST is different: its
+     * selected row carries a panel, so there the menu's own revision is the key it has always been.
+     */
+    if (!s_layer_valid || can_forget != s_layer_hint || s_cards != s_layer_cards ||
+        s_layer_w != s_scr_w || s_layer_h != s_scr_h ||
+        (s_cards ? s_content_rev : s_menu.revision) != s_layer_revision)
         build_layer(can_forget);
+    else if (s_cards && s_menu.selected != s_layer_selected)
+        rebuild_sprite();
 
     /*
      * WHAT MOVES THIS FRAME. Three numbers, read once here so every part of the frame agrees about
      * where in its breath it is - and so the periods are visible together rather than scattered.
      */
     glow_scale = breathe(now, 4200u, 172u, 255u);
+
+    /*
+     * WHERE THE SELECTED CARD IS THIS FRAME. The selection itself changed the instant the button was
+     * read; this is only where it gets drawn on the way there. Its glow rides the same offset, because
+     * light that lags the thing casting it is worse than light that does not move at all.
+     */
+    /*
+     * THE LIGHT TRAVELS; THE CARD DOES NOT.
+     *
+     * The first version slid the whole selected card from the slot it left to the one it arrived at,
+     * and that is the wrong reading of what SHELL-DESIGN.md asks for. It wants the CURSOR to move
+     * between cards - "the eye follows a moving thing; it has to re-find a jumping one" - and separately
+     * for the card you land on to be picked up. A card's NAME sliding across the screen to a slot it
+     * belongs in is neither.
+     *
+     * It also felt wrong for a reason worth writing down, because it was reported before it was
+     * understood: a selected card is taller than an unselected one, so its text sits in a different
+     * place inside it. Sliding the card meant that shift happened on the same frame the slide began -
+     * the content jumped and then travelled, which reads as a lurch no easing curve can smooth.
+     *
+     * So the card arrives immediately, at its own slot, exactly where it belongs; and the glow sweeps
+     * from the old card to the new one over two hundred milliseconds. What moves is the light, which is
+     * the thing the eye was going to follow anyway.
+     */
+    {
+        unsigned dt = (s_move_at != 0u && now >= s_move_at) ? (unsigned)(now - s_move_at)
+                                                            : SH_LIFT_MS;
+        int t = (dt >= SH_LIFT_MS) ? 255 : (int)((dt * 255u) / SH_LIFT_MS);
+        int gx, gy;
+
+        /*
+         * THE CARD RISES INTO PLACE, in its own slot, with an overshoot - which is the "picked up"
+         * rather than "highlighted" the design asks for. It starts level with its neighbours and ends
+         * a lift above them, so nothing about its content moves except the whole of it, together.
+         */
+        s_draw_x = s_sel_x;
+        s_draw_y = s_sel_y + s_lift - (s_lift * ease_out_back(t)) / 255;
+
+        /*
+         * AND THE LIGHT TRAVELS BETWEEN CARDS. Sliding the whole card to its new slot was the wrong
+         * reading of "cursor between cards" - a console's NAME does not travel to a slot it already
+         * belongs in. The glow sweeps across; the card is simply there.
+         */
+        s_moving = sprite_where(now, &gx, &gy);
+        s_glow_x = gx - s_sprite_pad + s_glow_base_x;
+        s_glow_y = s_draw_y - s_sprite_pad + s_glow_base_y;
+        if (t < 255)
+            s_moving = 1;
+
+        /* Down to where the layer's copy of this card ends, which is a lift below the sprite's. */
+        if (s_sprite_live) {
+            s_sup_lo = s_draw_x;
+            s_sup_hi = s_draw_x + s_card_w;
+            s_sup_top = s_draw_y;
+            s_sup_bot = s_draw_y + s_card_h + s_lift;
+        } else {
+            s_sup_lo = s_sup_hi = 0;
+        }
+    }
 
     s_ui_at = rc_tick();
     rc_wave_begin(s_scr_w, s_scr_h, now);
@@ -1647,10 +2157,11 @@ static void draw(int can_forget)
              * between the two rather than into either.
              */
             glow_row(row, y, glow_scale);
-            if (s_lrow_hi[y] > s_lrow_lo[y]) {
+            if (s_lrow_hi[y] > s_lrow_lo[y])
                 composite_row(row, y);
-                s_ticks_comp += rc_tick() - mid;
-            }
+            /* Last of the three, because it is the card in front. */
+            sprite_row(row, y, s_draw_x - s_sprite_pad, s_draw_y - s_sprite_pad);
+            s_ticks_comp += rc_tick() - mid;
         }
     } else {
         /*
@@ -1662,10 +2173,21 @@ static void draw(int can_forget)
         s_pitch = pitch;
         for (y = 0; y < s_scr_h; y++)
             rc_wave_row(pixels + (size_t)y * (size_t)pitch, s_scr_w, y);
-        paint_ui(can_forget);
-        for (y = 0; y < s_scr_h; y++)
+        paint_ui();
+        for (y = 0; y < s_scr_h; y++) {
             glow_row(pixels + (size_t)y * (size_t)pitch, y, glow_scale);
+            sprite_row(pixels + (size_t)y * (size_t)pitch, y,
+                       s_draw_x - s_sprite_pad, s_draw_y - s_sprite_pad);
+        }
     }
+    /*
+     * THE DESCRIPTION LINE AND THE HINT ROW, drawn straight onto the screen because both read the
+     * selection - see paint_live for why they are not in the layer.
+     */
+    s_px = pixels;
+    s_pitch = pitch;
+    paint_live(can_forget);
+
     /*
      * THE PIPS, LAST, because they sit on top of the card and because they are the one thing here small
      * enough that drawing it per frame never needed a cache in the first place.
@@ -1721,6 +2243,8 @@ static void draw(int can_forget)
         }
     }
     s_frame_at = s_draw_at;
+    if (s_moving)
+        s_moving_frames++;
 }
 
 /* ------------------------------------------------------------------------------------------------
@@ -1990,6 +2514,7 @@ static void search(void)
 {
     int i;
 
+    s_content_rev++;
     rc_menu_reset(&s_menu, "Ripcord", "Searching for consoles...");
     draw(0);
 
@@ -2025,6 +2550,7 @@ static int awake_state_of(const char *host)
 
 static void build_home(void)
 {
+    s_content_rev++;
     char subtitle[RC_MENU_NOTE_MAX];
     char value[RC_MENU_VALUE_MAX];
     int unpaired = 0;
@@ -2092,6 +2618,7 @@ static void build_home(void)
 /* Everything the home screen does not show, behind START. */
 static void build_options(void)
 {
+    s_content_rev++;
     rc_menu_reset(&s_menu, "Options", NULL);
     s_cards = 0;
     (void)rc_menu_add(&s_menu, SH_ID_SEARCH, "Search the network", NULL,
@@ -2273,6 +2800,7 @@ static void refresh_settings_values(void)
 
 static void build_settings(void)
 {
+    s_content_rev++;
     int row;
 
     rc_menu_reset(&s_menu, "Settings", "Left and right change a setting");
@@ -2583,16 +3111,21 @@ rc_shell_action rc_shell_run(const char *const *dirs, int dir_count)
                (unsigned)(s_sum_wait / s_frames));
         rc_log("shell:   worst single drawing pass %u us, worst copy %u us\n",
                s_ui_worst_us, s_vram_worst_us);
+        rc_log("shell:   %u frame(s) drawn while the cursor was still settling\n", s_moving_frames);
         rc_log("shell:   of the drawing: background rows %u us, compositing the interface %u us\n",
                (unsigned)((s_ticks_rows * 1000000u) / rc_tick_hz() / s_frames),
                (unsigned)((s_ticks_comp * 1000000u) / rc_tick_hz() / s_frames));
         rc_log("shell:   the interface layer was rebuilt %u time(s), %u us each\n",
                s_layer_builds, s_layer_builds ? (unsigned)(s_sum_layer / s_layer_builds) : 0u);
-        rc_log("shell:   inside a rebuild: header %u, cards %u (glow %u, card shapes %u),"
-               " hints %u; text everywhere %u\n",
-               (unsigned)(s_sum_header / n), (unsigned)(s_sum_cards / n),
-               (unsigned)(s_sum_glow / n), (unsigned)(s_sum_shape / n),
-               (unsigned)(s_sum_hints / n), (unsigned)(s_sum_text / n));
+        {
+            unsigned c = s_cards_drawn ? s_cards_drawn : 1u;
+
+            rc_log("shell:   inside a rebuild: header %u us, cards %u us, text %u us\n",
+                   (unsigned)(s_sum_header / n), (unsigned)(s_sum_cards / n),
+                   (unsigned)(s_sum_text / n));
+            rc_log("shell:   per card drawn (%u of them): glow %u us, shapes %u us\n",
+                   s_cards_drawn, (unsigned)(s_sum_glow / c), (unsigned)(s_sum_shape / c));
+        }
         if (s_thermal.available)
             rc_log("shell:   Cell %u.%u C on the way in, %u.%u C on the way out; RSX %u.%u -> %u.%u\n",
                    s_thermal.cell_first / 10u, s_thermal.cell_first % 10u,
