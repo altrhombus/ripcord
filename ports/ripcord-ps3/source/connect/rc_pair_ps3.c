@@ -166,7 +166,7 @@ const char *rc_pair_record_dir(void)
     return RC_PAIR_DIR;
 }
 
-int rc_pair_run(const char *host, const char *name)
+int rc_pair_run(const char *host, const char *name, const char *console_id)
 {
     halyard_pairing_record record;
     halyard_regist_params params;
@@ -309,6 +309,12 @@ int rc_pair_run(const char *host, const char *name)
         snprintf(record.name, sizeof(record.name), "%s", name);
     else
         record.name[0] = '\0';
+    /* The one stable thing about a console. See the header: without it a moved console has to be
+     * paired again, with it the record can be re-pointed at wherever it turns up. */
+    if (console_id != NULL && console_id[0] != '\0')
+        snprintf(record.console_id, sizeof(record.console_id), "%s", console_id);
+    else
+        record.console_id[0] = '\0';
     /* Remembered so the next pairing does not ask for it again. */
     snprintf(record.account_id, sizeof(record.account_id), "%s", params.account_id);
     record.is_ps5 = result.record.is_ps5;
