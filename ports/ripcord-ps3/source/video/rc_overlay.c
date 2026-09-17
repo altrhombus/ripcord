@@ -61,12 +61,24 @@
 #define RC_OV_REBUILD_MS   250u
 
 /* Big enough for the design size at 1080p; anything smaller uses less of it. */
-#define RC_OV_MAX_W        RC_OV_SURFACE_W
-#define RC_OV_MAX_H        RC_OV_SURFACE_H
+/*
+ * THE SURFACE IS NOW THE WHOLE SCREEN, and that is what lets the shell put a moving background behind
+ * antialiased text at all. Blending means reading what is underneath; reads from RSX memory are about a
+ * hundred times slower than writes, and the one time a blend was handed to the RSX instead its command
+ * processor stopped and every flip after the first stayed pending forever (b232 - "no video just
+ * audio"). So everything composites here, in main memory, and exactly one opaque copy reaches the
+ * screen.
+ *
+ * It costs 8 MB of main memory and 8 MB of video memory at 1080p, held for the run. The alternative was
+ * a second surface with a second font atlas and a second copy of the blending, which costs the same
+ * memory and an extra copy of every bug.
+ */
+#define RC_OV_MAX_W        1920
+#define RC_OV_MAX_H        1088
 
 static int s_scr_h = RC_OV_DESIGN_SCR_H;
-static int s_w = RC_OV_SURFACE_W;   /* the bitmap */
-static int s_h = RC_OV_SURFACE_H;
+static int s_w = RC_OV_MAX_W;   /* the bitmap - the whole screen */
+static int s_h = RC_OV_MAX_H;
 static int s_panel_w = RC_OV_DESIGN_W;
 static int s_panel_h = RC_OV_DESIGN_H;
 
@@ -97,6 +109,7 @@ static int s_want_sysfont;
 
 /* Defined below; rc_overlay_set needs both of the panel's sizes to build the atlas with. */
 static float size_for(int scale);
+static void blend_px(uint32_t *dst, uint32_t argb, unsigned cov);
 
 /* The PANEL - what the diagnostics overlay and the status card lay out against. */
 int rc_overlay_width(void)  { return s_panel_w; }
@@ -105,6 +118,15 @@ int rc_overlay_height(void) { return s_panel_h; }
 /* The SURFACE - the whole bitmap, which is larger. A menu uses this. */
 int rc_overlay_surface_width(void)  { return s_w; }
 int rc_overlay_surface_height(void) { return s_h; }
+
+uint32_t *rc_overlay_pixels(int *pitch_px)
+{
+    if (!s_ready)
+        return NULL;
+    if (pitch_px != NULL)
+        *pitch_px = s_w;
+    return s_bitmap;
+}
 
 /*
  * PREPARED AND SHOWN ARE DIFFERENT QUESTIONS, and separating them is what makes a runtime toggle safe.
@@ -182,6 +204,40 @@ void rc_overlay_rect(int x, int y, int w, int h, uint32_t argb)
     }
 }
 
+/*
+ * A FILL THAT LETS WHAT IS UNDERNEATH THROUGH, which rc_overlay_rect deliberately does not.
+ *
+ * rc_overlay_rect writes its colour and is right to: the diagnostics panel is opaque by decision, and a
+ * blended fill that reads every pixel it touches is real work. A card floating over a moving background
+ * is the case that needs the other behaviour, and it is affordable for exactly the reason the panel's
+ * was not - this runs at the menu, where nothing else is competing for the machine at all.
+ */
+void rc_overlay_blend_rect(int x, int y, int w, int h, uint32_t argb)
+{
+    unsigned alpha = (argb >> 24) & 0xffu;
+    int row, col;
+
+    if (!s_ready || w <= 0 || h <= 0 || alpha == 0u)
+        return;
+    if (alpha == 255u) {
+        rc_overlay_rect(x, y, w, h, argb);
+        return;
+    }
+    if (x < 0) { w += x; x = 0; }
+    if (y < 0) { h += y; y = 0; }
+    if (x + w > s_w) w = s_w - x;
+    if (y + h > s_h) h = s_h - y;
+    if (w <= 0 || h <= 0)
+        return;
+
+    for (row = 0; row < h; row++) {
+        uint32_t *p = s_bitmap + (size_t)(y + row) * (size_t)s_w + (size_t)x;
+
+        for (col = 0; col < w; col++)
+            blend_px(&p[col], argb, alpha);
+    }
+}
+
 void rc_overlay_set_system_font(int on)
 {
     s_want_sysfont = on;
@@ -202,14 +258,18 @@ void rc_overlay_set(int on)
             s_scr_h = info.height;
             s_x = rc_overlay_px(48);
             s_y = rc_overlay_px(32);
-            s_w = rc_overlay_px(RC_OV_SURFACE_W);
-            s_h = rc_overlay_px(RC_OV_SURFACE_H);
+            s_w = info.width;
+            s_h = info.height;
+            if (s_w > RC_OV_MAX_W)
+                s_w = RC_OV_MAX_W;
+            if (s_h > RC_OV_MAX_H)
+                s_h = RC_OV_MAX_H;
             s_panel_w = rc_overlay_px(RC_OV_DESIGN_W);
             s_panel_h = rc_overlay_px(RC_OV_DESIGN_H);
-            if (s_w > info.width - s_x * 2)
-                s_w = info.width - s_x * 2;
-            if (s_h > info.height - s_y * 2)
-                s_h = info.height - s_y * 2;
+            if (s_panel_w > s_w - s_x * 2)
+                s_panel_w = s_w - s_x * 2;
+            if (s_panel_h > s_h - s_y * 2)
+                s_panel_h = s_h - s_y * 2;
         }
         if (s_w <= 0 || s_h <= 0)
             return;
@@ -227,7 +287,7 @@ void rc_overlay_set(int on)
          * hand-drawn fallback is the thing that cannot fail to load; see rc_sysfont.c.
          */
         if (s_ready && s_want_sysfont)
-            s_sysfont = rc_sysfont_open(size_for(1), size_for(2));
+            s_sysfont = rc_sysfont_open(size_for(1), size_for(2), size_for(3));
     }
 }
 
@@ -334,6 +394,8 @@ static void blend_px(uint32_t *dst, uint32_t argb, unsigned cov)
 /* Design pixels, converted like every other measurement here. */
 static float size_for(int scale)
 {
+    if (scale >= 3)
+        return (float)rc_overlay_px(56);   /* the shell's wordmark and console names */
     return (float)rc_overlay_px((scale >= 2) ? 34 : 24);
 }
 
@@ -586,7 +648,21 @@ int rc_overlay_begin_now(void)
 {
     if (!s_ready)
         return 0;
-    rc_overlay_rect(0, 0, s_w, s_h, 0x00000000u);
+    /*
+     * ONLY THE PANEL, not the whole surface. The surface is the screen now; clearing all of it for a
+     * 760-pixel panel would be eight megabytes of memset four times a second on the thread that is also
+     * draining a socket. The shell, which does want all of it, asks for it by name.
+     */
+    rc_overlay_rect(0, 0, s_panel_w, s_panel_h, 0x00000000u);
+    s_rebuilt = 1;
+    return 1;
+}
+
+int rc_overlay_begin_surface(void)
+{
+    if (!s_ready)
+        return 0;
+    rc_overlay_rect(0, 0, s_w, s_h, 0xFF000000u);
     s_rebuilt = 1;
     return 1;
 }
@@ -609,7 +685,7 @@ int rc_overlay_begin(void)
      * the corners it leaves alone stay see-through - which is what makes a rounded corner possible at
      * all when nothing here can read what is underneath.
      */
-    rc_overlay_rect(0, 0, s_w, s_h, 0x00000000u);
+    rc_overlay_rect(0, 0, s_panel_w, s_panel_h, 0x00000000u);
     return 1;
 }
 

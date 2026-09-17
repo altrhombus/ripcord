@@ -60,8 +60,18 @@ static const char *s_face_name = "?";
 #define RC_SF_FIRST   32
 #define RC_SF_LAST    126
 #define RC_SF_COUNT   (RC_SF_LAST - RC_SF_FIRST + 1)
-#define RC_SF_SIZES   2
-#define RC_SF_ARENA   (192u * 1024u)
+/*
+ * THREE SIZES NOW: body, heading, and a display size for the shell's wordmark and console names, which
+ * have to read from a sofa rather than from a desk. The third costs its own arena and its own pass over
+ * printable ASCII at open - see the note on why they are all built there and never on demand.
+ */
+#define RC_SF_SIZES   3
+/*
+ * Raised with the third size. A 56-pixel face is roughly 35x55 of coverage per glyph across 95 of them,
+ * which is 183 KB - inside 192 by a margin too thin to be a decision. build_size refuses rather than
+ * overruns, so this being wrong is a loud failure, but a loud failure at start-up is still a failure.
+ */
+#define RC_SF_ARENA   (384u * 1024u)
 
 typedef struct {
     short w, h;
@@ -178,7 +188,7 @@ static int build_size(int slot, int pixels)
     return 1;
 }
 
-int rc_sysfont_open(float body_px, float heading_px)
+int rc_sysfont_open(float body_px, float heading_px, float display_px)
 {
     unsigned i;
     int rc = -1;
@@ -214,14 +224,15 @@ int rc_sysfont_open(float body_px, float heading_px)
      * layout asked for 24 and 34, which happened to work at 1080p and would have left the type at full
      * size on every smaller display.
      */
-    if (!build_size(0, (int)body_px) || !build_size(1, (int)heading_px)) {
+    if (!build_size(0, (int)body_px) || !build_size(1, (int)heading_px) ||
+        !build_size(2, (int)display_px)) {
         FT_Done_Face(s_face);
         s_face = NULL;
         FT_Done_FreeType(s_lib);
         s_lib = NULL;
         return fail("FT_Set_Pixel_Sizes while building the atlas", 0);
     }
-    s_sizes_built = 2;
+    s_sizes_built = 3;
     s_slot = 0;
 
     /*

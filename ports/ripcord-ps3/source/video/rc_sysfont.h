@@ -30,7 +30,7 @@
  * its own font - every step is reported through rc_sysfont_status() so a refusal names itself rather
  * than arriving as "the text looks wrong".
  */
-int rc_sysfont_open(float body_px, float heading_px);
+int rc_sysfont_open(float body_px, float heading_px, float display_px);
 
 /* One of: "not tried", "ready", or the step that failed with its error code. Never NULL. */
 const char *rc_sysfont_status(void);

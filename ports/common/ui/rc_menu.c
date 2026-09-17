@@ -106,6 +106,13 @@ void rc_menu_set_value(rc_menu *menu, int index, const char *value)
     menu->revision++;
 }
 
+void rc_menu_set_tag(rc_menu *menu, int index, const char *tag)
+{
+    if (!in_range(menu, index))
+        return;
+    copy_field(menu->item[index].tag, sizeof(menu->item[index].tag), tag);
+}
+
 void rc_menu_set_note(rc_menu *menu, int index, const char *note)
 {
     if (!in_range(menu, index))
