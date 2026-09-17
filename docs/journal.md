@@ -825,6 +825,30 @@ ruled one out at once rather than two builds later. The `sync` and the `dcbf` ar
 ground that the RSX now reads a buffer the PPE writes through its cache and nobody here has established
 whether that read path snoops; they cost 482 us a frame, and their comments say exactly that.
 
+### The effects, and a menu that keeps itself honest
+
+`SHELL-DESIGN.md`'s stage 2 and part of stage 5 went in once the frame had headroom, and all three are
+cheap for the same reason: the interface is a cached layer, so anything that MOVES has to live outside
+it — which turns out to be the arrangement that makes them nearly free. The glow is rasterised once into
+a coverage mask and multiplied by one scalar per frame; the pips are recorded during the rebuild and
+drawn last, 250 pixels; the motes are 26 points of light born in the ribbon band with a depth that makes
+far ones small, bright and slow and near ones large, dim and quick.
+
+The pip is a deliberate reversal of the plan. It asked for the STANDBY pip to breathe — "a console you
+must wake looks asleep" — and on a screen that is backwards: amber already says "not ready" by being
+amber, and animating it makes the thing you *cannot* use the liveliest thing on the card.
+
+**The motes took three goes and every correction came from looking at a television**: drawn small so the
+expansion would blur them for free (an eight-pixel smear that reads as motion blur); moving at a sixth
+of a pixel a second, which is shimmer rather than drift, under a comment claiming "about a minute" that
+was wrong by a factor of ten; and all rising from the floor, which reads as carbonation in a glass.
+
+And the console cards now re-ask every five seconds instead of once at launch, driving a new
+non-blocking form of `rc_discover` a frame at a time. It rebuilds only when something a viewer could see
+has changed — a rebuild throws away the cached layer and restarts the selected card's glow, so a row
+that flinched every few seconds because two datagrams said what the last two said would be a worse fault
+than the one it fixes.
+
 ### And an XMB quit took the console down
 
 Choosing Quit from the PS menu rebooted the console with three beeps, every time. Not a crash in the
