@@ -44,19 +44,6 @@
 /* The card, lifted and brightened when it is the one you are on. */
 #define SH_SELECT_LIFT 18
 
-/*
- * HOW OFTEN THE BACKGROUND IS REDRAWN, and this number is a placeholder for a measurement.
- *
- * The wave is filled by the PPE across the whole screen - two million pixels - and how long that takes
- * on this machine is not something to guess at. It is logged every time, and what it turns out to be
- * decides whether the next stage's motion can run at the flip rate or whether the fill belongs on the
- * SPEs, which are sitting idle at this screen with nothing whatsoever to do.
- *
- * 90 ms is about eleven frames a second. The ribbons take forty seconds to travel a phase, so eleven
- * frames a second is smooth for the thing being drawn - it is the CURSOR that would want more, and the
- * cursor does not move on its own.
- */
-#define SH_WAVE_MS     90u
 
 #define SH_BACKDROP   0xFF05070Bu
 
@@ -239,97 +226,226 @@ static void read_enter_button(void)
 /* ------------------------------------------------------------------------------------------------ */
 
 /*
- * A rounded rectangle, by the only method available here: a filled box with its corners walked in. No
- * curves, no antialiasing on the corner - at these radii and this contrast the stair is invisible on a
- * television, and a proper arc would mean coverage arithmetic for a shape nobody will look at.
+ * SHAPES, WITH THEIR EDGES ANTIALIASED, and that is the difference between "drawn" and "hand-drawn".
+ *
+ * The first version stepped squares along a diagonal to make a cross and left the corners off every
+ * rounded rectangle, which on a television read exactly as what it was. These rasterise properly: for
+ * each pixel, nine sub-positions are tested against the shape and the count becomes coverage, which is
+ * then blended. Nine samples a pixel is a lot per pixel and nothing at all in total - a button glyph is
+ * twenty-eight pixels square, and the cards are redrawn only when the cursor moves.
  */
-static void rounded(int x, int y, int w, int h, int r, uint32_t argb, int blend)
+#define SH_SS 3   /* sub-samples per axis */
+
+/* Integer square root. Used to find a circle's x at a given y without floating point. */
+static int isqrt_i(int v)
 {
+    int r = 0, b = 1 << 15;
+
+    if (v <= 0)
+        return 0;
+    while (b > v)
+        b >>= 2;
+    while (b != 0) {
+        if (v >= r + b) {
+            v -= r + b;
+            r = (r >> 1) + b;
+        } else {
+            r >>= 1;
+        }
+        b >>= 2;
+    }
+    return r;
+}
+
+/*
+ * How far inside the rectangle its rounded corner pulls the edge at this row, in 1/SH_SS units. Exact
+ * rather than approximated: the previous chord approximation was most of why the corners looked wrong.
+ */
+static int corner_inset(int row_ss, int h_ss, int r_ss)
+{
+    int dy;
+
+    if (row_ss < r_ss)
+        dy = r_ss - row_ss;
+    else if (row_ss >= h_ss - r_ss)
+        dy = row_ss - (h_ss - r_ss) + 1;
+    else
+        return 0;
+    return r_ss - isqrt_i(r_ss * r_ss - dy * dy);
+}
+
+/*
+ * One rounded rectangle, filled or outlined, with antialiased edges. `t` of 0 fills it; anything else is
+ * the stroke width. Coverage is accumulated per pixel across SH_SS x SH_SS sub-rows and sub-columns.
+ */
+static void rounded_shape(int x, int y, int w, int h, int r, int t, uint32_t argb)
+{
+    unsigned alpha = (argb >> 24) & 0xffu;
     int row;
 
-    if (w <= 0 || h <= 0)
+    if (w <= 0 || h <= 0 || alpha == 0u)
         return;
     if (r * 2 > w) r = w / 2;
     if (r * 2 > h) r = h / 2;
 
     for (row = 0; row < h; row++) {
-        int inset = 0;
+        int sub, col;
+        /* Coverage for this pixel row, one entry per column, 0..SH_SS*SH_SS. */
+        static unsigned char cov[1920];
+        int lo = w, hi = 0;
 
-        if (row < r) {
-            int dy = r - row;
-            /* A circle's x at this y, without a square root: the chord is close enough that the
-             * difference is under a pixel at every radius this uses. */
-            int dx = (dy * dy * 3) / (r * 4);
+        if (w > (int)sizeof(cov))
+            return;
+        memset(cov, 0, (size_t)w);
 
-            inset = dy - dx;
-            if (inset < 0)
-                inset = 0;
-        } else if (row >= h - r) {
-            int dy = row - (h - r) + 1;
-            int dx = (dy * dy * 3) / (r * 4);
+        for (sub = 0; sub < SH_SS; sub++) {
+            int row_ss = row * SH_SS + sub;
+            int inset = corner_inset(row_ss, h * SH_SS, r * SH_SS);
+            int left_ss = inset;
+            int right_ss = w * SH_SS - inset;
+            int i;
 
-            inset = dy - dx;
-            if (inset < 0)
-                inset = 0;
+            if (right_ss <= left_ss)
+                continue;
+
+            for (i = left_ss; i < right_ss; i++) {
+                int px = i / SH_SS;
+
+                if (t > 0) {
+                    /* Outline: keep only what is within `t` of an edge, on any side. */
+                    int from_left = i - left_ss;
+                    int from_right = right_ss - 1 - i;
+                    int from_top = row_ss;
+                    int from_bottom = h * SH_SS - 1 - row_ss;
+                    int ts = t * SH_SS;
+
+                    if (from_left >= ts && from_right >= ts && from_top >= ts && from_bottom >= ts)
+                        continue;
+                }
+                cov[px] = (unsigned char)(cov[px] + 1u);
+                if (px < lo) lo = px;
+                if (px > hi) hi = px;
+            }
         }
-        if (blend)
-            rc_overlay_blend_rect(x + inset, y + row, w - inset * 2, 1, argb);
-        else
-            rc_overlay_rect(x + inset, y + row, w - inset * 2, 1, argb);
+
+        for (col = lo; col <= hi && col < w; col++) {
+            unsigned c = cov[col];
+
+            if (c == 0u)
+                continue;
+            {
+                unsigned a = (alpha * c) / (SH_SS * SH_SS);
+
+                if (a > 0u)
+                    rc_overlay_blend_rect(x + col, y + row, 1, 1,
+                                          (a << 24) | (argb & 0x00FFFFFFu));
+            }
+        }
     }
 }
 
-/* The outline of one, drawn as four bars and the corners left square - see above. */
+static void rounded(int x, int y, int w, int h, int r, uint32_t argb, int blend)
+{
+    (void)blend;
+    rounded_shape(x, y, w, h, r, 0, argb);
+}
+
 static void rounded_edge(int x, int y, int w, int h, int r, int t, uint32_t argb)
 {
-    rc_overlay_blend_rect(x + r, y, w - r * 2, t, argb);
-    rc_overlay_blend_rect(x + r, y + h - t, w - r * 2, t, argb);
-    rc_overlay_blend_rect(x, y + r, t, h - r * 2, argb);
-    rc_overlay_blend_rect(x + w - t, y + r, t, h - r * 2, argb);
+    rounded_shape(x, y, w, h, r, t < 1 ? 1 : t, argb);
 }
 
 /*
- * THE BUTTON GLYPHS, AS SHAPES. Four primitives, and they say "console" faster than any amount of
- * layout - which is the entire reason they are here rather than the letters X and O. Returns the width
- * consumed, so a row of hints can be laid out by chaining rather than by hand-measured offsets.
+ * THE BUTTON GLYPHS. Four primitives, and they say "console" faster than any amount of layout - which
+ * is the entire reason they are here rather than the letters X and O. Same sub-sampled rasteriser as
+ * the rectangles, so a diagonal comes out as a clean line rather than a staircase.
+ *
+ * Returns the width consumed, so a row of hints is laid out by chaining rather than by hand-measured
+ * offsets - which is how the last one ended up off-centre.
  */
 static int glyph(uint32_t button, int x, int y, int size, uint32_t argb)
 {
-    int r = size / 2;
-    int cx = x + r;
-    int t = sy(4);
-    int i;
+    unsigned alpha = (argb >> 24) & 0xffu;
+    int half = (size * SH_SS) / 2;
+    int stroke = (size * SH_SS * 11) / 100;   /* 11% of the box, which reads at ten feet */
+    int radius = (size * SH_SS * 38) / 100;
+    int row;
 
-    if (t < 1)
-        t = 1;
+    if (size <= 0 || alpha == 0u)
+        return 0;
+    if (stroke < SH_SS)
+        stroke = SH_SS;
 
-    if (button == HALYARD_PAD_CROSS) {
-        /* Two bars, stepped diagonally. */
-        for (i = 0; i < size; i++) {
-            rc_overlay_blend_rect(x + i, y + i, t, t, argb);
-            rc_overlay_blend_rect(x + i, y + size - i - t, t, t, argb);
+    for (row = 0; row < size; row++) {
+        static unsigned char cov[256];
+        int sub, col;
+
+        if (size > (int)sizeof(cov))
+            return size;
+        memset(cov, 0, (size_t)size);
+
+        for (sub = 0; sub < SH_SS; sub++) {
+            int vy = row * SH_SS + sub - half;
+            int i;
+
+            for (i = 0; i < size * SH_SS; i++) {
+                int vx = i - half;
+                int inside = 0;
+
+                if (button == HALYARD_PAD_CROSS) {
+                    /* Two diagonal bars. The perpendicular distance to a 45-degree line through the
+                     * origin is |vx -+ vy| / sqrt(2), and the sqrt is folded into the comparison. */
+                    int d1 = vx - vy, d2 = vx + vy;
+
+                    if (d1 < 0) d1 = -d1;
+                    if (d2 < 0) d2 = -d2;
+                    inside = ((d1 * 100) / 141 < stroke || (d2 * 100) / 141 < stroke)
+                             && vx > -radius - stroke && vx < radius + stroke
+                             && vy > -radius - stroke && vy < radius + stroke;
+                } else if (button == HALYARD_PAD_CIRCLE) {
+                    int d = isqrt_i(vx * vx + vy * vy) - radius;
+
+                    if (d < 0) d = -d;
+                    inside = (d * 2 < stroke);
+                } else if (button == HALYARD_PAD_TRIANGLE) {
+                    /*
+                     * Three edges of an equilateral triangle, each an inequality, and the glyph is what
+                     * lies inside all three but outside the same three moved inwards. No line ever
+                     * extends past where the next one starts, which is what was wrong before.
+                     */
+                    int top = -radius, bot = (radius * 3) / 4;
+                    int e1 = (vy - top) * 60 - (vx * 100);    /* the left edge  */
+                    int e2 = (vy - top) * 60 + (vx * 100);    /* the right edge */
+                    int e3 = bot - vy;                        /* the base       */
+                    int m = stroke * 100;
+
+                    inside = (e1 >= 0 && e2 >= 0 && e3 >= 0)
+                             && (e1 < m || e2 < m || e3 * 100 < m);
+                } else {
+                    int ax = vx < 0 ? -vx : vx;
+                    int ay = vy < 0 ? -vy : vy;
+                    int outer = (radius * 9) / 10;
+
+                    inside = (ax <= outer && ay <= outer)
+                             && (ax > outer - stroke || ay > outer - stroke);
+                }
+
+                if (inside) {
+                    col = i / SH_SS;
+                    cov[col] = (unsigned char)(cov[col] + 1u);
+                }
+            }
         }
-    } else if (button == HALYARD_PAD_CIRCLE) {
-        for (i = 0; i < size; i++) {
-            int dy = i - r;
-            int dx2 = r * r - dy * dy;
-            int dx = 0;
 
-            while (dx * dx < dx2)
-                dx++;
-            rc_overlay_blend_rect(cx - dx, y + i, t, t, argb);
-            rc_overlay_blend_rect(cx + dx - t, y + i, t, t, argb);
-        }
-    } else if (button == HALYARD_PAD_TRIANGLE) {
-        for (i = 0; i < size; i++) {
-            int half = (i * r) / size;
+        for (col = 0; col < size; col++) {
+            unsigned a;
 
-            rc_overlay_blend_rect(cx - half, y + i, t, t, argb);
-            rc_overlay_blend_rect(cx + half - t, y + i, t, t, argb);
+            if (cov[col] == 0u)
+                continue;
+            a = (alpha * cov[col]) / (SH_SS * SH_SS);
+            if (a > 0u)
+                rc_overlay_blend_rect(x + col, y + row, 1, 1, (a << 24) | (argb & 0x00FFFFFFu));
         }
-        rc_overlay_blend_rect(x, y + size - t, size, t, argb);
-    } else {
-        rounded_edge(x, y, size, size, sy(4), t, argb);
     }
     return size;
 }
@@ -341,12 +457,11 @@ static int glyph(uint32_t button, int x, int y, int size, uint32_t argb)
  */
 static int pill(const char *label, int x, int y, int h, uint32_t argb)
 {
-    int pad = sx(16);
-    int w;
+    int pad = sx(18);
+    int w = rc_overlay_text(0, -10000, 1, 0x00000000u, "%s", label) + pad * 2;
 
-    rc_overlay_text(x + pad, y + sy(5), 1, 0x00000000u, "%s", label);   /* measure, drawing nothing */
-    w = rc_overlay_text(x + pad, y + sy(5), 1, argb, "%s", label) + pad * 2;
-    rounded_edge(x, y, w, h, h / 2, sy(3), argb);
+    rounded_shape(x, y, w, h, h / 2, sy(3), argb);
+    (void)rc_overlay_text(x + pad, y + (h - sy(24)) / 2, 1, argb, "%s", label);
     return w;
 }
 
@@ -417,18 +532,22 @@ static void draw_card(const rc_menu_item *item, int x, int y, int w, int h, int 
     }
 
     /* A pip and one word. Green is ready, amber is asleep, grey is a console that did not answer. */
+    /*
+     * A PIP ONLY WHEN IT MEANS SOMETHING. Green is ready and amber is asleep; a console that did not
+     * answer gets no dot at all, because a grey circle beside the word "paired" is a thing somebody has
+     * to work out rather than read, and there is nothing to work out - it just has not been seen.
+     */
     if (item->value[0] != '\0') {
-        uint32_t pip = RC_OV_LABEL;
         int px = x + pad, py = y + h - pad - sy(18);
         int d = sy(16);
+        int ready = (strcmp(item->value, "ready") == 0);
+        int standby = (strcmp(item->value, "standby") == 0);
 
-        if (strcmp(item->value, "ready") == 0)
-            pip = RC_OV_GOOD;
-        else if (strcmp(item->value, "standby") == 0)
-            pip = RC_OV_WARN;
-
-        rounded(px, py, d, d, d / 2, pip, 0);
-        (void)rc_overlay_text(px + d + sx(14), py - sy(4), 1, RC_OV_LABEL, "%s", item->value);
+        if (ready || standby) {
+            rounded_shape(px, py, d, d, d / 2, 0, ready ? RC_OV_GOOD : RC_OV_WARN);
+            px += d + sx(14);
+        }
+        (void)rc_overlay_text(px, py - sy(4), 1, RC_OV_LABEL, "%s", item->value);
     }
 }
 
@@ -532,7 +651,6 @@ static int s_cards = 1;
 static unsigned s_drawn_revision;
 static int s_drawn_hint = -1;
 static int s_drawn_valid;
-static uint64_t s_wave_at;
 
 static void draw(int can_forget)
 {
@@ -561,8 +679,14 @@ static void draw(int can_forget)
             usleep(2000);
     }
 
-    redraw = (!s_drawn_valid || s_menu.revision != s_drawn_revision || can_forget != s_drawn_hint
-              || now - s_wave_at >= SH_WAVE_MS);
+    /*
+     * THE BACKGROUND MOVES, so every frame is a redraw. The first version rebuilt it on a 90 ms timer
+     * because the fill measured 85,342 us on hardware - five frames - and a background that blocks for
+     * five frames is not ambient, it steps. With the divides and the branches gone from the inner loop
+     * it is asked for on every flip; what that actually costs is logged when the shell closes, because
+     * "it is fast enough now" is a claim and the log is the evidence.
+     */
+    redraw = 1;
     if (!redraw) {
         rc_overlay_end_now(0, 0, s_scr_w, s_scr_h);
         rc_video_flip();
@@ -574,7 +698,6 @@ static void draw(int can_forget)
     s_drawn_revision = s_menu.revision;
     s_drawn_hint = can_forget;
     s_drawn_valid = 1;
-    s_wave_at = now;
 
     /*
      * THE BACKGROUND, WRITTEN STRAIGHT INTO THE SURFACE. Everything after this blends over it in main
@@ -699,6 +822,41 @@ static void forget_held(void)
  * The home screen
  */
 
+/*
+ * A CONSOLE'S NAME OUTLIVES ITS ADDRESS, so take the name whenever the network offers one.
+ *
+ * A record written before this port stored names has only an address in it, and an address is not
+ * something anybody recognises on a menu - worse, it is the part most likely to be wrong later, because
+ * a DHCP lease is not a promise. Discovery knows what each console calls itself; when one answers at an
+ * address we already have keys for, that name is adopted and written down, and the card stops saying
+ * 192.168 anything.
+ *
+ * It does NOT re-address a console whose lease moved - that is the other half of the same problem and
+ * needs the stable device id discovery also returns. See the note in rc_connect on stale records.
+ */
+static void adopt_names(void)
+{
+    int changed = 0;
+    int i;
+
+    for (i = 0; i < s_found_count && i < RC_DISCOVER_MAX; i++) {
+        const char *found = s_found.console[i].host_name;
+        int at = halyard_pairing_set_find(&s_set, s_found.console[i].address);
+
+        if (at < 0 || found[0] == '\0')
+            continue;
+        if (strcmp(s_set.console[at].name, found) == 0)
+            continue;
+        snprintf(s_set.console[at].name, sizeof(s_set.console[at].name), "%s", found);
+        rc_log("shell: learned a paired console's name from the network\n");
+        changed = 1;
+    }
+    if (changed) {
+        s_dirty = 1;
+        save_record();
+    }
+}
+
 static void search(void)
 {
     int i;
@@ -708,6 +866,7 @@ static void search(void)
 
     s_found_count = rc_discover(SH_DISCOVER_MS, &s_found);
     s_searched = 1;
+    adopt_names();
     rc_log("shell: %d console(s) answered\n", s_found_count);
     for (i = 0; i < s_found_count; i++) {
         /* The name and the state, never the address - a log leaves this console and that line is the
@@ -1169,6 +1328,16 @@ rc_shell_action rc_shell_run(const char *const *dirs, int dir_count)
     rc_wave_open();
     s_accent = rc_wave_accent();
     load_record(dirs, dir_count);
+
+    /*
+     * ASKED ONCE ON THE WAY IN. Without this the home screen opens saying "paired" and "not seen" about
+     * consoles that are sitting there awake, and the only way to find out otherwise is to go into the
+     * options and ask - which is a thing to do about a screen whose whole job is to tell you.
+     *
+     * It costs the broadcast's deadline before the first card appears, and `search` puts "Searching for
+     * consoles" on the television first, so the wait is something happening rather than a blank screen.
+     */
+    search();
     build_home();
     forget_held();
 

@@ -157,6 +157,32 @@ static const struct {
 
 #define RC_WAVE_MAX_W 1920
 
+/*
+ * The three peaks are added, and the sum indexes a 256-entry palette with no clamp in the inner loop -
+ * so the sum has to fit. Checked here rather than clamped there: a clamp is a branch, and the branch is
+ * what this is getting rid of.
+ */
+typedef char rc_wave_levels_fit[(46 + 38 + 26) < 256 ? 1 : -1];
+
+/*
+ * THE INNER LOOP HAS NO DIVIDE AND NO BRANCH IN IT, and that is not premature optimisation - it is the
+ * whole difference between this working and not.
+ *
+ * The first version did the obvious thing: per pixel, per ribbon, take |y - centre[x]|, test it against
+ * the band, and scale it to a table index with a divide. Two million pixels, three ribbons: six million
+ * integer divides and six million unpredictable branches. It measured 85,342 us a frame on hardware -
+ * five whole frames at 60 Hz - which is how a background that is meant to be ambient ended up visibly
+ * stepping.
+ *
+ * Both go away by indexing a table with the SIGNED offset instead. Each ribbon gets one table spanning
+ * every dy the screen can produce, with zeroes outside its band, so "is this pixel in the ribbon" stops
+ * being a question anybody asks: it is a load and an add. The vertical lift is folded into a second
+ * table so composing the final pixel is one more load rather than three clamps and three shifts.
+ */
+#define RC_WAVE_MAX_H 1088
+#define RC_WAVE_DY_BIAS RC_WAVE_MAX_H
+#define RC_WAVE_DY_SPAN (RC_WAVE_MAX_H * 2 + 1)
+
 void rc_wave_draw(uint32_t *dst, int w, int h, int stride_px, uint64_t ms)
 {
     /*
@@ -164,15 +190,14 @@ void rc_wave_draw(uint32_t *dst, int w, int h, int stride_px, uint64_t ms)
      * it inside the pixel loop would be two million lookups to produce nineteen hundred answers.
      */
     static short centre[RC_WAVE_RIBBONS][RC_WAVE_MAX_W];
-    static unsigned char falloff[RC_WAVE_RIBBONS][257];
+    static unsigned char band[RC_WAVE_RIBBONS][RC_WAVE_DY_SPAN];
     /*
-     * THE HUE, RESOLVED ONCE PER BRIGHTNESS RATHER THAN ONCE PER PIXEL. Hue and saturation are fixed
-     * for the whole month, so only the value varies - which turns a colour-space conversion in the
-     * inner loop, two million times a frame, into a 256-entry table built once.
+     * The hue resolved once per brightness rather than once per pixel: hue and saturation are fixed for
+     * the whole month, so only the value varies, which turns a colour-space conversion in the inner
+     * loop into a table built once. The second index is the vertical lift, of which there are few.
      */
-    static uint32_t ramp[256];
+    static uint32_t ramp[16][256];
     static int ramp_month = -1;
-    static short thick[RC_WAVE_RIBBONS];
     uint64_t t0 = rc_tick();
     int rib, x, y;
 
@@ -180,12 +205,29 @@ void rc_wave_draw(uint32_t *dst, int w, int h, int stride_px, uint64_t ms)
         return;
     if (w > RC_WAVE_MAX_W)
         w = RC_WAVE_MAX_W;
+    if (h > RC_WAVE_MAX_H)
+        h = RC_WAVE_MAX_H;
     if (!s_sine_ready)
         build_sine();
 
     if (ramp_month != s_month) {
-        for (x = 0; x < 256; x++)
-            ramp[x] = hsv(RC_WAVE_MONTH[s_month].hue, RC_WAVE_MONTH[s_month].sat, x);
+        int lift, v;
+
+        for (lift = 0; lift < 16; lift++) {
+            int br = 5 + lift / 3, bg = 7 + lift / 2, bb = 11 + lift;
+
+            for (v = 0; v < 256; v++) {
+                uint32_t c = hsv(RC_WAVE_MONTH[s_month].hue, RC_WAVE_MONTH[s_month].sat, v);
+                int r = br + (int)((c >> 16) & 0xffu);
+                int g = bg + (int)((c >> 8) & 0xffu);
+                int b = bb + (int)(c & 0xffu);
+
+                if (r > 255) r = 255;
+                if (g > 255) g = 255;
+                if (b > 255) b = 255;
+                ramp[lift][v] = 0xff000000u | (uint32_t)((r << 16) | (g << 8) | b);
+            }
+        }
         ramp_month = s_month;
     }
 
@@ -193,11 +235,11 @@ void rc_wave_draw(uint32_t *dst, int w, int h, int stride_px, uint64_t ms)
         int cy = (RC_WAVE_RIBBON[rib].y_permille * h) / 1000;
         int amp = (RC_WAVE_RIBBON[rib].amp_permille * h) / 1000;
         int phase = (int)((ms * (uint64_t)RC_WAVE_RIBBON[rib].speed) / 1000u);
+        int thick = (RC_WAVE_RIBBON[rib].thick * h) / 1000;
         int i;
 
-        thick[rib] = (short)((RC_WAVE_RIBBON[rib].thick * h) / 1000);
-        if (thick[rib] < 1)
-            thick[rib] = 1;
+        if (thick < 1)
+            thick = 1;
 
         for (x = 0; x < w; x++) {
             /* The fundamental, plus a faster harmonic at a fraction of the amplitude - one sine alone
@@ -208,55 +250,33 @@ void rc_wave_draw(uint32_t *dst, int w, int h, int stride_px, uint64_t ms)
             centre[rib][x] = (short)(cy + (wave_sin(p1) * amp) / 256
                                         + (wave_sin(p2) * amp) / 896);
         }
-        /* A smooth shoulder rather than a linear ramp: a straight falloff has a visible edge where it
-         * reaches zero, and on a dark background a visible edge is the whole of what you notice. */
-        for (i = 0; i <= 256; i++) {
-            int u = 256 - i;                     /* 256 at the centre, 0 at the edge */
-            int sq = (u * u) >> 8;               /* squared, so it leaves gently      */
 
-            falloff[rib][i] = (unsigned char)((sq * RC_WAVE_RIBBON[rib].level) >> 8);
+        /*
+         * The band table: zero everywhere, and a smooth shoulder inside. Squared rather than linear
+         * because a straight falloff has a visible edge where it reaches zero, and on a background this
+         * dark a visible edge is the whole of what you notice.
+         */
+        memset(band[rib], 0, sizeof(band[rib]));
+        for (i = -thick + 1; i < thick; i++) {
+            int mag = (i < 0) ? -i : i;
+            int u = 256 - (mag * 256) / thick;   /* 256 at the centre, 0 at the edge */
+            int sq = (u * u) >> 8;
+
+            band[rib][i + RC_WAVE_DY_BIAS] = (unsigned char)((sq * RC_WAVE_RIBBON[rib].level) >> 8);
         }
     }
 
     for (y = 0; y < h; y++) {
         uint32_t *row = dst + (size_t)y * (size_t)stride_px;
-        /* The floor: a near-black that lifts very slightly towards the bottom, so the screen has a
-         * bottom edge rather than fading into the television's own black. */
-        int lift = (y * 14) / h;
-        int br = 5 + lift / 3, bg = 7 + lift / 2, bb = 11 + lift;
-        uint32_t flat = 0xff000000u | (uint32_t)((br << 16) | (bg << 8) | bb);
+        const short *c0 = centre[0], *c1 = centre[1], *c2 = centre[2];
+        const unsigned char *b0 = band[0], *b1 = band[1], *b2 = band[2];
+        /* The floor lifts very slightly towards the bottom, so the screen has a bottom edge rather
+         * than fading into the television's own black. */
+        const uint32_t *pal = ramp[(y * 14) / h];
+        int yb = y + RC_WAVE_DY_BIAS;
 
-        for (x = 0; x < w; x++) {
-            int add = 0;
-            int dy;
-
-            /* Unrolled: three ribbons is a fixed number, and the loop overhead is a third of the work
-             * in a body this small. */
-            dy = y - centre[0][x]; if (dy < 0) dy = -dy;
-            if (dy < thick[0]) add += falloff[0][(dy * 256) / thick[0]];
-            dy = y - centre[1][x]; if (dy < 0) dy = -dy;
-            if (dy < thick[1]) add += falloff[1][(dy * 256) / thick[1]];
-            dy = y - centre[2][x]; if (dy < 0) dy = -dy;
-            if (dy < thick[2]) add += falloff[2][(dy * 256) / thick[2]];
-
-            if (add == 0) {
-                row[x] = flat;
-            } else {
-                uint32_t c;
-                int r, g, b;
-
-                if (add > 255)
-                    add = 255;
-                c = ramp[add];
-                r = br + (int)((c >> 16) & 0xffu);
-                g = bg + (int)((c >> 8) & 0xffu);
-                b = bb + (int)(c & 0xffu);
-                if (r > 255) r = 255;
-                if (g > 255) g = 255;
-                if (b > 255) b = 255;
-                row[x] = 0xff000000u | (uint32_t)((r << 16) | (g << 8) | b);
-            }
-        }
+        for (x = 0; x < w; x++)
+            row[x] = pal[b0[yb - c0[x]] + b1[yb - c1[x]] + b2[yb - c2[x]]];
     }
 
     s_last_us = (unsigned)(((rc_tick() - t0) * 1000000u) / rc_tick_hz());
