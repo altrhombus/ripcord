@@ -636,6 +636,23 @@ int rc_overlay_ascent(int scale)
     return RC_FONT_H * scale * 2;
 }
 
+int rc_overlay_cap_height(int scale)
+{
+    if (s_sysfont) {
+        rc_sysfont_set_size(size_for(scale));
+        return rc_sysfont_cap_height();
+    }
+    /* The drawn font has no descenders and no accents: its cell IS its capital. */
+    return RC_FONT_H * scale * 2;
+}
+
+int rc_overlay_text_y(int box_y, int box_h, int scale)
+{
+    /* rc_overlay_text takes the top of the RUN; the baseline is that plus the ascent. Put the baseline
+     * where it has to be for the capitals to sit centred, then work back to the top. */
+    return box_y + (box_h + rc_overlay_cap_height(scale)) / 2 - rc_overlay_ascent(scale);
+}
+
 /*
  * A rebuild that ignores the throttle.
  *
