@@ -43,7 +43,8 @@ typedef enum {
     RC_ACCOUNT_OK = 0,
     RC_ACCOUNT_NO_NP,          /* the console says this user has no PSN account linked */
     RC_ACCOUNT_NO_USER,        /* no local user directory matched the signed-in user   */
-    RC_ACCOUNT_NO_FILE,        /* ...it had no np_cache.dat, or it could not be read   */
+    RC_ACCOUNT_NO_FILE,        /* ...and it has no np_cache.dat at all                 */
+    RC_ACCOUNT_UNREADABLE,     /* ...it has one and it would not give up eight bytes   */
     RC_ACCOUNT_IMPLAUSIBLE     /* it was read and does not look like an account id     */
 } rc_account_status;
 
