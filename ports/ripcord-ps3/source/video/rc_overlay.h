@@ -153,6 +153,20 @@ void rc_overlay_rect(int x, int y, int w, int h, uint32_t argb);
  * pixel, which is why the diagnostics panel does not use it - see the note in the .c. */
 void rc_overlay_blend_rect(int x, int y, int w, int h, uint32_t argb);
 
+/*
+ * A CONTROLLER BUTTON, as its shape, in a square box `size` on a side. Returns the width consumed, so a
+ * row of hints is laid out by chaining rather than by hand-measured offsets - which is how the last one
+ * ended up off-centre in the shell.
+ *
+ * CIRCLE AND CROSS ONLY. Those are the two the in-session menu names, and a shape nobody draws is a
+ * shape nobody checks - the shell has its own richer set because it needs triangle and the two word
+ * pills. Anything else asked for here is drawn as nothing rather than as an approximation.
+ *
+ * Takes `button` as a HALYARD_PAD_* bit so callers pass the same value they test input against, rather
+ * than a second enumeration that has to be kept in step with the first.
+ */
+int rc_overlay_glyph(uint32_t button, int x, int y, int size, uint32_t argb);
+
 /* Direct access for a caller that fills the surface itself, such as the shell's background. The pitch
  * is in PIXELS. NULL until rc_overlay_set has succeeded. */
 uint32_t *rc_overlay_pixels(int *pitch_px);
