@@ -3372,7 +3372,7 @@ static struct {
     rc_connect_result *out;
     int ready;        /* SESSION_ID seen - the console is willing to stream */
     int dead;         /* the session faulted or closed; nothing more will come */
-    int verdict_new;  /* a verdict arrived and has not been acted on - out->login_verdict holds it */
+    int verdict_new;  /* a verdict arrived and is UNREAD - out->login_verdict holds it; see signin_wait */
 } g_signin;
 
 static void signin_absorb(const halyard_control_event *ev)
@@ -3434,7 +3434,12 @@ static int signin_service(void)
     return 1;
 }
 
-/* Services until the console says something that ends the wait, or `until` passes. */
+/*
+ * Services until the console says something that ends the wait, or `until` passes.
+ *
+ * verdict_new is one of the things that ends it, so THE CALLER MUST CLEAR IT WHEN IT READS IT - an
+ * unread verdict makes the next wait return immediately. See where it is read for what that cost.
+ */
 static void signin_wait(uint64_t until)
 {
     while (rc_time_ms() < until && !g_signin.ready && !g_signin.dead && !g_signin.verdict_new) {
@@ -3865,19 +3870,41 @@ answered:
                 if (g_signin.ready || g_signin.dead)
                     break;
 
-                if (g_signin.verdict_new && out->login_verdict == 1) {
-                    SAY("the console rejected that passcode");
-                    continue;           /* ask again; attempt > 1 makes the screen say so */
-                }
-                if (g_signin.verdict_new && out->login_verdict == 0) {
-                    /*
-                     * Accepted, and the session does not always follow at once - the reference measures
-                     * about five seconds on the rendezvous route while the console renegotiates. Wait
-                     * that out rather than blaming the passcode for a session that is merely late.
-                     */
-                    SAY("the console accepted the passcode - waiting for SESSION_ID");
-                    say(RC_PHASE_CONNECTING, "Signed in", "Waiting for the console", NULL);
-                    signin_wait(rc_time_ms() + RC_SIGNIN_WAIT_MS);
+                /*
+                 * READ THE VERDICT, WHICH MEANS CLEARING IT. verdict_new is a latch meaning "a verdict
+                 * has arrived and nobody has acted on it yet", and signin_wait stops the moment it is
+                 * set - so a verdict still latched here is a wait that returns instantly.
+                 *
+                 * b440 was exactly that, and the log named it precisely: "the console accepted the
+                 * passcode - waiting for SESSION_ID" followed immediately by "stage reached: control
+                 * session open". The console had unlocked and was about to start a session; the wait
+                 * for it lasted no time at all, so the attempt was written off as a sign-in failure and
+                 * the shell came back. Reading the value and clearing the latch together is the whole
+                 * of the fix, and is why the read is one place rather than three conditions.
+                 */
+                if (g_signin.verdict_new) {
+                    int verdict = out->login_verdict;
+
+                    g_signin.verdict_new = 0;
+
+                    if (verdict == 1) {
+                        SAY("the console rejected that passcode");
+                        continue;       /* ask again; attempt > 1 makes the screen say so */
+                    }
+                    if (verdict == 0) {
+                        /*
+                         * Accepted, and the session does not always follow at once - the reference
+                         * measures about five seconds on the rendezvous route while the console
+                         * renegotiates. Wait that out rather than blaming the passcode for a session
+                         * that is merely late.
+                         */
+                        SAY("the console accepted the passcode - waiting for SESSION_ID");
+                        say(RC_PHASE_CONNECTING, "Signed in", "Waiting for the console", NULL);
+                        signin_wait(rc_time_ms() + RC_SIGNIN_WAIT_MS);
+                        break;
+                    }
+                    /* A verdict byte nobody has seen. Retrying asks the same question again. */
+                    SAY("the console answered with a verdict byte nobody has seen - not retrying");
                     break;
                 }
                 /* It said nothing at all. Ask again - the same passcode may simply not have landed. */
