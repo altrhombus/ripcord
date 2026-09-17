@@ -831,8 +831,14 @@ Choosing Quit from the PS menu rebooted the console with three beeps, every time
 teardown - the teardown never ran. lv2 raises `SYSUTIL_EXIT_GAME` through whatever callback the program
 registered and force-terminates it when nobody leaves; this program registered nothing, so every quit
 took the second path with the RSX holding a context and an SPU thread group running that is deliberately
-never destroyed. The shell now answers it. **The streaming path still does not** - it never calls
-`sysUtilCheckCallback` at all, so a quit mid-stream still ends this way.
+never destroyed. The shell answered it from b373 and the streaming path from b409 - three loops there are
+long enough to be asked to quit inside, and on that path `sysUtilCheckCallback` had never been called at
+all, so the request was not merely ignored, it was never delivered.
+
+**And the PS menu itself was slow for the same reason**, which nothing had connected to anything. The
+system overlay is driven from that same callback, so a program that never pumps it starves the whole
+system utility layer and not only its own exit event. It had been read as an old console under load. It
+was this, and it had been true of every streaming build this port has ever produced.
 
 ## The 3DS port — a second client, and the spec's first real audit
 
