@@ -675,11 +675,12 @@ int rc_overlay_begin_now(void)
     return 1;
 }
 
-int rc_overlay_begin_surface(void)
+int rc_overlay_begin_surface(int clear)
 {
     if (!s_ready)
         return 0;
-    rc_overlay_rect(0, 0, s_w, s_h, 0xFF000000u);
+    if (clear)
+        rc_overlay_rect(0, 0, s_w, s_h, 0xFF000000u);
     s_rebuilt = 1;
     return 1;
 }

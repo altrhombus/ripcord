@@ -822,7 +822,9 @@ static void draw(int can_forget)
         return;
     }
 
-    if (!rc_overlay_begin_surface())
+    /* No clear: the background below writes every pixel of the surface, and clearing it to black
+     * first is two million stores spent on a colour that is never seen. */
+    if (!rc_overlay_begin_surface(0))
         return;
     s_drawn_revision = s_menu.revision;
     s_drawn_hint = can_forget;
