@@ -81,6 +81,8 @@
 #include "rc_discover.h"
 #include "rc_connect.h"
 #include "rc_shell.h"
+#include "rc_account_ps3.h"
+#include "halyard_pairing_file.h"
 
 #include "../platform/rc_platform_ps3.h"
 
@@ -2402,6 +2404,25 @@ int main(void)
     }
 
     failures += check_discovery();
+
+    /*
+     * CAN THIS CONSOLE TELL US ITS OWN PSN ACCOUNT ID? An investigation rather than a check, and it
+     * never fails the run - see rc_account_ps3.h for what it looks for and why it looks for something
+     * it already has. It costs a few hundred small reads and answers a question that decides whether
+     * the worst step in the pairing flow can be deleted.
+     */
+    {
+        halyard_pairing_record rec;
+        rc_account_probe account;
+        int loaded = 0;
+        int dir;
+
+        ps3_log("\nacct:  looking for this console's own copy of the PSN account id\n");
+        for (dir = 0; dir < LOG_DIR_COUNT && !loaded; dir++)
+            loaded = halyard_pairing_file_load(g_log_dirs[dir], &rec);
+
+        rc_account_probe_run(loaded ? rec.account_id : NULL, &account);
+    }
 
     /*
      * THE FRONT DOOR, and everything below it now runs because somebody asked for it.

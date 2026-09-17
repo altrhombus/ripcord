@@ -227,6 +227,7 @@ SOURCES := \
 	source/discovery/rc_discover.c \
 	source/connect/rc_connect.c \
 	source/connect/rc_pair_ps3.c \
+	source/connect/rc_account_ps3.c \
 	$(CORE)/discovery/halyard_discovery.c \
 	$(CORE)/discovery/halyard_wake.c \
 	$(CORE)/session/halyard_pairing_file.c \
