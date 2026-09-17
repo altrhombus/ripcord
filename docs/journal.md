@@ -770,21 +770,69 @@ very slightly worse, which is the instruction's own cost with nothing saved behi
 is not what this is paying for, and the ceiling is not one a store pattern can be arranged around. That
 is why the next move for the background is the SPEs rather than another pass over the PPE code.
 
-### Where this leaves the design document's open question
+### How it ended: 10 fps to 30, and what each step was actually worth
 
-`SHELL-DESIGN.md` names a Route A (two blits, flat card) and a Route B (one composite, text floating on
-the wave) and says to measure before committing. The measurement says neither is the question: **the
-drawing is, and it is on the PPE.** The port already has three SPE threads that do nothing but bilinear
-scaling since the decoder began producing RGB, measured in its own streaming logs at 2,992 us for a
-full-screen picture — the same operation as the wave's upscale, at a quarter of the PPE's cost, on cores
-that are idle at the menu. The open question worth a probe is whether an SPE can DMA straight into RSX
-memory, which would delete the 10,875 us copy rather than reduce it. That is **not** the b232 hazard:
-b232 asked the RSX's 2D blitter to blend. This is a DMA to mapped memory, which is what the MFC is for.
+The design document named Route A and Route B - whether text can float on the wave - and said to measure
+before committing. The measurement said neither was the question. Six changes were tried on the drawing
+and the four aimed at memory or arithmetic were worth far less than they looked:
 
-One thermal data point, from this port's own streaming logs, for the question of whether any of this is
-affordable in a living room: a full session — cellVdec on the SPEs, three more scaling, network, audio —
-moved the Cell **+1.0 C**. The menu's current state is arguably the worse one, since the PPE is saturated
-for 99 ms and then spins.
+| | frame | what changed |
+|---|---|---|
+| b367 | 99,472 us | the honest baseline, once the frame rate stopped being frames ÷ time-open |
+| b371 | 66,570 | rounded rectangles drawn a span at a time, not a pixel at a time |
+| b375 | 49,928 | a table for constant-alpha runs; the glow stops painting its own interior |
+| b381 | 50,054 | the interface cached as a layer and composited per row |
+| b386 | 33,454 | **the RSX reads the bitmap in main memory; the 8 MB copy stops existing** |
+
+Two ideas were tried and taken back out: `dcbz` on the background's write path, and splitting each row
+into two runs so a header row would not composite the empty middle of the screen. Both measured nothing.
+
+**The two that worked were both about where memory is, not what is done to it.** Every blended pixel read
+the surface before writing it; the background, which only writes, costs about 21 cycles a pixel against
+the blend's 140. So the interface is drawn once into a layer and composited, and the surface is never
+read. And the copy into video memory - 10,884 us, 29 percent of the budget - existed only because
+nothing had asked the RSX to look at main memory. `gcmMapMainMemory` gives it a window on the buffer
+where it stands: 10,884 us to 2.
+
+**Four attempts to make the per-pixel blend cheaper moved it from 217 cycles to about 140 and no
+further** - dcbz, dcbt, removing the arithmetic, removing the multiplies. That is the finding worth
+carrying off this work: on this core, for this kind of loop, the arithmetic was never what was being
+waited for, and no arrangement of it was going to be.
+
+### The two visual faults, and the verification gap they exposed
+
+Both were found by somebody looking at a television, not by any test here.
+
+The first was a bounded clear of the cached layer - correct by induction, provided every write really is
+inside the bounds its drawer reports. Clearing in full fixed it, for about 7 ms on a rebuild, which is
+not in the frame budget.
+
+The second was the same premise failing outright: `rounded_glow` never reported its ink at all, so the
+composite clipped the glow to whatever else happened to be on each row. What reached the screen was a
+glow with square corners, present on the side facing the other card and absent on the outside, visible
+along the bottom only where the word "standby" widened the row. Every detail of that follows from one
+missing line, and five readings of the drawing code did not find it; a description of the *shape on the
+screen* did.
+
+**Nothing in this project's tests could have caught either.** They compare one implementation against
+another, and both would have drawn the glow correctly - the fault was in the bookkeeping beside the
+drawing. There is now an invariant check: every pixel with a non-zero alpha in the layer must lie inside
+the bounds its drawer reported, verified on the first couple of rebuilds and reported by row and column.
+
+One correction belongs in the record. Two builds were spent fixing a cache-coherency fault inferred from
+that smearing, which was never a cache fault - and its being *persistent and repeatable* should have
+ruled one out at once rather than two builds later. The `sync` and the `dcbf` are kept on the narrower
+ground that the RSX now reads a buffer the PPE writes through its cache and nobody here has established
+whether that read path snoops; they cost 482 us a frame, and their comments say exactly that.
+
+### And an XMB quit took the console down
+
+Choosing Quit from the PS menu rebooted the console with three beeps, every time. Not a crash in the
+teardown - the teardown never ran. lv2 raises `SYSUTIL_EXIT_GAME` through whatever callback the program
+registered and force-terminates it when nobody leaves; this program registered nothing, so every quit
+took the second path with the RSX holding a context and an SPU thread group running that is deliberately
+never destroyed. The shell now answers it. **The streaming path still does not** - it never calls
+`sysUtilCheckCallback` at all, so a quit mid-stream still ends this way.
 
 ## The 3DS port — a second client, and the spec's first real audit
 
