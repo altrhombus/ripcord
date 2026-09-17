@@ -2,6 +2,7 @@
 #include "rc_pair_ps3.h"
 
 #include "halyard_pairing_file.h"
+#include "rc_account_ps3.h"
 #include "halyard_regist_flow.h"
 #include "rc_log.h"
 #include "rc_osk_ps3.h"
@@ -189,15 +190,39 @@ int rc_pair_run(const char *host)
         return 0;
 
     /*
-     * PRE-FILLED FROM LAST TIME. A PSN account id is a nineteen-digit number entered with a
-     * controller; asking for it twice because a pairing was repeated is a bad trade for the two lines
-     * it takes to remember it. Starts on the keypad for the same reason.
+     * PRE-FILLED, AND THE PS3 ITSELF IS ASKED FIRST WHEN THERE IS NOTHING REMEMBERED.
+     *
+     * A PSN account id is a nineteen-digit number entered with a controller, and it was the worst step
+     * in the only flow a new user has to get through. This console is signed in to that very account
+     * and keeps the number in /dev_hdd0/home/<user>/np_cache.dat - see rc_account_ps3.h for how that
+     * was established, which was by searching for a number this port already had rather than by
+     * guessing at a file format.
+     *
+     * THE RECORD STILL WINS. A value somebody has already paired with beats one derived from the
+     * console, because it is confirmed and this is not.
+     *
+     * AND IT IS STILL SHOWN. The keyboard comes up with the number in it rather than being skipped, so
+     * a wrong one is a wrong number on a screen instead of a registration the console refuses for
+     * reasons it does not explain. One button instead of nineteen digits is the whole win; skipping the
+     * step as well would trade a falsifiable flow for an unfalsifiable one.
      */
-    show(RC_PHASE_PAIRING, "Pairing", "Enter your PSN account id", NULL);
-    if (!ask(RC_OSK_DIGITS_FIRST, "PSN account id",
-             record.account_id[0] != '\0' ? record.account_id : NULL,
-             params.account_id, sizeof(params.account_id), "the account id is needed"))
-        return 0;
+    {
+        const char *prefill = (record.account_id[0] != '\0') ? record.account_id : NULL;
+        char from_console[24];
+
+        if (prefill == NULL && rc_account_read(from_console, sizeof(from_console)) == RC_ACCOUNT_OK) {
+            prefill = from_console;
+            rc_log("pair:  the account id came from this PS3 - check it before continuing\n");
+            show(RC_PHASE_PAIRING, "Pairing", "Enter your PSN account id",
+                 "This PS3's own account id is filled in - check it and press Start");
+        } else {
+            show(RC_PHASE_PAIRING, "Pairing", "Enter your PSN account id", NULL);
+        }
+
+        if (!ask(RC_OSK_DIGITS_FIRST, "PSN account id", prefill,
+                 params.account_id, sizeof(params.account_id), "the account id is needed"))
+            return 0;
+    }
 
     show(RC_PHASE_PAIRING, "Pairing",
          "Enter the PIN from the console", "Settings, System, Remote Play, Link Device");
