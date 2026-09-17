@@ -306,6 +306,19 @@ static int isqrt_i(int v)
 static uint32_t *s_px;
 static int s_pitch;
 
+/*
+ * INSIDE THE DRAWING, because "drawing is 67 ms" names a half and not a cause. The estimate for these
+ * parts came to about ten milliseconds all told; being wrong by six times means something here is doing
+ * work nobody has accounted for, and the only way to find out which is to time the pieces separately.
+ */
+static uint64_t s_sum_glow, s_sum_shape, s_sum_text, s_sum_cards, s_sum_hints, s_sum_header;
+static uint64_t s_shape_at;
+
+static unsigned us_since(uint64_t t)
+{
+    return (unsigned)(((rc_tick() - t) * 1000000u) / rc_tick_hz());
+}
+
 static void blend_at(int x, int y, uint32_t rgb, unsigned a)
 {
     uint32_t *p;
@@ -609,11 +622,15 @@ static void draw_card(const rc_menu_item *item, int x, int y, int w, int h, int 
          * THE GLOW IS WHAT MAKES IT "PICKED UP" RATHER THAN "HIGHLIGHTED" - one continuous falloff off
          * the card's own outline. See rounded_glow on why this stopped being four stacked rectangles.
          */
+        s_shape_at = rc_tick();
         rounded_glow(x, y, w, h, r, sy(26), 0x40000000u | (s_accent & 0x00FFFFFFu));
+        s_sum_glow += us_since(s_shape_at);
     }
 
+    s_shape_at = rc_tick();
     rounded(x, y, w, h, r, selected ? 0xE00E1218u : 0xB00A0D12u, 1);
     rounded_edge(x, y, w, h, r, sy(2), selected ? s_accent : 0x30FFFFFFu);
+    s_sum_shape += us_since(s_shape_at);
 
     if (item->id == SH_ID_PAIR_NEW || !item->enabled) {
         /* The "pair a console" card: a plus, and nothing else to read. */
@@ -899,6 +916,9 @@ static void draw(int can_forget)
      */
     pump_input();
 
+    (void)rc_overlay_text_cost(NULL, NULL, 1);
+    s_shape_at = rc_tick();
+
     /* The wordmark, and a short rule under it in this month's colour. */
     (void)rc_overlay_text(sx(SH_MARGIN), sy(SH_WORD_Y), 3, RC_OV_TEXT, "%s", "RIPCORD");
     rc_overlay_blend_rect(sx(SH_MARGIN), sy(SH_RULE_Y), sx(112), sy(3), s_accent);
@@ -908,6 +928,9 @@ static void draw(int can_forget)
     if (s_menu.subtitle[0] != '\0')
         (void)rc_overlay_text(sx(SH_MARGIN), sy(SH_RULE_Y + 22), 1, RC_OV_LABEL, "%s",
                               s_menu.subtitle);
+
+    s_sum_header += us_since(s_shape_at);
+    s_shape_at = rc_tick();
 
     if (!s_cards)
         draw_list();
@@ -944,6 +967,9 @@ static void draw(int can_forget)
         }
     }
 
+    s_sum_cards += us_since(s_shape_at);
+    s_shape_at = rc_tick();
+
     /*
      * ONE DESCRIPTION LINE, IN A FIXED PLACE, changing with the focus. The XMB does this and it is
      * right: the explanation lives somewhere the eye learns once instead of on every row.
@@ -956,6 +982,13 @@ static void draw(int can_forget)
     }
 
     draw_hints(can_forget, 1);
+    s_sum_hints += us_since(s_shape_at);
+    {
+        unsigned tus = 0u;
+
+        (void)rc_overlay_text_cost(&tus, NULL, 0);
+        s_sum_text += tus;
+    }
     pump_input();
 
     /*
@@ -1733,6 +1766,11 @@ rc_shell_action rc_shell_run(const char *const *dirs, int dir_count)
                (unsigned)(s_sum_wait / s_frames));
         rc_log("shell:   worst single drawing pass %u us, worst copy %u us\n",
                s_ui_worst_us, s_vram_worst_us);
+        rc_log("shell:   inside the drawing: header %u, cards %u (glow %u, card shapes %u),"
+               " hints %u; text everywhere %u\n",
+               (unsigned)(s_sum_header / s_frames), (unsigned)(s_sum_cards / s_frames),
+               (unsigned)(s_sum_glow / s_frames), (unsigned)(s_sum_shape / s_frames),
+               (unsigned)(s_sum_hints / s_frames), (unsigned)(s_sum_text / s_frames));
         if (s_thermal.available)
             rc_log("shell:   Cell %u.%u C on the way in, %u.%u C on the way out; RSX %u.%u -> %u.%u\n",
                    s_thermal.cell_first / 10u, s_thermal.cell_first % 10u,
