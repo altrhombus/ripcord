@@ -109,11 +109,14 @@ int  rc_overlay_begin(void);
 int  rc_overlay_begin_now(void);
 
 /*
- * The same again, for a caller drawing the WHOLE surface rather than the panel - the shell. Clears to
- * opaque black rather than to transparent, because what it is about to draw covers the screen and has
- * nothing behind it to show through.
+ * The same again, for a caller drawing the WHOLE surface rather than the panel - the shell.
+ *
+ * `clear` asks for opaque black first, which is right for a caller whose drawing leaves gaps. A caller
+ * that writes every pixel itself - the shell does, the background is the first thing it draws - passes
+ * 0, because clearing 1920x1080 to black and then immediately overwriting all of it is two million
+ * stores a frame spent on a colour nobody ever sees.
  */
-int  rc_overlay_begin_surface(void);
+int  rc_overlay_begin_surface(int clear);
 
 /* The position is an argument rather than shared state - see the note in the .c for what making it
  * state cost the diagnostics overlay. */

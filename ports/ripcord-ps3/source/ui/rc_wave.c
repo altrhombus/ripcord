@@ -1,6 +1,7 @@
 /* See rc_wave.h. */
 #include "rc_wave.h"
 
+#include <stdint.h>
 #include <string.h>
 #include <time.h>
 
@@ -183,11 +184,79 @@ typedef char rc_wave_levels_fit[(46 + 38 + 26) < 256 ? 1 : -1];
 #define RC_WAVE_DY_BIAS RC_WAVE_MAX_H
 #define RC_WAVE_DY_SPAN (RC_WAVE_MAX_H * 2 + 1)
 
-void rc_wave_draw(uint32_t *dst, int w, int h, int stride_px, uint64_t ms)
+/*
+ * AND THEN IT IS DRAWN SMALL AND BLOWN UP, WHICH IS THE WHOLE REASON IT CAN RUN AT THE FLIP RATE.
+ *
+ * Removing the divides and the branches took the full-screen fill from 85 ms to 29. That is four times
+ * faster and still four times too slow: 29 ms is under 35 frames a second before a single card has been
+ * drawn, and a background that takes most of two frames does not step - it judders, which is worse,
+ * because the eye reads unevenness as a fault where it reads slowness as a choice.
+ *
+ * The fix is not another constant factor, it is to stop drawing two million pixels. There is nothing in
+ * this picture above a few cycles across the screen - three soft ribbons and a vertical gradient - so a
+ * quarter-scale buffer holds every bit of it that exists, and the missing pixels are not missing
+ * information, they are a resampling. 480x270 is a SIXTEENTH of the work.
+ *
+ * The blow-up back to full size is bilinear, and it is cheap for one specific reason: the ratio is
+ * exactly four, so the only weights that ever occur are 0, 1/4, 1/2 and 3/4 - and all three non-zero
+ * ones are reachable by halving twice. avg2 below is the whole of the arithmetic. No multiply, no
+ * divide, no per-pixel weight, three averages per four output pixels.
+ *
+ * It is NOT handed to the RSX, which is the obvious thing to do and is the thing that stopped the GPU
+ * in b232. Everything here stays in main memory; see rc_overlay.c.
+ */
+#define RC_WAVE_SHRINK 4
+#define RC_WAVE_SMALL_W (RC_WAVE_MAX_W / RC_WAVE_SHRINK + 1)
+#define RC_WAVE_SMALL_H (RC_WAVE_MAX_H / RC_WAVE_SHRINK + 1)
+
+static uint32_t s_small[RC_WAVE_SMALL_W * RC_WAVE_SMALL_H];
+
+/*
+ * The mean of two packed pixels without unpacking them: the bits they share, plus half the bits they do
+ * not. The mask drops what would carry between channels, which is the only thing that makes this
+ * different from an ordinary average and is why it needs no shifts per channel.
+ */
+static uint32_t avg2(uint32_t a, uint32_t b)
+{
+    return (a & b) + (((a ^ b) >> 1) & 0x7f7f7f7fu);
+}
+
+/*
+ * ESTABLISHING A CACHE LINE INSTEAD OF FETCHING IT, which is the difference between writing this
+ * surface once and moving it twice.
+ *
+ * b363 measured the small fill plus this expansion at 12,612 us - for two million pixels that is about
+ * six nanoseconds each, which is far more than the arithmetic can account for (three averages and a
+ * store per four pixels). The copy to video memory measured 10,976 us for the same eight megabytes, and
+ * two completely different pieces of code arriving at the same number is the tell: neither is limited
+ * by what it computes, both are limited by moving eight megabytes.
+ *
+ * A store to a cache line the processor does not hold has to READ that line from memory first, so that
+ * the part of it not being written survives - which doubles the traffic for a buffer that is going to
+ * be overwritten in full. `dcbz` says "this line is now mine and it is zero", with no read: the Cell
+ * Broadband Engine Programmer's Guide gives it as the way to write a large buffer without paying for
+ * the fetch of data that is about to be discarded.
+ *
+ * The line is 128 bytes, which is 32 pixels, and this loop writes strictly left to right - so one dcbz
+ * every 32 pixels covers exactly the bytes about to be stored and nothing beyond them. It is only
+ * correct while BOTH of those hold: a partial line, or a write that skips about, would zero data that
+ * nothing then rewrites. Hence the guard at the call site rather than inside here.
+ */
+#if defined(__powerpc__) || defined(__PPC__) || defined(__powerpc64__)
+#define RC_WAVE_LINE_PX 32
+#define rc_wave_claim_line(p) __asm__ __volatile__("dcbz 0,%0" : : "r"(p) : "memory")
+#else
+#define RC_WAVE_LINE_PX 32
+#define rc_wave_claim_line(p) ((void)(p))
+#endif
+
+/* The wave itself, at whatever size it is asked for. Every dimension below is proportional, so this is
+ * the same picture at 480 wide as at 1920 - which is what makes drawing it small legitimate. */
+static void wave_fill(uint32_t *dst, int w, int h, int stride_px, uint64_t ms)
 {
     /*
      * PER-COLUMN CENTRE LINES, COMPUTED ONCE. The sine is a function of x and time only, so evaluating
-     * it inside the pixel loop would be two million lookups to produce nineteen hundred answers.
+     * it inside the pixel loop would be a lookup per pixel to produce a few hundred answers.
      */
     static short centre[RC_WAVE_RIBBONS][RC_WAVE_MAX_W];
     static unsigned char band[RC_WAVE_RIBBONS][RC_WAVE_DY_SPAN];
@@ -198,17 +267,8 @@ void rc_wave_draw(uint32_t *dst, int w, int h, int stride_px, uint64_t ms)
      */
     static uint32_t ramp[16][256];
     static int ramp_month = -1;
-    uint64_t t0 = rc_tick();
+    int reach_lo[RC_WAVE_RIBBONS], reach_hi[RC_WAVE_RIBBONS];
     int rib, x, y;
-
-    if (dst == NULL || w <= 0 || h <= 0)
-        return;
-    if (w > RC_WAVE_MAX_W)
-        w = RC_WAVE_MAX_W;
-    if (h > RC_WAVE_MAX_H)
-        h = RC_WAVE_MAX_H;
-    if (!s_sine_ready)
-        build_sine();
 
     if (ramp_month != s_month) {
         int lift, v;
@@ -264,6 +324,23 @@ void rc_wave_draw(uint32_t *dst, int w, int h, int stride_px, uint64_t ms)
 
             band[rib][i + RC_WAVE_DY_BIAS] = (unsigned char)((sq * RC_WAVE_RIBBON[rib].level) >> 8);
         }
+
+        /*
+         * THE TOP THIRD OF THE SCREEN HAS NO RIBBON ON IT AT ALL, and paying the full price for it is a
+         * third of the frame spent proving that. The ribbons sit low by design - their centres are at
+         * 55, 60 and 68 percent of the height - so everything above the highest one's reach is a flat
+         * vertical ramp, and a row of it is a fill rather than three table lookups a pixel.
+         */
+        {
+            int lo = centre[rib][0], hi = centre[rib][0];
+
+            for (x = 1; x < w; x++) {
+                if (centre[rib][x] < lo) lo = centre[rib][x];
+                if (centre[rib][x] > hi) hi = centre[rib][x];
+            }
+            reach_lo[rib] = lo - thick;
+            reach_hi[rib] = hi + thick;
+        }
     }
 
     for (y = 0; y < h; y++) {
@@ -275,8 +352,117 @@ void rc_wave_draw(uint32_t *dst, int w, int h, int stride_px, uint64_t ms)
         const uint32_t *pal = ramp[(y * 14) / h];
         int yb = y + RC_WAVE_DY_BIAS;
 
+        if ((y < reach_lo[0] || y > reach_hi[0]) && (y < reach_lo[1] || y > reach_hi[1]) &&
+            (y < reach_lo[2] || y > reach_hi[2])) {
+            uint32_t flat = pal[0];
+
+            for (x = 0; x < w; x++)
+                row[x] = flat;
+            continue;
+        }
+
         for (x = 0; x < w; x++)
             row[x] = pal[b0[yb - c0[x]] + b1[yb - c1[x]] + b2[yb - c2[x]]];
+    }
+}
+
+/*
+ * One output row, four-times bilinear from two source rows. `fy` is which of the four vertical phases
+ * this row is; phase 0 needs no vertical work at all, which is a quarter of the screen for free.
+ */
+static void expand_row(uint32_t *out, int w, const uint32_t *a, const uint32_t *b, int sw, int fy,
+                       int claim)
+{
+    static uint32_t tmp[RC_WAVE_SMALL_W];
+    const uint32_t *src;
+    int i, x;
+
+    if (fy == 0) {
+        src = a;
+    } else {
+        for (i = 0; i <= sw; i++) {
+            uint32_t m = avg2(a[i], b[i]);
+
+            tmp[i] = (fy == 2) ? m : (fy == 1) ? avg2(a[i], m) : avg2(m, b[i]);
+        }
+        src = tmp;
+    }
+
+    x = 0;
+    for (i = 0; i < sw && x + 4 <= w; i++) {
+        uint32_t t0 = src[i], t1 = src[i + 1];
+        uint32_t m = avg2(t0, t1);
+
+        /* Only on a line this loop will fill completely - see rc_wave_claim_line. */
+        if (claim && (x % RC_WAVE_LINE_PX) == 0 && x + RC_WAVE_LINE_PX <= w)
+            rc_wave_claim_line(&out[x]);
+
+        out[x] = t0;
+        out[x + 1] = avg2(t0, m);
+        out[x + 2] = m;
+        out[x + 3] = avg2(m, t1);
+        x += 4;
+    }
+    /* The tail, a pixel at a time: whatever is left when the width is not a multiple of four. */
+    for (; i < sw && x < w; i++) {
+        uint32_t t0 = src[i], t1 = src[i + 1];
+        uint32_t m = avg2(t0, t1);
+
+        out[x++] = t0;
+        if (x < w) out[x++] = avg2(t0, m);
+        if (x < w) out[x++] = m;
+        if (x < w) out[x++] = avg2(m, t1);
+    }
+    while (x < w) {
+        out[x] = src[sw];
+        x++;
+    }
+}
+
+void rc_wave_draw(uint32_t *dst, int w, int h, int stride_px, uint64_t ms)
+{
+    uint64_t t0 = rc_tick();
+    int sw, sh, y;
+
+    if (dst == NULL || w <= 0 || h <= 0)
+        return;
+    if (w > RC_WAVE_MAX_W)
+        w = RC_WAVE_MAX_W;
+    if (h > RC_WAVE_MAX_H)
+        h = RC_WAVE_MAX_H;
+    if (!s_sine_ready)
+        build_sine();
+
+    /*
+     * One column and one row MORE than the division needs, because the right-hand and bottom output
+     * pixels interpolate towards a neighbour that has to exist. Generating it is cheaper than teaching
+     * the inner loop to notice it is at the edge.
+     */
+    sw = w / RC_WAVE_SHRINK;
+    sh = h / RC_WAVE_SHRINK;
+    if (sw < 2) sw = 2;
+    if (sh < 2) sh = 2;
+
+    wave_fill(s_small, sw + 1, sh + 1, RC_WAVE_SMALL_W, ms);
+
+    /*
+     * dcbz is only safe on rows that START on a cache line, because it claims a whole line and the loop
+     * only rewrites from the row's first pixel onwards. Checked once here rather than trusted: this
+     * function takes a destination and a stride from its caller and has no business assuming either.
+     */
+    {
+        int claim = (((uintptr_t)dst & (RC_WAVE_LINE_PX * 4u - 1u)) == 0u)
+                    && ((stride_px % RC_WAVE_LINE_PX) == 0);
+
+        for (y = 0; y < h; y++) {
+            int sy = y / RC_WAVE_SHRINK;
+            int fy = y % RC_WAVE_SHRINK;
+
+            if (sy > sh - 1) { sy = sh - 1; fy = RC_WAVE_SHRINK - 1; }
+            expand_row(dst + (size_t)y * (size_t)stride_px, w,
+                       s_small + (size_t)sy * RC_WAVE_SMALL_W,
+                       s_small + (size_t)(sy + 1) * RC_WAVE_SMALL_W, sw, fy, claim);
+        }
     }
 
     s_last_us = (unsigned)(((rc_tick() - t0) * 1000000u) / rc_tick_hz());
