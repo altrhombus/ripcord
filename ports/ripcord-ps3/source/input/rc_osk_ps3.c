@@ -2,6 +2,9 @@
 #include "rc_osk_ps3.h"
 
 #include "rc_log.h"
+
+#include <ppu-asm.h>
+
 #include "rc_platform.h"
 #include "rc_video_ps3.h"
 
@@ -11,12 +14,16 @@
 
 #include <string.h>
 
+/* PSL1GHT declares the plain wrapper but not the Ex form its own wrapper forwards to. Declared here
+ * rather than added to the SDK header, which every other port shares. */
+extern s32 sysUtilRegisterCallbackEx(s32 slot, sysutilCallback cb, void *usrdata);
+
 /*
  * How long to wait for the user. Generous: someone typing an eight-digit PIN off another screen, or an
  * address they have to go and look up, is not in a hurry and should not be timed out mid-word. This
  * only exists so a dialog that never reports back cannot hang the program forever.
  */
-#define RC_OSK_TIMEOUT_MS 120000u
+#define RC_OSK_TIMEOUT_MS 45000u
 
 /*
  * The dialog needs a memory container of its own. A megabyte is what the SDK's own samples use; sizing
@@ -31,6 +38,7 @@ static u16 s_message[RC_OSK_MAX_CHARS + 1];
 static u16 s_initial[RC_OSK_MAX_CHARS + 1];
 static u16 s_result[RC_OSK_MAX_CHARS + 1];
 
+static uint32_t s_opd_ex[2] __attribute__((aligned(8)));
 static unsigned s_container_bytes;
 
 /*
@@ -86,10 +94,52 @@ static int narrow(const u16 *in, char *out, size_t out_size)
     return 1;
 }
 
+/*
+ * EVERY EVENT THIS RECEIVES IS RECORDED, and none of them is logged from in here.
+ *
+ * b311 timed out with "the callback is not being delivered", which is one of two very different
+ * things: the callback is never called at all, or it is called with statuses this does not recognise.
+ * Those need opposite fixes and the timeout cannot tell them apart.
+ *
+ * Recorded into an array rather than logged directly because this runs from inside a system callback,
+ * and rc_log opens and writes a file. The pump loop prints the list afterwards, where that is safe.
+ */
+#define RC_OSK_EVENT_LOG 16
+static volatile unsigned s_events[RC_OSK_EVENT_LOG];
+static volatile unsigned s_event_count;
+
+static void handle_event(u64 status, unsigned tag);
+
+/* Slot 0, registered the ordinary way - the wrapper PSL1GHT provides. */
 static void osk_event(u64 status, u64 param, void *user)
 {
     (void)param;
     (void)user;
+    handle_event(status, 0x0000u);
+}
+
+/*
+ * Slot 1, registered through sysUtilRegisterCallbackEx with a 32-BIT DESCRIPTOR.
+ *
+ * An A/B in one run rather than a hypothesis a build. PSL1GHT's sysUtilRegisterCallback does not pass
+ * the pointer through untouched - it adds 16 to it and forwards to the Ex form - and this platform has
+ * twice now needed __build_opd32 for a function handed to a PRX (vdecClosure.fn, and the font
+ * library's allocator). Whether that wrapper's arithmetic is the right adaptation is not something
+ * this can read off a disassembly with confidence, so both are registered and the event log says which
+ * one delivers. The tag distinguishes them.
+ */
+static void osk_event_ex(u64 status, u64 param, void *user)
+{
+    (void)param;
+    (void)user;
+    handle_event(status, 0x1000u);
+}
+
+static void handle_event(u64 status, unsigned tag)
+{
+    if (s_event_count < RC_OSK_EVENT_LOG)
+        s_events[s_event_count] = (unsigned)status | tag;
+    s_event_count++;
 
     switch (status) {
     case SYSUTIL_OSK_INPUT_CANCELED:
@@ -143,6 +193,7 @@ rc_osk_status rc_osk_ask(rc_osk_kind kind, const char *prompt, const char *initi
     s_done = 0;
     s_cancelled = 0;
     s_container_bytes = 0u;
+    s_event_count = 0u;
 
     {
         s32 rc = sysUtilRegisterCallback(SYSUTIL_EVENT_SLOT0, osk_event, NULL);
@@ -151,6 +202,12 @@ rc_osk_status rc_osk_ask(rc_osk_kind kind, const char *prompt, const char *initi
             rc_log("osk:   sysUtilRegisterCallback refused (0x%08X)\n", (unsigned)rc);
             return RC_OSK_UNAVAILABLE;
         }
+        /* The second half of the A/B - see osk_event_ex. Not fatal if it refuses; slot 0 stands. */
+        rc = sysUtilRegisterCallbackEx(SYSUTIL_EVENT_SLOT1,
+                                       (sysutilCallback)(uintptr_t)(u32)__build_opd32(osk_event_ex,
+                                                                                      s_opd_ex),
+                                       NULL);
+        rc_log("osk:   slot1 via Ex with a 32-bit descriptor: 0x%08X\n", (unsigned)rc);
     }
 
     /*
@@ -242,12 +299,31 @@ rc_osk_status rc_osk_ask(rc_osk_kind kind, const char *prompt, const char *initi
     }
 
     sysUtilUnregisterCallback(SYSUTIL_EVENT_SLOT0);
+    sysUtilUnregisterCallback(SYSUTIL_EVENT_SLOT1);
     if (s_container_bytes != 0u)
         sysMemContainerDestroy(container);
 
+    /*
+     * WHAT ARRIVED, whatever the outcome. The expected set is 0x0502 loaded, 0x0503 done, 0x0504
+     * unloaded, and 0x0505/0x0506 for entered and cancelled - so a list that is empty means the
+     * callback never ran, and a list of unfamiliar numbers means it ran and this code is deaf to it.
+     */
+    {
+        unsigned i;
+        unsigned shown = (s_event_count < RC_OSK_EVENT_LOG) ? s_event_count : RC_OSK_EVENT_LOG;
+
+        if (s_event_count == 0u) {
+            rc_log("osk:   NO events arrived at all - the callback was never invoked\n");
+        } else {
+            rc_log("osk:   %u event(s):", s_event_count);
+            for (i = 0u; i < shown; i++)
+                rc_log(" 0x%04X", s_events[i]);
+            rc_log("\n");
+        }
+    }
+
     if (!s_done) {
-        rc_log("osk:   no completion event in %u ms - the callback is not being delivered\n",
-               (unsigned)RC_OSK_TIMEOUT_MS);
+        rc_log("osk:   no completion event in %u ms\n", (unsigned)RC_OSK_TIMEOUT_MS);
         return RC_OSK_TIMED_OUT;
     }
     if (s_cancelled)
