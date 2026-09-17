@@ -83,6 +83,8 @@ enum {
     SH_ID_SCALER,
     SH_ID_SMOOTHING,
     SH_ID_DIAGNOSTICS,
+    SH_ID_REST,
+    SH_ID_LOSS,
 
     SH_ID_CONSOLE_BASE = 100,  /* + the index into s_found - a console that answered and is not paired */
     SH_ID_PAIRED_BASE  = 200   /* + the index into s_set    - one this PS3 already has keys for       */
@@ -2950,6 +2952,15 @@ static void refresh_settings_values(void)
         case SH_ID_DIAGNOSTICS:
             snprintf(text, sizeof(text), "%s", s_settings.diagnostics ? "On" : "Off");
             break;
+        case SH_ID_REST:
+            snprintf(text, sizeof(text), "%s",
+                     (s_settings.rest_on_disconnect == 1) ? "Rest the console"
+                   : (s_settings.rest_on_disconnect == 2) ? "Leave it on" : "Ask each time");
+            break;
+        case SH_ID_LOSS:
+            snprintf(text, sizeof(text), "%s",
+                     s_settings.skip_until_keyframe ? "Wait for a clean picture" : "Keep decoding");
+            break;
         default:
             continue;
         }
@@ -2983,6 +2994,12 @@ static void build_settings(void)
     row = rc_menu_add(&s_menu, SH_ID_DIAGNOSTICS, "Diagnostics overlay", NULL,
                       "Frame rate and loss over the picture. SELECT and START opens the menu that toggles it");
     rc_menu_set_adjustable(&s_menu, row, 1);
+    row = rc_menu_add(&s_menu, SH_ID_REST, "When you disconnect", NULL,
+                      "Whether ending a session puts the console to sleep. Quitting to the XMB never does");
+    rc_menu_set_adjustable(&s_menu, row, 1);
+    row = rc_menu_add(&s_menu, SH_ID_LOSS, "After picture loss", NULL,
+                      "A fresh picture is always asked for. This is whether to show the broken frames until it arrives");
+    rc_menu_set_adjustable(&s_menu, row, 1);
     /*
      * NO TYPEFACE ROW, and that is a finding rather than an oversight. The atlas is built once, when
      * the overlay is prepared, which happens before this screen can be reached - so a control here
@@ -3012,6 +3029,14 @@ static int adjust(int delta)
     case SH_ID_SMOOTHING:    s_settings.bilinear_upscale =
                                  (s_settings.bilinear_upscale + (delta > 0 ? 1 : 2)) % 3; break;
     case SH_ID_DIAGNOSTICS:  s_settings.diagnostics = !s_settings.diagnostics; break;
+    case SH_ID_REST:
+        /* Three states, so it steps rather than toggles - and steps backwards on a left press like
+         * every other adjustable row here, which a modulo alone would not do. */
+        s_settings.rest_on_disconnect = (s_settings.rest_on_disconnect + (delta >= 0 ? 1 : 2)) % 3;
+        break;
+    case SH_ID_LOSS:
+        s_settings.skip_until_keyframe = !s_settings.skip_until_keyframe;
+        break;
     default:                 return 0;
     }
     refresh_settings_values();

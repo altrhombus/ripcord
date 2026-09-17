@@ -169,6 +169,16 @@ typedef struct {
     int hold_seconds;
 
     /*
+     * WHAT TO DO WITH THE CONSOLE WHEN A SESSION ENDS: 0 ask, 1 rest it, 2 leave it awake.
+     *
+     * Three states rather than a bool because "ask" is a real answer, and the right default - somebody
+     * who sometimes wants the console asleep and sometimes does not is not served by a preference that
+     * can only remember one of them. Only consulted when the person ended the session themselves;
+     * nothing here rests a console because an application closed.
+     */
+    int rest_on_disconnect;
+
+    /*
      * Scale on the GPU rather than on the CPU cores. 0 keeps the port's own scaler, 1 asks the platform
      * to use whatever fixed-function scaler it has.
      *
