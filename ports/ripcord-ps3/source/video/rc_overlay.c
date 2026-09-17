@@ -537,6 +537,36 @@ static void draw_mono(int x, int y, int scale, uint32_t argb, const char *text)
     }
 }
 
+/*
+ * WHAT THE TEXT COSTS, kept here rather than at the call sites, because the shell measures its drawing
+ * as one number and a caller cannot tell a slow glyph from a slow rectangle. b367 put the shell's
+ * drawing at 67 ms a frame against an estimate of ten, and an estimate wrong by six times is not
+ * something to reason further from - it means something is being paid for that nobody has named.
+ */
+static uint64_t s_text_us;
+static unsigned s_text_runs;
+
+void rc_overlay_text_cost(unsigned *us, unsigned *runs, int reset)
+{
+    if (us != NULL)
+        *us = (unsigned)s_text_us;
+    if (runs != NULL)
+        *runs = s_text_runs;
+    if (reset) {
+        s_text_us = 0u;
+        s_text_runs = 0u;
+    }
+}
+
+static void draw_prop_timed(int x, int y, int scale, uint32_t argb, const char *text)
+{
+    uint64_t at = rc_tick();
+
+    draw_prop(x, y, scale, argb, text);
+    s_text_us += ((rc_tick() - at) * 1000000u) / rc_tick_hz();
+    s_text_runs++;
+}
+
 int rc_overlay_text(int x, int y, int scale, uint32_t argb, const char *fmt, ...)
 {
     char text[96];
@@ -547,7 +577,7 @@ int rc_overlay_text(int x, int y, int scale, uint32_t argb, const char *fmt, ...
     va_start(ap, fmt);
     (void)vsnprintf(text, sizeof(text), fmt, ap);
     va_end(ap);
-    draw_prop(x, y, scale, argb, text);
+    draw_prop_timed(x, y, scale, argb, text);
     return text_width(text, scale);
 }
 
@@ -561,7 +591,7 @@ void rc_overlay_text_right(int x, int y, int scale, uint32_t argb, const char *f
     va_start(ap, fmt);
     (void)vsnprintf(text, sizeof(text), fmt, ap);
     va_end(ap);
-    draw_prop(x - text_width(text, scale), y, scale, argb, text);
+    draw_prop_timed(x - text_width(text, scale), y, scale, argb, text);
 }
 
 int rc_overlay_num_width(int scale, const char *fmt, ...)
