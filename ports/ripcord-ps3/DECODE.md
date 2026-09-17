@@ -1296,6 +1296,67 @@ program is how a setting gets written somewhere nothing reads — which looks ex
 is ignored. `rc_pair_record_dir()` and `rc_pair_apply_port_defaults()` exist so there is one answer to
 each question.
 
+### The PSN account id, read from the console — **answered, b335/b337**
+
+Registration is the one exchange that needs the account id, and the only way this port got it was a
+nineteen-digit number typed on an on-screen keyboard — the worst step in the only flow a new user has to
+get through. This PS3 is signed in to that very account, so the question was whether it would say so.
+
+**The documented route is closed.** `SYSMODULE_SYSUTIL_NP` exists as a module id and PSL1GHT ships no NP
+header and no NP stub library — no `lib*.a` in the toolchain carries a single `sceNp` symbol — so
+`sceNpManagerGetAccountId` is not reachable without resolving a PRX export by hand. (`sysPrxLoadModule`,
+`sysPrxGetModuleIdByName` and `sysPrxGetModuleInfo` *are* exposed, so that route exists; it is deep and
+firmware-dependent, and it is not needed.) What the documented API does answer is
+`SYSUTIL_SYSTEMPARAM_ID_CURRENT_USER_HAS_NP_ACCOUNT`, which is a precondition rather than a value.
+
+**So the probe searched for a number it already had.** A paired console holds the account id in its
+pairing record, put there by the person who owns it. Given that, finding where the console keeps its own
+copy is a substring search over a few hundred small files — which needs no hypothesis about any file
+format, cannot produce a value that is wrong, and reports an offset the next build reads directly. It
+found it first try:
+
+    /dev_hdd0/home/<user>/np_cache.dat — 248 bytes, the account id as a BIG-endian uint64 at offset 0
+
+**Which user is a real question and is answered from documented things.** A console can have several
+local users and only one is signed in; the documented parameter gives the current user's *name* and not
+the numbered directory it lives in, so the two are matched through `localusername`, the plain-text file
+each user directory carries. A single-user console falls back to the only directory there is and says so
+in the log. Two users with no name match declines rather than guessing — a client that silently registers
+under the wrong person's account is not one anyone can debug.
+
+**The search is kept, and now runs only when the direct read fails.** That is the case it is actually
+for: a different firmware or user layout is exactly the situation where "where did it move to" is the
+question, and nothing else can answer it. Paying its cost at every launch to re-derive an answer we have
+would be the opposite of what it is for.
+
+**The keyboard still comes up, with the number in it.** Skipping the step would trade a falsifiable flow
+for an unfalsifiable one: a wrong account id does not fail loudly, it fails as a registration the console
+refuses for reasons it does not explain. Pre-filled, a wrong one is a wrong number on a screen. One button
+instead of nineteen digits is the whole win. A remembered value still beats a derived one, because it is
+confirmed and this is not.
+
+**Nothing logs the value, in any form** — not the id, not the bytes near it, not filenames, since an
+exdata filename is a content id that names something somebody bought. What the probe reports is a
+directory, a file index, an offset and a byte order.
+
+### The rest of PSN sign-in — **not worth building here, and why**
+
+The cloud tier (`Ripcord.Cloud.Halyard`) is OAuth2 sign-in giving a console list, wake over the internet,
+and session signaling. `HalyardAuthClient` needs a **web view**: it builds an authorize URL, the user
+signs in with a passkey or QR on Sony's page, and the browser lands on a redirect carrying a `code` to
+exchange. The PS3 has no in-app browser this port can drive and no way to capture that redirect. After a
+first sign-in it is just a refresh token and `RestoreAsync` needs no interaction, so a refresh token
+obtained elsewhere *could* be imported — but that is personal secret material of the same class as the
+registration key, and a long opaque string to get onto a console.
+
+Transport is not the blocker: PSL1GHT ships `libhttp`, `libhttputil` and `libssl`, the console's own HTTPS
+stack. The blocker is the sign-in itself.
+
+And for this port the tier buys almost nothing. `rc_connect` does SRCH, wake and Takion entirely on the
+LAN. Its products are a console list (discovery has one), wake over the internet (we wake locally), and
+WAN signaling — which is a large separate piece of work and the only one of the three that is not already
+solved here. The account id was the part that paid, and it is now free.
+
 ### Still open
 - ~~**The fifth SPE.**~~ **Answered, and more completely than the question assumed.** The worry was that
   freeing the colour pass would only turn an SPE into a scaler rather than idling it. It idled all three:
