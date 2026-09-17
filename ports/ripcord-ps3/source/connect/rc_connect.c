@@ -28,6 +28,7 @@
 #include "rc_spu_yuv.h"
 #include "rc_video_ps3.h"
 #include "rc_pad_ps3.h"
+#include "rc_osk_ps3.h"
 #include "rc_session_state.h"
 #include "rc_status_screen.h"
 #include "halyard_input.h"
@@ -506,8 +507,8 @@ const rc_session_state *rc_connect_session_state(void)
  */
 void rc_connect_report_outcome(rc_connect_stage stage, const rc_connect_result *result)
 {
-    /* This has already said something more specific than anything below. */
-    if (result->stream_stalled)
+    /* Each of these has already said something more specific than anything below. */
+    if (result->stream_stalled || result->login_blocked)
         return;
 
     if (result->menu_disconnect) {
@@ -3340,6 +3341,179 @@ done:
     return ok;
 }
 
+/*
+ * ---------------------------------------------------------------------------------------------------
+ * THE SIGN-IN GATE, and why it has state of its own.
+ *
+ * A locked console asks for a passcode, and asking a person for one means raising the system keyboard,
+ * which blocks for as long as somebody takes to type. The control session cannot be left alone for that
+ * long: the console heartbeats every few seconds and disconnects a client that stops answering, so the
+ * keyboard would reliably destroy the session it was raised for.
+ *
+ * So servicing the session is factored out of the wait loop and into these, and the keyboard is given
+ * one of them as a pump hook - see rc_osk_set_pump_hook. Both paths absorb events through the same
+ * function, which is the point: whatever arrives while the keyboard is up is not merely kept alive, it
+ * is READ, so a console that answers mid-typing is not answered twice or missed entirely.
+ * ---------------------------------------------------------------------------------------------------
+ */
+
+/* Five, matching the reference. The retries exist because a person typing can mistype. */
+#define RC_SIGNIN_ATTEMPTS 5
+
+/*
+ * How long to wait on the console after a passcode goes out. The reference measures session-ready at
+ * about 2.3 s after a LAN submit and about five on the rendezvous route, where the console renegotiates
+ * the connection first; eight covers both without making "it never answered" slow to reach.
+ */
+#define RC_SIGNIN_WAIT_MS 8000u
+
+static struct {
+    halyard_control_session *session;
+    rc_connect_result *out;
+    int ready;        /* SESSION_ID seen - the console is willing to stream */
+    int dead;         /* the session faulted or closed; nothing more will come */
+    int verdict_new;  /* a verdict arrived and has not been acted on - out->login_verdict holds it */
+} g_signin;
+
+static void signin_absorb(const halyard_control_event *ev)
+{
+    rc_connect_result *out = g_signin.out;
+
+    if (ev->kind == HALYARD_CONTROL_EVENT_MESSAGE) {
+        out->frames_seen++;
+        if (out->first_type == 0u)
+            out->first_type = ev->type;
+        out->last_type = ev->type;
+
+        if (ev->type == HALYARD_CTRL_TYPE_HEARTBEAT_REQ)
+            out->heartbeats++;
+
+        /*
+         * THE CONSOLE'S VERDICT ON THE PASSCODE, which b41 could not read and so had to report a wrong
+         * passcode and a silent console as the same thing. ports/common decrypts the console's
+         * direction now, so the one byte is here; the .NET side reads plaintext[0] the same way and
+         * established both values by controlled experiment - see HALYARD_CTRL_LOGIN_ACCEPTED.
+         */
+        if (ev->type == HALYARD_CTRL_TYPE_LOGIN && ev->plaintext_length > 0u) {
+            if (ev->plaintext[0] == HALYARD_CTRL_LOGIN_ACCEPTED)
+                out->login_verdict = 0;
+            else if (ev->plaintext[0] == HALYARD_CTRL_LOGIN_REJECTED)
+                out->login_verdict = 1;
+            else
+                out->login_verdict = 2;  /* a third value nobody has seen - say so, don't round it */
+            g_signin.verdict_new = 1;
+        }
+
+        /*
+         * THE GATE ITSELF. b39 confirmed it on hardware: one control frame, type 0x0004, no heartbeats,
+         * no SESSION_ID. Recorded rather than answered here - answering is a conversation with a person
+         * and belongs in the caller, which is the only place that can hold one.
+         */
+        if (ev->type == HALYARD_CTRL_TYPE_LOGIN_PROMPT)
+            out->login_prompt = 1;
+    } else if (ev->kind == HALYARD_CONTROL_EVENT_SESSION_READY) {
+        g_signin.ready = 1;
+    }
+}
+
+/* One non-blocking step, absorbed. Returns 0 once the session is no longer usable. */
+static int signin_service(void)
+{
+    halyard_control_event ev;
+
+    if (g_signin.dead)
+        return 0;
+
+    memset(&ev, 0, sizeof(ev));
+    if (!halyard_control_session_service(g_signin.session, &ev)) {
+        g_signin.out->session_error = (int)ev.kind;
+        g_signin.dead = 1;
+        return 0;
+    }
+    signin_absorb(&ev);
+    return 1;
+}
+
+/* Services until the console says something that ends the wait, or `until` passes. */
+static void signin_wait(uint64_t until)
+{
+    while (rc_time_ms() < until && !g_signin.ready && !g_signin.dead && !g_signin.verdict_new) {
+        sysUtilCheckCallback();
+        if (rc_ps3_exit_requested())
+            return;
+        if (!signin_service())
+            return;
+        rc_sleep_ms(10u);
+    }
+}
+
+/*
+ * Called once a frame while the keyboard is up. Drains rather than stepping once: the keyboard's loop
+ * turns over sixty times a second at best, and one event a frame is enough to fall behind a console
+ * that has something to say.
+ */
+static void signin_pump(void)
+{
+    int steps;
+
+    for (steps = 0; steps < 32 && !g_signin.dead; steps++)
+        (void)signin_service();
+}
+
+/* Drawn behind the keyboard, once a frame, so the dialog composites over the card that says why it is
+ * being asked. See rc_osk_set_present_hook. */
+static void signin_present(void)
+{
+    rc_status_screen_draw(&g_session);
+}
+
+static void signin_open(halyard_control_session *session, rc_connect_result *out)
+{
+    memset(&g_signin, 0, sizeof(g_signin));
+    g_signin.session = session;
+    g_signin.out = out;
+}
+
+static void signin_close(void)
+{
+    memset(&g_signin, 0, sizeof(g_signin));
+}
+
+/*
+ * Asks for the console's passcode. `retry` is true when the console has already rejected one, which is
+ * the whole of what the screen can usefully add - "wrong passcode" said once is information, said the
+ * same way every time is noise.
+ *
+ * Returns 0 if the person backed out or the keyboard could not be raised. Cancelling is NOT a failure
+ * and gets no error card: somebody who dismissed a keyboard knows why they did.
+ */
+static int ask_login_pin(int retry, char *out, size_t out_size)
+{
+    rc_osk_status status;
+
+    say(RC_PHASE_CONNECTING,
+        retry ? "That passcode was not right" : "This console is locked",
+        retry ? "Try the console's passcode again" : "Enter the console's passcode",
+        "The same digits you use to sign in on the console itself");
+
+    rc_osk_set_present_hook(signin_present);
+    rc_osk_set_pump_hook(signin_pump);
+    status = rc_osk_ask(RC_OSK_NUMBERS, "Console passcode", NULL, out, out_size);
+    rc_osk_set_pump_hook(NULL);
+    rc_osk_set_present_hook(NULL);
+
+    if (status == RC_OSK_OK && out[0] != '\0')
+        return 1;
+
+    if (status == RC_OSK_CANCELLED)
+        say(RC_PHASE_ENDED, "Sign-in cancelled", "The console needs its passcode to stream", NULL);
+    else if (status == RC_OSK_OK)
+        say(RC_PHASE_FAILED, "Nothing was entered", "The console needs its passcode to stream", NULL);
+    else
+        say(RC_PHASE_FAILED, "Could not ask for the passcode", rc_osk_status_text(status), NULL);
+    return 0;
+}
+
 rc_connect_stage rc_connect(unsigned wake_timeout_ms, rc_connect_log_fn log,
                             const char *const *dirs, int dir_count, rc_connect_result *out)
 {
@@ -3611,118 +3785,124 @@ answered:
 
     {
         /*
-         * Twenty seconds, not eight. b36 watched this console take 12.3 s merely to answer a SRCH after
-         * waking, so a window that would have been generous for an already-awake console is not
-         * necessarily generous here - and reporting "not willing to stream" about one that is still
-         * waking up is a wrong answer rather than a slow one.
+         * THE SIGN-IN GATE. A console whose user is locked will not stream until it is answered, and it
+         * does not say so by refusing - it silently drops every Takion INIT, so failing to answer here
+         * surfaces later as a transport timeout that looks like a network fault.
+         *
+         * Twenty seconds to be told which case this is. Not eight: b36 watched this console take 12.3 s
+         * merely to answer a SRCH after waking, so a window generous for an already-awake console is not
+         * necessarily generous here, and calling one that is still waking up "not willing to stream" is
+         * a wrong answer rather than a slow one. An unlocked console sends no prompt at all and this
+         * window ends at SESSION_ID instead.
          */
         uint64_t deadline = rc_time_ms() + 20000u;
 
-        while (rc_time_ms() < deadline) {
-            halyard_control_event ev;
-            memset(&ev, 0, sizeof(ev));
+        signin_open(&session, out);
 
-            /* Same again: twenty seconds is long enough to be asked to quit inside. */
+        while (rc_time_ms() < deadline && !g_signin.ready && !g_signin.dead
+               && !out->login_prompt) {
+            /* Twenty seconds is long enough to be asked to quit inside. */
             sysUtilCheckCallback();
             if (rc_ps3_exit_requested())
                 break;
-
-            if (!halyard_control_session_service(&session, &ev)) {
-                out->session_error = (int)ev.kind;
+            if (!signin_service())
                 break;
-            }
-
-            if (ev.kind == HALYARD_CONTROL_EVENT_MESSAGE) {
-                out->frames_seen++;
-                if (out->first_type == 0u)
-                    out->first_type = ev.type;
-                out->last_type = ev.type;
-
-                if (ev.type == HALYARD_CTRL_TYPE_HEARTBEAT_REQ)
-                    out->heartbeats++;
-
-                /*
-                 * THE CONSOLE'S VERDICT ON THE PASSCODE, which b41 could not read and so had to report
-                 * a wrong passcode and a silent console as the same thing.
-                 *
-                 * ports/common now decrypts the console's direction, so the one byte is here. The .NET
-                 * side reads plaintext[0] the same way, and established both values by controlled
-                 * experiment - see HALYARD_CTRL_LOGIN_ACCEPTED.
-                 */
-                if (ev.type == HALYARD_CTRL_TYPE_LOGIN && ev.plaintext_length > 0u) {
-                    if (ev.plaintext[0] == HALYARD_CTRL_LOGIN_ACCEPTED)
-                        out->login_verdict = 0;
-                    else if (ev.plaintext[0] == HALYARD_CTRL_LOGIN_REJECTED)
-                        out->login_verdict = 1;
-                    else
-                        out->login_verdict = 2;  /* a third value nobody has seen - say so, don't round it */
-
-                    /* A rejected passcode will not become accepted by waiting out the deadline. */
-                    if (out->login_verdict != 0)
-                        break;
-                }
-
-                /*
-                 * THE SIGN-IN GATE, and the reference implementation ANSWERS IT rather than giving up.
-                 *
-                 * src/Ripcord.Protocol.Halyard/Session/HalyardStreamingSession.cs is the source of truth
-                 * here, and on TypeLoginPrompt it says "this user is locked, send the passcode" and
-                 * completes a gate that another task is waiting on. ports/ripcord-3ds treats the same
-                 * message as fatal - "this build cannot answer one" - which is that port's limitation
-                 * rather than the protocol's, and copying it here would have carried a restriction the
-                 * reference does not have.
-                 *
-                 * b39 confirmed this is the gate on hardware: one control frame, type 0x0004, no
-                 * heartbeats, no SESSION_ID. So the probe now answers it when a passcode was supplied
-                 * out of band, and still merely reports it when none was.
-                 */
-                if (ev.type == HALYARD_CTRL_TYPE_LOGIN_PROMPT) {
-                    out->login_prompt = 1;
-
-                    if (rec.login_pin[0] == '\0') {
-                        /* Nothing to answer with - report the gate rather than sit out the deadline. */
-                        break;
-                    }
-
-                    /*
-                     * ONE attempt, where the reference allows five. Its retries exist because a person is
-                     * typing and can correct a typo; this passcode came from a file, so re-sending the same
-                     * digits would only burn a counter and ask the console the same question twice.
-                     *
-                     * The counter discipline still matters and lives in ports/common: the submit takes the
-                     * next unused value (5 on a fresh session, matching the reference's "first attempt is
-                     * 5") and advances it in the same breath, so no IV is ever reused under the session key.
-                     */
-                    if (!out->login_submitted) {
-                        out->login_submitted =
-                            halyard_control_session_submit_login(&session, rec.login_pin,
-                                                                 strlen(rec.login_pin));
-                        SAY(out->login_submitted ? "passcode submitted - waiting for SESSION_ID"
-                                                 : "the passcode could not be encoded - not sent");
-                        if (!out->login_submitted)
-                            break;
-                    }
-
-                    /*
-                     * Keep waiting on the SAME deadline rather than extending it. The reference measures
-                     * the console's session-ready at ~2.3 s after a LAN submit, and the twenty seconds this
-                     * loop already had was sized for a console still waking up - so there is room, and
-                     * granting more would only slow down the "it never answered" case.
-                     *
-                     * The console's verdict arrives as LOGIN (0x0005) carrying one byte, and is handled
-                     * above - ports/common decrypts the console's direction now, so a wrong passcode is
-                     * no longer indistinguishable from silence.
-                     */
-                    continue;
-                }
-            }
-
-            if (ev.kind == HALYARD_CONTROL_EVENT_SESSION_READY) {
-                out->stage = RC_CONNECT_SESSION_READY;
-                break;
-            }
-            rc_sleep_ms(10u);
+            if (!g_signin.ready && !out->login_prompt)
+                rc_sleep_ms(10u);
         }
+
+        /*
+         * THE PASSCODE, ASKED FOR ON THE TELEVISION - and until now this port could not ask.
+         *
+         * b39 confirmed the gate on hardware and the answer was a passcode in the pairing record, put
+         * there over FTP. That is fine for a bring-up rig and no use at all to somebody who woke their
+         * console from sleep and found it locked: the connection was refused, the program said so, and
+         * there was nothing to do about it from the sofa.
+         *
+         * HalyardStreamingSession.cs is the source of truth and asks a provider, re-asking on each
+         * rejection up to five times, because a person typing can mistype. The same shape is here, with
+         * the stored passcode standing in for the first attempt when there is one - so a rig that has
+         * one still never sees a keyboard, and everybody else gets asked.
+         */
+        if (out->login_prompt && !g_signin.ready && !g_signin.dead) {
+            int attempt = 0;
+
+            SAY("the console says its user is locked and wants a passcode");
+
+            for (attempt = 1; attempt <= RC_SIGNIN_ATTEMPTS; attempt++) {
+                char typed[HALYARD_SESS_LOGIN_PIN_MAX];
+                const char *pin;
+
+                if (attempt == 1 && rec.login_pin[0] != '\0') {
+                    pin = rec.login_pin;
+                    SAY("using the passcode from the pairing record");
+                } else {
+                    if (!ask_login_pin(attempt > 1, typed, sizeof(typed)))
+                        break;          /* backed out, or the keyboard could not be raised */
+                    pin = typed;
+                }
+
+                say(RC_PHASE_CONNECTING, "Signing in", "Sending the passcode", NULL);
+
+                out->login_verdict = -1;
+                g_signin.verdict_new = 0;
+                if (!halyard_control_session_submit_login(&session, pin, strlen(pin))) {
+                    SAY("the passcode could not be encoded - not sent");
+                    say(RC_PHASE_FAILED, "That passcode could not be sent",
+                        "It has to be digits only", "Try again with the digits alone");
+                    break;
+                }
+                out->login_submitted = 1;
+                SAY("passcode submitted - waiting for the console's answer");
+
+                /*
+                 * WHICHEVER THE CONSOLE SAYS FIRST. Session-ready is the outright success; the verdict
+                 * byte is what lets a wrong passcode be re-asked at once instead of after a timeout,
+                 * and - as the reference is careful to point out - stops a RIGHT one being reported as
+                 * wrong when the session does not immediately follow.
+                 */
+                signin_wait(rc_time_ms() + RC_SIGNIN_WAIT_MS);
+                if (g_signin.ready || g_signin.dead)
+                    break;
+
+                if (g_signin.verdict_new && out->login_verdict == 1) {
+                    SAY("the console rejected that passcode");
+                    continue;           /* ask again; attempt > 1 makes the screen say so */
+                }
+                if (g_signin.verdict_new && out->login_verdict == 0) {
+                    /*
+                     * Accepted, and the session does not always follow at once - the reference measures
+                     * about five seconds on the rendezvous route while the console renegotiates. Wait
+                     * that out rather than blaming the passcode for a session that is merely late.
+                     */
+                    SAY("the console accepted the passcode - waiting for SESSION_ID");
+                    say(RC_PHASE_CONNECTING, "Signed in", "Waiting for the console", NULL);
+                    signin_wait(rc_time_ms() + RC_SIGNIN_WAIT_MS);
+                    break;
+                }
+                /* It said nothing at all. Ask again - the same passcode may simply not have landed. */
+                SAY("the console did not answer the passcode - asking again");
+            }
+
+            /*
+             * THE GATE OWNS WHAT IS SAID ABOUT ITS OWN FAILURE, and this flag is how it keeps it. Every
+             * way out of the loop above has already put a sentence on the screen that names the actual
+             * problem - except running out of attempts, which is said here. Without the flag the caller's
+             * generic report would paint over all of them with "the console refused the session", which
+             * is both wrong and leaves somebody with nothing to try.
+             */
+            if (!g_signin.ready) {
+                out->login_blocked = 1;
+                if (attempt > RC_SIGNIN_ATTEMPTS)
+                    say(RC_PHASE_FAILED, "The console would not accept the passcode",
+                        "Every attempt was refused",
+                        "Use the passcode you sign in with on the console itself");
+            }
+        }
+
+        if (g_signin.ready)
+            out->stage = RC_CONNECT_SESSION_READY;
+        signin_close();
     }
 
     /*

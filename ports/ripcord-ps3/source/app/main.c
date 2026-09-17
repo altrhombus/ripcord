@@ -1564,8 +1564,10 @@ static int check_connect(void)
         ps3_log("       %d control frame(s) while waiting; first 0x%04x, last 0x%04x, %d heartbeat(s)\n",
                 c.frames_seen, c.first_type, c.last_type, c.heartbeats);
         if (c.login_prompt && c.login_verdict == 1) {
-            ps3_log("FAIL  the console REJECTED the passcode in the pairing record. That is its own\n");
-            ps3_log("      answer, not a timeout - correct `pin=` and re-run.\n");
+            ps3_log("FAIL  the console REJECTED the passcode - every attempt. That is its own answer,\n");
+            ps3_log("      not a timeout. It wants the passcode the console signs in with; a `pin=`\n");
+            ps3_log("      in the pairing record is tried first and a wrong one there costs the first\n");
+            ps3_log("      of the attempts, so check that line too if one is present.\n");
         } else if (c.login_prompt && c.login_verdict == 2) {
             ps3_log("FAIL  the console answered the passcode with a verdict byte nobody has seen\n");
             ps3_log("      before - neither 0x00 nor 0x01. Worth a look rather than a retry.\n");
@@ -1578,9 +1580,15 @@ static int check_connect(void)
             ps3_log("FAIL  the passcode went back to the console and nothing returned - no verdict,\n");
             ps3_log("      no SESSION_ID. The console went quiet rather than saying no.\n");
         } else if (c.login_prompt) {
-            ps3_log("       the console wants a sign-in passcode and none was supplied. Either put\n");
-            ps3_log("       `pin=<digits>` in the pairing record beside the console, or sign in on\n");
-            ps3_log("       the console, leave it on the home screen, and re-run.\n");
+            /*
+             * NOTHING WAS SENT, which since the keyboard exists means the keyboard did not produce a
+             * passcode: it was dismissed, or it could not be raised at all. The old advice here - put
+             * `pin=` in the pairing record and re-run - described the only route there used to be and
+             * is now the fallback rather than the instruction.
+             */
+            ps3_log("       the console wants a sign-in passcode and none was sent. The keyboard was\n");
+            ps3_log("       either dismissed or could not be raised; the line above says which. A\n");
+            ps3_log("       `pin=<digits>` in the pairing record answers it without asking at all.\n");
         } else if (c.frames_seen == 0) {
             ps3_log("FAIL  the channel opened and the console said nothing at all - not even a\n");
             ps3_log("      heartbeat, which it normally sends within seconds. Suspect the channel.\n");

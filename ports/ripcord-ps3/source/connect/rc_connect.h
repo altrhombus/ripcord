@@ -408,6 +408,10 @@ typedef struct {
     /* Disconnect was chosen in that menu. Distinguishes the session a person ENDED from every other way
      * one can stop, which otherwise all arrive at the caller looking like the stream having failed. */
     int      menu_disconnect;
+    /* The sign-in gate ended the attempt, and has already said how on the television: cancelled at the
+     * keyboard, or every passcode refused. Stops the generic outcome below overwriting the specific
+     * reason with "the console refused the session", which is both wrong and unactionable. */
+    int      login_blocked;
     int      overlay_system_font;/* the console's own face opened, rather than the drawn fallback */
     char     overlay_font_status[96];
     int      stream_stalled;     /* the console stopped sending video while the session was up */
