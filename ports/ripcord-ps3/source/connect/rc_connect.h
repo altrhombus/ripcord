@@ -415,6 +415,9 @@ typedef struct {
     /* Quit was chosen from the PS menu while the stream was up. The third of the three deliberate
      * endings, and the only one that was previously indistinguishable from a fault in the summary. */
     int      xmb_quit;
+    /* The console was asked to go to rest on the way out, which only happens when somebody chose it
+     * from the disconnect question. Reported because the console acts on it after we are gone. */
+    int      rest_requested;
     /* The sign-in gate ended the attempt, and has already said how on the television: cancelled at the
      * keyboard, or every passcode refused. Stops the generic outcome below overwriting the specific
      * reason with "the console refused the session", which is both wrong and unactionable. */

@@ -621,10 +621,22 @@ static void draw_overlay(void);
  * becomes one of its entries. Same gesture, same number of presses, and it can do things the system's
  * menu could not.
  */
-#define RC_MENU_ROWS 4
+/*
+ * The most rows any one page of this menu has. There is no Resume entry: Circle backs out of every
+ * page, which is what Circle does everywhere else on this machine, and a row that duplicates the button
+ * somebody already knows is a row they have to read past to reach the ones that do something.
+ */
+#define RC_MENU_MAX_ROWS 3
 #define RC_MENU_PS_MS 120u   /* a momentary press - see the note where it is sent */
 
 static int g_menu_open;
+/*
+ * WHICH PAGE. 0 is the menu; 1 is the question Disconnect asks, because ending the session and putting
+ * the console to sleep are different things somebody might want and neither is a safe default to guess
+ * at. The desktop app asks the same question with a checkbox; a checkbox is the wrong shape for a
+ * gamepad, so it is two rows that each say what they do.
+ */
+static int g_menu_page;
 static int g_menu_row;
 static uint32_t g_menu_prev_buttons;
 static uint64_t g_ps_until;
@@ -640,7 +652,16 @@ static unsigned g_ps_sent;
  */
 static int g_menu_quit;
 
+/* ...and whether the console was asked to rest on the way out. See where the goodbye is sent. */
+static int g_menu_rest;
+
 static void draw_session_menu(void);
+
+/* How many rows the current page has. Both the cursor and the drawing ask, so neither can disagree. */
+static int menu_rows(void)
+{
+    return g_menu_page == 0 ? 3 : 2;
+}
 
 /*
  * What the overlay reports that is not already a live counter: the asks, which are settled once when
@@ -1169,6 +1190,7 @@ static void send_input(rc_connect_result *out)
         if (edges != g_chord_edges_seen) {
             g_chord_edges_seen = edges;
             g_menu_open = !g_menu_open;
+            g_menu_page = 0;
             g_menu_row = 0;
             g_menu_prev_buttons = in.buttons;
             out->overlay_toggles++;
@@ -1189,12 +1211,34 @@ static void send_input(rc_connect_result *out)
         g_menu_prev_buttons = in.buttons;
 
         if (pressed & (HALYARD_PAD_DPAD_UP | HALYARD_PAD_DPAD_LEFT))
-            g_menu_row = (g_menu_row + RC_MENU_ROWS - 1) % RC_MENU_ROWS;
+            g_menu_row = (g_menu_row + menu_rows() - 1) % menu_rows();
         if (pressed & (HALYARD_PAD_DPAD_DOWN | HALYARD_PAD_DPAD_RIGHT))
-            g_menu_row = (g_menu_row + 1) % RC_MENU_ROWS;
-        if (pressed & HALYARD_PAD_CIRCLE)
+            g_menu_row = (g_menu_row + 1) % menu_rows();
+
+        /*
+         * CIRCLE BACKS OUT OF ONE PAGE, not out of the menu. On the question Disconnect asks that is
+         * the difference between changing your mind and disconnecting anyway, and it is the reason
+         * there is no Resume row - Circle already means this everywhere on this machine.
+         */
+        if (pressed & HALYARD_PAD_CIRCLE) {
+            if (g_menu_page != 0) {
+                g_menu_page = 0;
+                g_menu_row = 2;     /* back onto Disconnect, where they just were */
+            } else {
+                g_menu_open = 0;
+            }
+        }
+
+        if ((pressed & HALYARD_PAD_CROSS) && g_menu_page != 0) {
+            /*
+             * Row 0 leaves the console awake, row 1 asks it to rest. Both disconnect: somebody who got
+             * this far said Disconnect once already, and making them say it a second time to get the
+             * ordinary outcome would be a confirmation dialog rather than a question.
+             */
+            g_menu_rest = (g_menu_row == 1);
+            g_menu_quit = 1;
             g_menu_open = 0;
-        if (pressed & HALYARD_PAD_CROSS) {
+        } else if (pressed & HALYARD_PAD_CROSS) {
             switch (g_menu_row) {
             case 0:
                 /*
@@ -1212,17 +1256,15 @@ static void send_input(rc_connect_result *out)
             case 1:
                 rc_overlay_show(!rc_overlay_shown());
                 break;
-            case 3:
+            default:
                 /*
                  * LAST IN THE LIST on purpose. It is the one entry here that cannot be undone by
                  * pressing it again, and the row the cursor starts on sends a PS press - so the
-                 * destructive one sits as far from the default as the list allows.
+                 * destructive one sits as far from the default as the list allows. It does not act:
+                 * it asks, on the second page.
                  */
-                g_menu_quit = 1;
-                g_menu_open = 0;
-                break;
-            default:
-                g_menu_open = 0;
+                g_menu_page = 1;
+                g_menu_row = 0;
                 break;
             }
         }
@@ -1744,41 +1786,59 @@ static const char *bitrate_text(int kbps, char *out, size_t out_size)
  */
 static void draw_session_menu(void)
 {
-    static const char *const kRows[RC_MENU_ROWS] = {
+    static const char *const kMenu[3] = {
         "Send the PS button to the console",
         "Diagnostics overlay",
-        "Resume",
         "Disconnect",
     };
+    static const char *const kRest[2] = {
+        "Disconnect, leave the console on",
+        "Disconnect and put the console to rest",
+    };
+    const char *const *rows = (g_menu_page == 0) ? kMenu : kRest;
+    const char *title = (g_menu_page == 0) ? "Ripcord" : "Disconnect";
+    /*
+     * What the bottom line says. Circle is the way out of both pages and is the reason there is no
+     * Resume row, so it is named rather than assumed - it is the one thing here nobody can see.
+     */
+    const char *hint = (g_menu_page == 0) ? "Circle resumes - the session is still running"
+                                          : "Circle goes back";
+    int n = menu_rows();
     int w = rc_overlay_width();
     int pad = rc_overlay_px(24);
     int row_h = rc_overlay_px(46);
+    int title_h = rc_overlay_px(44);
+    /*
+     * THE PANEL'S HEIGHT, WORKED OUT ONCE. It used to be the same expression written twice - for the
+     * fill and for the blit - and neither of them counted the line at the bottom, so the hint was drawn
+     * below the panel it belongs to and the bottom of it was cut off. Two copies of a formula that has
+     * to agree with a layout is how that happens; one variable that the layout and both users read is
+     * how it stops. The hint gets a full row's box, which is what every other line here gets.
+     */
+    int h = pad + title_h + row_h * n + rc_overlay_px(4) + row_h + pad;
     int y = pad;
     int i;
 
     if (!rc_overlay_begin_now())
         return;
 
-    rc_overlay_rect(0, 0, w, pad + row_h * RC_MENU_ROWS + pad + rc_overlay_px(34), 0xE80E1218u);
-    (void)rc_overlay_text(pad, y, 2, RC_OV_TEXT, "%s", "Ripcord");
-    y += rc_overlay_px(44);
+    rc_overlay_rect(0, 0, w, h, 0xE80E1218u);
+    (void)rc_overlay_text(pad, y, 2, RC_OV_TEXT, "%s", title);
+    y += title_h;
 
-    for (i = 0; i < RC_MENU_ROWS; i++) {
+    for (i = 0; i < n; i++) {
         if (i == g_menu_row)
             rc_overlay_blend_rect(pad / 2, y - rc_overlay_px(6), w - pad, row_h, 0x402D7DF6u);
-        (void)rc_overlay_text(pad, y, 1, (i == g_menu_row) ? RC_OV_TEXT : RC_OV_LABEL, "%s", kRows[i]);
-        if (i == 1)
+        (void)rc_overlay_text(pad, y, 1, (i == g_menu_row) ? RC_OV_TEXT : RC_OV_LABEL, "%s", rows[i]);
+        if (g_menu_page == 0 && i == 1)
             rc_overlay_text_right(w - pad, y, 1, rc_overlay_shown() ? RC_OV_GOOD : RC_OV_TRACK,
                                   "%s", rc_overlay_shown() ? "on" : "off");
         y += row_h;
     }
 
-    /* The stream has not stopped - it is behind this - so say which button puts you back in it. */
-    (void)rc_overlay_text(pad, y + rc_overlay_px(4), 1, RC_OV_TRACK, "%s",
-                          "The session is still running");
+    (void)rc_overlay_text(pad, y + rc_overlay_px(4), 1, RC_OV_TRACK, "%s", hint);
 
-    rc_overlay_end_now(rc_overlay_px(48), rc_overlay_px(32), w,
-                       pad + row_h * RC_MENU_ROWS + pad + rc_overlay_px(34));
+    rc_overlay_end_now(rc_overlay_px(48), rc_overlay_px(32), w, h);
 }
 
 static void draw_overlay(void)
@@ -3541,9 +3601,11 @@ rc_connect_stage rc_connect(unsigned wake_timeout_ms, rc_connect_log_fn log,
      * g_menu_quit, which would end the next session the moment it started for a reason nobody could see.
      */
     g_menu_open = 0;
+    g_menu_page = 0;
     g_menu_row = 0;
     g_menu_prev_buttons = 0u;
     g_menu_quit = 0;
+    g_menu_rest = 0;
     g_ps_until = 0u;
     g_ps_sent = 0u;
 
@@ -3998,6 +4060,25 @@ answered:
          * Sending one here would put somebody's console to sleep when they only quit the app, which is
          * a decision for a setting rather than a teardown.
          */
+        /*
+         * REST FIRST, IF IT WAS ASKED FOR, and the order is not arbitrary: cap52 isolated this by
+         * diffing a rest-off against a rest-on disconnect and the ONLY difference was this empty frame
+         * on the binary control channel, sent BEFORE the Takion DISCONNECT, which is byte-identical
+         * either way. So this frame is what rests the console; the goodbye below does not carry it.
+         *
+         * Only ever on request. Somebody who chose "leave the console on", or who quit from the PS
+         * menu, gets a console that is still awake - putting it to sleep because the app closed would
+         * be the app deciding something it was not asked about.
+         */
+        if (g_menu_rest) {
+            if (halyard_control_session_send(&session, HALYARD_CTRL_TYPE_REST_MODE, NULL, 0)) {
+                out->rest_requested = 1;
+                SAY("asked the console to go to rest");
+            } else {
+                SAY("the rest request could not be sent - the console will stay awake");
+            }
+        }
+
         if (out->takion_up) {
             uint8_t bye[16];
             size_t bye_len = takion_control_build_disconnect(NULL, bye, sizeof(bye));
