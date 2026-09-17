@@ -158,7 +158,7 @@ int rc_h264_sps_parse(const uint8_t *payload, size_t size, rc_h264_sps *out)
      * decoder would have accepted.
      */
     if (out->vui_parameters_present_flag) {
-        int aspect_present = 0, overscan_present = 0;
+        int aspect_present = 0, overscan_present = 0, overscan_ok = 0;
         uint32_t idc = 0u, ignored = 0u;
 
         do {
@@ -171,7 +171,10 @@ int rc_h264_sps_parse(const uint8_t *payload, size_t size, rc_h264_sps *out)
                 }
             }
             if (!rc_h264_bits_flag(&br, &overscan_present)) break;
-            if (overscan_present && !rc_h264_bits_flag(&br, (int *)&ignored)) break;
+            /* Its own int, not a cast of the uint32_t above: rc_h264_bits_flag writes an int, and
+             * reading one object through a pointer to another type is a pun the compiler is entitled
+             * to assume never happens. Same width here, which is exactly what makes it easy to miss. */
+            if (overscan_present && !rc_h264_bits_flag(&br, &overscan_ok)) break;
 
             if (!rc_h264_bits_flag(&br, &out->video_signal_type_present_flag)) break;
             if (!out->video_signal_type_present_flag) break;
