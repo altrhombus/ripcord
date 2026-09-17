@@ -1178,6 +1178,27 @@ static int check_connect(void)
                     ps3_log("       INPUT: the PS button was sent to the console %u time(s) - the\n"
                             "              system eats the real press, so this is the only route\n",
                             c.ps_presses_sent);
+                /*
+                 * WHAT THE STREAM SAYS ABOUT ITS OWN COLOUR, and what this decoder does about it.
+                 *
+                 * cellVdec is told BT.709 and takes no range input, so it applies one assumption -
+                 * limited range expanded to full. If the console signals FULL range, that material is
+                 * expanded a second time and highlights clip early, which on a bright scene reads as
+                 * "almost too bright" with everything else looking right. This line is how that stops
+                 * being a guess about somebody's television.
+                 */
+                ps3_log("       COLOUR: the stream says range %s, matrix %s\n",
+                        c.sps_full_range < 0 ? "UNSTATED (H.264 default: limited)"
+                                             : c.sps_full_range ? "FULL 0-255" : "limited 16-235",
+                        c.sps_matrix < 0 ? "unstated"
+                      : c.sps_matrix == 1 ? "BT.709 - which is what we ask cellVdec for"
+                      : (c.sps_matrix == 5 || c.sps_matrix == 6) ? "BT.601 - we ask for BT.709"
+                      : "something else");
+                if (c.sps_full_range == 1)
+                    ps3_log("       COLOUR: FULL RANGE. cellVdec has no range input and assumes\n"
+                            "               limited, so this stream is being expanded twice - that\n"
+                            "               is a real cause of highlights looking blown out\n");
+
                 if (c.skip_until_keyframe)
                     ps3_log("       PICTURE: waiting for a clean frame after a loss was ON - %u\n"
                             "                picture(s) arrived and were not shown\n",
