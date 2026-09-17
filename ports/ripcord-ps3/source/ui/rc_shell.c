@@ -591,7 +591,7 @@ static int pill(const char *label, int x, int y, int h, uint32_t argb)
     int w = rc_overlay_text(0, -10000, 1, 0x00000000u, "%s", label) + pad * 2;
 
     rounded_shape(x, y, w, h, h / 2, sy(3), argb);
-    (void)rc_overlay_text(x + pad, y + (h - sy(24)) / 2, 1, argb, "%s", label);
+    (void)rc_overlay_text(x + pad, rc_overlay_text_y(y, h, 1), 1, argb, "%s", label);
     return w;
 }
 
@@ -668,7 +668,7 @@ static void draw_card(const rc_menu_item *item, int x, int y, int w, int h, int 
             rounded_shape(px, py, d, d, d / 2, 0, ready ? RC_OV_GOOD : RC_OV_WARN);
             px += d + sx(14);
         }
-        (void)rc_overlay_text(px, py - sy(4), 1, RC_OV_LABEL, "%s", item->value);
+        (void)rc_overlay_text(px, rc_overlay_text_y(py, d, 1), 1, RC_OV_LABEL, "%s", item->value);
     }
 }
 
@@ -680,17 +680,21 @@ static void draw_hints(int forget, int options)
     int y = sy(SH_HINT_Y);
     int size = sy(28);
 
+    /* The glyphs are square boxes `size` on a side, so the words beside them are centred against that
+     * box rather than nudged down by a constant. */
+    int ty = rc_overlay_text_y(y, size, 1);
+
     x += glyph(s_enter, x, y, size, RC_OV_TEXT) + sx(14);
-    x += rc_overlay_text(x, y + sy(2), 1, RC_OV_LABEL, "%s",
+    x += rc_overlay_text(x, ty, 1, RC_OV_LABEL, "%s",
                          (s_menu.selected >= 0 && s_menu.item[s_menu.selected].id == SH_ID_PAIR_NEW)
                              ? "pair" : "stream") + sx(46);
     if (forget) {
         x += glyph(HALYARD_PAD_TRIANGLE, x, y, size, RC_OV_TEXT) + sx(14);
-        x += rc_overlay_text(x, y + sy(2), 1, RC_OV_LABEL, "%s", "forget") + sx(46);
+        x += rc_overlay_text(x, ty, 1, RC_OV_LABEL, "%s", "forget") + sx(46);
     }
     if (options) {
         x += pill("START", x, y, size, RC_OV_TEXT) + sx(14);
-        (void)rc_overlay_text(x, y + sy(2), 1, RC_OV_LABEL, "%s", "options");
+        (void)rc_overlay_text(x, ty, 1, RC_OV_LABEL, "%s", "options");
     }
 }
 
@@ -738,12 +742,16 @@ static void draw_list(void)
             rounded(x, y, w, h, sy(14), 0xC00E1218u, 1);
             rounded_edge(x, y, w, h, sy(14), sy(2), s_accent);
         }
-        (void)rc_overlay_text(x + sx(28), y + sy(12), 2, colour, "%s", item->label);
+        (void)rc_overlay_text(x + sx(28), rc_overlay_text_y(y, h, 2), 2, colour, "%s", item->label);
         if (item->value[0] != '\0') {
+            /* Centred in the SAME box as the label, at its own size - which is what puts two sizes on
+             * one row on a shared optical centre line instead of on two guessed offsets. */
+            int vy = rc_overlay_text_y(y, h, 1);
+
             if (item->adjustable && selected)
-                rc_overlay_text_right(x + w - sx(28), y + sy(20), 1, s_accent, "< %s >", item->value);
+                rc_overlay_text_right(x + w - sx(28), vy, 1, s_accent, "< %s >", item->value);
             else
-                rc_overlay_text_right(x + w - sx(28), y + sy(20), 1,
+                rc_overlay_text_right(x + w - sx(28), vy, 1,
                                       item->enabled ? RC_OV_LABEL : RC_OV_TRACK, "%s", item->value);
         }
     }
