@@ -22,6 +22,41 @@
 
 static rc_session_state s_state;
 
+/*
+ * WHAT A FIRST PAIRING SHOULD ASK FOR ON THIS HARDWARE.
+ *
+ * ports/common's defaults are 960x540 at 30 fps with software scaling, which is right for the port
+ * that set them - a 3DS, whose screen is 400x240 and whose decoder is a different thing entirely. They
+ * are wrong here, and b324 showed exactly how: the first machine ever paired by this port streamed at
+ * 29 fps through the SPE scaler, because a record written from scratch inherited a handheld's
+ * settings.
+ *
+ * Every number below was measured on this console during bring-up and is recorded in DECODE.md:
+ *
+ *   1280x720 at 60    the level 4.2 decoder's ceiling; 1080p needs a DPB it cannot be opened with
+ *   20,000 kbps       measured good - 64 to 68 slices a picture, where ~128 goes black and 25,000
+ *                     saturates the decoder into keyframe storms
+ *   RGB from vdec     removes the colour pass entirely
+ *   RSX scaling       113 us of a 16,667 us frame, against 3,204 for the SPE scaler
+ *   bilinear          free on the RSX, where it cost 21,038 us a frame on the SPEs
+ *   the system font   Rodin, read from flash, with the drawn font still behind it
+ *
+ * Applied only when there was no record to load. A record that exists says what its owner chose, and
+ * re-pairing is not the moment to overrule them.
+ */
+static void apply_ps3_defaults(halyard_pairing_record *record)
+{
+    record->stream_width = 1280;
+    record->stream_height = 720;
+    record->fps = 60;
+    record->stream_bitrate_kbps = 20000;
+    record->decoder_rgb = 1;
+    record->hardware_scale = 1;
+    record->bilinear_upscale = 1;
+    record->system_font = 1;
+    rc_log("pair:  first pairing - applying this port's measured defaults (720p60, 20000 kbps)\n");
+}
+
 /* Drawn behind the keyboard, once a frame, so the dialog has something to composite over and the
  * viewer can still see which question is being asked. See rc_osk_set_present_hook. */
 static void present_behind_keyboard(void)
@@ -139,7 +174,8 @@ int rc_pair_run(const char *host)
      * LOADED FIRST, so settings somebody chose survive a re-pairing. A record that was never loaded
      * saves defaults, which is right for a first pairing and wrong for every later one.
      */
-    (void)halyard_pairing_file_load(RC_PAIR_DIR, &record);
+    if (!halyard_pairing_file_load(RC_PAIR_DIR, &record))
+        apply_ps3_defaults(&record);
 
     show(RC_PHASE_PAIRING, "Pairing", "Enter the console's address", NULL);
     if (!ask(RC_OSK_TEXT, "Console IP address",
