@@ -1378,6 +1378,49 @@ LAN. Its products are a console list (discovery has one), wake over the internet
 WAN signaling — which is a large separate piece of work and the only one of the three that is not already
 solved here. The account id was the part that paid, and it is now free.
 
+### More than one console — **b341**
+
+The file held exactly one, so pairing a second silently destroyed the first one's keys — and getting
+them back means standing in front of that console reading a PIN off its screen again. `Ripcord.Core`'s
+`IPairedConsoleStore` has been a list with `Upsert` and `Remove` throughout, so this is `ports/common`
+catching up to the source of truth rather than inventing a format.
+
+**The split is the one .NET makes.** Per console: address, name, family, and the keys that identify this
+client to it. Shared: everything else — account id, picture size, frame rate, every toggle. Nobody wants
+one frame rate for the console in the front room and another for the one upstairs; they want the
+settings they chose.
+
+**The settings are stored once and held many times.** Every entry is a complete `halyard_pairing_record`
+with the shared fields identical in all of them — the loader copies them into each entry, the writer
+takes them from one. The duplication is in memory only and regenerated on every load, and in exchange
+every existing caller keeps taking the one struct it already took, with no notion of a set at all.
+`halyard_pairing_file_load` is now "load the set, return the selected entry", and the 3DS port did not
+change.
+
+**Nothing has to migrate.** Console keys appearing before any `[console]` line are read as the first
+console — exactly the old layout — and the writer puts the shared settings at the top, before any
+section, so a reader that predates sections still finds them. A migration step is a thing that can fail
+halfway; this cannot.
+
+**`halyard_pairing_file_save` reads before it writes.** It adds or replaces the entry at that address,
+selects it, and writes the whole set back, so a caller pairing a second console keeps the first without
+knowing a set exists. That is the fix for the original bug, placed where the bug was.
+
+**The shell writes only when something changed.** The file holds the only copy of material that cannot
+be regenerated, and a write truncates before it writes — so every unnecessary one is a window in which a
+power cut costs somebody a trip to another room. Launching the shell and picking the console that was
+already selected opens no window at all. Forgetting a console is the exception and always writes, since
+skipping that write *is* the bug.
+
+**Forgetting is confirmed, and Triangle does nothing on any other row.** One button is not enough
+between somebody and a PIN they have to go and read. The confirmation opens on "Keep it", and Circle —
+the reflex answer — is also the safe one.
+
+**Home screen:** every paired console, whether or not it answered (one in standby in another room is
+still one this PS3 can wake), then anything on the network it has no keys for, then the commands. A
+console that answered shows `ready` or `standby`; one that did not shows `not seen`. Eight paired
+consoles is the ceiling, and a ninth is refused rather than evicting somebody's oldest.
+
 ### Still open
 - ~~**The fifth SPE.**~~ **Answered, and more completely than the question assumed.** The worry was that
   freeing the colour pass would only turn an SPE into a scaler rather than idling it. It idled all three:

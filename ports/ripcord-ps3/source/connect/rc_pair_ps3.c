@@ -166,7 +166,7 @@ const char *rc_pair_record_dir(void)
     return RC_PAIR_DIR;
 }
 
-int rc_pair_run(const char *host)
+int rc_pair_run(const char *host, const char *name)
 {
     halyard_pairing_record record;
     halyard_regist_params params;
@@ -304,6 +304,11 @@ int rc_pair_run(const char *host)
 
     /* The record is the product of all of this, and the only place it exists. */
     snprintf(record.host, sizeof(record.host), "%s", params.host);
+    /* What discovery called it, if discovery is how we got here. Never on the wire - see the header. */
+    if (name != NULL && name[0] != '\0')
+        snprintf(record.name, sizeof(record.name), "%s", name);
+    else
+        record.name[0] = '\0';
     /* Remembered so the next pairing does not ask for it again. */
     snprintf(record.account_id, sizeof(record.account_id), "%s", params.account_id);
     record.is_ps5 = result.record.is_ps5;
@@ -311,10 +316,16 @@ int rc_pair_run(const char *host)
     record.registkey_length = result.record.registration_key_length;
     memcpy(record.companion, result.record.companion, sizeof(record.companion));
 
+    /*
+     * SAVED WITHOUT LOSING THE OTHERS. halyard_pairing_file_save reads the file, adds or replaces the
+     * entry at this address, selects it and writes the whole set back - so pairing a second console
+     * keeps the first. The version that wrote this record straight out destroyed the first console's
+     * keys and said nothing about it.
+     */
     if (!halyard_pairing_file_save(RC_PAIR_DIR, &record)) {
         show(RC_PHASE_FAILED, "Paired, but could not save it",
              "The console accepted the pairing and the record could not be written",
-             "Check there is space and the install is not read-only");
+             "Check there is space, and that no more than eight consoles are already paired");
         return 0;
     }
 

@@ -879,7 +879,7 @@ static int check_connect(void)
          * typed a PIN was to stream - not to be told it worked and dropped back to a log.
          */
         ps3_log("conn:  no pairing record - offering to pair\n");
-        if (rc_pair_run(NULL)) {
+        if (rc_pair_run(NULL, NULL)) {
             ps3_log("conn:  paired; retrying the connection\n");
             stage = rc_connect(RC_CONNECT_WAKE_TIMEOUT_MS, connect_progress, g_log_dirs, LOG_DIR_COUNT,
                                &c);
