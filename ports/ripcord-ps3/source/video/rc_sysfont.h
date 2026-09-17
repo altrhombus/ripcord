@@ -39,6 +39,10 @@ const char *rc_sysfont_status(void);
  * rather than against a baseline nobody can see. */
 int rc_sysfont_ascent(void);
 
+/* The height of a capital, in pixels. This, not the ascent, is what a label is centred on - see the
+ * note in the .c for why centring on the line box hangs a word of capitals visibly high. */
+int rc_sysfont_cap_height(void);
+
 /* Changes the em size. The ascent moves with it, so re-read it after calling this. */
 void rc_sysfont_set_size(float pixels);
 
