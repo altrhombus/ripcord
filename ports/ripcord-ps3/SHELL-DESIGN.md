@@ -200,44 +200,44 @@ back. A is most of the win.
 6. **Do not slow the common path.** One console paired, already selected: launch, skip or wait 1.5 s,
    press ✕. If a change makes that longer, the change is wrong.
 
-## What the hardware said — 2026-09-17, builds b360-b367
+## What the hardware said — 2026-09-17, builds b360-b392
 
-**Stage 1 is in, and the measurement that mattered was not the one this document expected.** Costs per
-frame at 1920x1080, measured as the interval between successive draws rather than as frames over wall
-time (which is not a frame rate — the shell blocks inside discovery and the pairing prompts, and an
-earlier version of this number reported 15 fps and 10 fps for runs whose drawing was identical):
+**Stage 1 is in and the menu runs at 30 fps, from 10.** The open question this document poses - Route A
+against Route B, whether text can float on the wave - turned out not to be the question. Costs per frame
+at 1920x1080, measured as the interval between successive draws:
 
-```
-99,472 us a frame = 10 fps
-of which: background 13,904   drawing 67,272   to video memory 10,875   flip wait 7,300
-```
+| | frame | what changed |
+|---|---|---|
+| b367 | 99,472 us | the baseline, once the frame rate stopped being frames ÷ time-open |
+| b371 | 66,570 | rounded rectangles drawn a span at a time |
+| b375 | 49,928 | a table for constant-alpha runs; the glow stops painting its own interior |
+| b386 | 33,454 | the RSX reads the bitmap in main memory; the 8 MB copy stops existing |
 
-**The drawing is 68 percent of the frame**, and every plan above aims at the background. The background
-is now a quarter-scale buffer blown up 4x (29,388 us to 13,904, and closer to the original than the
-original was to itself — mean channel error 0.41/255 against a full-resolution render). That was worth
-doing and it was not the problem.
+What it settles:
 
-Three things this settles:
+- **The drawing was 68 percent of the frame, not the background.** Every plan above aims at the
+  background. The background is now 13 ms of a 33 ms frame and was never the problem.
+- **The text was four percent.** This document's warning about rasterising glyph runs sixty times a
+  second is sound and was not what was happening here; the rounded rectangles were.
+- **Route B, but for a different reason than this document gives.** The interface is cached as a layer
+  and composited per row - not so text can float on the wave, but because every blended pixel READ the
+  surface, and the surface is eight megabytes that are never in cache. The background, which only
+  writes, costs 21 cycles a pixel against the blend's 140.
+- **The copy into video memory was 29 percent of the budget** and existed only because nothing had asked
+  the RSX to look at main memory. `gcmMapMainMemory` and `GCM_TRANSFER_MAIN_TO_LOCAL`: 10,884 us to 2.
+  This is not the b232 hazard - b232 asked the 2D engine to *blend*, which it will not do. This asks it
+  to copy, which it has done since b228.
+- **`dcbz`, `dcbt` and removing the arithmetic each moved the blend from 217 cycles a pixel to about 140
+  and no further.** On this core, for this loop, the arithmetic was never what was being waited for.
+- **The SPEs were not needed.** They remain the route if a future version wants 60.
 
-- **`dcbz` does not help.** The background and the copy to video memory cost nearly the same for the
-  same 8 MB, which looked like both paying to fetch lines they were about to overwrite. One `dcbz` per
-  128 bytes measured *slightly worse*. The ceiling is not one a store pattern can be arranged around.
-- **Route A versus Route B is the wrong question.** Neither addresses the drawing, which is where the
-  time is. What addresses it is caching the UI as a layer so a frame composites it instead of
-  re-rasterising it — which this document already says under "What makes this affordable", and which
-  turns out to be the *first* thing to do rather than a condition on Route B.
-- **The SPEs are not speculative here.** `rc_spu_yuv` already runs three threads that do nothing but
-  bilinear scaling since the decoder began producing RGB, measured at 2,992 us for a full-screen
-  picture. The wave's upscale is that same operation.
+**And on the fan.** A full streaming session moves the Cell +1.0 C; this menu moves it +0.5 to +2.0 C
+across a run, against a PPE that used to be saturated for 99 ms and then spin. The shell samples the
+Cell and RSX either side of itself, so every change from here has a before and after.
 
-The open question worth a probe is whether an SPE can DMA straight into RSX memory, which would delete
-the 10,875 us copy rather than reduce it. Note this is **not** the b232 hazard: b232 asked the RSX's 2D
-blitter to blend. A DMA to mapped memory is what the MFC is for.
-
-**And on the fan.** A full streaming session — cellVdec on the SPEs, three more scaling, network, audio
-— moves the Cell +1.0 C. The menu's present state is arguably worse than anything proposed, because the
-PPE is saturated for 99 ms and then spins in a wait loop. The shell now samples the Cell and RSX either
-side of itself, so every change from here has a before and after instead of an argument.
+**Two visual faults reached the television**, both from the layer's bookkeeping rather than its drawing,
+and both found by somebody looking at a screen rather than by any test. There is now an invariant check:
+every pixel with a non-zero alpha in the layer must lie inside the bounds its drawer reported.
 
 ## Stages
 
