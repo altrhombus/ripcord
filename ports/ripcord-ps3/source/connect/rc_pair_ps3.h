@@ -42,9 +42,14 @@ void rc_pair_apply_port_defaults(halyard_pairing_record *record);
  * and leaves the address to stand in for it. The session state carries what happened either way, and is
  * left on the screen.
  *
+ * `console_id` is the id discovery reported, and it is the one field here that is not a convenience:
+ * `host` is a DHCP lease and this is not, so a record carrying it can be found again after the console
+ * moves instead of having to be re-paired. NULL when pairing from a typed address, which is a normal
+ * state - the id is learned the next time that console answers a broadcast.
+ *
  * THE CONSOLES ALREADY PAIRED ARE KEPT. This adds one or replaces the entry at the same address; it no
  * longer overwrites the file, which is what used to destroy the previous console's keys silently.
  */
-int rc_pair_run(const char *host, const char *name);
+int rc_pair_run(const char *host, const char *name, const char *console_id);
 
 #endif /* RC_PAIR_PS3_H */

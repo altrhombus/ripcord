@@ -879,7 +879,7 @@ static int check_connect(void)
          * typed a PIN was to stream - not to be told it worked and dropped back to a log.
          */
         ps3_log("conn:  no pairing record - offering to pair\n");
-        if (rc_pair_run(NULL, NULL)) {
+        if (rc_pair_run(NULL, NULL, NULL)) {
             ps3_log("conn:  paired; retrying the connection\n");
             stage = rc_connect(RC_CONNECT_WAKE_TIMEOUT_MS, connect_progress, g_log_dirs, LOG_DIR_COUNT,
                                &c);
@@ -953,7 +953,11 @@ static int check_connect(void)
                                                          : "unconfirmed - declared anyway"));
     }
 
-    if (c.unicast_replied)
+    if (c.unicast_replied && c.readdressed)
+        ps3_log("       the recorded address was stale; the console proved its identity from a new\n"
+                "       one and the record now points there. It answered; %s\n",
+                c.was_asleep ? "in standby" : "awake");
+    else if (c.unicast_replied)
         ps3_log("       it answered; %s\n", c.was_asleep ? "in standby" : "awake");
     else if (c.broadcast_found && !c.broadcast_matches)
         ps3_log("       it did not answer, but a console answered a BROADCAST from a different\n"

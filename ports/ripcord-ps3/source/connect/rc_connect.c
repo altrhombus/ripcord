@@ -89,15 +89,25 @@ static void fill_addr(struct sockaddr_in *a, const char *ip, unsigned short port
  * avoids waking the question of which console replied.
  */
 /*
- * Broadcast SRCH, used only to tell two failures apart: a console that is off, and a console that has
- * moved since the record was written. A DHCP lease outliving a pairing record is ordinary - this
- * project's own PS3 changed address twice in a week - and the symptom is identical to an absent console
- * unless something asks the wider question.
+ * Broadcast SRCH, for the console that has moved since the record was written.
  *
- * `found_addr` receives the address that answered, so the caller can compare it with the record's
- * WITHOUT either of them being logged.
+ * A DHCP lease outliving a pairing record is ordinary - this project's own PS3 changed address twice in
+ * a week - and the symptom is identical to an absent console unless something asks the wider question.
+ * This began as that question alone: it told the two failures apart and then gave up either way, which
+ * named the problem accurately and left somebody to fix it by re-pairing a console that was sitting
+ * there working, keys and all.
+ *
+ * SO IT NOW ANSWERS "WHICH ONE", NOT JUST "IS THERE ONE". `want_id` is the console's own id out of the
+ * record; when it is set, replies are read until one carries that id rather than the first one being
+ * taken. That distinction is the whole of what makes acting on the answer safe - on a network with two
+ * consoles the first to reply is a coin toss, and re-pointing a record at the wrong console would swap
+ * somebody's two entries and look like the keys had broken.
+ *
+ * `found_addr` receives the address that answered and `found_id` its id, so the caller can compare
+ * both with the record's WITHOUT either of them being logged.
  */
-static int broadcast_find(char *found_addr, size_t addr_size, unsigned timeout_ms)
+static int broadcast_find(char *found_addr, size_t addr_size, char *found_id, size_t id_size,
+                          const char *want_id, unsigned timeout_ms)
 {
     const halyard_discovery_profile *profile = &halyard_discovery_profile_ps5;
     char probe[128];
@@ -143,8 +153,15 @@ static int broadcast_find(char *found_addr, size_t addr_size, unsigned timeout_m
         }
         buf[n] = '\0';
         if (halyard_discovery_parse_response(buf, (size_t)n, NULL, &found)) {
+            /* Not the one being looked for: keep listening rather than answering with a stranger. */
+            if (want_id != NULL && want_id[0] != '\0' && strcmp(found.host_id, want_id) != 0)
+                continue;
             if (inet_ntop(AF_INET, &from.sin_addr, found_addr, (socklen_t)addr_size) != NULL)
                 got = 1;
+            if (found_id != NULL && id_size > 0u) {
+                strncpy(found_id, found.host_id, id_size - 1u);
+                found_id[id_size - 1u] = '\0';
+            }
             break;
         }
     }
@@ -3201,14 +3218,43 @@ rc_connect_stage rc_connect(unsigned wake_timeout_ms, rc_connect_log_fn log,
          * stale rather than the console missing, and those need completely different fixes.
          */
         char seen[HALYARD_DISCOVERY_ADDRESS_MAX];
+        char seen_id[HALYARD_DISCOVERY_HOST_ID_MAX];
 
-        if (broadcast_find(seen, sizeof(seen), 2500u)) {
+        if (broadcast_find(seen, sizeof(seen), seen_id, sizeof(seen_id), rec.console_id, 2500u)) {
             out->broadcast_found = 1;
             out->broadcast_matches = (strcmp(seen, rec.host) == 0);
+
+            /*
+             * IT MOVED, AND IT PROVED WHO IT IS. The id in the reply is the one this record was
+             * written against, so the address is the only thing that is wrong and the keys are as
+             * good as they ever were. Point the record at where it answered and carry on into the
+             * same connect this function would have done - the alternative was telling somebody to
+             * walk to another room and read a PIN off a screen to fix a DHCP lease.
+             *
+             * The re-probe is not ceremony. It is the same question asked at the new address, so a
+             * console that answered a broadcast and then will not answer a unicast still fails here
+             * rather than being followed into the rest of the flow on the strength of one datagram.
+             */
+            if (!out->broadcast_matches && rec.console_id[0] != '\0' &&
+                strcmp(seen_id, rec.console_id) == 0) {
+                SAY("the recorded address is stale - the console answered from another one");
+                out->readdressed =
+                    halyard_pairing_file_readdress(out->record_dir != NULL
+                                                       ? out->record_dir : RC_CONNECT_PAIRING_DIR,
+                                                   rec.console_id, seen);
+                snprintf(rec.host, sizeof(rec.host), "%s", seen);
+                if (probe_once(rec.host, halyard_discovery_profile_ps5.wake_search_source_port,
+                               &awake, 1500u)) {
+                    out->unicast_replied = 1;
+                    goto answered;
+                }
+            }
         }
         out->stage = RC_CONNECT_NO_CONSOLE;
         return out->stage;
     }
+
+answered:
 
     /* Only meaningful once something actually answered. */
     out->was_asleep = !awake;
