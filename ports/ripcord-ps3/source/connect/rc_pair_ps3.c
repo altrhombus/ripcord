@@ -14,6 +14,9 @@
 #include <string.h>
 
 #include <arpa/inet.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <unistd.h>
 #include <net/net.h>
 #include <net/netctl.h>
 
@@ -59,19 +62,59 @@ static int ask(rc_osk_kind kind, const char *prompt, const char *initial, char *
  * OUR OWN LAN ADDRESS, which the registration request has to carry in its HOST header.
  *
  * Not cosmetic and not the console's: the request tells the console where the client speaking to it
- * lives. Read from the network stack rather than assumed, because a console with two interfaces, or a
- * machine that moved networks since boot, would otherwise send an address that is no longer its own.
+ * lives.
+ *
+ * ASKED OF A SOCKET THAT ROUTES TO THE CONSOLE, rather than of the network stack in general. Opening a
+ * UDP socket towards the console and reading back its local address gives the address on the interface
+ * that actually reaches it - which is the right answer for a machine with two interfaces, and is the
+ * reason this is not simply "what is my IP". No packet is sent: connect on a datagram socket only
+ * fixes the peer and picks a route.
+ *
+ * netCtlGetInfo is the fallback, and it needs netCtlInit first. b322 called it without that and got
+ * nothing back, which then reported as "this console does not appear to be on a network" - about the
+ * PS3, though it reads like it is about the PS5.
  */
-static int local_address(char *out, size_t out_size)
+static int local_address(const char *console_host, char *out, size_t out_size)
 {
-    union net_ctl_info info;
+    int sock;
+    struct sockaddr_in peer;
+    struct sockaddr_in mine;
+    socklen_t len = (socklen_t)sizeof(mine);
 
-    if (netCtlGetInfo(NET_CTL_INFO_IP_ADDRESS, &info) != 0)
-        return 0;
-    if (strlen(info.ip_address) + 1u > out_size)
-        return 0;
-    strcpy(out, info.ip_address);
-    return out[0] != '\0';
+    out[0] = '\0';
+
+    sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (sock >= 0) {
+        memset(&peer, 0, sizeof(peer));
+        peer.sin_family = AF_INET;
+        peer.sin_port = htons(HALYARD_REGIST_PORT);
+        if (inet_aton(console_host, &peer.sin_addr) != 0
+            && connect(sock, (struct sockaddr *)&peer, sizeof(peer)) == 0
+            && getsockname(sock, (struct sockaddr *)&mine, &len) == 0) {
+            const char *text = inet_ntoa(mine.sin_addr);
+
+            if (text != NULL && strlen(text) + 1u <= out_size && strcmp(text, "0.0.0.0") != 0)
+                snprintf(out, out_size, "%s", text);
+        }
+        close(sock);
+    }
+    if (out[0] != '\0') {
+        rc_log("pair:  our address on the route to the console is %s\n", out);
+        return 1;
+    }
+
+    {
+        union net_ctl_info info;
+
+        if (netCtlInit() == 0 && netCtlGetInfo(NET_CTL_INFO_IP_ADDRESS, &info) == 0
+            && info.ip_address[0] != '\0' && strlen(info.ip_address) + 1u <= out_size) {
+            snprintf(out, out_size, "%s", info.ip_address);
+            rc_log("pair:  our address from netCtl is %s\n", out);
+            return 1;
+        }
+    }
+    rc_log("pair:  could not determine this PS3's own address\n");
+    return 0;
 }
 
 /*
@@ -123,10 +166,14 @@ int rc_pair_run(const char *host)
     params.passcode = (uint32_t)strtoul(pin_text, NULL, 10);
 
     params.is_ps5 = 1;
-    if (!local_address(params.client_ip, sizeof(params.client_ip))) {
-        show(RC_PHASE_FAILED, "No network address",
-             "This console does not appear to be on a network",
-             "Check its network settings and try again");
+    if (!local_address(params.host, params.client_ip, sizeof(params.client_ip))) {
+        /*
+         * Named as the PS3, because "this console" reads as the PS5 to anyone standing between the
+         * two - which is exactly who sees this.
+         */
+        show(RC_PHASE_FAILED, "This PS3 has no network address",
+             "It could not find its own address on the network",
+             "Check the PS3's network settings, not the PlayStation 5's");
         return 0;
     }
 
