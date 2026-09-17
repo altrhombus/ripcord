@@ -696,6 +696,17 @@ static void rounded_glow(int x, int y, int w, int h, int r, int spread, uint32_t
         if (dy - box.r >= reach)
             continue;
         dst = s_px + (size_t)row * (size_t)s_pitch;
+        /*
+         * THE WIDEST THING ON THE ROW, AND THE ONE THAT WAS NOT SAYING SO.
+         *
+         * A glow reaches `spread` beyond the card on every side, so it sets the row's bounds wherever
+         * it appears. Leaving this out did not lose the glow - it is drawn into the layer either way -
+         * it lost the COMPOSITE's permission to look at it, so the parts of the glow outside whatever
+         * else happened to be on that row were never read back. The result reads as a glow with square
+         * corners, present on the side facing the other card and absent on the outside, and visible
+         * along the bottom only where the word "standby" happened to widen the row.
+         */
+        layer_note_ink(row, lo, hi);
 
         /* The straight band, where the distance is the row's alone - the same decomposition
          * rounded_shape uses, and for the same reason. */
@@ -1137,6 +1148,7 @@ static uint32_t *s_layer;              /* premultiplied ARGB - the interface, wi
  */
 static short s_lrow_lo[SH_MAX_H], s_lrow_hi[SH_MAX_H];
 static int s_layer_fresh;
+static int s_layer_checks;
 static int s_layer_w, s_layer_h;
 
 /* What the layer was built for. Any of these changing is what makes it stale. */
@@ -1302,6 +1314,46 @@ static void paint_ui(int can_forget)
 
 }
 
+/*
+ * EVERY PIXEL DRAWN MUST BE INSIDE THE BOUNDS ITS DRAWER REPORTED, and until b391 nothing checked it.
+ *
+ * The composite walks the recorded bounds and nothing else, so a primitive that draws without saying
+ * where does not lose its pixels - it loses the composite's permission to read them. rounded_glow did
+ * exactly that, and what reached the television was a glow with square corners, present on the side
+ * facing the other card and absent on the outside, visible along the bottom only where the word
+ * "standby" happened to widen the row. Five readings of the drawing code did not find it; a description
+ * of the shape on screen did, which is not a method that scales.
+ *
+ * Nothing in this project's host tests could have caught it either: they compare one implementation
+ * against another and both would have drawn the glow correctly. The fault was in the BOOKKEEPING beside
+ * the drawing, and the only thing that knows about it is this invariant.
+ *
+ * Checked on the first couple of rebuilds and then never again: a layout fault is there from the first
+ * frame or not at all, and the scan is the cost the ink hook exists to avoid paying per frame.
+ */
+static void layer_verify(void)
+{
+    int y, x, bad = 0;
+
+    for (y = 0; y < s_layer_h && bad < 4; y++) {
+        const uint32_t *row = s_layer + (size_t)y * (size_t)s_layer_w;
+
+        for (x = 0; x < s_layer_w; x++) {
+            if ((row[x] >> 24) == 0u)
+                continue;
+            if (x >= s_lrow_lo[y] && x < s_lrow_hi[y])
+                continue;
+            rc_log("shell: INK OUTSIDE ITS BOUNDS at row %d column %d, recorded %d..%d - something\n"
+                   "       drew without saying where, and the composite will clip it off\n",
+                   y, x, (int)s_lrow_lo[y], (int)s_lrow_hi[y]);
+            bad++;
+            break;
+        }
+    }
+    if (bad == 0)
+        rc_log("shell: the layer's ink is inside the bounds it reported\n");
+}
+
 static void build_layer(int can_forget)
 {
     uint64_t at = rc_tick();
@@ -1311,20 +1363,25 @@ static void build_layer(int can_forget)
         return;
 
     /*
-     * CLEARED WHERE THERE WAS INK, NOT EVERYWHERE. A full memset is eight megabytes to erase a few
-     * hundred thousand pixels of interface; the rest of the layer has been transparent since it was
-     * allocated and stays that way. s_layer_fresh covers the one case where that is not true - a buffer
-     * straight from memalign, whose contents are nobody's guess.
+     * CLEARED IN FULL, AND THIS IS A RETREAT FROM SOMETHING CLEVERER.
+     *
+     * b386 cleared only the rows and columns the previous build had recorded ink on, which is sound by
+     * induction - every build erases the last one's full extent, so the only ink present is the last
+     * one's - and it was eight megabytes of memset saved on a path that runs a few times a second. What
+     * was reported from hardware was the previous screen's glow showing faintly through the next one,
+     * and the argument above has exactly one weak point: it holds only while every write really is
+     * inside its recorded bounds, across two files and seven drawing primitives.
+     *
+     * A full clear removes that entire class of question for about seven milliseconds on a rebuild, and
+     * a rebuild is not in the frame budget. The ink bounds are still recorded and still used - they are
+     * what stops the COMPOSITE walking the whole screen sixty times a second, which is where the time
+     * actually was. This gives up the small half of that saving and keeps the large one.
+     *
+     * If the smearing survives this, it is not the bookkeeping: it is the RSX reading main memory that
+     * the PPE has written, and that is a different fix in a different file.
      */
-    if (s_layer_fresh) {
-        memset(s_layer, 0, (size_t)s_layer_w * (size_t)s_layer_h * 4u);
-        s_layer_fresh = 0;
-    } else {
-        for (y = 0; y < s_layer_h; y++)
-            if (s_lrow_hi[y] > s_lrow_lo[y])
-                memset(s_layer + (size_t)y * (size_t)s_layer_w + s_lrow_lo[y], 0,
-                       (size_t)(s_lrow_hi[y] - s_lrow_lo[y]) * 4u);
-    }
+    memset(s_layer, 0, (size_t)s_layer_w * (size_t)s_layer_h * 4u);
+    s_layer_fresh = 0;
     for (y = 0; y < s_layer_h; y++) {
         s_lrow_lo[y] = 0;
         s_lrow_hi[y] = 0;
@@ -1341,6 +1398,11 @@ static void build_layer(int can_forget)
     rc_overlay_set_ink_hook(NULL);
     rc_overlay_target(NULL, 0);
     s_layer_building = 0;
+
+    if (s_layer_checks < 2) {
+        s_layer_checks++;
+        layer_verify();
+    }
 
     s_layer_revision = s_menu.revision;
     s_layer_hint = can_forget;
