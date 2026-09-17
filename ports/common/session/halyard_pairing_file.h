@@ -20,8 +20,9 @@
  *   hardwarescale=0            (optional - 1 scales on the GPU instead of the CPU, where the port has
  *                               one; `bilinear` then costs nothing, since the filter is wired)
  *   diagnostics=0              (optional - 1 draws the diagnostics overlay over the stream)
- *   systemfont=0               (optional - 1 tries the platform's own font for the overlay. Known to
- *                               fail on the PS3; see that port's DECODE.md before spending time on it)
+ *   systemfont=0               (optional - 1 tries the platform's own font for the overlay)
+ *   accountid=...              (optional - the PSN account id, remembered from pairing so that a
+ *                               nineteen-digit number need only be typed once)
  *   videoformat=bgr565         (optional - "bgr565" or "rgb565"; see below)
  *   widescreen=1               (optional - 800x240 top screen; on by default, see below)
  *   smoothing=1                (optional - average the two source rows the vertical squeeze straddles)
@@ -168,6 +169,17 @@ typedef struct {
      * setting so a future attempt costs one line in this file rather than a rebuild.
      */
     int system_font;
+
+    /*
+     * The PSN account id, remembered so it is typed once.
+     *
+     * It is needed by REGISTRATION and by nothing else, so a paired client never reads it - but a
+     * re-pairing would otherwise mean entering a nineteen-digit number with a controller again, and
+     * the console cannot be asked for it. Not a secret in the way the registkey is: it identifies an
+     * account without granting anything, and the console is told it in a request this client already
+     * sends.
+     */
+    char account_id[64];
     int video_rgb565;        /* 1 = ask MVD for RGB565 instead of BGR565 */
     int skip_until_keyframe; /* 1 = drop every frame after a loss until the next IDR */
     int widescreen;          /* 1 = 800x240 top screen (default); 0 = 400x240 */

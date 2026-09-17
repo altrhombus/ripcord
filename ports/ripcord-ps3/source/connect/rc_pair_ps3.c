@@ -99,12 +99,19 @@ int rc_pair_run(const char *host)
     (void)halyard_pairing_file_load(RC_PAIR_DIR, &record);
 
     show(RC_PHASE_PAIRING, "Pairing", "Enter the console's address", NULL);
-    if (!ask(RC_OSK_TEXT, "Console IP address", host, params.host, sizeof(params.host),
-             "the console's address is needed"))
+    if (!ask(RC_OSK_TEXT, "Console IP address",
+             (host != NULL) ? host : (record.host[0] != '\0' ? record.host : NULL),
+             params.host, sizeof(params.host), "the console's address is needed"))
         return 0;
 
+    /*
+     * PRE-FILLED FROM LAST TIME. A PSN account id is a nineteen-digit number entered with a
+     * controller; asking for it twice because a pairing was repeated is a bad trade for the two lines
+     * it takes to remember it. Starts on the keypad for the same reason.
+     */
     show(RC_PHASE_PAIRING, "Pairing", "Enter your PSN account id", NULL);
-    if (!ask(RC_OSK_TEXT, "PSN account id", NULL,
+    if (!ask(RC_OSK_DIGITS_FIRST, "PSN account id",
+             record.account_id[0] != '\0' ? record.account_id : NULL,
              params.account_id, sizeof(params.account_id), "the account id is needed"))
         return 0;
 
@@ -150,6 +157,8 @@ int rc_pair_run(const char *host)
 
     /* The record is the product of all of this, and the only place it exists. */
     snprintf(record.host, sizeof(record.host), "%s", params.host);
+    /* Remembered so the next pairing does not ask for it again. */
+    snprintf(record.account_id, sizeof(record.account_id), "%s", params.account_id);
     record.is_ps5 = result.record.is_ps5;
     memcpy(record.registkey, result.record.registration_key, result.record.registration_key_length);
     record.registkey_length = result.record.registration_key_length;

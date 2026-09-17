@@ -20,7 +20,13 @@
  * address they have to go and look up, is not in a hurry and should not be timed out mid-word. This
  * only exists so a dialog that never reports back cannot hang the program forever.
  */
-#define RC_OSK_TIMEOUT_MS 45000u
+/*
+ * Generous, because the mechanism works now and the thing being typed can be long: a PSN account id is
+ * a nineteen-digit number entered with a controller. It was cut to 45 seconds while the dialog was
+ * being diagnosed and a failure meant waiting; it exists only so a dialog that never reports back
+ * cannot hang the program forever, and it should never be reachable by someone who is still typing.
+ */
+#define RC_OSK_TIMEOUT_MS 240000u
 
 /*
  * The dialog needs a memory container of its own. A megabyte is what the SDK's own samples use; sizing
@@ -234,8 +240,8 @@ rc_osk_status rc_osk_ask(rc_osk_kind kind, const char *prompt, const char *initi
             param.allowedPanels = (kind == RC_OSK_NUMBERS)
                 ? OSK_PANEL_TYPE_NUMERAL
                 : (OSK_PANEL_TYPE_ALPHABET | OSK_PANEL_TYPE_NUMERAL);
-            param.firstViewPanel = (kind == RC_OSK_NUMBERS) ? OSK_PANEL_TYPE_NUMERAL
-                                                            : OSK_PANEL_TYPE_ALPHABET;
+            param.firstViewPanel = (kind == RC_OSK_TEXT) ? OSK_PANEL_TYPE_ALPHABET
+                                                         : OSK_PANEL_TYPE_NUMERAL;
             point.x = 0.0f;
             point.y = 0.0f;
             param.controlPoint = point;
