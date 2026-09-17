@@ -408,6 +408,21 @@ static void draw_sys(int x, int y, int scale, uint32_t argb, const char *text)
     base = rc_sysfont_ascent();
 
     /*
+     * A RUN THAT CANNOT BE SEEN COSTS NOTHING, and until b363 it cost almost everything.
+     *
+     * Callers measure a string by drawing it at y = -10000 and taking the returned advance - the width
+     * comes from text_width and is free. This function, though, ran the whole way for such a call: it
+     * cleared its band of the coverage buffer, rasterised every glyph into it, and only then skipped
+     * the composite row by row because each row was above the surface. So every measured run was
+     * rasterised twice and shown once, and the shell measures nearly everything it draws - card names,
+     * pill labels, the whole hint row.
+     *
+     * The guard is two comparisons and it halves the text cost of a frame.
+     */
+    if (y >= s_h || y + RC_OV_COV_H <= 0)
+        return;
+
+    /*
      * ONLY THE COLUMNS THIS RUN TOUCHES ARE CLEARED AND COMPOSITED.
      *
      * Measuring is free now that the glyphs are an atlas, so the run's width is known before it is
