@@ -2974,7 +2974,7 @@ static void build_settings(void)
                       "Costs nothing on the RSX. Smooth both ways is too slow for 60 fps");
     rc_menu_set_adjustable(&s_menu, row, 1);
     row = rc_menu_add(&s_menu, SH_ID_DIAGNOSTICS, "Diagnostics overlay", NULL,
-                      "Frame rate and loss over the picture. Options and Create toggles it mid-stream");
+                      "Frame rate and loss over the picture. SELECT and START opens the menu that toggles it");
     rc_menu_set_adjustable(&s_menu, row, 1);
     /*
      * NO TYPEFACE ROW, and that is a finding rather than an oversight. The atlas is built once, when
