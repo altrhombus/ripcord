@@ -1059,6 +1059,11 @@ void rc_video_overlay_blit(uint32_t src_offset, int src_pitch, int w, int h, int
      *
      * `sync` waits for every prior store to reach the point where the rest of the machine can see it.
      * It is issued once a frame, against a transfer of eight megabytes, so its cost does not signify.
+     *
+     * The smearing that prompted this was NOT this - it was a drawing bug in rc_shell.c, found two
+     * builds later. Ordering stores before handing the buffer to another device is correct regardless,
+     * and costs nothing, so it stays; see the longer note beside flush_for_rsx in rc_overlay.c for what
+     * is and is not known about whether it was ever needed.
      */
     if (from_main)
         __asm__ __volatile__("sync" : : : "memory");

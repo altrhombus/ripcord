@@ -140,6 +140,10 @@ void rc_overlay_target(uint32_t *px, int pitch);
  */
 void rc_overlay_set_ink_hook(void (*hook)(int y, int x0, int x1));
 
+/* 1 when the RSX reads the bitmap in main memory rather than a copy of it in its own - which is what
+ * removed an eight-megabyte copy a frame, and what makes cache flushing this side's problem. */
+int rc_overlay_reads_main(void);
+
 /* The position is an argument rather than shared state - see the note in the .c for what making it
  * state cost the diagnostics overlay. */
 void rc_overlay_end_now(int x, int y, int w, int h);

@@ -840,6 +840,45 @@ int rc_overlay_begin(void)
  * nothing when it is hidden; a status card is drawn because something asked for it, not because a
  * toggle is on.
  */
+/*
+ * PUSH THE BITMAP OUT OF THE CACHE BEFORE THE RSX READS IT - AND READ THIS BEFORE DELETING IT.
+ *
+ * HONESTY FIRST: this was added to fix visible smearing, and the smearing turned out to be something
+ * else entirely - rc_shell.c's glow was drawing outside the bounds it reported, so the composite was
+ * clipping it. Nothing here was ever shown to fix anything. Two builds were spent inferring a cache
+ * fault from a symptom that, being PERSISTENT AND REPEATABLE, should have ruled one out immediately.
+ *
+ * It is kept anyway, and the reason is not sentiment. The RSX now reads a buffer the PPE writes through
+ * its cache, and whether that read path snoops the PPE's L2 is a question this project has not answered
+ * either way. Absence of a symptom is not absence of a race - a rare one would be miserable to find
+ * later, from a report of one bad frame an hour. `sync` orders the stores and costs nothing; dcbf
+ * pushes the lines to memory, and the lines being pushed have to reach memory anyway, so it brings a
+ * writeback forward rather than adding one.
+ *
+ * WHAT IT COSTS, measured: 482 us a frame of a 34,232 us frame, in place of the 10,884 us copy it
+ * replaced. If somebody needs that 482 us back, this is the first thing to try removing - and the
+ * honest way to test it is a long run watching for one bad frame, not a clean minute.
+ */
+static void flush_for_rsx(int h)
+{
+#if defined(__powerpc__) || defined(__PPC__) || defined(__powerpc64__)
+    const char *p = (const char *)s_bitmap;
+    size_t bytes = (size_t)s_w * (size_t)h * 4u;
+    size_t i;
+
+    for (i = 0; i < bytes; i += 128u)
+        __asm__ __volatile__("dcbf 0,%0" : : "r"(p + i) : "memory");
+    __asm__ __volatile__("sync" : : : "memory");
+#else
+    (void)h;
+#endif
+}
+
+int rc_overlay_reads_main(void)
+{
+    return s_from_main;
+}
+
 void rc_overlay_end_now(int x, int y, int w, int h)
 {
     if (!s_ready)
@@ -859,6 +898,8 @@ void rc_overlay_end_now(int x, int y, int w, int h)
             memcpy(s_vram, s_bitmap, (size_t)s_w * (size_t)s_h * 4u);
         s_rebuilt = 0;
     }
+    if (s_from_main)
+        flush_for_rsx(h);
     /*
      * THE POSITION IS AN ARGUMENT, NOT STATE, and it is that way because making it state was a bug.
      * The status card set a shared origin to centre itself and never put it back, so the diagnostics
