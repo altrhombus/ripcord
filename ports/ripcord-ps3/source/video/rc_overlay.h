@@ -65,13 +65,9 @@ int  rc_overlay_using_system_font(void);
 int rc_overlay_px(int design);
 
 /*
- * THE SURFACE, IN DESIGN PIXELS - the whole bitmap, before rc_overlay_px converts it for the screen in
- * front of it. Here rather than in the .c because a caller that lays out against the surface has to be
- * able to check at COMPILE TIME that its last row is on it: every primitive below clips silently, so a
- * layout that runs off the bottom is invisible in the code and invisible on the television.
+ * THE SURFACE IS THE SCREEN. rc_overlay_surface_width/height report the display's own size, so a
+ * caller laying out against it works in real pixels and scales its own design measurements.
  */
-#define RC_OV_SURFACE_W 960
-#define RC_OV_SURFACE_H 600
 
 /*
  * THE PANEL and THE SURFACE are different sizes. The panel is the region the diagnostics overlay and
@@ -99,10 +95,25 @@ int  rc_overlay_begin(void);
  */
 int  rc_overlay_begin_now(void);
 
+/*
+ * The same again, for a caller drawing the WHOLE surface rather than the panel - the shell. Clears to
+ * opaque black rather than to transparent, because what it is about to draw covers the screen and has
+ * nothing behind it to show through.
+ */
+int  rc_overlay_begin_surface(void);
+
 /* The position is an argument rather than shared state - see the note in the .c for what making it
  * state cost the diagnostics overlay. */
 void rc_overlay_end_now(int x, int y, int w, int h);
 void rc_overlay_rect(int x, int y, int w, int h, uint32_t argb);
+
+/* The same, but letting what is already there through according to the top byte. Costs a read per
+ * pixel, which is why the diagnostics panel does not use it - see the note in the .c. */
+void rc_overlay_blend_rect(int x, int y, int w, int h, uint32_t argb);
+
+/* Direct access for a caller that fills the surface itself, such as the shell's background. The pitch
+ * is in PIXELS. NULL until rc_overlay_set has succeeded. */
+uint32_t *rc_overlay_pixels(int *pitch_px);
 
 /*
  * TWO FONTS, AND WHICH ONE TO USE IS A QUESTION ABOUT THE TEXT, NOT ABOUT TASTE.

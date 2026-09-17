@@ -8,6 +8,8 @@
 
 #include <sysutil/sysutil.h>
 
+#include "rc_wave.h"
+
 #include "halyard_pairing_file.h"
 #include "rc_build_id.h"
 #include "rc_discover.h"
@@ -20,39 +22,47 @@
 #include "rc_video_ps3.h"
 
 /* ------------------------------------------------------------------------------------------------
- * LAYOUT, in the overlay's design pixels - a 1920x1080 screen, converted by rc_overlay_px for
- * whatever the television actually is. Nothing here is a real pixel count, which is the whole point:
- * b265 shipped a panel measured in real pixels and it was wider than a 480p screen.
+ * LAYOUT, in design pixels against a 1920x1080 screen, converted by sx()/sy() for whatever the
+ * television actually is. Nothing here is a real pixel count: b265 shipped a panel measured in real
+ * pixels and it was wider than a 480p screen.
+ *
+ * Both axes are scaled, which the diagnostics panel's rc_overlay_px does not do - it scales by height
+ * alone, which is right for a panel that keeps its shape and wrong for a layout that fills the screen.
+ * A 4:3 480p mode is 720x480, where scaling x by the height ratio would put the right-hand margin 133
+ * pixels off the side of the picture.
  */
-#define SH_PAD        44
-#define SH_HEADER_H   80
-#define SH_RULE_H     3
-#define SH_SUBTITLE_Y 94
-#define SH_ROW_TOP    150
-#define SH_ROW_H      60
-#define SH_ROWS_MAX   6
-#define SH_FOOTER_Y   522                    /* the rule under the list */
-#define SH_NOTE_Y     534                    /* what the selected row is for */
-#define SH_HINT_Y     566                    /* which buttons do what */
+#define SH_MARGIN     120
+#define SH_WORD_Y      74     /* the wordmark's top edge */
+#define SH_RULE_Y     150
+#define SH_CARD_W     360
+#define SH_CARD_H     430
+#define SH_CARD_GAP    54
+#define SH_CARD_MID   560     /* the centre line the row sits on */
+#define SH_DESC_Y     900
+#define SH_HINT_Y     976
+
+/* The card, lifted and brightened when it is the one you are on. */
+#define SH_SELECT_LIFT 18
 
 /*
- * THOSE LAST FOUR ARE WRITTEN OUT RATHER THAN DERIVED, and checked against the surface once here.
+ * HOW OFTEN THE BACKGROUND IS REDRAWN, and this number is a placeholder for a measurement.
  *
- * The first version computed the footer from SH_ROW_TOP + SH_ROWS_MAX * SH_ROW_H, which is the obvious
- * thing and put the button hints 22 design pixels BELOW the bottom of the surface - where they are not
- * drawn at all, silently, because every primitive in rc_overlay clips. A layout whose last row falls
- * off the end is invisible in the code and invisible on the screen; the compiler can see it, so let it.
+ * The wave is filled by the PPE across the whole screen - two million pixels - and how long that takes
+ * on this machine is not something to guess at. It is logged every time, and what it turns out to be
+ * decides whether the next stage's motion can run at the flip rate or whether the fill belongs on the
+ * SPEs, which are sitting idle at this screen with nothing whatsoever to do.
+ *
+ * 90 ms is about eleven frames a second. The ribbons take forty seconds to travel a phase, so eleven
+ * frames a second is smooth for the thing being drawn - it is the CURSOR that would want more, and the
+ * cursor does not move on its own.
  */
-typedef char sh_layout_fits[(SH_ROW_TOP + SH_ROWS_MAX * SH_ROW_H <= SH_FOOTER_Y &&
-                             SH_HINT_Y + 26 <= RC_OV_SURFACE_H) ? 1 : -1];
+#define SH_WAVE_MS     90u
 
-#define SH_SELECT     0xFF1E2B3Du            /* the row under the cursor */
-#define SH_BACKDROP   0xFF080A0Eu            /* behind the panel, where there is no picture */
+#define SH_BACKDROP   0xFF05070Bu
 
 /*
  * HOW LONG A HELD DIRECTION WAITS, and then how fast it goes. 340 ms is long enough that a deliberate
- * single press never repeats and short enough that holding down feels like holding down; 90 ms is about
- * eleven rows a second, which on a list of six is fast without being uncontrollable.
+ * single press never repeats and short enough that holding down feels like holding down.
  */
 #define SH_REPEAT_DELAY_MS 340u
 #define SH_REPEAT_RATE_MS   90u
@@ -109,7 +119,6 @@ static const char *s_record_dir;    /* where it was loaded from, so it is saved 
  */
 static int s_dirty;
 
-static int s_first_row;             /* the top of the visible window - see ensure_visible */
 static uint32_t s_prev_buttons;
 static uint64_t s_repeat_at;
 
@@ -189,182 +198,452 @@ static void save_record(void)
  * Drawing
  */
 
-static void draw_row(const rc_menu_item *item, int y, int selected)
-{
-    int w = rc_overlay_surface_width();
-    uint32_t label_colour = item->enabled ? RC_OV_TEXT : RC_OV_LABEL;
-    int text_y;
+static int s_scr_w = 1920, s_scr_h = 1080;
+static uint32_t s_accent = 0xFF4A9EFFu;
 
-    if (selected) {
-        rc_overlay_rect(rc_overlay_px(SH_PAD - 12), y, w - rc_overlay_px((SH_PAD - 12) * 2),
-                        rc_overlay_px(SH_ROW_H - 8), SH_SELECT);
-        rc_overlay_rect(rc_overlay_px(SH_PAD - 12), y, rc_overlay_px(5),
-                        rc_overlay_px(SH_ROW_H - 8), RC_OV_ACCENT);
-    }
-
-    /* Baselines rather than boxes, so the value beside the label sits on the same line as it. */
-    text_y = y + rc_overlay_px(12);
-    (void)rc_overlay_text(rc_overlay_px(SH_PAD + 6), text_y, 2, label_colour, "%s", item->label);
-
-    if (item->value[0] != '\0') {
-        /*
-         * Right-aligned, and on an adjustable row wearing the arrows that say so. A row that changes
-         * when you press left is indistinguishable from one that does not until you press left, which
-         * is exactly the kind of thing nobody presses on a television.
-         *
-         * ONE RUN RATHER THAN THREE. The arrows are in the same string as the value because measuring
-         * a proportional run to place something beside it means asking the font for a width, and the
-         * two things this file could ask - the monospaced number width and the proportional advance -
-         * disagree. A single right-aligned run cannot be misaligned by either.
-         */
-        int right = w - rc_overlay_px(SH_PAD);
-        int baseline = text_y + rc_overlay_ascent(2) - rc_overlay_ascent(1);
-
-        if (item->adjustable && selected)
-            rc_overlay_text_right(right, baseline, 1, RC_OV_ACCENT, "< %s >", item->value);
-        else
-            rc_overlay_text_right(right, baseline, 1,
-                                  item->enabled ? RC_OV_LABEL : RC_OV_TRACK, "%s", item->value);
-    }
-}
+/* Design pixels to real ones, on each axis independently - see the note above SH_MARGIN. */
+static int sx(int v) { return (v * s_scr_w) / 1920; }
+static int sy(int v) { return (v * s_scr_h) / 1080; }
 
 /*
- * Keeps the cursor inside the visible window. Six rows fit; a home screen with a paired console, three
- * that answered a broadcast and four commands does not.
+ * WHICH BUTTON MEANS "ENTER" IS THE CONSOLE'S DECISION, NOT OURS.
+ *
+ * Japanese PlayStation hardware confirms with circle and cancels with cross; western hardware is the
+ * other way round, and the PS3 says which one this machine uses in a documented system parameter. A
+ * client that hardcodes the cross is choosing to be wrong for some of the people using it, and they
+ * notice immediately and permanently. Read once, and every glyph, prompt and handler below follows it.
  */
-static void ensure_visible(void)
+static uint32_t s_enter = HALYARD_PAD_CROSS;
+static uint32_t s_back  = HALYARD_PAD_CIRCLE;
+
+static void read_enter_button(void)
 {
-    if (s_menu.selected < 0) {
-        s_first_row = 0;
+    s32 value = 0;
+
+    if (sysUtilGetSystemParamInt(SYSUTIL_SYSTEMPARAM_ID_ENTER_BUTTON_ASSIGN, &value) != 0) {
+        rc_log("shell: the console did not say which button is enter - assuming cross\n");
         return;
     }
-    if (s_menu.selected < s_first_row)
-        s_first_row = s_menu.selected;
-    else if (s_menu.selected >= s_first_row + SH_ROWS_MAX)
-        s_first_row = s_menu.selected - SH_ROWS_MAX + 1;
+    /*
+     * [X] 0 is circle-confirms and 1 is cross-confirms. The parameter is documented to exist and its
+     * values are not, so this is an assumption - but it is a SAFE one to get wrong in one direction
+     * only: the fallback is the cross, which is what this port did before it asked at all.
+     */
+    if (value == 0) {
+        s_enter = HALYARD_PAD_CIRCLE;
+        s_back = HALYARD_PAD_CROSS;
+    }
+    rc_log("shell: enter is %s on this console\n", (s_enter == HALYARD_PAD_CROSS) ? "cross" : "circle");
+}
 
-    if (s_first_row > s_menu.count - SH_ROWS_MAX)
-        s_first_row = s_menu.count - SH_ROWS_MAX;
-    if (s_first_row < 0)
-        s_first_row = 0;
+/* ------------------------------------------------------------------------------------------------ */
+
+/*
+ * A rounded rectangle, by the only method available here: a filled box with its corners walked in. No
+ * curves, no antialiasing on the corner - at these radii and this contrast the stair is invisible on a
+ * television, and a proper arc would mean coverage arithmetic for a shape nobody will look at.
+ */
+static void rounded(int x, int y, int w, int h, int r, uint32_t argb, int blend)
+{
+    int row;
+
+    if (w <= 0 || h <= 0)
+        return;
+    if (r * 2 > w) r = w / 2;
+    if (r * 2 > h) r = h / 2;
+
+    for (row = 0; row < h; row++) {
+        int inset = 0;
+
+        if (row < r) {
+            int dy = r - row;
+            /* A circle's x at this y, without a square root: the chord is close enough that the
+             * difference is under a pixel at every radius this uses. */
+            int dx = (dy * dy * 3) / (r * 4);
+
+            inset = dy - dx;
+            if (inset < 0)
+                inset = 0;
+        } else if (row >= h - r) {
+            int dy = row - (h - r) + 1;
+            int dx = (dy * dy * 3) / (r * 4);
+
+            inset = dy - dx;
+            if (inset < 0)
+                inset = 0;
+        }
+        if (blend)
+            rc_overlay_blend_rect(x + inset, y + row, w - inset * 2, 1, argb);
+        else
+            rc_overlay_rect(x + inset, y + row, w - inset * 2, 1, argb);
+    }
+}
+
+/* The outline of one, drawn as four bars and the corners left square - see above. */
+static void rounded_edge(int x, int y, int w, int h, int r, int t, uint32_t argb)
+{
+    rc_overlay_blend_rect(x + r, y, w - r * 2, t, argb);
+    rc_overlay_blend_rect(x + r, y + h - t, w - r * 2, t, argb);
+    rc_overlay_blend_rect(x, y + r, t, h - r * 2, argb);
+    rc_overlay_blend_rect(x + w - t, y + r, t, h - r * 2, argb);
 }
 
 /*
- * WHAT WAS ON THE SCREEN LAST TIME, so a menu nobody is touching costs nothing.
- *
- * The loop below runs at the flip rate whether or not anything happened, and rebuilding the surface
- * means clearing 960x600 pixels, rasterising every run on it and copying the result to video memory.
- * Doing that sixty times a second for a picture that is identical is the same mistake the diagnostics
- * panel already found once - see rc_overlay_end on why that copy is gated. The blit still happens every
- * frame, because the back buffer is cleared every frame; it is the REBUILD that is skipped.
+ * THE BUTTON GLYPHS, AS SHAPES. Four primitives, and they say "console" faster than any amount of
+ * layout - which is the entire reason they are here rather than the letters X and O. Returns the width
+ * consumed, so a row of hints can be laid out by chaining rather than by hand-measured offsets.
  */
-static unsigned s_drawn_revision;
-static int s_drawn_first_row = -1;
-static const char *s_drawn_hint = NULL;
-static int s_drawn_valid;
+static int glyph(uint32_t button, int x, int y, int size, uint32_t argb)
+{
+    int r = size / 2;
+    int cx = x + r;
+    int t = sy(4);
+    int i;
 
-static void draw(const char *hint)
+    if (t < 1)
+        t = 1;
+
+    if (button == HALYARD_PAD_CROSS) {
+        /* Two bars, stepped diagonally. */
+        for (i = 0; i < size; i++) {
+            rc_overlay_blend_rect(x + i, y + i, t, t, argb);
+            rc_overlay_blend_rect(x + i, y + size - i - t, t, t, argb);
+        }
+    } else if (button == HALYARD_PAD_CIRCLE) {
+        for (i = 0; i < size; i++) {
+            int dy = i - r;
+            int dx2 = r * r - dy * dy;
+            int dx = 0;
+
+            while (dx * dx < dx2)
+                dx++;
+            rc_overlay_blend_rect(cx - dx, y + i, t, t, argb);
+            rc_overlay_blend_rect(cx + dx - t, y + i, t, t, argb);
+        }
+    } else if (button == HALYARD_PAD_TRIANGLE) {
+        for (i = 0; i < size; i++) {
+            int half = (i * r) / size;
+
+            rc_overlay_blend_rect(cx - half, y + i, t, t, argb);
+            rc_overlay_blend_rect(cx + half - t, y + i, t, t, argb);
+        }
+        rc_overlay_blend_rect(x, y + size - t, size, t, argb);
+    } else {
+        rounded_edge(x, y, size, size, sy(4), t, argb);
+    }
+    return size;
+}
+
+/*
+ * SELECT and START, as words in a rounded pill - which is how PS3-era games drew them. There is no
+ * hamburger on a DualShock 3; that is a phone idiom, and putting one on a console screen is the sort of
+ * thing that marks software as not from here.
+ */
+static int pill(const char *label, int x, int y, int h, uint32_t argb)
+{
+    int pad = sx(16);
+    int w;
+
+    rc_overlay_text(x + pad, y + sy(5), 1, 0x00000000u, "%s", label);   /* measure, drawing nothing */
+    w = rc_overlay_text(x + pad, y + sy(5), 1, argb, "%s", label) + pad * 2;
+    rounded_edge(x, y, w, h, h / 2, sy(3), argb);
+    return w;
+}
+
+/* ------------------------------------------------------------------------------------------------ */
+
+static void draw_card(const rc_menu_item *item, int x, int y, int w, int h, int selected)
+{
+    int r = sy(22);
+    int pad = sy(34);
+    uint32_t name_colour = item->enabled ? RC_OV_TEXT : RC_OV_LABEL;
+
+    if (selected) {
+        /*
+         * THE GLOW IS WHAT MAKES IT "PICKED UP" RATHER THAN "HIGHLIGHTED". Four concentric rounded
+         * rectangles at a falling alpha, which on a dark background reads as light spilling off the
+         * card. It is cheaper than it looks: at this size it is a few thousand blended pixels.
+         */
+        int g;
+
+        for (g = 4; g >= 1; g--) {
+            int spread = sy(6) * g;
+            uint32_t a = (uint32_t)(0x16u / (unsigned)g) << 24;
+
+            rounded(x - spread, y - spread, w + spread * 2, h + spread * 2, r + spread,
+                    a | (s_accent & 0x00FFFFFFu), 1);
+        }
+    }
+
+    rounded(x, y, w, h, r, selected ? 0xE00E1218u : 0xB00A0D12u, 1);
+    rounded_edge(x, y, w, h, r, sy(2), selected ? s_accent : 0x30FFFFFFu);
+
+    if (item->id == SH_ID_PAIR_NEW || !item->enabled) {
+        /* The "pair a console" card: a plus, and nothing else to read. */
+        int cx = x + w / 2, cy = y + h / 2 - sy(30);
+        int arm = sx(30), t = sy(5);
+
+        rc_overlay_blend_rect(cx - arm, cy - t / 2, arm * 2, t, selected ? RC_OV_TEXT : 0x80E6EAEFu);
+        rc_overlay_blend_rect(cx - t / 2, cy - arm, t, arm * 2, selected ? RC_OV_TEXT : 0x80E6EAEFu);
+        {
+            int tw = rc_overlay_text(0, -10000, 2, 0x00000000u, "%s", item->label);
+
+            (void)rc_overlay_text(x + (w - tw) / 2, y + h / 2 + sy(36), 2, name_colour, "%s",
+                                  item->label);
+        }
+        return;
+    }
+
+    /* The family tag, small and in this month's accent. */
+    if (item->tag[0] != '\0')
+        (void)rc_overlay_text(x + pad, y + pad, 1, s_accent, "%s", item->tag);
+
+    /* The console's own name, large and centred - that is the word its owner thinks in. */
+    {
+        int tw = rc_overlay_text(0, -10000, 3, 0x00000000u, "%s", item->label);
+        int tx = x + (w - tw) / 2;
+
+        if (tw > w - sy(20)) {
+            /* Too long to centre without touching the edges: set it smaller and left-aligned instead
+             * of letting it run off the card. */
+            tw = rc_overlay_text(0, -10000, 2, 0x00000000u, "%s", item->label);
+            tx = x + (w - tw) / 2;
+            if (tx < x + sy(12))
+                tx = x + sy(12);
+            (void)rc_overlay_text(tx, y + h / 2 - sy(18), 2, name_colour, "%s", item->label);
+        } else {
+            (void)rc_overlay_text(tx, y + h / 2 - sy(30), 3, name_colour, "%s", item->label);
+        }
+    }
+
+    /* A pip and one word. Green is ready, amber is asleep, grey is a console that did not answer. */
+    if (item->value[0] != '\0') {
+        uint32_t pip = RC_OV_LABEL;
+        int px = x + pad, py = y + h - pad - sy(18);
+        int d = sy(16);
+
+        if (strcmp(item->value, "ready") == 0)
+            pip = RC_OV_GOOD;
+        else if (strcmp(item->value, "standby") == 0)
+            pip = RC_OV_WARN;
+
+        rounded(px, py, d, d, d / 2, pip, 0);
+        (void)rc_overlay_text(px + d + sx(14), py - sy(4), 1, RC_OV_LABEL, "%s", item->value);
+    }
+}
+
+/* The footer, as glyphs and pills rather than letters. Drawn by the caller through `draw`'s hint slot
+ * would mean a string; this is a row of shapes, so it is its own function and `draw` calls it. */
+static void draw_hints(int forget, int options)
+{
+    int x = sx(SH_MARGIN);
+    int y = sy(SH_HINT_Y);
+    int size = sy(28);
+
+    x += glyph(s_enter, x, y, size, RC_OV_TEXT) + sx(14);
+    x += rc_overlay_text(x, y + sy(2), 1, RC_OV_LABEL, "%s",
+                         (s_menu.selected >= 0 && s_menu.item[s_menu.selected].id == SH_ID_PAIR_NEW)
+                             ? "pair" : "stream") + sx(46);
+    if (forget) {
+        x += glyph(HALYARD_PAD_TRIANGLE, x, y, size, RC_OV_TEXT) + sx(14);
+        x += rc_overlay_text(x, y + sy(2), 1, RC_OV_LABEL, "%s", "forget") + sx(46);
+    }
+    if (options) {
+        x += pill("START", x, y, size, RC_OV_TEXT) + sx(14);
+        (void)rc_overlay_text(x, y + sy(2), 1, RC_OV_LABEL, "%s", "options");
+    }
+}
+
+/*
+ * A vertical list, for everything that is not the home screen: options, settings, a confirmation. Over
+ * the same wave, with the selected row on a panel rather than a highlight bar - the card row's idea,
+ * flattened.
+ */
+#define SH_LIST_TOP  300
+#define SH_LIST_H     82
+#define SH_LIST_MAX    6
+
+static int s_first_row;
+
+static void draw_list(void)
+{
+    int w = s_scr_w - sx(SH_MARGIN) * 2;
+    int shown, i;
+
+    if (s_menu.selected >= 0) {
+        if (s_menu.selected < s_first_row)
+            s_first_row = s_menu.selected;
+        else if (s_menu.selected >= s_first_row + SH_LIST_MAX)
+            s_first_row = s_menu.selected - SH_LIST_MAX + 1;
+    }
+    if (s_first_row > s_menu.count - SH_LIST_MAX)
+        s_first_row = s_menu.count - SH_LIST_MAX;
+    if (s_first_row < 0)
+        s_first_row = 0;
+
+    shown = s_menu.count - s_first_row;
+    if (shown > SH_LIST_MAX)
+        shown = SH_LIST_MAX;
+
+    for (i = 0; i < shown; i++) {
+        int index = s_first_row + i;
+        const rc_menu_item *item = &s_menu.item[index];
+        int selected = (index == s_menu.selected);
+        int y = sy(SH_LIST_TOP + i * SH_LIST_H);
+        int h = sy(SH_LIST_H - 12);
+        int x = sx(SH_MARGIN);
+        uint32_t colour = item->enabled ? RC_OV_TEXT : RC_OV_LABEL;
+
+        if (selected) {
+            rounded(x, y, w, h, sy(14), 0xC00E1218u, 1);
+            rounded_edge(x, y, w, h, sy(14), sy(2), s_accent);
+        }
+        (void)rc_overlay_text(x + sx(28), y + sy(12), 2, colour, "%s", item->label);
+        if (item->value[0] != '\0') {
+            if (item->adjustable && selected)
+                rc_overlay_text_right(x + w - sx(28), y + sy(20), 1, s_accent, "< %s >", item->value);
+            else
+                rc_overlay_text_right(x + w - sx(28), y + sy(20), 1,
+                                      item->enabled ? RC_OV_LABEL : RC_OV_TRACK, "%s", item->value);
+        }
+    }
+
+    if (s_menu.count > SH_LIST_MAX) {
+        int tx = s_scr_w - sx(SH_MARGIN) + sx(20);
+        int ty = sy(SH_LIST_TOP);
+        int th = sy(SH_LIST_MAX * SH_LIST_H - 12);
+
+        rc_overlay_blend_rect(tx, ty, sx(4), th, RC_OV_TRACK);
+        rc_overlay_blend_rect(tx, ty + th * s_first_row / s_menu.count, sx(4),
+                              th * SH_LIST_MAX / s_menu.count, s_accent);
+    }
+}
+
+/*
+ * WHAT WAS ON THE SCREEN LAST TIME, so a menu nobody is touching costs only its background.
+ */
+/*
+ * TWO WAYS TO SHOW ONE MODEL. The home screen is a row of cards because choosing a destination is a
+ * different act from choosing a setting - and a settings screen laid out as cards would be four
+ * enormous tiles saying "30 fps". rc_menu does not know or care which of these is drawing it.
+ */
+static int s_cards = 1;
+
+static unsigned s_drawn_revision;
+static int s_drawn_hint = -1;
+static int s_drawn_valid;
+static uint64_t s_wave_at;
+
+static void draw(int can_forget)
 {
     rc_video_info info;
-    int w, h, x, y, i, shown;
+    uint32_t *pixels;
+    int pitch = 0;
+    uint64_t now = rc_time_ms();
+    int redraw;
+    int i;
 
     if (!rc_video_info_get(&info))
         return;
-
-    w = rc_overlay_surface_width();
-    h = rc_overlay_surface_height();
-    x = (info.width - w) / 2;
-    y = (info.height - h) / 2;
-    ensure_visible();
+    s_scr_w = rc_overlay_surface_width();
+    s_scr_h = rc_overlay_surface_height();
 
     /*
-     * WAIT FOR THE LAST FLIP BEFORE QUEUING ANOTHER, which the streaming path does not do and must
-     * not: there, a flip that has not landed means skip a frame, because the thread is also draining a
-     * socket and blocking it loses packets. Here there is no socket and nothing else to do, and a loop
-     * that queues flips as fast as the PPE can issue them would run this menu at several thousand
-     * frames a second to no visible effect whatsoever. Bounded, because b232 left the RSX stopped with
-     * every flip pending forever - a menu that waits for a flip that will never complete is a hang.
+     * WAIT FOR THE LAST FLIP BEFORE QUEUING ANOTHER, which the streaming path does not do and must not:
+     * there, a flip that has not landed means skip a frame, because the thread is also draining a
+     * socket. Here there is nothing else to do. Bounded, because b232 left the RSX stopped with every
+     * flip pending forever - a menu that waits for a flip that will never complete is a hang.
      */
     {
-        uint64_t give_up = rc_time_ms() + 100u;
+        uint64_t give_up = now + 100u;
 
         while (!rc_video_present_ready() && rc_time_ms() < give_up)
             usleep(2000);
     }
 
-    if (s_drawn_valid && s_menu.revision == s_drawn_revision && s_first_row == s_drawn_first_row &&
-        hint == s_drawn_hint) {
-        rc_video_clear_back(SH_BACKDROP);
-        rc_overlay_end_now(x, y, w, h);
+    redraw = (!s_drawn_valid || s_menu.revision != s_drawn_revision || can_forget != s_drawn_hint
+              || now - s_wave_at >= SH_WAVE_MS);
+    if (!redraw) {
+        rc_overlay_end_now(0, 0, s_scr_w, s_scr_h);
         rc_video_flip();
         return;
     }
 
-    if (!rc_overlay_begin_now())
+    if (!rc_overlay_begin_surface())
         return;
     s_drawn_revision = s_menu.revision;
-    s_drawn_first_row = s_first_row;
-    s_drawn_hint = hint;
+    s_drawn_hint = can_forget;
     s_drawn_valid = 1;
+    s_wave_at = now;
 
-    rc_overlay_rect(0, 0, w, h, RC_OV_PANEL);
-    rc_overlay_rect(0, 0, w, rc_overlay_px(SH_HEADER_H), RC_OV_HEADER);
-    rc_overlay_rect(0, rc_overlay_px(SH_HEADER_H), w, rc_overlay_px(SH_RULE_H), RC_OV_ACCENT);
-    rc_overlay_rect(0, 0, 1, h, RC_OV_EDGE);
-    rc_overlay_rect(w - 1, 0, 1, h, RC_OV_EDGE);
-    rc_overlay_rect(0, h - 1, w, 1, RC_OV_EDGE);
+    /*
+     * THE BACKGROUND, WRITTEN STRAIGHT INTO THE SURFACE. Everything after this blends over it in main
+     * memory and one opaque copy reaches the screen - see rc_overlay.c on why a blend must never be
+     * handed to the RSX.
+     */
+    pixels = rc_overlay_pixels(&pitch);
+    if (pixels != NULL)
+        rc_wave_draw(pixels, s_scr_w, s_scr_h, pitch, now);
 
-    (void)rc_overlay_text(rc_overlay_px(SH_PAD), rc_overlay_px(22), 2, RC_OV_TEXT, "%s",
-                          s_menu.title);
-    rc_overlay_text_right(w - rc_overlay_px(SH_PAD), rc_overlay_px(30), 1, RC_OV_LABEL, "%s",
+    /* The wordmark, and a short rule under it in this month's colour. */
+    (void)rc_overlay_text(sx(SH_MARGIN), sy(SH_WORD_Y), 3, RC_OV_TEXT, "%s", "RIPCORD");
+    rc_overlay_blend_rect(sx(SH_MARGIN), sy(SH_RULE_Y), sx(112), sy(3), s_accent);
+    rc_overlay_text_right(s_scr_w - sx(SH_MARGIN), sy(SH_WORD_Y + 22), 1, RC_OV_LABEL, "%s",
                           RC_PS3_BUILD_ID);
 
     if (s_menu.subtitle[0] != '\0')
-        (void)rc_overlay_text(rc_overlay_px(SH_PAD), rc_overlay_px(SH_SUBTITLE_Y), 1, RC_OV_LABEL,
-                              "%s", s_menu.subtitle);
+        (void)rc_overlay_text(sx(SH_MARGIN), sy(SH_RULE_Y + 22), 1, RC_OV_LABEL, "%s",
+                              s_menu.subtitle);
 
-    shown = s_menu.count - s_first_row;
-    if (shown > SH_ROWS_MAX)
-        shown = SH_ROWS_MAX;
+    if (!s_cards)
+        draw_list();
+    else
+    /*
+     * THE CARDS, CENTRED AS A ROW. More than four and they would not fit at this width, so the row
+     * narrows rather than running off the screen - a console nobody can see is worse than a small one.
+     */
+    {
+        int n = s_menu.count;
+        int cw = sx(SH_CARD_W), ch = sy(SH_CARD_H), gap = sx(SH_CARD_GAP);
+        int total;
+        int x0;
 
-    for (i = 0; i < shown; i++) {
-        int index = s_first_row + i;
+        if (n > 0) {
+            while (n * cw + (n - 1) * gap > s_scr_w - sx(SH_MARGIN)) {
+                cw = cw * 9 / 10;
+                gap = gap * 9 / 10;
+                ch = ch * 9 / 10;
+                if (cw < sx(120))
+                    break;
+            }
+            total = n * cw + (n - 1) * gap;
+            x0 = (s_scr_w - total) / 2;
 
-        draw_row(&s_menu.item[index], rc_overlay_px(SH_ROW_TOP + i * SH_ROW_H),
-                 index == s_menu.selected);
+            for (i = 0; i < n; i++) {
+                int selected = (i == s_menu.selected);
+                int lift = selected ? sy(SH_SELECT_LIFT) : 0;
+                int x = x0 + i * (cw + gap);
+                int y = sy(SH_CARD_MID) - ch / 2 - lift;
+
+                draw_card(&s_menu.item[i], x, y, cw, ch + lift, selected);
+            }
+        }
     }
 
     /*
-     * A LIST THAT CONTINUES SAYS SO. Without this a seventh console is simply not on the screen, and
-     * the only way to find out it is there is to press down and watch the rows move.
+     * ONE DESCRIPTION LINE, IN A FIXED PLACE, changing with the focus. The XMB does this and it is
+     * right: the explanation lives somewhere the eye learns once instead of on every row.
      */
-    if (s_menu.count > SH_ROWS_MAX) {
-        int track_x = w - rc_overlay_px(SH_PAD - 22);
-        int track_y = rc_overlay_px(SH_ROW_TOP);
-        int track_h = rc_overlay_px(SH_ROWS_MAX * SH_ROW_H - 8);
-        int thumb_h = track_h * SH_ROWS_MAX / s_menu.count;
-        int thumb_y = track_y + track_h * s_first_row / s_menu.count;
-
-        rc_overlay_rect(track_x, track_y, rc_overlay_px(4), track_h, RC_OV_TRACK);
-        rc_overlay_rect(track_x, thumb_y, rc_overlay_px(4), thumb_h, RC_OV_EDGE);
-    }
-
-    rc_overlay_rect(rc_overlay_px(SH_PAD), rc_overlay_px(SH_FOOTER_Y),
-                    w - rc_overlay_px(SH_PAD * 2), 1, RC_OV_EDGE);
-
     {
         const rc_menu_item *item = rc_menu_selected(&s_menu);
 
         if (item != NULL && item->note[0] != '\0')
-            (void)rc_overlay_text(rc_overlay_px(SH_PAD), rc_overlay_px(SH_NOTE_Y), 1, RC_OV_TEXT,
-                                  "%s", item->note);
+            (void)rc_overlay_text(sx(SH_MARGIN), sy(SH_DESC_Y), 2, RC_OV_TEXT, "%s", item->note);
     }
-    if (hint != NULL)
-        (void)rc_overlay_text(rc_overlay_px(SH_PAD), rc_overlay_px(SH_HINT_Y), 1, RC_OV_LABEL,
-                              "%s", hint);
 
-    rc_video_clear_back(SH_BACKDROP);
-    rc_overlay_end_now(x, y, w, h);
+    draw_hints(can_forget, 1);
+
+    rc_overlay_end_now(0, 0, s_scr_w, s_scr_h);
     rc_video_flip();
 }
 
@@ -425,7 +704,7 @@ static void search(void)
     int i;
 
     rc_menu_reset(&s_menu, "Ripcord", "Searching for consoles...");
-    draw(NULL);
+    draw(0);
 
     s_found_count = rc_discover(SH_DISCOVER_MS, &s_found);
     s_searched = 1;
@@ -471,16 +750,17 @@ static void build_home(void)
     if (s_set.count == 0)
         snprintf(subtitle, sizeof(subtitle), "%s",
                  s_searched && unpaired > 0
-                     ? "Nothing paired yet - pick a console below to link it"
+                     ? "Nothing paired yet - pick a console to link it"
                      : "No console is paired with this PS3 yet");
     else if (s_set.count == 1)
         snprintf(subtitle, sizeof(subtitle), "One console paired%s",
                  unpaired > 0 ? ", and another answered on this network" : "");
     else
         snprintf(subtitle, sizeof(subtitle), "%d consoles paired%s", s_set.count,
-                 unpaired > 0 ? ", and more answered on this network" : "");
+                 unpaired > 0 ? ", and more answered" : "");
 
     rc_menu_reset(&s_menu, "Ripcord", subtitle);
+    s_cards = 1;
 
     /*
      * THE PAIRED CONSOLES FIRST, AND ALL OF THEM, whether or not they answered. One in standby in
@@ -493,35 +773,39 @@ static void build_home(void)
 
         snprintf(value, sizeof(value), "%s",
                  (awake < 0) ? (s_searched ? "not seen" : "paired") : (awake ? "ready" : "standby"));
-        /*
-         * The NAME if discovery gave us one and the address otherwise. An address is not a thing anybody
-         * chooses from a list, but it is better than a row that says nothing, and a console paired by
-         * hand before this port stored names has only that.
-         */
-        (void)rc_menu_add(&s_menu, SH_ID_PAIRED_BASE + i,
+        row = rc_menu_add(&s_menu, SH_ID_PAIRED_BASE + i,
                           rec->name[0] != '\0' ? rec->name : rec->host, value,
                           (awake == 0) ? "In standby - Ripcord will wake it first"
-                                       : "Press X to stream from this console");
+                                       : "Stream from this console");
+        rc_menu_set_tag(&s_menu, row, rec->is_ps5 ? "PS5" : "PS4");
     }
 
-    if (s_set.count == 0) {
-        row = rc_menu_add(&s_menu, SH_ID_PAIRED_BASE, "Start streaming", "not paired",
-                          "Pair with a console first - there is nothing to connect to yet");
-        rc_menu_set_enabled(&s_menu, row, 0);
-    }
-
-    /* Anything that answered and this PS3 has no keys for. Cross pairs with it, with the address filled
-     * in already, which is the one part of pairing a broadcast can do for you. */
+    /* Anything on the network this PS3 has no keys for. */
     for (i = 0; i < s_found_count && i < RC_DISCOVER_MAX; i++) {
         if (paired_index_of(i) >= 0)
             continue;
         snprintf(value, sizeof(value), "%s", s_found.console[i].is_awake ? "ready" : "standby");
-        (void)rc_menu_add(&s_menu, SH_ID_CONSOLE_BASE + i,
+        row = rc_menu_add(&s_menu, SH_ID_CONSOLE_BASE + i,
                           s_found.console[i].host_name[0] != '\0' ? s_found.console[i].host_name
                                                                   : "A PlayStation",
-                          value, "Not paired yet - press X to link this PS3 to it");
+                          value, "Not paired yet - link this PS3 to it");
+        rc_menu_set_tag(&s_menu, row, "NEW");
     }
 
+    /*
+     * ONE CARD FOR THE THING THERE IS NO CONSOLE FOR YET, and everything else behind START. The front
+     * screen is for the one decision somebody came here to make; searching, settings and quitting are
+     * not that decision and do not belong beside it.
+     */
+    (void)rc_menu_add(&s_menu, SH_ID_PAIR_NEW, "Pair a console", NULL,
+                      "Link this PS3 to a console on your network");
+}
+
+/* Everything the home screen does not show, behind START. */
+static void build_options(void)
+{
+    rc_menu_reset(&s_menu, "Options", NULL);
+    s_cards = 0;
     (void)rc_menu_add(&s_menu, SH_ID_SEARCH, "Search the network", NULL,
                       "Ask every console on this network to answer");
     (void)rc_menu_add(&s_menu, SH_ID_PAIR_NEW, "Pair by address", NULL,
@@ -530,6 +814,7 @@ static void build_home(void)
                       "Picture size, frame rate and how much bandwidth to ask for");
     (void)rc_menu_add(&s_menu, SH_ID_QUIT, "Quit to the XMB", NULL,
                       "Close Ripcord and go back to the menu");
+    (void)rc_menu_add(&s_menu, SH_ID_BACK, "Back", NULL, "Return to your consoles");
 }
 
 /*
@@ -552,6 +837,7 @@ static int confirm_forget(int index)
              rec->name[0] != '\0' ? rec->name : rec->host);
 
     rc_menu_reset(&s_menu, "Forget this console", question);
+    s_cards = 0;
     (void)rc_menu_add(&s_menu, SH_ID_FORGET_NO, "Keep it", NULL, "Go back and change nothing");
     (void)rc_menu_add(&s_menu, SH_ID_FORGET_YES, "Forget it", NULL,
                       "This PS3 will need its PIN again to stream from it");
@@ -568,15 +854,15 @@ static int confirm_forget(int index)
             (void)rc_menu_move(&s_menu, -1);
         if (edges & HALYARD_PAD_DPAD_DOWN)
             (void)rc_menu_move(&s_menu, 1);
-        if (edges & HALYARD_PAD_CROSS) {
+        if (edges & s_enter) {
             forget = (rc_menu_selected_id(&s_menu) == SH_ID_FORGET_YES);
             answered = 1;
         }
         /* Circle is the safe answer, which is why "Keep it" is also the row the cursor starts on. */
-        if (edges & HALYARD_PAD_CIRCLE)
+        if (edges & s_back)
             answered = 1;
 
-        draw("X  choose      O  keep it");
+        draw(0);
     }
 
     if (forget) {
@@ -698,6 +984,7 @@ static void build_settings(void)
     int row;
 
     rc_menu_reset(&s_menu, "Settings", "Left and right change a setting");
+    s_cards = 0;
 
     row = rc_menu_add(&s_menu, SH_ID_RESOLUTION, "Picture size", NULL,
                       "What to ask the console to encode. 1280x720 is this decoder's ceiling");
@@ -775,16 +1062,16 @@ static void run_settings(void)
             (void)adjust(-1);
         if (edges & HALYARD_PAD_DPAD_RIGHT)
             (void)adjust(1);
-        if (edges & HALYARD_PAD_CROSS) {
+        if (edges & s_enter) {
             if (rc_menu_selected_id(&s_menu) == SH_ID_BACK)
                 running = 0;
             else
                 (void)adjust(1);
         }
-        if (edges & HALYARD_PAD_CIRCLE)
+        if (edges & s_back)
             running = 0;
 
-        draw("X  change      O  back");
+        draw(0);
     }
 
     /*
@@ -796,6 +1083,64 @@ static void run_settings(void)
 }
 
 /* ------------------------------------------------------------------------------------------------ */
+
+/* Returns 1 if the person asked to leave. */
+static int run_options(const char *const *dirs, int dir_count)
+{
+    int running = 1;
+    int quit = 0;
+
+    build_options();
+    s_first_row = 0;
+    forget_held();
+
+    while (running) {
+        uint32_t edges;
+
+        sysUtilCheckCallback();
+        edges = read_edges();
+
+        if (edges & HALYARD_PAD_DPAD_UP)
+            (void)rc_menu_move(&s_menu, -1);
+        if (edges & HALYARD_PAD_DPAD_DOWN)
+            (void)rc_menu_move(&s_menu, 1);
+
+        if (edges & s_enter) {
+            switch (rc_menu_selected_id(&s_menu)) {
+            case SH_ID_SEARCH:
+                search();
+                build_options();
+                (void)rc_menu_select_id(&s_menu, SH_ID_SEARCH);
+                forget_held();
+                break;
+            case SH_ID_PAIR_NEW:
+                (void)rc_pair_run(NULL, NULL);
+                load_record(dirs, dir_count);
+                running = 0;
+                break;
+            case SH_ID_SETTINGS:
+                run_settings();
+                build_options();
+                (void)rc_menu_select_id(&s_menu, SH_ID_SETTINGS);
+                forget_held();
+                break;
+            case SH_ID_QUIT:
+                quit = 1;
+                running = 0;
+                break;
+            default:
+                running = 0;
+                break;
+            }
+        }
+        if ((edges & s_back) || (edges & HALYARD_PAD_OPTIONS))
+            running = 0;
+
+        if (running)
+            draw(0);
+    }
+    return quit;
+}
 
 rc_shell_action rc_shell_run(const char *const *dirs, int dir_count)
 {
@@ -820,102 +1165,85 @@ rc_shell_action rc_shell_run(const char *const *dirs, int dir_count)
         return RC_SHELL_CONNECT;
     }
 
+    read_enter_button();
+    rc_wave_open();
+    s_accent = rc_wave_accent();
     load_record(dirs, dir_count);
     build_home();
     forget_held();
 
     while (running) {
         uint32_t edges;
+        int id;
 
         sysUtilCheckCallback();
         edges = read_edges();
 
-        if (edges & HALYARD_PAD_DPAD_UP)
+        /* A row of cards moves sideways. Up and down are accepted too, because somebody will press
+         * them and doing nothing at all reads as the menu being stuck. */
+        if (edges & (HALYARD_PAD_DPAD_LEFT | HALYARD_PAD_DPAD_UP))
             (void)rc_menu_move(&s_menu, -1);
-        if (edges & HALYARD_PAD_DPAD_DOWN)
+        if (edges & (HALYARD_PAD_DPAD_RIGHT | HALYARD_PAD_DPAD_DOWN))
             (void)rc_menu_move(&s_menu, 1);
 
-        if (edges & HALYARD_PAD_CROSS) {
-            int id = rc_menu_selected_id(&s_menu);
+        id = rc_menu_selected_id(&s_menu);
 
-            switch (id) {
-            case SH_ID_SEARCH:
-                search();
-                build_home();
-                (void)rc_menu_select_id(&s_menu, SH_ID_SEARCH);
-                forget_held();
-                break;
-
-            case SH_ID_PAIR_NEW:
+        if (edges & s_enter) {
+            if (id >= SH_ID_PAIRED_BASE && id < SH_ID_PAIRED_BASE + HALYARD_PAIRING_MAX_CONSOLES) {
                 /*
-                 * rc_pair_run owns the whole flow including its own screens, and leaves its outcome on
-                 * the television. The list is reloaded afterwards because pairing added to it.
+                 * CHOSEN, WRITTEN DOWN, AND ONLY THEN CONNECTED. rc_connect reads the file rather than
+                 * taking an argument, so the choice has to reach the file before this returns -
+                 * otherwise picking the second console streams from the first.
                  */
+                if (s_set.selected != id - SH_ID_PAIRED_BASE) {
+                    halyard_pairing_set_select(&s_set, id - SH_ID_PAIRED_BASE);
+                    s_dirty = 1;
+                }
+                save_record();
+                action = RC_SHELL_CONNECT;
+                running = 0;
+            } else if (id >= SH_ID_CONSOLE_BASE && id < SH_ID_CONSOLE_BASE + RC_DISCOVER_MAX) {
+                int found = id - SH_ID_CONSOLE_BASE;
+
+                /* Its address and its name are already known, so the one question a broadcast can
+                 * answer is not asked again. */
+                (void)rc_pair_run(s_found.console[found].address, s_found.console[found].host_name);
+                load_record(dirs, dir_count);
+                build_home();
+                forget_held();
+            } else if (id == SH_ID_PAIR_NEW) {
                 (void)rc_pair_run(NULL, NULL);
                 load_record(dirs, dir_count);
                 build_home();
                 forget_held();
-                break;
-
-            case SH_ID_SETTINGS:
-                run_settings();
-                build_home();
-                (void)rc_menu_select_id(&s_menu, SH_ID_SETTINGS);
-                forget_held();
-                break;
-
-            case SH_ID_QUIT:
-                running = 0;
-                break;
-
-            default:
-                if (id >= SH_ID_PAIRED_BASE && id < SH_ID_PAIRED_BASE + HALYARD_PAIRING_MAX_CONSOLES) {
-                    /*
-                     * CHOSEN, WRITTEN DOWN, AND ONLY THEN CONNECTED. rc_connect reads the file rather
-                     * than taking an argument, so the choice has to reach the file before this returns -
-                     * otherwise picking the second console on the list streams from the first.
-                     */
-                    if (s_set.selected != id - SH_ID_PAIRED_BASE) {
-                        halyard_pairing_set_select(&s_set, id - SH_ID_PAIRED_BASE);
-                        s_dirty = 1;
-                    }
-                    save_record();
-                    action = RC_SHELL_CONNECT;
-                    running = 0;
-                } else if (id >= SH_ID_CONSOLE_BASE && id < SH_ID_CONSOLE_BASE + RC_DISCOVER_MAX) {
-                    int found = id - SH_ID_CONSOLE_BASE;
-
-                    /* Its address and its name are already known, so the one question a broadcast can
-                     * answer is not asked again. */
-                    (void)rc_pair_run(s_found.console[found].address,
-                                      s_found.console[found].host_name);
-                    load_record(dirs, dir_count);
-                    build_home();
-                    forget_held();
-                }
-                break;
             }
         }
 
         /*
-         * TRIANGLE FORGETS, and only on a console this PS3 actually has keys for. On any other row it
+         * TRIANGLE FORGETS, and only on a console this PS3 actually has keys for. On any other card it
          * does nothing at all rather than the nearest destructive thing.
          */
-        if (edges & HALYARD_PAD_TRIANGLE) {
-            int id = rc_menu_selected_id(&s_menu);
+        if ((edges & HALYARD_PAD_TRIANGLE) && id >= SH_ID_PAIRED_BASE &&
+            id < SH_ID_PAIRED_BASE + HALYARD_PAIRING_MAX_CONSOLES && s_set.count > 0) {
+            (void)confirm_forget(id - SH_ID_PAIRED_BASE);
+            build_home();
+            forget_held();
+        }
 
-            if (id >= SH_ID_PAIRED_BASE && id < SH_ID_PAIRED_BASE + HALYARD_PAIRING_MAX_CONSOLES &&
-                s_set.count > 0) {
-                (void)confirm_forget(id - SH_ID_PAIRED_BASE);
-                build_home();
-                forget_held();
-            }
+        /* START opens everything the front screen deliberately does not show. */
+        if (edges & HALYARD_PAD_OPTIONS) {
+            if (run_options(dirs, dir_count))
+                running = 0;
+            build_home();
+            forget_held();
         }
 
         if (running)
-            draw(s_set.count > 0 ? "X  select      /\\  forget a console" : "X  select");
+            draw(s_set.count > 0);
     }
 
+    rc_log("shell: the background fill took %u us a frame across %dx%d\n",
+           rc_wave_last_us(), s_scr_w, s_scr_h);
     rc_log("shell: closing - %s\n", action == RC_SHELL_CONNECT ? "connecting" : "quitting");
     return action;
 }
