@@ -432,35 +432,60 @@ static unsigned div255(unsigned v)
 }
 
 /*
- * ASKING FOR THE LINE BEFORE THE LOOP NEEDS IT.
+ * TRIED AND REJECTED: dcbt. The second memory-level idea to change nothing, and together they point
+ * somewhere else entirely.
  *
- * b371 took the arithmetic out of this loop and the shapes went from 42,029 us to 16,582 - better, and
- * nothing like as much better as the work removed. What is left is about 186 cycles a blended pixel,
- * which is not arithmetic at any plausible rate; it is the shape of the access. A blend READS the pixel
- * it is about to write, the surface is eight megabytes so nothing is in cache, and the store depends on
- * the load - so an in-order core stops dead on each one and waits for main memory.
+ * b371 took roughly ninety percent of the arithmetic out of this loop and the shapes fell by 2.5x, not
+ * by ten. What was left came to about 170 cycles a blended pixel, which looked like a read-modify-write
+ * to an eight-megabyte surface that is never in cache: an in-order core stopping dead on each dependent
+ * load. So b373 prefetched four cache lines ahead. Glow 8,972 to 9,045 us, card shapes 16,582 to
+ * 16,619 - nothing, within noise.
  *
- * That also explains the thing that did not add up earlier: taking most of the work out barely moved
- * the number, because the work was never what was being paid for.
+ * With dcbz on the write path in rc_wave.c having done nothing either, that is two interventions aimed
+ * at memory with no effect, and the conclusion is that memory is not what this is waiting for.
  *
- * dcbt asks for a line without waiting for it. Issued far enough ahead, the miss for pixel x is already
- * in flight while the loop is still working on x - 128, so the stalls overlap instead of queueing. It
- * is a hint with no architectural effect: a wrong address costs nothing and faults nothing, which is
- * why the bound below is about not wasting one rather than about safety.
- *
- * Note this is the OPPOSITE case to the dcbz in rc_wave.c, which did not help. There the surface was
- * being written in full and never read, so there was nothing to wait for. Here every pixel is read.
+ * WHICH LEAVES THE MULTIPLIES. The PPE's integer multiply is slow and poorly pipelined, and a blend
+ * does three of them per pixel - one per channel - each feeding a dependent chain. Three multiplies at
+ * the PPE's latency is most of the per-pixel budget on its own, and no amount of arranging the memory
+ * was ever going to touch it. See blend_span: they are now a table.
  */
-#if defined(__powerpc__) || defined(__PPC__) || defined(__powerpc64__)
-#define sh_prefetch(p) __asm__ __volatile__("dcbt 0,%0" : : "r"(p))
-#else
-#define sh_prefetch(p) ((void)(p))
-#endif
 
-/* A 128-byte line is 32 pixels; four lines ahead keeps roughly four misses in flight, which is about
- * what this core will hold open at once. */
-#define SH_PF_STEP  32
-#define SH_PF_AHEAD 128
+/*
+ * THE BLEND, WITH THE MULTIPLIES REPLACED BY A TABLE.
+ *
+ * For one span the source colour and the alpha are constant, so a channel's result - (src*a + dst*inv)
+ * / 255 - depends on nothing but that channel's DESTINATION byte, of which there are 256 possible
+ * values. Three 256-entry tables, built once and shifted into position as they are built, turn the
+ * inner loop into three loads and three ors.
+ *
+ * The tables are cached on the colour and alpha that built them, because a card's whole interior is one
+ * span after another at the same two values: the fill is rebuilt once for the shape rather than once a
+ * row. They are three kilobytes all told, which stays in L1 alongside everything else in this loop.
+ */
+static uint32_t s_lut_r[256], s_lut_g[256], s_lut_b[256];
+static uint32_t s_lut_rgb = 1u;      /* an impossible colour - the top byte is never set here */
+static unsigned s_lut_a = 256u;      /* and an impossible alpha, so the first call always builds */
+
+static void blend_lut_for(uint32_t rgb, unsigned a)
+{
+    unsigned inv = 255u - a;
+    unsigned sr = ((rgb >> 16) & 0xffu) * a;
+    unsigned sg = ((rgb >> 8) & 0xffu) * a;
+    unsigned sb = (rgb & 0xffu) * a;
+    int v;
+
+    if (rgb == s_lut_rgb && a == s_lut_a)
+        return;
+    for (v = 0; v < 256; v++) {
+        unsigned d = (unsigned)v * inv;
+
+        s_lut_r[v] = div255(sr + d) << 16;
+        s_lut_g[v] = div255(sg + d) << 8;
+        s_lut_b[v] = div255(sb + d);
+    }
+    s_lut_rgb = rgb;
+    s_lut_a = a;
+}
 
 /*
  * One horizontal run at a single alpha. The globals are read ONCE here rather than per pixel: s_px and
@@ -468,9 +493,39 @@ static unsigned div255(unsigned v)
  * reach them - so every iteration of the old per-pixel path reloaded all four before it could work out
  * where the next pixel was.
  */
+/*
+ * ONE PIXEL AT AN ALPHA OF ITS OWN, which is what the table cannot do.
+ *
+ * The table above is keyed on the colour AND the alpha, so it is only free where a run shares both. A
+ * glow's alpha changes with every pixel by definition, and b374 shipped it through blend_span anyway:
+ * the key missed on nearly every pixel, so a 768-entry table was rebuilt two hundred thousand times a
+ * frame and the glow went from 9,045 us to 43,227. The table was a good idea applied to the one place
+ * it cannot apply.
+ *
+ * So varying alpha keeps the multiplies. Three per pixel is what that costs, and the glow is now small
+ * enough - see rounded_glow - that it no longer matters.
+ */
+static void blend_one(uint32_t *p, uint32_t rgb, unsigned a)
+{
+    uint32_t d;
+    unsigned inv;
+
+    if (a == 0u)
+        return;
+    if (a >= 255u) {
+        *p = 0xff000000u | rgb;
+        return;
+    }
+    d = *p;
+    inv = 255u - a;
+    *p = 0xff000000u
+       | (div255(((rgb >> 16) & 0xffu) * a + ((d >> 16) & 0xffu) * inv) << 16)
+       | (div255(((rgb >> 8) & 0xffu) * a + ((d >> 8) & 0xffu) * inv) << 8)
+       |  div255((rgb & 0xffu) * a + (d & 0xffu) * inv);
+}
+
 static void blend_span(uint32_t *row, int x0, int x1, uint32_t rgb, unsigned a)
 {
-    unsigned inv, sr, sg, sb;
     int x;
 
     if (a == 0u || x1 <= x0)
@@ -478,27 +533,19 @@ static void blend_span(uint32_t *row, int x0, int x1, uint32_t rgb, unsigned a)
     if (a >= 255u) {
         uint32_t c = 0xff000000u | rgb;
 
-        /* No read, so nothing to wait for and nothing to prefetch. */
         for (x = x0; x < x1; x++)
             row[x] = c;
         return;
     }
-    inv = 255u - a;
-    sr = ((rgb >> 16) & 0xffu) * a;     /* the source's contribution, which does not vary */
-    sg = ((rgb >> 8) & 0xffu) * a;
-    sb = (rgb & 0xffu) * a;
+    blend_lut_for(rgb, a);
 
     for (x = x0; x < x1; x++) {
-        uint32_t d;
+        uint32_t d = row[x];
 
-        if (((x - x0) % SH_PF_STEP) == 0 && x + SH_PF_AHEAD < x1)
-            sh_prefetch(&row[x + SH_PF_AHEAD]);
-
-        d = row[x];
         row[x] = 0xff000000u
-               | (div255(sr + ((d >> 16) & 0xffu) * inv) << 16)
-               | (div255(sg + ((d >> 8) & 0xffu) * inv) << 8)
-               |  div255(sb + (d & 0xffu) * inv);
+               | s_lut_r[(d >> 16) & 0xffu]
+               | s_lut_g[(d >> 8) & 0xffu]
+               | s_lut_b[d & 0xffu];
     }
 }
 
@@ -571,7 +618,7 @@ static void rounded_shape(int x, int y, int w, int h, int r, int t, uint32_t arg
                 c = (outer < inner) ? outer : inner;
             }
             if (c != 0u)
-                blend_span(dst, col, col + 1, rgb, div255(alpha * c));
+                blend_one(&dst[col], rgb, div255(alpha * c));
         }
     }
 }
@@ -638,24 +685,51 @@ static void rounded_glow(int x, int y, int w, int h, int r, int spread, uint32_t
         flat_hi = (box.cx + box.hw) / SH_SUB;
         if (flat_lo < lo) flat_lo = lo;
         if (flat_hi > hi) flat_hi = hi;
+        /*
+         * THE INSIDE IS NOT PAINTED AT ALL, and that is most of the glow's pixels.
+         *
+         * A glow is drawn immediately before the card that casts it, and the card covers exactly the
+         * region where this distance is negative. What showed through was the glow's own alpha - at
+         * most 64 of 255 - seen through the twelve percent the card's fill lets past: about three
+         * percent of a colour that is already nearly the background. Skipping it takes the glow from
+         * the whole card plus its surround to a band around the edge, which is the only part anybody
+         * has ever seen. One pixel of overlap is kept so the card's own antialiased edge still has
+         * something to sit on.
+         */
+        if (dy - box.r < -SH_SUB && flat_hi > flat_lo) {
+            /* An interior row: the straight band is under the card, so only its two ends matter. */
+            if (flat_lo > lo)
+                for (col = lo; col < flat_lo; col++) {
+                    int d = rrect_dist(&box, col, dy);
+
+                    if (d < reach && d >= -SH_SUB)
+                        blend_one(&dst[col], rgb, fall[d < 0 ? 0 : d]);
+                }
+            for (col = flat_hi; col < hi; col++) {
+                int d = rrect_dist(&box, col, dy);
+
+                if (d < reach && d >= -SH_SUB)
+                    blend_one(&dst[col], rgb, fall[d < 0 ? 0 : d]);
+            }
+            continue;
+        }
+
         if (flat_hi > flat_lo) {
             int d = dy - box.r;
 
+            /* Constant across the span, so this one IS a job for the table. */
             blend_span(dst, flat_lo, flat_hi, rgb, fall[d < 0 ? 0 : d]);
         }
 
         for (col = lo; col < hi; col++) {
             int d;
-            unsigned a;
 
             if (col >= flat_lo && col < flat_hi)
                 continue;
             d = rrect_dist(&box, col, dy);
-            if (d >= reach)
+            if (d >= reach || d < -SH_SUB)
                 continue;
-            a = fall[d < 0 ? 0 : d];   /* the card is drawn over the inside; a flat peak there is free */
-            if (a != 0u)
-                blend_span(dst, col, col + 1, rgb, a);
+            blend_one(&dst[col], rgb, fall[d < 0 ? 0 : d]);
         }
     }
 }
