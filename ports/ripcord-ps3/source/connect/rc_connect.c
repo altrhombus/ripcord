@@ -1798,11 +1798,12 @@ static void draw_session_menu(void)
     const char *const *rows = (g_menu_page == 0) ? kMenu : kRest;
     const char *title = (g_menu_page == 0) ? "Ripcord" : "Disconnect";
     /*
-     * What the bottom line says. Circle is the way out of both pages and is the reason there is no
-     * Resume row, so it is named rather than assumed - it is the one thing here nobody can see.
+     * WHAT CIRCLE DOES, AS THE BUTTON RATHER THAN AS ITS NAME. It is the way out of both pages and the
+     * reason there is no Resume row, so it has to be on screen - and the shell's footer already
+     * established how this machine says such a thing: the shape, then the word. Spelling "Circle" out
+     * in a sentence was this panel disagreeing with the rest of the application about its own idiom.
      */
-    const char *hint = (g_menu_page == 0) ? "Circle resumes - the session is still running"
-                                          : "Circle goes back";
+    const char *hint = (g_menu_page == 0) ? "Resume" : "Back";
     int n = menu_rows();
     int w = rc_overlay_width();
     int pad = rc_overlay_px(24);
@@ -1836,7 +1837,25 @@ static void draw_session_menu(void)
         y += row_h;
     }
 
-    (void)rc_overlay_text(pad, y + rc_overlay_px(4), 1, RC_OV_TRACK, "%s", hint);
+    /*
+     * The glyph is a square box `size` on a side and the word is centred against that box rather than
+     * nudged down by a constant, which is what rc_overlay_text_y is for. Chained off the width the
+     * glyph reports, so the spacing cannot drift from the shape.
+     */
+    {
+        int g = rc_overlay_cap_height(1) + rc_overlay_px(6);
+        int gy = y + rc_overlay_px(4);
+        int gx = pad;
+
+        gx += rc_overlay_glyph(HALYARD_PAD_CIRCLE, gx, gy, g, RC_OV_TEXT) + rc_overlay_px(12);
+        gx += rc_overlay_text(gx, rc_overlay_text_y(gy, g, 1), 1, RC_OV_LABEL, "%s", hint);
+
+        /* Only on the menu, where it is reassurance rather than instruction: the picture behind this
+         * panel is still live, and a menu over a frozen-looking image invites a panic. */
+        if (g_menu_page == 0)
+            (void)rc_overlay_text(gx + rc_overlay_px(36), rc_overlay_text_y(gy, g, 1), 1,
+                                  RC_OV_TRACK, "%s", "the session is still running");
+    }
 
     rc_overlay_end_now(rc_overlay_px(48), rc_overlay_px(32), w, h);
 }
