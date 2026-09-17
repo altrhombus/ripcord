@@ -69,9 +69,12 @@
  * rather than by this file - see rc_menu.h on why rows are addressed by id and not by index.
  */
 enum {
+    /* A row that is text rather than a control. About is made of these; nothing dispatches on it. */
+    SH_ID_NONE = 0,
     SH_ID_PAIR_NEW = 1,
     SH_ID_SEARCH,
     SH_ID_SETTINGS,
+    SH_ID_ABOUT,
     SH_ID_QUIT,
     SH_ID_BACK,
     SH_ID_FORGET_YES,
@@ -2776,21 +2779,50 @@ static void build_home(void)
                       "Link this PS3 to a console on your network");
 }
 
+/*
+ * ADDS A ROW AND CHECKS ITS DESCRIPTION FITS.
+ *
+ * The descriptions are drawn at scale 2 across one line with no wrapping and no ellipsis, so one that
+ * is too long is simply cut - "...opens the menu that togg" sat on this screen for several builds,
+ * because the only way to notice is to select that row on a television and read it.
+ *
+ * rc_overlay_text returns the width it would consume and draws nothing when the run is off-surface, so
+ * the question can just be ASKED at build time. It costs one measurement per row, once per screen.
+ */
+static int add_row(int id, const char *label, const char *note)
+{
+    int row = rc_menu_add(&s_menu, id, label, NULL, note);
+    int room = s_scr_w - sx(SH_MARGIN) * 2;
+    int want;
+
+    if (note == NULL || note[0] == '\0' || room <= 0)
+        return row;
+
+    want = rc_overlay_text(0, -10000, 2, 0x00000000u, "%s", note);
+    if (want > room)
+        rc_log("shell: the description for \"%s\" is %d px wide and %d px fit - it will be cut\n",
+               label, want, room);
+    return row;
+}
+
 /* Everything the home screen does not show, behind START. */
 static void build_options(void)
 {
     s_content_rev++;
     rc_menu_reset(&s_menu, "Options", NULL);
     s_cards = 0;
-    (void)rc_menu_add(&s_menu, SH_ID_SEARCH, "Search the network", NULL,
-                      "Ask every console on this network to answer");
-    (void)rc_menu_add(&s_menu, SH_ID_PAIR_NEW, "Pair by address", NULL,
-                      "Type the console's address yourself, if it did not answer");
-    (void)rc_menu_add(&s_menu, SH_ID_SETTINGS, "Settings", NULL,
-                      "Picture size, frame rate and how much bandwidth to ask for");
-    (void)rc_menu_add(&s_menu, SH_ID_QUIT, "Quit to the XMB", NULL,
-                      "Close Ripcord and go back to the menu");
-    (void)rc_menu_add(&s_menu, SH_ID_BACK, "Back", NULL, "Return to your consoles");
+    (void)add_row(SH_ID_SEARCH, "Search the network",
+                  "Search for consoles on your network");
+    /* "Pair", not "connect": this exchanges keys with a console, which is a different and
+     * longer-lived thing than starting a session with one it is already paired to. */
+    (void)add_row(SH_ID_PAIR_NEW, "Pair by address",
+                  "Pair with a console by entering its IP address");
+    (void)add_row(SH_ID_SETTINGS, "Settings",
+                  "Picture, bandwidth, and what happens when you disconnect");
+    (void)add_row(SH_ID_ABOUT, "About Ripcord",
+                  "Version, licence, and the work this is built on");
+    (void)add_row(SH_ID_QUIT, "Quit", "Close Ripcord and return to the XMB");
+    (void)add_row(SH_ID_BACK, "Back", "Return to your consoles");
 }
 
 /*
@@ -2876,7 +2908,16 @@ typedef struct { int w, h; } sh_resolution;
  * no option, because the person who picks it concludes the client is broken.
  */
 static const sh_resolution SH_RESOLUTIONS[] = { { 640, 360 }, { 960, 540 }, { 1280, 720 } };
-static const int SH_BITRATES[] = { 2000, 4000, 6000, 8000, 10000, 15000, 20000, 25000, 30000 };
+/*
+ * STOPS AT 20 Mbps, which is where this decoder stops rather than where the console does. Asking for
+ * more made cellVdec drop whole pictures, so the higher rungs were a way to make the picture worse by
+ * asking for better - a control whose top end is a trap is worse than one that does not go there.
+ *
+ * A record that already says 25000 or 30000 keeps that figure until somebody presses left or right:
+ * step_list starts from index 0 when the current value is not on the ladder, so the first press lands
+ * on 2000 rather than nearby. That is the one rough edge here and it is one press deep.
+ */
+static const int SH_BITRATES[] = { 2000, 4000, 6000, 8000, 10000, 15000, 20000 };
 static const int SH_RATES[] = { 30, 60 };
 
 #define SH_COUNT(a) ((int)(sizeof(a) / sizeof((a)[0])))
@@ -2976,29 +3017,29 @@ static void build_settings(void)
     rc_menu_reset(&s_menu, "Settings", "Left and right change a setting");
     s_cards = 0;
 
-    row = rc_menu_add(&s_menu, SH_ID_RESOLUTION, "Picture size", NULL,
-                      "What to ask the console to encode. 1280x720 is this decoder's ceiling");
+    row = add_row(SH_ID_RESOLUTION, "Picture size",
+                  "The size of the picture you ask the console to send");
     rc_menu_set_adjustable(&s_menu, row, 1);
-    row = rc_menu_add(&s_menu, SH_ID_FPS, "Frame rate", NULL,
-                      "60 is measured good here; 30 is the one to try if the picture breaks up");
+    row = add_row(SH_ID_FPS, "Frame rate",
+                  "60 is smoother. Try 30 if the picture quality suffers");
     rc_menu_set_adjustable(&s_menu, row, 1);
-    row = rc_menu_add(&s_menu, SH_ID_BITRATE, "Bandwidth", NULL,
-                      "Asking for more than 20 Mbps makes this decoder drop whole pictures");
+    row = add_row(SH_ID_BITRATE, "Bandwidth",
+                  "Lower this if your network cannot keep up");
     rc_menu_set_adjustable(&s_menu, row, 1);
-    row = rc_menu_add(&s_menu, SH_ID_SCALER, "Scaling", NULL,
-                      "The RSX does it in 113 us a frame; the SPE cores take 3,204");
+    row = add_row(SH_ID_SCALER, "Scaling",
+                  "RSX is the graphics chip, SPE the Cell's cores. RSX is faster");
     rc_menu_set_adjustable(&s_menu, row, 1);
-    row = rc_menu_add(&s_menu, SH_ID_SMOOTHING, "Smoothing", NULL,
-                      "Costs nothing on the RSX. Smooth both ways is too slow for 60 fps");
+    row = add_row(SH_ID_SMOOTHING, "Smoothing",
+                  "How the picture is enlarged. Smoothing both ways costs frames");
     rc_menu_set_adjustable(&s_menu, row, 1);
-    row = rc_menu_add(&s_menu, SH_ID_DIAGNOSTICS, "Diagnostics overlay", NULL,
-                      "Frame rate and loss over the picture. SELECT and START opens the menu that toggles it");
+    row = add_row(SH_ID_DIAGNOSTICS, "Diagnostics overlay",
+                  "Frame rate and loss, drawn over the picture");
     rc_menu_set_adjustable(&s_menu, row, 1);
-    row = rc_menu_add(&s_menu, SH_ID_REST, "When you disconnect", NULL,
-                      "Whether ending a session puts the console to sleep. Quitting to the XMB never does");
+    row = add_row(SH_ID_REST, "When you disconnect",
+                  "Whether ending a session puts the console to sleep");
     rc_menu_set_adjustable(&s_menu, row, 1);
-    row = rc_menu_add(&s_menu, SH_ID_LOSS, "After picture loss", NULL,
-                      "A fresh picture is always asked for. This is whether to show the broken frames until it arrives");
+    row = add_row(SH_ID_LOSS, "After picture loss",
+                  "Whether to show broken frames while a clean one is on its way");
     rc_menu_set_adjustable(&s_menu, row, 1);
     /*
      * NO TYPEFACE ROW, and that is a finding rather than an oversight. The atlas is built once, when
@@ -3006,7 +3047,9 @@ static void build_settings(void)
      * would move a field in the record and change nothing anyone could see until the next launch. A
      * setting that appears to do nothing is worse than an absent one.
      */
-    (void)rc_menu_add(&s_menu, SH_ID_BACK, "Done", NULL, "Save these and go back");
+    /* "Go back" rather than "to the main menu": this returns to Options, which is where it came
+     * from, and naming the wrong screen is worse than naming none. */
+    (void)add_row(SH_ID_BACK, "Done", "Save these settings and go back");
     refresh_settings_values();
 }
 
@@ -3042,6 +3085,82 @@ static int adjust(int delta)
     refresh_settings_values();
     s_dirty = 1;
     return 1;
+}
+
+/*
+ * ABOUT, AND WHY IT IS A REAL SCREEN RATHER THAN A SPLASH.
+ *
+ * Three of these are obligations rather than decoration. The licence is Apache 2.0 and says so where
+ * somebody using the software can read it; the third-party libraries are other people's work that this
+ * would not run without, named with their versions so the claim is checkable; and the version is the
+ * thing support questions start with.
+ *
+ * NO LIST OF PEOPLE IS HARD-CODED HERE. A static roll of contributors is wrong the moment somebody
+ * joins, and a screen that is quietly out of date is worse than one that points at the place which
+ * cannot be - so it names the repository, which is where the list actually lives and stays current.
+ */
+static void build_about(void)
+{
+    s_content_rev++;
+    rc_menu_reset(&s_menu, "About", "Ripcord for PlayStation 3");
+    s_cards = 0;
+
+    (void)add_row(SH_ID_NONE, "Version", NULL);
+    rc_menu_set_value(&s_menu, s_menu.count - 1, RC_PS3_VERSION);
+    (void)add_row(SH_ID_NONE, "Licence", NULL);
+    rc_menu_set_value(&s_menu, s_menu.count - 1, "Apache 2.0");
+    (void)add_row(SH_ID_NONE, "Source and contributors", NULL);
+    rc_menu_set_value(&s_menu, s_menu.count - 1, "github.com/altrhombus/ripcord");
+
+    (void)add_row(SH_ID_NONE, "openh264", NULL);
+    rc_menu_set_value(&s_menu, s_menu.count - 1, "2.6.0, Cisco, BSD");
+    (void)add_row(SH_ID_NONE, "Opus", NULL);
+    rc_menu_set_value(&s_menu, s_menu.count - 1, "1.5.2, Xiph.Org, BSD");
+    (void)add_row(SH_ID_NONE, "Mbed TLS", NULL);
+    rc_menu_set_value(&s_menu, s_menu.count - 1, "2.28.8, Apache 2.0");
+    (void)add_row(SH_ID_NONE, "FreeType", NULL);
+    rc_menu_set_value(&s_menu, s_menu.count - 1, "the console's own typefaces");
+    (void)add_row(SH_ID_NONE, "PSL1GHT", NULL);
+    rc_menu_set_value(&s_menu, s_menu.count - 1, "the open PS3 SDK");
+
+    /*
+     * SAID PLAINLY, because it is the one thing on this screen somebody might otherwise assume the
+     * other way, and the repository's own NOTICE makes the same statement at length.
+     */
+    (void)add_row(SH_ID_NONE, "Not affiliated with Sony", NULL);
+    rc_menu_set_value(&s_menu, s_menu.count - 1, "Independent, clean-room");
+
+    (void)add_row(SH_ID_BACK, "Back", "Return to Options");
+    /* The informational rows cannot be chosen, so the cursor opens on the only row that does
+     * anything rather than on a line of text that ignores every press. */
+    (void)rc_menu_select_id(&s_menu, SH_ID_BACK);
+}
+
+static void run_about(void)
+{
+    int running = 1;
+
+    build_about();
+    s_first_row = 0;
+    forget_held();
+
+    while (running) {
+        uint32_t edges;
+
+        sysUtilCheckCallback();
+        if (rc_ps3_exit_requested())
+            break;
+        edges = take_edges();
+
+        if (edges & HALYARD_PAD_DPAD_UP)
+            (void)rc_menu_move(&s_menu, -1);
+        if (edges & HALYARD_PAD_DPAD_DOWN)
+            (void)rc_menu_move(&s_menu, 1);
+        if ((edges & s_enter) || (edges & s_back))
+            running = 0;
+
+        draw(0);
+    }
 }
 
 static void run_settings(void)
@@ -3134,6 +3253,12 @@ static int run_options(const char *const *dirs, int dir_count)
                 run_settings();
                 build_options();
                 (void)rc_menu_select_id(&s_menu, SH_ID_SETTINGS);
+                forget_held();
+                break;
+            case SH_ID_ABOUT:
+                run_about();
+                build_options();
+                (void)rc_menu_select_id(&s_menu, SH_ID_ABOUT);
                 forget_held();
                 break;
             case SH_ID_QUIT:
