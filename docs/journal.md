@@ -694,6 +694,98 @@ a machine that *has* the dirty room.
 
 ## Ports, and the streaming-quality work
 
+## The PS3 port — the shell, and what the hardware said about it
+
+> **This file had no PS3 entry at all before 2026-09-17**, while the port grew a platform bring-up, a
+> decoder, discovery, pairing, an account reader and a home screen. That is the same lesson the 3DS
+> section opens with, repeated: a body of work with its own README in its own directory quietly stops
+> being tracked here. The port's own history lives in `ports/ripcord-ps3/README.md`, `SETUP.md` and
+> `DECODE.md`; what follows is **only** the shell work of 2026-09-17, written down because it produced
+> numbers that decide the next architecture.
+
+`ports/ripcord-ps3/SHELL-DESIGN.md` plans a replacement for the grey list the port launched with: a row
+of console cards over the XMB's undulating background, one description line, everything else behind
+`START`. Stage 1 is in. This entry is about the four things that were wrong with it on a television and
+the one measurement that had been lying.
+
+**The corners were a chamfer, and the distance function was not the problem.** b360 replaced nine-sample
+supersampling with an exact rounded-rectangle SDF, and the corners still read as "a line, then a separate
+corner, then another line". The formula was right; the four-line integer square root under it had never
+been checked against the thing it claims to compute. It seeded its search at `1<<15`, which is not a
+power of four, so it answered roughly `sqrt(2v)` — and, that seed also being the largest value it can
+start from, saturated at 510 for anything above 65535. A 22-pixel corner feeds it six-figure values. It
+was drawing an arc of the wrong radius joined to the straight edges at a step. Fixed, and checked on the
+host against exact geometry: 0.0156 px, which is the quantum. Sub-pixel resolution went to sixty-fourths
+at the same time, and the selected card's four stacked glow rectangles became one continuous falloff.
+
+**Text was centred on the line box rather than on the letters.** A line reserves room for accents and
+descenders; a label of capitals uses neither, so every label hung high by exactly that space. Four layout
+sites had four separately-guessed constants. `rc_sysfont` now measures cap height off `'H'` and
+`rc_overlay_text_y` is the one place the arithmetic lives. Behind the same symptom: `rc_sysfont_set_size`
+chose the nearer of the first **two** built sizes by midpoint, so the third — a display size added for the
+wordmark and console names — had been unreachable since it was introduced, paid for in arena and never
+shown.
+
+**A tap of `START` was withheld and then never sent.** The diagnostics chord withholds Options or Create
+for 250 ms in case its partner arrives. Its comment said a lone press then "travels normally, a fifth of
+a second late", which is true of a press held and false of a tap: the button came back up before the
+window expired and the press was discarded. The comment described an intention the code did not
+implement, which is why it read as correct for four builds — and the same bug on the console is a
+screenshot that does not happen.
+
+### The measurement that was wrong, and what it hid
+
+The shell reported a frame rate as frames divided by the time it was open. It is not one: the shell
+blocks for 1.5 s inside a discovery broadcast and for as long as somebody takes in the pairing prompts,
+none of which draws. Two runs reported **15 fps and 10 fps with identical component costs**, the
+difference being how long the person holding the controller spent in a sub-screen. Worse, the component
+costs were sampled from the last frame, and the last frame before quitting is drawn on a different
+screen — so "drawing: 19 ms" was a reading of the options list, and the card row it was attributed to
+costs three times that.
+
+Measuring the interval between successive draws, discarding gaps over a fifth of a second, and summing
+the components rather than sampling them (b367, 1080p):
+
+```
+99,472 us a frame (worst 104,369) = 10 fps
+of which draw 99,376: background 13,904, drawing 67,272, to video memory 10,875, flip wait 7,300
+Cell 62.7 C on the way in, 64.7 C on the way out
+```
+
+**Drawing is 68% of the frame.** Every decision taken before this had been aimed at the background.
+
+### What was tried on the background, and what it ruled out
+
+Rendering the wave at 480x270 and blowing it up 4x took it from 29,388 us to 13,904. The ratio being
+exactly four is what makes the expansion cheap: the only weights are 0, ¼, ½ and ¾, and all three
+non-zero ones are reachable by halving twice, so one packed average is the whole of the arithmetic.
+Checked on the host against the same generator at full size — mean channel error 0.41/255, worst 5, and
+*smoother* between adjacent pixels than the full-resolution original, because interpolation softens the
+palette's own quantisation.
+
+**`dcbz` was tried and did not help**, and the negative result is the useful part. The background and the
+copy to video memory costing nearly the same for the same 8 MB looked like both paying to fetch cache
+lines they were about to overwrite in full. One `dcbz` per 128 bytes measured 13,774 us against 12,612 —
+very slightly worse, which is the instruction's own cost with nothing saved behind it. So the line fetch
+is not what this is paying for, and the ceiling is not one a store pattern can be arranged around. That
+is why the next move for the background is the SPEs rather than another pass over the PPE code.
+
+### Where this leaves the design document's open question
+
+`SHELL-DESIGN.md` names a Route A (two blits, flat card) and a Route B (one composite, text floating on
+the wave) and says to measure before committing. The measurement says neither is the question: **the
+drawing is, and it is on the PPE.** The port already has three SPE threads that do nothing but bilinear
+scaling since the decoder began producing RGB, measured in its own streaming logs at 2,992 us for a
+full-screen picture — the same operation as the wave's upscale, at a quarter of the PPE's cost, on cores
+that are idle at the menu. The open question worth a probe is whether an SPE can DMA straight into RSX
+memory, which would delete the 10,875 us copy rather than reduce it. That is **not** the b232 hazard:
+b232 asked the RSX's 2D blitter to blend. This is a DMA to mapped memory, which is what the MFC is for.
+
+One thermal data point, from this port's own streaming logs, for the question of whether any of this is
+affordable in a living room: a full session — cellVdec on the SPEs, three more scaling, network, audio —
+moved the Cell **+1.0 C**. The menu's current state is arguably the worse one, since the PPE is saturated
+for 99 ms and then spins.
+
 ## The 3DS port — a second client, and the spec's first real audit
 
 **Added to this file 2026-08-17, having been missing from it entirely** while ~70 commits of work landed.

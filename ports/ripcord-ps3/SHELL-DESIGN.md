@@ -200,13 +200,52 @@ back. A is most of the win.
 6. **Do not slow the common path.** One console paired, already selected: launch, skip or wait 1.5 s,
    press ✕. If a change makes that longer, the change is wrong.
 
+## What the hardware said — 2026-09-17, builds b360-b367
+
+**Stage 1 is in, and the measurement that mattered was not the one this document expected.** Costs per
+frame at 1920x1080, measured as the interval between successive draws rather than as frames over wall
+time (which is not a frame rate — the shell blocks inside discovery and the pairing prompts, and an
+earlier version of this number reported 15 fps and 10 fps for runs whose drawing was identical):
+
+```
+99,472 us a frame = 10 fps
+of which: background 13,904   drawing 67,272   to video memory 10,875   flip wait 7,300
+```
+
+**The drawing is 68 percent of the frame**, and every plan above aims at the background. The background
+is now a quarter-scale buffer blown up 4x (29,388 us to 13,904, and closer to the original than the
+original was to itself — mean channel error 0.41/255 against a full-resolution render). That was worth
+doing and it was not the problem.
+
+Three things this settles:
+
+- **`dcbz` does not help.** The background and the copy to video memory cost nearly the same for the
+  same 8 MB, which looked like both paying to fetch lines they were about to overwrite. One `dcbz` per
+  128 bytes measured *slightly worse*. The ceiling is not one a store pattern can be arranged around.
+- **Route A versus Route B is the wrong question.** Neither addresses the drawing, which is where the
+  time is. What addresses it is caching the UI as a layer so a frame composites it instead of
+  re-rasterising it — which this document already says under "What makes this affordable", and which
+  turns out to be the *first* thing to do rather than a condition on Route B.
+- **The SPEs are not speculative here.** `rc_spu_yuv` already runs three threads that do nothing but
+  bilinear scaling since the decoder began producing RGB, measured at 2,992 us for a full-screen
+  picture. The wave's upscale is that same operation.
+
+The open question worth a probe is whether an SPE can DMA straight into RSX memory, which would delete
+the 10,875 us copy rather than reduce it. Note this is **not** the b232 hazard: b232 asked the RSX's 2D
+blitter to blend. A DMA to mapped memory is what the MFC is for.
+
+**And on the fan.** A full streaming session — cellVdec on the SPEs, three more scaling, network, audio
+— moves the Cell +1.0 C. The menu's present state is arguably worse than anything proposed, because the
+PPE is saturated for 99 ms and then spins in a wait loop. The shell now samples the Cell and RSX either
+side of itself, so every change from here has a before and after instead of an argument.
+
 ## Stages
 
 Each is shippable on its own and testable on hardware, which is how everything else here has been
 built.
 
 1. **Foundation** — the wave (Route A), the card row, the single description line, options tucked
-   away. Static. This alone is most of the transformation.
+   away. Static. This alone is most of the transformation. **Landed b360-b367.**
 2. **Motion** — eased cursor, card spring, entry stagger, breathing pip.
 3. **The moment** — title sequence and the trophy card.
 4. **Sound** — three tones, and the settings toggle for them.
