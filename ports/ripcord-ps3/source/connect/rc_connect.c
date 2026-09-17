@@ -444,22 +444,17 @@ static int g_stream_rcvbuf;
 #define RC_STREAM_INFO_WAIT_MS 10000u
 
 /*
- * How long to hold the negotiated session open, watching. Long enough that the console's own cadence
- * shows through - it heartbeats and re-sends on its own timers - and short enough that a bring-up probe
- * still finishes. Not a streaming duration; a sampling one.
- */
-/*
- * Long enough to WATCH, not just to measure.
+ * HOW LONG THE SESSION RAN, measured. There is no constant above it any more and that is the point.
  *
- * Six seconds produced ~146 good frames and a clean set of numbers, and on a television it read as a
- * glimpse. The measurement was never the constraint here - the console streams for as long as it is
- * asked to, and the cost of asking for longer is only that the probe takes longer.
+ * This was RC_STREAM_HOLD_MS, thirty seconds, chosen when the session was a bring-up probe that had to
+ * finish by itself: six seconds gave a clean set of numbers and read on a television as a glimpse, so
+ * thirty was "long enough to watch". Neither figure is a streaming duration, and a stream is what this
+ * is now - so the timer is gone and only the measurement of it remains. See the hold loop.
+ *
+ * Every rate in the summary divides by this, so it is read from the clock at both ends rather than
+ * assumed from an intention somebody may have cut short.
  */
-#define RC_STREAM_HOLD_MS 30000u
-
-/* What the hold ACTUALLY ran for - the constant above is only the default when the pairing record does
- * not say. Reported rather than assumed, because every rate in the summary divides by it. */
-static unsigned g_hold_ms = RC_STREAM_HOLD_MS;
+static unsigned g_hold_ms;
 
 /*
  * WHAT THE PERSON IN FRONT OF THE TELEVISION IS TOLD.
@@ -509,10 +504,16 @@ const rc_session_state *rc_connect_session_state(void)
  * "try again" on a fault nobody can influence is worse than silence, because it implies the fault is
  * the viewer's to fix.
  */
-void rc_connect_report_outcome(rc_connect_stage stage, int stalled)
+void rc_connect_report_outcome(rc_connect_stage stage, const rc_connect_result *result)
 {
-    if (stalled)
-        return;             /* the stall already said something more specific than any of this */
+    /* This has already said something more specific than anything below. */
+    if (result->stream_stalled)
+        return;
+
+    if (result->menu_disconnect) {
+        say(RC_PHASE_ENDED, "Disconnected", NULL, NULL);
+        return;
+    }
 
     switch (stage) {
     case RC_CONNECT_NO_RECORD:
@@ -599,6 +600,46 @@ static int g_stream_channel_ready;
 
 /* Defined below, between its two callers - the YUV and the packed-RGB present paths. */
 static void draw_overlay(void);
+
+/* ------------------------------------------------------------------------------------------------
+ * THE IN-SESSION MENU
+ *
+ * WHY IT IS OURS AND NOT THE XMB'S. The obvious home for "send the PS button to the console" is the
+ * menu the PS button already opens, and that menu belongs to the system. PS3 has exactly one custom
+ * menu API - sceNpCustomMenu - and its constants (SELECTED_TYPE_ME, _FRIEND, _PLAYER) give it away: it
+ * attaches actions to a PERSON in the friend list, not to the in-game menu's top level, which retail
+ * games never added to. On custom firmware a VSH plugin could, but that is a second binary living in
+ * vsh.self, tied to firmware revisions, talking to this process over some channel of its own - a great
+ * deal of system-level surface in the trust path of a client that holds a console's pairing keys, to
+ * save one button press. webMAN, which can write VSH plugins, still offers button COMBOS for this.
+ *
+ * AND THE PS PRESS NEVER REACHES US ANYWAY. The system consumes it before any application sees it, so
+ * nothing here could forward a real one; what is sent is synthesised either way.
+ *
+ * So the chord that already opened the diagnostics overlay opens a short menu instead, and the overlay
+ * becomes one of its entries. Same gesture, same number of presses, and it can do things the system's
+ * menu could not.
+ */
+#define RC_MENU_ROWS 4
+#define RC_MENU_PS_MS 120u   /* a momentary press - see the note where it is sent */
+
+static int g_menu_open;
+static int g_menu_row;
+static uint32_t g_menu_prev_buttons;
+static uint64_t g_ps_until;
+static unsigned g_ps_sent;
+
+/*
+ * DISCONNECT, ASKED FOR FROM INSIDE THE STREAM. Read by the hold loop, which ends when it is set.
+ *
+ * This row is not a convenience. The session used to stop on a thirty-second timer, so there was always
+ * a way out whether anyone wanted one or not; with the timer gone the only remaining exits were Quit
+ * from the PS menu - which leaves the program altogether - and the console giving up. Removing a timer
+ * without adding this would have left somebody holding a controller with no way back to the menu.
+ */
+static int g_menu_quit;
+
+static void draw_session_menu(void);
 
 /*
  * What the overlay reports that is not already a live counter: the asks, which are settled once when
@@ -1126,9 +1167,80 @@ static void send_input(rc_connect_result *out)
 
         if (edges != g_chord_edges_seen) {
             g_chord_edges_seen = edges;
-            rc_overlay_show(!rc_overlay_shown());
+            g_menu_open = !g_menu_open;
+            g_menu_row = 0;
+            g_menu_prev_buttons = in.buttons;
             out->overlay_toggles++;
         }
+    }
+
+    /*
+     * WHILE THE MENU IS UP, THE CONSOLE HEARS A CONTROLLER NOBODY IS TOUCHING.
+     *
+     * Not silence: rc_pad_read's own comment is that sending nothing means "no controller", which is a
+     * different statement from "nothing pressed", and the console is owed the second one. So the state
+     * is neutralised rather than withheld - a menu that let Cross through would confirm the highlighted
+     * item AND fire whatever the game had under Cross.
+     */
+    if (g_menu_open) {
+        uint32_t pressed = in.buttons & ~g_menu_prev_buttons;
+
+        g_menu_prev_buttons = in.buttons;
+
+        if (pressed & (HALYARD_PAD_DPAD_UP | HALYARD_PAD_DPAD_LEFT))
+            g_menu_row = (g_menu_row + RC_MENU_ROWS - 1) % RC_MENU_ROWS;
+        if (pressed & (HALYARD_PAD_DPAD_DOWN | HALYARD_PAD_DPAD_RIGHT))
+            g_menu_row = (g_menu_row + 1) % RC_MENU_ROWS;
+        if (pressed & HALYARD_PAD_CIRCLE)
+            g_menu_open = 0;
+        if (pressed & HALYARD_PAD_CROSS) {
+            switch (g_menu_row) {
+            case 0:
+                /*
+                 * A MOMENTARY PRESS, and the distinction matters on the far end: a PS5 opens its control
+                 * centre on a tap and offers to power down on a hold, so a press of the wrong length is
+                 * not a worse version of the right one, it is a different command. 120 ms is the same
+                 * figure rc_pad_ps3.c replays a withheld tap for, and for the same reason - long enough
+                 * that a console reading state at 200 Hz cannot miss it, short enough to be a tap.
+                 */
+                g_ps_until = rc_time_ms() + RC_MENU_PS_MS;
+                g_ps_sent++;
+                out->ps_presses_sent = g_ps_sent;
+                g_menu_open = 0;
+                break;
+            case 1:
+                rc_overlay_show(!rc_overlay_shown());
+                break;
+            case 3:
+                /*
+                 * LAST IN THE LIST on purpose. It is the one entry here that cannot be undone by
+                 * pressing it again, and the row the cursor starts on sends a PS press - so the
+                 * destructive one sits as far from the default as the list allows.
+                 */
+                g_menu_quit = 1;
+                g_menu_open = 0;
+                break;
+            default:
+                g_menu_open = 0;
+                break;
+            }
+        }
+
+        memset(&in.buttons, 0, sizeof(in.buttons));
+        in.left_x = in.left_y = in.right_x = in.right_y = 0;
+        in.left_trigger = in.right_trigger = 0u;
+    }
+
+    /*
+     * The synthesised press, laid over whatever the pad is actually doing. It outlives the menu closing
+     * by design: the menu is gone the moment Cross is read, and the press has to reach the console
+     * after that or there would be nothing to see.
+     */
+    if (g_ps_until != 0u) {
+        if (rc_time_ms() < g_ps_until)
+            in.buttons |= HALYARD_PAD_PS;
+        else
+            g_ps_until = 0u;
     }
 
     now = rc_time_ms();
@@ -1533,7 +1645,10 @@ static void on_picture(void *ctx, const unsigned char *y, const unsigned char *u
     if (us == 0u)
         return;   /* the display is not open, or the picture does not fit - not an error here */
 
-    draw_overlay();
+    if (g_menu_open)
+        draw_session_menu();
+    else
+        draw_overlay();
 
     rc_video_flip();
     g_blits++;
@@ -1619,6 +1734,50 @@ static const char *bitrate_text(int kbps, char *out, size_t out_size)
     }
     snprintf(out, out_size, "%d", kbps);
     return " kbit/s asked";
+}
+
+/*
+ * Drawn in the diagnostics panel's own space, because the two are alternatives - the overlay is one of
+ * this menu's entries, so they are never wanted at once - and because that panel is the one surface
+ * already proven to composite over a live picture every frame.
+ */
+static void draw_session_menu(void)
+{
+    static const char *const kRows[RC_MENU_ROWS] = {
+        "Send the PS button to the console",
+        "Diagnostics overlay",
+        "Resume",
+        "Disconnect",
+    };
+    int w = rc_overlay_width();
+    int pad = rc_overlay_px(24);
+    int row_h = rc_overlay_px(46);
+    int y = pad;
+    int i;
+
+    if (!rc_overlay_begin_now())
+        return;
+
+    rc_overlay_rect(0, 0, w, pad + row_h * RC_MENU_ROWS + pad + rc_overlay_px(34), 0xE80E1218u);
+    (void)rc_overlay_text(pad, y, 2, RC_OV_TEXT, "%s", "Ripcord");
+    y += rc_overlay_px(44);
+
+    for (i = 0; i < RC_MENU_ROWS; i++) {
+        if (i == g_menu_row)
+            rc_overlay_blend_rect(pad / 2, y - rc_overlay_px(6), w - pad, row_h, 0x402D7DF6u);
+        (void)rc_overlay_text(pad, y, 1, (i == g_menu_row) ? RC_OV_TEXT : RC_OV_LABEL, "%s", kRows[i]);
+        if (i == 1)
+            rc_overlay_text_right(w - pad, y, 1, rc_overlay_shown() ? RC_OV_GOOD : RC_OV_TRACK,
+                                  "%s", rc_overlay_shown() ? "on" : "off");
+        y += row_h;
+    }
+
+    /* The stream has not stopped - it is behind this - so say which button puts you back in it. */
+    (void)rc_overlay_text(pad, y + rc_overlay_px(4), 1, RC_OV_TRACK, "%s",
+                          "The session is still running");
+
+    rc_overlay_end_now(rc_overlay_px(48), rc_overlay_px(32), w,
+                       pad + row_h * RC_MENU_ROWS + pad + rc_overlay_px(34));
 }
 
 static void draw_overlay(void)
@@ -1920,7 +2079,10 @@ static void on_picture_rgb(void *ctx, const unsigned char *argb, int stride, int
         return;
     }
 
-    draw_overlay();
+    if (g_menu_open)
+        draw_session_menu();
+    else
+        draw_overlay();
 
     rc_video_flip();
     g_blits++;
@@ -2798,6 +2960,7 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
         uint64_t next_heartbeat;
         uint64_t next_congestion;
         uint64_t hold_ms;
+        uint64_t hold_started;
         uint64_t next_sysutil;
 
         /*
@@ -2814,18 +2977,34 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
         rc_thermal_sample(&out->thermal);
 
         /*
-         * holdseconds in the pairing record, because the two things measured across a hold settle at
-         * very different rates: frame rate and loss are steady within seconds, while a fan responds
-         * over minutes, so 30 seconds reports the beginning of a thermal curve and calls it a result.
-         * Clamped to an hour so a typo cannot hang the console in a loop with no way out but the power
-         * switch.
+         * NO TIMER, AND THAT IS THE CHANGE RATHER THAN THE ABSENCE OF ONE.
+         *
+         * This loop used to run for thirty seconds and stop. That was the right shape while the question
+         * was "does a picture arrive at all" - a probe reports and exits - and it is the wrong one now
+         * that the other end of it is somebody playing a game. A stream that ends on a stopwatch is a
+         * disconnect nobody asked for, and there is no number of seconds that is correct for both uses.
+         *
+         * So the session runs until something ENDS it, and every ending is deliberate: Disconnect in the
+         * in-session menu, Quit from the PS menu, the console ceasing to send pictures, or a channel
+         * fault. All four are handled below, all four leave by `break`, and the teardown after the loop
+         * is untouched.
+         *
+         * holdseconds in the pairing record SURVIVES, as an explicit cap, because a measurement run has
+         * the opposite need: comparing two builds' frame rate or thermals requires both to have run the
+         * same length, and a person putting the controller down at a different moment is not that. It is
+         * opt-in, absent from every record that does not ask for it, clamped to an hour so a typo cannot
+         * pin the console open, and logged when it applies - a stream that stops by itself should never
+         * be a mystery to whoever is watching it.
          */
         hold_ms = (rec->hold_seconds > 0)
                       ? (uint64_t)(rec->hold_seconds > 3600 ? 3600 : rec->hold_seconds) * 1000ULL
-                      : (uint64_t)RC_STREAM_HOLD_MS;
-        g_hold_ms = (unsigned)hold_ms;
+                      : 0ULL;
+        if (hold_ms > 0ULL)
+            rc_log("conn:  holdseconds=%d - this session stops itself after %u seconds\n",
+                   rec->hold_seconds, (unsigned)(hold_ms / 1000ULL));
 
-        deadline = rc_time_ms() + hold_ms;
+        deadline = (hold_ms > 0ULL) ? (rc_time_ms() + hold_ms) : 0ULL;
+        hold_started = rc_time_ms();
         /*
          * WHEN TO NEXT ASK THE SYSTEM WHETHER IT WANTS US GONE. Ten times a second, not every pass:
          * this loop turns over as fast as the socket gives it work, and rc_connect.c's standing rule is
@@ -2840,7 +3019,7 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
 
         say(RC_PHASE_CONNECTING, "Connecting", "Waiting for the console to send video", NULL);
 
-        while (rc_time_ms() < deadline) {
+        while (deadline == 0ULL || rc_time_ms() < deadline) {
             /*
              * THE STREAM CHANNEL'S OWN HEARTBEAT, which is ours to send rather than to answer.
              *
@@ -2881,6 +3060,18 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
                            "       cleanly rather than being force-terminated\n");
                     break;
                 }
+            }
+
+            /*
+             * THE OTHER DELIBERATE ENDING, and the one a person is far more likely to use. Checked here
+             * rather than where the menu sets it because that runs inside the input path, which has no
+             * business deciding the lifetime of the session around it - it records the request and this
+             * loop, which owns the teardown, acts on it.
+             */
+            if (g_menu_quit) {
+                rc_log("conn:  Disconnect was chosen in the in-session menu - ending the stream\n");
+                out->menu_disconnect = 1;
+                break;
             }
 
             send_periodic(session, out, &next_heartbeat, &next_congestion);
@@ -3000,6 +3191,14 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
             if (drained == 0 && result == 0)
                 rc_sleep_ms(2u);
         }
+
+        /*
+         * WHAT THE HOLD ACTUALLY RAN FOR, measured rather than assumed. With no timer there is no
+         * figure to assume: every rate in the summary divides by this, and dividing by an intended
+         * length when somebody disconnected after four seconds reports a frame rate that is wrong by
+         * however long they stayed.
+         */
+        g_hold_ms = (unsigned)(rc_time_ms() - hold_started);
     }
 
     out->video_frames = g_tally.video_frames;
@@ -3152,6 +3351,21 @@ rc_connect_stage rc_connect(unsigned wake_timeout_ms, rc_connect_log_fn log,
     memset(out, 0, sizeof(*out));
     memset(&rec, 0, sizeof(rec));
     out->login_verdict = -1;  /* "never arrived" is the honest default, and 0 already means accepted */
+
+    /*
+     * THE IN-SESSION MENU'S STATE, CLEARED, because this function can now be entered more than once.
+     *
+     * It could not before: the program ran one session and left. Returning to the shell afterwards
+     * means a second connect inherits whatever the first one left in these - a menu still flagged open,
+     * a disconnect still asked for, a PS press still in flight - and the most damaging of those is
+     * g_menu_quit, which would end the next session the moment it started for a reason nobody could see.
+     */
+    g_menu_open = 0;
+    g_menu_row = 0;
+    g_menu_prev_buttons = 0u;
+    g_menu_quit = 0;
+    g_ps_until = 0u;
+    g_ps_sent = 0u;
 
     SAY("loading the pairing record");
 
