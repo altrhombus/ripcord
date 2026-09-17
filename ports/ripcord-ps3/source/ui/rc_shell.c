@@ -1875,6 +1875,103 @@ static void adopt_names(void)
     }
 }
 
+/* ------------------------------------------------------------------------------------------------
+ * THE QUIET REFRESH
+ *
+ * The console cards were asked once, at launch, and then never again. So a console woken from another
+ * room went on saying "standby" while somebody stood watching the screen that exists to tell them - and
+ * the only way to find out otherwise was to go into the options and ask, which is a thing to do about a
+ * menu whose whole job is that answer.
+ *
+ * It re-asks every ten seconds, and does it WITHOUT STOPPING: rc_discover blocks for its whole window,
+ * which would freeze the shell for a second and a half every time, so this drives rc_discover's
+ * open/pump/close form a frame at a time. Two datagrams and a socket held for under a second.
+ *
+ * AND IT ONLY REBUILDS THE MENU WHEN SOMETHING A VIEWER COULD SEE HAS CHANGED. Rebuilding bumps the
+ * menu's revision, which throws away the cached interface layer - about nineteen milliseconds - and
+ * more to the point restarts the selected card's glow. A card row that flinched every ten seconds
+ * because two datagrams came back saying exactly what the last two said would be a worse fault than the
+ * one this fixes.
+ */
+static void build_home(void);   /* defined below; the refresh rebuilds the cards through it */
+
+#define SH_REFRESH_MS        10000u   /* how often to ask again */
+#define SH_REFRESH_WINDOW_MS   900u   /* how long to listen before giving up on the rest */
+
+static rc_discover_result s_scan;
+static int s_scan_sock = -1;
+static int s_scan_found;
+static uint64_t s_scan_until, s_scan_next;
+
+/* Whether anything on a card would be drawn differently. Names and wake state are what a card shows;
+ * the order the replies arrived in is not, so this compares by address rather than by position. */
+static int scan_differs(void)
+{
+    int i, j;
+
+    if (s_scan_found != s_found_count)
+        return 1;
+    for (i = 0; i < s_scan_found && i < RC_DISCOVER_MAX; i++) {
+        for (j = 0; j < s_found_count && j < RC_DISCOVER_MAX; j++) {
+            if (strcmp(s_scan.console[i].address, s_found.console[j].address) != 0)
+                continue;
+            if (s_scan.console[i].is_awake != s_found.console[j].is_awake ||
+                strcmp(s_scan.console[i].host_name, s_found.console[j].host_name) != 0)
+                return 1;
+            break;
+        }
+        if (j >= s_found_count || j >= RC_DISCOVER_MAX)
+            return 1;               /* a console that was not there before */
+    }
+    return 0;
+}
+
+static void refresh_tick(void)
+{
+    uint64_t now = rc_time_ms();
+
+    if (s_scan_sock < 0) {
+        if (now < s_scan_next)
+            return;
+        memset(&s_scan, 0, sizeof(s_scan));
+        s_scan_found = 0;
+        s_scan_sock = rc_discover_open(&s_scan);
+        s_scan_until = now + SH_REFRESH_WINDOW_MS;
+        s_scan_next = now + SH_REFRESH_MS;   /* from the START, so a slow answer does not compound */
+        return;
+    }
+
+    s_scan_found = rc_discover_pump(s_scan_sock, &s_scan, s_scan_found);
+    if (now < s_scan_until && s_scan_found < RC_DISCOVER_MAX)
+        return;
+
+    rc_discover_close(s_scan_sock);
+    s_scan_sock = -1;
+
+    /*
+     * NOTHING ANSWERED IS NOT NEWS. A broadcast that comes back empty means this datagram went
+     * unanswered, not that the console has gone - a single dropped reply would otherwise blank the card
+     * every ten seconds. Only what DID answer is taken.
+     */
+    if (s_scan_found == 0)
+        return;
+    if (!scan_differs())
+        return;
+
+    s_found = s_scan;
+    s_found_count = s_scan_found;
+    adopt_names();
+    {
+        /* The cursor is where somebody left it, and a refresh they did not ask for must not move it. */
+        int keep = rc_menu_selected_id(&s_menu);
+
+        build_home();
+        if (keep >= 0)
+            (void)rc_menu_select_id(&s_menu, keep);
+    }
+    rc_log("shell: a console's status changed - the cards were rebuilt\n");
+}
+
 static void search(void)
 {
     int i;
@@ -2379,6 +2476,7 @@ rc_shell_action rc_shell_run(const char *const *dirs, int dir_count)
     search();
     build_home();
     forget_held();
+    s_scan_next = rc_time_ms() + SH_REFRESH_MS;
 
     while (running) {
         uint32_t edges;
@@ -2389,6 +2487,7 @@ rc_shell_action rc_shell_run(const char *const *dirs, int dir_count)
          * rc_platform_ps3.h on what happens to a program that does not. */
         if (rc_ps3_exit_requested())
             break;
+        refresh_tick();
         edges = take_edges();
 
         /* A row of cards moves sideways. Up and down are accepted too, because somebody will press
