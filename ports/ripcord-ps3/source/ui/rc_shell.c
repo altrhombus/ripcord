@@ -1895,7 +1895,20 @@ static void adopt_names(void)
  */
 static void build_home(void);   /* defined below; the refresh rebuilds the cards through it */
 
-#define SH_REFRESH_MS        10000u   /* how often to ask again */
+/*
+ * FIVE SECONDS, AND THE ANSWER IS TAKEN AS SOON AS IT IS COMPLETE.
+ *
+ * Ten seconds plus a 900 ms window meant a change could take eleven seconds to appear, which was
+ * reported from hardware as "longer than ten seconds" - correctly. Two datagrams every five seconds is
+ * nothing on a LAN and nothing on this CPU, so the interval is halved; and the window no longer has to
+ * expire before the cards move, provided at least as many consoles have answered as answered last time.
+ *
+ * THAT PROVISO IS THE WHOLE OF THE CARE HERE. Acting on the first reply would drop a second console that
+ * was merely slower, and it would do it silently - a card vanishing for five seconds and coming back.
+ * Waiting for the window is the safe answer when FEWER have replied than before; when the count is
+ * already whole, there is nothing further to wait for.
+ */
+#define SH_REFRESH_MS         5000u   /* how often to ask again */
 #define SH_REFRESH_WINDOW_MS   900u   /* how long to listen before giving up on the rest */
 
 static rc_discover_result s_scan;
@@ -1942,7 +1955,8 @@ static void refresh_tick(void)
     }
 
     s_scan_found = rc_discover_pump(s_scan_sock, &s_scan, s_scan_found);
-    if (now < s_scan_until && s_scan_found < RC_DISCOVER_MAX)
+    if (now < s_scan_until && s_scan_found < RC_DISCOVER_MAX &&
+        !(s_scan_found >= s_found_count && s_scan_found > 0 && scan_differs()))
         return;
 
     rc_discover_close(s_scan_sock);
