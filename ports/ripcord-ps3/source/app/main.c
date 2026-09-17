@@ -1178,6 +1178,10 @@ static int check_connect(void)
                     ps3_log("       INPUT: the PS button was sent to the console %u time(s) - the\n"
                             "              system eats the real press, so this is the only route\n",
                             c.ps_presses_sent);
+                if (c.skip_until_keyframe)
+                    ps3_log("       PICTURE: waiting for a clean frame after a loss was ON - %u\n"
+                            "                picture(s) arrived and were not shown\n",
+                            c.frames_skipped);
                 if (c.menu_disconnect)
                     ps3_log("       INPUT: Disconnect was chosen in that menu - the session ended\n"
                             "              because somebody asked it to, not because anything failed\n"
