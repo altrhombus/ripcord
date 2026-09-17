@@ -64,6 +64,20 @@ typedef struct {
  */
 int rc_discover(unsigned timeout_ms, rc_discover_result *out);
 
+/*
+ * THE SAME, FOR A CALLER THAT CANNOT STOP - a menu with a screen to keep drawing.
+ *
+ * rc_discover_open sends the probes and returns a socket, or -1. rc_discover_pump takes whatever has
+ * arrived since the last call, without waiting, and returns the running count; call it as often as you
+ * like and stop when you have waited long enough. rc_discover_close ends it.
+ *
+ * `out` is filled progressively and belongs to the caller for the whole exchange. rc_discover is these
+ * three in a loop, which is what keeps them exercised: every bring-up run drives that path.
+ */
+int  rc_discover_open(rc_discover_result *out);
+int  rc_discover_pump(int sock, rc_discover_result *out, int found);
+void rc_discover_close(int sock);
+
 #ifdef __cplusplus
 }
 #endif
