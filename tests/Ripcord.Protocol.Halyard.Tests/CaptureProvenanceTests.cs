@@ -83,6 +83,9 @@ public class CaptureProvenanceTests
         ["00000000000000000000000100000000"] = "a single set bit - GCM counter block",
         ["000000000000000000000000ffffffff"] = "counter-block wrap boundary",
         ["ffffffffffffffff0000000000000000"] = "all-ones then all-zeros - a length/boundary probe",
+        ["abababababababababababababababab"] =
+            "sixteen 0xAB - pairing_set_test.c's FAKE_COMPANION, and what a debug allocator fills "
+            + "uninitialised memory with, which is why a heap dump has it",
 
         // --- Published test vectors ---------------------------------------------------------------------
         // Counting sequences from NIST SP 800-38 / RFC test suites, printed in public standards. They turn
