@@ -3059,6 +3059,7 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
                 if (rc_ps3_exit_requested()) {
                     rc_log("conn:  the XMB asked this program to quit - ending the stream\n"
                            "       cleanly rather than being force-terminated\n");
+                    out->xmb_quit = 1;
                     break;
                 }
             }
