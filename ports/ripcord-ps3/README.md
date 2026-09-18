@@ -2,32 +2,36 @@
 
 A PS5 Remote Play client for PlayStation 3 homebrew, in C.
 
-**Status: it runs on a PS3, the platform seam is confirmed against hardware, and it decodes H.264
-pixel-correctly on the console.** What exists and is tested is the
-bitstream front end — reader, parameter-set and slice-header parsers, Annex-B splitter, picture-boundary
-tracking — built on the host, because none of it needs a PS3 to be found wrong. What is now *also*
-confirmed is the platform layer: on 2026-09-11 the bring-up program ran on a real console and every check
-passed. The time base, the sleep's units and the CSPRNG are measurements rather than assumptions.
+**Status: it streams.** A PS5's picture, decoded on the console's own hardware decoder, scaled on the
+SPEs, presented through the RSX, with Opus audio, controller input, and pairing performed from the PS3
+itself using the system keyboard. The sections below are the record of getting there, in the order it
+happened; they are dated and they are not rewritten, so an early one describes an earlier state on
+purpose.
+
+Before any of that, the platform seam was confirmed against hardware: on 2026-09-11 the bring-up program
+ran on a real console and every check passed, making the time base, the sleep's units and the CSPRNG
+measurements rather than assumptions. The bitstream front end — reader, parameter-set and slice-header
+parsers, Annex-B splitter, picture-boundary tracking — was built and tested on the host first, because
+none of it needs a PS3 to be found wrong.
 
 **The headline measurement: the PPE time base is 79,800,986 Hz against the 79,800,000 this port
 expected — 12 parts per million.** That number scales every timeout in the core, and it is right.
 
-What remains untouched by hardware is everything above the seam: sockets, threads, decode.
 [`SETUP.md`](SETUP.md) records what the toolchain install took, what it corrected, and — at some length —
-the five runs it took to get a program to start at all.
+the five runs it took to get a program to start at all. It is written for the same Linux box the 3DS and
+Vita ports are built on.
 
-This branch sits on `feat/ports-common`, so `ports/common` — the portable protocol core — is in the
-tree. That was not true when the port was scoped: the core lived on `feat/vita-port`, 94 commits behind
-`main` and unable to build, since `docs/protocol/*.proto` were added to `main` afterwards and the .NET
-solution could not restore there. `CONTRIBUTING.md` requires `commit → test → push`, and a branch whose
-tests cannot run is the wrong base — so steps 1–3 were deliberately chosen to need nothing from the core,
-and the core was rebased onto `main` on its own branch before step 4 asked for it.
-
-No PS3 on hand yet, which is fine: none of the work that comes first needs one. A *toolchain*
-unblocks more of this port than a console does, and that has now been demonstrated rather than argued —
-installing one settled two of this file's open `[X]` questions and turned up two build errors, without
-a console being involved. [`SETUP.md`](SETUP.md) is how to get one, and is written for the same Linux
-box the 3DS and Vita ports are built on.
+> **Two claims were retired here on 2026-09-18, and are named rather than quietly deleted.** This section
+> said *"no PS3 on hand yet, which is fine: none of the work that comes first needs one"*, and that
+> *"everything above the seam — sockets, threads, decode"* was untouched by hardware. Both were true when
+> the port was scoped and neither survived it: there is a console, sockets and threads and decode are all
+> hardware-verified, and the port streams. The argument they were making — that a *toolchain* unblocks more
+> of a port than a console does, and that the first steps were chosen to need neither the core nor the
+> hardware — held up, which is why it is worth recording that it was made in advance rather than in
+> hindsight.
+>
+> The same paragraph also described this work as a branch sitting on `feat/ports-common`, with `ports/common`
+> not yet on `main`. It merged on 2026-09-18; `ports/common` is on `main`, and so is this port.
 
 ## Why this port is only the decoder
 
