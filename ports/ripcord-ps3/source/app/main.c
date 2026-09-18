@@ -1,13 +1,21 @@
 /*
  * ripcord-ps3 - platform bring-up: does the toolchain work, and is the clock what we think it is.
  *
- * This is step 4 of the port's order of work, and it is deliberately the cheapest program that can fail
- * informatively. It links the portable core's platform seam against PSL1GHT, prints a timestamp, and
- * then does the one measurement that everything timing-dependent in this port rests on.
+ * This began as step 4 of the port's order of work - deliberately the cheapest program that could fail
+ * informatively, linking the portable core's platform seam against PSL1GHT, printing a timestamp and
+ * doing the one measurement that everything timing-dependent in this port rests on.
  *
- * *** NEVER CROSS-COMPILED, NEVER RUN ON A CONSOLE. *** No PSL1GHT here and no PS3, so everything
- * SDK-facing is [X]. It has been built and run on a host, which is a narrower claim - see the end of
- * this comment for exactly how much narrower.
+ * *** IT IS NOW THE APPLICATION'S ENTRY POINT, AND IT RUNS ON A CONSOLE. *** This banner said "never
+ * cross-compiled, never run on a console - no PSL1GHT here and no PS3, so everything SDK-facing is [X]",
+ * and that was true when it was written. It is retired here rather than deleted so that a reader who
+ * meets the bring-up reasoning below knows it was written before the hardware existed and survived
+ * contact with it.
+ *
+ * The bring-up checks did not move out when the app grew around them, and that is deliberate.
+ * measure_timebase() and check_spu() still run on every launch, after the logs are open and before
+ * rc_shell_run() is reached, so a console that has changed underneath this port says so at start-up -
+ * as a named check against lv2's own answer - rather than as a stream that mysteriously times out. What
+ * follows describes those checks; the shell and the session live in source/ui and source/connect.
  *
  * WHY IT MEASURES THE CLOCK RATHER THAN JUST PRINTING ONE.
  *
