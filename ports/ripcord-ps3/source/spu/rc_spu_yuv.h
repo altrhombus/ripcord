@@ -1,0 +1,102 @@
+/*
+ * Colour conversion on the SPEs.
+ *
+ * The picture is split into horizontal strips, one per SPE, and nothing is shared between them: no locks,
+ * no communication, and the only coordination is the PPE waiting for every done flag. That is what makes
+ * this the right first job to move off the PPE - the arithmetic is per-pixel with no dependency between
+ * pixels, which is the shape the SPEs exist for.
+ *
+ * The threads are created ONCE and told to work by a mailbox write. A thread group create/start/join per
+ * frame at 30 fps would spend more time in lv2 than on pixels.
+ *
+ * FALLING BACK IS PART OF THE CONTRACT. If the SPEs cannot be brought up, or a frame does not complete
+ * inside its deadline, the caller converts on the PPE instead - which is known to work at 12 ms and is a
+ * far better outcome than a frozen picture. rc_spu_yuv_convert says which happened.
+ */
+#ifndef RC_SPU_YUV_H
+#define RC_SPU_YUV_H
+
+#include <stddef.h>
+#include <stdint.h>
+
+/*
+ * Six SPEs are physically present on a PS3 and one is reserved by the hypervisor, leaving six usable of
+ * which lv2 will give a normal process rather fewer. Asking for this many and accepting what arrives is
+ * more robust than asserting a number the firmware has opinions about.
+ *
+ * FOUR, NOT FIVE, AND ONE IS DELIBERATELY LEFT UNCLAIMED. cellVdec runs its decoder on the SPEs -
+ * vdecConfig has a num_spus field - so a build that means to use the console's own H.264 decoder cannot
+ * also hold every SPE for colour conversion. This group is created once and never released: the teardown
+ * at the foot of rc_spu_yuv.c writes a quit sentinel and deliberately does NOT destroy the group,
+ * because sysSpuThreadGroupDestroy and sysSpuThreadGroupTerminate each locked this console during b105
+ * and b107. So the SPE that vdec needs has to be left free from the start; there is no giving one back
+ * later.
+ *
+ * b146 hung somewhere inside the vdec probe with all five held. That does not prove this was the cause -
+ * the instrumentation that was supposed to name the call did not survive the hang, which is fixed
+ * separately - but leaving vdec an SPE is required by the design either way, not a guess at the fix.
+ */
+/*
+ * THREE, because this no longer converts anything.
+ *
+ * It was five while it did YUV-to-RGB and scaling, then four to leave the decoder an SPE, then the
+ * decoder took a second. Now the decoder produces RGB itself and this only scales - 10,876 us a frame
+ * across the group against 16,444 before - so the group can give one back to the side that still cannot
+ * keep up: b190 still refused twelve submissions, all of them on the large frames of a transition, and
+ * refusing one breaks the reference chain.
+ *
+ * Three SPEs scaling costs about 3,600 us each against 2,700, which the frame budget has room for. Two
+ * decoding against three does not, which is where the blockiness comes from.
+ */
+#define RC_SPU_YUV_MAX_SPES 3
+
+typedef struct {
+    int  spes;              /* how many actually came up; 0 means the PPE path is the only path */
+    int  init_failed_at;    /* which step refused, for the report */
+    int  last_error;
+    unsigned frames;        /* frames converted on the SPEs */
+    unsigned fallbacks;     /* frames that timed out and went to the PPE instead */
+    unsigned avg_us;
+    unsigned worst_us;
+
+    /*
+     * WHERE AN SPE'S TIME GOES, summed across the SPEs of the last frame and converted from the SPU
+     * decrementer, which runs at the same timebase rc_tick_hz reports.
+     *
+     * The kernel blocks on every transfer - one tag, a status wait after each get and each put - so it
+     * is idle for the whole of each round trip. This says whether that idling or the arithmetic is the
+     * 4,945 us, and the answer decides the next change: if the arithmetic dominates, taking ARGB32 from
+     * the decoder (b179 proved it will) removes the colour pass; if the waiting dominates, that same
+     * change makes it worse, since ARGB is 4 bytes a pixel against YUV420's 1.5, and double buffering is
+     * the answer instead.
+     */
+    unsigned last_dma_us;
+    unsigned last_work_us;
+    int      disabled;      /* the SPE path gave up and the PPE carried the rest of the run */
+} rc_spu_yuv_stats;
+
+/* Brings up the SPE threads. Returns the number running - zero is a valid answer and not an error. */
+int rc_spu_yuv_init(void);
+
+/*
+ * Converts one picture into `dst`. Returns microseconds on success, 0 if the SPEs are not available or
+ * did not finish - in which case the caller must convert on the PPE.
+ */
+unsigned rc_spu_yuv_convert(const uint8_t *y, const uint8_t *u, const uint8_t *v,
+                            int y_stride, int uv_stride, int width, int height,
+                            uint32_t *dst, int dst_pitch, int dst_width, int dst_height);
+
+/* The same, for a picture the decoder has already converted to packed 32-bit RGB. Scales only. */
+unsigned rc_spu_yuv_convert_argb(const uint8_t *argb, int src_stride, int width, int height,
+                                 uint32_t *dst, int dst_pitch, int dst_width, int dst_height);
+
+/*
+ * 0 nearest, 1 interpolate along the row, 2 interpolate in both directions. Honoured by the packed-RGB
+ * path only. Mode 2 does not fit a 60 fps budget - see the note on `bilinear` in rc_spu_yuv_job.h.
+ */
+void rc_spu_yuv_set_bilinear(int mode);
+
+void rc_spu_yuv_stats_get(rc_spu_yuv_stats *out);
+void rc_spu_yuv_exit(void);
+
+#endif /* RC_SPU_YUV_H */

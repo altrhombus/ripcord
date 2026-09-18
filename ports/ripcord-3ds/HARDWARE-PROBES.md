@@ -311,6 +311,32 @@ macroblock-aligned and still refused.
 stream" is off the table for good. That makes the per-frame scale a fixed cost in the CPU budget rather
 than an optimisation.
 
+**Reading a working player settled the call sequence.** `Core-2-Extreme/Video_player_for_3DS` (GPL-3.0 —
+read for facts, nothing copied; this tree is Apache-2.0) does four things this port did not:
+
+1. **`MVDSTD_SetConfig` before every `ProcessVideoFrame`**, not only at render time. If MVD writes the
+   picture during processing, an output address applied at render is applied *after* the write — which
+   is exactly "decodes perfectly into nowhere".
+2. **The NAL unit keeps its 3-byte start-code prefix.** This port was stripping it.
+3. **Frame completion is detected by sentinel pixels in the output buffer**, not by the status code. That
+   player does not trust MVD's return values either — and this port spent several runs treating
+   `FRAMEREADY` as authoritative when it does not mean pixels exist.
+4. **The first unit after init is fed twice.**
+
+**And one thing the reference does that libctru will not allow here.** It calls
+`mvdstdRenderVideoFrame(NULL, ...)`, relying on the previously-set config. libctru's header documents
+that as supported — and its compiled code disagrees: `cmp r0, #0` branching to `mvn r0, #0` means a NULL
+config returns `0xFFFFFFFF` before touching the hardware. Copying that call shape produced 1,753 instant
+render errors in one run. **The config pointer must be passed**; the header is wrong, the disassembly is
+not.
+
+**And `mvdstdSetupOutputBuffers` was actively harmful, not merely unhelpful.** 3dbrew: "once this command
+is used, each rendered frame will be written into the output buffers specified by the entry-list
+**instead of** the output buffers from configuration". Registering an entrylist does not add a route to
+our buffer — it *diverts output away from the config path*, which is the path the working player actually
+uses. It is no longer called. Route (1) below was therefore never a route at all; it was the thing
+blocking the route.
+
 **Route (1) failed on hardware**: `SetupOutputBuffers` returned `MVD_STATUS_OK` (note: *not* 0 — MVD
 reports success as `0x17000`, and testing `!= 0` wasted a run), renders succeeded, and the buffer stayed
 entirely zero. Transposed dimensions (candidate 1) behaved identically.
