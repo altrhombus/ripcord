@@ -1,6 +1,6 @@
 /* See rc_random.h for why this hard-fails instead of degrading, and why there is no host implementation. */
 
-#include "rc_random.h"
+#include "util/rc_random.h"
 
 #include <string.h>
 

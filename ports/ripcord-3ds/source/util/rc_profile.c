@@ -2,7 +2,7 @@
 
 #include "rc_profile.h"
 
-#include "rc_log.h"
+#include "util/rc_log.h"
 
 #include <3ds.h>
 

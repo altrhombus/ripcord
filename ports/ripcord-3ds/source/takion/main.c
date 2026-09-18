@@ -27,10 +27,10 @@
  *                         console without a live session, so no value here makes this probe work)
  */
 #include "../net/rc_soc.h"
-#include "../util/rc_log.h"
-#include "../util/rc_program_dir.h"
-#include "takion_data_chunk.h"
-#include "takion_reliable_channel.h"
+#include "util/rc_log.h"
+#include "util/rc_program_dir.h"
+#include "takion/takion_data_chunk.h"
+#include "takion/takion_reliable_channel.h"
 
 #include <3ds.h>
 

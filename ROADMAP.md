@@ -740,6 +740,37 @@ Both need a console or a capture to settle, hence here rather than in Track D.
     carrier, never the colour — but it wants re-checking rather than assuming.
 - [ ] **Wordmark.** No typeface chosen, so nothing ships the name as artwork. Blocks a proper wide tile and
       splash lockup — both currently mark-only.
+- [ ] **Pair a console port from the desktop app — proposed 2026-09-16, not started.** A port asks the
+      desktop to sign in on its behalf: the port enters a pairing mode and announces itself on the LAN, a
+      running Ripcord on a PC or Mac sees it offered in its own UI, does the PSN sign-in and the console
+      registration with a real browser and a real keyboard, and hands the finished pairing record back.
+
+      **What it is for.** Registration needs two things a small port is bad at asking for: the PSN account
+      id — a nineteen-digit number — and the console's PIN. `ports/ripcord-ps3` now reads the account id out
+      of the PS3 itself when that PS3 is signed in to PSN (see its `DECODE.md`), and when it is not, the
+      best it can do is say so and suggest signing in. That is a real improvement and it is not the same as
+      not asking: a port on hardware that cannot sign in to PSN at all, or a user who does not want to,
+      still has nineteen digits to find and type. This removes both questions from the television rather
+      than making them easier, and it removes them for **every** port rather than for the one that happened
+      to have a readable cache.
+
+      **Where it belongs.** In `ports/common` and behind a `Ripcord.Presentation` seam, not in any one port.
+      The console half is a UDP announce and a small transfer; the desktop half is a discovery source, a
+      confirmation, and a reuse of the registration it already performs. Neither half is PS3-specific and
+      writing it as though it were would mean writing it twice.
+
+      **Three constraints, and the first is the one to design around.**
+      1. **The record is secret material.** `registkey` and `companion` are tied to one console and one
+         account — the wrong side of `CLAUDE.md`'s generic-versus-personal line — so they must not cross a
+         LAN in clear, and an announce that anything on the network can claim is an announce that hands them
+         to whoever asks first. The obvious shape is a short code shown on the television and typed into the
+         desktop, which authenticates the pairing and keys the transfer in one step. That is a design
+         decision, not a detail to leave to the implementer.
+      2. **The port must still work alone.** This is an *alternative* to the on-screen keyboard, never a
+         replacement: a console with no PC on the network has to keep the flow it has.
+      3. **It does not need the cloud tier.** Sign-in happens on the desktop, which already has it. Nothing
+         about this asks a console to speak OAuth — see `ports/ripcord-ps3/DECODE.md` on why that is not a
+         road worth starting down.
 
 
 ### Track G — Deferred phases

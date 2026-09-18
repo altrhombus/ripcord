@@ -14,9 +14,9 @@
  * The timing number is the interesting output. If a field encryption costs microseconds, the control
  * plane is free and the open question is the A/V path; if it costs milliseconds, that is a finding.
  */
-#include "../halyard/halyard_v1.h"
-#include "../crypto/rc_crypto.h"
-#include "../util/rc_log.h"
+#include "halyard/halyard_v1.h"
+#include "crypto/rc_crypto.h"
+#include "util/rc_log.h"
 
 #include <3ds.h>
 

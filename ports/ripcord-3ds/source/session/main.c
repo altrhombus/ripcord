@@ -19,17 +19,17 @@
  * two disagree about the control plane, this one is right.
  */
 #include "../net/rc_soc.h"
-#include "../net/rc_tcp.h"
-#include "../halyard/halyard_v1.h"
-#include "../util/rc_base64.h"
-#include "../util/rc_hex.h"
-#include "../util/rc_log.h"
-#include "../util/rc_program_dir.h"
-#include "halyard_control_arm.h"
-#include "halyard_pairing_file.h"
-#include "halyard_ctrl_message.h"
-#include "halyard_sess_fields.h"
-#include "halyard_sess_request.h"
+#include "net/rc_tcp.h"
+#include "halyard/halyard_v1.h"
+#include "util/rc_base64.h"
+#include "util/rc_hex.h"
+#include "util/rc_log.h"
+#include "util/rc_program_dir.h"
+#include "session/halyard_control_arm.h"
+#include "session/halyard_pairing_file.h"
+#include "session/halyard_ctrl_message.h"
+#include "session/halyard_sess_fields.h"
+#include "session/halyard_sess_request.h"
 
 #include <3ds.h>
 

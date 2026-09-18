@@ -10,8 +10,8 @@
  * a real LAN proves the wire format still matches an actual console rather than just those examples.
  */
 #include "../net/rc_soc.h"
-#include "../util/rc_log.h"
-#include "halyard_discovery.h"
+#include "util/rc_log.h"
+#include "discovery/halyard_discovery.h"
 
 #include <3ds.h>
 

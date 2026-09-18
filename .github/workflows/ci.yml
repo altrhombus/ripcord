@@ -135,3 +135,68 @@ jobs:
         run: |
           dotnet test tests/Ripcord.Protocol.Halyard.Tests/Ripcord.Protocol.Halyard.Tests.csproj -c Release
           dotnet test tests/Ripcord.Presentation.Tests/Ripcord.Presentation.Tests.csproj -c Release
+
+  # CONTRIBUTING.md section 1 requires every commit to carry a Signed-off-by line matching its
+  # author. Until now the only thing enforcing that was a checkbox in the pull-request template,
+  # and a checkbox is not a mechanism: feat/ps3-port reached 260 unsigned commits out of 308
+  # before anybody noticed, on a repository whose main branch is otherwise entirely signed. That
+  # is what an unenforced rule costs, and it is the same shape as every other guard here - the
+  # rule existed, nothing asked it.
+  #
+  # Deliberately a few lines of git rather than a third-party action. This repository takes only
+  # first-party actions, and "does each commit in this range carry a trailer" does not justify a
+  # supply-chain dependency on somebody else's.
+  dco:
+    name: DCO sign-off
+    # Pull requests only. On a push to main the range worth checking is ambiguous, and by then the
+    # check is a report rather than a gate.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      # fetch-depth: 0 for the same reason the other jobs need it: the commits being judged are
+      # exactly the ones a shallow clone does not have, and `git rev-list` over a range it cannot
+      # see exits 0 having checked nothing.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Every commit is signed off by its own author
+        run: |
+          base='${{ github.event.pull_request.base.sha }}'
+          head='${{ github.event.pull_request.head.sha }}'
+
+          # --no-merges: a merge commit introduces no new work to certify, and the one the forge
+          # writes for you cannot have been signed by anybody in advance. The DCO is about
+          # authorship, so it is asked of commits that carry authored work.
+          commits="$(git rev-list --no-merges "$base..$head")"
+          if [ -z "$commits" ]; then
+            echo "No non-merge commits in $base..$head - nothing to certify."
+            exit 0
+          fi
+
+          fail=0
+          checked=0
+          for sha in $commits; do
+            checked=$((checked + 1))
+            author="$(git log -1 --format='%an <%ae>' "$sha")"
+            signoffs="$(git log -1 --format='%B' "$sha" | sed -n 's/^[Ss]igned-off-by:[[:space:]]*//p' | sed 's/[[:space:]]*$//')"
+
+            # -x and -i: the whole line must be the author, not merely contain them, so a sign-off
+            # naming somebody else does not pass simply by being present.
+            if echo "$signoffs" | grep -qixF "$author"; then
+              continue
+            fi
+
+            echo "::error title=Missing or mismatched DCO sign-off::$(git log -1 --format='%h %s' "$sha")"
+            echo "    author:    $author"
+            echo "    sign-offs: ${signoffs:-(none)}"
+            fail=1
+          done
+
+          if [ "$fail" -ne 0 ]; then
+            echo ""
+            echo "CONTRIBUTING.md section 1: every commit must carry a Signed-off-by line matching its author."
+            echo "  a new commit:   git commit -s"
+            echo "  a whole branch: git rebase --signoff $base"
+            exit 1
+          fi
+          echo "All $checked commits carry a sign-off matching their author."
