@@ -188,6 +188,16 @@ rc_osk_status rc_osk_ask(rc_osk_kind kind, const char *prompt, const char *initi
     widen(prompt, s_message, RC_OSK_MAX_CHARS + 1u);
     widen(initial, s_initial, RC_OSK_MAX_CHARS + 1u);
     memset(s_result, 0, sizeof(s_result));
+    /*
+     * AND THE UNLOAD'S BUFFER, which was cleared once by .bss and never again.
+     *
+     * The teardown's copy is where the text usually arrives - see the note at the collection - and it is
+     * copied over s_result wholesale, after which narrow() reads up to the first NUL. So a shorter entry
+     * following a longer one shows the longer one's tail if the library ever declines to terminate what
+     * it writes. Whether it does is not something this port can establish, which is the point: the
+     * failure would be a passcode that is right, rejected, and identical on screen to one that is wrong.
+     */
+    memset(s_unload_text, 0, sizeof(s_unload_text));
 
     memset(&field, 0, sizeof(field));
     field.message = s_message;
