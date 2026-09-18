@@ -98,9 +98,11 @@ Three consequences worth stating, since each closes an argument:
 installer, no publish profile in use, no tag. 1.0 needs a downloadable x64 build, instructions that work on
 a machine that has never had the SDK on it, and a tagged release to hang them from.
 
-**2. CI green on a real runner.** `.github/workflows/ci.yml` has existed for days and has never executed.
-It is the only thing that would have caught the launch crash, the shallow-clone gap, and the commit-message
-violation without someone noticing by hand. Until it runs once, it is a file, not a check.
+**2. ~~CI green on a real runner.~~ Closed 2026-09-18.** `.github/workflows/ci.yml` had existed for days
+and never executed; it is now green on every job — tests, both App architectures, both portable-core hosts,
+the DCO gate and the new PS3 package job. It earned its keep on the first run: the DCO check caught a real
+unsigned commit rather than passing a self-test. What remains is not this item — it is that a *red* run now
+has to mean something, which is a habit rather than a file.
 
 **3. The three known defects.** All were found on hardware and all sit in the primary path:
 - an Xbox pad is dead while a DualSense is attached — the single most likely first-run configuration for
@@ -158,7 +160,7 @@ English-only. The README is already unusually honest; 1.0 needs it to also be *c
 
 1.0 ships when every line is true:
 
-- [ ] CI passes on a real runner, on a clean clone, for every job.
+- [x] CI passes on a real runner, on a clean clone, for every job. — 2026-09-18, all seven jobs green.
 - [ ] A tagged release exists with an x64 zip and an x64 MSIX attached, and install steps for both
       verified on a machine without the SDK.
 - [ ] The MSIX has been installed and launched from its signed package, not just built - including a pair
