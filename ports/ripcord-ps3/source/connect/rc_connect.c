@@ -3598,6 +3598,22 @@ static void signin_absorb(const halyard_control_event *ev)
     rc_connect_result *out = g_signin.out;
 
     if (ev->kind == HALYARD_CONTROL_EVENT_MESSAGE) {
+        /*
+         * EVERY FRAME'S TYPE AND DECRYPTED LENGTH, WHILE THE GATE IS OPEN - which is how a passcode the
+         * console really refused is told apart from one our own crypto mangled on the way.
+         *
+         * Both look identical from the outside: a rejection byte is a rejection byte whether the
+         * console read our digits and disliked them, or read something else entirely. But the LENGTHS
+         * are a check nobody has to trust us for. docs/protocol/ps5-session-transport.md carries the
+         * console's own table - 0x8004 is 4 bytes, 0x50 is 0, 0x36 and 0x910 are 4 - so lengths that
+         * match it are a receive counter in step, and a receive counter in step is a key and a schedule
+         * that agree with the console's. Lengths that do not match mean the verdict byte is not a
+         * verdict at all, and the passcode was never the problem.
+         *
+         * The passcode itself is never logged, here or anywhere: only how many digits went out.
+         */
+        rc_log("conn:  ctrl frame type 0x%04x, %u plaintext byte(s) at counter %u\n",
+               (unsigned)ev->type, (unsigned)ev->plaintext_length, (unsigned)ev->counter);
         out->frames_seen++;
         if (out->first_type == 0u)
             out->first_type = ev->type;
@@ -4116,6 +4132,14 @@ answered:
                     break;
                 }
                 out->login_submitted = 1;
+                /*
+                 * THE LENGTH AND THE COUNTER, NEVER THE DIGITS. Counter 5 for the first submit is a
+                 * PS5 fact (cap50) that this port applies to both families; if a PS4 wants the passcode
+                 * somewhere else, this line is what will say so, because the length will be right and
+                 * the answer still wrong.
+                 */
+                rc_log("conn:  %u digit(s) submitted at counter %u\n",
+                       (unsigned)strlen(pin), (unsigned)(session.next_counter - 1u));
                 SAY("passcode submitted - waiting for the console's answer");
 
                 /*
