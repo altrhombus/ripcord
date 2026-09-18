@@ -870,8 +870,9 @@ was this, and it had been true of every streaming build this port has ever produ
 That is itself the lesson: this file is the source of truth only while someone writes in it, and a body of
 work with its own README in its own directory is exactly the kind that quietly stops being tracked here.
 
-`ports/ripcord-3ds` is a from-scratch C client for modded **New 3DS** hardware, on branch `3ds` (unmerged,
-~70 commits ahead of `main`). ~18.7k lines. It is not part of `Ripcord.slnx` and never will be — sharing a
+`ports/ripcord-3ds` is a from-scratch C client for modded **New 3DS** hardware. It was on an unmerged `3ds`
+branch when this entry was written and is on `main` now; the ~18.7k lines it had then are, after the core
+was extracted, ~6.4k of its own plus the ~12.2k of `ports/common` it shares with the other ports. It is not part of `Ripcord.slnx` and never will be — sharing a
 repository buys shared specs, constants and test vectors, not a build system with a cross-compiler for a
 different CPU and OS. It keeps **no copy** of the interop constants: `tools/gen_constants.py` reads the one
 committed JSON at build time and generates a C translation unit into the gitignored `build/`, so one bounded
@@ -912,13 +913,18 @@ landed since it was written.
 
 ## The portable core, and the Vita port — started 2026-08-17
 
-> **Not in this repository.** Everything in this section lives on the unpublished `feat/vita-port` branch:
-> `ports/common/` with the extracted protocol core, its three platform implementations, the mbedtls
-> cross-build script, and the Vita port with its hardware checklist. Only `main` is published, so none of
-> those paths resolve here, and `ports/` holds `ripcord-3ds` in its pre-extraction layout — the very layout
-> these entries describe moving away from. Kept because the reasoning is worth having; flagged because a
-> reader would otherwise go looking for files that are not there. Cross-platform work is deliberately
-> parked until the Windows client is feature complete.
+> **Partly in this repository, as of 2026-09-18.** This note used to say none of it was, and that was true
+> when written: `main` carried `ripcord-3ds` in its pre-extraction layout and no `ports/common` at all.
+> Merging the PS3 port brought the extracted core with it, so **`ports/common/` now resolves on `main`** —
+> the protocol core, the platform seam and its implementations, the mbedtls cross-build script — and
+> `ports/ripcord-3ds` is the thin post-extraction tree these entries describe moving to rather than the one
+> they describe moving away from.
+>
+> **What is still not here is the Vita port itself** and its hardware checklist, which remain on the
+> unpublished `feat/vita-port` branch; `ports/ripcord-vita` has no tracked files in this repository. The
+> reasoning below is kept because it is worth having, and this note stays rather than being deleted because
+> a reader who remembers the old claim should be able to see it was retired on purpose. Cross-platform work
+> beyond the ports is deliberately parked until the Windows client is feature complete.
 
 **`ports/common` now holds the protocol core**, on branch `feat/vita-port`. The 3DS port was written as
 a single-platform tree; auditing it for a second target found that **71 of its 88 source files reference
