@@ -144,16 +144,32 @@ Console toolchain libraries, statically linked
   FreeType is offered under either the FreeType License or GPLv2, at the choice
   of the user of the library. RIPCORD ELECTS THE FREETYPE LICENSE. The election
   is recorded here rather than left implicit because the two arms are not
-  interchangeable for this project: the FTL is permissive and asks for a credit
-  line, while GPLv2 and the Apache-2.0 licence this project is distributed under
-  are not compatible. A build that drifted into the GPLv2 arm by nobody choosing
-  would be a licensing problem discovered late. The credit the FTL asks for is:
+  interchangeable for this project: the FTL is permissive, while GPLv2 and the
+  Apache-2.0 licence this project is distributed under are not compatible. A
+  build that drifted into the GPLv2 arm by nobody choosing would be a licensing
+  problem discovered late.
 
-      Portions of this software are copyright (c) The FreeType Project
-      (www.freetype.org). All rights reserved.
+  THE FTL ASKS FOR TWO DIFFERENT THINGS AND A BINARY TRIGGERS BOTH. Section 2
+  asks for a credit; section 1 separately requires, of redistribution in binary
+  form, "a disclaimer that states that the software is based in part of the work
+  of the FreeType Team, in the distribution documentation". Only the credit was
+  recorded here until 2026-09-18, and it carried no year:
 
-  and it belongs in the documentation accompanying any binary that links it -
-  today, ripcord-ps3.
+      Portions of this software are copyright (c) 2026 The FreeType Project
+      (https://freetype.org). All rights reserved.
+
+      This software is based in part on the work of the FreeType Team.
+
+  Both lines ship inside every ripcord-ps3 package, in USRDIR/THIRD-PARTY-
+  NOTICES.txt, because "the distribution documentation" for someone who
+  downloads a .pkg is what is inside the .pkg - not a file in this repository
+  that they never receive. The disclaimer is emitted unconditionally by the
+  generator, so it cannot be lost to a missing file the way a copied licence
+  text can.
+
+  FTL section 3 also forbids either party using the other's name for
+  commercial, advertising or promotional purposes without written permission.
+  Nothing in this project does; recorded so it stays a decision.
 
 Console firmware, used at runtime and never redistributed
 
@@ -165,8 +181,22 @@ Console firmware, used at runtime and never redistributed
   on the console. No firmware component - no module, no font, no data file - is
   copied into this repository or into a built binary.
 
-A DISTRIBUTED BINARY IS NOT THIS REPOSITORY. A built .self or .3dsx links the
-components above statically, so whoever publishes one is distributing them and
-takes on the attribution and notice obligations that come with each. No such
-binary is released here. If one ever is, this section is the starting inventory
-and not a substitute for assembling the notices those licences ask for.
+A DISTRIBUTED BINARY IS NOT THIS REPOSITORY, and ripcord-ps3 now produces one.
+A built .self, .pkg or .3dsx links the components above statically, so whoever
+publishes one is distributing them and takes on the attribution and notice
+obligations that come with each.
+
+This section is the inventory. The notices themselves are generated at package
+time by ports/ripcord-ps3/tools/gen-third-party-notices.sh, from the licence
+texts shipped with the exact versions linked into that build, and land in the
+package at USRDIR/THIRD-PARTY-NOTICES.txt. Generated rather than committed for
+the same reason the interop constants are: a checked-in copy of somebody else's
+licence is a second copy that drifts, and the one that matters is the licence of
+the version actually linked.
+
+The generator exits non-zero if a licence that REQUIRES reproduction is missing
+- openh264, Opus and Mbed TLS all do - and the package will not build without
+them. Shipping a binary with an incomplete notices file is worse than not
+shipping one.
+
+ripcord-3ds does not yet have the equivalent, and no .3dsx is released.
