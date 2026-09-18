@@ -3764,6 +3764,7 @@ rc_connect_stage rc_connect(unsigned wake_timeout_ms, rc_connect_log_fn log,
     memset(out, 0, sizeof(*out));
     memset(&rec, 0, sizeof(rec));
     out->login_verdict = -1;  /* "never arrived" is the honest default, and 0 already means accepted */
+    out->login_counter = -1;  /* nothing has accepted anything yet */
 
     /*
      * THE IN-SESSION MENU'S STATE, CLEARED, because this function can now be entered more than once.
@@ -4090,24 +4091,25 @@ answered:
          * one still never sees a keyboard, and everybody else gets asked.
          */
         if (out->login_prompt && !g_signin.ready && !g_signin.dead) {
+            char typed[HALYARD_SESS_LOGIN_PIN_MAX];
+            const char *pin = NULL;
             int attempt = 0;
 
             SAY("the console says its user is locked and wants a passcode");
 
-            for (attempt = 1; attempt <= RC_SIGNIN_ATTEMPTS; attempt++) {
-                char typed[HALYARD_SESS_LOGIN_PIN_MAX];
-                const char *pin;
+            /*
+             * THE PASSCODE, ASKED FOR ONCE. The stored one stands in when a record carries it, so a rig
+             * that has one never sees a keyboard.
+             */
+            if (rec.login_pin[0] != '\0') {
+                pin = rec.login_pin;
+                SAY("using the passcode from the pairing record");
+            } else if (ask_login_pin(0, typed, sizeof(typed))) {
+                pin = typed;
+            }
 
-                if (attempt == 1 && rec.login_pin[0] != '\0') {
-                    pin = rec.login_pin;
-                    SAY("using the passcode from the pairing record");
-                } else {
-                    if (!ask_login_pin(attempt > 1, typed, sizeof(typed)))
-                        break;          /* backed out, or the keyboard could not be raised */
-                    pin = typed;
-                }
-
-                say(RC_PHASE_CONNECTING, "Signing in", "Sending the passcode", NULL);
+            for (attempt = 1; pin != NULL && attempt <= RC_SIGNIN_ATTEMPTS; attempt++) {
+                unsigned counter;
 
                 /*
                  * THE SESSION CAN DIE WHILE SOMEBODY IS TYPING. The keyboard blocks for as long as it
@@ -4117,14 +4119,59 @@ answered:
                  * "that passcode could not be encoded" sends somebody to correct digits that were fine.
                  */
                 if (g_signin.dead) {
-                    SAY("the control session ended while the passcode was being typed");
+                    SAY("the control session ended while the passcode was being entered");
                     say(RC_PHASE_FAILED, "The console closed the connection",
                         "It ended while the passcode was being entered", "Try connecting again");
                     break;
                 }
 
+                /*
+                 * WHICH COUNTER THE PASSCODE IS ENCRYPTED AT, and on a PS4 this is the experiment.
+                 *
+                 * 5 is not a guess for a PS5: cap50 decrypts the typed digits at 5 and at nothing else,
+                 * and the reasoning behind it is halyard_sess_fields.h's - our direction spends 0-4 on
+                 * the five /sess/ctrl request fields, and only payload-carrying frames spend anything.
+                 *
+                 * IT IS A GUESS FOR A PS4. We hold no PS4 capture of a sign-in; the family's work on
+                 * record is registration and streaming from an imported record, and the gate was never
+                 * reached. A PS4 that does not recognise one of those five headers never decrypts it,
+                 * never spends its counter, and expects the passcode one lower - which is exactly the
+                 * shape of a console reading a well-formed field and calling it wrong. So the same
+                 * digits are offered at 5, then at 4, then at the neighbours, and the console decides.
+                 *
+                 * ONLY UPWARDS, AND THAT IS A DELIBERATE HALF OF THE QUESTION. Counters 0-4 have each
+                 * already encrypted a /sess/ctrl field under this key, and a repeated counter is a
+                 * repeated IV: anyone who captured both frames learns the XOR of their plaintexts, and
+                 * RP-StreamingType's plaintext at 4 is a known 4-byte integer - which would make the
+                 * XOR the passcode itself. That is a real weakening of a live session and it is not
+                 * something to do as a side effect of a diagnostic.
+                 *
+                 * So this tries the counters nothing has used. If the console accepts one, the question
+                 * is answered at no cost. If it refuses all of them, the answer lies below 5, and
+                 * reaching it means reusing an IV deliberately, once, with somebody who understands
+                 * that choosing to - not a sweep that quietly did it on the way past.
+                 *
+                 * PS5 DOES NOT SWEEP. There the counter is settled, so a rejection means the digits were
+                 * wrong and the right response is to ask again rather than to try the same wrong digits
+                 * five more ways.
+                 */
+                static const unsigned kSweep[RC_SIGNIN_ATTEMPTS] = { 5u, 6u, 7u, 8u, 9u };
+
+                if (rec.is_ps5) {
+                    counter = HALYARD_SESS_COUNTER_LOGIN_PIN_START;
+                    if (attempt > 1 && !ask_login_pin(1, typed, sizeof(typed)))
+                        break;
+                    if (attempt > 1)
+                        pin = typed;
+                } else {
+                    counter = kSweep[attempt - 1];
+                }
+
+                say(RC_PHASE_CONNECTING, "Signing in", "Sending the passcode", NULL);
+
                 out->login_verdict = -1;
                 g_signin.verdict_new = 0;
+                session.next_counter = counter;
                 if (!halyard_control_session_submit_login(&session, pin, strlen(pin))) {
                     SAY("the passcode could not be encoded - not sent");
                     say(RC_PHASE_FAILED, "That passcode could not be sent",
@@ -4132,15 +4179,8 @@ answered:
                     break;
                 }
                 out->login_submitted = 1;
-                /*
-                 * THE LENGTH AND THE COUNTER, NEVER THE DIGITS. Counter 5 for the first submit is a
-                 * PS5 fact (cap50) that this port applies to both families; if a PS4 wants the passcode
-                 * somewhere else, this line is what will say so, because the length will be right and
-                 * the answer still wrong.
-                 */
                 rc_log("conn:  %u digit(s) submitted at counter %u\n",
-                       (unsigned)strlen(pin), (unsigned)(session.next_counter - 1u));
-                SAY("passcode submitted - waiting for the console's answer");
+                       (unsigned)strlen(pin), counter);
 
                 /*
                  * WHICHEVER THE CONSOLE SAYS FIRST. Session-ready is the outright success; the verdict
@@ -4156,13 +4196,6 @@ answered:
                  * READ THE VERDICT, WHICH MEANS CLEARING IT. verdict_new is a latch meaning "a verdict
                  * has arrived and nobody has acted on it yet", and signin_wait stops the moment it is
                  * set - so a verdict still latched here is a wait that returns instantly.
-                 *
-                 * b440 was exactly that, and the log named it precisely: "the console accepted the
-                 * passcode - waiting for SESSION_ID" followed immediately by "stage reached: control
-                 * session open". The console had unlocked and was about to start a session; the wait
-                 * for it lasted no time at all, so the attempt was written off as a sign-in failure and
-                 * the shell came back. Reading the value and clearing the latch together is the whole
-                 * of the fix, and is why the read is one place rather than three conditions.
                  */
                 if (g_signin.verdict_new) {
                     int verdict = out->login_verdict;
@@ -4170,41 +4203,40 @@ answered:
                     g_signin.verdict_new = 0;
 
                     if (verdict == 1) {
-                        SAY("the console rejected that passcode");
-                        continue;       /* ask again; attempt > 1 makes the screen say so */
+                        rc_log("conn:  the console rejected the passcode at counter %u\n", counter);
+                        continue;
                     }
                     if (verdict == 0) {
                         /*
-                         * Accepted, and the session does not always follow at once - the reference
-                         * measures about five seconds on the rendezvous route while the console
-                         * renegotiates. Wait that out rather than blaming the passcode for a session
-                         * that is merely late.
+                         * ACCEPTED - AND ON A PS4 THE COUNTER IS THE FINDING. Said loudly because the
+                         * whole point of the sweep is the number, and a run that works and does not say
+                         * why has to be done again to learn anything.
                          */
-                        SAY("the console accepted the passcode - waiting for SESSION_ID");
+                        out->login_counter = (int)counter;
+                        rc_log("conn:  ACCEPTED at counter %u - this is the answer the sweep was for\n",
+                               counter);
                         say(RC_PHASE_CONNECTING, "Signed in", "Waiting for the console", NULL);
                         signin_wait(rc_time_ms() + RC_SIGNIN_WAIT_MS);
                         break;
                     }
-                    /* A verdict byte nobody has seen. Retrying asks the same question again. */
                     SAY("the console answered with a verdict byte nobody has seen - not retrying");
                     break;
                 }
-                /* It said nothing at all. Ask again - the same passcode may simply not have landed. */
-                SAY("the console did not answer the passcode - asking again");
+                /* It said nothing at all. The next counter is as good a next step as a re-send. */
+                SAY("the console did not answer the passcode");
             }
 
             /*
              * THE GATE OWNS WHAT IS SAID ABOUT ITS OWN FAILURE, and this flag is how it keeps it. Every
              * way out of the loop above has already put a sentence on the screen that names the actual
-             * problem - except running out of attempts, which is said here. Without the flag the caller's
-             * generic report would paint over all of them with "the console refused the session", which
-             * is both wrong and leaves somebody with nothing to try.
+             * problem - except running out of attempts, which is said here.
              */
             if (!g_signin.ready) {
                 out->login_blocked = 1;
                 if (attempt > RC_SIGNIN_ATTEMPTS)
                     say(RC_PHASE_FAILED, "The console would not accept the passcode",
-                        "Every attempt was refused",
+                        rec.is_ps5 ? "Every attempt was refused"
+                                   : "Refused at every counter tried",
                         "Use the passcode you sign in with on the console itself");
             }
         }
