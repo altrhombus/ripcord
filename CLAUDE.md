@@ -255,12 +255,21 @@ When working in `Ripcord.Protocol.Halyard*`, `Ripcord.Cloud.Halyard`, or anythin
   or account — registration keys, pairing records, session keys, device or account ids — stays in the
   dirty room, and `BundledInteropConstantsTests.Bundle_CarriesNoLiveVectorMaterial` enforces that line.
   Do not widen this exception without amending `NOTICE` and this file together.
-  - **One further constant travels with these, and is listed here so the inventory is complete:**
-    `HalyardRegistrationMessage.ClientTypeHex` — the 32-byte `Client-Type` value the console parses by
-    content. Observed on our own wire, generic to the application, identical for every client, and tied
-    to no account or console, so it passes the same generic-versus-personal test. It lives in source
-    rather than the bundle because it is a protocol constant a message builder needs inline. The spec
-    redacts it as `<hex>` only because the spec redacts *all* observed field values by default.
+  - **One further constant travels with these, and is listed here so the inventory is complete:** the
+    32-byte `Client-Type` value the console parses by content. Observed on our own wire, generic to the
+    application, identical for every client, and tied to no account or console, so it passes the same
+    generic-versus-personal test. It lives in source rather than the bundle because it is a protocol
+    constant a message builder needs inline. The spec redacts it as `<hex>` only because the spec
+    redacts *all* observed field values by default.
+    - **It has two homes, and both are the inventory:**
+      `HalyardRegistrationMessage.ClientTypeHex` and `HALYARD_REGIST_CLIENT_TYPE_HEX` in
+      `ports/common/session/halyard_regist_message.h`. The C ports build a registration request without
+      linking against the .NET side, so the value is written twice on purpose. This is **not** a
+      widening of the exception — no new value is exposed, the same one appears in two places — but a
+      sentence claiming to be a complete inventory has to name both, and for a while it named one.
+      `BundledInteropConstantsTests.ClientType_PortsCopyMatchesTheReferenceImplementation` asserts the
+      two agree, so a third copy or a drifted one fails with that sentence rather than as an
+      unexplained hex literal. If you add a home, add it here and to that test together.
 - **Bounded exception 2: the application OAuth credential** in
   `src/Ripcord.Cloud.Halyard/Data/halyard-oauth-client.json` (added 2026-08-07, deliberately, by the project
   owner's decision — this one had sat unresolved as "the OAuth decision" for months). It is the vendor desktop

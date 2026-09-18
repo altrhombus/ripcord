@@ -1,0 +1,229 @@
+/*
+ * ripcord-ps3 - a probe for the console's own H.264 decoder (cellVdec, via PSL1GHT's codec/vdec.h).
+ *
+ * WHY A PROBE BEFORE AN IMPLEMENTATION. b144 established that openh264 on the PPE is the ceiling: with
+ * the network finally clean the console tripled its bitrate, frames went from 8.2 KB to 23.3 KB, and the
+ * measured cost per successful decode rose to somewhere around 70-83 ms - a 12-14 fps limit on a 30 fps
+ * stream. The hardware decoder is the way out, and it runs on the SPEs rather than the PPE.
+ *
+ * The obstacle is that vdecType.profile_level has no constant anywhere in the SDK headers. It is a number
+ * the library expects and that this project has no derivation for. Guessing it from recall is exactly the
+ * failure mode CLAUDE.md names - fluent, confident specificity about a value nobody checked - so this
+ * sweeps the space instead and lets the console say which values it accepts. That is a derivation.
+ *
+ * The same probe reports the memory each accepted level wants, which sizes the allocation the real
+ * implementation will need, and whether the module loads at all.
+ *
+ * Nothing here decodes anything. It queries, and it is safe to run before the decoder exists.
+ */
+#ifndef RC_VDEC_PROBE_H
+#define RC_VDEC_PROBE_H
+
+#include <stdint.h>
+
+/* The accepted profile_level values, in order, filled by rc_vdec_probe. b145 found 13 of them spanning
+ * 10 to 42, which is exactly H.264's own level_idc set - but a count and a range are an inference, and
+ * this is the list itself. */
+#define RC_VDEC_LEVELS_MAX 32
+
+typedef struct {
+    int module_load;
+    int levels[RC_VDEC_LEVELS_MAX];
+    int level_count;          /* sysModuleLoad's return for the H.264 decoder module */
+    int queried;              /* how many profile_level values were tried */
+    int accepted;             /* how many vdecQueryAttr accepted */
+    int first_accepted;       /* the lowest accepted value, -1 if none */
+    int last_accepted;        /* the highest accepted value, -1 if none */
+    unsigned first_mem_size;  /* what the lowest accepted value asks for */
+    unsigned largest_mem_size;/* the largest any accepted value asks for */
+    int largest_mem_level;    /* which value that was */
+    unsigned cmd_depth;       /* from the lowest accepted value */
+    unsigned ver_major;
+    unsigned ver_minor;
+    int last_error;           /* the error the last REJECTED query returned */
+} rc_vdec_probe_result;
+
+/* Loads the module and sweeps profile_level. Returns 1 if the module loaded, whatever the sweep found. */
+int rc_vdec_probe(rc_vdec_probe_result *out);
+
+/*
+ * THE SECOND QUESTION, and the one that decides whether cellVdec is usable at all: does it decode the
+ * same bytes into the same pictures?
+ *
+ * This runs the console's decoder over the same capture rc_decode_probe feeds to openh264 and hashes the
+ * output the same way - Y, then U, then V, one running FNV-1a per picture, via the same function. Equal
+ * hashes mean the two decoders agree, which is the only evidence worth having before the live path is
+ * moved onto a decoder nobody here has run.
+ *
+ * It is deliberately OFFLINE. Nothing in the streaming path changes, and a failure costs a run rather
+ * than a session.
+ *
+ * EVERY STEP IS LOGGED AS IT IS ATTEMPTED, through the caller's own log function, and that is the whole
+ * point rather than a convenience. b146 recorded the step in the struct below and printed it after the
+ * call returned - which names nothing at all when the call never returns, which is precisely the case
+ * the field existed for. The console hung and the last line in the log was the one printed before the
+ * probe started. A record that only survives success is not instrumentation.
+ *
+ * rc_log flushes per line, so a line written before a call is on disk before that call can hang.
+ */
+typedef enum {
+    RC_VDEC_STEP_NONE = 0,
+    RC_VDEC_STEP_READ_FILE,
+    RC_VDEC_STEP_QUERY_ATTR,
+    RC_VDEC_STEP_ALLOC,
+    RC_VDEC_STEP_OPEN,
+    RC_VDEC_STEP_START_SEQUENCE,
+    RC_VDEC_STEP_DECODE_AU,
+    RC_VDEC_STEP_GET_PICTURE,
+    RC_VDEC_STEP_END_SEQUENCE,
+    RC_VDEC_STEP_CLOSE,
+    RC_VDEC_STEP_DONE
+} rc_vdec_step;
+
+typedef struct {
+    int      level;           /* the profile_level asked for */
+    unsigned mem_size;        /* what vdecQueryAttr wanted for it */
+    int      opened;
+    int      aus_fed;
+    int      pictures_out;
+    int      width, height;
+    uint64_t hash[8];         /* RC_DECODE_PROBE_FRAMES - same order, same function */
+    int      hashes;
+    int      last_error;      /* the library's own return from whatever failed */
+    int      last_step;       /* rc_vdec_step - the last call ATTEMPTED */
+    uint64_t decode_ticks;    /* feeding only; the hash is not in here */
+
+    /*
+     * THE FIRST PICTURE, PULLED APART. b151 proved the decoder works - 14 pictures, no errors - and that
+     * its output does not hash the same as openh264's, with both reporting 640x360. The combined hash
+     * cannot say why. These can: the luma hashed on its own, and the chroma hashed at two candidate
+     * offsets, because the capture's SPS is 640x368 and a decoder that keeps 368 rows starts its U plane
+     * at 640*368 while this probe was reading it at 640*360.
+     */
+    uint64_t hash_y;
+    uint64_t hash_u_at_visible;  /* U assuming the planes follow the 360 visible rows */
+    uint64_t hash_u_at_padded;   /* U assuming they follow the 368 coded rows */
+    uint64_t hash_v_at_visible;
+    uint64_t hash_v_at_padded;
+    int      padded_height;      /* what the 16-aligned height would be */
+
+    /*
+     * THE STRIDE, DERIVED RATHER THAN ASSUMED. b152 showed the two decoders disagree on the LUMA, not
+     * just the chroma, and printed the reason in passing: openh264's own strides are 704 and 352 for a
+     * 640-wide picture. It pads, and this probe was reading vdec's output as though stride equalled
+     * width. If vdec pads too then every row after the first is read misaligned, which corrupts Y and
+     * makes any question about chroma offsets meaningless.
+     *
+     * No SDK header states the stride, so it is swept against openh264's known-good luma hash - the same
+     * method that turned profile_level from a guess into the level_idc set. `matched_stride` is the one
+     * that reproduces the reference, or 0 if nothing in the range does, which would mean the difference
+     * is in the pixels rather than their arrangement.
+     */
+    int      matched_stride;
+    int      matched_luma_rows;  /* rows of luma before the chroma begins, once the stride is known */
+    unsigned picture_size;       /* what the decoder itself says the picture occupies */
+    unsigned picture_attr;
+    unsigned picture_status;
+    uint8_t  first_luma[16];       /* see rc_decode_probe.h for why bytes and not another hash */
+    uint8_t  second_row_luma[16];  /* at the stride picture_size implies */
+
+    /*
+     * THE DIFF AGAINST openh264's FIRST LUMA PLANE. Hashes said "not equal" four builds running and a
+     * corner sample said "equal here"; neither says WHERE. These do.
+     *
+     * A first difference on a row boundary means a layout mistake still. Differences scattered from an
+     * early content row mean the two decoders decoded different pictures. A small count means they
+     * agree and something trivial differs; a count near the whole plane means they do not.
+     */
+    int diff_valid;          /* a reference was available to compare against */
+    long diff_bytes;         /* how many of the luma bytes differ */
+    long diff_total;         /* out of how many */
+    long diff_first_offset;  /* -1 if identical */
+    int  diff_first_row, diff_first_col;
+    uint8_t diff_reference[8];
+    uint8_t diff_actual[8];
+
+    /*
+     * THE SHAPE OF THE DISAGREEMENT, not just its size. b155 found the two decoders agree on 99% of the
+     * plane, with the first difference at column 632 of 640 and a count near 8*360 - which is what a
+     * few bytes of drift per row looks like, and nothing like two different pictures. These say whether
+     * that reading holds: drift confined to the right edge gives a high min column and every row
+     * affected, while a genuinely different picture scatters across all columns.
+     */
+    int  diff_rows_affected;
+    int  diff_min_col, diff_max_col;
+    int  diff_min_row, diff_max_row;
+    long diff_in_last_16_cols;
+
+    /*
+     * If the planes are drifting, the drift is a stride this probe has not guessed. Rather than reason
+     * about it again, the reference's second row is searched for in the decoder's output: the offset it
+     * is found at IS the stride. 0 means it was not found, which would end the drift theory.
+     */
+    int found_row_stride;
+
+    /*
+     * HOW BIG the differences are, which is what decides whether they matter. b156 localised them to
+     * columns 632..639 and showed one sample differing by exactly 1. A handful of least-significant bits
+     * at the right edge is invisible; anything large is a real decode fault wearing the same shape.
+     */
+    int  diff_max_delta;
+    long diff_delta_sum;
+    long diff_over_4;
+
+    /*
+     * THE EDGE ITSELF, from three rows with real content in them.
+     *
+     * b157 killed the easy explanations: the differences are large (up to 165), so not rounding; they sit
+     * only in columns 632..639, so not drift; and the capture's SPS crops 8 rows off the BOTTOM and
+     * nothing off the sides, so not cropping. Rows 0..23 agree completely, including those columns, which
+     * makes it content-dependent rather than structural.
+     *
+     * What is left is to look at the pixels. Sixteen columns from each decoder, so the last eight sit
+     * beside the eight before them that agree.
+     */
+    uint8_t edge_ref[3][16];
+    uint8_t edge_act[3][16];
+    int     edge_row[3];
+    int     edge_rows;
+
+    /*
+     * And one specific question worth answering while looking: is vdec's edge a COPY of something else in
+     * the same row? A decoder that replicates its last good block, or is off by a block, would show up as
+     * those eight bytes occurring somewhere else in the reference row. -1 if they do not.
+     */
+    int edge_found_at;
+
+    unsigned buffer_addr;   /* where the picture was written, to show its alignment */
+    int      rgb_requested;
+    int      rgb_accepted;      /* vdecGetPicture returned success for ARGB32 */
+    unsigned rgb_min, rgb_max;  /* the byte range it wrote - all zero means accepted and not filled */
+    /*
+     * THE FIRST PIXEL, WHICH DECIDES THE RANGE. The capture opens on black, and in this stream black is
+     * limited-range Y=0x18. A decoder converting limited to full gives RGB 9 (1.164 * (24 - 16)); one
+     * treating the input as already full-range gives 24, and every level above it is lifted the same
+     * way - which is what a picture that looks slightly too bright would be.
+     */
+    uint8_t  rgb_first[8];
+} rc_vdec_decode_result;
+
+/* Decodes up to `max_frames` pictures from the Annex-B capture at `path` using the console's decoder.
+ * Returns 1 if at least one picture came out. `out` is filled either way. */
+/* Called with one already-formatted line per step attempted. Must write through to storage - see above. */
+typedef void (*rc_vdec_log_fn)(const char *message);
+
+/*
+ * `reference_y` is openh264's luma hash for the first picture, used to identify the stride by sweep.
+ * Pass 0 to skip that search.
+ */
+/*
+ * `want_rgb` asks the decoder for VDEC_PICFMT_ARGB32 instead of YUV420P. That is the open question behind
+ * the colour converter: if the decoder can hand back RGB, the YUV-to-RGB pass on the SPEs is not needed.
+ * Asked here, offline, because the streaming path has no RGB blit and a format switch there would draw
+ * garbage to find out.
+ */
+int rc_vdec_decode_probe(const char *path, int level, int max_frames, rc_vdec_log_fn log,
+                         uint64_t reference_y, uint64_t reference_u, int want_rgb,
+                         rc_vdec_decode_result *out);
+
+#endif /* RC_VDEC_PROBE_H */

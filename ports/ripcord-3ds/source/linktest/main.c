@@ -26,7 +26,7 @@
  * screen and, via rc_log(), to a file next to this .3dsx on the SD card.
  */
 #include "../net/rc_soc.h"
-#include "../util/rc_log.h"
+#include "util/rc_log.h"
 
 #include <3ds.h>
 

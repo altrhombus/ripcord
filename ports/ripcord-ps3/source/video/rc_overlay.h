@@ -1,0 +1,211 @@
+/*
+ * ripcord-ps3 - the on-screen diagnostics overlay. See the .c for what it may and may not do to the
+ * memory it draws into.
+ *
+ * ORDER MATTERS AND IS THE CALLER'S PROBLEM. rc_overlay_end() queues the copy over the picture, so it
+ * has to run AFTER the picture has been queued and BEFORE the flip. It also has to run on every frame
+ * even when rc_overlay_begin() declines to rebuild the text, because the picture blit clears the back
+ * buffer each time - see b228 for what skipping it looks like.
+ */
+#ifndef RC_OVERLAY_H
+#define RC_OVERLAY_H
+
+#include <stdint.h>
+
+/*
+ * THE PALETTE. The top byte is carried but the panel is OPAQUE - see rc_video_overlay_blit for why
+ * translucency is closed off, and what it cost to find out.
+ *
+ * Blues and greys rather than the pure black and white the first version used: a black panel over a
+ * dark game disappears and a white-on-black one glares over a bright one. These sit above both, and
+ * the body is a touch lighter than it would be if it were see-through, so it reads as a deliberate
+ * panel rather than as a hole in the picture.
+ */
+#define RC_OV_PANEL    0xFF12161Cu   /* the body                                            */
+#define RC_OV_HEADER   0xFF1B2129u   /* the title bar, lifted so the name separates from it  */
+#define RC_OV_EDGE     0xFF39434Fu
+#define RC_OV_ACCENT   0xFF4A9EFFu
+#define RC_OV_TEXT     0xFFE6EAEFu
+#define RC_OV_LABEL    0xFF8A94A0u   /* field names - present but not competing with the values */
+#define RC_OV_GOOD     0xFF5FD08Au
+#define RC_OV_WARN     0xFFF0C04Au
+#define RC_OV_BAD      0xFFF06060u
+#define RC_OV_TRACK    0xFF232B34u   /* the empty part of a sparkline                       */
+
+/* Ask for the platform's own font. Must be called BEFORE rc_overlay_set, which is where it is tried.
+ * Off by default on this port - it does not work here, and DECODE.md records what was eliminated. */
+void rc_overlay_set_system_font(int on);
+
+/*
+ * PREPARE the overlay: allocate its panel and build its font atlas. Expensive, and safe only where a
+ * few milliseconds do not matter - call it at session set-up, not from the present path. See the note
+ * in the .c for what doing it lazily cost.
+ */
+void rc_overlay_set(int on);
+
+/* SHOW or hide it. Cheap, and safe to call from anywhere - it only decides whether to draw. */
+void rc_overlay_show(int on);
+int  rc_overlay_shown(void);
+
+/* Whether the bitmap and atlas exist. Nothing can be drawn before rc_overlay_set has succeeded. */
+int  rc_overlay_prepared(void);
+
+/* Prepared AND shown, which is what the present path actually wants to know. */
+int  rc_overlay_on(void);
+
+/* 1 when the console's own face opened, 0 when the drawn fallback is in use. Worth reporting: the two
+ * look different enough that "which font is this" is otherwise guessed from the screen. */
+int  rc_overlay_using_system_font(void);
+
+/*
+ * DESIGN PIXELS TO REAL ONES. Every measurement in the panel's layout is against a 1920x1080 screen;
+ * this converts one. A fixed pixel layout is 40% of a 1080p screen, 59% of a 720p one and wider than a
+ * 720x480 one - at which point the blit refuses the rectangle and the overlay is silently not there.
+ */
+int rc_overlay_px(int design);
+
+/*
+ * THE SURFACE IS THE SCREEN. rc_overlay_surface_width/height report the display's own size, so a
+ * caller laying out against it works in real pixels and scales its own design measurements.
+ */
+
+/*
+ * THE PANEL and THE SURFACE are different sizes. The panel is the region the diagnostics overlay and
+ * the status card lay out against; the surface is the whole bitmap, which is larger so that a menu can
+ * share this file's font, blending and blit rather than carrying a second copy of all three.
+ */
+int rc_overlay_width(void);
+int rc_overlay_height(void);
+int rc_overlay_surface_width(void);
+int rc_overlay_surface_height(void);
+
+/* How far below a run's top edge its baseline sits, so two sizes on one row can be aligned by their
+ * baselines rather than by their boxes. */
+int rc_overlay_ascent(int scale);
+
+/* The height of a capital at this scale. */
+int rc_overlay_cap_height(int scale);
+
+/*
+ * THE y TO HAND rc_overlay_text SO A LABEL SITS CENTRED IN A BOX, given the box's top and height.
+ *
+ * Every caller that wanted this was doing it by subtracting a guessed constant from the box height, and
+ * every one of those guesses was the line height rather than the height of the letters - so the text in
+ * a pill and the text in a list row both hung high by the space a descender would have used. It is one
+ * calculation and it belongs where the metrics are, not in four layout sites with four constants.
+ */
+int rc_overlay_text_y(int box_y, int box_h, int scale);
+
+/*
+ * Starts a rebuild. 0 means "not yet" - the bitmap still holds the last text and the caller should go
+ * straight to rc_overlay_end() to queue the copy.
+ */
+int  rc_overlay_begin(void);
+
+/*
+ * The same, for a caller that is drawing because something CHANGED rather than because a frame went
+ * past: no throttle, no `shown` gate. Pair with rc_overlay_end_now. See the notes in the .c.
+ */
+int  rc_overlay_begin_now(void);
+
+/*
+ * The same again, for a caller drawing the WHOLE surface rather than the panel - the shell.
+ *
+ * `clear` asks for opaque black first, which is right for a caller whose drawing leaves gaps. A caller
+ * that writes every pixel itself - the shell does, the background is the first thing it draws - passes
+ * 0, because clearing 1920x1080 to black and then immediately overwriting all of it is two million
+ * stores a frame spent on a colour nobody ever sees.
+ */
+int  rc_overlay_begin_surface(int clear);
+
+/*
+ * How long every text run since the last reset took, and how many there were. For telling "the drawing
+ * is slow" apart from "the TEXT is slow", which are different fixes.
+ */
+void rc_overlay_text_cost(unsigned *us, unsigned *runs, int reset);
+
+/*
+ * AIM THE DRAWING SOMEWHERE OTHER THAN THE SURFACE, or back at it with NULL.
+ *
+ * The shell builds its whole interface once into a cached layer and composites that over the moving
+ * background each frame; text is most of what such a layer holds. The destination must be at least as
+ * large as the surface. See the note in the .c: the compositing arithmetic is the same either way.
+ */
+void rc_overlay_target(uint32_t *px, int pitch);
+
+/*
+ * Called for each row a drawing operation puts ink on, with the row and the half-open column range.
+ * NULL turns it off. For a caller keeping a cached layer: knowing this as it is drawn is what saves
+ * reading the layer back afterwards to find out. Bounds are conservative, never tight.
+ */
+void rc_overlay_set_ink_hook(void (*hook)(int y, int x0, int x1));
+
+/* 1 when the RSX reads the bitmap in main memory rather than a copy of it in its own - which is what
+ * removed an eight-megabyte copy a frame, and what makes cache flushing this side's problem. */
+int rc_overlay_reads_main(void);
+
+/* The position is an argument rather than shared state - see the note in the .c for what making it
+ * state cost the diagnostics overlay. */
+void rc_overlay_end_now(int x, int y, int w, int h);
+void rc_overlay_rect(int x, int y, int w, int h, uint32_t argb);
+
+/* The same, but letting what is already there through according to the top byte. Costs a read per
+ * pixel, which is why the diagnostics panel does not use it - see the note in the .c. */
+void rc_overlay_blend_rect(int x, int y, int w, int h, uint32_t argb);
+
+/*
+ * A CONTROLLER BUTTON, as its shape, in a square box `size` on a side. Returns the width consumed, so a
+ * row of hints is laid out by chaining rather than by hand-measured offsets - which is how the last one
+ * ended up off-centre in the shell.
+ *
+ * CIRCLE AND CROSS ONLY. Those are the two the in-session menu names, and a shape nobody draws is a
+ * shape nobody checks - the shell has its own richer set because it needs triangle and the two word
+ * pills. Anything else asked for here is drawn as nothing rather than as an approximation.
+ *
+ * Takes `button` as a HALYARD_PAD_* bit so callers pass the same value they test input against, rather
+ * than a second enumeration that has to be kept in step with the first.
+ */
+int rc_overlay_glyph(uint32_t button, int x, int y, int size, uint32_t argb);
+
+/* Direct access for a caller that fills the surface itself, such as the shell's background. The pitch
+ * is in PIXELS. NULL until rc_overlay_set has succeeded. */
+uint32_t *rc_overlay_pixels(int *pitch_px);
+
+/*
+ * TWO FONTS, AND WHICH ONE TO USE IS A QUESTION ABOUT THE TEXT, NOT ABOUT TASTE.
+ *
+ * _text is proportional, with real lower case and descenders, and is for WORDS - labels, headings,
+ * anything whose job is to be read.
+ *
+ * _num is the monospaced 5x7, and is for anything that CHANGES. A column of figures has to hold still
+ * while the figures change: a digit one pixel narrower than its neighbour shuffles the whole row every
+ * time it ticks, and a number that moves while you read it is a number you read twice. Prefer
+ * _num_right for those, so the digits grow leftwards from a fixed edge.
+ */
+/*
+ * BOTH RETURN THE ADVANCE, so a caller chains `x += rc_overlay_text(x, ...)` rather than writing down
+ * where the next piece goes. The first version of the panel used hand-measured pixel offsets for every
+ * run that mixed words and figures; they were measured against one font at one size, and the first
+ * time either changed the labels started cutting into the numbers beside them. An offset that has to
+ * be recomputed by hand whenever anything moves is a bug with a delay on it.
+ */
+int rc_overlay_text(int x, int y, int scale, uint32_t argb, const char *fmt, ...);
+int rc_overlay_num(int x, int y, int scale, uint32_t argb, const char *fmt, ...);
+
+/* Right-aligned: the text ENDS at x. For a figure that changes, so it grows leftwards from a fixed edge. */
+void rc_overlay_text_right(int x, int y, int scale, uint32_t argb, const char *fmt, ...);
+void rc_overlay_num_right(int x, int y, int scale, uint32_t argb, const char *fmt, ...);
+
+/* What rc_overlay_num WOULD occupy, without drawing it - for reserving room to its left. */
+int rc_overlay_num_width(int scale, const char *fmt, ...);
+
+/*
+ * A sparkline: `n` values drawn as columns left to right, scaled against `max`. Zero-height bars still
+ * get a single pixel so a run of dead seconds reads as a flat line rather than as missing data.
+ */
+void rc_overlay_bars(int x, int y, int w, int h, const unsigned *v, unsigned n, unsigned max,
+                     uint32_t argb);
+
+void rc_overlay_end(void);
+
+#endif /* RC_OVERLAY_H */

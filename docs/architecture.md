@@ -20,11 +20,11 @@ would be, and `PresentationPortabilityTests` is what stops one appearing.
 
 ```
   FRONT ENDS          Ripcord.App                ports/ripcord-3ds   (C, devkitARM)
-                      (WinUI 3, Windows)         ports/ripcord-vita  (C, started)
-                             │                            ╷
-                             ▼                            ╷
-                   Ripcord.Presentation.Halyard           ╷
-                             │                            ╷
+                      (WinUI 3, Windows)         ports/ripcord-ps3   (C, ps3dev)
+                             │                            │
+                             ▼                            ▼
+                   Ripcord.Presentation.Halyard           ports/common     the portable C99 core
+                             │                            ╷                every port compiles
                              ▼                            ╷ ported from,
   PORTABLE APP       Ripcord.Presentation                 ╷ not linked
                              │                            ╷ against
@@ -42,10 +42,15 @@ would be, and `PresentationPortabilityTests` is what stops one appearing.
   FOUNDATION        Ripcord.Core  ·  Ripcord.Core.Net       no PlayStation knowledge
 ```
 
-Solid arrows are assembly references. The ports are **separate from-scratch C implementations** that port
-logic from `src/` rather than linking against it — they exist as completeness tests for the specification,
-on the principle that a spec is only as good as its ability to produce a working implementation by someone
-who was not in the room when it was written.
+Solid arrows are assembly references on the managed side and ordinary compilation on the ports side.
+The ports are **separate from-scratch C implementations** that port logic from `src/` rather than linking
+against it — they exist as completeness tests for the specification, on the principle that a spec is only
+as good as its ability to produce a working implementation by someone who was not in the room when it was
+written.
+
+The dotted line starts at `ports/common` rather than at each port because that is where the porting
+actually happened: the protocol is written once in portable C99 and every port consumes it. What a port
+contains is its platform — video, audio, input, storage, a shell — and nothing else.
 
 Media (`Ripcord.Media*`), input (`Ripcord.Input*`) and diagnostics (`Ripcord.Diagnostics`) hang off the
 front end rather than the protocol stack, and reach native code through their `.Interop` halves.
@@ -94,6 +99,40 @@ Each project, and what it is responsible for:
 - **`tools/Ripcord.ProtocolLab`** — the console harness: drives the connect flow against a real PS5 and
   replays captures through the parsers. The iteration/verification tool for every protocol stage.
 - **`tools/Ripcord.HidCapture`** — standalone HID capture utility for controller RE work.
+
+## The ports
+
+`ports/` holds from-scratch C clients for consoles the .NET stack cannot run on. They share a protocol
+core with each other, and nothing at all with `src/` at link time.
+
+- **`ports/common`** — the protocol in portable C99: `crypto/`, `halyard/` (the control KDF and the field
+  ciphers), `session/`, `discovery/`, `takion/`, `stream/` (A/V framing and Cauchy Reed-Solomon FEC over
+  GF(2^8)), `input/`, `net/`, `util/`, plus `tests/` — a host-side known-answer suite that needs no
+  console, no GPU and no hardware. It is not a library anyone designed: it is what was left over when the
+  3DS port was audited for a second target and **71 of its 88 source files turned out to reference no
+  operating system at all**.
+- **`ports/common/platform/rc_platform.h`** — the seam, and the only header in the core that names an OS:
+  a monotonic millisecond clock, a sleep, a high-resolution tick, a CSPRNG. Sockets are deliberately not
+  in it; they are called as plain BSD names, which was expected to need a seam on Vita and did not.
+  **Nothing goes in that header that only one platform needs** — a seam earns its place by having at
+  least two real implementations, and anything a single port wants belongs in that port's tree behind a
+  callback the port installs. That is why decode, audio and present are absent from it, despite being the
+  largest platform surface any port has.
+- **`ports/ripcord-3ds`** — modded New 3DS, devkitARM. Streams decoded video from a real PS5.
+- **`ports/ripcord-ps3`** — PS3 homebrew, ps3dev/PSL1GHT. Decodes on the console's own `cellVdec`, scales
+  on the SPEs, presents through the RSX, and pairs from the console with the system keyboard.
+
+Dependency direction inside the core matches the .NET side's: `halyard/` depends on `crypto/` and never
+the reverse, and `crypto/` knows nothing about PlayStation.
+
+**The clean-room rule does not apply between Ripcord's own front ends.** A port may read, port and
+directly adapt code from `src/` at will — that is this project's own reference implementation, not the
+external source the rule exists to keep out. [`CLAUDE.md`](../CLAUDE.md) states the exception. Citing what
+a file was ported from is good practice, because it tells the next reader where to look when the two
+diverge, but it is a courtesy rather than an obligation.
+
+A Vita port exists on an unpublished branch and is **not in this tree**; [`journal.md`](journal.md)
+records what it established. The diagram above names only what is here.
 
 ## The crypto seam pattern
 

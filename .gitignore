@@ -46,6 +46,20 @@ docs/protocol/captures/
 client.json
 account.json
 
+## Ripcord: a console port's pairing record. halyard_pairing_file.c writes it beside the running
+## binary, so it normally lives on the console or next to a build output that is already ignored -
+## this rule is for the copy that gets dropped into the tree while developing, which is exactly how
+## the two rules above earned their place.
+##
+## It is the per-console half of the same split: registkey and companion are tied to one console and
+## one account, and the file also carries login_pin, the console's own sign-in PIN. CLAUDE.md puts all
+## of that on the personal side of the generic-versus-personal line, where the bundled interop
+## constants are on the other. Never committed.
+##
+## Named rather than globbed because the filename is fixed in halyard_pairing_file.c; if that ever
+## takes a configurable name, this rule needs to follow it.
+pairing.txt
+
 ## Ripcord: per-machine Claude Code state. Local tool-permission grants, of use to nobody
 ## else, and they record the paths this machine happened to read - including comparison reads
 ## of other implementations, which are a permitted audit but have no business in a public
@@ -62,8 +76,25 @@ account.json
 ## build/ so it cannot quietly swallow a directory somebody adds elsewhere.
 ports/*/build/
 ports/*/tests/build/
+## Ripcord: third-party dependencies a port fetches and hash-verifies at build time rather than
+## vendoring them - openh264 for the PS3 decoder, via that port's own build script. Deliberately
+## OUTSIDE build/: `make clean` must not destroy a 57 MB fetch and 35 compiles, and `make distclean`
+## is the one that does. Kept here beside the other ports/ rules rather than in the port that needed
+## it first, so a working tree cannot lose the fetch just by standing on a branch without that port.
+ports/*/third-party/
+
+## Ripcord: the ports' per-machine build counter - how many times somebody pressed make, which is not a
+## fact about the project. ports/ripcord-ps3/Makefile explains what it is for.
+##
+## This rule and the *.self / *.pkg ones below live on the shared branch rather than only on the branch
+## of the port that produces them: a `git add -A` run from a branch without them, while a port's
+## artifacts happen to be sitting on disk, commits them. That is exactly how 2.5 MB of PS3 binaries
+## once reached ports/common's branch.
+ports/*/.buildno
 *.3dsx
 *.vpk
+*.self
+*.pkg
 *.smdh
 *.cia
 *.elf
@@ -566,3 +597,6 @@ $RECYCLE.BIN/
 
 # Vim temporary swap files
 *.swp
+
+## Ripcord: PS Vita packaging output, produced by ports/ripcord-vita/Makefile.
+ports/*/*.vpk
