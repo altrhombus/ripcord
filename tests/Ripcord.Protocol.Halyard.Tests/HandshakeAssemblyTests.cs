@@ -80,11 +80,20 @@ public class HandshakeAssemblyTests
 
         var registrationKey = Encoding.ASCII.GetBytes("abcd1234");
         var deviceId = Hex.Bytes("00112233445566778899aabbccddeeff");
-        var fields = HalyardSessCtrlFields.Build(crypto, registrationKey, deviceId, 10, 0, startBitrate: 10_000, streamingType: 0);
+        var fields = HalyardSessCtrlFields.Build(crypto, registrationKey, deviceId, 10, 0, startBitrate: 10_000, streamingType: 0, platform: HalyardConsolePlatform.Ps5);
 
         Assert.Equal(
             new[] { SessProtocol.HeaderAuth, SessProtocol.HeaderDid, SessProtocol.HeaderOsType, SessProtocol.HeaderStartBitrate, SessProtocol.HeaderStreamingType },
             fields.Select(f => f.Key).ToArray());
+
+        // PS4 carries four headers, not five - RP-StreamingType is not one of them - which is what puts the
+        // login passcode at counter 4 instead of 5. A capture fact; see HalyardSessCtrlFields.LoginPinCounter.
+        var ps4 = HalyardSessCtrlFields.Build(crypto, registrationKey, deviceId, 10, 0, startBitrate: 10_000, streamingType: 0, platform: HalyardConsolePlatform.Ps4);
+        Assert.Equal(
+            new[] { SessProtocol.HeaderAuth, SessProtocol.HeaderDid, SessProtocol.HeaderOsType, SessProtocol.HeaderStartBitrate },
+            ps4.Select(f => f.Key).ToArray());
+        Assert.Equal(5ul, HalyardSessCtrlFields.LoginPinCounter(HalyardConsolePlatform.Ps5));
+        Assert.Equal(4ul, HalyardSessCtrlFields.LoginPinCounter(HalyardConsolePlatform.Ps4));
 
         // Every value is valid base64; RP-Auth decrypts back to the zero-padded registration key.
         foreach (var (_, value) in fields)
