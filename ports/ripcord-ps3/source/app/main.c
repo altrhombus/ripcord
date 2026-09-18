@@ -1602,6 +1602,9 @@ static int check_connect(void)
     case RC_CONNECT_SESSION_OPEN:
         ps3_log("       %d control frame(s) while waiting; first 0x%04x, last 0x%04x, %d heartbeat(s)\n",
                 c.frames_seen, c.first_type, c.last_type, c.heartbeats);
+        if (c.login_counter >= 0)
+            ps3_log("       COUNTER: the console accepted the passcode at cipher counter %d\n",
+                    c.login_counter);
         if (c.login_prompt && c.login_verdict == 1) {
             ps3_log("FAIL  the console REJECTED the passcode - every attempt. That is its own answer,\n");
             ps3_log("      not a timeout. It wants the passcode the console signs in with; a `pin=`\n");
