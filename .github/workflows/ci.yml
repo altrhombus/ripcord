@@ -280,15 +280,25 @@ jobs:
       # build and the one that has actually been installed on hardware. The .self is here because it
       # is what ps3load takes, which is the fast loop SETUP.md section 6 argues for.
       #
-      # The third-party notices are not listed separately: they travel INSIDE the package, which is
-      # where the licences require them, and the step above fails the build if they do not.
+      # THE PACKAGE, AND ONLY THE PACKAGE. It is the file a person wants - it installs from the XMB and
+      # appears on the console - and it is self-sufficient, carrying USRDIR/THIRD-PARTY-NOTICES.txt
+      # inside itself, which is where the licences want it for a binary distribution.
+      #
+      # The .self used to ship here too and no longer does, which settles a licence question rather than
+      # trimming a download. A .self is a bare executable with no container: `strings` finds no notice
+      # text in it, and it links openh264, Opus, Mbed TLS, PSL1GHT and FreeType statically. Publishing
+      # one means publishing the notices beside it and relying on whoever downloads it to take both. Not
+      # publishing it removes the question instead of answering it, and costs nothing - a .self is a
+      # local build product for ps3load, and anyone who wants one runs `make`.
+      #
+      # The .gnpdrm one rather than the plain .pkg: it is what tools/ship.sh uploads, what SETUP.md's
+      # loop installs, and what has been installed on hardware. The plain .pkg also installs and can
+      # come back if a reason appears; one file is a better default than two that differ in a header
+      # byte and an encryption key.
       - uses: actions/upload-artifact@v4
         with:
           name: ripcord-ps3-b${{ github.run_number }}
-          path: |
-            ports/ripcord-ps3/ripcord-ps3.gnpdrm.pkg
-            ports/ripcord-ps3/ripcord-ps3.pkg
-            ports/ripcord-ps3/ripcord-ps3.self
+          path: ports/ripcord-ps3/ripcord-ps3.gnpdrm.pkg
           if-no-files-found: error
 
   # CONTRIBUTING.md section 1 requires every commit to carry a Signed-off-by line matching its
