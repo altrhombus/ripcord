@@ -95,7 +95,31 @@ HEADER
     section "Opus $(basename "$OPUS_DIR" | sed 's/^opus-//') - BSD-3-Clause"
     cat "$OPUS_DIR/COPYING"
 
-    section "Mbed TLS $(basename "$MBEDTLS_DIR" | sed 's/^mbedtls-//') - Apache-2.0"
+    # MBED TLS IS DUAL-LICENSED, and this section used to say "Apache-2.0" over a file that carries both
+    # arms in full - 553 lines, of which about 250 are the GNU General Public License. A reader of the
+    # shipped notices saw a GPL text under an Apache heading with nothing joining the two, and the
+    # available readings were "this package contains GPL code" and "somebody pasted the wrong file".
+    # Neither is true; what was missing is that a CHOICE WAS MADE.
+    #
+    # Reproducing upstream's file verbatim stays - it is the text that ships with the version actually
+    # linked, which is the property this generator exists for. What is added is the sentence naming the
+    # arm, in the same shape the FreeType election below already uses, because this project had a house
+    # style for exactly this case and applied it to one of the two components that needed it.
+    section "Mbed TLS $(basename "$MBEDTLS_DIR" | sed 's/^mbedtls-//') - Apache-2.0 (elected)"
+    cat <<'MBEDTLS_ELECTION'
+Mbed TLS is offered under a dual licence - Apache-2.0 or GPL-2.0-or-later - at
+the choice of the user of the library. RIPCORD ELECTS THE APACHE-2.0 ARM.
+
+The election is recorded because the two arms are not interchangeable for this
+project: Apache-2.0 is the licence Ripcord itself is distributed under, and
+GPL-2.0 is not compatible with it. A build that drifted into the GPL arm because
+nobody chose would be a licensing problem discovered late.
+
+Upstream's own licence file follows in full, unmodified. It carries the text of
+BOTH arms, so the GNU General Public License appears below despite not being the
+licence under which this package uses Mbed TLS.
+
+MBEDTLS_ELECTION
     cat "$MBEDTLS_DIR/LICENSE"
 
     # FreeType: the disclaimer below is what the FTL requires of a BINARY distribution (FTL section 1).
