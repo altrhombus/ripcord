@@ -46,6 +46,20 @@ docs/protocol/captures/
 client.json
 account.json
 
+## Ripcord: a console port's pairing record. halyard_pairing_file.c writes it beside the running
+## binary, so it normally lives on the console or next to a build output that is already ignored -
+## this rule is for the copy that gets dropped into the tree while developing, which is exactly how
+## the two rules above earned their place.
+##
+## It is the per-console half of the same split: registkey and companion are tied to one console and
+## one account, and the file also carries login_pin, the console's own sign-in PIN. CLAUDE.md puts all
+## of that on the personal side of the generic-versus-personal line, where the bundled interop
+## constants are on the other. Never committed.
+##
+## Named rather than globbed because the filename is fixed in halyard_pairing_file.c; if that ever
+## takes a configurable name, this rule needs to follow it.
+pairing.txt
+
 ## Ripcord: per-machine Claude Code state. Local tool-permission grants, of use to nobody
 ## else, and they record the paths this machine happened to read - including comparison reads
 ## of other implementations, which are a permitted audit but have no business in a public
