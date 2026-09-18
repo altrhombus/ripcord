@@ -71,6 +71,13 @@ The backlog below has 44 open items and no line through it, which means it canno
 This section draws that line. It is deliberately a *definition* first, because every argument about whether
 something belongs in 1.0 turns out to be an argument about what 1.0 is for.
 
+**THIS 1.0 IS THE WINDOWS CLIENT'S. The console ports version independently**, and `ripcord-ps3` has its own
+tag namespace - `ps3-v1.0`, built and published by the `ps3-release` job in `.github/workflows/ci.yml` when
+such a tag is pushed. That is a claim about the port alone: that it runs, streams and pairs. It is not a
+claim that anything in this section is met, and a reader who sees a `ps3-v1.0` release should not conclude
+that Ripcord shipped. The two version lines are separate on purpose, because the port and the app are at
+very different maturities and a shared number would have to lie about one of them.
+
 ### What 1.0 means
 
 > **Someone who is not the author can download a build, pair their own console, and play — on PS5 or PS4 —

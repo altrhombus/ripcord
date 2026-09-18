@@ -3,6 +3,11 @@ name: CI
 on:
   push:
     branches: [main]
+    # The PS3 port versions independently of the Windows client, so it has its own tag namespace and
+    # ps3-v1.0 is a claim about the port alone. A tag push runs this whole file, not a reduced release
+    # pipeline: a release that has not passed the same checks as a pull request is a weaker artifact than
+    # the pull request was.
+    tags: ['ps3-v*']
   pull_request:
   workflow_dispatch:
 
@@ -232,7 +237,22 @@ jobs:
       # with a dot in it (run 432 -> 04.32). The Makefile's ceiling applies here too: the NN.NN
       # version field holds to b9999, and run 10000 would produce a version this console will not
       # parse. That is years away and it is written down rather than guarded.
+      # ON A TAG THE PACKAGE IS VERSIONED BY THE TAG AND NOT BY EITHER COUNTER, because a person installing
+      # a release is asking "which version is this" and a counter answers "which iteration is this" - a
+      # question about the machine that built it. RELEASE_TAG goes into the environment, which is where the
+      # Makefile's `RELEASE_TAG ?=` reads it from, and the developer counter is not consumed at all.
+      - name: Decide how this build is versioned
+        run: |
+          case "$GITHUB_REF" in
+            refs/tags/ps3-v*)
+              echo "RELEASE_TAG=$GITHUB_REF_NAME" >> "$GITHUB_ENV"
+              echo "release build, versioned by tag $GITHUB_REF_NAME" ;;
+            *)
+              echo "ordinary build, versioned by run number ${{ github.run_number }}" ;;
+          esac
+
       - name: Stamp the package with this run's number
+        if: env.RELEASE_TAG == ''
         run: echo $(( ${{ github.run_number }} - 1 )) > ports/ripcord-ps3/.buildno
 
       # BOTH GOALS, and `pkg` alone is not enough. The pkg rule depends on build/ripcord-ps3.ready.elf
@@ -258,22 +278,36 @@ jobs:
       - name: The package carries the build that was just made
         working-directory: ports/ripcord-ps3
         run: |
-          # [a-z]* tolerates the BUILD_ORIGIN suffix this job passes - the id is "b35ci", not "b35".
-          # Without it the pattern matches nothing and this gate fails every CI build while reporting a
-          # stale package, which is the misdiagnosis it exists to avoid rather than cause.
-          built=$(sed -n 's/.*"b\([0-9]*\)[a-z]*".*/\1/p' build/rc_build_id.h)
           sfo_ver=$(strings build/pkg/PARAM.SFO | grep -oE '^[0-9][0-9]\.[0-9][0-9]$' | head -1)
-          sfo_built=$(printf '%s' "$sfo_ver" | tr -d '.' | sed 's/^0*//')
 
-          if [ -z "$built" ] || [ "$built" != "$sfo_built" ]; then
-            echo "::error::compiled b$built but the package's version says ${sfo_ver:-nothing} - the package is stale"
-            exit 1
+          if [ -n "$RELEASE_TAG" ]; then
+            # A RELEASE IS CHECKED AGAINST ITS TAG, which is the only thing that can be wrong about it:
+            # the package must claim the version the tag names. ps3-v1.0 -> 01.00.
+            expected=$(printf '%s' "$RELEASE_TAG" \
+              | sed -n 's/^ps3-v\([0-9][0-9]*\)\.\([0-9][0-9]*\)$/\1 \2/p' \
+              | xargs printf '%02d.%02d')
+            if [ -z "$expected" ] || [ "$sfo_ver" != "$expected" ]; then
+              echo "::error::tag $RELEASE_TAG wants version $expected but the package says ${sfo_ver:-nothing}"
+              exit 1
+            fi
+            echo "$RELEASE_TAG, version $sfo_ver - EBOOT, icon and notices all present"
+          else
+            # [a-z]* tolerates the BUILD_ORIGIN suffix this job passes - the id is "b35ci", not "b35".
+            # Without it the pattern matches nothing and this gate fails every CI build while reporting a
+            # stale package, which is the misdiagnosis it exists to avoid rather than cause.
+            built=$(sed -n 's/.*"b\([0-9]*\)[a-z]*".*/\1/p' build/rc_build_id.h)
+            sfo_built=$(printf '%s' "$sfo_ver" | tr -d '.' | sed 's/^0*//')
+
+            if [ -z "$built" ] || [ "$built" != "$sfo_built" ]; then
+              echo "::error::compiled b$built but the package's version says ${sfo_ver:-nothing} - the package is stale"
+              exit 1
+            fi
           fi
           for f in build/pkg/USRDIR/EBOOT.BIN build/pkg/USRDIR/THIRD-PARTY-NOTICES.txt build/pkg/ICON0.PNG; do
             [ -s "$f" ] || { echo "::error::$f is missing or empty in the package staging directory"; exit 1; }
           done
-          echo "b$built, version $sfo_ver - EBOOT, icon and notices all present"
-          ls -l ripcord-ps3.pkg ripcord-ps3.gnpdrm.pkg ripcord-ps3.self
+          [ -n "$RELEASE_TAG" ] || echo "b$built, version $sfo_ver - EBOOT, icon and notices all present"
+          ls -l ripcord-ps3.gnpdrm.pkg
 
       # BOTH PACKAGES, because they are not interchangeable and which one a console wants depends on
       # how it is set up. tools/ship.sh uploads the .gnpdrm one - that is the package_finalize'd
@@ -300,6 +334,67 @@ jobs:
           name: ripcord-ps3-b${{ github.run_number }}
           path: ports/ripcord-ps3/ripcord-ps3.gnpdrm.pkg
           if-no-files-found: error
+
+  # THE RELEASE. Runs only for a ps3-v* tag, and only after everything else in this file has passed -
+  # including the two suites, both App architectures and both portable-core hosts. A release that skipped
+  # the checks a pull request has to pass would be a weaker artifact than the pull request was.
+  #
+  # IT BUILDS NOTHING. The package it publishes is the one ps3-package already built and verified against
+  # the tag, downloaded as that job's artifact. A release that rebuilds is a release nothing has checked -
+  # the bytes a person installs would be bytes no gate ever saw.
+  #
+  # A DRAFT, DELIBERATELY. The workflow attaches the package and writes nothing about what it does; a human
+  # publishes it, having written release notes that say what this port streams and what it does not. An
+  # automated release is an outward-facing act taken without anybody reading it, and this project's notes
+  # are the place its limits get stated honestly.
+  ps3-release:
+    name: PS3 release
+    if: startsWith(github.ref, 'refs/tags/ps3-v')
+    # Deliberately not `dco`: it is pull-request-only, so on a tag it is skipped, and a skipped dependency
+    # skips its dependents.
+    needs: [tests, app, portable-core, ps3-package]
+    runs-on: ubuntu-latest
+    permissions:
+      # The only job in this file that writes anything back. The workflow's default is contents: read.
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: ripcord-ps3-b${{ github.run_number }}
+          path: dist
+
+      # THE ASSET CARRIES THE VERSION IN ITS NAME, because a file called ripcord-ps3.gnpdrm.pkg in a
+      # downloads folder beside three others is unidentifiable. The console does not care what the package
+      # is called - only EBOOT.BIN's name matters to NPDRM - so this is free.
+      - name: Publish a draft release with the package
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # ${GITHUB_REF_NAME#ps3-} drops the namespace prefix, so ps3-v0.9 gives ripcord-ps3-v0.9.pkg
+          # rather than ripcord-ps3-ps3-v0.9.pkg. The prefix exists to keep the tag namespace separate
+          # from the Windows client's; it has no business appearing twice in a filename.
+          asset="ripcord-ps3-${GITHUB_REF_NAME#ps3-}.pkg"
+          mv dist/ripcord-ps3.gnpdrm.pkg "$asset"
+          ls -l "$asset"
+
+          # The notes are a placeholder on purpose. What this port streams, and what it does not, is a
+          # judgement a person makes and writes before publishing - not something a workflow asserts.
+          cat > notes.md <<'NOTES'
+          **Draft — release notes go here before publishing.** What this build runs, streams and pairs
+          with, and what it does not do.
+
+          The package installs from the XMB. It carries its own third-party notices inside itself at
+          `USRDIR/THIRD-PARTY-NOTICES.txt`.
+          NOTES
+          sed -i 's/^          //' notes.md
+
+          gh release create "$GITHUB_REF_NAME" "$asset" \
+            --draft \
+            --title "ripcord-ps3 $GITHUB_REF_NAME" \
+            --notes-file notes.md
+
+          echo "Draft release $GITHUB_REF_NAME created with $asset attached."
+          echo "It is NOT public until somebody publishes it."
 
   # CONTRIBUTING.md section 1 requires every commit to carry a Signed-off-by line matching its
   # author. Until now the only thing enforcing that was a checkbox in the pull-request template,
