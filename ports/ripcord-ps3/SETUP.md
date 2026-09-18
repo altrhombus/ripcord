@@ -233,8 +233,9 @@ question is answered: a packaged title can write to its own `USRDIR`, to `/dev_h
 **Still open, and now genuinely about work rather than tooling:**
 
 1. **The loader's default main-thread stack**, when `SYS_PROCESS_PARAM` is absent — never measured.
-2. **Sockets on hardware.** `bind()` to port 0 is the specific thing worth testing before assuming; the
-   3DS rejects it outright and no PS3 has been asked.
+2. ~~**Sockets on hardware.**~~ **Answered on hardware.** `bind()` to port 0 was the specific thing worth
+   testing rather than assuming, because the 3DS rejects it outright. **The PS3 accepts it** — the run
+   that established that is the one where discovery found a PS5 from the console.
 3. ~~**Step 6, SPU bring-up.**~~ **Done on hardware.** Dispatch ~65 µs, DMA ~10 GB/s single-buffered;
    `DECODE.md` §3 has what that does to the decoder's design. The second compiler works, an SPE image
    embeds into the PPU binary, and a job model exists.
