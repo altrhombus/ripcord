@@ -42,6 +42,25 @@ static void fill_addr(struct sockaddr_in *a, const char *ip, unsigned short port
  * moving the socket's lifetime into the caller's hands. rc_discover is now these three in a loop, which
  * is also the check that they behave: the bring-up path exercises them on every run.
  */
+/*
+ * BOTH FAMILIES, because a search that only asks one of them can only ever find one of them.
+ *
+ * The two differ in the port they listen on and in the protocol version they expect echoed back - 9302
+ * and 00030010 for a PS5, 987 and 00020020 for a PS4 - so a PS5 probe is not merely unanswered by a
+ * PS4, it never reaches it. This port asked only the first, and a PS4 on the same network was
+ * indistinguishable from no PS4 at all.
+ *
+ * ONE SOCKET IS ENOUGH for both. The replies come back to the source address and port of the probe, not
+ * to the port it was sent to, so a single bound socket receives both and the parser does not need to be
+ * told which it is reading - the reply says so itself, in the host type this port now carries through
+ * to pairing.
+ */
+static const halyard_discovery_profile *const kProfiles[] = {
+    &halyard_discovery_profile_ps5,
+    &halyard_discovery_profile_ps4,
+};
+#define RC_DISCOVER_PROFILES ((int)(sizeof(kProfiles) / sizeof(kProfiles[0])))
+
 int rc_discover_open(rc_discover_result *out)
 {
     const halyard_discovery_profile *profile = &halyard_discovery_profile_ps5;
@@ -50,6 +69,7 @@ int rc_discover_open(rc_discover_result *out)
     struct sockaddr_in local, bcast;
     int sock = -1;
     int on = 1;
+    int p;
 
 
     memset(out, 0, sizeof(*out));
@@ -112,6 +132,24 @@ int rc_discover_open(rc_discover_result *out)
     }
     out->sinlen_set_send_ok = 1;
     out->probes_sent = out->sinlen_zero_send_ok ? 2 : 1;
+
+    /*
+     * AND THE REST OF THE FAMILIES. The first is already out - it carried the sin_len experiment above,
+     * which wants one probe and not a loop around it - so this sends every profile after it. A send
+     * that fails is not fatal: one family answering is a better outcome than neither, and a network
+     * that refuses a broadcast to one port has already been reported by the send that did go.
+     */
+    for (p = 1; p < RC_DISCOVER_PROFILES; p++) {
+        char other[128];
+        size_t other_len = halyard_discovery_build_probe(kProfiles[p], other, sizeof(other));
+
+        if (other_len == 0u)
+            continue;
+        fill_addr(&bcast, "255.255.255.255", kProfiles[p]->port);
+        if (sendto(sock, other, other_len, 0, (struct sockaddr *)&bcast,
+                   (socklen_t)sizeof(bcast)) >= 0)
+            out->probes_sent++;
+    }
 
     /*
      * Poll rather than block. rc_time_ms is the seam's monotonic clock - the one rc_platform_ps3.c

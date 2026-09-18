@@ -5,6 +5,7 @@
 #include "rc_account_ps3.h"
 #include "halyard_account_id.h"
 #include "halyard_regist_flow.h"
+#include "halyard_control_arm.h"
 #include "rc_log.h"
 #include "rc_osk_ps3.h"
 #include "rc_platform.h"
@@ -166,7 +167,34 @@ const char *rc_pair_record_dir(void)
     return RC_PAIR_DIR;
 }
 
-int rc_pair_run(const char *host, const char *name, const char *console_id)
+/*
+ * WHICH FAMILY IS AT THIS ADDRESS, when nobody has said.
+ *
+ * The arming probe is already a family test and it is the one that matters: "SRC3" for a PS5 and "SRC2"
+ * for a PS4, on TCP 9295's own UDP port, answered with "RES3"/"RES2". That is the same port the
+ * registration POST goes to, so a console that answers here is a console that will take the POST - and
+ * sending the probe is what arms its listener anyway, which registration requires regardless.
+ *
+ * PS5 IS TRIED FIRST because this port has only ever had PS5s pointed at it; the cost of the order
+ * being wrong is one two-second window. Returns 1 for PS5, 0 for PS4, and -1 for "neither answered",
+ * which is a real answer rather than a reason to guess: an address that does not respond here is not
+ * going to accept a registration, and saying so beats sending one to find out.
+ */
+static int detect_family(const char *host)
+{
+    if (halyard_control_arm_probe(host, 1)) {
+        rc_log("pair:  %s answered the PS5 probe\n", host);
+        return 1;
+    }
+    if (halyard_control_arm_probe(host, 0)) {
+        rc_log("pair:  %s answered the PS4 probe\n", host);
+        return 0;
+    }
+    rc_log("pair:  %s answered neither the PS5 nor the PS4 probe\n", host);
+    return -1;
+}
+
+int rc_pair_run(const char *host, const char *name, const char *console_id, const char *host_type)
 {
     halyard_pairing_record record;
     halyard_regist_params params;
@@ -265,7 +293,25 @@ int rc_pair_run(const char *host, const char *name, const char *console_id)
         return 0;
     params.passcode = (uint32_t)strtoul(pin_text, NULL, 10);
 
-    params.is_ps5 = 1;
+    /*
+     * THE FAMILY, from discovery when it found one and from the console itself when it did not. Never
+     * assumed: this line used to read `params.is_ps5 = 1;` and that single assumption is the whole
+     * reason a PS4 could be paired with, prompted for a PIN, and refused.
+     */
+    if (host_type != NULL && host_type[0] != '\0') {
+        params.is_ps5 = (strcmp(host_type, "PS4") != 0);
+        rc_log("pair:  discovery says this is a %s\n", params.is_ps5 ? "PS5" : "PS4");
+    } else {
+        int family = detect_family(params.host);
+
+        if (family < 0) {
+            show(RC_PHASE_FAILED, "That address did not answer",
+                 "Neither a PS5 nor a PS4 replied there",
+                 "Check the address, and that the console is on and on the same network");
+            return 0;
+        }
+        params.is_ps5 = family;
+    }
     if (!local_address(params.host, params.client_ip, sizeof(params.client_ip))) {
         /*
          * Named as the PS3, because "this console" reads as the PS5 to anyone standing between the

@@ -50,6 +50,15 @@ void rc_pair_apply_port_defaults(halyard_pairing_record *record);
  * THE CONSOLES ALREADY PAIRED ARE KEPT. This adds one or replaces the entry at the same address; it no
  * longer overwrites the file, which is what used to destroy the previous console's keys silently.
  */
-int rc_pair_run(const char *host, const char *name, const char *console_id);
+/*
+ * `host_type` is the family, "PS5" or "PS4", as discovery reported it. NULL means nobody knows yet -
+ * the address was typed - and the flow finds out for itself rather than assuming.
+ *
+ * IT IS NOT A DETAIL. The two families take different registration paths, different key tables and
+ * different wrap tables, and a console sent the wrong family's registration refuses it. This port
+ * hard-coded PS5 at every one of those decisions, so a PS4 could be typed in, prompted for, and
+ * refused, with a log line that said only "the console refused the registration".
+ */
+int rc_pair_run(const char *host, const char *name, const char *console_id, const char *host_type);
 
 #endif /* RC_PAIR_PS3_H */

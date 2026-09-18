@@ -111,10 +111,26 @@ static void fill_addr(struct sockaddr_in *a, const char *ip, unsigned short port
  * `found_addr` receives the address that answered and `found_id` its id, so the caller can compare
  * both with the record's WITHOUT either of them being logged.
  */
-static int broadcast_find(char *found_addr, size_t addr_size, char *found_id, size_t id_size,
+/*
+ * WHICH FAMILY'S DISCOVERY PROFILE, from the record.
+ *
+ * The ports and the protocol version differ between the families, so a PS4 sent a PS5 SRCH never hears
+ * it - the datagram goes to a port it is not listening on. Every site below used the PS5 profile
+ * outright, which made a paired PS4 unreachable at the wake and at every liveness probe even once
+ * pairing itself had been fixed.
+ *
+ * The record is the authority because pairing already established the family and wrote it down; nothing
+ * on this path needs to ask again.
+ */
+static const halyard_discovery_profile *profile_for(int is_ps5)
+{
+    return is_ps5 ? &halyard_discovery_profile_ps5 : &halyard_discovery_profile_ps4;
+}
+
+static int broadcast_find(int is_ps5, char *found_addr, size_t addr_size, char *found_id, size_t id_size,
                           const char *want_id, unsigned timeout_ms)
 {
-    const halyard_discovery_profile *profile = &halyard_discovery_profile_ps5;
+    const halyard_discovery_profile *profile = profile_for(is_ps5);
     char probe[128];
     size_t probe_len;
     struct sockaddr_in local, bcast;
@@ -175,9 +191,10 @@ static int broadcast_find(char *found_addr, size_t addr_size, char *found_id, si
     return got;
 }
 
-static int probe_once(const char *host, unsigned short src_port, int *is_awake, unsigned timeout_ms)
+static int probe_once(int is_ps5, const char *host, unsigned short src_port, int *is_awake,
+                      unsigned timeout_ms)
 {
-    const halyard_discovery_profile *profile = &halyard_discovery_profile_ps5;
+    const halyard_discovery_profile *profile = profile_for(is_ps5);
     char probe[128];
     size_t probe_len;
     struct sockaddr_in local, peer;
@@ -232,7 +249,7 @@ static int probe_once(const char *host, unsigned short src_port, int *is_awake, 
 
 static int send_wakeup(const halyard_pairing_record *rec, rc_connect_result *out)
 {
-    const halyard_discovery_profile *profile = &halyard_discovery_profile_ps5;
+    const halyard_discovery_profile *profile = profile_for(rec->is_ps5);
     char credential[HALYARD_WAKE_CREDENTIAL_MAX];
     char payload[256];
     size_t payload_len;
@@ -3872,7 +3889,8 @@ rc_connect_stage rc_connect(unsigned wake_timeout_ms, rc_connect_log_fn log,
         rec.name[0] != '\0' ? rec.name : "Looking for the console", NULL);
     SAY("unicast SRCH to the recorded address");
 
-    if (probe_once(rec.host, halyard_discovery_profile_ps5.wake_search_source_port, &awake, 1500u)) {
+    if (probe_once(rec.is_ps5, rec.host, profile_for(rec.is_ps5)->wake_search_source_port,
+                   &awake, 1500u)) {
         out->unicast_replied = 1;
     } else {
         /*
@@ -3883,7 +3901,8 @@ rc_connect_stage rc_connect(unsigned wake_timeout_ms, rc_connect_log_fn log,
         char seen[HALYARD_DISCOVERY_ADDRESS_MAX];
         char seen_id[HALYARD_DISCOVERY_HOST_ID_MAX];
 
-        if (broadcast_find(seen, sizeof(seen), seen_id, sizeof(seen_id), rec.console_id, 2500u)) {
+        if (broadcast_find(rec.is_ps5, seen, sizeof(seen), seen_id, sizeof(seen_id),
+                           rec.console_id, 2500u)) {
             out->broadcast_found = 1;
             out->broadcast_matches = (strcmp(seen, rec.host) == 0);
 
@@ -3906,8 +3925,8 @@ rc_connect_stage rc_connect(unsigned wake_timeout_ms, rc_connect_log_fn log,
                                                        ? out->record_dir : RC_CONNECT_PAIRING_DIR,
                                                    rec.console_id, seen);
                 snprintf(rec.host, sizeof(rec.host), "%s", seen);
-                if (probe_once(rec.host, halyard_discovery_profile_ps5.wake_search_source_port,
-                               &awake, 1500u)) {
+                if (probe_once(rec.is_ps5, rec.host,
+                               profile_for(rec.is_ps5)->wake_search_source_port, &awake, 1500u)) {
                     out->unicast_replied = 1;
                     goto answered;
                 }
@@ -3962,8 +3981,8 @@ answered:
                 return out->stage;
             }
             out->polls++;
-            if (probe_once(rec.host, halyard_discovery_profile_ps5.wake_search_source_port,
-                           &awake, 800u) && awake) {
+            if (probe_once(rec.is_ps5, rec.host,
+                           profile_for(rec.is_ps5)->wake_search_source_port, &awake, 800u) && awake) {
                 out->woke_after_ms = (unsigned)(rc_time_ms() - started);
                 break;
             }
