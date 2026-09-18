@@ -430,6 +430,9 @@ typedef struct {
      * keyboard, or every passcode refused. Stops the generic outcome below overwriting the specific
      * reason with "the console refused the session", which is both wrong and unactionable. */
     int      login_blocked;
+    /* The cipher counter the console ACCEPTED the passcode at, or -1 if none did. 5 for a PS5 and
+     * settled; on a PS4 it is the thing being measured - see the sweep in the sign-in gate. */
+    int      login_counter;
     int      overlay_system_font;/* the console's own face opened, rather than the drawn fallback */
     char     overlay_font_status[96];
     int      stream_stalled;     /* the console stopped sending video while the session was up */
