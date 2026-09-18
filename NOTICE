@@ -224,6 +224,30 @@ A built .self, .pkg or .3dsx links the components above statically, so whoever
 publishes one is distributing them and takes on the attribution and notice
 obligations that come with each.
 
+THAT IS NO LONGER SOMEBODY ELSE. This project publishes ripcord-ps3 binaries
+itself - as CI artifacts on every run, and as assets on a tagged release - so the
+obligations above are this project's own and not a caution addressed to a
+downstream packager. The sentence was written when no binary left this repository
+and has been left standing above, because it is still what applies to anyone who
+builds and publishes their own.
+
+WHAT IS PUBLISHED IS THE .pkg, AND IT CARRIES ITS OWN NOTICES. It contains
+USRDIR/THIRD-PARTY-NOTICES.txt, installs from the XMB and appears on the console -
+it is the file a person wants, and it needs nothing beside it to satisfy the
+obligations above.
+
+THE .self IS NOT PUBLISHED, and that is a licence decision as much as a
+simplification. A .self is a bare executable with no container: it links every
+component listed above statically and carries no notice text at all, so publishing
+one means publishing the notices next to it and depending on whoever downloads it
+to take both files rather than one. Not publishing it removes the question instead
+of answering it. It remains a local build product - what ps3load loads - and
+anyone who wants one builds it.
+
+An earlier revision shipped a .self in CI artifacts with no notices file, on the
+reasoning that the notices travel inside the package. True of the package, and not
+true of the .self next to it in the same download.
+
 This section is the inventory. The notices themselves are generated at package
 time by ports/ripcord-ps3/tools/gen-third-party-notices.sh, from the licence
 texts shipped with the exact versions linked into that build, and land in the
