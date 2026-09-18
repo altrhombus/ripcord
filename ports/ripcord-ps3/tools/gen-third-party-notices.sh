@@ -58,6 +58,22 @@ require "Mbed TLS" "$MBEDTLS_DIR"  "LICENSE" "run ../common/tools/build-mbedtls.
 
 section() { printf '\n\n%s\n%s\n\n' "$1" "$(echo "$1" | tr '[:print:]' '-')"; }
 
+# The PSL1GHT revision the linked binary was actually built from, as " (f649a08)", or nothing at all.
+#
+# The archive carries no licence file but it DOES carry build.txt, which names the exact ps3dev, PSL1GHT
+# and ps3libraries commits it was built from - so the notice can say which PSL1GHT it describes rather
+# than leaving a reader to assume. That is the part of "the licence of the version actually linked" that
+# is recoverable here, and it is worth recovering: the MIT text has not changed since 2011, but a notice
+# that names its subject can be checked and one that does not cannot.
+#
+# Degrades to an unlabelled heading rather than failing. A missing build.txt makes the notice less
+# precise; it does not make the licence any less required, and refusing to emit it would invert the whole
+# point of this change.
+psl1ght_version() {
+    [ -f "$PS3DEV/build.txt" ] || return 0
+    awk '$1 == "PSL1GHT" { printf " (%s)", substr($2, 1, 7); exit }' "$PS3DEV/build.txt" 2>/dev/null || true
+}
+
 {
     cat <<'HEADER'
 THIRD-PARTY NOTICES - ripcord-ps3
@@ -108,10 +124,53 @@ FREETYPE
         [ -f "$f" ] && { section "zlib"; cat "$f"; break; }
     done
 
-    # PSL1GHT: the runtime this port links against. Included when the toolchain carries a licence file.
-    for f in "$PSL1GHT/LICENSE" "$PSL1GHT/COPYING" "$PSL1GHT/licence.txt"; do
-        [ -f "$f" ] && { section "PSL1GHT"; cat "$f"; break; }
-    done
+    # PSL1GHT: the runtime this port links against, and the one toolchain component whose licence is
+    # MANDATORY rather than a courtesy. MIT requires "the above copyright notice and this permission
+    # notice" in all copies, and every .self and .pkg this port produces is a copy.
+    #
+    # EMITTED UNCONDITIONALLY, FROM TEXT HELD HERE, and that is the correction rather than a shortcut.
+    # An earlier revision read it from candidate paths under $PS3DEV and said nothing when none matched -
+    # which is what happened on every build, because the ps3dev prebuilt archive ships no licence file
+    # for anything. A find across the whole 577 MB unpacked tree returns exactly one, belonging to a
+    # PolarSSL this port does not link. So the loop was not unlucky; it could never have succeeded, and
+    # it failed silently for as long as it existed.
+    #
+    # This is the same decision #7 made for FreeType's mandatory disclaimer and for the same reason: an
+    # obligation that only ships when an optional file happens to be present is an obligation that does
+    # not ship. It is a checked-in copy of somebody else's licence, which this project otherwise avoids -
+    # but the argument against that is drift from the version actually linked, and there is no local copy
+    # to drift from. The commit below closes that gap instead.
+    #
+    # Provenance: https://github.com/ps3dev/PSL1GHT/blob/master/LICENSE, checked 2026-09-18 and found
+    # byte-identical at master and at the commit $PS3DEV/build.txt names for the pinned nightly - so the
+    # text below is right for the revision this toolchain links, not merely right for the project.
+    #
+    # The digest is deliberately NOT quoted here. A 64-character hex run in a comment is prose to the
+    # published-tree sweep, which cannot tell a licence digest from key material and should not try; the
+    # build scripts get away with theirs because those live in code. Re-verify by diffing this heredoc
+    # against that file rather than against a number somebody pasted, which is the stronger check anyway.
+    section "PSL1GHT$(psl1ght_version) - MIT"
+    cat <<'PSL1GHT_MIT'
+Copyright (c) 2011 PSL1GHT Development Team
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+PSL1GHT_MIT
 } > "$OUT"
 
 echo "gen-third-party-notices: wrote $OUT ($(wc -l < "$OUT") lines)"
