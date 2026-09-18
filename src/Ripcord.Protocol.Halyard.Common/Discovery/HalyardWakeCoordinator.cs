@@ -35,10 +35,18 @@ public sealed class HalyardWakeCoordinator(
     Func<CancellationToken, Task<bool?>> probeAwake,
     Func<CancellationToken, Task> sendWake,
     TimeSpan? pollInterval = null,
-    TimeSpan? wakeBudget = null)
+    TimeSpan? wakeBudget = null,
+    TimeProvider? timeProvider = null)
 {
     private readonly Func<CancellationToken, Task<bool?>> _probeAwake = probeAwake;
     private readonly Func<CancellationToken, Task> _sendWake = sendWake;
+
+    // The clock this loop measures its budget against, injectable for the same reason HalyardWanRendezvous
+    // takes one: a poll loop whose exit depends on elapsed real time cannot be tested without either waiting
+    // out the real interval or racing it. Tests supply a clock that reports the delay as having happened
+    // without spending it, so what decides the outcome is the SEQUENCE of probe answers - which is what this
+    // class is about - rather than how fast the host got through them.
+    private readonly TimeProvider _time = timeProvider ?? TimeProvider.System;
 
     // A few seconds between polls: a PS5 takes real time to come out of rest mode, so hammering discovery
     // buys nothing. The budget is generous because failing to wake a console the user asked for is worse than
@@ -71,10 +79,10 @@ public sealed class HalyardWakeCoordinator(
         // Poll until it reports awake or the budget runs out. A single WAKEUP is enough in the capture, so we
         // do not re-send on every tick — a console that ignored the first is unlikely to answer a flood, and
         // re-sending risks nothing useful.
-        var deadline = DateTime.UtcNow + _wakeBudget;
-        while (DateTime.UtcNow < deadline)
+        var deadline = _time.GetUtcNow() + _wakeBudget;
+        while (_time.GetUtcNow() < deadline)
         {
-            await Task.Delay(_pollInterval, cancellationToken).ConfigureAwait(false);
+            await Task.Delay(_pollInterval, _time, cancellationToken).ConfigureAwait(false);
 
             bool? state = await _probeAwake(cancellationToken).ConfigureAwait(false);
             if (state is true)

@@ -43,7 +43,7 @@ public class TakionReliableChannelTests
         Assert.Equal(ControlMessage.Types.MessageType.SessionReply, reply.Type);
 
         // The console SACKed our request, so the retransmit queue drains.
-        await WaitForAsync(() => client.UnackedCount == 0, cts.Token);
+        await WaitForAsync(() => client.UnackedCount == 0, cts.Token, "every DATA chunk to be acknowledged");
         Assert.Equal(0, client.UnackedCount);
 
         await cts.CancelAsync();
@@ -78,7 +78,7 @@ public class TakionReliableChannelTests
 
         // Once the SACK lands the estimate is populated. Over loopback it is sub-millisecond, so assert only
         // that a sample was taken and the value is sane — not a specific figure.
-        await WaitForAsync(() => client.RoundTripSampleCount > 0, cts.Token);
+        await WaitForAsync(() => client.RoundTripSampleCount > 0, cts.Token, "the first RTT sample");
         Assert.InRange(client.RoundTripTimeMs, 0, 5_000);
 
         await cts.CancelAsync();
@@ -115,12 +115,19 @@ public class TakionReliableChannelTests
             await Task.Delay(10, cts.Token);
         }
 
-        await WaitForAsync(() => client.RoundTripSampleCount >= 2, cts.Token);
+        await WaitForAsync(() => client.RoundTripSampleCount >= 2, cts.Token, "two RTT samples");
 
-        // Loopback RTT is well under a millisecond, so the estimate must be a positive fraction — proving the
-        // measurement survives at sub-millisecond scale instead of collapsing to an integer 0.
+        // THE REGRESSION IS TRUNCATION, so the load-bearing assertion is that the estimate is a positive
+        // fraction rather than an integer 0 - which is what an int-typed RoundTripTimeMs produced from a
+        // 0.4 ms round trip.
         Assert.True(client.RoundTripTimeMs > 0, "a real sample must produce a positive estimate");
-        Assert.True(client.RoundTripTimeMs < 100, $"loopback RTT should be tiny, got {client.RoundTripTimeMs} ms");
+
+        // A SANITY BOUND, NOT A PERFORMANCE ASSERTION, and it is loose on purpose. This drives real sockets,
+        // and how long a loopback round trip takes on a shared CI runner is a fact about the runner; an
+        // earlier `< 100` was tight enough that a busy host could cross it, which made a truncation test
+        // report a latency failure. What must not happen is a figure so large it could only be a unit or
+        // clock-source mistake, and that is all this catches.
+        Assert.True(client.RoundTripTimeMs < 5000, $"RTT should be a plausible millisecond figure, got {client.RoundTripTimeMs} ms");
 
         await cts.CancelAsync();
         await SwallowAsync(serverTask);
@@ -155,11 +162,21 @@ public class TakionReliableChannelTests
         }
     }
 
-    private static async Task WaitForAsync(Func<bool> condition, CancellationToken ct)
+    // THROWS when the condition never arrives, rather than returning as though it had. It used to exit on
+    // cancellation and let the caller assert against whatever state existed - so "the console never answered
+    // inside ten seconds" surfaced as whichever assertion happened to read an unset field next, naming a
+    // value rather than the wait. That is the same misdiagnosis shape as a stale-package check reporting a
+    // version mismatch: the guard fired, and pointed somewhere else.
+    private static async Task WaitForAsync(Func<bool> condition, CancellationToken ct, string what)
     {
-        while (!condition() && !ct.IsCancellationRequested)
+        while (!condition())
         {
-            await Task.Delay(20, ct).ConfigureAwait(false);
+            if (ct.IsCancellationRequested)
+            {
+                throw new TimeoutException($"timed out waiting for {what}");
+            }
+
+            await Task.Delay(20, CancellationToken.None).ConfigureAwait(false);
         }
     }
 
