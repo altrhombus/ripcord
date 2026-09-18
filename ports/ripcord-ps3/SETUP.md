@@ -315,6 +315,26 @@ channels wrote on the successful run. `_open_r` does dispatch through a devoptab
 `make pkg`, FTP it to `/dev_hdd0/packages/`, install from the XMB. One install per iteration, which is
 the real cost, and it has worked every time.
 
+**A build id ending in `ci` came from CI, not from your machine.** The two counters are independent and
+say nothing about each other: `.buildno` is gitignored per-machine state counting one developer's
+iterations, while the workflow stamps `github.run_number`, which counts CI runs and climbs much faster.
+Both print the same `bNNN` shape, and this repository's docs cite 94 local build numbers between b87 and
+b428 — so CI reaching run 87 would have minted a second, different "b87". `BUILD_ORIGIN=ci` appends the
+suffix and keeps them apart. **The XMB cannot help you here**: it shows `APP_VER`, which is digits and a
+dot, so a CI b35 and a local b35 both read `00.35` there. The log's first line is the authoritative
+answer, which is what this section has said since it was written.
+
+**An install that fails with `80028f21` is usually the title, not the package.** If the installed title
+is in an inconsistent state — a `USRDIR` assembled by hand, or a previous install that left it without an
+`EBOOT.BIN` — then *every* later install of that title fails, with an error that names nothing and is
+identical whatever package you feed it. It reads exactly like a broken build. **Delete the title from the
+XMB and install again**; that clears it. On 2026-09-18 this cost four hardware round trips, spent
+suspecting the version, the notices file, the package filename and `package_finalize` in turn, while all
+four were innocent and the title had been poisoned before the first of them was built.
+
+**Installing replaces `USRDIR`, so back up `pairing.txt` first** if the console is paired, or it has to be
+paired again. It is per-console material: keep it out of the repository.
+
 **The package carries its third-party notices**, generated into `USRDIR/THIRD-PARTY-NOTICES.txt` by
 `tools/gen-third-party-notices.sh` from the licence texts that came with the exact openh264, Opus and
 Mbed TLS the build linked. This adds no step: those tarballs already have to be fetched for the binary
