@@ -5,12 +5,14 @@ WHY GENERATE RATHER THAN COPY.  The bundle
 (src/Ripcord.Protocol.Halyard/Data/halyard-v1-constants.json) is committed under a specific, narrow
 argument in the repository NOTICE: these are values the console computes against, identical for every user
 and every console, and a client cannot speak the protocol without them.  That argument is made once, about
-one file.  A second checked-in copy of the same bytes in this port would quietly turn one bounded exception
-into two, and the second would carry no argument at all.  So this port keeps no copy: the build reads the
-one committed file and generates a C translation unit into the build directory, which is gitignored.
+one file.  A second checked-in copy of the same bytes would quietly turn one bounded exception into two,
+and the second would carry no argument at all.  So no consumer keeps a copy: each build reads the one
+committed file and generates a C translation unit into its own build directory, which is gitignored.
 
-It also means the port cannot drift.  If the bundle is ever corrected, ripcord-3ds picks up the correction on
-the next build rather than on the next time somebody remembers.
+It also means no consumer can drift.  If the bundle is ever corrected, every one of them picks up the
+correction on its next build rather than on the next time somebody remembers -- and there are four now
+(ripcord-3ds, ripcord-ps3, and the host test suite twice, once per switch below), which is three more
+reasons for that property than the argument was first written with.
 
 Parsing JSON on an ARM11 at 268 MHz to reach a lookup table would also be silly, which is the other half of
 the reason this is a build step and not runtime code.
@@ -24,7 +26,12 @@ and its constants had no business in the binary.  A port that DOES register need
 answer is a flag rather than emitting them everywhere -- every byte in a binary that nothing can reach is
 a byte somebody has to justify.
 
-Usage:  gen_constants.py [--registration] <bundle.json> <output.c>
+WHO ASKED.  --for names the build that invoked this, and is stamped into the generated file.  It exists
+because the header used to name a fixed path, that path was this script's old home under ripcord-3ds, and
+it stayed wrong in every generated file for as long as nobody followed it.  A caller that knows its own
+name can say so; one that does not omits the flag and the line simply reads without it.
+
+Usage:  gen_constants.py [--registration] [--for <name>] <bundle.json> <output.c>
 """
 
 import json
@@ -70,11 +77,21 @@ def main(argv):
     want_registration = "--registration" in args
     if want_registration:
         args.remove("--registration")
-    if len(args) != 2:
-        raise SystemExit("usage: gen_constants.py [--registration] <bundle.json> <output.c>")
-    argv = [argv[0]] + args
 
-    bundle_path, output_path = argv[1], argv[2]
+    # --for <name>: optional, so the three existing call sites keep working unchanged if one is missed.
+    requested_by = None
+    if "--for" in args:
+        at = args.index("--for")
+        if at + 1 >= len(args):
+            raise SystemExit("--for needs a name (the build asking for these constants)")
+        requested_by = args[at + 1]
+        del args[at:at + 2]
+
+    if len(args) != 2:
+        raise SystemExit(
+            "usage: gen_constants.py [--registration] [--for <name>] <bundle.json> <output.c>")
+
+    bundle_path, output_path = args[0], args[1]
 
     try:
         with open(bundle_path, "r", encoding="utf-8") as handle:
@@ -140,12 +157,14 @@ def main(argv):
         "/*",
         " * GENERATED FILE - DO NOT EDIT, DO NOT COMMIT.",
         " *",
-        f" * Produced by ports/ripcord-3ds/tools/gen_constants.py from {bundle_path}.",
+        f" * Produced by ports/common/tools/gen_constants.py from {bundle_path}"
+        + (f", for {requested_by}." if requested_by else "."),
         " * Regenerate with `make constants` (the normal build does it for you).",
         " *",
         " * These are the generic v1 interoperability constants described in the repository NOTICE:",
         " * identical for every console and every account, and required to speak the protocol at all.",
-        " * No per-console, per-account or per-session material appears here or anywhere in this port.",
+        " * No per-console, per-account or per-session material appears here, or anywhere in the build",
+        " * that asked for it.",
         " */",
         '#include "halyard_v1.h"',
         "",
@@ -172,7 +191,7 @@ def main(argv):
 
     if want_registration:
         parts += [
-            "/* Registration - emitted because this port performs PIN pairing itself. */",
+            "/* Registration - emitted because the build that asked performs PIN pairing itself. */",
             f"const int halyard_v1_registration_bundled = {1 if registration_complete else 0};",
             f"const int halyard_v1_has_ps4_registration = {1 if has_ps4_registration else 0};",
             f"const int halyard_v1_selector_offset = {selector_offset};",
