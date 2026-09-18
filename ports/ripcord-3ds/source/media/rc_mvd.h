@@ -19,11 +19,16 @@
  * copied into a linearAlloc'd staging buffer and GSPGPU_FlushDataCache'd before the call. Feeding it a
  * pointer into an ordinary heap or stack buffer produces silence or garbage rather than an error.
  *
- * UNVERIFIED ON HARDWARE. Everything above the decoder has now been confirmed against a real PS5, but
- * this file has never run: there is no MVD block on a build machine and no way to emulate one honestly.
- * Treat the output-dimension handling in particular as provisional - see the .c on why the example's
- * 240x400 framebuffer geometry is transposed relative to the 400x240 screen, and what that means for a
- * 640x360 source.
+ * VERIFIED ON HARDWARE, and this header said the opposite until 2026-09-18 - "this file has never run:
+ * there is no MVD block on a build machine and no way to emulate one honestly", with the
+ * output-dimension handling called out as provisional. Both were true when written. Neither survived:
+ * MVD has decoded video from a real PS5 on a real console, six defects were found in this path by
+ * building an offline replay harness and measuring rather than guessing, and the output dimensions were
+ * the part that took the most finding rather than the part left unexamined - the .c now explains the
+ * 240x400 memory orientation against the 400x240 screen instead of flagging it as unknown.
+ *
+ * The caution is retired rather than deleted because it was the right caution to have had: without an
+ * MVD block on a build machine, everything here WAS assumption until a console said otherwise.
  */
 #ifndef RC_MVD_H
 #define RC_MVD_H

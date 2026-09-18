@@ -1,9 +1,14 @@
 /*
  * SHA-256 (FIPS 180-4) and HMAC-SHA-256 (RFC 2104).
  *
- * The control plane needs these for exactly one thing - the per-field IV derivation in
- * source/halyard/halyard_field_iv.c - but that one thing runs on every encrypted header field of every
+ * The control plane needs these for exactly one thing - halyard_field_iv_derive() in
+ * halyard/halyard_control_crypto.c - but that one thing runs on every encrypted header field of every
  * connect, so it is worth having rather than pulling in a TLS stack for.
+ *
+ * Until 2026-09-18 that reference named a halyard_field_iv translation unit under the old source/
+ * layout: a file that does not exist, at a path that predates the extraction into ports/common. The
+ * FUNCTION name survived the merge into halyard_control_crypto.c, which is why it looked plausible. The
+ * dead path is described rather than quoted here, so a scan for unresolvable references stays quiet.
  */
 #include "rc_crypto.h"
 
