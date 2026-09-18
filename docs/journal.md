@@ -879,6 +879,17 @@ an artifact download is an upload by another name and `make pkg` leaves the prev
 it fails. And it asserts the third-party notices are actually inside the staged package, which the licences
 require of a binary distribution and which was a prerequisite in the Makefile with nothing reading it.
 
+**It ran, and the whole file went green the same day.** `ROADMAP.md` had carried "CI has never executed
+— until it runs once, it is a file, not a check" since the workflow was written. First execution was this
+PR: seven jobs, all green, including the two App architectures and both portable-core hosts. The PS3 job
+cost 68s cold — 180 MB toolchain download plus all three cross-builds — and 37-40s warm, with both caches
+hitting and both build steps skipped.
+
+**The DCO gate's first live run caught a real violation, not a self-test.** It failed on a commit that had
+reached a branch without a sign-off, which is exactly the class of thing it was written for after
+`feat/ps3-port` reached 260 unsigned commits out of 308. A guard's first genuine catch is worth recording
+because it is the only evidence that it guards anything.
+
 **And the first real build answered the notices commit's open question — badly.** That commit shipped
 unverified, saying the toolchain-sourced licence paths for FreeType, zlib and PSL1GHT were best-effort and
 "the first thing to check on a real build". They are all wrong, and not because the guesses were poor: the
