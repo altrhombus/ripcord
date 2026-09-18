@@ -332,6 +332,26 @@ XMB and install again**; that clears it. On 2026-09-18 this cost four hardware r
 suspecting the version, the notices file, the package filename and `package_finalize` in turn, while all
 four were innocent and the title had been poisoned before the first of them was built.
 
+### Cutting a release
+
+```sh
+git tag ps3-v1.0 && git push origin ps3-v1.0
+```
+
+That runs the whole of `.github/workflows/ci.yml` — both suites, both App architectures, both
+portable-core hosts, and the PS3 package — and then `ps3-release` attaches the package to a **draft**
+GitHub release. Nothing is public until a person publishes it, and the notes are a placeholder until a
+person writes them: what this build runs, streams and pairs with, and what it does not do.
+
+**A release is versioned by its tag, not by either build counter.** `ps3-v1.0` produces `APP_VER` `01.00`,
+the build id is `v1.0` rather than `bNNN`, and no developer counter is consumed — a release is identified
+by its tag, so spending one of your numbers on it would hand out an id nothing refers to. The same works
+locally: `make pkg RELEASE_TAG=ps3-v1.0`. A tag that is not `ps3-v<major>.<minor>` is a hard error rather
+than a silent `00.00`.
+
+**The port versions independently of the Windows client** — `ps3-v1.0` says this port runs, streams and
+pairs, and says nothing about `ROADMAP.md`'s 1.0, whose criteria are about the app.
+
 **Installing replaces `USRDIR`, so back up `pairing.txt` first** if the console is paired, or it has to be
 paired again. It is per-console material: keep it out of the repository.
 
