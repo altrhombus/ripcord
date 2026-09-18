@@ -2,7 +2,7 @@
 
 #include "rc_audio.h"
 
-#include "../util/rc_log.h"
+#include "util/rc_log.h"
 
 #include <3ds.h>
 #include <opus/opus.h>

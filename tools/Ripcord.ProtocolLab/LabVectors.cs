@@ -1,8 +1,10 @@
+using System.Buffers.Binary;
 using System.Security.Cryptography;
 using System.Text;
 using Google.Protobuf; // for the ToByteArray() extension on the generated ControlMessage
 using Ripcord.Core.Net.Crypto;
 using Ripcord.Core.Sessions;
+using Ripcord.Protocol.Halyard.Common.Crypto;
 using Ripcord.Protocol.Halyard.Common.Crypto.V1;
 using Ripcord.Protocol.Halyard.Session;
 
@@ -45,14 +47,27 @@ namespace Ripcord.ProtocolLab;
 /// </summary>
 internal static class LabVectors
 {
+    /// <summary>
+    /// The KDF domain separator baked into every emitted vector. It still says <c>ripcord-3ds</c> after
+    /// the suite moved to <c>ports/common</c>, and that is deliberate: changing it changes the derived
+    /// bytes, so every <c>.kat</c> file and the C runners that check against them would have to move
+    /// together for a rename that buys nothing. A historical name in a domain string is not a bug; a
+    /// domain string that quietly changes value is.
+    /// </summary>
     private const string Domain = "ripcord-3ds-vectors/v1";
 
     /// <summary>vectors [outPath] — write the control-crypto known-answer vectors.</summary>
     public static int Emit(string[] args)
     {
+        // The default follows the suite, which moved to ports/common/tests when the portable core was
+        // extracted - ports/common/tests/Makefile reads `vectors/*.kat` relative to itself. It pointed at
+        // ports/ripcord-3ds/tests/vectors until 2026-09-11, which stopped existing in that same
+        // extraction: the emitter went on succeeding, wrote four files into a directory nothing reads,
+        // and the C suite then reported missing vectors while telling you to run the command you had
+        // just run. Nothing failed, so nothing said so.
         string outPath = args.Length > 1
             ? args[1]
-            : Path.Combine("ports", "ripcord-3ds", "tests", "vectors", "control-crypto.kat");
+            : Path.Combine("ports", "common", "tests", "vectors", "control-crypto.kat");
 
         var secrets = HalyardInteropConstants.Control();
         if (secrets is null)
@@ -98,6 +113,23 @@ internal static class LabVectors
         Console.WriteLine($"wrote {streamOutPath}");
         Console.WriteLine($"  gmac={streamCounts.Gmac} streamkdf={streamCounts.StreamKdf} " +
             $"packetnonce={streamCounts.PacketNonce} packettag={streamCounts.PacketTag}");
+
+        // A fourth file: PIN registration. Separate for the same reason the others are - the C port
+        // checks it with its own runner, and a port that consumes a pairing record made elsewhere links
+        // none of this. It is emitted only when the bundle carries the registration tables.
+        string registOutPath = string.IsNullOrEmpty(dir)
+            ? "registration-crypto.kat"
+            : Path.Combine(dir, "registration-crypto.kat");
+        int registCount = EmitRegistrationFile(registOutPath);
+        if (registCount >= 0)
+        {
+            Console.WriteLine($"wrote {registOutPath}");
+            Console.WriteLine($"  registration={registCount}");
+        }
+        else
+        {
+            Console.WriteLine("registration vectors skipped: the bundle carries no registration tables");
+        }
 
         // A third file, for the same reason the second one is separate: the C port checks these with a
         // runner that links an EC backend (mbedtls), which the other two deliberately do not need.
@@ -534,6 +566,87 @@ internal static class LabVectors
     }
 
     // ---- the stream/A-V plane crypto: GMAC (via AES-GCM), the stream KDF, and per-packet nonce/tag ----
+
+    /// <summary>
+    /// PIN-registration known-answer vectors: the transport key from (context, passcode), and the material
+    /// wrap in both directions, for both console families.
+    ///
+    /// <para>
+    /// These exist because the registration key exchange is the one part of pairing where a C port and this
+    /// implementation can disagree SILENTLY. A wrong transport key does not fail loudly - the console
+    /// answers 403 with a generic application reason, which reads identically to a mistyped PIN, a wrong
+    /// transport and a stale search probe. Checking the arithmetic on a host, against numbers this side
+    /// computed, is how that stops being a hardware mystery.
+    /// </para>
+    ///
+    /// <para>
+    /// Returns -1 when the bundle carries no registration tables, which is a legitimate build
+    /// (-p:BundleInteropConstants=false) and not an error.
+    /// </para>
+    /// </summary>
+    private static int EmitRegistrationFile(string outPath)
+    {
+        var ps5 = HalyardInteropConstants.Registration(HalyardConsolePlatform.Ps5);
+        if (ps5 is null)
+            return -1;
+        var ps4 = HalyardInteropConstants.Registration(HalyardConsolePlatform.Ps4);
+
+        var stream = new DerivedBytes(Domain + "/registration");
+        var sb = new StringBuilder();
+
+        sb.AppendLine("# ripcord v1 PIN-registration known-answer vectors");
+        sb.AppendLine("# generated by: dotnet run --project tools/Ripcord.ProtocolLab -- vectors <path>");
+        sb.AppendLine("# inputs are SHA-256(\"" + Domain + "/registration\" || counter). DO NOT EDIT - regenerate.");
+        sb.AppendLine("version 1");
+        sb.AppendLine($"ps4tables {(ps4 is not null ? 1 : 0)}");
+        sb.AppendLine();
+
+        int count = 0;
+        var kdf5 = new HalyardRegistrationKdf(ps5.Value.Secrets);
+        var kdf4 = ps4 is null ? null : new HalyardRegistrationKdf(ps4.Value.Secrets, versionSelector: 0);
+
+        // The context has to be long enough for the selector offset AND the scatter offsets, so it is
+        // sized from the constants rather than from a number that happens to be big enough today.
+        int contextLength = Math.Max(
+            ps5.Value.Secrets.SelectorOffset + 1,
+            HalyardRegistrationKdf.WrappedOffsetLow + 8);
+
+        for (int i = 0; i < 24; i++)
+        {
+            byte[] context = stream.Next(contextLength);
+            byte[] material = stream.Next(16);
+            // Eight digits, which is what the console shows. Kept inside that range deliberately: a
+            // passcode outside it would exercise arithmetic the real flow never reaches.
+            uint passcode = BinaryPrimitives.ReadUInt32BigEndian(stream.Next(4)) % 100000000u;
+
+            bool isPs5 = (i % 2) == 0 || kdf4 is null;
+            var kdf = isPs5 ? kdf5 : kdf4!;
+
+            byte[] key = kdf.DeriveKey(context, passcode);
+            byte[] wrapped = kdf.WrapMaterial(material, context);
+            byte[] unwrapped = kdf.UnwrapMaterial(wrapped, context);
+
+            // A round trip that does not return the input would mean the two transforms disagree, which
+            // no amount of matching the wrapped bytes would catch.
+            if (!unwrapped.AsSpan().SequenceEqual(material))
+                throw new InvalidOperationException("wrap/unwrap round trip failed on the .NET side");
+
+            sb.AppendLine($"registration {(isPs5 ? 1 : 0)} {Hex(context)} {passcode} {Hex(material)} " +
+                          $"{Hex(key)} {Hex(wrapped)}");
+            count++;
+        }
+
+        sb.AppendLine();
+        sb.AppendLine($"# selectorOffset {ps5.Value.Secrets.SelectorOffset}");
+        sb.AppendLine($"# wrappedOffsets {HalyardRegistrationKdf.WrappedOffsetLow} " +
+                      $"{HalyardRegistrationKdf.WrappedOffsetHigh}");
+
+        string? dir = Path.GetDirectoryName(Path.GetFullPath(outPath));
+        if (!string.IsNullOrEmpty(dir))
+            Directory.CreateDirectory(dir);
+        File.WriteAllText(outPath, sb.ToString());
+        return count;
+    }
 
     private static (int Gmac, int StreamKdf, int PacketNonce, int PacketTag) EmitStreamCryptoFile(string outPath)
     {

@@ -97,6 +97,29 @@ public class PublishedTreeSweepTests
         ["ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"] =
             "the base64 alphabet itself, in the 3DS port's encoder - RFC 4648 table 1, not a value",
 
+        // The PS3 port's arrivals. Four of the six are values chosen precisely BECAUSE they are
+        // recognisable - a counting pattern, a float whose bytes are its own reverse - which is the
+        // property that makes a leak detector look at them twice.
+        ["10111213202122303132404142"] =
+            "the H.264 level_idc values cellVdec accepts, swept 0..255 on hardware - the published "
+            + "level ladder of ITU-T H.264 Annex A, identical on every PS3",
+        ["3FF0000000000000"] =
+            "IEEE-754 1.0, big-endian. Chosen in control_proto_test.c as the one double whose little-"
+            + "endian form is its own reverse, so it cannot hide a byte-order mistake",
+        ["000000000000F03F"] =
+            "that same 1.0, little-endian - the two halves of the byte-order test, and the reason the "
+            + "value was picked",
+        ["c0ba8a3cd5620400"] =
+            "the little-endian u64 of the account id 1234567890123456, which IsSyntheticFiller already "
+            + "names as filler - this is that same made-up id after the encoder under test ran on it",
+        ["81985529216486895"] =
+            "0x0123456789ABCDEF in decimal. All-digits, so it reads as hex to the detector; the test "
+            + "declaring it says it is a counting pattern so nothing there resembles anybody's account",
+        ["1a2b"] =
+            "the leading hex of this project's own synthetic registration key, quoted as the fragment "
+            + "\"1a2b...\" in prose explaining that a hex account id typed into the box travels as its "
+            + "characters. The full value is allowlisted above; the ellipsis is what draws the detector",
+
     };
 
     /// <summary>
@@ -117,6 +140,14 @@ public class PublishedTreeSweepTests
         ["2001:db8a::"] =
             "the RFC 3849 near-miss from the contract table, quoted in the commit message that added it - "
             + "documentation-adjacent by construction and routed nowhere",
+        ["00000001674d4028"] =
+            "an Annex-B start code and the SPS header behind it - profile 77, level 0x28 - quoted in the "
+            + "message that opened vdec at the level the stream declares. Codec structure, and the same "
+            + "eight bytes lead every stream of that shape",
+        ["a8d751ecc65d1be8"] =
+            "a digest of one decoded luma plane, quoted as the point at which ffmpeg and openh264 agreed "
+            + "bit-for-bit. A one-way hash of picture content from our own capture: it names no console, "
+            + "account or session, and its only use is that two decoders produced the same one",
     };
     // </sweep:fixtures>
 
@@ -124,6 +155,27 @@ public class PublishedTreeSweepTests
     // this: in "0x4825" there is no boundary between x and 4.
     private const string HexStart = @"(?<![0-9a-zA-Z])(?:0[xX])?";
     private const string HexEnd = @"(?![0-9a-zA-Z])";
+
+    /// <summary>
+    /// The one commit message this sweep does not read: the synthetic merge a forge builds for a pull
+    /// request.
+    ///
+    /// <para><c>actions/checkout</c> materialises <c>refs/pull/N/merge</c> on a pull_request event, and that
+    /// commit's message is generated rather than written — <c>Merge &lt;40 hex&gt; into &lt;40 hex&gt;</c>.
+    /// Both SHAs trip <see cref="HexRun"/>, so this suite failed on all three platforms of the first pull
+    /// request this repository ever opened, for a reason that had nothing to do with its contents and would
+    /// have repeated on every pull request after it. The guard was correct about the bytes and wrong about
+    /// what they were.</para>
+    ///
+    /// <para><b>Matched as a whole message, never as a line.</b> A pattern loose enough to drop "a line with
+    /// two SHAs in it" would also drop one somebody wrote deliberately; this requires the entire message to
+    /// be that one generated sentence and nothing else, so a forge merge carrying any added prose is read
+    /// like any other commit. A commit SHA is public by construction and is not a leak in any case — the
+    /// narrow form is not about this value, it is about not leaving a shape here that a later edit can
+    /// widen. <see cref="ForgeMergeCommit_IsSkippedWholeAndNothingElseIs"/> pins both halves.</para>
+    /// </summary>
+    private static readonly Regex ForgeMergeCommitMessage =
+        new(@"^\s*Merge [0-9a-fA-F]{40} into [0-9a-fA-F]{40}\s*$", RegexOptions.Compiled);
 
     private static readonly Regex TruncatedHex =
         new(HexStart + @"([0-9a-fA-F]{4,})(?:…|\.\.\.)", RegexOptions.Compiled);
@@ -240,9 +292,23 @@ public class PublishedTreeSweepTests
         + @")(?![0-9a-zA-Z:.])",
         RegexOptions.Compiled);
 
-    /// <summary>A version attribute is not an address. Decided here rather than left to trip a later widening.</summary>
-    private static readonly Regex VersionContext =
-        new(@"(?i)version|net\d|\bv\d+\.\d+|TargetFramework|MaxVersionTested|MinVersion", RegexOptions.Compiled);
+    /// <summary>
+    /// Dotted decimals that are not addresses. A version attribute was the first kind; a specification
+    /// clause reference is the second, and it arrived with ripcord-ps3 - H.264 is cited by clause
+    /// throughout, and exactly-four-part numbers like <c>sec 7.4.1.1</c> are indistinguishable from an
+    /// IPv4 address to a pattern. Three- and five-part references never collided - <c>9.1.1</c> is too
+    /// short for the quad and <c>7.4.1.2.4</c> too long - which is why this went unnoticed until a file
+    /// full of four-part ones existed.
+    ///
+    /// <para>The clause alternative is deliberately tight: the citation word must be immediately
+    /// followed by the dotted number, so "in section 3" beside a real address suppresses nothing, which
+    /// a bare word match would not have managed. The residual cost is the one this guard always had -
+    /// it is tested per line, so a genuine address sharing a line with a clause citation is missed.
+    /// Both properties are contract rows.</para>
+    /// </summary>
+    private static readonly Regex NotAnAddressContext =
+        new(@"(?i)version|net\d|\bv\d+\.\d+|TargetFramework|MaxVersionTested|MinVersion"
+            + @"|\b(?:sec|section|clause|annex)\.?\s*\d+(?:\.\d+)+", RegexOptions.Compiled);
 
     /// <summary>
     /// <c>.cpp</c>, <c>.hpp</c>, <c>.idl</c> and <c>.def</c> were missing until the tenth review, so the
@@ -259,7 +325,8 @@ public class PublishedTreeSweepTests
     private static readonly string[] TextExtensions =
         [".md", ".cs", ".c", ".h", ".cpp", ".hpp", ".idl", ".def", ".json", ".yml", ".yaml", ".xaml",
          ".py", ".props", ".targets", ".csproj", ".vcxproj", ".slnx", ".proto", ".sh", ".ps1",
-         ".editorconfig", ".gitattributes", ".appxmanifest", ".manifest", ".svg", ".resx", ".resw"];
+         ".editorconfig", ".gitattributes", ".appxmanifest", ".manifest", ".svg", ".resx", ".resw",
+         ".html"];
 
     private static readonly string[] NamedFiles = ["NOTICE", "LICENSE", ".gitignore", "Makefile"];
 
@@ -271,6 +338,19 @@ public class PublishedTreeSweepTests
     /// <c>data:</c> URIs and editor-inserted author strings — exactly the class widening the corpus existed
     /// for. It is in <see cref="TextExtensions"/> now, and
     /// <see cref="EveryCommittedTextFile_IsSwept"/> no longer takes this list's word for it.</para>
+    ///
+    /// <para><c>.html</c> is here for the same reason and got here the same way. A committed design
+    /// mockup — 553 lines of UTF-8 carrying prose, colour values and notes — was unclassified, so the
+    /// corpus never opened it, and <see cref="EveryCommittedTextFile_IsSwept"/> said so. That file has
+    /// since been deleted and is deliberately not named here, because a docstring pointing at something
+    /// that no longer exists is the stale reference this file keeps finding elsewhere.</para>
+    ///
+    /// <para><b>The entry stays regardless of whether any HTML is currently committed.</b> Nothing
+    /// requires these to be reachable — the list classifies a file <em>type</em>, and HTML is text a
+    /// person wrote, so there is no future in which "binary" or "skip" is the right answer. Dropping it
+    /// would not be unsafe, since an unclassified extension fails closed and loudly; it would just
+    /// reopen a settled question in front of whoever next commits one, at the moment their build turns
+    /// red.</para>
     ///
     /// <para><c>.pcapng</c> and <c>.bin</c> were also here, which gave a committed capture a route
     /// <em>past</em> the corpus guard as "declared binary". Capture types are on
@@ -565,6 +645,10 @@ public class PublishedTreeSweepTests
         { "10.0.0.7", LineContext.Prose, false, "RFC 1918, published as captured by stated policy" },
         { "224.0.0.251", LineContext.Prose, false, "the mDNS multicast group" },
         { "Version=\"1.0.0.0\"", LineContext.Prose, false, "a version quad, not an address - decided rather than discovered" },
+        { "ITU-T H.264 sec 7.4.1.1", LineContext.Prose, false,
+          "a four-part specification clause is not an address - ripcord-ps3 is full of them" },
+        { "the console answered from 172.217.16.14 in section 3", LineContext.Prose, true,
+          "a citation word with no dotted clause after it must not suppress a real address" },
         { "fd00:1a2b:3c4d:5e6f:0011:2233:4455:6677", LineContext.Prose, false, "the declared synthetic ULA, allowed by value" },
         { "fd00:abcd:1234:5678::9", LineContext.Prose, true, "a different address in the same /8 - the prefix test used to wave this through" },
         { "2001:db8::1", LineContext.Prose, false, "RFC 3849 documentation prefix" },
@@ -703,28 +787,88 @@ public class PublishedTreeSweepTests
     /// Code that ships, as opposed to code that tests it. The distinction carries real weight: a hex
     /// constant under <c>src/</c> is something every user runs, while one in a test file is almost always a
     /// published NIST vector or a captured frame the parser is checked against. Ports keep their tests
-    /// beside their source, hence the <c>/source/</c> segment rather than a prefix.
+    /// beside their source, so the ports clause names a segment rather than a prefix.
+    ///
+    /// <para><b>It names the test segment, not the source one, and the difference is the whole point.</b>
+    /// This clause read <c>Contains("/source/")</c> until the portable core was extracted to
+    /// <c>ports/common/</c> — whose files are <c>crypto/</c>, <c>takion/</c>, <c>stream/</c>,
+    /// <c>session/</c>, with no <c>/source/</c> segment anywhere. Ninety files, the crypto and the key
+    /// schedule and the transport among them, silently reclassified as test code: the strict
+    /// <see cref="CodeHexLiteral"/> rule stopped applying to them, <see cref="CodeBase64Literal"/> stopped
+    /// running on them entirely, and nothing said so. What surfaced it was
+    /// <see cref="EveryAllowlistEntry_SuppressesSomethingReal"/> reporting the base64-alphabet entry as
+    /// inert — the entry had been written for <c>rc_base64.c</c>, which had simply moved.</para>
+    ///
+    /// <para>A positive marker fails open: code in a layout the rule did not anticipate gets the weaker
+    /// scope, and gets it quietly. A negative one fails closed — anything new under <c>ports/</c> is
+    /// product code until a <c>tests</c> segment says otherwise, so the next port to invent a directory
+    /// layout is over-covered rather than under-covered. For a guard, that is the direction to be wrong in.
+    /// <see cref="ProductCodeClassification"/> pins both halves.</para>
     /// </summary>
     private static bool IsProductCode(string relative) =>
         relative.StartsWith("src/", StringComparison.Ordinal)
         || relative.StartsWith("tools/", StringComparison.Ordinal)
         || (relative.StartsWith("ports/", StringComparison.Ordinal)
-            && relative.Contains("/source/", StringComparison.Ordinal));
+            && !relative.Split('/').Contains("tests", StringComparer.Ordinal));
 
+    /// <summary>
+    /// The files this sweep reads: the ones git actually tracks.
+    ///
+    /// <para><b>It asked the filesystem until 2026-09-12, and the two answers are not the same.</b> A
+    /// <c>Directory.EnumerateFiles</c> walk filtered by <see cref="Excluded"/> reads whatever happens to be
+    /// on the disk, including files <c>.gitignore</c> exists to keep out of the repository. What surfaced
+    /// it was a PS3 decoder build: <c>ports/*/third-party/</c> is gitignored, and 165 MB of upstream Mbed
+    /// TLS landed there, whereupon the sweep reported upstream's DHM test constants and an address in one
+    /// of its comments as "unredacted values in committed text". None of it was committed, or ever could
+    /// be.</para>
+    ///
+    /// <para>That is not a cosmetic mismatch. A guard that cries wolf about files nobody can publish gets
+    /// its findings skimmed, and this one's whole value is that a finding means something. Worse, the two
+    /// halves of this file disagreed about the word "committed": <see cref="EveryCommittedTextFile_IsSwept"/>
+    /// already asked <c>git ls-files</c>, and its own docstring says only git can answer which committed
+    /// files a corpus does not open. The corpus it was checking answered a different question.</para>
+    ///
+    /// <para><b>This narrows the sweep, so the safety of the narrowing is the thing to check, not the
+    /// tidiness.</b> The threat is publication, and a gitignored file is not published. The capture-type
+    /// guard is unaffected because it never lived here: <see cref="NeverCommitted"/> is enforced inside
+    /// <see cref="EveryCommittedTextFile_IsSwept"/>, against git's list, where a gitignored capture is
+    /// correct and a committed one fails. The dirty room stays doubly covered — gitignored, and named in
+    /// <see cref="Excluded"/>. What is given up is the sweep noticing a value in a file that is not in the
+    /// repository and is not going to be, which was never the promise.</para>
+    ///
+    /// <para>If git cannot answer — an archive rather than a clone — this falls back to the old walk
+    /// rather than sweeping nothing. Over-reporting is the safe direction to fail in, and an empty corpus
+    /// would make every assertion in this file pass while checking nothing.
+    /// <see cref="SweptCorpus_ContainsOnlyTrackedFiles"/> pins the property.</para>
+    /// </summary>
     private static IEnumerable<string> CommittedText()
     {
         string root = RepoRoot();
-        foreach (string path in Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories))
+        string? listing = RunGit(root, "ls-files");
+
+        IEnumerable<string> relatives = listing is null
+            ? Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories)
+                .Select(p => Path.GetRelativePath(root, p).Replace(Path.DirectorySeparatorChar, '/'))
+            : listing.Split((char)0x0a).Select(r => r.TrimEnd((char)0x0d));
+
+        foreach (string rel in relatives)
         {
-            string rel = Path.GetRelativePath(root, path).Replace(Path.DirectorySeparatorChar, '/');
+            if (rel.Length == 0) continue;
             if (Excluded(rel)) continue;
             if (PinnedDataFiles.ContainsKey(rel)) continue;   // covered by hash instead
 
-            if (TextExtensions.Contains(Path.GetExtension(path), StringComparer.OrdinalIgnoreCase)
-                || NamedFiles.Contains(Path.GetFileName(path), StringComparer.OrdinalIgnoreCase))
+            if (!TextExtensions.Contains(Path.GetExtension(rel), StringComparer.OrdinalIgnoreCase)
+                && !NamedFiles.Contains(Path.GetFileName(rel), StringComparer.OrdinalIgnoreCase))
             {
-                yield return path;
+                continue;
             }
+
+            // Tracked but not on disk: a file deleted in the working tree is still in git's list, and
+            // reading it would throw rather than report anything.
+            string full = Path.Combine(root, rel.Replace('/', Path.DirectorySeparatorChar));
+            if (!File.Exists(full)) continue;
+
+            yield return full;
         }
     }
 
@@ -935,7 +1079,7 @@ public class PublishedTreeSweepTests
         foreach (Match m in Ipv4.Matches(line))
         {
             if (IsDocumentationAddress(m.Groups[1].Value)) continue;
-            if (VersionContext.IsMatch(line)) continue;
+            if (NotAnAddressContext.IsMatch(line)) continue;
             found.Add($"{at}|ipv4|{m.Value}");
         }
 
@@ -1150,6 +1294,9 @@ public class PublishedTreeSweepTests
 
             string sha = parts[0].Trim();
             sha = sha[..Math.Min(8, sha.Length)];
+
+            // Generated by the forge, not by anybody here. See ForgeMergeCommitMessage.
+            if (ForgeMergeCommitMessage.IsMatch(parts[1])) continue;
 
             string[] lines = parts[1].Split(Lf);
             for (int i = 0; i < lines.Length; i++)
@@ -1508,6 +1655,67 @@ public class PublishedTreeSweepTests
     }
 
     /// <summary>
+    /// The corpus named "committed text" contains only committed text.
+    ///
+    /// <para>Stated as a test rather than left to the implementation because the two ways of being wrong
+    /// have opposite signs and only one of them is loud. Reading untracked files produces false findings,
+    /// which is what actually happened and is at least visible. Reading <em>fewer</em> files than git
+    /// tracks would make this whole file pass while checking less than it claims, and nothing else here
+    /// would notice — <see cref="EveryCommittedTextFile_IsSwept"/> checks classification coverage, not
+    /// that the sweep opened anything.</para>
+    /// </summary>
+    [Fact]
+    public void SweptCorpus_ContainsOnlyTrackedFiles()
+    {
+        string root = RepoRoot();
+        string? listing = RunGit(root, "ls-files");
+        if (listing is null) return;   // no git: the fallback walk is deliberate, and this cannot judge it
+
+        HashSet<string> tracked = new(
+            listing.Split((char)0x0a).Select(r => r.TrimEnd((char)0x0d)).Where(r => r.Length > 0),
+            StringComparer.OrdinalIgnoreCase);
+
+        List<string> untracked = CommittedText()
+            .Select(p => Path.GetRelativePath(root, p).Replace(Path.DirectorySeparatorChar, '/'))
+            .Where(rel => !tracked.Contains(rel))
+            .ToList();
+
+        Assert.True(
+            untracked.Count == 0,
+            "The sweep opened files git does not track. A finding in one of these is not a finding — the "
+            + "file cannot be published — and noise here is what gets a real finding skimmed past:\n  "
+            + string.Join("\n  ", untracked.Take(20)));
+
+        // And the corpus is not empty, because an empty one passes everything.
+        Assert.True(CommittedText().Any(), "the swept corpus is empty, so every assertion in this file is vacuous");
+    }
+
+    /// <summary>
+    /// Which paths get the strict scope. <see cref="IsProductCode"/> decides which of two hex rules applies
+    /// and whether <see cref="CodeBase64Literal"/> runs at all, so a path drifting out of it weakens the
+    /// detector everywhere in that directory at once — and does it silently, which is how the extraction of
+    /// <c>ports/common/</c> demoted the whole portable core in a refactor that touched no test.
+    ///
+    /// <para>The rows that matter are the last two. A directory layout nobody has invented yet must land on
+    /// the strict side by default, because the alternative is a guard that quietly stops covering new code.
+    /// </para>
+    /// </summary>
+    [Theory]
+    [InlineData("src/Ripcord.Protocol.Halyard.Common/Crypto/V1/HalyardV1SessionCrypto.cs", true)]
+    [InlineData("tools/Ripcord.ProtocolLab/Program.cs", true)]
+    [InlineData("tests/Ripcord.Protocol.Halyard.Tests/LiveControlVectorTests.cs", false)]
+    [InlineData("ports/ripcord-3ds/source/util/rc_random.c", true)]
+    [InlineData("ports/ripcord-ps3/source/media/rc_h264_bits.c", true)]
+    [InlineData("ports/ripcord-ps3/tests/h264_test.c", false)]
+    [InlineData("ports/common/crypto/rc_aes.c", true)]
+    [InlineData("ports/common/util/rc_base64.c", true)]
+    [InlineData("ports/common/tests/fec_test.c", false)]
+    [InlineData("ports/a-port-that-does-not-exist-yet/media/decoder.c", true)]
+    [InlineData("ports/a-port-that-does-not-exist-yet/tests/decoder_test.c", false)]
+    public void ProductCodeClassification(string relative, bool expected)
+        => Assert.Equal(expected, IsProductCode(relative));
+
+    /// <summary>
     /// A committed constant the prose-only scope cannot see, checked by the hash of its value. The two data
     /// files beside it are pinned the same way; this closes the last declared constant that had no
     /// value-level guard at all.
@@ -1579,5 +1787,42 @@ public class PublishedTreeSweepTests
             + "never produces, which asserts a coverage that does not exist. Either the value is gone (delete "
             + "the entry) or the detector cannot reach it (fix the detector):\n  "
             + string.Join("\n  ", inert));
+    }
+
+    /// <summary>
+    /// The forge's generated merge message is skipped whole, and nothing that merely resembles it is.
+    ///
+    /// <para>The SHAs here are built rather than written, because this file is swept by the sweep it
+    /// defines: a literal forty-character hex run in this method would itself be a finding in
+    /// <see cref="CommittedText_CarriesNoUnredactedValues"/>, reported against the very test that exists to
+    /// stop that kind of false positive. They are built out of distinct digits rather than a repeated
+    /// character so that <see cref="IsSyntheticFiller"/> does not wave them through — the last assertion
+    /// depends on them being values the detectors would otherwise report.</para>
+    /// </summary>
+    [Fact]
+    public void ForgeMergeCommit_IsSkippedWholeAndNothingElseIs()
+    {
+        string head = string.Concat(Enumerable.Repeat("0123456789abcdef", 3))[..40];
+        string bas = string.Concat(Enumerable.Repeat("fedcba9876543210", 3))[..40];
+        string generated = $"Merge {head} into {bas}";
+
+        Assert.True(ForgeMergeCommitMessage.IsMatch(generated),
+            "the forge's own merge message must be skipped, or every pull request fails");
+        Assert.True(ForgeMergeCommitMessage.IsMatch(generated + "\n"),
+            "a trailing newline is how git hands the message over, so it must match with one");
+
+        // Anything beyond that one generated sentence is somebody's writing, and is read like any other.
+        Assert.False(
+            ForgeMergeCommitMessage.IsMatch(generated + "\n\nand the handshake key was " + head),
+            "a forge merge carrying added prose must NOT be skipped - the prose is where a value would sit");
+        Assert.False(ForgeMergeCommitMessage.IsMatch("Merge branch 'feat/ps3-port' into main"),
+            "an ordinary merge message is not this shape and never was the problem");
+        Assert.False(ForgeMergeCommitMessage.IsMatch($"See {head} for the fix"),
+            "a SHA quoted in prose is not a forge merge, and stays subject to every detector");
+
+        // The skip is load-bearing rather than decorative: read as a line, this message DOES produce
+        // findings, which is exactly why it has to be dropped a level up before the lines are scanned.
+        Assert.NotEmpty(
+            ScanLine(generated, isProse: true, applyAllowlist: true, "contract", isMessage: true));
     }
 }
