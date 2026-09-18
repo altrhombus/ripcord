@@ -727,7 +727,13 @@ static int run_senkusha(const char *host)
      * (31 << 3) | 2 = 250, which is >= 0x80 and therefore a TWO-byte varint tag, 0xFA 0x01 - not the
      * single 0xFA that writing it out by hand produces. That is exactly the sort of thing
      * takion_control_proto.c's varint writer exists to get right, and this literal is checked against it
-     * by tests/connect_test.c rather than being taken on faith.
+     * rather than being taken on faith - by ports/common/tests/control_proto_test.c, which carries these
+     * exact seven bytes twice and the same tag arithmetic beside them.
+     *
+     * Until 2026-09-18 this named a connect_test file under this port's own tests/ directory. No such
+     * file has ever existed, so the claim was true in substance and unfollowable as written - the worse
+     * of the two failures, because a reader who went looking would have concluded the literal was
+     * unverified. The dead name is described rather than quoted, to keep reference scans quiet.
      */
     {
         static const uint8_t kVersionRequest[] = {

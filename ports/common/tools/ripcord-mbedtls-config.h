@@ -4,7 +4,10 @@
  * ports/common/crypto/rc_ecdh.c delegates exactly one primitive to this library - ECDH over P-256 and
  * P-521 - and uses only its mbedtls_ecp_* and mbedtls_mpi_* entry points. There is no TLS here, no
  * X.509, no cipher suites, no entropy source, no filesystem and no clock: this port supplies its own
- * randomness (see source/platform/rc_random_vita.c) and speaks a protocol that is not TLS.
+ * randomness through the platform seam's rc_random_bytes (platform/rc_platform.h) and speaks a protocol
+ * that is not TLS. Until 2026-09-18 this pointed at an rc_random_vita translation unit under the old
+ * source/ layout - both a pre-extraction path and a file that lives on the unpublished Vita branch, so a
+ * reader could not follow it either way. Described rather than quoted, to keep reference scans quiet.
  *
  * Everything below is therefore an ALLOW-list rather than the usual mbedtls config, which is a
  * deny-list over a large default. That is deliberate - it keeps the built archive small enough to be a
