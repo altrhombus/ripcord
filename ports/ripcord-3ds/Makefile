@@ -280,7 +280,7 @@ constants: $(GENERATED)
 
 $(GENERATED): $(BUNDLE) $(CORE)/tools/gen_constants.py
 	@mkdir -p $(@D)
-	$(PYTHON) $(CORE)/tools/gen_constants.py $(BUNDLE) $@
+	$(PYTHON) $(CORE)/tools/gen_constants.py --for ripcord-3ds $(BUNDLE) $@
 
 $(BUILD)/$(TARGET).elf: $(SOURCES) $(GENERATED)
 	@mkdir -p $(@D)

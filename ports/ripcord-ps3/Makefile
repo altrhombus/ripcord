@@ -478,7 +478,7 @@ PYTHON    ?= python3
 
 $(GENERATED): $(BUNDLE) $(CORE)/tools/gen_constants.py
 	@mkdir -p $(@D)
-	$(PYTHON) $(CORE)/tools/gen_constants.py --registration $(BUNDLE) $@
+	$(PYTHON) $(CORE)/tools/gen_constants.py --registration --for ripcord-ps3 $(BUNDLE) $@
 
 $(BUILD)/ct_halyard_v1_constants.g.o: $(GENERATED)
 	@mkdir -p $(@D)
