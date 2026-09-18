@@ -2736,8 +2736,9 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
      *
      * FRAME RATE IS NOT WHAT IS BEING CAPPED. 720p60 is 216,000 macroblocks a second against 4.2's
      * ceiling of 522,240, and the reference buffer does not grow with frame rate - so 60 fps at this
-     * resolution should be inside the same level. It is untested here, and capping it would forgo
-     * something that may simply work. The cap is on size alone.
+     * resolution should be inside the same level - and it is. 720p60 ran at 58 fps sustained: 1,748 of
+     * 1,769 frames decoded, all of them shown, nothing dropped at the display, audio clean. This said
+     * "untested here" until 2026-09-18. The cap is on size alone, and that is still the right cap.
      */
     if (params.height > 720 || params.width > 1280) {
         out->resolution_capped_from_width = params.width;
@@ -2897,7 +2898,11 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
     out->sealing_on = 1;
 
     /*
-     * AND THE RECEIVE HALF, in COUNTING mode for now.
+     * AND THE RECEIVE HALF, WHICH VERIFIES AND DROPS.
+     *
+     * This heading read "in COUNTING mode for now" until 2026-09-18, which was true of the first
+     * hardware run and had not been true since b70. The paragraph below is why it counted to begin
+     * with; the one after it is what earned enforcement.
      *
      * Sealing without verifying is half a mechanism - GMAC authenticates without encrypting, so a
      * control message from anyone parses perfectly well, and until now this port read whatever arrived

@@ -43,9 +43,9 @@
  * OUTPUT GOES TO A FILE, following both other ports. Results you can copy off the drive beat a
  * photograph of a television that you then retype.
  *
- * WHAT HAS ACTUALLY BEEN RUN, since "never run on a console" above is about the PS3 and this file is
- * not only a PS3 file. Everything below touches the platform seam, the logger and the CSPRNG seam and
- * nothing else, so it compiles and runs on a host against stand-ins for all three. Re-run on 2026-09-11
+ * WHAT RUNS WHERE. This file is not only a PS3 file. Everything below touches the platform seam, the
+ * logger and the CSPRNG seam and nothing else, so it compiles and runs on a host against stand-ins for
+ * all three, as well as on the console. Re-run on 2026-09-11
  * after the CSPRNG check was added, and every branch was exercised rather than only the happy one,
  * because a check that has never failed is not yet known to be a check:
  *
