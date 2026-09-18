@@ -123,12 +123,31 @@ Console ports, fetched and built from source
   openh264 2.6.0    BSD-2-Clause   ports/ripcord-ps3/tools/build-openh264.sh
   Opus 1.5.2        BSD-3-Clause   ports/ripcord-ps3/tools/build-opus.sh
   Mbed TLS 2.28.8   Apache-2.0     ports/common/tools/build-mbedtls.sh
+                    (elected - see below)
 
   Each script pins a version and a digest and refuses a mismatch. ripcord-ps3
   builds all three; ripcord-3ds links devkitPro's builds of Opus and the same
   Mbed TLS version; the host test suite builds Mbed TLS for the machine running
   it. ports/ripcord-ps3/DECODE.md records why a permissive-only line was held
   for these and why an LGPL decoder was declined.
+
+  MBED TLS IS DUAL-LICENSED and the table above states a choice, so the choice
+  is recorded here. Upstream offers Apache-2.0 or GPL-2.0-or-later at the option
+  of the user of the library. RIPCORD ELECTS THE APACHE-2.0 ARM, for the same
+  reason the FreeType election below is recorded rather than left implicit: the
+  arms are not interchangeable for this project, since Apache-2.0 is what
+  Ripcord is distributed under and GPLv2 is not compatible with it.
+
+  Upstream's licence file carries both arms in full, so roughly 250 lines of the
+  GNU General Public License travel inside every ripcord-ps3 package. That is
+  upstream's own text reproduced unmodified, not a licence this package uses,
+  and the generated notices now say so at the head of that section - because a
+  GPL text under an Apache heading with nothing joining the two invites exactly
+  the wrong conclusion.
+
+  openh264 and Opus are single-licence - checked against their own LICENSE and
+  COPYING files rather than assumed - so Mbed TLS and FreeType are the only two
+  components this project elects anything for.
 
 Console toolchain libraries, statically linked
 
