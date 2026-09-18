@@ -132,14 +132,33 @@ Console ports, fetched and built from source
 
 Console toolchain libraries, statically linked
 
-  ripcord-ps3 links FreeType and zlib from ps3dev's portlibs; ripcord-3ds links
-  devkitPro's libctru and its builds of Opus and Mbed TLS. These are supplied by
-  the installed toolchain rather than fetched by this repository, so no version
-  or digest is pinned here and what a build picks up depends on the toolchain
-  installed. They are third-party code in a built binary exactly as the fetched
-  components above are. Their licences are the upstream projects' own, and this
-  project has not separately catalogued them - work that belongs with a binary
-  release rather than with the source.
+  ripcord-ps3 links PSL1GHT, FreeType and zlib from the ps3dev toolchain;
+  ripcord-3ds links devkitPro's libctru and its builds of Opus and Mbed TLS.
+  These are supplied by the installed toolchain rather than fetched by this
+  repository, so no version or digest is pinned here and what a build picks up
+  depends on the toolchain installed. They are third-party code in a built
+  binary exactly as the fetched components above are.
+
+  PSL1GHT is MIT, and MIT requires its copyright notice and permission notice in
+  all copies - so it ships in every ripcord-ps3 package, at USRDIR/THIRD-PARTY-
+  NOTICES.txt, headed with the PSL1GHT revision the binary was built from.
+
+  THE TEXT IS CARRIED BY THE GENERATOR RATHER THAN READ FROM THE TOOLCHAIN, and
+  the reason is worth recording because it is the opposite of what was assumed.
+  The generator originally looked for a licence file under $PS3DEV and emitted
+  nothing when it found none - which was every build, because the ps3dev
+  prebuilt archive ships no licence file for any component. A search of the
+  whole unpacked toolchain returns exactly one, belonging to a library this port
+  does not link. The obligation is unconditional, so what satisfies it cannot be
+  conditional on an optional file; this is the same decision taken for
+  FreeType's mandatory disclaimer below, for the same reason.
+
+  zlib asks nothing of a binary distribution and is included as a courtesy when
+  a licence file is available, which at present it is not. FreeType's mandatory
+  disclaimer is covered below and does not depend on the toolchain carrying
+  anything. Beyond those, this project has not separately catalogued the
+  toolchain components' licences - work that belongs with a binary release
+  rather than with the source.
 
   FreeType is offered under either the FreeType License or GPLv2, at the choice
   of the user of the library. RIPCORD ELECTS THE FREETYPE LICENSE. The election
@@ -197,6 +216,8 @@ the version actually linked.
 The generator exits non-zero if a licence that REQUIRES reproduction is missing
 - openh264, Opus and Mbed TLS all do - and the package will not build without
 them. Shipping a binary with an incomplete notices file is worse than not
-shipping one.
+shipping one. PSL1GHT's MIT text and FreeType's FTL disclaimer are the two that
+are reproduced unconditionally from the generator itself rather than read from a
+file, precisely so that there is no path on which they can go missing.
 
 ripcord-3ds does not yet have the equivalent, and no .3dsx is released.
