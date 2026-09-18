@@ -54,12 +54,21 @@ public class HalyardWanRendezvousTests
             return Task.CompletedTask;
         }
 
+        /// <summary>
+        /// Runs after each OFFER POST, with the number sent so far. It is how a test says "the console
+        /// answers on our Nth offer" without timing it: a claim about how many rounds the loop makes has to
+        /// be driven by the loop, because a wall-clock delay only decides how many rounds a given host
+        /// happens to fit alongside it.
+        /// </summary>
+        public Action<int>? OnOfferSent { get; set; }
+
         public Task SendOfferAsync(
             string sessionId, string accountId, string duid, IReadOnlyList<HalyardCandidate> candidates, CancellationToken ct, ReadOnlyMemory<byte> localHashedId = default, int reqId = 1, int sid = 1)
         {
             OfferCount++;
             Calls.Enqueue("offer");
             LastOffer = candidates;
+            OnOfferSent?.Invoke(OfferCount);
             return Task.CompletedTask;
         }
 
@@ -79,29 +88,38 @@ public class HalyardWanRendezvousTests
         public IReadOnlyList<HalyardCandidate>? LastOffer { get; private set; }
     }
 
-    /// <summary>Fails the first N OFFER POSTs with a 404-style error, then succeeds — as a propagating session does.</summary>
+    /// <summary>
+    /// Fails the first N OFFER POSTs with a 404-style error, then succeeds — as a propagating session does.
+    /// <see cref="OnOfferAccepted"/> then fires once, which lets a test make the console's answer a
+    /// consequence of the OFFER that finally landed rather than of a timer running out.
+    /// </summary>
     private sealed class FailFirstOffersSignaling(int failures) : IHalyardSignalingClient
     {
         private int _offerAttempts;
 
+        private int _accepted;
+
         public int OfferAttempts => _offerAttempts;
 
-        public TaskCompletionSource CommandSent { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        /// <summary>Runs once, on the first OFFER POST that is not failed.</summary>
+        public Action? OnOfferAccepted { get; set; }
 
         public Task<string> CreateSessionAsync(string pushContextId, CancellationToken ct) => Task.FromResult("s");
 
         public Task SendConnectCommandAsync(
             string duid, string a, string s, string c, (string, string, string) seeds, CancellationToken ct)
-        {
-            CommandSent.TrySetResult();
-            return Task.CompletedTask;
-        }
+            => Task.CompletedTask;
 
         public Task SendOfferAsync(string s, string a, string d, IReadOnlyList<HalyardCandidate> c, CancellationToken ct, ReadOnlyMemory<byte> localHashedId = default, int reqId = 1, int sid = 1)
         {
             if (Interlocked.Increment(ref _offerAttempts) <= failures)
             {
                 throw new HalyardCloudException("POST .../sessionMessage failed (404).");
+            }
+
+            if (Interlocked.Exchange(ref _accepted, 1) == 0)
+            {
+                OnOfferAccepted?.Invoke();
             }
 
             return Task.CompletedTask;
@@ -299,8 +317,12 @@ public class HalyardWanRendezvousTests
         var channel = new HalyardPushChannel(socket);
         var rendezvous = new HalyardWanRendezvous(signaling, new FakeGatherer(null), options);
         using UdpClient media = MediaSocket();
-        _ = signaling.CommandSent.Task.ContinueWith(
-            async _ => { await Task.Delay(150); socket.Push(ConsoleOfferFrame()); }, TaskScheduler.Default);
+
+        // The console answers *because* an OFFER finally reached it, so both failures are behind us by
+        // construction on any host. Releasing the answer on a wall-clock delay instead is what made this test
+        // flake: it only counted three attempts on a host that fitted three offer intervals into those
+        // milliseconds, and an osx-arm64 runner that fitted two read two and failed.
+        signaling.OnOfferAccepted = () => socket.Push(ConsoleOfferFrame());
 
         await using HalyardWanConnection conn = await rendezvous.ConnectAsync(
             Request, media, channel, Server, "token", CancellationToken.None);
@@ -316,14 +338,17 @@ public class HalyardWanRendezvousTests
         var (rendezvous, signaling, socket, channel) = Build(options: options);
         using UdpClient media = MediaSocket();
 
-        // Answer only after a few offer intervals have passed.
-        _ = signaling.CommandSent.Task.ContinueWith(
-            async _ =>
+        // Answer on the second offer, not after a stretch of wall clock. The claim is about the loop — that
+        // it re-offers rather than offering once and waiting — so the loop is what has to release the answer;
+        // a delay only asserts that this host fits two intervals into 200ms. Same shape as the transient-404
+        // test above, which failed on CI for exactly that reason.
+        signaling.OnOfferSent = sent =>
+        {
+            if (sent == 2)
             {
-                await Task.Delay(200);
                 socket.Push(ConsoleOfferFrame());
-            },
-            TaskScheduler.Default);
+            }
+        };
 
         await using HalyardWanConnection conn = await rendezvous.ConnectAsync(
             Request, media, channel, Server, "token", CancellationToken.None);
