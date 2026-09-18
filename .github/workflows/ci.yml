@@ -388,7 +388,12 @@ jobs:
           NOTES
           sed -i 's/^          //' notes.md
 
+          # -R, because this job has no checkout and does not want one. `gh` infers the repository from a
+          # git remote, and the first run of this job died on "fatal: not a git repository" after doing
+          # everything else correctly - the asset was built, named and sitting there. Checking out the
+          # source purely to satisfy that inference would contradict the reason the job builds nothing.
           gh release create "$GITHUB_REF_NAME" "$asset" \
+            -R "$GITHUB_REPOSITORY" \
             --draft \
             --title "ripcord-ps3 $GITHUB_REF_NAME" \
             --notes-file notes.md
