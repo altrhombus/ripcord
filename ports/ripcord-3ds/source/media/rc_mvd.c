@@ -62,7 +62,7 @@
 
 #include "rc_mvd.h"
 
-#include "../util/rc_log.h"
+#include "util/rc_log.h"
 #include "../util/rc_profile.h"
 
 #include <3ds.h>

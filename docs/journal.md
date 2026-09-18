@@ -694,14 +694,185 @@ a machine that *has* the dirty room.
 
 ## Ports, and the streaming-quality work
 
+## The PS3 port — the shell, and what the hardware said about it
+
+> **This file had no PS3 entry at all before 2026-09-17**, while the port grew a platform bring-up, a
+> decoder, discovery, pairing, an account reader and a home screen. That is the same lesson the 3DS
+> section opens with, repeated: a body of work with its own README in its own directory quietly stops
+> being tracked here. The port's own history lives in `ports/ripcord-ps3/README.md`, `SETUP.md` and
+> `DECODE.md`; what follows is **only** the shell work of 2026-09-17, written down because it produced
+> numbers that decide the next architecture.
+
+`ports/ripcord-ps3/SHELL-DESIGN.md` plans a replacement for the grey list the port launched with: a row
+of console cards over the XMB's undulating background, one description line, everything else behind
+`START`. Stage 1 is in. This entry is about the four things that were wrong with it on a television and
+the one measurement that had been lying.
+
+**The corners were a chamfer, and the distance function was not the problem.** b360 replaced nine-sample
+supersampling with an exact rounded-rectangle SDF, and the corners still read as "a line, then a separate
+corner, then another line". The formula was right; the four-line integer square root under it had never
+been checked against the thing it claims to compute. It seeded its search at `1<<15`, which is not a
+power of four, so it answered roughly `sqrt(2v)` — and, that seed also being the largest value it can
+start from, saturated at 510 for anything above 65535. A 22-pixel corner feeds it six-figure values. It
+was drawing an arc of the wrong radius joined to the straight edges at a step. Fixed, and checked on the
+host against exact geometry: 0.0156 px, which is the quantum. Sub-pixel resolution went to sixty-fourths
+at the same time, and the selected card's four stacked glow rectangles became one continuous falloff.
+
+**Text was centred on the line box rather than on the letters.** A line reserves room for accents and
+descenders; a label of capitals uses neither, so every label hung high by exactly that space. Four layout
+sites had four separately-guessed constants. `rc_sysfont` now measures cap height off `'H'` and
+`rc_overlay_text_y` is the one place the arithmetic lives. Behind the same symptom: `rc_sysfont_set_size`
+chose the nearer of the first **two** built sizes by midpoint, so the third — a display size added for the
+wordmark and console names — had been unreachable since it was introduced, paid for in arena and never
+shown.
+
+**A tap of `START` was withheld and then never sent.** The diagnostics chord withholds Options or Create
+for 250 ms in case its partner arrives. Its comment said a lone press then "travels normally, a fifth of
+a second late", which is true of a press held and false of a tap: the button came back up before the
+window expired and the press was discarded. The comment described an intention the code did not
+implement, which is why it read as correct for four builds — and the same bug on the console is a
+screenshot that does not happen.
+
+### The measurement that was wrong, and what it hid
+
+The shell reported a frame rate as frames divided by the time it was open. It is not one: the shell
+blocks for 1.5 s inside a discovery broadcast and for as long as somebody takes in the pairing prompts,
+none of which draws. Two runs reported **15 fps and 10 fps with identical component costs**, the
+difference being how long the person holding the controller spent in a sub-screen. Worse, the component
+costs were sampled from the last frame, and the last frame before quitting is drawn on a different
+screen — so "drawing: 19 ms" was a reading of the options list, and the card row it was attributed to
+costs three times that.
+
+Measuring the interval between successive draws, discarding gaps over a fifth of a second, and summing
+the components rather than sampling them (b367, 1080p):
+
+```
+99,472 us a frame (worst 104,369) = 10 fps
+of which draw 99,376: background 13,904, drawing 67,272, to video memory 10,875, flip wait 7,300
+Cell 62.7 C on the way in, 64.7 C on the way out
+```
+
+**Drawing is 68% of the frame.** Every decision taken before this had been aimed at the background.
+
+### What was tried on the background, and what it ruled out
+
+Rendering the wave at 480x270 and blowing it up 4x took it from 29,388 us to 13,904. The ratio being
+exactly four is what makes the expansion cheap: the only weights are 0, ¼, ½ and ¾, and all three
+non-zero ones are reachable by halving twice, so one packed average is the whole of the arithmetic.
+Checked on the host against the same generator at full size — mean channel error 0.41/255, worst 5, and
+*smoother* between adjacent pixels than the full-resolution original, because interpolation softens the
+palette's own quantisation.
+
+**`dcbz` was tried and did not help**, and the negative result is the useful part. The background and the
+copy to video memory costing nearly the same for the same 8 MB looked like both paying to fetch cache
+lines they were about to overwrite in full. One `dcbz` per 128 bytes measured 13,774 us against 12,612 —
+very slightly worse, which is the instruction's own cost with nothing saved behind it. So the line fetch
+is not what this is paying for, and the ceiling is not one a store pattern can be arranged around. That
+is why the next move for the background is the SPEs rather than another pass over the PPE code.
+
+### How it ended: 10 fps to 30, and what each step was actually worth
+
+The design document named Route A and Route B - whether text can float on the wave - and said to measure
+before committing. The measurement said neither was the question. Six changes were tried on the drawing
+and the four aimed at memory or arithmetic were worth far less than they looked:
+
+| | frame | what changed |
+|---|---|---|
+| b367 | 99,472 us | the honest baseline, once the frame rate stopped being frames ÷ time-open |
+| b371 | 66,570 | rounded rectangles drawn a span at a time, not a pixel at a time |
+| b375 | 49,928 | a table for constant-alpha runs; the glow stops painting its own interior |
+| b381 | 50,054 | the interface cached as a layer and composited per row |
+| b386 | 33,454 | **the RSX reads the bitmap in main memory; the 8 MB copy stops existing** |
+
+Two ideas were tried and taken back out: `dcbz` on the background's write path, and splitting each row
+into two runs so a header row would not composite the empty middle of the screen. Both measured nothing.
+
+**The two that worked were both about where memory is, not what is done to it.** Every blended pixel read
+the surface before writing it; the background, which only writes, costs about 21 cycles a pixel against
+the blend's 140. So the interface is drawn once into a layer and composited, and the surface is never
+read. And the copy into video memory - 10,884 us, 29 percent of the budget - existed only because
+nothing had asked the RSX to look at main memory. `gcmMapMainMemory` gives it a window on the buffer
+where it stands: 10,884 us to 2.
+
+**Four attempts to make the per-pixel blend cheaper moved it from 217 cycles to about 140 and no
+further** - dcbz, dcbt, removing the arithmetic, removing the multiplies. That is the finding worth
+carrying off this work: on this core, for this kind of loop, the arithmetic was never what was being
+waited for, and no arrangement of it was going to be.
+
+### The two visual faults, and the verification gap they exposed
+
+Both were found by somebody looking at a television, not by any test here.
+
+The first was a bounded clear of the cached layer - correct by induction, provided every write really is
+inside the bounds its drawer reports. Clearing in full fixed it, for about 7 ms on a rebuild, which is
+not in the frame budget.
+
+The second was the same premise failing outright: `rounded_glow` never reported its ink at all, so the
+composite clipped the glow to whatever else happened to be on each row. What reached the screen was a
+glow with square corners, present on the side facing the other card and absent on the outside, visible
+along the bottom only where the word "standby" widened the row. Every detail of that follows from one
+missing line, and five readings of the drawing code did not find it; a description of the *shape on the
+screen* did.
+
+**Nothing in this project's tests could have caught either.** They compare one implementation against
+another, and both would have drawn the glow correctly - the fault was in the bookkeeping beside the
+drawing. There is now an invariant check: every pixel with a non-zero alpha in the layer must lie inside
+the bounds its drawer reported, verified on the first couple of rebuilds and reported by row and column.
+
+One correction belongs in the record. Two builds were spent fixing a cache-coherency fault inferred from
+that smearing, which was never a cache fault - and its being *persistent and repeatable* should have
+ruled one out at once rather than two builds later. The `sync` and the `dcbf` are kept on the narrower
+ground that the RSX now reads a buffer the PPE writes through its cache and nobody here has established
+whether that read path snoops; they cost 482 us a frame, and their comments say exactly that.
+
+### The effects, and a menu that keeps itself honest
+
+`SHELL-DESIGN.md`'s stage 2 and part of stage 5 went in once the frame had headroom, and all three are
+cheap for the same reason: the interface is a cached layer, so anything that MOVES has to live outside
+it — which turns out to be the arrangement that makes them nearly free. The glow is rasterised once into
+a coverage mask and multiplied by one scalar per frame; the pips are recorded during the rebuild and
+drawn last, 250 pixels; the motes are 26 points of light born in the ribbon band with a depth that makes
+far ones small, bright and slow and near ones large, dim and quick.
+
+The pip is a deliberate reversal of the plan. It asked for the STANDBY pip to breathe — "a console you
+must wake looks asleep" — and on a screen that is backwards: amber already says "not ready" by being
+amber, and animating it makes the thing you *cannot* use the liveliest thing on the card.
+
+**The motes took three goes and every correction came from looking at a television**: drawn small so the
+expansion would blur them for free (an eight-pixel smear that reads as motion blur); moving at a sixth
+of a pixel a second, which is shimmer rather than drift, under a comment claiming "about a minute" that
+was wrong by a factor of ten; and all rising from the floor, which reads as carbonation in a glass.
+
+And the console cards now re-ask every five seconds instead of once at launch, driving a new
+non-blocking form of `rc_discover` a frame at a time. It rebuilds only when something a viewer could see
+has changed — a rebuild throws away the cached layer and restarts the selected card's glow, so a row
+that flinched every few seconds because two datagrams said what the last two said would be a worse fault
+than the one it fixes.
+
+### And an XMB quit took the console down
+
+Choosing Quit from the PS menu rebooted the console with three beeps, every time. Not a crash in the
+teardown - the teardown never ran. lv2 raises `SYSUTIL_EXIT_GAME` through whatever callback the program
+registered and force-terminates it when nobody leaves; this program registered nothing, so every quit
+took the second path with the RSX holding a context and an SPU thread group running that is deliberately
+never destroyed. The shell answered it from b373 and the streaming path from b409 - three loops there are
+long enough to be asked to quit inside, and on that path `sysUtilCheckCallback` had never been called at
+all, so the request was not merely ignored, it was never delivered.
+
+**And the PS menu itself was slow for the same reason**, which nothing had connected to anything. The
+system overlay is driven from that same callback, so a program that never pumps it starves the whole
+system utility layer and not only its own exit event. It had been read as an old console under load. It
+was this, and it had been true of every streaming build this port has ever produced.
+
 ## The 3DS port — a second client, and the spec's first real audit
 
 **Added to this file 2026-08-17, having been missing from it entirely** while ~70 commits of work landed.
 That is itself the lesson: this file is the source of truth only while someone writes in it, and a body of
 work with its own README in its own directory is exactly the kind that quietly stops being tracked here.
 
-`ports/ripcord-3ds` is a from-scratch C client for modded **New 3DS** hardware, on branch `3ds` (unmerged,
-~70 commits ahead of `main`). ~18.7k lines. It is not part of `Ripcord.slnx` and never will be — sharing a
+`ports/ripcord-3ds` is a from-scratch C client for modded **New 3DS** hardware. It was on an unmerged `3ds`
+branch when this entry was written and is on `main` now; the ~18.7k lines it had then are, after the core
+was extracted, ~6.4k of its own plus the ~12.2k of `ports/common` it shares with the other ports. It is not part of `Ripcord.slnx` and never will be — sharing a
 repository buys shared specs, constants and test vectors, not a build system with a cross-compiler for a
 different CPU and OS. It keeps **no copy** of the interop constants: `tools/gen_constants.py` reads the one
 committed JSON at build time and generates a C translation unit into the gitignored `build/`, so one bounded
@@ -742,13 +913,18 @@ landed since it was written.
 
 ## The portable core, and the Vita port — started 2026-08-17
 
-> **Not in this repository.** Everything in this section lives on the unpublished `feat/vita-port` branch:
-> `ports/common/` with the extracted protocol core, its three platform implementations, the mbedtls
-> cross-build script, and the Vita port with its hardware checklist. Only `main` is published, so none of
-> those paths resolve here, and `ports/` holds `ripcord-3ds` in its pre-extraction layout — the very layout
-> these entries describe moving away from. Kept because the reasoning is worth having; flagged because a
-> reader would otherwise go looking for files that are not there. Cross-platform work is deliberately
-> parked until the Windows client is feature complete.
+> **Partly in this repository, as of 2026-09-18.** This note used to say none of it was, and that was true
+> when written: `main` carried `ripcord-3ds` in its pre-extraction layout and no `ports/common` at all.
+> Merging the PS3 port brought the extracted core with it, so **`ports/common/` now resolves on `main`** —
+> the protocol core, the platform seam and its implementations, the mbedtls cross-build script — and
+> `ports/ripcord-3ds` is the thin post-extraction tree these entries describe moving to rather than the one
+> they describe moving away from.
+>
+> **What is still not here is the Vita port itself** and its hardware checklist, which remain on the
+> unpublished `feat/vita-port` branch; `ports/ripcord-vita` has no tracked files in this repository. The
+> reasoning below is kept because it is worth having, and this note stays rather than being deleted because
+> a reader who remembers the old claim should be able to see it was retired on purpose. Cross-platform work
+> beyond the ports is deliberately parked until the Windows client is feature complete.
 
 **`ports/common` now holds the protocol core**, on branch `feat/vita-port`. The 3DS port was written as
 a single-platform tree; auditing it for a second target found that **71 of its 88 source files reference

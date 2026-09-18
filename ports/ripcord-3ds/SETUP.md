@@ -121,14 +121,14 @@ Run these in order. Each one is a real gate; do not skip ahead when one fails.
 ```sh
 # 1. The .NET side builds and the vector emitter runs. It writes four files, not one.
 dotnet run --project tools/Ripcord.ProtocolLab -- vectors
-#    expect: wrote ports/ripcord-3ds/tests/vectors/control-crypto.kat
+#    expect: wrote ports/common/tests/vectors/control-crypto.kat
 #            kdf=80 ctxkey=21 iv=13 mode=33 field=14  (ps4 tables present)
 #            wrote .../stream-crypto.kat    gmac=9 streamkdf=4 packetnonce=12 packettag=12
 #            wrote .../session-crypto.kat   ecdhpub=6 ecdhshared=8 ecdhsig=4 streamkeys=8
 #            wrote .../control-proto.kat    sessionreq=5 sessionreply=5
 
 # 2. The C compiles and agrees with it - ten runners, no hardware involved.
-make -C ports/ripcord-3ds/tests
+make -C ports/common/tests
 #    expect: self-test: AES-128 matches FIPS-197 C.1
 #            171 / 24 / 53 / 61 / 65 / 2654 / 58 / 31 / 44 / 71 passed, 0 failed  (3,244 total)
 #    if ecdh_test says "skipped: built without an ECDH backend", libmbedtls-dev is missing
@@ -163,7 +163,7 @@ issue again:
 ## 4. The daily loop
 
 ```sh
-make -C ports/ripcord-3ds/tests      # after any change under source/ — fast, no hardware
+make -C ports/common/tests           # after any change under source/ — fast, no hardware
 make -C ports/ripcord-3ds            # when you want a .3dsx to try on hardware
 make -C ports/ripcord-3ds mvdreplay  # just the offline decoder harness
 ```

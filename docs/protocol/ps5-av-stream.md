@@ -100,6 +100,44 @@ Frame cadence: the audio-tail/short-fragment and frame-index rates are consisten
 per second, but frame rate should be confirmed against a decode rather than inferred from packet
 timing.
 
+### The elementary stream itself **[W]**
+
+Measured by parsing the parameter sets out of two decrypted Annex-B dumps written by the 3DS port's
+`dumpvideo=1` path (1,214 and 941 pictures). Both agree exactly, and a single SPS and a single PPS
+serve the whole session in each.
+
+| Field | Value | Consequence for a decoder |
+|---|---|---|
+| `profile_idc` | **77 — Main** | No 8×8 transform and no scaling matrices; those are High-profile only |
+| `level_idc` | **31 — Level 3.1** | At the observed 640×368. A higher resolution must raise it — 720p60 exceeds 3.1's MB rate **[X]** |
+| `constraint_flags` | `0x40` (`constraint_set1_flag`) | Main-conformant |
+| `entropy_coding_mode_flag` | **1 — CABAC** | The expensive half to implement, and the part that resists parallelism |
+| `chroma_format_idc` | 1 — 4:2:0 | |
+| `frame_mbs_only_flag` | **1 — progressive** | No field coding, no MBAFF |
+| `num_slice_groups_minus1` | 0 | One slice group; no FMO/ASO |
+| `pic_order_cnt_type` | **2** | Picture order **is** decode order. No `pic_order_cnt_lsb` is coded at all and reordering is not representable — which corroborates the I-and-P-only slice types from a second direction |
+| `log2_max_frame_num` | 7 | `frame_num` is 7 bits and wraps at 128 |
+| `max_num_ref_frames` | **9** | A nine-frame DPB. With no B-slices, long P-prediction chains are where the efficiency comes from — and nine 720p NV12 frames is ~12.5 MB a decoder must hold |
+| `frame_cropping_flag` | 1 | 640×368 coded, cropped to the 640×360 displayed |
+| `pic_init_qp` | 26 | |
+| `deblocking_filter_control_present_flag` | 1 | Slice headers carry deblocking overrides |
+| `redundant_pic_cnt_present_flag` | 0 | No redundant slices |
+| Slice types present | **I and P only** | No B-slices: no reordering delay, no bipredictive MC, no DPB reorder logic |
+| Coded size | 640×368 | Macroblock-aligned; 640×360 displayed, per `ports/ripcord-3ds/HARDWARE-PROBES.md` |
+
+**Slices per picture: min 1, max 22, mean 2.0–2.3.** The maximum is the IDR picture — one keyframe of
+21–22 slices — while ordinary P-pictures carry one or two. This is consistent with the one-slice-per-MTU
+behaviour recorded in `ports/ripcord-3ds/source/mvdreplay/main.c`, and that file's independent count (941
+pictures, 20 SPS, a 21-NAL first keyframe) reproduces exactly.
+
+**Both dumps are 640×368, so the slice count at higher resolutions is not measured `[X]`.** One slice per
+MTU implies it scales with macroblock count — 720p is roughly four times the macroblocks — but that is an
+inference, and it matters to anyone parallelising entropy decode across cores. Measurable from a 720p
+dump whenever one is taken.
+
+IDRs are infrequent: one IDR picture in 1,214, and 89 IDR slices across 941 pictures in the other dump.
+That matches the separately recorded observation of two keyframes in 25 seconds.
+
 ## Audio channel (`0x03`)
 
 Fixed-structure packets, ~310 bytes on the wire, ~87/s, one encrypted audio unit each (1:1
@@ -120,9 +158,14 @@ receiver.
 
 ## What's still needed
 
-- Confirm channel semantics and the video reassembly fields against an actual decode (decrypt →
-  feed a decoder → verify frame boundaries reconstruct correctly). Everything here is structural
-  inference from plaintext framing only.
+- ~~Confirm channel semantics and the video reassembly fields against an actual decode (decrypt →
+  feed a decoder → verify frame boundaries reconstruct correctly).~~ **Done.** Both front ends decode
+  this stream end to end, and the elementary-stream parameters are now measured rather than inferred —
+  see [The elementary stream itself](#the-elementary-stream-itself-w). The framing table above remains
+  structural inference from plaintext framing, and the fields still marked tentative there are still
+  tentative.
+- Measure slices per picture at 720p. The 640×368 dumps give a mean of 2.0–2.3, and whether that scales
+  with macroblock count decides how far entropy decode can be parallelised on a multi-core port **[X]**.
 - Decode the up-direction feedback/report format (channel `0x00` + sub-flags) — needed for
   adaptive bitrate; capture with induced loss to force NACK/report variety.
 - Characterize the `0x12` low-rate down channel (stats/report vs. something else).

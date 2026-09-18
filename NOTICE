@@ -106,7 +106,67 @@ the full provenance writeup.
 Third-party components
 --------------------------------------------------------------------------------
 
-Ripcord depends on third-party packages resolved at build time (NuGet) and on
-Microsoft platform components (the Windows App SDK, Media Foundation, Direct3D
-12, WASAPI, GameInput). Those components are governed by their own licences;
-none of their source is vendored into this repository.
+Nothing below is vendored into this repository. The managed build resolves its
+dependencies through NuGet. The console ports fetch theirs at build time, check
+them against a pinned SHA-256 and compile them from source into a gitignored
+directory, so a clone contains none of them. What follows is an inventory, not a
+licence grant: each component is governed by its own licence and carries its own
+notices.
+
+Managed build (Windows)
+
+  NuGet packages resolved at build time, and Microsoft platform components: the
+  Windows App SDK, Media Foundation, Direct3D 12, WASAPI and GameInput.
+
+Console ports, fetched and built from source
+
+  openh264 2.6.0    BSD-2-Clause   ports/ripcord-ps3/tools/build-openh264.sh
+  Opus 1.5.2        BSD-3-Clause   ports/ripcord-ps3/tools/build-opus.sh
+  Mbed TLS 2.28.8   Apache-2.0     ports/common/tools/build-mbedtls.sh
+
+  Each script pins a version and a digest and refuses a mismatch. ripcord-ps3
+  builds all three; ripcord-3ds links devkitPro's builds of Opus and the same
+  Mbed TLS version; the host test suite builds Mbed TLS for the machine running
+  it. ports/ripcord-ps3/DECODE.md records why a permissive-only line was held
+  for these and why an LGPL decoder was declined.
+
+Console toolchain libraries, statically linked
+
+  ripcord-ps3 links FreeType and zlib from ps3dev's portlibs; ripcord-3ds links
+  devkitPro's libctru and its builds of Opus and Mbed TLS. These are supplied by
+  the installed toolchain rather than fetched by this repository, so no version
+  or digest is pinned here and what a build picks up depends on the toolchain
+  installed. They are third-party code in a built binary exactly as the fetched
+  components above are. Their licences are the upstream projects' own, and this
+  project has not separately catalogued them - work that belongs with a binary
+  release rather than with the source.
+
+  FreeType is offered under either the FreeType License or GPLv2, at the choice
+  of the user of the library. RIPCORD ELECTS THE FREETYPE LICENSE. The election
+  is recorded here rather than left implicit because the two arms are not
+  interchangeable for this project: the FTL is permissive and asks for a credit
+  line, while GPLv2 and the Apache-2.0 licence this project is distributed under
+  are not compatible. A build that drifted into the GPLv2 arm by nobody choosing
+  would be a licensing problem discovered late. The credit the FTL asks for is:
+
+      Portions of this software are copyright (c) The FreeType Project
+      (www.freetype.org). All rights reserved.
+
+  and it belongs in the documentation accompanying any binary that links it -
+  today, ripcord-ps3.
+
+Console firmware, used at runtime and never redistributed
+
+  The ports reach their console's own system modules through the toolchain's
+  stub libraries: on PS3 the video decoder, RSX, audio, networking, filesystem
+  and system-utility modules. ripcord-ps3 also reads the system typeface from
+  /dev_flash at runtime and rasterises it with FreeType, which is what the
+  firmware's own font API would have done with the same file; the typeface stays
+  on the console. No firmware component - no module, no font, no data file - is
+  copied into this repository or into a built binary.
+
+A DISTRIBUTED BINARY IS NOT THIS REPOSITORY. A built .self or .3dsx links the
+components above statically, so whoever publishes one is distributing them and
+takes on the attribution and notice obligations that come with each. No such
+binary is released here. If one ever is, this section is the starting inventory
+and not a substitute for assembling the notices those licences ask for.

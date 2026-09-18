@@ -1,7 +1,19 @@
 # ripcord-3ds
 
-A PS5 Remote Play client for modded Nintendo 3DS hardware, in C, sharing Ripcord's protocol
-specification but none of its code.
+A PS5 Remote Play client for modded Nintendo 3DS hardware, in C, written from Ripcord's protocol
+specification rather than from its implementation.
+
+> **That sentence used to end "but none of its code", and that is no longer true.** This port was
+> written standalone, and it was then audited for a second target: 71 of its 88 source files referenced
+> no operating system at all, so they were lifted into [`ports/common`](../common) and this port became
+> the first of three consumers of a core extracted from it. It also compiles files ported from the .NET
+> side - `senkusha_echo.h` says so in its own header - because `CLAUDE.md`'s clean-room rule does not
+> apply between Ripcord's own front ends: a same-project port may adapt `src/` at will, that being this
+> project's own reference implementation and not the external source the rule exists to exclude.
+>
+> What survives, and is the reason the port exists, is the **specification** claim: nothing here was
+> derived by reading somebody else's Remote Play client, and the spec proved complete enough to produce
+> a working one.
 
 **Status: video from a real PS5, decoded and on screen.** As of 2026-08-13
 `ripcord-3ds-connect.3dsx` runs the whole connect flow against real hardware — discovery, `/sess/init` →
@@ -11,10 +23,15 @@ own control traffic with GMAC, acks `STREAM_INFO`, and decodes the resulting H.2
 MVD block onto the top screen. A 60-second window: 1,782 pictures, 0 process errors, 0 render errors,
 29.7 fps presented, 2 units lost in 5,397.
 
-Still missing: audio (no Opus), input (nothing is sent back), and senkusha's RTT/MTU measurement legs.
-Picture quality is now limited by the screen rather than by the pipeline — the console sends 640x360 and
-the top screen has 240 rows, so 37.5% of the source rows are discarded on the way down. See
-[Where this stands](#where-this-stands).
+**Since then — audio, input, and the senkusha measurement legs have all landed** (2026-08-17). Opus decodes
+to NDSP; the pad sends state snapshots and button history back up the stream socket; senkusha now measures
+rather than assumes (RTT 2 ms from 10/10 echoes, MTU 1454 confirmed both directions), so the launch spec
+declares real figures instead of `rtt: 0`. The stream is now requested at **960x540** rather than 640x360.
+The 60-second figures above are from the 2026-08-13 build at 640x360 and have not been re-measured since.
+
+Still missing: on-device PIN pairing — it streams from an imported pairing record. Picture quality is bounded
+by the screen rather than the pipeline: the top screen has 240 rows, so most of the source rows are discarded
+on the way down. See [Where this stands](#where-this-stands).
 
 ## Why this exists
 
@@ -74,50 +91,29 @@ them.
 
 ## Layout
 
+**The protocol core no longer lives here.** As of 2026-08-17 it is in
+[`ports/common`](../common) — crypto, the Halyard control KDF, session, discovery, Takion, stream
+framing/FEC, input, and the portable half of `util/` — shared with every other Ripcord port and reached
+through the seam in [`ports/common/platform/rc_platform.h`](../common/platform/rc_platform.h). 71 of
+this port's 88 files turned out to reference no OS at all; what remains below is the 3DS.
+
 ```
-source/crypto/      AES-128, SHA-256, HMAC, cipher modes   <- mirrors Ripcord.Core.Net.Crypto
-source/halyard/     control KDF, field IV, field ciphers   <- mirrors Protocol.Halyard.Common/Crypto/V1
-source/net/         SOC service lifecycle + a minimal TCP client (rc_tcp.c, Phase 4)
-source/util/        shared seams: SD-card logging, base64/hex, trim/header-parsing, program-dir resolution
+source/platform/    the rc_platform.h seam, libctru side (clock, sleep, tick)
+source/net/         SOC service lifecycle (rc_soc.c)
+source/media/       MVD hardware H.264 decode (rc_mvd.c) + NDSP audio (rc_audio.c)
+source/util/        rc_stack.c (the main-thread stack size), rc_random.c (CSPRNG), rc_profile.c
 source/app/         on-device crypto smoke test (ripcord-3ds.3dsx)
 source/linktest/    Phase 2 UDP link test (ripcord-3ds-linktest.3dsx)
-source/discovery/   Phase 3 LAN discovery: SRCH probe/parse + on-device app (ripcord-3ds-discovery.3dsx)
-source/session/     Phase 4 /sess/init -> /sess/ctrl exchange + on-device app (ripcord-3ds-session.3dsx)
-source/takion/      Phase 5 Takion transport: handshake, DATA/SACK, reassembly + on-device app
-                    (ripcord-3ds-takion.3dsx)
-source/stream/      stream framing, FEC, demux: A/V header, GF(2^8)/Cauchy Reed-Solomon, packet crypto
-                    (GMAC + KDF), frame reassembly - no on-device app yet (see SETUP.md for why)
-source/media/       Phase 6d MVD hardware H.264 decode (rc_mvd.c) - New 3DS only, UNVERIFIED
-source/connect/     Phase 6b THE CONNECT FLOW: control -> senkusha -> Takion -> stream keys, the only
-                    program that reaches the stream plane (ripcord-3ds-connect.3dsx)
-source/crypto/rc_ecdh.*          Phase 6a ECDH seam over mbedtls - the one primitive not implemented here
-source/takion/takion_control_proto.*      SESSION_REQUEST/REPLY protobuf (hand-rolled, two messages)
-source/takion/takion_session_negotiator.* the stream key agreement (socket-free; driven by source/connect)
-source/session/halyard_control_session.*  the control plane as a reusable, pollable object
-source/session/halyard_launch_spec.*      the launchSpec JSON - carries handshakeKey to the console
-source/util/rc_random.*                   libctru CSPRNG seam; no host implementation, deliberately
-tests/              host-side known-answer runner, discovery + session + takion + stream self-tests
-tools/              constants generator, UDP link-test sender (host-side)
+source/discovery/   Phase 3 on-device LAN discovery app (ripcord-3ds-discovery.3dsx)
+source/session/     Phase 4 on-device /sess app (ripcord-3ds-session.3dsx)
+source/takion/      Phase 5 on-device transport probe (ripcord-3ds-takion.3dsx)
+source/connect/     Phase 6b THE CONNECT FLOW - the only program that reaches the stream plane
+                    (ripcord-3ds-connect.3dsx)
+source/mvdreplay/   decoder replay harness (ripcord-3ds-mvdreplay.3dsx)
 ```
 
-The dependency direction is the same one the .NET side enforces: `halyard/` depends on `crypto/`, never
-the reverse, and `crypto/` knows nothing about PlayStation. `net/`, `linktest/` and `discovery/` are a
-separate, parallel branch of that graph — they answer network questions, not protocol ones, and depend on
-neither `crypto/` nor `halyard/`. `session/` is where the two branches finally meet: it is the first code
-in this port to use `halyard/`'s control-field cipher against something an actual console sent back
-(`/sess/init`'s `RP-Nonce`), which is the whole reason Phase 4 exists. Within `discovery/` and `session/`,
-the wire-format parsers (`halyard_discovery.c`, `halyard_sess_request.c`, `halyard_ctrl_message.c`,
-`halyard_sess_fields.c`, `halyard_control_arm.c`) have no socket dependency of their own — see their
-headers for why — so they are checked on the host in `tests/discovery_test.c` / `tests/session_test.c`
-without any of `net/`'s hardware seam involved. `rc_text.c` (trim / case-insensitive header-name match) is
-shared by both `halyard_discovery.c` and `halyard_sess_request.c`, factored out once the second module
-needed the exact logic the first already had as private statics. `takion/` follows the same split one
-level further: `takion_message.c`/`takion_handshake.c`/`takion_data_chunk.c`/`takion_sack_chunk.c`/
-`takion_reassembler.c` are pure (host-tested in `tests/takion_test.c`, no vector file needed — see that
-file's header for where each known-answer packet came from), while `takion_reliable_channel.c` is the one
-file in this port's whole protocol layer that both owns a socket *and* isn't crypto — it drives the pure
-chunk codecs over UDP with retransmit/SACK timing, and like `rc_soc.c`/`rc_tcp.c` has no host test of its
-own, only the on-device app.
+`source/util/rc_stack.c` is 3DS code despite including no libctru header: it overrides libctru's weak
+`__stacksize__` symbol, and its comment is the record of what 32 KB cost this port twice.
 
 ## Building
 
@@ -125,13 +121,21 @@ own, only the on-device app.
 
 This is the part that verifies the crypto, and it should be the part you run.
 
+The tests moved with the code they test — they are [`ports/common/tests`](../common/tests) now, and
+cover every port rather than this one.
+
 ```sh
 # 1. Generate the vectors from the .NET implementation (once, from the repo root)
 dotnet run --project tools/Ripcord.ProtocolLab -- vectors
 
-# 2. Build and run the C against them
-make -C ports/ripcord-3ds/tests
+# 2. Build and run the C against them (3,243 assertions)
+make -C ports/common/tests
+
+# 3. Compile every portable file, including the ones no runner links
+make -C ports/common/tests compile
 ```
+
+`make -C ports/ripcord-3ds test` still works and forwards to the same place.
 
 ### The 3DS build
 
