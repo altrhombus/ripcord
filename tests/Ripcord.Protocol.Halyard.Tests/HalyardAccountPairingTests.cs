@@ -64,6 +64,13 @@ public sealed class HalyardAccountPairingTests
 
         // The negotiation is answered in full — an ack for the console's OFFER and an ACCEPT naming its
         // stream id. Stopping after our own OFFER is what left the console silent on the wire.
+        //
+        // The ack is posted from a background task on purpose (the flow must not block on it while the
+        // console is opening its side), so nothing orders it against PairAsync returning. Wait for the ack
+        // itself rather than assuming it has already landed: reading the counter straight after the call is
+        // what failed on the linux-x64 CI host, which scheduled the assertion first and saw zero. The token
+        // only bounds a genuine failure; a working ack satisfies this the moment it is sent.
+        await signaling.ResultSent.Task.WaitAsync(cts.Token);
         Assert.Equal(1, signaling.ResultsSent);
         Assert.Equal(consoleSid, signaling.AcceptedPeerSid);
     }
@@ -176,14 +183,25 @@ public sealed class HalyardAccountPairingTests
             => Task.FromResult<IReadOnlyList<HalyardCloudSession>>([]);
 
 
-        public int ResultsSent { get; private set; }
+        private int _resultsSent;
+
+        public int ResultsSent => Volatile.Read(ref _resultsSent);
+
+        /// <summary>
+        /// Completes on the first RESULT. The coordinator acks from a fire-and-forget task, so this is the
+        /// only edge a test has between "the ack was sent" and "the ack is observable"; without it an
+        /// assertion on <see cref="ResultsSent"/> is a race the caller wins on a fast host and loses on a
+        /// slow one.
+        /// </summary>
+        public TaskCompletionSource ResultSent { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public int AcceptedPeerSid { get; private set; } = -1;
 
         public Task SendResultAsync(
             string sessionId, string accountId, string consoleDuid, int reqId, CancellationToken ct)
         {
-            ResultsSent++;
+            Interlocked.Increment(ref _resultsSent);
+            ResultSent.TrySetResult();
             return Task.CompletedTask;
         }
 
