@@ -240,9 +240,14 @@ jobs:
       # gitignored) `make pkg` leaves no .self behind at all and the upload below fails looking for
       # one. One invocation rather than two so both goals share a single rc_build_id.h and the package
       # cannot end up stamped differently from the .self beside it.
+      # BUILD_ORIGIN=ci, so the compiled build id is "b35ci" and no CI artifact can be mistaken for a
+      # developer build. The two counters are independent - this one is github.run_number, the other is a
+      # gitignored per-machine file - and both printed the same "bNNN" shape until now. The docs cite 94
+      # local build numbers between b87 and b428; CI was days from reaching that range and minting a
+      # second, different b87.
       - name: Build the package
         working-directory: ports/ripcord-ps3
-        run: make all pkg
+        run: make all pkg BUILD_ORIGIN=ci
 
       # THE PACKAGE HAS TO PROVE IT CARRIES THE BUILD THAT WAS JUST MADE. This is tools/ship.sh's
       # check, which exists because `make pkg` leaves the previous package in place when it fails:
@@ -253,7 +258,10 @@ jobs:
       - name: The package carries the build that was just made
         working-directory: ports/ripcord-ps3
         run: |
-          built=$(sed -n 's/.*"b\([0-9]*\)".*/\1/p' build/rc_build_id.h)
+          # [a-z]* tolerates the BUILD_ORIGIN suffix this job passes - the id is "b35ci", not "b35".
+          # Without it the pattern matches nothing and this gate fails every CI build while reporting a
+          # stale package, which is the misdiagnosis it exists to avoid rather than cause.
+          built=$(sed -n 's/.*"b\([0-9]*\)[a-z]*".*/\1/p' build/rc_build_id.h)
           sfo_ver=$(strings build/pkg/PARAM.SFO | grep -oE '^[0-9][0-9]\.[0-9][0-9]$' | head -1)
           sfo_built=$(printf '%s' "$sfo_ver" | tr -d '.' | sed 's/^0*//')
 
