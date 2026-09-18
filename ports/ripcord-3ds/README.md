@@ -1,7 +1,19 @@
 # ripcord-3ds
 
-A PS5 Remote Play client for modded Nintendo 3DS hardware, in C, sharing Ripcord's protocol
-specification but none of its code.
+A PS5 Remote Play client for modded Nintendo 3DS hardware, in C, written from Ripcord's protocol
+specification rather than from its implementation.
+
+> **That sentence used to end "but none of its code", and that is no longer true.** This port was
+> written standalone, and it was then audited for a second target: 71 of its 88 source files referenced
+> no operating system at all, so they were lifted into [`ports/common`](../common) and this port became
+> the first of three consumers of a core extracted from it. It also compiles files ported from the .NET
+> side - `senkusha_echo.h` says so in its own header - because `CLAUDE.md`'s clean-room rule does not
+> apply between Ripcord's own front ends: a same-project port may adapt `src/` at will, that being this
+> project's own reference implementation and not the external source the rule exists to exclude.
+>
+> What survives, and is the reason the port exists, is the **specification** claim: nothing here was
+> derived by reading somebody else's Remote Play client, and the spec proved complete enough to produce
+> a working one.
 
 **Status: video from a real PS5, decoded and on screen.** As of 2026-08-13
 `ripcord-3ds-connect.3dsx` runs the whole connect flow against real hardware — discovery, `/sess/init` →
