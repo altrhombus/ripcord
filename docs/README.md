@@ -15,6 +15,8 @@ subject from different angles, which is why picking by topic alone leads you to 
 | **What outside material was consulted, and what did each item inform?** | [`protocol-research-log.md`](protocol-research-log.md) |
 | How does the PS5 Remote Play protocol actually work? | [`protocol/`](protocol/) |
 | In what order would I build a client from the spec? | [`protocol/IMPLEMENTATION.md`](protocol/IMPLEMENTATION.md) |
+| What is the portable C core the console ports share? | [`ports/common/README.md`](../ports/common/README.md) |
+| How do I build or run a console port? | [The console ports](#the-console-ports), below |
 | How do I contribute, and what must I attest to? | [`CONTRIBUTING.md`](../CONTRIBUTING.md) |
 | How was it built, historically? | [`history/`](history/) |
 
@@ -32,6 +34,24 @@ interchangeable:
 - **`protocol-research-log.md` is the clean-room provenance record.** One row per external reference
   consulted, what it informed, and which spec section it fed. It exists to make the independence claim
   checkable by someone who does not trust it. It is evidence, not narrative.
+
+### The console ports
+
+`ports/` is documented inside its own tree rather than here. A port's setup is inseparable from its
+toolchain, and a second copy of it under `docs/` would go stale the first time a devkit moved.
+[`architecture.md`](architecture.md) has the layering and the rule about what may be shared with `src/`;
+these answer "what is it, and how do I build it".
+
+| Document | Answers |
+|---|---|
+| [`ports/common/README.md`](../ports/common/README.md) | What the portable C99 core holds, and what the platform seam does and does not ask of an OS |
+| [`ports/ripcord-3ds/README.md`](../ports/ripcord-3ds/README.md) | The 3DS port: status, design, what runs on hardware |
+| [`ports/ripcord-3ds/SETUP.md`](../ports/ripcord-3ds/SETUP.md) | Building it and getting it onto a console |
+| [`ports/ripcord-3ds/HARDWARE-PROBES.md`](../ports/ripcord-3ds/HARDWARE-PROBES.md) | What each on-device probe measured |
+| [`ports/ripcord-ps3/README.md`](../ports/ripcord-ps3/README.md) | The PS3 port: status, design, what runs on hardware |
+| [`ports/ripcord-ps3/SETUP.md`](../ports/ripcord-ps3/SETUP.md) | Toolchain, packaging, and the fast iteration loop |
+| [`ports/ripcord-ps3/DECODE.md`](../ports/ripcord-ps3/DECODE.md) | The decoder investigation — why the console's own decoder, what it accepts, and the values no SDK header states |
+| [`ports/ripcord-ps3/SHELL-DESIGN.md`](../ports/ripcord-ps3/SHELL-DESIGN.md) | The shell's design plan — what the on-console interface should be, and what nine comments in `source/ui/` argue with |
 
 ## What is deliberately not here
 
@@ -128,3 +148,6 @@ docs/
     captures/                  DIRTY ROOM — gitignored, never published
   history/                     superseded plans, kept for the record
 ```
+
+Port documentation is **not** under `docs/` — it lives beside each port in `ports/*/`, for the reason
+given in [The console ports](#the-console-ports).
