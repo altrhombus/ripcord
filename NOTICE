@@ -141,6 +141,20 @@ Console toolchain libraries, statically linked
   project has not separately catalogued them - work that belongs with a binary
   release rather than with the source.
 
+  FreeType is offered under either the FreeType License or GPLv2, at the choice
+  of the user of the library. RIPCORD ELECTS THE FREETYPE LICENSE. The election
+  is recorded here rather than left implicit because the two arms are not
+  interchangeable for this project: the FTL is permissive and asks for a credit
+  line, while GPLv2 and the Apache-2.0 licence this project is distributed under
+  are not compatible. A build that drifted into the GPLv2 arm by nobody choosing
+  would be a licensing problem discovered late. The credit the FTL asks for is:
+
+      Portions of this software are copyright (c) The FreeType Project
+      (www.freetype.org). All rights reserved.
+
+  and it belongs in the documentation accompanying any binary that links it -
+  today, ripcord-ps3.
+
 Console firmware, used at runtime and never redistributed
 
   The ports reach their console's own system modules through the toolchain's
