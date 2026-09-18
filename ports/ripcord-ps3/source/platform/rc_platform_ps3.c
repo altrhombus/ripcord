@@ -5,13 +5,23 @@
  * ports/common/platform/rc_platform.h for what each function promises; this file only says how the PPE
  * delivers it.
  *
- * *** NOTHING IN THIS FILE HAS EVER BEEN COMPILED. ***
+ * *** COMPILED, RUN, AND MEASURED ON A CONSOLE. ***
  *
- * There is no PSL1GHT installation on the machine this was written on and no PS3 to run it against, so
- * every SDK-facing line below is [X] - assumed, never confirmed. That marking is not decoration. The
- * 3DS port's first socket bug was an idiom that is correct on .NET, correct on Unix, and rejected
- * outright by the 3DS SOC service, and it cost a hardware run to find. Assume this file has one of
- * those in it, and see the VERIFY notes for where to look first.
+ * This banner said the exact opposite until 2026-09-18 - "nothing in this file has ever been compiled",
+ * every SDK-facing line [X], no PSL1GHT installation and no PS3 to run it against. That was true when it
+ * was written, and it is retired rather than deleted because the warning it carried was the right one to
+ * have had: the 3DS port's first socket bug was an idiom that is correct on .NET, correct on Unix, and
+ * rejected outright by the 3DS SOC service, and it cost a hardware run to find. It was reasonable to
+ * assume this file had one of those in it. It did not.
+ *
+ * What the console settled, on 2026-09-11 and in the runs after it:
+ *
+ *   - THE TIME BASE IS 79,800,986 Hz, measured, against the 79,800,000 this file expected - 12 parts per
+ *     million. It is no longer asserted either: rc_tick_hz() asks lv2, and the constant is demoted to
+ *     rc_ps3_timebase_hz_expected() for main.c to cross-check the kernel's answer against.
+ *   - SLEEP TAKES MICROSECONDS under the sysUsleep spelling, which was the one genuine unit risk here.
+ *   - THE CSPRNG returns what the seam promises, every branch of the check exercised rather than only
+ *     the passing one.
  *
  * THE SDK SURFACE IS DELIBERATELY ALMOST EMPTY, AND THAT IS THE DESIGN.
  *
@@ -120,10 +130,11 @@ void rc_sleep_ms(uint32_t ms)
      * svcSleepThread wanted nanoseconds and the three original call sites each wrote the conversion out
      * by hand - so the multiply happens once, here, and nowhere else in the port.
      *
-     * VERIFY: the name and the unit together. If sysUsleep is absent under this spelling, the lv2 call
-     * beneath it is sys_timer_usleep, taking the same microseconds. A wrong unit here does not fail
-     * loudly: a factor of a thousand shows up as a port that either spins or hangs, and both look like
-     * a network fault from the outside. main.c times a one-second sleep for this reason. */
+     * VERIFIED, and it was worth asking. The name resolves and the unit is microseconds: main.c times a
+     * known interval against lv2's own frequency and the two agree. A wrong unit would not have failed
+     * loudly - a factor of a thousand shows up as a port that either spins or hangs, and both look like
+     * a network fault from the outside - which is why it was checked before anything depended on it. If
+     * the spelling ever disappears, the lv2 call beneath it is sys_timer_usleep, same units. */
     sysUsleep(ms * 1000u);
 }
 
