@@ -31,6 +31,15 @@ public static class HalyardSessCtrlFields
     public const ulong CounterLoginPin = 5;
 
     /// <summary>
+    /// The counter the login passcode is encrypted at, by family: 5 for a PS5 (five <c>/sess/ctrl</c>
+    /// headers, 0-4) and 4 for a PS4 (four headers, 0-3 - RP-StreamingType is not a PS4 header, it is sent
+    /// as a binary frame after the passcode). Both are capture facts from a Frida hook on our own vendor
+    /// client (5.5.0.08250); a PS4 passcode submitted at 5 is refused, which cost b469/b470 to find.
+    /// </summary>
+    public static ulong LoginPinCounter(HalyardConsolePlatform platform)
+        => platform == HalyardConsolePlatform.Ps4 ? CounterStreamingType : CounterLoginPin;
+
+    /// <summary>
     /// Login-passcode plaintext: the digits as their ASCII characters, nothing more. A 4-digit PIN is 4 bytes
     /// (e.g. "1234" → <c>31 32 33 34</c>); the field cipher is a stream mode so the ciphertext is the same
     /// length. Rejects non-digits rather than encrypt something the console will never accept.
@@ -100,18 +109,30 @@ public static class HalyardSessCtrlFields
         int osMajor,
         int osMinor,
         int startBitrate,
-        int streamingType)
+        int streamingType,
+        HalyardConsolePlatform platform)
     {
         string Encrypt(ulong counter, ReadOnlySpan<byte> plaintext)
             => Convert.ToBase64String(crypto.EncryptControlField(counter, plaintext));
 
-        return
-        [
+        var fields = new List<KeyValuePair<string, string>>
+        {
             new(SessProtocol.HeaderAuth, Encrypt(CounterAuth, BuildAuthPlaintext(registrationKey))),
             new(SessProtocol.HeaderDid, Encrypt(CounterDid, BuildDidPlaintext(deviceId))),
             new(SessProtocol.HeaderOsType, Encrypt(CounterOsType, BuildOsTypePlaintext(osMajor, osMinor))),
             new(SessProtocol.HeaderStartBitrate, Encrypt(CounterStartBitrate, BuildInt32Plaintext(startBitrate))),
-            new(SessProtocol.HeaderStreamingType, Encrypt(CounterStreamingType, BuildInt32Plaintext(streamingType))),
-        ];
+        };
+
+        // RP-StreamingType is PS5-only. On PS4 it is not a /sess/ctrl header at all (the vendor sends a
+        // 16-byte field after the passcode instead), so emitting it here would spend counter 4 - where a
+        // PS4 then expects the passcode. Leaving it off is what frees counter 4 for the login. See
+        // LoginPinCounter and the capture note on CounterLoginPin.
+        if (platform != HalyardConsolePlatform.Ps4)
+        {
+            fields.Add(new(SessProtocol.HeaderStreamingType,
+                Encrypt(CounterStreamingType, BuildInt32Plaintext(streamingType))));
+        }
+
+        return fields;
     }
 }

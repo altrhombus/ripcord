@@ -491,12 +491,18 @@ public sealed class HalyardStreamingSession : IStreamingSession
                 deviceId,
                 os.Major, os.Minor,
                 startBitrate: bitrate,
-                streamingType: 0);
+                streamingType: 0,
+                platform: platform);
 
             foreach (var (name, value) in fields)
             {
                 request.Header(name, value);
             }
+
+            // The passcode is the next field-encrypt after these headers, and PS4 sent one fewer, so its
+            // counter is 4 where a PS5's is 5. Set from the family here, now that the headers are emitted,
+            // unless an experiment pinned it explicitly.
+            _clientFieldCounter = CtrlCounterOverride ?? HalyardSessCtrlFields.LoginPinCounter(platform);
         }
 
         return _control.SendRequestAsync(request, cancellationToken);
@@ -766,10 +772,17 @@ public sealed class HalyardStreamingSession : IStreamingSession
     /// too, and the five <c>/sess/ctrl</c> request fields spend 0–4 — which is why the login passcode, the
     /// only client frame that existed before, is at 5.
     /// </summary>
-    private ulong _clientFieldCounter =
+    /// <summary>An explicit counter override for experiments; when set it wins over the family default.</summary>
+    private static readonly ulong? CtrlCounterOverride =
         ulong.TryParse(Environment.GetEnvironmentVariable("RIPCORD_CTRL_COUNTER"), out ulong start)
             ? start
-            : HalyardSessCtrlFields.CounterLoginPin;
+            : null;
+
+    /// <summary>
+    /// Starts at the PS5 value and is corrected to the family default when <c>/sess/ctrl</c> is built (a PS4
+    /// spends one fewer header, so its passcode is 4, not 5). The override, if present, wins over both.
+    /// </summary>
+    private ulong _clientFieldCounter = CtrlCounterOverride ?? HalyardSessCtrlFields.CounterLoginPin;
 
     /// <summary>
     /// Decrypt and dump a control frame, for the frames nobody has decoded yet (<c>0x0016</c>, <c>0x0017</c>,
