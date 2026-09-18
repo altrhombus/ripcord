@@ -268,7 +268,7 @@ $(MBEDTLS_PREFIX)/lib/libmbedcrypto.a: $(CORE)/tools/build-mbedtls.sh $(CORE)/to
 
 $(GENERATED): $(BUNDLE) $(CORE)/tools/gen_constants.py
 	@mkdir -p $(@D)
-	$(PYTHON) $(CORE)/tools/gen_constants.py $(BUNDLE) $@
+	$(PYTHON) $(CORE)/tools/gen_constants.py --for 'ports/common/tests' $(BUNDLE) $@
 
 $(TARGET): $(SOURCES) $(GENERATED)
 	@mkdir -p $(@D)
@@ -316,7 +316,7 @@ $(INPUT_TARGET): $(INPUT_SOURCES)
 
 $(REGISTRATION_GENERATED): $(BUNDLE) $(CORE)/tools/gen_constants.py
 	@mkdir -p $(@D)
-	$(PYTHON) $(CORE)/tools/gen_constants.py --registration $(BUNDLE) $@
+	$(PYTHON) $(CORE)/tools/gen_constants.py --registration --for 'ports/common/tests' $(BUNDLE) $@
 
 REGIST_FLOW_SOURCES := \
 	$(CORE)/halyard/halyard_registration.c \
