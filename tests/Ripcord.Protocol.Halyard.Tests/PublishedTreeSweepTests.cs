@@ -318,11 +318,18 @@ public class PublishedTreeSweepTests
     /// for. It is in <see cref="TextExtensions"/> now, and
     /// <see cref="EveryCommittedTextFile_IsSwept"/> no longer takes this list's word for it.</para>
     ///
-    /// <para><c>.html</c> arrived unclassified with <c>ports/ripcord-ps3/shell-mockup.html</c> — 553 lines
-    /// of committed UTF-8 carrying prose, colour values and design notes, which the corpus never opened
-    /// because the extension was on neither list. The same answer as <c>.svg</c>, for the same reason: it
-    /// is text a person wrote, so it is swept. A mockup is exactly the kind of file that acquires a real
-    /// address while nobody is thinking of it as source.</para>
+    /// <para><c>.html</c> is here for the same reason and got here the same way. A committed design
+    /// mockup — 553 lines of UTF-8 carrying prose, colour values and notes — was unclassified, so the
+    /// corpus never opened it, and <see cref="EveryCommittedTextFile_IsSwept"/> said so. That file has
+    /// since been deleted and is deliberately not named here, because a docstring pointing at something
+    /// that no longer exists is the stale reference this file keeps finding elsewhere.</para>
+    ///
+    /// <para><b>The entry stays regardless of whether any HTML is currently committed.</b> Nothing
+    /// requires these to be reachable — the list classifies a file <em>type</em>, and HTML is text a
+    /// person wrote, so there is no future in which "binary" or "skip" is the right answer. Dropping it
+    /// would not be unsafe, since an unclassified extension fails closed and loudly; it would just
+    /// reopen a settled question in front of whoever next commits one, at the moment their build turns
+    /// red.</para>
     ///
     /// <para><c>.pcapng</c> and <c>.bin</c> were also here, which gave a committed capture a route
     /// <em>past</em> the corpus guard as "declared binary". Capture types are on
