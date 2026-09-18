@@ -315,6 +315,13 @@ channels wrote on the successful run. `_open_r` does dispatch through a devoptab
 `make pkg`, FTP it to `/dev_hdd0/packages/`, install from the XMB. One install per iteration, which is
 the real cost, and it has worked every time.
 
+**The package carries its third-party notices**, generated into `USRDIR/THIRD-PARTY-NOTICES.txt` by
+`tools/gen-third-party-notices.sh` from the licence texts that came with the exact openh264, Opus and
+Mbed TLS the build linked. This adds no step: those tarballs already have to be fetched for the binary
+to link at all. It does add a way to fail — if a licence file is missing the generator exits non-zero
+and `make pkg` stops, deliberately, because a package that ships without them is a licence breach
+rather than a cosmetic omission. `make notices` builds just that file if you want to read it.
+
 What takes most of the sting out is that the bring-up program logs over **UDP** as well as to disk
 (`source/net/rc_netlog.c`), so the output arrives live on the development machine instead of needing an
 FTP fetch per question:

@@ -108,6 +108,7 @@ CONTENTID := UP0001-$(APPID)_00-0000000000000000
 CORE  := ../common
 BUILD := build
 APP   := ripcord-ps3
+NOTICES := $(BUILD)/THIRD-PARTY-NOTICES.txt
 
 # ARCHITECTURE FLAGS - AND THE RULE MATTERS MORE THAN THE VALUE, because the two ports that came before
 # were bitten by this in OPPOSITE directions.
@@ -664,10 +665,22 @@ $(ICON0): tools/make-icon.py ../../brand/ripcord-tile.svg
 # binary is. Changing how PARAM.SFO is written and then having make decide the package was up to date is
 # how a build ships with the previous build's metadata - which ship.sh caught the first time this rule
 # changed, and should not have had to.
-$(APP).pkg: $(BUILD)/$(APP).ready.elf $(ICON0) Makefile
+# THE NOTICES ARE A PREREQUISITE OF THE PACKAGE, not a step somebody remembers. openh264, Opus and
+# Mbed TLS each require their licence to travel with a BINARY distribution - the BSDs' "in the
+# documentation and/or other materials provided with the distribution", Apache-2.0 section 4's "give any
+# other recipients a copy of this License". A .pkg that ships without them is a licence breach, so the
+# generator exits non-zero rather than emitting a partial file and this rule fails with it.
+$(NOTICES): tools/gen-third-party-notices.sh
+	@mkdir -p $(@D)
+	sh tools/gen-third-party-notices.sh $@
+
+notices: $(NOTICES)
+
+$(APP).pkg: $(BUILD)/$(APP).ready.elf $(ICON0) $(NOTICES) Makefile
 	@rm -rf $(BUILD)/pkg
 	@mkdir -p $(BUILD)/pkg/USRDIR
 	cp $(ICON0) $(BUILD)/pkg/ICON0.PNG
+	cp $(NOTICES) $(BUILD)/pkg/USRDIR/THIRD-PARTY-NOTICES.txt
 	$(SELF_NPDRM) $< $(BUILD)/pkg/USRDIR/EBOOT.BIN $(CONTENTID) > /dev/null
 	@sed 's/01\.00/$(APP_VER)/g' $(SFOXML) > $(BUILD)/sfo.xml
 	$(SFO) --title "$(TITLE)" --appid "$(APPID)" -f $(BUILD)/sfo.xml $(BUILD)/pkg/PARAM.SFO
@@ -676,6 +689,8 @@ $(APP).pkg: $(BUILD)/$(APP).ready.elf $(ICON0) Makefile
 	$(PKG_FINALIZE) $(APP).gnpdrm.pkg
 
 pkg: $(APP).pkg
+
+.PHONY: notices
 
 # THE FAST LOOP. Sends the ELF straight to a listener on the console over TCP 4299 and relays the
 # program's stdout back, so an iteration is one command with no install step and no XMB round trip.
