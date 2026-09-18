@@ -27,7 +27,11 @@ make pkg                         # set -e: a non-zero exit stops here, before an
 # changed is where it says so: the XMB title is now the program's name, and the build number is its
 # VERSION, which is an NN.NN string whose digits ARE the build. So the check reads the version instead
 # of the title, and the failure it exists to catch is unchanged.
-BUILD_ID=$(sed -n 's/.*"b\([0-9]*\)".*/\1/p' build/rc_build_id.h)
+# [a-z]* tolerates the BUILD_ORIGIN suffix - "b35ci" as well as "b460". Without it the pattern needs a
+# quote straight after the digits, yields nothing for a CI build, and this script refuses to upload while
+# blaming a stale package. The digits are what the SFO version can be compared against; the suffix says
+# where the build came from and is deliberately not part of the comparison.
+BUILD_ID=$(sed -n 's/.*"b\([0-9]*\)[a-z]*".*/\1/p' build/rc_build_id.h)
 SFO_VER=$(strings build/pkg/PARAM.SFO | grep -oE '^[0-9][0-9]\.[0-9][0-9]$' | head -1)
 SFO_BUILD=$(printf '%s' "${SFO_VER}" | tr -d '.' | sed 's/^0*//')
 
