@@ -864,6 +864,59 @@ system overlay is driven from that same callback, so a program that never pumps 
 system utility layer and not only its own exit event. It had been read as an old console under load. It
 was this, and it had been true of every streaming build this port has ever produced.
 
+### CI builds the package — 2026-09-18
+
+`.github/workflows/ci.yml` gained a `PS3 package` job: ubuntu runner, the pinned `nightly-2026-07-26`
+ps3dev archive, the three cross-built dependencies, `make all pkg`, and the `.pkg`/`.gnpdrm.pkg`/`.self`
+uploaded as a build artifact stamped with the run number. Until now the only machine that had ever built
+this port was the author's.
+
+**Three things it does that are not "run make".** The build number comes from `github.run_number` rather
+than the gitignored `.buildno`, because a runner starts at zero and every package CI ever produced would
+otherwise call itself b1 — which is the exact ambiguity the build id exists to remove. The job then
+re-runs `tools/ship.sh`'s check, that the compiled build id and the version in `PARAM.SFO` agree, because
+an artifact download is an upload by another name and `make pkg` leaves the previous package in place when
+it fails. And it asserts the third-party notices are actually inside the staged package, which the licences
+require of a binary distribution and which was a prerequisite in the Makefile with nothing reading it.
+
+**It ran, and the whole file went green the same day.** `ROADMAP.md` had carried "CI has never executed
+— until it runs once, it is a file, not a check" since the workflow was written. First execution was this
+PR: seven jobs, all green, including the two App architectures and both portable-core hosts. The PS3 job
+cost 68s cold — 180 MB toolchain download plus all three cross-builds — and 37-40s warm, with both caches
+hitting and both build steps skipped.
+
+**The DCO gate's first live run caught a real violation, not a self-test.** It failed on a commit that had
+reached a branch without a sign-off, which is exactly the class of thing it was written for after
+`feat/ps3-port` reached 260 unsigned commits out of 308. A guard's first genuine catch is worth recording
+because it is the only evidence that it guards anything.
+
+**And the first real build answered the notices commit's open question — badly.** That commit shipped
+unverified, saying the toolchain-sourced licence paths for FreeType, zlib and PSL1GHT were best-effort and
+"the first thing to check on a real build". They are all wrong, and not because the guesses were poor: the
+ps3dev prebuilt archive carries **no licence file for anything**. `find` over 577 MB turns up exactly one,
+belonging to a PolarSSL this port does not link. So all three loops fall through silently, which is what
+they were written to do.
+
+What that costs, precisely. FreeType is fine — the mandatory FTL section-1 disclaimer is fixed text emitted
+whether or not `FTL.TXT` is found, which is the design decision that commit made on purpose and it is the
+one that held. zlib is fine; it asks nothing of a binary distribution. **PSL1GHT is the open one** — it is
+linked into every build and no notice for it ships, so if its licence asks for reproduction the package does
+not satisfy it. Fixing it means sourcing the text from somewhere other than the toolchain, pinned the way
+the fetched dependencies are, and that is a decision rather than a patch. `[X]` until someone makes it.
+
+**A second, smaller thing the output shows.** The Mbed TLS section is headed `Apache-2.0` and then
+reproduces upstream's `LICENSE` verbatim — which is the dual Apache-2.0 **OR** GPL-2.0-or-later file, so
+roughly 250 lines of GPLv2 appear under a heading that says Apache. Reproducing upstream verbatim is the
+right instinct; the heading is what quietly asserts an election. The FreeType section one screen below says
+"Ripcord elects the FreeType License, not the GPLv2 alternative" in so many words, which is the standard
+this project already set for exactly this case. Mbed TLS should say it the same way.
+
+**`make pkg` alone does not build the `.self`.** The pkg rule stops at `build/ripcord-ps3.ready.elf` and
+never reaches the `$(APP).self` rule, so on a clean checkout — where `*.self` is gitignored and therefore
+absent — the artifact upload would have failed looking for a file no step had made. Found by building a
+`git archive` of HEAD in an empty directory rather than by reading the Makefile, which is the only way that
+class of mistake shows up: on the author's machine the file was simply already there, four weeks old.
+
 ## The 3DS port — a second client, and the spec's first real audit
 
 **Added to this file 2026-08-17, having been missing from it entirely** while ~70 commits of work landed.

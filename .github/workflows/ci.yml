@@ -136,6 +136,153 @@ jobs:
           dotnet test tests/Ripcord.Protocol.Halyard.Tests/Ripcord.Protocol.Halyard.Tests.csproj -c Release
           dotnet test tests/Ripcord.Presentation.Tests/Ripcord.Presentation.Tests.csproj -c Release
 
+  # The PS3 port's installable package. Not in Ripcord.slnx and buildable by neither dotnet nor
+  # MSBuild - it is a Makefile driving a PowerPC cross-compiler plus a second one for the SPEs - so it
+  # gets its own job rather than a leg on one of the matrices above.
+  #
+  # THE PACKAGE, NOT THE .self, AND THAT IS THE POINT. A plain `make` gives ripcord-ps3.self, which is
+  # what ps3load sends to a console over the network. `make pkg` is what installs from the XMB, which
+  # is what somebody who is not developing this port actually wants - and it covers strictly more of
+  # the build: make_self_npdrm, the icon, PARAM.SFO and the third-party notices are all pkg-only
+  # steps. ports/ripcord-ps3/SETUP.md section 6 is the post-mortem of four hardware runs that produced
+  # no output at all, and both causes were in the packaging rather than in the program.
+  #
+  # NOT PATH-FILTERED, deliberately. A per-job `paths:` needs either its own workflow file or a
+  # third-party filter action, and the second is not something this repository takes - but the
+  # honest reason is that the filter would be wrong anyway. This build consumes ports/common/** and
+  # src/Ripcord.Protocol.Halyard/Data/halyard-v1-constants.json, so a change under src/ really can
+  # break it, and "the PS3 job only runs when PS3 files change" is how that stays unnoticed.
+  ps3-package:
+    name: PS3 package
+    runs-on: ubuntu-latest
+    env:
+      # The toolchain this port is verified against. ports/ripcord-ps3/SETUP.md section 2 names the
+      # same nightly and the two are meant to agree - bump them together, with a hardware run behind
+      # the bump. Pinned rather than tracking the newest because ps3dev cuts nightlies on its own
+      # schedule, and a green build going red for a reason nobody in this repository chose is the
+      # fastest way to teach people to ignore a red build.
+      PS3DEV_RELEASE: nightly-2026-07-26
+    steps:
+      - uses: actions/checkout@v4
+
+      # 180 MB compressed, 577 MB unpacked, and nothing in it depends on anything in this repository -
+      # so the release tag is the whole cache key. Kept in $HOME rather than the workspace: the
+      # archive is relocatable (SETUP.md section 2), and an unpacked toolchain inside the checkout is
+      # 577 MB of untracked files sitting in a tree other jobs make assertions about.
+      - name: Cache the ps3dev toolchain
+        id: ps3dev
+        uses: actions/cache@v4
+        with:
+          path: ~/ps3dev
+          key: ps3dev-${{ env.PS3DEV_RELEASE }}
+
+      - name: Install the ps3dev toolchain
+        if: steps.ps3dev.outputs.cache-hit != 'true'
+        run: |
+          curl -sSL --retry 3 -o "$RUNNER_TEMP/ps3dev.tar.gz" \
+            "https://github.com/ps3dev/ps3dev/releases/download/$PS3DEV_RELEASE/ps3dev-linux-X64.tar.gz"
+          tar xzf "$RUNNER_TEMP/ps3dev.tar.gz" -C "$HOME"    # the archive's top level is ps3dev/
+
+      # PSL1GHT IS PS3DEV, not $PS3DEV/psl1ght. The archive puts ppu_rules, base_rules and data_rules
+      # at the top level beside ppu/ and spu/, and ppu_rules resolves -I$(PSL1GHT)/ppu/include against
+      # that. SETUP.md section 2 records the same correction, which an earlier revision of it got
+      # wrong. The Makefiles hard-error on either variable being unset, so there is no silent wrong
+      # answer available - but there is a silently wrong directory, which is this one.
+      #
+      # The Makefile addresses the compilers by absolute path; PATH is here for build-mbedtls.sh,
+      # which resolves ${CROSS}gcc with `command -v` and exits rather than build if it is not there.
+      - name: Point the build at the toolchain
+        run: |
+          echo "PS3DEV=$HOME/ps3dev"  >> "$GITHUB_ENV"
+          echo "PSL1GHT=$HOME/ps3dev" >> "$GITHUB_ENV"
+          printf '%s\n' "$HOME/ps3dev/bin" "$HOME/ps3dev/ppu/bin" "$HOME/ps3dev/spu/bin" >> "$GITHUB_PATH"
+
+      # openh264, Opus and Mbed TLS are fetched from pinned, hash-verified upstream releases and
+      # cross-built; none is vendored, which is why this is a build step at all and not a checkout.
+      # The key covers the three scripts and the Mbed TLS config header because those are the only
+      # things in this repository that decide what comes out, plus the toolchain that compiled it.
+      - name: Cache the cross-built third-party libraries
+        id: thirdparty
+        uses: actions/cache@v4
+        with:
+          path: ports/ripcord-ps3/third-party
+          key: ps3-thirdparty-${{ env.PS3DEV_RELEASE }}-${{ hashFiles('ports/ripcord-ps3/tools/build-openh264.sh', 'ports/ripcord-ps3/tools/build-opus.sh', 'ports/common/tools/build-mbedtls.sh', 'ports/common/tools/ripcord-mbedtls-config.h') }}
+
+      # SKIPPED ON A CACHE HIT rather than left to short-circuit itself. build-mbedtls.sh does check
+      # whether its output is up to date; build-openh264.sh does not - it clears obj/ and recompiles
+      # all 35 translation units every time it runs. Since the cache key covers the scripts, a hit
+      # means the libraries in it were produced by exactly these scripts and this toolchain, so
+      # running them again buys nothing but minutes.
+      - name: Cross-build openh264, Opus and Mbed TLS
+        if: steps.thirdparty.outputs.cache-hit != 'true'
+        working-directory: ports/ripcord-ps3
+        run: |
+          sh tools/build-openh264.sh
+          sh tools/build-opus.sh
+          PREFIX="$PWD/third-party/mbedtls" CROSS=powerpc64-ps3-elf- sh ../common/tools/build-mbedtls.sh
+
+      # THE BUILD NUMBER IS THE RUN NUMBER, and this is not decoration. The Makefile explains at
+      # length why every build gets an id: for five hardware runs the only evidence of WHICH binary
+      # had executed was the byte size of the installed EBOOT, and a stale install and a broken
+      # program look identical. .buildno is gitignored per-machine state, so a runner starts at zero
+      # and every package CI ever produced would otherwise call itself b1.
+      #
+      # One less than the run number, because the rc_build_id.h rule increments what it reads - so
+      # the package comes out stamped with the run that made it, and the XMB version is that number
+      # with a dot in it (run 432 -> 04.32). The Makefile's ceiling applies here too: the NN.NN
+      # version field holds to b9999, and run 10000 would produce a version this console will not
+      # parse. That is years away and it is written down rather than guarded.
+      - name: Stamp the package with this run's number
+        run: echo $(( ${{ github.run_number }} - 1 )) > ports/ripcord-ps3/.buildno
+
+      # BOTH GOALS, and `pkg` alone is not enough. The pkg rule depends on build/ripcord-ps3.ready.elf
+      # and stops there - it never reaches the $(APP).self rule, so on a clean checkout (*.self is
+      # gitignored) `make pkg` leaves no .self behind at all and the upload below fails looking for
+      # one. One invocation rather than two so both goals share a single rc_build_id.h and the package
+      # cannot end up stamped differently from the .self beside it.
+      - name: Build the package
+        working-directory: ports/ripcord-ps3
+        run: make all pkg
+
+      # THE PACKAGE HAS TO PROVE IT CARRIES THE BUILD THAT WAS JUST MADE. This is tools/ship.sh's
+      # check, which exists because `make pkg` leaves the previous package in place when it fails:
+      # three builds in a row reported a new build number, uploaded cleanly, installed cleanly and
+      # ran the old binary. An artifact download is an upload by another name, so it gets the same
+      # gate. The notices check is the other half - a .pkg that ships without them is a licence
+      # breach, and the Makefile makes them a prerequisite precisely so this can be asserted.
+      - name: The package carries the build that was just made
+        working-directory: ports/ripcord-ps3
+        run: |
+          built=$(sed -n 's/.*"b\([0-9]*\)".*/\1/p' build/rc_build_id.h)
+          sfo_ver=$(strings build/pkg/PARAM.SFO | grep -oE '^[0-9][0-9]\.[0-9][0-9]$' | head -1)
+          sfo_built=$(printf '%s' "$sfo_ver" | tr -d '.' | sed 's/^0*//')
+
+          if [ -z "$built" ] || [ "$built" != "$sfo_built" ]; then
+            echo "::error::compiled b$built but the package's version says ${sfo_ver:-nothing} - the package is stale"
+            exit 1
+          fi
+          for f in build/pkg/USRDIR/EBOOT.BIN build/pkg/USRDIR/THIRD-PARTY-NOTICES.txt build/pkg/ICON0.PNG; do
+            [ -s "$f" ] || { echo "::error::$f is missing or empty in the package staging directory"; exit 1; }
+          done
+          echo "b$built, version $sfo_ver - EBOOT, icon and notices all present"
+          ls -l ripcord-ps3.pkg ripcord-ps3.gnpdrm.pkg ripcord-ps3.self
+
+      # BOTH PACKAGES, because they are not interchangeable and which one a console wants depends on
+      # how it is set up. tools/ship.sh uploads the .gnpdrm one - that is the package_finalize'd
+      # build and the one that has actually been installed on hardware. The .self is here because it
+      # is what ps3load takes, which is the fast loop SETUP.md section 6 argues for.
+      #
+      # The third-party notices are not listed separately: they travel INSIDE the package, which is
+      # where the licences require them, and the step above fails the build if they do not.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ripcord-ps3-b${{ github.run_number }}
+          path: |
+            ports/ripcord-ps3/ripcord-ps3.gnpdrm.pkg
+            ports/ripcord-ps3/ripcord-ps3.pkg
+            ports/ripcord-ps3/ripcord-ps3.self
+          if-no-files-found: error
+
   # CONTRIBUTING.md section 1 requires every commit to carry a Signed-off-by line matching its
   # author. Until now the only thing enforcing that was a checkbox in the pull-request template,
   # and a checkbox is not a mechanism: feat/ps3-port reached 260 unsigned commits out of 308
