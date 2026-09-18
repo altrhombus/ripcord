@@ -223,11 +223,28 @@ static int run_sess_ctrl(halyard_control_session *s, const halyard_pairing_recor
         rc_base64_encode(plain4, sizeof(plain4), bitrate_b64, sizeof(bitrate_b64));
         halyard_sess_request_add_header(&req, "RP-StartBitrate", bitrate_b64);
 
-        halyard_sess_field_int32le_plaintext(rec->streaming_type, plain4);
-        halyard_control_field_encrypt(&s->ctrl, HALYARD_SESS_COUNTER_STREAMING_TYPE,
-            plain4, plain4, sizeof(plain4));
-        rc_base64_encode(plain4, sizeof(plain4), streaming_b64, sizeof(streaming_b64));
-        halyard_sess_request_add_header(&req, "RP-StreamingType", streaming_b64);
+        /*
+         * RP-StreamingType IS PS5-ONLY, and this is a capture fact rather than a guess. A Frida hook on
+         * our own vendor client's field cipher (5.5.0.08250) shows the console-direction encrypts in
+         * order: on PS5 the fifth /sess/ctrl header is a 4-byte StreamingType at counter 4 and the login
+         * passcode is counter 5; on PS4 there are only FOUR headers (Auth, Did, OSType, StartBitrate at
+         * 0-3), the login passcode is counter 4, and the 16-byte field that would have been the fifth
+         * header is sent AFTER the passcode as a binary frame - so it is not a /sess/ctrl header at all.
+         *
+         * Sending StreamingType on PS4 would spend counter 4, which is where the console then expects the
+         * passcode - the exact reason a correct PS4 passcode was refused at counter 5 (b469/b470) until
+         * this was captured. So on PS4 the field is not sent, counter 4 is left for the passcode, and no
+         * counter is reused.
+         */
+        if (rec->is_ps5) {
+            halyard_sess_field_int32le_plaintext(rec->streaming_type, plain4);
+            halyard_control_field_encrypt(&s->ctrl, HALYARD_SESS_COUNTER_STREAMING_TYPE,
+                plain4, plain4, sizeof(plain4));
+            rc_base64_encode(plain4, sizeof(plain4), streaming_b64, sizeof(streaming_b64));
+            halyard_sess_request_add_header(&req, "RP-StreamingType", streaming_b64);
+        } else {
+            (void)streaming_b64;
+        }
 
         n = halyard_sess_request_serialize(&req, buf, sizeof(buf));
     }
@@ -291,9 +308,14 @@ int halyard_control_session_open(const halyard_pairing_record *record, halyard_c
         return 0;
     }
 
-    /* The five headers above consumed counters 0-4; anything encrypted later on this connection starts
-     * here. See the header's note on why this must never be restarted. */
-    out->next_counter = HALYARD_SESS_COUNTER_LOGIN_PIN_START;
+    /*
+     * WHERE THE NEXT ENCRYPT STARTS, and it differs by family because the header count does. PS5 sent
+     * five headers (counters 0-4), so the next frame - the login passcode - is 5. PS4 sent four (0-3),
+     * so its passcode is 4, the slot PS5's StreamingType would have taken. Both are the count of headers
+     * actually encrypted above; see the RP-StreamingType note and the header's warning on restarting.
+     */
+    out->next_counter = record->is_ps5 ? HALYARD_SESS_COUNTER_LOGIN_PIN_START
+                                    : HALYARD_SESS_COUNTER_STREAMING_TYPE;
     out->recv_counter = HALYARD_SESS_COUNTER_CONSOLE_START;
     return 1;
 }
