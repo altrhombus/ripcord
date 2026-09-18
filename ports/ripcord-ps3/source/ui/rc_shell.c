@@ -2760,13 +2760,25 @@ static void build_home(void)
 
     /* Anything on the network this PS3 has no keys for. */
     for (i = 0; i < s_found_count && i < RC_DISCOVER_MAX; i++) {
+        /*
+         * THE FAMILY IS WORTH SAYING HERE, now that both can appear. The search asks a PS5's port and a
+         * PS4's, so this list can hold either, and the two are paired by different means - which the
+         * flow handles for itself, but somebody looking at two cards should still be able to tell which
+         * machine is which. The tag stays NEW because "not paired" is the more useful distinction on a
+         * screen whose other cards are paired; the family goes in the line underneath.
+         */
+        const char *family = s_found.console[i].host_type;
+        char note[RC_MENU_NOTE_MAX];
+
         if (paired_index_of(i) >= 0)
             continue;
         snprintf(value, sizeof(value), "%s", s_found.console[i].is_awake ? "ready" : "standby");
+        snprintf(note, sizeof(note), "%s%s- not paired yet. Link this PS3 to it",
+                 (family[0] != '\0') ? family : "", (family[0] != '\0') ? " " : "");
         row = rc_menu_add(&s_menu, SH_ID_CONSOLE_BASE + i,
                           s_found.console[i].host_name[0] != '\0' ? s_found.console[i].host_name
                                                                   : "A PlayStation",
-                          value, "Not paired yet - link this PS3 to it");
+                          value, note);
         rc_menu_set_tag(&s_menu, row, "NEW");
     }
 
@@ -3245,7 +3257,7 @@ static int run_options(const char *const *dirs, int dir_count)
                 forget_held();
                 break;
             case SH_ID_PAIR_NEW:
-                (void)rc_pair_run(NULL, NULL, NULL);
+                (void)rc_pair_run(NULL, NULL, NULL, NULL);
                 load_record(dirs, dir_count);
                 running = 0;
                 break;
@@ -3370,7 +3382,7 @@ rc_shell_action rc_shell_run(const char *const *dirs, int dir_count)
                 /* Its address and its name are already known, so the one question a broadcast can
                  * answer is not asked again. */
                 if (rc_pair_run(s_found.console[found].address, s_found.console[found].host_name,
-                                s_found.console[found].host_id))
+                                s_found.console[found].host_id, s_found.console[found].host_type))
                     toast(RC_OV_GOOD, "Paired with %s",
                           s_found.console[found].host_name[0] != '\0'
                               ? s_found.console[found].host_name : "the console");
@@ -3378,7 +3390,7 @@ rc_shell_action rc_shell_run(const char *const *dirs, int dir_count)
                 build_home();
                 forget_held();
             } else if (id == SH_ID_PAIR_NEW) {
-                if (rc_pair_run(NULL, NULL, NULL))
+                if (rc_pair_run(NULL, NULL, NULL, NULL))
                     toast(RC_OV_GOOD, "Paired");
                 load_record(dirs, dir_count);
                 build_home();
