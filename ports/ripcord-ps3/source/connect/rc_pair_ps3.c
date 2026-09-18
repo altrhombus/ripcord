@@ -295,6 +295,23 @@ int rc_pair_run(const char *host, const char *name, const char *console_id)
             snprintf(detail, sizeof(detail), "%s", halyard_regist_status_text(result.status));
 
         rc_log("pair:  failed - %s\n", detail);
+        /*
+         * THE TWO FACTS THE SENTENCE ABOVE LEAVES OUT, and the first attempt at a PS4 needed both.
+         *
+         * "The console refused the registration" is HALYARD_REGIST_ERR_REFUSED, which means a non-2xx
+         * status - and the status is the whole diagnosis: a 404 says the PATH was wrong, which is a
+         * different fault from a 403 saying the key was. The probe matters just as much;
+         * halyard_regist_message.h records that a console refuses a registration that was not preceded
+         * by a matching search probe, so a probe that went unanswered explains the refusal by itself.
+         *
+         * Neither is worth a line on the television - they are for whoever reads the log afterwards -
+         * but leaving them out of the log too meant a refusal that had four possible causes and no way
+         * to tell them apart.
+         */
+        rc_log("       HTTP status %d; the search probe was %s\n",
+               result.http_status,
+               result.saw_search_reply ? "answered" : "NOT answered - the console ignores a"
+                                                      " registration that did not follow one");
         show(RC_PHASE_FAILED, "Pairing failed", detail,
              result.status == HALYARD_REGIST_ERR_BAD_RECORD
                  ? "Check the PIN and that it has not expired, then try again"
