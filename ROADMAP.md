@@ -218,6 +218,22 @@ pass has to exercise.
 
 ## Backlog
 
+### PS3 port — auto-reconnect on a stream stall (noted 2026-09-18)
+When the console stops sending video, the PS3 port trips its 4-second stall detector and returns to the
+shell, leaving the person to re-select the console by hand. The .NET side does not: `SessionController` owns
+a reconnect/watchdog that treats a drop as a transient and re-establishes. On a real link a momentary
+stall is common — a b473 PS4 session dropped at 17.5 s on a 623 ms-RTT link and a hand-reconnect on a
+20 ms link held straight away — so the manual round trip is friction over exactly the case a watchdog
+exists for.
+- **Not a bug and not urgent.** The stall detection is correct; this is about what happens *after* it.
+- **Do it carefully.** ROADMAP already treats reconnect-on-collapse with caution (see the mid-session
+  bitrate item): a reconnect loop that fires against a console that is genuinely gone, or that is refusing
+  because someone else took the session, is worse than dropping to the shell. Bound the attempts, back off,
+  and surface what is happening rather than retrying silently.
+- **Reference, not a port.** `SessionController`'s watchdog is the shape to follow; the PS3 lifecycle is its
+  own (`rc_connect` returns to `rc_shell_run`), so this is a loop around the connect call with a limit, not
+  a lift of the C# object.
+
 ### Follow-ups from the settings-page crash (cause found and fixed 2026-08-06)
 **Pre-existing, and it predates the Stage A work.** Opening Settings terminated the process every time on this
 ARM64 host: no managed exception, nothing in `crash.log`, window simply gone. WER records a stowed exception,
