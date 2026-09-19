@@ -502,6 +502,26 @@ live end-to-end connect.)*
     deployment. It is not on the path to anything else.
 
 #### Open — needs a console or a capture to resolve
+- [ ] **PS4 sends a 16-byte control frame after the login passcode — what is it, and do we need it?**
+      The Frida capture that settled the PS4 login counter (see `docs/journal.md`, the PS4 sign-in entry, and
+      the fix in `HalyardSessCtrlFields`/`halyard_control_session.c`) showed the vendor client's PS4
+      control direction encrypting, when locked: RP-Auth(0), RP-Did(1), RP-OSType(2), RP-StartBitrate(3),
+      login passcode(4), then a **16-byte field at counter 5**. That trailing field is where a PS5 would have
+      put RP-StreamingType(4-byte, counter 4) as a `/sess/ctrl` header — on PS4 it is *not* a header, it is a
+      binary frame sent after the passcode, and it is 16 bytes not 4. We do not send it.
+  - **Evidence it may not matter:** our own PS4 session (b467) streamed end to end with no such frame, and
+    with RP-StreamingType wrongly sent as a header — so the console tolerated its absence at least once, on a
+    freshly-paired unlocked user.
+  - **Why it is still open:** that session was unlocked. The locked path (passcode → session) has never been
+    driven to a *stream* on our client, only to the sign-in gate. If the 16-byte frame carries streaming type
+    or a codec selector the console needs post-login, a locked PS4 might sign in and then fail to stream.
+  - **Cheapest next step:** the capture is already in the dirty room (the same `frida_ps4_login` run). Decrypt
+    that counter-5 frame's plaintext offline against the session key the hook also dumped, and read its 16
+    bytes — that alone likely says what it is (a 4-byte int padded, a codec id, or something structured).
+    Only if that is inconclusive does it need a fresh capture.
+  - **If it turns out to be needed:** it is a binary control frame at the counter after the passcode (5 when a
+    passcode preceded it, 4 when not), not a `/sess/ctrl` header — so the fix is a post-`EnsureSignedIn` send,
+    family-gated, in both `HalyardStreamingSession` and `ports/common`.
 - [ ] **Does the console honour a mid-session target bitrate?** Unresolved, and the answer changes the design
       of everything downstream. Evidence leans *no* (16.1 Mbps measured against a 13.5 Mbps target), but later
       readings were confounded by VBR noise (20 → 34 → 20 Mbps at a fixed 40 Mbps cap).
