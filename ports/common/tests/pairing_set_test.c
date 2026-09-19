@@ -188,6 +188,49 @@ static void test_settings_can_be_applied_from_outside_the_set(void)
     check(set.count == 2, "a null argument does nothing rather than something");
 }
 
+/*
+ * A SHARED SETTING SURVIVES SAVE THEN LOAD, which is the half apply_settings does not cover.
+ *
+ * apply_settings is an in-memory copy; the file round trip is a separate risk with its own failure mode.
+ * Each shared field is written by name in save_set and read by name in the loader, and a key string that
+ * disagrees between the two - `restondisconnect` written, `rest_on_disconnect` parsed - drops the setting
+ * silently, with no compile error and nothing else to notice it. copy_shared_settings, the writer and the
+ * parser are three lists that must agree; this asserts the two that touch the file do.
+ *
+ * The two newest fields (rest_on_disconnect, skip_until_keyframe) are the ones this was written for - they
+ * were added late and had no round-trip coverage - but it checks a spread across the record so a future
+ * field dropped from the writer or the parser is caught here rather than on a console.
+ */
+static void test_shared_settings_survive_the_file(void)
+{
+    halyard_pairing_set set;
+    halyard_pairing_record rec;
+
+    write_file("\n[console]\nhost=10.0.0.9\nregistkey=" FAKE_REGISTKEY "\ncompanion=" FAKE_COMPANION "\n");
+    check(halyard_pairing_file_load(g_dir, &rec) == 1, "a console to carry the settings");
+
+    /* Values chosen so a default would not accidentally pass: rest=2 (not the 0 default), skip=1,
+     * non-default fps/bitrate/hold, and both toggles off their defaults. */
+    rec.rest_on_disconnect = 2;
+    rec.skip_until_keyframe = 1;
+    rec.fps = 30;
+    rec.stream_bitrate_kbps = 15000;
+    rec.hold_seconds = 45;
+    rec.hardware_scale = 0;
+    rec.diagnostics = 1;
+    check(halyard_pairing_file_save(g_dir, &rec) == 1, "the record saves");
+
+    memset(&set, 0, sizeof(set));
+    check(halyard_pairing_file_load_set(g_dir, &set) == 1, "and loads back as one console");
+    check(set.console[0].rest_on_disconnect == 2, "rest_on_disconnect survived the file");
+    check(set.console[0].skip_until_keyframe == 1, "skip_until_keyframe survived the file");
+    check(set.console[0].fps == 30, "fps survived");
+    check(set.console[0].stream_bitrate_kbps == 15000, "bitrate survived");
+    check(set.console[0].hold_seconds == 45, "hold_seconds survived");
+    check(set.console[0].hardware_scale == 0, "hardware_scale survived (0 is a real value, not absence)");
+    check(set.console[0].diagnostics == 1, "diagnostics survived");
+}
+
 static void test_a_console_that_moved_is_found_by_its_own_id(void)
 {
     halyard_pairing_set set;
@@ -335,6 +378,7 @@ int main(int argc, char **argv)
     test_upsert_replaces_rather_than_duplicates();
     test_a_settings_change_reaches_every_console();
     test_settings_can_be_applied_from_outside_the_set();
+    test_shared_settings_survive_the_file();
     test_a_console_that_moved_is_found_by_its_own_id();
     test_remove();
     test_incomplete_entries_are_dropped_not_offered();
