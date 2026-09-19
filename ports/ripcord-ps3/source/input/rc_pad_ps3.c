@@ -1,5 +1,6 @@
 /* See rc_pad_ps3.h - especially on what a DualShock 3 cannot send. */
 #include "rc_pad_ps3.h"
+#include "rc_chord.h"
 
 #include <io/pad.h>
 
@@ -79,39 +80,13 @@ static unsigned s_fresh;
 /* Set once a shoulder reports a level that is neither off nor fully on - the only evidence that
  * pressure was actually granted, since a refusal reads exactly like a trigger nobody touched. */
 static int s_analog_seen;
-static int s_chord_held;
-static unsigned s_chord_edges;
-static uint64_t s_pending_since;
-/* A tap that was withheld and turned out not to be a chord: which button, and until when. */
-static uint32_t s_replay;
-static uint64_t s_replay_until;
-/* What the previous read held back, so a release knows which button to replay - by then `held` is 0. */
-static uint32_t s_withheld;
-/* A chord has fired and neither of its buttons may act again until both are released. */
-static int s_chord_latched;
-
 /*
- * How long a chord button is withheld while waiting for its partner. Long enough for two thumbs to
- * arrive together without hurrying, short enough that a press which turns out to be ordinary is late
- * rather than lost.
+ * THE CHORD STATE, and its logic, live in rc_chord.c now - a pure state machine over a button mask and
+ * the clock, so the two bugs it has had (a swallowed tap never sent; a stray press left on release) can
+ * be driven from a host test rather than only found on hardware. This file supplies the mask and the
+ * time and applies the result to the pad state; rc_chord.h owns RC_CHORD_WINDOW_MS/REPLAY_MS.
  */
-#define RC_CHORD_WINDOW_MS 250u
-
-/*
- * AND HOW LONG A TAP THAT TURNED OUT TO BE ORDINARY IS THEN HELD FOR.
- *
- * The hold-back above withholds a chord button while its partner might still arrive. The comment below
- * claimed that a press which turns out to be ordinary "is released and travels normally, a fifth of a
- * second late" - and for a press somebody is still holding, it does. For a TAP it did not: the button
- * came back up before the window expired, s_pending_since was cleared, and the press was never sent at
- * all. On the console that was a screenshot that did not happen; on this port's own menu it was START
- * appearing to need holding down to open the options, which is how it was noticed.
- *
- * So a tap inside the window is replayed - held for this long from the moment it is released, which is
- * what turns "swallowed" back into "late". Long enough that an edge-driven menu and a console reading
- * state at 200 Hz both see it, short enough that it is still a tap.
- */
-#define RC_CHORD_REPLAY_MS 120u
+static rc_chord s_chord;
 
 int rc_pad_read(halyard_input_state *out)
 {
@@ -226,63 +201,10 @@ int rc_pad_read(halyard_input_state *out)
          */
         {
             const uint32_t chord = HALYARD_PAD_OPTIONS | HALYARD_PAD_CREATE;
-            uint32_t held = s_last.buttons & chord;
-            uint32_t suppress = 0u;
-            uint64_t now = rc_time_ms();
-
-            if (held == chord) {
-                if (!s_chord_held)
-                    s_chord_edges++;    /* rising edge - the caller acts on the count changing */
-                s_chord_held = 1;
-                s_chord_latched = 1;
-                suppress = chord;
-                s_pending_since = 0u;
-                s_replay = 0u;          /* a chord forming cancels its first button's replay */
-            } else if (s_chord_latched) {
-                /*
-                 * A CHORD THAT HAS FIRED SWALLOWS BOTH BUTTONS UNTIL BOTH ARE LET GO, and this latch is
-                 * what makes that true of the second one. Without it, releasing one thumb a moment
-                 * before the other left the remaining button looking like a fresh lone press - so it
-                 * re-armed the hold-back, and then the release replayed it. Every use of the
-                 * chord would have ended with a stray START press behind it, which on this port's own
-                 * menu is the options screen opening every time the in-session menu is used.
-                 */
-                s_chord_held = 0;
-                suppress = held;
-                s_pending_since = 0u;
-                if (held == 0u)
-                    s_chord_latched = 0;
-            } else {
-                s_chord_held = 0;
-                if (held != 0u) {
-                    if (s_pending_since == 0u)
-                        s_pending_since = now;
-                    if (now - s_pending_since < RC_CHORD_WINDOW_MS)
-                        suppress = held;
-                    else
-                        s_pending_since = 0u;   /* the window passed; it travels from here on */
-                } else {
-                    /*
-                     * LET GO INSIDE THE WINDOW, WITH NO PARTNER. It was a tap, and withholding it was
-                     * right up to this instant and wrong from it - see RC_CHORD_REPLAY_MS.
-                     */
-                    if (s_pending_since != 0u && now - s_pending_since < RC_CHORD_WINDOW_MS) {
-                        s_replay = s_withheld;
-                        s_replay_until = now + RC_CHORD_REPLAY_MS;
-                    }
-                    s_pending_since = 0u;
-                }
-            }
-            s_withheld = suppress;
+            uint32_t effective = rc_chord_apply(&s_chord, chord, s_last.buttons, rc_time_ms());
 
             *out = s_last;
-            out->buttons &= ~suppress;
-            if (s_replay != 0u) {
-                if (now < s_replay_until)
-                    out->buttons |= s_replay;
-                else
-                    s_replay = 0u;
-            }
+            out->buttons = effective;
             return 1;
         }
     }
@@ -302,7 +224,7 @@ int rc_pad_read(halyard_input_state *out)
  */
 unsigned rc_pad_chord_edges(void)
 {
-    return s_chord_edges;
+    return s_chord.edges;
 }
 
 int rc_pad_analog_triggers_seen(void)
