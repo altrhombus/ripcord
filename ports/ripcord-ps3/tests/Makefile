@@ -55,16 +55,22 @@ WAVE_SOURCES := \
 	$(CORE)/tests/rc_platform_host.c \
 	wave_test.c
 
+CHORD_TARGET := $(BUILD)/chord_test
+CHORD_SOURCES := \
+	$(PORT_ROOT)/source/input/rc_chord.c \
+	chord_test.c
+
 .PHONY: all check build clean
 
 all: check
 
-check: $(H264_TARGET) $(RANDOM_TARGET) $(WAVE_TARGET)
+check: $(H264_TARGET) $(RANDOM_TARGET) $(WAVE_TARGET) $(CHORD_TARGET)
 	./$(H264_TARGET)
 	./$(RANDOM_TARGET)
 	./$(WAVE_TARGET)
+	./$(CHORD_TARGET)
 
-build: $(H264_TARGET) $(RANDOM_TARGET) $(WAVE_TARGET)
+build: $(H264_TARGET) $(RANDOM_TARGET) $(WAVE_TARGET) $(CHORD_TARGET)
 
 $(H264_TARGET): $(H264_SOURCES)
 	@mkdir -p $(@D)
@@ -78,6 +84,10 @@ $(WAVE_TARGET): $(WAVE_SOURCES)
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) -I $(PORT_ROOT)/source/ui -I $(CORE)/util -I $(CORE)/platform \
 		-o $@ $(WAVE_SOURCES) -lm
+
+$(CHORD_TARGET): $(CHORD_SOURCES)
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) -I $(PORT_ROOT)/source/input -I $(CORE)/input -o $@ $(CHORD_SOURCES)
 
 clean:
 	rm -rf $(BUILD)
