@@ -155,6 +155,11 @@ public class PublishedTreeSweepTests
             "a digest of one decoded luma plane, quoted as the point at which ffmpeg and openh264 agreed "
             + "bit-for-bit. A one-way hash of picture content from our own capture: it names no console, "
             + "account or session, and its only use is that two decoders produced the same one",
+        ["7.4.1.1"] =
+            "ITU-T H.264 section 7.4.1.1, quoted in the message of the commit that allowlists the same "
+            + "clause number for the other corpora. Four dotted small integers are indistinguishable "
+            + "from an address to the detector and this one is a citation - it routes nowhere, and the "
+            + "spec it cites is the reason this project can parse a slice header at all",
     };
     // </sweep:fixtures>
 
