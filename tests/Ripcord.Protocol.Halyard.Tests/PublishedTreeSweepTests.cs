@@ -120,6 +120,13 @@ public class PublishedTreeSweepTests
             + "\"1a2b...\" in prose explaining that a hex account id typed into the box travels as its "
             + "characters. The full value is allowlisted above; the ellipsis is what draws the detector",
 
+        ["7.4.1.1"] =
+            "an H.264 clause number (ITU-T H.264 sec 7.4.1.1, NAL unit semantics) in a since-deleted "
+            + "design doc's history, matched by the IPv4 pattern - four dotted small integers. Benign, "
+            + "reachable only in a historical blob, and the doc that carried it existed to note this very "
+            + "false positive. Narrowing the IPv4 detector to exclude it would be the scope-too-narrow "
+            + "defect this file's header catalogues; allowlisting the exact value is the safe answer",
+
     };
 
     /// <summary>
@@ -1080,6 +1087,10 @@ public class PublishedTreeSweepTests
         {
             if (IsDocumentationAddress(m.Groups[1].Value)) continue;
             if (NotAnAddressContext.IsMatch(line)) continue;
+            // The allowlist hook the IPv6 branch has and this one lacked, so a benign four-dotted value
+            // (an H.264 clause number reads as an IPv4) can be tolerated by exact value with a reason,
+            // rather than only by narrowing the pattern - the scope-too-narrow defect this file warns of.
+            if (Allow(m.Value)) continue;
             found.Add($"{at}|ipv4|{m.Value}");
         }
 
@@ -1331,7 +1342,7 @@ public class PublishedTreeSweepTests
     /// <para>Absent history is an honest absence and returns empty, exactly as the message sweep does — but
     /// a shallow clone is not, and takes the same loud failure, for the same reason.</para>
     /// </summary>
-    private static List<string> HistoricalBlobOffenders()
+    private static List<string> HistoricalBlobOffenders(bool applyAllowlist = true)
     {
         string root = RepoRoot();
         if (!MessageCorpusState().Readable) return [];
@@ -1382,7 +1393,7 @@ public class PublishedTreeSweepTests
             for (int i = 0; i < lines.Length; i++)
             {
                 found.AddRange(ScanLine(
-                    lines[i].TrimEnd((char)0x0d), isProse, applyAllowlist: true,
+                    lines[i].TrimEnd((char)0x0d), isProse, applyAllowlist,
                     $"{sha[..8]} {rel}:{i + 1}", isProductCode));
             }
         }
@@ -1763,12 +1774,21 @@ public class PublishedTreeSweepTests
         HashSet<string> fromMessages =
             readable ? Values(CommitMessageOffenders(false)) : new(StringComparer.OrdinalIgnoreCase);
 
+        // The historical blobs are a third corpus Allowed silences, so an entry justified only by a value
+        // that lives in history - a benign false positive in a since-deleted file, which cannot be edited
+        // out without rewriting history - is legitimate and must not read as inert. Gated on git being
+        // present, exactly like the message corpus: a tarball has no history and would otherwise turn this
+        // red for values it genuinely cannot see. Before this, Allowed could suppress a historical finding
+        // but no entry could be justified by one, so a benign clause number forced a filter-repo pass.
+        HashSet<string> fromHistory =
+            readable ? Values(HistoricalBlobOffenders(false)) : new(StringComparer.OrdinalIgnoreCase);
+
         // Exact, because exact is what IsAllowed does. A substring test would call an entry live when its
         // text merely occurs inside a longer run the detector reports whole — suppressing nothing, which is
         // the condition this test exists to find. Validating against a looser predicate than the one that
         // ships is this file's signature defect; it had crept into the test written to prevent it.
         List<string> inert = Allowed
-            .Where(e => !fromFiles.Contains(Normalise(e.Key)))
+            .Where(e => !fromFiles.Contains(Normalise(e.Key)) && !fromHistory.Contains(Normalise(e.Key)))
             .Select(e => $"{e.Key}  (\"{e.Value}\")  [file corpus]")
             .Concat(readable
                 ? AllowedInMessages
