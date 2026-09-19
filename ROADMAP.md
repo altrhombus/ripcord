@@ -515,10 +515,12 @@ live end-to-end connect.)*
   - **Why it is still open:** that session was unlocked. The locked path (passcode → session) has never been
     driven to a *stream* on our client, only to the sign-in gate. If the 16-byte frame carries streaming type
     or a codec selector the console needs post-login, a locked PS4 might sign in and then fail to stream.
-  - **Cheapest next step:** the capture is already in the dirty room (the same `frida_ps4_login` run). Decrypt
-    that counter-5 frame's plaintext offline against the session key the hook also dumped, and read its 16
-    bytes — that alone likely says what it is (a 4-byte int padded, a codec id, or something structured).
-    Only if that is inconclusive does it need a fresh capture.
+  - **Cheapest next step:** re-run the login hook. `hook_login_fieldcrypt.js` is a *field-encrypt* hook, so
+    it sees the plaintext (arg2) before encryption — no key, no offline decryption. The first run only
+    dumped the passcode call's plaintext; the hook now dumps every call's, so one more locked sign-in
+    prints the 16-byte frame's 16 bytes directly. (The earlier run did not record them, and no pcap of that
+    Frida session exists, so there is nothing to decrypt from what we hold — it is a re-capture, not a
+    decrypt.) The bytes alone likely say what it is: a 4-byte int padded, a codec id, or something structured.
   - **If it turns out to be needed:** it is a binary control frame at the counter after the passcode (5 when a
     passcode preceded it, 4 when not), not a `/sess/ctrl` header — so the fix is a post-`EnsureSignedIn` send,
     family-gated, in both `HalyardStreamingSession` and `ports/common`.
