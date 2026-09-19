@@ -4,6 +4,11 @@ An independent, clean-room **PlayStation Remote Play client for Windows**. Ripco
 PS5 or PS4 over your LAN, decodes the H.264/HEVC video stream on the GPU, plays audio through WASAPI, and
 sends controller input back over the reverse-engineered wire protocol.
 
+The same protocol core, ported to C, runs on hardware that never had a Remote Play client: **a
+PlayStation 3 streams 720p60 from a PS5 or a PS4**, decoding on the console's own hardware decoder and
+spending 0.68% of a frame budget doing it. There is a package you can install —
+[`ps3-v1.0`](https://github.com/altrhombus/ripcord/releases/tag/ps3-v1.0).
+
 It is a from-scratch implementation. There is no vendor code in this repository, and the protocol
 specification in [`docs/protocol/`](docs/protocol/) was derived independently — see
 [Provenance](#provenance-and-legal-position) below, which is not boilerplate for this project.
@@ -20,6 +25,10 @@ Phase 1 — LAN remote play — works end to end against real hardware, and as o
 direct peer to peer. A clone can pair with a console and stream from it; the protocol's interoperability
 constants are included (see [Interoperability constants](#interoperability-constants) below). What is
 missing is breadth, not basic function: no HDR output, no DualSense haptics or gyro.
+
+Every push and pull request runs the full suite on Windows, Linux and macOS, builds the app for x64 and
+ARM64, and cross-builds the PlayStation 3 package — seven jobs, and a tagged `ps3-v*` attaches that package
+to a release. The Windows client has no installer yet; the PS3 port does.
 
 ### What works
 
@@ -45,18 +54,37 @@ Verified end-to-end against real hardware on a LAN, on **PS5 and PS4** alike:
   classic STUN (RFC 3489 Binding Requests) to learn each leg's reflexive address; the control association
   and the A/V connection are separate mappings and need it separately. Throughput was indistinguishable from
   the same-LAN figures. Driven from the harness, not yet through the app's own UI.
-- **1,028 unit tests** across two suites, pure managed and cross-platform — they need no console, no GPU and
-  no Windows-only hardware. A clean checkout without the authors' captures runs 987 of them and skips 41, by
-  design. Thirty-six validate against real captured ground truth that is not, and will not be, published; the
-  other five are the hardware-accelerated GF paths, which skip whichever of x64 and ARM64 the host is not.
-  Fifty-three of them — seven checks and a forty-six-row detector contract — sweep all three corpora a clone
-  carries: the tree, every commit message, and every revision of every file. One of the seven asks git which
-  committed files the other six do not open, because a corpus list cannot audit itself.
+- **1,074 unit tests** across two suites, pure managed and cross-platform — they need no console, no GPU and
+  no Windows-only hardware, and CI runs them on Windows, Linux and macOS. A clean checkout without the
+  authors' captures skips **37** of them by design: those validate against real captured ground truth that is
+  not, and will not be, published. A few more skip for the host rather than the captures — the
+  hardware-accelerated GF paths skip whichever of x64 and ARM64 the machine is not, and two seam tests want
+  Windows. Sixty-eight of them — nine checks and a detector-contract table — sweep all three corpora a clone
+  carries: the tree, every commit message, and every revision of every file. One of the nine asks git which
+  committed files the others do not open, because a corpus list cannot audit itself.
 
-There is also a **second client**: [`ports/ripcord-3ds`](ports/ripcord-3ds), a from-scratch C implementation
-for modded New 3DS hardware that streams real video from a real PS5. It exists as a completeness test for the
-specification — a spec is only as good as its ability to produce a working implementation by someone who
-wasn't in the room when it was written, and every place that port had to guess is a defect in the document.
+  That sweep is not decoration. It has caught a licence digest quoted in a commit message, an allowlist entry
+  guarding a value no clone contains, and an H.264 clause number that four dotted integers make
+  indistinguishable from an address — each on the commit that introduced it.
+
+### The console ports
+
+The protocol core was factored into portable C (`ports/common`) and carried onto hardware Sony never shipped
+a client for. Each port is a **completeness test for the specification** — a spec is only as good as its
+ability to produce a working implementation by someone who wasn't in the room when it was written, and every
+place a port had to guess is a defect in the document. Three of them have now read it.
+
+- **[`ports/ripcord-ps3`](ports/ripcord-ps3) — PlayStation 3.** The furthest along, and the one with a
+  release. It streams **720p60 from a PS5 or a PS4** at 20,000 kbps: `cellVdec` decodes, the RSX scales, and
+  the decoder hands over RGB by DMA so nothing copies a pixel on the PPE. The whole video path costs **113 µs
+  of a 16,667 µs frame**, 110 of which are the decode call. Discovery, wake, pairing and the passcode prompt
+  all happen on the console, with the system keyboard — no PC in the loop.
+- **[`ports/ripcord-3ds`](ports/ripcord-3ds) — New 3DS.** The first port, and the one that proved the
+  specification could be read by somebody else. Streams real video from a real PS5.
+- **`ports/ripcord-vita` — PS Vita.** On its own branch, not in this tree.
+
+The PS3 port also measured the thing every timeout in the core depends on: the PPE time base is
+**79,800,986 Hz against the 79,800,000 it expected**, 12 parts per million out.
 
 ### What does not work yet
 
@@ -159,7 +187,9 @@ PlayStation.
 | `Ripcord.Diagnostics` | Tracing/metrics behind the diagnostics overlay |
 | `tools/Ripcord.ProtocolLab` | Console harness — drives the connect flow and replays captures |
 | `tools/Ripcord.HidCapture` | Standalone HID capture utility for controller work |
-| `ports/ripcord-3ds` | A second client, in C, for New 3DS hardware — not part of the solution |
+| `ports/common` | The protocol core in portable C, shared by every console port |
+| `ports/ripcord-ps3` | PlayStation 3 client — streams 720p60, ships a `.pkg`; not part of the solution |
+| `ports/ripcord-3ds` | New 3DS client, in C — not part of the solution |
 
 `Ripcord.Presentation` is plain `net10.0` and no UI-framework type may cross into it — no brush, no
 visibility, no dispatcher. Presentation concerns are portable enums that each front end maps to its own
