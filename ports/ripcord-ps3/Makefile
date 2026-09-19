@@ -279,6 +279,7 @@ SOURCES := \
 	source/platform/rc_platform_ps3.c \
 	source/platform/rc_thermal.c \
 	source/input/rc_pad_ps3.c \
+	source/input/rc_chord.c \
 	source/input/rc_osk_ps3.c \
 	$(CORE)/ui/rc_session_state.c \
 	$(CORE)/ui/rc_menu.c \
