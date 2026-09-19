@@ -502,28 +502,27 @@ live end-to-end connect.)*
     deployment. It is not on the path to anything else.
 
 #### Open — needs a console or a capture to resolve
-- [ ] **PS4 sends a 16-byte control frame after the login passcode — what is it, and do we need it?**
-      The Frida capture that settled the PS4 login counter (see `docs/journal.md`, the PS4 sign-in entry, and
-      the fix in `HalyardSessCtrlFields`/`halyard_control_session.c`) showed the vendor client's PS4
-      control direction encrypting, when locked: RP-Auth(0), RP-Did(1), RP-OSType(2), RP-StartBitrate(3),
-      login passcode(4), then a **16-byte field at counter 5**. That trailing field is where a PS5 would have
-      put RP-StreamingType(4-byte, counter 4) as a `/sess/ctrl` header — on PS4 it is *not* a header, it is a
-      binary frame sent after the passcode, and it is 16 bytes not 4. We do not send it.
-  - **Evidence it may not matter:** our own PS4 session (b467) streamed end to end with no such frame, and
-    with RP-StreamingType wrongly sent as a header — so the console tolerated its absence at least once, on a
-    freshly-paired unlocked user.
-  - **Why it is still open:** that session was unlocked. The locked path (passcode → session) has never been
-    driven to a *stream* on our client, only to the sign-in gate. If the 16-byte frame carries streaming type
-    or a codec selector the console needs post-login, a locked PS4 might sign in and then fail to stream.
-  - **Cheapest next step:** re-run the login hook. `hook_login_fieldcrypt.js` is a *field-encrypt* hook, so
-    it sees the plaintext (arg2) before encryption — no key, no offline decryption. The first run only
-    dumped the passcode call's plaintext; the hook now dumps every call's, so one more locked sign-in
-    prints the 16-byte frame's 16 bytes directly. (The earlier run did not record them, and no pcap of that
-    Frida session exists, so there is nothing to decrypt from what we hold — it is a re-capture, not a
-    decrypt.) The bytes alone likely say what it is: a 4-byte int padded, a codec id, or something structured.
-  - **If it turns out to be needed:** it is a binary control frame at the counter after the passcode (5 when a
-    passcode preceded it, 4 when not), not a `/sess/ctrl` header — so the fix is a post-`EnsureSignedIn` send,
-    family-gated, in both `HalyardStreamingSession` and `ports/common`.
+- [ ] **PS4 sends a 16-byte MTU frame after the login passcode — do we need to send it?** *Decoded
+      2026-09-18; what it is is settled, whether it is required is not.* The login-hook re-run dumped the
+      frame's plaintext: `00000000 000005AE 0000000000000000` — sixteen bytes carrying **1454** (`0x5AE`,
+      big-endian) at offset 4, the rest zero. 1454 is the MTU (`RC_DECLARED_MTU`, all over the specs), so
+      this is an **MTU declaration** on the control direction, not a codec or streaming-type selector.
+  - **The same capture confirmed the b473 fix exactly.** The vendor's locked PS4 control direction encrypts
+    RP-Auth(0), RP-Did(1), RP-OSType(2, `"Win10.0"`), RP-StartBitrate(3), login passcode(**4**), MTU frame(5)
+    — four `/sess/ctrl` headers and the passcode at counter 4, byte-position-for-byte what
+    `HalyardSessCtrlFields`/`halyard_control_session.c` now send. RP-StreamingType is not a PS4 header at all.
+  - **It is always sent by the vendor, locked or not** (counter 5 with a passcode, counter 4 without) — so it
+    is a normal control frame, not a login artefact. We send neither it nor RP-StreamingType on PS4.
+  - **Evidence it may not matter:** our own PS4 session (b467) streamed end to end without this frame (and
+    with RP-StreamingType wrongly sent as a header). Our control direction never advances past the passcode's
+    counter, so its absence cannot desync anything — the only question is whether the console *requires* the
+    MTU declaration to stream, and b467 says at least once it did not.
+  - **What still needs a console:** drive a *locked* PS4 to a stream on b473 (sign-in at counter 4 → video).
+    b467 was unlocked; the locked→stream path has only ever reached the gate. Test both on b473: (a) locked
+    signs in and streams, and (b) unlocked still streams now that RP-StreamingType is dropped.
+  - **If it turns out to be needed:** it is a 16-byte binary control frame — `u32 0, u32-BE mtu, 8 bytes 0` —
+    at the counter after the passcode (5 with one, 4 without), not a `/sess/ctrl` header. The fix is a
+    post-`EnsureSignedIn` send, family-gated, in both `HalyardStreamingSession` and `ports/common`.
 - [ ] **Does the console honour a mid-session target bitrate?** Unresolved, and the answer changes the design
       of everything downstream. Evidence leans *no* (16.1 Mbps measured against a 13.5 Mbps target), but later
       readings were confounded by VBR noise (20 → 34 → 20 Mbps at a fixed 40 Mbps cap).
