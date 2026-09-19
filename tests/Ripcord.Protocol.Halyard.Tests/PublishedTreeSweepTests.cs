@@ -120,13 +120,6 @@ public class PublishedTreeSweepTests
             + "\"1a2b...\" in prose explaining that a hex account id typed into the box travels as its "
             + "characters. The full value is allowlisted above; the ellipsis is what draws the detector",
 
-        ["7.4.1.1"] =
-            "an H.264 clause number (ITU-T H.264 sec 7.4.1.1, NAL unit semantics) in a since-deleted "
-            + "design doc's history, matched by the IPv4 pattern - four dotted small integers. Benign, "
-            + "reachable only in a historical blob, and the doc that carried it existed to note this very "
-            + "false positive. Narrowing the IPv4 detector to exclude it would be the scope-too-narrow "
-            + "defect this file's header catalogues; allowlisting the exact value is the safe answer",
-
     };
 
     /// <summary>
