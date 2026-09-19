@@ -528,7 +528,7 @@ live end-to-end connect.)*
     — four `/sess/ctrl` headers and the passcode at counter 4, byte-position-for-byte what
     `HalyardSessCtrlFields`/`halyard_control_session.c` now send. RP-StreamingType is not a PS4 header at all.
   - **Both families send it, identically, and we send it on neither.** The PS5 vendor client sends the
-    byte-for-byte same frame (`00000000 000005AE 0000…`) at the counter after its five headers — counter 5
+    byte-for-byte same frame (`00000000 000005AE` and eight zero bytes) at the counter after its five headers — counter 5
     unlocked, 6 locked — where the PS4 sends it at 4/5. It is a normal control frame on both, not a login
     artefact and not a family difference. Our launchSpec `mtu` and the senkusha probe are *different*
     mechanisms; this control-channel frame we implement for no console.
