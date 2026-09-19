@@ -314,8 +314,7 @@ int halyard_control_session_open(const halyard_pairing_record *record, halyard_c
      * so its passcode is 4, the slot PS5's StreamingType would have taken. Both are the count of headers
      * actually encrypted above; see the RP-StreamingType note and the header's warning on restarting.
      */
-    out->next_counter = record->is_ps5 ? HALYARD_SESS_COUNTER_LOGIN_PIN_START
-                                    : HALYARD_SESS_COUNTER_STREAMING_TYPE;
+    out->next_counter = halyard_sess_login_pin_counter(record->is_ps5);
     out->recv_counter = HALYARD_SESS_COUNTER_CONSOLE_START;
     return 1;
 }
