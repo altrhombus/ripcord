@@ -33,6 +33,21 @@
 #define HALYARD_SESS_COUNTER_LOGIN_PIN_START  5u
 
 /*
+ * WHICH COUNTER THE LOGIN PASSCODE IS ENCRYPTED AT, by family - 5 for a PS5, 4 for a PS4.
+ *
+ * A PS5's /sess/ctrl carries five encrypted headers (RP-Auth..RP-StreamingType, counters 0-4), so the
+ * passcode is 5. A PS4's carries only four (RP-StreamingType is not a PS4 header; it is a binary frame
+ * sent after the passcode), so the passcode is 4. Both are wire facts from a Frida capture of the vendor
+ * client and were confirmed on hardware - a PS4 refuses the passcode at 5 (b469/b470), accepts it at 4
+ * (b473). This mirrors the .NET HalyardSessCtrlFields.LoginPinCounter. A named rule rather than an inline
+ * conditional so the two families' counts have one home and a test can pin them.
+ */
+static inline uint64_t halyard_sess_login_pin_counter(int is_ps5)
+{
+    return is_ps5 ? HALYARD_SESS_COUNTER_LOGIN_PIN_START : HALYARD_SESS_COUNTER_STREAMING_TYPE;
+}
+
+/*
  * THE CONSOLE'S OWN COUNTER, which is a separate sequence from the five above.
  *
  * The control-field cipher's counter is per-connection and shared across a whole DIRECTION, so each side
