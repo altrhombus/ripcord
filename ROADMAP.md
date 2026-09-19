@@ -511,12 +511,15 @@ live end-to-end connect.)*
     RP-Auth(0), RP-Did(1), RP-OSType(2, `"Win10.0"`), RP-StartBitrate(3), login passcode(**4**), MTU frame(5)
     — four `/sess/ctrl` headers and the passcode at counter 4, byte-position-for-byte what
     `HalyardSessCtrlFields`/`halyard_control_session.c` now send. RP-StreamingType is not a PS4 header at all.
-  - **It is always sent by the vendor, locked or not** (counter 5 with a passcode, counter 4 without) — so it
-    is a normal control frame, not a login artefact. We send neither it nor RP-StreamingType on PS4.
-  - **Evidence it may not matter:** our own PS4 session (b467) streamed end to end without this frame (and
-    with RP-StreamingType wrongly sent as a header). Our control direction never advances past the passcode's
-    counter, so its absence cannot desync anything — the only question is whether the console *requires* the
-    MTU declaration to stream, and b467 says at least once it did not.
+  - **Both families send it, identically, and we send it on neither.** The PS5 vendor client sends the
+    byte-for-byte same frame (`00000000 000005AE 0000…`) at the counter after its five headers — counter 5
+    unlocked, 6 locked — where the PS4 sends it at 4/5. It is a normal control frame on both, not a login
+    artefact and not a family difference. Our launchSpec `mtu` and the senkusha probe are *different*
+    mechanisms; this control-channel frame we implement for no console.
+  - **Evidence it may not matter:** the whole .NET app streams against PS5 in production without ever sending
+    this frame, and our PS4 session (b467) streamed without it too. Our control direction never advances past
+    the passcode's counter, so its absence desyncs nothing — the only question is whether a console *requires*
+    the MTU declaration to stream, and PS5 answers "no" every day.
   - **What still needs a console:** drive a *locked* PS4 to a stream on b473 (sign-in at counter 4 → video).
     b467 was unlocked; the locked→stream path has only ever reached the gate. Test both on b473: (a) locked
     signs in and streams, and (b) unlocked still streams now that RP-StreamingType is dropped.
