@@ -281,6 +281,94 @@ static void test_real_sps(void)
            g_sps.max_num_ref_frames, g_sps.frame_cropping_flag, g_sps.vui_parameters_present_flag);
 }
 
+/*
+ * A MINIMAL BASELINE SPS THAT REACHES THE VUI, built rather than captured.
+ *
+ * The colour signalling (video_full_range_flag, matrix_coefficients) decides whether cellVdec's fixed
+ * limited-range assumption is right, and a stream that says "full range" and is expanded as limited
+ * blows its highlights - the sand-dune symptom that sent us to read this field at all. The parser walks
+ * the VUI exactly as far as those fields; nothing captured exercises that walk, so it is built here.
+ *
+ * profile_idc 66 (Baseline) has no chroma block, which keeps the builder short: the parser skips
+ * straight from sps_id to log2_max_frame_num. pic_order_cnt_type 2 and frame_mbs_only 1 skip their
+ * optional sub-blocks too. `vst`/`full_range`/`colour`/`matrix` shape the VUI; `vui=0` omits it entirely.
+ */
+static void build_min_sps(bitwriter *w, int vui, int vst, int full_range, int colour, int matrix)
+{
+    bw_init(w);
+    bw_u(w, 8u, 66u);        /* profile_idc = Baseline (no chroma block) */
+    bw_u(w, 8u, 0u);         /* constraint_flags */
+    bw_u(w, 8u, 30u);        /* level_idc 3.0 */
+    bw_ue(w, 0u);            /* sps_id */
+    bw_ue(w, 0u);            /* log2_max_frame_num_minus4 */
+    bw_ue(w, 2u);            /* pic_order_cnt_type 2 - no extra fields */
+    bw_ue(w, 1u);            /* max_num_ref_frames */
+    bw_u(w, 1u, 0u);         /* gaps_in_frame_num_value_allowed_flag */
+    bw_ue(w, 79u);           /* pic_width_in_mbs_minus1  -> 1280 */
+    bw_ue(w, 44u);           /* pic_height_in_map_units_minus1 -> 720, frame_mbs_only */
+    bw_u(w, 1u, 1u);         /* frame_mbs_only_flag -> no mb_adaptive field */
+    bw_u(w, 1u, 1u);         /* direct_8x8_inference_flag */
+    bw_u(w, 1u, 0u);         /* frame_cropping_flag = 0 */
+    bw_u(w, 1u, (uint32_t)(vui ? 1 : 0));   /* vui_parameters_present_flag */
+
+    if (vui) {
+        bw_u(w, 1u, 0u);     /* aspect_ratio_info_present_flag */
+        bw_u(w, 1u, 0u);     /* overscan_info_present_flag */
+        bw_u(w, 1u, (uint32_t)(vst ? 1 : 0));   /* video_signal_type_present_flag */
+        if (vst) {
+            bw_u(w, 3u, 5u); /* video_format = unspecified */
+            bw_u(w, 1u, (uint32_t)(full_range ? 1 : 0));
+            bw_u(w, 1u, (uint32_t)(colour ? 1 : 0));   /* colour_description_present_flag */
+            if (colour) {
+                bw_u(w, 8u, 1u);                       /* colour_primaries (BT.709) */
+                bw_u(w, 8u, 1u);                       /* transfer_characteristics */
+                bw_u(w, 8u, (uint32_t)matrix);         /* matrix_coefficients */
+            }
+        }
+    }
+    bw_trailing_bits(w);
+}
+
+static void test_vui_colour(void)
+{
+    bitwriter w;
+    rc_h264_sps sps;
+
+    /* Full range, BT.709 matrix, stated outright - the case that matters most, because it is the one
+     * cellVdec's limited-range assumption gets WRONG. */
+    build_min_sps(&w, 1, 1, 1, 1, 1);
+    CHECK(rc_h264_sps_parse(w.buf, bw_bytes(&w), &sps), "a baseline SPS with a full VUI should parse");
+    CHECK(sps.video_signal_type_present_flag == 1, "video_signal_type should be seen");
+    CHECK(sps.video_full_range_flag == 1, "full range should be read as 1, got %d",
+          sps.video_full_range_flag);
+    CHECK(sps.colour_description_present_flag == 1, "colour description should be seen");
+    CHECK(sps.matrix_coefficients == 1, "BT.709 matrix should be 1, got %d", sps.matrix_coefficients);
+    CHECK(sps.coded_width == 1280u && sps.coded_height == 720u, "the builder's size should round-trip");
+
+    /* Limited range, and 0 is a REAL value, not absence - the distinction the -1 default exists for. */
+    build_min_sps(&w, 1, 1, 0, 1, 1);
+    CHECK(rc_h264_sps_parse(w.buf, bw_bytes(&w), &sps), "limited-range SPS should parse");
+    CHECK(sps.video_full_range_flag == 0, "limited range should be read as 0, got %d",
+          sps.video_full_range_flag);
+
+    /* A VUI whose video_signal_type is absent: the colour fields stay "not stated" (-1), never 0. A
+     * caller must be able to tell "the stream said limited" from "the stream said nothing". */
+    build_min_sps(&w, 1, 0, 0, 0, 0);
+    CHECK(rc_h264_sps_parse(w.buf, bw_bytes(&w), &sps), "SPS with a VUI but no video_signal_type parses");
+    CHECK(sps.video_full_range_flag == -1, "absent range must stay -1 (not stated), got %d",
+          sps.video_full_range_flag);
+    CHECK(sps.matrix_coefficients == -1, "absent matrix must stay -1, got %d", sps.matrix_coefficients);
+
+    /* No VUI at all: same "not stated" defaults, and the parse still succeeds - the colour fields are
+     * diagnostic, and the coded size callers depend on was known before the VUI. */
+    build_min_sps(&w, 0, 0, 0, 0, 0);
+    CHECK(rc_h264_sps_parse(w.buf, bw_bytes(&w), &sps), "SPS with no VUI should still parse");
+    CHECK(sps.vui_parameters_present_flag == 0, "no VUI expected");
+    CHECK(sps.video_full_range_flag == -1 && sps.matrix_coefficients == -1,
+          "no VUI means not stated, not zero");
+    CHECK(sps.coded_width == 1280u, "the coded size is still read without a VUI");
+}
+
 static void test_real_pps(void)
 {
     CHECK(rc_h264_pps_parse(k_real_pps, sizeof(k_real_pps), &g_pps), "the console's PPS should parse");
@@ -661,6 +749,7 @@ int main(void)
     test_exp_golomb();
     test_emulation_prevention();
     test_real_sps();
+    test_vui_colour();
     test_real_pps();
     test_rejects_malformed();
     test_slice_headers();
