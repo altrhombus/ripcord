@@ -428,6 +428,20 @@ static void test_console_direction_counter(void)
     CHECK(HALYARD_SESS_COUNTER_CONSOLE_START != HALYARD_SESS_COUNTER_LOGIN_PIN_START,
           "the two directions must not share a counter origin");
 
+    /*
+     * THE LOGIN PASSCODE COUNTER IS FAMILY-DEPENDENT, and getting it wrong is a wrong-IV that reads as a
+     * wrong passcode - a silent failure with no error, which is exactly what it did on PS4 before b473.
+     * A PS5 spends five /sess/ctrl headers (0-4) so the passcode is 5; a PS4 spends four so it is 4. The
+     * real /sess/ctrl builder does TCP I/O and cannot run here, but the counter it hands the passcode
+     * comes from this pure function, so this pins the rule the builder obeys.
+     */
+    CHECK(halyard_sess_login_pin_counter(1) == HALYARD_SESS_COUNTER_LOGIN_PIN_START,
+          "a PS5 encrypts the login passcode at counter 5");
+    CHECK(halyard_sess_login_pin_counter(0) == HALYARD_SESS_COUNTER_STREAMING_TYPE,
+          "a PS4 encrypts it at counter 4 - one fewer /sess/ctrl header");
+    CHECK(halyard_sess_login_pin_counter(1) != halyard_sess_login_pin_counter(0),
+          "the two families must not share the passcode counter");
+
     if (halyard_control_field_init(&ctx, nonce, companion, 0, HALYARD_VERSION_SELECTOR_PS5) != 0) {
         CHECK(0, "control field init refused - constants not bundled in this build?");
         return;
