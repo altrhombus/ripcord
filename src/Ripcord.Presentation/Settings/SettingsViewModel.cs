@@ -294,8 +294,6 @@ public sealed class SettingsViewModel : ObservableState<SettingsViewState>
     public void SetDiagnosticsRung(int index) => Apply(
         () => _draft.WithDiagnosticsRung(DiagnosticsRungs[Math.Clamp(index, 0, DiagnosticsRungs.Length - 1)]));
 
-    public void SetLargeUiScale(bool on) => Apply(() => _draft with { LargeUiScale = on });
-
     // ---- internals -----------------------------------------------------------------------------
 
     /// <summary>The rungs offered, in the order they are shown. Index into this, never cast.</summary>
@@ -442,7 +440,6 @@ public sealed class SettingsViewModel : ObservableState<SettingsViewState>
             RestConsoleOnDisconnect: _draft.RestConsoleOnDisconnect,
             DiagnosticsOptions: DiagnosticsLabels,
             DiagnosticsIndex: Array.IndexOf(DiagnosticsRungs, _draft.DiagnosticsRungOnConnect),
-            LargeUiScale: _draft.LargeUiScale,
 
             CredentialTitle: _consoles.CredentialsEncrypted
                 ? Strings.Settings_ConsolesEncrypted
