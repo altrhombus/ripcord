@@ -225,9 +225,11 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
         // E7E8 = PowerButton, E768 = Play.
         HeroPlayIcon.Glyph = s.ActionGlyph == ActionGlyph.Wake ? "" : "";
 
-        // Disabled rather than hidden: an unreachable console usually just needs switching on, and the button
-        // vanishing would read as "this console is broken" rather than "it is not answering right now".
-        HeroPlayButton.IsEnabled = s.CanConnect;
+        // Dimmed, never disabled. A probe's silence is not knowledge that the console is off -- it is one
+        // unanswered datagram - so it must not remove the ability to try. The dimming still says "we could not
+        // reach this"; pressing it now produces a connect attempt that can explain itself, which is strictly
+        // more useful than a button that does nothing.
+        HeroPlayButton.Opacity = s.IsReachable ? 1.0 : 0.5;
     }
 
     private void OnHeroPlayClick(object sender, RoutedEventArgs e)
