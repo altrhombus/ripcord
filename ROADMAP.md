@@ -260,47 +260,20 @@ exists for.
   own (`rc_connect` returns to `rc_shell_run`), so this is a loop around the connect call with a limit, not
   a lift of the C# object.
 
-### Design direction — settled 2026-09-13, four items open and priced
+### Design direction — settled 2026-09-13, two of four items still open
 
 The UX review is done and its decisions are recorded in [`docs/design.md`](docs/design.md), which is now
-the standing answer to "what does the app look like". Implementation has not started. Four questions were
-left open rather than guessed, and each is priced here so the cost of the design work is visible before it
-is committed to.
+the standing answer to "what does the app look like". Four questions were left open rather than guessed,
+and each was priced here so the cost of the design work was visible before it was committed to.
 
 Nothing below is a design question. They are all *verifications and one-way doors* — the things that have
 to be true before drawings become code.
 
-**One of the four is gone rather than done.** Verifying the OS text scale mattered only because Ripcord
-scaled text itself; that feature was removed on 2026-09-19 and the question went with it. See the journal.
-
-- [x] **`ReceiveQueueBusyDepth` — settled 2026-09-19. The metric was wrong, not the number.** Four ARM64
-      sessions, ~2100 live samples: run A (2.4 GHz VLAN, network-lossy) and run B (Microsoft Basic Render
-      Driver, readback decode path, 8 ms RTT — device-starved). Moved to the journal; kept here only as the
-      decision record, because the constant still exists and its comment now explains why it is not a
-      discriminator.
-
-      **The discriminator never once pointed at the right cause, and in run B it pointed at the wrong one.**
-      All six samples carrying loss ≥ 2% in the device-starved runs read a receive queue of exactly 0, so the
-      verdict was "Losing packets on the network — switch to a wired connection" while RTT was 15–28 ms and
-      the GPU selection was the fault. In run A, all 20 excursions above 16 sat on samples with exactly zero
-      loss.
-
-      **The `decode_queue` conjunction is dead, and run B is what killed it.** It never reached 16 — max 10
-      and 9 — while the receive queue hit 41 and 266 in the same runs. Requiring both would have made the
-      branch unfireable. This was the open question run B was taken to answer; the answer is no.
-
-      **What replaced it: `PresentedShareBusyRatio`.** If the network is the bottleneck the frames never
-      arrive, so decode and present fall together; if the device is, they arrive and decode fine and we fail
-      to put them on screen. All six loss-carrying samples sat at a presented/decoded ratio of 0.00–0.11
-      against a session median of 0.87–0.93, so 0.5 has daylight on both sides. Mechanical rather than tuned,
-      which is why it is not a re-fitted 16.
-
-      **One caveat on the evidence, recorded rather than smoothed over.** The device-starved half is measured
-      sample-for-sample. The network half is *reasoned* — run A's traces were deleted before the
-      presented/decoded ratio was computed from them, so the claim that the ratio stays near 1 under pure
-      network loss rests on the mechanism, not on those files. Originals may still be on the test machine
-      under `%LOCALAPPDATA%\Ripcord\state`. Worth confirming on the next lossy session; it would not change
-      the decision to remove the old discriminator, which is settled on its own evidence.
+**Two of the four are gone rather than done, and both closed by deletion rather than by an answer.**
+Verifying the OS text scale mattered only because Ripcord scaled text itself; that feature was removed on
+2026-09-19 and the question went with it. `ReceiveQueueBusyDepth` was to be re-derived from ARM64 captures;
+the captures said the metric could not support a threshold at all, so it was replaced rather than retuned.
+Both are in the journal, and one confirmation is still outstanding — see Track A.
 
 - [ ] **Settle the wordmark.** Outfit is used throughout the design drawings and is explicitly provisional.
       `brand/README.md` shortlists Poppins and Plus Jakarta Sans alongside it; all three are open-licensed,
@@ -544,6 +517,17 @@ for Stage B's card redesign rather than a patch:
 
 
 ### Track A — Live-test the streaming-quality work
+
+- [ ] **Confirm the presented/decoded ratio under pure network loss (owed from 2026-09-19).** The signal
+      that replaced `ReceiveQueueBusyDepth` is measured on the device-starved side — six loss-carrying
+      samples at a ratio of 0.00–0.11 — but the network side is *reasoned*: frames that never arrive cannot
+      be decoded either, so the ratio should stay near 1. Run A's traces were deleted before the ratio was
+      computed from them, so that half rests on the mechanism.
+      **Cost: nothing extra.** Any session with real loss and a healthy decode path answers it; the trace
+      records both columns already. Filter for `loss_pct >= 2` and read `present_fps / decode_fps`.
+      **If it does not hold** — if the ratio collapses under pure network loss too — then the two causes are
+      not separable by this signal either, and the honest fix is to stop claiming to tell them apart rather
+      than to find a third discriminator. Say "losing packets" and list both remedies.
 > **Plan written 2026-08-02:** `captures/console_session_plan.md` (dirty room) batches every remaining
 > hardware-gated item across this track and Tracks B/C into one trip, in a fixed order — Phase 1 needs the
 > console *asleep*, a state you get once per session, so the ordering is load-bearing rather than advisory.
