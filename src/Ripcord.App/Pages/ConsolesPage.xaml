@@ -195,7 +195,7 @@
                             <StackPanel
                                 Grid.Column="1"
                                 VerticalAlignment="Center"
-                                Opacity="{x:Bind State.CanConnect, Mode=OneWay, Converter={StaticResource ActionOpacity}}"
+                                Opacity="{x:Bind State.IsReachable, Mode=OneWay, Converter={StaticResource ActionOpacity}}"
                                 Orientation="Horizontal"
                                 Spacing="6">
                                 <FontIcon
