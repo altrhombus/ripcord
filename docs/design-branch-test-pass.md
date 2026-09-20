@@ -30,23 +30,63 @@ this session is worth more than an ordinary look.
 
 ### `ReceiveQueueBusyDepth`, on ARM64 — the one that gates a verdict
 
-The constant is 16. The roadmap records observed-healthy ARM64 peaks of **18**. It is the discriminator
-between *"Losing packets on the network"* and *"Your device is struggling to keep up"*, so today a healthy
-handheld can be told its own hardware is at fault — and this branch promotes that verdict to rung 1, where it
-becomes the only thing on screen.
+The constant is 16. The roadmap records observed-healthy ARM64 peaks of **18**. It decides which of two
+sentences a struggling player is shown:
 
-- Stream something demanding, healthy, for a few minutes. Open rung 3 (below) and watch **queues → receive**.
-- Record the peak.
-- Then make it genuinely lossy (see below) and record it again.
-- Wanted: a number with daylight on both sides. If healthy peaks at 18 and lossy sits at 30, 24 is a
-  defensible threshold; if they overlap, that is a more interesting finding and the verdict needs a different
-  discriminator.
+```
+loss >= 2%  and  receive queue >= 16   ->  "Your device is struggling to keep up"
+loss >= 2%  and  receive queue <  16   ->  "Losing packets on the network"
+```
 
-### Making a stream lossy on purpose
+Those send people to opposite ends of the house, and this branch promotes that sentence to rung 1 where it is
+the only thing on screen. So the number has to be right, and right on ARM64 specifically, because that is the
+hardware the current value appears to misjudge.
 
-Needed for the HUD work as well as the capture above. Easiest first: put the PC on Wi‑Fi, walk away from the
-router, or stream 1080p60 at 40 Mbps over a congested band. Failing that, start a large upload on the same
-link.
+**Where to read it.** Rung 3, the **PIPELINE** group: `queues  decode N · receive M`. **M** is the value.
+There is no sparkline and no peak column for it — which is itself worth noting as a gap, because it means the
+peak has to be eyeballed or sampled. **F8 writes the whole panel to a file**, so the least error-prone method
+is to press F8 every ten seconds or so through each run and read the peak off the files afterwards.
+
+#### The two runs have to be produced differently, and that is the whole point
+
+The pairing is not "healthy vs. lossy". Both branches of the verdict require loss ≥ 2% already; what separates
+them is whether the *device* is also behind. So produce each condition with a lever that moves only one of
+them, or the result cannot distinguish anything.
+
+**Run A — the network is dropping packets and the device is fine.** Expect a LOW queue.
+
+- Wired or strong Wi‑Fi, **720p60** so the decoder has plenty of headroom, hardware decode left on Automatic.
+- Introduce loss without touching the CPU: stream over a congested 2.4 GHz band, or start a large sustained
+  upload on the same link and leave it running.
+- If you want a dialled-in number instead of a congested one, `clumsy` (WinDivert-based, single exe, no
+  install) drops a set percentage of inbound UDP. Check it has an ARM64 build before relying on it; if not,
+  the congestion route is fine and is closer to what a real player hits anyway.
+- Wait for loss to sit above 2% for a while, then sample. **Record the peak receive queue.**
+
+**Run B — the device cannot keep up and the network is fine.** Expect a HIGH queue.
+
+- Wired or strong Wi‑Fi, **1080p60 at a high bitrate**.
+- Force software decode from inside the app: **Settings → Advanced → Which GPU to use → Choose a specific
+  GPU**, then pick an adapter the list annotates as having **no hardware video decoding**. Rung 3's
+  **path** row should then read `software` rather than `zero-copy`, which is your confirmation the lever
+  worked.
+- If every adapter on the machine decodes in hardware, fall back to CPU contention: peg all cores with a busy
+  loop for the duration.
+- **Record the peak receive queue.**
+
+**Run C — baseline.** 1080p60, hardware decode, healthy network, a few minutes. **Record the peak.** This is
+the number that has to sit safely *below* whatever threshold you pick, or a healthy ARM64 stream keeps getting
+told its hardware is at fault — which is the bug being chased.
+
+#### What the answer looks like
+
+Three peaks: C (healthy) < A (network loss) << B (device starved). Pick a threshold with daylight between
+A and B, and comfortably above C.
+
+If **A and B overlap**, that is the more interesting result and it is worth more than a tuned constant: it
+means receive-queue depth does not separate the two causes on this hardware, and the verdict needs a different
+discriminator — decode time or presented-vs-decoded frame drift are the obvious candidates. Record the numbers
+and leave the constant alone rather than picking one that happens to fit one run.
 
 ---
 
