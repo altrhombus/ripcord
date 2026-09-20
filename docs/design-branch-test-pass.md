@@ -15,11 +15,13 @@ ARM64 Release was cross-built clean from an x64 host on 2026-09-13 (exit 0, `Rip
 has never been *launched* on an ARM64 machine, so a crash at startup is a finding in its own right and not a
 sign you did something wrong.
 
-**Baseline before you start:** 379 presentation tests and 768 protocol tests pass. The protocol suite also
-reports one or two failures from `ports/ripcord-ps3` — third-party mbedTLS in the working tree, and H.264
-clause numbers from the H.264 spec, in that branch's blobs, being matched by the redaction sweep's IPv4
-pattern - dotted four-part numbers, which is what a clause reference and an address have in common. Both are false positives, neither is from this branch, and `rev-list --all` reaches the second one
-whatever is checked out.
+**Baseline before you start: everything is green.** 366 presentation tests and 785 protocol tests pass, with
+6 skipped — those are the live-vector tests that self-skip without the dirty-room fixtures, which is correct
+on a machine that does not have them. The branch is rebased onto `main` and the working tree is clean.
+
+If you see a failure, it is real. That was not true a few days ago — the suite carried two redaction-sweep
+failures from the PS3 port's vendored third-party sources, and they are gone: `main`'s `.gitignore` already
+covered them, and this branch was simply too old to have those rules.
 
 ---
 
@@ -182,7 +184,6 @@ in the chair, it is a design finding rather than a bug.
 
 ## Known and not worth reporting
 
-- `ports/ripcord-ps3` failing the redaction sweep. False positives, other branch.
 - The rung-3 sheet reads status → target → metrics rather than leading with the sparklines. Deliberate: the
   existing vertical order was preserved so the rail and overlay did not change. Reordering is one line if the
   sheet reads badly.
