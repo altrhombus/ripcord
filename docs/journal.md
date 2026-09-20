@@ -35,6 +35,55 @@ different purpose.
 > anything. The list above is short, it is checkable in one `git log --format=%B | grep`, and it stops
 > growing the moment someone notices — which is the property that actually matters.
 
+### Removed — Ripcord's own text scaling (2026-09-19)
+
+`LargeUiScale`, `UiScale` and `AppScale` are gone: the app-level "larger text and controls" switch, the
+portable policy that decided what it was worth, and the front end that wrote scaled sizes into the WinUI
+resources before the first window existed. With them went `UiScaleTests`, the Accessibility settings section
+that held the switch, and the persisted `RipcordSettings.LargeUiScale`.
+
+**This reverses a decision, and the reasoning is the point.** The feature had been argued for twice: the
+re-imagining plan called the inert toggle "a broken promise", and the 1.0 scope listed wiring it as in-scope
+work. Both were right that a switch which does nothing is worse than no switch. Neither asked whether the
+switch should exist.
+
+The position that settles it: **an app should be a good citizen of the desktop environment it runs in.**
+Text size is something the user has already told Windows, in one place, for everything they run. A second
+control inside Ripcord competes with that answer, asks them to solve the same problem twice, and is the kind
+of feature that looks like care and behaves like another setting to get wrong. The one place Ripcord is
+deliberately *more* than a good citizen is controller input — because nothing in the desktop environment
+does that for it.
+
+**Three things fall out, and all three are simplifications.**
+
+The unverified premise underneath the feature stops mattering. `UiScale.AppliesOsTextScaleItself` was a
+constant documenting a disagreement — Microsoft's text-scaling documentation says WinUI honours
+`UISettings.TextScaleFactor` with no work from the app; the re-imagining plan asserted the opposite and said
+in italics to verify it before building on it. It was never verified, and being wrong meant a user at 150%
+rendering at 225%. Nothing multiplies anything now, so there is no premise left to be wrong about.
+
+The console card's fixed `ItemsWrapGrid.ItemHeight` stops blocking the card redesign. It was recorded as
+incompatible with the planned scaling, but the incompatibility was ours: the cell only had to grow because
+the app was growing the text inside it. The note stays in the roadmap, struck through, because the reasoning
+still applies if the *platform* grows that text on its own.
+
+And one of the four priced items from the design review is closed by deletion rather than by work — which
+is the cheapest way an open question ever closes.
+
+**What Ripcord still owes the environment:** theme, accent, high contrast, transparency, reduced motion, and
+whatever the platform does with text scale. Those are all read and acted on already (`AppEffects`,
+`AppMotion`). Removing a competing control is not the same as ignoring the ones that remain, and it would be
+a regression to read it that way.
+
+**Worth knowing for anyone re-reading the removed code:** `AppScale` carried a genuine platform finding that
+is not written down anywhere else. WinUI's stock text styles resolve their size through `StaticResource`, not
+`ThemeResource`, and `XamlControlsResources` *defines* those keys itself — so a reference inside it resolves
+locally and never escalates to `Application.Resources`. Overriding `BodyTextBlockFontSize` at app level
+therefore changes nothing at all, which is exactly the mechanism the re-imagining plan proposed. Control-
+internal text is the opposite case: `ControlContentThemeFontSize` is a `ThemeResource` and does honour an
+app-level override. Anyone who tries to scale WinUI text in future will meet both halves of that, and the
+file that recorded them is in the history of this branch.
+
 > **↻ RESUME HERE (2026-09-05 — VIDEO OVER THE INTERNET. The account route works off-network.)**
 >
 > Client on a phone hotspot, console on a different network, both behind NAT, no port forwarding, direct

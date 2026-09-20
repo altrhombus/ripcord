@@ -82,7 +82,6 @@ public sealed record SettingsViewState(
     /// </summary>
     IReadOnlyList<string> DiagnosticsOptions,
     int DiagnosticsIndex,
-    bool LargeUiScale,
 
     // ---- credential banner ----
     string CredentialTitle,

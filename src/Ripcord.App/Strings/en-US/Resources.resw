@@ -472,14 +472,6 @@
     <value>Rest console when I disconnect</value>
     <comment>The header above a control on the Settings page.</comment>
   </data>
-  <data name="SettingsPage_EasierReadHandheldFrom.Description" xml:space="preserve">
-    <value>Makes Ripcord's own text and buttons bigger, on top of your Windows text size. Takes effect next time Ripcord starts.</value>
-    <comment>The description under a control on the Settings page.</comment>
-  </data>
-  <data name="SettingsPage_EasierReadHandheldFrom.Header" xml:space="preserve">
-    <value>Larger text and controls</value>
-    <comment>The header above a control on the Settings page.</comment>
-  </data>
   <data name="SettingsPage_FrameRateLatencyPacket.Description" xml:space="preserve">
     <value>Frame rate, latency and packet loss over the video. You can also toggle this with F3 while streaming.</value>
     <comment>The description under a control on the Settings page. F3 is a product or standard name - do not translate.</comment>
@@ -510,10 +502,6 @@
   </data>
   <data name="SettingsPage_ImageScaling.AutomationProperties.Name" xml:space="preserve">
     <value>Image scaling</value>
-    <comment>Name on the Settings page.</comment>
-  </data>
-  <data name="SettingsPage_LargerTextControls.AutomationProperties.Name" xml:space="preserve">
-    <value>Larger text and controls</value>
     <comment>Name on the Settings page.</comment>
   </data>
   <data name="SettingsPage_LeaveStreamController.AutomationProperties.Name" xml:space="preserve">
@@ -767,10 +755,6 @@
   <data name="SettingsPage_WhenYouPlay.Text" xml:space="preserve">
     <value>When you play</value>
     <comment>Settings section heading: what the app does when a stream starts and ends.</comment>
-  </data>
-  <data name="SettingsPage_Accessibility.Text" xml:space="preserve">
-    <value>Accessibility</value>
-    <comment>Settings section heading: controls that make the app easier to use.</comment>
   </data>
   <data name="SettingsPage_Advanced.Text" xml:space="preserve">
     <value>Advanced</value>
