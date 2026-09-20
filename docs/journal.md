@@ -35,6 +35,66 @@ different purpose.
 > anything. The list above is short, it is checkable in one `git log --format=%B | grep`, and it stops
 > growing the moment someone notices — which is the property that actually matters.
 
+### The receive-queue threshold was never the problem (2026-09-19)
+
+Four ARM64 sessions, ~2100 live samples, and the answer to "is 16 right on this hardware" turned out to be
+that the question was wrong. `ReceiveQueueBusyDepth` is no longer a discriminator; `PresentedShareBusyRatio`
+is.
+
+**What it was for.** Loss is the most impactful thing the health assessor can report, and the same loss
+figure means two opposite things: the network is dropping packets, or this device cannot keep up and is
+shedding. The advice diverges completely — move closer to the router, versus lower the resolution — so
+something has to split them. Receive-queue depth was that something, on the reasoning that a queue backing
+up means our own processing is behind.
+
+**What the measurements said.** Run A put the client on a 2.4 GHz VLAN; run B pointed decode at the
+Microsoft Basic Render Driver, which took the readback path at 8 ms RTT. Across both:
+
+- **Every** sample carrying loss ≥ 2% read a receive queue of exactly 0 — including the device-starved
+  samples presenting 0 fps out of 61 decoded. The verdict shown was "Losing packets on the network", on a
+  flawless link.
+- **Every** excursion above 16 in the lossy run sat on a sample with exactly 0.00 loss.
+- The reading is an instantaneous depth sampled at 2 Hz against frame-sized arrival bursts: 0 → 34 → 0
+  inside two seconds, 17 excursions of which 15 were a single sample, peaking at 266 during a stall whose
+  neighbouring samples both read 0.
+
+So it was not mistuned. No threshold survives a signal that spikes to 266 and returns to 0 between samples,
+which is why raising 16 would have bought nothing.
+
+**The obvious alternative was tested and failed.** Requiring the decode queue to agree would have suppressed
+every false reading — and would also have made the branch unfireable: the decode queue never reached 16 in
+either run (max 10 and 9) while the receive queue reached 266. Run B was taken specifically to answer that
+question, and the answer is no. Worth recording as a case where the cheap fix was checked rather than
+adopted.
+
+**What replaced it.** Ask whether we are presenting what we decode. If the network is the bottleneck the
+frames never arrive, so decode and present fall together and the ratio stays near 1; if the device is, they
+arrive and decode fine and never reach the screen. The six loss-carrying samples sat at 0.00–0.11 against a
+session median of 0.87–0.93. The threshold is 0.5 because that is the middle of the gap, not because it fit.
+
+**Two further faults the traces exposed, both found by the data disagreeing with itself.**
+
+The health column was lagged one row: the trace sample read `_diagnostics.HealthLevel` before the `Mutate`
+that recomposed it, so every row carried the verdict belonging to the sample half a second earlier. Nothing
+on screen was ever wrong — the panel always showed the fresh value — but every correlation drawn between the
+health column and any other column in its own row was silently off by one. Found by noticing a row that
+logged 11.48% loss and read `Info`, which that row's own numbers cannot produce.
+
+And the readback note outranked the frame-rate check, so a stream presenting 4 fps out of 60 decoded was
+told "Hardware decode active (with a memory copy). This is fine." 16–17% of past-startup samples in both
+device-starved runs took a Healthy/Info verdict while presenting under 45 fps.
+
+**The instrument needed fixing before it could be trusted.** The first traces recorded an empty `adapter:`
+line, because the preamble was written at the top of the connect and the adapter is not resolved until the
+decode pipeline initialises on the first frame. On a run whose entire subject is which GPU is in use, that
+is the one field that mattered.
+
+**What is still owed.** The device-starved half is measured sample-for-sample; the network half is reasoned.
+Run A's traces were deleted before the presented/decoded ratio was computed from them, so the claim that the
+ratio stays near 1 under pure network loss rests on the mechanism rather than on those files. It does not
+change the decision — the old discriminator falls on its own evidence — but the confirmation is outstanding
+and the next naturally lossy session closes it.
+
 ### Removed — Ripcord's own text scaling (2026-09-19)
 
 `LargeUiScale`, `UiScale` and `AppScale` are gone: the app-level "larger text and controls" switch, the
