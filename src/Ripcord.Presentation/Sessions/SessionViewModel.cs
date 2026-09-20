@@ -45,6 +45,8 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
 
     private ConnectPhase? _phase;
 
+    private DateTimeOffset? _traceStartedAt;
+
     /// <summary>
     /// Which rung to come back to. Someone who lives at rung 3 gets rung 3, which is the whole reason the
     /// key is a toggle rather than a cycle: it returns you where you were, not one step further in.
@@ -116,6 +118,14 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
     /// </para>
     /// </summary>
     public MetricHistory FpsHistory { get; } = new(60);
+
+    /// <summary>
+    /// The most recent sample as raw numbers, for the session trace. Null until a live sample has been
+    /// taken. Outside the state record for the same reason the histories are: the front end reads it on
+    /// the tick that produced it, and copying it into an immutable record twice a second to hand back the
+    /// same values would be ceremony.
+    /// </summary>
+    public SessionSample? LastSample { get; private set; }
 
     public MetricHistory LossHistory { get; } = new(60);
 
@@ -399,6 +409,23 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
             LossHistory.Add(stats.PacketLossRatio * 100.0);
             RttHistory.Add(stats.RoundTripTimeMs);
             BitrateHistory.Add(stats.BitrateKbps / 1000.0);
+
+            // The same numbers, unformatted, for the trace. Built here rather than in the front end because
+            // every one of them has already been computed at this point, and a second implementation of
+            // "frames over the interval" is a second chance to disagree with the panel.
+            _traceStartedAt ??= now;
+            LastSample = new SessionSample(
+                ElapsedSeconds: (now - _traceStartedAt.Value).TotalSeconds,
+                PresentFps: presentFps,
+                DecodeFps: decodeFps,
+                LossPercent: stats.PacketLossRatio * 100.0,
+                RttMs: stats.RoundTripTimeMs,
+                BitrateMbps: stats.BitrateKbps / 1000.0,
+                ReceiveQueueDepth: stats.ReceiveQueueDepth,
+                DecodeQueueDepth: s.QueueDepth,
+                PipelineLatencyMs: s.PipelineLatencyMs,
+                DecodeMode: s.DecodeMode,
+                HealthLevel: _diagnostics.HealthLevel);
         }
 
         Mutate(() =>
