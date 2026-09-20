@@ -44,10 +44,20 @@ Those send people to opposite ends of the house, and this branch promotes that s
 the only thing on screen. So the number has to be right, and right on ARM64 specifically, because that is the
 hardware the current value appears to misjudge.
 
-**Where to read it.** Rung 3, the **PIPELINE** group: `queues  decode N · receive M`. **M** is the value.
-There is no sparkline and no peak column for it — which is itself worth noting as a gap, because it means the
-peak has to be eyeballed or sampled. **F8 writes the whole panel to a file**, so the least error-prone method
-is to press F8 every ten seconds or so through each run and read the peak off the files afterwards.
+**You do not have to read it off the screen.** Every session now writes a trace automatically:
+
+```
+%LOCALAPPDATA%\Ripcord\state\session-trace-<timestamp>.csv
+```
+
+One row per stats tick (twice a second), one file per session, started the moment a connect begins. It
+carries the receive queue alongside loss, frame rate, latency, bitrate, decode queue, pipeline latency and
+the decode path, plus a `#` preamble naming the adapter, the requested resolution and **the thresholds the
+build was compiled with** — so a trace read later does not depend on anyone remembering which constants
+produced it. There is no console name, address or account in it.
+
+Rung 3's **PIPELINE** group still shows `queues  decode N · receive M` live if you want to watch, and the
+panel prints the trace's path when it opens so you can find the file on a handheld.
 
 #### The two runs have to be produced differently, and that is the whole point
 
@@ -63,7 +73,7 @@ them, or the result cannot distinguish anything.
 - If you want a dialled-in number instead of a congested one, `clumsy` (WinDivert-based, single exe, no
   install) drops a set percentage of inbound UDP. Check it has an ARM64 build before relying on it; if not,
   the congestion route is fine and is closer to what a real player hits anyway.
-- Wait for loss to sit above 2% for a while, then sample. **Record the peak receive queue.**
+- Wait for loss to sit above 2% for a while and let it run. **The trace file is the deliverable.**
 
 **Run B — the device cannot keep up and the network is fine.** Expect a HIGH queue.
 
@@ -74,16 +84,19 @@ them, or the result cannot distinguish anything.
   worked.
 - If every adapter on the machine decodes in hardware, fall back to CPU contention: peg all cores with a busy
   loop for the duration.
-- **Record the peak receive queue.**
+- Stop the stream when you have a few minutes of it. **The trace file is the deliverable** — no need to read anything.
 
 **Run C — baseline.** 1080p60, hardware decode, healthy network, a few minutes. **Record the peak.** This is
 the number that has to sit safely *below* whatever threshold you pick, or a healthy ARM64 stream keeps getting
 told its hardware is at fault — which is the bug being chased.
 
-#### What the answer looks like
+#### What to send back
 
-Three peaks: C (healthy) < A (network loss) << B (device starved). Pick a threshold with daylight between
-A and B, and comfortably above C.
+The three CSVs. Nothing needs reading or labelling — the decode-path column tells run B apart from the other
+two, and the loss column separates A from C, so the files identify themselves.
+
+What is being looked for: C (healthy) < A (network loss) << B (device starved), with daylight between A and B
+and comfortable clearance above C.
 
 If **A and B overlap**, that is the more interesting result and it is worth more than a tuned constant: it
 means receive-queue depth does not separate the two causes on this hardware, and the verdict needs a different
