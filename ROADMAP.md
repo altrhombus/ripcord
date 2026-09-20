@@ -273,54 +273,34 @@ to be true before drawings become code.
 **One of the four is gone rather than done.** Verifying the OS text scale mattered only because Ripcord
 scaled text itself; that feature was removed on 2026-09-19 and the question went with it. See the journal.
 
-- [ ] **`ReceiveQueueBusyDepth` — measured on ARM64 2026-09-19, and the constant is not the problem.**
-      Two session traces (0.6 min and 14.1 min, 1708 samples, ARM64, 720p60 H.264 over a 2.4 GHz VLAN)
-      answered a different question than the one asked. **Do not retune 16 on this evidence** — read the
-      finding first.
+- [x] **`ReceiveQueueBusyDepth` — settled 2026-09-19. The metric was wrong, not the number.** Four ARM64
+      sessions, ~2100 live samples: run A (2.4 GHz VLAN, network-lossy) and run B (Microsoft Basic Render
+      Driver, readback decode path, 8 ms RTT — device-starved). Moved to the journal; kept here only as the
+      decision record, because the constant still exists and its comment now explains why it is not a
+      discriminator.
 
-      What the 14-minute trace says, on the live samples:
+      **The discriminator never once pointed at the right cause, and in run B it pointed at the wrong one.**
+      All six samples carrying loss ≥ 2% in the device-starved runs read a receive queue of exactly 0, so the
+      verdict was "Losing packets on the network — switch to a wired connection" while RTT was 15–28 ms and
+      the GPU selection was the fault. In run A, all 20 excursions above 16 sat on samples with exactly zero
+      loss.
 
-      | signal | p50 | p90 | p99 | max |
-      |---|---|---|---|---|
-      | `receive_queue` | 0 | 0 | 16 | 51 |
-      | `decode_queue` | 0 | 0 | 1 | 2 |
-      | `loss_pct` | 0 | 0 | 0.8 | 24.86 |
-      | `rtt_ms` | 36 | 74 | 88 | 93 |
+      **The `decode_queue` conjunction is dead, and run B is what killed it.** It never reached 16 — max 10
+      and 9 — while the receive queue hit 41 and 266 in the same runs. Requiring both would have made the
+      branch unfireable. This was the open question run B was taken to answer; the answer is no.
 
-      - **The two signals never co-occurred, in either direction.** All 20 samples at or above 16 had
-        `loss_pct` exactly 0.00. Both samples with loss ≥ 2% had `receive_queue` exactly 0. The threshold
-        governs a tiebreaker inside the loss branch, so across 14 minutes it was never once consulted in a
-        way that changed what the user was told.
-      - **The queue does not build up; it spikes for one sample.** 17 excursions above 16, 15 of them a
-        single sample, none longer than two — `0 → 19 → 0 → 0 → 34 → 0` inside two seconds, with fps,
-        bitrate and loss all steady across the whole excursion. A 2 Hz instantaneous read of a queue fed by
-        frame-sized bursts is sampling noise, not a depth.
-      - **So the code does not do what its own comment says.** The comment at the constant says "a
-        *sustained* build-up means OUR processing is falling behind"; the test is `s.ReceiveQueueDepth >=
-        ReceiveQueueBusyDepth` against one sample. The comment describes the right condition and the code
-        tests a different one.
-      - **The latent defect is a misdiagnosis, and raising 16 does not remove it.** Spikes reached 51, so
-        any threshold the noise can reach is reachable. ~1.2% of healthy samples spiked; over a long lossy
-        session one will eventually land on a loss sample, and the player is then told "Your device is
-        struggling to keep up — close other apps, or lower the stream resolution" while their Wi-Fi is the
-        actual fault. That is the disclosure ladder confidently sending someone to fix the wrong thing.
-      - **Independent evidence that the device was never the problem:** `decode_mode` was 2 (hardware
-        zero-copy) for 1645/1645 live samples and `decode_queue` never exceeded 2. The ARM64 machine held
-        720p60 comfortably throughout.
+      **What replaced it: `PresentedShareBusyRatio`.** If the network is the bottleneck the frames never
+      arrive, so decode and present fall together; if the device is, they arrive and decode fine and we fail
+      to put them on screen. All six loss-carrying samples sat at a presented/decoded ratio of 0.00–0.11
+      against a session median of 0.87–0.93, so 0.5 has daylight on both sides. Mechanical rather than tuned,
+      which is why it is not a re-fitted 16.
 
-      **Recommended fix — shape, not value.** Make the test sustained, as the comment always said: require
-      the depth to hold above the threshold for N consecutive samples, or read a high-water mark over the
-      interval instead of an instant. Either would have suppressed all 20 false readings here without
-      touching 16.
-      **Open, and deliberately not decided on one machine's data:** whether a backed-up receive queue should
-      also require an elevated `decode_queue`. It would have suppressed every false reading — but a receive
-      queue backing up could *starve* the decoder rather than back it up, which would make the two signals
-      mutually exclusive and the conjunction unfireable. Needs a genuinely device-starved capture (run B) to
-      settle, and run B has not been taken.
-      **Price now: ~2 hours** to implement the sustained reading and pin it with a test that replays a spike
-      train. The threshold re-derivation the original item asked for is **not** needed.
-      **Still blocks** HUD rung 1, for the original reason: promoting a verdict to the only thing on screen
-      makes a wrong verdict much louder than it is today.
+      **One caveat on the evidence, recorded rather than smoothed over.** The device-starved half is measured
+      sample-for-sample. The network half is *reasoned* — run A's traces were deleted before the
+      presented/decoded ratio was computed from them, so the claim that the ratio stays near 1 under pure
+      network loss rests on the mechanism, not on those files. Originals may still be on the test machine
+      under `%LOCALAPPDATA%\Ripcord\state`. Worth confirming on the next lossy session; it would not change
+      the decision to remove the old discriminator, which is settled on its own evidence.
 
 - [ ] **Settle the wordmark.** Outfit is used throughout the design drawings and is explicitly provisional.
       `brand/README.md` shortlists Poppins and Plus Jakarta Sans alongside it; all three are open-licensed,
