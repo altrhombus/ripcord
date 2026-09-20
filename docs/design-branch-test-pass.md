@@ -2,8 +2,7 @@
 
 **The question this answers: what changed on this branch that a person has to look at?**
 
-Everything below was built and unit-tested and **none of it has been seen on a screen**. Written 2026-09-13
-against fifteen commits from `main`. Delete this file once the pass is done and its findings are in
+Written 2026-09-13; last revised 2026-09-19. Delete this file once the pass is done and its findings are in
 [`ROADMAP.md`](../ROADMAP.md).
 
 ```
@@ -11,97 +10,23 @@ git checkout feat/app-design-direction
 msbuild Ripcord.slnx -p:Platform=ARM64 -p:Configuration=Release -m
 ```
 
-ARM64 Release was cross-built clean from an x64 host on 2026-09-13 (exit 0, `Ripcord.App.exe` produced). It
-has never been *launched* on an ARM64 machine, so a crash at startup is a finding in its own right and not a
-sign you did something wrong.
+**What has now been seen on a screen, and what has not.** The ARM64 build has been launched and streamed on
+real hardware (2026-09-19), so "does it start" and "does it stream" are answered. Four sessions were recorded
+and the measurement section that used to open this file is **done** — see the journal. What has *not* been
+looked at is everything under "What to test" below: the surfaces were exercised incidentally while chasing
+numbers, not walked deliberately.
 
-**Baseline before you start: everything is green.** 366 presentation tests and 785 protocol tests pass, with
-6 skipped — those are the live-vector tests that self-skip without the dirty-room fixtures, which is correct
-on a machine that does not have them. The branch is rebased onto `main` and the working tree is clean.
+**Baseline: everything is green.** 378 presentation tests and 788 protocol tests pass, with 6 skipped — the
+live-vector tests that self-skip without the dirty-room fixtures, which is correct on a machine that does not
+have them. The branch is rebased onto `main`, 27 commits ahead, working tree clean.
 
-If you see a failure, it is real. That was not true a few days ago — the suite carried two redaction-sweep
-failures from the PS3 port's vendored third-party sources, and they are gone: `main`'s `.gitignore` already
-covered them, and this branch was simply too old to have those rules.
+If you see a failure, it is real.
 
----
-
-## Capture these first, before touching anything
-
-One of the priced items in `ROADMAP.md` can only be answered at a machine, and only on ARM64 — which is why
-this session is worth more than an ordinary look.
-
-### `ReceiveQueueBusyDepth`, on ARM64 — the one that gates a verdict
-
-The constant is 16. The roadmap records observed-healthy ARM64 peaks of **18**. It decides which of two
-sentences a struggling player is shown:
-
-```
-loss >= 2%  and  receive queue >= 16   ->  "Your device is struggling to keep up"
-loss >= 2%  and  receive queue <  16   ->  "Losing packets on the network"
-```
-
-Those send people to opposite ends of the house, and this branch promotes that sentence to rung 1 where it is
-the only thing on screen. So the number has to be right, and right on ARM64 specifically, because that is the
-hardware the current value appears to misjudge.
-
-**You do not have to read it off the screen.** Every session now writes a trace automatically:
-
-```
-%LOCALAPPDATA%\Ripcord\state\session-trace-<timestamp>.csv
-```
-
-One row per stats tick (twice a second), one file per session, started the moment a connect begins. It
-carries the receive queue alongside loss, frame rate, latency, bitrate, decode queue, pipeline latency and
-the decode path, plus a `#` preamble naming the adapter, the requested resolution and **the thresholds the
-build was compiled with** — so a trace read later does not depend on anyone remembering which constants
-produced it. There is no console name, address or account in it.
-
-Rung 3's **PIPELINE** group still shows `queues  decode N · receive M` live if you want to watch, and the
-panel prints the trace's path when it opens so you can find the file on a handheld.
-
-#### The two runs have to be produced differently, and that is the whole point
-
-The pairing is not "healthy vs. lossy". Both branches of the verdict require loss ≥ 2% already; what separates
-them is whether the *device* is also behind. So produce each condition with a lever that moves only one of
-them, or the result cannot distinguish anything.
-
-**Run A — the network is dropping packets and the device is fine.** Expect a LOW queue.
-
-- Wired or strong Wi‑Fi, **720p60** so the decoder has plenty of headroom, hardware decode left on Automatic.
-- Introduce loss without touching the CPU: stream over a congested 2.4 GHz band, or start a large sustained
-  upload on the same link and leave it running.
-- If you want a dialled-in number instead of a congested one, `clumsy` (WinDivert-based, single exe, no
-  install) drops a set percentage of inbound UDP. Check it has an ARM64 build before relying on it; if not,
-  the congestion route is fine and is closer to what a real player hits anyway.
-- Wait for loss to sit above 2% for a while and let it run. **The trace file is the deliverable.**
-
-**Run B — the device cannot keep up and the network is fine.** Expect a HIGH queue.
-
-- Wired or strong Wi‑Fi, **1080p60 at a high bitrate**.
-- Force software decode from inside the app: **Settings → Advanced → Which GPU to use → Choose a specific
-  GPU**, then pick an adapter the list annotates as having **no hardware video decoding**. Rung 3's
-  **path** row should then read `software` rather than `zero-copy`, which is your confirmation the lever
-  worked.
-- If every adapter on the machine decodes in hardware, fall back to CPU contention: peg all cores with a busy
-  loop for the duration.
-- Stop the stream when you have a few minutes of it. **The trace file is the deliverable** — no need to read anything.
-
-**Run C — baseline.** 1080p60, hardware decode, healthy network, a few minutes. **Record the peak.** This is
-the number that has to sit safely *below* whatever threshold you pick, or a healthy ARM64 stream keeps getting
-told its hardware is at fault — which is the bug being chased.
-
-#### What to send back
-
-The three CSVs. Nothing needs reading or labelling — the decode-path column tells run B apart from the other
-two, and the loss column separates A from C, so the files identify themselves.
-
-What is being looked for: C (healthy) < A (network loss) << B (device starved), with daylight between A and B
-and comfortable clearance above C.
-
-If **A and B overlap**, that is the more interesting result and it is worth more than a tuned constant: it
-means receive-queue depth does not separate the two causes on this hardware, and the verdict needs a different
-discriminator — decode time or presented-vs-decoded frame drift are the obvious candidates. Record the numbers
-and leave the constant alone rather than picking one that happens to fit one run.
+**Three findings already came out of the hardware sessions, and all three are fixed** — listed so they are
+not re-reported: the session trace recorded an empty GPU name; the trace's health column was lagged one row
+behind its own numbers; and a console that was powered on the whole time was shown as unreachable because a
+single probe datagram went missing. That last one is worth a deliberate re-check on the same VLAN, since it
+is the only one whose fix cannot be proven off-device.
 
 ---
 
@@ -171,6 +96,14 @@ Rename / Details / Remove moved out of code-behind into the string catalogue.
 - [ ] **Details** omits rows the console does not know. A console that reports its own name and has not been
       renamed should *not* show a "Reported name" row duplicating the title.
 - [ ] **Remove** names the console it is about to forget.
+- [ ] **Reachability, on the VLAN that broke it.** This is the one fix on the branch that cannot be proven off
+      the device, so it is worth reaching for deliberately. Open the list with the console powered on and
+      across the VLAN, several times. It should now settle on a real status rather than claiming it cannot be
+      reached; the probe gets three asks instead of one.
+- [ ] **And the dead end is gone regardless.** Even when a console genuinely is switched off, the action is
+      now only *dimmed* — never disabled. Confirm it is still pressable, and that pressing it produces a
+      connect attempt that says what went wrong rather than nothing happening. A silent probe must never be
+      able to lock you out of a console that is sitting there working.
 
 ### 6. Tokens — cheap to check, easy to regress
 
@@ -200,6 +133,33 @@ in the chair, it is a design finding rather than a bug.
 - The rung-3 sheet reads status → target → metrics rather than leading with the sparklines. Deliberate: the
   existing vertical order was preserved so the rail and overlay did not change. Reordering is one line if the
   sheet reads badly.
-- No card, hero, first-run or pairing-celebration work has been done. That is waiting on regression baselines
-  — screenshots of the grid and session page in light, dark and high contrast — which have to be captured
-  *before* those surfaces are touched.
+- No card, hero, first-run or pairing-celebration work has been done. That is waiting on regression
+  baselines, which have to be captured *before* those surfaces are touched — see below.
+
+## The other reason to be at the machine: regression baselines
+
+The repository contains **no product screenshots at all**, and the card redesign is the highest
+visual-regression risk left in the plan. Capturing these costs about an hour and unblocks the largest
+remaining piece of design work, so it is worth doing in the same sitting as the pass above.
+
+Two surfaces, three themes, and the states that only exist under an input device:
+
+```
+[ ] Console grid   light · dark · high contrast      (a populated list, two or more cards)
+[ ] Console grid   the empty state, all three themes
+[ ] Session page   light · dark · high contrast      (needs a live stream)
+[ ] Session page   each of the three HUD rungs       (hidden · summary · full)
+```
+
+For each of the two surfaces, also capture **rest, hover, keyboard focus and pad focus** on a card and on the
+hero action. Focus is the state most likely to regress silently and the one least likely to be noticed, since
+nothing about it shows up in a static comparison taken with a mouse parked off-window.
+
+- **Window size matters and should be recorded**, because HUD placement is a function of it: the panel becomes
+  a rail, a sheet or an overlay depending on the viewport and the video's aspect. Capture the session page at
+  a wide window and at something close to phone-narrow, or the baseline only covers one of three layouts.
+- **PNG, not JPEG**, and name them `<surface>-<theme>-<state>.png`. Where they live is an open question —
+  they are the first binaries of their kind in this tree — so park them outside the repo for now and let the
+  card work settle the question of whether they belong in it.
+- **High contrast is worth the most per shot.** It has been coded for and never looked at, and it is the
+  theme where a hard-coded colour shows up as unreadable rather than merely off.
