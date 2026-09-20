@@ -136,11 +136,23 @@ in the chair, it is a design finding rather than a bug.
 - No card, hero, first-run or pairing-celebration work has been done. That is waiting on regression
   baselines, which have to be captured *before* those surfaces are touched — see below.
 
-## The other reason to be at the machine: regression baselines
+## Regression baselines — and these do not need the ARM64 machine
 
 The repository contains **no product screenshots at all**, and the card redesign is the highest
 visual-regression risk left in the plan. Capturing these costs about an hour and unblocks the largest
-remaining piece of design work, so it is worth doing in the same sitting as the pass above.
+remaining piece of design work.
+
+**Capture them wherever is convenient, including an x64 desktop.** Nothing in the layout is
+architecture-conditional — the only place the app reads the processor architecture at all is one string in
+the F8 diagnostics report. Same Windows App SDK, same theme resources, same control templates.
+
+**The constraint is consistency, not architecture.** A baseline is only useful against a later shot taken
+the same way, so whichever machine takes these has to take the comparison shots too. A diff between an x64
+desktop and an ARM64 handheld shows display scaling, window size and GPU, not the change under review. Note
+the machine, its display scale and the window size alongside the files.
+
+**Two things genuinely do need the other hardware, and they are not baselines:** the pad and touch passes in
+"Per surface, per input" above, and the reachability re-check on the VLAN. Those stay with the handheld.
 
 Two surfaces, three themes, and the states that only exist under an input device:
 
