@@ -348,6 +348,34 @@ public class SessionViewModelTests
     }
 
     [Fact]
+    public void TraceSample_CarriesTheVerdictForItsOwnNumbers_NotThePreviousTicks()
+    {
+        // The bug this pins was invisible on screen and fatal in analysis: the trace row was built from the
+        // PREVIOUS tick's verdict, so a row logging catastrophic loss carried the health of the calm sample
+        // half a second earlier. Every conclusion drawn by correlating the health column against any other
+        // column was off by one row, and nothing about the file said so.
+        (SessionViewModel vm, FakePipeline pipeline, TestClock clock) = Build();
+
+        pipeline.Snapshot = new VideoPipelineSnapshot(0, 0, 0, 0, 2);
+        vm.Sample(Live());
+
+        // A calm second: no loss.
+        clock.Advance(TimeSpan.FromMilliseconds(500));
+        pipeline.Snapshot = new VideoPipelineSnapshot(30, 30, 0, 0, 2);
+        vm.Sample(Live(lossRatio: 0));
+        Assert.Equal(StreamHealthLevel.Healthy, vm.LastSample!.HealthLevel);
+
+        // Then loss well past the critical threshold, in the very next sample. The row that RECORDS that loss
+        // has to be the row that judges it.
+        clock.Advance(TimeSpan.FromMilliseconds(500));
+        pipeline.Snapshot = new VideoPipelineSnapshot(60, 60, 0, 0, 2);
+        vm.Sample(Live(lossRatio: 0.25));
+
+        Assert.Equal(25.0, vm.LastSample!.LossPercent, 3);
+        Assert.Equal(StreamHealthLevel.Critical, vm.LastSample.HealthLevel);
+    }
+
+    [Fact]
     public void Histories_AreNotRecordedWithoutASession()
     {
         // Otherwise the 30-second peaks open every session already poisoned with zeroes.
