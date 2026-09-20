@@ -154,7 +154,6 @@ public sealed partial class SettingsPage : Page
         RestOnDisconnectToggle.Toggled += (_, _) => Edit(() => _viewModel.SetRestOnDisconnect(RestOnDisconnectToggle.IsOn));
         DiagnosticsPicker.SelectionChanged += (_, _) =>
             Edit(() => _viewModel.SetDiagnosticsRung(DiagnosticsPicker.SelectedIndex));
-        LargeUiToggle.Toggled += (_, _) => Edit(() => _viewModel.SetLargeUiScale(LargeUiToggle.IsOn));
     }
 
     /// <summary>Forward a user edit, unless the change came from Render assigning the control itself.</summary>
@@ -311,7 +310,6 @@ public sealed partial class SettingsPage : Page
             ConfirmOnDisconnectToggle.IsOn = s.ConfirmOnDisconnect;
             RestOnDisconnectToggle.IsOn = s.RestConsoleOnDisconnect;
             FillCombo(DiagnosticsPicker, s.DiagnosticsOptions, s.DiagnosticsIndex);
-            LargeUiToggle.IsOn = s.LargeUiScale;
 
             RenderCredentialBar(s);
         }

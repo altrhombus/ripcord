@@ -60,7 +60,7 @@ Three rules keep it from becoming decoration:
   missing rather than greyed, matching the standing rule that an offline console is a normal state and not
   a fault.
 - **It scales with its container, not as a fixed chip.** 92 px beside a 292×188 grid card, 184 px beside the
-  one-console hero, 138 px at 150 % text scale.
+  one-console hero. It is a proportion of the card, not a number.
 
 The diagonal is the loudest thing in the app. It stays on Ripcord's own surfaces and never reaches a
 settings row.
@@ -214,7 +214,6 @@ and a LAN-only player never signs in.
 | Picture | Resolution and frame rate, max bitrate, adapt automatically, image scaling, **video codec**, HDR |
 | Controls | Keyboard input, key and pad bindings, exit gesture, menu stick sensitivity |
 | When you play | Full screen on connect, ask before disconnecting, rest on disconnect, diagnostics (off / summary / full) |
-| Accessibility | Larger text and controls |
 | Account | PSN sign-in, consoles on this account |
 | Advanced | GPU preference, specific adapter, connection reporting, credential protection |
 
@@ -225,9 +224,10 @@ whose reason sits behind a collapsed heading somewhere else. A control that expl
 is unavailable belongs beside it.
 
 Every knob survives; they stop being peers. The dials an enthusiast expects move into a collapsed
-**Advanced** so a casual player never scrolls past them. Accessibility gets its own heading, because burying
-an accessibility control under "Display" is how it goes unfound. A **search box** is what makes collapsing
-Advanced safe at roughly twenty settings.
+**Advanced** so a casual player never scrolls past them. A **search box** is what makes collapsing Advanced
+safe at roughly twenty settings.
+
+There is no Accessibility section, and that is the point rather than an omission — see below.
 
 Each row's description says what it does *for you* rather than what it sets: "4 of 4 checks passed on this
 display" is the HDR readiness verdict promoted to the row, leaving the expander for people who want the four
@@ -241,13 +241,26 @@ what is left still reads as Ripcord — because the identity was never in the co
 as shape, and the plain-text "PS5"/"PS4" label does the work colour was doing, which is why that label is
 never optional.
 
-**At 150 % the card grows with the text** — 438×282 rather than 292×188 — and the wedge grows with the card.
-`ItemsWrapGrid` requires a fixed item size, so the cell must be bound to the same factor `AppScale`
-computes. Two fixed numbers that have to move together is exactly the arrangement that silently stops moving
-together, so it wants a test rather than a comment.
+**Text size belongs to Windows, and Ripcord does not compete with it.** The app carried its own "larger text
+and controls" switch and an `AppScale` that rewrote the size tokens at startup; both are gone, along with the
+`UiScale` policy that composed them with the OS factor. Settled 2026-09-19.
 
-Both of these are **drawings of what should happen, not records of what does** — see the open items in
-[`../ROADMAP.md`](../ROADMAP.md).
+The reason is a position rather than a cleanup: **an app should be a good citizen of the desktop it runs on,**
+and a second scale control competing with the system one is the opposite of that. It also asked the user to
+solve in Ripcord a problem they had already solved in Windows, and it is the kind of feature that looks like
+care and behaves like a second setting to get wrong.
+
+Two things fall out, and both are improvements. The unverified premise underneath it — whether WinUI applies
+`UISettings.TextScaleFactor` itself, where being wrong meant rendering everything at 225% — stops mattering,
+because nothing multiplies anything now. And the console card's fixed `ItemsWrapGrid` cell height stops being
+a blocker for the card redesign: the cell only had to grow because the app was growing the text inside it.
+
+**What Ripcord still owes the user's environment:** theme, accent, high contrast, transparency, reduced
+motion, and whatever the platform does with text scale. The one place it is deliberately more than a good
+citizen is **controller input**, because nothing in the desktop environment does that for it.
+
+The high-contrast rendition above remains a **drawing of what should happen, not a record of what does** —
+see [`../ROADMAP.md`](../ROADMAP.md).
 
 ## Deliberately not redesigned
 

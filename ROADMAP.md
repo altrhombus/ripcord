@@ -130,10 +130,10 @@ has to mean something, which is a habit rather than a file.
 without ever being driven by a person. This is not code — it is an afternoon with a pad, a console and a
 list. It is also where the three bugs above came from, so the expectation should be that it finds more.
 
-**5. Controls that do what they say.** `LargeUiScale` is wired: `UiScale` holds the policy, `AppScale`
-applies it to the WinUI resources at startup, and the switch now says it takes effect on restart. What is
-left is not code — it is one look at a screen. See the accessibility item below for the question that is
-still open, which has to be answered at 150% on a real display and cannot be settled by argument.
+**5. Controls that do what they say.** The one control that did not is gone: Ripcord no longer scales its
+own text, because text size belongs to the desktop environment and a second control competing with the
+system one is not what a good citizen does. Removed 2026-09-19 — see the journal. What is left under this
+heading is the standing rule rather than a specific switch: **no user-visible control is inert.**
 
 **6. Two protocol gaps that could bite a console we have never seen.** ~~The GMAC rotation-window boundary
 and `CurveForVersion` having no answer for non-P521 versions.~~ **Both closed 2026-09-11.** The rotation
@@ -145,9 +145,6 @@ open research question and can wait.
 **7. An MSIX alongside the zip.** `EnableMsixTooling` is already on and `Package.appxmanifest` already
 exists, so this is packaging and verification rather than new plumbing — but see the decisions below for the
 signing constraint and the two behavioural differences a packaged build brings.
-
-**8. `LargeUiScale` wired through.** App-wide scaling, which collides with the fixed console-card cell
-height and wants the 150% OS text scale checked at the machine.
 
 **9. Honest first-run docs.** What works, what does not, which console generations, and the fact that it is
 English-only. The README is already unusually honest; 1.0 needs it to also be *complete* about limits.
@@ -169,7 +166,7 @@ English-only. The README is already unusually honest; 1.0 needs it to also be *c
   translation would be worse than English.
 - **A purchased code-signing certificate.** The zip is unsigned and SmartScreen will say so on first run;
   the README has to say so first. The MSIX is self-signed — see the decisions below for what that costs.
-- The senkusha probe questions, and the remaining accessibility items other than `LargeUiScale`.
+- The senkusha probe questions and the remaining accessibility items.
   (**The wordmark is no longer out** — see the amendment under "What 1.0 means".)
 
 ### Exit criteria
@@ -181,8 +178,6 @@ English-only. The README is already unusually honest; 1.0 needs it to also be *c
       verified on a machine without the SDK.
 - [ ] The MSIX has been installed and launched from its signed package, not just built - including a pair
       and a stream, because packaged data paths and packaged resource loading are both different.
-- [ ] `LargeUiScale` changes the UI, at 100% and at the OS 150% text scale — and at 150% the text is
-      scaled once, not twice. See `UiScale.AppliesOsTextScaleItself`.
 - [ ] The three known defects are fixed, each confirmed on hardware.
 - [ ] The input stack, Stage A steps 8–10 and the two Stage B checks have been driven by a person, and
       whatever that finds is either fixed or listed.
@@ -217,10 +212,6 @@ double-click to install" is not available.
   launched, not just built — this is the failure mode that produced a launch crash this week, where the
   markup compiled, the PRI indexed, and the app died on load.
 
-**`LargeUiScale`: wire it.** It becomes real 1.0 work rather than a one-line hide. It is app-wide scaling,
-it collides with the fixed console-card cell height already noted in the backlog, and the plan wants the OS
-text scale verified at 150% at the machine — so it lands with the hardware pass rather than before it.
-
 **The account tier is in the supported surface.** Sign-in, the account console list, cloud wake and the
 account pairing route are all part of what 1.0 claims to support, and therefore part of what the hardware
 pass has to exercise.
@@ -253,13 +244,8 @@ is committed to.
 Nothing below is a design question. They are all *verifications and one-way doors* — the things that have
 to be true before drawings become code.
 
-- [ ] **Verify `UiScale.AppliesOsTextScaleItself` at 150% on a real display.** Still the unverified
-      assumption its own file warns about: if WinUI already applies `TextScaleFactor`, applying it again
-      lands the user at 225%. **Price: ~30 minutes to answer** — set Windows text scale to 150%, launch,
-      measure a known glyph. If the assumption is wrong, **add half a day**: the flag flips and every
-      surface needs re-checking at 150%, which is a pass someone has to do anyway.
-      **Blocks** the console-card redesign, because the card, the wedge and the `ItemsWrapGrid` cell size
-      all have to scale by the same factor and the card work bakes that factor in.
+**One of the four is gone rather than done.** Verifying the OS text scale mattered only because Ripcord
+scaled text itself; that feature was removed on 2026-09-19 and the question went with it. See the journal.
 
 - [ ] **Re-derive `ReceiveQueueBusyDepth` from ARM64 captures.** 16 sits below observed-healthy ARM64 peaks
       of 18, and it is the discriminator between "Losing packets on the network" and "Your device is
@@ -386,8 +372,6 @@ looking.
       `AddConsolePage` → `PairPage` (never cached — a flow must start clean), `KeyBindingsPage` →
       `ControlsPage`. Only `HomePage` should be cached, to keep grid scroll position and the realized
       containers `PrepareConnectAnimation` needs.
-- [ ] **`LargeUiScale` / `TextScaleFactor`.** The plan wants the OS text scale verified empirically at 150%
-      *before* building the fix, which is another at-the-machine check.
 
 
 ### Open bug — an Xbox pad is dead while a DualSense is attached (found on hardware 2026-08-06)
@@ -493,8 +477,6 @@ request rather than leaving it set-but-disabled to reappear later.
 `IVideoPipelineStats`, `IVideoCapabilitiesProbe`, plus `IShellNavigator` for window-level operations.
 Two flags deleted rather than moved: `SettingsPage._loading` (fourteen handlers checked it) and the
 `AddConsolePage` scan-generation guard that was being evaluated at the wrong time.
-- [ ] **`LargeUiScale` is still cosmetic-only** and collides with the fixed console-card cell height — see the
-      card-layout entry below. Stage B's problem, recorded here so it is not discovered as a surprise.
 
 
 ### Console-card layout — fixed cell height is a standing constraint (noted 2026-08-05)
@@ -505,8 +487,10 @@ for Stage B's card redesign rather than a patch:
 - [ ] **A two-line display name still overflows.** `MaxLines="2"` on the name plus a fixed cell height cannot
       both be honoured — a long nickname needs ~28px the cell does not have. Either the name goes single-line
       with an ellipsis (the tooltip already carries the full name) or the card stops being fixed-height.
-- [ ] **Fixed `ItemHeight` is incompatible with the planned text scaling.** `LargeUiScale` and the OS
-      `TextScaleFactor` both grow every line in the card while the cell stays put, so the same clipping
+- [ ] ~~**Fixed `ItemHeight` is incompatible with the planned text scaling.**~~ **No longer a constraint as
+      of 2026-09-19**, because Ripcord no longer scales its own text. Kept here only because the reasoning
+      still applies if the platform grows the card's text on its own: the OS
+      `TextScaleFactor` would grow every line in the card while the cell stays put, so the same clipping
       returns at 150%. This is the general form of the bug above, and it applies to every fixed dimension in
       the app — which is why the design-system work makes sizes tokens rather than literals. `ItemsWrapGrid`
       requires a fixed item size, so a scalable card means either binding the cell size to the same scale
@@ -810,33 +794,8 @@ Both need a console or a capture to settle, hence here rather than in Track D.
     identifiers, an example IP address and a row of bullet characters. Audience decides: text a maintainer
     reads when helping you follows the maintainer.
   - **No translations ship**, deliberately. An unreviewed machine translation is worse than honest English.
-- [ ] **Accessibility backlog.** Three of these are pre-existing; the redesign made the first more visible
-      rather than causing it.
-  - **`LargeUiScale` is applied, but one premise under it is still unverified.** The mechanism landed:
-    `UiScale` (portable, tested) decides the multiplier, `AppScale` writes scaled sizes into the WinUI
-    resources before the first window exists.
-
-    Two things were learned building it that contradict
-    `docs/history/app-reimagining-plan.md`, and the plan is left as written because it is a historical
-    record — the corrections live in `AppScale`'s own documentation, which is where someone changing this
-    will be standing:
-
-    1. **The plan's mechanism cannot work.** It proposed overriding WinUI's font-size keys at app level. The
-       stock text ramp reaches them through `StaticResource`, not `ThemeResource`, and
-       `XamlControlsResources` *defines* those keys — so a reference inside it resolves locally and never
-       escalates to `Application.Resources`. Overriding them changes nothing. Control-internal text is the
-       opposite (`{ThemeResource ControlContentThemeFontSize}`) and is handled the easy way, so there are two
-       mechanisms in `AppScale` because the platform has two behaviours.
-    2. **The premise may be false, and getting it wrong is worse than doing nothing.** The plan asserts WinUI
-       3 desktop ignores `UISettings.TextScaleFactor`, and then says in italics to verify that before
-       building on it. Nobody did, and Microsoft's text-scaling documentation says the opposite. If the
-       platform already applies the OS factor and we multiply by it too, a user at 150% gets a 225% Ripcord —
-       an accessibility setting breaking the layout it was meant to rescue. So the app-level switch is
-       currently a flat 1.3× and the OS factor is not in our arithmetic at all.
-
-    **The open item is one observation:** set Windows text size to 150%, launch Ripcord, see whether its text
-    grows. If it does not, flip `UiScale.AppliesOsTextScaleItself` to `true` — that constant exists to be the
-    only thing that changes. `UiScaleTests` asserts the factor is applied exactly once either way.
+- [ ] **Accessibility backlog.** Both pre-existing. A third entry here - an unverified premise under
+      Ripcord's own text scaling - went away with the feature on 2026-09-19.
   - **Screen-reader pass over the card grid.** Each card composes its own `AutomationProperties.Name`
     (name, family, status, action) because a `GridViewItem` whose content is a panel has none of its own —
     but reading *order* across a wrapping grid is not automatic and has not been checked with Narrator.
