@@ -60,6 +60,14 @@
     <Content Include="Assets\StoreLogo.png" />
     <Content Include="Assets\AppIcon.ico" />
     <Content Include="Assets\Wide310x150Logo.scale-200.png" />
+
+    <!-- Copy them next to the exe, on build AND on publish. The MSIX path does not need this - packaged
+         resources come out of the PRI - but an unpackaged build reads two of them off disk by path:
+         AppWindow.SetIcon takes a file path rather than an ms-appx URI, and the TitleBar icon follows it.
+         Publish was dropping the whole folder, so a published build lost its title-bar icon while the
+         taskbar kept one (that comes from $(ApplicationIcon), stamped into the exe). Worth stating because
+         the failure is silent: SetIcon on a missing file does not throw, it just does nothing. -->
+    <Content Update="Assets\**" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>
