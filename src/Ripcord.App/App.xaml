@@ -26,7 +26,7 @@
             <conv:InverseBoolToVisibilityConverter x:Key="InverseBoolToVisibility" />
             <conv:ActionGlyphIsConverter x:Key="ActionGlyphIs" />
             <conv:HighlightWashOpacityConverter x:Key="WashOpacity" />
-            <conv:CanConnectOpacityConverter x:Key="ActionOpacity" />
+            <conv:ReachableOpacityConverter x:Key="ActionOpacity" />
         </ResourceDictionary>
     </Application.Resources>
 </Application>
