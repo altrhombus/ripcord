@@ -35,6 +35,41 @@ different purpose.
 > anything. The list above is short, it is checkable in one `git log --format=%B | grep`, and it stops
 > growing the moment someone notices — which is the property that actually matters.
 
+### A lost probe no longer subtracts a capability (2026-09-19)
+
+Reported from the ARM64 test machine: the console list said the console could not be reached, though it was
+powered on for the whole session. Closing the app and picking the console *while the status still read
+"detecting"* connected first time.
+
+That workaround named the mechanism exactly, and both halves of it were wrong.
+
+**One datagram was the defect.** `HalyardReachabilityProbe` sent a single SRCH and waited one second. UDP does
+not retransmit, the console was across a VLAN boundary on a 2.4 GHz link, and 802.11's own retry can outlast
+the window — so one lost packet, entirely unremarkable on that path, became a verdict. The probe's comment
+argued the short wait well ("a console that has not answered in a second is not going to look any more online
+in three") and it is true of a console that is *off*; it is not true of a packet that was dropped. The fix is
+therefore retries, not a longer wait: three chances at a second each rather than one chance at three.
+`ConsoleReachabilityMonitor` owns the retry, not the probe, because the seam is deliberately dumb and
+judgement belongs where it can be tested without opening a socket. Only silence is retried — an answer of
+either kind is ground truth and is taken immediately, so a console that is there still costs one datagram.
+
+**And silence was taking the Play button away.** `ConsoleCardState.CanConnect` was false for `Offline`, which
+the front end wired to `IsEnabled`. But *silence is the only route to `Offline`* — there is no reply that
+means "I am switched off" — so the state was never knowledge, and a state that is never knowledge must not
+remove an ability. The user was let through only because the wrong verdict had not arrived yet, which is an
+accident, not a design.
+
+The property is now `IsReachable` and is presentation-only: it dims the action so the card admits it could not
+reach the console, and nothing more. Pressing it produces a connect attempt that can explain what went wrong,
+which is strictly more useful than a control that does nothing. The old name was load-bearing in the lie —
+anything called `CanConnect` invites exactly the binding it got.
+
+**The general rule this is an instance of, worth stating once:** a probe's failure to answer is evidence about
+the probe as much as about the thing probed. It may change what a surface *says*; it should not change what a
+surface *permits*. The existing relocate and account-fallback ladder was already built on that principle — it
+exists precisely so that silence gets interrogated rather than believed — and this closes the one rung that
+still treated a non-answer as a fact.
+
 ### The receive-queue threshold was never the problem (2026-09-19)
 
 Four ARM64 sessions, ~2100 live samples, and the answer to "is 16 right on this hardware" turned out to be
