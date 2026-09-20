@@ -409,28 +409,37 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
             LossHistory.Add(stats.PacketLossRatio * 100.0);
             RttHistory.Add(stats.RoundTripTimeMs);
             BitrateHistory.Add(stats.BitrateKbps / 1000.0);
-
-            // The same numbers, unformatted, for the trace. Built here rather than in the front end because
-            // every one of them has already been computed at this point, and a second implementation of
-            // "frames over the interval" is a second chance to disagree with the panel.
-            _traceStartedAt ??= now;
-            LastSample = new SessionSample(
-                ElapsedSeconds: (now - _traceStartedAt.Value).TotalSeconds,
-                PresentFps: presentFps,
-                DecodeFps: decodeFps,
-                LossPercent: stats.PacketLossRatio * 100.0,
-                RttMs: stats.RoundTripTimeMs,
-                BitrateMbps: stats.BitrateKbps / 1000.0,
-                ReceiveQueueDepth: stats.ReceiveQueueDepth,
-                DecodeQueueDepth: s.QueueDepth,
-                PipelineLatencyMs: s.PipelineLatencyMs,
-                DecodeMode: s.DecodeMode,
-                HealthLevel: _diagnostics.HealthLevel);
         }
 
         Mutate(() =>
         {
             _diagnostics = ComposeDiagnostics(s, telemetry, decodeFps, presentFps, audioFps);
+
+            // The same numbers, unformatted, for the trace. Built here rather than in the front end because
+            // every one of them has already been computed at this point, and a second implementation of
+            // "frames over the interval" is a second chance to disagree with the panel.
+            //
+            // Written AFTER the recompose above, and that ordering is the whole point: reading
+            // _diagnostics.HealthLevel before it was recomposed put the PREVIOUS tick's verdict next to this
+            // tick's numbers, so every trace disagreed with itself by one row - a sample logging 11.48% loss
+            // carried the verdict from the calm sample half a second earlier. Found by noticing a row whose
+            // health could not be derived from the rest of the row.
+            if (telemetry.HasSession)
+            {
+                _traceStartedAt ??= now;
+                LastSample = new SessionSample(
+                    ElapsedSeconds: (now - _traceStartedAt.Value).TotalSeconds,
+                    PresentFps: presentFps,
+                    DecodeFps: decodeFps,
+                    LossPercent: stats.PacketLossRatio * 100.0,
+                    RttMs: stats.RoundTripTimeMs,
+                    BitrateMbps: stats.BitrateKbps / 1000.0,
+                    ReceiveQueueDepth: stats.ReceiveQueueDepth,
+                    DecodeQueueDepth: s.QueueDepth,
+                    PipelineLatencyMs: s.PipelineLatencyMs,
+                    DecodeMode: s.DecodeMode,
+                    HealthLevel: _diagnostics.HealthLevel);
+            }
 
             // The verdict is recomputed twice a second and is right to be twitchy - the panel wants the live
             // value. The notice over the game is not: the gate is what stops a two-second wobble becoming a
