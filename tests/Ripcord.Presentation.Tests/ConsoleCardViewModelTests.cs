@@ -50,7 +50,7 @@ public class ConsoleCardViewModelTests
         Assert.Equal(StatusTone.Positive, s.StatusTone);
         Assert.Equal("Play", s.PrimaryActionLabel);
         Assert.Equal(ActionGlyph.Play, s.ActionGlyph);
-        Assert.True(s.CanConnect);
+        Assert.True(s.IsReachable);
         Assert.False(s.IsChecking);
     }
 
@@ -69,7 +69,7 @@ public class ConsoleCardViewModelTests
         Assert.Equal(StatusTone.Caution, s.StatusTone);
         Assert.Equal("Wake & play", s.PrimaryActionLabel);
         Assert.Equal(ActionGlyph.Wake, s.ActionGlyph);
-        Assert.True(s.CanConnect);
+        Assert.True(s.IsReachable);
     }
 
     [Fact]
@@ -86,7 +86,7 @@ public class ConsoleCardViewModelTests
         Assert.Equal(StatusTone.Neutral, s.StatusTone);
         Assert.Equal("Can't reach it", s.PrimaryActionLabel);
         Assert.Equal(ActionGlyph.Play, s.ActionGlyph);
-        Assert.False(s.CanConnect);
+        Assert.False(s.IsReachable);
     }
 
     [Fact]
@@ -103,7 +103,7 @@ public class ConsoleCardViewModelTests
             // "play" rather than "connect" since the labels took the player's verb: Play / Wake & play, against
             // "Can't reach it" for the one state that offers nothing.
             bool actionOffersPlay = s.PrimaryActionLabel.Contains("play", StringComparison.OrdinalIgnoreCase);
-            Assert.Equal(s.CanConnect, actionOffersPlay);
+            Assert.Equal(s.IsReachable, actionOffersPlay);
         }
     }
 

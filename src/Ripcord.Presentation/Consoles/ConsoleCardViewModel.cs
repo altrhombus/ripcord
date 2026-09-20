@@ -147,10 +147,15 @@ public sealed class ConsoleCardViewModel : ObservableState<ConsoleCardState>
             // label already says "Not reachable", and a console being switched off is not a fault.
             ActionGlyph: wake ? ActionGlyph.Wake : ActionGlyph.Play,
 
-            // False only when the console did not answer at all. Everything else is worth attempting: a console
-            // can answer 620 and still be woken, and a merely slow probe should not lock the user out.
-            // Away is connectable -- that is the point of distinguishing it from Offline.
-            CanConnect: _reachability != ConsoleReachability.Offline,
+            // False only when the console did not answer at all. Presentation only: it dims the action so the
+            // card admits we could not reach it. It deliberately does NOT gate connecting, and the old name
+            // (CanConnect) said otherwise while a front end wired it to IsEnabled.
+            //
+            // Silence is the only route to Offline, and silence is not knowledge -- a console powered on for a
+            // whole session was reported unreachable because one datagram was lost. Blocking on it turns a lost
+            // packet into a dead end, while allowing the attempt costs a failed connect that can at least say
+            // what went wrong. Away is reachable -- that is the point of distinguishing it from Offline.
+            IsReachable: _reachability != ConsoleReachability.Offline,
             LastConnectedLabel: LastPlayed.Describe(_console.LastConnectedUtc, _clock()),
             IsHighlighted: _highlighted,
 

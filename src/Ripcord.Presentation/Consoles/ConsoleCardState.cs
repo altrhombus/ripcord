@@ -60,7 +60,7 @@ public enum StatusTone
 /// <summary>Which glyph the card's primary action shows.</summary>
 public enum ActionGlyph
 {
-    /// <summary>Play. Also used for an unreachable console — see <see cref="ConsoleCardState.CanConnect"/>.</summary>
+    /// <summary>Play. Also used for an unreachable console — see <see cref="ConsoleCardState.IsReachable"/>.</summary>
     Play,
 
     /// <summary>Power, for when connecting implies waking the console first.</summary>
@@ -95,7 +95,7 @@ public sealed record ConsoleCardState(
     bool IsChecking,
     string PrimaryActionLabel,
     ActionGlyph ActionGlyph,
-    bool CanConnect,
+    bool IsReachable,
     string? LastConnectedLabel,
     bool IsHighlighted,
     string AutomationName)

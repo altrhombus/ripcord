@@ -137,11 +137,12 @@ public sealed partial class HighlightWashOpacityConverter : IValueConverter
 }
 
 /// <summary>
-/// Dims the primary action for a console that did not answer. Dimmed rather than removed: the card should still
-/// say what it is for, and an unreachable console usually just needs switching on — the affordance disappearing
-/// would read as "this console is broken".
+/// Dims the primary action for a console that did not answer. Dimmed rather than removed or disabled: the card
+/// should still say what it is for, an unreachable console usually just needs switching on, and a probe's
+/// silence is not grounds for taking the action away — one lost datagram reads exactly like a console that is
+/// off.
 /// </summary>
-public sealed partial class CanConnectOpacityConverter : IValueConverter
+public sealed partial class ReachableOpacityConverter : IValueConverter
 {
     public object Convert(object value, Type targetType, object parameter, string language)
         => value is true ? 1.0 : 0.5;
