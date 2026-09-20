@@ -218,6 +218,32 @@ pass has to exercise.
 
 ## Backlog
 
+### Open bug — a healthy console is reported offline by a single lost probe (observed on hardware 2026-09-19)
+
+Observed on an ARM64 test machine with the console on a 2.4 GHz IoT VLAN: the console list said the console
+could not be reached, though it was powered on for the whole session. Restarting the app and picking the
+console *while the status still read "detecting"* connected first time.
+
+The workaround identifies the mechanism exactly. `HalyardReachabilityProbe` sends **one** SRCH datagram and
+waits **one second** (`ProbeWindow`), and `result?.IsAwake` folds "no reply within the window" into the same
+`null` as "unparseable host". `ConsoleCardViewModel` then sets
+`CanConnect: _reachability != ConsoleReachability.Offline` — so `Unknown` (still detecting) permits a connect
+and a *wrong* `Offline` forbids it. The person was let through precisely because the verdict had not arrived
+yet.
+
+- **The probe's own comment argues the short window** — "a console that has not answered in a second is not
+  going to look any more online in three" — and that is true of a console that is off. It is not true of a
+  single UDP datagram crossing a VLAN boundary onto a 2.4 GHz link, where one drop is unremarkable and the
+  MAC-layer retry alone can outlast the window.
+- **One datagram is the defect, not the one second.** Prefer two or three probes inside a similar overall
+  budget over a longer single wait; the failure is a lost packet, not a slow console.
+- **Never let a probe's silence *subtract* a capability.** `Offline` currently means both "answered 620" and
+  "said nothing", and only the first is knowledge. A no-reply should degrade to `Unknown` — which still shows
+  an honest status dot and still lets the person try — and reserve `Offline` for an answer that says so. That
+  change alone removes the dead end even if every retry is lost.
+- Not yet reproduced deliberately; the report is one occurrence with a clean explanation, so confirm the
+  no-reply path before changing the timing.
+
 ### PS3 port — auto-reconnect on a stream stall (noted 2026-09-18)
 When the console stops sending video, the PS3 port trips its 4-second stall detector and returns to the
 shell, leaving the person to re-select the console by hand. The .NET side does not: `SessionController` owns
