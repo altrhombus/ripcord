@@ -89,6 +89,12 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer
 
     private double _appliedDiagnosticsInset = 16;
 
+    private StreamWriter? _trace;
+
+    private string? _tracePath;
+
+    private int _traceRowsSinceFlush;
+
     /// <summary>Which arrangement the panel is currently in, so the rebuild only runs when it changes.</summary>
     private bool _diagnosticsIsSheet;
 
@@ -258,6 +264,8 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer
         _statsTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
         _statsTimer.Tick += StatsTick;
         _statsTimer.Start();
+
+        StartTrace();
 
         // A diagnostics row, not a gate. ConnectFlow independently refuses to connect without the constants;
         // this is the panel saying so, and it has to be written whether or not anyone opens the panel.
@@ -1386,6 +1394,95 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer
     /// anywhere and pasted whole.
     /// </para>
     /// </summary>
+    /// <summary>
+    /// Open the session trace. One CSV per session, beside the F8 reports, recording every stats tick.
+    ///
+    /// <para>
+    /// The F8 report answers "what is wrong right now"; this answers "what happened over the last ten
+    /// minutes", which is the shape of question a threshold needs. Reading a twice-a-second figure off a
+    /// screen and trying to catch its peak is not a measurement, and it is what the receive-queue question
+    /// currently asks of whoever is holding the handheld.
+    /// </para>
+    /// </summary>
+    private void StartTrace()
+    {
+        try
+        {
+            string path = System.IO.Path.Combine(
+                _services.Paths.StateDirectory,
+                $"session-trace-{DateTime.Now:yyyyMMdd-HHmmss}.csv");
+
+            _trace = new StreamWriter(path, append: false) { AutoFlush = false };
+
+            // Say WHERE, for the same reason the F8 report does: on a handheld there is no other way to
+            // find it, and a trace nobody can locate is a trace nobody sends.
+            _tracePath = path;
+            DiagnosticsSavedText.Text = $"tracing to: {path}";
+
+            SessionConfig config = _settings.ToSessionConfig();
+            foreach (string line in SessionSampleLog.Preamble(
+                typeof(SessionPage).Assembly.GetName().Version?.ToString() ?? "unknown",
+                _pipelineStats.AdapterDescription, config.CodecPreference.ToString(),
+                _settings.Width, _settings.Height, _settings.TargetFps, _settings.BitrateKbps))
+            {
+                _trace.WriteLine(line);
+            }
+
+            _trace.Flush();
+        }
+        catch (Exception ex)
+        {
+            // Same rule as the F8 report: a diagnostics action never takes a live session with it.
+            _trace = null;
+            Debug.WriteLine($"[Ripcord] session trace could not be started: {ex}");
+        }
+    }
+
+    /// <summary>
+    /// One row. Flushed on a cadence rather than every line: a trace that loses its last second to a hard
+    /// kill is still useful, and a trace that costs a disk write twice a second on a handheld is not.
+    /// </summary>
+    private void AppendTrace()
+    {
+        if (_trace is null || _viewModel.LastSample is not { } sample)
+        {
+            return;
+        }
+
+        try
+        {
+            _trace.WriteLine(SessionSampleLog.Row(sample));
+
+            if (++_traceRowsSinceFlush >= 20)
+            {
+                _traceRowsSinceFlush = 0;
+                _trace.Flush();
+            }
+        }
+        catch (Exception ex)
+        {
+            // Stop tracing rather than throwing every tick for the rest of the session.
+            Debug.WriteLine($"[Ripcord] session trace stopped: {ex}");
+            StopTrace();
+        }
+    }
+
+    private void StopTrace()
+    {
+        StreamWriter? trace = _trace;
+        _trace = null;
+
+        try
+        {
+            trace?.Flush();
+            trace?.Dispose();
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[Ripcord] session trace close failed: {ex}");
+        }
+    }
+
     private void SaveDiagnostics()
     {
         try
@@ -1401,7 +1498,9 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer
             File.WriteAllText(path, BuildDiagnosticsReport());
 
             // Show WHERE it went. On a handheld there is no other way to find out.
-            DiagnosticsSavedText.Text = $"saved: {path}";
+            DiagnosticsSavedText.Text = _tracePath is null
+                ? $"saved: {path}"
+                : $"saved: {path}  ·  trace: {_tracePath}";
         }
         catch (Exception ex)
         {
@@ -1570,7 +1669,14 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer
         //
         // False means the sample was skipped — no pipeline yet, or too little time since the last one for a rate
         // to mean anything — so there is nothing new to plot either.
-        if (_viewModel.Sample(ReadTelemetry()) && _viewModel.State.Rung == DiagnosticsRung.Full)
+        bool sampled = _viewModel.Sample(ReadTelemetry());
+
+        if (sampled)
+        {
+            AppendTrace();
+        }
+
+        if (sampled && _viewModel.State.Rung == DiagnosticsRung.Full)
         {
             RenderGraph();
         }
@@ -1720,6 +1826,8 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer
 
     private async Task TeardownAsync()
     {
+        StopTrace();
+
         await TeardownControllerAsync();
 
         D3D12VideoDecodePipeline? pipeline = _pipeline;
