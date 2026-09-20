@@ -178,7 +178,6 @@ public sealed record RipcordSettings
     }
 
     /// <summary>Larger text and controls, for handhelds and TV viewing distances.</summary>
-    public bool LargeUiScale { get; set; }
 
     /// <summary>Build the session configuration these settings describe.</summary>
     public SessionConfig ToSessionConfig()

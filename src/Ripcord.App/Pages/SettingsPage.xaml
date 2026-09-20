@@ -238,23 +238,6 @@
                 </tk:SettingsCard>
             </StackPanel>
 
-            <!--  ============ Accessibility ============  -->
-            <StackPanel Spacing="4">
-                <TextBlock x:Uid="SettingsPage_Accessibility" Style="{StaticResource RipcordSectionHeaderStyle}" />
-
-                <!--
-                    Its own heading rather than a row under Display. An accessibility control filed with
-                    the window-behaviour toggles is one nobody who needs it goes looking for, and this is
-                    the only one the app has.
-                -->
-                <tk:SettingsCard
-                    x:Uid="SettingsPage_EasierReadHandheldFrom">
-                    <ToggleSwitch
-                        x:Name="LargeUiToggle"
-                        x:Uid="SettingsPage_LargerTextControls" />
-                </tk:SettingsCard>
-            </StackPanel>
-
             <!--
                 ============ Account ============
 

@@ -104,7 +104,6 @@ public class SettingsStoreTests : IDisposable
             UiStickDeadzone = 0.35,
             FullScreenOnConnect = false,
             ShowDiagnosticsOverlay = true,
-            LargeUiScale = true,
         };
 
         store.Save(updated);
