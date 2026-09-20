@@ -45,9 +45,33 @@ public static class StreamHealthAssessor
     public const double LossWarnRatio = 0.02; // 2%
     public const double LossBadRatio = 0.10;  // 10%
 
-    // The receive queue is normally ~0 (the processor drains instantly). A sustained build-up means OUR
-    // processing is falling behind — so loss at the same time is a device/compute problem, not the network.
+    // The receive queue is normally ~0 (the processor drains instantly).
+    //
+    // It is NOT a usable discriminator and is no longer used as one. Measured on ARM64 over four sessions
+    // (~2100 live samples, 2026-09-19) it never once pointed at the right cause, and in the device-starved
+    // run it pointed confidently at the wrong one: every sample carrying real loss read a depth of exactly 0
+    // while the machine was demonstrably the bottleneck, and every excursion above 16 happened on a sample
+    // with exactly zero loss. What it actually records is an instantaneous depth sampled at 2 Hz against
+    // frame-sized arrival bursts - 0 → 34 → 0 inside two seconds, peaking at 266 during a stall whose
+    // neighbouring samples both read 0. No threshold survives that, which is why this is a shape problem and
+    // retuning the number was the wrong fix. Kept as a displayed diagnostic and as the low-water guard on
+    // rule 4, where a spurious reading suppresses a warning rather than inventing one.
     public const int ReceiveQueueBusyDepth = 16;
+
+    /// <summary>
+    /// Presenting below this share of what we decode means the device is shedding frames it has already paid
+    /// to decode — the signal that actually separates "this device cannot keep up" from "the network is
+    /// dropping packets".
+    ///
+    /// <para>
+    /// The logic is mechanical rather than tuned: if the <em>network</em> is the bottleneck the frames never
+    /// arrive, so decode and present fall together and the ratio stays near 1. If the <em>device</em> is the
+    /// bottleneck the frames arrive and decode fine and we fail to put them on screen, so the ratio collapses.
+    /// Measured on the device-starved run, all six samples carrying loss sat between 0.00 and 0.11 against a
+    /// session median of 0.87–0.93, so 0.5 has daylight on both sides rather than being fitted to the data.
+    /// </para>
+    /// </summary>
+    public const double PresentedShareBusyRatio = 0.5;
 
     // demux→present latency this high (with the queues near empty) means the GPU decode itself is slow.
     public const double PipelineLatencyWarnMs = 60;
@@ -94,11 +118,11 @@ public static class StreamHealthAssessor
         }
 
         // 1) Packet loss is the most impactful problem. Split "our device can't keep up" from "the network is
-        //    dropping packets" using the receive-queue depth: a full/climbing queue means we're shedding.
+        //    dropping packets" by asking whether we are presenting what we decode - see IsSheddingFrames.
         if (s.PacketLossRatio >= LossWarnRatio)
         {
             StreamHealthLevel level = s.PacketLossRatio >= LossBadRatio ? StreamHealthLevel.Critical : StreamHealthLevel.Warning;
-            if (s.ReceiveQueueDepth >= ReceiveQueueBusyDepth)
+            if (IsSheddingFrames(s))
             {
                 return new StreamHealthVerdict(level,
                     "Your device is struggling to keep up",
@@ -124,6 +148,19 @@ public static class StreamHealthAssessor
             return new StreamHealthVerdict(StreamHealthLevel.Warning,
                 "Video is decoding slowly on this device",
                 "Try a lower resolution; a more capable GPU will reduce the delay.");
+        }
+
+        // 3b) Decoding fine, failing to present. Ranked above the readback note below because that note says
+        //     "This is fine", and it was reaching the screen while the stream presented 4 fps out of 60
+        //     decoded - 16-17% of samples in both device-starved runs got a Healthy/Info verdict while
+        //     presenting under 45 fps. A verdict that says everything is fine during a visible stutter is
+        //     worse than no verdict, because it is the one the player checks before giving up.
+        if (IsSheddingFrames(s))
+        {
+            return new StreamHealthVerdict(StreamHealthLevel.Warning,
+                "This device is dropping frames it already decoded",
+                "The video is arriving and decoding, but not reaching the screen fast enough. Try a lower "
+                + "resolution, close other apps, or pick a GPU that supports the zero-copy path.");
         }
 
         // 4) Hardware decode works but isn't zero-copy — a minor extra memory copy per frame.
@@ -155,4 +192,15 @@ public static class StreamHealthAssessor
 
         return new StreamHealthVerdict(StreamHealthLevel.Healthy, "Connection healthy", "Everything looks good.");
     }
+
+    /// <summary>
+    /// Are we decoding frames and then failing to put them on screen?
+    ///
+    /// <para>
+    /// <c>DecodeFps &gt; 1</c> guards the degenerate cases: a stream that has stopped, and the first sample of
+    /// one that has not started, both present zero out of zero and would otherwise read as total shedding.
+    /// </para>
+    /// </summary>
+    private static bool IsSheddingFrames(in StreamHealthSignals s)
+        => s.DecodeFps > 1 && s.PresentFps < s.DecodeFps * PresentedShareBusyRatio;
 }
