@@ -95,6 +95,20 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer
 
     private int _traceRowsSinceFlush;
 
+    /// <summary>
+    /// False until the preamble has been written. The preamble carries the GPU name, and the GPU is not known
+    /// at connect time - the adapter is resolved when the decode pipeline initialises, which is the first
+    /// frame, not the first tick. Writing the preamble eagerly produced an empty <c>adapter:</c> line in every
+    /// trace taken so far.
+    /// </summary>
+    private bool _tracePreambleWritten;
+
+    /// <summary>
+    /// Rows seen while still waiting for the adapter name. Bounded so a session that never decodes a frame
+    /// still produces a file with a header rather than an unreadable list of bare numbers.
+    /// </summary>
+    private int _tracePreambleWaits;
+
     /// <summary>Which arrangement the panel is currently in, so the rebuild only runs when it changes.</summary>
     private bool _diagnosticsIsSheet;
 
@@ -1413,22 +1427,15 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer
                 $"session-trace-{DateTime.Now:yyyyMMdd-HHmmss}.csv");
 
             _trace = new StreamWriter(path, append: false) { AutoFlush = false };
+            _tracePreambleWritten = false;
+            _tracePreambleWaits = 0;
 
             // Say WHERE, for the same reason the F8 report does: on a handheld there is no other way to
             // find it, and a trace nobody can locate is a trace nobody sends.
             _tracePath = path;
             DiagnosticsSavedText.Text = $"tracing to: {path}";
 
-            SessionConfig config = _settings.ToSessionConfig();
-            foreach (string line in SessionSampleLog.Preamble(
-                typeof(SessionPage).Assembly.GetName().Version?.ToString() ?? "unknown",
-                _pipelineStats.AdapterDescription, config.CodecPreference.ToString(),
-                _settings.Width, _settings.Height, _settings.TargetFps, _settings.BitrateKbps))
-            {
-                _trace.WriteLine(line);
-            }
-
-            _trace.Flush();
+            // The preamble is deliberately NOT written here - see WriteTracePreamble.
         }
         catch (Exception ex)
         {
@@ -1436,6 +1443,60 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer
             _trace = null;
             Debug.WriteLine($"[Ripcord] session trace could not be started: {ex}");
         }
+    }
+
+    /// <summary>Rows to wait for an adapter name before writing the preamble without one.</summary>
+    private const int TracePreambleMaxWaits = 40;
+
+    /// <summary>
+    /// Write the preamble, once, as late as the adapter name allows.
+    ///
+    /// <para>
+    /// The preamble exists so a trace that arrives on its own still says what it was a trace OF, and the GPU
+    /// is the one piece of machine detail in it - "which adapter" changes the answer to most questions a
+    /// trace is taken to settle. But the adapter is only resolved when the decode pipeline initialises, and
+    /// that happens on the first decoded frame. <see cref="StartTrace"/> runs at the top of the connect,
+    /// before there is a pipeline at all, so asking then reliably yields an empty string - which is exactly
+    /// what the first traces taken off hardware contained.
+    /// </para>
+    ///
+    /// <para>
+    /// So the preamble waits for a name, but not indefinitely: after <see cref="TracePreambleMaxWaits"/> rows
+    /// it is written regardless. A session that fails before it ever decodes is precisely when a trace is most
+    /// worth having, and a file of bare numbers with no header is not one.
+    /// </para>
+    /// </summary>
+    private void WriteTracePreamble()
+    {
+        if (_trace is null || _tracePreambleWritten)
+        {
+            return;
+        }
+
+        string adapter = _pipelineStats.AdapterDescription;
+        if (string.IsNullOrWhiteSpace(adapter))
+        {
+            if (++_tracePreambleWaits < TracePreambleMaxWaits)
+            {
+                return;
+            }
+
+            // Said plainly rather than left blank: "not known yet" and "there is no GPU row at all" are
+            // different findings, and a reader months later cannot tell an empty field from a missing one.
+            adapter = "unknown (no frame decoded)";
+        }
+
+        SessionConfig config = _settings.ToSessionConfig();
+        foreach (string line in SessionSampleLog.Preamble(
+            typeof(SessionPage).Assembly.GetName().Version?.ToString() ?? "unknown",
+            adapter, config.CodecPreference.ToString(),
+            _settings.Width, _settings.Height, _settings.TargetFps, _settings.BitrateKbps))
+        {
+            _trace.WriteLine(line);
+        }
+
+        _tracePreambleWritten = true;
+        _trace.Flush();
     }
 
     /// <summary>
@@ -1451,6 +1512,14 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer
 
         try
         {
+            // Rows written before the header would be unreadable, so the preamble gates them. The wait is
+            // bounded (see WriteTracePreamble) and what it costs is the pre-connect all-zero rows.
+            WriteTracePreamble();
+            if (!_tracePreambleWritten)
+            {
+                return;
+            }
+
             _trace.WriteLine(SessionSampleLog.Row(sample));
 
             if (++_traceRowsSinceFlush >= 20)
