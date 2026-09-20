@@ -92,20 +92,61 @@ public class StreamHealthAssessorTests
     }
 
     [Fact]
-    public void Loss_WithLowReceiveQueue_IsNetwork()
+    public void Loss_WhilePresentingWhatWeDecode_IsNetwork()
     {
-        StreamHealthVerdict v = StreamHealthAssessor.Assess(Healthy(loss: 0.05, rxq: 0));
+        // Frames arrive, decode and reach the screen; the console still reports loss. Nothing local to blame.
+        StreamHealthVerdict v = StreamHealthAssessor.Assess(Healthy(loss: 0.05, presentFps: 58, decodeFps: 60));
         Assert.Equal(StreamHealthLevel.Warning, v.Level);
         Assert.Contains("network", v.Headline, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("wired", v.Tip, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
-    public void Loss_WithClimbingReceiveQueue_IsDevice()
+    public void Loss_WhileSheddingDecodedFrames_IsDevice()
     {
-        StreamHealthVerdict v = StreamHealthAssessor.Assess(Healthy(loss: 0.05, rxq: 200));
+        // The real shape of the device-starved run, sample for sample: 61.3 fps decoded, 0 presented, loss
+        // reported, and a receive queue of exactly 0 - which is why depth cannot be the discriminator.
+        StreamHealthVerdict v = StreamHealthAssessor.Assess(
+            Healthy(loss: 0.1148, rxq: 0, presentFps: 0.1, decodeFps: 61.3, decodeMode: 1));
+
+        Assert.Equal(StreamHealthLevel.Critical, v.Level);
+        Assert.Contains("device", v.Headline, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Loss_IsNotBlamedOnTheDeviceJustBecauseTheReceiveQueueSpiked()
+    {
+        // The measured failure: an instantaneous depth sampled at 2 Hz against bursty arrivals spiked to 266
+        // on a sample whose neighbours both read 0. That must no longer move the verdict at all, so this run
+        // is the network case wearing the old device tell.
+        StreamHealthVerdict v = StreamHealthAssessor.Assess(
+            Healthy(loss: 0.05, rxq: 266, presentFps: 58, decodeFps: 60));
+
+        Assert.Contains("network", v.Headline, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void SheddingDecodedFrames_WithoutLoss_OutranksTheReadbackNote()
+    {
+        // The ordering bug: with a readback decode path and no loss, rule 4 said "This is fine" while the
+        // stream presented 4 fps out of 60 decoded. 16-17% of samples in both device-starved runs landed on a
+        // Healthy/Info verdict below 45 fps, and this is the one a player checks before giving up.
+        StreamHealthVerdict v = StreamHealthAssessor.Assess(
+            Healthy(loss: 0, presentFps: 3.9, decodeFps: 58.6, decodeMode: 1, latencyMs: 30));
+
         Assert.Equal(StreamHealthLevel.Warning, v.Level);
-        Assert.Contains("struggling", v.Headline, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("fine", v.Tip, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void AStoppedStreamIsNotReportedAsShedding()
+    {
+        // Zero presented out of zero decoded is a stall, not shedding, and the liveness rule owns it. Without
+        // the DecodeFps guard this reads as total frame-dropping and blames the GPU for a dead link.
+        StreamHealthVerdict v = StreamHealthAssessor.Assess(
+            Healthy(loss: 0, presentFps: 0, decodeFps: 0, decodeMode: 2));
+
+        Assert.DoesNotContain("dropping frames", v.Headline, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
