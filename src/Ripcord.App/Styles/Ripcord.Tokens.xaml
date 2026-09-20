@@ -3,9 +3,10 @@
     Values, not appearances. Nothing in this file styles anything — it is the vocabulary the other three
     dictionaries and the pages spend.
 
-    Why tokens rather than literals: every size here has to be reachable at runtime for text scaling to be
-    possible at all (see the LargeUiScale work), and a literal in a page is a value no scale factor can find.
-    That indirection is the whole mechanism, so it is worth the extra hop even where the value never changes.
+    Why tokens rather than literals: one name, one value, spent from many places - so a size can be reviewed
+    once rather than found by grep. Ripcord no longer scales its own text (Windows does that, and the app's
+    job is to honour it rather than compete with it), so the indirection is about consistency now rather
+    than about being reachable by a scale factor.
 
     Consumers should use ThemeResource for anything that can change at runtime and StaticResource only for
     values that genuinely cannot.

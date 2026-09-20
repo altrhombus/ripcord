@@ -25,10 +25,10 @@ whatever is checked out.
 
 ## Capture these first, before touching anything
 
-Two of the four priced items in `ROADMAP.md` can only be answered at a machine, and **one of them can only be
-answered on ARM64** — which is why this session is worth more than an ordinary look.
+One of the priced items in `ROADMAP.md` can only be answered at a machine, and only on ARM64 — which is why
+this session is worth more than an ordinary look.
 
-### 1. `ReceiveQueueBusyDepth`, on ARM64 — the one that gates a verdict
+### `ReceiveQueueBusyDepth`, on ARM64 — the one that gates a verdict
 
 The constant is 16. The roadmap records observed-healthy ARM64 peaks of **18**. It is the discriminator
 between *"Losing packets on the network"* and *"Your device is struggling to keep up"*, so today a healthy
@@ -41,15 +41,6 @@ becomes the only thing on screen.
 - Wanted: a number with daylight on both sides. If healthy peaks at 18 and lossy sits at 30, 24 is a
   defensible threshold; if they overlap, that is a more interesting finding and the verdict needs a different
   discriminator.
-
-### 2. Text scale at 150%
-
-Set Windows text scaling to 150% before launching. `UiScale.AppliesOsTextScaleItself` is `false` — an
-assumption its own file warns may be wrong, and if it is, everything renders at 225%.
-
-- Is text roughly 1.5× or roughly 2.25×?
-- Then turn on **Settings → Accessibility → Larger text and controls**, restart, and check it is 1.3× on top
-  of the OS factor rather than a second multiplication of it.
 
 ### Making a stream lossy on purpose
 
@@ -108,6 +99,9 @@ Sections are now **Picture / Controls / When you play / Accessibility / Account 
 
 - [ ] Every control still works. The page moved a lot of markup; a lost `x:Name` shows up as a crash on open,
       not at build time.
+- [ ] There is **no "Larger text and controls"** switch and no Accessibility section. Ripcord now leaves text
+      size to Windows; if the OS scale is set to 150% the app should follow it on its own, and if it does not,
+      that is a platform finding worth recording rather than a reason to bring the switch back.
 - [ ] **Diagnostics is a three-way picker** (Off / Summary / Full), not a switch. Set it to Full, restart,
       connect — the stream opens at rung 3.
 - [ ] **Settings migration.** Before switching to this branch, note what your existing `settings.json` says.
