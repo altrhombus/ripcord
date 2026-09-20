@@ -273,15 +273,54 @@ to be true before drawings become code.
 **One of the four is gone rather than done.** Verifying the OS text scale mattered only because Ripcord
 scaled text itself; that feature was removed on 2026-09-19 and the question went with it. See the journal.
 
-- [ ] **Re-derive `ReceiveQueueBusyDepth` from ARM64 captures.** 16 sits below observed-healthy ARM64 peaks
-      of 18, and it is the discriminator between "Losing packets on the network" and "Your device is
-      struggling to keep up" — so a healthy handheld can be told its hardware is at fault. Already recorded
-      under the streaming-quality items; repeated here because the HUD redesign makes it load-bearing.
-      **Price: one hardware session, ~2 hours** — capture queue depth on ARM64 while healthy and while
-      deliberately lossy, pick a threshold with daylight between the two, change one constant, add the test
-      that pins it.
-      **Blocks** HUD rung 1, which is a single sentence with no numbers behind it. Promoting a verdict to
-      the only thing on screen makes a wrong verdict much louder than it is today.
+- [ ] **`ReceiveQueueBusyDepth` — measured on ARM64 2026-09-19, and the constant is not the problem.**
+      Two session traces (0.6 min and 14.1 min, 1708 samples, ARM64, 720p60 H.264 over a 2.4 GHz VLAN)
+      answered a different question than the one asked. **Do not retune 16 on this evidence** — read the
+      finding first.
+
+      What the 14-minute trace says, on the live samples:
+
+      | signal | p50 | p90 | p99 | max |
+      |---|---|---|---|---|
+      | `receive_queue` | 0 | 0 | 16 | 51 |
+      | `decode_queue` | 0 | 0 | 1 | 2 |
+      | `loss_pct` | 0 | 0 | 0.8 | 24.86 |
+      | `rtt_ms` | 36 | 74 | 88 | 93 |
+
+      - **The two signals never co-occurred, in either direction.** All 20 samples at or above 16 had
+        `loss_pct` exactly 0.00. Both samples with loss ≥ 2% had `receive_queue` exactly 0. The threshold
+        governs a tiebreaker inside the loss branch, so across 14 minutes it was never once consulted in a
+        way that changed what the user was told.
+      - **The queue does not build up; it spikes for one sample.** 17 excursions above 16, 15 of them a
+        single sample, none longer than two — `0 → 19 → 0 → 0 → 34 → 0` inside two seconds, with fps,
+        bitrate and loss all steady across the whole excursion. A 2 Hz instantaneous read of a queue fed by
+        frame-sized bursts is sampling noise, not a depth.
+      - **So the code does not do what its own comment says.** The comment at the constant says "a
+        *sustained* build-up means OUR processing is falling behind"; the test is `s.ReceiveQueueDepth >=
+        ReceiveQueueBusyDepth` against one sample. The comment describes the right condition and the code
+        tests a different one.
+      - **The latent defect is a misdiagnosis, and raising 16 does not remove it.** Spikes reached 51, so
+        any threshold the noise can reach is reachable. ~1.2% of healthy samples spiked; over a long lossy
+        session one will eventually land on a loss sample, and the player is then told "Your device is
+        struggling to keep up — close other apps, or lower the stream resolution" while their Wi-Fi is the
+        actual fault. That is the disclosure ladder confidently sending someone to fix the wrong thing.
+      - **Independent evidence that the device was never the problem:** `decode_mode` was 2 (hardware
+        zero-copy) for 1645/1645 live samples and `decode_queue` never exceeded 2. The ARM64 machine held
+        720p60 comfortably throughout.
+
+      **Recommended fix — shape, not value.** Make the test sustained, as the comment always said: require
+      the depth to hold above the threshold for N consecutive samples, or read a high-water mark over the
+      interval instead of an instant. Either would have suppressed all 20 false readings here without
+      touching 16.
+      **Open, and deliberately not decided on one machine's data:** whether a backed-up receive queue should
+      also require an elevated `decode_queue`. It would have suppressed every false reading — but a receive
+      queue backing up could *starve* the decoder rather than back it up, which would make the two signals
+      mutually exclusive and the conjunction unfireable. Needs a genuinely device-starved capture (run B) to
+      settle, and run B has not been taken.
+      **Price now: ~2 hours** to implement the sustained reading and pin it with a test that replays a spike
+      train. The threshold re-derivation the original item asked for is **not** needed.
+      **Still blocks** HUD rung 1, for the original reason: promoting a verdict to the only thing on screen
+      makes a wrong verdict much louder than it is today.
 
 - [ ] **Settle the wordmark.** Outfit is used throughout the design drawings and is explicitly provisional.
       `brand/README.md` shortlists Poppins and Plus Jakarta Sans alongside it; all three are open-licensed,
