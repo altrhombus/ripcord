@@ -70,6 +70,7 @@
                         Width="92"
                         HorizontalAlignment="Right"
                         Accent="{x:Bind State.Accent, Mode=OneWay, Converter={StaticResource AccentBrush}}"
+                        AccentColor="{x:Bind State.Accent, Mode=OneWay, Converter={StaticResource AccentColor}}"
                         FacetFill="{ThemeResource RipcordWedgeFacetBrush}"
                         MarkFill="{ThemeResource TextFillColorPrimaryBrush}"
                         Muted="{x:Bind State.IsReachable, Mode=OneWay, Converter={StaticResource Not}}"

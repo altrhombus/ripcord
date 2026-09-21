@@ -47,7 +47,7 @@
             <SolidColorBrush x:Key="RipcordCardHoverOverlayBrush" Color="#16FFFFFF" />
 
             <!--  The wedge's plane: the card's own gradient, lifted. See the facet note below.  -->
-            <LinearGradientBrush x:Key="RipcordWedgeFacetBrush" StartPoint="0,0" EndPoint="1,1">
+            <LinearGradientBrush x:Key="RipcordWedgeFacetBrush" StartPoint="0,1" EndPoint="1,0">
                 <GradientStop Offset="0" Color="#2E333C" />
                 <GradientStop Offset="1" Color="#1B1F26" />
             </LinearGradientBrush>
@@ -73,7 +73,7 @@
                 lighter than the GROUND so it reads as raised paper; the facet runs deeper than the CARD so it
                 reads as a plane cut into that paper. There is no room above white to go lighter anyway.
             -->
-            <LinearGradientBrush x:Key="RipcordWedgeFacetBrush" StartPoint="0,0" EndPoint="1,1">
+            <LinearGradientBrush x:Key="RipcordWedgeFacetBrush" StartPoint="0,1" EndPoint="1,0">
                 <GradientStop Offset="0" Color="#F4F6FA" />
                 <GradientStop Offset="1" Color="#E2E6EE" />
             </LinearGradientBrush>

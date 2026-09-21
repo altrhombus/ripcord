@@ -2,6 +2,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using Windows.Foundation;
+using Windows.UI;
 
 namespace Ripcord_App.Controls;
 
@@ -62,6 +63,18 @@ public sealed partial class PlayWedge : UserControl
         var planeGeometry = new PathGeometry();
         planeGeometry.Figures.Add(plane);
         Zone.Data = planeGeometry;
+
+        // The bleed is clipped to the same plane, so the falloff cannot spill past the diagonal onto the
+        // card's text. Its own geometry object rather than the same instance: sharing one would tie two
+        // Paths to a single mutable object for no gain.
+        var bleedPlane = new PathFigure { StartPoint = new Point(slant, 0), IsClosed = true, IsFilled = true };
+        bleedPlane.Segments.Add(new LineSegment { Point = new Point(w, 0) });
+        bleedPlane.Segments.Add(new LineSegment { Point = new Point(w, h) });
+        bleedPlane.Segments.Add(new LineSegment { Point = new Point(0, h) });
+
+        var bleedGeometry = new PathGeometry();
+        bleedGeometry.Figures.Add(bleedPlane);
+        Bleed.Data = bleedGeometry;
 
         var edge = new PathFigure { StartPoint = new Point(slant, 0), IsClosed = false };
         edge.Segments.Add(new LineSegment { Point = new Point(0, h) });
@@ -188,8 +201,70 @@ public sealed partial class PlayWedge : UserControl
         typeof(PlayWedge),
         new PropertyMetadata(null));
 
+    /// <summary>
+    /// The family accent as a bare colour, for the bleed's gradient stops.
+    ///
+    /// <para>
+    /// A second input for the same fact, which is not ideal, and the reason is a framework one:
+    /// <see cref="Accent"/> is a <see cref="Brush"/> because that is what a fill and a stroke take, and a
+    /// gradient stop takes a <see cref="Windows.UI.Color"/>. Reading the colour back out of the brush would
+    /// work only while it happens to be a <see cref="SolidColorBrush"/>, which is an assumption about the
+    /// caller that this control should not make. <c>AccentResources</c> exposes both for the same reason.
+    /// </para>
+    /// </summary>
+    public Color AccentColor
+    {
+        get => (Color)GetValue(AccentColorProperty);
+        set => SetValue(AccentColorProperty, value);
+    }
+
+    public static readonly DependencyProperty AccentColorProperty = DependencyProperty.Register(
+        nameof(AccentColor),
+        typeof(Color),
+        typeof(PlayWedge),
+        new PropertyMetadata(default(Color), OnFillInputChanged));
+
+    /// <summary>How far the bleed reaches into the plane, as a fraction of the wedge's width.</summary>
+    private const double BleedFraction = 0.55;
+
+    /// <summary>The accent's opacity where it meets the rim. It falls to nothing across the bleed.</summary>
+    private const byte BleedAlpha = 0x24;
+
     private static void OnFillInputChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
         => ((PlayWedge)d).UpdateRim();
 
-    private void UpdateRim() => RimBrush = Muted ? MutedAccent : Accent;
+    private void UpdateRim()
+    {
+        RimBrush = Muted ? MutedAccent : Accent;
+
+        // No bleed on a console we could not reach. The rim still marks the shape; the light goes out of it.
+        if (Muted)
+        {
+            Bleed.Fill = null;
+            return;
+        }
+
+        // Horizontal rather than truly perpendicular to the rim. The slant is about nine degrees off
+        // vertical, so the two differ by less than the falloff's own softness, and a rotated gradient would
+        // need its own transform rebuilt on every resize for a difference nobody can see.
+        var bleed = new LinearGradientBrush
+        {
+            MappingMode = BrushMappingMode.RelativeToBoundingBox,
+            StartPoint = new Point(0, 0),
+            EndPoint = new Point(BleedFraction, 0),
+        };
+
+        bleed.GradientStops.Add(new GradientStop
+        {
+            Offset = 0,
+            Color = Color.FromArgb(BleedAlpha, AccentColor.R, AccentColor.G, AccentColor.B),
+        });
+        bleed.GradientStops.Add(new GradientStop
+        {
+            Offset = 1,
+            Color = Color.FromArgb(0, AccentColor.R, AccentColor.G, AccentColor.B),
+        });
+
+        Bleed.Fill = bleed;
+    }
 }

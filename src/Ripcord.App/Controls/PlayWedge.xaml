@@ -45,38 +45,48 @@
     -->
     <Grid AutomationProperties.AccessibilityView="Raw">
 
-        <!--  The zone. Data is rebuilt on size change; see OnSizeChanged.  -->
         <!--
-            The plane. Its brush comes from the CALLER, for the same reason FamilyMark takes its accent from
-            the caller rather than defaulting: a UserControl that names app-level resources in its own markup
-            is a lookup waiting to fail, and in XAML that failure is silent - the page comes up blank with
-            nothing thrown and nothing written to the crash log.
-        -->
-        <!--
-            Both paths live in a CANVAS, and that is load-bearing rather than tidy.
+            ALL THREE PATHS LIVE IN A CANVAS, AND THAT IS LOAD-BEARING RATHER THAN TIDY.
 
             Their geometry is rebuilt in OnSizeChanged. In a Grid that is a feedback loop: assigning Data
             changes the Path's desired size, which invalidates layout, which raises SizeChanged again. The
-            zone alone survived it by accident - its quadrilateral fills the container exactly, so its
-            desired size never changed. The rim is a single diagonal, its bounds are smaller than the
-            container, and adding it turned the whole window black with no exception logged.
+            plane alone survived it by accident - its quadrilateral fills the container exactly, so its
+            desired size never changed. The rim is a single diagonal, its bounds are smaller, and adding it
+            turned the whole window black with no exception thrown and nothing in the crash log.
 
-            A Canvas does not size to its children, so the loop cannot start. The Viewbox stays a Grid child
-            because it needs centring, and it is sized from code rather than from its content.
+            A Canvas does not size to its children, so the loop cannot start. Add shapes here, not to the Grid.
+            The Viewbox stays a Grid child because it needs centring, and it is sized from code.
         -->
         <Canvas>
+
+            <!--
+                The plane. Its brush comes from the CALLER, for the same reason FamilyMark takes its accent
+                from the caller rather than defaulting: a UserControl that names app-level resources in its
+                own markup is a lookup waiting to fail, and in XAML that failure is silent.
+            -->
             <Path x:Name="Zone" Fill="{x:Bind FacetFill, Mode=OneWay}" />
+
+            <!--
+                The bleed: the accent falling off the rim into the plane, built in code from AccentColor.
+
+                This is what stops the rim reading as a drawn edge rather than a lit one, and it is the
+                answer to "the wedge is too quiet" that does NOT reintroduce the slab - it is a gradient to
+                transparent, so there is no field of colour anywhere, only a falloff. Suppressed entirely
+                when Muted, and it carries no information a colour-blind or high-contrast user could miss,
+                because the rim and the mark both say the same thing without it.
+            -->
+            <Path x:Name="Bleed" />
+
+            <!--
+                The rim: the leading diagonal alone, in the family's accent. A LINE, NOT A FIELD - this is
+                the wedge's whole colour budget and Ripcord.Card.xaml has the argument for why that matters.
+                Thickness is a literal rather than a token, for the resource-lookup reason above.
+            -->
             <Path
                 x:Name="Rim"
                 Stroke="{x:Bind RimBrush, Mode=OneWay}"
                 StrokeThickness="3" />
         </Canvas>
-
-        <!--
-            The rim: the leading diagonal on its own, in the family's accent. A LINE, NOT A FIELD - this is
-            the wedge's entire colour budget, and Ripcord.Card.xaml has the argument for why that matters.
-            Thickness is a literal rather than a token for the reason above.
-        -->
 
         <!--
             The mark, centred in the zone. Its own Viewbox so the triangle keeps the brand proportions
