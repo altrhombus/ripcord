@@ -256,6 +256,23 @@ Both are in the journal, and one confirmation is still outstanding — see Track
       **One-way door**: once the tile, splash and store assets are cut from a face, changing it re-cuts all
       of them. Decide before generating, not after.
 
+- [ ] **The card has no legible focus state, and hover and focus are the same picture (found 2026-09-20).**
+      Went looking for it while planning the baseline shots and could not see one on screen. The code says
+      why. `GotFocus` and `PointerEntered` both call `OnCardHighlight`, which sets one flag, `IsHighlighted`,
+      which drives one accent wash — so a keyboard or pad user cannot tell "focus is here" from "the mouse is
+      over there". The wash moves from 0.10 to 0.22 opacity on a gradient that fades to transparent at 90%,
+      which is a tint delta rather than an outline, and in high contrast `AppEffects.AccentWashOpacity`
+      returns 0 for both states, so the only affordance disappears entirely.
+
+      This fails the project's own standing invariant — *"VISIBLE: focus or pressed state is always visible,
+      legible at 2 m"* — on the surface where it matters most, since the card grid is what a pad-only player
+      navigates first. The high-contrast suppression is individually correct (decoration does not belong in
+      high contrast) but nothing was put in its place.
+
+      **Not a separate task: it is a requirement on the card redesign.** Two distinct states, one of which
+      survives high contrast, and focus legible across a room. Fixing it in the current card would be work
+      thrown away.
+
 - [ ] **Capture regression baselines before touching the card.** Screenshots of the console grid and the
       session page in light, dark and high contrast, including hover and focus states. None exist in the
       tree — the repository has no product screenshots at all.
