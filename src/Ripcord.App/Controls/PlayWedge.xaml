@@ -3,38 +3,31 @@
     The play wedge: Ripcord's action language, and on a console card it IS the primary action rather than an
     icon sitting inside a button.
 
-    Two shapes, one control:
+    Two shapes:
 
       the zone   a slanted band at the trailing edge, leaning forward like an italic. It is what makes "the
-                 whole card is one focus stop" visually true - the card does not need a Connect button
-                 because its trailing edge already says the card launches something.
+                 whole card is one focus stop" visually true - a card does not need a Connect button when its
+                 trailing edge already says it launches something.
       the mark   the play triangle from brand/ripcord-mark.svg, "M29 17 L53 32 L29 47 Z" with a round join.
-                 The coordinates here are that path, translated to sit in the zone. brand/*.svg is the source
-                 of truth; keep this in step with it and do not re-draw the triangle by eye.
+                 brand/*.svg is the source of truth; keep this in step with it rather than re-drawing it.
 
-    Three rules from docs/design.md keep it from becoming decoration, and all three are enforced here rather
-    than by whoever uses the control:
+    WHY THE GEOMETRY IS BUILT IN CODE AND NOT A VIEWBOX.
 
-      - A wedge means "this launches something." Never navigation.
-      - It scales with its container. 92px beside a 292x188 grid card, 184px beside the one-console hero - a
-        proportion of the card, not a chip with a fixed size. Hence the Viewbox: callers set a width and the
-        geometry follows, so there is exactly one set of coordinates in the app.
-      - The diagonal is the loudest thing in the app. It stays on Ripcord's own surfaces and never reaches a
-        settings row.
+    The first version wrapped a fixed 92x176 canvas in a Uniform Viewbox, which is wrong in two ways at once
+    and only looks right at exactly one size. Uniform letterboxes: asked for 184 wide beside a 150-tall hero
+    card it would scale to the height and leave the zone 78 wide, so the wedge simply would not reach the
+    card's edge. Stretch="Fill" fixes the size and breaks the angle instead - the slant would be near 9
+    degrees on a grid card and near 20 on the hero, which is the one thing about this shape that has to stay
+    constant, because the diagonal is the app's signature and a signature that changes slope is not one.
 
-    ON THE UNREACHABLE CASE, WHICH DEPARTS FROM THE WRITTEN DESIGN - see Muted.
+    So the slant is held as a RATIO of the height (28/176, the mark's own proportion) and the path is rebuilt
+    on every size change. The angle is then identical at 92px beside a grid card and at 184px beside the
+    hero, which is what docs/design.md means by "it scales with its container, not as a fixed chip".
 
-    docs/design.md says a console that cannot be reached has "no wedge at all - the affordance is missing
-    rather than greyed". That was written on 2026-09-13, when "cannot be reached" was believed to be
-    knowledge. It is not: a probe is one UDP datagram, and on 2026-09-19 a console that was powered on for an
-    entire session was reported unreachable because that datagram went missing. Removing the affordance
-    entirely would rebuild, in the visual layer, the dead end that was just removed from the logic layer.
-
-    So the wedge stays and goes quiet instead: the zone drops to a neutral fill and loses its accent. That
-    keeps the doc's actual REASONING - an unreachable console is a normal state and not a fault, so no red,
-    no error glyph, nothing that reads as broken - while leaving the player something to press. The design
-    doc records this amendment; if the two ever disagree again, the doc is authoritative and this comment is
-    the thing to correct.
+    ON THE UNREACHABLE CASE, WHICH DEPARTS FROM THE WRITTEN DESIGN - see Muted in the code-behind. In short:
+    docs/design.md said an unreachable console has no wedge at all, that was written when "cannot be reached"
+    was believed to be knowledge, and it is not. The wedge goes quiet instead of vanishing. The design doc
+    records the amendment; if the two ever disagree again, the doc wins and this comment is what to correct.
 -->
 <UserControl
     x:Class="Ripcord_App.Controls.PlayWedge"
@@ -42,35 +35,37 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-    mc:Ignorable="d">
+    mc:Ignorable="d"
+    SizeChanged="OnSizeChanged">
 
     <!--
-        Decorative to assistive technology. The card that hosts this composes its own AutomationName from the
-        console's name, state and what activating it will do, so announcing the wedge as well would add a
+        Decorative to assistive technology. The card hosting this composes its own AutomationName from the
+        console's name, its state and what activating it will do, so announcing the wedge as well would add a
         second voice saying "play" after the sentence that already said it.
     -->
-    <Viewbox
-        AutomationProperties.AccessibilityView="Raw"
-        Stretch="Uniform">
-        <Canvas Width="92" Height="176">
+    <Grid AutomationProperties.AccessibilityView="Raw">
 
-            <!--
-                The zone. Leading edge runs from (28,0) to (0,176) - further right at the top, so it leans
-                the way italics lean and reads as forward motion rather than as a corner that got cut.
-            -->
-            <Path Data="M 28,0 L 92,0 L 92,176 L 0,176 Z" Fill="{x:Bind ZoneFill, Mode=OneWay}" />
+        <!--  The zone. Data is rebuilt on size change; see OnSizeChanged.  -->
+        <Path x:Name="Zone" Fill="{x:Bind ZoneFill, Mode=OneWay}" />
 
-            <!--
-                The play triangle, brand geometry, centred in the parallel part of the zone. The round join
-                is the mark's own (stroke-width 6, stroke-linejoin round in the SVG) and is what keeps it
-                from reading as a sharp arrowhead.
-            -->
-            <Path
-                Data="M 40,73 L 64,88 L 40,103 Z"
-                Fill="{x:Bind MarkFill, Mode=OneWay}"
-                Stroke="{x:Bind MarkFill, Mode=OneWay}"
-                StrokeLineJoin="Round"
-                StrokeThickness="6" />
-        </Canvas>
-    </Viewbox>
+        <!--
+            The mark, centred in the zone. Its own Viewbox so the triangle keeps the brand proportions
+            whatever the zone is doing, and its round join is the mark's own - stroke-linejoin="round" in the
+            SVG - which is what stops it reading as a sharp arrowhead.
+        -->
+        <Viewbox
+            x:Name="MarkBox"
+            HorizontalAlignment="Center"
+            VerticalAlignment="Center"
+            Stretch="Uniform">
+            <Canvas Width="30" Height="36">
+                <Path
+                    Data="M 5,3 L 27,18 L 5,33 Z"
+                    Fill="{x:Bind MarkFill, Mode=OneWay}"
+                    Stroke="{x:Bind MarkFill, Mode=OneWay}"
+                    StrokeLineJoin="Round"
+                    StrokeThickness="6" />
+            </Canvas>
+        </Viewbox>
+    </Grid>
 </UserControl>
