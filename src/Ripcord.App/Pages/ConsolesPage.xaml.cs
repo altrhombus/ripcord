@@ -26,7 +26,9 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
     /// Whatever this page's current layout says is the point of it. Open the window, press A, playing.
     ///
     /// <para>
-    /// On the hero that is the Play button itself — the layout exists so there is exactly one thing to press.
+    /// On the hero that is the card itself, which on that layout <em>is</em> the action — the layout exists so
+    /// there is exactly one thing to press, and since 2026-09-20 that thing is the card rather than a separate
+    /// button sitting under it.
     /// On the grid it is the grid, not a specific container: focusing a <see cref="GridView"/> hands focus to
     /// its own first (or last-focused) item, which survives the list being rebuilt underneath. With nothing
     /// paired it is null, so the shell falls back to tree order — an empty install has no console to offer and
@@ -39,7 +41,10 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
         {
             if (HeroPanel.Visibility == Visibility.Visible)
             {
-                return HeroPlayButton;
+                // The card, which on this layout is itself the action. It used to be a separate accent
+                // button below the card; the card is now the button, so focus lands on the thing the wedge
+                // is pointing at rather than beside it.
+                return HeroCard;
             }
 
             return ConsoleGrid.Visibility == Visibility.Visible ? ConsoleGrid : null;
@@ -219,18 +224,25 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
             _ => "TextFillColorTertiaryBrush",
         });
 
+        // The action names itself over the wedge. There is no glyph to set any more - the wedge IS the play
+        // mark, so a FontIcon beside it would be the same statement twice.
         HeroPlayLabel.Text = s.PrimaryActionLabel;
-        // Escaped rather than pasted, per this file's own rule: a private-use codepoint sitting raw in a
-        // C# string is invisible in a diff and quietly mangled by anything that re-encodes the file.
-        // E7E8 = PowerButton, E768 = Play.
-        HeroPlayIcon.Glyph = s.ActionGlyph == ActionGlyph.Wake ? "" : "";
 
-        // Dimmed, never disabled. A probe's silence is not knowledge that the console is off -- it is one
-        // unanswered datagram - so it must not remove the ability to try. The dimming still says "we could not
-        // reach this"; pressing it now produces a connect attempt that can explain itself, which is strictly
-        // more useful than a button that does nothing.
-        HeroPlayButton.Opacity = s.IsReachable ? 1.0 : 0.5;
+        HeroWedge.Accent = AccentResources.Brush(s.Accent);
+
+        // Quiet, never absent. A probe's silence is not knowledge that the console is off - it is one
+        // unanswered datagram - so it must not take the affordance away. The wedge drops its family accent
+        // to say "we could not reach this" and keeps everything else, including the ability to press it;
+        // what follows is a connect attempt that can explain itself, which beats a control that does
+        // nothing. This departs from docs/design.md deliberately, and the doc records the amendment.
+        HeroWedge.Muted = !s.IsReachable;
     }
+
+    private void OnHeroHighlight(object sender, PointerRoutedEventArgs e)
+        => HeroHoverWash.Visibility = Visibility.Visible;
+
+    private void OnHeroUnhighlight(object sender, PointerRoutedEventArgs e)
+        => HeroHoverWash.Visibility = Visibility.Collapsed;
 
     private void OnHeroPlayClick(object sender, RoutedEventArgs e)
     {

@@ -108,4 +108,56 @@
     <Thickness x:Key="RipcordFocusSecondaryThickness">2</Thickness>
     <Thickness x:Key="RipcordFocusMargin">-4</Thickness>
 
+    <!--
+        A card that IS a button.
+
+        The grid gets this free: a GridViewItem is already focusable, clickable and pad-navigable, so the card
+        template inside it is just paint. The one-console hero had no such container, and the consequence was
+        that its card was not clickable at all - the action lived in a separate accent button underneath, which
+        is exactly the "card plus a Connect button" shape the wedge exists to replace.
+
+        The template is stripped to a bare ContentPresenter deliberately. Basing this on the stock button style
+        would drag in a background, a border and the PointerOver/Pressed states that paint them, and the card
+        draws all three itself - so the work would be spent turning chrome off rather than leaving it out. What
+        a Button is actually wanted for here is behaviour: focus, Space and Enter, the pad's A button, and an
+        automation peer that reports itself as invokable.
+    -->
+    <!--
+        The play mark inside the wedge, and the label beside it.
+
+        White, because brand/README.md says so: "Wedge on tile: #FFFFFF". The first attempt painted the mark
+        in the card's own fill so it would read as cut out of the accent, which is a different idea and a
+        worse one - on a saturated vendor accent a dark triangle reads as a hole punched in the card rather
+        than as the app's mark.
+
+        Fixed rather than theme-varying on purpose. The zone underneath is a VENDOR accent, which is the same
+        colour in light and dark, so a mark that flipped with the theme would be white on blue in one and
+        near-black on the same blue in the other - contrast decided by a theme that has no bearing on the
+        colour actually behind it.
+    -->
+    <SolidColorBrush x:Key="RipcordWedgeMarkBrush" Color="#FFFFFF" />
+    <SolidColorBrush x:Key="RipcordWedgeTextBrush" Color="#E8FFFFFF" />
+
+    <Style x:Key="RipcordCardButtonStyle" TargetType="Button">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+        <Setter Property="VerticalContentAlignment" Value="Stretch" />
+        <Setter Property="UseSystemFocusVisuals" Value="True" />
+        <Setter Property="FocusVisualPrimaryThickness" Value="{StaticResource RipcordFocusPrimaryThickness}" />
+        <Setter Property="FocusVisualSecondaryThickness" Value="{StaticResource RipcordFocusSecondaryThickness}" />
+        <Setter Property="FocusVisualMargin" Value="{StaticResource RipcordFocusMargin}" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <ContentPresenter
+                        Content="{TemplateBinding Content}"
+                        HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                        VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}" />
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
 </ResourceDictionary>

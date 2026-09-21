@@ -1,6 +1,7 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
+using Windows.Foundation;
 
 namespace Ripcord_App.Controls;
 
@@ -11,9 +12,60 @@ namespace Ripcord_App.Controls;
 /// </summary>
 public sealed partial class PlayWedge : UserControl
 {
+    /// <summary>
+    /// The slant, as a fraction of the wedge's height. 28/176 is the mark's own proportion.
+    ///
+    /// <para>
+    /// A ratio and not a number of pixels, because the angle is the part that must not change: the diagonal
+    /// is the app's signature, and a signature with a different slope on every surface is not one. Holding
+    /// the ratio makes the slant identical at 92px beside a grid card and at 184px beside the hero.
+    /// </para>
+    /// </summary>
+    private const double SlantRatio = 28.0 / 176.0;
+
+    /// <summary>The play mark's height, as a fraction of the wedge's. Also taken from the grid card.</summary>
+    private const double MarkRatio = 36.0 / 176.0;
+
     public PlayWedge()
     {
         InitializeComponent();
+    }
+
+    /// <summary>
+    /// Rebuild the zone for the size we were actually given.
+    ///
+    /// <para>
+    /// Built here rather than declared once in markup because neither Viewbox stretch mode is correct for
+    /// this shape: Uniform letterboxes, so a wedge asked to be 184 wide beside a shorter hero card would not
+    /// reach the card's edge at all; Fill reaches the edge but changes the slant with the aspect ratio. The
+    /// XAML carries the longer version of that argument.
+    /// </para>
+    /// </summary>
+    private void OnSizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        double w = e.NewSize.Width;
+        double h = e.NewSize.Height;
+
+        if (w <= 0 || h <= 0)
+        {
+            return;
+        }
+
+        double slant = h * SlantRatio;
+
+        var figure = new PathFigure { StartPoint = new Point(slant, 0), IsClosed = true, IsFilled = true };
+        figure.Segments.Add(new LineSegment { Point = new Point(w, 0) });
+        figure.Segments.Add(new LineSegment { Point = new Point(w, h) });
+        figure.Segments.Add(new LineSegment { Point = new Point(0, h) });
+
+        var geometry = new PathGeometry();
+        geometry.Figures.Add(figure);
+        Zone.Data = geometry;
+
+        // Centred in the parallel part of the zone rather than in the whole control: the slant eats into the
+        // leading edge, so centring on the full width would push the mark visibly off to one side.
+        MarkBox.Height = h * MarkRatio;
+        MarkBox.Margin = new Thickness(slant, 0, 0, 0);
     }
 
     /// <summary>
