@@ -32,96 +32,71 @@
         -->
         <DataTemplate x:Key="ConsoleCardTemplate" x:DataType="vm:ConsoleCardViewModel">
             <Border
-                Padding="0"
-                AutomationProperties.Name="{x:Bind State.AutomationName, Mode=OneWay}"
-                Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                Background="{ThemeResource RipcordCardFillBrush}"
+                BorderBrush="{ThemeResource RipcordCardStrokeBrush}"
                 BorderThickness="1"
-                ContextRequested="OnCardContextRequested"
                 CornerRadius="{StaticResource RipcordCardCornerRadius}"
-                GotFocus="OnCardHighlight"
-                LostFocus="OnCardUnhighlight"
+                AutomationProperties.Name="{x:Bind State.AutomationName, Mode=OneWay}"
+                ContextRequested="OnCardContextRequested"
                 PointerCanceled="OnCardUnhighlight"
                 PointerEntered="OnCardHighlight"
                 PointerExited="OnCardUnhighlight">
-                <Grid>
-                    <Rectangle
-                        Opacity="{x:Bind State.IsHighlighted, Mode=OneWay, Converter={StaticResource WashOpacity}}"
-                        RadiusX="8"
-                        RadiusY="8">
-                        <Rectangle.Fill>
-                            <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
-                                <GradientStop Offset="0" Color="{x:Bind State.Accent, Mode=OneWay, Converter={StaticResource AccentColor}}" />
-                                <GradientStop Offset="0.9" Color="Transparent" />
-                            </LinearGradientBrush>
-                        </Rectangle.Fill>
-                    </Rectangle>
 
-                    <Grid Padding="16,14,12,14" RowSpacing="2">
-                        <!--
-                            The slack lives in an EMPTY row (4), not in a row that holds text. When it was on the
-                            last-connected line instead, any shortfall was absorbed by clipping that line rather
-                            than by closing up whitespace — which is how a 12px cell-size error turned into a
-                            visibly chopped "Played 31 min ago". Content rows are Auto so they always get the
-                            height they ask for; row 4 gives back whatever is left.
-                        -->
+                <!--
+                    Clipped to the card's own radius so the wedge can run to three of its edges without a
+                    square corner poking out. Everything stacks inside this one Grid: highlight, hover wash,
+                    wedge, content, overflow.
+                -->
+                <Grid CornerRadius="{StaticResource RipcordCardCornerRadius}">
+
+                    <!--  The inner top highlight. One hairline of light; see Ripcord.Card.xaml.  -->
+                    <Rectangle Fill="{ThemeResource RipcordCardHighlightBrush}" />
+
+                    <!--
+                        Hover only. Focus is a ring drawn OUTSIDE the card by the system focus visual, which
+                        is a different kind of mark on purpose: the two used to be one wash at two opacities,
+                        0.10 and 0.22, and were indistinguishable on a real screen.
+                    -->
+                    <Rectangle
+                        Fill="{ThemeResource RipcordCardHoverOverlayBrush}"
+                        Visibility="{x:Bind State.IsHighlighted, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
+
+                    <!--
+                        The wedge, trailing edge, full height. 92 of the card's 280 - a third of it, which is
+                        what stops it reading as an icon that wandered right. Muted rather than removed when
+                        the console did not answer; PlayWedge.xaml has the argument for that departure.
+                    -->
+                    <controls:PlayWedge
+                        Width="92"
+                        HorizontalAlignment="Right"
+                        Accent="{x:Bind State.Accent, Mode=OneWay, Converter={StaticResource AccentBrush}}"
+                        MarkFill="{ThemeResource RipcordCardFillBrush}"
+                        Muted="{x:Bind State.IsReachable, Mode=OneWay, Converter={StaticResource Not}}"
+                        MutedAccent="{ThemeResource ControlStrongFillColorDisabledBrush}" />
+
+                    <!--
+                        Content sits in the leading two-thirds. The right margin clears the wedge, and the
+                        rows are Auto with one * spacer so a short card closes up whitespace rather than
+                        clipping its last line - the failure that ate a third of "Played 31 min ago" when the
+                        slack lived on a row that held text.
+                    -->
+                    <Grid Margin="16,14,100,14">
                         <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="*" />
                             <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-
-                        <!--  The vendor mark: the trail from the app mark, in this vendor's colour.  -->
-                        <controls:FamilyMark
-                            Width="13"
-                            Height="23"
-                            HorizontalAlignment="Left"
-                            Accent="{x:Bind State.Accent, Mode=OneWay, Converter={StaticResource AccentBrush}}" />
 
                         <!--
-                            The overflow. A button nested inside a clickable item is fine — it handles the
-                            pointer first, so opening the menu does not also start a connect.
-
-                            It was 32×32, which is a comfortable mouse target and a poor finger one. Grown to
-                            the 48 minimum as a HIT AREA only: the background is transparent, so the glyph sits
-                            where it always did and the card looks unchanged. The negative margin absorbs the
-                            extra size into the card's padding rather than pushing the title down — without it,
-                            every card grows to fit a button nobody can see.
-                        -->
-                        <Button
-                            Grid.Column="1"
-                            MinWidth="{StaticResource RipcordTouchTarget}"
-                            MinHeight="{StaticResource RipcordTouchTarget}"
-                            Margin="0,-8,-8,0"
-                            Padding="0"
-                            VerticalAlignment="Top"
-                            x:Uid="ConsolesPage_MoreOptionsConsole"
-                            Background="Transparent"
-                            BorderThickness="0"
-                            Click="OnConsoleOverflowClick"
-                            Tag="{x:Bind}">
-                            <FontIcon FontSize="{ThemeResource RipcordIconSizeBody}" Glyph="&#xE712;" />
-                        </Button>
-
-                        <!--
-                            The tooltip REPEATS the name; it is not the only place the name lives. Touch never
-                            hovers, so anything reachable by hover alone is unreachable on a handheld — and the
-                            card is a fixed height, so a long name genuinely truncates here. What makes that
-                            acceptable is Details in the overflow menu, which shows the full name and is
-                            reachable by finger, by pad and by mouse. Do not let this tooltip become the only
-                            copy.
+                            The name leads. Two lines at most, and the right margin holds the overflow button
+                            off its first line. The tooltip REPEATS the name rather than being the only copy:
+                            touch never hovers, so anything reachable by hover alone is unreachable on a
+                            handheld. Details in the overflow menu is the copy reachable by finger, pad and
+                            mouse.
                         -->
                         <TextBlock
-                            Grid.Row="1"
-                            Grid.ColumnSpan="2"
-                            Margin="0,10,0,0"
+                            Margin="0,0,36,0"
                             MaxLines="2"
                             Style="{StaticResource SubtitleTextBlockStyle}"
                             Text="{x:Bind State.DisplayName, Mode=OneWay}"
@@ -129,92 +104,84 @@
                             TextWrapping="Wrap"
                             ToolTipService.ToolTip="{x:Bind State.DisplayName, Mode=OneWay}" />
 
-                        <TextBlock
-                            Grid.Row="2"
-                            Grid.ColumnSpan="2"
-                            Foreground="{ThemeResource TextFillColorTertiaryBrush}"
-                            Style="{StaticResource CaptionTextBlockStyle}"
-                            Text="{x:Bind State.Details, Mode=OneWay}"
-                            TextTrimming="CharacterEllipsis" />
-
-                        <TextBlock
-                            Grid.Row="3"
-                            Grid.ColumnSpan="2"
-                            Margin="0,2,0,0"
-                            Foreground="{ThemeResource TextFillColorTertiaryBrush}"
-                            Style="{StaticResource CaptionTextBlockStyle}"
-                            Text="{x:Bind State.LastConnectedLabel, Mode=OneWay}"
-                            Visibility="{x:Bind State.HasLastConnected, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
+                        <!--  The vendor trail sits with the family it names, not off on its own.  -->
+                        <StackPanel
+                            Grid.Row="1"
+                            Margin="0,6,0,0"
+                            Orientation="Horizontal"
+                            Spacing="8">
+                            <controls:FamilyMark
+                                Width="9"
+                                Height="16"
+                                VerticalAlignment="Center"
+                                Accent="{x:Bind State.Accent, Mode=OneWay, Converter={StaticResource AccentBrush}}" />
+                            <TextBlock
+                                VerticalAlignment="Center"
+                                Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                                Style="{StaticResource CaptionTextBlockStyle}"
+                                Text="{x:Bind State.Details, Mode=OneWay}"
+                                TextTrimming="CharacterEllipsis" />
+                        </StackPanel>
 
                         <!--
-                            Status and the primary action share the last row: the state, then what activating
-                            the card will do about it.
+                            Status, last. A coloured dot AND the word, never colour alone. While the probe is
+                            in flight the dot is a spinner instead: "finding out" and "found out, it is
+                            nothing" are opposite answers and must not look alike.
                         -->
-                        <Grid
-                            Grid.Row="5"
-                            Grid.ColumnSpan="2"
-                            Margin="0,12,0,0"
-                            ColumnSpacing="8">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-
-                            <!--
-                                A coloured dot AND the word, never colour alone. While the probe is still in
-                                flight the dot is a spinner instead — "finding out" and "found out, it's
-                                nothing" are opposite answers and must not look alike.
-                            -->
-                            <StackPanel
+                        <StackPanel
+                            Grid.Row="3"
+                            Orientation="Horizontal"
+                            Spacing="6">
+                            <Grid
+                                Width="10"
+                                Height="10"
+                                VerticalAlignment="Center">
+                                <Ellipse
+                                    Width="8"
+                                    Height="8"
+                                    VerticalAlignment="Center"
+                                    Fill="{x:Bind State.StatusTone, Mode=OneWay, Converter={StaticResource StatusBrush}}"
+                                    Visibility="{x:Bind State.IsChecking, Mode=OneWay, Converter={StaticResource InverseBoolToVisibility}}" />
+                                <ProgressRing
+                                    Width="10"
+                                    Height="10"
+                                    IsActive="True"
+                                    Visibility="{x:Bind State.IsChecking, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
+                            </Grid>
+                            <TextBlock
                                 VerticalAlignment="Center"
-                                Orientation="Horizontal"
-                                Spacing="6">
-                                <Grid Width="10" Height="10">
-                                    <Ellipse
-                                        Width="8"
-                                        Height="8"
-                                        VerticalAlignment="Center"
-                                        Fill="{x:Bind State.StatusTone, Mode=OneWay, Converter={StaticResource StatusBrush}}"
-                                        Visibility="{x:Bind State.IsChecking, Mode=OneWay, Converter={StaticResource InverseBoolToVisibility}}" />
-                                    <ProgressRing
-                                        Width="10"
-                                        Height="10"
-                                        IsActive="True"
-                                        Visibility="{x:Bind State.IsChecking, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
-                                </Grid>
-                                <TextBlock
-                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                    Style="{StaticResource CaptionTextBlockStyle}"
-                                    Text="{x:Bind State.StatusLabel, Mode=OneWay}" />
-                            </StackPanel>
-
-                            <!--
-                                Not a Button: the card itself is the button. This is the affordance that says
-                                so, and dims when the console did not answer at all.
-                            -->
-                            <StackPanel
-                                Grid.Column="1"
+                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                Style="{StaticResource CaptionTextBlockStyle}"
+                                Text="{x:Bind State.StatusLabel, Mode=OneWay}" />
+                            <TextBlock
                                 VerticalAlignment="Center"
-                                Opacity="{x:Bind State.IsReachable, Mode=OneWay, Converter={StaticResource ActionOpacity}}"
-                                Orientation="Horizontal"
-                                Spacing="6">
-                                <FontIcon
-                                    FontSize="{ThemeResource RipcordIconSizeCaption}"
-                                    Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
-                                    Glyph="&#xE768;"
-                                    Visibility="{x:Bind State.ActionGlyph, Mode=OneWay, Converter={StaticResource ActionGlyphIs}, ConverterParameter=Play}" />
-                                <FontIcon
-                                    FontSize="{ThemeResource RipcordIconSizeCaption}"
-                                    Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
-                                    Glyph="&#xE7E8;"
-                                    Visibility="{x:Bind State.ActionGlyph, Mode=OneWay, Converter={StaticResource ActionGlyphIs}, ConverterParameter=Wake}" />
-                                <TextBlock
-                                    Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
-                                    Style="{StaticResource CaptionTextBlockStyle}"
-                                    Text="{x:Bind State.PrimaryActionLabel, Mode=OneWay}" />
-                            </StackPanel>
-                        </Grid>
+                                Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                                Style="{StaticResource CaptionTextBlockStyle}"
+                                Text="{x:Bind State.LastConnectedLabel, Mode=OneWay}"
+                                TextTrimming="CharacterEllipsis"
+                                Visibility="{x:Bind State.HasLastConnected, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
+                        </StackPanel>
                     </Grid>
+
+                    <!--
+                        The overflow floats over the content rather than sitting in it, so a 48px hit area
+                        does not push the title down. A button nested inside a clickable item is fine: it
+                        handles the pointer first, so opening the menu does not also start a connect.
+                    -->
+                    <Button
+                        MinWidth="{StaticResource RipcordTouchTarget}"
+                        MinHeight="{StaticResource RipcordTouchTarget}"
+                        Margin="0,6,84,0"
+                        Padding="0"
+                        HorizontalAlignment="Right"
+                        VerticalAlignment="Top"
+                        x:Uid="ConsolesPage_MoreOptionsConsole"
+                        Background="Transparent"
+                        BorderThickness="0"
+                        Click="OnConsoleOverflowClick"
+                        Tag="{x:Bind}">
+                        <FontIcon FontSize="{ThemeResource RipcordIconSizeBody}" Glyph="&#xE712;" />
+                    </Button>
                 </Grid>
             </Border>
         </DataTemplate>
@@ -270,6 +237,24 @@
             <Setter Property="HorizontalContentAlignment" Value="Stretch" />
             <Setter Property="VerticalContentAlignment" Value="Stretch" />
             <Setter Property="Background" Value="Transparent" />
+
+            <!--
+                The focus ring, on the CONTAINER, because the container is what a GridView actually focuses -
+                the template's Border never receives focus from a pad at all.
+
+                Heavier than stock (3/2 against WinUI's 2/1) because this app's standing invariant is that
+                focus is legible at 2 m, and the default weight was drawn for a mouse at desk distance. It is
+                still the SYSTEM focus visual rather than a border drawn in the template, which is what makes
+                it correct in high contrast without anyone remembering to think about it.
+
+                The negative margin lifts the ring clear of the card's own stroke. Adjacent, the two read as
+                one thick edge, which is how a focus ring goes unnoticed on a surface that already has a
+                border.
+            -->
+            <Setter Property="UseSystemFocusVisuals" Value="True" />
+            <Setter Property="FocusVisualPrimaryThickness" Value="{StaticResource RipcordFocusPrimaryThickness}" />
+            <Setter Property="FocusVisualSecondaryThickness" Value="{StaticResource RipcordFocusSecondaryThickness}" />
+            <Setter Property="FocusVisualMargin" Value="{StaticResource RipcordFocusMargin}" />
         </Style>
     </Page.Resources>
 

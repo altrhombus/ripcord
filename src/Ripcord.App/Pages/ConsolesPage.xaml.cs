@@ -448,14 +448,15 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
 
     // The card's hover/focus cue. Held as a flag on the item rather than by reaching into the template, so it
     // survives the markup being rearranged \u2014 see ConsoleCardViewModel.IsHighlighted.
-    private void OnCardHighlight(object sender, RoutedEventArgs e) => SetHighlight(sender, true);
-
-    private void OnCardUnhighlight(object sender, RoutedEventArgs e) => SetHighlight(sender, false);
-
     private void OnCardHighlight(object sender, PointerRoutedEventArgs e) => SetHighlight(sender, true);
 
     private void OnCardUnhighlight(object sender, PointerRoutedEventArgs e) => SetHighlight(sender, false);
 
+    /// <summary>
+    /// The pointer wash, and only the pointer. Focus is the container's ring - see the container style - and
+    /// the two are deliberately different kinds of mark: they were one shared wash at two opacities until
+    /// 2026-09-20, which left a pad user unable to tell where focus was.
+    /// </summary>
     private static void SetHighlight(object sender, bool on)
     {
         if (sender is FrameworkElement { DataContext: ConsoleCardViewModel item })
