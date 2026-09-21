@@ -119,21 +119,22 @@ public sealed partial class ActionGlyphIsConverter : IValueConverter
 }
 
 /// <summary>
-/// How strongly the vendor accent wash shows through when a card is highlighted.
+/// Inverts a bool, for the bindings whose natural reading is the negative of the state's.
 ///
 /// <para>
-/// The values live here rather than in the view-model on purpose: "how visible is a hover" is a styling
-/// decision, and a portable view-model asserting 0.22 would be making a Windows design choice on behalf of
-/// every future front end. Low enough at rest that it reads as a tint over Mica rather than a coloured panel.
+/// This exists where a <em>wash</em> converter used to: one accent tint at 0.10 and 0.22 opacity served as
+/// both the hover and the focus appearance of a console card. It was deleted rather than retuned, because a
+/// tint delta on a gradient that fades out at 90% is not legible on a real screen, high contrast suppressed
+/// it to zero, and one shared visual left a pad user unable to tell where focus was. Hover and focus are now
+/// different kinds of mark - a wash, and a ring drawn outside the card. Do not reintroduce a single
+/// "highlighted" appearance shared by both.
 /// </para>
 /// </summary>
-public sealed partial class HighlightWashOpacityConverter : IValueConverter
+public sealed partial class NotConverter : IValueConverter
 {
-    public object Convert(object value, Type targetType, object parameter, string language)
-        => AppEffects.AccentWashOpacity(value is true ? 0.22 : 0.10);
+    public object Convert(object value, Type targetType, object parameter, string language) => value is not true;
 
-    public object ConvertBack(object value, Type targetType, object parameter, string language)
-        => throw new NotSupportedException();
+    public object ConvertBack(object value, Type targetType, object parameter, string language) => value is not true;
 }
 
 /// <summary>

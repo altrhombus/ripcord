@@ -56,14 +56,40 @@ Three rules keep it from becoming decoration:
 
 - **A wedge means "this launches something."** The card's play action, the primary action of first run and
   of the pairing celebration. Never something that merely navigates.
-- **Absent, not disabled.** A console that cannot be reached has *no wedge at all*. The affordance is
-  missing rather than greyed, matching the standing rule that an offline console is a normal state and not
-  a fault.
+- **Quiet, not absent — amended 2026-09-20.** This rule originally read *"absent, not disabled: a console
+  that cannot be reached has no wedge at all."* It was written when "cannot be reached" was taken to be
+  knowledge. It is not. A reachability probe is a single UDP datagram, and on 2026-09-19 a console that was
+  powered on for an entire session was reported unreachable because that one datagram went missing; the fix
+  for that was to stop letting silence remove the ability to try. Removing the wedge would rebuild the same
+  dead end one layer up, in paint, where no amount of retrying reaches it.
+
+  So an unreachable console keeps its wedge and the wedge goes neutral — it loses the family accent and
+  nothing else. The original *reasoning* is what survives, and it is the part worth keeping: an offline
+  console is a normal state and not a fault, so there is no red, no error glyph, and nothing that reads as
+  broken. What changed is the conclusion drawn from it, because the premise turned out to be false.
 - **It scales with its container, not as a fixed chip.** 92 px beside a 292×188 grid card, 184 px beside the
   one-console hero. It is a proportion of the card, not a number.
 
 The diagonal is the loudest thing in the app. It stays on Ripcord's own surfaces and never reaches a
 settings row.
+
+### Hover and focus are different kinds of mark
+
+Added 2026-09-20, after going to photograph the card's states and finding there were none worth
+photographing. `GotFocus` and `PointerEntered` both set one `IsHighlighted` flag driving one accent wash,
+moving it from 0.10 to 0.22 opacity on a gradient that fades out at 90%. Hover and keyboard focus were
+therefore the same picture, that picture was a tint delta invisible on a real screen, and in high contrast
+the wash was suppressed to zero so neither state existed at all.
+
+The rule that replaces it:
+
+> **Hover is a wash. Focus is a ring. They are different kinds of mark, never two strengths of one.**
+
+Focus uses the *system* focus visual rather than anything drawn in the template, which is what makes it
+correct in high contrast without anyone having to remember — and it is set heavier than stock, 3px against
+WinUI's 2px, because this project already holds itself to *"focus is legible at 2 m"* and the default weight
+was drawn for a mouse at desk distance. It is set on the `GridViewItem` container, not the card inside it,
+because the container is what a `GridView` actually focuses; a pad never focuses the template's own root.
 
 ## Material: the gradient rule
 
