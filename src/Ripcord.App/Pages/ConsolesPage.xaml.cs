@@ -230,6 +230,10 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
 
         HeroWedge.Accent = AccentResources.Brush(s.Accent);
 
+        // The same accent again as a bare colour, because the bleed's gradient stops take a Color and the
+        // rim's stroke takes a Brush. AccentResources exposes both for exactly this reason.
+        HeroWedge.AccentColor = AccentResources.Color(s.Accent);
+
         // Quiet, never absent. A probe's silence is not knowledge that the console is off - it is one
         // unanswered datagram - so it must not take the affordance away. The wedge drops its family accent
         // to say "we could not reach this" and keeps everything else, including the ability to press it;
