@@ -45,6 +45,12 @@
 
             <!--  The pointer wash. Lifts the card a little; deliberately quieter than focus. See below.  -->
             <SolidColorBrush x:Key="RipcordCardHoverOverlayBrush" Color="#16FFFFFF" />
+
+            <!--  The wedge's plane: the card's own gradient, lifted. See the facet note below.  -->
+            <LinearGradientBrush x:Key="RipcordWedgeFacetBrush" StartPoint="0,0" EndPoint="1,1">
+                <GradientStop Offset="0" Color="#2E333C" />
+                <GradientStop Offset="1" Color="#1B1F26" />
+            </LinearGradientBrush>
         </ResourceDictionary>
 
         <!--  Light. Lighter than the ground, not darker. The whole point of the rule.  -->
@@ -61,6 +67,16 @@
 
             <SolidColorBrush x:Key="RipcordCardStrokeBrush" Color="#1A000000" />
             <SolidColorBrush x:Key="RipcordCardHoverOverlayBrush" Color="#12000000" />
+
+            <!--
+                Deeper, not lighter, and that is not an inconsistency with the card's own rule. The card runs
+                lighter than the GROUND so it reads as raised paper; the facet runs deeper than the CARD so it
+                reads as a plane cut into that paper. There is no room above white to go lighter anyway.
+            -->
+            <LinearGradientBrush x:Key="RipcordWedgeFacetBrush" StartPoint="0,0" EndPoint="1,1">
+                <GradientStop Offset="0" Color="#F4F6FA" />
+                <GradientStop Offset="1" Color="#E2E6EE" />
+            </LinearGradientBrush>
         </ResourceDictionary>
 
         <!--
@@ -77,6 +93,14 @@
             <StaticResource x:Key="RipcordCardStrokeBrush" ResourceKey="CardStrokeColorDefaultBrush" />
             <SolidColorBrush x:Key="RipcordCardHighlightBrush" Color="Transparent" />
             <SolidColorBrush x:Key="RipcordCardHoverOverlayBrush" Color="Transparent" />
+
+            <!--
+                Transparent, so the wedge is its rim and nothing else. This is the case the whole facet idea
+                is built to satisfy: strip every decorative colour and the diagonal must still be there. The
+                version this replaced filled the zone with the accent, which in high contrast resolved to the
+                TEXT colour - a third of the card became a solid slab of it, with the play mark lost inside.
+            -->
+            <SolidColorBrush x:Key="RipcordWedgeFacetBrush" Color="Transparent" />
         </ResourceDictionary>
 
     </ResourceDictionary.ThemeDictionaries>
@@ -123,20 +147,45 @@
         automation peer that reports itself as invokable.
     -->
     <!--
-        The play mark inside the wedge, and the label beside it.
+        THE FACET, AND WHY THE WEDGE IS NOT A PANEL OF COLOUR.
 
-        White, because brand/README.md says so: "Wedge on tile: #FFFFFF". The first attempt painted the mark
-        in the card's own fill so it would read as cut out of the accent, which is a different idea and a
-        worse one - on a saturated vendor accent a dark triangle reads as a hole punched in the card rather
-        than as the app's mark.
+        docs/design.md puts this one section above the wedge itself: "Identity therefore comes from material
+        and form... That is also what survives high contrast, where decorative colour must disappear entirely
+        and only shape is left."
 
-        Fixed rather than theme-varying on purpose. The zone underneath is a VENDOR accent, which is the same
-        colour in light and dark, so a mark that flipped with the theme would be white on blue in one and
-        near-black on the same blue in the other - contrast decided by a theme that has no bearing on the
-        colour actually behind it.
+        The first build inverted that. It filled the zone with the vendor accent at full strength, so the
+        wedge was a field of colour that happened to be diagonal - which reads as loud (a third of the card
+        shouting) while being weak in the way that matters, because removing the colour left nothing behind.
+        In high contrast, where AccentResources resolves the accent to the TEXT brush, that became a solid
+        slab of text colour with the play mark invisible inside it.
+
+        So the zone is now a FACET: the card's own gradient, shifted, so it reads as a plane cut into the same
+        material. The accent survives as a RIM along the diagonal - a line, not a field - which is what makes
+        the diagonal the loud thing rather than the area, and what lets high contrast keep the shape while
+        dropping the colour.
+
+        The mark takes the ordinary foreground brush for the same reason. It was fixed white when the zone
+        behind it was always a saturated accent; on a facet it is a glyph on a surface like any other, and a
+        fixed colour would be a contrast bug waiting for the first theme that disagrees.
+
+        The mark and label brushes are deliberately NOT aliased into this dictionary. Two StaticResource
+        entries at this dictionary's root, pointing at TextFillColorPrimaryBrush and
+        TextFillColorSecondaryBrush, rendered the ENTIRE WINDOW BLACK. StaticResource is a parse-time lookup,
+        and while this dictionary is being built it cannot reliably see XamlControlsResources even though
+        App.xaml merges that first. Nothing throws and no crash is logged - the page simply comes up empty,
+        which is the worst possible failure mode for a resource dictionary.
+
+        Callers reference the system brushes with ThemeResource at the point of use instead, which resolves
+        later and tracks theme changes properly. The aliases inside the theme dictionaries above are a
+        different case and are fine: those resolve only when that theme becomes active, by which time
+        everything they name exists.
     -->
-    <SolidColorBrush x:Key="RipcordWedgeMarkBrush" Color="#FFFFFF" />
-    <SolidColorBrush x:Key="RipcordWedgeTextBrush" Color="#E8FFFFFF" />
+
+    <!--
+        The rim's weight. Constant rather than proportional: a rim is a line, and a line that thickens with
+        its container stops reading as an edge and starts reading as a second, thinner panel.
+    -->
+    <x:Double x:Key="RipcordWedgeRimThickness">3</x:Double>
 
     <Style x:Key="RipcordCardButtonStyle" TargetType="Button">
         <Setter Property="Background" Value="Transparent" />
