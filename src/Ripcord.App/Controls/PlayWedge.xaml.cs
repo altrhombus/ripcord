@@ -53,14 +53,23 @@ public sealed partial class PlayWedge : UserControl
 
         double slant = h * SlantRatio;
 
-        var figure = new PathFigure { StartPoint = new Point(slant, 0), IsClosed = true, IsFilled = true };
-        figure.Segments.Add(new LineSegment { Point = new Point(w, 0) });
-        figure.Segments.Add(new LineSegment { Point = new Point(w, h) });
-        figure.Segments.Add(new LineSegment { Point = new Point(0, h) });
+        // The plane: the closed quadrilateral.
+        var plane = new PathFigure { StartPoint = new Point(slant, 0), IsClosed = true, IsFilled = true };
+        plane.Segments.Add(new LineSegment { Point = new Point(w, 0) });
+        plane.Segments.Add(new LineSegment { Point = new Point(w, h) });
+        plane.Segments.Add(new LineSegment { Point = new Point(0, h) });
 
-        var geometry = new PathGeometry();
-        geometry.Figures.Add(figure);
-        Zone.Data = geometry;
+        var planeGeometry = new PathGeometry();
+        planeGeometry.Figures.Add(plane);
+        Zone.Data = planeGeometry;
+
+        var edge = new PathFigure { StartPoint = new Point(slant, 0), IsClosed = false };
+        edge.Segments.Add(new LineSegment { Point = new Point(0, h) });
+
+        var edgeGeometry = new PathGeometry();
+        edgeGeometry.Figures.Add(edge);
+        Rim.Data = edgeGeometry;
+
 
         // Centred in the parallel part of the zone rather than in the whole control: the slant eats into the
         // leading edge, so centring on the full width would push the mark visibly off to one side.
@@ -142,23 +151,45 @@ public sealed partial class PlayWedge : UserControl
         new PropertyMetadata(false, OnFillInputChanged));
 
     /// <summary>
-    /// The brush the zone is actually painted with. A read-only projection of the three inputs above rather
-    /// than a converter at each binding site, so "which colour is the zone" has one answer in one place.
+    /// The plane's brush — the card's own material, one step lifted. Supplied by the caller in markup so it
+    /// tracks the theme, and so this control names no app-level resource of its own.
     /// </summary>
-    public Brush? ZoneFill
+    public Brush FacetFill
     {
-        get => (Brush?)GetValue(ZoneFillProperty);
-        private set => SetValue(ZoneFillProperty, value);
+        get => (Brush)GetValue(FacetFillProperty);
+        set => SetValue(FacetFillProperty, value);
     }
 
-    public static readonly DependencyProperty ZoneFillProperty = DependencyProperty.Register(
-        nameof(ZoneFill),
+    public static readonly DependencyProperty FacetFillProperty = DependencyProperty.Register(
+        nameof(FacetFill),
+        typeof(Brush),
+        typeof(PlayWedge),
+        new PropertyMetadata(null));
+
+    /// <summary>
+    /// The brush the rim is stroked with. A read-only projection of the inputs above rather than a converter
+    /// at each binding site, so "which colour is the diagonal" has one answer in one place.
+    ///
+    /// <para>
+    /// This drives the <em>rim</em>, not a fill. It filled the whole zone in the first build, and moving it
+    /// to the edge is the change that took the wedge from a field of colour to a shape with a coloured edge
+    /// — which is what <c>docs/design.md</c> asks for and what survives high contrast.
+    /// </para>
+    /// </summary>
+    public Brush? RimBrush
+    {
+        get => (Brush?)GetValue(RimBrushProperty);
+        private set => SetValue(RimBrushProperty, value);
+    }
+
+    public static readonly DependencyProperty RimBrushProperty = DependencyProperty.Register(
+        nameof(RimBrush),
         typeof(Brush),
         typeof(PlayWedge),
         new PropertyMetadata(null));
 
     private static void OnFillInputChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
-        => ((PlayWedge)d).UpdateZoneFill();
+        => ((PlayWedge)d).UpdateRim();
 
-    private void UpdateZoneFill() => ZoneFill = Muted ? MutedAccent : Accent;
+    private void UpdateRim() => RimBrush = Muted ? MutedAccent : Accent;
 }

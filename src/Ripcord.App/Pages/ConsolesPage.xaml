@@ -70,7 +70,8 @@
                         Width="92"
                         HorizontalAlignment="Right"
                         Accent="{x:Bind State.Accent, Mode=OneWay, Converter={StaticResource AccentBrush}}"
-                        MarkFill="{ThemeResource RipcordWedgeMarkBrush}"
+                        FacetFill="{ThemeResource RipcordWedgeFacetBrush}"
+                        MarkFill="{ThemeResource TextFillColorPrimaryBrush}"
                         Muted="{x:Bind State.IsReachable, Mode=OneWay, Converter={StaticResource Not}}"
                         MutedAccent="{ThemeResource ControlStrongFillColorDisabledBrush}" />
 
@@ -206,11 +207,21 @@
                     A dashed outline, which a Border cannot draw — StrokeDashArray belongs to Shape. So the
                     outline is a Rectangle sitting over the fill, sized to the tile.
                 -->
+                <!--
+                    The card's own material, at lower emphasis. It was a flat SubtleFillColorSecondaryBrush,
+                    which looked fine beside the old flat cards and looked like a different app beside the
+                    new ones - a grey rectangle sitting in a row of gradients. A ghost of a card has to be
+                    made of the same stuff as the card, or it stops reading as "one more of these".
+
+                    Opacity rather than a second set of colours: one number says "this one is not real yet",
+                    and it cannot drift out of step with the card the way a parallel palette would.
+                -->
                 <Rectangle
-                    Fill="{ThemeResource SubtleFillColorSecondaryBrush}"
+                    Fill="{ThemeResource RipcordCardFillBrush}"
+                    Opacity="0.5"
                     RadiusX="8"
                     RadiusY="8"
-                    Stroke="{ThemeResource CardStrokeColorDefaultBrush}"
+                    Stroke="{ThemeResource RipcordCardStrokeBrush}"
                     StrokeDashArray="4,3"
                     StrokeThickness="1" />
                 <StackPanel
@@ -367,7 +378,8 @@
                             x:Name="HeroWedge"
                             Width="184"
                             HorizontalAlignment="Right"
-                            MarkFill="{ThemeResource RipcordWedgeMarkBrush}"
+                            FacetFill="{ThemeResource RipcordWedgeFacetBrush}"
+                            MarkFill="{ThemeResource TextFillColorPrimaryBrush}"
                             MutedAccent="{ThemeResource ControlStrongFillColorDisabledBrush}" />
 
                         <Grid Margin="28,24,200,24">
@@ -433,7 +445,7 @@
                             Margin="0,0,20,18"
                             HorizontalAlignment="Right"
                             VerticalAlignment="Bottom"
-                            Foreground="{ThemeResource RipcordWedgeTextBrush}"
+                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                             Style="{StaticResource CaptionTextBlockStyle}" />
 
                         <Button
