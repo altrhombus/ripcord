@@ -163,9 +163,10 @@ Two surfaces, three themes, and the states that only exist under an input device
 [ ] Session page   each of the three HUD rungs       (hidden · summary · full)
 ```
 
-For each of the two surfaces, also capture **rest, hover, keyboard focus and pad focus** on a card and on the
-hero action. Focus is the state most likely to regress silently and the one least likely to be noticed, since
-nothing about it shows up in a static comparison taken with a mouse parked off-window.
+**Rest states only, and do not chase hover or focus on a card.** They were on this list until someone went
+looking for them and could not see one. The card has no legible focus state and no distinct hover state — see
+the open item in `ROADMAP.md` — so those shots would record an absence at four times the effort. Capture them
+*after* the card work, when there is something to capture.
 
 - **Window size matters and should be recorded**, because HUD placement is a function of it: the panel becomes
   a rail, a sheet or an overlay depending on the viewport and the video's aspect. Capture the session page at
