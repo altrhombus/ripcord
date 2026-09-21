@@ -46,7 +46,37 @@
     <Grid AutomationProperties.AccessibilityView="Raw">
 
         <!--  The zone. Data is rebuilt on size change; see OnSizeChanged.  -->
-        <Path x:Name="Zone" Fill="{x:Bind ZoneFill, Mode=OneWay}" />
+        <!--
+            The plane. Its brush comes from the CALLER, for the same reason FamilyMark takes its accent from
+            the caller rather than defaulting: a UserControl that names app-level resources in its own markup
+            is a lookup waiting to fail, and in XAML that failure is silent - the page comes up blank with
+            nothing thrown and nothing written to the crash log.
+        -->
+        <!--
+            Both paths live in a CANVAS, and that is load-bearing rather than tidy.
+
+            Their geometry is rebuilt in OnSizeChanged. In a Grid that is a feedback loop: assigning Data
+            changes the Path's desired size, which invalidates layout, which raises SizeChanged again. The
+            zone alone survived it by accident - its quadrilateral fills the container exactly, so its
+            desired size never changed. The rim is a single diagonal, its bounds are smaller than the
+            container, and adding it turned the whole window black with no exception logged.
+
+            A Canvas does not size to its children, so the loop cannot start. The Viewbox stays a Grid child
+            because it needs centring, and it is sized from code rather than from its content.
+        -->
+        <Canvas>
+            <Path x:Name="Zone" Fill="{x:Bind FacetFill, Mode=OneWay}" />
+            <Path
+                x:Name="Rim"
+                Stroke="{x:Bind RimBrush, Mode=OneWay}"
+                StrokeThickness="3" />
+        </Canvas>
+
+        <!--
+            The rim: the leading diagonal on its own, in the family's accent. A LINE, NOT A FIELD - this is
+            the wedge's entire colour budget, and Ripcord.Card.xaml has the argument for why that matters.
+            Thickness is a literal rather than a token for the reason above.
+        -->
 
         <!--
             The mark, centred in the zone. Its own Viewbox so the triangle keeps the brand proportions
