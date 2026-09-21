@@ -70,7 +70,7 @@
                         Width="92"
                         HorizontalAlignment="Right"
                         Accent="{x:Bind State.Accent, Mode=OneWay, Converter={StaticResource AccentBrush}}"
-                        MarkFill="{ThemeResource RipcordCardFillBrush}"
+                        MarkFill="{ThemeResource RipcordWedgeMarkBrush}"
                         Muted="{x:Bind State.IsReachable, Mode=OneWay, Converter={StaticResource Not}}"
                         MutedAccent="{ThemeResource ControlStrongFillColorDisabledBrush}" />
 
@@ -81,10 +81,17 @@
                         slack lived on a row that held text.
                     -->
                     <Grid Margin="16,14,100,14">
+                        <!--
+                            Five rows, and last-played gets its own. It shared the status row for one build
+                            and "Played 11 Sep 2026" came out as "Played 11 Sep 2" - the text column here is
+                            about 164px once the wedge and the padding are taken out, which is not enough for
+                            a status word and a date side by side. The hero has room for both; this does not.
+                        -->
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="*" />
+                            <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
 
@@ -128,8 +135,17 @@
                             in flight the dot is a spinner instead: "finding out" and "found out, it is
                             nothing" are opposite answers and must not look alike.
                         -->
-                        <StackPanel
+                        <TextBlock
                             Grid.Row="3"
+                            Margin="0,0,0,4"
+                            Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                            Style="{StaticResource CaptionTextBlockStyle}"
+                            Text="{x:Bind State.LastConnectedLabel, Mode=OneWay}"
+                            TextTrimming="CharacterEllipsis"
+                            Visibility="{x:Bind State.HasLastConnected, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
+
+                        <StackPanel
+                            Grid.Row="4"
                             Orientation="Horizontal"
                             Spacing="6">
                             <Grid
@@ -152,14 +168,8 @@
                                 VerticalAlignment="Center"
                                 Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                 Style="{StaticResource CaptionTextBlockStyle}"
-                                Text="{x:Bind State.StatusLabel, Mode=OneWay}" />
-                            <TextBlock
-                                VerticalAlignment="Center"
-                                Foreground="{ThemeResource TextFillColorTertiaryBrush}"
-                                Style="{StaticResource CaptionTextBlockStyle}"
-                                Text="{x:Bind State.LastConnectedLabel, Mode=OneWay}"
-                                TextTrimming="CharacterEllipsis"
-                                Visibility="{x:Bind State.HasLastConnected, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
+                                Text="{x:Bind State.StatusLabel, Mode=OneWay}"
+                                TextTrimming="CharacterEllipsis" />
                         </StackPanel>
                     </Grid>
 
@@ -303,6 +313,11 @@
 
             "Add another console" is a quiet link rather than a second button, because on this layout there is
             exactly one thing worth pressing and it is not that.
+
+            The width is DEFINITE, not a maximum. As MaxWidth on a centred panel it collapsed to content and
+            the card came out around 420 instead of 520 - which does not look wrong on its own, but the wedge
+            beside it is a fixed 184, so it silently became 44% of the card rather than the 35% it is drawn
+            as. A proportion expressed as one fixed number beside one elastic one is not a proportion.
         -->
         <StackPanel
             x:Name="HeroPanel"
@@ -310,73 +325,129 @@
             Margin="0,8,0,48"
             HorizontalAlignment="Center"
             VerticalAlignment="Center"
-            MaxWidth="520"
+            Width="520"
             Spacing="16"
             Visibility="Collapsed">
-            <Border
-                x:Name="HeroCard"
-                Padding="28,24"
-                ContextRequested="OnHeroContextRequested"
-                Style="{StaticResource RipcordCardStyle}">
-                <Grid ColumnSpacing="20">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-
-                    <controls:FamilyMark
-                        x:Name="HeroMark"
-                        Width="26"
-                        Height="46"
-                        VerticalAlignment="Top" />
-
-                    <StackPanel Grid.Column="1" Spacing="2">
-                        <TextBlock
-                            x:Name="HeroName"
-                            Style="{StaticResource SubtitleTextBlockStyle}"
-                            TextTrimming="CharacterEllipsis" />
-                        <TextBlock
-                            x:Name="HeroDetails"
-                            Style="{StaticResource RipcordSubtleCaptionStyle}" />
-                        <TextBlock
-                            x:Name="HeroLastPlayed"
-                            Style="{StaticResource RipcordSubtleCaptionStyle}" />
-                        <StackPanel
-                            Margin="0,8,0,0"
-                            Orientation="Horizontal"
-                            Spacing="8">
-                            <Ellipse
-                                x:Name="HeroStatusDot"
-                                Width="8"
-                                Height="8"
-                                VerticalAlignment="Center" />
-                            <TextBlock x:Name="HeroStatus" Style="{StaticResource CaptionTextBlockStyle}" />
-                        </StackPanel>
-                    </StackPanel>
-
-                    <Button
-                        x:Name="HeroOverflowButton"
-                        Grid.Column="2"
-                        VerticalAlignment="Top"
-                        x:Uid="ConsolesPage_MoreOptionsConsole2"
-                        Click="OnHeroOverflowClick"
-                        Style="{StaticResource SubtleButtonStyle}">
-                        <FontIcon FontSize="{ThemeResource RipcordIconSizeCaption}" Glyph="&#xE712;" />
-                    </Button>
-                </Grid>
-            </Border>
-
+            <!--
+                The card IS the action. It was a Border with the real action in an accent button underneath -
+                a card plus a Connect button, which is the shape the wedge exists to replace, and it meant the
+                card itself could not be clicked at all. As a Button it focuses on load, takes Space, Enter
+                and the pad's A button, and reports itself to automation as something you invoke.
+            -->
             <Button
-                x:Name="HeroPlayButton"
+                x:Name="HeroCard"
+                MinHeight="164"
                 HorizontalAlignment="Stretch"
-                HorizontalContentAlignment="Center"
                 Click="OnHeroPlayClick"
-                Style="{StaticResource AccentButtonStyle}">
-                <StackPanel Orientation="Horizontal" Spacing="8">
-                    <FontIcon x:Name="HeroPlayIcon" FontSize="{ThemeResource RipcordIconSizeAction}" />
-                    <TextBlock x:Name="HeroPlayLabel" />
-                </StackPanel>
+                ContextRequested="OnHeroContextRequested"
+                PointerCanceled="OnHeroUnhighlight"
+                PointerEntered="OnHeroHighlight"
+                PointerExited="OnHeroUnhighlight"
+                Style="{StaticResource RipcordCardButtonStyle}">
+                <Border
+                    Background="{ThemeResource RipcordCardFillBrush}"
+                    BorderBrush="{ThemeResource RipcordCardStrokeBrush}"
+                    BorderThickness="1"
+                    CornerRadius="{StaticResource RipcordCardCornerRadius}">
+                    <Grid CornerRadius="{StaticResource RipcordCardCornerRadius}">
+
+                        <Rectangle Fill="{ThemeResource RipcordCardHighlightBrush}" />
+
+                        <Rectangle
+                            x:Name="HeroHoverWash"
+                            Fill="{ThemeResource RipcordCardHoverOverlayBrush}"
+                            Visibility="Collapsed" />
+
+                        <!--
+                            184 against the grid card's 92 - twice the size for twice the card, and the same
+                            slant, because PlayWedge holds the angle as a ratio of its height rather than
+                            baking in pixels.
+                        -->
+                        <controls:PlayWedge
+                            x:Name="HeroWedge"
+                            Width="184"
+                            HorizontalAlignment="Right"
+                            MarkFill="{ThemeResource RipcordWedgeMarkBrush}"
+                            MutedAccent="{ThemeResource ControlStrongFillColorDisabledBrush}" />
+
+                        <Grid Margin="28,24,200,24">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+
+                            <TextBlock
+                                x:Name="HeroName"
+                                Margin="0,0,36,0"
+                                MaxLines="2"
+                                Style="{StaticResource TitleTextBlockStyle}"
+                                TextTrimming="CharacterEllipsis"
+                                TextWrapping="Wrap" />
+
+                            <StackPanel
+                                Grid.Row="1"
+                                Margin="0,8,0,0"
+                                Orientation="Horizontal"
+                                Spacing="10">
+                                <controls:FamilyMark
+                                    x:Name="HeroMark"
+                                    Width="11"
+                                    Height="19"
+                                    VerticalAlignment="Center" />
+                                <TextBlock
+                                    x:Name="HeroDetails"
+                                    VerticalAlignment="Center"
+                                    Style="{StaticResource RipcordSubtleCaptionStyle}" />
+                            </StackPanel>
+
+                            <StackPanel
+                                Grid.Row="3"
+                                Orientation="Horizontal"
+                                Spacing="8">
+                                <Ellipse
+                                    x:Name="HeroStatusDot"
+                                    Width="8"
+                                    Height="8"
+                                    VerticalAlignment="Center" />
+                                <TextBlock
+                                    x:Name="HeroStatus"
+                                    VerticalAlignment="Center"
+                                    Style="{StaticResource CaptionTextBlockStyle}" />
+                                <TextBlock
+                                    x:Name="HeroLastPlayed"
+                                    VerticalAlignment="Center"
+                                    Style="{StaticResource RipcordSubtleCaptionStyle}" />
+                            </StackPanel>
+                        </Grid>
+
+                        <!--
+                            The action names itself over the wedge. The grid card can leave this out - its
+                            status line already says "Rest mode" and the card is small enough to read whole -
+                            but the hero is the surface where "Wake & play" versus "Play" is the difference
+                            between expecting a stream and expecting a wait.
+                        -->
+                        <TextBlock
+                            x:Name="HeroPlayLabel"
+                            Margin="0,0,20,18"
+                            HorizontalAlignment="Right"
+                            VerticalAlignment="Bottom"
+                            Foreground="{ThemeResource RipcordWedgeTextBrush}"
+                            Style="{StaticResource CaptionTextBlockStyle}" />
+
+                        <Button
+                            x:Name="HeroOverflowButton"
+                            Margin="0,12,196,0"
+                            HorizontalAlignment="Right"
+                            VerticalAlignment="Top"
+                            x:Uid="ConsolesPage_MoreOptionsConsole2"
+                            Click="OnHeroOverflowClick"
+                            Style="{StaticResource SubtleButtonStyle}">
+                            <FontIcon FontSize="{ThemeResource RipcordIconSizeCaption}" Glyph="&#xE712;" />
+                        </Button>
+                    </Grid>
+                </Border>
             </Button>
 
             <HyperlinkButton
