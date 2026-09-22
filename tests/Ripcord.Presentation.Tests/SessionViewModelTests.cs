@@ -715,12 +715,82 @@ public class SessionViewModelTests
     [Fact]
     public void AConnectStageCarriesItsPhaseToTheTrail()
     {
-        (SessionViewModel vm, _, _) = Build();
+        // The stage goes through ConnectGate now, so it does not reach the screen the instant it is
+        // reported - it has to outlive the dwell. That is the point of the gate: a warm connect reports
+        // three stages inside a second, and showing each one produces a flicker nobody can read.
+        (SessionViewModel vm, _, TestClock clock) = Build();
 
         vm.ShowConnectStage(new ConnectStage("Waking", "standby", Terminal: false, ConnectPhase.Waking));
 
+        clock.Advance(ConnectGate.Dwell);
+        vm.TickConnect();
+
         Assert.Equal(ConnectPhase.Waking, vm.State.Phase);
         Assert.Equal("Waking", vm.State.StatusHeadline);
+    }
+
+    [Fact]
+    public void AConnectStageOvertakenBeforeItCouldBeReadNeverReachesTheScreen()
+    {
+        // The warm-connect case the gate exists for: three stages inside a second. Only the last is worth
+        // showing, because the first two were gone before anyone could read them.
+        (SessionViewModel vm, _, TestClock clock) = Build();
+
+        vm.ShowConnectStage(new ConnectStage("Preparing", "video", Terminal: false, ConnectPhase.Preparing));
+        clock.Advance(TimeSpan.FromMilliseconds(80));
+        vm.ShowConnectStage(new ConnectStage("Connecting", "handshake", Terminal: false, ConnectPhase.Connecting));
+
+        clock.Advance(ConnectGate.Dwell);
+        vm.TickConnect();
+
+        Assert.Equal("Connecting", vm.State.StatusHeadline);
+    }
+
+    [Fact]
+    public void AConnectOffersNoEscapeUntilItHasRunLongEnoughToFeelStuck()
+    {
+        // Offered on entry it is the ceremony this screen was rebuilt to avoid, and it invites abandoning a
+        // connect that was about to succeed.
+        (SessionViewModel vm, _, TestClock clock) = Build();
+
+        vm.ResetConnect();
+        vm.ShowConnectStage(new ConnectStage("Waking", "standby", Terminal: false, ConnectPhase.Waking));
+        clock.Advance(ConnectGate.Dwell);
+        vm.TickConnect();
+
+        Assert.False(vm.State.ConnectEscapeVisible);
+
+        clock.Advance(SessionViewModel.ConnectEscapeAfter);
+        vm.TickConnect();
+
+        Assert.True(vm.State.ConnectEscapeVisible);
+    }
+
+    [Fact]
+    public void AFailedConnectOffersItsOwnActionsRatherThanTheEscape()
+    {
+        // A terminal stage brings retry and leave with it. A third way out beside them is noise.
+        (SessionViewModel vm, _, TestClock clock) = Build();
+
+        vm.ResetConnect();
+        vm.ShowConnectStage(new ConnectStage("No reply", "gone", Terminal: true, ConnectPhase.Connecting));
+        clock.Advance(SessionViewModel.ConnectEscapeAfter);
+        vm.TickConnect();
+
+        Assert.False(vm.State.ConnectEscapeVisible);
+        Assert.True(vm.State.StatusActionsVisible);
+    }
+
+    [Fact]
+    public void ATerminalStageNeverWaits()
+    {
+        // A failure carries the reason and brings the retry actions with it. Nothing about it is worth
+        // delaying, and a player looking at a stalled connect should not wait out a dwell to be told.
+        (SessionViewModel vm, _, _) = Build();
+
+        vm.ShowConnectStage(new ConnectStage("Could not reach it", "no reply", Terminal: true, ConnectPhase.Connecting));
+
+        Assert.Equal("Could not reach it", vm.State.StatusHeadline);
     }
 
     [Fact]
@@ -728,8 +798,10 @@ public class SessionViewModelTests
     {
         // The trail must not keep its last position through a reconnect. It would be claiming progress that
         // belongs to a sequence which already finished, on a screen that is about to start a new one.
-        (SessionViewModel vm, _, _) = Build();
+        (SessionViewModel vm, _, TestClock clock) = Build();
         vm.ShowConnectStage(new ConnectStage("Waking", "standby", Terminal: false, ConnectPhase.Waking));
+        clock.Advance(ConnectGate.Dwell);
+        vm.TickConnect();
         Assert.NotNull(vm.State.Phase);
 
         vm.ApplyLifecycle(new SessionStatus(SessionLifecycle.Reconnecting, "Lost the console"));

@@ -332,6 +332,10 @@
     <value>Settings</value>
     <comment>ToolTip on the main window title bar.</comment>
   </data>
+  <data name="SessionPage_BackConsoles2.Content" xml:space="preserve">
+    <value>Back to consoles</value>
+    <comment>Quiet link on the connecting screen, shown once a connect has run a few seconds.</comment>
+  </data>
   <data name="SessionPage_BackConsoles.Content" xml:space="preserve">
     <value>Back to consoles</value>
     <comment>The label on a control on the in-stream session page. Keep it short; it sits on a control.</comment>
