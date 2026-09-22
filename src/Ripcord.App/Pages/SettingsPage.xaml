@@ -162,6 +162,32 @@
                         x:Uid="SettingsPage_SendKeyboardInputConsole" />
                 </tk:SettingsCard>
 
+                <!--
+                    The live pad readout, moved here from the stream's rung 3.
+
+                    It is a CONTROLLER diagnostic, not a stream one: what it answers is "is this pad reaching
+                    Ripcord, and is that stick centred", and both questions are asked while looking at the
+                    bindings rather than while looking at a game. On rung 3 it was competing with twenty
+                    instruments about the picture, on a surface you have to be streaming to open - so the one
+                    place it could not be read was the place somebody would be holding the pad to test it.
+                -->
+                <tk:SettingsCard x:Uid="SettingsPage_LivePadReadout">
+                    <StackPanel MinWidth="260" HorizontalAlignment="Right">
+                        <TextBlock
+                            x:Name="PadButtonsText"
+                            HorizontalAlignment="Right"
+                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                            Style="{StaticResource CaptionTextBlockStyle}"
+                            TextWrapping="Wrap" />
+                        <TextBlock
+                            x:Name="PadSticksText"
+                            HorizontalAlignment="Right"
+                            Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                            Style="{StaticResource CaptionTextBlockStyle}"
+                            TextWrapping="Wrap" />
+                    </StackPanel>
+                </tk:SettingsCard>
+
                 <tk:SettingsCard x:Uid="SettingsPage_KeysGamepadMapping" x:Name="KeyBindingsCard">
                     <Button
                         x:Name="KeyBindingsButton"
