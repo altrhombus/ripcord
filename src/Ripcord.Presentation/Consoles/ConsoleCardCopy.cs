@@ -32,6 +32,13 @@ public static class ConsoleCardCopy
 
     public static string MenuRemove => Strings.Console_MenuRemove;
 
+    /// <summary>Write a desktop shortcut that launches straight into this console.</summary>
+    public static string MenuShortcut => Strings.Console_MenuShortcut;
+
+    public static string ShortcutMade => Strings.Console_ShortcutMade;
+
+    public static string ShortcutFailed => Strings.Console_ShortcutFailed;
+
     public static string DetailsClose => Strings.Console_DetailsClose;
 
     public static string RenameTitle => Strings.Console_RenameTitle;
