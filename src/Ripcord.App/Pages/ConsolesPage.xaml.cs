@@ -144,6 +144,10 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
 
         TryLaunchDirectly(consoles);
 
+        // Kept in step with whatever is paired. Fire-and-forget because nothing on this page waits on it and
+        // a jump list that failed to rebuild is not worth a word to anyone - see PlayJumpList.
+        _ = PlayJumpList.RefreshAsync(consoles.Select(c => c.Console).ToList());
+
         if (consoles.Count > 0)
         {
             // Consume the rest intent for this pass only; a later plain Refresh must not re-arm the watch.
@@ -369,6 +373,25 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
     /// right-click / menu-key path share one definition \u2014 two copies would drift the moment either grew an
     /// entry.
     /// </summary>
+    /// <summary>
+    /// Write a desktop shortcut that launches straight into this console, and say whether it worked.
+    ///
+    /// <para>
+    /// Told rather than assumed: the desktop can be redirected somewhere read-only or onto a share that is
+    /// not there, and a menu item that silently does nothing is worse than one that says it could not.
+    /// </para>
+    /// </summary>
+    private void CreateShortcut(ConsoleCardViewModel item)
+    {
+        string? path = PlayShortcut.WriteToDesktop(item.Console.DisplayName);
+
+        ShortcutBar.Message = path is null ? ConsoleCardCopy.ShortcutFailed : ConsoleCardCopy.ShortcutMade;
+        ShortcutBar.Severity = path is null
+            ? InfoBarSeverity.Warning
+            : InfoBarSeverity.Success;
+        ShortcutBar.IsOpen = true;
+    }
+
     private MenuFlyout BuildConsoleFlyout(ConsoleCardViewModel item)
     {
         var flyout = new MenuFlyout { Placement = FlyoutPlacementMode.BottomEdgeAlignedRight };
@@ -384,8 +407,19 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
         var remove = new MenuFlyoutItem { Text = ConsoleCardCopy.MenuRemove, Icon = new FontIcon { Glyph = "\uE74D" } };
         remove.Click += async (_, _) => await RemoveAsync(item);
 
+        // The artefact somebody adds to Steam, to a handheld launcher, or pins to their taskbar. It is the
+        // half of "launch at a console" that works without package identity - a jump list needs it and the
+        // zip has none, and the zip is how most people will run this.
+        var shortcut = new MenuFlyoutItem
+        {
+            Text = ConsoleCardCopy.MenuShortcut,
+            Icon = new FontIcon { Glyph = "" },
+        };
+        shortcut.Click += (_, _) => CreateShortcut(item);
+
         flyout.Items.Add(rename);
         flyout.Items.Add(details);
+        flyout.Items.Add(shortcut);
         // IsTabStop=false, or directional focus stops on it: a separator is decoration and activating it does
         // nothing, so a pad user gets a dead step between Details and Remove.
         flyout.Items.Add(new MenuFlyoutSeparator { IsTabStop = false });
