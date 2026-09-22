@@ -211,7 +211,13 @@
         <Grid VerticalAlignment="Bottom">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
-                <RowDefinition Height="{StaticResource RipcordTouchShelfHeight}" />
+                <!--
+                    Height is set in code from RipcordTouchShelfHeight. It CANNOT be bound here: the
+                    token is an x:Double and this property is a GridLength, and XAML does not convert
+                    between them - it throws at page load, which is to say when somebody opens a
+                    stream rather than when anybody builds. Found exactly that way.
+                -->
+                <RowDefinition x:Name="TouchShelfRow" />
             </Grid.RowDefinitions>
 
             <!--
