@@ -311,6 +311,10 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer
 
     private async Task StartSessionAsync()
     {
+        // The previous attempt's last line must not be up while this one is deciding what to say. Covers
+        // retry as well as a first connect, since retry comes back through here.
+        _viewModel.ResetConnect();
+
         _connectCts = new CancellationTokenSource();
 
         // Diagnostics run from here on, before the session exists: an empty panel is least useful precisely
@@ -498,6 +502,7 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer
         StatusDetail.Text = s.StatusDetail;
         RenderTrail(s);
         StatusActions.Visibility = Vis(s.StatusActionsVisible);
+        ConnectEscape.Visibility = Vis(s.ConnectEscapeVisible);
 
         ControllerConnectedText.Text = s.ConnectedControllers;
 
@@ -1786,6 +1791,13 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer
         //
         // False means the sample was skipped — no pipeline yet, or too little time since the last one for a rate
         // to mean anything — so there is nothing new to plot either.
+        // The connect gate needs the clock, not just reports. ConnectFlow reports only when something
+        // changes, so a stage that hangs reports once and then goes quiet - without this, a four-second
+        // stall would never promote its own line and the screen would sit on a stage that had already
+        // stopped being true. Ticked before sampling, and unconditionally, because the connect sequence runs
+        // before there is any telemetry to sample.
+        _viewModel.TickConnect();
+
         bool sampled = _viewModel.Sample(ReadTelemetry());
 
         if (sampled)
