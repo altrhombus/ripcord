@@ -250,8 +250,14 @@ whose reason sits behind a collapsed heading somewhere else. A control that expl
 is unavailable belongs beside it.
 
 Every knob survives; they stop being peers. The dials an enthusiast expects move into a collapsed
-**Advanced** so a casual player never scrolls past them. A **search box** is what makes collapsing Advanced
-safe at roughly twenty settings.
+**Advanced** so a casual player never scrolls past them.
+
+> **Amended 2026-09-21: no search box.** This section prescribed one, on the reasoning that search is what
+> makes collapsing Advanced safe. At roughly twenty settings on a single scrolling page it is not needed —
+> and it is a *Windows Settings mannerism* rather than a Fluent behaviour, which is precisely the line
+> [the position](#the-position) draws between what this app borrows and what it invents. It would also be
+> the only control on the page that has to be taught what every setting is called, which is a maintenance
+> cost paid forever against a problem twenty rows do not have.
 
 There is no Accessibility section, and that is the point rather than an omission — see below.
 
