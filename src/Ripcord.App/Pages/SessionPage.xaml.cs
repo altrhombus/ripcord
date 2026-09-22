@@ -498,12 +498,59 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer
     private void HideStatus() => _viewModel.HideStatus();
 
     /// <summary>
+    /// Take the connect composition off the picture, identity last.
+    ///
+    /// <para>
+    /// Identity last because it is the element the <c>ConnectedAnimation</c> carried here from the card: the
+    /// console's mark arrives first and leaves last, so the whole sequence reads as one object travelling
+    /// rather than two screens swapping.
+    /// </para>
+    /// </summary>
+    private void FadeOutStatusOverlay()
+    {
+        var fade = new Storyboard();
+
+        var opacity = new DoubleAnimation
+        {
+            To = 0,
+            Duration = new Duration(TimeSpan.FromMilliseconds(150)),
+            EnableDependentAnimation = true,
+        };
+
+        Storyboard.SetTarget(opacity, StatusOverlay);
+        Storyboard.SetTargetProperty(opacity, "Opacity");
+        fade.Children.Add(opacity);
+
+        // Collapsed only once it is invisible: leaving it Visible at zero opacity would keep it in the hit
+        // test, and a transparent panel over a running game swallows the first click.
+        fade.Completed += (_, _) =>
+        {
+            StatusOverlay.Visibility = Visibility.Collapsed;
+            StatusOverlay.Opacity = 1;
+        };
+
+        fade.Begin();
+    }
+
+    /// <summary>
     /// Project the whole view-model state onto the controls. One method rather than per-property handlers,
     /// because the state arrives as one value and cannot be half-applied.
     /// </summary>
     private void Render(SessionViewState s)
     {
-        StatusOverlay.Visibility = Vis(s.StatusVisible);
+        // Faded rather than switched, on the way out only. The first decoded frame is the moment the player
+        // has been waiting for, and a hard cut from the connect composition to the picture throws away the
+        // one transition worth having. Opacity ONLY, which is exactly and only what Ripcord.Motion.xaml
+        // permits on the video layer, and skipped entirely when motion is off.
+        if (!s.StatusVisible && StatusOverlay.Visibility == Visibility.Visible && AppMotion.Enabled)
+        {
+            FadeOutStatusOverlay();
+        }
+        else
+        {
+            StatusOverlay.Opacity = 1;
+            StatusOverlay.Visibility = Vis(s.StatusVisible);
+        }
         StatusHeadline.Text = s.StatusHeadline;
         StatusDetail.Text = s.StatusDetail;
         RenderTrail(s);
