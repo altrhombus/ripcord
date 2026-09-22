@@ -242,8 +242,56 @@ public sealed partial class PlayWedge : UserControl
     /// <summary>How far the bleed reaches into the plane, as a fraction of the wedge's width.</summary>
     private const double BleedFraction = 0.55;
 
-    /// <summary>The accent's opacity where it meets the rim. It falls to nothing across the bleed.</summary>
-    private const byte BleedAlpha = 0x24;
+    /// <summary>
+    /// The accent's opacity where it meets the rim, at rest and under the pointer and the press. It falls to
+    /// nothing across the bleed in every case.
+    ///
+    /// <para>
+    /// The wedge was the loudest element in the app and the only inert one: drawn at a third of the card,
+    /// reading unmistakably as a button, and responding to nothing. There was no pressed state anywhere on
+    /// the primary action of the product. These three steps are that response, and they are a change in the
+    /// light on the diagonal rather than a change to it - the shape never moves.
+    /// </para>
+    /// </summary>
+    private const byte BleedAlphaRest = 0x24;
+
+    private const byte BleedAlphaHot = 0x3A;
+
+    private const byte BleedAlphaDown = 0x60;
+
+    /// <summary>The pointer is over the card this wedge belongs to.</summary>
+    public bool IsHot
+    {
+        get => (bool)GetValue(IsHotProperty);
+        set => SetValue(IsHotProperty, value);
+    }
+
+    public static readonly DependencyProperty IsHotProperty = DependencyProperty.Register(
+        nameof(IsHot),
+        typeof(bool),
+        typeof(PlayWedge),
+        new PropertyMetadata(false, OnFillInputChanged));
+
+    /// <summary>
+    /// The card is being pressed.
+    ///
+    /// <para>
+    /// Deliberately NOT cleared before the connect animation runs. The <c>ConnectedAnimation</c> lifts the
+    /// card into the session page, and an element that snapped back to rest one frame before being lifted
+    /// reads as two motions where there should be one.
+    /// </para>
+    /// </summary>
+    public bool IsDown
+    {
+        get => (bool)GetValue(IsDownProperty);
+        set => SetValue(IsDownProperty, value);
+    }
+
+    public static readonly DependencyProperty IsDownProperty = DependencyProperty.Register(
+        nameof(IsDown),
+        typeof(bool),
+        typeof(PlayWedge),
+        new PropertyMetadata(false, OnFillInputChanged));
 
     private static void OnFillInputChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
         => ((PlayWedge)d).UpdateRim();
@@ -283,7 +331,7 @@ public sealed partial class PlayWedge : UserControl
         bleed.GradientStops.Add(new GradientStop
         {
             Offset = 0,
-            Color = Color.FromArgb(BleedAlpha, AccentColor.R, AccentColor.G, AccentColor.B),
+            Color = Color.FromArgb(Alpha(), AccentColor.R, AccentColor.G, AccentColor.B),
         });
         bleed.GradientStops.Add(new GradientStop
         {
@@ -293,4 +341,15 @@ public sealed partial class PlayWedge : UserControl
 
         Bleed.Fill = bleed;
     }
+
+    /// <summary>
+    /// How strongly the bleed shows, for the state the card is in.
+    ///
+    /// <para>
+    /// Press outranks hover because a press implies the pointer is there anyway, and because the moment
+    /// worth marking is the one the player caused. Focus gets nothing from this: the ring owns focus, and a
+    /// second focus mark on the wedge would rebuild exactly the confusion the 2026-09-20 split removed.
+    /// </para>
+    /// </summary>
+    private byte Alpha() => IsDown ? BleedAlphaDown : IsHot ? BleedAlphaHot : BleedAlphaRest;
 }
