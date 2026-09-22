@@ -3,6 +3,7 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using Windows.Foundation;
 using Windows.UI;
+using Ripcord_App.Services;
 
 namespace Ripcord_App.Controls;
 
@@ -30,6 +31,18 @@ public sealed partial class PlayWedge : UserControl
     public PlayWedge()
     {
         InitializeComponent();
+
+        // Whether the bleed is allowed to show depends on a system setting, so it has to be re-decided when
+        // that setting changes rather than only when a binding does. Subscribed on Loaded and released on
+        // Unloaded because AppEffects.Changed is static: a card that stayed subscribed would keep the whole
+        // page alive, and this control is realised once per console and recycled by the GridView.
+        Loaded += (_, _) =>
+        {
+            AppEffects.Changed += UpdateRim;
+            UpdateRim();
+        };
+
+        Unloaded += (_, _) => AppEffects.Changed -= UpdateRim;
     }
 
     /// <summary>
@@ -76,13 +89,15 @@ public sealed partial class PlayWedge : UserControl
         bleedGeometry.Figures.Add(bleedPlane);
         Bleed.Data = bleedGeometry;
 
+        // The rim: the leading diagonal on its own, open, so the accent is an edge and never an area. A
+        // separate figure rather than a stroke on the plane, because stroking the plane would outline the
+        // card's three straight sides as well and the wedge would read as a box.
         var edge = new PathFigure { StartPoint = new Point(slant, 0), IsClosed = false };
         edge.Segments.Add(new LineSegment { Point = new Point(0, h) });
 
         var edgeGeometry = new PathGeometry();
         edgeGeometry.Figures.Add(edge);
         Rim.Data = edgeGeometry;
-
 
         // Centred in the parallel part of the zone rather than in the whole control: the slant eats into the
         // leading edge, so centring on the full width would push the mark visibly off to one side.
@@ -237,8 +252,19 @@ public sealed partial class PlayWedge : UserControl
     {
         RimBrush = Muted ? MutedAccent : Accent;
 
-        // No bleed on a console we could not reach. The rim still marks the shape; the light goes out of it.
-        if (Muted)
+        // No bleed on a console we could not reach - the rim still marks the shape, the light goes out of it -
+        // and none in high contrast, which is the case this got wrong on hardware.
+        //
+        // AccentResources.Brush already resolves the accent to a system brush in high contrast, so the RIM was
+        // correct on its own. The bleed takes the accent as a bare Color instead, and that path has no such
+        // suppression: it kept painting a vendor blue at 14% over a high-contrast card. Decorative colour
+        // outside the system palette is precisely what high contrast is a contract against, and a user who
+        // turned it on to make the screen legible is the last person who should be given a decorative wash.
+        //
+        // AccentWashOpacity is the existing answer to "how strongly may a decorative accent show", and it
+        // returns zero here. It had no callers after the card's old accent wash was deleted; this is the call
+        // it was written for.
+        if (Muted || AppEffects.AccentWashOpacity(1.0) == 0)
         {
             Bleed.Fill = null;
             return;
