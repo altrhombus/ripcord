@@ -9,6 +9,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Input;
+using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Animation;
 using Ripcord.Core.Consoles;
 using Ripcord.Presentation;
@@ -391,7 +392,55 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
         if (sender is FrameworkElement { DataContext: ConsoleCardViewModel item })
         {
             item.IsHighlighted = on;
+
+            // Hover is reported separately from the wash's hover-or-focus, because the wedge answers this
+            // one and must not answer focus. Cleared on exit, which also clears any press left behind by a
+            // pointer that left the card mid-press.
+            item.IsPointerOver = on;
+
+            if (!on)
+            {
+                item.IsPressed = false;
+            }
         }
+    }
+
+    private void OnCardDown(object sender, PointerRoutedEventArgs e) => SetPressed(sender, true);
+
+    /// <summary>
+    /// Release, cancel, and capture-lost all end a press.
+    ///
+    /// <para>
+    /// Capture-lost is the one that is easy to omit and the one that strands a card lit: a press that turns
+    /// into a scroll or is interrupted by a flyout never raises Released, and the wedge would stay at its
+    /// pressed strength until the pointer happened to leave.
+    /// </para>
+    /// </summary>
+    private void OnCardUp(object sender, PointerRoutedEventArgs e) => SetPressed(sender, false);
+
+    /// <summary>How far a pressed card settles. Small on purpose: felt rather than watched.</summary>
+    private const double PressScaleFactor = 0.985;
+
+    private static void SetPressed(object sender, bool down)
+    {
+        if (sender is not FrameworkElement { DataContext: ConsoleCardViewModel item } element)
+        {
+            return;
+        }
+
+        item.IsPressed = down;
+
+        // The scale is the front end's alone - it is a WinUI transform, and the portable layer holds no UI
+        // types. Skipped entirely when motion is off rather than run at zero duration, so a player who asked
+        // Windows for less motion gets none rather than an instant jump.
+        if (!AppMotion.Enabled || element.FindName("PressScale") is not ScaleTransform scale)
+        {
+            return;
+        }
+
+        double target = down ? PressScaleFactor : 1.0;
+        scale.ScaleX = target;
+        scale.ScaleY = target;
     }
 
     /// <summary>
