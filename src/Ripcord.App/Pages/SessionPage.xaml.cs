@@ -810,21 +810,13 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer
             _ => 3,
         };
 
-        PaintDash(TrailOne, reached >= 1);
-        PaintDash(TrailTwo, reached >= 2);
-        PaintDash(TrailThree, reached >= 3);
-    }
-
-    /// <summary>
-    /// One dash of the trail. The vendor accent, because this is the console's own mark travelling — and it
-    /// is resolved through AccentResources, so high contrast drops it to a system brush rather than painting
-    /// decorative colour where the palette forbids it.
-    /// </summary>
-    private void PaintDash(Shape dash, bool lit)
-    {
+        // The console's own accent for the trail, resolved through AccentResources so high contrast drops it
+        // to a system brush rather than painting decorative colour where the palette forbids it. The wedge
+        // takes the ordinary foreground: it is the app's mark, not the console's.
         ConsoleFamily family = ConsoleFamily.ForPlatformName(_console?.Platform);
-        dash.Fill = AccentResources.Brush(family.Accent);
-        dash.Opacity = lit ? 1.0 : 0.22;
+        StatusTrail.Accent = AccentResources.Brush(family.Accent);
+        StatusTrail.WedgeFill = ThemeBrush.Lookup("TextFillColorPrimaryBrush");
+        StatusTrail.Reached = reached;
     }
 
     /// <summary>Groups of the instrument panel, in the order they read. Column order in a sheet, row order otherwise.</summary>
