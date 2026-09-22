@@ -31,6 +31,22 @@ internal static class ThemeBrush
         => Application.Current.Resources.TryGetValue(key, out object? value) && value is Brush brush
             ? brush
             : new SolidColorBrush(Microsoft.UI.Colors.Transparent);
+
+    /// <summary>
+    /// A numeric token, for the properties XAML cannot bind one to.
+    ///
+    /// <para>
+    /// <c>RowDefinition.Height</c> is the case this exists for: the token is an <c>x:Double</c> and the
+    /// property is a <c>GridLength</c>, and XAML does not convert between them. It does not fail at build
+    /// either — it throws when the page is loaded, which for a stream page means when somebody starts a
+    /// stream. The fallback is here for the same reason: a missing token should cost a layout that is
+    /// slightly wrong, not a session that will not open.
+    /// </para>
+    /// </summary>
+    public static double LookupDouble(string key, double fallback)
+        => Application.Current.Resources.TryGetValue(key, out object? value) && value is double number
+            ? number
+            : fallback;
 }
 
 /// <summary>Vendor accent as a brush, for marks and strokes.</summary>
