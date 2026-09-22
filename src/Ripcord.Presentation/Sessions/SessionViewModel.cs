@@ -37,6 +37,12 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
     private readonly IVideoPipelineStats _pipeline;
     private readonly Func<DateTimeOffset> _clock;
 
+    // Holds each connect line long enough to be read. See ShowConnectStage.
+    private readonly ConnectGate _gate = new();
+
+    private DateTimeOffset? _connectStartedAt;
+    private bool _connectEscapeVisible;
+
     /// <summary>Decides which health verdicts are worth interrupting the player about. See the class note.</summary>
     private readonly HealthAlertGate _alertGate = new();
 
@@ -268,16 +274,69 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
     {
         ArgumentNullException.ThrowIfNull(stage);
 
+        // Offered to the gate rather than shown. A warm connect reports three stages inside a second and the
+        // player sees a flicker they cannot read; the gate holds each line long enough to be read, and drops
+        // a line that was overtaken before anyone could. Null means nothing has earned the screen yet, so
+        // whatever is up stays up.
+        if (_gate.Offer(stage, _clock()) is { } shown)
+        {
+            Apply(shown);
+        }
+    }
+
+    /// <summary>
+    /// Let the connect gate see the clock.
+    ///
+    /// <para>
+    /// Called from the same timer that samples telemetry. <see cref="ConnectFlow"/> reports only when
+    /// something changes, so a stage that hangs reports once and then goes quiet - and without this, a
+    /// four-second stall would never be named, which is exactly backwards.
+    /// </para>
+    /// </summary>
+    public void TickConnect()
+    {
+        if (_gate.Tick(_clock()) is { } shown && shown.Headline != _statusHeadline)
+        {
+            Apply(shown);
+        }
+
+        // The way out, once a connect has run long enough to feel stuck. Not offered on entry: a Cancel
+        // shown the instant you press Play is the ceremony this composition exists to avoid, and it invites
+        // abandoning a connect that was about to succeed.
+        bool escape = _statusVisible
+                      && !_statusTerminal
+                      && _connectStartedAt is { } started
+                      && _clock() - started >= ConnectEscapeAfter;
+
+        if (escape != _connectEscapeVisible)
+        {
+            Mutate(() => _connectEscapeVisible = escape);
+        }
+    }
+
+    /// <summary>How long a connect runs before it offers a way out of itself.</summary>
+    public static readonly TimeSpan ConnectEscapeAfter = TimeSpan.FromSeconds(3);
+
+    /// <summary>Forget the previous attempt. Its last line must not be up while the next one decides.</summary>
+    public void ResetConnect()
+    {
+        _gate.Reset();
         Mutate(() =>
         {
-            _statusVisible = true;
-            _statusHeadline = stage.Headline;
-            _statusDetail = stage.Detail;
-            _statusBusy = !stage.Terminal;
-            _statusTerminal = stage.Terminal;
-            _phase = stage.Phase;
+            _connectStartedAt = _clock();
+            _connectEscapeVisible = false;
         });
     }
+
+    private void Apply(ConnectStage stage) => Mutate(() =>
+    {
+        _statusVisible = true;
+        _statusHeadline = stage.Headline;
+        _statusDetail = stage.Detail;
+        _statusBusy = !stage.Terminal;
+        _statusTerminal = stage.Terminal;
+        _phase = stage.Phase;
+    });
 
     public void HideStatus() => Mutate(() =>
     {
@@ -763,6 +822,7 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
         StatusDetail: _statusDetail,
         StatusBusy: _statusBusy,
         StatusActionsVisible: _statusTerminal,
+        ConnectEscapeVisible: _connectEscapeVisible,
         IsStreamLive: _isStreamLive,
 
         // Suppressed while the status overlay is up: that overlay is a stronger statement about the same
