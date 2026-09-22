@@ -14,6 +14,31 @@ public enum ControllerLink
     Bluetooth,
 }
 
+/// <summary>
+/// What route, if any, the rung-1 notice may offer for going a rung deeper.
+///
+/// <para>
+/// Portable and semantic, never a key name: the notice used to end in a literal "F3" pill whatever the player
+/// had in their hands, which on a handheld names a key that is not on the device. Which glyph or word each of
+/// these becomes is the front end's business, and the front end already tracks the input mode for its hint
+/// bar — this only says whether a route exists.
+/// </para>
+/// </summary>
+public enum AlertHint
+{
+    /// <summary>
+    /// Say nothing. The pad case: nothing in the stream layer takes gamepad input by design, so every route
+    /// out of rung 1 is one a pad cannot walk, and naming one would be worse than silence.
+    /// </summary>
+    None,
+
+    /// <summary>A keyboard shortcut is available. The front end names the key.</summary>
+    Key,
+
+    /// <summary>The notice itself is the control. Touch, where a target you can hit beats a key you cannot.</summary>
+    Tap,
+}
+
 /// <summary>One capability worth advertising about the picture currently on screen.</summary>
 /// <param name="Accent">
 /// Whether it is the headline capability rather than a supporting one. The <em>emphasis</em>, not the colour —
@@ -54,9 +79,15 @@ public sealed record SessionViewState(
     /// <summary>
     /// Rung 1 of the HUD: something is wrong and has stayed wrong long enough to be worth saying over a
     /// running game. Gated by <see cref="HealthAlertGate"/> rather than read straight off the verdict, and
-    /// suppressed entirely while the status overlay is up, since that overlay already says more.
+    /// suppressed both while the status overlay is up and once the HUD itself is open, since each of those
+    /// already says the same thing in more words.
     /// </summary>
     bool AlertVisible,
+
+    /// <summary>
+    /// Whether the notice may offer a way deeper, and by what route. See <see cref="Sessions.AlertHint"/>.
+    /// </summary>
+    AlertHint AlertHint,
 
     /// <summary>How much of the HUD is on screen. See <see cref="DiagnosticsRung"/>.</summary>
     DiagnosticsRung Rung,
@@ -84,6 +115,7 @@ public sealed record SessionViewState(
         StatusActionsVisible: false,
         IsStreamLive: false,
         AlertVisible: false,
+        AlertHint: AlertHint.Key,
         Rung: DiagnosticsRung.Hidden,
         Phase: null,
         ConnectedControllers: Strings.Session_NoControllers,
@@ -144,6 +176,13 @@ public sealed record SessionDiagnosticsState(
     // ---- verdict ----
     string Health,
     string HealthTip,
+
+    /// <summary>
+    /// The rung-1 line: the same verdict as <see cref="Health"/>, plus the single clause a player can act on.
+    /// Separate from the headline so all three rungs still say the same sentence — see
+    /// <see cref="StreamHealthVerdict.Notice"/>.
+    /// </summary>
+    string HealthNotice,
     StreamHealthLevel HealthLevel,
 
     /// <summary>Loss as a percentage, for rung 2. The panel plots it; the summary strip states it.</summary>
@@ -194,6 +233,7 @@ public sealed record SessionDiagnosticsState(
         Path: string.Empty,
         Health: Strings.Session_NotConnectedYet,
         HealthTip: Strings.Session_WaitingToStart,
+        HealthNotice: Strings.Session_NotConnectedYet,
         HealthLevel: StreamHealthLevel.Info,
         HeroLoss: "—",
         VideoWidth: 0,
