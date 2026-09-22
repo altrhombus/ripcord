@@ -384,6 +384,17 @@
             ghost tile, because at one console a second hero-sized tile would make adding one look like half
             the page.
         -->
+        <!--
+            Confirmation for the shortcut menu item. An InfoBar rather than a dialog: writing a shortcut is
+            not a decision anybody needs to acknowledge, and a modal in front of the console list would be
+            three presses for a thing that already worked.
+        -->
+        <InfoBar
+            x:Name="ShortcutBar"
+            Grid.Row="3"
+            Margin="0,0,0,8"
+            IsOpen="False" />
+
         <HyperlinkButton
             x:Name="HeroAddLink"
             Grid.Row="3"
