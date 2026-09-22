@@ -26,6 +26,7 @@
             <conv:InverseBoolToVisibilityConverter x:Key="InverseBoolToVisibility" />
             <conv:ActionGlyphIsConverter x:Key="ActionGlyphIs" />
             <conv:NotConverter x:Key="Not" />
+            <conv:CardDensityConverter x:Key="Density" />
             <conv:ReachableOpacityConverter x:Key="ActionOpacity" />
         </ResourceDictionary>
     </Application.Resources>

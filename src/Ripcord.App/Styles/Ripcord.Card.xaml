@@ -106,47 +106,6 @@
     </ResourceDictionary.ThemeDictionaries>
 
     <!--
-        The focus ring, and why it is these numbers.
-
-        Hover and focus were the same picture until 2026-09-20: both ran through one IsHighlighted flag onto
-        one accent wash, moving it from 0.10 to 0.22 opacity on a gradient that fades out at 90%. That is a
-        tint delta rather than an outline, it was invisible on a real screen, and in high contrast the wash
-        was suppressed to zero, leaving nothing at all. A pad user could not tell where focus was.
-
-        So the two states are now different KINDS of thing, not two strengths of one thing:
-
-          hover  a wash over the card - pointer feedback, low stakes, and it follows the mouse
-          focus  a ring drawn outside the card - the keyboard and pad answer to "where am I?"
-
-        The ring is the system focus visual rather than something drawn here, which is what makes it correct
-        in high contrast for free: Windows draws it in the system focus colour and it cannot be suppressed by
-        an app that forgot to think about it. What IS set here is its weight - 3px primary against a 2px
-        secondary, against WinUI's 2 and 1 - because the standing invariant for this app is that focus is
-        legible at 2 m, and the stock weight was drawn for a mouse at desk distance.
-
-        The negative margin lifts the ring off the card's own stroke. Without it the two lines sit adjacent
-        and read as one thick edge, which is the failure mode that makes a focus ring easy to miss on a
-        surface that already has a border.
-    -->
-    <Thickness x:Key="RipcordFocusPrimaryThickness">3</Thickness>
-    <Thickness x:Key="RipcordFocusSecondaryThickness">2</Thickness>
-    <Thickness x:Key="RipcordFocusMargin">-4</Thickness>
-
-    <!--
-        A card that IS a button.
-
-        The grid gets this free: a GridViewItem is already focusable, clickable and pad-navigable, so the card
-        template inside it is just paint. The one-console hero had no such container, and the consequence was
-        that its card was not clickable at all - the action lived in a separate accent button underneath, which
-        is exactly the "card plus a Connect button" shape the wedge exists to replace.
-
-        The template is stripped to a bare ContentPresenter deliberately. Basing this on the stock button style
-        would drag in a background, a border and the PointerOver/Pressed states that paint them, and the card
-        draws all three itself - so the work would be spent turning chrome off rather than leaving it out. What
-        a Button is actually wanted for here is behaviour: focus, Space and Enter, the pad's A button, and an
-        automation peer that reports itself as invokable.
-    -->
-    <!--
         THE FACET, AND WHY THE WEDGE IS NOT A PANEL OF COLOUR.
 
         docs/design.md puts this one section above the wedge itself: "Identity therefore comes from material
@@ -182,31 +141,30 @@
     -->
 
     <!--
-        The rim's weight. Constant rather than proportional: a rim is a line, and a line that thickens with
-        its container stops reading as an edge and starts reading as a second, thinner panel.
-    -->
-    <x:Double x:Key="RipcordWedgeRimThickness">3</x:Double>
+        The focus ring, and why it is these numbers.
 
-    <Style x:Key="RipcordCardButtonStyle" TargetType="Button">
-        <Setter Property="Background" Value="Transparent" />
-        <Setter Property="BorderThickness" Value="0" />
-        <Setter Property="Padding" Value="0" />
-        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-        <Setter Property="VerticalContentAlignment" Value="Stretch" />
-        <Setter Property="UseSystemFocusVisuals" Value="True" />
-        <Setter Property="FocusVisualPrimaryThickness" Value="{StaticResource RipcordFocusPrimaryThickness}" />
-        <Setter Property="FocusVisualSecondaryThickness" Value="{StaticResource RipcordFocusSecondaryThickness}" />
-        <Setter Property="FocusVisualMargin" Value="{StaticResource RipcordFocusMargin}" />
-        <Setter Property="Template">
-            <Setter.Value>
-                <ControlTemplate TargetType="Button">
-                    <ContentPresenter
-                        Content="{TemplateBinding Content}"
-                        HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
-                        VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}" />
-                </ControlTemplate>
-            </Setter.Value>
-        </Setter>
-    </Style>
+        Hover and focus were the same picture until 2026-09-20: both ran through one IsHighlighted flag onto
+        one accent wash, moving it from 0.10 to 0.22 opacity on a gradient that fades out at 90%. That is a
+        tint delta rather than an outline, it was invisible on a real screen, and in high contrast the wash
+        was suppressed to zero, leaving nothing at all. A pad user could not tell where focus was.
+
+        So the two states are now different KINDS of thing, not two strengths of one thing:
+
+          hover  a wash over the card - pointer feedback, low stakes, and it follows the mouse
+          focus  a ring drawn outside the card - the keyboard and pad answer to "where am I?"
+
+        The ring is the system focus visual rather than something drawn here, which is what makes it correct
+        in high contrast for free: Windows draws it in the system focus colour and it cannot be suppressed by
+        an app that forgot to think about it. What IS set here is its weight - 3px primary against a 2px
+        secondary, against WinUI's 2 and 1 - because the standing invariant for this app is that focus is
+        legible at 2 m, and the stock weight was drawn for a mouse at desk distance.
+
+        The negative margin lifts the ring off the card's own stroke. Without it the two lines sit adjacent
+        and read as one thick edge, which is the failure mode that makes a focus ring easy to miss on a
+        surface that already has a border.
+    -->
+    <Thickness x:Key="RipcordFocusPrimaryThickness">3</Thickness>
+    <Thickness x:Key="RipcordFocusSecondaryThickness">2</Thickness>
+    <Thickness x:Key="RipcordFocusMargin">-4</Thickness>
 
 </ResourceDictionary>

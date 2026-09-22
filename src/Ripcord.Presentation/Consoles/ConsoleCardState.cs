@@ -98,6 +98,11 @@ public sealed record ConsoleCardState(
     bool IsReachable,
     string? LastConnectedLabel,
     bool IsHighlighted,
+
+    /// <summary>How large the card is drawn. The front end reads a wedge width, a type role and a
+    /// content margin from this; see <see cref="CardMetrics"/> for why it is one rule and not three
+    /// layouts.</summary>
+    CardDensity Density,
     string AutomationName)
 {
     /// <summary>True when there is a last-played caption to show at all.</summary>
