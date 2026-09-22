@@ -1,0 +1,871 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ripcord design review</title>
+<style>
+:root{
+  --bg:#faf9f5; --fg:#1d1d1b; --muted:#5d5c56; --rule:#dedbd2; --card:#ffffff;
+  --accent:#1f5fb8; --accentbg:#eaf1fb; --code:#f1efe8; --shadow:0 1px 2px rgba(0,0,0,.06);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#16161a; --fg:#e9e8e4; --muted:#a3a29c; --rule:#2e2e34; --card:#1d1d22;
+    --accent:#7fb0ff; --accentbg:#182335; --code:#232329; --shadow:none;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#16161a; --fg:#e9e8e4; --muted:#a3a29c; --rule:#2e2e34; --card:#1d1d22;
+  --accent:#7fb0ff; --accentbg:#182335; --code:#232329; --shadow:none;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0;background:var(--bg);color:var(--fg);
+  font-family:"Segoe UI Variable Text","Segoe UI",system-ui,-apple-system,sans-serif;
+  font-size:16px;line-height:1.62;
+}
+main{max-width:1180px;margin:0 auto;padding:56px 16px 120px}
+h1,h2,h3,h4{line-height:1.25;letter-spacing:-.015em;scroll-margin-top:24px}
+h1{font-size:2.05rem;font-weight:650;margin:0 0 .6em}
+h2{font-size:1.5rem;font-weight:650;margin:2.6em 0 .7em;padding-top:.5em;border-top:1px solid var(--rule)}
+h3{font-size:1.14rem;font-weight:650;margin:2.1em 0 .5em}
+h4{font-size:1rem;font-weight:650;margin:1.6em 0 .4em}
+p{margin:0 0 1.05em;max-width:78ch}
+ul,ol{margin:0 0 1.15em;padding-left:1.4em;max-width:78ch}
+li{margin:0 0 .5em}
+li>ul,li>ol{margin:.5em 0 0}
+a{color:var(--accent);text-decoration-color:color-mix(in srgb,var(--accent) 40%,transparent);text-underline-offset:2px}
+a:hover{text-decoration-color:currentColor}
+hr{border:0;border-top:1px solid var(--rule);margin:2.6em 0}
+code{font-family:"Cascadia Mono",ui-monospace,"SF Mono",Consolas,monospace;font-size:.875em;
+  background:var(--code);padding:.12em .38em;border-radius:4px}
+pre{background:var(--code);border:1px solid var(--rule);border-radius:8px;padding:14px 16px;
+  overflow:auto;margin:0 0 1.2em;max-width:78ch}
+pre code{background:none;padding:0;font-size:.85rem;line-height:1.55}
+blockquote{margin:0 0 1.2em;padding:.1em 0 .1em 18px;border-left:3px solid var(--accent);
+  background:var(--accentbg);padding:14px 18px;border-radius:0 8px 8px 0;max-width:78ch}
+blockquote p:last-child{margin:0}
+.tw{overflow-x:auto;margin:0 0 1.4em;-webkit-overflow-scrolling:touch}
+table{border-collapse:collapse;font-size:.92rem;min-width:100%}
+th,td{text-align:left;vertical-align:top;padding:9px 14px;border-bottom:1px solid var(--rule)}
+th{font-weight:650;border-bottom:2px solid var(--rule);white-space:nowrap}
+td code{white-space:nowrap}
+.meta{color:var(--muted);font-size:.92rem}
+.board{margin:0 0 42px;padding:0}
+.board figcaption{display:flex;flex-wrap:wrap;gap:4px 14px;align-items:baseline;margin:0 0 10px}
+.bt{font-weight:650;font-size:1.02rem}
+.bn{color:var(--muted);font-size:.86rem}
+.bwrap{position:relative;overflow:hidden;border:1px solid var(--rule);border-radius:10px;
+  background:#0f0f12;box-shadow:var(--shadow)}
+.bwrap iframe{position:absolute;left:0;top:0;border:0;transform-origin:0 0;display:block}
+.toc{background:var(--card);border:1px solid var(--rule);border-radius:10px;padding:18px 22px;margin:0 0 2.4em;max-width:78ch}
+.toc h4{margin:0 0 .5em}
+.toc ul{margin:0;padding-left:1.2em;columns:2;column-gap:32px}
+.toc li{margin:0 0 .3em;break-inside:avoid}
+@media (max-width:760px){
+  main{padding:32px 16px 80px}
+  h1{font-size:1.6rem}
+  h2{font-size:1.25rem}
+  .toc ul{columns:1}
+}
+</style>
+</head>
+<body>
+<main>
+<h1 id="second-design-review--featapp-design-direction">Second design review — <code>feat/app-design-direction</code></h1>
+<p><strong>The question this answers: the direction is settled and half-built. Is it right, and what is missing?</strong></p>
+<p>Written 2026-09-21, against <code>cf6ac0a</code>. This is a <strong>review, not a settlement.</strong> Nothing here amends <a href="design.md"><code>design.md</code></a> until you decide it does; where I disagree with that file I say so and price the disagreement, because the project's own rule is that reopening a settled decision is a change rather than a refinement and the cost should be visible before it is paid.</p>
+<p>Read <a href="design.md"><code>design.md</code></a> first — it is the thing being reviewed, and this file assumes it.</p>
+<p>Mock-ups of the card's states, first run, the celebration and the density steps are at the <a href="#the-mock-ups">foot of this page</a>.</p>
+<hr>
+<h2 id="amended-2026-09-21-after-review">Amended 2026-09-21, after review</h2>
+<p>Three findings were re-decided once the owner had read this file, and the portable half has since been built. <strong><a href="design-review-handoff.md"><code>design-review-handoff.md</code></a> is the current instruction set; where it disagrees with this file, it wins.</strong></p>
+<ul><li><strong>B3 is superseded.</strong> One shared <code>ConsoleCard</code> control was the recommendation here. The hero instead becomes a <em>grid of one</em> — <code>ConsoleCardState</code> already carries everything <code>RenderHero()</code> set by hand, so the hero needed code-behind only because it was not inside an items control. Divergence becomes unrepresentable rather than discouraged, and ~110 lines of code-behind go.</li><li><strong>E2 is softened.</strong> This file said to delete the "which console" step. Xbox work is starting, so the step is repositioned instead: discovery leads and answers the question itself, the step survives for the manual-address path, and its buttons are built from implemented platforms so Xbox appears when it works and not before. No work is deleted.</li><li><strong>The touch-bar collision is confirmed</strong>, on the desktop as well as the handheld, and is now a defect rather than an open question — see §0 of the handoff for the arithmetic. Regression baselines are no longer a blocker: this has not shipped.</li></ul>
+<p><strong>One finding was added during implementation.</strong> <code>AlertVisible</code> was suppressed while the connect overlay was up but not while the HUD was open, and rung 2 leads with the same verdict in the same words — so a lossy stream could stack the identical sentence twice against the bottom edge, underneath the touch bar. Fixed in the portable layer.</p>
+<hr>
+<h2 id="the-verdict-before-the-detail">The verdict, before the detail</h2>
+<p><strong>The direction is right and the reasoning behind it is better than most shipping design systems manage.</strong> I went looking for the places where a design doc has talked itself into something, and mostly found the opposite: the borrow-behaviour/own-expression line, killing the <code>NavigationView</code>, the hover-wash-versus- focus-ring split, the facet-with-a-rim over the accent slab, the three-rung ladder with a toggle that never deepens, <code>HudPlacement</code> claiming dead space, deleting <code>AppScale</code>, and keeping the wedge on a console that did not answer — those are all correct, several are non-obvious, and I would defend every one of them in a room.</p>
+<p>So this review is not about the direction. It is about three things:</p>
+<ol><li><strong>The app's stated job is to disappear, and the biggest opportunity to do that is not in the design at all.</strong> It is one press away from being zero presses, and that press is currently unavoidable because Ripcord has no way to be launched <em>at</em> a console. See <a href="#a-the-through-line-one-press-is-not-the-floor">A</a>.</li><li><strong>The loudest element in the app is the only inert one.</strong> The wedge reads as a button, is drawn at a third of the card, and responds to nothing — no hover, no focus, no press. There is no pressed state anywhere on the primary action of the product. See <a href="#b-the-card">B</a>.</li><li><strong>The surfaces that carry the whole delight budget are the ones that are not built,</strong> and where they <em>are</em> built they contradict the settled design. Pairing asks the user the exact question <code>design.md</code> says the app must answer for them, and offers a console the app cannot stream. See <a href="#e-first-run-and-pairing">E</a>.</li></ol>
+<p>Everything is priced as <strong>refinement</strong> (inside the settled direction), <strong>change</strong> (touches a settled value), or <strong>reversal</strong> (contradicts a settled decision).</p>
+<hr>
+<h2 id="a-the-through-line-one-press-is-not-the-floor">A. The through-line: one press is not the floor</h2>
+<h3 id="a1--ripcord-cannot-be-launched-at-a-console--new-capability">A1 — Ripcord cannot be launched at a console — <em>new capability</em></h3>
+<p>Today the fastest path to a game is: launch Ripcord → home → press A on the hero. That is good, and the hero layout earned it. But the audience this is for does not launch things from a Start menu — they launch from a handheld's game launcher, from Steam Big Picture, from a pinned taskbar icon, from a controller. None of those can express <em>"play on the living room PS5"</em>, because the executable takes no argument saying so.</p>
+<p><strong>The load-bearing primitive is a launch argument, not a jump list:</strong></p>
+<pre><code>ripcord.exe --play &quot;Living room PS5&quot;     # by name or by console id
+ripcord.exe --play-last</code></pre>
+<p>That one thing unlocks every entry point at once, including the ones I cannot anticipate:</p>
+<div class='tw'><table><thead><tr><th>Entry point</th><th>Needs</th><th>Works in</th></tr></thead><tbody><tr><td>Steam / Big Picture as a non-Steam game</td><td>the argument</td><td>zip <strong>and</strong> MSIX</td></tr><tr><td>A handheld launcher (Armoury Crate, Legion Space, Playnite)</td><td>the argument</td><td>zip <strong>and</strong> MSIX</td></tr><tr><td>A desktop/Start shortcut, offered from the card's overflow menu</td><td>the argument + a <code>.lnk</code> writer</td><td>zip <strong>and</strong> MSIX</td></tr><tr><td>The taskbar jump list</td><td>package identity</td><td><strong>MSIX only</strong> — see below</td></tr><tr><td><code>ripcord://play/&lt;id&gt;</code></td><td>a registered protocol handler</td><td>either, with a registry write</td></tr></tbody></table></div>
+<p><strong>On the jump list specifically, since you asked.</strong> <code>Windows.UI.StartScreen.JumpList</code> needs package identity. <code>WindowsPackageType</code> is <code>None</code> today, so in the zip — which ROADMAP names as the <em>primary</em> artifact — <code>JumpList.IsSupported()</code> returns <code>false</code> and the API is simply unavailable. In the MSIX it works fine. Three honest options:</p>
+<ul><li><strong>Recommended: guard on <code>IsSupported()</code> and let it degrade.</strong> The MSIX gets a real jump list for free, in about thirty lines and no interop; the zip gets nothing and loses nothing, because the zip user reaches the same behaviour through the shortcut the overflow menu offers them. Rebuild the list whenever the paired- console list changes.</li><li><strong>Parity in both builds</strong> means the Win32 COM path — <code>ICustomDestinationList</code> + <code>IShellLink</code>, plus <code>SetCurrentProcessExplicitAppUserModelID</code> so the taskbar groups correctly. It works unpackaged and it is perhaps 200 lines of CsWin32 interop. Worth it only if the zip having no jump list bothers you; given the zip user has a desktop shortcut that does the same job, I do not think it should.</li><li><strong>Sparse package identity</strong> gets you the WinRT API unpackaged, but it needs a signed package, which ROADMAP has already decided against buying. Not available.</li></ul>
+<p><strong>And a recommendation against the obvious alternative.</strong> Do <em>not</em> ship "connect to X when Ripcord opens" as a setting. Someone who opens the app to rename a console should not find themselves in a game. <strong>Intent belongs to the entry point, not to a preference</strong> — a shortcut that says "play" always means play, and the plain icon always means "open the app". That distinction is free, it is unambiguous, and it is the thing a preference cannot express.</p>
+<blockquote><p><strong>Price: new capability.</strong> The argument is small. The shortcut-creation command is a <code>.lnk</code> writer and one flyout entry. The jump list is thirty lines behind a support check. I would put the argument and the shortcut in 1.0 and the jump list wherever it falls out.</p></blockquote>
+<h3 id="a2--what-the-home-page-is-for-once-a1-exists">A2 — What the home page is <em>for</em>, once A1 exists</h3>
+<p>If the shell can launch you into a game, the home page stops being the road to play and becomes the place you manage consoles. That does not mean it gets worse — the hero should stay exactly as it is, because the app icon is still the most common entry point and one press is still the right cost there. But it does mean the overflow menu grows the most valuable command in the product (<strong>Create a shortcut</strong>), and that "how do I get here faster?" now has an answer the app can give.</p>
+<hr>
+<h2 id="b-the-card">B. The card</h2>
+<h3 id="b1--the-wedge-responds-to-nothing--refinement-and-the-biggest-single-win-here">B1 — The wedge responds to nothing — <em>refinement, and the biggest single win here</em></h3>
+<p>The card has a hover wash and a focus ring. The wedge has neither. It changes for exactly one input: <code>Muted</code>.</p>
+<p>So the element drawn to read as the primary action — a third of the card, a play triangle, a lit diagonal — is the one element in the app that never acknowledges you. Hover the card and a flat 9%-white rectangle appears <em>behind</em> the wedge while the wedge itself sits still. That is the uncanny part, and it is why the card can look finished in a screenshot and feel dead under a hand.</p>
+<p><strong>The wedge should carry the card's interaction state.</strong> This does not touch the hover-is-a-wash / focus-is-a- ring rule — focus stays the ring and the wedge stays out of it. It is the <em>wash</em> gaining a second facet:</p>
+<ul><li><strong>Hover:</strong> the bleed goes from <code>0x24</code> to roughly <code>0x3A</code> and the rim to full-strength accent, over <code>RipcordDurationStateChange</code>. The diagonal lights; nothing moves.</li><li><strong>Focus:</strong> nothing extra. The ring owns it, deliberately, and adding a second focus mark here would reintroduce exactly the confusion the 2026-09-20 amendment removed.</li><li><strong>Pressed:</strong> see B2.</li></ul>
+<p>The control already has every property this needs (<code>AccentColor</code>, <code>RimBrush</code>, <code>Muted</code>); it wants two more inputs and two storyboards.</p>
+<h3 id="b2--nothing-anywhere-confirms-a-press-on-the-primary-action--refinement">B2 — Nothing anywhere confirms a press on the primary action — <em>refinement</em></h3>
+<ul><li><strong>Grid card:</strong> <code>GridViewItem</code>'s stock pressed visuals paint the <em>container's</em> background, and the card's opaque <code>Border</code> covers it completely. Invisible by construction.</li><li><strong>Hero card:</strong> <code>RipcordCardButtonStyle</code> strips the template to a bare <code>ContentPresenter</code> — there are literally no visual states.</li></ul>
+<p>On a warm LAN connect the page changes in a second or two and nobody notices. The case that matters is the cold one: the first connect of a session, where <code>PrepareAsync</code> is bringing up a D3D12 device and the UI thread is busy. Press, nothing, press again. That is the oldest bug in interaction design and the app is currently built to have it.</p>
+<p><strong>Recommend one pressed treatment shared by both cards:</strong> the bleed goes to full and the card scales to 0.985 for <code>RipcordDurationInstant</code> (83 ms), gated on <code>AppMotion.Enabled</code>. Windows 11's own tiles depress; this is the Fluent-native answer rather than an invented one.</p>
+<p><strong>And make the press the start of the handoff, not the navigation.</strong> The moment the card is invoked, light the wedge fully and leave it lit while navigation happens. The <code>ConnectedAnimation</code> then lifts an element that is already in its destination state, so the transition reads as one motion rather than a jump-cut into a different-looking thing.</p>
+<p>This also closes ROADMAP's own exit criterion — <em>"No user-visible control is inert"</em> — in spirit, on the control it matters most for.</p>
+<h3 id="b3--two-implementations-of-one-card-already-drifting--change">B3 — Two implementations of one card, already drifting — <em>change</em></h3>
+<p>The grid card is a <code>DataTemplate</code> bound through <code>State.*</code>. The hero card is hand-written markup driven by an imperative <code>RenderHero()</code>. They have already diverged, and every divergence favours the grid:</p>
+<div class='tw'><table><thead><tr><th></th><th>Grid card</th><th>Hero card</th></tr></thead><tbody><tr><td>"Checking…" while a probe is in flight</td><td><code>ProgressRing</code></td><td>a grey dot — <strong>breaks the grid card's own rule</strong></td></tr><tr><td><code>PrimaryActionLabel</code> ("Wake &amp; play")</td><td>absent</td><td>present</td></tr><tr><td>Tooltip repeating a truncated name</td><td>present</td><td>absent</td></tr><tr><td>Overflow button hit area</td><td>48 × 48</td><td><code>SubtleButtonStyle</code>, no minimum — <strong>under target</strong></td></tr></tbody></table></div>
+<p>The first row is the one to care about. The grid card's own comment argues it: <em>"'finding out' and 'found out, it is nothing' are opposite answers and must not look alike."</em> The hero card — the layout a one-console user sees every single time — makes them look alike.</p>
+<p><strong>Recommend one <code>ConsoleCard</code> user control with a <code>Density</code> property (<code>Grid</code> | <code>Hero</code>),</strong> consumed by both layouts. Every state becomes expressible once, the fourth row above fixes itself, and the regression baselines ROADMAP wants have half as many surfaces to cover.</p>
+<h3 id="b4--the-heros-overflow-button-is-below-the-touch-minimum--refinement">B4 — The hero's overflow button is below the touch minimum — <em>refinement</em></h3>
+<p>Covered in the table above; calling it out separately because it is a one-line fix on the layout a handheld user meets most often, and <code>RipcordTouchTarget</code> exists precisely so this is not a judgement call.</p>
+<h3 id="b5--the-grid-card-spends-a-third-of-its-width-on-a-mark-that-repeats-what-the-card-already-says--change">B5 — The grid card spends a third of its width on a mark that repeats what the card already says — <em>change</em></h3>
+<p>280 px of card, minus a 92 px wedge, minus 16/100 of margin, leaves about <strong>164 px of text column</strong>. The code comments record two clipping incidents caused by exactly that budget ("Played 11 Sep 2", and the row that lost its bottom third), and ROADMAP records a third — a two-line console name overflowing, <em>"the first screen anyone sees."</em> Three incidents in one constraint is the constraint telling you something.</p>
+<p>The 33% is a <em>drawn</em> proportion, not a measured one. The hero can afford 35% because it is 520 px wide; 35% of 520 is a wedge you can see. 33% of 280 is a wedge that is already small <em>and</em> is eating the only text column on the card.</p>
+<p><strong>Options, in the order I would take them:</strong></p>
+<ul><li><strong>(a) Let the cell breathe at desktop widths.</strong> Covered by <a href="#d1--all-three-form-factors-cost-one-rule-not-three-modes">D1</a> anyway: at ≥ 1920 the cell goes to 360 × 232 and the whole problem evaporates at the sizes where people have many consoles.</li><li><strong>(b) Trim the grid wedge to ~68–72 px (24–26%) at the narrow step.</strong> The slant is a ratio of height, so the signature is untouched — the angle is identical, the zone is narrower. The card gains ~22 px of text.</li><li><strong>(c) Accept and truncate.</strong> Which is what happens today, three times.</li></ul>
+<p>I would do (a) and (b). This is a <em>change</em> — it touches a proportion <code>design.md</code> states as a number — which is why it is priced as one rather than slipped in.</p>
+<h3 id="b6--the-hover-wash-is-a-visibility-toggle--refinement">B6 — The hover wash is a <code>Visibility</code> toggle — <em>refinement</em></h3>
+<p>Binary, instant, no transition. Every hover in Windows cross-fades, <code>Ripcord.Motion.xaml</code> defines the exact tokens for it, and they are unspent. Opacity over <code>RipcordDurationInstant</code>.</p>
+<h3 id="b7--hover-is-driven-by-raw-pointer-events-rather-than-a-visual-state--refinement">B7 — Hover is driven by raw pointer events rather than a visual state — <em>refinement</em></h3>
+<p><code>PointerEntered</code> / <code>PointerExited</code> / <code>PointerCanceled</code> on the <code>Border</code> is a hand-rolled <code>PointerOver</code>, and it has the failure modes the stock one does not: a pen does not always produce the pair, and a pointer capture taken elsewhere can leave the wash stuck on a card you have navigated away from. <code>VisualStateManager</code>'s own <code>PointerOver</code> on the container is free and correct.</p>
+<hr>
+<h2 id="c-connect">C. Connect</h2>
+<h3 id="c1--on-a-fast-connect-the-player-reads-three-headlines-in-two-seconds--refinement-highest-value-on-this-surface">C1 — On a fast connect the player reads three headlines in two seconds — <em>refinement, highest value on this surface</em></h3>
+<p><code>Preparing video…</code> → <code>Checking credentials…</code> → <code>Connecting to your console…</code>, each at <code>TitleTextBlockStyle</code>, on a LAN connect to an awake console. That is a strobe, and it is the <strong>common</strong> case — the case <code>design.md</code> correctly says must not feel like a ceremony.</p>
+<p>The engineering reason for announcing each phase before it runs is right and must be kept: when something hangs, the last line on screen names it. The fix is not to say less, it is to <strong>not promote a line that has not earned the screen</strong>:</p>
+<blockquote><p>A stage's text appears only once that stage has been running ~600 ms. Before that, the headline holds the console's name.</p></blockquote>
+<p>A 1.8-second connect then shows one calm line and cuts to the game. A hang shows exactly what it shows today. Nothing is lost and the common case stops flickering.</p>
+<p><strong>And the app already has this pattern.</strong> <code>HealthAlertGate</code> exists to decide when a message has earned the screen over a running game, with hysteresis, tested, in the portable layer. Connect deserves the same gate, written the same way, for the same reason. That is a symmetry argument as much as a UX one.</p>
+<h3 id="c2--the-trail-is-the-mark-with-the-mark-taken-out--change-and-the-best-delight-per-pixel-in-the-app">C2 — The trail is the mark with the mark taken out — <em>change, and the best delight-per-pixel in the app</em></h3>
+<p><code>brand/README.md</code> is specific about why the dashes are uneven and right-aligned: <em>"uneven, because a tidy trio is a fast-forward button; right-aligned, because that keeps the gap to the wedge constant and puts the raggedness on the outside edge, where it reads as a trail rather than as a mistake."</em></p>
+<p>Both of those reasons are about the dashes' relationship <strong>to the wedge</strong>. On the connect screen the wedge is absent, the dashes are lit left-to-right, and the raggedness is now <em>inside</em> the progress reading — so the middle segment is 70% wider than the first for a reason the viewer cannot recover, and the shape reads as a progress bar with odd segments rather than as the mark.</p>
+<p><strong>Put the wedge at the head of the trail.</strong> ~24 px, leading, with the three dashes behind it lighting as the connect travels. Then it <em>is</em> the mark, doing the thing the brand document says the mark means — <em>"pull it and it's away"</em> — at the one moment in the product where that sentence is literally true.</p>
+<p>It is sub-second, it blocks nothing, it recurs without wearing out because it is never in the way, and it costs one control instance. If there is a single frame in this app worth spending identity on, it is this one.</p>
+<p>(It interacts well with C1: on a fast connect the trail barely lights, which is correct. The trail is for the slow case, which is exactly when someone wants it.)</p>
+<h3 id="c3--there-is-no-visible-way-to-abandon-a-connect--refinement">C3 — There is no visible way to abandon a connect — <em>refinement</em></h3>
+<p><code>StatusActions</code> stays <code>Collapsed</code> until a stage is terminal. A rest-mode wake polls for up to 30 seconds with nothing on screen offering a way out. Escape works; the app's own code comments establish that an undiscoverable escape is a trap (<em>"without it the exit gesture is undiscoverable, which is what made a running stream feel like a trap on a handheld"</em>) — the same reasoning applies here and has not been applied.</p>
+<p><strong>After ~3 seconds of any non-terminal connect, show a quiet "Back to consoles" under the status line.</strong> Not on entry, which would be the ceremony the composition exists to avoid. Three seconds is about when a person starts wondering, and offering the exit at the moment they wonder is the difference between patience and worry.</p>
+<h3 id="c4--spend-the-third-personality-room-on-the-handoff-not-the-wake-wait--reversal-argued">C4 — Spend the third personality room on the handoff, not the wake wait — <em>reversal, argued</em></h3>
+<p><code>design.md</code> names three rooms for personality: first run, a successful pair, and <strong>the wake wait</strong>. I would keep the first two and challenge the third, using the document's own argument.</p>
+<p>The wake wait is 10–25 seconds and it recurs every evening for anyone who rests their console. That is the exact shape of the thing <code>design.md</code> rejects one section earlier: <em>"setup can afford ceremony because you do it once, and connecting happens several times an evening. A ceremony performed daily is a chore."</em> A charming wake wait is a chore with a smile on it. Keep it calm — name, trail, one line, nothing more.</p>
+<p><strong>Spend it on the first frame instead.</strong> Today the picture arrives as a cut. A ~150 ms opacity cross-fade from the connect composition into the stream, with the identity mark the last thing to leave, is the moment the app disappears — and making that deliberate is the most repeatable delight in the product, because it is over before anyone could tire of it.</p>
+<p><code>Ripcord.Motion.xaml</code> already permits precisely this and nothing more: <em>"anything on the video layer but opacity, under 150 ms."</em> The rule was written for this.</p>
+<h3 id="c5--two-near-identical-strings-for-different-states--refinement">C5 — Two near-identical strings for different states — <em>refinement</em></h3>
+<p><code>SessionPage_Starting</code> is <code>"Starting…"</code>; <code>StreamHealthAssessor</code> returns <code>"Starting up…"</code>. Same surface, different meanings, indistinguishable at a glance.</p>
+<hr>
+<h2 id="d-form-factor--desktop-handheld-and-couch">D. Form factor — desktop, handheld and couch</h2>
+<p>You asked whether all three can be served, and floated auto-detection with a manual opt-in. <strong>All three, and it costs one rule rather than three modes — and no setting at all.</strong></p>
+<h3 id="d1--all-three-form-factors-cost-one-rule-not-three-modes">D1 — All three form factors cost one rule, not three modes</h3>
+<p>Pad and touch reachability is already required by the handheld, and the couch adds nothing new to it. The only real difference between a desk, a handheld and a sofa is <strong>apparent size</strong>, and the project has already made the right call about who owns that: Windows does. Re-introducing a "TV mode" scale would be <code>AppScale</code> wearing a different hat, and it would be wrong for the same reasons.</p>
+<p><strong>But your Big Picture instinct is correct and it is not the same problem.</strong> Windows sets display scale from the EDID, and a 55" 1080p television commonly reports 100%. So a Big Picture launch lands a 292 px card on a screen being read from three metres, and the user has tuned nothing because from their point of view they were in a game launcher a second ago.</p>
+<p>The distinction that resolves it:</p>
+<blockquote><p><strong>Windows owns text size. Ripcord owns the size of Ripcord's own cards.</strong></p></blockquote>
+<p>That is not a reopening of the <code>AppScale</code> decision — it is the opposite of it. The type ramp stays the platform's, untouched; what responds is Ripcord's own furniture, and it responds to <strong>the viewport</strong>, not to a preference. <code>ItemsWrapGrid</code> needs a fixed item size, so it is a stepped rule at the breakpoints <code>ApplyColumnCount</code> already uses:</p>
+<div class='tw'><table><thead><tr><th>Viewport width</th><th>Columns</th><th>Cell</th><th>Hero</th></tr></thead><tbody><tr><td>&lt; 640</td><td>1</td><td>292 × 188</td><td>520</td></tr><tr><td>640–1007</td><td>2</td><td>292 × 188</td><td>520</td></tr><tr><td>1008–1919</td><td>as many as fit</td><td>292 × 188</td><td>520</td></tr><tr><td><strong>≥ 1920</strong></td><td>as many as fit</td><td><strong>360 × 232</strong></td><td><strong>640</strong></td></tr></tbody></table></div>
+<p>The top step is where a maximised desktop window and a Big Picture session on a TV both land, and one rule serves both. Nothing to detect, nothing to choose, nothing for a user to get wrong — which is the same doctrine that deleted the scale switch.</p>
+<p>It also retires <a href="#b5--the-grid-card-spends-a-third-of-its-width-on-a-mark-that-repeats-what-the-card-already-says--change">B5</a> at the sizes where people own several consoles.</p>
+<p><strong>If a manual override is ever wanted, make it an entry point rather than a preference</strong> — the same argument as <a href="#a1--ripcord-cannot-be-launched-at-a-console--new-capability">A1</a>. A <code>--big-picture</code> launch argument means what it says; a settings toggle called "TV mode" is a thing to find, get wrong, and forget you set. I would ship D1 alone and wait to see whether anyone asks.</p>
+<h3 id="d2--rung-1-shows-a-keyboard-key-to-a-player-who-has-no-keyboard--refinement">D2 — Rung 1 shows a keyboard key to a player who has no keyboard — <em>refinement</em></h3>
+<p>The health alert ends in a pill reading <strong>F3</strong>. On a handheld, mid-game, with a controller in both hands, that is a string naming a key that does not exist on the device.</p>
+<p>The app already solves this elsewhere: <code>InputHintBar</code> adapts to the current input mode. Rung 1 should read from the same source — "F3" after keyboard input, the pad glyph or nothing after pad input — and <strong>on touch, the whole alert should be tappable</strong> and open rung 2.</p>
+<p>That last part also improves the answer to the pad-only question below.</p>
+<h3 id="d3--the-pad-only-hud-answer-gets-better-for-free">D3 — The pad-only HUD answer gets better for free</h3>
+<p><code>design.md</code>'s honest answer for a pad-only player is "choose your rung in Settings before you connect." That is true and it is weak — it asks someone to predict, before a session, whether that session will go wrong. With D2's tappable alert, a handheld player reaches rung 2 by touching the thing that just told them something is wrong, which is the obvious gesture and needs no foresight.</p>
+<p>The touch-bar collision on the bottom edge is still untested and stays on the test list.</p>
+<hr>
+<h2 id="e-first-run-and-pairing">E. First run and pairing</h2>
+<p>This is where the delight budget lives, and it is the part that is not built. It is also where the implementation contradicts the settled design most directly.</p>
+<h3 id="e1--the-first-thing-a-new-user-sees-is-an-absence-drawn-with-the-wrong-mark--unbuilt">E1 — The first thing a new user sees is an absence, drawn with the wrong mark — <em>unbuilt</em></h3>
+<p>Current empty state: a <code>FamilyMark</code> in <code>TextFillColorTertiaryBrush</code>, "No consoles yet", a paragraph, an accent button.</p>
+<p>Two problems, and the second is the serious one:</p>
+<ul><li><strong>"No consoles yet" reports a deficiency</strong> to someone who has done nothing wrong and has been using the app for four seconds.</li><li><strong><code>FamilyMark</code> is the console badge, not the app's mark.</strong> Its own XAML says so: <em>"The play wedge is left out deliberately: the wedge is the <strong>app's</strong> identity."</em> So the app introduces itself with the half of its logo that means "a console vendor", greyed to tertiary.</li></ul>
+<p><code>design.md</code> already specifies the fix and nobody has built it: mark, one sentence, one primary action, and the same-network limit stated before it is met. Per your answer, no wordmark — the full mark carries it, and the title bar already says the name.</p>
+<pre><code>      ◤ ▬▬  ▬      (the full mark, hero size, in Ripcord&#x27;s own colours)
+
+      Play your PlayStation on this PC.
+
+      Ripcord finds your console on your network — keep both on the
+      same Wi-Fi or wired connection.
+
+      [ Add your console ]</code></pre>
+<h3 id="e2--pairing-asks-the-player-two-questions-the-app-can-answer-and-offers-a-console-it-cannot-stream--reversal">E2 — Pairing asks the player two questions the app can answer, and offers a console it cannot stream — <em>reversal</em></h3>
+<p><strong>Step 1</strong> asks <em>"Which console are you connecting to?"</em> with <strong>PS5 / PS4 / Xbox</strong>. <code>Lanyard</code> is reserved in <code>ConsolePlatform</code> and not implemented. Offering it in the first thirty seconds of the product is a promise the next screen breaks, and a new user has no way to know it is a placeholder.</p>
+<p>The question is also <strong>answerable</strong>: discovery reports the platform. Lead with the scan and it answers itself. The family question survives only on the manual-address path, where it genuinely is not knowable.</p>
+<p><strong>Step 3</strong> shows a <code>RadioButtons</code> labelled <em>"How should the console confirm this PC?"</em>, offering the account route against the code route. That is <strong>precisely</strong> the question <code>design.md</code> says the app must answer on the player's behalf:</p>
+<blockquote><p><em>"The route is a mechanism, and the player has no stake in it. A casual player does not know what a pairing code is; asking them to choose between two mechanisms is the kind of question the app should answer for them."</em></p></blockquote>
+<p>The settled model is already written: signed in with the console on the account → pair, and state the route as a fact; not signed in → the code route leads, with sign-in beside it phrased as what it saves them; either way the other route is one quiet link away.</p>
+<p><strong>What this buys.</strong> First run drops from five steps to three for the common case — <strong>Find → Link → Paired</strong> — which then matches the mark's three dashes, so the stepper can honestly <em>be</em> the trail. Today it is <strong>four equal dashes in equal columns</strong>: the tidy trio <code>brand/README.md</code> explicitly forbids, plus a fourth, sitting in an app whose other progress indicator is three uneven ones. The two indicators in this product currently disagree with each other, and one of them disagrees with the brand.</p>
+<h3 id="e3--two-hard-coded-english-strings-in-the-page-a-new-user-meets-first--refinement">E3 — Two hard-coded English strings in the page a new user meets first — <em>refinement</em></h3>
+<pre><code>&lt;x:String&gt;Through my account — no code needed&lt;/x:String&gt;
+&lt;x:String&gt;With a code from the console&lt;/x:String&gt;</code></pre>
+<p><code>AddConsolePage.xaml</code>, bypassing the catalogue — the same defect this branch just fixed for the console flyout, on the app's other most important page. If E2 lands they disappear with the control; if it does not, they still need moving.</p>
+<h3 id="e4--the-celebration-is-a-stock-green-checkmark--unbuilt-and-the-best-spent-frame-in-the-product">E4 — The celebration is a stock green checkmark — <em>unbuilt, and the best-spent frame in the product</em></h3>
+<p><code>FontIcon &amp;#xE930;</code> in <code>SystemFillColorSuccessBrush</code>, beside the word "Paired". That is what a form looks like when it validates.</p>
+<p><code>design.md</code> is right about why this moment deserves more than any other: it happens once per console, it is the only point where the player did something that could have failed, and the reward is the reason they installed the app. Build it as specified — the mark assembling at hero size, "Paired." with a period, <strong>Done</strong> as a peer of <strong>Play now</strong> because the record is already on disk.</p>
+<p><strong>One addition. Make "Play now" the wedge, at hero size, not an accent button.</strong> The same language as every card they will ever press afterwards.</p>
+<p>That turns the celebration into the app's only tutorial, and it does not feel like one: the first time you ever see the wedge, it launches your game — so every card from then on is a promise you have already seen kept.</p>
+<h3 id="e5--keep-the-name-box-but-do-not-let-it-take-focus">E5 — Keep the name box, but do not let it take focus</h3>
+<p>Naming after pairing is the right call and the code already argues it well. On a pad, make sure the text box cannot hold focus on entry ahead of <strong>Play now</strong> — a soft keyboard opening on a handheld at the celebration would undo the whole moment.</p>
+<hr>
+<h2 id="f-settings">F. Settings</h2>
+<h3 id="f1--the-doc-prescribes-a-collapsed-advanced-and-a-search-box-the-page-has-five-flat-headers--unbuilt">F1 — The doc prescribes a collapsed Advanced and a search box; the page has five flat headers — <em>unbuilt</em></h3>
+<p>Stated so the divergence is on the record either way.</p>
+<h3 id="f2--i-would-drop-the-search-box-from-the-design--reversal-and-it-makes-f1-cheaper">F2 — I would drop the search box from the design — <em>reversal, and it makes F1 cheaper</em></h3>
+<p>Windows Settings has search because it has hundreds of settings across dozens of pages. Ripcord has about twenty on one scrolling page. A search box over twenty items mostly returns everything, needs an empty state designed for it, and is itself a <em>Windows Settings mannerism</em> rather than a <em>Fluent behaviour</em> — which the position's own line separates deliberately: borrow the behaviour, not the appearance.</p>
+<p><strong>Collapse Advanced, keep it last, skip the box, and amend <code>design.md</code>.</strong> The stated reason for the box was to make collapsing Advanced safe; at this scale, collapsing Advanced is safe because the page is one screen of scroll with five headings on it.</p>
+<h3 id="f3--keep-when-you-play">F3 — Keep "When you play"</h3>
+<p>The best-written thing on the page, and exactly the register a consumer app should use. Noting it so nobody tidies it into "Session".</p>
+<hr>
+<h2 id="g-where-the-docs-and-the-build-disagree">G. Where the docs and the build disagree</h2>
+<p>Each of these is cheap and unambiguous. They are listed together because doc drift is its own defect — <code>design.md</code> is the thing the next person will trust.</p>
+<div class='tw'><table><thead><tr><th><code>design.md</code> / <code>brand/README.md</code> says</th><th>The branch does</th><th></th></tr></thead><tbody><tr><td>An unreachable console has no wedge</td><td>The wedge is muted</td><td><strong>Doc already amended 2026-09-20. Implementation is right.</strong></td></tr><tr><td>First run: mark, one sentence, one action</td><td>Grey <code>FamilyMark</code>, "No consoles yet"</td><td><a href="#e1--the-first-thing-a-new-user-sees-is-an-absence-drawn-with-the-wrong-mark--unbuilt">E1</a></td></tr><tr><td>The app answers the pairing-route question</td><td>A <code>RadioButtons</code> asks the user</td><td><a href="#e2--pairing-asks-the-player-two-questions-the-app-can-answer-and-offers-a-console-it-cannot-stream--reversal">E2</a></td></tr><tr><td>Celebration: the mark assembles at hero size</td><td>Stock green check-mark</td><td><a href="#e4--the-celebration-is-a-stock-green-checkmark--unbuilt-and-the-best-spent-frame-in-the-product">E4</a></td></tr><tr><td>Settings: Advanced collapsed, plus a search box</td><td>Five flat headers, no search</td><td><a href="#f1--the-doc-prescribes-a-collapsed-advanced-and-a-search-box-the-page-has-five-flat-headers--unbuilt">F1</a> / <a href="#f2--i-would-drop-the-search-box-from-the-design--reversal-and-it-makes-f1-cheaper">F2</a></td></tr><tr><td>The live pad readout moves to the controls page</td><td>Still in the rung-3 panel (<code>ControllerButtonsText</code>)</td><td>Unbuilt; one of the few rung moves the ladder specified</td></tr><tr><td>Dashes are uneven because a tidy trio is a fast-forward button</td><td><code>AddConsolePage</code> draws four equal dashes in equal columns</td><td><a href="#e2--pairing-asks-the-player-two-questions-the-app-can-answer-and-offers-a-console-it-cannot-stream--reversal">E2</a></td></tr><tr><td>There is no Accessibility section, deliberately</td><td><code>design-branch-test-pass.md</code> §4 lists one <strong>and then says there is none, two lines later</strong></td><td>Stale; fix the test-pass doc</td></tr></tbody></table></div>
+<hr>
+<h2 id="h-what-i-would-not-change-and-why-it-is-worth-saying">H. What I would not change, and why it is worth saying</h2>
+<p>A review that only lists faults leaves the next person unsure which decisions are load-bearing. These are, and they should survive any of the above:</p>
+<ul><li><strong>Borrow behaviour, spend identity where the surface is ours alone.</strong> The clearest statement of that line I have read in a project document, and the table that follows it is correctly drawn.</li><li><strong>Killing the <code>NavigationView</code>.</strong> One destination and two commands does not need a rail, and the observation that it cost a gamer their first press is exactly the right lens.</li><li><strong>Hover is a wash, focus is a ring, and focus uses the system visual at 3 px.</strong> Right, right, and right — including the reasoning that the system visual is what makes high contrast correct without anyone remembering.</li><li><strong>The facet with a rim, over the accent slab.</strong> The high-contrast failure that prompted it (the accent resolving to the text brush and making a third of the card a solid block) is the right reason, and the general principle — <em>identity in material and form, because that is what survives when colour must go</em> — is the best idea in the design.</li><li><strong>The wedge stays on a console that did not answer.</strong> Removing an affordance on the strength of one lost UDP datagram is the worst kind of paternalism, and the amendment is the document working as intended.</li><li><strong>The ladder, and <code>F3</code> toggling rather than deepening.</strong> Unusually disciplined. Do not let anyone add a cycling second press.</li><li><strong><code>HudPlacement</code> claiming dead space.</strong> Genuinely clever, pure, and tested.</li><li><strong>Deleting <code>AppScale</code> / <code>UiScale</code>.</strong> Correct, and the argument generalises — see <a href="#d1--all-three-form-factors-cost-one-rule-not-three-modes">D1</a>.</li><li><strong><code>StreamHealthAssessor</code>'s verdicts split device-from-network and carry a real remedy.</strong> Better than the commercial clients. The only thing wrong with it is that rung 1 shows the diagnosis and keeps the remedy a keypress away — worth considering whether the shortest actionable clause belongs on the alert itself ("Wi-Fi is losing packets — a wired connection will help"), which is still one line and still no numbers.</li></ul>
+<hr>
+<h2 id="i-if-you-only-do-some-of-it">I. If you only do some of it</h2>
+<p>Ordered by value per hour, not by section.</p>
+<p><strong>Do first — small, and they fix things people will feel:</strong></p>
+<ol><li><a href="#b2--nothing-anywhere-confirms-a-press-on-the-primary-action--refinement">B2</a> — a pressed state on the card. The primary action of the product currently acknowledges nothing.</li><li><a href="#c1--on-a-fast-connect-the-player-reads-three-headlines-in-two-seconds--refinement-highest-value-on-this-surface">C1</a> — the connect dwell gate. Every session meets it, and the fast path stops strobing.</li><li><a href="#b1--the-wedge-responds-to-nothing--refinement-and-the-biggest-single-win-here">B1</a> — the wedge carries hover and press.</li><li><a href="#d2--rung-1-shows-a-keyboard-key-to-a-player-who-has-no-keyboard--refinement">D2</a> — stop showing "F3" to a controller.</li><li><a href="#b4--the-heros-overflow-button-is-below-the-touch-minimum--refinement">B4</a> + <a href="#c5--two-near-identical-strings-for-different-states--refinement">C5</a> + <a href="#e3--two-hard-coded-english-strings-in-the-page-a-new-user-meets-first--refinement">E3</a> + the stale test-pass bullet — minutes each.</li></ol>
+<p><strong>Then — the delight budget, which is the part that is missing rather than wrong:</strong></p>
+<ol><li><a href="#e4--the-celebration-is-a-stock-green-checkmark--unbuilt-and-the-best-spent-frame-in-the-product">E4</a> — the pairing celebration, with <strong>Play now</strong> as the wedge.</li><li><a href="#e1--the-first-thing-a-new-user-sees-is-an-absence-drawn-with-the-wrong-mark--unbuilt">E1</a> — first run.</li><li><a href="#c2--the-trail-is-the-mark-with-the-mark-taken-out--change-and-the-best-delight-per-pixel-in-the-app">C2</a> — the wedge leads the connect trail.</li><li><a href="#c4--spend-the-third-personality-room-on-the-handoff-not-the-wake-wait--reversal-argued">C4</a> — the first-frame cross-fade; calm the wake wait.</li></ol>
+<p><strong>Then — structural, and they make everything after them cheaper:</strong></p>
+<ol><li><a href="#b3--two-implementations-of-one-card-already-drifting--change">B3</a> — one card control. Do this <strong>before</strong> the regression baselines, not after.</li><li><a href="#e2--pairing-asks-the-player-two-questions-the-app-can-answer-and-offers-a-console-it-cannot-stream--reversal">E2</a> — pairing leads with the scan and answers the route question. Removes a whole step and an unshippable option.</li><li><a href="#a1--ripcord-cannot-be-launched-at-a-console--new-capability">A1</a> — the launch argument and <strong>Create a shortcut</strong>. The jump list follows for free in the MSIX.</li><li><a href="#d1--all-three-form-factors-cost-one-rule-not-three-modes">D1</a> — density steps.</li><li><a href="#b5--the-grid-card-spends-a-third-of-its-width-on-a-mark-that-repeats-what-the-card-already-says--change">B5</a> / <a href="#c3--there-is-no-visible-way-to-abandon-a-connect--refinement">C3</a> / <a href="#f2--i-would-drop-the-search-box-from-the-design--reversal-and-it-makes-f1-cheaper">F2</a> — the rest.</li></ol>
+<p><strong>One sequencing note that matters:</strong> ROADMAP wants regression baselines captured before the card is touched. Items 1, 3 and 10 all touch the card. Capture the baselines first or accept that they record a card nobody is keeping.</p>
+<hr>
+<h2 id="j-open-questions-i-could-not-answer-from-here">J. Open questions I could not answer from here</h2>
+<ul><li><strong>Does WinUI 3 actually apply <code>UISettings.TextScaleFactor</code>?</strong> <code>design.md</code> records this as unverified and then builds a position on top of it. The position is right regardless — an app should not compete with the OS on text size — but if the platform does <em>not</em> honour it, then a user who set text scale in Windows gets nothing from Ripcord, and that is a limit the README should state rather than a thing to quietly hope about. One hardware check settles it.</li><li><strong>Does the touch bar collide with rung 2 on the handheld?</strong> Already on the test list; nothing I can add off the device.</li><li><strong>Is the rail legible at 300 px in a black pillar?</strong> The threshold was chosen from a mock-up, by the test doc's own admission. Worth checking that a bright panel in peripheral vision against pure black is not worse than the overlay it exists to avoid.</li></ul>
+<hr>
+<h2 id="the-mock-ups">The mock-ups</h2>
+<p>Drawn at the real values — 280×176, the tile's own <code>#23272E→#12151A</code>, a 92 px wedge, the rim at <code>#2D7DF6</code>. Each board maps to a lettered finding above. Nothing here is a settled decision.</p>
+<figure class='board'><figcaption><span class='bt'>Card states — B1 / B2</span><span class='bn'>B1, B2 — every state at the real values, today against proposed</span></figcaption><div class='bwrap' style='height:457px'><iframe loading='lazy' scrolling='no' style='width:1624px;height:660px;transform:scale(0.6897)' srcdoc="&lt;!doctype html&gt;&lt;html&gt;&lt;head&gt;&lt;meta charset=&quot;utf-8&quot;&gt;&lt;style&gt;
+body{margin:0;font-family:&quot;Segoe UI Variable Text&quot;,&quot;Segoe UI Variable&quot;,&quot;Segoe UI&quot;,system-ui,sans-serif;background:#26262a;color:#fff}
+.lbl{font-size:12px;letter-spacing:.09em;text-transform:uppercase;color:rgba(255,255,255,.55)}
+.cap{font-size:12.5px;line-height:1.45;color:rgba(255,255,255,.58)}
+.card{position:relative;width:280px;height:176px;border-radius:8px;box-sizing:border-box;
+  background:linear-gradient(135deg,#23272E 0%,#12151A 100%);border:1px solid rgba(255,255,255,.18);overflow:hidden}
+.hl{position:absolute;inset:0;background:linear-gradient(180deg,rgba(255,255,255,.15) 0%,rgba(255,255,255,0) 4%);pointer-events:none}
+.wash{position:absolute;inset:0;background:rgba(255,255,255,.086)}
+.body{position:absolute;left:16px;top:14px;right:100px;bottom:14px;display:flex;flex-direction:column}
+.name{font-size:19px;font-weight:600;line-height:1.2;letter-spacing:-.01em}
+.fam{display:flex;align-items:center;gap:8px;margin-top:6px}
+.det{font-size:12px;color:rgba(255,255,255,.54)}
+.st{display:flex;align-items:center;gap:6px;margin-top:auto}
+.stt{font-size:12px;color:rgba(255,255,255,.79)}
+.dot{width:8px;height:8px;border-radius:50%}
+.ring{position:absolute;inset:-7px;border:3px solid #fff;border-radius:15px;pointer-events:none}
+.ring2{position:absolute;inset:-4px;border:2px solid #000;border-radius:12px;pointer-events:none}
+html,body{overflow:hidden}&lt;/style&gt;&lt;/head&gt;&lt;body&gt;
+
+&lt;div style=&quot;width: 1624px; height: 660px; box-sizing: border-box; padding: 48px 64px; display: flex; flex-direction: column; gap: 30px;&quot;&gt;
+
+  &lt;div&gt;
+    &lt;div style=&quot;font-size: 27px; font-weight: 600; letter-spacing: -0.015em;&quot;&gt;The console card, state by state&lt;/div&gt;
+    &lt;div class=&quot;cap&quot; style=&quot;max-width: 980px; margin-top: 6px;&quot;&gt;Drawn at the real values — 280&amp;times;176, the tile&#x27;s own &lt;span style=&quot;color:#a9b4c4&quot;&gt;#23272E&amp;rarr;#12151A&lt;/span&gt;, a 92&amp;thinsp;px wedge, the rim at &lt;span style=&quot;color:#7fb0ff&quot;&gt;#2D7DF6&lt;/span&gt;. The top row is what the branch ships today. The bottom row is B1 and B2 of the review.&lt;/div&gt;
+  &lt;/div&gt;
+
+  &lt;div style=&quot;display: flex; flex-direction: column; gap: 12px;&quot;&gt;
+    &lt;div class=&quot;lbl&quot;&gt;Today&lt;/div&gt;
+    &lt;div style=&quot;display: flex; gap: 24px;&quot;&gt;
+
+      &lt;div style=&quot;display: flex; flex-direction: column; gap: 10px; width: 280px;&quot;&gt;
+        &lt;div class=&quot;card&quot;&gt;
+          &lt;div class=&quot;hl&quot;&gt;&lt;/div&gt;
+          &lt;svg width=&quot;92&quot; height=&quot;176&quot; viewBox=&quot;0 0 92 176&quot; style=&quot;position:absolute;right:0;top:0&quot;&gt;
+            &lt;defs&gt;&lt;linearGradient id=&quot;f1&quot; x1=&quot;0&quot; y1=&quot;1&quot; x2=&quot;1&quot; y2=&quot;0&quot;&gt;&lt;stop offset=&quot;0&quot; stop-color=&quot;#2E333C&quot;/&gt;&lt;stop offset=&quot;1&quot; stop-color=&quot;#1B1F26&quot;/&gt;&lt;/linearGradient&gt;
+            &lt;linearGradient id=&quot;b1&quot; x1=&quot;0&quot; y1=&quot;0&quot; x2=&quot;0.55&quot; y2=&quot;0&quot;&gt;&lt;stop offset=&quot;0&quot; stop-color=&quot;#2D7DF6&quot; stop-opacity=&quot;0.14&quot;/&gt;&lt;stop offset=&quot;1&quot; stop-color=&quot;#2D7DF6&quot; stop-opacity=&quot;0&quot;/&gt;&lt;/linearGradient&gt;
+            &lt;clipPath id=&quot;c1&quot;&gt;&lt;path d=&quot;M28 0 L92 0 L92 176 L0 176 Z&quot;/&gt;&lt;/clipPath&gt;&lt;/defs&gt;
+            &lt;path d=&quot;M28 0 L92 0 L92 176 L0 176 Z&quot; fill=&quot;url(#f1)&quot;/&gt;
+            &lt;rect x=&quot;0&quot; y=&quot;0&quot; width=&quot;92&quot; height=&quot;176&quot; fill=&quot;url(#b1)&quot; clip-path=&quot;url(#c1)&quot;/&gt;
+            &lt;path d=&quot;M28 0 L0 176&quot; stroke=&quot;#2D7DF6&quot; stroke-width=&quot;3&quot; fill=&quot;none&quot;/&gt;
+            &lt;g transform=&quot;translate(45 70) scale(1)&quot;&gt;&lt;path d=&quot;M 5,3 L 27,18 L 5,33 Z&quot; fill=&quot;#fff&quot; stroke=&quot;#fff&quot; stroke-width=&quot;6&quot; stroke-linejoin=&quot;round&quot;/&gt;&lt;/g&gt;
+          &lt;/svg&gt;
+          &lt;div class=&quot;body&quot;&gt;
+            &lt;div class=&quot;name&quot;&gt;Living room PS5&lt;/div&gt;
+            &lt;div class=&quot;fam&quot;&gt;
+              &lt;svg width=&quot;9&quot; height=&quot;16&quot; viewBox=&quot;0 0 16 28&quot;&gt;&lt;rect x=&quot;7&quot; y=&quot;0&quot; width=&quot;9&quot; height=&quot;7&quot; rx=&quot;3.5&quot; fill=&quot;#2D7DF6&quot;/&gt;&lt;rect x=&quot;0&quot; y=&quot;10.5&quot; width=&quot;16&quot; height=&quot;7&quot; rx=&quot;3.5&quot; fill=&quot;#2D7DF6&quot;/&gt;&lt;rect x=&quot;4&quot; y=&quot;21&quot; width=&quot;12&quot; height=&quot;7&quot; rx=&quot;3.5&quot; fill=&quot;#2D7DF6&quot;/&gt;&lt;/svg&gt;
+              &lt;span class=&quot;det&quot;&gt;PS5 &amp;middot; 192.168.1.20&lt;/span&gt;
+            &lt;/div&gt;
+            &lt;div class=&quot;st&quot;&gt;&lt;span class=&quot;dot&quot; style=&quot;background:#6CCB5F&quot;&gt;&lt;/span&gt;&lt;span class=&quot;stt&quot;&gt;Ready&lt;/span&gt;&lt;/div&gt;
+          &lt;/div&gt;
+        &lt;/div&gt;
+        &lt;div class=&quot;cap&quot;&gt;&lt;b style=&quot;color:rgba(255,255,255,.85)&quot;&gt;Rest.&lt;/b&gt; Correct, and handsome.&lt;/div&gt;
+      &lt;/div&gt;
+
+      &lt;div style=&quot;display: flex; flex-direction: column; gap: 10px; width: 280px;&quot;&gt;
+        &lt;div class=&quot;card&quot;&gt;
+          &lt;div class=&quot;hl&quot;&gt;&lt;/div&gt;
+          &lt;div class=&quot;wash&quot;&gt;&lt;/div&gt;
+          &lt;svg width=&quot;92&quot; height=&quot;176&quot; viewBox=&quot;0 0 92 176&quot; style=&quot;position:absolute;right:0;top:0&quot;&gt;
+            &lt;path d=&quot;M28 0 L92 0 L92 176 L0 176 Z&quot; fill=&quot;url(#f1)&quot;/&gt;
+            &lt;rect x=&quot;0&quot; y=&quot;0&quot; width=&quot;92&quot; height=&quot;176&quot; fill=&quot;url(#b1)&quot; clip-path=&quot;url(#c1)&quot;/&gt;
+            &lt;path d=&quot;M28 0 L0 176&quot; stroke=&quot;#2D7DF6&quot; stroke-width=&quot;3&quot; fill=&quot;none&quot;/&gt;
+            &lt;g transform=&quot;translate(45 70)&quot;&gt;&lt;path d=&quot;M 5,3 L 27,18 L 5,33 Z&quot; fill=&quot;#fff&quot; stroke=&quot;#fff&quot; stroke-width=&quot;6&quot; stroke-linejoin=&quot;round&quot;/&gt;&lt;/g&gt;
+          &lt;/svg&gt;
+          &lt;div class=&quot;body&quot;&gt;
+            &lt;div class=&quot;name&quot;&gt;Living room PS5&lt;/div&gt;
+            &lt;div class=&quot;fam&quot;&gt;
+              &lt;svg width=&quot;9&quot; height=&quot;16&quot; viewBox=&quot;0 0 16 28&quot;&gt;&lt;rect x=&quot;7&quot; y=&quot;0&quot; width=&quot;9&quot; height=&quot;7&quot; rx=&quot;3.5&quot; fill=&quot;#2D7DF6&quot;/&gt;&lt;rect x=&quot;0&quot; y=&quot;10.5&quot; width=&quot;16&quot; height=&quot;7&quot; rx=&quot;3.5&quot; fill=&quot;#2D7DF6&quot;/&gt;&lt;rect x=&quot;4&quot; y=&quot;21&quot; width=&quot;12&quot; height=&quot;7&quot; rx=&quot;3.5&quot; fill=&quot;#2D7DF6&quot;/&gt;&lt;/svg&gt;
+              &lt;span class=&quot;det&quot;&gt;PS5 &amp;middot; 192.168.1.20&lt;/span&gt;
+            &lt;/div&gt;
+            &lt;div class=&quot;st&quot;&gt;&lt;span class=&quot;dot&quot; style=&quot;background:#6CCB5F&quot;&gt;&lt;/span&gt;&lt;span class=&quot;stt&quot;&gt;Ready&lt;/span&gt;&lt;/div&gt;
+          &lt;/div&gt;
+        &lt;/div&gt;
+        &lt;div class=&quot;cap&quot;&gt;&lt;b style=&quot;color:rgba(255,255,255,.85)&quot;&gt;Hover.&lt;/b&gt; A flat wash appears &lt;i&gt;behind&lt;/i&gt; the wedge. The wedge itself does not move, and it snaps in with no transition.&lt;/div&gt;
+      &lt;/div&gt;
+
+      &lt;div style=&quot;display: flex; flex-direction: column; gap: 10px; width: 280px;&quot;&gt;
+        &lt;div class=&quot;card&quot; style=&quot;margin: 0;&quot;&gt;
+          &lt;div class=&quot;hl&quot;&gt;&lt;/div&gt;
+          &lt;svg width=&quot;92&quot; height=&quot;176&quot; viewBox=&quot;0 0 92 176&quot; style=&quot;position:absolute;right:0;top:0&quot;&gt;
+            &lt;path d=&quot;M28 0 L92 0 L92 176 L0 176 Z&quot; fill=&quot;url(#f1)&quot;/&gt;
+            &lt;rect x=&quot;0&quot; y=&quot;0&quot; width=&quot;92&quot; height=&quot;176&quot; fill=&quot;url(#b1)&quot; clip-path=&quot;url(#c1)&quot;/&gt;
+            &lt;path d=&quot;M28 0 L0 176&quot; stroke=&quot;#2D7DF6&quot; stroke-width=&quot;3&quot; fill=&quot;none&quot;/&gt;
+            &lt;g transform=&quot;translate(45 70)&quot;&gt;&lt;path d=&quot;M 5,3 L 27,18 L 5,33 Z&quot; fill=&quot;#fff&quot; stroke=&quot;#fff&quot; stroke-width=&quot;6&quot; stroke-linejoin=&quot;round&quot;/&gt;&lt;/g&gt;
+          &lt;/svg&gt;
+          &lt;div class=&quot;body&quot;&gt;
+            &lt;div class=&quot;name&quot;&gt;Living room PS5&lt;/div&gt;
+            &lt;div class=&quot;fam&quot;&gt;
+              &lt;svg width=&quot;9&quot; height=&quot;16&quot; viewBox=&quot;0 0 16 28&quot;&gt;&lt;rect x=&quot;7&quot; y=&quot;0&quot; width=&quot;9&quot; height=&quot;7&quot; rx=&quot;3.5&quot; fill=&quot;#2D7DF6&quot;/&gt;&lt;rect x=&quot;0&quot; y=&quot;10.5&quot; width=&quot;16&quot; height=&quot;7&quot; rx=&quot;3.5&quot; fill=&quot;#2D7DF6&quot;/&gt;&lt;rect x=&quot;4&quot; y=&quot;21&quot; width=&quot;12&quot; height=&quot;7&quot; rx=&quot;3.5&quot; fill=&quot;#2D7DF6&quot;/&gt;&lt;/svg&gt;
+              &lt;span class=&quot;det&quot;&gt;PS5 &amp;middot; 192.168.1.20&lt;/span&gt;
+            &lt;/div&gt;
+            &lt;div class=&quot;st&quot;&gt;&lt;span class=&quot;dot&quot; style=&quot;background:#6CCB5F&quot;&gt;&lt;/span&gt;&lt;span class=&quot;stt&quot;&gt;Ready&lt;/span&gt;&lt;/div&gt;
+          &lt;/div&gt;
+          &lt;div class=&quot;ring2&quot;&gt;&lt;/div&gt;
+          &lt;div class=&quot;ring&quot;&gt;&lt;/div&gt;
+        &lt;/div&gt;
+        &lt;div class=&quot;cap&quot;&gt;&lt;b style=&quot;color:#9ad48f&quot;&gt;Focus.&lt;/b&gt; The 3&amp;thinsp;px system ring, lifted off the stroke. This one is right and should not change.&lt;/div&gt;
+      &lt;/div&gt;
+
+      &lt;div style=&quot;display: flex; flex-direction: column; gap: 10px; width: 280px;&quot;&gt;
+        &lt;div class=&quot;card&quot;&gt;
+          &lt;div class=&quot;hl&quot;&gt;&lt;/div&gt;
+          &lt;svg width=&quot;92&quot; height=&quot;176&quot; viewBox=&quot;0 0 92 176&quot; style=&quot;position:absolute;right:0;top:0&quot;&gt;
+            &lt;path d=&quot;M28 0 L92 0 L92 176 L0 176 Z&quot; fill=&quot;url(#f1)&quot;/&gt;
+            &lt;rect x=&quot;0&quot; y=&quot;0&quot; width=&quot;92&quot; height=&quot;176&quot; fill=&quot;url(#b1)&quot; clip-path=&quot;url(#c1)&quot;/&gt;
+            &lt;path d=&quot;M28 0 L0 176&quot; stroke=&quot;#2D7DF6&quot; stroke-width=&quot;3&quot; fill=&quot;none&quot;/&gt;
+            &lt;g transform=&quot;translate(45 70)&quot;&gt;&lt;path d=&quot;M 5,3 L 27,18 L 5,33 Z&quot; fill=&quot;#fff&quot; stroke=&quot;#fff&quot; stroke-width=&quot;6&quot; stroke-linejoin=&quot;round&quot;/&gt;&lt;/g&gt;
+          &lt;/svg&gt;
+          &lt;div class=&quot;body&quot;&gt;
+            &lt;div class=&quot;name&quot;&gt;Living room PS5&lt;/div&gt;
+            &lt;div class=&quot;fam&quot;&gt;
+              &lt;svg width=&quot;9&quot; height=&quot;16&quot; viewBox=&quot;0 0 16 28&quot;&gt;&lt;rect x=&quot;7&quot; y=&quot;0&quot; width=&quot;9&quot; height=&quot;7&quot; rx=&quot;3.5&quot; fill=&quot;#2D7DF6&quot;/&gt;&lt;rect x=&quot;0&quot; y=&quot;10.5&quot; width=&quot;16&quot; height=&quot;7&quot; rx=&quot;3.5&quot; fill=&quot;#2D7DF6&quot;/&gt;&lt;rect x=&quot;4&quot; y=&quot;21&quot; width=&quot;12&quot; height=&quot;7&quot; rx=&quot;3.5&quot; fill=&quot;#2D7DF6&quot;/&gt;&lt;/svg&gt;
+              &lt;span class=&quot;det&quot;&gt;PS5 &amp;middot; 192.168.1.20&lt;/span&gt;
+            &lt;/div&gt;
+            &lt;div class=&quot;st&quot;&gt;&lt;span class=&quot;dot&quot; style=&quot;background:#6CCB5F&quot;&gt;&lt;/span&gt;&lt;span class=&quot;stt&quot;&gt;Ready&lt;/span&gt;&lt;/div&gt;
+          &lt;/div&gt;
+        &lt;/div&gt;
+        &lt;div class=&quot;cap&quot;&gt;&lt;b style=&quot;color:#ffa39a&quot;&gt;Pressed. This is not a mistake in the drawing.&lt;/b&gt; There is no pressed state: the GridViewItem paints the container behind an opaque card, and the hero&#x27;s style has no visual states at all.&lt;/div&gt;
+      &lt;/div&gt;
+
+      &lt;div style=&quot;display: flex; flex-direction: column; gap: 10px; width: 280px;&quot;&gt;
+        &lt;div class=&quot;card&quot;&gt;
+          &lt;div class=&quot;hl&quot;&gt;&lt;/div&gt;
+          &lt;svg width=&quot;92&quot; height=&quot;176&quot; viewBox=&quot;0 0 92 176&quot; style=&quot;position:absolute;right:0;top:0&quot;&gt;
+            &lt;path d=&quot;M28 0 L92 0 L92 176 L0 176 Z&quot; fill=&quot;url(#f1)&quot;/&gt;
+            &lt;path d=&quot;M28 0 L0 176&quot; stroke=&quot;rgba(255,255,255,.16)&quot; stroke-width=&quot;3&quot; fill=&quot;none&quot;/&gt;
+            &lt;g transform=&quot;translate(45 70)&quot;&gt;&lt;path d=&quot;M 5,3 L 27,18 L 5,33 Z&quot; fill=&quot;rgba(255,255,255,.55)&quot; stroke=&quot;rgba(255,255,255,.55)&quot; stroke-width=&quot;6&quot; stroke-linejoin=&quot;round&quot;/&gt;&lt;/g&gt;
+          &lt;/svg&gt;
+          &lt;div class=&quot;body&quot;&gt;
+            &lt;div class=&quot;name&quot;&gt;Bedroom PS4&lt;/div&gt;
+            &lt;div class=&quot;fam&quot;&gt;
+              &lt;svg width=&quot;9&quot; height=&quot;16&quot; viewBox=&quot;0 0 16 28&quot;&gt;&lt;rect x=&quot;7&quot; y=&quot;0&quot; width=&quot;9&quot; height=&quot;7&quot; rx=&quot;3.5&quot; fill=&quot;#2D7DF6&quot;/&gt;&lt;rect x=&quot;0&quot; y=&quot;10.5&quot; width=&quot;16&quot; height=&quot;7&quot; rx=&quot;3.5&quot; fill=&quot;#2D7DF6&quot;/&gt;&lt;rect x=&quot;4&quot; y=&quot;21&quot; width=&quot;12&quot; height=&quot;7&quot; rx=&quot;3.5&quot; fill=&quot;#2D7DF6&quot;/&gt;&lt;/svg&gt;
+              &lt;span class=&quot;det&quot;&gt;PS4 &amp;middot; 192.168.1.31&lt;/span&gt;
+            &lt;/div&gt;
+            &lt;div class=&quot;st&quot;&gt;&lt;span class=&quot;dot&quot; style=&quot;background:rgba(255,255,255,.36)&quot;&gt;&lt;/span&gt;&lt;span class=&quot;stt&quot;&gt;Can&#x27;t reach it&lt;/span&gt;&lt;/div&gt;
+          &lt;/div&gt;
+        &lt;/div&gt;
+        &lt;div class=&quot;cap&quot;&gt;&lt;b style=&quot;color:#9ad48f&quot;&gt;Unreachable.&lt;/b&gt; Quiet, not absent, and still pressable. Keep exactly this.&lt;/div&gt;
+      &lt;/div&gt;
+
+    &lt;/div&gt;
+  &lt;/div&gt;
+
+  &lt;div style=&quot;display: flex; flex-direction: column; gap: 12px;&quot;&gt;
+    &lt;div class=&quot;lbl&quot;&gt;Proposed &amp;mdash; the wedge carries the card&#x27;s state&lt;/div&gt;
+    &lt;div style=&quot;display: flex; gap: 24px;&quot;&gt;
+
+      &lt;div style=&quot;display: flex; flex-direction: column; gap: 10px; width: 280px;&quot;&gt;
+        &lt;div class=&quot;card&quot;&gt;
+          &lt;div class=&quot;hl&quot;&gt;&lt;/div&gt;
+          &lt;svg width=&quot;92&quot; height=&quot;176&quot; viewBox=&quot;0 0 92 176&quot; style=&quot;position:absolute;right:0;top:0&quot;&gt;
+            &lt;path d=&quot;M28 0 L92 0 L92 176 L0 176 Z&quot; fill=&quot;url(#f1)&quot;/&gt;
+            &lt;rect x=&quot;0&quot; y=&quot;0&quot; width=&quot;92&quot; height=&quot;176&quot; fill=&quot;url(#b1)&quot; clip-path=&quot;url(#c1)&quot;/&gt;
+            &lt;path d=&quot;M28 0 L0 176&quot; stroke=&quot;#2D7DF6&quot; stroke-width=&quot;3&quot; fill=&quot;none&quot;/&gt;
+            &lt;g transform=&quot;translate(45 70)&quot;&gt;&lt;path d=&quot;M 5,3 L 27,18 L 5,33 Z&quot; fill=&quot;#fff&quot; stroke=&quot;#fff&quot; stroke-width=&quot;6&quot; stroke-linejoin=&quot;round&quot;/&gt;&lt;/g&gt;
+          &lt;/svg&gt;
+          &lt;div class=&quot;body&quot;&gt;
+            &lt;div class=&quot;name&quot;&gt;Living room PS5&lt;/div&gt;
+            &lt;div class=&quot;fam&quot;&gt;
+              &lt;svg width=&quot;9&quot; height=&quot;16&quot; viewBox=&quot;0 0 16 28&quot;&gt;&lt;rect x=&quot;7&quot; y=&quot;0&quot; width=&quot;9&quot; height=&quot;7&quot; rx=&quot;3.5&quot; fill=&quot;#2D7DF6&quot;/&gt;&lt;rect x=&quot;0&quot; y=&quot;10.5&quot; width=&quot;16&quot; height=&quot;7&quot; rx=&quot;3.5&quot; fill=&quot;#2D7DF6&quot;/&gt;&lt;rect x=&quot;4&quot; y=&quot;21&quot; width=&quot;12&quot; height=&quot;7&quot; rx=&quot;3.5&quot; fill=&quot;#2D7DF6&quot;/&gt;&lt;/svg&gt;
+              &lt;span class=&quot;det&quot;&gt;PS5 &amp;middot; 192.168.1.20&lt;/span&gt;
+            &lt;/div&gt;
+            &lt;div class=&quot;st&quot;&gt;&lt;span class=&quot;dot&quot; style=&quot;background:#6CCB5F&quot;&gt;&lt;/span&gt;&lt;span class=&quot;stt&quot;&gt;Ready&lt;/span&gt;&lt;/div&gt;
+          &lt;/div&gt;
+        &lt;/div&gt;
+        &lt;div class=&quot;cap&quot;&gt;&lt;b style=&quot;color:rgba(255,255,255,.85)&quot;&gt;Rest.&lt;/b&gt; Unchanged. This is the baseline everything else is measured against.&lt;/div&gt;
+      &lt;/div&gt;
+
+      &lt;div style=&quot;display: flex; flex-direction: column; gap: 10px; width: 280px;&quot;&gt;
+        &lt;div class=&quot;card&quot;&gt;
+          &lt;div class=&quot;hl&quot;&gt;&lt;/div&gt;
+          &lt;div class=&quot;wash&quot;&gt;&lt;/div&gt;
+          &lt;svg width=&quot;92&quot; height=&quot;176&quot; viewBox=&quot;0 0 92 176&quot; style=&quot;position:absolute;right:0;top:0&quot;&gt;
+            &lt;defs&gt;&lt;linearGradient id=&quot;b2&quot; x1=&quot;0&quot; y1=&quot;0&quot; x2=&quot;0.55&quot; y2=&quot;0&quot;&gt;&lt;stop offset=&quot;0&quot; stop-color=&quot;#2D7DF6&quot; stop-opacity=&quot;0.23&quot;/&gt;&lt;stop offset=&quot;1&quot; stop-color=&quot;#2D7DF6&quot; stop-opacity=&quot;0&quot;/&gt;&lt;/linearGradient&gt;&lt;/defs&gt;
+            &lt;path d=&quot;M28 0 L92 0 L92 176 L0 176 Z&quot; fill=&quot;url(#f1)&quot;/&gt;
+            &lt;rect x=&quot;0&quot; y=&quot;0&quot; width=&quot;92&quot; height=&quot;176&quot; fill=&quot;url(#b2)&quot; clip-path=&quot;url(#c1)&quot;/&gt;
+            &lt;path d=&quot;M28 0 L0 176&quot; stroke=&quot;#5A9DFF&quot; stroke-width=&quot;3&quot; fill=&quot;none&quot;/&gt;
+            &lt;g transform=&quot;translate(45 70)&quot;&gt;&lt;path d=&quot;M 5,3 L 27,18 L 5,33 Z&quot; fill=&quot;#fff&quot; stroke=&quot;#fff&quot; stroke-width=&quot;6&quot; stroke-linejoin=&quot;round&quot;/&gt;&lt;/g&gt;
+          &lt;/svg&gt;
+          &lt;div class=&quot;body&quot;&gt;
+            &lt;div class=&quot;name&quot;&gt;Living room PS5&lt;/div&gt;
+            &lt;div class=&quot;fam&quot;&gt;
+              &lt;svg width=&quot;9&quot; height=&quot;16&quot; viewBox=&quot;0 0 16 28&quot;&gt;&lt;rect x=&quot;7&quot; y=&quot;0&quot; width=&quot;9&quot; height=&quot;7&quot; rx=&quot;3.5&quot; fill=&quot;#2D7DF6&quot;/&gt;&lt;rect x=&quot;0&quot; y=&quot;10.5&quot; width=&quot;16&quot; height=&quot;7&quot; rx=&quot;3.5&quot; fill=&quot;#2D7DF6&quot;/&gt;&lt;rect x=&quot;4&quot; y=&quot;21&quot; width=&quot;12&quot; height=&quot;7&quot; rx=&quot;3.5&quot; fill=&quot;#2D7DF6&quot;/&gt;&lt;/svg&gt;
+              &lt;span class=&quot;det&quot;&gt;PS5 &amp;middot; 192.168.1.20&lt;/span&gt;
+            &lt;/div&gt;
+            &lt;div class=&quot;st&quot;&gt;&lt;span class=&quot;dot&quot; style=&quot;background:#6CCB5F&quot;&gt;&lt;/span&gt;&lt;span class=&quot;stt&quot;&gt;Ready&lt;/span&gt;&lt;/div&gt;
+          &lt;/div&gt;
+        &lt;/div&gt;
+        &lt;div class=&quot;cap&quot;&gt;&lt;b style=&quot;color:#9ad48f&quot;&gt;Hover.&lt;/b&gt; The diagonal &lt;i&gt;lights&lt;/i&gt;: bleed 0x24&amp;rarr;0x3A, rim to full accent, over 150&amp;thinsp;ms. Still a gradient to transparent &amp;mdash; no field of colour returns.&lt;/div&gt;
+      &lt;/div&gt;
+
+      &lt;div style=&quot;display: flex; flex-direction: column; gap: 10px; width: 280px;&quot;&gt;
+        &lt;div class=&quot;card&quot;&gt;
+          &lt;div class=&quot;hl&quot;&gt;&lt;/div&gt;
+          &lt;svg width=&quot;92&quot; height=&quot;176&quot; viewBox=&quot;0 0 92 176&quot; style=&quot;position:absolute;right:0;top:0&quot;&gt;
+            &lt;path d=&quot;M28 0 L92 0 L92 176 L0 176 Z&quot; fill=&quot;url(#f1)&quot;/&gt;
+            &lt;rect x=&quot;0&quot; y=&quot;0&quot; width=&quot;92&quot; height=&quot;176&quot; fill=&quot;url(#b1)&quot; clip-path=&quot;url(#c1)&quot;/&gt;
+            &lt;path d=&quot;M28 0 L0 176&quot; stroke=&quot;#2D7DF6&quot; stroke-width=&quot;3&quot; fill=&quot;none&quot;/&gt;
+            &lt;g transform=&quot;translate(45 70)&quot;&gt;&lt;path d=&quot;M 5,3 L 27,18 L 5,33 Z&quot; fill=&quot;#fff&quot; stroke=&quot;#fff&quot; stroke-width=&quot;6&quot; stroke-linejoin=&quot;round&quot;/&gt;&lt;/g&gt;
+          &lt;/svg&gt;
+          &lt;div class=&quot;body&quot;&gt;
+            &lt;div class=&quot;name&quot;&gt;Living room PS5&lt;/div&gt;
+            &lt;div class=&quot;fam&quot;&gt;
+              &lt;svg width=&quot;9&quot; height=&quot;16&quot; viewBox=&quot;0 0 16 28&quot;&gt;&lt;rect x=&quot;7&quot; y=&quot;0&quot; width=&quot;9&quot; height=&quot;7&quot; rx=&quot;3.5&quot; fill=&quot;#2D7DF6&quot;/&gt;&lt;rect x=&quot;0&quot; y=&quot;10.5&quot; width=&quot;16&quot; height=&quot;7&quot; rx=&quot;3.5&quot; fill=&quot;#2D7DF6&quot;/&gt;&lt;rect x=&quot;4&quot; y=&quot;21&quot; width=&quot;12&quot; height=&quot;7&quot; rx=&quot;3.5&quot; fill=&quot;#2D7DF6&quot;/&gt;&lt;/svg&gt;
+              &lt;span class=&quot;det&quot;&gt;PS5 &amp;middot; 192.168.1.20&lt;/span&gt;
+            &lt;/div&gt;
+            &lt;div class=&quot;st&quot;&gt;&lt;span class=&quot;dot&quot; style=&quot;background:#6CCB5F&quot;&gt;&lt;/span&gt;&lt;span class=&quot;stt&quot;&gt;Ready&lt;/span&gt;&lt;/div&gt;
+          &lt;/div&gt;
+          &lt;div class=&quot;ring2&quot;&gt;&lt;/div&gt;
+          &lt;div class=&quot;ring&quot;&gt;&lt;/div&gt;
+        &lt;/div&gt;
+        &lt;div class=&quot;cap&quot;&gt;&lt;b style=&quot;color:rgba(255,255,255,.85)&quot;&gt;Focus.&lt;/b&gt; Deliberately identical to today. The ring owns focus; a second focus mark on the wedge would rebuild the confusion the 2026-09-20 amendment removed.&lt;/div&gt;
+      &lt;/div&gt;
+
+      &lt;div style=&quot;display: flex; flex-direction: column; gap: 10px; width: 280px;&quot;&gt;
+        &lt;div style=&quot;width: 280px; height: 176px; display: flex; align-items: center; justify-content: center;&quot;&gt;
+        &lt;div class=&quot;card&quot; style=&quot;transform: scale(0.985);&quot;&gt;
+          &lt;div class=&quot;hl&quot;&gt;&lt;/div&gt;
+          &lt;div class=&quot;wash&quot;&gt;&lt;/div&gt;
+          &lt;svg width=&quot;92&quot; height=&quot;176&quot; viewBox=&quot;0 0 92 176&quot; style=&quot;position:absolute;right:0;top:0&quot;&gt;
+            &lt;defs&gt;&lt;linearGradient id=&quot;b3&quot; x1=&quot;0&quot; y1=&quot;0&quot; x2=&quot;0.55&quot; y2=&quot;0&quot;&gt;&lt;stop offset=&quot;0&quot; stop-color=&quot;#2D7DF6&quot; stop-opacity=&quot;0.38&quot;/&gt;&lt;stop offset=&quot;1&quot; stop-color=&quot;#2D7DF6&quot; stop-opacity=&quot;0&quot;/&gt;&lt;/linearGradient&gt;&lt;/defs&gt;
+            &lt;path d=&quot;M28 0 L92 0 L92 176 L0 176 Z&quot; fill=&quot;url(#f1)&quot;/&gt;
+            &lt;rect x=&quot;0&quot; y=&quot;0&quot; width=&quot;92&quot; height=&quot;176&quot; fill=&quot;url(#b3)&quot; clip-path=&quot;url(#c1)&quot;/&gt;
+            &lt;path d=&quot;M28 0 L0 176&quot; stroke=&quot;#7FB4FF&quot; stroke-width=&quot;3&quot; fill=&quot;none&quot;/&gt;
+            &lt;g transform=&quot;translate(45 70)&quot;&gt;&lt;path d=&quot;M 5,3 L 27,18 L 5,33 Z&quot; fill=&quot;#fff&quot; stroke=&quot;#fff&quot; stroke-width=&quot;6&quot; stroke-linejoin=&quot;round&quot;/&gt;&lt;/g&gt;
+          &lt;/svg&gt;
+          &lt;div class=&quot;body&quot;&gt;
+            &lt;div class=&quot;name&quot;&gt;Living room PS5&lt;/div&gt;
+            &lt;div class=&quot;fam&quot;&gt;
+              &lt;svg width=&quot;9&quot; height=&quot;16&quot; viewBox=&quot;0 0 16 28&quot;&gt;&lt;rect x=&quot;7&quot; y=&quot;0&quot; width=&quot;9&quot; height=&quot;7&quot; rx=&quot;3.5&quot; fill=&quot;#2D7DF6&quot;/&gt;&lt;rect x=&quot;0&quot; y=&quot;10.5&quot; width=&quot;16&quot; height=&quot;7&quot; rx=&quot;3.5&quot; fill=&quot;#2D7DF6&quot;/&gt;&lt;rect x=&quot;4&quot; y=&quot;21&quot; width=&quot;12&quot; height=&quot;7&quot; rx=&quot;3.5&quot; fill=&quot;#2D7DF6&quot;/&gt;&lt;/svg&gt;
+              &lt;span class=&quot;det&quot;&gt;PS5 &amp;middot; 192.168.1.20&lt;/span&gt;
+            &lt;/div&gt;
+            &lt;div class=&quot;st&quot;&gt;&lt;span class=&quot;dot&quot; style=&quot;background:#6CCB5F&quot;&gt;&lt;/span&gt;&lt;span class=&quot;stt&quot;&gt;Ready&lt;/span&gt;&lt;/div&gt;
+          &lt;/div&gt;
+        &lt;/div&gt;
+        &lt;/div&gt;
+        &lt;div class=&quot;cap&quot;&gt;&lt;b style=&quot;color:#9ad48f&quot;&gt;Pressed.&lt;/b&gt; Bleed to full, card to 0.985 for 83&amp;thinsp;ms (&lt;span style=&quot;color:#a9b4c4&quot;&gt;RipcordDurationInstant&lt;/span&gt;), gated on AppMotion. The wedge then stays lit while the ConnectedAnimation runs, so the handoff is one motion.&lt;/div&gt;
+      &lt;/div&gt;
+
+      &lt;div style=&quot;display: flex; flex-direction: column; gap: 10px; width: 280px;&quot;&gt;
+        &lt;div class=&quot;card&quot; style=&quot;background:#1a1a1a;border:1px solid #fff&quot;&gt;
+          &lt;svg width=&quot;92&quot; height=&quot;176&quot; viewBox=&quot;0 0 92 176&quot; style=&quot;position:absolute;right:0;top:0&quot;&gt;
+            &lt;path d=&quot;M28 0 L0 176&quot; stroke=&quot;#fff&quot; stroke-width=&quot;3&quot; fill=&quot;none&quot;/&gt;
+            &lt;g transform=&quot;translate(45 70)&quot;&gt;&lt;path d=&quot;M 5,3 L 27,18 L 5,33 Z&quot; fill=&quot;#fff&quot; stroke=&quot;#fff&quot; stroke-width=&quot;6&quot; stroke-linejoin=&quot;round&quot;/&gt;&lt;/g&gt;
+          &lt;/svg&gt;
+          &lt;div class=&quot;body&quot;&gt;
+            &lt;div class=&quot;name&quot;&gt;Living room PS5&lt;/div&gt;
+            &lt;div class=&quot;fam&quot;&gt;
+              &lt;svg width=&quot;9&quot; height=&quot;16&quot; viewBox=&quot;0 0 16 28&quot;&gt;&lt;rect x=&quot;7&quot; y=&quot;0&quot; width=&quot;9&quot; height=&quot;7&quot; rx=&quot;3.5&quot; fill=&quot;#fff&quot;/&gt;&lt;rect x=&quot;0&quot; y=&quot;10.5&quot; width=&quot;16&quot; height=&quot;7&quot; rx=&quot;3.5&quot; fill=&quot;#fff&quot;/&gt;&lt;rect x=&quot;4&quot; y=&quot;21&quot; width=&quot;12&quot; height=&quot;7&quot; rx=&quot;3.5&quot; fill=&quot;#fff&quot;/&gt;&lt;/svg&gt;
+              &lt;span class=&quot;det&quot; style=&quot;color:#fff&quot;&gt;PS5 &amp;middot; 192.168.1.20&lt;/span&gt;
+            &lt;/div&gt;
+            &lt;div class=&quot;st&quot;&gt;&lt;span class=&quot;dot&quot; style=&quot;background:#fff&quot;&gt;&lt;/span&gt;&lt;span class=&quot;stt&quot; style=&quot;color:#fff&quot;&gt;Ready&lt;/span&gt;&lt;/div&gt;
+          &lt;/div&gt;
+        &lt;/div&gt;
+        &lt;div class=&quot;cap&quot;&gt;&lt;b style=&quot;color:#9ad48f&quot;&gt;High contrast.&lt;/b&gt; Every proposed state degrades to nothing here, which is the point: hover and press are decorative colour, focus is the system ring, and the shape survives on its own.&lt;/div&gt;
+      &lt;/div&gt;
+
+    &lt;/div&gt;
+  &lt;/div&gt;
+
+&lt;/div&gt;
+&lt;/body&gt;&lt;/html&gt;"></iframe></div></figure>
+<figure class='board'><figcaption><span class='bt'>Connect — C2 / C3</span><span class='bn'>C2, C3 — the slow case, with a way out after three seconds</span></figcaption><div class='bwrap' style='height:632px'><iframe loading='lazy' scrolling='no' style='width:1280px;height:720px;transform:scale(0.8750)' srcdoc="&lt;!doctype html&gt;&lt;html&gt;&lt;head&gt;&lt;meta charset=&quot;utf-8&quot;&gt;&lt;style&gt;
+body{margin:0;font-family:&quot;Segoe UI Variable Text&quot;,&quot;Segoe UI Variable&quot;,&quot;Segoe UI&quot;,system-ui,sans-serif;background:#000;color:#fff}
+.tb{height:48px;display:flex;align-items:center;gap:10px;padding:0 14px;background:#26262a;border-bottom:1px solid rgba(255,255,255,.06)}
+.tbt{font-size:12px;color:rgba(255,255,255,.79)}
+.quiet{background:transparent;color:rgba(255,255,255,.79);border:1px solid rgba(255,255,255,.14);border-radius:4px;padding:0 16px;height:32px;font:inherit;font-size:13px;cursor:pointer}
+.quiet:hover{background:rgba(255,255,255,.06);color:#fff}
+html,body{overflow:hidden}&lt;/style&gt;&lt;/head&gt;&lt;body&gt;
+
+&lt;div style=&quot;width: 1280px; height: 720px; box-sizing: border-box; background: #000; display: flex; flex-direction: column; overflow: hidden;&quot;&gt;
+
+  &lt;div class=&quot;tb&quot;&gt;
+    &lt;svg width=&quot;16&quot; height=&quot;16&quot; viewBox=&quot;0 0 64 64&quot;&gt;&lt;rect width=&quot;64&quot; height=&quot;64&quot; rx=&quot;15&quot; fill=&quot;#1a1e24&quot;/&gt;&lt;rect x=&quot;15&quot; y=&quot;18&quot; width=&quot;9&quot; height=&quot;7&quot; rx=&quot;3.5&quot; fill=&quot;#2FBF5B&quot;/&gt;&lt;rect x=&quot;8&quot; y=&quot;28.5&quot; width=&quot;16&quot; height=&quot;7&quot; rx=&quot;3.5&quot; fill=&quot;#2D7DF6&quot;/&gt;&lt;rect x=&quot;12&quot; y=&quot;39&quot; width=&quot;12&quot; height=&quot;7&quot; rx=&quot;3.5&quot; fill=&quot;#F0433A&quot;/&gt;&lt;path d=&quot;M29 17 L53 32 L29 47 Z&quot; fill=&quot;#fff&quot; stroke=&quot;#fff&quot; stroke-width=&quot;5&quot; stroke-linejoin=&quot;round&quot;/&gt;&lt;/svg&gt;
+    &lt;span class=&quot;tbt&quot;&gt;Ripcord&lt;/span&gt;
+  &lt;/div&gt;
+
+  &lt;div style=&quot;flex-grow: 1; position: relative;&quot;&gt;
+
+    &lt;div style=&quot;position: absolute; left: 32px; top: 30px; display: flex; align-items: center; gap: 12px;&quot;&gt;
+      &lt;svg width=&quot;24&quot; height=&quot;20&quot; viewBox=&quot;0 0 16 28&quot; aria-hidden=&quot;true&quot;&gt;&lt;rect x=&quot;7&quot; y=&quot;0&quot; width=&quot;9&quot; height=&quot;7&quot; rx=&quot;3.5&quot; fill=&quot;#2D7DF6&quot;/&gt;&lt;rect x=&quot;0&quot; y=&quot;10.5&quot; width=&quot;16&quot; height=&quot;7&quot; rx=&quot;3.5&quot; fill=&quot;#2D7DF6&quot;/&gt;&lt;rect x=&quot;4&quot; y=&quot;21&quot; width=&quot;12&quot; height=&quot;7&quot; rx=&quot;3.5&quot; fill=&quot;#2D7DF6&quot;/&gt;&lt;/svg&gt;
+      &lt;span style=&quot;font-size: 14px; font-weight: 600;&quot;&gt;Living room PS5&lt;/span&gt;
+    &lt;/div&gt;
+
+    &lt;div style=&quot;position: absolute; left: 32px; bottom: 64px; max-width: 700px; display: flex; align-items: flex-end; gap: 26px;&quot;&gt;
+
+      &lt;svg width=&quot;72&quot; height=&quot;72&quot; viewBox=&quot;0 0 64 64&quot; aria-hidden=&quot;true&quot; style=&quot;flex-shrink:0;margin-bottom:2px&quot;&gt;
+        &lt;rect x=&quot;15&quot; y=&quot;18&quot; width=&quot;9&quot; height=&quot;7&quot; rx=&quot;3.5&quot; fill=&quot;#2D7DF6&quot;/&gt;
+        &lt;rect x=&quot;8&quot; y=&quot;28.5&quot; width=&quot;16&quot; height=&quot;7&quot; rx=&quot;3.5&quot; fill=&quot;#2D7DF6&quot;/&gt;
+        &lt;rect x=&quot;12&quot; y=&quot;39&quot; width=&quot;12&quot; height=&quot;7&quot; rx=&quot;3.5&quot; fill=&quot;rgba(255,255,255,0.14)&quot;/&gt;
+        &lt;path d=&quot;M29 17 L53 32 L29 47 Z&quot; fill=&quot;#fff&quot; stroke=&quot;#fff&quot; stroke-width=&quot;5&quot; stroke-linejoin=&quot;round&quot;/&gt;
+      &lt;/svg&gt;
+
+      &lt;div style=&quot;display: flex; flex-direction: column; gap: 10px; padding-bottom: 4px;&quot;&gt;
+        &lt;div style=&quot;font-size: 28px; font-weight: 600; letter-spacing: -0.015em;&quot;&gt;Waking your PS5&amp;hellip;&lt;/div&gt;
+        &lt;div style=&quot;font-size: 14px; color: rgba(255,255,255,.79);&quot;&gt;The console was in standby. Usually about ten seconds.&lt;/div&gt;
+        &lt;div style=&quot;margin-top: 8px;&quot;&gt;
+          &lt;button class=&quot;quiet&quot;&gt;Back to consoles&lt;/button&gt;
+        &lt;/div&gt;
+      &lt;/div&gt;
+
+    &lt;/div&gt;
+
+  &lt;/div&gt;
+
+&lt;/div&gt;
+&lt;/body&gt;&lt;/html&gt;"></iframe></div></figure>
+<figure class='board'><figcaption><span class='bt'>The trail — C2</span><span class='bn'>C2 — the trail as a stepper against the trail as the mark</span></figcaption><div class='bwrap' style='height:562px'><iframe loading='lazy' scrolling='no' style='width:1000px;height:560px;transform:scale(1.0000)' srcdoc="&lt;!doctype html&gt;&lt;html&gt;&lt;head&gt;&lt;meta charset=&quot;utf-8&quot;&gt;&lt;style&gt;
+body{margin:0;font-family:&quot;Segoe UI Variable Text&quot;,&quot;Segoe UI Variable&quot;,&quot;Segoe UI&quot;,system-ui,sans-serif;background:#0a0a0a;color:#fff}
+.lbl{font-size:12px;letter-spacing:.09em;text-transform:uppercase;color:rgba(255,255,255,.55)}
+.cap{font-size:12.5px;line-height:1.45;color:rgba(255,255,255,.58)}
+.ph{font-size:12px;color:rgba(255,255,255,.5)}
+.cell{width:190px;display:flex;flex-direction:column;align-items:flex-start;gap:12px}
+.dash{height:3px;border-radius:1.5px}
+html,body{overflow:hidden}&lt;/style&gt;&lt;/head&gt;&lt;body&gt;
+
+&lt;div style=&quot;width: 1000px; height: 560px; box-sizing: border-box; padding: 44px 48px; display: flex; flex-direction: column; gap: 32px;&quot;&gt;
+
+  &lt;div&gt;
+    &lt;div style=&quot;font-size: 25px; font-weight: 600; letter-spacing: -0.015em;&quot;&gt;The connect trail, two readings&lt;/div&gt;
+    &lt;div class=&quot;cap&quot; style=&quot;max-width: 800px; margin-top: 6px;&quot;&gt;The dashes are uneven and right&amp;#8209;aligned because of their relationship to the wedge. Laid out in a horizontal row with no wedge, both of those reasons are gone &amp;mdash; so the middle segment is 70% wider than the first for a reason nobody can recover.&lt;/div&gt;
+  &lt;/div&gt;
+
+  &lt;div style=&quot;display: flex; flex-direction: column; gap: 14px;&quot;&gt;
+    &lt;div class=&quot;lbl&quot;&gt;Today &amp;mdash; a stepper with odd segments&lt;/div&gt;
+    &lt;div style=&quot;display: flex; gap: 30px;&quot;&gt;
+      &lt;div class=&quot;cell&quot;&gt;&lt;div style=&quot;display:flex;align-items:center;gap:8px;height:24px&quot;&gt;&lt;div class=&quot;dash&quot; style=&quot;width:34px;background:#2D7DF6&quot;&gt;&lt;/div&gt;&lt;div class=&quot;dash&quot; style=&quot;width:58px;background:rgba(255,255,255,.16)&quot;&gt;&lt;/div&gt;&lt;div class=&quot;dash&quot; style=&quot;width:44px;background:rgba(255,255,255,.16)&quot;&gt;&lt;/div&gt;&lt;/div&gt;&lt;div class=&quot;ph&quot;&gt;Preparing video&lt;/div&gt;&lt;/div&gt;
+      &lt;div class=&quot;cell&quot;&gt;&lt;div style=&quot;display:flex;align-items:center;gap:8px;height:24px&quot;&gt;&lt;div class=&quot;dash&quot; style=&quot;width:34px;background:#2D7DF6&quot;&gt;&lt;/div&gt;&lt;div class=&quot;dash&quot; style=&quot;width:58px;background:#2D7DF6&quot;&gt;&lt;/div&gt;&lt;div class=&quot;dash&quot; style=&quot;width:44px;background:rgba(255,255,255,.16)&quot;&gt;&lt;/div&gt;&lt;/div&gt;&lt;div class=&quot;ph&quot;&gt;Waking the console&lt;/div&gt;&lt;/div&gt;
+      &lt;div class=&quot;cell&quot;&gt;&lt;div style=&quot;display:flex;align-items:center;gap:8px;height:24px&quot;&gt;&lt;div class=&quot;dash&quot; style=&quot;width:34px;background:#2D7DF6&quot;&gt;&lt;/div&gt;&lt;div class=&quot;dash&quot; style=&quot;width:58px;background:#2D7DF6&quot;&gt;&lt;/div&gt;&lt;div class=&quot;dash&quot; style=&quot;width:44px;background:#2D7DF6&quot;&gt;&lt;/div&gt;&lt;/div&gt;&lt;div class=&quot;ph&quot;&gt;Connecting&lt;/div&gt;&lt;/div&gt;
+    &lt;/div&gt;
+  &lt;/div&gt;
+
+  &lt;div style=&quot;display: flex; flex-direction: column; gap: 14px;&quot;&gt;
+    &lt;div class=&quot;lbl&quot;&gt;Proposed &amp;mdash; the mark assembles&lt;/div&gt;
+    &lt;div style=&quot;display: flex; gap: 30px;&quot;&gt;
+
+      &lt;div class=&quot;cell&quot;&gt;
+        &lt;svg width=&quot;64&quot; height=&quot;64&quot; viewBox=&quot;0 0 64 64&quot; aria-hidden=&quot;true&quot;&gt;
+          &lt;rect x=&quot;15&quot; y=&quot;18&quot; width=&quot;9&quot; height=&quot;7&quot; rx=&quot;3.5&quot; fill=&quot;#2D7DF6&quot;/&gt;
+          &lt;rect x=&quot;8&quot; y=&quot;28.5&quot; width=&quot;16&quot; height=&quot;7&quot; rx=&quot;3.5&quot; fill=&quot;rgba(255,255,255,0.14)&quot;/&gt;
+          &lt;rect x=&quot;12&quot; y=&quot;39&quot; width=&quot;12&quot; height=&quot;7&quot; rx=&quot;3.5&quot; fill=&quot;rgba(255,255,255,0.14)&quot;/&gt;
+          &lt;path d=&quot;M29 17 L53 32 L29 47 Z&quot; fill=&quot;#fff&quot; stroke=&quot;#fff&quot; stroke-width=&quot;5&quot; stroke-linejoin=&quot;round&quot;/&gt;
+        &lt;/svg&gt;
+        &lt;div class=&quot;ph&quot;&gt;Preparing video&lt;/div&gt;
+      &lt;/div&gt;
+
+      &lt;div class=&quot;cell&quot;&gt;
+        &lt;svg width=&quot;64&quot; height=&quot;64&quot; viewBox=&quot;0 0 64 64&quot; aria-hidden=&quot;true&quot;&gt;
+          &lt;rect x=&quot;15&quot; y=&quot;18&quot; width=&quot;9&quot; height=&quot;7&quot; rx=&quot;3.5&quot; fill=&quot;#2D7DF6&quot;/&gt;
+          &lt;rect x=&quot;8&quot; y=&quot;28.5&quot; width=&quot;16&quot; height=&quot;7&quot; rx=&quot;3.5&quot; fill=&quot;#2D7DF6&quot;/&gt;
+          &lt;rect x=&quot;12&quot; y=&quot;39&quot; width=&quot;12&quot; height=&quot;7&quot; rx=&quot;3.5&quot; fill=&quot;rgba(255,255,255,0.14)&quot;/&gt;
+          &lt;path d=&quot;M29 17 L53 32 L29 47 Z&quot; fill=&quot;#fff&quot; stroke=&quot;#fff&quot; stroke-width=&quot;5&quot; stroke-linejoin=&quot;round&quot;/&gt;
+        &lt;/svg&gt;
+        &lt;div class=&quot;ph&quot;&gt;Waking the console&lt;/div&gt;
+      &lt;/div&gt;
+
+      &lt;div class=&quot;cell&quot;&gt;
+        &lt;svg width=&quot;64&quot; height=&quot;64&quot; viewBox=&quot;0 0 64 64&quot; aria-hidden=&quot;true&quot;&gt;
+          &lt;rect x=&quot;15&quot; y=&quot;18&quot; width=&quot;9&quot; height=&quot;7&quot; rx=&quot;3.5&quot; fill=&quot;#2D7DF6&quot;/&gt;
+          &lt;rect x=&quot;8&quot; y=&quot;28.5&quot; width=&quot;16&quot; height=&quot;7&quot; rx=&quot;3.5&quot; fill=&quot;#2D7DF6&quot;/&gt;
+          &lt;rect x=&quot;12&quot; y=&quot;39&quot; width=&quot;12&quot; height=&quot;7&quot; rx=&quot;3.5&quot; fill=&quot;#2D7DF6&quot;/&gt;
+          &lt;path d=&quot;M29 17 L53 32 L29 47 Z&quot; fill=&quot;#fff&quot; stroke=&quot;#fff&quot; stroke-width=&quot;5&quot; stroke-linejoin=&quot;round&quot;/&gt;
+        &lt;/svg&gt;
+        &lt;div class=&quot;ph&quot;&gt;Connecting&lt;/div&gt;
+      &lt;/div&gt;
+
+      &lt;div class=&quot;cell&quot; style=&quot;width:260px&quot;&gt;
+        &lt;svg width=&quot;64&quot; height=&quot;64&quot; viewBox=&quot;0 0 64 64&quot; aria-hidden=&quot;true&quot; style=&quot;opacity:.35&quot;&gt;
+          &lt;rect x=&quot;15&quot; y=&quot;18&quot; width=&quot;9&quot; height=&quot;7&quot; rx=&quot;3.5&quot; fill=&quot;#2D7DF6&quot;/&gt;
+          &lt;rect x=&quot;8&quot; y=&quot;28.5&quot; width=&quot;16&quot; height=&quot;7&quot; rx=&quot;3.5&quot; fill=&quot;#2D7DF6&quot;/&gt;
+          &lt;rect x=&quot;12&quot; y=&quot;39&quot; width=&quot;12&quot; height=&quot;7&quot; rx=&quot;3.5&quot; fill=&quot;#2D7DF6&quot;/&gt;
+          &lt;path d=&quot;M29 17 L53 32 L29 47 Z&quot; fill=&quot;#fff&quot; stroke=&quot;#fff&quot; stroke-width=&quot;5&quot; stroke-linejoin=&quot;round&quot;/&gt;
+        &lt;/svg&gt;
+        &lt;div class=&quot;ph&quot;&gt;First frame &amp;mdash; the whole composition cross&amp;#8209;fades out in 150&amp;thinsp;ms, the mark last&lt;/div&gt;
+      &lt;/div&gt;
+
+    &lt;/div&gt;
+  &lt;/div&gt;
+
+  &lt;div class=&quot;cap&quot; style=&quot;max-width: 860px; border-left: 2px solid #2D7DF6; padding-left: 14px;&quot;&gt;The wedge is lit from the first moment &amp;mdash; you pulled it, it is away &amp;mdash; and the trail accumulates behind it as the connect travels. Three dashes because the mark has three and because they are the three waits a player can tell apart. It is the console&#x27;s accent, not the logo&#x27;s three, because this says &lt;i&gt;which console&lt;/i&gt;, not &lt;i&gt;which app&lt;/i&gt;.&lt;/div&gt;
+
+&lt;/div&gt;
+&lt;/body&gt;&lt;/html&gt;"></iframe></div></figure>
+<figure class='board'><figcaption><span class='bt'>First run — E1</span><span class='bn'>E1 — the app&#x27;s own mark, and a promise instead of an absence</span></figcaption><div class='bwrap' style='height:632px'><iframe loading='lazy' scrolling='no' style='width:1280px;height:720px;transform:scale(0.8750)' srcdoc="&lt;!doctype html&gt;&lt;html&gt;&lt;head&gt;&lt;meta charset=&quot;utf-8&quot;&gt;&lt;style&gt;
+body{margin:0;font-family:&quot;Segoe UI Variable Text&quot;,&quot;Segoe UI Variable&quot;,&quot;Segoe UI&quot;,system-ui,sans-serif;background:#26262a;color:#fff}
+.tb{height:48px;display:flex;align-items:center;gap:10px;padding:0 4px 0 14px;border-bottom:1px solid rgba(255,255,255,.06)}
+.tbt{font-size:12px;color:rgba(255,255,255,.79)}
+.tbb{width:40px;height:40px;display:flex;align-items:center;justify-content:center;border-radius:4px;color:rgba(255,255,255,.79)}
+.acc{background:#2D7DF6;color:#fff;border:none;border-radius:4px;padding:0 20px;height:36px;font:inherit;font-size:14px;font-weight:600;cursor:pointer}
+.acc:hover{background:#3d89f8}
+html,body{overflow:hidden}&lt;/style&gt;&lt;/head&gt;&lt;body&gt;
+
+&lt;div style=&quot;width: 1280px; height: 720px; box-sizing: border-box; background: #26262a; display: flex; flex-direction: column; overflow: hidden;&quot;&gt;
+
+  &lt;div class=&quot;tb&quot;&gt;
+    &lt;svg width=&quot;16&quot; height=&quot;16&quot; viewBox=&quot;0 0 64 64&quot;&gt;&lt;rect width=&quot;64&quot; height=&quot;64&quot; rx=&quot;15&quot; fill=&quot;#1a1e24&quot;/&gt;&lt;rect x=&quot;15&quot; y=&quot;18&quot; width=&quot;9&quot; height=&quot;7&quot; rx=&quot;3.5&quot; fill=&quot;#2FBF5B&quot;/&gt;&lt;rect x=&quot;8&quot; y=&quot;28.5&quot; width=&quot;16&quot; height=&quot;7&quot; rx=&quot;3.5&quot; fill=&quot;#2D7DF6&quot;/&gt;&lt;rect x=&quot;12&quot; y=&quot;39&quot; width=&quot;12&quot; height=&quot;7&quot; rx=&quot;3.5&quot; fill=&quot;#F0433A&quot;/&gt;&lt;path d=&quot;M29 17 L53 32 L29 47 Z&quot; fill=&quot;#fff&quot; stroke=&quot;#fff&quot; stroke-width=&quot;5&quot; stroke-linejoin=&quot;round&quot;/&gt;&lt;/svg&gt;
+    &lt;span class=&quot;tbt&quot;&gt;Ripcord&lt;/span&gt;
+    &lt;span style=&quot;flex-grow:1&quot;&gt;&lt;/span&gt;
+    &lt;div class=&quot;tbb&quot;&gt;&lt;svg width=&quot;16&quot; height=&quot;16&quot; viewBox=&quot;0 0 16 16&quot; fill=&quot;none&quot; stroke=&quot;currentColor&quot; stroke-width=&quot;1.3&quot;&gt;&lt;circle cx=&quot;8&quot; cy=&quot;8&quot; r=&quot;2.4&quot;/&gt;&lt;path d=&quot;M8 1.5v1.8M8 12.7v1.8M14.5 8h-1.8M3.3 8H1.5M12.6 3.4l-1.3 1.3M4.7 11.3l-1.3 1.3M12.6 12.6l-1.3-1.3M4.7 4.7L3.4 3.4&quot;/&gt;&lt;/svg&gt;&lt;/div&gt;
+    &lt;div class=&quot;tbb&quot;&gt;&lt;svg width=&quot;16&quot; height=&quot;16&quot; viewBox=&quot;0 0 16 16&quot; fill=&quot;none&quot; stroke=&quot;currentColor&quot; stroke-width=&quot;1.3&quot;&gt;&lt;circle cx=&quot;8&quot; cy=&quot;8&quot; r=&quot;6.3&quot;/&gt;&lt;path d=&quot;M8 7.2v4.2M8 4.6v.9&quot;/&gt;&lt;/svg&gt;&lt;/div&gt;
+  &lt;/div&gt;
+
+  &lt;div style=&quot;flex-grow: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 26px; padding: 0 40px 56px;&quot;&gt;
+
+    &lt;svg width=&quot;104&quot; height=&quot;104&quot; viewBox=&quot;0 0 64 64&quot; aria-hidden=&quot;true&quot;&gt;
+      &lt;rect x=&quot;15&quot; y=&quot;18&quot; width=&quot;9&quot; height=&quot;7&quot; rx=&quot;3.5&quot; fill=&quot;#2FBF5B&quot;/&gt;
+      &lt;rect x=&quot;8&quot; y=&quot;28.5&quot; width=&quot;16&quot; height=&quot;7&quot; rx=&quot;3.5&quot; fill=&quot;#2D7DF6&quot;/&gt;
+      &lt;rect x=&quot;12&quot; y=&quot;39&quot; width=&quot;12&quot; height=&quot;7&quot; rx=&quot;3.5&quot; fill=&quot;#F0433A&quot;/&gt;
+      &lt;path d=&quot;M29 17 L53 32 L29 47 Z&quot; fill=&quot;#fff&quot; stroke=&quot;#fff&quot; stroke-width=&quot;5&quot; stroke-linejoin=&quot;round&quot;/&gt;
+    &lt;/svg&gt;
+
+    &lt;div style=&quot;display: flex; flex-direction: column; align-items: center; gap: 12px; max-width: 460px;&quot;&gt;
+      &lt;h1 style=&quot;margin: 0; font-size: 28px; font-weight: 600; letter-spacing: -0.015em; text-align: center;&quot;&gt;Play your PlayStation on this PC.&lt;/h1&gt;
+      &lt;p style=&quot;margin: 0; font-size: 14px; line-height: 1.55; color: rgba(255,255,255,.79); text-align: center;&quot;&gt;Ripcord finds your console on your network &amp;mdash; keep both on the same Wi&amp;#8209;Fi or wired connection. Add it once and it stays paired.&lt;/p&gt;
+    &lt;/div&gt;
+
+    &lt;button class=&quot;acc&quot; style=&quot;margin-top: 6px;&quot;&gt;Add your console&lt;/button&gt;
+
+  &lt;/div&gt;
+
+&lt;/div&gt;
+&lt;/body&gt;&lt;/html&gt;"></iframe></div></figure>
+<figure class='board'><figcaption><span class='bt'>Paired — E4</span><span class='bn'>E4 — Play now is the wedge, so the card is taught here</span></figcaption><div class='bwrap' style='height:632px'><iframe loading='lazy' scrolling='no' style='width:1280px;height:720px;transform:scale(0.8750)' srcdoc="&lt;!doctype html&gt;&lt;html&gt;&lt;head&gt;&lt;meta charset=&quot;utf-8&quot;&gt;&lt;style&gt;
+body{margin:0;font-family:&quot;Segoe UI Variable Text&quot;,&quot;Segoe UI Variable&quot;,&quot;Segoe UI&quot;,system-ui,sans-serif;background:#26262a;color:#fff}
+.tb{height:48px;display:flex;align-items:center;gap:10px;padding:0 14px;border-bottom:1px solid rgba(255,255,255,.06)}
+.tbt{font-size:12px;color:rgba(255,255,255,.79)}
+.dash{height:4px;border-radius:2px}
+.ghost{background:transparent;color:#fff;border:1px solid rgba(255,255,255,.18);border-radius:4px;padding:0 20px;height:36px;font:inherit;font-size:14px;cursor:pointer}
+.ghost:hover{background:rgba(255,255,255,.06)}
+.tbox{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.14);border-bottom:1px solid rgba(255,255,255,.4);border-radius:4px;height:32px;display:flex;align-items:center;padding:0 11px;font-size:14px;color:rgba(255,255,255,.55);width:320px}
+.wbtn{position:relative;width:268px;height:76px;border:none;background:transparent;padding:0;cursor:pointer;display:block}
+html,body{overflow:hidden}&lt;/style&gt;&lt;/head&gt;&lt;body&gt;
+
+&lt;div style=&quot;width: 1280px; height: 720px; box-sizing: border-box; background: #26262a; display: flex; flex-direction: column; overflow: hidden;&quot;&gt;
+
+  &lt;div class=&quot;tb&quot;&gt;
+    &lt;svg width=&quot;16&quot; height=&quot;16&quot; viewBox=&quot;0 0 64 64&quot;&gt;&lt;rect width=&quot;64&quot; height=&quot;64&quot; rx=&quot;15&quot; fill=&quot;#1a1e24&quot;/&gt;&lt;rect x=&quot;15&quot; y=&quot;18&quot; width=&quot;9&quot; height=&quot;7&quot; rx=&quot;3.5&quot; fill=&quot;#2FBF5B&quot;/&gt;&lt;rect x=&quot;8&quot; y=&quot;28.5&quot; width=&quot;16&quot; height=&quot;7&quot; rx=&quot;3.5&quot; fill=&quot;#2D7DF6&quot;/&gt;&lt;rect x=&quot;12&quot; y=&quot;39&quot; width=&quot;12&quot; height=&quot;7&quot; rx=&quot;3.5&quot; fill=&quot;#F0433A&quot;/&gt;&lt;path d=&quot;M29 17 L53 32 L29 47 Z&quot; fill=&quot;#fff&quot; stroke=&quot;#fff&quot; stroke-width=&quot;5&quot; stroke-linejoin=&quot;round&quot;/&gt;&lt;/svg&gt;
+    &lt;span class=&quot;tbt&quot;&gt;Ripcord&lt;/span&gt;
+  &lt;/div&gt;
+
+  &lt;div style=&quot;flex-grow: 1; padding: 40px 48px; display: flex; flex-direction: column; gap: 28px;&quot;&gt;
+
+    &lt;div style=&quot;display: flex; flex-direction: column; gap: 14px;&quot;&gt;
+      &lt;h1 style=&quot;margin: 0; font-size: 24px; font-weight: 600; letter-spacing: -0.01em;&quot;&gt;Add a console&lt;/h1&gt;
+      &lt;div style=&quot;display: flex; gap: 7px; width: 220px;&quot;&gt;
+        &lt;div class=&quot;dash&quot; style=&quot;width:52px;background:#2D7DF6&quot;&gt;&lt;/div&gt;
+        &lt;div class=&quot;dash&quot; style=&quot;width:86px;background:#2D7DF6&quot;&gt;&lt;/div&gt;
+        &lt;div class=&quot;dash&quot; style=&quot;width:66px;background:#2D7DF6&quot;&gt;&lt;/div&gt;
+      &lt;/div&gt;
+    &lt;/div&gt;
+
+    &lt;div style=&quot;display: flex; align-items: center; gap: 26px; margin-top: 4px;&quot;&gt;
+      &lt;svg width=&quot;84&quot; height=&quot;84&quot; viewBox=&quot;0 0 64 64&quot; aria-hidden=&quot;true&quot;&gt;
+        &lt;rect x=&quot;15&quot; y=&quot;18&quot; width=&quot;9&quot; height=&quot;7&quot; rx=&quot;3.5&quot; fill=&quot;#2FBF5B&quot;/&gt;
+        &lt;rect x=&quot;8&quot; y=&quot;28.5&quot; width=&quot;16&quot; height=&quot;7&quot; rx=&quot;3.5&quot; fill=&quot;#2D7DF6&quot;/&gt;
+        &lt;rect x=&quot;12&quot; y=&quot;39&quot; width=&quot;12&quot; height=&quot;7&quot; rx=&quot;3.5&quot; fill=&quot;#F0433A&quot;/&gt;
+        &lt;path d=&quot;M29 17 L53 32 L29 47 Z&quot; fill=&quot;#fff&quot; stroke=&quot;#fff&quot; stroke-width=&quot;5&quot; stroke-linejoin=&quot;round&quot;/&gt;
+      &lt;/svg&gt;
+      &lt;div style=&quot;display: flex; flex-direction: column; gap: 8px;&quot;&gt;
+        &lt;div style=&quot;font-size: 40px; font-weight: 600; letter-spacing: -0.02em; line-height: 1;&quot;&gt;Paired.&lt;/div&gt;
+        &lt;div style=&quot;font-size: 14px; color: rgba(255,255,255,.79);&quot;&gt;Living room PS5 is linked to this PC. You won&#x27;t have to do this again.&lt;/div&gt;
+      &lt;/div&gt;
+    &lt;/div&gt;
+
+    &lt;div style=&quot;display: flex; align-items: center; gap: 20px; margin-top: 8px;&quot;&gt;
+      &lt;button class=&quot;wbtn&quot; aria-label=&quot;Play now on Living room PS5&quot;&gt;
+        &lt;svg width=&quot;268&quot; height=&quot;76&quot; viewBox=&quot;0 0 268 76&quot; style=&quot;position:absolute;left:0;top:0&quot;&gt;
+          &lt;defs&gt;
+            &lt;linearGradient id=&quot;hf&quot; x1=&quot;0&quot; y1=&quot;1&quot; x2=&quot;1&quot; y2=&quot;0&quot;&gt;&lt;stop offset=&quot;0&quot; stop-color=&quot;#2E333C&quot;/&gt;&lt;stop offset=&quot;1&quot; stop-color=&quot;#1B1F26&quot;/&gt;&lt;/linearGradient&gt;
+            &lt;linearGradient id=&quot;hb&quot; x1=&quot;0&quot; y1=&quot;0&quot; x2=&quot;0.55&quot; y2=&quot;0&quot;&gt;&lt;stop offset=&quot;0&quot; stop-color=&quot;#2D7DF6&quot; stop-opacity=&quot;0.26&quot;/&gt;&lt;stop offset=&quot;1&quot; stop-color=&quot;#2D7DF6&quot; stop-opacity=&quot;0&quot;/&gt;&lt;/linearGradient&gt;
+            &lt;clipPath id=&quot;hc&quot;&gt;&lt;path d=&quot;M12 0 L268 0 L268 76 L0 76 Z&quot;/&gt;&lt;/clipPath&gt;
+          &lt;/defs&gt;
+          &lt;path d=&quot;M12 0 L268 0 L268 76 L0 76 Z&quot; fill=&quot;url(#hf)&quot;/&gt;
+          &lt;rect x=&quot;0&quot; y=&quot;0&quot; width=&quot;268&quot; height=&quot;76&quot; fill=&quot;url(#hb)&quot; clip-path=&quot;url(#hc)&quot;/&gt;
+          &lt;path d=&quot;M12 0 L0 76&quot; stroke=&quot;#2D7DF6&quot; stroke-width=&quot;3&quot; fill=&quot;none&quot;/&gt;
+          &lt;g transform=&quot;translate(34 22) scale(0.88)&quot;&gt;&lt;path d=&quot;M 5,3 L 27,18 L 5,33 Z&quot; fill=&quot;#fff&quot; stroke=&quot;#fff&quot; stroke-width=&quot;6&quot; stroke-linejoin=&quot;round&quot;/&gt;&lt;/g&gt;
+          &lt;text x=&quot;80&quot; y=&quot;44&quot; fill=&quot;#fff&quot; font-family=&quot;Segoe UI Variable Text, Segoe UI, system-ui, sans-serif&quot; font-size=&quot;17&quot; font-weight=&quot;600&quot;&gt;Play now&lt;/text&gt;
+        &lt;/svg&gt;
+        &lt;span style=&quot;position:absolute;inset:-7px;border:3px solid #fff;border-radius:11px&quot;&gt;&lt;/span&gt;
+      &lt;/button&gt;
+      &lt;button class=&quot;ghost&quot;&gt;Done&lt;/button&gt;
+    &lt;/div&gt;
+
+    &lt;div style=&quot;display: flex; flex-direction: column; gap: 6px; margin-top: 10px;&quot;&gt;
+      &lt;label for=&quot;nm&quot; style=&quot;font-size: 14px; color: rgba(255,255,255,.79);&quot;&gt;What should we call it?&lt;/label&gt;
+      &lt;div class=&quot;tbox&quot; id=&quot;nm&quot;&gt;Living room PS5&lt;/div&gt;
+      &lt;div style=&quot;font-size: 12px; color: rgba(255,255,255,.55);&quot;&gt;Handy when you have more than one. You can change it any time.&lt;/div&gt;
+    &lt;/div&gt;
+
+  &lt;/div&gt;
+
+&lt;/div&gt;
+&lt;/body&gt;&lt;/html&gt;"></iframe></div></figure>
+<figure class='board'><figcaption><span class='bt'>Density steps — D1 / B5</span><span class='bn'>D1, B5 — one rule for the desk, the handheld and the sofa</span></figcaption><div class='bwrap' style='height:579px'><iframe loading='lazy' scrolling='no' style='width:1280px;height:660px;transform:scale(0.8750)' srcdoc="&lt;!doctype html&gt;&lt;html&gt;&lt;head&gt;&lt;meta charset=&quot;utf-8&quot;&gt;&lt;style&gt;
+body{margin:0;font-family:&quot;Segoe UI Variable Text&quot;,&quot;Segoe UI Variable&quot;,&quot;Segoe UI&quot;,system-ui,sans-serif;background:#26262a;color:#fff}
+.lbl{font-size:12px;letter-spacing:.09em;text-transform:uppercase;color:rgba(255,255,255,.55)}
+.cap{font-size:12.5px;line-height:1.45;color:rgba(255,255,255,.58)}
+.card{position:relative;border-radius:8px;box-sizing:border-box;background:linear-gradient(135deg,#23272E 0%,#12151A 100%);border:1px solid rgba(255,255,255,.18);overflow:hidden}
+.hl{position:absolute;inset:0;background:linear-gradient(180deg,rgba(255,255,255,.15) 0%,rgba(255,255,255,0) 4%)}
+.det{font-size:12px;color:rgba(255,255,255,.54)}
+.stt{font-size:12px;color:rgba(255,255,255,.79)}
+.dot{width:8px;height:8px;border-radius:50%;background:#6CCB5F}
+.meas{position:absolute;height:14px;border-left:1px solid #F0A33A;border-right:1px solid #F0A33A}
+.measl{position:absolute;font-size:11px;color:#F0A33A;white-space:nowrap}
+html,body{overflow:hidden}&lt;/style&gt;&lt;/head&gt;&lt;body&gt;
+
+&lt;div style=&quot;width: 1280px; height: 660px; box-sizing: border-box; padding: 44px 48px; display: flex; flex-direction: column; gap: 30px;&quot;&gt;
+
+  &lt;div&gt;
+    &lt;div style=&quot;font-size: 25px; font-weight: 600; letter-spacing: -0.015em;&quot;&gt;One rule for the desk, the handheld and the sofa&lt;/div&gt;
+    &lt;div class=&quot;cap&quot; style=&quot;max-width: 900px; margin-top: 6px;&quot;&gt;Windows owns text size. Ripcord owns the size of Ripcord&#x27;s own cards. The cell steps up at 1920&amp;thinsp;px of viewport &amp;mdash; where a maximised desktop window and a Big Picture session on a television both land &amp;mdash; and the type ramp never moves.&lt;/div&gt;
+  &lt;/div&gt;
+
+  &lt;div style=&quot;display: flex; gap: 64px; align-items: flex-start;&quot;&gt;
+
+    &lt;div style=&quot;display: flex; flex-direction: column; gap: 14px;&quot;&gt;
+      &lt;div class=&quot;lbl&quot;&gt;&amp;lt;&amp;nbsp;1920 &amp;mdash; cell 292&amp;times;188&lt;/div&gt;
+      &lt;div style=&quot;position: relative; padding-bottom: 30px;&quot;&gt;
+        &lt;div class=&quot;card&quot; style=&quot;width:280px;height:176px&quot;&gt;
+          &lt;div class=&quot;hl&quot;&gt;&lt;/div&gt;
+          &lt;svg width=&quot;92&quot; height=&quot;176&quot; viewBox=&quot;0 0 92 176&quot; style=&quot;position:absolute;right:0;top:0&quot;&gt;
+            &lt;defs&gt;&lt;linearGradient id=&quot;df&quot; x1=&quot;0&quot; y1=&quot;1&quot; x2=&quot;1&quot; y2=&quot;0&quot;&gt;&lt;stop offset=&quot;0&quot; stop-color=&quot;#2E333C&quot;/&gt;&lt;stop offset=&quot;1&quot; stop-color=&quot;#1B1F26&quot;/&gt;&lt;/linearGradient&gt;
+            &lt;linearGradient id=&quot;db&quot; x1=&quot;0&quot; y1=&quot;0&quot; x2=&quot;0.55&quot; y2=&quot;0&quot;&gt;&lt;stop offset=&quot;0&quot; stop-color=&quot;#2D7DF6&quot; stop-opacity=&quot;0.14&quot;/&gt;&lt;stop offset=&quot;1&quot; stop-color=&quot;#2D7DF6&quot; stop-opacity=&quot;0&quot;/&gt;&lt;/linearGradient&gt;
+            &lt;clipPath id=&quot;dc1&quot;&gt;&lt;path d=&quot;M28 0 L92 0 L92 176 L0 176 Z&quot;/&gt;&lt;/clipPath&gt;&lt;/defs&gt;
+            &lt;path d=&quot;M28 0 L92 0 L92 176 L0 176 Z&quot; fill=&quot;url(#df)&quot;/&gt;
+            &lt;rect x=&quot;0&quot; y=&quot;0&quot; width=&quot;92&quot; height=&quot;176&quot; fill=&quot;url(#db)&quot; clip-path=&quot;url(#dc1)&quot;/&gt;
+            &lt;path d=&quot;M28 0 L0 176&quot; stroke=&quot;#2D7DF6&quot; stroke-width=&quot;3&quot; fill=&quot;none&quot;/&gt;
+            &lt;g transform=&quot;translate(45 70)&quot;&gt;&lt;path d=&quot;M 5,3 L 27,18 L 5,33 Z&quot; fill=&quot;#fff&quot; stroke=&quot;#fff&quot; stroke-width=&quot;6&quot; stroke-linejoin=&quot;round&quot;/&gt;&lt;/g&gt;
+          &lt;/svg&gt;
+          &lt;div style=&quot;position:absolute;left:16px;top:14px;right:100px;bottom:14px;display:flex;flex-direction:column&quot;&gt;
+            &lt;div style=&quot;font-size:19px;font-weight:600;line-height:1.2;letter-spacing:-.01em;max-height:46px;overflow:hidden&quot;&gt;Basement PlayStat&amp;hellip;&lt;/div&gt;
+            &lt;div style=&quot;display:flex;align-items:center;gap:8px;margin-top:6px&quot;&gt;
+              &lt;svg width=&quot;9&quot; height=&quot;16&quot; viewBox=&quot;0 0 16 28&quot;&gt;&lt;rect x=&quot;7&quot; y=&quot;0&quot; width=&quot;9&quot; height=&quot;7&quot; rx=&quot;3.5&quot; fill=&quot;#2D7DF6&quot;/&gt;&lt;rect x=&quot;0&quot; y=&quot;10.5&quot; width=&quot;16&quot; height=&quot;7&quot; rx=&quot;3.5&quot; fill=&quot;#2D7DF6&quot;/&gt;&lt;rect x=&quot;4&quot; y=&quot;21&quot; width=&quot;12&quot; height=&quot;7&quot; rx=&quot;3.5&quot; fill=&quot;#2D7DF6&quot;/&gt;&lt;/svg&gt;
+              &lt;span class=&quot;det&quot;&gt;PS5 &amp;middot; 192.168.1.20&lt;/span&gt;
+            &lt;/div&gt;
+            &lt;div style=&quot;margin-top:auto;font-size:12px;color:rgba(255,255,255,.54);margin-bottom:4px&quot;&gt;Played 11 Sep 2&amp;hellip;&lt;/div&gt;
+            &lt;div style=&quot;display:flex;align-items:center;gap:6px&quot;&gt;&lt;span class=&quot;dot&quot;&gt;&lt;/span&gt;&lt;span class=&quot;stt&quot;&gt;Ready&lt;/span&gt;&lt;/div&gt;
+          &lt;/div&gt;
+        &lt;/div&gt;
+        &lt;div class=&quot;meas&quot; style=&quot;left:16px;width:164px;bottom:8px&quot;&gt;&lt;/div&gt;
+        &lt;div class=&quot;measl&quot; style=&quot;left:16px;bottom:-10px&quot;&gt;164&amp;thinsp;px of text column&lt;/div&gt;
+      &lt;/div&gt;
+      &lt;div class=&quot;cap&quot; style=&quot;width: 280px;&quot;&gt;Three separate clipping incidents are recorded against this budget: a truncated date, a row that lost its bottom third, and a two&amp;#8209;line console name overflowing.&lt;/div&gt;
+    &lt;/div&gt;
+
+    &lt;div style=&quot;display: flex; flex-direction: column; gap: 14px;&quot;&gt;
+      &lt;div class=&quot;lbl&quot;&gt;&amp;ge;&amp;nbsp;1920 &amp;mdash; cell 360&amp;times;232&lt;/div&gt;
+      &lt;div style=&quot;position: relative; padding-bottom: 30px;&quot;&gt;
+        &lt;div class=&quot;card&quot; style=&quot;width:348px;height:220px&quot;&gt;
+          &lt;div class=&quot;hl&quot;&gt;&lt;/div&gt;
+          &lt;svg width=&quot;112&quot; height=&quot;220&quot; viewBox=&quot;0 0 112 220&quot; style=&quot;position:absolute;right:0;top:0&quot;&gt;
+            &lt;defs&gt;&lt;clipPath id=&quot;dc2&quot;&gt;&lt;path d=&quot;M35 0 L112 0 L112 220 L0 220 Z&quot;/&gt;&lt;/clipPath&gt;&lt;/defs&gt;
+            &lt;path d=&quot;M35 0 L112 0 L112 220 L0 220 Z&quot; fill=&quot;url(#df)&quot;/&gt;
+            &lt;rect x=&quot;0&quot; y=&quot;0&quot; width=&quot;112&quot; height=&quot;220&quot; fill=&quot;url(#db)&quot; clip-path=&quot;url(#dc2)&quot;/&gt;
+            &lt;path d=&quot;M35 0 L0 220&quot; stroke=&quot;#2D7DF6&quot; stroke-width=&quot;3&quot; fill=&quot;none&quot;/&gt;
+            &lt;g transform=&quot;translate(55 87) scale(1.25)&quot;&gt;&lt;path d=&quot;M 5,3 L 27,18 L 5,33 Z&quot; fill=&quot;#fff&quot; stroke=&quot;#fff&quot; stroke-width=&quot;6&quot; stroke-linejoin=&quot;round&quot;/&gt;&lt;/g&gt;
+          &lt;/svg&gt;
+          &lt;div style=&quot;position:absolute;left:20px;top:18px;right:124px;bottom:18px;display:flex;flex-direction:column&quot;&gt;
+            &lt;div style=&quot;font-size:21px;font-weight:600;line-height:1.2;letter-spacing:-.01em&quot;&gt;Basement PlayStation&lt;/div&gt;
+            &lt;div style=&quot;display:flex;align-items:center;gap:8px;margin-top:8px&quot;&gt;
+              &lt;svg width=&quot;10&quot; height=&quot;18&quot; viewBox=&quot;0 0 16 28&quot;&gt;&lt;rect x=&quot;7&quot; y=&quot;0&quot; width=&quot;9&quot; height=&quot;7&quot; rx=&quot;3.5&quot; fill=&quot;#2D7DF6&quot;/&gt;&lt;rect x=&quot;0&quot; y=&quot;10.5&quot; width=&quot;16&quot; height=&quot;7&quot; rx=&quot;3.5&quot; fill=&quot;#2D7DF6&quot;/&gt;&lt;rect x=&quot;4&quot; y=&quot;21&quot; width=&quot;12&quot; height=&quot;7&quot; rx=&quot;3.5&quot; fill=&quot;#2D7DF6&quot;/&gt;&lt;/svg&gt;
+              &lt;span class=&quot;det&quot;&gt;PS5 &amp;middot; 192.168.1.20&lt;/span&gt;
+            &lt;/div&gt;
+            &lt;div style=&quot;margin-top:auto;font-size:12px;color:rgba(255,255,255,.54);margin-bottom:5px&quot;&gt;Played 11 Sep 2026&lt;/div&gt;
+            &lt;div style=&quot;display:flex;align-items:center;gap:6px&quot;&gt;&lt;span class=&quot;dot&quot;&gt;&lt;/span&gt;&lt;span class=&quot;stt&quot;&gt;Ready&lt;/span&gt;&lt;/div&gt;
+          &lt;/div&gt;
+        &lt;/div&gt;
+        &lt;div class=&quot;meas&quot; style=&quot;left:20px;width:204px;bottom:8px&quot;&gt;&lt;/div&gt;
+        &lt;div class=&quot;measl&quot; style=&quot;left:20px;bottom:-10px&quot;&gt;204&amp;thinsp;px &amp;mdash; the name fits, the date fits&lt;/div&gt;
+      &lt;/div&gt;
+      &lt;div class=&quot;cap&quot; style=&quot;width: 348px;&quot;&gt;The type ramp is identical &amp;mdash; 19&amp;thinsp;px to 21&amp;thinsp;px is the card&#x27;s own step, not a text scale. What grows is Ripcord&#x27;s furniture, which is the only thing Ripcord is entitled to grow.&lt;/div&gt;
+    &lt;/div&gt;
+
+  &lt;/div&gt;
+
+&lt;/div&gt;
+&lt;/body&gt;&lt;/html&gt;"></iframe></div></figure>
+<figure class='board'><figcaption><span class='bt'>Rung 1 hint — D2</span><span class='bn'>D2 — the hint follows the input the player is actually using</span></figcaption><div class='bwrap' style='height:562px'><iframe loading='lazy' scrolling='no' style='width:900px;height:560px;transform:scale(1.0000)' srcdoc="&lt;!doctype html&gt;&lt;html&gt;&lt;head&gt;&lt;meta charset=&quot;utf-8&quot;&gt;&lt;style&gt;
+body{margin:0;font-family:&quot;Segoe UI Variable Text&quot;,&quot;Segoe UI Variable&quot;,&quot;Segoe UI&quot;,system-ui,sans-serif;background:#0a0a0a;color:#fff}
+.lbl{font-size:12px;letter-spacing:.09em;text-transform:uppercase;color:rgba(255,255,255,.55)}
+.cap{font-size:12.5px;line-height:1.45;color:rgba(255,255,255,.58)}
+.alert{display:inline-flex;align-items:center;gap:12px;padding:11px 16px;border-radius:12px;background:rgba(44,44,44,.86);border:1px solid rgba(255,255,255,.1);backdrop-filter:blur(30px)}
+.dot{width:8px;height:8px;border-radius:50%;background:#FCE100;flex-shrink:0}
+.vt{font-size:14px;font-weight:600}
+button.alert{font:inherit;color:#fff;cursor:pointer}
+.pill{border-radius:10px;background:rgba(255,255,255,.08);padding:2px 9px;font-size:11px;color:rgba(255,255,255,.79);letter-spacing:.02em}
+html,body{overflow:hidden}&lt;/style&gt;&lt;/head&gt;&lt;body&gt;
+
+&lt;div style=&quot;width: 900px; height: 560px; box-sizing: border-box; padding: 44px 48px; display: flex; flex-direction: column; gap: 28px;&quot;&gt;
+
+  &lt;div&gt;
+    &lt;div style=&quot;font-size: 25px; font-weight: 600; letter-spacing: -0.015em;&quot;&gt;Rung 1 stops naming a key the player does not have&lt;/div&gt;
+    &lt;div class=&quot;cap&quot; style=&quot;max-width: 760px; margin-top: 6px;&quot;&gt;The alert reads its hint from the same place &lt;span style=&quot;color:#a9b4c4&quot;&gt;InputHintBar&lt;/span&gt; does. And the verdict carries the shortest actionable clause &amp;mdash; still one line, still no numbers.&lt;/div&gt;
+  &lt;/div&gt;
+
+  &lt;div style=&quot;display: flex; flex-direction: column; gap: 10px;&quot;&gt;
+    &lt;div class=&quot;lbl&quot;&gt;Today &amp;mdash; whatever the input&lt;/div&gt;
+    &lt;div&gt;&lt;span class=&quot;alert&quot;&gt;&lt;span class=&quot;dot&quot;&gt;&lt;/span&gt;&lt;span class=&quot;vt&quot;&gt;Losing packets on the network&lt;/span&gt;&lt;span class=&quot;pill&quot;&gt;F3&lt;/span&gt;&lt;/span&gt;&lt;/div&gt;
+  &lt;/div&gt;
+
+  &lt;div style=&quot;display: flex; flex-direction: column; gap: 10px;&quot;&gt;
+    &lt;div class=&quot;lbl&quot;&gt;Last input was a keyboard&lt;/div&gt;
+    &lt;div&gt;&lt;span class=&quot;alert&quot;&gt;&lt;span class=&quot;dot&quot;&gt;&lt;/span&gt;&lt;span class=&quot;vt&quot;&gt;Wi&amp;#8209;Fi is losing packets &amp;mdash; a wired connection will help&lt;/span&gt;&lt;span class=&quot;pill&quot;&gt;F3&lt;/span&gt;&lt;/span&gt;&lt;/div&gt;
+  &lt;/div&gt;
+
+  &lt;div style=&quot;display: flex; flex-direction: column; gap: 10px;&quot;&gt;
+    &lt;div class=&quot;lbl&quot;&gt;Last input was a controller&lt;/div&gt;
+    &lt;div&gt;&lt;span class=&quot;alert&quot;&gt;&lt;span class=&quot;dot&quot;&gt;&lt;/span&gt;&lt;span class=&quot;vt&quot;&gt;Wi&amp;#8209;Fi is losing packets &amp;mdash; a wired connection will help&lt;/span&gt;&lt;/span&gt;&lt;/div&gt;
+    &lt;div class=&quot;cap&quot;&gt;No hint at all: nothing in the stream layer takes pad input by design, so naming a route the pad cannot walk is worse than silence.&lt;/div&gt;
+  &lt;/div&gt;
+
+  &lt;div style=&quot;display: flex; flex-direction: column; gap: 10px;&quot;&gt;
+    &lt;div class=&quot;lbl&quot;&gt;Touch &amp;mdash; the whole alert is the control&lt;/div&gt;
+    &lt;div&gt;&lt;button class=&quot;alert&quot; style=&quot;cursor:pointer&quot;&gt;&lt;span class=&quot;dot&quot;&gt;&lt;/span&gt;&lt;span class=&quot;vt&quot;&gt;Wi&amp;#8209;Fi is losing packets &amp;mdash; a wired connection will help&lt;/span&gt;&lt;span class=&quot;pill&quot;&gt;Tap for detail&lt;/span&gt;&lt;/button&gt;&lt;/div&gt;
+    &lt;div class=&quot;cap&quot;&gt;Which also answers the handheld better than the three&amp;#8209;way setting does: reaching rung&amp;nbsp;2 by touching the thing that just spoke needs no foresight.&lt;/div&gt;
+  &lt;/div&gt;
+
+&lt;/div&gt;
+&lt;/body&gt;&lt;/html&gt;"></iframe></div></figure>
+</main>
+</body>
+</html>
