@@ -160,6 +160,46 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer
         base.OnNavigatedTo(e);
         _console = e.Parameter as PairedConsole;
         ShowConnectIdentity();
+
+        // Rung 1 names a route out of itself, and which route exists depends on what the player is holding.
+        // The router's tracker already decides and debounces that; this layer takes the answer rather than
+        // forming its own opinion from raw events. Seeded with the current mode because ModeChanged only
+        // fires on a change, and someone who has been on a pad all evening would otherwise be told about a
+        // key until they touched something.
+        _viewModel.SetInputMode(App.Input.Mode);
+        App.Input.ModeChanged += OnInputModeChanged;
+    }
+
+    protected override void OnNavigatedFrom(NavigationEventArgs e)
+    {
+        base.OnNavigatedFrom(e);
+
+        // The router outlives every page, so a page that stayed subscribed would be kept alive by it - and
+        // would go on setting state on a view-model nobody is rendering.
+        App.Input.ModeChanged -= OnInputModeChanged;
+    }
+
+    private void OnInputModeChanged(InputMode mode)
+        => DispatcherQueue.TryEnqueue(() => _viewModel.SetInputMode(mode));
+
+    /// <summary>
+    /// On touch, the notice itself is the way deeper.
+    ///
+    /// <para>
+    /// Only on touch. With a keyboard the pill names F3 and the notice is a label; with a pad there is no
+    /// route at all and there is deliberately no pill. Making the notice tappable in every mode would give a
+    /// mouse a target that says nothing about itself, which is how an invisible affordance gets built.
+    /// </para>
+    /// </summary>
+    private void OnHealthAlertTapped(object sender, TappedRoutedEventArgs e)
+    {
+        if (_viewModel.State.AlertHint != AlertHint.Tap)
+        {
+            return;
+        }
+
+        _viewModel.ToggleDiagnostics();
+        e.Handled = true;
     }
 
     /// <summary>
@@ -466,8 +506,16 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer
         HealthAlert.Visibility = Vis(s.AlertVisible);
         if (s.AlertVisible)
         {
-            AlertText.Text = s.Diagnostics.Health;
+            // The NOTICE, not the bare verdict: a verdict plus one clause saying what to do about it. Rung 1
+            // is the only rung most players will ever see, and "Losing packets on the network" on its own
+            // names a problem and offers nothing.
+            AlertText.Text = s.Diagnostics.HealthNotice;
             RenderHealthDot(AlertDot, s.Diagnostics.HealthLevel);
+
+            // Named for the input actually in the player's hands. A pad gets neither pill: every route out
+            // of rung 1 is one a pad cannot walk, and naming one would be worse than saying nothing.
+            AlertKeyPill.Visibility = Vis(s.AlertHint == AlertHint.Key);
+            AlertTapPill.Visibility = Vis(s.AlertHint == AlertHint.Tap);
         }
 
         // One source of truth for how much of the HUD is up. It used to be DiagnosticsPanel.Visibility,
