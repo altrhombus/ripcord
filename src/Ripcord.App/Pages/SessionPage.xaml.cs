@@ -35,6 +35,7 @@ using Ripcord.Protocol.Halyard.Session;
 using Ripcord_App.Accents;
 using Ripcord_App.Dialogs;
 using Ripcord_App.Input;
+using Ripcord_App.Converters;
 using Ripcord_App.Services;
 using WinRT;
 using Ripcord.Core.Reactive;
@@ -158,6 +159,11 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer
     protected override void OnNavigatedTo(NavigationEventArgs e)
     {
         base.OnNavigatedTo(e);
+
+        // The shelf the touch bar lives in. Sized here rather than in markup because the token is a double
+        // and this is a GridLength; XAML will not convert, and binding it threw at page load - which is to
+        // say when somebody opened a stream, not when anybody built.
+        TouchShelfRow.Height = new GridLength(ThemeBrush.LookupDouble("RipcordTouchShelfHeight", fallback: 90));
         _console = e.Parameter as PairedConsole;
         ShowConnectIdentity();
 

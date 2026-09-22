@@ -12,6 +12,7 @@ using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Animation;
 using Ripcord.Core.Consoles;
+using Ripcord.Core.Launch;
 using Ripcord.Presentation;
 using Ripcord.Presentation.Consoles;
 using Ripcord_App.Input;
@@ -141,6 +142,8 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
         // The subtitle instructs someone to pick from several. With one console there is nothing to pick.
         SubtitleText.Visibility = Vis(consoles.Count > 1);
 
+        TryLaunchDirectly(consoles);
+
         if (consoles.Count > 0)
         {
             // Consume the rest intent for this pass only; a later plain Refresh must not re-arm the watch.
@@ -153,6 +156,56 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
     }
 
     private static Visibility Vis(bool on) => on ? Visibility.Visible : Visibility.Collapsed;
+
+    // Consumed once. Coming back from a stream runs Refresh again, and a launch argument that fired every
+    // time would trap the player in a loop they cannot leave without killing the process.
+    private bool _launchConsumed;
+
+    /// <summary>
+    /// Act on <c>--play</c> or <c>--play-last</c>, if this launch carried one.
+    ///
+    /// <para>
+    /// From here rather than from startup because this is the first moment the paired-console list exists,
+    /// and the argument names a console rather than an address. A name that matches nothing falls through to
+    /// the list, which is the honest outcome: the shortcut is stale, and showing every console is what the
+    /// person was reaching for anyway.
+    /// </para>
+    /// </summary>
+    private void TryLaunchDirectly(List<ConsoleCardViewModel> consoles)
+    {
+        if (_launchConsumed || consoles.Count == 0)
+        {
+            return;
+        }
+
+        _launchConsumed = true;
+
+        ConsoleCardViewModel? target = App.Launch.Action switch
+        {
+            LaunchAction.Play => consoles.FirstOrDefault(
+                c => App.Launch.Matches(c.Console.DisplayName, c.Console.Id)),
+
+            // Most recently reached for, which is what "last" means to the person who typed it - the stamp
+            // is written on the attempt, not on a successful stream.
+            LaunchAction.PlayLast => consoles
+                .Where(c => c.Console.LastConnectedUtc is not null)
+                .OrderByDescending(c => c.Console.LastConnectedUtc)
+                .FirstOrDefault(),
+
+            _ => null,
+        };
+
+        if (target is null)
+        {
+            return;
+        }
+
+        // Enqueued rather than called. Refresh runs from the page's Loaded, and navigating away from a page
+        // that is still loading leaves the frame in a state where the navigation is dropped - the console
+        // was stamped as played and nothing happened, which is the worst of both. By the time the queue
+        // drains the page has finished loading and the navigation takes.
+        DispatcherQueue.TryEnqueue(() => Connect(target));
+    }
 
     // ---- responsive columns ----------------------------------------------------------------------
 
