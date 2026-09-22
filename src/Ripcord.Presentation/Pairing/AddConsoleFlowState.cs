@@ -64,6 +64,12 @@ public sealed record AddConsoleFlowState(
     /// </summary>
     bool RouteChoiceOffered,
 
+    /// <summary>
+    /// What the quiet link to the other route says, named for what it gets the player rather than for
+    /// the mechanism behind it. Empty when there is only one route.
+    /// </summary>
+    string SwitchRouteLabel,
+
     /// <summary>Show the console's own instructions and the code box.</summary>
     bool CodeEntryShown,
 
