@@ -3,6 +3,7 @@ using System.IO;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Ripcord.Core.Platform;
+using Ripcord.Core.Launch;
 using Ripcord.Presentation;
 using Ripcord.Presentation.Halyard;
 using Ripcord_App.Input;
@@ -58,6 +59,20 @@ public partial class App : Application
     /// <summary>Full text of the most recent unhandled exception, for the diagnostics UI to surface.</summary>
     public static string? LastCrashReport { get; private set; }
 
+    /// <summary>
+    /// What the command line asked for, parsed once at startup.
+    ///
+    /// <para>
+    /// The point of it is that the fastest path to a game stops being "launch, home, press A" and becomes no
+    /// presses at all. The audience for this app does not launch things from a Start menu - they launch from
+    /// a handheld's game launcher, from Steam Big Picture, from a pinned icon, from a controller - and none
+    /// of those could express "play on the living room PS5" while the executable took no argument saying so.
+    /// One argument unlocks every one of those entry points at once, including the ones nobody has thought
+    /// of, and it works from the zip as well as from a package.
+    /// </para>
+    /// </summary>
+    public static LaunchIntent Launch { get; private set; } = LaunchIntent.Shell;
+
     public App()
     {
         InitializeComponent();
@@ -73,6 +88,12 @@ public partial class App : Application
         // The graph first, the window second. MainWindow's own constructor reads the settings store, and every
         // page it can navigate to resolves from here before its InitializeComponent runs, so there is no ordering
         // in which a partially-built graph is observable.
+        // Parsed before anything can read it. Environment.GetCommandLineArgs rather than the activation
+        // args, because those are empty for an ordinary double-click launch with arguments - which is
+        // exactly how a shortcut, a launcher and a jump list all start the app.
+        string[] command = Environment.GetCommandLineArgs();
+        Launch = LaunchIntent.Parse(command.Length > 1 ? command[1..] : []);
+
         DispatcherQueue uiThread = DispatcherQueue.GetForCurrentThread();
 
         // Before the window: AccessibilitySettings only raises its change event for an instance created on a
