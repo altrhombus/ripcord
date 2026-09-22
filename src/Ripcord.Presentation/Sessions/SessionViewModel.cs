@@ -1,4 +1,5 @@
 using Ripcord.Client;
+using Ripcord.Core.Input;
 using Ripcord.Core.Sessions;
 using Ripcord.Core.Settings;
 using Ripcord.Diagnostics;
@@ -40,6 +41,12 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
     private readonly HealthAlertGate _alertGate = new();
 
     private bool _alertRaised;
+
+    /// <summary>
+    /// How the player is driving right now, so the rung-1 notice can offer a route they can actually walk.
+    /// Pointer is the startup assumption, the same one <c>InputModeTracker</c> makes.
+    /// </summary>
+    private InputMode _inputMode = InputMode.Pointer;
 
     private DiagnosticsRung _rung;
 
@@ -200,6 +207,29 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
     });
 
     /// <summary>Go one rung deeper, from the summary strip to the full instrument panel.</summary>
+    /// <summary>
+    /// Tell the surface how the player is driving. Called from the front end's input-mode tracker, which
+    /// already exists and already debounces — this layer takes the answer rather than deciding it.
+    /// </summary>
+    public void SetInputMode(InputMode mode) => Mutate(() => _inputMode = mode);
+
+    /// <summary>
+    /// Which hint rung 1 may offer, given the input in the player's hands.
+    ///
+    /// <para>
+    /// <b>The controller case is deliberately none.</b> Nothing in the stream layer takes gamepad input, by
+    /// design, so naming any route at all would name one the pad cannot walk. The honest answer for a pad-only
+    /// player is the three-way diagnostics setting they chose before connecting — and, on a handheld, the
+    /// touch route below, which needs no foresight at all.
+    /// </para>
+    /// </summary>
+    private static AlertHint HintFor(InputMode mode) => mode switch
+    {
+        InputMode.Touch => AlertHint.Tap,
+        InputMode.Controller => AlertHint.None,
+        _ => AlertHint.Key,
+    };
+
     public void ShowDiagnosticsDetail() => Mutate(() => _rung = DiagnosticsRung.Full);
 
     /// <summary>Come back up to the summary strip.</summary>
@@ -494,7 +524,7 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
         double capMbps = Math.Max(0.1, _settings.BitrateKbps / 1000.0);
         double usedFraction = Math.Clamp(stats.BitrateKbps / 1000.0 / capMbps, 0, 1);
 
-        (string health, string healthTip, StreamHealthLevel level) =
+        (string health, string healthTip, string healthNotice, StreamHealthLevel level) =
             ComposeHealth(s, telemetry, decodeFps, presentFps);
 
         return new SessionDiagnosticsState(
@@ -536,6 +566,9 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
 
             Health: health,
             HealthTip: healthTip,
+
+            // The rung-1 line. Same verdict, plus the one clause a player can act on - see StreamHealthVerdict.
+            HealthNotice: healthNotice,
             HealthLevel: level,
             HeroLoss: $"{stats.PacketLossRatio * 100:F1}%",
             VideoWidth: s.DecodedWidth,
@@ -670,7 +703,7 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
         return why;
     }
 
-    private (string Health, string Tip, StreamHealthLevel Level) ComposeHealth(
+    private (string Health, string Tip, string Notice, StreamHealthLevel Level) ComposeHealth(
         VideoPipelineSnapshot s,
         SessionTelemetry telemetry,
         double decodeFps,
@@ -680,7 +713,8 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
         {
             // The assessor's inputs are all zero without a session, and "frame rate is below target" is a
             // misleading thing to say about a stream that has not started.
-            return (Strings.Session_NotConnectedYet, Strings.Session_WaitingToStart, StreamHealthLevel.Info);
+            return (Strings.Session_NotConnectedYet, Strings.Session_WaitingToStart,
+                Strings.Session_NotConnectedYet, StreamHealthLevel.Info);
         }
 
         SessionStatistics stats = telemetry.Statistics;
@@ -699,7 +733,7 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
             MillisecondsSinceLastFrame: telemetry.MillisecondsSinceLastFrame ?? 0,
             RoundTripTimeMs: stats.RoundTripTimeMs));
 
-        return (verdict.Headline, verdict.Tip, verdict.Level);
+        return (verdict.Headline, verdict.Tip, verdict.Notice, verdict.Level);
     }
 
     /// <summary>
@@ -733,7 +767,16 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
 
         // Suppressed while the status overlay is up: that overlay is a stronger statement about the same
         // situation, and two notices about one problem read as two problems.
-        AlertVisible: _alertRaised && !_statusVisible,
+        //
+        // And suppressed once the HUD itself is open, for the same reason one layer down. Rung 2 leads with
+        // the verdict, in the same words, so leaving rung 1 up stacked the identical sentence twice against
+        // the bottom edge — under the touch bar, on a handheld, at the moment the stream was already unwell.
+        AlertVisible: _alertRaised && !_statusVisible && _rung == DiagnosticsRung.Hidden,
+
+        // Which hint the notice may offer, given how the player is actually driving. The notice used to end
+        // in a bare "F3" pill whatever was in their hands, which on a handheld names a key the device does
+        // not have.
+        AlertHint: HintFor(_inputMode),
         Rung: _rung,
         Phase: _phase,
 
