@@ -760,8 +760,8 @@
     <value>When you play</value>
     <comment>Settings section heading: what the app does when a stream starts and ends.</comment>
   </data>
-  <data name="SettingsPage_Advanced.Text" xml:space="preserve">
+  <data name="SettingsPage_AdvancedExpander.Header" xml:space="preserve">
     <value>Advanced</value>
-    <comment>Settings section heading: graphics device, experimental reporting, credential storage.</comment>
+    <comment>Collapsed section at the end of Settings, holding the options a casual player should not have to scroll past.</comment>
   </data>
 </root>

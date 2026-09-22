@@ -23,7 +23,7 @@ public readonly record struct StreamHealthSignals(
     double PacketLossRatio,   // 0..1, A/V unit loss over the last congestion window
     int DecodeMode,           // 0 = software, 1 = hardware + CPU readback, 2 = hardware zero-copy
     // Liveness. These are deliberately NOT defaulted: they gate every rule below, and when they were optional
-    // a caller that forgot them silently pinned the verdict to "Starting up…" forever with a live stream on
+    // a caller that forgot them silently pinned the verdict to "Starting…" forever with a live stream on
     // screen. Making them required turns that into a compile error.
     bool HasReceivedFrames,          // has ANY frame ever arrived this session?
     double MillisecondsSinceConnect, // since the handshake completed (drives the startup grace period)
@@ -134,11 +134,11 @@ public static class StreamHealthAssessor
             // Still inside the startup window: genuinely just waiting.
             if (s.MillisecondsSinceConnect < StartupGraceMs)
             {
-                return new StreamHealthVerdict(StreamHealthLevel.Info, "Starting up…", "Waiting for video from the console.");
+                return new StreamHealthVerdict(StreamHealthLevel.Info, "Starting…", "Waiting for video from the console.");
             }
 
             // Past it: the handshake succeeded but no picture ever came. That is a real failure, and saying
-            // "Starting up…" forever is the single most misleading thing this class could do.
+            // "Starting…" forever is the single most misleading thing this class could do.
             return new StreamHealthVerdict(StreamHealthLevel.Critical,
                 "No video from the console",
                 "The connection succeeded but no video arrived. Make sure a user is logged in on the console and "
