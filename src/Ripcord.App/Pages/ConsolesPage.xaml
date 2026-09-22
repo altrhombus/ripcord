@@ -400,16 +400,21 @@
             Margin="0,0,0,48"
             HorizontalAlignment="Center"
             VerticalAlignment="Center"
-            MaxWidth="380"
-            Spacing="14">
-            <controls:FamilyMark
-                Width="26"
-                Height="46"
-                Accent="{ThemeResource TextFillColorTertiaryBrush}" />
+            MaxWidth="520"
+            Spacing="18">
+            <!--
+                The FULL mark, not FamilyMark. This surface is about Ripcord rather than about a console, and
+                FamilyMark is the console badge - its own XAML says the wedge is left out because the wedge is
+                the app's identity. No wordmark either: the title bar already carries the name.
+            -->
+            <controls:RipcordMark
+                Width="88"
+                Height="88"
+                WedgeFill="{ThemeResource TextFillColorPrimaryBrush}" />
             <TextBlock
                 HorizontalAlignment="Center"
-                Style="{StaticResource SubtitleTextBlockStyle}"
-                x:Uid="ConsolesPage_ConsolesYet"
+                Style="{StaticResource TitleTextBlockStyle}"
+                x:Uid="ConsolesPage_FirstRunTitle"
                 TextAlignment="Center" />
             <TextBlock
                 HorizontalAlignment="Center"

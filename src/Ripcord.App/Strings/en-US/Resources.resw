@@ -225,16 +225,16 @@
     <comment>Static text on the console list (the home screen).</comment>
   </data>
   <data name="ConsolesPage_AddConsoleOnceStays.Text" xml:space="preserve">
-    <value>Add your console once and it stays paired. Ripcord finds it on your network, so you won't need its address.</value>
+    <value>Ripcord finds your console on your network — keep both on the same Wi‑Fi or wired connection. Add it once and it stays paired.</value>
     <comment>Static text on the console list (the home screen). Ripcord is a product or standard name - do not translate.</comment>
   </data>
   <data name="ConsolesPage_Consoles.Text" xml:space="preserve">
     <value>Consoles</value>
     <comment>Static text on the console list (the home screen).</comment>
   </data>
-  <data name="ConsolesPage_ConsolesYet.Text" xml:space="preserve">
-    <value>No consoles yet</value>
-    <comment>Static text on the console list (the home screen).</comment>
+  <data name="ConsolesPage_FirstRunTitle.Text" xml:space="preserve">
+    <value>Play your PlayStation on this PC.</value>
+    <comment>First-run headline on the console list. Replaced "No consoles yet", which reported a deficiency to somebody who had done nothing wrong.</comment>
   </data>
   <data name="ConsolesPage_MoreOptionsConsole.AutomationProperties.Name" xml:space="preserve">
     <value>More options for this console</value>
