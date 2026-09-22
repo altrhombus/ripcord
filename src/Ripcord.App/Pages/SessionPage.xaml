@@ -214,6 +214,7 @@
             <Border
                 x:Name="HealthAlert"
                 Grid.Row="0"
+                Tapped="OnHealthAlertTapped"
                 Margin="28,0,0,12"
                 MaxWidth="400"
                 Padding="16,11"
@@ -239,11 +240,27 @@
                         Style="{StaticResource BodyStrongTextBlockStyle}"
                         TextWrapping="Wrap"
                         VerticalAlignment="Center" />
+                    <!--
+                        The route deeper, named for the input the player is actually holding. A pad gets no
+                        pill at all: nothing in the stream layer takes gamepad input by design, so every route
+                        out of rung 1 is one a pad cannot walk and naming one is worse than silence.
+                    -->
                     <Border
+                        x:Name="AlertKeyPill"
                         Style="{StaticResource RipcordPillStyle}"
                         VerticalAlignment="Center">
                         <TextBlock
                             x:Uid="SessionPage_AlertMoreKey"
+                            Style="{StaticResource RipcordPillTextStyle}" />
+                    </Border>
+
+                    <Border
+                        x:Name="AlertTapPill"
+                        Style="{StaticResource RipcordPillStyle}"
+                        VerticalAlignment="Center"
+                        Visibility="Collapsed">
+                        <TextBlock
+                            x:Uid="SessionPage_AlertMoreTap"
                             Style="{StaticResource RipcordPillTextStyle}" />
                     </Border>
                 </StackPanel>
