@@ -141,6 +141,19 @@
                     IsIndeterminate="True"
                     Visibility="Collapsed" />
 
+                <!--
+                    The way out of a connect that has run long enough to feel stuck - quiet, and a link
+                    rather than a button, because it is not what anybody came here to press. It appears
+                    after a few seconds rather than on entry: a Cancel offered the instant you press Play is
+                    the ceremony this screen was rebuilt to avoid.
+                -->
+                <HyperlinkButton
+                    x:Name="ConnectEscape"
+                    HorizontalAlignment="Left"
+                    Click="LeaveButton_Click"
+                    x:Uid="SessionPage_BackConsoles2"
+                    Visibility="Collapsed" />
+
                 <StackPanel
                     x:Name="StatusActions"
                     Orientation="Horizontal"

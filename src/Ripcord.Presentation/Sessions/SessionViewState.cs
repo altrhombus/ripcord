@@ -71,6 +71,16 @@ public sealed record SessionViewState(
     bool StatusActionsVisible,
 
     /// <summary>
+    /// A quiet way out of a connect that has run long enough to feel stuck.
+    ///
+    /// <para>
+    /// Not offered on entry. A Cancel shown the instant you press Play is the ceremony this screen was
+    /// rebuilt to avoid, and it invites abandoning a connect that was about to succeed.
+    /// </para>
+    /// </summary>
+    bool ConnectEscapeVisible,
+
+    /// <summary>
     /// The session is live and a picture is arriving. The front end's cue to go immersive; kept as state rather
     /// than an event so a surface that attaches late still knows where it stands.
     /// </summary>
@@ -113,6 +123,7 @@ public sealed record SessionViewState(
         StatusDetail: string.Empty,
         StatusBusy: true,
         StatusActionsVisible: false,
+        ConnectEscapeVisible: false,
         IsStreamLive: false,
         AlertVisible: false,
         AlertHint: AlertHint.Key,
