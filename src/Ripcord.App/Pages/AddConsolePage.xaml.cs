@@ -56,7 +56,13 @@ public sealed partial class AddConsolePage : Page
         BuildFamilyCard(Ps5Button, ConsoleFamily.Ps5);
         BuildFamilyCard(Ps4Button, ConsoleFamily.Ps4);
         BuildFamilyCard(XboxButton, ConsoleFamily.Xbox);
-        XboxButton.IsEnabled = ConsoleFamily.Xbox.IsSelectable;
+        // Hidden, not disabled. A greyed Xbox button tells somebody deciding whether this app is for them
+        // that Xbox is supported and then that it is not, in the same breath. The column collapses with it
+        // so the two that remain fill the row.
+        XboxButton.Visibility = Vis(ConsoleFamily.Xbox.IsSelectable);
+        XboxColumn.Width = ConsoleFamily.Xbox.IsSelectable
+            ? new GridLength(1, GridUnitType.Star)
+            : new GridLength(0);
 
         Render(_flow.State);
     }
@@ -95,7 +101,6 @@ public sealed partial class AddConsolePage : Page
         StepDash1.Opacity = DashOpacity(1, s.ReachedDash);
         StepDash2.Opacity = DashOpacity(2, s.ReachedDash);
         StepDash3.Opacity = DashOpacity(3, s.ReachedDash);
-        StepDash4.Opacity = DashOpacity(4, s.ReachedDash);
 
         FamilyNote.Message = s.FamilyNote ?? string.Empty;
         FamilyNote.Severity = InfoBarSeverity.Informational;
@@ -117,17 +122,10 @@ public sealed partial class AddConsolePage : Page
         // route does not ask for it at all.
         AccountEntryPanel.Visibility = Vis(!s.AccountIdIsAutomatic && s.CodeEntryShown);
 
-        RouteChoice.Visibility = Vis(s.RouteChoiceOffered);
-
-        // Guarded because assigning SelectedIndex raises SelectionChanged, which would call back into the flow
-        // on every render and fight the user's own choice.
-        int wanted = s.Route == PairingRoute.Account ? 0 : 1;
-        if (RouteChoice.SelectedIndex != wanted)
-        {
-            _suppressRouteChange = true;
-            RouteChoice.SelectedIndex = wanted;
-            _suppressRouteChange = false;
-        }
+        // Shown only when there genuinely are two routes. The app has already taken one; this is the way to
+        // the other, named for what it is rather than for the mechanism behind it.
+        SwitchRouteLink.Visibility = Vis(s.RouteChoiceOffered);
+        SwitchRouteLink.Content = s.SwitchRouteLabel;
 
         ConsoleStepsCard.Visibility = Vis(s.CodeEntryShown);
         PasscodeBox.Visibility = Vis(s.CodeEntryShown);
@@ -163,7 +161,9 @@ public sealed partial class AddConsolePage : Page
         BackButton.IsEnabled = s.CanGoBack;
 
         PrimaryButton.Visibility = Vis(s.Step is AddConsoleStep.Link or AddConsoleStep.Done);
-        PrimaryButton.Content = s.Step == AddConsoleStep.Done ? "Save & connect" : s.PairActionLabel;
+        // Composed portably, including at Done - the label there used to be a literal in this file, which
+        // put the one string the celebration turns on outside the catalogue.
+        PrimaryButton.Content = s.PairActionLabel;
         PrimaryButton.IsEnabled = s.Step == AddConsoleStep.Done || s.CanPair;
 
         // One commit action, naming the route the step is set up for. There used to be two -- "Pair" and "Pair
@@ -213,7 +213,13 @@ public sealed partial class AddConsolePage : Page
                 PasscodeBox.Focus(FocusState.Keyboard);
                 break;
             case AddConsoleStep.Done:
-                NameBox.Focus(FocusState.Keyboard);
+                // Play now, NOT the name box.
+                //
+                // Focusing a TextBox opens the soft keyboard on a handheld, so the celebration would arrive
+                // with half the screen covered by a keyboard for a field nobody has to fill in - the console
+                // is already paired and already named. Renaming is a flourish somebody can reach for; the
+                // thing they came for holds focus.
+                PrimaryButton.Focus(FocusState.Keyboard);
                 break;
 
             case AddConsoleStep.Find:
@@ -327,17 +333,11 @@ public sealed partial class AddConsolePage : Page
     private void OnLinkInputChanged(object sender, TextChangedEventArgs e)
         => _flow.SetLinkInput(PasscodeBox.Text, AccountBox.Text);
 
-    private bool _suppressRouteChange;
-
-    private void OnRouteChoiceChanged(object sender, SelectionChangedEventArgs e)
-    {
-        if (_suppressRouteChange)
-        {
-            return;
-        }
-
-        _flow.SelectRoute(RouteChoice.SelectedIndex == 0 ? PairingRoute.Account : PairingRoute.Code);
-    }
+    /// <summary>
+    /// Take the other route. The one quiet way out of a decision the app made on the player's behalf.
+    /// </summary>
+    private void OnSwitchRoute(object sender, RoutedEventArgs e)
+        => _flow.SelectRoute(_flow.State.Route == PairingRoute.Account ? PairingRoute.Code : PairingRoute.Account);
 
     private async void OnPrimaryClick(object sender, RoutedEventArgs e)
     {

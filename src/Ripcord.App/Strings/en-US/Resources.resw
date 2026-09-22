@@ -148,10 +148,6 @@
     <value>Handy when you have more than one. You can change it any time.</value>
     <comment>Static text on the add-a-console flow.</comment>
   </data>
-  <data name="AddConsolePage_HowShouldConsoleConfirm.Header" xml:space="preserve">
-    <value>How should the console confirm this PC?</value>
-    <comment>The header above a control on the add-a-console flow.</comment>
-  </data>
   <data name="AddConsolePage_LinkCode.Header" xml:space="preserve">
     <value>Link code</value>
     <comment>The header above a control on the add-a-console flow.</comment>
@@ -177,8 +173,8 @@
     <comment>Static text on the add-a-console flow.</comment>
   </data>
   <data name="AddConsolePage_Paired.Text" xml:space="preserve">
-    <value>Paired</value>
-    <comment>Static text on the add-a-console flow.</comment>
+    <value>Paired.</value>
+    <comment>The pairing celebration headline. The full stop is deliberate: the app states a fact rather than congratulating anybody, so never "Success!".</comment>
   </data>
   <data name="AddConsolePage_Pairing.Text" xml:space="preserve">
     <value>Pairing…</value>

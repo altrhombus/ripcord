@@ -327,7 +327,11 @@ public class AddConsoleFlowTests
         await h.Flow.SelectFamilyAsync(ConsoleFamily.Ps5);
 
         Assert.Equal(AddConsoleStep.Find, h.Flow.State.Step);
-        Assert.Equal(2, h.Flow.State.ReachedDash);
+
+        // Still the first dash. Family and Find share one: discovery leads, and the family question is the
+        // exception rather than a stage - counting it separately made the common journey look like it had
+        // skipped a step.
+        Assert.Equal(1, h.Flow.State.ReachedDash);
         Assert.Equal(1, h.Scanner.ScanCount);
         Assert.Contains("PS5", h.Flow.State.FindHeading);
     }
@@ -1304,7 +1308,9 @@ public class AddConsoleFlowTests
         await h.Flow.PairAsync();
 
         Assert.Equal(AddConsoleStep.Done, h.Flow.State.Step);
-        Assert.Equal(4, h.Flow.State.ReachedDash);
+
+        // Three dashes now, not four - the mark's own trail rather than a progress bar.
+        Assert.Equal(3, h.Flow.State.ReachedDash);
         Assert.Equal("PS5-8A2F", h.Flow.State.SuggestedName);
         Assert.Contains("won't need the code again", h.Flow.State.DoneSubtext);
 
