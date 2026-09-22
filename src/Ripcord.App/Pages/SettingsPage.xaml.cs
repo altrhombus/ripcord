@@ -12,6 +12,7 @@ using Ripcord.Presentation;
 using Ripcord.Presentation.Accounts;
 using Ripcord.Presentation.Consoles;
 using Ripcord.Presentation.Settings;
+using Ripcord.Core.Input;
 using Ripcord_App.Input;
 using Ripcord_App.Dialogs;
 using Ripcord_App.Services;
@@ -63,6 +64,34 @@ public sealed partial class SettingsPage : Page
 
         _viewModel.PropertyChanged += (_, _) => Render(_viewModel.State);
         _account.PropertyChanged += (_, _) => RenderAccount(_account.State);
+
+        // The live pad readout. Attached on Loaded and released on Unloaded because the router outlives every
+        // page: a settings page that stayed subscribed would be held alive by it, and would go on formatting
+        // stick positions into a page nobody is looking at.
+        Loaded += (_, _) => App.Input.FrameReceived += OnPadFrame;
+        Unloaded += (_, _) => App.Input.FrameReceived -= OnPadFrame;
+    }
+
+    /// <summary>
+    /// Show what the pad is reporting, right now.
+    ///
+    /// <para>
+    /// Frames arrive off the UI thread and at the pad's own rate, which is far faster than anybody can read.
+    /// Marshalled, and only the two lines that answer the question somebody opened this row to ask: is the
+    /// controller reaching Ripcord at all, and is that stick actually centred.
+    /// </para>
+    /// </summary>
+    private void OnPadFrame(ControllerStateFrame frame)
+    {
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            // The enum's own name for "nothing held" needs no translation and no second string to maintain.
+            PadButtonsText.Text = $"{frame.Buttons}";
+
+            PadSticksText.Text =
+                $"L ({frame.LeftStickX:F2}, {frame.LeftStickY:F2})   R ({frame.RightStickX:F2}, {frame.RightStickY:F2})   "
+                + $"LT {frame.LeftTrigger:F2}  RT {frame.RightTrigger:F2}";
+        });
     }
 
     /// <summary>

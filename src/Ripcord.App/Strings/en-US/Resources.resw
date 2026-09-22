@@ -688,6 +688,14 @@
     <value>Image scaling</value>
     <comment>The header above a control on the Settings page.</comment>
   </data>
+  <data name="SettingsPage_LivePadReadout.Header" xml:space="preserve">
+    <value>Controller test</value>
+    <comment>Settings row showing what the attached controller is reporting right now.</comment>
+  </data>
+  <data name="SettingsPage_LivePadReadout.Description" xml:space="preserve">
+    <value>Press buttons or move a stick to check the controller is reaching Ripcord.</value>
+    <comment>Description under the live controller readout in Settings.</comment>
+  </data>
   <data name="SettingsPage_KeysGamepadMapping.Header" xml:space="preserve">
     <value>Keys and gamepad mapping</value>
     <comment>The header above a control on the Settings page.</comment>

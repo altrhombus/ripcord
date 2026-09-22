@@ -967,10 +967,14 @@
                                         Foreground="{ThemeResource TextFillColorTertiaryBrush}"
                                         Style="{StaticResource CaptionTextBlockStyle}"
                                         TextWrapping="Wrap" />
-                                    <!--  Live pad state: only populated while a controller is actually reporting.  -->
-                                    <TextBlock x:Name="ControllerButtonsText" Foreground="{ThemeResource TextFillColorTertiaryBrush}" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap" />
-                                    <TextBlock x:Name="ControllerSticksText" Foreground="{ThemeResource TextFillColorTertiaryBrush}" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap" />
-                                    <TextBlock x:Name="ControllerTriggersText" Foreground="{ThemeResource TextFillColorTertiaryBrush}" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap" />
+                                    <!--
+                                        The live pad state used to be here. It is a CONTROLLER diagnostic
+                                        rather than a stream one, and this was the one place it could not be
+                                        read by somebody holding the pad to test it - you have to be
+                                        streaming to open rung 3. It now sits in Settings beside the
+                                        bindings it helps check. What stays is whether a pad is attached and
+                                        which engines are running, which are facts about the session.
+                                    -->
                                 </StackPanel>
                             </Grid>
 

@@ -1257,13 +1257,8 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer
             ExitProgressBar.Value = progress;
             ExitProgressPanel.Visibility = progress is > 0 and < 1 ? Visibility.Visible : Visibility.Collapsed;
 
-            if (_viewModel.State.Rung == DiagnosticsRung.Full)
-            {
-                ControllerButtonsText.Text = $"Buttons: {frame.Buttons}";
-                ControllerSticksText.Text =
-                    $"L: ({frame.LeftStickX:F2}, {frame.LeftStickY:F2})  R: ({frame.RightStickX:F2}, {frame.RightStickY:F2})";
-                ControllerTriggersText.Text = $"LT: {frame.LeftTrigger:F2}  RT: {frame.RightTrigger:F2}";
-            }
+            // The live pad readout moved to Settings, beside the bindings it helps check. Nothing here
+            // reads the frame any more except the exit gesture above.
         });
     }
 
