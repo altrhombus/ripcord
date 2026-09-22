@@ -109,11 +109,16 @@
         <StackPanel MaxWidth="720" HorizontalAlignment="Left" Spacing="12">
             <TextBlock x:Uid="AddConsolePage_AddConsole" Style="{StaticResource TitleTextBlockStyle}" />
             <Grid ColumnSpacing="6" Width="220" HorizontalAlignment="Left">
+                <!--
+                    Three, uneven, in the mark's own proportions - 9 : 16 : 12, from brand/ripcord-tile.svg.
+                    Four equal dashes were a progress bar wearing the mark's clothes. These are the trail,
+                    which is the same shape the connect sequence fills in and the celebration assembles, so
+                    the three moments that matter all speak the same language.
+                -->
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="9*" />
+                    <ColumnDefinition Width="16*" />
+                    <ColumnDefinition Width="12*" />
                 </Grid.ColumnDefinitions>
                 <Rectangle x:Name="StepDash1" Style="{StaticResource RipcordStepDashStyle}" />
                 <Rectangle
@@ -123,10 +128,6 @@
                 <Rectangle
                     x:Name="StepDash3"
                     Grid.Column="2"
-                    Style="{StaticResource RipcordStepDashStyle}" />
-                <Rectangle
-                    x:Name="StepDash4"
-                    Grid.Column="3"
                     Style="{StaticResource RipcordStepDashStyle}" />
             </Grid>
         </StackPanel>
@@ -148,11 +149,18 @@
                         x:Uid="AddConsolePage_WhichConsoleConnecting"
                         TextWrapping="Wrap" />
 
+                    <!--
+                        The families that are actually implemented, and only those. The Xbox button used to be
+                        here disabled, which is a promise the app cannot keep offered to somebody deciding
+                        whether this app is for them - it says "we support Xbox" in the same breath as "not
+                        for you". Gated on IsSelectable rather than deleted, so it appears the moment
+                        ConsolePlatform.Lanyard works and nothing in this page changes when it does.
+                    -->
                     <Grid ColumnSpacing="12">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition x:Name="XboxColumn" Width="*" />
                         </Grid.ColumnDefinitions>
 
                         <Button
@@ -278,18 +286,23 @@
                         x:Uid="AddConsolePage_LinkPcConsole"
                         TextWrapping="Wrap" />
 
-                    <!--  The choice, when there is one. Shown above everything it governs, because the rest of
-                          this step is only meaningful once it is made: the step used to show both routes at
-                          once and contradict itself, promising "no code needed" directly above a box asking
-                          for a code.  -->
-                    <RadioButtons
-                        x:Name="RouteChoice"
-                        x:Uid="AddConsolePage_HowShouldConsoleConfirm"
-                        SelectionChanged="OnRouteChoiceChanged"
-                        Visibility="Collapsed">
-                        <x:String>Through my account — no code needed</x:String>
-                        <x:String>With a code from the console</x:String>
-                    </RadioButtons>
+                    <!--
+                        The route, stated rather than asked.
+
+                        It was a pair of radio buttons with their labels hard-coded in this file, past the
+                        string catalogue. But the route is a MECHANISM and the player has no stake in it: a
+                        casual player does not know what a pairing code is, and asking them to choose between
+                        two ways of confirming a thing is the kind of question the app should answer for
+                        itself. Signed in with the console on the account, it pairs; otherwise the code route
+                        leads, because it needs nothing they do not already have.
+
+                        The other route stays one quiet link away - never weighted, never explained unless
+                        asked - so nobody who wants it is locked out of it.
+                    -->
+                    <HyperlinkButton
+                        x:Name="SwitchRouteLink"
+                        Click="OnSwitchRoute"
+                        Visibility="Collapsed" />
 
                     <InfoBar
                         x:Name="AccountPairingNote"
@@ -384,17 +397,29 @@
                         </TransitionCollection>
                     </StackPanel.Transitions>
 
-                    <StackPanel Orientation="Horizontal" Spacing="12">
-                        <FontIcon
-                            VerticalAlignment="Center"
-                            FontSize="{ThemeResource RipcordIconSizeHero}"
-                            Foreground="{ThemeResource SystemFillColorSuccessBrush}"
-                            Glyph="&#xE930;" />
-                        <TextBlock
-                            VerticalAlignment="Center"
-                            Style="{StaticResource SubtitleTextBlockStyle}"
-                            x:Uid="AddConsolePage_Paired" />
-                    </StackPanel>
+                    <!--
+                        The celebration, and it earns the space: this happens once per console, it is the only
+                        moment in the flow the player did something that could have failed, and the reward is
+                        the reason they installed the app.
+
+                        The mark at hero size rather than a green check glyph. A check says "the operation
+                        succeeded"; the mark says "this is now a Ripcord console", which is the thing that
+                        actually happened. And it is the same shape the step dashes have been filling in and
+                        the connect sequence assembles, so by the time somebody presses Play they have seen
+                        it three times without being taught anything.
+
+                        "Paired." with a period, never "Success!" - the app is stating a fact, not
+                        congratulating anybody.
+                    -->
+                    <controls:RipcordMark
+                        Width="96"
+                        Height="96"
+                        HorizontalAlignment="Left"
+                        WedgeFill="{ThemeResource TextFillColorPrimaryBrush}" />
+
+                    <TextBlock
+                        Style="{StaticResource TitleTextBlockStyle}"
+                        x:Uid="AddConsolePage_Paired" />
 
                     <TextBlock
                         x:Name="DoneSubtext"
