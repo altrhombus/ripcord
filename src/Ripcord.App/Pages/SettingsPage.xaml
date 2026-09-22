@@ -283,52 +283,67 @@
             </StackPanel>
 
             <!--  ============ Advanced ============  -->
-            <StackPanel Spacing="4">
-                <TextBlock x:Uid="SettingsPage_Advanced" Style="{StaticResource RipcordSectionHeaderStyle}" />
+            <!--
+                Collapsed, and last. These are the settings a casual player should never scroll past, and
+                an expander is the ordinary Windows way to say so - it is a Fluent behaviour, which is the
+                half of the position the app borrows rather than invents.
 
-                <tk:SettingsCard
-                    x:Uid="SettingsPage_AutomaticPicksGpuDriving">
-                    <ComboBox
-                        x:Name="GpuCombo"
-                        MinWidth="180"
-                        x:Uid="SettingsPage_WhichGpuUse" />
-                </tk:SettingsCard>
+                NO SEARCH BOX, and docs/design.md is amended in the same commit for prescribing one.
+                Twenty settings on one scrolling page do not need search; it is a Windows Settings
+                mannerism rather than a Fluent behaviour, and the distinction is exactly the line the
+                design position draws. A search box would also be the only control here that has to be
+                taught what every setting is called.
+            -->
+            <Expander
+                HorizontalAlignment="Stretch"
+                HorizontalContentAlignment="Stretch"
+                x:Uid="SettingsPage_AdvancedExpander">
+                <StackPanel Spacing="4">
 
-                <!--  Shown only for the "specific GPU" preference — see SettingsViewModel.AdapterPickerVisible.  -->
-                <tk:SettingsCard
-                    x:Name="AdapterCard"
-                    x:Uid="SettingsPage_SpecificAdapter"
-                    Visibility="Collapsed">
-                    <ComboBox
-                        x:Name="AdapterCombo"
-                        MinWidth="280"
-                        x:Uid="SettingsPage_SpecificGraphicsAdapter" />
-                </tk:SettingsCard>
+                    <tk:SettingsCard
+                        x:Uid="SettingsPage_AutomaticPicksGpuDriving">
+                        <ComboBox
+                            x:Name="GpuCombo"
+                            MinWidth="180"
+                            x:Uid="SettingsPage_WhichGpuUse" />
+                    </tk:SettingsCard>
 
-                <InfoBar
-                    x:Name="AdapterWarning"
-                    IsClosable="False"
-                    IsOpen="False"
-                    Severity="Warning" />
+                    <!--  Shown only for the "specific GPU" preference — see SettingsViewModel.AdapterPickerVisible.  -->
+                    <tk:SettingsCard
+                        x:Name="AdapterCard"
+                        x:Uid="SettingsPage_SpecificAdapter"
+                        Visibility="Collapsed">
+                        <ComboBox
+                            x:Name="AdapterCombo"
+                            MinWidth="280"
+                            x:Uid="SettingsPage_SpecificGraphicsAdapter" />
+                    </tk:SettingsCard>
 
-                <tk:SettingsCard
-                    x:Uid="SettingsPage_SendsMeasuredDelayPacket">
-                    <ToggleSwitch
-                        x:Name="ConnectionQualityToggle"
-                        x:Uid="SettingsPage_TellConsoleAboutConnection" />
-                </tk:SettingsCard>
+                    <InfoBar
+                        x:Name="AdapterWarning"
+                        IsClosable="False"
+                        IsOpen="False"
+                        Severity="Warning" />
 
-                <!--
-                    Moved here from a section of its own. It is one always-open InfoBar reporting whether
-                    pairing credentials are encrypted at rest - a fact about how the app stores things, which
-                    is what this section is for, and not something a heading of its own made easier to find.
-                -->
-                <InfoBar
-                    x:Name="CredentialProtectionBar"
-                    IsClosable="False"
-                    IsOpen="True"
-                    Severity="Informational" />
-            </StackPanel>
+                    <tk:SettingsCard
+                        x:Uid="SettingsPage_SendsMeasuredDelayPacket">
+                        <ToggleSwitch
+                            x:Name="ConnectionQualityToggle"
+                            x:Uid="SettingsPage_TellConsoleAboutConnection" />
+                    </tk:SettingsCard>
+
+                    <!--
+                        Moved here from a section of its own. It is one always-open InfoBar reporting whether
+                        pairing credentials are encrypted at rest - a fact about how the app stores things, which
+                        is what this section is for, and not something a heading of its own made easier to find.
+                    -->
+                    <InfoBar
+                        x:Name="CredentialProtectionBar"
+                        IsClosable="False"
+                        IsOpen="True"
+                        Severity="Informational" />
+                </StackPanel>
+            </Expander>
         </StackPanel>
     </ScrollViewer>
 </Page>

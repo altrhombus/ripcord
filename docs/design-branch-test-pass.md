@@ -75,7 +75,9 @@ The 460 px centred card with a spinner is gone. Identity top-left, status low-le
 
 ### 4. Settings — re-tiered
 
-Sections are now **Picture / Controls / When you play / Accessibility / Account / Advanced**.
+Sections are now **Picture / Controls / When you play / Account / Advanced**, and Advanced is an
+expander rather than a heading. There is no Accessibility section: the switch it held was removed when
+Ripcord stopped scaling its own text.
 
 - [ ] Every control still works. The page moved a lot of markup; a lost `x:Name` shows up as a crash on open,
       not at build time.
