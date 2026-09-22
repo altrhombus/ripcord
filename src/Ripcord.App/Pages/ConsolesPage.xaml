@@ -39,15 +39,29 @@
                 AutomationProperties.Name="{x:Bind State.AutomationName, Mode=OneWay}"
                 ContextRequested="OnCardContextRequested"
                 PointerCanceled="OnCardUnhighlight"
+                PointerCaptureLost="OnCardUp"
                 PointerEntered="OnCardHighlight"
-                PointerExited="OnCardUnhighlight">
+                PointerExited="OnCardUnhighlight"
+                PointerPressed="OnCardDown"
+                PointerReleased="OnCardUp">
 
                 <!--
                     Clipped to the card's own radius so the wedge can run to three of its edges without a
                     square corner poking out. Everything stacks inside this one Grid: highlight, hover wash,
                     wedge, content, overflow.
                 -->
-                <Grid CornerRadius="{StaticResource RipcordCardCornerRadius}">
+                <!--
+                    RenderTransformOrigin is the centre so a press settles inwards rather than pulling toward
+                    a corner. The scale itself is driven from code, gated on AppMotion.Enabled - the card is
+                    on the path to play, and the standing rule there is that nothing may stand between the
+                    player and the press.
+                -->
+                <Grid
+                    CornerRadius="{StaticResource RipcordCardCornerRadius}"
+                    RenderTransformOrigin="0.5,0.5">
+                    <Grid.RenderTransform>
+                        <ScaleTransform x:Name="PressScale" />
+                    </Grid.RenderTransform>
 
                     <!--  The inner top highlight. One hairline of light; see Ripcord.Card.xaml.  -->
                     <Rectangle Fill="{ThemeResource RipcordCardHighlightBrush}" />
@@ -73,6 +87,8 @@
                         AccentColor="{x:Bind State.Accent, Mode=OneWay, Converter={StaticResource AccentColor}}"
                         FacetFill="{ThemeResource RipcordWedgeFacetBrush}"
                         MarkFill="{ThemeResource TextFillColorPrimaryBrush}"
+                        IsDown="{x:Bind State.IsPressed, Mode=OneWay}"
+                        IsHot="{x:Bind State.IsPointerOver, Mode=OneWay}"
                         Muted="{x:Bind State.IsReachable, Mode=OneWay, Converter={StaticResource Not}}"
                         MutedAccent="{ThemeResource ControlStrongFillColorDisabledBrush}" />
 

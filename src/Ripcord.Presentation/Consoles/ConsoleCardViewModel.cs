@@ -23,6 +23,8 @@ public sealed class ConsoleCardViewModel : ObservableState<ConsoleCardState>
     private ConsoleReachability _reachability = ConsoleReachability.Checking;
     private bool _highlighted;
     private CardDensity _density = CardDensity.Grid;
+    private bool _pointerOver;
+    private bool _pressed;
 
     /// <param name="clock">
     /// Injected so the last-played caption is testable at its boundaries. Same seam, and same reason, as
@@ -76,6 +78,31 @@ public sealed class ConsoleCardViewModel : ObservableState<ConsoleCardState>
     {
         get => _density;
         set => Mutate(() => _density = value);
+    }
+
+    /// <summary>
+    /// The pointer is over this card. Distinct from <see cref="IsHighlighted"/>, which is hover <em>or</em>
+    /// focus and drives the card's wash.
+    ///
+    /// <para>
+    /// Separate because the wedge responds to this and must not respond to focus: focus is the ring's job,
+    /// and a second focus mark on the wedge would rebuild the confusion that splitting them removed.
+    /// </para>
+    /// </summary>
+    public bool IsPointerOver
+    {
+        get => _pointerOver;
+        set => Mutate(() => _pointerOver = value);
+    }
+
+    /// <summary>
+    /// The card is being pressed. The primary action of the product had no pressed state at all until this
+    /// existed - the wedge read unmistakably as a button and answered nothing.
+    /// </summary>
+    public bool IsPressed
+    {
+        get => _pressed;
+        set => Mutate(() => _pressed = value);
     }
 
     /// <summary>
@@ -176,6 +203,8 @@ public sealed class ConsoleCardViewModel : ObservableState<ConsoleCardState>
             LastConnectedLabel: LastPlayed.Describe(_console.LastConnectedUtc, _clock()),
             IsHighlighted: _highlighted,
             Density: _density,
+            IsPointerOver: _pointerOver,
+            IsPressed: _pressed,
 
             // A grid item whose content is a panel has no accessible name of its own, so without this a screen
             // reader announces a list of unlabelled tiles. Composed rather than left to the reading order, so it

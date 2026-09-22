@@ -103,6 +103,12 @@ public sealed record ConsoleCardState(
     /// content margin from this; see <see cref="CardMetrics"/> for why it is one rule and not three
     /// layouts.</summary>
     CardDensity Density,
+
+    /// <summary>The pointer is over the card. Hover only - focus is the ring's, not the wedge's.</summary>
+    bool IsPointerOver,
+
+    /// <summary>The card is being pressed.</summary>
+    bool IsPressed,
     string AutomationName)
 {
     /// <summary>True when there is a last-played caption to show at all.</summary>
