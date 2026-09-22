@@ -22,6 +22,7 @@ public sealed class ConsoleCardViewModel : ObservableState<ConsoleCardState>
     private PairedConsole _console;
     private ConsoleReachability _reachability = ConsoleReachability.Checking;
     private bool _highlighted;
+    private CardDensity _density = CardDensity.Grid;
 
     /// <param name="clock">
     /// Injected so the last-played caption is testable at its boundaries. Same seam, and same reason, as
@@ -59,6 +60,22 @@ public sealed class ConsoleCardViewModel : ObservableState<ConsoleCardState>
     {
         get => _highlighted;
         set => Mutate(() => _highlighted = value);
+    }
+
+    /// <summary>
+    /// How large this card is being drawn, and therefore how much it is allowed to say.
+    ///
+    /// <para>
+    /// Set by the page from <see cref="CardMetrics.For"/> when the viewport or the console count changes. It
+    /// lives on the card rather than being read from the page by each binding because a card has to be able
+    /// to answer for itself: the front end selects a wedge width, a type role and a margin from it, and a
+    /// binding that had to reach back up to the page for that would be a second path to the same fact.
+    /// </para>
+    /// </summary>
+    public CardDensity Density
+    {
+        get => _density;
+        set => Mutate(() => _density = value);
     }
 
     /// <summary>
@@ -158,6 +175,7 @@ public sealed class ConsoleCardViewModel : ObservableState<ConsoleCardState>
             IsReachable: _reachability != ConsoleReachability.Offline,
             LastConnectedLabel: LastPlayed.Describe(_console.LastConnectedUtc, _clock()),
             IsHighlighted: _highlighted,
+            Density: _density,
 
             // A grid item whose content is a panel has no accessible name of its own, so without this a screen
             // reader announces a list of unlabelled tiles. Composed rather than left to the reading order, so it
