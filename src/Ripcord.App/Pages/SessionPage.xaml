@@ -119,15 +119,11 @@
                     Deliberately NOT a percentage. Where you are is knowable; how long it will take is not,
                     and a bar that implied otherwise would be inventing a number to look reassuring.
                 -->
-                <StackPanel
+                <controls:ConnectMark
                     x:Name="StatusTrail"
-                    HorizontalAlignment="Left"
-                    Orientation="Horizontal"
-                    Spacing="{StaticResource RipcordSpacingS}">
-                    <Rectangle x:Name="TrailOne" Width="34" Height="3" RadiusX="1.5" RadiusY="1.5" />
-                    <Rectangle x:Name="TrailTwo" Width="58" Height="3" RadiusX="1.5" RadiusY="1.5" />
-                    <Rectangle x:Name="TrailThree" Width="44" Height="3" RadiusX="1.5" RadiusY="1.5" />
-                </StackPanel>
+                    Width="72"
+                    Height="72"
+                    HorizontalAlignment="Left" />
 
                 <!--
                     The fallback, for every status that did not come from the connect sequence - a reconnect, a
