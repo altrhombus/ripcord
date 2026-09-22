@@ -126,6 +126,21 @@
     <x:Double x:Key="RipcordTouchTarget">48</x:Double>
     <x:Double x:Key="RipcordTouchTargetCompact">40</x:Double>
 
+    <!--
+        The strip along the bottom of a stream that belongs to the touch bar, reserved whether or not the
+        bar is showing.
+
+        A RESERVATION, not a control size, which is why it is here with the touch targets rather than on
+        TouchControls itself. 52px buttons plus 8 padding plus a border plus its 20px lift; the number is
+        the space the bar needs when it appears, and the HUD is kept out of it permanently.
+
+        Permanently, because the bar times out after four seconds. A row that collapsed when it went away
+        would bounce rung 1 and rung 2 down and back every time somebody moved the mouse - which is how the
+        bar is summoned on a desktop, so this is not a handheld-only concern. 90px of unused edge on a
+        machine that never summons it is the cheaper of the two.
+    -->
+    <x:Double x:Key="RipcordTouchShelfHeight">90</x:Double>
+
 
     <!--
         ================================================================================================
