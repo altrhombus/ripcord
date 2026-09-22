@@ -140,6 +140,32 @@ public class PageStyleTests
             + string.Join(", ", offenders));
     }
 
+    [Fact]
+    public void TheConsoleCardIsDeclaredExactlyOnce()
+    {
+        // The hero and the grid card were separate markup for one release and drifted three ways: the hero
+        // could not show the "checking" spinner the grid card shows, its overflow button sat under the touch
+        // minimum, and a change made to one was routinely not made to the other. The symptom reported was
+        // "making a change but it only applied to one of the views".
+        //
+        // They are one template at three densities now. This counts the wedge because the wedge is the part
+        // that cannot be faked: any second copy of the card has to draw one, so a second declaration here is
+        // the moment the divergence comes back, and it fails on the commit that introduces it rather than on
+        // the hardware pass three weeks later.
+        string path = Path.Combine(RepositoryRoot(), "src", "Ripcord.App", "Pages", "ConsolesPage.xaml");
+
+        // Asserted, not assumed. A guard that reads a file it cannot find does not fail - it passes, having
+        // counted nothing, which is the failure mode that makes a structural test worse than no test at all.
+        Assert.True(File.Exists(path), $"Expected the console page at {path}.");
+
+        int wedges = Regex.Matches(File.ReadAllText(path), "<controls:PlayWedge").Count;
+
+        Assert.True(
+            wedges == 1,
+            $"{path} declares {wedges} PlayWedge elements. There must be exactly one: the console card "
+            + "is a single template whose parts vary by CardDensity. A second one means a second card.");
+    }
+
     private static bool IsGenerated(string path)
         => path.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.Ordinal)
            || path.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}", StringComparison.Ordinal);

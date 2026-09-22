@@ -23,33 +23,22 @@ namespace Ripcord_App.Pages;
 public sealed partial class ConsolesPage : Page, IInitialFocusTarget
 {
     /// <summary>
-    /// Whatever this page's current layout says is the point of it. Open the window, press A, playing.
+    /// Whatever this page currently says is the point of it. Open the window, press A, playing.
     ///
     /// <para>
-    /// On the hero that is the card itself, which on that layout <em>is</em> the action — the layout exists so
-    /// there is exactly one thing to press, and since 2026-09-20 that thing is the card rather than a separate
-    /// button sitting under it.
-    /// On the grid it is the grid, not a specific container: focusing a <see cref="GridView"/> hands focus to
-    /// its own first (or last-focused) item, which survives the list being rebuilt underneath. With nothing
-    /// paired it is null, so the shell falls back to tree order — an empty install has no console to offer and
-    /// the add button is genuinely the point.
+    /// The grid, not a specific container: focusing a <see cref="GridView"/> hands focus to its own first (or
+    /// last-focused) item, which survives the list being rebuilt underneath. That now covers the one-console
+    /// case too, which used to be a separate panel with a separate focus target — it is a hero-sized cell in
+    /// the same grid, so there is one answer here instead of two.
+    /// </para>
+    ///
+    /// <para>
+    /// With nothing paired it is null and the shell falls back to tree order: an empty install has no console
+    /// to offer and the add button is genuinely the point.
     /// </para>
     /// </summary>
     public Control? InitialFocus
-    {
-        get
-        {
-            if (HeroPanel.Visibility == Visibility.Visible)
-            {
-                // The card, which on this layout is itself the action. It used to be a separate accent
-                // button below the card; the card is now the button, so focus lands on the thing the wedge
-                // is pointing at rather than beside it.
-                return HeroCard;
-            }
-
-            return ConsoleGrid.Visibility == Visibility.Visible ? ConsoleGrid : null;
-        }
-    }
+        => ConsoleGrid.Visibility == Visibility.Visible ? ConsoleGrid : null;
 
     private readonly RipcordAppServices _services;
     private readonly IPairedConsoleStore _store;
@@ -74,6 +63,15 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
     // "Going to sleep…" and watches it settle. Null when the last disconnect did not request rest.
     private string? _restRequestedHost;
 
+    // Guards the hero's focus-on-load against firing again when containers are recycled - a scroll or a
+    // refresh re-realises them, and pulling focus back to the card mid-interaction would be worse than never
+    // giving it. Reset by Refresh, which is the only place the layout can change underneath it.
+    private bool _heroFocusTaken;
+
+    // The layout the cards were last composed for, so container preparation can size the panel without
+    // recomputing it from a width that may have moved since.
+    private CardLayout _layout;
+
     public ConsolesPage()
     {
         // Resolved BEFORE InitializeComponent, so compiled bindings evaluate against live objects on their first
@@ -85,15 +83,9 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
         InitializeComponent();
 
         ConsoleGrid.ItemsSource = _items;
-        Loaded += (_, _) => Refresh();
-        Unloaded += (_, _) =>
-        {
-            CancelProbes();
 
-            // The hero subscribes to its console for live reachability; leaving that attached would keep this
-            // page alive through the view-model for as long as the console object lives.
-            DetachHero();
-        };
+        Loaded += (_, _) => Refresh();
+        Unloaded += (_, _) => CancelProbes();
     }
 
     /// <summary>
@@ -111,49 +103,42 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
     /// Rebuild the page for whatever is actually paired.
     ///
     /// <para>
-    /// Three layouts, because one or two consoles is the real case and a grid is only the right answer for one
-    /// of them. Nothing → the empty state, which is the first-run explanation. Exactly one → the hero, where
-    /// the console is the page and Play is a real button. Two or more → the card grid with the add tile after
-    /// the last card.
+    /// Two surfaces now, not three. Nothing paired → the first-run explanation. Anything else → the grid, at
+    /// whatever density <see cref="CardMetrics"/> returns for the viewport and the count. The one-console
+    /// "hero" is that grid holding a single hero-sized cell, which is what removed ~115 lines of code-behind
+    /// and, with them, the drift between two copies of the same card.
     /// </para>
     /// </summary>
     private void Refresh()
     {
         CancelProbes();
-        DetachHero();
+        _heroFocusTaken = false;
 
         List<ConsoleCardViewModel> consoles = _store.Load().Select(_services.CreateConsoleCard).ToList();
 
         _items.Clear();
 
-        // A grid of one is a list pretending to be a choice, so one console gets its own layout rather than a
-        // single card marooned in a wrapping panel.
-        bool hero = consoles.Count == 1;
-        bool grid = consoles.Count > 1;
-
-        if (grid)
+        foreach (ConsoleCardViewModel item in consoles)
         {
-            foreach (ConsoleCardViewModel item in consoles)
-            {
-                _items.Add(item);
-            }
+            _items.Add(item);
+        }
 
-            // Only when there is a grid to put it in; the other two layouts carry their own add affordance, and
-            // a lone ghost tile floating in an otherwise blank page says much less.
+        CardLayout layout = ApplyCardLayout(consoles.Count);
+
+        // The ghost tile belongs in the collection only when the grid is dense enough for it to read as "one
+        // more of these". Beside a single hero-sized card it would look like half the page's purpose, so that
+        // layout offers the quiet link below instead.
+        if (layout.ShowAddTile)
+        {
             _items.Add(AddConsolePlaceholder.Instance);
         }
 
-        ConsoleGrid.Visibility = Vis(grid);
-        HeroPanel.Visibility = Vis(hero);
+        ConsoleGrid.Visibility = Vis(consoles.Count > 0);
         EmptyState.Visibility = Vis(consoles.Count == 0);
+        HeroAddLink.Visibility = Vis(consoles.Count > 0 && !layout.ShowAddTile);
 
         // The subtitle instructs someone to pick from several. With one console there is nothing to pick.
-        SubtitleText.Visibility = Vis(grid);
-
-        if (hero)
-        {
-            AttachHero(consoles[0]);
-        }
+        SubtitleText.Visibility = Vis(consoles.Count > 1);
 
         if (consoles.Count > 0)
         {
@@ -164,158 +149,88 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
             _probeCts = new CancellationTokenSource();
             _ = _reachability.RefreshAsync(consoles, restHost, _probeCts.Token);
         }
-
-        ApplyColumnCount();
     }
 
     private static Visibility Vis(bool on) => on ? Visibility.Visible : Visibility.Collapsed;
 
-    // ---- hero layout -----------------------------------------------------------------------------
-
-    /// <summary>
-    /// The single console the hero is showing, held so its live reachability keeps the panel current — the
-    /// probe resolves after this returns, and a hero stuck on "Checking…" would be worse than a card doing it.
-    /// </summary>
-    private ConsoleCardViewModel? _heroConsole;
-
-    private void AttachHero(ConsoleCardViewModel console)
-    {
-        _heroConsole = console;
-        console.PropertyChanged += OnHeroChanged;
-
-        // Rebuilt per console rather than reused: the menu's items close over this particular card.
-        HeroCard.ContextFlyout = BuildConsoleFlyout(console);
-
-        RenderHero(console.State);
-    }
-
-    private void DetachHero()
-    {
-        if (_heroConsole is { } previous)
-        {
-            previous.PropertyChanged -= OnHeroChanged;
-            _heroConsole = null;
-        }
-    }
-
-    private void OnHeroChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
-    {
-        if (_heroConsole is { } console)
-        {
-            RenderHero(console.State);
-        }
-    }
-
-    private void RenderHero(ConsoleCardState s)
-    {
-        HeroMark.Accent = AccentResources.Brush(s.Accent);
-        HeroName.Text = s.DisplayName;
-        HeroDetails.Text = s.Details;
-
-        HeroLastPlayed.Text = s.LastConnectedLabel ?? string.Empty;
-        HeroLastPlayed.Visibility = Vis(s.LastConnectedLabel is { Length: > 0 });
-
-        HeroStatus.Text = s.StatusLabel;
-        HeroStatusDot.Fill = ThemeBrush.Lookup(s.StatusTone switch
-        {
-            StatusTone.Positive => "SystemFillColorSuccessBrush",
-            StatusTone.Caution => "SystemFillColorCautionBrush",
-            StatusTone.Neutral => "TextFillColorDisabledBrush",
-            _ => "TextFillColorTertiaryBrush",
-        });
-
-        // The action names itself over the wedge. There is no glyph to set any more - the wedge IS the play
-        // mark, so a FontIcon beside it would be the same statement twice.
-        HeroPlayLabel.Text = s.PrimaryActionLabel;
-
-        HeroWedge.Accent = AccentResources.Brush(s.Accent);
-
-        // The same accent again as a bare colour, because the bleed's gradient stops take a Color and the
-        // rim's stroke takes a Brush. AccentResources exposes both for exactly this reason.
-        HeroWedge.AccentColor = AccentResources.Color(s.Accent);
-
-        // Quiet, never absent. A probe's silence is not knowledge that the console is off - it is one
-        // unanswered datagram - so it must not take the affordance away. The wedge drops its family accent
-        // to say "we could not reach this" and keeps everything else, including the ability to press it;
-        // what follows is a connect attempt that can explain itself, which beats a control that does
-        // nothing. This departs from docs/design.md deliberately, and the doc records the amendment.
-        HeroWedge.Muted = !s.IsReachable;
-    }
-
-    private void OnHeroHighlight(object sender, PointerRoutedEventArgs e)
-        => HeroHoverWash.Visibility = Visibility.Visible;
-
-    private void OnHeroUnhighlight(object sender, PointerRoutedEventArgs e)
-        => HeroHoverWash.Visibility = Visibility.Collapsed;
-
-    private void OnHeroPlayClick(object sender, RoutedEventArgs e)
-    {
-        if (_heroConsole is { } console)
-        {
-            Connect(console);
-        }
-    }
-
-    private void OnHeroOverflowClick(object sender, RoutedEventArgs e)
-    {
-        if (_heroConsole is { } console)
-        {
-            BuildConsoleFlyout(console).ShowAt(HeroOverflowButton);
-        }
-    }
-
-    private void OnHeroContextRequested(UIElement sender, ContextRequestedEventArgs args)
-    {
-        if (_heroConsole is not { } console)
-        {
-            return;
-        }
-
-        MenuFlyout flyout = BuildConsoleFlyout(console);
-
-        if (args.TryGetPosition(HeroCard, out Windows.Foundation.Point point))
-        {
-            flyout.ShowAt(HeroCard, new FlyoutShowOptions { Position = point });
-        }
-        else
-        {
-            flyout.ShowAt(HeroCard);
-        }
-
-        args.Handled = true;
-    }
-
     // ---- responsive columns ----------------------------------------------------------------------
 
-    private void OnPageSizeChanged(object sender, SizeChangedEventArgs e) => ApplyColumnCount();
+    private void OnPageSizeChanged(object sender, SizeChangedEventArgs e)
+        => ApplyCardLayout(_items.OfType<ConsoleCardViewModel>().Count());
 
     /// <summary>
-    /// Cap the card row on the standard Windows breakpoints, in effective pixels — under 640 one column,
-    /// 640–1007 two, wider than that as many as fit.
+    /// Size the grid's cells and cap its columns, from <see cref="CardMetrics"/>.
     ///
     /// <para>
-    /// <c>ItemsWrapGrid</c> would otherwise fit whatever the arithmetic allows: at 292px cells a 639px window
-    /// takes two columns, which on a phone-width or split-screen window leaves cards narrower than their own
-    /// content wants. The breakpoints exist so a narrow window gets one readable card rather than two cramped
-    /// ones.
+    /// The arithmetic is not here on purpose. Breakpoints, cell sizes and the column cap are a rule that can
+    /// be wrong on a display nobody in the room owns, and the previous version of it — three literals in a
+    /// switch — could only be checked by resizing a window and looking. <c>CardMetrics</c> is pure and has
+    /// tests; this method's whole job is to hand it a width and apply the answer.
+    /// </para>
+    ///
+    /// <para>
+    /// Returns the layout so the caller can also ask it about the add tile, rather than computing it twice
+    /// from the same two inputs and eventually disagreeing with itself.
     /// </para>
     /// </summary>
-    private void ApplyColumnCount()
+    private CardLayout ApplyCardLayout(int consoleCount)
+    {
+        CardLayout layout = CardMetrics.For(ActualWidth, consoleCount);
+        _layout = layout;
+
+        foreach (ConsoleCardViewModel card in _items.OfType<ConsoleCardViewModel>())
+        {
+            card.Density = layout.Density;
+        }
+
+        SizePanel();
+
+        // A single hero-sized card is the page; anything denser is a list and reads from the top-left.
+        bool hero = layout.Density == CardDensity.Hero;
+        ConsoleGrid.HorizontalAlignment = hero ? HorizontalAlignment.Center : HorizontalAlignment.Stretch;
+        ConsoleGrid.VerticalAlignment = hero ? VerticalAlignment.Center : VerticalAlignment.Stretch;
+
+        return layout;
+    }
+
+    /// <summary>
+    /// Push the current cell size onto the wrapping panel, if it exists yet.
+    ///
+    /// <para>
+    /// <b>It usually does not, at the moment you would expect it to.</b> <c>ItemsPanelRoot</c> is null while
+    /// the page is loading and still null in the grid's own <c>Loaded</c> - it is materialised from the
+    /// <c>ItemsPanelTemplate</c> during the first measure pass. Setting the size before then goes nowhere and
+    /// leaves the markup's own <c>ItemWidth</c> standing, which put a hero-density CARD inside a
+    /// grid-density CELL and wrapped the console's name to one letter per line.
+    /// </para>
+    ///
+    /// <para>
+    /// So it is called again from container preparation, which cannot run before the panel exists. Guarded
+    /// against writing values that already match, because assigning these invalidates layout and this is
+    /// reached from inside a layout pass.
+    /// </para>
+    /// </summary>
+    private void SizePanel()
     {
         if (ConsoleGrid.ItemsPanelRoot is not ItemsWrapGrid panel)
         {
             return;
         }
 
-        double width = ActualWidth;
-        panel.MaximumRowsOrColumns = width switch
+        if (panel.ItemWidth != _layout.CellWidth)
         {
-            > 0 and < 640 => 1,
-            >= 640 and < 1008 => 2,
+            panel.ItemWidth = _layout.CellWidth;
+        }
 
-            // -1 is "as many as fit", which is the right answer once there is room for three.
-            _ => -1,
-        };
+        if (panel.ItemHeight != _layout.CellHeight)
+        {
+            panel.ItemHeight = _layout.CellHeight;
+        }
+
+        if (panel.MaximumRowsOrColumns != _layout.MaxColumns)
+        {
+            panel.MaximumRowsOrColumns = _layout.MaxColumns;
+        }
     }
 
     private void CancelProbes()
@@ -378,12 +293,10 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
 
         try
         {
-            // Whichever layout is showing owns the element the eye is travelling from. On the hero there is no
-            // grid container to ask for, so the card itself is the source — without this, the one-console
-            // layout was the only path that cut to black.
-            UIElement? source = HeroPanel.Visibility == Visibility.Visible
-                ? HeroCard
-                : ConsoleGrid.ContainerFromItem(item) as GridViewItem;
+            // Always the container now. This used to branch on which layout was showing, because the hero
+            // card sat outside any items control and had no container to ask for - so the one-console path
+            // was the only one that cut to black when the branch was wrong. Every card is a GridViewItem.
+            UIElement? source = ConsoleGrid.ContainerFromItem(item) as GridViewItem;
 
             if (source is not null)
             {
@@ -505,6 +418,9 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
             return;
         }
 
+        // The first moment the wrapping panel is guaranteed to exist. See SizePanel.
+        SizePanel();
+
         // Detach first: recycling means this container may still carry the last item's subscriptions.
         container.GotFocus -= OnContainerFocus;
         container.LostFocus -= OnContainerBlur;
@@ -519,6 +435,22 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
         container.ContextFlyout = BuildConsoleFlyout(item);
         container.GotFocus += OnContainerFocus;
         container.LostFocus += OnContainerBlur;
+
+        // Open the window, press A, playing - the promise the one-console layout exists to keep.
+        //
+        // Done from here rather than from InitialFocus because at hero density the answer is a container that
+        // does not exist yet when the shell asks: the GridView realises its items after the page's own Loaded,
+        // so focusing the grid at that point lands on nothing and the first press goes nowhere. This fires as
+        // the container is realised, which is the first moment there is something to focus.
+        //
+        // Only at hero density, and only the first card. In a dense grid the shell's own answer is correct -
+        // focusing the GridView hands focus to whichever item it last had, which is what someone returning to
+        // the page expects, and stealing that to the first card would undo it.
+        if (item.Density == CardDensity.Hero && args.ItemIndex == 0 && !_heroFocusTaken)
+        {
+            _heroFocusTaken = true;
+            _ = container.Focus(FocusState.Programmatic);
+        }
     }
 
     private static void OnContainerFocus(object sender, RoutedEventArgs e) => SetContainerHighlight(sender, true);

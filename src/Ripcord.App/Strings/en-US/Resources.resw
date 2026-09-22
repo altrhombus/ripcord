@@ -244,10 +244,6 @@
     <value>More options</value>
     <comment>ToolTip on the console list (the home screen).</comment>
   </data>
-  <data name="ConsolesPage_MoreOptionsConsole2.AutomationProperties.Name" xml:space="preserve">
-    <value>More options for this console</value>
-    <comment>Name on the console list (the home screen).</comment>
-  </data>
   <data name="ConsolesPage_PickOneStartStreaming.Text" xml:space="preserve">
     <value>Pick one to start streaming. A console in rest mode will be woken for you.</value>
     <comment>Static text on the console list (the home screen).</comment>
