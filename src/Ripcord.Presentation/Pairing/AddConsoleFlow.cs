@@ -884,14 +884,21 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
         return new AddConsoleFlowState(
             Step: _step,
 
-            // Pairing shares the link step's dash: it is the same step from the user's point of view, just the
-            // part they are not doing anything during.
+            // THREE dashes, not four, and they are the mark's own three.
+            //
+            // Pairing shares the link step's dash: it is the same step from the user's point of view, just
+            // the part they are not doing anything during. Family shares FIND's, because discovery leads now
+            // and the family question is the exception rather than a stage - it appears only on the manual
+            // path and when a scan finds nothing, and counting it as its own step would make the common
+            // journey look like it skipped one.
+            //
+            // Four equal dashes were a progress bar. Three uneven ones are the trail from the mark, which is
+            // the same shape the connect sequence fills in and the celebration assembles.
             ReachedDash: _step switch
             {
-                AddConsoleStep.Family => 1,
-                AddConsoleStep.Find => 2,
-                AddConsoleStep.Link or AddConsoleStep.Pairing => 3,
-                _ => 4,
+                AddConsoleStep.Family or AddConsoleStep.Find => 1,
+                AddConsoleStep.Link or AddConsoleStep.Pairing => 2,
+                _ => 3,
             },
             Family: _family,
             FamilyNote: _familyNote,
@@ -922,10 +929,18 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
             // Only worth asking when both can actually work. Where the account route cannot, the step shows
             // the code route without putting a decision in front of someone who has none to make.
             RouteChoiceOffered: accountPairingOffered && accountCapable && consoleKnownToAccount,
+            SwitchRouteLabel: Route == PairingRoute.Account
+                ? Strings.Pairing_UseCodeInstead
+                : Strings.Pairing_UseAccountInstead,
             CodeEntryShown: Route == PairingRoute.Code,
-            PairActionLabel: Route == PairingRoute.Account
-                ? Strings.Pairing_ActionWithAccount
-                : Strings.Pairing_ActionWithCode,
+            // At Done the record is already on disk, so this is not a save button - it is the thing the
+            // player came for, named as such. It was the literal string "Save & connect" in the page's
+            // code-behind, past the catalogue entirely.
+            PairActionLabel: _step == AddConsoleStep.Done
+                ? Strings.Pairing_PlayNow
+                : Route == PairingRoute.Account
+                    ? Strings.Pairing_ActionWithAccount
+                    : Strings.Pairing_ActionWithCode,
 
             // Three different things to say, and the difference matters: one is an invitation, one is fixable on
             // the console, and one is a property of the build the user cannot do anything about.

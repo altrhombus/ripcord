@@ -574,6 +574,18 @@
     <value>Details</value>
     <comment>Card overflow menu: show what is known about this console.</comment>
   </data>
+  <data name="Pairing_PlayNow" xml:space="preserve">
+    <value>Play now</value>
+    <comment>Primary action on the pairing celebration. Not a save button: the console is already paired by the time this appears.</comment>
+  </data>
+  <data name="Pairing_UseCodeInstead" xml:space="preserve">
+    <value>Use a code from the console instead</value>
+    <comment>Quiet link on the pairing step, offering the other route without weighting it.</comment>
+  </data>
+  <data name="Pairing_UseAccountInstead" xml:space="preserve">
+    <value>Use my account instead — no code needed</value>
+    <comment>Quiet link on the pairing step, offering the other route without weighting it.</comment>
+  </data>
   <data name="Console_MenuShortcut" xml:space="preserve">
     <value>Create a shortcut</value>
     <comment>Card overflow menu: write a desktop shortcut that launches straight into this console.</comment>
