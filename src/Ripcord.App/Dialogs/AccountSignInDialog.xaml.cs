@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.Web.WebView2.Core;
+using Ripcord_App.Input;
 using Ripcord.Presentation.Accounts;
 
 namespace Ripcord_App.Dialogs;
@@ -31,6 +32,13 @@ namespace Ripcord_App.Dialogs;
 public sealed partial class AccountSignInDialog : ContentDialog
 {
     private readonly AccountViewModel _account;
+
+    /// <summary>
+    /// Null unless <c>RIPCORD_TRACE_FOCUS=1</c>. This surface is where focus theft was found twice and
+    /// mis-diagnosed twice, so it is the one place worth being able to switch a trace on for.
+    /// </summary>
+    private FocusTrace? _focusTrace;
+
     private bool _completed;
 
     public AccountSignInDialog(AccountViewModel account)
@@ -40,6 +48,11 @@ public sealed partial class AccountSignInDialog : ContentDialog
         InitializeComponent();
 
         Loaded += OnLoaded;
+        Unloaded += (_, _) =>
+        {
+            _focusTrace?.Dispose();
+            _focusTrace = null;
+        };
     }
 
     /// <summary>
@@ -54,6 +67,9 @@ public sealed partial class AccountSignInDialog : ContentDialog
 
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
+        // Before the web view exists, so the trace covers the dialog opening as well as everything after it.
+        _focusTrace = FocusTrace.StartIfEnabled("account sign-in");
+
         try
         {
             // Explicit rather than implicit-on-first-navigate, so a missing or broken WebView2 runtime surfaces
