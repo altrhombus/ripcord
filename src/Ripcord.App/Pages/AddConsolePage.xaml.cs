@@ -131,6 +131,14 @@ public sealed partial class AddConsolePage : Page
         // the other, named for what it is rather than for the mechanism behind it.
         // Composed portably, including whether it should appear at all: the flow knows whether this build
         // has an account tier and whether anybody is signed into it, and neither is this page's to judge.
+        // Two offers, never both. The lead one is the step's content while the form waits to be asked for;
+        // the quiet one sits by the account-id field once somebody has chosen the code route anyway. They
+        // say different things because they sit in different places.
+        SignInLeadPanel.Visibility = Vis(s.SignInLeads);
+        SignInLeadText.Text = s.SignInLeadText;
+        SignInLeadButton.Content = s.SignInActionLabel;
+        UseCodeLink.Content = s.CodeRouteLabel;
+
         SignInInvitation.Message = s.SignInInvitation;
         SignInButton.Content = s.SignInActionLabel;
         SignInInvitation.IsOpen = s.SignInInvitation.Length > 0;
@@ -171,7 +179,9 @@ public sealed partial class AddConsolePage : Page
 
         BackButton.IsEnabled = s.CanGoBack;
 
-        PrimaryButton.Visibility = Vis(s.Step is AddConsoleStep.Link or AddConsoleStep.Done);
+        // Nothing to pair while the form is still an offer: Pair would sit there permanently disabled under
+        // a proposition, which reads as a dead end rather than a choice.
+        PrimaryButton.Visibility = Vis(s.Step is AddConsoleStep.Link or AddConsoleStep.Done && !s.SignInLeads);
         // Composed portably, including at Done - the label there used to be a literal in this file, which
         // put the one string the celebration turns on outside the catalogue.
         PrimaryButton.Content = s.PairActionLabel;
@@ -378,6 +388,12 @@ public sealed partial class AddConsolePage : Page
     /// </para>
     /// </summary>
     private void OnSignInClick(object sender, RoutedEventArgs e) => _services.Shell.ShowSettings();
+
+    /// <summary>
+    /// Show the code form. Not a fallback being grudgingly allowed - local pairing is a legitimate choice,
+    /// and somebody who does not want an account connected should reach it in one press and without argument.
+    /// </summary>
+    private void OnUseCodeClick(object sender, RoutedEventArgs e) => _flow.RevealCodeRoute();
 
     private void OnSwitchRoute(object sender, RoutedEventArgs e)
         => _flow.SelectRoute(_flow.State.Route == PairingRoute.Account ? PairingRoute.Code : PairingRoute.Account);
