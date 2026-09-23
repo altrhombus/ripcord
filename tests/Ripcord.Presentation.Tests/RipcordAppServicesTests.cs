@@ -179,6 +179,10 @@ public class RipcordAppServicesTests
         public void SetFullScreen(bool fullScreen)
         {
         }
+
+        public void ShowSettings()
+        {
+        }
     }
 
     private sealed class StubScanner : IConsoleScanner

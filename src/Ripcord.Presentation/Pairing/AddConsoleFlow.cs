@@ -973,6 +973,16 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
         bool accountCapable = _accountPairingCapability?.Available ?? false;
         bool consoleKnownToAccount = ResolveCloudDeviceId() is not null;
 
+        // Signing in is POSSIBLE but has not happened. Every question above asks whether the account route is
+        // available to somebody already signed in, so all of them are false here - which meant the step said
+        // nothing at all about the account, and left a first-time user hunting for an account id by hand.
+        //
+        // The design has always called for this: "not signed in, the code route leads, since it needs nothing
+        // the player does not already have; sign-in sits beside it, PHRASED AS WHAT IT SAVES THEM." The
+        // second half was never built. It is an invitation and not a requirement, which is why it says what
+        // it buys rather than what is missing.
+        bool couldSignIn = _account is not null && _accountPairing is not null && !AccountIdIsAutomatic;
+
         return new AddConsoleFlowState(
             Step: _step,
 
@@ -1028,6 +1038,14 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
             SwitchRouteLabel: Route == PairingRoute.Account
                 ? Strings.Pairing_UseCodeInstead
                 : Strings.Pairing_UseAccountInstead,
+            // The invitation, on the code route only. Offered beside the code route rather than instead of it:
+            // somebody who came here to type the code on their screen should not be stopped to sign in.
+            SignInInvitation: couldSignIn && Route == PairingRoute.Code
+                ? Strings.Pairing_SignInSaves
+                : string.Empty,
+
+            SignInActionLabel: Strings.Pairing_SignInAction,
+
             CodeEntryShown: Route == PairingRoute.Code,
             // At Done the record is already on disk, so this is not a save button - it is the thing the
             // player came for, named as such. It was the literal string "Save & connect" in the page's

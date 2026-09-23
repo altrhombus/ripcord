@@ -71,6 +71,21 @@ public sealed record AddConsoleFlowState(
     string SwitchRouteLabel,
 
     /// <summary>Show the console's own instructions and the code box.</summary>
+    /// <summary>
+    /// What signing in would save this user, or empty when it would save nothing — because they already have,
+    /// or because this build ships no account credential and cannot.
+    ///
+    /// <para>
+    /// An invitation rather than a requirement. The code route works without it and is offered regardless;
+    /// this only says what the other route would spare them, which for a first-time user is finding their
+    /// account id by hand.
+    /// </para>
+    /// </summary>
+    string SignInInvitation,
+
+    /// <summary>The invitation's own button label. Empty when there is no invitation.</summary>
+    string SignInActionLabel,
+
     bool CodeEntryShown,
 
     /// <summary>The label for the step's single commit button, which names the route it will take.</summary>

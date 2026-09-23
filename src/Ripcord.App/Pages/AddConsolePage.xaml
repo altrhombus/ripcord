@@ -310,6 +310,29 @@
                         IsOpen="False"
                         Visibility="Collapsed" />
 
+                    <!--
+                        The sign-in invitation, on the code route only.
+
+                        It sits BESIDE the code route rather than in front of it: the code works without an
+                        account and somebody who came here to type the one on their screen should not be
+                        stopped. What was missing before was any mention of the account at all when nobody
+                        was signed in - every other note here asks whether the account route is available to
+                        somebody already signed in, so all of them went quiet and a first-time user was left
+                        hunting for their account id by hand.
+
+                        Phrased as what it saves, never as something missing, and it carries the button that
+                        takes them there - an invitation you have to go and find yourself is not one.
+                    -->
+                    <InfoBar
+                        x:Name="SignInInvitation"
+                        IsClosable="False"
+                        IsOpen="False"
+                        Severity="Informational">
+                        <InfoBar.ActionButton>
+                            <Button x:Name="SignInButton" Click="OnSignInClick" />
+                        </InfoBar.ActionButton>
+                    </InfoBar>
+
                     <!--  Both of these belong to the code route only, and are collapsed together.  -->
                     <Border
                         x:Name="ConsoleStepsCard"

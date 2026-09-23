@@ -757,6 +757,43 @@ public class AddConsoleFlowTests
     // ---- account id, typed or automatic ---------------------------------------------------------
 
     [Fact]
+    public async Task NotSignedIn_TheCodeRouteInvitesSigningIn()
+    {
+        // The gap this closes: every other note on this step asks whether the account route is available to
+        // somebody ALREADY signed in, so with nobody signed in they all went quiet - and the step said
+        // nothing about the account at all. A first-time user was left to find their account id by hand.
+        var h = new Harness(account: new FakeAccountSession());
+
+        await h.ToLinkViaScanAsync();
+
+        Assert.NotEmpty(h.Flow.State.SignInInvitation);
+        Assert.NotEmpty(h.Flow.State.SignInActionLabel);
+    }
+
+    [Fact]
+    public async Task AlreadySignedIn_NothingInvitesThemToSignInAgain()
+    {
+        var account = new FakeAccountSession { Current = new AccountIdentity("4200000000000000042", "somebody", "GB") };
+        var h = new Harness(account: account);
+
+        await h.ToLinkViaScanAsync();
+
+        Assert.Empty(h.Flow.State.SignInInvitation);
+    }
+
+    [Fact]
+    public async Task ABuildWithNoAccountTier_InvitesNobodyToSignIn()
+    {
+        // Offering a sign-in this build cannot perform would be worse than saying nothing: it names a way out
+        // that does not exist, on the one screen somebody is already stuck on.
+        var h = new Harness(withAccountPairing: false);
+
+        await h.ToLinkViaScanAsync();
+
+        Assert.Empty(h.Flow.State.SignInInvitation);
+    }
+
+    [Fact]
     public async Task WhenSignedIn_TheAccountIdIsSuppliedRatherThanTyped()
     {
         // The point of the whole account tier for a LAN-only user: the account id was previously something you

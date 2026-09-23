@@ -129,6 +129,12 @@ public sealed partial class AddConsolePage : Page
 
         // Shown only when there genuinely are two routes. The app has already taken one; this is the way to
         // the other, named for what it is rather than for the mechanism behind it.
+        // Composed portably, including whether it should appear at all: the flow knows whether this build
+        // has an account tier and whether anybody is signed into it, and neither is this page's to judge.
+        SignInInvitation.Message = s.SignInInvitation;
+        SignInButton.Content = s.SignInActionLabel;
+        SignInInvitation.IsOpen = s.SignInInvitation.Length > 0;
+
         SwitchRouteLink.Visibility = Vis(s.RouteChoiceOffered);
         SwitchRouteLink.Content = s.SwitchRouteLabel;
 
@@ -362,6 +368,16 @@ public sealed partial class AddConsolePage : Page
             // the typed-address path does not depend on the scan having worked.
         }
     }
+
+    /// <summary>
+    /// Take them to where the account lives.
+    ///
+    /// <para>
+    /// Through the shell seam rather than by naming a page: a page must not know how another page is
+    /// reached, and this lands exactly where clicking the gear would.
+    /// </para>
+    /// </summary>
+    private void OnSignInClick(object sender, RoutedEventArgs e) => _services.Shell.ShowSettings();
 
     private void OnSwitchRoute(object sender, RoutedEventArgs e)
         => _flow.SelectRoute(_flow.State.Route == PairingRoute.Account ? PairingRoute.Code : PairingRoute.Account);
