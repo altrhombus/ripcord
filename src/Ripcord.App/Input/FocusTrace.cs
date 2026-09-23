@@ -123,6 +123,14 @@ public sealed class FocusTrace : IDisposable
     /// The frames that answer the question. Ripcord frames are kept in full, because one of them is the
     /// culprit whenever the culprit is ours; the rest are counted rather than listed, since a wall of WinUI
     /// dispatch frames says only "the platform", which is exactly as much as it needs to say.
+    ///
+    /// <para>
+    /// <b>The entry point does not count as blame, and the first version of this got that wrong.</b> Every
+    /// frame in the process sits under <c>Program.Main</c>, so counting it made even a pure platform-dispatched
+    /// mouse click read as ours — which would have hidden the one answer this method exists to give. A move
+    /// arriving from the message loop has nothing of ours between it and <c>Main</c>, and that is the
+    /// signature to look for.
+    /// </para>
     /// </summary>
     private static string Blame()
     {
@@ -140,14 +148,20 @@ public sealed class FocusTrace : IDisposable
                 continue;
             }
 
-            if (owner.StartsWith("Ripcord", StringComparison.Ordinal))
-            {
-                ours.Add($"{owner.Split('.')[^1]}.{method!.Name}");
-            }
-            else
+            if (!owner.StartsWith("Ripcord", StringComparison.Ordinal))
             {
                 others++;
+                continue;
             }
+
+            // The process entry point and the generated application bootstrap are under everything, so they
+            // say nothing about who moved focus.
+            if (method!.Name is "Main" or "InvokeMain" or "OnLaunched")
+            {
+                continue;
+            }
+
+            ours.Add($"{owner.Split('.')[^1]}.{method.Name}");
         }
 
         return ours.Count == 0
