@@ -310,6 +310,36 @@
                         IsOpen="False"
                         Visibility="Collapsed" />
 
+                    <!--
+                        SIGN-IN LEADS, because it is genuinely the lazier path and the code route only looks
+                        like it.
+
+                        The code route wants somebody at the console, through its menus, reading an 8-digit
+                        code, AND holding a numeric account id almost nobody knows - this app's own caption
+                        sends them to a third-party lookup tool for it. The vendor's client never asks for
+                        that number at all. Signing in wants a password they already have.
+
+                        So the form is not drawn until it is asked for, and this is the step's content until
+                        then. The way past is directly below, unweighted and unexplained: somebody who would
+                        rather not connect an account is making a trade they are entitled to make, and local
+                        pairing stays available to them in full.
+                    -->
+                    <StackPanel x:Name="SignInLeadPanel" Spacing="12" Visibility="Collapsed">
+                        <TextBlock
+                            x:Name="SignInLeadText"
+                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                            TextWrapping="Wrap" />
+
+                        <Button
+                            x:Name="SignInLeadButton"
+                            Click="OnSignInClick"
+                            Style="{StaticResource AccentButtonStyle}" />
+
+                        <HyperlinkButton
+                            x:Name="UseCodeLink"
+                            Click="OnUseCodeClick" />
+                    </StackPanel>
+
                     <!--  Both of these belong to the code route only, and are collapsed together.  -->
                     <Border
                         x:Name="ConsoleStepsCard"

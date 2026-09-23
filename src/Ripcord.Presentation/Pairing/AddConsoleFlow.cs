@@ -91,6 +91,25 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
     /// nothing, having spent the search window doing it.
     /// </summary>
     private bool _scanFoundNothing;
+
+    /// <summary>
+    /// The code form has been asked for. False until then, when somebody is not signed in.
+    ///
+    /// <para>
+    /// <b>Because the code route is not the lazy one, however it looks.</b> docs/design.md had it leading on
+    /// the grounds that it "needs nothing the player does not already have" - and that is simply false. It
+    /// needs them at the console, through its menus, reading an 8-digit code, AND holding their numeric
+    /// account id, which almost nobody knows and which this app's own caption sends them to a third-party
+    /// lookup tool to find. Signing in needs a password they already have.
+    /// </para>
+    ///
+    /// <para>
+    /// So sign-in leads and the code form waits to be asked for. Never a wall: the link to it is right there,
+    /// unexplained and unweighted, for anybody who would rather not connect an account - and that is a trade
+    /// they are entitled to make without being argued with.
+    /// </para>
+    /// </summary>
+    private bool _codeRouteRevealed;
     private string? _familyNote;
     private string _findSubheading = ScanningMessage;
     private bool _isScanning;
@@ -265,6 +284,11 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
 
         return EnterFindAsync();
     }
+
+    /// <summary>
+    /// Show the code form. For somebody who would rather type a code than connect an account.
+    /// </summary>
+    public void RevealCodeRoute() => Mutate(() => _codeRouteRevealed = true);
 
     /// <summary>Search again from scratch, discarding what the previous scan found.</summary>
     public Task RescanAsync() => StartScanAsync();
@@ -983,6 +1007,10 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
         // it buys rather than what is missing.
         bool couldSignIn = _account is not null && _accountPairing is not null && !AccountIdIsAutomatic;
 
+        // Sign-in leads until it is declined. Computed once, because the form's visibility is its exact
+        // inverse and deriving the two separately is how they come to disagree.
+        bool signInLeads = couldSignIn && Route == PairingRoute.Code && !_codeRouteRevealed;
+
         return new AddConsoleFlowState(
             Step: _step,
 
@@ -1040,13 +1068,24 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
                 : Strings.Pairing_UseAccountInstead,
             // The invitation, on the code route only. Offered beside the code route rather than instead of it:
             // somebody who came here to type the code on their screen should not be stopped to sign in.
-            SignInInvitation: couldSignIn && Route == PairingRoute.Code
-                ? Strings.Pairing_SignInSaves
+            // The QUIET one, beside the account-id field, and only once the form is up. It must not appear
+            // alongside the lead offer below: the two say different things because they sit in different
+            // places, and the lead's "no code to fetch" would be a contradiction above a code box.
+            SignInInvitation: couldSignIn && Route == PairingRoute.Code && _codeRouteRevealed
+                ? Strings.Pairing_SignInFillsField
                 : string.Empty,
 
             SignInActionLabel: Strings.Pairing_SignInAction,
+            CodeRouteLabel: Strings.Pairing_UseCodeAnyway,
+            SignInLeadText: Strings.Pairing_SignInSaves,
 
-            CodeEntryShown: Route == PairingRoute.Code,
+            // Withheld only while something is being offered INSTEAD. Keyed off the offer rather than off
+            // being signed out, because those are not the same question: a build with no account tier has
+            // nobody to sign in, and hiding the form there left a step that showed nothing and offered
+            // nothing. A test caught it.
+            CodeEntryShown: Route == PairingRoute.Code && !signInLeads,
+
+            SignInLeads: signInLeads,
             // At Done the record is already on disk, so this is not a save button - it is the thing the
             // player came for, named as such. It was the literal string "Save & connect" in the page's
             // code-behind, past the catalogue entirely.
