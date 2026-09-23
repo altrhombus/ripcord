@@ -757,17 +757,64 @@ public class AddConsoleFlowTests
     // ---- account id, typed or automatic ---------------------------------------------------------
 
     [Fact]
-    public async Task NotSignedIn_TheCodeRouteInvitesSigningIn()
+    public async Task NotSignedIn_SignInLeadsAndTheCodeFormWaits()
     {
-        // The gap this closes: every other note on this step asks whether the account route is available to
-        // somebody ALREADY signed in, so with nobody signed in they all went quiet - and the step said
-        // nothing about the account at all. A first-time user was left to find their account id by hand.
+        // The code route LOOKS like the low-friction one and is not. It wants somebody at the console,
+        // through its menus, reading an 8-digit code, and holding a numeric account id almost nobody knows -
+        // this app's own caption sends them to a third-party lookup tool for it, and the vendor's client
+        // never asks for that number at all. Signing in wants a password they already have.
         var h = new Harness(account: new FakeAccountSession());
 
         await h.ToLinkViaScanAsync();
 
+        Assert.True(h.Flow.State.SignInLeads);
+        Assert.False(h.Flow.State.CodeEntryShown);
+        Assert.NotEmpty(h.Flow.State.SignInLeadText);
+        Assert.NotEmpty(h.Flow.State.CodeRouteLabel);
+    }
+
+    [Fact]
+    public async Task TheCodeRouteIsAlwaysOnePressAway()
+    {
+        // Local pairing is a legitimate choice, not a fallback being grudgingly allowed. Somebody who does
+        // not want an account connected reaches the form in one press and without being argued with.
+        var h = new Harness(account: new FakeAccountSession());
+        await h.ToLinkViaScanAsync();
+
+        h.Flow.RevealCodeRoute();
+
+        Assert.False(h.Flow.State.SignInLeads);
+        Assert.True(h.Flow.State.CodeEntryShown);
+    }
+
+    [Fact]
+    public async Task OnceTheCodeFormIsUp_TheOfferIsTheQuietOneBesideTheField()
+    {
+        // Two offers, never both, because they say different things: the lead one promises no code to fetch,
+        // which would be a contradiction sitting above a box asking for a code.
+        var h = new Harness(account: new FakeAccountSession());
+        await h.ToLinkViaScanAsync();
+
+        Assert.Empty(h.Flow.State.SignInInvitation);
+
+        h.Flow.RevealCodeRoute();
+
         Assert.NotEmpty(h.Flow.State.SignInInvitation);
-        Assert.NotEmpty(h.Flow.State.SignInActionLabel);
+        Assert.False(h.Flow.State.SignInLeads);
+    }
+
+    [Fact]
+    public async Task SignedIn_TheFormIsNotWithheld()
+    {
+        // Nothing to defer: the account supplies the id, so the form is only ever the code box and there is
+        // no work to spare anybody by hiding it.
+        var account = new FakeAccountSession { Current = new AccountIdentity("4200000000000000042", "somebody", "GB") };
+        var h = new Harness(account: account);
+
+        await h.ToLinkViaScanAsync();
+
+        Assert.False(h.Flow.State.SignInLeads);
+        Assert.True(h.Flow.State.CodeEntryShown);
     }
 
     [Fact]
@@ -791,6 +838,11 @@ public class AddConsoleFlowTests
         await h.ToLinkViaScanAsync();
 
         Assert.Empty(h.Flow.State.SignInInvitation);
+        Assert.False(h.Flow.State.SignInLeads);
+
+        // And the form is there immediately: with no account to offer, withholding it would be a step that
+        // shows nothing and offers nothing.
+        Assert.True(h.Flow.State.CodeEntryShown);
     }
 
     [Fact]
