@@ -229,8 +229,8 @@
     <comment>Static text on the console list (the home screen).</comment>
   </data>
   <data name="ConsolesPage_FirstRunTitle.Text" xml:space="preserve">
-    <value>Play your PlayStation on this PC.</value>
-    <comment>First-run headline on the console list. Replaced "No consoles yet", which reported a deficiency to somebody who had done nothing wrong.</comment>
+    <value>Play your console on this PC.</value>
+    <comment>First-run headline on the console list. Deliberately names no vendor: the brand is invoked only where it is factually necessary, and Xbox support is coming, so a headline naming one platform would date the moment it lands. Replaced "No consoles yet", which reported a deficiency to somebody who had done nothing wrong.</comment>
   </data>
   <data name="ConsolesPage_MoreOptionsConsole.AutomationProperties.Name" xml:space="preserve">
     <value>More options for this console</value>
