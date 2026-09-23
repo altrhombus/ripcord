@@ -112,9 +112,12 @@ public sealed partial class MainWindow : Window, IShellNavigator
         // The standing guarantee that something is always focused. Everything else that seeds focus — window
         // activation, navigation, the first pad press — predates it and each was written for one situation
         // somebody hit; this one covers the situations nobody has hit yet.
+        // needsSeed is the SHELL's question, not the pilot's. This used to ask the pilot directly, which
+        // skipped the modal guard and left the watchdog as the one seeding path with nothing in front of
+        // it - see ModalOwnsFocus for what that cost.
         _focusWatchdog = new FocusWatchdog(
             _dispatcherQueue,
-            needsSeed: () => _focus.NeedsFocusSeed(),
+            needsSeed: ShellShouldSeedFocus,
             seed: FocusFirstContentElement);
 
         // Focus is seeded on every navigation, not only when the chrome scope activates. Going to the pair flow
@@ -622,28 +625,46 @@ public sealed partial class MainWindow : Window, IShellNavigator
     /// </para>
     /// </summary>
     /// <summary>
+    /// True while a modal owns focus, in which case the shell must keep its hands off.
+    ///
+    /// <para>
+    /// <b>The bug that named this.</b> The PSN sign-in dialog hosts a WebView2, which is a native child HWND.
+    /// Click into an HTML text box and Win32 focus goes there — but XAML focus goes NOWHERE, because the
+    /// focused thing is not in the XAML tree at all. <c>FocusManager.GetFocusedElement</c> returns null,
+    /// <see cref="FocusPilot.NeedsFocusSeed"/> reads that as "nothing has focus", and the shell put focus back
+    /// into the dialog. The password box deselected the instant it was clicked, every time.
+    /// </para>
+    ///
+    /// <para>
+    /// XAML focus being nowhere is not the same as focus being nowhere.
+    /// </para>
+    ///
+    /// <para>
+    /// But the narrow reading is the wrong one, and fixing only the web view is how this took two attempts.
+    /// <see cref="FocusFirstContentElement"/> focuses the page inside <c>ChromeFrame</c> — which while a modal
+    /// is up is the content BEHIND it. Doing that is never right, whatever the modal contains and whatever
+    /// prompted it. So the guard belongs at the chokepoint rather than at the symptom, and a modal keeps focus
+    /// for as long as it is showing: <c>ContentDialog</c> seeds and traps its own.
+    /// </para>
+    /// </summary>
+    private bool ModalOwnsFocus => _input.Scopes.Top?.Kind == InputScopeKind.Modal;
+
+    /// <summary>
+    /// Whether the shell should put focus into the page — the question every seeding path has to ask, and the
+    /// reason it is a method: the focus watchdog asked <see cref="FocusPilot.NeedsFocusSeed"/> on its own and
+    /// so had no <see cref="ModalOwnsFocus"/> guard, which is what kept the sign-in box unusable after the
+    /// guard was added here.
+    /// </summary>
+    private bool ShellShouldSeedFocus() => !ModalOwnsFocus && _focus.NeedsFocusSeed();
+
+    /// <summary>
     /// Put focus somewhere if it is nowhere. Returns true when it had to act, so a caller can treat the press
-    /// that prompted it as spent.
+    /// that prompted it as spent — which is also why the modal case returns false rather than swallowing the
+    /// press: nothing moved, so nothing was spent.
     /// </summary>
     private bool SeedFocusIfNothingHasIt()
     {
-        // NOT WHILE A MODAL IS UP, and this is the bug that taught us why.
-        //
-        // The PSN sign-in dialog hosts a WebView2, which is a native child HWND. Click into an HTML text box
-        // and Win32 focus goes there - but XAML focus goes NOWHERE, because the focused thing is not in the
-        // XAML tree at all. FocusManager.GetFocusedElement then returns null, NeedsFocusSeed reads that as
-        // "nothing has focus", and this yanked focus back into the dialog's own buttons. The text box
-        // deselected the instant it was clicked, and typing a password was impossible.
-        //
-        // XAML focus being nowhere is not the same as focus being nowhere. A modal owns focus for as long as
-        // it is up - ContentDialog seeds and traps its own - so the shell has no business reaching in, and
-        // the one case where it thought it did is the case where it was wrong.
-        if (_input.Scopes.Top?.Kind == InputScopeKind.Modal)
-        {
-            return false;
-        }
-
-        if (!_focus.NeedsFocusSeed())
+        if (!ShellShouldSeedFocus())
         {
             return false;
         }
@@ -654,6 +675,15 @@ public sealed partial class MainWindow : Window, IShellNavigator
 
     private void FocusFirstContentElement()
     {
+        // The chokepoint. Every other seeding path leads here — window activation, navigation, chrome scope
+        // activation, a pad direction with nothing focused, the watchdog, region cycling — and each was
+        // written for one situation somebody hit, so guarding them one at a time is how one gets missed.
+        // Focusing the page behind a modal is wrong in all of them.
+        if (ModalOwnsFocus)
+        {
+            return;
+        }
+
         if (ChromeFrame.Content is not FrameworkElement content)
         {
             return;
