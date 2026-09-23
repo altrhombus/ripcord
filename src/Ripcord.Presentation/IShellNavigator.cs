@@ -40,4 +40,15 @@ public interface IShellNavigator
 
     /// <summary>Enter or leave fullscreen. Owned by the shell, because the presenter belongs to it.</summary>
     void SetFullScreen(bool fullScreen);
+
+    /// <summary>
+    /// Show the settings surface.
+    ///
+    /// <para>
+    /// Here because the shell owns navigation and a page must not know how another page is reached. Added for
+    /// the pairing step's sign-in invitation: the account lives in settings, so inviting somebody to sign in
+    /// without being able to take them there would be an invitation to go and find it themselves.
+    /// </para>
+    /// </summary>
+    void ShowSettings();
 }
