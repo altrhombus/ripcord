@@ -583,8 +583,8 @@
     <comment>Card overflow menu: show what is known about this console.</comment>
   </data>
   <data name="Pairing_SignInSaves" xml:space="preserve">
-    <value>Sign in to your PlayStation Network account and you won't need the code or your account ID — and you'll be able to play away from home.</value>
-    <comment>Invitation beside the code route when nobody is signed in. Phrased as what signing in saves, not as something missing: the code route works without it.</comment>
+    <value>Sign in and Ripcord fills this in for you — and you'll be able to play away from home.</value>
+    <comment>Invitation under the account-id field when nobody is signed in. Says only what is true and unconditional: signing in fills that field. It must NOT promise that the code is unnecessary — that holds only when the account already knows the console, and it would sit above a box asking for one.</comment>
   </data>
   <data name="Pairing_SignInAction" xml:space="preserve">
     <value>Sign in</value>
