@@ -20,6 +20,25 @@ namespace Ripcord.Presentation;
 /// the thing front ends differ on most and agree on least.
 /// </para>
 /// </summary>
+/// <summary>Where in settings a caller wants somebody to land.</summary>
+public enum SettingsDestination
+{
+    /// <summary>The top of the page, as the gear button opens it.</summary>
+    Top,
+
+    /// <summary>
+    /// The account section.
+    ///
+    /// <para>
+    /// Worth naming, because "open settings" is not the same offer as "sign in". The pairing step's sign-in
+    /// button opened settings at the top, where the account section is the last thing on a long page — so a
+    /// button that said "Sign in to PlayStation Network" delivered somebody to a resolution dropdown and
+    /// left them to go hunting. An offer that does not land where it promised is worse than no offer.
+    /// </para>
+    /// </summary>
+    Account,
+}
+
 public interface IShellNavigator
 {
     /// <summary>True while the stream layer is showing.</summary>
@@ -42,13 +61,13 @@ public interface IShellNavigator
     void SetFullScreen(bool fullScreen);
 
     /// <summary>
-    /// Show the settings surface.
+    /// Show the settings surface, at <paramref name="destination"/>.
     ///
     /// <para>
-    /// Here because the shell owns navigation and a page must not know how another page is reached. Added for
-    /// the pairing step's sign-in invitation: the account lives in settings, so inviting somebody to sign in
-    /// without being able to take them there would be an invitation to go and find it themselves.
+    /// Here because the shell owns navigation and a page must not know how another page is reached. The
+    /// destination is part of the contract rather than the caller's problem: landing somebody on the right
+    /// page is only half of taking them somewhere, and the half that gets forgotten.
     /// </para>
     /// </summary>
-    void ShowSettings();
+    void ShowSettings(SettingsDestination destination = SettingsDestination.Top);
 }
