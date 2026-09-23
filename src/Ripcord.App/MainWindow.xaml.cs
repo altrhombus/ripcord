@@ -506,6 +506,12 @@ public sealed partial class MainWindow : Window, IShellNavigator
     /// would make back feel broken in exactly the way a repeated click invites.
     /// </para>
     /// </summary>
+    /// <summary>
+    /// <see cref="IShellNavigator.ShowSettings"/>. The same route the gear button takes, so the pairing
+    /// step's sign-in invitation lands exactly where somebody clicking the gear would.
+    /// </summary>
+    public void ShowSettings() => NavigateToUtility(typeof(SettingsPage));
+
     private void NavigateToUtility(Type pageType)
     {
         if (ChromeFrame.Content?.GetType() != pageType)
