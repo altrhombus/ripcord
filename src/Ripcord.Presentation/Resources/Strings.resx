@@ -310,6 +310,14 @@
     <value>Link this PC to {0}</value>
     <comment>Heading on the pairing step. {0} is the console's name.</comment>
   </data>
+  <data name="Pairing_LookingForAny" xml:space="preserve">
+    <value>Looking for your console</value>
+    <comment>Heading while scanning, before anybody has said which console they have — which is now the usual case, because the scan answers that itself.</comment>
+  </data>
+  <data name="Pairing_FamilyNeededForAddress" xml:space="preserve">
+    <value>Nothing answered, so we need to know what to look for. Pick your console, then enter its address.</value>
+    <comment>Shown on the family step when it is reached because a scan found nothing.</comment>
+  </data>
   <data name="Pairing_LookingFor" xml:space="preserve">
     <value>Looking for your {0}</value>
     <comment>Heading while scanning. {0} is a short console name such as PS5 - do not translate it.</comment>
