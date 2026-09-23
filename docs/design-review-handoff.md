@@ -315,13 +315,18 @@ colours — not `FamilyMark`, which is the console badge and whose own XAML says
 it is the app's identity. No wordmark; the title bar carries the name.
 
 ```
-Play your PlayStation on this PC.
+Play your console on this PC.
 
 Ripcord finds your console on your network — keep both on the same
 Wi-Fi or wired connection. Add it once and it stays paired.
 
 [ Add your console ]
 ```
+
+**Amended 2026-09-22: "your console", not "your PlayStation".** This file prescribed the vendor name. The
+brand is invoked only where it is factually necessary — signing in to PlayStation Network, or naming a PS5
+on a family button — and a headline is not one of those places. It would also date the moment Xbox support
+lands, which is the work starting next.
 
 "No consoles yet" goes. It reports a deficiency to someone who has done nothing wrong.
 
