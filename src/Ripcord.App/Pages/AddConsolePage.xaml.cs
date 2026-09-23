@@ -387,7 +387,8 @@ public sealed partial class AddConsolePage : Page
     /// reached, and this lands exactly where clicking the gear would.
     /// </para>
     /// </summary>
-    private void OnSignInClick(object sender, RoutedEventArgs e) => _services.Shell.ShowSettings();
+    private void OnSignInClick(object sender, RoutedEventArgs e)
+        => _services.Shell.ShowSettings(SettingsDestination.Account);
 
     /// <summary>
     /// Show the code form. Not a fallback being grudgingly allowed - local pairing is a legitimate choice,

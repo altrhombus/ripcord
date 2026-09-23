@@ -180,7 +180,7 @@ public class RipcordAppServicesTests
         {
         }
 
-        public void ShowSettings()
+        public void ShowSettings(SettingsDestination destination = SettingsDestination.Top)
         {
         }
     }

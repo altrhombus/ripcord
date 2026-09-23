@@ -507,16 +507,19 @@ public sealed partial class MainWindow : Window, IShellNavigator
     /// </para>
     /// </summary>
     /// <summary>
-    /// <see cref="IShellNavigator.ShowSettings"/>. The same route the gear button takes, so the pairing
-    /// step's sign-in invitation lands exactly where somebody clicking the gear would.
+    /// <see cref="IShellNavigator.ShowSettings"/>. The same route the gear button takes, carrying where the
+    /// caller wanted somebody to end up.
     /// </summary>
-    public void ShowSettings() => NavigateToUtility(typeof(SettingsPage));
+    public void ShowSettings(SettingsDestination destination = SettingsDestination.Top)
+        => NavigateToUtility(typeof(SettingsPage), destination);
 
-    private void NavigateToUtility(Type pageType)
+    private void NavigateToUtility(Type pageType, object? parameter = null)
     {
-        if (ChromeFrame.Content?.GetType() != pageType)
+        // Re-navigated when a parameter is carried, even if the page is already up: "take me to the account"
+        // has to be honoured by a page that happens to be showing already, or the second press does nothing.
+        if (ChromeFrame.Content?.GetType() != pageType || parameter is not null)
         {
-            ChromeFrame.Navigate(pageType);
+            ChromeFrame.Navigate(pageType, parameter);
         }
     }
 
