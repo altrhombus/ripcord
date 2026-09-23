@@ -310,29 +310,6 @@
                         IsOpen="False"
                         Visibility="Collapsed" />
 
-                    <!--
-                        The sign-in invitation, on the code route only.
-
-                        It sits BESIDE the code route rather than in front of it: the code works without an
-                        account and somebody who came here to type the one on their screen should not be
-                        stopped. What was missing before was any mention of the account at all when nobody
-                        was signed in - every other note here asks whether the account route is available to
-                        somebody already signed in, so all of them went quiet and a first-time user was left
-                        hunting for their account id by hand.
-
-                        Phrased as what it saves, never as something missing, and it carries the button that
-                        takes them there - an invitation you have to go and find yourself is not one.
-                    -->
-                    <InfoBar
-                        x:Name="SignInInvitation"
-                        IsClosable="False"
-                        IsOpen="False"
-                        Severity="Informational">
-                        <InfoBar.ActionButton>
-                            <Button x:Name="SignInButton" Click="OnSignInClick" />
-                        </InfoBar.ActionButton>
-                    </InfoBar>
-
                     <!--  Both of these belong to the code route only, and are collapsed together.  -->
                     <Border
                         x:Name="ConsoleStepsCard"
@@ -369,6 +346,30 @@
                             x:Uid="AddConsolePage_NumericIdBehindPsn" />
                     </StackPanel>
 
+
+                    <!--
+                        The sign-in invitation, on the code route only, and DIRECTLY UNDER THE FIELD IT IS
+                        ABOUT rather than above the whole step.
+
+                        It was above the heading, which made it the loudest thing on a step whose leading
+                        route is the code - and it was telling the same story as the account-id caption two
+                        controls further down, in a different voice. Here it sits beside the friction it
+                        removes: the box somebody is staring at, wondering where to find the number.
+
+                        It also no longer promises "you won't need the code". That sat directly above a box
+                        asking for a code, which is precisely the contradiction docs/design.md says this step
+                        used to open with - and it was not even reliable, since the code is only skipped when
+                        the account already knows the console, which nothing here can know yet.
+                    -->
+                    <InfoBar
+                        x:Name="SignInInvitation"
+                        IsClosable="False"
+                        IsOpen="False"
+                        Severity="Informational">
+                        <InfoBar.ActionButton>
+                            <Button x:Name="SignInButton" Click="OnSignInClick" />
+                        </InfoBar.ActionButton>
+                    </InfoBar>
                     <!--  The signed-in replacement for the box above.  -->
                     <InfoBar
                         x:Name="AccountKnownNote"

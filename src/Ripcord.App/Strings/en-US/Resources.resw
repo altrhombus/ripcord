@@ -169,7 +169,7 @@
     <comment>Static text on the add-a-console flow.</comment>
   </data>
   <data name="AddConsolePage_NumericIdBehindPsn.Text" xml:space="preserve">
-    <value>This is the numeric id behind your PSN account — not your online ID or email address. Sign in under Settings → Account and this fills itself in; otherwise you'll need to get it from an account-id lookup tool.</value>
+    <value>The numeric id behind your PSN account — not your online ID or email address. An account-id lookup tool will find it.</value>
     <comment>Static text on the add-a-console flow.</comment>
   </data>
   <data name="AddConsolePage_Paired.Text" xml:space="preserve">
