@@ -234,7 +234,7 @@ exists for.
   own (`rc_connect` returns to `rc_shell_run`), so this is a loop around the connect call with a limit, not
   a lift of the C# object.
 
-### Design direction — settled 2026-09-13, two of four items still open
+### Design direction — settled 2026-09-13, two items still open
 
 The UX review is done and its decisions are recorded in [`docs/design.md`](docs/design.md), which is now
 the standing answer to "what does the app look like". Four questions were left open rather than guessed,
@@ -249,6 +249,10 @@ Verifying the OS text scale mattered only because Ripcord scaled text itself; th
 the captures said the metric could not support a threshold at all, so it was replaced rather than retuned.
 Both are in the journal, and one confirmation is still outstanding — see Track A.
 
+**A third went with the card rebuild.** The console card had no legible focus state and no distinct
+hover; both were fixed when the card was rebuilt on 2026-09-20 — hover is a wash, focus is the system
+ring, and neither can be mistaken for the other. See the journal.
+
 - [ ] **Settle the wordmark.** Outfit is used throughout the design drawings and is explicitly provisional.
       `brand/README.md` shortlists Poppins and Plus Jakarta Sans alongside it; all three are open-licensed,
       so this is a look decision with a licence check attached, not a procurement.
@@ -256,35 +260,27 @@ Both are in the journal, and one confirmation is still outstanding — see Track
       **One-way door**: once the tile, splash and store assets are cut from a face, changing it re-cuts all
       of them. Decide before generating, not after.
 
-- [ ] **The card has no legible focus state, and hover and focus are the same picture (found 2026-09-20).**
-      Went looking for it while planning the baseline shots and could not see one on screen. The code says
-      why. `GotFocus` and `PointerEntered` both call `OnCardHighlight`, which sets one flag, `IsHighlighted`,
-      which drives one accent wash — so a keyboard or pad user cannot tell "focus is here" from "the mouse is
-      over there". The wash moves from 0.10 to 0.22 opacity on a gradient that fades to transparent at 90%,
-      which is a tint delta rather than an outline, and in high contrast `AppEffects.AccentWashOpacity`
-      returns 0 for both states, so the only affordance disappears entirely.
+- [ ] **Capture regression baselines — of the NEW card now, not the old one.**
+      The original item said "capture these before touching the card". That moment has gone: the card was
+      rebuilt on 2026-09-20 and 21, so the surface those shots would have protected no longer exists and
+      there is nothing left to regress against. Nothing was lost by it — a before-set of a card being
+      replaced wholesale had little reach.
 
-      This fails the project's own standing invariant — *"VISIBLE: focus or pressed state is always visible,
-      legible at 2 m"* — on the surface where it matters most, since the card grid is what a pad-only player
-      navigates first. The high-contrast suppression is individually correct (decoration does not belong in
-      high contrast) but nothing was put in its place.
+      What is wanted now is the *after* set, which every later change is judged against. Dark, light and
+      high contrast were all seen during the rebuild but live only in a chat log; the session page has
+      never been shot at all, and it is the one needing a live stream.
 
-      **Not a separate task: it is a requirement on the card redesign.** Two distinct states, one of which
-      survives high contrast, and focus legible across a room. Fixing it in the current card would be work
-      thrown away.
+      ```
+      [ ] Console grid   light · dark · high contrast   (the one-console hero, and two or more cards)
+      [ ] Console grid   the first-run surface, all three themes
+      [ ] Session page   light · dark · high contrast   (needs a live stream)
+      [ ] Session page   each of the three HUD rungs
+      ```
 
-- [ ] **Capture regression baselines before touching the card.** Screenshots of the console grid and the
-      session page in light, dark and high contrast, including hover and focus states. None exist in the
-      tree — the repository has no product screenshots at all.
-      **Price: ~1 hour at the machine**, and it needs a live stream for the session shots, so it batches
-      with the next hardware session.
-      **Blocks nothing, de-risks everything.** The card redesign is the highest visual-regression risk in
-      the plan and there is currently no artefact to regress against.
-
-**What is not open:** the direction (the wedge), the light-theme treatment, the connect composition, the
-HUD's three rungs and its placement rule, the pairing route model, and the settings re-tiering. Those are
-settled in `docs/design.md`. Reopening one is a change, not a refinement.
-
+      **Price: ~1 hour, at any machine.** Nothing in the layout is architecture-conditional, so an x64
+      desktop is as good as the handheld. The constraint is that whoever takes these also takes the
+      comparison shots later: a diff across two machines shows display scale and GPU rather than the change
+      under review. Record the machine, its scale and the window size beside the files.
 
 ### Follow-ups from the settings-page crash (cause found and fixed 2026-08-06)
 **Pre-existing, and it predates the Stage A work.** Opening Settings terminated the process every time on this
