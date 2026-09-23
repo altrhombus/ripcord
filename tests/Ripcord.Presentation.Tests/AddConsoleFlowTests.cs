@@ -232,6 +232,13 @@ public class AddConsoleFlowTests
             Flow.Completed += Completions.Add;
         }
 
+        /// <summary>Seed one console for the scan to find, so StartAsync has something to report.</summary>
+        public Harness WithConsole(DiscoveredConsole? console = null)
+        {
+            Scanner.Yields(console ?? Console("10.0.0.7"));
+            return this;
+        }
+
         /// <summary>Drive the flow to the Link step with a console picked from the scan.</summary>
         public async Task<DiscoveredConsoleCard> ToLinkViaScanAsync(DiscoveredConsole? console = null)
         {
@@ -299,24 +306,103 @@ public class AddConsoleFlowTests
     // ---- family step ---------------------------------------------------------------------------
 
     [Fact]
-    public async Task StartsOnTheFamilyStep()
+    public async Task StartsByLooking_NotByAsking()
     {
-        var h = new Harness();
-        Assert.Equal(AddConsoleStep.Family, h.Flow.State.Step);
+        // DISCOVERY LEADS. The flow used to open on "which console are you connecting to?" - a question the
+        // scan answers by itself, since every console found reports its own platform and SelectDiscovered has
+        // always taken the family from the console rather than the guess. The step existed to display a shape.
+        var h = new Harness().WithConsole();
+
+        await h.Flow.StartAsync();
+
+        Assert.Equal(AddConsoleStep.Find, h.Flow.State.Step);
+        Assert.Equal(1, h.Scanner.ScanCount);
         Assert.Equal(1, h.Flow.State.ReachedDash);
-        await Task.CompletedTask;
+    }
+
+    [Fact]
+    public async Task TheScanHeadingNamesNoFamilyUntilSomebodyPicksOne()
+    {
+        // It read "Looking for your PS5" on the way in, which is the app telling the user what they are
+        // looking for on the strength of a default nobody chose.
+        var h = new Harness().WithConsole();
+
+        await h.Flow.StartAsync();
+        Assert.DoesNotContain("PS5", h.Flow.State.FindHeading);
+
+        await h.Flow.SelectFamilyAsync(ConsoleFamily.Ps5);
+        Assert.Contains("PS5", h.Flow.State.FindHeading);
+    }
+
+    [Fact]
+    public async Task AConsoleFoundByScanningNeverAsksItsFamily()
+    {
+        // The whole point. The console reports what it is, so the question never reaches the player.
+        var h = new Harness().WithConsole();
+
+        await h.Flow.StartAsync();
+        h.Flow.SelectDiscovered(h.Flow.Discovered[0]);
+
+        Assert.Equal(AddConsoleStep.Link, h.Flow.State.Step);
+        Assert.Equal(ConsoleFamily.Ps5, h.Flow.State.Family);
+    }
+
+    [Fact]
+    public async Task AnEmptyScanIsWhereTheFamilyQuestionBelongs()
+    {
+        // Nothing answered, so nothing has said what we are looking for - and an address typed by hand cannot
+        // be paired without knowing its family. This is the one place the question is genuinely unanswerable.
+        var h = new Harness();
+
+        await h.Flow.StartAsync();
+
+        Assert.Equal(AddConsoleStep.Family, h.Flow.State.Step);
+        Assert.NotNull(h.Flow.State.FamilyNote);
+    }
+
+    [Fact]
+    public async Task PickingAFamilyAfterAnEmptyScanDoesNotScanAgain()
+    {
+        // The scanner is family-agnostic, so a second scan would look for the same consoles in the same place
+        // and find the same nothing, having spent the search window doing it. Go where they were headed.
+        var h = new Harness();
+
+        await h.Flow.StartAsync();
+        Assert.Equal(1, h.Scanner.ScanCount);
+
+        await h.Flow.SelectFamilyAsync(ConsoleFamily.Ps5);
+
+        Assert.Equal(1, h.Scanner.ScanCount);
+        Assert.Equal(AddConsoleStep.Find, h.Flow.State.Step);
+        Assert.True(h.Flow.State.ManualEntryOpen);
+    }
+
+    [Fact]
+    public async Task BackFromTheFirstScanLeavesTheFlow()
+    {
+        // Find is the first step now. For anybody whose scan found something there is nothing behind it, and
+        // Back means leaving - inventing a step to go back to would be worse.
+        var h = new Harness().WithConsole();
+
+        await h.Flow.StartAsync();
+
+        Assert.False(await h.Flow.BackAsync());
     }
 
     [Fact]
     public async Task UnsupportedFamily_ShowsTheCaveatAndGoesNoFurther()
     {
+        // Reached the way a player now reaches it: a scan found nothing, so the family is asked. Picking one
+        // the app cannot stream must say so and stay put.
         var h = new Harness();
+        await h.Flow.StartAsync();
+        Assert.Equal(AddConsoleStep.Family, h.Flow.State.Step);
 
         await h.Flow.SelectFamilyAsync(ConsoleFamily.Xbox);
 
         Assert.Equal(AddConsoleStep.Family, h.Flow.State.Step);
         Assert.NotNull(h.Flow.State.FamilyNote);
-        Assert.Equal(0, h.Scanner.ScanCount);
+        Assert.Equal(1, h.Scanner.ScanCount);
     }
 
     [Fact]

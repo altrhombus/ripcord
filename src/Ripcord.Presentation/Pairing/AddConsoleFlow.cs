@@ -59,8 +59,38 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
     /// </summary>
     private readonly IAccountConsolePairing? _accountPairing;
 
-    private AddConsoleStep _step = AddConsoleStep.Family;
+    /// <summary>
+    /// DISCOVERY LEADS. The flow used to open on "which console are you connecting to?", which is a question
+    /// the scan answers by itself: every console found on the network reports its own platform, and
+    /// <see cref="SelectDiscovered"/> has always taken the family from the console rather than from whatever
+    /// the user guessed. So the step existed to display a shape.
+    ///
+    /// <para>
+    /// It still exists, for the one case where the family genuinely is not knowable: a hand-typed address,
+    /// reached either deliberately or because nothing answered. See <see cref="DescribeScanOutcome"/>.
+    /// </para>
+    /// </summary>
+    private AddConsoleStep _step = AddConsoleStep.Find;
+
+    /// <summary>
+    /// The family to PREFER, for result ordering and for the account-pairing capability question. Always
+    /// concrete, because both of those want an answer before anybody has given one.
+    /// </summary>
     private ConsoleFamily _family = ConsoleFamily.Ps5;
+
+    /// <summary>
+    /// The family the user actually chose, as opposed to the one assumed. Null until they say so, which is
+    /// most of the time now — so the scan heading must not name one, and the ordering preference in
+    /// <see cref="Accept"/> must not claim one.
+    /// </summary>
+    private ConsoleFamily? _chosenFamily;
+
+    /// <summary>
+    /// A scan has finished and found nothing. Selecting a family after that must not start another scan: the
+    /// scanner is family-agnostic, so it would look for the same consoles in the same place and find the same
+    /// nothing, having spent the search window doing it.
+    /// </summary>
+    private bool _scanFoundNothing;
     private string? _familyNote;
     private string _findSubheading = ScanningMessage;
     private bool _isScanning;
@@ -186,6 +216,17 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
     // ---- transitions ---------------------------------------------------------------------------
 
     /// <summary>
+    /// Begin. Scans immediately, because the first thing the flow should do is look.
+    ///
+    /// <para>
+    /// A method rather than constructor work: the scan is asynchronous and the constructor cannot await it,
+    /// and a fire-and-forget scan begun during construction would be running before the caller had wired up
+    /// the change notification it needs to see results arrive.
+    /// </para>
+    /// </summary>
+    public Task StartAsync() => EnterFindAsync();
+
+    /// <summary>
     /// Choose a family. An unsupported one surfaces its caveat and goes no further; a supported one starts the
     /// scan. A family with a caveat that <em>is</em> usable shows the caveat and proceeds — being honest about
     /// rough edges is not the same as refusing.
@@ -194,13 +235,35 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
     {
         ArgumentNullException.ThrowIfNull(family);
 
+        bool skipScan = _scanFoundNothing;
+
         Mutate(() =>
         {
             _family = family;
+            _chosenFamily = family;
             _familyNote = family.SupportNote;
         });
 
-        return family.IsSelectable ? EnterFindAsync() : Task.CompletedTask;
+        if (!family.IsSelectable)
+        {
+            return Task.CompletedTask;
+        }
+
+        // Straight to the typed-address panel when a scan has already come back empty. Scanning again would
+        // look for the same consoles in the same place and find the same nothing, having spent the search
+        // window doing it - and the only reason we are asking the family at all is that somebody is about to
+        // type an address.
+        if (skipScan)
+        {
+            Mutate(() =>
+            {
+                _step = AddConsoleStep.Find;
+                _manualEntryOpen = true;
+            });
+            return Task.CompletedTask;
+        }
+
+        return EnterFindAsync();
     }
 
     /// <summary>Search again from scratch, discarding what the previous scan found.</summary>
@@ -498,6 +561,16 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
         {
             case AddConsoleStep.Find:
                 CancelScan();
+
+                // Back to the family question only if that is where we came from. Find is the FIRST step now,
+                // so for everybody whose scan found something there is nothing behind it and Back means
+                // leaving - anything else would invent a step to go back to.
+                if (_chosenFamily is null && !_scanFoundNothing)
+                {
+                    await DisposeAsync().ConfigureAwait(false);
+                    return false;
+                }
+
                 Mutate(() =>
                 {
                     _step = AddConsoleStep.Family;
@@ -704,11 +777,14 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
             return;
         }
 
-        // The family the user picked first, then everything else — their console is almost certainly the one they
-        // said it was, and it should not be listed below one they were not looking for.
+        // The family the user picked first, then everything else — their console is almost certainly the one
+        // they said it was, and it should not be listed below one they were not looking for.
+        //
+        // Only when they actually picked one. Ordering by the assumed default would sort a mixed list on a
+        // preference nobody expressed, which is worse than arrival order because it looks deliberate.
         DiscoveredConsoleCard card = DiscoveredConsoleCard.From(console);
-        int insertAt = card.Family == _family
-            ? Discovered.Count(d => d.Family == _family)
+        int insertAt = _chosenFamily is { } chosen && card.Family == chosen
+            ? Discovered.Count(d => d.Family == chosen)
             : Discovered.Count;
         Discovered.Insert(insertAt, card);
     }
@@ -719,9 +795,25 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
         if (Discovered.Count == 0)
         {
             _findSubheading = Strings.Pairing_NothingAnswered;
+            _scanFoundNothing = true;
+
+            // Nothing answered, so nothing has told us what we are looking for - and a hand-typed address
+            // cannot be paired without knowing its family. THIS is where the question belongs: it is asked
+            // only when it is genuinely unanswerable, rather than in front of everybody on the way in.
+            if (_chosenFamily is null)
+            {
+                _step = AddConsoleStep.Family;
+                _familyNote = Strings.Pairing_FamilyNeededForAddress;
+                return;
+            }
+
             _manualEntryOpen = true;
             return;
         }
+
+        // Something answered, so the scan has told us what it is. Anybody who reaches the link step from here
+        // never sees the family question.
+        _scanFoundNothing = false;
 
         _findSubheading = Discovered.Any(d => d.Family != _family)
             ? Strings.Pairing_PickConsoleMixedFamilies
@@ -902,7 +994,11 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
             },
             Family: _family,
             FamilyNote: _familyNote,
-            FindHeading: string.Format(Strings.Pairing_LookingFor, _family.ShortName),
+            // Generic until somebody has actually chosen. It used to read "Looking for your PS5" on the way
+            // in, which was the app telling the user what they were looking for on the strength of a default.
+            FindHeading: _chosenFamily is { } chosen
+                ? string.Format(Strings.Pairing_LookingFor, chosen.ShortName)
+                : Strings.Pairing_LookingForAny,
             FindSubheading: _findSubheading,
             IsScanning: _isScanning,
             ManualEntryOpen: _manualEntryOpen,
