@@ -53,6 +53,11 @@ public sealed partial class AddConsolePage : Page
         _discoveryAnchor = new FocusAnchor(DiscoveredList, DispatcherQueue);
         _discoveryAnchor.Watch(_flow.Discovered);
 
+        // Look first, ask second. The flow opens on the scan now, so this is what gets it going - from
+        // Loaded rather than here, because the scan is asynchronous and results arriving before the page has
+        // finished building would have nowhere to land.
+        Loaded += (_, _) => _ = StartFlowAsync();
+
         BuildFamilyCard(Ps5Button, ConsoleFamily.Ps5);
         BuildFamilyCard(Ps4Button, ConsoleFamily.Ps4);
         BuildFamilyCard(XboxButton, ConsoleFamily.Xbox);
@@ -336,6 +341,28 @@ public sealed partial class AddConsolePage : Page
     /// <summary>
     /// Take the other route. The one quiet way out of a decision the app made on the player's behalf.
     /// </summary>
+    /// <summary>
+    /// Kick the first scan.
+    ///
+    /// <para>
+    /// async void by way of a task-returning helper, and guarded, because this is a fire-and-forget from an
+    /// event handler: a scanner that throws on the way in must leave the page usable - somebody can still
+    /// type an address - rather than taking the window with it.
+    /// </para>
+    /// </summary>
+    private async Task StartFlowAsync()
+    {
+        try
+        {
+            await _flow.StartAsync();
+        }
+        catch (Exception)
+        {
+            // The flow reports a failed scan through its own subheading; there is nothing to add here, and
+            // the typed-address path does not depend on the scan having worked.
+        }
+    }
+
     private void OnSwitchRoute(object sender, RoutedEventArgs e)
         => _flow.SelectRoute(_flow.State.Route == PairingRoute.Account ? PairingRoute.Code : PairingRoute.Account);
 
