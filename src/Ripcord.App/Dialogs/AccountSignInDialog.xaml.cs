@@ -71,6 +71,15 @@ public sealed partial class AccountSignInDialog : ContentDialog
             // WebView2 profile API is per-environment rather than per-control, so instead the sign-in request
             // itself carries prompt=always, which makes the page re-authenticate regardless of what is cached.
             Browser.Source = new Uri(url);
+
+            // Hand XAML focus to the web view and leave it there.
+            //
+            // A WebView2 is a native child HWND, so once its content has focus XAML focus reads as NOWHERE -
+            // FocusManager.GetFocusedElement returns null. Anything that treats that as "focus needs
+            // seeding" pulls focus back out, and the symptom is a password box that deselects the instant it
+            // is clicked. The shell's own seeding is now barred while a modal is up; this is the other half,
+            // so nothing in the dialog is holding focus for the platform to snap back to either.
+            _ = Browser.Focus(FocusState.Programmatic);
         }
         catch (Exception ex)
         {
