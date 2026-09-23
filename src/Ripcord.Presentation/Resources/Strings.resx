@@ -583,11 +583,19 @@
     <comment>Card overflow menu: show what is known about this console.</comment>
   </data>
   <data name="Pairing_SignInSaves" xml:space="preserve">
-    <value>Sign in and Ripcord fills this in for you — and you'll be able to play away from home.</value>
+    <value>Sign in and Ripcord pairs this console for you — no code to fetch, no account ID to look up, and you'll be able to play away from home.</value>
     <comment>Invitation under the account-id field when nobody is signed in. Says only what is true and unconditional: signing in fills that field. It must NOT promise that the code is unnecessary — that holds only when the account already knows the console, and it would sit above a box asking for one.</comment>
   </data>
+  <data name="Pairing_UseCodeAnyway" xml:space="preserve">
+    <value>Use a code from the console instead</value>
+    <comment>The way past the sign-in offer, for somebody who would rather not connect an account. Unweighted and unexplained: declining is a trade they are entitled to make without being argued with.</comment>
+  </data>
+  <data name="Pairing_SignInFillsField" xml:space="preserve">
+    <value>Sign in and Ripcord fills this in for you.</value>
+    <comment>The quiet note beside the account-id field, shown only once somebody has chosen the code route anyway. Says only what is true in that position: it must not promise the code is unnecessary while sitting above a box asking for one.</comment>
+  </data>
   <data name="Pairing_SignInAction" xml:space="preserve">
-    <value>Sign in</value>
+    <value>Sign in to PlayStation Network</value>
     <comment>Button on the sign-in invitation. Opens Settings, where the account lives.</comment>
   </data>
   <data name="Pairing_PlayNow" xml:space="preserve">

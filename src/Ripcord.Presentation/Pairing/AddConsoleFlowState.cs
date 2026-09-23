@@ -86,6 +86,24 @@ public sealed record AddConsoleFlowState(
     /// <summary>The invitation's own button label. Empty when there is no invitation.</summary>
     string SignInActionLabel,
 
+    /// <summary>
+    /// Sign-in is being offered ahead of the code form, because it is genuinely less work.
+    ///
+    /// <para>
+    /// The code route looks like the low-friction one and is not: it wants the player at the console, through
+    /// its menus, reading an 8-digit code, and holding a numeric account id almost nobody knows. Signing in
+    /// wants a password they already have. When this is true the form is not drawn yet and the offer is the
+    /// step's content; <see cref="CodeRouteLabel"/> is the way past it.
+    /// </para>
+    /// </summary>
+    bool SignInLeads,
+
+    /// <summary>The way to the code form for somebody who would rather not connect an account.</summary>
+    string CodeRouteLabel,
+
+    /// <summary>What the lead offer says. Empty unless <see cref="SignInLeads"/>.</summary>
+    string SignInLeadText,
+
     bool CodeEntryShown,
 
     /// <summary>The label for the step's single commit button, which names the route it will take.</summary>
