@@ -627,6 +627,22 @@ public sealed partial class MainWindow : Window, IShellNavigator
     /// </summary>
     private bool SeedFocusIfNothingHasIt()
     {
+        // NOT WHILE A MODAL IS UP, and this is the bug that taught us why.
+        //
+        // The PSN sign-in dialog hosts a WebView2, which is a native child HWND. Click into an HTML text box
+        // and Win32 focus goes there - but XAML focus goes NOWHERE, because the focused thing is not in the
+        // XAML tree at all. FocusManager.GetFocusedElement then returns null, NeedsFocusSeed reads that as
+        // "nothing has focus", and this yanked focus back into the dialog's own buttons. The text box
+        // deselected the instant it was clicked, and typing a password was impossible.
+        //
+        // XAML focus being nowhere is not the same as focus being nowhere. A modal owns focus for as long as
+        // it is up - ContentDialog seeds and traps its own - so the shell has no business reaching in, and
+        // the one case where it thought it did is the case where it was wrong.
+        if (_input.Scopes.Top?.Kind == InputScopeKind.Modal)
+        {
+            return false;
+        }
+
         if (!_focus.NeedsFocusSeed())
         {
             return false;
