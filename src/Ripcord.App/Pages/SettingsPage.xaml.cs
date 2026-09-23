@@ -43,7 +43,7 @@ namespace Ripcord_App.Pages;
 /// places and one more to forget in the fifteenth. Attaching afterwards means the event cannot happen at all.
 /// </para>
 /// </summary>
-public sealed partial class SettingsPage : Page
+public sealed partial class SettingsPage : Page, IInitialFocusTarget
 {
     private readonly SettingsViewModel _viewModel;
 
@@ -101,9 +101,35 @@ public sealed partial class SettingsPage : Page
     /// crash the process if run on this thread — see <see cref="IVideoCapabilitiesProbe"/>.
     /// </summary>
     /// <summary>
-    /// Where the caller asked us to land. Null for an ordinary visit through the gear button.
+    /// Where the caller asked us to land. <see cref="SettingsDestination.Top"/> for an ordinary visit
+    /// through the gear button.
     /// </summary>
     private SettingsDestination _destination;
+
+    /// <summary>
+    /// The sign-in button, but only for somebody who came here to press it.
+    ///
+    /// <para>
+    /// This has to be the shell's answer rather than a Focus() call of this page's own. The shell seeds focus
+    /// from ChromeFrame.Navigated at Low dispatcher priority - which is AFTER Loaded - so anything focused
+    /// during load is overwritten a moment later by first-in-tree-order, and the button came up unfocused
+    /// with the resolution dropdown holding focus instead. Answering here is answering the question the shell
+    /// actually asks.
+    /// </para>
+    ///
+    /// <para>
+    /// Returned unconditionally when that is where they were headed, because the button is COLLAPSED unless
+    /// the build can sign in at all - and the shell already treats a Focus() that does not land as a reason
+    /// to fall through to tree order. Second-guessing that here would be two guards for one question.
+    /// </para>
+    ///
+    /// <para>
+    /// Null for an ordinary visit: tree order is the right default for a settings page, where no single
+    /// control is the reason you are there.
+    /// </para>
+    /// </summary>
+    public Control? InitialFocus
+        => _destination == SettingsDestination.Account ? SignInButton : null;
 
     protected override void OnNavigatedTo(NavigationEventArgs e)
     {
@@ -133,11 +159,9 @@ public sealed partial class SettingsPage : Page
             return;
         }
 
+        // Scrolling only. Focus is answered through InitialFocus, because the shell seeds it after this
+        // runs and would overwrite anything set here - which is exactly what happened.
         AccountCard.StartBringIntoView(new BringIntoViewOptions { VerticalAlignmentRatio = 0 });
-
-        // Focus the thing they came to press, not the section around it. Programmatic rather than Keyboard:
-        // they arrived by pressing a button, so a focus rectangle here would be the second one on screen.
-        _ = SignInButton.Focus(FocusState.Programmatic);
     }
 
     private async void Page_Loaded(object sender, RoutedEventArgs e)
