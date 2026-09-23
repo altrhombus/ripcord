@@ -35,6 +35,53 @@ different purpose.
 > anything. The list above is short, it is checkable in one `git log --format=%B | grep`, and it stops
 > growing the moment someone notices — which is the property that actually matters.
 
+### The second design review, built (2026-09-20 to 09-22)
+
+A second review of `feat/app-design-direction` landed as a written handoff, and most of it is now in the
+tree. The reasoning lives in `docs/design-review-2026-09-21.md`; what follows is what changed and the three
+things the work found that nobody was looking for.
+
+**The console card stopped being two cards.** The one-console hero had its own markup and its own
+`RenderHero()`, and the two copies drifted three ways in a single release: the hero could not show the
+"checking" spinner, its overflow button sat under the touch minimum, and changes made to the grid card were
+routinely not made to it. Every fact `RenderHero()` set by hand was already on `ConsoleCardState` — the hero
+needed code-behind only because it was not inside an items control. It is now a hero-sized cell in the same
+`GridView`, which deleted ~115 lines and made divergence unrepresentable rather than discouraged. A test
+counts `PlayWedge` declarations in the page, because a second copy of the card has to draw one.
+
+**The wedge stopped being inert.** It was the loudest element in the app and answered nothing — no hover, no
+press, no pressed state anywhere on the primary action of the product. Hover, press and focus are now three
+different kinds of mark: a wash, a brighter bleed, and the system focus ring, all suppressed in high
+contrast where the shape already carries the meaning.
+
+**Ripcord can be launched at a console.** `--play "Living room PS5"` and `--play-last`, parsed in
+`Ripcord.Core` with thirteen tests, plus a desktop-shortcut writer and a jump list guarded on package
+identity. The fastest path to a game was launch, home, press A; the audience for this launches from Steam,
+from a handheld launcher, from a pinned icon, and none of those could say which console until the executable
+took an argument saying so.
+
+**Three faults found in passing, and the first one is the instructive one.**
+
+The touch shelf bound `RowDefinition.Height` to an `x:Double` token where the property is a `GridLength`.
+XAML does not convert — it throws when the page *loads*, which for a stream page means when somebody starts
+a stream. It built clean, no test could reach it, and the first thing ever to open a session page was the
+launch argument added three commits later. That is the second token type-mismatch on this branch invisible
+to the build; the first was `FocusVisualPrimaryThickness`. **A token bound to a property of a different type
+is a page that opens to nothing, and nothing catches it but opening the page.**
+
+The pairing celebration's primary action read `"Save & connect"` from a literal in code-behind, past the
+string catalogue, on a step where the record is already on disk. And focus landed on the name box, which
+opens a soft keyboard on a handheld — so the celebration arrived with half the screen covered, for a field
+nobody has to fill in.
+
+**What is not done, and why.** The review asked for discovery to lead the pairing flow, with the family
+question demoted to the manual and not-found paths. The route is stated rather than asked and the dead Xbox
+button is gated, but the flow still *starts* at the family step. Making discovery lead is a state-machine
+change to `AddConsoleFlow`: the initial step, a heading that names a family it would not yet know, deriving
+the family from the picked console, and the no-results fallback. Twenty-seven tests call `SelectFamilyAsync`
+directly and forty-seven reach it through helpers. It is contained and well-specified, and it wants its own
+sitting rather than the end of a long one.
+
 ### A lost probe no longer subtracts a capability (2026-09-19)
 
 Reported from the ARM64 test machine: the console list said the console could not be reached, though it was
