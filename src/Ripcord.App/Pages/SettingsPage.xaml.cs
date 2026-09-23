@@ -6,6 +6,7 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Documents;
 using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Navigation;
 using System.Threading.Tasks;
 using CommunityToolkit.WinUI.Controls;
 using Ripcord.Presentation;
@@ -99,6 +100,46 @@ public sealed partial class SettingsPage : Page
     /// view-model or caught here. The load has to be asynchronous because the capability probes are native and
     /// crash the process if run on this thread — see <see cref="IVideoCapabilitiesProbe"/>.
     /// </summary>
+    /// <summary>
+    /// Where the caller asked us to land. Null for an ordinary visit through the gear button.
+    /// </summary>
+    private SettingsDestination _destination;
+
+    protected override void OnNavigatedTo(NavigationEventArgs e)
+    {
+        base.OnNavigatedTo(e);
+        _destination = e.Parameter as SettingsDestination? ?? SettingsDestination.Top;
+    }
+
+    /// <summary>
+    /// Put the account section in front of somebody who asked for it.
+    ///
+    /// <para>
+    /// The pairing step's sign-in button used to open this page at the top, where the account is the last
+    /// card on a long scroll — so a button reading "Sign in to PlayStation Network" delivered them to a
+    /// resolution dropdown and left them hunting. Landing on the right page is only half of taking somebody
+    /// somewhere.
+    /// </para>
+    ///
+    /// <para>
+    /// After the load, because the account card's own contents decide its height and bringing it into view
+    /// before then scrolls to where it used to be.
+    /// </para>
+    /// </summary>
+    private void GoToDestination()
+    {
+        if (_destination != SettingsDestination.Account)
+        {
+            return;
+        }
+
+        AccountCard.StartBringIntoView(new BringIntoViewOptions { VerticalAlignmentRatio = 0 });
+
+        // Focus the thing they came to press, not the section around it. Programmatic rather than Keyboard:
+        // they arrived by pressing a button, so a focus rectangle here would be the second one on screen.
+        _ = SignInButton.Focus(FocusState.Programmatic);
+    }
+
     private async void Page_Loaded(object sender, RoutedEventArgs e)
     {
         try
@@ -115,6 +156,9 @@ public sealed partial class SettingsPage : Page
         Render(_viewModel.State);
         RenderAccount(_account.State);
         WireHandlers();
+
+        // Now the cards are their real heights, so bringing one into view scrolls to where it actually is.
+        GoToDestination();
 
         // After the first render, and not awaited above: restoring a stored session is a network round trip,
         // and the rest of the page must not wait on it. It renders itself when it lands.
