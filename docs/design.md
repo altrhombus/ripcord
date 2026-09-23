@@ -215,9 +215,26 @@ for them. The decision they *do* have a stake in is whether to connect a PlaySta
 the account id.
 
 - Signed in, console on the account → pair. No question; the route is stated as a fact.
-- Not signed in → the code route leads, since it needs nothing the player does not already have. Sign-in
-  sits beside it, phrased as what it saves them.
-- Either way the other route is one quiet link away — never weighted, never explained unless asked.
+- Not signed in → **sign-in leads**, and the code form waits until it is asked for. Amended 2026-09-22; see
+  below.
+- Either way the other route is one press away — never weighted, never explained unless asked.
+
+> **Amended 2026-09-22: sign-in leads, not the code route.** This section had the code route leading "since
+> it needs nothing the player does not already have". That is false, and it was false when it was written.
+> The code route needs them at the console, through its menus, reading an 8-digit code, **and holding their
+> numeric account id** — which almost nobody knows, which this app's own field caption sends them to a
+> third-party lookup tool to find, and which the vendor's own client never asks for at all. Signing in needs
+> a password they already have.
+>
+> So the low-friction route is the account one, and the app should default to it. The code form is not drawn
+> until somebody asks for it, and asking is one unweighted press — because pairing locally without
+> connecting an account is a legitimate choice, and somebody making it is entitled to do so without being
+> argued with.
+>
+> The account question was also being asked **once per console**, which this section already forbids ("asked
+> once per account and never per console"). Leading with it does not fix that on its own: signing in once
+> means every later console pairs with no code and no id, so the question stops arising rather than being
+> suppressed.
 
 **The app does not reassure anyone about account safety.** We cannot back a claim in either direction, and a
 line saying otherwise would be the app vouching for something outside its control. Both routes exist without
