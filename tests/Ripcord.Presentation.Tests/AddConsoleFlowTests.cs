@@ -1566,8 +1566,56 @@ public class AddConsoleFlowTests
         Assert.Equal("PS5-8A2F", h.Flow.State.SuggestedName);
         Assert.Contains("won't need the code again", h.Flow.State.DoneSubtext);
 
-        // Nothing is stored until the user confirms.
-        Assert.Empty(h.Store.Load());
+        // Stored ALREADY, which is the point of the step being allowed to say "Paired."
+        Assert.Equal("PS5-8A2F", h.Store.Load().Single().DisplayName);
+    }
+
+    [Fact]
+    public async Task Pair_Success_SurvivesWalkingAwayFromTheCelebration()
+    {
+        // The step says the console is linked to this PC. It used to be saying that about something only in
+        // memory - Finish did the storing - so closing the app at the celebration lost it. And the loss is not
+        // symmetric: the console HAS registered, so it believes the pairing exists while we no longer hold the
+        // credential, and recovering means fetching a fresh code off its screen.
+        var h = new Harness();
+        await h.ToLinkViaScanAsync();
+        h.EnterValidLinkInput();
+
+        await h.Flow.PairAsync();
+        await h.Flow.DisposeAsync();          // the user closed the app, or navigated away
+
+        Assert.Equal("PS5-8A2F", h.Store.Load().Single().DisplayName);
+    }
+
+    [Fact]
+    public async Task Finish_WithoutARename_DoesNotStoreASecondTime()
+    {
+        // Finish is a way out and a rename, not the save. Accepting the prefilled name must not pin it as a
+        // nickname - a pinned name stops tracking the console if the console is ever renamed.
+        var h = new Harness();
+        await h.ToLinkViaScanAsync();
+        h.EnterValidLinkInput();
+        await h.Flow.PairAsync();
+
+        h.Flow.Finish("PS5-8A2F", connect: false);
+
+        PairedConsole stored = h.Store.Load().Single();
+        Assert.True(string.IsNullOrEmpty(stored.Nickname), $"nickname was pinned to '{stored.Nickname}'");
+        Assert.Equal("PS5-8A2F", stored.DisplayName);
+    }
+
+    [Fact]
+    public async Task Finish_WithARename_UpdatesTheStoredRecord()
+    {
+        var h = new Harness();
+        await h.ToLinkViaScanAsync();
+        h.EnterValidLinkInput();
+        await h.Flow.PairAsync();
+
+        h.Flow.Finish("Living room", connect: false);
+
+        Assert.Equal("Living room", h.Store.Load().Single().Nickname);
+        Assert.Single(h.Store.Load());
     }
 
     [Fact]

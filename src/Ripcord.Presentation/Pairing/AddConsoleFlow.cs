@@ -555,6 +555,19 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
             }
 
             PairedConsole paired = BuildRecord(result.CredentialRecord);
+
+            // **Stored here, where it becomes true, and not on the way out of the celebration.**
+            //
+            // The step that follows says "Paired." and that the console is linked to this PC. That was a
+            // promise about something still only in memory: the record was written by Finish, so abandoning
+            // the flow at the celebration — or closing the app, or a crash — lost it. The console, meanwhile,
+            // HAS registered, so the loss is not symmetric. It believes the pairing exists and we no longer
+            // have the credential, and recovering means a fresh code off the console's screen.
+            //
+            // So the surface stops needing a save. Finish re-stores only when the user typed a different name,
+            // which makes it a rename rather than the moment the pairing is committed.
+            _store.Upsert(paired);
+
             Mutate(() =>
             {
                 _paired = paired;
@@ -589,9 +602,14 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
     }
 
     /// <summary>
-    /// Save the paired console, optionally starting a session. A nickname is stored only when it differs from
-    /// what the console would be called anyway — otherwise a user who accepts the prefilled name silently gets it
+    /// Leave the celebration, optionally starting a session — and apply a nickname if one was typed.
+    ///
+    /// <para>
+    /// <b>Not the save.</b> The record went to the store the moment the console registered, because that is
+    /// when it became true. This only writes again when the user typed a name that differs from what the
+    /// console would be called anyway — otherwise somebody who accepts the prefilled name silently gets it
     /// pinned, and it stops tracking the console if the console is ever renamed.
+    /// </para>
     /// </summary>
     public void Finish(string typedName, bool connect)
     {
@@ -601,11 +619,15 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
         }
 
         string typed = (typedName ?? string.Empty).Trim();
-        PairedConsole toSave = typed.Length > 0 && typed != _paired.DisplayName
-            ? _paired with { Nickname = typed }
-            : _paired;
+        bool renamed = typed.Length > 0 && typed != _paired.DisplayName;
+        PairedConsole toSave = renamed ? _paired with { Nickname = typed } : _paired;
 
-        _store.Upsert(toSave);
+        // Only on a rename. The unnamed case is already stored, byte for byte, from the moment of pairing.
+        if (renamed)
+        {
+            _store.Upsert(toSave);
+        }
+
         Completed?.Invoke(new AddConsoleCompletion(toSave, connect));
     }
 
@@ -1130,6 +1152,8 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
                 : Route == PairingRoute.Account
                     ? Strings.Pairing_ActionWithAccount
                     : Strings.Pairing_ActionWithCode,
+
+            DoneActionLabel: Strings.Pairing_DoneAction,
 
             // Three different things to say, and the difference matters: one is an invitation, one is fixable on
             // the console, and one is a property of the build the user cannot do anything about.
