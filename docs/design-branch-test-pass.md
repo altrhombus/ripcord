@@ -112,6 +112,39 @@ Rename / Details / Remove moved out of code-behind into the string catalogue.
 - [ ] The **About** page and the session overlays: no corner looks wrong. Ten hard-coded radii were replaced
       with tokens and the touch bar's was deliberately changed from 14 to 12.
 
+### 7. The console card and its wedge
+
+The card was rebuilt around the play wedge, and hero and grid are now one template at three densities — so a
+fault in one is a fault in all three, which is the point.
+
+- [ ] **Hover and press the wedge.** Three different marks: a wash on hover, a brighter bleed on press, the
+      system ring on focus. If press is indistinguishable from hover, say so — the press state is the app's
+      primary action answering.
+- [ ] **In high contrast, both new states must vanish entirely** and the shape must still read. The accent
+      bleed painted colour here once; it is suppressed through `AppEffects.AccentWashOpacity` now.
+- [ ] **Press a card cold** — first connect of a session, while the D3D12 device is still coming up. The
+      press must land immediately even though the connect does not.
+- [ ] **One console is still one press.** Open the window, press A. Focus must already be on the card at hero
+      density; if it is not, the focus call is landing before the container is prepared.
+- [ ] **A two-line console name** no longer overflows. Set a long nickname and check all three densities.
+- [ ] **Last played** reads on its own row and is not truncated at grid density.
+
+### 8. Pairing — discovery leads, and sign-in is the lazy path
+
+- [ ] **The flow opens on the search**, not on a family question. The family is asked only for a typed
+      address or a scan that found nothing.
+- [ ] **No dead Xbox button** anywhere in the flow.
+- [ ] **Signed out, sign-in leads** and the code form is not drawn yet. The link to it is present,
+      unweighted, and reaches the form in one press.
+- [ ] **Sign in from the pairing step and stay there.** This is the fix for a real complaint: it used to
+      navigate to Settings and leave the flow abandoned behind you. Expect the modal over the step you were
+      on, and when it closes, the same step with the account id filled in — and, if the account already knows
+      this console, no code box at all.
+- [ ] **Cancel the sign-in.** No error bar, and the offer is still there.
+- [ ] **The celebration.** Mark at hero size, "Paired." with a period, **Play now** drawn as the wedge. Focus
+      must be on Play now, not the name box — on a handheld the name box opens a soft keyboard over half the
+      screen for a field nobody has to fill in.
+
 ---
 
 ## Per surface, per input
@@ -135,8 +168,9 @@ in the chair, it is a design finding rather than a bug.
 - The rung-3 sheet reads status → target → metrics rather than leading with the sparklines. Deliberate: the
   existing vertical order was preserved so the rail and overlay did not change. Reordering is one line if the
   sheet reads badly.
-- No card, hero, first-run or pairing-celebration work has been done. That is waiting on regression
-  baselines, which have to be captured *before* those surfaces are touched — see below.
+- ~~No card, hero, first-run or pairing-celebration work has been done.~~ **All of it has now landed** —
+  §7 and §8 above cover it. The regression baselines this was waiting on were never captured, so the
+  before-set does not exist; see below for what that changes.
 
 ## Regression baselines — and these do not need the ARM64 machine
 
@@ -165,10 +199,20 @@ Two surfaces, three themes, and the states that only exist under an input device
 [ ] Session page   each of the three HUD rungs       (hidden · summary · full)
 ```
 
-**Rest states only, and do not chase hover or focus on a card.** They were on this list until someone went
-looking for them and could not see one. The card has no legible focus state and no distinct hover state — see
-the open item in `ROADMAP.md` — so those shots would record an absence at four times the effort. Capture them
-*after* the card work, when there is something to capture.
+**Amended: the card now HAS hover, press and focus states, and the before-set was never taken.** This note
+used to say to skip those shots because there was nothing to capture — the card had no legible focus state and
+no distinct hover state. That was true and is the reason the states were built. It also means these are no
+longer *regression* baselines against the old card: that set does not exist and cannot be taken now without
+checking out an earlier commit.
+
+So capture them as the **first** set, of the card as it stands, and include the states:
+
+```
+[ ] Console card   rest · hover · pressed · focused      (dark, then light, then high contrast)
+```
+
+The value is unchanged even though the framing is: the next person to touch this card needs something to
+diff against, and today there is still nothing in the tree.
 
 - **Window size matters and should be recorded**, because HUD placement is a function of it: the panel becomes
   a rail, a sheet or an overlay depending on the viewport and the video's aspect. Capture the session page at
