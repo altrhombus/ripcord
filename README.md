@@ -86,16 +86,20 @@ place a port had to guess is a defect in the document. Three of them have now re
 The PS3 port also measured the thing every timeout in the core depends on: the PPE time base is
 **79,800,986 Hz against the 79,800,000 it expected**, 12 parts per million out.
 
+**Internet play works through the app's own UI**, as of 2026-09-24 — previously the route was solved but had
+only ever been driven from `tools/Ripcord.ProtocolLab`. Demonstrated on hardware: pairing a console over the
+account (no-PIN) route from the app, then connecting to it from a different network entirely (a phone
+hotspot), including waking it from rest over the internet, and disconnecting cleanly — the console showed its
+own "remote play disconnected" notice, which is the difference between ending a session and vanishing from
+one. One machine, one console, one pair of networks; a carrier NAT that maps per destination would still
+defeat the reflexive path, and the console has to be signed in to PlayStation Network for anything on this
+route to reach it.
+
 ### What does not work yet
 
 - **IPv6-only networks.** The stack is IPv4 throughout — discovery, STUN and the session transport all bind
   and filter `InterNetwork`. The STUN reflexive path that makes internet play work therefore cannot function
   without IPv4. Nothing claims otherwise, but it is worth stating against a headline feature.
-- **Internet play through the app's own UI.** The route itself works — the account (no-PIN) registration
-  that used to block it is solved, and a full off-network session carried video at 60 fps on 2026-09-05.
-  What is not done is the last wiring: route selection is injectable and unit-tested, but has only ever been
-  driven from `tools/Ripcord.ProtocolLab`, not clicked through the app. Expect it to work; it has not been
-  demonstrated that way.
 - **Following a console paired by typed address.** A console added by hand-typed IP carries no `HostId`, so
   it cannot be relocated after a DHCP lease change. Every other pairing route can.
 - **True HDR output.** HDR is negotiated correctly and the console sends it, but the swap chain is still SDR.
