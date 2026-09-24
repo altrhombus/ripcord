@@ -98,6 +98,12 @@ public sealed record AddConsoleFlowState(
     /// </summary>
     bool SignInLeads,
 
+    /// <summary>
+    /// Why a sign-in started from this step could not run, or empty. Empty after a cancelled sign-in too —
+    /// the user closing a window they opened is not a failure to report.
+    /// </summary>
+    string SignInError,
+
     /// <summary>The way to the code form for somebody who would rather not connect an account.</summary>
     string CodeRouteLabel,
 
