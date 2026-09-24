@@ -43,12 +43,16 @@ public sealed class HalyardPairingTrace
         RegexOptions.Compiled);
 
     private readonly string _path;
-    private readonly Stopwatch _clock = Stopwatch.StartNew();
+    private readonly object _gate = new();
+
+    private DateTimeOffset _previous;
 
     private HalyardPairingTrace(string path)
     {
         _path = path;
-        Write($"==== account pairing — {DateTimeOffset.Now:O} ====");
+        _previous = DateTimeOffset.Now;
+
+        Write($"==== pairing trace opened {DateTimeOffset.Now:O} (at app start, not at a pairing) ====");
     }
 
     /// <summary>True when <c>RIPCORD_TRACE_PAIRING</c> asks for tracing.</summary>
@@ -78,12 +82,42 @@ public sealed class HalyardPairingTrace
         }
     }
 
+    /// <summary>
+    /// Wall clock, plus the gap since the previous line.
+    ///
+    /// <para>
+    /// <b>Not elapsed-since-start, and the first trace this produced is why.</b> The sink is built with the
+    /// service graph, at app start, so an elapsed clock counted from launch — and the first line of a pairing
+    /// read "44690 ms", which looks exactly like a 44-second stall connecting the push channel and was in fact
+    /// the user walking through the UI to reach the Pair button. It cost a wrong hypothesis before the
+    /// arithmetic gave it away.
+    /// </para>
+    ///
+    /// <para>
+    /// A gap between two lines is the number that means something here — every wait in the rendezvous is one —
+    /// so that is what each line carries, next to the time it happened.
+    /// </para>
+    /// </summary>
     private void Write(string line)
     {
         try
         {
             string safe = Identifier.Replace(line, m => $"<id:{m.Length}>");
-            File.AppendAllText(_path, $"[{_clock.ElapsedMilliseconds,7} ms] {safe}{Environment.NewLine}", Encoding.UTF8);
+
+            // The sink is handed to a layer that calls it from the push receive loop as well as from the
+            // pairing task, so two lines can genuinely race. The one lock here is for the file and the
+            // previous-timestamp pair, which have to move together or the gaps stop adding up.
+            lock (_gate)
+            {
+                DateTimeOffset now = DateTimeOffset.Now;
+                TimeSpan gap = now - _previous;
+                _previous = now;
+
+                File.AppendAllText(
+                    _path,
+                    $"{now:HH:mm:ss.fff}  +{gap.TotalSeconds,6:0.000}s  {safe}{Environment.NewLine}",
+                    Encoding.UTF8);
+            }
         }
         catch (Exception)
         {
