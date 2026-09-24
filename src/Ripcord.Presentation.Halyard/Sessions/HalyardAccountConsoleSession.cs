@@ -108,7 +108,11 @@ public sealed class HalyardAccountConsoleSession
         // is the whole reason this trace exists.
         _options.Log?.Invoke("account route entered");
 
-        if (!_gateway.IsSignedIn)
+        // Restores the session if it is only on disk, rather than reading "not loaded yet" as "not signed in".
+        // This asked IsSignedIn, which is an in-memory question, and refused a user whose stored token was
+        // perfectly good but whom nothing had got round to restoring - which nothing did except the settings
+        // page, so this route worked only for somebody who had happened to open it.
+        if (!await _gateway.EnsureSignedInAsync(cancellationToken).ConfigureAwait(false))
         {
             return HalyardAccountSessionResult.Failed(
                 "Sign in to your PlayStation Network account to connect over the account route.");
