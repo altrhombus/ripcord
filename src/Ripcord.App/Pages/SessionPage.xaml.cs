@@ -376,12 +376,22 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer
         // A real power monitor, so the adaptive controller's battery / energy-saver / critical-battery caps can
         // actually engage. Without one injected, SessionController falls back to UnknownPowerThermalMonitor,
         // which always claims external power — meaning a handheld on battery streamed at full desktop quality.
+        // Bracketed, because this window had no instrumentation at all and a connect was reported sitting in
+        // it indefinitely: the flow's last stage reached the trace, the account route's first line never did,
+        // and everything between them is device work on the UI path - a power monitor, a controller, the open.
+        void Trace(string line) => _services.DiagnosticTrace?.Invoke(line);
+
+        Trace("connect: building the power monitor");
         _powerMonitor = PowerThermalMonitor.ForCurrentPlatform();
+        Trace("connect: power monitor built");
 
         // Keep whatever headline the flow last set and replace only the detail, so the console's own progress
         // lines land under "Connecting to your console…" instead of replacing it.
-        var connectProgress = new Progress<string>(
-            line => ShowStatus(_viewModel.State.StatusHeadline, line, terminal: false));
+        var connectProgress = new Progress<string>(line =>
+        {
+            ShowStatus(_viewModel.State.StatusHeadline, line, terminal: false);
+            _services.DiagnosticTrace?.Invoke($"connect: {line}");
+        });
 
         // The controller owns everything from here: handshake, media/input routing, stall detection, reconnect.
         // The session it is handed owns whatever its route holds open, so teardown stays the controller's
@@ -397,7 +407,10 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer
             new AnonymousObserver<SessionStatus>(OnStatusChanged));
 
         OnStatusChanged(_controller.CurrentStatus);
+
+        Trace("connect: handing over to the session controller");
         await _controller.StartAsync(plan.Config);
+        Trace("connect: the session controller returned");
     }
 
     /// <summary>

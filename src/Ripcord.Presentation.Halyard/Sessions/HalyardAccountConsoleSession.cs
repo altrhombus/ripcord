@@ -103,6 +103,11 @@ public sealed class HalyardAccountConsoleSession
         ArgumentException.ThrowIfNullOrEmpty(consoleHost);
         ArgumentException.ThrowIfNullOrEmpty(consoleDuid);
 
+        // The very first thing, ahead of even the signed-in check. A route that reports nothing until after
+        // its preconditions is indistinguishable from one that was never entered, and telling those two apart
+        // is the whole reason this trace exists.
+        _options.Log?.Invoke("account route entered");
+
         if (!_gateway.IsSignedIn)
         {
             return HalyardAccountSessionResult.Failed(
