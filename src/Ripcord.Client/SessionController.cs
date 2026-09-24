@@ -326,30 +326,8 @@ public sealed class SessionController : IAsyncDisposable
                         : "Connecting to your console…",
                     isRetry ? attempt : 0);
 
-                // **Bounded, so the loop can always reach a terminal state.** The retry budget bounds how
-                // many attempts there are and says nothing about one that never returns - and one that never
-                // returns leaves the window saying "Connecting…" for as long as anybody will watch it.
-                //
-                // The timeout is on the WAIT and not on a token handed to the attempt, deliberately. A
-                // successful attempt's session keeps the token it was opened with for the whole of its
-                // lifetime, so a token that cancels itself two minutes in would tear down a stream that was
-                // working. What that costs is an abandoned attempt still running behind a timeout - bounded
-                // by the retry budget, and observing the outer token as soon as the user leaves the page.
-                ConnectOutcome outcome;
-                try
-                {
-                    outcome = await TryConnectAsync(cancellationToken)
-                        .WaitAsync(_options.ConnectTimeout, cancellationToken)
-                        .ConfigureAwait(false);
-                }
-                catch (TimeoutException)
-                {
-                    outcome = new ConnectOutcome(
-                        false,
-                        Retryable: true,
-                        $"The console didn't answer within "
-                        + $"{Math.Round(_options.ConnectTimeout.TotalSeconds)}s.");
-                }
+                ConnectOutcome outcome = await ConnectWithinDeadlineAsync(cancellationToken)
+                    .ConfigureAwait(false);
 
                 if (outcome.Connected)
                 {
@@ -468,6 +446,89 @@ public sealed class SessionController : IAsyncDisposable
     {
         double seconds = _options.InitialBackoff.TotalSeconds * Math.Pow(2, Math.Max(0, attempt - 1));
         return TimeSpan.FromSeconds(Math.Min(seconds, _options.MaxBackoff.TotalSeconds));
+    }
+
+    /// <summary>
+    /// The token a live session was opened with, armed to cancel if the attempt overran and disarmed once it
+    /// succeeded. Held here because the session outlives the attempt and this must outlive the session.
+    /// </summary>
+    private CancellationTokenSource? _attemptLifetime;
+
+    /// <summary>
+    /// One connect attempt, with a deadline it cannot exceed.
+    ///
+    /// <para>
+    /// <b>Why the deadline exists.</b> <see cref="SessionControllerOptions.MaxReconnectAttempts"/> bounds how
+    /// many attempts there are and says nothing about one that never returns — and one that never returns is
+    /// a window reading "Connecting…" for as long as somebody will watch it. Reported that way from hardware.
+    /// </para>
+    ///
+    /// <para>
+    /// <b>Why it is armed and disarmed rather than simply waited out.</b> Stopping the wait
+    /// (<c>Task.WaitAsync</c>) leaves the attempt running, and an account-route attempt that is still running
+    /// is still <em>joined to its cloud session</em> — it leaves that session on its own teardown path, which
+    /// it reaches only when it eventually finishes. A cloud session nobody is in is the half-open-session
+    /// state that makes a console refuse every later connection until it is restarted, so a backstop built
+    /// that way would trade a stuck window for a stranded console. Cancelling is the only ending that
+    /// releases what the attempt holds.
+    /// </para>
+    ///
+    /// <para>
+    /// <b>And why it cannot simply be a cancelling token.</b> The session keeps the token it was opened with
+    /// for its whole lifetime — <c>HalyardAccountPairing</c> links its connection lifetime to it and the push
+    /// loop runs until that is cancelled — so a token that cancelled itself two minutes in would tear down a
+    /// working stream at the two-minute mark. Hence: armed for the attempt, disarmed the moment it succeeds,
+    /// and disposed with the session rather than with the attempt.
+    /// </para>
+    /// </summary>
+    private async Task<ConnectOutcome> ConnectWithinDeadlineAsync(CancellationToken cancellationToken)
+    {
+        var attemptLifetime = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        attemptLifetime.CancelAfter(_options.ConnectTimeout);
+
+        ConnectOutcome outcome;
+        try
+        {
+            outcome = await TryConnectAsync(attemptLifetime.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            // Ours, not the caller's: the deadline fired.
+            attemptLifetime.Dispose();
+            return Overran();
+        }
+        catch
+        {
+            attemptLifetime.Dispose();
+            throw;
+        }
+
+        if (!outcome.Connected)
+        {
+            attemptLifetime.Dispose();
+            return outcome;
+        }
+
+        // Disarm, then check: the timer can fire between the attempt reporting success and this line. A
+        // session opened on an already-cancelled token is not a session, and reporting it as connected would
+        // hand the loop something that is about to fall over.
+        attemptLifetime.CancelAfter(Timeout.InfiniteTimeSpan);
+
+        if (attemptLifetime.IsCancellationRequested)
+        {
+            attemptLifetime.Dispose();
+            await TeardownSessionAsync().ConfigureAwait(false);
+            return Overran();
+        }
+
+        // The session owns this now. Released by TeardownSessionAsync, which runs on every path out.
+        _attemptLifetime = attemptLifetime;
+        return outcome;
+
+        ConnectOutcome Overran() => new(
+            false,
+            Retryable: true,
+            $"The console didn't answer within {Math.Round(_options.ConnectTimeout.TotalSeconds)}s.");
     }
 
     private readonly record struct ConnectOutcome(bool Connected, bool Retryable, string Detail);
@@ -778,6 +839,12 @@ public sealed class SessionController : IAsyncDisposable
             try { await session.DisposeAsync().ConfigureAwait(false); }
             catch (Exception) { /* teardown races are not worth failing a reconnect over */ }
         }
+
+        // The disarmed deadline, which the session has been holding. Disposed after it rather than before:
+        // the session's own teardown may still be using the token it was opened with.
+        CancellationTokenSource? lifetime = _attemptLifetime;
+        _attemptLifetime = null;
+        lifetime?.Dispose();
     }
 
     private void Transition(SessionLifecycle lifecycle, string detail, int attempt = 0, TimeSpan? nextRetry = null)

@@ -165,6 +165,78 @@ public class SessionControllerTests
 
     // ---- tests ----
 
+    // ---- the per-attempt deadline ----------------------------------------------------------------
+    //
+    // MaxReconnectAttempts bounds how many attempts there are and says nothing about one that never returns.
+    // The deadline is the backstop for that, and it is armed on the token the attempt is given - so the thing
+    // most worth pinning is that a SUCCESSFUL attempt is disarmed, because the session keeps that token for
+    // its whole lifetime and a live stream must not be cancelled out from under itself.
+    //
+    // Real time rather than VirtualTime, deliberately: CancelAfter runs on a real timer, and a test that
+    // faked the clock would pass whatever the code did.
+
+    [Fact]
+    public async Task ASuccessfulConnect_IsNotCancelledWhenTheDeadlineWouldHaveElapsed()
+    {
+        var time = new VirtualTime();
+        var session = new FakeSession();
+        var pipeline = new FakePipeline();
+        CancellationToken opened = default;
+
+        await using var controller = new SessionController(
+            token =>
+            {
+                opened = token;
+                return Task.FromResult<IStreamingSession>(session);
+            },
+            pipeline,
+            options: new SessionControllerOptions { ConnectTimeout = TimeSpan.FromMilliseconds(150) },
+            clock: time.Now,
+            delay: time.Delay);
+
+        await controller.StartAsync(Config);
+        await WaitFor(() => controller.Lifecycle == SessionLifecycle.Streaming, "should connect");
+
+        // Well past the deadline. Without the disarm this token is cancelled by now and the stream with it.
+        await Task.Delay(TimeSpan.FromMilliseconds(500));
+
+        Assert.False(
+            opened.IsCancellationRequested,
+            "the session's token was cancelled by the connect deadline after the connect had already "
+            + "succeeded, which would tear down a working stream");
+        Assert.Equal(SessionLifecycle.Streaming, controller.Lifecycle);
+    }
+
+    [Fact]
+    public async Task AnAttemptThatNeverReturns_FailsRatherThanHanging()
+    {
+        var time = new VirtualTime();
+        var pipeline = new FakePipeline();
+
+        await using var controller = new SessionController(
+            async token =>
+            {
+                // Never answers, but honours cancellation — which is what lets the deadline release whatever
+                // the attempt was holding instead of abandoning it still joined to a cloud session.
+                await Task.Delay(Timeout.Infinite, token);
+                throw new InvalidOperationException("unreachable");
+            },
+            pipeline,
+            options: new SessionControllerOptions
+            {
+                ConnectTimeout = TimeSpan.FromMilliseconds(150),
+                MaxReconnectAttempts = 1,
+                InitialBackoff = TimeSpan.Zero,
+            },
+            clock: time.Now,
+            delay: time.Delay);
+
+        await controller.StartAsync(Config);
+
+        await WaitFor(() => controller.Lifecycle == SessionLifecycle.Failed, "should give up rather than hang");
+        Assert.Contains("didn't answer within", controller.CurrentStatus.Detail);
+    }
+
     [Fact]
     public async Task StartsIdle_ThenReachesStreamingOnASuccessfulConnect()
     {
