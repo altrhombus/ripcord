@@ -528,15 +528,22 @@ public sealed class HalyardAccountPairing(
             // OFFER breaks the exchange, because on this route the console initiates the signaling (its OFFER
             // arrives unprompted, with its own reqId) and we are the responder. Tried live; the console
             // answered by TERMINATE-ing and never opened a control association at all.
+            // Three states, not two: joined, waited-and-it-never-came, and never-waited. The join wait only
+            // runs on the route that needs it, and "false" would otherwise let a failure message downstream
+            // claim the console never turned up when nothing ever looked.
+            bool? consoleJoined = null;
+
             if (!request.LocalHashedId.IsEmpty)
             {
                 try
                 {
                     await joined.Task.WaitAsync(_options.OfferTimeout, cancellationToken).ConfigureAwait(false);
+                    consoleJoined = true;
                     Log("console joined the session");
                 }
                 catch (TimeoutException)
                 {
+                    consoleJoined = false;
                     Log("the console never joined the session");
                 }
             }
@@ -560,9 +567,21 @@ public sealed class HalyardAccountPairing(
                     Log($"seed wait timed out after {_options.SeedTimeout.TotalSeconds:0}s "
                         + $"(customData1 frames seen: {seen}, unreadable: {unreadable})");
 
-                    return fail(unreadable > 0
-                        ? $"The console published a registration seed ({unreadable} of {seen} customData1 "
-                          + "frames) but none of them could be decrypted with this session's key material."
+                    // Ordered by how far upstream the fault is, because the first true statement is the useful
+                    // one. A console that never joined cannot have published anything, so blaming the seed
+                    // there names a consequence and hides the cause — reported from hardware as a seed
+                    // timeout when the trace showed the console had never turned up at all.
+                    return fail(
+                        consoleJoined == false && seen == 0
+                            ? "The console never joined the session, so it never got as far as publishing a "
+                              + "registration seed. It has to be awake, or able to be woken over the internet "
+                              + "from rest mode, and reachable by the account service."
+                        : unreadable > 0
+                            ? $"The console published a registration seed ({unreadable} of {seen} customData1 "
+                              + "frames) but none of them could be decrypted with this session's key material."
+                        : consoleJoined == true
+                            ? "The console joined the session but did not publish the registration seed "
+                              + "(customData1) in time."
                         : "The console did not publish the registration seed (customData1) in time.");
                 }
 
