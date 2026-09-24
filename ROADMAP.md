@@ -223,21 +223,37 @@ pass has to exercise.
 An account ("no PIN") pairing from the app reaches the console and stops. The trace
 (`RIPCORD_TRACE_PAIRING=1`, `state/pairing-trace.log`) says the cloud half is fine — push channel connected,
 session created, connect command accepted, all inside 500 ms — and then the console never joins, and publishes
-no `customData1` at all. Two attempts: the first woke the console and produced no seed, the second did not wake
-it.
+no `customData1` at all. Four attempts: the first woke the console and produced no seed, the other three did
+not wake it at all.
 
 **Not the console's settings.** Confirmed on the hardware: remote play is enabled, rest-mode internet is on,
 and turning the console on from the network is on.
 
-**What the next trace answers.** Two diagnostics landed with this entry and neither has been run yet:
+**Both diagnostics have now been run, and both came back clean.** Four attempts in total.
 
-- **`GetSessionAsync` membership readback** after the join and seed waits. If the service lists the console as a
-  member, the command worked and our push subscription missed the announcement — our bug. If it lists only us,
-  the console never acted on a command the cloud accepted. Opposite ends of the stack.
-- **The commanded duid against the account's console list.** The duid is resolved by *name*
-  (`CloudConsoleMatch.ResolveId` on the display name), so a console whose account record is named differently —
-  or an account holding two similarly-named consoles — yields a command the cloud accepts and addressed to
-  something that is not there. That symptom is indistinguishable from a console that will not wake.
+- **The commanded duid is right.** The account lists exactly one console and it is the one commanded;
+  `enabledFeatures=[remotePlay]`; `wakeupEnabledPowerModes=[networkStandby,mainOnStandby]` — both modes,
+  so the flag check owed below would not have caught this.
+- **The session service agrees the console never joined.** A `GetSessionAsync` readback after both waits
+  lists one member, the client. So this is not our push subscription missing an announcement — there was
+  nothing to miss.
+- **The command body matches the spec**, which is capture-backed `[C]`: six fields, `accountId` as a bare
+  number, `clientType` `"Windows"`, `commandType` `"remotePlay"`, `messageDestination` `"SQS"`. Accepted
+  with a `commandId` ~150 ms after session create.
+
+**So the finding is about the spec, not the code.** "This command wakes a sleeping console" is now marked
+`[X]` in `docs/protocol/ps5-cloud-session-api.md`: it was inferred from the field's semantics and from
+`wakeupEnabledPowerModes` existing, and every capture behind that section (cap64, cap96, cap97, cap107) was
+taken against a console that was **already awake**. The one live confirmation (2026-09-03, twice) was also
+an awake console, joining in ~0.75 s.
+
+**Next, and it needs hardware rather than code:**
+
+1. **Pair with the console already on.** If that works first time, the route is sound and the defect is
+   scoped to waking — which is a much smaller problem and has an honest interim answer (tell the user).
+2. **Does the vendor's client wake the same console in the same state?** If it cannot either, this is the
+   console's link to PSN in standby and not our command. If it can, we need a capture of the vendor waking
+   a *sleeping* console — no capture in the dirty room predates that gap.
 
 **Known-good baseline for comparison:** `docs/journal.md`, 2026-09-03 — an *awake* console joins ~0.75 s after
 the command and delivers the seed immediately, reproduced twice. So a console that has not joined in 30 s is
