@@ -442,14 +442,27 @@ public sealed class HalyardAccountPairing(
                 }
 
                 HalyardSessionMember[] members = mine.Members ?? [];
-                Log($"session readback {when}: {members.Length} member(s)");
+
+                // Identified by the duid we commanded, which is the only unambiguous test.
+                //
+                // The first version of this guessed: "a console member is the one carrying a deviceUniqueId,
+                // we are the one that does not". That is wrong — we create the session with
+                // deviceUniqueId "me" and the service resolves it, so THIS CLIENT has one too. The readback
+                // duly reported one member with a deviceUniqueId and the note invited reading it as the
+                // console having joined, which is the opposite of what it meant.
+                bool consoleIsAMember = members.Any(
+                    m => string.Equals(m.DeviceUniqueId, request.ConsoleDuid, StringComparison.Ordinal));
+
+                Log($"session readback {when}: {members.Length} member(s); "
+                    + $"the console {(consoleIsAMember ? "IS" : "is NOT")} among them");
 
                 foreach (HalyardSessionMember member in members)
                 {
-                    // A console member is the one carrying a deviceUniqueId; we are the one that does not.
-                    Log($"  member platform={member.Platform} "
-                        + $"device={(member.DeviceUniqueId is { Length: > 0 } ? "yes" : "no")} "
-                        + $"account={member.AccountId}");
+                    bool isConsole = string.Equals(
+                        member.DeviceUniqueId, request.ConsoleDuid, StringComparison.Ordinal);
+
+                    Log($"  member platform={member.Platform} account={member.AccountId} "
+                        + $"{(isConsole ? "<- the console we commanded" : "(not the commanded console)")}");
                 }
             }
             catch (Exception ex)

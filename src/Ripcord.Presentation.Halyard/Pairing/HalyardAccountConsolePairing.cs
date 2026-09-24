@@ -106,8 +106,23 @@ public sealed class HalyardAccountConsolePairing : IAccountConsolePairing
             {
                 bool isTarget = string.Equals(console.Duid, request.CloudDeviceId, StringComparison.Ordinal);
 
+                // The MODES, not just whether the list is non-empty. CanWake collapses
+                // wakeupEnabledPowerModes to a bool, and the spec records values like
+                // ["networkStandby", "mainOnStandby"] — a console that permits waking from one standby mode
+                // and is currently in the other is wakeable by that bool and not in fact wakeable. The
+                // features list is here for the same reason: "remotePlay is enabled" is one entry in it.
+                string modes = console.Device.WakeupEnabledPowerModes is { Length: > 0 } w
+                    ? string.Join(",", w)
+                    : "(none)";
+
+                string features = console.Device.EnabledFeatures is { Length: > 0 } f
+                    ? string.Join(",", f)
+                    : "(none)";
+
                 Log($"  {(isTarget ? "->" : "  ")} name=\"{console.Device.Name}\" platform={console.Platform} "
-                    + $"remotePlay={console.RemotePlayEnabled} canWake={console.CanWake} duid={console.Duid}");
+                    + $"remotePlay={console.RemotePlayEnabled} duid={console.Duid}");
+                Log($"       wakeupEnabledPowerModes=[{modes}]");
+                Log($"       enabledFeatures=[{features}]");
             }
 
             if (!consoles.Any(c => string.Equals(c.Duid, request.CloudDeviceId, StringComparison.Ordinal)))
