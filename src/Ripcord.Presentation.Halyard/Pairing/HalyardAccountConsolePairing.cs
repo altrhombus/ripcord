@@ -212,7 +212,10 @@ public sealed class HalyardAccountConsolePairing : IAccountConsolePairing
             return new ConsoleRegistrationResult(false, CheckAvailability(request.Family).Detail, null);
         }
 
-        if (!_gateway.IsSignedIn)
+        // Same reasoning as the connect path: a stored session that nothing has restored is a signed-in user,
+        // not a signed-out one. Pairing happened to work because it is reached from surfaces that had already
+        // restored, which is luck rather than design.
+        if (!await _gateway.EnsureSignedInAsync(cancellationToken).ConfigureAwait(false))
         {
             return new ConsoleRegistrationResult(false,
                 "Sign in to your PlayStation Network account to pair without a code.", null);
