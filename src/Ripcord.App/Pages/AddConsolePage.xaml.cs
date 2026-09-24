@@ -203,7 +203,7 @@ public sealed partial class AddConsolePage : Page
         // with my account" -- above a body that described both routes at once, so nothing said which button
         // went with which half of what you had just read. The choice moved into the step; the button follows it.
         SecondaryButton.Visibility = Vis(s.Step == AddConsoleStep.Done);
-        SecondaryButton.Content = "Save";
+        SecondaryButton.Content = s.DoneActionLabel;
         SecondaryButton.IsEnabled = true;
 
         FocusForStep(s);

@@ -114,6 +114,18 @@ public sealed record AddConsoleFlowState(
 
     /// <summary>The label for the step's single commit button, which names the route it will take.</summary>
     string PairActionLabel,
+
+    /// <summary>
+    /// The way out of the celebration, beside Play now — and deliberately not a save button.
+    ///
+    /// <para>
+    /// It read <c>"Save"</c>, from a literal in the page's code-behind, past the string catalogue. Two
+    /// things wrong with that and the second is the worse one: the label was unlocalisable, and it was
+    /// offering to save a record that had been on disk since the console registered. A step that announces
+    /// "Paired." and then offers to save reads as though the first claim were conditional on the second.
+    /// </para>
+    /// </summary>
+    string DoneActionLabel,
     bool AccountIdIsAutomatic,
     string AccountIdNote,
     string? LinkError,
