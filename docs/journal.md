@@ -35,6 +35,65 @@ different purpose.
 > anything. The list above is short, it is checkable in one `git log --format=%B | grep`, and it stops
 > growing the moment someone notices — which is the property that actually matters.
 
+### The console was signed out, and five runs went looking elsewhere (2026-09-23 to 09-24)
+
+Account pairing has now completed through the app's own UI — the first time it has, rather than through
+`ProtocolLab`. Getting there took five failed attempts and three wrong conclusions, and the wrong
+conclusions are the useful part of the record.
+
+**What it was.** The console was signed out of PlayStation Network. The account's PSN security options had
+been changed, which signs devices out, and the console had been sitting in rest mode signed out ever since.
+Signing in on the console fixed it immediately: from rest mode, no restart, first attempt. The trigger
+matters less than the class — whatever signs a console out produces this.
+
+**Why it took five runs.** Nothing visible said so. The console answered LAN `SRCH` under its own name, so
+discovery listed it normally. The account's console list still reported `enabledFeatures: [remotePlay]` and
+`wakeupEnabledPowerModes: [networkStandby, mainOnStandby]`. Every `commands` POST was accepted with a
+`commandId` inside 150 ms. The command is delivered to a console's own PSN session, and a console that has
+none receives nothing — the 202 means queued, not read. The console-list response has no presence field at
+all, so a client cannot detect this and can only name it.
+
+**The three wrong answers, in order.**
+
+The first was mine twice over. The app was passing `null` for the pairing layer's `Log` sink, so a failure
+reported only the last thing it had been waiting for — `customData1` — which is where the code happened to
+give up, not where the fault was. Worse, the timeout message asserted the console had not published a seed
+when a seed that arrived and failed to decrypt was silently ignored on the same path. Both fixed: the
+frames are counted, the failures are ordered by how far upstream they are, and `RIPCORD_TRACE_PAIRING=1`
+now writes the rendezvous to `state/pairing-trace.log`.
+
+The trace then produced a false lead of its own. Its clock ran from app start, because the sink is built
+with the service graph, so the first line of a pairing read `44690 ms` — which looks exactly like a push
+channel taking 44 seconds to connect and was in fact the user walking to the Pair button. Lines now carry
+wall clock and the gap since the previous line, a gap being the only number that means anything in a
+sequence made entirely of waits.
+
+The second wrong answer was the name match. The duid is resolved against the console's *display name*, so a
+differently-named account record would produce a command the cloud accepts and nothing receives. Plausible,
+and wrong: the trace now prints the account's consoles with their flags and marks the one being commanded.
+
+The third was a marked `[X]`. With every client-side hypothesis dead I marked the spec's "this command
+wakes a sleeping console" as unconfirmed, on the grounds that every capture behind that section was taken
+against an awake console. The owner then suggested reading the dirty room, which is where the RE log
+records that same command waking that same console repeatedly on 2026-09-04 — so the claim was `[V]` and my
+mark was wrong. The log also documents the half-open-session trap, which I then blamed instead, and that
+was wrong twice: it was not this, and it was an artefact of the account route being mid-build. A failed
+attempt used to leave the console holding a session nobody was in; completed sessions clear that state
+themselves now. Reading a resolved entry as a standing cause is its own kind of mistake, and the fix was
+not to put it in front of users.
+
+**The lesson that generalises.** Every one of those hypotheses was about something the client sends. The
+signal that would have pointed the right way was an asymmetry between two things the client only observes:
+reachable on the LAN, unreachable through the account. That combination is about the console's session with
+PSN and cannot be about the command. It is written into the spec next to the wake, because it is the cheap
+discriminator nobody had named.
+
+A side finding, ruled out on the way: `POST {userProfileBase}/userProfile/v1/users/{onlineId}/remoteConsole/
+wakeUp` is a real dedicated wake endpoint, reached after a `baseUrls/userProfile` lookup, and it is
+**PS4-only** — the format string in our own copy of the vendor control library hard-codes `platform=PS4`,
+and none of the fifteen PS5 flow captures contains the call. Recorded so it is not mistaken for a missing
+PS5 step.
+
 ### Sign-in leads pairing, and a focus bug that took three tries (2026-09-22 to 09-23)
 
 Discovery now leads the pairing flow, closing the item the previous session left open. The flow starts at
