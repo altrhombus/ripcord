@@ -241,20 +241,44 @@ and turning the console on from the network is on.
   number, `clientType` `"Windows"`, `commandType` `"remotePlay"`, `messageDestination` `"SQS"`. Accepted
   with a `commandId` ~150 ms after session create.
 
-**So the finding is about the spec, not the code.** "This command wakes a sleeping console" is now marked
-`[X]` in `docs/protocol/ps5-cloud-session-api.md`: it was inferred from the field's semantics and from
-`wakeupEnabledPowerModes` existing, and every capture behind that section (cap64, cap96, cap97, cap107) was
-taken against a console that was **already awake**. The one live confirmation (2026-09-03, twice) was also
-an awake console, joining in ~0.75 s.
+**The cause was already written down, in the dirty room's RE log.** Reading it was the owner's suggestion
+and it ended the hunt in one pass — `docs/protocol/captures/lab-notebook.md`, the 2026-09-04 session,
+"Console-state lessons, which cost several runs today" and "The half-open-session trap".
 
-**Next, and it needs hardware rather than code:**
+**The half-open-session trap.** An attempt that fails *after* the console has joined leaves it holding a
+Remote Play session nobody is in. It then reports Remote Play as in use, refuses its pair-device page, will
+not join any further cloud session, and will not wake — showing none of the banners a real stream shows.
+Every later attempt fails as `the console never joined the session`, indefinitely. Leaving `members/me` does
+not evict the console and deleting the session is refused (405), so **only a completed session or a restart
+clears it**. That matches this report exactly: the first attempt woke the console and then failed part-way,
+and the three after it met a stranded console.
 
-1. **Pair with the console already on.** If that works first time, the route is sound and the defect is
-   scoped to waking — which is a much smaller problem and has an honest interim answer (tell the user).
-2. **Does the vendor's client wake the same console in the same state?** If it cannot either, this is the
-   console's link to PSN in standby and not our command. If it can, we need a capture of the vendor waking
-   a *sleeping* console — no capture in the dirty room predates that gap.
+It also records that a LAN `connect` which exits without a clean disconnect strands the console the same
+way, and — separately — that cloud wake is simply unreliable on this console: `canWake=True`, the command
+accepted, six discovery polls finding it still asleep, settings unchanged.
 
+**So the `[X]` was wrong and has been withdrawn.** The command waking a sleeping console is `[V]`: the log
+has it waking this same console repeatedly across that day, and account pairing completing end to end
+against it. `ps5-cloud-session-api.md` now records the trap and the flakiness instead, with the mistake
+noted, because four failures were spent diagnosing a wake that was not broken.
+
+**Landed as a result:** the failure message names the trap and the restart, since nothing in the code can
+clear it after the fact — saying so is the whole remedy.
+
+**Also checked and ruled out:** `POST {userProfileBase}/userProfile/v1/users/{onlineId}/remoteConsole/
+wakeUp?platform=PS4` is a real, separate wake endpoint reached after a `baseUrls/userProfile` lookup, and it
+is **PS4-only** — the vendor control library's format string hard-codes `platform=PS4`, and no PS5 capture
+of ours contains the call. It is not a missing PS5 step.
+
+**Still open:**
+
+1. **Pair with the console restarted and awake.** Expected to work; the harness did exactly this on
+   2026-09-04.
+2. **Why did the first attempt fail part-way?** It woke the console and then produced no seed, which is the
+   failure that stranded it. This is the first time the *app* has driven account pairing rather than the
+   harness, and the harness path completed, so a difference between the two is the place to look.
+3. **Does the app disconnect cleanly on exit?** The log records the harness stranding consoles this way. If
+   the app does the same, an ordinary stream can block account pairing afterwards.
 **Known-good baseline for comparison:** `docs/journal.md`, 2026-09-03 — an *awake* console joins ~0.75 s after
 the command and delivers the seed immediately, reproduced twice. So a console that has not joined in 30 s is
 not slow; the timeouts are not the fault.
