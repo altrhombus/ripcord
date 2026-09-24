@@ -410,6 +410,54 @@ public sealed class HalyardAccountPairing(
         var acked = new HashSet<(string Action, int ReqId)>();
         var ackLock = new object();
 
+        // Ask the session service who is in the session, independently of the push channel.
+        //
+        // **This is the question a join timeout cannot answer on its own.** "The console never joined" is what
+        // our push channel failed to hear, which is not the same fact as the console not being there. If the
+        // service lists it as a member, the command worked and our subscription missed the announcement — our
+        // bug. If the service lists only us, the command was accepted by the cloud and the console never acted
+        // on it, which is a console or account problem and nothing in this process will fix it. The two send
+        // you to opposite ends of the stack, and the readback endpoint already exists for exactly this.
+        //
+        // Diagnostic only: it never changes what the flow does, and it cannot fail the pairing.
+        async Task LogMembershipAsync(string when)
+        {
+            if (_options.Log is null || liveSessionId is null)
+            {
+                return;
+            }
+
+            try
+            {
+                IReadOnlyList<HalyardCloudSession> sessions = await _signaling
+                    .GetSessionAsync(liveSessionId, cancellationToken)
+                    .ConfigureAwait(false);
+
+                HalyardCloudSession? mine = sessions.FirstOrDefault(x => x.SessionId == liveSessionId);
+
+                if (mine is null)
+                {
+                    Log($"session readback {when}: the service does not have our session at all");
+                    return;
+                }
+
+                HalyardSessionMember[] members = mine.Members ?? [];
+                Log($"session readback {when}: {members.Length} member(s)");
+
+                foreach (HalyardSessionMember member in members)
+                {
+                    // A console member is the one carrying a deviceUniqueId; we are the one that does not.
+                    Log($"  member platform={member.Platform} "
+                        + $"device={(member.DeviceUniqueId is { Length: > 0 } ? "yes" : "no")} "
+                        + $"account={member.AccountId}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Log($"session readback {when} failed: {ex.GetType().Name}");
+            }
+        }
+
         // Answer every signaling message the console sends with a RESULT carrying its reqId.
         //
         // **This is the thing that was missing.** Ripcord acked the console's OFFER and nothing else. Five
@@ -545,6 +593,7 @@ public sealed class HalyardAccountPairing(
                 {
                     consoleJoined = false;
                     Log("the console never joined the session");
+                    await LogMembershipAsync("after the join wait").ConfigureAwait(false);
                 }
             }
 
@@ -566,6 +615,8 @@ public sealed class HalyardAccountPairing(
 
                     Log($"seed wait timed out after {_options.SeedTimeout.TotalSeconds:0}s "
                         + $"(customData1 frames seen: {seen}, unreadable: {unreadable})");
+
+                    await LogMembershipAsync("after the seed wait").ConfigureAwait(false);
 
                     // Ordered by how far upstream the fault is, because the first true statement is the useful
                     // one. A console that never joined cannot have published anything, so blaming the seed
