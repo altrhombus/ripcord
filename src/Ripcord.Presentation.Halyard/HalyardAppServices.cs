@@ -236,7 +236,15 @@ public static class HalyardAppServices
         try
         {
             return new HalyardAccountGateway(
-                new HttpClient(),
+
+                // **Not HttpClient's default hundred seconds.** Every call through here is a short REST
+                // request the user is waiting on, and the connect path retries six times - so one
+                // hundred-second hang is ten minutes of a window reading "Connecting" with a flash of
+                // "Reconnecting" between attempts. Observed exactly that way on a phone hotspot, with an
+                // empty trace, which looks like the code never ran. Twenty seconds is long enough for a
+                // slow link to finish a token refresh and short enough to report a dead one while the
+                // user is still watching.
+                new HttpClient { Timeout = TimeSpan.FromSeconds(20) },
                 config,
                 tokens ?? new AccountTokenStore(paths),
                 deviceIdentity ?? new DefaultDeviceIdentity());
