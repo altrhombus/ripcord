@@ -173,19 +173,33 @@
                             Grid.Row="4"
                             Orientation="Horizontal"
                             Spacing="6">
+                            <!--
+                                The ring is 16, not 10, and that is the whole of the fix.
+
+                                This is the stock WinUI ProgressRing - nothing here is hand-drawn - but its
+                                template lays six dots around a circle and animates their size and opacity.
+                                Below about sixteen pixels the dots land on fractions of a pixel, so instead
+                                of reading as motion around a ring they read as a faint sparkle, which is
+                                exactly how it was reported. The control's own documented minimum is 16.
+
+                                The dot it replaces stays 8: a resting indicator wants to be small and a
+                                moving one wants to be legible, and the Grid sizes to the larger so neither
+                                shifts the caption beside it.
+                            -->
                             <Grid
-                                Width="10"
-                                Height="10"
+                                Width="16"
+                                Height="16"
                                 VerticalAlignment="Center">
                                 <Ellipse
                                     Width="8"
                                     Height="8"
+                                    HorizontalAlignment="Center"
                                     VerticalAlignment="Center"
                                     Fill="{x:Bind State.StatusTone, Mode=OneWay, Converter={StaticResource StatusBrush}}"
                                     Visibility="{x:Bind State.IsChecking, Mode=OneWay, Converter={StaticResource InverseBoolToVisibility}}" />
                                 <ProgressRing
-                                    Width="10"
-                                    Height="10"
+                                    Width="16"
+                                    Height="16"
                                     IsActive="True"
                                     Visibility="{x:Bind State.IsChecking, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
                             </Grid>
