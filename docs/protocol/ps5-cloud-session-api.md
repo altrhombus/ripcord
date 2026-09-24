@@ -334,7 +334,35 @@ retro-corrects the earlier "`data1/2/3` open `[X]`" and "`customData1` open `[X]
 ephemeral key/material and the encrypted seed the whole time.
 
 This command is what makes a *sleeping* console wake and connect (subject to
-`wakeupEnabledPowerModes` from the console-list call).
+`wakeupEnabledPowerModes` from the console-list call) — **`[X]` for the *sleeping* half.**
+
+> **What is confirmed, and what is not.** The command reaching an **awake** console and bringing it into
+> the session is `[V]`: live against real hardware 2026-09-03, twice, joining ~0.75 s after the command.
+> That it *wakes* a console in standby is **not** backed by any capture of ours — it was written from the
+> field's own semantics and from `wakeupEnabledPowerModes` existing, which is an inference, not an
+> observation.
+>
+> **And it is contradicted by hardware (2026-09-23).** Four attempts from Ripcord against a PS5 in
+> standby, with every precondition satisfied and verified in the same run:
+>
+> - the account lists exactly one console, and it is the `duid` being commanded;
+> - `enabledFeatures` contains `remotePlay`;
+> - `wakeupEnabledPowerModes` is `[networkStandby, mainOnStandby]` — both modes;
+> - the `commands` POST is accepted (202, a `commandId` returned) within ~150 ms of session create;
+> - the command body matches the six-field form above, `accountId` as a bare number.
+>
+> The console does not wake, does not join, and publishes no `customData1`. A `GetSessionAsync` readback
+> after both waits lists one member — the client — so the session service agrees the console never
+> joined; this is not our push subscription missing an announcement.
+>
+> **What this does not settle.** Whether the vendor's client wakes the same console in the same state has
+> not been tested, so the open question is whether a sleeping console needs something in the command that
+> ours omits, or whether this console simply has no live channel to PSN in standby despite the setting.
+> Those need a capture of the vendor waking a *sleeping* console — every capture behind this section
+> (cap64, cap96, cap97, cap107) was taken against a console that was already awake. Until then the
+> practical consequence stands on its own: **account pairing has only ever been observed to work against
+> an awake console**, and a client should say so rather than wait out two timeouts. Tracked in
+> `ROADMAP.md`.
 
 ## Candidate exchange / signaling — `remotePlaySessions/<id>/sessionMessage`
 
