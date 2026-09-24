@@ -35,6 +35,64 @@ different purpose.
 > anything. The list above is short, it is checkable in one `git log --format=%B | grep`, and it stops
 > growing the moment someone notices — which is the property that actually matters.
 
+### Sign-in leads pairing, and a focus bug that took three tries (2026-09-22 to 09-23)
+
+Discovery now leads the pairing flow, closing the item the previous session left open. The flow starts at
+`Find`, the family is derived from the console that answered, and the family question survives only on the
+two paths that genuinely cannot answer it — a typed address, and a scan that found nothing.
+
+**The design document was wrong about which route is lazier, and the wording had been repeating it.**
+`docs/design.md` had the code route leading when nobody is signed in, on the grounds that it "needs nothing
+the player does not already have". That is false. The code route needs the player at the console, through its
+menus, reading an eight-digit code, *and* holding the numeric PSN account id — which almost nobody knows, and
+which the app's own caption sent them to a third-party lookup tool to find. Signing in needs a password they
+already have.
+
+So sign-in leads and the code form waits to be asked for. The link to it sits alongside, unexplained and
+unweighted, because somebody who would rather not connect an account is making a trade they are entitled to
+make. The local route stays a first-class path; it stopped being the *default* one.
+
+Two smaller things fell out of testing that by hand. The invitation was telling the same story twice in two
+voices — an `InfoBar` above the step and the account-id caption below it — and the `InfoBar` promised "you
+won't need the code" directly above a box asking for a code, which is the exact contradiction `design.md`
+records the step as having opened with once before. And accepting the invitation opened Settings scrolled to
+the top with the resolution dropdown focused, the account card being near the bottom; `IShellNavigator` now
+carries a `SettingsDestination`, and the page answers `IInitialFocusTarget` rather than trying to move focus
+in `Loaded`, which is too early — the shell seeds focus at Low priority *after* that.
+
+**Then the sign-in box would not hold focus, and finding out why took three commits and a log.**
+
+Clicking into the PSN password field deselected it instantly. A `WebView2` is a native child HWND: when its
+HTML content has focus, Win32 focus is inside that window and XAML focus is *nowhere*, so
+`FocusManager.GetFocusedElement` returns null. `FocusPilot.NeedsFocusSeed` reads null as "nothing has focus",
+and the shell put focus back into the dialog — on every click.
+
+The first fix guarded `SeedFocusIfNothingHasIt`. Still dropped focus: `FocusWatchdog` asked
+`NeedsFocusSeed` itself and called `FocusFirstContentElement` directly, so it never saw that guard. The second
+fix moved the check to `FocusFirstContentElement`, where all six seeding paths converge — window activation,
+navigation, chrome scope activation, region cycling, a pad direction with nothing focused, and the watchdog.
+**Guarding callers one at a time is how one gets missed, and focusing the page behind a modal is wrong on all
+six paths regardless of what the modal contains.** `ModalHostTests` now asserts the guard is the first
+statement in that method and that `NeedsFocusSeed` is asked exactly once; both halves were checked by
+breaking them.
+
+The third commit is the one worth keeping. Two fixes had been aimed by reasoning about the symptom, and a
+symptom seen by hand does not say whose call stack it came from — so `RIPCORD_TRACE_FOCUS=1` now writes every
+focus move, with the frames that caused it, to `state/focus-trace.log`. A move our code made lists Ripcord
+frames; a move the platform made reads `PLATFORM ONLY`. It logs element type and `x:Name` only, never `Text`
+and never a web view source, because the surface it exists for is a password box.
+
+It found its own bug first: every frame in the process sits under `Program.Main`, so the blame column counted
+that and reported platform-dispatched mouse clicks as ours. The entry point and bootstrap no longer count.
+
+The trace then settled it. A complete sign-in — email, password, submit, PSN's redirect chain — ran ninety
+seconds with XAML focus resting on the `WebView2` the whole time and not one focus event in between. The only
+move logged was the dialog tearing down at the end, `PLATFORM ONLY`, which is correct. The account tier has
+now been driven end to end through the app's own UI by a person, rather than through `ProtocolLab`.
+
+The tracer stays. This repo has found focus bugs by hand five or six times now, and the cost of leaving an
+env-gated trace in the tree is one unused class.
+
 ### The second design review, built (2026-09-20 to 09-22)
 
 A second review of `feat/app-design-direction` landed as a written handoff, and most of it is now in the
@@ -74,13 +132,12 @@ string catalogue, on a step where the record is already on disk. And focus lande
 opens a soft keyboard on a handheld — so the celebration arrived with half the screen covered, for a field
 nobody has to fill in.
 
-**What is not done, and why.** The review asked for discovery to lead the pairing flow, with the family
-question demoted to the manual and not-found paths. The route is stated rather than asked and the dead Xbox
-button is gated, but the flow still *starts* at the family step. Making discovery lead is a state-machine
-change to `AddConsoleFlow`: the initial step, a heading that names a family it would not yet know, deriving
-the family from the picked console, and the no-results fallback. Twenty-seven tests call `SelectFamilyAsync`
-directly and forty-seven reach it through helpers. It is contained and well-specified, and it wants its own
-sitting rather than the end of a long one.
+**What was not done at the time.** The review asked for discovery to lead the pairing flow, with the family
+question demoted to the manual and not-found paths. That was left open here because it is a state-machine
+change to `AddConsoleFlow` — the initial step, a heading that names a family it would not yet know, deriving
+the family from the picked console, the no-results fallback — with twenty-seven tests calling
+`SelectFamilyAsync` directly and forty-seven reaching it through helpers. It got its own sitting and landed
+the next day; see the section above.
 
 ### A lost probe no longer subtracts a capability (2026-09-19)
 
