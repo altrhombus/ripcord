@@ -326,7 +326,30 @@ public sealed class SessionController : IAsyncDisposable
                         : "Connecting to your console…",
                     isRetry ? attempt : 0);
 
-                ConnectOutcome outcome = await TryConnectAsync(cancellationToken).ConfigureAwait(false);
+                // **Bounded, so the loop can always reach a terminal state.** The retry budget bounds how
+                // many attempts there are and says nothing about one that never returns - and one that never
+                // returns leaves the window saying "Connecting…" for as long as anybody will watch it.
+                //
+                // The timeout is on the WAIT and not on a token handed to the attempt, deliberately. A
+                // successful attempt's session keeps the token it was opened with for the whole of its
+                // lifetime, so a token that cancels itself two minutes in would tear down a stream that was
+                // working. What that costs is an abandoned attempt still running behind a timeout - bounded
+                // by the retry budget, and observing the outer token as soon as the user leaves the page.
+                ConnectOutcome outcome;
+                try
+                {
+                    outcome = await TryConnectAsync(cancellationToken)
+                        .WaitAsync(_options.ConnectTimeout, cancellationToken)
+                        .ConfigureAwait(false);
+                }
+                catch (TimeoutException)
+                {
+                    outcome = new ConnectOutcome(
+                        false,
+                        Retryable: true,
+                        $"The console didn't answer within "
+                        + $"{Math.Round(_options.ConnectTimeout.TotalSeconds)}s.");
+                }
 
                 if (outcome.Connected)
                 {
