@@ -355,8 +355,16 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer
         // The sequence itself is portable and tested off-device; this page supplies the one part that needs a
         // GPU (IVideoPipelinePreparer, implemented below) and renders each stage as it is announced.
         var flow = new ConnectFlow(_services.Sessions, _services.WakeCoordinator, this);
-        var stages = new Progress<ConnectStage>(
-            stage => _viewModel.ShowConnectStage(stage));
+        var stages = new Progress<ConnectStage>(stage =>
+        {
+            _viewModel.ShowConnectStage(stage);
+
+            // And to the trace, because the surface keeps only the current stage. A connect that sits in one
+            // of these for minutes is indistinguishable, on screen, from a connect that never started - which
+            // is exactly how an account connect over a hotspot was reported.
+            _services.DiagnosticTrace?.Invoke(
+                $"connect stage [{stage.Phase}] {stage.Headline} - {stage.Detail}");
+        });
 
         ConnectPlan? plan = await flow.RunAsync(_console, _settings, stages, _connectCts.Token);
         if (plan is null)

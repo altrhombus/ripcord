@@ -90,6 +90,19 @@ public sealed class RipcordAppServices
     public required IStreamingSessionSource Sessions { get; init; }
 
     /// <summary>
+    /// Where a surface can write a diagnostic line, or null when nothing is recording.
+    ///
+    /// <para>
+    /// <b>Data, not a device, which is why it is an <see cref="Action{T}"/> and not a seam.</b> There is
+    /// nothing to implement and nothing to stub: a caller reports a line or it does not, and a null means
+    /// tracing is off rather than absent. It exists because every surface that narrates a long operation
+    /// narrates it to a control that shows one line at a time, and the line that matters is usually the one
+    /// before the one on screen.
+    /// </para>
+    /// </summary>
+    public Action<string>? DiagnosticTrace { get; init; }
+
+    /// <summary>
     /// The shell, once the front end has one.
     ///
     /// <para>

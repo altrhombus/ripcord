@@ -71,6 +71,12 @@ public static class HalyardAppServices
 
         IPlatformPaths resolvedPaths = paths ?? new DefaultPlatformPaths();
 
+        // **One sink for the whole graph, not one per consumer.** Pairing and the session source each built
+        // their own, so a trace opened with two headers and every line had two clocks to be measured against.
+        // Null unless RIPCORD_TRACE_PAIRING asks, and passed on as a plain Action so nothing below has to
+        // know what a trace is.
+        Action<string>? sharedTrace = HalyardPairingTrace.SinkIfEnabled(resolvedPaths);
+
         // One gateway serves the account tier and account pairing, built at most once and only if something
         // asks — a caller that substitutes both seams must not pay for a device-id lookup, or fail on a host
         // that cannot supply one. Hence a memoised local rather than a field or an eager call.
@@ -101,7 +107,7 @@ public static class HalyardAppServices
             // streams named the PlayStation backend directly. Choosing between the local and account routes
             // needs the account tier as well, and a page deciding that for itself would be the second place in
             // the app with an opinion about what "signed in" means.
-            Sessions = sessions ?? BuildSessionSource(resolvedConsoles, Gateway, resolvedPaths),
+            Sessions = sessions ?? BuildSessionSource(resolvedConsoles, Gateway, sharedTrace),
 
             // Absent rather than broken when there is no gateway: the code route is unaffected, and the flow
             // renders the reason instead of offering an action that cannot work.
@@ -112,11 +118,12 @@ public static class HalyardAppServices
                     // pairing that failed saying only what it had been waiting for.
                     ? new HalyardAccountConsolePairing(
                         forPairing,
-                        options: new HalyardAccountPairingOptions
-                        {
-                            Log = HalyardPairingTrace.SinkIfEnabled(resolvedPaths),
-                        })
+                        options: new HalyardAccountPairingOptions { Log = sharedTrace })
                     : new UnavailableAccountPairing()),
+            // The connect sequence reports its stages here as well as to the surface. The surface shows the
+            // latest line; a connect that sits in one stage for minutes needs the one that came before it.
+            DiagnosticTrace = sharedTrace,
+
             Dispatcher = dispatcher,
             VideoCapabilities = videoCapabilities,
             Paths = resolvedPaths,
@@ -166,18 +173,11 @@ public static class HalyardAppServices
     /// </para>
     /// </summary>
     private static IStreamingSessionSource BuildSessionSource(
-        IPairedConsoleStore consoles, Func<HalyardAccountGateway?> gateway, IPlatformPaths paths)
+        IPairedConsoleStore consoles, Func<HalyardAccountGateway?> gateway, Action<string>? trace)
     {
         var factory = new HalyardSessionFactory(
             HalyardControlSecretsLoader.Load(out string cryptoSource),
             new PairedConsoleCredentialStore(consoles));
-
-        // The same trace the pairing flow writes, for the same reason and to the same file. The account
-        // ROUTE is shared — session, command, join, seed, OFFER — so a connect that fails and a pairing that
-        // fails stop at the same places, and a connect had nowhere to record it: the stages go to the connect
-        // surface, which shows the latest line only, and a retry loop overwrites the one that mattered before
-        // anybody can read it. Null unless RIPCORD_TRACE_PAIRING says otherwise.
-        Action<string>? trace = HalyardPairingTrace.SinkIfEnabled(paths);
 
         return new HalyardStreamingSessionSource(
             factory,
