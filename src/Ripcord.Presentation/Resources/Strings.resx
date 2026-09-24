@@ -330,6 +330,19 @@
     <value>No code needed — {0} confirms this PC through your account.</value>
     <comment>Shown when the account route means no code is required. {0} is the console's name.</comment>
   </data>
+  <data name="Pairing_RemotePlayOff" xml:space="preserve">
+    <value>Remote Play is switched off on {0}. Turn it on in the console's Settings → System → Remote Play, then search again.</value>
+    <comment>Shown when the account's record for this console says remote play is not enabled. The fix is on
+the console, not in the app. {0} is the console's name. The menu path is the CONSOLE's own wording - match
+what it says in your language, as with Pairing_ConsoleSteps.</comment>
+  </data>
+  <data name="Pairing_NoCodeNeededButAwake" xml:space="preserve">
+    <value>No code needed — {0} confirms this PC through your account. Turn the console on first, though: your account isn't allowed to wake it from rest.</value>
+    <comment>The account route works, with one caveat. Said together rather than as two notes, because the
+reassurance and the condition belong to the same decision: the user is about to press Pair and needs to know
+the console has to be awake for it. Not a refusal - an awake console pairs normally. {0} is the console's
+name.</comment>
+  </data>
   <data name="Pairing_NotInAccountList" xml:space="preserve">
     <value>This console isn't in your account's console list, so pairing it needs the code from its screen. Sign in to the console with this account, then search again.</value>
     <comment>Shown when the signed-in account does not know this console. The fix is on the console, not in the app.</comment>

@@ -169,9 +169,15 @@ public sealed partial class AddConsolePage : Page
         // what may cross the boundary (a StatusTone, never a Brush).
         AccountPairingNote.Visibility = Vis(s.AccountPairingOffered);
         AccountPairingNote.Message = s.AccountPairingNote;
-        AccountPairingNote.Severity = s.CanPairWithAccount
-            ? InfoBarSeverity.Success
-            : InfoBarSeverity.Informational;
+        // The note's own tone, not whether the route is available. Those agreed while the note only ever
+        // said one of two things; they stop agreeing when the route is available WITH a condition, and a
+        // green bar reading "turn the console on first" reads as the opposite of its own sentence.
+        AccountPairingNote.Severity = s.AccountPairingNoteTone switch
+        {
+            StatusTone.Positive => InfoBarSeverity.Success,
+            StatusTone.Caution => InfoBarSeverity.Warning,
+            _ => InfoBarSeverity.Informational,
+        };
         AccountPairingNote.IsOpen = s.AccountPairingOffered;
 
         LinkStatus.Severity = InfoBarSeverity.Error;
