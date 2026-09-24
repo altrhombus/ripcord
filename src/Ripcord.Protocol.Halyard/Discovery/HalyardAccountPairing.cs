@@ -635,11 +635,21 @@ public sealed class HalyardAccountPairing(
                     // one. A console that never joined cannot have published anything, so blaming the seed
                     // there names a consequence and hides the cause — reported from hardware as a seed
                     // timeout when the trace showed the console had never turned up at all.
+                    //
+                    // **And the restart is named, because it is the likeliest cause by some distance.** An
+                    // attempt that fails after the console has joined leaves it holding a session nobody is
+                    // in; it then refuses every further cloud session with exactly this symptom, indefinitely,
+                    // and will not wake either. Leaving `members/me` does not evict it and deleting the
+                    // session is refused (405), so there is nothing this code can do about it after the fact —
+                    // which makes saying so the whole of the remedy. Four consecutive failures were spent
+                    // diagnosing a wake that was not broken, and the answer was already in the RE log.
                     return fail(
                         consoleJoined == false && seen == 0
                             ? "The console never joined the session, so it never got as far as publishing a "
-                              + "registration seed. It has to be awake, or able to be woken over the internet "
-                              + "from rest mode, and reachable by the account service."
+                              + "registration seed. If an earlier attempt failed part-way, the console may "
+                              + "still be holding that session — it will refuse new ones until it is "
+                              + "restarted, and will not wake either. Otherwise it has to be awake, or able "
+                              + "to be woken over the internet from rest mode."
                         : unreadable > 0
                             ? $"The console published a registration seed ({unreadable} of {seen} customData1 "
                               + "frames) but none of them could be decrypted with this session's key material."
