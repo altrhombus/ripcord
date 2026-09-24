@@ -74,6 +74,20 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer
 
     private D3D12VideoDecodePipeline? _pipeline;
     private SessionController? _controller;
+
+    /// <summary>
+    /// The teardown this page started when it unloaded, for a caller that has to know when the session has
+    /// actually finished ending.
+    ///
+    /// <para>
+    /// <b>Only the shutdown path needs this.</b> Leaving a stream in the ordinary way unloads the page while
+    /// the window lives on, so the teardown completes on its own and nobody waits. Closing the window
+    /// mid-stream is different: the process is about to exit, and the teardown's last acts are a control-channel
+    /// close and — on the account route — an HTTPS call leaving the cloud session. A dropped task does neither,
+    /// and the console is then holding a session nobody told it about.
+    /// </para>
+    /// </summary>
+    public Task? Teardown { get; private set; }
     private IDisposable? _statusSubscription;
     private DispatcherTimer? _statsTimer;
 
@@ -1987,10 +2001,11 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer
 
         LeaveImmersiveMode();
 
-        // Fire-and-forget the async teardown. The previous version blocked the UI thread on
-        // DisposeAsync().AsTask().Wait() twice, which froze the window on exit and risked a deadlock: session
-        // disposal awaits the control keep-alive task and joins the decode worker.
-        _ = TeardownAsync();
+        // Still not awaited HERE — blocking the UI thread on it froze the window on exit and risked a
+        // deadlock, since session disposal awaits the control keep-alive task and joins the decode worker.
+        // But the task is no longer dropped: the window needs something to wait on when the app is closing
+        // mid-stream, or the process exits before the session is ended properly. See Teardown.
+        Teardown = TeardownAsync();
     }
 
     private async Task TeardownAsync()

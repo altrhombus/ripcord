@@ -204,6 +204,16 @@ public sealed partial class MainWindow : Window, IShellNavigator
             }
         };
 
+        // Closing mid-stream has to end the session before the process goes.
+        //
+        // The session page's teardown is deliberately not awaited on the UI thread — doing that froze the
+        // window on exit once — so on an ordinary "leave the stream" it simply completes while the window
+        // lives on. At shutdown there is no window to live on: the task is dropped, the process exits, and the
+        // teardown's last acts never happen. Those acts are the control-channel close and, on the account
+        // route, an HTTPS call leaving the cloud session, which is what tells PSN and the console we are gone.
+        // Without it the console can be left holding a session nobody is in.
+        AppWindow.Closing += OnAppWindowClosing;
+
         Closed += (_, _) =>
         {
             AppEffects.Changed -= OnEffectsChanged;
@@ -237,6 +247,56 @@ public sealed partial class MainWindow : Window, IShellNavigator
         // Hide the chrome underneath so nothing renders behind the video.
         ChromeFrame.Visibility = Visibility.Collapsed;
         ApplyStreamChrome();
+    }
+
+    /// <summary>
+    /// Set once the close has been allowed through, so the second <c>Close()</c> is not intercepted again.
+    /// </summary>
+    private bool _closeAllowed;
+
+    private void OnAppWindowClosing(AppWindow sender, AppWindowClosingEventArgs args)
+    {
+        // Nothing streaming, or we are already on the way out: let it close.
+        if (_closeAllowed || StreamFrame.Content is not SessionPage page)
+        {
+            return;
+        }
+
+        args.Cancel = true;
+        _ = CloseWhenSessionHasEndedAsync(page);
+    }
+
+    /// <summary>
+    /// End the session, then close for real.
+    ///
+    /// <para>
+    /// <b>Bounded, because a hang here is worse than an unclean exit.</b> The teardown's own cloud call carries
+    /// a three-second timeout, so four is enough for the whole of it and still short enough that a user who
+    /// clicked the X is not left wondering. If it overruns we close anyway — the alternative is a window that
+    /// will not shut, which is the bug the fire-and-forget was introduced to fix.
+    /// </para>
+    /// </summary>
+    private async Task CloseWhenSessionHasEndedAsync(SessionPage page)
+    {
+        try
+        {
+            // Unloads the page, which is what starts the teardown and sets its task.
+            CloseStream();
+
+            if (page.Teardown is { } teardown)
+            {
+                await Task.WhenAny(teardown, Task.Delay(TimeSpan.FromSeconds(4)));
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[Ripcord] session teardown on close failed: {ex}");
+        }
+        finally
+        {
+            _closeAllowed = true;
+            Close();
+        }
     }
 
     /// <summary>
