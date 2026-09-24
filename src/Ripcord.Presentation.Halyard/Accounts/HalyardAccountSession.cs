@@ -42,7 +42,11 @@ public sealed class HalyardAccountSession(HalyardAccountGateway gateway) : IAcco
 
     public async Task<IReadOnlyList<CloudConsole>> ListConsolesAsync(CancellationToken cancellationToken)
     {
-        if (!_gateway.IsSignedIn)
+        // Restores the session if it is only on disk. Reading IsSignedIn here returned an empty list on a
+        // fresh launch, and an empty list is indistinguishable from "the account has no consoles" — which is
+        // what made a console away from home read as Offline rather than Away. Away is decided by asking
+        // whether the account lists it, and the answer was always no because nobody had signed the gateway in.
+        if (!await _gateway.EnsureSignedInAsync(cancellationToken).ConfigureAwait(false))
         {
             return [];
         }
@@ -58,14 +62,17 @@ public sealed class HalyardAccountSession(HalyardAccountGateway gateway) : IAcco
             CanWakeRemotely: c.CanWake))];
     }
 
-    public Task WakeAsync(string cloudDeviceId, CancellationToken cancellationToken)
+    public async Task WakeAsync(string cloudDeviceId, CancellationToken cancellationToken)
     {
-        if (!_gateway.IsSignedIn)
+        // Same restore, same reason: a cloud wake on a fresh launch threw "not signed in" at a signed-in user.
+        if (!await _gateway.EnsureSignedInAsync(cancellationToken).ConfigureAwait(false))
         {
             throw new InvalidOperationException("Not signed in, so the account service cannot be asked to wake a console.");
         }
 
-        return new HalyardSessionCoordinator(_gateway.Cloud).WakeAsync(cloudDeviceId, cancellationToken);
+        await new HalyardSessionCoordinator(_gateway.Cloud)
+            .WakeAsync(cloudDeviceId, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     public void SignOut() => _gateway.SignOut();
