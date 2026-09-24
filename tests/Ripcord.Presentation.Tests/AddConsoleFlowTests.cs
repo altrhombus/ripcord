@@ -828,6 +828,83 @@ public class AddConsoleFlowTests
         Assert.Empty(h.Flow.State.SignInInvitation);
     }
 
+    // ---- signing in without leaving the flow -----------------------------------------------------
+    //
+    // The invitation used to navigate to the settings page, because that is where the sign-in sequence was
+    // written. Reported from hardware: sign-in completes and you are standing on a settings page with the
+    // pairing flow abandoned behind you, and the way back is to start pairing over. Sign-in is now a modal over
+    // this step, so what is tested is that the step re-aims itself when told the account arrived.
+
+    [Fact]
+    public async Task SigningInMidFlow_TurnsTheStepOverWithoutLeavingIt()
+    {
+        var account = new FakeAccountSession();
+        var h = new Harness(account: account);
+        await h.ToLinkViaScanAsync();
+
+        Assert.True(h.Flow.State.SignInLeads);
+
+        // What the dialog does, as far as this flow can see: the session now has an identity.
+        account.Current = new AccountIdentity("4200000000000000042", "somebody", "GB");
+        h.Flow.AccountSignInFinished();
+
+        // The offer is spent and the form appears with the id already answered. Nothing navigated.
+        Assert.False(h.Flow.State.SignInLeads);
+        Assert.True(h.Flow.State.CodeEntryShown);
+        Assert.True(h.Flow.State.AccountIdIsAutomatic);
+        Assert.Empty(h.Flow.State.SignInInvitation);
+        Assert.Equal(AddConsoleStep.Link, h.Flow.State.Step);
+    }
+
+    [Fact]
+    public async Task SigningInMidFlow_WhenTheAccountKnowsTheConsole_DropsTheCodeEntirely()
+    {
+        // The whole point of signing in here. The console-list lookup is skipped while there is no account to
+        // ask, so being told about the sign-in has to start it — otherwise the account route stays unavailable
+        // until something unrelated moves, and the user types a code they did not need.
+        var account = new FakeAccountSession();
+        var h = new Harness(account: account);
+        await h.ToLinkViaScanAsync(Console("10.0.0.7", name: "PS5-8A2F"));
+
+        Assert.Equal(PairingRoute.Code, h.Flow.State.Route);
+
+        account.Current = new AccountIdentity("4200000000000000042", "somebody", "GB");
+        account.Consoles = [new CloudConsole("duid-living-room", "PS5-8A2F", true, true)];
+        h.Flow.AccountSignInFinished();
+
+        Assert.True(await WaitUntil(() => h.Flow.State.Route == PairingRoute.Account));
+        Assert.True(h.Flow.State.CanPairWithAccount);
+    }
+
+    [Fact]
+    public async Task ASignInThatCouldNotRun_SaysSoOnTheStepThatAskedForIt()
+    {
+        var h = new Harness(account: new FakeAccountSession());
+        await h.ToLinkViaScanAsync();
+
+        h.Flow.AccountSignInFinished("Couldn't open the sign-in page.");
+
+        Assert.Equal("Couldn't open the sign-in page.", h.Flow.State.SignInError);
+
+        // Still offered, because the failure was ours and retrying is reasonable.
+        Assert.True(h.Flow.State.SignInLeads);
+    }
+
+    [Fact]
+    public async Task ACancelledSignIn_LeavesNothingBehind()
+    {
+        // Closing a window you opened is not an error. Reporting it would leave a red bar on the step for
+        // somebody who simply changed their mind.
+        var h = new Harness(account: new FakeAccountSession());
+        await h.ToLinkViaScanAsync();
+
+        h.Flow.AccountSignInFinished("Couldn't open the sign-in page.");
+        h.Flow.AccountSignInFinished();
+
+        Assert.Empty(h.Flow.State.SignInError);
+        Assert.True(h.Flow.State.SignInLeads);
+    }
+
     [Fact]
     public async Task ABuildWithNoAccountTier_InvitesNobodyToSignIn()
     {

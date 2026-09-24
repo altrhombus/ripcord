@@ -2,11 +2,13 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Navigation;
 using Ripcord.Presentation;
+using Ripcord.Presentation.Accounts;
 using Ripcord.Presentation.Consoles;
 using Ripcord.Presentation.Pairing;
 using Ripcord_App.Accents;
 using Ripcord_App.Controls;
 using Ripcord_App.Input;
+using Ripcord_App.Services;
 
 namespace Ripcord_App.Pages;
 
@@ -24,6 +26,12 @@ public sealed partial class AddConsolePage : Page
     private readonly RipcordAppServices _services;
     private readonly AddConsoleFlow _flow;
 
+    /// <summary>
+    /// A view-model of this page's own over the shared account session, used only to run a sign-in from here.
+    /// The flow reads the session itself; this is the surface half.
+    /// </summary>
+    private readonly AccountViewModel _account;
+
     // Guards against a second navigation if Completed were ever raised twice.
     private bool _leaving;
 
@@ -40,6 +48,7 @@ public sealed partial class AddConsolePage : Page
         // network.
         _services = App.Services;
         _flow = _services.CreateAddConsoleFlow();
+        _account = _services.CreateAccountViewModel();
 
         InitializeComponent();
 
@@ -138,6 +147,9 @@ public sealed partial class AddConsolePage : Page
         SignInLeadText.Text = s.SignInLeadText;
         SignInLeadButton.Content = s.SignInActionLabel;
         UseCodeLink.Content = s.CodeRouteLabel;
+
+        SignInErrorBar.Message = s.SignInError;
+        SignInErrorBar.IsOpen = s.SignInError.Length > 0;
 
         SignInInvitation.Message = s.SignInInvitation;
         SignInButton.Content = s.SignInActionLabel;
@@ -387,8 +399,24 @@ public sealed partial class AddConsolePage : Page
     /// reached, and this lands exactly where clicking the gear would.
     /// </para>
     /// </summary>
-    private void OnSignInClick(object sender, RoutedEventArgs e)
-        => _services.Shell.ShowSettings(SettingsDestination.Account);
+    /// <summary>
+    /// Sign in without leaving the flow.
+    ///
+    /// <para>
+    /// This used to navigate to the settings page, because that is where the sign-in sequence was written. The
+    /// user signed in and was then standing on a settings page with pairing abandoned behind them — the way
+    /// back was to start pairing over from the beginning. Sign-in is a modal over whatever asked for it, so
+    /// the step the user was on is still the step they are on.
+    /// </para>
+    /// </summary>
+    private async void OnSignInClick(object sender, RoutedEventArgs e)
+    {
+        AccountSignInResult result = await AccountSignIn.RunAsync(_account, XamlRoot);
+
+        // Told either way. Success starts the console-list lookup that decides whether this console even needs
+        // a code; failure is a sentence on this step rather than one the user has to go somewhere to read.
+        _flow.AccountSignInFinished(result.Failure);
+    }
 
     /// <summary>
     /// Show the code form. Not a fallback being grudgingly allowed - local pairing is a legitimate choice,

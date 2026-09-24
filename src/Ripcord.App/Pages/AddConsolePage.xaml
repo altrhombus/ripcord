@@ -324,6 +324,21 @@
                         rather not connect an account is making a trade they are entitled to make, and local
                         pairing stays available to them in full.
                     -->
+                    <!--
+                        Why a sign-in could not run, on the step that asked for it. Above both sign-in
+                        surfaces, because either can raise it: the lead panel when sign-in leads, and the
+                        invitation InfoBar further down when the code form has been revealed.
+
+                        Only ever a real failure - a missing web view runtime, say. A cancelled sign-in leaves
+                        this closed: the user shut a window they opened, which is not something to report back
+                        to them in red.
+                    -->
+                    <InfoBar
+                        x:Name="SignInErrorBar"
+                        IsClosable="False"
+                        IsOpen="False"
+                        Severity="Error" />
+
                     <StackPanel x:Name="SignInLeadPanel" Spacing="12" Visibility="Collapsed">
                         <TextBlock
                             x:Name="SignInLeadText"

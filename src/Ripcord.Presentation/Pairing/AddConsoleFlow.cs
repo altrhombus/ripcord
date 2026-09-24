@@ -110,6 +110,12 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
     /// </para>
     /// </summary>
     private bool _codeRouteRevealed;
+
+    /// <summary>
+    /// Why a sign-in started from this flow could not run, or null. Not set when the user simply cancelled —
+    /// closing a window you opened is not an error and must not leave a red bar behind.
+    /// </summary>
+    private string? _signInError;
     private string? _familyNote;
     private string _findSubheading = ScanningMessage;
     private bool _isScanning;
@@ -289,6 +295,35 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
     /// Show the code form. For somebody who would rather type a code than connect an account.
     /// </summary>
     public void RevealCodeRoute() => Mutate(() => _codeRouteRevealed = true);
+
+    /// <summary>
+    /// A sign-in the user started from this flow has finished, one way or the other.
+    ///
+    /// <para>
+    /// <b>Why the flow has to be told.</b> The account is read live — <see cref="AccountIdIsAutomatic"/> asks
+    /// the session every time the state is composed — but nothing here subscribes to it, so a sign-in that
+    /// happens beside the flow changes every answer and recomposes nothing. Before this existed the invitation
+    /// navigated to the settings page to sign in, which abandoned the flow outright; the user came back by
+    /// starting pairing again.
+    /// </para>
+    ///
+    /// <para>
+    /// On success the console-list lookup is started, because it was skipped while there was no account to
+    /// ask, and whether the account already knows this console is what decides the route. The route itself
+    /// needs no nudging: <see cref="DefaultRoute"/> follows availability and <c>_chosenRoute</c> is still null
+    /// for anyone who has not picked one, so the step re-aims itself as the answers arrive.
+    /// </para>
+    /// </summary>
+    /// <param name="failure">A sentence to show, or null for signed in or cancelled.</param>
+    public void AccountSignInFinished(string? failure = null)
+    {
+        Mutate(() => _signInError = failure);
+
+        if (failure is null)
+        {
+            StartCloudConsoleLookup();
+        }
+    }
 
     /// <summary>Search again from scratch, discarding what the previous scan found.</summary>
     public Task RescanAsync() => StartScanAsync();
@@ -1086,6 +1121,7 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
             CodeEntryShown: Route == PairingRoute.Code && !signInLeads,
 
             SignInLeads: signInLeads,
+            SignInError: _signInError ?? string.Empty,
             // At Done the record is already on disk, so this is not a save button - it is the thing the
             // player came for, named as such. It was the literal string "Save & connect" in the page's
             // code-behind, past the catalogue entirely.
