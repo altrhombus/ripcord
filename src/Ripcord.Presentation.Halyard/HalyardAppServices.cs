@@ -101,7 +101,7 @@ public static class HalyardAppServices
             // streams named the PlayStation backend directly. Choosing between the local and account routes
             // needs the account tier as well, and a page deciding that for itself would be the second place in
             // the app with an opinion about what "signed in" means.
-            Sessions = sessions ?? BuildSessionSource(resolvedConsoles, Gateway),
+            Sessions = sessions ?? BuildSessionSource(resolvedConsoles, Gateway, resolvedPaths),
 
             // Absent rather than broken when there is no gateway: the code route is unaffected, and the flow
             // renders the reason instead of offering an action that cannot work.
@@ -166,11 +166,18 @@ public static class HalyardAppServices
     /// </para>
     /// </summary>
     private static IStreamingSessionSource BuildSessionSource(
-        IPairedConsoleStore consoles, Func<HalyardAccountGateway?> gateway)
+        IPairedConsoleStore consoles, Func<HalyardAccountGateway?> gateway, IPlatformPaths paths)
     {
         var factory = new HalyardSessionFactory(
             HalyardControlSecretsLoader.Load(out string cryptoSource),
             new PairedConsoleCredentialStore(consoles));
+
+        // The same trace the pairing flow writes, for the same reason and to the same file. The account
+        // ROUTE is shared — session, command, join, seed, OFFER — so a connect that fails and a pairing that
+        // fails stop at the same places, and a connect had nowhere to record it: the stages go to the connect
+        // surface, which shows the latest line only, and a retry loop overwrites the one that mattered before
+        // anybody can read it. Null unless RIPCORD_TRACE_PAIRING says otherwise.
+        Action<string>? trace = HalyardPairingTrace.SinkIfEnabled(paths);
 
         return new HalyardStreamingSessionSource(
             factory,
@@ -182,11 +189,39 @@ public static class HalyardAppServices
                     {
                         // The rendezvous takes tens of seconds and says useful things while it does; without
                         // this the surface shows one unchanging line and reads as a hang.
-                        Log = progress is null ? null : progress.Report,
+                        Log = Tee(progress is null ? null : progress.Report, trace),
                     })
                 : null,
             () => gateway() is not null,
             cryptoSource);
+    }
+
+    /// <summary>
+    /// Send each line to both sinks, or to whichever one exists.
+    ///
+    /// <para>
+    /// The surface and the trace want the same lines for different lifetimes: the surface shows the current
+    /// one, the file keeps all of them. Returning null when neither exists matters — the options field reads
+    /// null as "no log" and skips the formatting entirely.
+    /// </para>
+    /// </summary>
+    private static Action<string>? Tee(Action<string>? first, Action<string>? second)
+    {
+        if (first is null)
+        {
+            return second;
+        }
+
+        if (second is null)
+        {
+            return first;
+        }
+
+        return line =>
+        {
+            first(line);
+            second(line);
+        };
     }
 
     private static HalyardAccountGateway? TryBuildGateway(
