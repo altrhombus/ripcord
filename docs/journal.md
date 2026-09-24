@@ -35,6 +35,58 @@ different purpose.
 > anything. The list above is short, it is checkable in one `git log --format=%B | grep`, and it stops
 > growing the moment someone notices — which is the property that actually matters.
 
+### Remote play works through the app, and eight reports came back with it (2026-09-24)
+
+Pairing over the account route, connecting from a different network, waking a console from rest over the
+internet, and disconnecting cleanly — all through the app's own UI, which none of it had ever been.
+`README.md` carried "internet play through the app's own UI" under *what does not work yet* until today.
+
+**One bug had three faces, and finding it took five traced runs.** A stored refresh token is a signed-in
+user whose session has not been loaded, and `IsSignedIn` asks the second question while reading like the
+first. Only the settings page ever called `RestoreAsync`, so a launch that went straight to a console had
+no account in memory. That refused an account-route connect outright, made `ListConsolesAsync` return an
+empty list — which is why a console away from home read `Offline` when `Away` existed and described it
+exactly — and made a cloud wake throw at a signed-in user. The gateway restores on demand now, lazily,
+because a LAN connect never touches the account tier and should not pay a round trip for it.
+
+**What the five runs cost, and what they bought.** Each layer narrated itself to a surface that shows one
+line at a time, and each had to be found separately: the app passed `null` for the pairing log; the trace
+clock ran from app start, so the first line of a pairing read `44690 ms` and looked like a 44-second stall
+that was really somebody walking to the Pair button; the connect flow's stages went to the screen and
+nowhere else; and the account route's first log sat *after* its preconditions, so a refusal was
+indistinguishable from never being entered. The tracing now reaches from the connect flow down into the
+route, and that is the part that outlasts this bug.
+
+**Then eight observations from the first sessions that worked**, which is what a person in the chair
+produces and automation does not:
+
+- The connect overlay stayed over the running stream. `Streaming` dismisses it; the control channel goes
+  on narrating afterwards, and each line raised it again.
+- A console away from home wore a green dot. The comment defending it argued that nothing is wrong (true)
+  and that it is ready to play (not knowable — `Away` means the account lists it, not that it is awake).
+- Rung 3 was a one-way door. `HideDiagnosticsDetail` had existed with no caller since it was written.
+- The summary strip spanned the window regardless of the picture it was measuring.
+- The connect message moved while being read, pushed by four things below it on a bottom-anchored panel.
+- The "checking" ring read as a faint sparkle: stock `ProgressRing`, at 10px, below the 16 its template
+  needs before its dots stop landing on fractions of a pixel.
+- A retry replaced its own reason with "Reconnecting to your console…" under a heading saying the same
+  thing, so the informative line was the one that flickered.
+- And the one that was a real hole rather than a rough edge: nothing bounded a single connect *attempt*.
+  The retry budget bounds how many there are and says nothing about one that never returns.
+
+**That last fix was wrong once before it was right, and explaining it is what caught it.** The first
+version stopped waiting (`Task.WaitAsync`) rather than cancelling, which leaves the attempt running — and
+an account-route attempt that is still running is still joined to its cloud session, the half-open state
+that makes a console refuse every later connection. A backstop built that way trades a stuck window for a
+stranded console. Cancelling was awkward because the session keeps the token it was opened with for its
+whole lifetime, so a token cancelling itself two minutes in would tear down a working stream: hence armed
+for the attempt, disarmed on success, disposed with the session. The test that matters asserts a live
+session's token survives past the deadline, and fails if the disarm is removed.
+
+The verbose connect narration that made the last three days tractable now follows the diagnostics setting
+that already existed — stages for everybody, the protocol's own words at Full — rather than earning a
+second switch meaning the same thing.
+
 ### The console was signed out, and five runs went looking elsewhere (2026-09-23 to 09-24)
 
 Account pairing has now completed through the app's own UI — the first time it has, rather than through

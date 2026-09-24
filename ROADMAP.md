@@ -280,8 +280,10 @@ stream the ordinary way was always fine, because the window lives on and the tas
 (its own cloud call carries a three-second timeout) and then closes regardless — a hang there would be
 worse than an unclean exit, and is the bug the fire-and-forget was introduced to fix.
 
-**Needs verifying on hardware**, which is the only way: start a stream, close the window with the X
-mid-stream, and confirm the console does not afterwards report Remote Play in use or refuse to pair.
+**Verified on hardware 2026-09-24.** Closing the window mid-stream, and the console showed its own "remote
+play disconnected" notice — which is the tell the RE log named for the difference between ending a session
+and vanishing from one, since a half-open session shows none of the banners a real one does. A reconnect
+straight afterwards worked, which is the part a slow retry would have passed regardless.
 ### PS3 port — auto-reconnect on a stream stall (noted 2026-09-18)
 When the console stops sending video, the PS3 port trips its 4-second stall detector and returns to the
 shell, leaving the person to re-select the console by hand. The .NET side does not: `SessionController` owns
