@@ -752,6 +752,12 @@
     <value>loss</value>
     <comment>Label under the packet loss percentage on the stream diagnostics summary.</comment>
   </data>
+  <data name="SessionPage_DiagnosticsLess.Content" xml:space="preserve">
+    <value>Less</value>
+    <comment>Button in the full instrument panel that goes back to the summary strip. The inverse of
+SessionPage_DiagnosticsDetails, and it must stay the inverse: without it a promotion to the full panel
+lasts the rest of the session, because F3 restores the rung it was left on.</comment>
+  </data>
   <data name="SessionPage_DiagnosticsDetails.Content" xml:space="preserve">
     <value>Details</value>
     <comment>Button on the diagnostics summary that opens the full instrument panel.</comment>
