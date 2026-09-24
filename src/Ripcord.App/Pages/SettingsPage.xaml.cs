@@ -14,8 +14,6 @@ using Ripcord.Presentation.Accounts;
 using Ripcord.Presentation.Consoles;
 using Ripcord.Presentation.Settings;
 using Ripcord.Core.Input;
-using Ripcord_App.Input;
-using Ripcord_App.Dialogs;
 using Ripcord_App.Services;
 
 namespace Ripcord_App.Pages;
@@ -270,49 +268,18 @@ public sealed partial class SettingsPage : Page, IInitialFocusTarget
     /// what they used to do when a change handler updated one and left the other until the page was reopened.
     /// </summary>
     /// <summary>
-    /// Run the sign-in flow: show the web view, then hand whatever it caught back to the view-model.
-    ///
-    /// <para>
-    /// The exchange happens <em>after</em> the dialog has closed, deliberately. Awaiting a network call while a
-    /// modal is still up means the dialog owns the failure, and a dialog that has to render an error is a
-    /// dialog that has to stay open — which is how the user ends up looking at a spent authorization code.
-    /// </para>
+    /// Run the sign-in flow. The sequence lives in <see cref="AccountSignIn"/> because this page is no longer
+    /// the only surface that starts one — the pairing flow signs in where it stands rather than sending the
+    /// user here and stranding them.
     /// </summary>
     private async Task SignInAsync()
     {
-        var dialog = new AccountSignInDialog(_account) { XamlRoot = XamlRoot };
+        AccountSignInResult result = await AccountSignIn.RunAsync(_account, XamlRoot);
 
-        try
-        {
-            // Through ModalHost, never ContentDialog.ShowAsync directly: the dialog needs a Modal input scope
-            // pushed for it, or the settings page underneath keeps the pad and a controller-only user is left
-            // looking at a sign-in page they cannot reach. ModalHostTests enforces this.
-            await ModalHost.ShowAsync(dialog);
-        }
-        catch (Exception ex)
-        {
-            // Another dialog already up, most likely. Nothing has been started, so there is nothing to undo.
-            Debug.WriteLine($"[Ripcord] sign-in dialog failed to show: {ex}");
-            return;
-        }
-
-        if (dialog.Failure is { } failure)
+        if (result.Failure is { } failure)
         {
             AccountError.Message = failure;
             AccountError.IsOpen = true;
-            return;
-        }
-
-        if (dialog.CompletedRedirect is not { } redirect)
-        {
-            return; // cancelled, which is not worth reporting
-        }
-
-        await _account.CompleteSignInAsync(redirect);
-
-        if (_account.State.Step == AccountStep.SignedIn)
-        {
-            await _account.LoadConsolesAsync();
         }
     }
 
