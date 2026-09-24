@@ -99,7 +99,7 @@ public sealed class HalyardAccountConsolePairing : IAccountConsolePairing
                 .ListConsolesAsync(cancellationToken)
                 .ConfigureAwait(false);
 
-            Log($"pairing target: platform={request.Family} duid={request.CloudDeviceId}");
+            Log($"pairing target: platform={request.Family.Key} duid={request.CloudDeviceId}");
             Log($"the account lists {consoles.Count} console(s):");
 
             foreach (HalyardConsoleClient console in consoles)
