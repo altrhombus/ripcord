@@ -334,36 +334,37 @@ retro-corrects the earlier "`data1/2/3` open `[X]`" and "`customData1` open `[X]
 ephemeral key/material and the encrypted seed the whole time.
 
 This command is what makes a *sleeping* console wake and connect (subject to
-`wakeupEnabledPowerModes` from the console-list call) — **`[X]` for the *sleeping* half.**
+`wakeupEnabledPowerModes` from the console-list call) `[V]` — but it is not reliable, and the failure has a
+specific cause worth knowing before chasing it.
 
-> **What is confirmed, and what is not.** The command reaching an **awake** console and bringing it into
-> the session is `[V]`: live against real hardware 2026-09-03, twice, joining ~0.75 s after the command.
-> That it *wakes* a console in standby is **not** backed by any capture of ours — it was written from the
-> field's own semantics and from `wakeupEnabledPowerModes` existing, which is an inference, not an
-> observation.
+> **Confirmed, and then mis-diagnosed once already.** The command waking a console in standby is observed:
+> the RE log records it waking the same console repeatedly across one day's runs, and account pairing
+> completing end to end against that console (2026-09-04). An earlier revision of this section marked the
+> sleeping half `[X]` on the strength of four consecutive failures from the app — which was wrong, and is
+> recorded here because the four failures have a documented cause that looks exactly like a wake that does
+> not work.
 >
-> **And it is contradicted by hardware (2026-09-23).** Four attempts from Ripcord against a PS5 in
-> standby, with every precondition satisfied and verified in the same run:
+> **The half-open-session trap.** An attempt that fails *after* the console has joined leaves the console
+> holding a Remote Play session that nobody is in. It then reports Remote Play as in use, refuses its
+> pair-device page, will not join a further cloud session, and shows **none** of the banners a real stream
+> shows. Every subsequent attempt fails as `the console never joined the session`, indefinitely — including
+> attempts that would otherwise have woken it. Two things do **not** clear it: leaving `members/me` (which
+> does not evict the console) and deleting the session (PSN answers **405**). A completed session clears it;
+> otherwise the console needs restarting.
 >
-> - the account lists exactly one console, and it is the `duid` being commanded;
-> - `enabledFeatures` contains `remotePlay`;
-> - `wakeupEnabledPowerModes` is `[networkStandby, mainOnStandby]` — both modes;
-> - the `commands` POST is accepted (202, a `commandId` returned) within ~150 ms of session create;
-> - the command body matches the six-field form above, `accountId` as a bare number.
+> A LAN `connect` that exits without a clean disconnect strands the console the same way, so a failed
+> stream can block the account route afterwards.
 >
-> The console does not wake, does not join, and publishes no `customData1`. A `GetSessionAsync` readback
-> after both waits lists one member — the client — so the session service agrees the console never
-> joined; this is not our push subscription missing an announcement.
+> **And it is genuinely flaky beyond that.** Also recorded: `canWake=True` from the console list, the
+> command accepted, and six discovery polls finding the console still asleep — with rest-mode settings
+> unchanged and supported. The standing advice from that session is the right order to work in: treat a
+> console that will not join as a power-state question first.
 >
-> **What this does not settle.** Whether the vendor's client wakes the same console in the same state has
-> not been tested, so the open question is whether a sleeping console needs something in the command that
-> ours omits, or whether this console simply has no live channel to PSN in standby despite the setting.
-> Those need a capture of the vendor waking a *sleeping* console — every capture behind this section
-> (cap64, cap96, cap97, cap107) was taken against a console that was already awake. Until then the
-> practical consequence stands on its own: **account pairing has only ever been observed to work against
-> an awake console**, and a client should say so rather than wait out two timeouts. Tracked in
-> `ROADMAP.md`.
-
+> **Not the PS4 wake endpoint.** `POST {userProfileBase}/userProfile/v1/users/{onlineId}/remoteConsole/
+> wakeUp?platform=PS4` exists and is a separate, dedicated wake call, reached after a
+> `GET asm/v1/apps/me/baseUrls/userProfile` lookup. It is **PS4-only**: the format string in the vendor
+> control library hard-codes `platform=PS4`, and no PS5 capture of ours contains the call. For PS5 the
+> `commands` POST above is the wake. Recorded so the endpoint is not mistaken for a missing PS5 step.
 ## Candidate exchange / signaling — `remotePlaySessions/<id>/sessionMessage`
 
 This is the ICE-style candidate negotiation, carried **in cleartext over HTTPS** (not raw STUN) -
