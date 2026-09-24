@@ -218,6 +218,37 @@ pass has to exercise.
 
 ## Backlog
 
+### Open bug — account pairing: the console never joins the session (found on hardware 2026-09-23)
+
+An account ("no PIN") pairing from the app reaches the console and stops. The trace
+(`RIPCORD_TRACE_PAIRING=1`, `state/pairing-trace.log`) says the cloud half is fine — push channel connected,
+session created, connect command accepted, all inside 500 ms — and then the console never joins, and publishes
+no `customData1` at all. Two attempts: the first woke the console and produced no seed, the second did not wake
+it.
+
+**Not the console's settings.** Confirmed on the hardware: remote play is enabled, rest-mode internet is on,
+and turning the console on from the network is on.
+
+**What the next trace answers.** Two diagnostics landed with this entry and neither has been run yet:
+
+- **`GetSessionAsync` membership readback** after the join and seed waits. If the service lists the console as a
+  member, the command worked and our push subscription missed the announcement — our bug. If it lists only us,
+  the console never acted on a command the cloud accepted. Opposite ends of the stack.
+- **The commanded duid against the account's console list.** The duid is resolved by *name*
+  (`CloudConsoleMatch.ResolveId` on the display name), so a console whose account record is named differently —
+  or an account holding two similarly-named consoles — yields a command the cloud accepts and addressed to
+  something that is not there. That symptom is indistinguishable from a console that will not wake.
+
+**Known-good baseline for comparison:** `docs/journal.md`, 2026-09-03 — an *awake* console joins ~0.75 s after
+the command and delivers the seed immediately, reproduced twice. So a console that has not joined in 30 s is
+not slow; the timeouts are not the fault.
+
+**Owed alongside, and agreed with the owner:** the flow offers account pairing on the sole basis that the
+console appears in the account's list. It ignores `RemotePlayEnabled` and `CanWake`, both of which the record
+carries, so a console that genuinely cannot be woken remotely waits out both timeouts and is then told
+something about a registration seed. The flow should say so before the user presses Pair. Not the cause of this
+bug — the flags are true here — which is why it is listed as a separate piece of work rather than a fix for it.
+
 ### PS3 port — auto-reconnect on a stream stall (noted 2026-09-18)
 When the console stops sending video, the PS3 port trips its 4-second stall detector and returns to the
 shell, leaving the person to re-select the console by hand. The .NET side does not: `SessionController` owns
