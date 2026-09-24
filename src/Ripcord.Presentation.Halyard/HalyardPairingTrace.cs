@@ -35,11 +35,21 @@ namespace Ripcord.Presentation.Halyard;
 /// </summary>
 public sealed class HalyardPairingTrace
 {
-    /// <summary>A GUID, a long hex run, or a long base64 run. Anything id-shaped, not any particular field.</summary>
+    /// <summary>
+    /// A GUID, a long hex run, or a long base64 run. Anything id-shaped, not any particular field.
+    ///
+    /// <para>
+    /// <b>The base64 branch requires a digit or a <c>+</c>/<c>/</c>,</b> which is not fussiness: without
+    /// it the run of letters in a long camelCase field name is itself a valid base64 run, and a trace came
+    /// back reading <c>&lt;id:23&gt;=[networkStandby,mainOnStandby]</c> — the redactor had eaten
+    /// <c>wakeupEnabledPowerModes</c>, which is the NAME of the field and not its value. Base64 of real
+    /// key material effectively always carries a digit; an identifier a programmer typed does not.
+    /// </para>
+    /// </summary>
     private static readonly Regex Identifier = new(
         @"\b([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
         + @"|[0-9a-fA-F]{16,}"
-        + @"|[A-Za-z0-9+/]{20,}={0,2})\b",
+        + @"|(?=[A-Za-z0-9+/]*[0-9+/])[A-Za-z0-9+/]{20,}={0,2})\b",
         RegexOptions.Compiled);
 
     private readonly string _path;
