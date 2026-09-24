@@ -598,6 +598,13 @@
     <value>Sign in to PlayStation Network</value>
     <comment>Button on the sign-in invitation. Opens Settings, where the account lives.</comment>
   </data>
+  <data name="Pairing_DoneAction" xml:space="preserve">
+    <value>Done</value>
+    <comment>The way out of the pairing celebration, beside Play now. NOT "Save": the record is written
+the moment the console registers, because that is when it becomes true, and the step already says the
+console is linked to this PC. A button offering to save something already saved invites the reader to
+think the claim above it is conditional.</comment>
+  </data>
   <data name="Pairing_PlayNow" xml:space="preserve">
     <value>Play now</value>
     <comment>Primary action on the pairing celebration. Not a save button: the console is already paired by the time this appears.</comment>
