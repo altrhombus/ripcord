@@ -171,6 +171,13 @@ Per-console fields worth noting:
   enabled and the other had it disabled.
 - `enabledFeatures` — includes `"remotePlay"` when the console is set up for it.
 
+**What this response does *not* carry, which matters more than it looks:** there is no presence, online or
+signed-in field. Both flags above are *configuration* — what the console is set up to permit — and neither
+says whether it has a live session with the account service right now. A console signed out of PSN appears
+here exactly as a healthy one does, and the connect command is then accepted and never delivered; see
+the wake section above. So this endpoint answers "which consoles may I remote-play, and may I wake them",
+and not "can I reach them". Treating it as the latter costs an unbounded wait and a misleading error.
+
 `platform=PS5` filters to PS5s; PS4s would presumably use a different filter value. This endpoint is
 the cloud equivalent of "which of my consoles can I remote-play, and can I wake them", and is the
 right basis for Ripcord's console picker when signed in.
@@ -344,23 +351,38 @@ specific cause worth knowing before chasing it.
 > recorded here because the four failures have a documented cause that looks exactly like a wake that does
 > not work.
 >
-> **The half-open-session trap.** An attempt that fails *after* the console has joined leaves the console
-> holding a Remote Play session that nobody is in. It then reports Remote Play as in use, refuses its
-> pair-device page, will not join a further cloud session, and shows **none** of the banners a real stream
-> shows. Every subsequent attempt fails as `the console never joined the session`, indefinitely — including
-> attempts that would otherwise have woken it. Two things do **not** clear it: leaving `members/me` (which
-> does not evict the console) and deleting the session (PSN answers **405**). A completed session clears it;
-> otherwise the console needs restarting.
+> **One cause, observed: a console signed OUT of the account service never receives the command `[V]`.**
+> Five runs of it (2026-09-24), against a console that had been signed out after the account's PSN security
+> options were changed. The trigger is incidental — whatever signs a console out lands here — and it is not
+> something a client can see. Throughout, the console *looked* completely available:
 >
-> A LAN `connect` that exits without a clean disconnect strands the console the same way, so a failed
-> stream can block the account route afterwards.
+> - it answered LAN `SRCH` under its own name, so discovery listed it normally;
+> - the console list still reported `enabledFeatures: [remotePlay]` and
+>   `wakeupEnabledPowerModes: [networkStandby, mainOnStandby]`;
+> - every `commands` POST was accepted with a `commandId` in ~150 ms.
 >
-> **And it is genuinely flaky beyond that.** Also recorded: `canWake=True` from the console list, the
-> command accepted, and six discovery polls finding the console still asleep — with rest-mode settings
-> unchanged and supported. The standing advice from that session is the right order to work in: treat a
-> console that will not join as a power-state question first.
+> It never woke and never joined. Signing in **on the console** fixed it immediately — from rest mode, with
+> no restart, first attempt. The command is delivered to a console's own PSN session, and a console that has
+> none receives nothing; the cloud's 202 means the command was queued, not that anything will read it.
 >
-> **Not the PS4 wake endpoint.** `POST {userProfileBase}/userProfile/v1/users/{onlineId}/remoteConsole/
+> **Recorded as one cause and not ranked among them**, because one incident is not a base rate. What makes
+> it worth naming first to a *user* is that it is undetectable from the client: the console-list fields are
+> `name`, `language`, `wakeupEnabledPowerModes`, `enabledFeatures`, `updatedDateTime`, `duid`, `platform`,
+> with no presence or online flag anywhere.
+>
+> The one asymmetry worth noticing is the cheap discriminator: **reachable on the LAN, unreachable through
+> the account** points at the console's PSN session rather than at anything the client sent. That is also
+> a candidate explanation for the RE log's "cloud wake is unreliable on this console" entry (2026-09-04) —
+> `canWake=True`, command accepted, six discovery polls finding it still asleep, settings unchanged — where
+> sign-in state was not checked. Candidate, not conclusion.
+>
+> **A historical cause, since fixed: the half-open-session trap.** While the account route was still being
+> built, an attempt that failed *after* the console had joined left the console holding a Remote Play
+> session nobody was in, and it then refused every later cloud session with this same symptom until it was
+> restarted — leaving `members/me` does not evict the console, and deleting the session is refused (405).
+> Sessions now complete and clear that state themselves, so this is recorded for the shape of the symptom
+> rather than as something to check. It was wrongly blamed for the sign-out runs above.
+>> **Not the PS4 wake endpoint.** `POST {userProfileBase}/userProfile/v1/users/{onlineId}/remoteConsole/
 > wakeUp?platform=PS4` exists and is a separate, dedicated wake call, reached after a
 > `GET asm/v1/apps/me/baseUrls/userProfile` lookup. It is **PS4-only**: the format string in the vendor
 > control library hard-codes `platform=PS4`, and no PS5 capture of ours contains the call. For PS5 the

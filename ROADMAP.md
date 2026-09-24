@@ -218,77 +218,46 @@ pass has to exercise.
 
 ## Backlog
 
-### Open bug — account pairing: the console never joins the session (found on hardware 2026-09-23)
+### Account pairing — resolved, and one thing owed (2026-09-23 to 09-24)
 
-An account ("no PIN") pairing from the app reaches the console and stops. The trace
-(`RIPCORD_TRACE_PAIRING=1`, `state/pairing-trace.log`) says the cloud half is fine — push channel connected,
-session created, connect command accepted, all inside 500 ms — and then the console never joins, and publishes
-no `customData1` at all. Four attempts: the first woke the console and produced no seed, the other three did
-not wake it at all.
+**The console was signed out of PlayStation Network.** The account's PSN security options had been changed,
+which signs devices out, and the console had been sitting in rest mode signed out since. Signing in on the
+console fixed it immediately — from rest mode, no restart, first attempt. Account pairing then completed
+through the app's own UI, which is the first time it has.
 
-**Not the console's settings.** Confirmed on the hardware: remote play is enabled, rest-mode internet is on,
-and turning the console on from the network is on.
+Worth reading as a class rather than a case: whatever signs a console out lands in the same place, and the
+trigger is not something a client can see or care about.
 
-**Both diagnostics have now been run, and both came back clean.** Four attempts in total.
+It was invisible from the client throughout, and that is the part worth keeping: the console answered LAN
+discovery under its own name, the console list still reported `remotePlay` enabled and both standby wake
+modes, and every `commands` POST was accepted with a `commandId` in ~150 ms. The command is delivered to a
+console's own PSN session and a console that has none receives nothing; the 202 means queued, not read.
 
-- **The commanded duid is right.** The account lists exactly one console and it is the one commanded;
-  `enabledFeatures=[remotePlay]`; `wakeupEnabledPowerModes=[networkStandby,mainOnStandby]` — both modes,
-  so the flag check owed below would not have caught this.
-- **The session service agrees the console never joined.** A `GetSessionAsync` readback after both waits
-  lists one member, the client. So this is not our push subscription missing an announcement — there was
-  nothing to miss.
-- **The command body matches the spec**, which is capture-backed `[C]`: six fields, `accountId` as a bare
-  number, `clientType` `"Windows"`, `commandType` `"remotePlay"`, `messageDestination` `"SQS"`. Accepted
-  with a `commandId` ~150 ms after session create.
+**The API cannot tell us.** The console-list response carries `name`, `language`,
+`wakeupEnabledPowerModes`, `enabledFeatures`, `updatedDateTime`, `duid`, `platform` — no presence or online
+field. Both flags are *configuration*, not reachability. So a client can only name it as the likely cause,
+which the failure message now does. Written up in `docs/protocol/ps5-cloud-session-api.md`, in both the wake
+section and the console-list section.
 
-**The cause was already written down, in the dirty room's RE log.** Reading it was the owner's suggestion
-and it ended the hunt in one pass — `docs/protocol/captures/lab-notebook.md`, the 2026-09-04 session,
-"Console-state lessons, which cost several runs today" and "The half-open-session trap".
+**Two wrong conclusions were reached on the way, both now withdrawn in place:** that the command does not
+wake a sleeping console (marked `[X]`, then found `[V]` in the RE log), and that the half-open-session trap
+was responsible. The trap was a mid-implementation artefact of the account route being built — completed
+sessions clear that state themselves now — so it is recorded in the spec for the shape of the symptom and
+is not something to check. The useful signal, in hindsight, is the asymmetry: **reachable on the LAN,
+unreachable through the account** points at the console's PSN session rather than at anything the client
+sent. The failure message lists the possible causes without ranking them; one incident is not a base rate.
 
-**The half-open-session trap.** An attempt that fails *after* the console has joined leaves it holding a
-Remote Play session nobody is in. It then reports Remote Play as in use, refuses its pair-device page, will
-not join any further cloud session, and will not wake — showing none of the banners a real stream shows.
-Every later attempt fails as `the console never joined the session`, indefinitely. Leaving `members/me` does
-not evict the console and deleting the session is refused (405), so **only a completed session or a restart
-clears it**. That matches this report exactly: the first attempt woke the console and then failed part-way,
-and the three after it met a stranded console.
+**Still owed — the flag check, agreed before any of this.** The flow offers account pairing on the sole
+basis that the console appears in the account's list, ignoring `RemotePlayEnabled` and `CanWake` which the
+record carries. It should say so before the user presses Pair rather than after two timeouts. This bug is
+not an argument for it — both flags were true here — but it is not an argument against it either: a console
+with remote play switched off is a case the flow still handles by waiting sixty seconds and then blaming a
+registration seed.
 
-It also records that a LAN `connect` which exits without a clean disconnect strands the console the same
-way, and — separately — that cloud wake is simply unreliable on this console: `canWake=True`, the command
-accepted, six discovery polls finding it still asleep, settings unchanged.
-
-**So the `[X]` was wrong and has been withdrawn.** The command waking a sleeping console is `[V]`: the log
-has it waking this same console repeatedly across that day, and account pairing completing end to end
-against it. `ps5-cloud-session-api.md` now records the trap and the flakiness instead, with the mistake
-noted, because four failures were spent diagnosing a wake that was not broken.
-
-**Landed as a result:** the failure message names the trap and the restart, since nothing in the code can
-clear it after the fact — saying so is the whole remedy.
-
-**Also checked and ruled out:** `POST {userProfileBase}/userProfile/v1/users/{onlineId}/remoteConsole/
-wakeUp?platform=PS4` is a real, separate wake endpoint reached after a `baseUrls/userProfile` lookup, and it
-is **PS4-only** — the vendor control library's format string hard-codes `platform=PS4`, and no PS5 capture
-of ours contains the call. It is not a missing PS5 step.
-
-**Still open:**
-
-1. **Pair with the console restarted and awake.** Expected to work; the harness did exactly this on
-   2026-09-04.
-2. **Why did the first attempt fail part-way?** It woke the console and then produced no seed, which is the
-   failure that stranded it. This is the first time the *app* has driven account pairing rather than the
-   harness, and the harness path completed, so a difference between the two is the place to look.
-3. **Does the app disconnect cleanly on exit?** The log records the harness stranding consoles this way. If
-   the app does the same, an ordinary stream can block account pairing afterwards.
-**Known-good baseline for comparison:** `docs/journal.md`, 2026-09-03 — an *awake* console joins ~0.75 s after
-the command and delivers the seed immediately, reproduced twice. So a console that has not joined in 30 s is
-not slow; the timeouts are not the fault.
-
-**Owed alongside, and agreed with the owner:** the flow offers account pairing on the sole basis that the
-console appears in the account's list. It ignores `RemotePlayEnabled` and `CanWake`, both of which the record
-carries, so a console that genuinely cannot be woken remotely waits out both timeouts and is then told
-something about a registration seed. The flow should say so before the user presses Pair. Not the cause of this
-bug — the flags are true here — which is why it is listed as a separate piece of work rather than a fix for it.
-
+**Also still open, and now the more interesting one:** does the app disconnect cleanly on exit? The RE log
+records the harness stranding consoles by exiting a stream without a clean disconnect, which blocks the
+account route afterwards. If the app does the same, that is a recurring user-facing bug rather than a lab
+artefact.
 ### PS3 port — auto-reconnect on a stream stall (noted 2026-09-18)
 When the console stops sending video, the PS3 port trips its 4-second stall detector and returns to the
 shell, leaving the person to re-select the console by hand. The .NET side does not: `SessionController` owns

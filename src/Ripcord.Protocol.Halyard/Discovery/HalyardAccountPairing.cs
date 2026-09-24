@@ -636,20 +636,30 @@ public sealed class HalyardAccountPairing(
                     // there names a consequence and hides the cause — reported from hardware as a seed
                     // timeout when the trace showed the console had never turned up at all.
                     //
-                    // **And the restart is named, because it is the likeliest cause by some distance.** An
-                    // attempt that fails after the console has joined leaves it holding a session nobody is
-                    // in; it then refuses every further cloud session with exactly this symptom, indefinitely,
-                    // and will not wake either. Leaving `members/me` does not evict it and deleting the
-                    // session is refused (405), so there is nothing this code can do about it after the fact —
-                    // which makes saying so the whole of the remedy. Four consecutive failures were spent
-                    // diagnosing a wake that was not broken, and the answer was already in the RE log.
+                    // Ordered by how far upstream the fault is, because the first true statement is the
+                    // useful one. A console that never joined cannot have published anything, so blaming the
+                    // seed there names a consequence and hides the cause — reported from hardware as a seed
+                    // timeout when the trace showed the console had never turned up at all.
+                    //
+                    // **Signed out of the account service is one of these, and it is the one that is
+                    // invisible.** Five runs (2026-09-24) against a console signed out of PSN after the
+                    // account's security options changed: it answered LAN discovery under its own name
+                    // throughout, the console list still reported remote play enabled and both standby wake
+                    // modes, and every command was accepted with a commandId in ~150 ms. Signing in on the
+                    // console fixed it from rest mode, first attempt, no restart.
+                    //
+                    // Nothing in the console list reports it — the fields are name, language,
+                    // wakeupEnabledPowerModes, enabledFeatures, updatedDateTime, duid, platform, with no
+                    // presence or online flag — so a client cannot check for it and can only name it among
+                    // the things to look at. It is listed rather than ranked: one observation is not a base
+                    // rate, and the other causes here have been seen too.
                     return fail(
                         consoleJoined == false && seen == 0
                             ? "The console never joined the session, so it never got as far as publishing a "
-                              + "registration seed. If an earlier attempt failed part-way, the console may "
-                              + "still be holding that session — it will refuse new ones until it is "
-                              + "restarted, and will not wake either. Otherwise it has to be awake, or able "
-                              + "to be woken over the internet from rest mode."
+                              + "registration seed. It has to be awake or able to be woken over the internet "
+                              + "from rest mode, reachable by the account service, and signed in to "
+                              + "PlayStation Network — a console that is signed out still answers on your "
+                              + "network and still looks available here."
                         : unreadable > 0
                             ? $"The console published a registration seed ({unreadable} of {seen} customData1 "
                               + "frames) but none of them could be decrypted with this session's key material."
