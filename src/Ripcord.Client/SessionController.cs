@@ -303,6 +303,16 @@ public sealed class SessionController : IAsyncDisposable
     {
         int attempt = 0;
 
+        // Why the last attempt stopped, carried into the next one.
+        //
+        // **Because "Reconnecting to your console…" under a heading that says the same thing is not a
+        // sentence.** The useful message — what failed, and how long until the next try — was reported just
+        // before the backoff, so it held the screen for the backoff and was then replaced by that tautology
+        // for the whole of the attempt. Reported from hardware as a connect that flashed between two
+        // unhelpful lines: with early backoffs of a second or two, the informative one is the one that
+        // flickers.
+        string? lastReason = null;
+
         try
         {
             while (!cancellationToken.IsCancellationRequested)
@@ -310,7 +320,10 @@ public sealed class SessionController : IAsyncDisposable
                 bool isRetry = attempt > 0;
                 Transition(
                     isRetry ? SessionLifecycle.Reconnecting : SessionLifecycle.Connecting,
-                    isRetry ? "Reconnecting to your console…" : "Connecting to your console…",
+                    isRetry
+                        ? $"Attempt {attempt} of {_options.MaxReconnectAttempts}."
+                          + (lastReason is null ? string.Empty : $" {lastReason}")
+                        : "Connecting to your console…",
                     isRetry ? attempt : 0);
 
                 ConnectOutcome outcome = await TryConnectAsync(cancellationToken).ConfigureAwait(false);
@@ -354,6 +367,8 @@ public sealed class SessionController : IAsyncDisposable
 
                     // Backoff on a flap too. Reconnecting instantly into a console that is shutting down is
                     // what turned this into a tight loop rather than a slow one.
+                    lastReason = "The stream dropped as soon as it started.";
+
                     TimeSpan flapBackoff = BackoffFor(attempt);
                     Transition(
                         SessionLifecycle.Reconnecting,
@@ -390,6 +405,8 @@ public sealed class SessionController : IAsyncDisposable
                         $"Couldn't reconnect after {_options.MaxReconnectAttempts} attempts. {outcome.Detail}");
                     return;
                 }
+
+                lastReason = outcome.Detail;
 
                 TimeSpan backoff = BackoffFor(attempt);
                 Transition(

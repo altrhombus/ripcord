@@ -175,9 +175,13 @@ public sealed class ConsoleCardViewModel : ObservableState<ConsoleCardState>
                 ConsoleReachability.Resting or ConsoleReachability.PreparingForRest => StatusTone.Caution,
                 ConsoleReachability.Offline => StatusTone.Neutral,
 
-                // Positive: it is ready to play. The label carries "elsewhere"; the colour should not also
-                // suggest something is wrong, because nothing is.
-                ConsoleReachability.Away => StatusTone.Positive,
+                // **Caution, and the Positive this replaces was over-claiming.** The argument for green was
+                // that nothing is wrong, which is true, and that it is ready to play, which we do not know:
+                // Away means the account lists the console, not that it is awake. A console asleep in another
+                // house is Away, and seen on hardware as a green dot over a console that then had to be woken
+                // during the connect. Caution is the same tone Resting wears and says the same thing — it
+                // will work, and it will take a moment longer.
+                ConsoleReachability.Away => StatusTone.Caution,
                 _ => StatusTone.Unknown,
             },
 
