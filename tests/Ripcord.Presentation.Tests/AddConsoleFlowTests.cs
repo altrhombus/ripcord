@@ -1083,6 +1083,89 @@ public class AddConsoleFlowTests
             Consoles = [new CloudConsole(duid, name, true, true)],
         };
 
+    // ---- the account's own flags on the console ---------------------------------------------------
+    //
+    // The record carries two, and the step used to ignore both: it offered the account route because the
+    // console appeared in the list, which says only that the account has seen it. Getting this wrong is
+    // expensive and silent - sixty seconds of waiting, then a message about a registration seed for a console
+    // that was never going to answer. The two are not the same KIND of fact, which is the thing these pin.
+
+    [Fact]
+    public async Task AccountPairing_WhenRemotePlayIsOffOnTheConsole_IsRefusedAndSaysWhere()
+    {
+        // Fatal, and fixable on the console. Offering the route here would be offering something that cannot
+        // work, so the step does not aim at it either.
+        var account = new FakeAccountSession
+        {
+            Current = new AccountIdentity("4200000000000000042", "somebody", "GB"),
+            Consoles = [new CloudConsole("duid-living-room", "PS5-8A2F", RemotePlayEnabled: false, CanWakeRemotely: true)],
+        };
+        var h = new Harness(account: account);
+        await h.ToLinkViaScanAsync(Console("10.0.0.7", name: "PS5-8A2F"));
+
+        Assert.False(h.Flow.State.CanPairWithAccount);
+        Assert.Equal(PairingRoute.Code, h.Flow.State.Route);
+        Assert.Contains("Remote Play is switched off", h.Flow.State.AccountPairingNote);
+
+        // Caution, not an error tone: a setting being off is not a fault. See StatusTone.Neutral's note.
+        Assert.Equal(StatusTone.Caution, h.Flow.State.AccountPairingNoteTone);
+    }
+
+    [Fact]
+    public async Task AccountPairing_WhenTheConsoleCannotBeWoken_IsStillOfferedWithTheCondition()
+    {
+        // A condition, not a refusal: an awake console pairs normally, so refusing would take away a route
+        // that works. What the user needs is to know it before pressing Pair rather than after two timeouts.
+        var account = new FakeAccountSession
+        {
+            Current = new AccountIdentity("4200000000000000042", "somebody", "GB"),
+            Consoles = [new CloudConsole("duid-living-room", "PS5-8A2F", RemotePlayEnabled: true, CanWakeRemotely: false)],
+        };
+        var h = new Harness(account: account);
+        await h.ToLinkViaScanAsync(Console("10.0.0.7", name: "PS5-8A2F"));
+
+        Assert.True(h.Flow.State.CanPairWithAccount);
+        Assert.Equal(PairingRoute.Account, h.Flow.State.Route);
+        Assert.Contains("Turn the console on first", h.Flow.State.AccountPairingNote);
+
+        // And still says the code is unnecessary, because that is also true and is why they chose this route.
+        Assert.Contains("No code needed", h.Flow.State.AccountPairingNote);
+
+        // NOT Positive. A green bar carrying an instruction reads as the opposite of its own sentence.
+        Assert.Equal(StatusTone.Caution, h.Flow.State.AccountPairingNoteTone);
+    }
+
+    [Fact]
+    public async Task AccountPairing_WithBothFlagsSet_CarriesNoCondition()
+    {
+        var h = new Harness(account: SignedInKnowing());
+        await h.ToLinkViaScanAsync(Console("10.0.0.7", name: "PS5-8A2F"));
+
+        Assert.True(h.Flow.State.CanPairWithAccount);
+        Assert.Contains("No code needed", h.Flow.State.AccountPairingNote);
+        Assert.DoesNotContain("Turn the console on first", h.Flow.State.AccountPairingNote);
+        Assert.Equal(StatusTone.Positive, h.Flow.State.AccountPairingNoteTone);
+    }
+
+    [Fact]
+    public async Task AccountPairing_WhenTheAccountDoesNotKnowTheConsole_TheFlagsClaimNothing()
+    {
+        // The flags default to true for an unknown console, so that the note reports the thing that is
+        // actually true - the console is not in the list - rather than inventing a fact about a record that
+        // does not exist.
+        var account = new FakeAccountSession
+        {
+            Current = new AccountIdentity("4200000000000000042", "somebody", "GB"),
+            Consoles = [new CloudConsole("duid-other", "Some other console", true, true)],
+        };
+        var h = new Harness(account: account);
+        await h.ToLinkViaScanAsync(Console("10.0.0.7", name: "PS5-8A2F"));
+
+        Assert.False(h.Flow.State.CanPairWithAccount);
+        Assert.DoesNotContain("Remote Play is switched off", h.Flow.State.AccountPairingNote);
+        Assert.Contains("isn't in your account's console list", h.Flow.State.AccountPairingNote);
+    }
+
     [Fact]
     public async Task AccountPairing_WhenSignedOut_IsNotOfferedAtAll()
     {

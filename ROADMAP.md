@@ -247,13 +247,28 @@ is not something to check. The useful signal, in hindsight, is the asymmetry: **
 unreachable through the account** points at the console's PSN session rather than at anything the client
 sent. The failure message lists the possible causes without ranking them; one incident is not a base rate.
 
-**Still owed — the flag check, agreed before any of this.** The flow offers account pairing on the sole
-basis that the console appears in the account's list, ignoring `RemotePlayEnabled` and `CanWake` which the
-record carries. It should say so before the user presses Pair rather than after two timeouts. This bug is
-not an argument for it — both flags were true here — but it is not an argument against it either: a console
-with remote play switched off is a case the flow still handles by waiting sixty seconds and then blaming a
-registration seed.
+**The flag check: done.** The flow offered account pairing because the console appeared in the account's
+list, which says only that the account has seen it. It now reads the two flags the record carries, and
+keeps them apart because they are not the same kind of fact:
 
+- `RemotePlayEnabled` false — the route cannot work. Not offered, `DefaultRoute` does not aim at it, and the
+  note says where on the console to turn it on.
+- `CanWakeRemotely` false — the route works on an *awake* console, so refusing would take away something
+  that works. Offered, with the condition said in the same sentence as the reassurance, because the user is
+  about to press Pair and both belong to that decision.
+
+Both default to true when the account does not know the console, so the note reports the thing that is
+actually true — not in the list — rather than inventing a fact about a record that does not exist.
+
+The note's severity now follows the note (`AccountPairingNoteTone`, a `StatusTone`) rather than whether the
+route is available. Those agreed while the note only ever said one of two things; they stop agreeing the
+moment the route is available *with a condition*, and a green Success bar reading "turn the console on
+first" tells the reader the opposite of what the sentence says. Nothing is Critical: a setting being off is
+not a fault.
+
+Four tests, one verified non-vacuous by removing the gate. **Not verified on hardware** — it needs a console
+with remote play switched off, or rest-mode wake switched off, which means changing settings on a working
+console and changing them back.
 **The clean-exit question: answered, fixed, and needing one live check.** The app did *not* disconnect
 cleanly when closed mid-stream. `SessionPage.Page_Unloaded` starts its teardown fire-and-forget — correctly,
 since awaiting it on the UI thread froze the window on exit once — and nothing held the window open for it,

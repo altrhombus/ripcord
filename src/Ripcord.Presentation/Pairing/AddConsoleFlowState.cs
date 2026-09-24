@@ -52,6 +52,25 @@ public sealed record AddConsoleFlowState(
     string AccountPairingNote,
 
     /// <summary>
+    /// What the note above means, as a tone rather than a colour.
+    ///
+    /// <para>
+    /// <b>It follows the note, not <see cref="CanPairWithAccount"/>,</b> which is the change worth explaining.
+    /// The front end used to derive severity from whether the route was available — Success when it was,
+    /// Informational when it was not — and that was fine while the note only ever said one of two things. It
+    /// stopped being fine when the route could be available <em>with a condition attached</em>: a green
+    /// Success bar reading "turn the console on first" tells the reader the opposite of what the sentence
+    /// says.
+    /// </para>
+    ///
+    /// <para>
+    /// Nothing here is Critical, deliberately, for the same reason <see cref="StatusTone.Neutral"/> exists:
+    /// remote play switched off is a setting, not a fault, and colouring a setting like a failure cries wolf.
+    /// </para>
+    /// </summary>
+    StatusTone AccountPairingNoteTone,
+
+    /// <summary>
     /// Which route the link step is currently set up for. Everything below follows from it: the step used to
     /// show both routes at once — "no code needed", then how to find a code, then a box asking for one — which
     /// contradicted itself and left two commit buttons with nothing to say which belonged to what.

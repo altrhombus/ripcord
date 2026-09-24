@@ -425,7 +425,10 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
     private PairingRoute DefaultRoute =>
         _accountPairing is not null && AccountIdIsAutomatic
         && (_accountPairingCapability?.Available ?? false)
-        && ResolveCloudDeviceId() is not null
+        // Remote play switched off on the console is the one flag that makes this route impossible rather
+        // than merely conditional, so the step must not aim at it. Being unable to WAKE the console is a
+        // condition, not a refusal — an awake console pairs normally — and does not change the route.
+        && ResolveCloudConsole() is { RemotePlayEnabled: true }
             ? PairingRoute.Account
             : PairingRoute.Code;
 
@@ -965,8 +968,20 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
     /// paired before sign-in existed — see <see cref="CloudConsoleMatch"/> for the matching rule and why an
     /// ambiguous match deliberately yields nothing.
     /// </summary>
-    private string? ResolveCloudDeviceId()
-        => CloudConsoleMatch.ResolveId(_cloudConsoles, _selected?.Console.DisplayName);
+    private string? ResolveCloudDeviceId() => ResolveCloudConsole()?.Id;
+
+    /// <summary>
+    /// The account service's record for the console being paired, or null when it does not know it (or knows
+    /// two by the same name, which yields nothing rather than a guess).
+    ///
+    /// <para>
+    /// Wanted for its flags as much as its id. <c>RemotePlayEnabled</c> and <c>CanWakeRemotely</c> decide
+    /// whether the account route can work at all and whether it can work on a sleeping console, and the step
+    /// used to offer the route on the strength of the record merely existing.
+    /// </para>
+    /// </summary>
+    private CloudConsole? ResolveCloudConsole()
+        => CloudConsoleMatch.Resolve(_cloudConsoles, _selected?.Console.DisplayName);
 
     /// <summary>The signed-in account's name in parentheses, or nothing when it has none to show.</summary>
     private string FormatAccountName()
@@ -1052,7 +1067,24 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
         // account has to already know this console.
         bool accountPairingOffered = _accountPairing is not null && AccountIdIsAutomatic;
         bool accountCapable = _accountPairingCapability?.Available ?? false;
-        bool consoleKnownToAccount = ResolveCloudDeviceId() is not null;
+        CloudConsole? cloudConsole = ResolveCloudConsole();
+        bool consoleKnownToAccount = cloudConsole is not null;
+
+        // **Two flags the account's own record carries, and the step used to ignore both.** It offered the
+        // account route because the console appeared in the list, which says only that the account has seen
+        // it. The failure for getting this wrong is expensive and silent: sixty seconds of waiting, and then
+        // a message about a registration seed for a console that was never going to answer.
+        //
+        // They are not the same kind of fact and must not be treated as one:
+        //
+        //   RemotePlayEnabled  false → the route cannot work. Fixable, on the console.
+        //   CanWakeRemotely    false → the route works on an AWAKE console. A condition, not a refusal.
+        //
+        // Both default to true when the account does not know the console, because then it is
+        // consoleKnownToAccount that has the answer and these would otherwise say something false about a
+        // record that does not exist.
+        bool remotePlayEnabled = cloudConsole?.RemotePlayEnabled ?? true;
+        bool canWakeRemotely = cloudConsole?.CanWakeRemotely ?? true;
 
         // Signing in is POSSIBLE but has not happened. Every question above asks whether the account route is
         // available to somebody already signed in, so all of them are false here - which meant the step said
@@ -1113,7 +1145,8 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
                 : _passcode.Length >= _options.MinimumPasscodeLength && EffectiveAccountId.Length > 0,
 
             AccountPairingOffered: accountPairingOffered,
-            CanPairWithAccount: accountPairingOffered && accountCapable && consoleKnownToAccount,
+            CanPairWithAccount: accountPairingOffered && accountCapable && consoleKnownToAccount
+                                && remotePlayEnabled,
 
             Route: Route,
 
@@ -1166,9 +1199,28 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
                     ? _accountPairingCapability?.Detail ?? NoAccountPairingMessage
                     : !consoleKnownToAccount
                         ? NotInAccountListMessage
-                        : Route == PairingRoute.Account
-                            ? string.Format(Strings.Pairing_NoCodeNeeded, name)
-                            : string.Empty,
+
+                        // Ordered fatal-before-conditional. Remote play being off stops the route; not being
+                        // allowed to wake the console only requires that it is already on.
+                        : !remotePlayEnabled
+                            ? string.Format(Strings.Pairing_RemotePlayOff, name)
+                            : Route != PairingRoute.Account
+                                ? string.Empty
+                                : canWakeRemotely
+                                    ? string.Format(Strings.Pairing_NoCodeNeeded, name)
+                                    : string.Format(Strings.Pairing_NoCodeNeededButAwake, name),
+
+            // Caution for both of the console-side answers, and they are the two that carry an instruction:
+            // one says turn a setting on, the other says turn the console on. Positive only when the route is
+            // available with nothing attached; everything else is Neutral, because a build without the
+            // constants and a console the account has not seen are not faults of the user's.
+            AccountPairingNoteTone: !accountPairingOffered || !accountCapable || !consoleKnownToAccount
+                ? StatusTone.Neutral
+                : !remotePlayEnabled || (Route == PairingRoute.Account && !canWakeRemotely)
+                    ? StatusTone.Caution
+                    : Route == PairingRoute.Account
+                        ? StatusTone.Positive
+                        : StatusTone.Neutral,
 
             // When signed in, the account id stops being something the user has to find. This is the whole point
             // of the account tier for someone who only ever plays on their own network.
