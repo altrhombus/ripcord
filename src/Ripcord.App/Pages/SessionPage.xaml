@@ -103,52 +103,77 @@
                     Style="{StaticResource TitleTextBlockStyle}"
                     x:Uid="SessionPage_Starting"
                     TextWrapping="Wrap" />
+                <!--
+                    MinHeight reserves the second line this often wraps to. The panel is bottom-anchored, so
+                    anything that changes height below the headline moves the headline - and a detail that
+                    grows from one line to two on a retry is enough to make the whole message hop.
+                -->
                 <TextBlock
                     x:Name="StatusDetail"
+                    MinHeight="40"
                     Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                     Style="{StaticResource BodyTextBlockStyle}"
                     TextWrapping="Wrap" />
 
                 <!--
-                    The trail: the mark's own three dashes, uneven and right-aligned exactly as brand/README
-                    describes them, lit as far as the connect has travelled. Three because the mark has three -
-                    a progress indicator with more steps than the logo it is made from would be a different
-                    graphic wearing the logo's clothes - and because they are the three waits a player can
-                    actually tell apart: the device coming up, the console coming up, the handshake.
+                    **Fixed height, because everything inside it comes and goes.** The trail is drawn only
+                    once there is a phase to draw, the bar only when there is not, and the way out appears
+                    a few seconds in - and each of those used to move the headline above it, on a panel
+                    anchored to the bottom. Reported as text that jumps around while you are reading it.
 
-                    Deliberately NOT a percentage. Where you are is knowable; how long it will take is not,
-                    and a bar that implied otherwise would be inventing a number to look reassuring.
+                    Reserving the tallest arrangement costs some empty space early in a connect and buys a
+                    message that stays where it was put. The children keep their own visibility; what they
+                    no longer have is any effect on where anything else sits.
                 -->
-                <controls:ConnectMark
-                    x:Name="StatusTrail"
-                    Width="72"
-                    Height="72"
-                    HorizontalAlignment="Left" />
+                <Grid x:Name="StatusProgressHost" Height="112">
+                    <!--
+                        The trail: the mark's own three dashes, uneven and right-aligned exactly as
+                        brand/README describes them, lit as far as the connect has travelled. Three because
+                        the mark has three - a progress indicator with more steps than the logo it is made
+                        from would be a different graphic wearing the logo's clothes - and because they are
+                        the three waits a player can actually tell apart: the device coming up, the console
+                        coming up, the handshake.
 
-                <!--
-                    The fallback, for every status that did not come from the connect sequence - a reconnect, a
-                    stall - where there is no phase to draw and pretending otherwise would claim progress.
-                -->
-                <ProgressBar
-                    x:Name="StatusBusyBar"
-                    Width="180"
-                    Height="3"
-                    HorizontalAlignment="Left"
-                    IsIndeterminate="True"
-                    Visibility="Collapsed" />
+                        Deliberately NOT a percentage. Where you are is knowable; how long it will take is
+                        not, and a bar that implied otherwise would be inventing a number to look
+                        reassuring.
+                    -->
+                    <controls:ConnectMark
+                        x:Name="StatusTrail"
+                        Width="72"
+                        Height="72"
+                        HorizontalAlignment="Left"
+                        VerticalAlignment="Top" />
 
-                <!--
-                    The way out of a connect that has run long enough to feel stuck - quiet, and a link
-                    rather than a button, because it is not what anybody came here to press. It appears
-                    after a few seconds rather than on entry: a Cancel offered the instant you press Play is
-                    the ceremony this screen was rebuilt to avoid.
-                -->
-                <HyperlinkButton
-                    x:Name="ConnectEscape"
-                    HorizontalAlignment="Left"
-                    Click="LeaveButton_Click"
-                    x:Uid="SessionPage_BackConsoles2"
-                    Visibility="Collapsed" />
+                    <!--
+                        The fallback, for every status that did not come from the connect sequence - a
+                        reconnect, a stall - where there is no phase to draw and pretending otherwise would
+                        claim progress.
+                    -->
+                    <ProgressBar
+                        x:Name="StatusBusyBar"
+                        Width="180"
+                        Height="3"
+                        Margin="0,16,0,0"
+                        HorizontalAlignment="Left"
+                        VerticalAlignment="Top"
+                        IsIndeterminate="True"
+                        Visibility="Collapsed" />
+
+                    <!--
+                        The way out of a connect that has run long enough to feel stuck - quiet, and a link
+                        rather than a button, because it is not what anybody came here to press. It appears
+                        after a few seconds rather than on entry: a Cancel offered the instant you press
+                        Play is the ceremony this screen was rebuilt to avoid.
+                    -->
+                    <HyperlinkButton
+                        x:Name="ConnectEscape"
+                        HorizontalAlignment="Left"
+                        VerticalAlignment="Bottom"
+                        Click="LeaveButton_Click"
+                        x:Uid="SessionPage_BackConsoles2"
+                        Visibility="Collapsed" />
+                </Grid>
 
                 <StackPanel
                     x:Name="StatusActions"
