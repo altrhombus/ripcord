@@ -370,14 +370,34 @@ public sealed class HalyardAccountPairing(
         // ignored so a stray frame cannot resolve the wait with garbage.
         var seed = new TaskCompletionSource<byte[]>(TaskCreationOptions.RunContinuationsAsynchronously);
 
+        // Counted, because otherwise the two failures are indistinguishable and they are not the same fault.
+        // Ignoring a customData1 that will not decrypt is right — a stray frame must not resolve the wait with
+        // garbage — but reporting the timeout afterwards as "the console did not publish the seed" asserts
+        // something we do not know. A seed that arrived and did not open means our key material, our context
+        // key or our encoding is wrong; a seed that never arrived means the console never got as far as
+        // publishing one. They have nothing in common but the symptom, and the wrong one sends the next
+        // person looking in the wrong place.
+        int customDataSeen = 0;
+        int customDataUnreadable = 0;
+
         void OnCustomData1(string customData1)
         {
+            Interlocked.Increment(ref customDataSeen);
+
             try
             {
                 seed.TrySetResult(HalyardAccountSeedDelivery.RecoverSeed(data1, data2, customData1, _contextKey));
             }
-            catch (FormatException) { /* not a valid double-base64 customData1 for us — keep waiting */ }
-            catch (ArgumentException) { /* wrong length after decode — keep waiting */ }
+            catch (FormatException)
+            {
+                // Not a valid double-base64 customData1 for us — keep waiting.
+                Interlocked.Increment(ref customDataUnreadable);
+            }
+            catch (ArgumentException)
+            {
+                // Wrong length after decode — keep waiting.
+                Interlocked.Increment(ref customDataUnreadable);
+            }
         }
 
         // The console's OFFER, which carries where it is and the id it will name itself by in the prelude.
@@ -534,7 +554,16 @@ public sealed class HalyardAccountPairing(
                 }
                 catch (TimeoutException)
                 {
-                    return fail("The console did not publish the registration seed (customData1) in time.");
+                    int seen = Volatile.Read(ref customDataSeen);
+                    int unreadable = Volatile.Read(ref customDataUnreadable);
+
+                    Log($"seed wait timed out after {_options.SeedTimeout.TotalSeconds:0}s "
+                        + $"(customData1 frames seen: {seen}, unreadable: {unreadable})");
+
+                    return fail(unreadable > 0
+                        ? $"The console published a registration seed ({unreadable} of {seen} customData1 "
+                          + "frames) but none of them could be decrypted with this session's key material."
+                        : "The console did not publish the registration seed (customData1) in time.");
                 }
 
                 Log("registration seed recovered from customData1");

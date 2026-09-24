@@ -107,7 +107,15 @@ public static class HalyardAppServices
             // renders the reason instead of offering an action that cannot work.
             AccountPairing = accountPairing
                 ?? (Gateway() is { } forPairing
-                    ? new HalyardAccountConsolePairing(forPairing)
+                    // The trace sink is null unless RIPCORD_TRACE_PAIRING says otherwise. The rendezvous
+                    // narrates its own stages and the app was throwing that away, which left an account
+                    // pairing that failed saying only what it had been waiting for.
+                    ? new HalyardAccountConsolePairing(
+                        forPairing,
+                        options: new HalyardAccountPairingOptions
+                        {
+                            Log = HalyardPairingTrace.SinkIfEnabled(resolvedPaths),
+                        })
                     : new UnavailableAccountPairing()),
             Dispatcher = dispatcher,
             VideoCapabilities = videoCapabilities,
