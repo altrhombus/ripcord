@@ -389,8 +389,21 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer
         // lines land under "Connecting to your console…" instead of replacing it.
         var connectProgress = new Progress<string>(line =>
         {
-            ShowStatus(_viewModel.State.StatusHeadline, line, terminal: false);
             _services.DiagnosticTrace?.Invoke($"connect: {line}");
+
+            // **Nothing on screen once the picture is up.** The control channel goes on narrating after the
+            // stream is live - "DataReceived" and its neighbours - and every one of those lines used to call
+            // ShowStatus, which re-raised the overlay that Streaming had just dismissed. Seen on hardware as
+            // "Connecting to your console…" sitting over a running stream with a protocol word underneath it.
+            //
+            // The right half to guard is this one, not ShowStatus: a connect reporter has nothing to say
+            // after the connect, while ShowStatus still has to work for Degraded and for a failure.
+            if (_viewModel.State.IsStreamLive)
+            {
+                return;
+            }
+
+            ShowStatus(_viewModel.State.StatusHeadline, line, terminal: false);
         });
 
         // The controller owns everything from here: handshake, media/input routing, stall detection, reconnect.
