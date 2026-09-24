@@ -403,6 +403,17 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer
                 return;
             }
 
+            // **The stages are for everybody; this line is not.** What the flow reports - "Preparing video",
+            // "Checking credentials", "Connecting to your console" - is written for a player. What arrives
+            // here is the protocol narrating itself: PreludeEstablished, DataReceived, registered. It is the
+            // difference between a connect that explains itself and one that looks like it is leaking, so it
+            // follows the diagnostics setting the user already has rather than a second switch meaning the
+            // same thing.
+            if (_settings.DiagnosticsRungOnConnect != DiagnosticsRung.Full)
+            {
+                return;
+            }
+
             ShowStatus(_viewModel.State.StatusHeadline, line, terminal: false);
         });
 
@@ -1502,6 +1513,16 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer
             ? DiagnosticsPanel.ActualWidth
             : DiagnosticsPanel.MaxWidth;
 
+        // **The summary strip belongs to the picture, not to the window.** It stretched the full width
+        // whatever the stream was doing, so a 16:9 stream in a wide window put a bar of instruments out over
+        // both pillarboxes - reading as chrome bolted to the window rather than as something measuring the
+        // thing above it. PillarWidth is one bar, so the picture is the viewport less two of them; with no
+        // pillarboxing that is the viewport and the strip is exactly as wide as it was.
+        double pictureWidth = ActualWidth - (layout.PillarWidth * 2);
+        DiagnosticsSummary.MaxWidth = pictureWidth > 120 && double.IsFinite(pictureWidth)
+            ? pictureWidth
+            : double.PositiveInfinity;
+
         ApplyDiagnosticsLayout(layout.Placement);
 
         // A sheet must not grow past the bar it is sitting in. Without this it keeps the window-height cap set
@@ -1824,6 +1845,12 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer
 
         // Same reason as the touch toggle: the button would otherwise keep focus and swallow every
         // subsequent Space before it reached the console.
+        FocusStreamSurface();
+    }
+
+    private void DiagnosticsLessButton_Click(object sender, RoutedEventArgs e)
+    {
+        _viewModel.HideDiagnosticsDetail();
         FocusStreamSurface();
     }
 

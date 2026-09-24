@@ -295,6 +295,7 @@
                 Grid.Row="0"
                 Margin="28,0,28,12"
                 Padding="18,14"
+                HorizontalAlignment="Center"
                 VerticalAlignment="Bottom"
                 Background="{ThemeResource AcrylicInAppFillColorDefaultBrush}"
                 BorderBrush="{ThemeResource SurfaceStrokeColorDefaultBrush}"
@@ -542,14 +543,30 @@
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
                     <TextBlock
                         VerticalAlignment="Center"
                         CharacterSpacing="60"
                         Style="{StaticResource BodyStrongTextBlockStyle}"
                         x:Uid="SessionPage_StreamDiagnostics" />
-                    <Border
+                    <!--
+                        The way back to the strip, which did not exist. Details promoted rung 2 to rung 3 and
+                        nothing demoted it: F3 hides the panel and F3 again restores the rung you were on, by
+                        design, so a promotion was permanent for the rest of the session. A one-way control is
+                        the shape of the bug, and the inverse of Details belongs beside the thing it undoes.
+                    -->
+                    <Button
+                        x:Name="DiagnosticsLessButton"
                         Grid.Column="1"
+                        Margin="0,0,8,0"
+                        MinHeight="{StaticResource RipcordTouchTargetCompact}"
+                        VerticalAlignment="Center"
+                        x:Uid="SessionPage_DiagnosticsLess"
+                        Click="DiagnosticsLessButton_Click" />
+
+                    <Border
+                        Grid.Column="2"
                         Padding="6,1"
                         VerticalAlignment="Center"
                         Background="{ThemeResource ControlFillColorSecondaryBrush}"
