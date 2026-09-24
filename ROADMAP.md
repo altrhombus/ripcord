@@ -254,10 +254,19 @@ not an argument for it — both flags were true here — but it is not an argume
 with remote play switched off is a case the flow still handles by waiting sixty seconds and then blaming a
 registration seed.
 
-**Also still open, and now the more interesting one:** does the app disconnect cleanly on exit? The RE log
-records the harness stranding consoles by exiting a stream without a clean disconnect, which blocks the
-account route afterwards. If the app does the same, that is a recurring user-facing bug rather than a lab
-artefact.
+**The clean-exit question: answered, fixed, and needing one live check.** The app did *not* disconnect
+cleanly when closed mid-stream. `SessionPage.Page_Unloaded` starts its teardown fire-and-forget — correctly,
+since awaiting it on the UI thread froze the window on exit once — and nothing held the window open for it,
+so at shutdown the task was dropped and the process exited. The teardown's last acts are the
+control-channel close and, on the account route, `LeaveSessionAsync` over HTTPS; neither happened. Leaving a
+stream the ordinary way was always fine, because the window lives on and the task completes.
+
+`AppWindow.Closing` now cancels once, closes the stream layer, waits up to four seconds for the teardown
+(its own cloud call carries a three-second timeout) and then closes regardless — a hang there would be
+worse than an unclean exit, and is the bug the fire-and-forget was introduced to fix.
+
+**Needs verifying on hardware**, which is the only way: start a stream, close the window with the X
+mid-stream, and confirm the console does not afterwards report Remote Play in use or refuse to pair.
 ### PS3 port — auto-reconnect on a stream stall (noted 2026-09-18)
 When the console stops sending video, the PS3 port trips its 4-second stall detector and returns to the
 shell, leaving the person to re-select the console by hand. The .NET side does not: `SessionController` owns
