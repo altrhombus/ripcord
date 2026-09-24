@@ -16,9 +16,12 @@ Mock-ups of the card's states, first run, the celebration and the density steps:
 
 ## Amended 2026-09-21, after review
 
-Three findings were re-decided once the owner had read this file, and the portable half has since been
-built. **[`design-review-handoff.md`](design-review-handoff.md) is the current instruction set; where it
-disagrees with this file, it wins.**
+Three findings were re-decided once the owner had read this file, and the work has since been built. It was
+carried out from a written instruction set, `design-review-handoff.md`, which said to delete itself once the
+work had landed and its remaining findings had homes — so it is gone. Its hardware checks are §7 and §8 of
+[`design-branch-test-pass.md`](design-branch-test-pass.md) and the narrative is in
+[`journal.md`](journal.md). **Where the amendments below disagree with the body of this file, the amendments
+win.**
 
 - **B3 is superseded.** One shared `ConsoleCard` control was the recommendation here. The hero instead
   becomes a *grid of one* — `ConsoleCardState` already carries everything `RenderHero()` set by hand, so the
