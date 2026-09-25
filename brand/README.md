@@ -81,7 +81,9 @@ deuteranopia check before any colour is changed.
 ## The wordmark
 
 **Outfit SemiBold (600), lowercase**, set beside the mark. Settled 2026-09-24 against Poppins and Plus
-Jakarta Sans. Outfit's near-circular bowls echo the wedge's round joins and the dashes' pill ends, and it
+Jakarta Sans. The specimens the choice was made from, and the alternatives it was made against, are in
+[`explorations/wordmark-and-tile.html`](explorations/wordmark-and-tile.html) — live type rather than
+screenshots, so it still shows what was compared. Outfit's near-circular bowls echo the wedge's round joins and the dashes' pill ends, and it
 was already the face in the design drawings. Poppins was ruled out as too common to read as a choice.
 Plus Jakarta Sans sat too close to Segoe UI Variable, where the wordmark would look like UI text.
 
