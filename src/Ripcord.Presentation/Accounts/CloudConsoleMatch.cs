@@ -34,6 +34,19 @@ public static class CloudConsoleMatch
     /// what people do to tell two consoles apart.
     /// </param>
     public static string? ResolveId(IReadOnlyList<CloudConsole> cloudConsoles, string? reportedName)
+        => Resolve(cloudConsoles, reportedName)?.Id;
+
+    /// <summary>
+    /// The account service's whole record for a console, matched the same way — and by the same code, so the
+    /// ambiguity rule cannot diverge between the caller that wants an id and the caller that wants the flags.
+    ///
+    /// <para>
+    /// The record carries more than the id: whether remote play is enabled and whether the console permits being
+    /// woken. A caller deciding <em>whether to offer</em> the account route needs those, and asking for the id
+    /// and then looking the console up again would be a second match with its own chance of disagreeing.
+    /// </para>
+    /// </summary>
+    public static CloudConsole? Resolve(IReadOnlyList<CloudConsole> cloudConsoles, string? reportedName)
     {
         ArgumentNullException.ThrowIfNull(cloudConsoles);
 
@@ -42,7 +55,7 @@ public static class CloudConsoleMatch
             return null;
         }
 
-        string? found = null;
+        CloudConsole? found = null;
         foreach (CloudConsole candidate in cloudConsoles)
         {
             if (!string.Equals(candidate.Name, reportedName, StringComparison.OrdinalIgnoreCase))
@@ -55,7 +68,7 @@ public static class CloudConsoleMatch
                 return null; // ambiguous
             }
 
-            found = candidate.Id;
+            found = candidate;
         }
 
         return found;

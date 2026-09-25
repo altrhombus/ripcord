@@ -99,6 +99,15 @@ Three consequences worth stating, since each closes an argument:
 - **Anything deferred gets said out loud in the release notes.** Shipping without haptics is fine.
   Shipping without haptics and letting someone discover it is not.
 
+**Amended 2026-09-13 — the bar was raised, deliberately and as a change rather than a refinement.** The
+owner asked for a UX review with the app judged as a Windows 11 Fluent showcase, and chose to make that
+work 1.0-blocking rather than a 1.1 track. The definition above still holds as the floor; what changed is
+that "without hitting a defect the project already knows about" now includes *the app reading as a generic
+WinUI sample*, which the design review found to be a structural property rather than an absence of polish.
+See [`docs/design.md`](docs/design.md) for what was settled and the four priced items below for what is
+still open. One consequence: the wordmark moves out of "explicitly out" and into scope, because the design
+depends on it and asset generation is a one-way door.
+
 ### In scope
 
 **1. A build someone can actually run.** There is no release artifact today: `WindowsPackageType=None`, no
@@ -121,10 +130,10 @@ has to mean something, which is a habit rather than a file.
 without ever being driven by a person. This is not code — it is an afternoon with a pad, a console and a
 list. It is also where the three bugs above came from, so the expectation should be that it finds more.
 
-**5. Controls that do what they say.** `LargeUiScale` is wired: `UiScale` holds the policy, `AppScale`
-applies it to the WinUI resources at startup, and the switch now says it takes effect on restart. What is
-left is not code — it is one look at a screen. See the accessibility item below for the question that is
-still open, which has to be answered at 150% on a real display and cannot be settled by argument.
+**5. Controls that do what they say.** The one control that did not is gone: Ripcord no longer scales its
+own text, because text size belongs to the desktop environment and a second control competing with the
+system one is not what a good citizen does. Removed 2026-09-19 — see the journal. What is left under this
+heading is the standing rule rather than a specific switch: **no user-visible control is inert.**
 
 **6. Two protocol gaps that could bite a console we have never seen.** ~~The GMAC rotation-window boundary
 and `CurveForVersion` having no answer for non-P521 versions.~~ **Both closed 2026-09-11.** The rotation
@@ -136,9 +145,6 @@ open research question and can wait.
 **7. An MSIX alongside the zip.** `EnableMsixTooling` is already on and `Package.appxmanifest` already
 exists, so this is packaging and verification rather than new plumbing — but see the decisions below for the
 signing constraint and the two behavioural differences a packaged build brings.
-
-**8. `LargeUiScale` wired through.** App-wide scaling, which collides with the fixed console-card cell
-height and wants the 150% OS text scale checked at the machine.
 
 **9. Honest first-run docs.** What works, what does not, which console generations, and the fact that it is
 English-only. The README is already unusually honest; 1.0 needs it to also be *complete* about limits.
@@ -160,8 +166,8 @@ English-only. The README is already unusually honest; 1.0 needs it to also be *c
   translation would be worse than English.
 - **A purchased code-signing certificate.** The zip is unsigned and SmartScreen will say so on first run;
   the README has to say so first. The MSIX is self-signed — see the decisions below for what that costs.
-- **The wordmark**, the senkusha probe questions, and the remaining accessibility items other than
-  `LargeUiScale`.
+- The senkusha probe questions and the remaining accessibility items.
+  (**The wordmark is no longer out** — see the amendment under "What 1.0 means".)
 
 ### Exit criteria
 
@@ -172,8 +178,6 @@ English-only. The README is already unusually honest; 1.0 needs it to also be *c
       verified on a machine without the SDK.
 - [ ] The MSIX has been installed and launched from its signed package, not just built - including a pair
       and a stream, because packaged data paths and packaged resource loading are both different.
-- [ ] `LargeUiScale` changes the UI, at 100% and at the OS 150% text scale — and at 150% the text is
-      scaled once, not twice. See `UiScale.AppliesOsTextScaleItself`.
 - [ ] The three known defects are fixed, each confirmed on hardware.
 - [ ] The input stack, Stage A steps 8–10 and the two Stage B checks have been driven by a person, and
       whatever that finds is either fixed or listed.
@@ -208,16 +212,78 @@ double-click to install" is not available.
   launched, not just built — this is the failure mode that produced a launch crash this week, where the
   markup compiled, the PRI indexed, and the app died on load.
 
-**`LargeUiScale`: wire it.** It becomes real 1.0 work rather than a one-line hide. It is app-wide scaling,
-it collides with the fixed console-card cell height already noted in the backlog, and the plan wants the OS
-text scale verified at 150% at the machine — so it lands with the hardware pass rather than before it.
-
 **The account tier is in the supported surface.** Sign-in, the account console list, cloud wake and the
 account pairing route are all part of what 1.0 claims to support, and therefore part of what the hardware
 pass has to exercise.
 
 ## Backlog
 
+### Account pairing — resolved, and one thing owed (2026-09-23 to 09-24)
+
+**The console was signed out of PlayStation Network.** The account's PSN security options had been changed,
+which signs devices out, and the console had been sitting in rest mode signed out since. Signing in on the
+console fixed it immediately — from rest mode, no restart, first attempt. Account pairing then completed
+through the app's own UI, which is the first time it has.
+
+Worth reading as a class rather than a case: whatever signs a console out lands in the same place, and the
+trigger is not something a client can see or care about.
+
+It was invisible from the client throughout, and that is the part worth keeping: the console answered LAN
+discovery under its own name, the console list still reported `remotePlay` enabled and both standby wake
+modes, and every `commands` POST was accepted with a `commandId` in ~150 ms. The command is delivered to a
+console's own PSN session and a console that has none receives nothing; the 202 means queued, not read.
+
+**The API cannot tell us.** The console-list response carries `name`, `language`,
+`wakeupEnabledPowerModes`, `enabledFeatures`, `updatedDateTime`, `duid`, `platform` — no presence or online
+field. Both flags are *configuration*, not reachability. So a client can only name it as the likely cause,
+which the failure message now does. Written up in `docs/protocol/ps5-cloud-session-api.md`, in both the wake
+section and the console-list section.
+
+**Two wrong conclusions were reached on the way, both now withdrawn in place:** that the command does not
+wake a sleeping console (marked `[X]`, then found `[V]` in the RE log), and that the half-open-session trap
+was responsible. The trap was a mid-implementation artefact of the account route being built — completed
+sessions clear that state themselves now — so it is recorded in the spec for the shape of the symptom and
+is not something to check. The useful signal, in hindsight, is the asymmetry: **reachable on the LAN,
+unreachable through the account** points at the console's PSN session rather than at anything the client
+sent. The failure message lists the possible causes without ranking them; one incident is not a base rate.
+
+**The flag check: done.** The flow offered account pairing because the console appeared in the account's
+list, which says only that the account has seen it. It now reads the two flags the record carries, and
+keeps them apart because they are not the same kind of fact:
+
+- `RemotePlayEnabled` false — the route cannot work. Not offered, `DefaultRoute` does not aim at it, and the
+  note says where on the console to turn it on.
+- `CanWakeRemotely` false — the route works on an *awake* console, so refusing would take away something
+  that works. Offered, with the condition said in the same sentence as the reassurance, because the user is
+  about to press Pair and both belong to that decision.
+
+Both default to true when the account does not know the console, so the note reports the thing that is
+actually true — not in the list — rather than inventing a fact about a record that does not exist.
+
+The note's severity now follows the note (`AccountPairingNoteTone`, a `StatusTone`) rather than whether the
+route is available. Those agreed while the note only ever said one of two things; they stop agreeing the
+moment the route is available *with a condition*, and a green Success bar reading "turn the console on
+first" tells the reader the opposite of what the sentence says. Nothing is Critical: a setting being off is
+not a fault.
+
+Four tests, one verified non-vacuous by removing the gate. **Not verified on hardware** — it needs a console
+with remote play switched off, or rest-mode wake switched off, which means changing settings on a working
+console and changing them back.
+**The clean-exit question: answered, fixed, and needing one live check.** The app did *not* disconnect
+cleanly when closed mid-stream. `SessionPage.Page_Unloaded` starts its teardown fire-and-forget — correctly,
+since awaiting it on the UI thread froze the window on exit once — and nothing held the window open for it,
+so at shutdown the task was dropped and the process exited. The teardown's last acts are the
+control-channel close and, on the account route, `LeaveSessionAsync` over HTTPS; neither happened. Leaving a
+stream the ordinary way was always fine, because the window lives on and the task completes.
+
+`AppWindow.Closing` now cancels once, closes the stream layer, waits up to four seconds for the teardown
+(its own cloud call carries a three-second timeout) and then closes regardless — a hang there would be
+worse than an unclean exit, and is the bug the fire-and-forget was introduced to fix.
+
+**Verified on hardware 2026-09-24.** Closing the window mid-stream, and the console showed its own "remote
+play disconnected" notice — which is the tell the RE log named for the difference between ending a session
+and vanishing from one, since a half-open session shows none of the banners a real one does. A reconnect
+straight afterwards worked, which is the part a slow retry would have passed regardless.
 ### PS3 port — auto-reconnect on a stream stall (noted 2026-09-18)
 When the console stops sending video, the PS3 port trips its 4-second stall detector and returns to the
 shell, leaving the person to re-select the console by hand. The .NET side does not: `SessionController` owns
@@ -233,6 +299,78 @@ exists for.
 - **Reference, not a port.** `SessionController`'s watchdog is the shape to follow; the PS3 lifecycle is its
   own (`rc_connect` returns to `rc_shell_run`), so this is a loop around the connect call with a limit, not
   a lift of the C# object.
+
+### Design direction — settled 2026-09-13, one item still open
+
+The UX review is done and its decisions are recorded in [`docs/design.md`](docs/design.md), which is now
+the standing answer to "what does the app look like". Four questions were left open rather than guessed,
+and each was priced here so the cost of the design work was visible before it was committed to.
+
+Nothing below is a design question. They are all *verifications and one-way doors* — the things that have
+to be true before drawings become code.
+
+**Two of the four are gone rather than done, and both closed by deletion rather than by an answer.**
+Verifying the OS text scale mattered only because Ripcord scaled text itself; that feature was removed on
+2026-09-19 and the question went with it. `ReceiveQueueBusyDepth` was to be re-derived from ARM64 captures;
+the captures said the metric could not support a threshold at all, so it was replaced rather than retuned.
+Both are in the journal, and one confirmation is still outstanding — see Track A.
+
+**A third went with the card rebuild.** The console card had no legible focus state and no distinct
+hover; both were fixed when the card was rebuilt on 2026-09-20 — hover is a wash, focus is the system
+ring, and neither can be mistaken for the other. See the journal.
+
+**The wordmark was settled on 2026-09-24**: Outfit SemiBold, lowercase, horizontal lockup. The tile was
+lifted and given an edge in the same pass. See the journal and `brand/README.md`. It left one small
+follow-up, listed under the accessibility and polish items: whether the console card rejoins the tile.
+
+- [ ] **Capture regression baselines — of the NEW card now, not the old one.**
+      The original item said "capture these before touching the card". That moment has gone: the card was
+      rebuilt on 2026-09-20 and 21, so the surface those shots would have protected no longer exists and
+      there is nothing left to regress against. Nothing was lost by it — a before-set of a card being
+      replaced wholesale had little reach.
+
+      What is wanted now is the *after* set, which every later change is judged against. Dark, light and
+      high contrast were all seen during the rebuild but live only in a chat log; the session page has
+      never been shot at all, and it is the one needing a live stream.
+
+      ```
+      [ ] Console grid   light · dark · high contrast   (the one-console hero, and two or more cards)
+      [ ] Console grid   the first-run surface, all three themes
+      [ ] Session page   light · dark · high contrast   (needs a live stream)
+      [ ] Session page   each of the three HUD rungs
+      ```
+
+      **Price: ~1 hour, at any machine.** Nothing in the layout is architecture-conditional, so an x64
+      desktop is as good as the handheld. The constraint is that whoever takes these also takes the
+      comparison shots later: a diff across two machines shows display scale and GPU rather than the change
+      under review. Record the machine, its scale and the window size beside the files.
+
+### Hardware verification owed for the design work (merged to `main` 2026-09-24)
+
+The design direction landed as 95 commits and **almost none of its surfaces have been walked deliberately**.
+What has been exercised is what got hit while chasing something else — which is exactly how the eight defects
+recorded in the journal for 2026-09-24 were found, none of them a crash and not one catchable by either test
+suite. That list is the argument for this item; the suites cannot replace it.
+
+- [ ] **Run the manual script.** [`docs/design-branch-test-pass.md`](docs/design-branch-test-pass.md), §1–§8,
+      plus the per-input matrix it defines: pad-only with mouse and keyboard physically denied, touch on a
+      handheld, high contrast, transparency off, reduce motion, Narrator over the card grid, and a TV at 2–3 m
+      for the focus-ring legibility judgement the one-adaptive-UI decision rests on.
+
+- [ ] **Two judgements nobody has made yet**, both cosmetic and both written blind:
+      - the connect screen reserves a fixed 112 px block below its message so the text cannot be pushed
+        around. Does that read as breathing room or as a gap? The number is the thing to change, not the
+        approach.
+      - the diagnostics summary strip now tracks the picture's width rather than the window's. When the
+        stream is letterboxed it still sits on the black bar at the bottom — whether it should rise to the
+        picture's edge was not decided, only left alone.
+
+- [ ] **The account-pairing flag check**, which needs a console with remote play *or* rest-mode wake
+      deliberately switched off — i.e. changing a setting on a working console and changing it back. Landed
+      untested; see the account-pairing entry above for what it does.
+
+Everything else the design work owed is done: the two one-way doors (the wordmark and the card rebuild) are
+closed, and the regression baselines are the item above this one.
 
 ### Follow-ups from the settings-page crash (cause found and fixed 2026-08-06)
 **Pre-existing, and it predates the Stage A work.** Opening Settings terminated the process every time on this
@@ -329,8 +467,6 @@ looking.
       `AddConsolePage` → `PairPage` (never cached — a flow must start clean), `KeyBindingsPage` →
       `ControlsPage`. Only `HomePage` should be cached, to keep grid scroll position and the realized
       containers `PrepareConnectAnimation` needs.
-- [ ] **`LargeUiScale` / `TextScaleFactor`.** The plan wants the OS text scale verified empirically at 150%
-      *before* building the fix, which is another at-the-machine check.
 
 
 ### Open bug — an Xbox pad is dead while a DualSense is attached (found on hardware 2026-08-06)
@@ -436,8 +572,6 @@ request rather than leaving it set-but-disabled to reappear later.
 `IVideoPipelineStats`, `IVideoCapabilitiesProbe`, plus `IShellNavigator` for window-level operations.
 Two flags deleted rather than moved: `SettingsPage._loading` (fourteen handlers checked it) and the
 `AddConsolePage` scan-generation guard that was being evaluated at the wrong time.
-- [ ] **`LargeUiScale` is still cosmetic-only** and collides with the fixed console-card cell height — see the
-      card-layout entry below. Stage B's problem, recorded here so it is not discovered as a surprise.
 
 
 ### Console-card layout — fixed cell height is a standing constraint (noted 2026-08-05)
@@ -448,8 +582,10 @@ for Stage B's card redesign rather than a patch:
 - [ ] **A two-line display name still overflows.** `MaxLines="2"` on the name plus a fixed cell height cannot
       both be honoured — a long nickname needs ~28px the cell does not have. Either the name goes single-line
       with an ellipsis (the tooltip already carries the full name) or the card stops being fixed-height.
-- [ ] **Fixed `ItemHeight` is incompatible with the planned text scaling.** `LargeUiScale` and the OS
-      `TextScaleFactor` both grow every line in the card while the cell stays put, so the same clipping
+- [ ] ~~**Fixed `ItemHeight` is incompatible with the planned text scaling.**~~ **No longer a constraint as
+      of 2026-09-19**, because Ripcord no longer scales its own text. Kept here only because the reasoning
+      still applies if the platform grows the card's text on its own: the OS
+      `TextScaleFactor` would grow every line in the card while the cell stays put, so the same clipping
       returns at 150%. This is the general form of the bug above, and it applies to every fixed dimension in
       the app — which is why the design-system work makes sizes tokens rather than literals. `ItemsWrapGrid`
       requires a fixed item size, so a scalable card means either binding the cell size to the same scale
@@ -458,6 +594,17 @@ for Stage B's card redesign rather than a patch:
 
 
 ### Track A — Live-test the streaming-quality work
+
+- [ ] **Confirm the presented/decoded ratio under pure network loss (owed from 2026-09-19).** The signal
+      that replaced `ReceiveQueueBusyDepth` is measured on the device-starved side — six loss-carrying
+      samples at a ratio of 0.00–0.11 — but the network side is *reasoned*: frames that never arrive cannot
+      be decoded either, so the ratio should stay near 1. Run A's traces were deleted before the ratio was
+      computed from them, so that half rests on the mechanism.
+      **Cost: nothing extra.** Any session with real loss and a healthy decode path answers it; the trace
+      records both columns already. Filter for `loss_pct >= 2` and read `present_fps / decode_fps`.
+      **If it does not hold** — if the ratio collapses under pure network loss too — then the two causes are
+      not separable by this signal either, and the honest fix is to stop claiming to tell them apart rather
+      than to find a third discriminator. Say "losing packets" and list both remedies.
 > **Plan written 2026-08-02:** `captures/console_session_plan.md` (dirty room) batches every remaining
 > hardware-gated item across this track and Tracks B/C into one trip, in a fixed order — Phase 1 needs the
 > console *asleep*, a state you get once per session, so the ordering is load-bearing rather than advisory.
@@ -753,33 +900,8 @@ Both need a console or a capture to settle, hence here rather than in Track D.
     identifiers, an example IP address and a row of bullet characters. Audience decides: text a maintainer
     reads when helping you follows the maintainer.
   - **No translations ship**, deliberately. An unreviewed machine translation is worse than honest English.
-- [ ] **Accessibility backlog.** Three of these are pre-existing; the redesign made the first more visible
-      rather than causing it.
-  - **`LargeUiScale` is applied, but one premise under it is still unverified.** The mechanism landed:
-    `UiScale` (portable, tested) decides the multiplier, `AppScale` writes scaled sizes into the WinUI
-    resources before the first window exists.
-
-    Two things were learned building it that contradict
-    `docs/history/app-reimagining-plan.md`, and the plan is left as written because it is a historical
-    record — the corrections live in `AppScale`'s own documentation, which is where someone changing this
-    will be standing:
-
-    1. **The plan's mechanism cannot work.** It proposed overriding WinUI's font-size keys at app level. The
-       stock text ramp reaches them through `StaticResource`, not `ThemeResource`, and
-       `XamlControlsResources` *defines* those keys — so a reference inside it resolves locally and never
-       escalates to `Application.Resources`. Overriding them changes nothing. Control-internal text is the
-       opposite (`{ThemeResource ControlContentThemeFontSize}`) and is handled the easy way, so there are two
-       mechanisms in `AppScale` because the platform has two behaviours.
-    2. **The premise may be false, and getting it wrong is worse than doing nothing.** The plan asserts WinUI
-       3 desktop ignores `UISettings.TextScaleFactor`, and then says in italics to verify that before
-       building on it. Nobody did, and Microsoft's text-scaling documentation says the opposite. If the
-       platform already applies the OS factor and we multiply by it too, a user at 150% gets a 225% Ripcord —
-       an accessibility setting breaking the layout it was meant to rescue. So the app-level switch is
-       currently a flat 1.3× and the OS factor is not in our arithmetic at all.
-
-    **The open item is one observation:** set Windows text size to 150%, launch Ripcord, see whether its text
-    grows. If it does not, flip `UiScale.AppliesOsTextScaleItself` to `true` — that constant exists to be the
-    only thing that changes. `UiScaleTests` asserts the factor is applied exactly once either way.
+- [ ] **Accessibility backlog.** Both pre-existing. A third entry here - an unverified premise under
+      Ripcord's own text scaling - went away with the feature on 2026-09-19.
   - **Screen-reader pass over the card grid.** Each card composes its own `AutomationProperties.Name`
     (name, family, status, action) because a `GridViewItem` whose content is a panel has none of its own —
     but reading *order* across a wrapping grid is not automatic and has not been checked with Narrator.
@@ -787,8 +909,13 @@ Both need a console or a capture to settle, hence here rather than in Track D.
     Nintendo-red would sit adjacent in the family picker the day one does. `brand/README.md` already flags
     this trio as the palette's weak point. The mitigation is in the design — the text label is the primary
     carrier, never the colour — but it wants re-checking rather than assuming.
-- [ ] **Wordmark.** No typeface chosen, so nothing ships the name as artwork. Blocks a proper wide tile and
-      splash lockup — both currently mark-only.
+- [ ] **Does the console card rejoin the tile? — opened 2026-09-24.** The card's dark gradient used to be
+      the tile's own values. The tile was lifted to `#303743 → #1B1F26` and the card was not, because the
+      wedge facet is defined as "the card lifted" (`#2E333C → #1B1F26`), which is almost exactly the new
+      tile, so moving the card alone would erase the facet. Rejoining means lifting the card *and* the facet
+      together, a visible change to every card in dark theme. That is a look decision to make on a real
+      screen, not here. Until then `Ripcord.Card.xaml` and `docs/design.md` say they have diverged, and why.
+      **Price: ~30 minutes to try, most of it looking.**
 - [ ] **Pair a console port from the desktop app — proposed 2026-09-16, not started.** A port asks the
       desktop to sign in on its behalf: the port enters a pairing mode and announces itself on the LAN, a
       running Ripcord on a PC or Mac sees it offered in its own UI, does the PSN sign-in and the console

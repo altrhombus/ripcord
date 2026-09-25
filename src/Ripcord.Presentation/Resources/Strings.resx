@@ -310,6 +310,14 @@
     <value>Link this PC to {0}</value>
     <comment>Heading on the pairing step. {0} is the console's name.</comment>
   </data>
+  <data name="Pairing_LookingForAny" xml:space="preserve">
+    <value>Looking for your console</value>
+    <comment>Heading while scanning, before anybody has said which console they have — which is now the usual case, because the scan answers that itself.</comment>
+  </data>
+  <data name="Pairing_FamilyNeededForAddress" xml:space="preserve">
+    <value>Nothing answered, so we need to know what to look for. Pick your console, then enter its address.</value>
+    <comment>Shown on the family step when it is reached because a scan found nothing.</comment>
+  </data>
   <data name="Pairing_LookingFor" xml:space="preserve">
     <value>Looking for your {0}</value>
     <comment>Heading while scanning. {0} is a short console name such as PS5 - do not translate it.</comment>
@@ -321,6 +329,19 @@
   <data name="Pairing_NoCodeNeeded" xml:space="preserve">
     <value>No code needed — {0} confirms this PC through your account.</value>
     <comment>Shown when the account route means no code is required. {0} is the console's name.</comment>
+  </data>
+  <data name="Pairing_RemotePlayOff" xml:space="preserve">
+    <value>Remote Play is switched off on {0}. Turn it on in the console's Settings → System → Remote Play, then search again.</value>
+    <comment>Shown when the account's record for this console says remote play is not enabled. The fix is on
+the console, not in the app. {0} is the console's name. The menu path is the CONSOLE's own wording - match
+what it says in your language, as with Pairing_ConsoleSteps.</comment>
+  </data>
+  <data name="Pairing_NoCodeNeededButAwake" xml:space="preserve">
+    <value>No code needed — {0} confirms this PC through your account. Turn the console on first, though: your account isn't allowed to wake it from rest.</value>
+    <comment>The account route works, with one caveat. Said together rather than as two notes, because the
+reassurance and the condition belong to the same decision: the user is about to press Pair and needs to know
+the console has to be awake for it. Not a refusal - an awake console pairs normally. {0} is the console's
+name.</comment>
   </data>
   <data name="Pairing_NotInAccountList" xml:space="preserve">
     <value>This console isn't in your account's console list, so pairing it needs the code from its screen. Sign in to the console with this account, then search again.</value>
@@ -505,5 +526,204 @@
   <data name="Wake_AskingPsn" xml:space="preserve">
     <value>Asking PlayStation Network to wake your console…</value>
     <comment>Progress text while waking a console that is not on this network. 'PlayStation Network' is a product name - do not translate.</comment>
+  </data>
+  <data name="Connect_NoConsoleHeadline" xml:space="preserve">
+    <value>No console selected</value>
+    <comment>Connect sequence: shown when the session page opens without a console.</comment>
+  </data>
+  <data name="Connect_NoConsoleDetail" xml:space="preserve">
+    <value>Choose a console from the Consoles page to start streaming.</value>
+    <comment>Connect sequence: what to do when no console was selected.</comment>
+  </data>
+  <data name="Connect_PreparingVideoHeadline" xml:space="preserve">
+    <value>Preparing video…</value>
+    <comment>Connect sequence: first phase, creating the graphics device and decoder.</comment>
+  </data>
+  <data name="Connect_PreparingVideoDetail" xml:space="preserve">
+    <value>Creating the graphics device and decoder.</value>
+    <comment>Connect sequence: detail line under the video preparation headline.</comment>
+  </data>
+  <data name="Connect_VideoFailedHeadline" xml:space="preserve">
+    <value>Video setup failed</value>
+    <comment>Connect sequence: the graphics device or decoder could not be created. The detail is the error message.</comment>
+  </data>
+  <data name="Connect_CheckingCredentialsHeadline" xml:space="preserve">
+    <value>Checking credentials…</value>
+    <comment>Connect sequence: second phase, loading control secrets and the pairing record.</comment>
+  </data>
+  <data name="Connect_CheckingCredentialsDetail" xml:space="preserve">
+    <value>Loading control secrets and pairing.</value>
+    <comment>Connect sequence: detail line under the credentials headline.</comment>
+  </data>
+  <data name="Connect_NoConstantsHeadline" xml:space="preserve">
+    <value>Missing control constants</value>
+    <comment>Connect sequence: this build cannot speak the protocol, so a stream is impossible. Fatal.</comment>
+  </data>
+  <data name="Connect_WakeDetail" xml:space="preserve">
+    <value>The console was in standby.</value>
+    <comment>Connect sequence: detail line shown under the wake progress headline.</comment>
+  </data>
+  <data name="Connect_DidNotWakeHeadline" xml:space="preserve">
+    <value>Console didn't wake</value>
+    <comment>Connect sequence: a wake was sent and the console never came up. Fatal.</comment>
+  </data>
+  <data name="Connect_DidNotWakeDetail" xml:space="preserve">
+    <value>The console reported standby and did not wake within 30 seconds. Turn it on manually, or check it is set to allow being woken from rest mode, then reconnect.</value>
+    <comment>Connect sequence: what to do when the console did not wake.</comment>
+  </data>
+  <data name="Connect_ConnectingHeadline" xml:space="preserve">
+    <value>Connecting to your console…</value>
+    <comment>Connect sequence: final phase. The detail line says which route was chosen and why.</comment>
+  </data>
+  <data name="Settings_DiagnosticsOff" xml:space="preserve">
+    <value>Off</value>
+    <comment>Diagnostics picker: the HUD is not shown when a stream starts.</comment>
+  </data>
+  <data name="Settings_DiagnosticsSummary" xml:space="preserve">
+    <value>Summary</value>
+    <comment>Diagnostics picker: a stream opens with the one-line summary strip.</comment>
+  </data>
+  <data name="Settings_DiagnosticsFull" xml:space="preserve">
+    <value>Full instruments</value>
+    <comment>Diagnostics picker: a stream opens with the full instrument panel.</comment>
+  </data>
+  <data name="Console_MenuRename" xml:space="preserve">
+    <value>Rename</value>
+    <comment>Card overflow menu: rename this console.</comment>
+  </data>
+  <data name="Console_MenuDetails" xml:space="preserve">
+    <value>Details</value>
+    <comment>Card overflow menu: show what is known about this console.</comment>
+  </data>
+  <data name="Pairing_SignInSaves" xml:space="preserve">
+    <value>Sign in and Ripcord pairs this console for you — no code to fetch, no account ID to look up, and you'll be able to play away from home.</value>
+    <comment>Invitation under the account-id field when nobody is signed in. Says only what is true and unconditional: signing in fills that field. It must NOT promise that the code is unnecessary — that holds only when the account already knows the console, and it would sit above a box asking for one.</comment>
+  </data>
+  <data name="Pairing_UseCodeAnyway" xml:space="preserve">
+    <value>Use a code from the console instead</value>
+    <comment>The way past the sign-in offer, for somebody who would rather not connect an account. Unweighted and unexplained: declining is a trade they are entitled to make without being argued with.</comment>
+  </data>
+  <data name="Pairing_SignInFillsField" xml:space="preserve">
+    <value>Sign in and Ripcord fills this in for you.</value>
+    <comment>The quiet note beside the account-id field, shown only once somebody has chosen the code route anyway. Says only what is true in that position: it must not promise the code is unnecessary while sitting above a box asking for one.</comment>
+  </data>
+  <data name="Pairing_SignInAction" xml:space="preserve">
+    <value>Sign in to PlayStation Network</value>
+    <comment>Button on the sign-in invitation. Opens Settings, where the account lives.</comment>
+  </data>
+  <data name="Pairing_DoneAction" xml:space="preserve">
+    <value>Done</value>
+    <comment>The way out of the pairing celebration, beside Play now. NOT "Save": the record is written
+the moment the console registers, because that is when it becomes true, and the step already says the
+console is linked to this PC. A button offering to save something already saved invites the reader to
+think the claim above it is conditional.</comment>
+  </data>
+  <data name="Pairing_PlayNow" xml:space="preserve">
+    <value>Play now</value>
+    <comment>Primary action on the pairing celebration. Not a save button: the console is already paired by the time this appears.</comment>
+  </data>
+  <data name="Pairing_UseCodeInstead" xml:space="preserve">
+    <value>Use a code from the console instead</value>
+    <comment>Quiet link on the pairing step, offering the other route without weighting it.</comment>
+  </data>
+  <data name="Pairing_UseAccountInstead" xml:space="preserve">
+    <value>Use my account instead — no code needed</value>
+    <comment>Quiet link on the pairing step, offering the other route without weighting it.</comment>
+  </data>
+  <data name="Console_MenuShortcut" xml:space="preserve">
+    <value>Create a shortcut</value>
+    <comment>Card overflow menu: write a desktop shortcut that launches straight into this console.</comment>
+  </data>
+  <data name="Console_ShortcutMade" xml:space="preserve">
+    <value>Shortcut created on your desktop.</value>
+    <comment>Confirmation after writing a play shortcut.</comment>
+  </data>
+  <data name="Console_ShortcutFailed" xml:space="preserve">
+    <value>Could not create the shortcut.</value>
+    <comment>Shown when writing a play shortcut did not work — usually a redirected or read-only desktop.</comment>
+  </data>
+  <data name="Console_MenuRemove" xml:space="preserve">
+    <value>Remove</value>
+    <comment>Card overflow menu: forget this console pairing.</comment>
+  </data>
+  <data name="Console_DetailName" xml:space="preserve">
+    <value>Name</value>
+    <comment>Console details row label: the name shown in Ripcord.</comment>
+  </data>
+  <data name="Console_DetailConsole" xml:space="preserve">
+    <value>Console</value>
+    <comment>Console details row label: which console generation this is.</comment>
+  </data>
+  <data name="Console_DetailAddress" xml:space="preserve">
+    <value>Address</value>
+    <comment>Console details row label: the network address.</comment>
+  </data>
+  <data name="Console_DetailStatus" xml:space="preserve">
+    <value>Status</value>
+    <comment>Console details row label: reachable, resting, offline.</comment>
+  </data>
+  <data name="Console_DetailReportedName" xml:space="preserve">
+    <value>Reported name</value>
+    <comment>Console details row label: the name the console calls itself.</comment>
+  </data>
+  <data name="Console_DetailHostId" xml:space="preserve">
+    <value>Host ID</value>
+    <comment>Console details row label: the console identifier discovery reports. Not translated as an abbreviation.</comment>
+  </data>
+  <data name="Console_DetailSystemVersion" xml:space="preserve">
+    <value>System version</value>
+    <comment>Console details row label: the console firmware version.</comment>
+  </data>
+  <data name="Console_DetailLastPlayed" xml:space="preserve">
+    <value>Last played</value>
+    <comment>Console details row label: when this console was last streamed from.</comment>
+  </data>
+  <data name="Console_DetailsClose" xml:space="preserve">
+    <value>Close</value>
+    <comment>Button that dismisses the console details dialog.</comment>
+  </data>
+  <data name="Console_RenameTitle" xml:space="preserve">
+    <value>Rename console</value>
+    <comment>Title of the rename dialog.</comment>
+  </data>
+  <data name="Console_RenameExplanation" xml:space="preserve">
+    <value>Give this console a name you will recognise — useful when you have more than one.</value>
+    <comment>Rename dialog: why you might rename a console.</comment>
+  </data>
+  <data name="Console_RenameHint" xml:space="preserve">
+    <value>Leave it empty to go back to the name the console reports.</value>
+    <comment>Rename dialog: what clearing the field does.</comment>
+  </data>
+  <data name="Console_RenameSave" xml:space="preserve">
+    <value>Save</value>
+    <comment>Rename dialog primary button.</comment>
+  </data>
+  <data name="Console_Cancel" xml:space="preserve">
+    <value>Cancel</value>
+    <comment>Dismisses a dialog without doing anything. Shared by rename and remove.</comment>
+  </data>
+  <data name="Console_RenameFailed" xml:space="preserve">
+    <value>Couldn't rename that console</value>
+    <comment>Error dialog title when saving a new name failed.</comment>
+  </data>
+  <data name="Console_RemoveTitle" xml:space="preserve">
+    <value>Remove this console?</value>
+    <comment>Title of the destructive remove confirmation.</comment>
+  </data>
+  <data name="Console_RemovePrompt" xml:space="preserve">
+    <value>Ripcord will forget its pairing with {0}. To use it again you will need to enter a new link code from the console.</value>
+    <comment>Remove confirmation body. {0} is the console name.</comment>
+  </data>
+  <data name="Console_RemoveConfirm" xml:space="preserve">
+    <value>Remove</value>
+    <comment>Remove dialog primary button. Destructive.</comment>
+  </data>
+  <data name="Console_RemoveFailed" xml:space="preserve">
+    <value>Couldn't remove that console</value>
+    <comment>Error dialog title when removing a pairing failed.</comment>
+  </data>
+  <data name="Console_Ok" xml:space="preserve">
+    <value>OK</value>
+    <comment>Dismisses an error dialog. Acknowledgement only - nothing is undone by it.</comment>
   </data>
 </root>

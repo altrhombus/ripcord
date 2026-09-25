@@ -9,8 +9,10 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Input;
+using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Animation;
 using Ripcord.Core.Consoles;
+using Ripcord.Core.Launch;
 using Ripcord.Presentation;
 using Ripcord.Presentation.Consoles;
 using Ripcord_App.Input;
@@ -23,28 +25,22 @@ namespace Ripcord_App.Pages;
 public sealed partial class ConsolesPage : Page, IInitialFocusTarget
 {
     /// <summary>
-    /// Whatever this page's current layout says is the point of it. Open the window, press A, playing.
+    /// Whatever this page currently says is the point of it. Open the window, press A, playing.
     ///
     /// <para>
-    /// On the hero that is the Play button itself — the layout exists so there is exactly one thing to press.
-    /// On the grid it is the grid, not a specific container: focusing a <see cref="GridView"/> hands focus to
-    /// its own first (or last-focused) item, which survives the list being rebuilt underneath. With nothing
-    /// paired it is null, so the shell falls back to tree order — an empty install has no console to offer and
-    /// the add button is genuinely the point.
+    /// The grid, not a specific container: focusing a <see cref="GridView"/> hands focus to its own first (or
+    /// last-focused) item, which survives the list being rebuilt underneath. That now covers the one-console
+    /// case too, which used to be a separate panel with a separate focus target — it is a hero-sized cell in
+    /// the same grid, so there is one answer here instead of two.
+    /// </para>
+    ///
+    /// <para>
+    /// With nothing paired it is null and the shell falls back to tree order: an empty install has no console
+    /// to offer and the add button is genuinely the point.
     /// </para>
     /// </summary>
     public Control? InitialFocus
-    {
-        get
-        {
-            if (HeroPanel.Visibility == Visibility.Visible)
-            {
-                return HeroPlayButton;
-            }
-
-            return ConsoleGrid.Visibility == Visibility.Visible ? ConsoleGrid : null;
-        }
-    }
+        => ConsoleGrid.Visibility == Visibility.Visible ? ConsoleGrid : null;
 
     private readonly RipcordAppServices _services;
     private readonly IPairedConsoleStore _store;
@@ -69,6 +65,15 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
     // "Going to sleep…" and watches it settle. Null when the last disconnect did not request rest.
     private string? _restRequestedHost;
 
+    // Guards the hero's focus-on-load against firing again when containers are recycled - a scroll or a
+    // refresh re-realises them, and pulling focus back to the card mid-interaction would be worse than never
+    // giving it. Reset by Refresh, which is the only place the layout can change underneath it.
+    private bool _heroFocusTaken;
+
+    // The layout the cards were last composed for, so container preparation can size the panel without
+    // recomputing it from a width that may have moved since.
+    private CardLayout _layout;
+
     public ConsolesPage()
     {
         // Resolved BEFORE InitializeComponent, so compiled bindings evaluate against live objects on their first
@@ -80,15 +85,9 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
         InitializeComponent();
 
         ConsoleGrid.ItemsSource = _items;
-        Loaded += (_, _) => Refresh();
-        Unloaded += (_, _) =>
-        {
-            CancelProbes();
 
-            // The hero subscribes to its console for live reachability; leaving that attached would keep this
-            // page alive through the view-model for as long as the console object lives.
-            DetachHero();
-        };
+        Loaded += (_, _) => Refresh();
+        Unloaded += (_, _) => CancelProbes();
     }
 
     /// <summary>
@@ -106,49 +105,48 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
     /// Rebuild the page for whatever is actually paired.
     ///
     /// <para>
-    /// Three layouts, because one or two consoles is the real case and a grid is only the right answer for one
-    /// of them. Nothing → the empty state, which is the first-run explanation. Exactly one → the hero, where
-    /// the console is the page and Play is a real button. Two or more → the card grid with the add tile after
-    /// the last card.
+    /// Two surfaces now, not three. Nothing paired → the first-run explanation. Anything else → the grid, at
+    /// whatever density <see cref="CardMetrics"/> returns for the viewport and the count. The one-console
+    /// "hero" is that grid holding a single hero-sized cell, which is what removed ~115 lines of code-behind
+    /// and, with them, the drift between two copies of the same card.
     /// </para>
     /// </summary>
     private void Refresh()
     {
         CancelProbes();
-        DetachHero();
+        _heroFocusTaken = false;
 
         List<ConsoleCardViewModel> consoles = _store.Load().Select(_services.CreateConsoleCard).ToList();
 
         _items.Clear();
 
-        // A grid of one is a list pretending to be a choice, so one console gets its own layout rather than a
-        // single card marooned in a wrapping panel.
-        bool hero = consoles.Count == 1;
-        bool grid = consoles.Count > 1;
-
-        if (grid)
+        foreach (ConsoleCardViewModel item in consoles)
         {
-            foreach (ConsoleCardViewModel item in consoles)
-            {
-                _items.Add(item);
-            }
+            _items.Add(item);
+        }
 
-            // Only when there is a grid to put it in; the other two layouts carry their own add affordance, and
-            // a lone ghost tile floating in an otherwise blank page says much less.
+        CardLayout layout = ApplyCardLayout(consoles.Count);
+
+        // The ghost tile belongs in the collection only when the grid is dense enough for it to read as "one
+        // more of these". Beside a single hero-sized card it would look like half the page's purpose, so that
+        // layout offers the quiet link below instead.
+        if (layout.ShowAddTile)
+        {
             _items.Add(AddConsolePlaceholder.Instance);
         }
 
-        ConsoleGrid.Visibility = Vis(grid);
-        HeroPanel.Visibility = Vis(hero);
+        ConsoleGrid.Visibility = Vis(consoles.Count > 0);
         EmptyState.Visibility = Vis(consoles.Count == 0);
+        HeroAddLink.Visibility = Vis(consoles.Count > 0 && !layout.ShowAddTile);
 
         // The subtitle instructs someone to pick from several. With one console there is nothing to pick.
-        SubtitleText.Visibility = Vis(grid);
+        SubtitleText.Visibility = Vis(consoles.Count > 1);
 
-        if (hero)
-        {
-            AttachHero(consoles[0]);
-        }
+        TryLaunchDirectly(consoles);
+
+        // Kept in step with whatever is paired. Fire-and-forget because nothing on this page waits on it and
+        // a jump list that failed to rebuild is not worth a word to anyone - see PlayJumpList.
+        _ = PlayJumpList.RefreshAsync(consoles.Select(c => c.Console).ToList());
 
         if (consoles.Count > 0)
         {
@@ -159,145 +157,138 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
             _probeCts = new CancellationTokenSource();
             _ = _reachability.RefreshAsync(consoles, restHost, _probeCts.Token);
         }
-
-        ApplyColumnCount();
     }
 
     private static Visibility Vis(bool on) => on ? Visibility.Visible : Visibility.Collapsed;
 
-    // ---- hero layout -----------------------------------------------------------------------------
+    // Consumed once. Coming back from a stream runs Refresh again, and a launch argument that fired every
+    // time would trap the player in a loop they cannot leave without killing the process.
+    private bool _launchConsumed;
 
     /// <summary>
-    /// The single console the hero is showing, held so its live reachability keeps the panel current — the
-    /// probe resolves after this returns, and a hero stuck on "Checking…" would be worse than a card doing it.
+    /// Act on <c>--play</c> or <c>--play-last</c>, if this launch carried one.
+    ///
+    /// <para>
+    /// From here rather than from startup because this is the first moment the paired-console list exists,
+    /// and the argument names a console rather than an address. A name that matches nothing falls through to
+    /// the list, which is the honest outcome: the shortcut is stale, and showing every console is what the
+    /// person was reaching for anyway.
+    /// </para>
     /// </summary>
-    private ConsoleCardViewModel? _heroConsole;
-
-    private void AttachHero(ConsoleCardViewModel console)
+    private void TryLaunchDirectly(List<ConsoleCardViewModel> consoles)
     {
-        _heroConsole = console;
-        console.PropertyChanged += OnHeroChanged;
-
-        // Rebuilt per console rather than reused: the menu's items close over this particular card.
-        HeroCard.ContextFlyout = BuildConsoleFlyout(console);
-
-        RenderHero(console.State);
-    }
-
-    private void DetachHero()
-    {
-        if (_heroConsole is { } previous)
-        {
-            previous.PropertyChanged -= OnHeroChanged;
-            _heroConsole = null;
-        }
-    }
-
-    private void OnHeroChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
-    {
-        if (_heroConsole is { } console)
-        {
-            RenderHero(console.State);
-        }
-    }
-
-    private void RenderHero(ConsoleCardState s)
-    {
-        HeroMark.Accent = AccentResources.Brush(s.Accent);
-        HeroName.Text = s.DisplayName;
-        HeroDetails.Text = s.Details;
-
-        HeroLastPlayed.Text = s.LastConnectedLabel ?? string.Empty;
-        HeroLastPlayed.Visibility = Vis(s.LastConnectedLabel is { Length: > 0 });
-
-        HeroStatus.Text = s.StatusLabel;
-        HeroStatusDot.Fill = ThemeBrush.Lookup(s.StatusTone switch
-        {
-            StatusTone.Positive => "SystemFillColorSuccessBrush",
-            StatusTone.Caution => "SystemFillColorCautionBrush",
-            StatusTone.Neutral => "TextFillColorDisabledBrush",
-            _ => "TextFillColorTertiaryBrush",
-        });
-
-        HeroPlayLabel.Text = s.PrimaryActionLabel;
-        // Escaped rather than pasted, per this file's own rule: a private-use codepoint sitting raw in a
-        // C# string is invisible in a diff and quietly mangled by anything that re-encodes the file.
-        // E7E8 = PowerButton, E768 = Play.
-        HeroPlayIcon.Glyph = s.ActionGlyph == ActionGlyph.Wake ? "" : "";
-
-        // Disabled rather than hidden: an unreachable console usually just needs switching on, and the button
-        // vanishing would read as "this console is broken" rather than "it is not answering right now".
-        HeroPlayButton.IsEnabled = s.CanConnect;
-    }
-
-    private void OnHeroPlayClick(object sender, RoutedEventArgs e)
-    {
-        if (_heroConsole is { } console)
-        {
-            Connect(console);
-        }
-    }
-
-    private void OnHeroOverflowClick(object sender, RoutedEventArgs e)
-    {
-        if (_heroConsole is { } console)
-        {
-            BuildConsoleFlyout(console).ShowAt(HeroOverflowButton);
-        }
-    }
-
-    private void OnHeroContextRequested(UIElement sender, ContextRequestedEventArgs args)
-    {
-        if (_heroConsole is not { } console)
+        if (_launchConsumed || consoles.Count == 0)
         {
             return;
         }
 
-        MenuFlyout flyout = BuildConsoleFlyout(console);
+        _launchConsumed = true;
 
-        if (args.TryGetPosition(HeroCard, out Windows.Foundation.Point point))
+        ConsoleCardViewModel? target = App.Launch.Action switch
         {
-            flyout.ShowAt(HeroCard, new FlyoutShowOptions { Position = point });
-        }
-        else
+            LaunchAction.Play => consoles.FirstOrDefault(
+                c => App.Launch.Matches(c.Console.DisplayName, c.Console.Id)),
+
+            // Most recently reached for, which is what "last" means to the person who typed it - the stamp
+            // is written on the attempt, not on a successful stream.
+            LaunchAction.PlayLast => consoles
+                .Where(c => c.Console.LastConnectedUtc is not null)
+                .OrderByDescending(c => c.Console.LastConnectedUtc)
+                .FirstOrDefault(),
+
+            _ => null,
+        };
+
+        if (target is null)
         {
-            flyout.ShowAt(HeroCard);
+            return;
         }
 
-        args.Handled = true;
+        // Enqueued rather than called. Refresh runs from the page's Loaded, and navigating away from a page
+        // that is still loading leaves the frame in a state where the navigation is dropped - the console
+        // was stamped as played and nothing happened, which is the worst of both. By the time the queue
+        // drains the page has finished loading and the navigation takes.
+        DispatcherQueue.TryEnqueue(() => Connect(target));
     }
 
     // ---- responsive columns ----------------------------------------------------------------------
 
-    private void OnPageSizeChanged(object sender, SizeChangedEventArgs e) => ApplyColumnCount();
+    private void OnPageSizeChanged(object sender, SizeChangedEventArgs e)
+        => ApplyCardLayout(_items.OfType<ConsoleCardViewModel>().Count());
 
     /// <summary>
-    /// Cap the card row on the standard Windows breakpoints, in effective pixels — under 640 one column,
-    /// 640–1007 two, wider than that as many as fit.
+    /// Size the grid's cells and cap its columns, from <see cref="CardMetrics"/>.
     ///
     /// <para>
-    /// <c>ItemsWrapGrid</c> would otherwise fit whatever the arithmetic allows: at 292px cells a 639px window
-    /// takes two columns, which on a phone-width or split-screen window leaves cards narrower than their own
-    /// content wants. The breakpoints exist so a narrow window gets one readable card rather than two cramped
-    /// ones.
+    /// The arithmetic is not here on purpose. Breakpoints, cell sizes and the column cap are a rule that can
+    /// be wrong on a display nobody in the room owns, and the previous version of it — three literals in a
+    /// switch — could only be checked by resizing a window and looking. <c>CardMetrics</c> is pure and has
+    /// tests; this method's whole job is to hand it a width and apply the answer.
+    /// </para>
+    ///
+    /// <para>
+    /// Returns the layout so the caller can also ask it about the add tile, rather than computing it twice
+    /// from the same two inputs and eventually disagreeing with itself.
     /// </para>
     /// </summary>
-    private void ApplyColumnCount()
+    private CardLayout ApplyCardLayout(int consoleCount)
+    {
+        CardLayout layout = CardMetrics.For(ActualWidth, consoleCount);
+        _layout = layout;
+
+        foreach (ConsoleCardViewModel card in _items.OfType<ConsoleCardViewModel>())
+        {
+            card.Density = layout.Density;
+        }
+
+        SizePanel();
+
+        // A single hero-sized card is the page; anything denser is a list and reads from the top-left.
+        bool hero = layout.Density == CardDensity.Hero;
+        ConsoleGrid.HorizontalAlignment = hero ? HorizontalAlignment.Center : HorizontalAlignment.Stretch;
+        ConsoleGrid.VerticalAlignment = hero ? VerticalAlignment.Center : VerticalAlignment.Stretch;
+
+        return layout;
+    }
+
+    /// <summary>
+    /// Push the current cell size onto the wrapping panel, if it exists yet.
+    ///
+    /// <para>
+    /// <b>It usually does not, at the moment you would expect it to.</b> <c>ItemsPanelRoot</c> is null while
+    /// the page is loading and still null in the grid's own <c>Loaded</c> - it is materialised from the
+    /// <c>ItemsPanelTemplate</c> during the first measure pass. Setting the size before then goes nowhere and
+    /// leaves the markup's own <c>ItemWidth</c> standing, which put a hero-density CARD inside a
+    /// grid-density CELL and wrapped the console's name to one letter per line.
+    /// </para>
+    ///
+    /// <para>
+    /// So it is called again from container preparation, which cannot run before the panel exists. Guarded
+    /// against writing values that already match, because assigning these invalidates layout and this is
+    /// reached from inside a layout pass.
+    /// </para>
+    /// </summary>
+    private void SizePanel()
     {
         if (ConsoleGrid.ItemsPanelRoot is not ItemsWrapGrid panel)
         {
             return;
         }
 
-        double width = ActualWidth;
-        panel.MaximumRowsOrColumns = width switch
+        if (panel.ItemWidth != _layout.CellWidth)
         {
-            > 0 and < 640 => 1,
-            >= 640 and < 1008 => 2,
+            panel.ItemWidth = _layout.CellWidth;
+        }
 
-            // -1 is "as many as fit", which is the right answer once there is room for three.
-            _ => -1,
-        };
+        if (panel.ItemHeight != _layout.CellHeight)
+        {
+            panel.ItemHeight = _layout.CellHeight;
+        }
+
+        if (panel.MaximumRowsOrColumns != _layout.MaxColumns)
+        {
+            panel.MaximumRowsOrColumns = _layout.MaxColumns;
+        }
     }
 
     private void CancelProbes()
@@ -360,12 +351,10 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
 
         try
         {
-            // Whichever layout is showing owns the element the eye is travelling from. On the hero there is no
-            // grid container to ask for, so the card itself is the source — without this, the one-console
-            // layout was the only path that cut to black.
-            UIElement? source = HeroPanel.Visibility == Visibility.Visible
-                ? HeroCard
-                : ConsoleGrid.ContainerFromItem(item) as GridViewItem;
+            // Always the container now. This used to branch on which layout was showing, because the hero
+            // card sat outside any items control and had no container to ask for - so the one-console path
+            // was the only one that cut to black when the branch was wrong. Every card is a GridViewItem.
+            UIElement? source = ConsoleGrid.ContainerFromItem(item) as GridViewItem;
 
             if (source is not null)
             {
@@ -384,23 +373,53 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
     /// right-click / menu-key path share one definition \u2014 two copies would drift the moment either grew an
     /// entry.
     /// </summary>
+    /// <summary>
+    /// Write a desktop shortcut that launches straight into this console, and say whether it worked.
+    ///
+    /// <para>
+    /// Told rather than assumed: the desktop can be redirected somewhere read-only or onto a share that is
+    /// not there, and a menu item that silently does nothing is worse than one that says it could not.
+    /// </para>
+    /// </summary>
+    private void CreateShortcut(ConsoleCardViewModel item)
+    {
+        string? path = PlayShortcut.WriteToDesktop(item.Console.DisplayName);
+
+        ShortcutBar.Message = path is null ? ConsoleCardCopy.ShortcutFailed : ConsoleCardCopy.ShortcutMade;
+        ShortcutBar.Severity = path is null
+            ? InfoBarSeverity.Warning
+            : InfoBarSeverity.Success;
+        ShortcutBar.IsOpen = true;
+    }
+
     private MenuFlyout BuildConsoleFlyout(ConsoleCardViewModel item)
     {
         var flyout = new MenuFlyout { Placement = FlyoutPlacementMode.BottomEdgeAlignedRight };
 
         // Glyphs escaped rather than pasted: a private-use codepoint sitting raw in a C# string is invisible
         // in a diff and quietly mangled by anything that re-encodes the file.
-        var rename = new MenuFlyoutItem { Text = "Rename", Icon = new FontIcon { Glyph = "\uE8AC" } };
+        var rename = new MenuFlyoutItem { Text = ConsoleCardCopy.MenuRename, Icon = new FontIcon { Glyph = "\uE8AC" } };
         rename.Click += async (_, _) => await RenameAsync(item);
 
-        var details = new MenuFlyoutItem { Text = "Details", Icon = new FontIcon { Glyph = "\uE946" } };
+        var details = new MenuFlyoutItem { Text = ConsoleCardCopy.MenuDetails, Icon = new FontIcon { Glyph = "\uE946" } };
         details.Click += async (_, _) => await ShowDetailsAsync(item);
 
-        var remove = new MenuFlyoutItem { Text = "Remove", Icon = new FontIcon { Glyph = "\uE74D" } };
+        var remove = new MenuFlyoutItem { Text = ConsoleCardCopy.MenuRemove, Icon = new FontIcon { Glyph = "\uE74D" } };
         remove.Click += async (_, _) => await RemoveAsync(item);
+
+        // The artefact somebody adds to Steam, to a handheld launcher, or pins to their taskbar. It is the
+        // half of "launch at a console" that works without package identity - a jump list needs it and the
+        // zip has none, and the zip is how most people will run this.
+        var shortcut = new MenuFlyoutItem
+        {
+            Text = ConsoleCardCopy.MenuShortcut,
+            Icon = new FontIcon { Glyph = "" },
+        };
+        shortcut.Click += (_, _) => CreateShortcut(item);
 
         flyout.Items.Add(rename);
         flyout.Items.Add(details);
+        flyout.Items.Add(shortcut);
         // IsTabStop=false, or directional focus stops on it: a separator is decoration and activating it does
         // nothing, so a pad user gets a dead step between Details and Remove.
         flyout.Items.Add(new MenuFlyoutSeparator { IsTabStop = false });
@@ -446,20 +465,69 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
 
     // The card's hover/focus cue. Held as a flag on the item rather than by reaching into the template, so it
     // survives the markup being rearranged \u2014 see ConsoleCardViewModel.IsHighlighted.
-    private void OnCardHighlight(object sender, RoutedEventArgs e) => SetHighlight(sender, true);
-
-    private void OnCardUnhighlight(object sender, RoutedEventArgs e) => SetHighlight(sender, false);
-
     private void OnCardHighlight(object sender, PointerRoutedEventArgs e) => SetHighlight(sender, true);
 
     private void OnCardUnhighlight(object sender, PointerRoutedEventArgs e) => SetHighlight(sender, false);
 
+    /// <summary>
+    /// The pointer wash, and only the pointer. Focus is the container's ring - see the container style - and
+    /// the two are deliberately different kinds of mark: they were one shared wash at two opacities until
+    /// 2026-09-20, which left a pad user unable to tell where focus was.
+    /// </summary>
     private static void SetHighlight(object sender, bool on)
     {
         if (sender is FrameworkElement { DataContext: ConsoleCardViewModel item })
         {
             item.IsHighlighted = on;
+
+            // Hover is reported separately from the wash's hover-or-focus, because the wedge answers this
+            // one and must not answer focus. Cleared on exit, which also clears any press left behind by a
+            // pointer that left the card mid-press.
+            item.IsPointerOver = on;
+
+            if (!on)
+            {
+                item.IsPressed = false;
+            }
         }
+    }
+
+    private void OnCardDown(object sender, PointerRoutedEventArgs e) => SetPressed(sender, true);
+
+    /// <summary>
+    /// Release, cancel, and capture-lost all end a press.
+    ///
+    /// <para>
+    /// Capture-lost is the one that is easy to omit and the one that strands a card lit: a press that turns
+    /// into a scroll or is interrupted by a flyout never raises Released, and the wedge would stay at its
+    /// pressed strength until the pointer happened to leave.
+    /// </para>
+    /// </summary>
+    private void OnCardUp(object sender, PointerRoutedEventArgs e) => SetPressed(sender, false);
+
+    /// <summary>How far a pressed card settles. Small on purpose: felt rather than watched.</summary>
+    private const double PressScaleFactor = 0.985;
+
+    private static void SetPressed(object sender, bool down)
+    {
+        if (sender is not FrameworkElement { DataContext: ConsoleCardViewModel item } element)
+        {
+            return;
+        }
+
+        item.IsPressed = down;
+
+        // The scale is the front end's alone - it is a WinUI transform, and the portable layer holds no UI
+        // types. Skipped entirely when motion is off rather than run at zero duration, so a player who asked
+        // Windows for less motion gets none rather than an instant jump.
+        if (!AppMotion.Enabled || element.FindName("PressScale") is not ScaleTransform scale)
+        {
+            return;
+        }
+
+        double target = down ? PressScaleFactor : 1.0;
+        scale.ScaleX = target;
+        scale.ScaleY = target;
     }
 
     /// <summary>
@@ -486,6 +554,9 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
             return;
         }
 
+        // The first moment the wrapping panel is guaranteed to exist. See SizePanel.
+        SizePanel();
+
         // Detach first: recycling means this container may still carry the last item's subscriptions.
         container.GotFocus -= OnContainerFocus;
         container.LostFocus -= OnContainerBlur;
@@ -500,6 +571,22 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
         container.ContextFlyout = BuildConsoleFlyout(item);
         container.GotFocus += OnContainerFocus;
         container.LostFocus += OnContainerBlur;
+
+        // Open the window, press A, playing - the promise the one-console layout exists to keep.
+        //
+        // Done from here rather than from InitialFocus because at hero density the answer is a container that
+        // does not exist yet when the shell asks: the GridView realises its items after the page's own Loaded,
+        // so focusing the grid at that point lands on nothing and the first press goes nowhere. This fires as
+        // the container is realised, which is the first moment there is something to focus.
+        //
+        // Only at hero density, and only the first card. In a dense grid the shell's own answer is correct -
+        // focusing the GridView hands focus to whichever item it last had, which is what someone returning to
+        // the page expects, and stealing that to the first card would undo it.
+        if (item.Density == CardDensity.Hero && args.ItemIndex == 0 && !_heroFocusTaken)
+        {
+            _heroFocusTaken = true;
+            _ = container.Focus(FocusState.Programmatic);
+        }
     }
 
     private static void OnContainerFocus(object sender, RoutedEventArgs e) => SetContainerHighlight(sender, true);
@@ -527,7 +614,7 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
         var dialog = new ContentDialog
         {
             XamlRoot = XamlRoot,
-            Title = "Rename console",
+            Title = ConsoleCardCopy.RenameTitle,
             Content = new StackPanel
             {
                 Spacing = 12,
@@ -536,21 +623,21 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
                 {
                     new TextBlock
                     {
-                        Text = "Give this console a name you'll recognise — useful when you have more than one.",
+                        Text = ConsoleCardCopy.RenameExplanation,
                         TextWrapping = TextWrapping.Wrap,
                     },
                     box,
                     new TextBlock
                     {
-                        Text = "Leave it empty to go back to the name the console reports.",
+                        Text = ConsoleCardCopy.RenameHint,
                         Style = (Style)Application.Current.Resources["CaptionTextBlockStyle"],
                         Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["TextFillColorTertiaryBrush"],
                         TextWrapping = TextWrapping.Wrap,
                     },
                 },
             },
-            PrimaryButtonText = "Save",
-            CloseButtonText = "Cancel",
+            PrimaryButtonText = ConsoleCardCopy.RenameSave,
+            CloseButtonText = ConsoleCardCopy.Cancel,
             DefaultButton = ContentDialogButton.Primary,
         };
 
@@ -568,38 +655,20 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
         }
         catch (Exception ex)
         {
-            await ShowErrorAsync("Couldn't rename that console", ex.Message);
+            await ShowErrorAsync(ConsoleCardCopy.RenameFailed, ex.Message);
         }
     }
 
     private async Task ShowDetailsAsync(ConsoleCardViewModel item)
     {
         var panel = new StackPanel { Spacing = 8, MinWidth = 320 };
-        AddDetail(panel, "Name", item.State.DisplayName);
-        AddDetail(panel, "Console", item.Family.LongName);
-        AddDetail(panel, "Address", item.Console.Host);
-        AddDetail(panel, "Status", item.State.StatusLabel);
 
-        // Everything below is only known for consoles paired since discovery started carrying it, so each is
-        // shown only when there is something to show rather than as a row of blanks.
-        if (item.Console.ReportedName is { Length: > 0 } reported && reported != item.State.DisplayName)
+        // Which rows exist is a decision about what the surface says - most of these facts are only known
+        // for consoles paired since discovery started carrying them - so it is made in the presentation
+        // layer and tested there. This loop is the whole of the page's part in it.
+        foreach (ConsoleDetail detail in ConsoleCardCopy.Details(item))
         {
-            AddDetail(panel, "Reported name", reported);
-        }
-
-        if (item.Console.HostId is { Length: > 0 } hostId)
-        {
-            AddDetail(panel, "Host ID", hostId);
-        }
-
-        if (item.Console.SystemVersion is { Length: > 0 } version)
-        {
-            AddDetail(panel, "System version", version);
-        }
-
-        if (item.State.LastConnectedLabel is { } played)
-        {
-            AddDetail(panel, "Last played", played);
+            AddDetail(panel, detail.Label, detail.Value);
         }
 
         try
@@ -609,7 +678,7 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
                 XamlRoot = XamlRoot,
                 Title = item.State.DisplayName,
                 Content = panel,
-                CloseButtonText = "Close",
+                CloseButtonText = ConsoleCardCopy.DetailsClose,
             });
         }
         catch (Exception)
@@ -652,11 +721,10 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
             var confirm = new ContentDialog
             {
                 XamlRoot = XamlRoot,
-                Title = "Remove this console?",
-                Content = $"Ripcord will forget its pairing with {item.State.DisplayName}. To use it again you'll need "
-                          + "to enter a new link code from the console.",
-                PrimaryButtonText = "Remove",
-                CloseButtonText = "Cancel",
+                Title = ConsoleCardCopy.RemoveTitle,
+                Content = ConsoleCardCopy.RemovePrompt(item.State.DisplayName),
+                PrimaryButtonText = ConsoleCardCopy.RemoveConfirm,
+                CloseButtonText = ConsoleCardCopy.Cancel,
                 DefaultButton = ContentDialogButton.Close,
             };
 
@@ -668,7 +736,7 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
         }
         catch (Exception ex)
         {
-            await ShowErrorAsync("Couldn't remove that console", ex.Message);
+            await ShowErrorAsync(ConsoleCardCopy.RemoveFailed, ex.Message);
         }
     }
 
@@ -681,7 +749,7 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
                 XamlRoot = XamlRoot,
                 Title = title,
                 Content = message,
-                CloseButtonText = "OK",
+                CloseButtonText = ConsoleCardCopy.Ok,
             });
         }
         catch (Exception)
