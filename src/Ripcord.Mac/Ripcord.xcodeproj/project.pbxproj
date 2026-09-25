@@ -82,6 +82,11 @@
 			path = session;
 			sourceTree = "<group>";
 		};
+		2442448CD1312E41B1789B28 /* client */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = client;
+			sourceTree = "<group>";
+		};
 		3C3A5EE50D021FCBDB67ACAC /* crypto */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = crypto;
@@ -247,6 +252,7 @@
 		EAFC6462B882DC5C9DD7DD77 /* libripcord */ = {
 			isa = PBXGroup;
 			children = (
+				2442448CD1312E41B1789B28 /* client */,
 				3C3A5EE50D021FCBDB67ACAC /* crypto */,
 				87EA10EE2864F46F34F2E7D6 /* discovery */,
 				B4D571CA882121C0A02E9845 /* halyard */,
@@ -340,6 +346,7 @@
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
+				2442448CD1312E41B1789B28 /* client */,
 				3C3A5EE50D021FCBDB67ACAC /* crypto */,
 				87EA10EE2864F46F34F2E7D6 /* discovery */,
 				B4D571CA882121C0A02E9845 /* halyard */,
