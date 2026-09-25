@@ -275,8 +275,10 @@ Step 1, promoting the core to `libripcord/` with fuzzing and a CI job, is done a
     - [ ] **Run the rendezvous route against a console**, first on the LAN and then off it. The Swift cloud
           tier drives it through the contract in `halyard_client.h` ("THE RENDEZVOUS ROUTE"). Nothing in it
           has met hardware, and a console's answers there were only ever seen through .NET.
-    - [ ] A login prompt arriving after the rendezvous route's 1 s sign-in window is not handled. .NET does
-          not handle one either `[X]`.
+    - [ ] A login prompt arriving after the rendezvous route's 1 s sign-in window. It is now answered
+          where it lands, in the media wait (2026-09-25), after a connect from rest reached that wait with
+          no prompt and the console never offered media. Unproven until a late prompt is actually logged
+          `[X]`. .NET does not handle one either.
     - [ ] `rc_udp_open_bound` (bind, getsockname) has not been built for the PS3, 3DS or Vita SDKs `[X]`.
     - [ ] The spec says the 0x40 request word appears in no capture and is a counter; .NET and C both
           send 0x40 `[X]`. Change both together.

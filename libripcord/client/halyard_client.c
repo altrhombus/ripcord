@@ -1586,6 +1586,31 @@ static int connect_media(halyard_client *c)
         client_tick(c);
         if (c->end_pending != HALYARD_CLIENT_END_NONE)
             return 0;
+        /*
+         * A LOGIN PROMPT THAT ARRIVED AFTER THE SIGN-IN WINDOW. This route's window is 1 s, and a console
+         * that has just been woken from rest brings its user up more slowly than that: on 2026-09-25 a
+         * connect from rest over the internet reached this wait with no prompt seen, and the console then
+         * never offered a media connection - consistent with a prompt arriving late, being absorbed by
+         * the control service, and the console waiting for a passcode nobody sent. Widening the window is
+         * not the answer, because SESSION_ID only comes after the A/V leg here, so an unlocked console
+         * would make every connect wait it out. So a late prompt is answered where it lands, with the same
+         * gate, and the wait for the media OFFER starts again from there. [X] until a late prompt is seen.
+         */
+        if (c->login_prompt && !c->session_ready && c->result.login_attempts == 0) {
+            client_log(c, HALYARD_CLIENT_LOG_WARN,
+                       "client: the console asked for its passcode late (%u ms into the media wait)",
+                       (unsigned)(rc_time_ms() - asked));
+            if (!signin_passcode(c))
+                return 0;
+            if (!c->session_ready) {
+                client_log(c, HALYARD_CLIENT_LOG_WARN, "client: passcode accepted but no SESSION_ID followed");
+                end_request(c, HALYARD_CLIENT_END_SIGNIN_NO_SESSION);
+                return 0;
+            }
+            reach(c, HALYARD_CLIENT_STAGE_SESSION_READY);
+            asked = rc_time_ms();
+            continue;
+        }
         answer = c->cb.poll_media(c->cb.user, &info, &peer);
         if (answer != 0)
             break;
