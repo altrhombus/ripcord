@@ -22,10 +22,10 @@ discovery/  the SRCH probe and its response parser, and the LAN wake datagram
 takion/     the SCTP-over-UDP transport: handshake, DATA/SACK, reassembly, senkusha, key negotiation
 stream/     A/V framing, Cauchy Reed-Solomon FEC over GF(2^8), packet crypto, frame reassembly
 input/      controller state -> input packet
-net/        rc_tcp.c, a minimal TCP client over BSD sockets
+net/        rc_tcp.c, a minimal TCP client; rc_udp.c; rc_stun*.c, the STUN reflexive-address client
 util/       base64, hex, text/header parsing, logging, program-dir resolution
 platform/   rc_platform.h - the seam, and the ONLY thing here that names an OS
-tests/      the host-side known-answer suite (3,287 assertions), plus the host seam implementation
+tests/      the host-side known-answer suite (3,868 assertions on 2026-09-24), plus the host seam implementation
 tools/      gen_constants.py, udp_link_test_sender.py, build-mbedtls.sh + its minimal config
 ```
 
@@ -99,6 +99,12 @@ instead, and `ECDH_BACKEND=none` skips the ECDH cases and exits 0. Before the lo
 the derived stream keys went unchecked exactly where nobody would notice — so "any machine with a C
 compiler and nothing else installed" is now true rather than aspirational.
 
+**A build can supply its own backend instead.** Defining `RC_ECDH_EXTERNAL_BACKEND` compiles only the
+backend-neutral half of `rc_ecdh.c`, and the build provides the five backend entry points itself. The macOS
+client does this with CryptoKit (`src/Ripcord.Mac/RipcordKit/Crypto/CryptoKitECDH.swift`), and its
+`libripcord-ecdh-kat` target runs this tree's `tests/ecdh_test.c`, unmodified, against it. Mbed TLS and
+CryptoKit are therefore two real backends behind one seam, and both are checked against the same vectors.
+
 The version is pinned to 2.28.8 because that is what devkitPro packages as `3ds-mbedtls`: one version,
 one `rc_ecdh.c`, two ports.
 
@@ -115,6 +121,7 @@ and the stream headers. It is C, so a length it trusts is a memory-safety bug ra
 | `fuzz_takion.c` | Message framing, every handshake chunk, SACK, DATA, and a reassembler that lives across datagrams |
 | `fuzz_control.c` | The `/sess/ctrl` byte stream and every Takion control-message parser |
 | `fuzz_stream.c` | Stream headers, frame assembly and FEC recovery, with the passthrough crypto seam so it also reaches what an authenticated console could drive |
+| `fuzz_stun.c` | The STUN Binding Response parser - the one surface that faces the open internet rather than the LAN |
 
 Stateful harnesses read their input as a sequence of length-prefixed records, one per datagram
 (`fuzz/fuzz_input.h`), so a second packet can find the state the first one left.
