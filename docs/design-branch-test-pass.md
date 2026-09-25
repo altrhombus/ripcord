@@ -1,12 +1,12 @@
-# Test pass — `feat/app-design-direction`
+# Test pass — the app design work
 
-**The question this answers: what changed on this branch that a person has to look at?**
+**The question this answers: what a person has to look at, on the surfaces the design work rebuilt.**
 
-Written 2026-09-13; last revised 2026-09-19. Delete this file once the pass is done and its findings are in
-[`ROADMAP.md`](../ROADMAP.md).
+Written 2026-09-13 for `feat/app-design-direction`; last revised 2026-09-24, when that branch merged. The
+branch name is gone from the title because the work is on `main` and the script outlives it. Delete this file
+once the pass is done and its findings are in [`ROADMAP.md`](../ROADMAP.md).
 
 ```
-git checkout feat/app-design-direction
 msbuild Ripcord.slnx -p:Platform=ARM64 -p:Configuration=Release -m
 ```
 
@@ -16,9 +16,9 @@ and the measurement section that used to open this file is **done** — see the 
 looked at is everything under "What to test" below: the surfaces were exercised incidentally while chasing
 numbers, not walked deliberately.
 
-**Baseline: everything is green.** 378 presentation tests and 788 protocol tests pass, with 6 skipped — the
-live-vector tests that self-skip without the dirty-room fixtures, which is correct on a machine that does not
-have them. The branch is rebased onto `main`, 27 commits ahead, working tree clean.
+**Baseline: everything is green.** 452 presentation tests and 791 protocol tests pass, with 6 skipped — the
+live-vector tests that self-skip without the dirty-room fixtures, and the ARM PMULL paths, which is correct on
+a machine that has neither.
 
 If you see a failure, it is real.
 
