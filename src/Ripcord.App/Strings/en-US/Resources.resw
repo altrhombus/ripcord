@@ -616,10 +616,6 @@
     <value>Report an issue</value>
     <comment>Static text on the About page.</comment>
   </data>
-  <data name="AboutPage_Ripcord.Text" xml:space="preserve">
-    <value>Ripcord</value>
-    <comment>Static text on the About page. Ripcord is a product or standard name - do not translate.</comment>
-  </data>
   <data name="AboutPage_Source.Text" xml:space="preserve">
     <value>Source</value>
     <comment>Static text on the About page.</comment>

@@ -157,6 +157,11 @@ tile also goes without the edge: a sub-pixel hairline at 16 px is mud.
 - The tile is also drawn as vectors in `AboutPage.xaml` (the hero tile), edge included. That is the one
   duplicate of the composed tile in the tree; keep it in step with the ground, the mark and the edge values
   in `generate-assets.ps1`. `RipcordMark` and `ConnectMark` redraw the mark alone.
+- **The wordmark has a second copy too**, in `src/Ripcord.App/Controls/RipcordWordmark.xaml`: the single
+  path from `ripcord-wordmark.svg`, pasted. It is drawn rather than loaded for the reason the tile is — an
+  asset would need a raster per scale factor, and soft type is the one thing a wordmark cannot afford. So
+  **rerunning `outline-wordmark.py` means copying that path across again**, and a change to the type, the
+  tracking or the lockup rules that stops at the SVG will leave the app showing the old cut.
 - The console card's dark gradient is **not** the ground. It kept the pre-lift values, because the wedge
   facet is defined as the card lifted and would disappear against a card at the new values. See
   `Ripcord.Card.xaml`.

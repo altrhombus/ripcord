@@ -3,6 +3,7 @@
     x:Class="Ripcord_App.Pages.AboutPage"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="using:Ripcord_App.Controls"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:local="using:Ripcord_App.Pages"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
@@ -121,7 +122,24 @@
                         </Viewbox>
 
                         <StackPanel Grid.Column="1" Spacing="6">
-                            <TextBlock x:Uid="AboutPage_Ripcord" Style="{StaticResource TitleLargeTextBlockStyle}" />
+                            <!--
+                                The wordmark, not the name set in the UI font. With the tile beside it this is
+                                the lockup brand/README.md defines - mark plus word - and the About page is the
+                                one surface in the app that is about Ripcord rather than about a console, which
+                                is where a lockup belongs.
+
+                                Height only. The width follows the word, and constraining both would either
+                                stretch the type or letterbox it.
+
+                                It replaces a TitleLarge TextBlock reading "Ripcord". The accessible name did
+                                not move with it: the tile above already carries "Ripcord logo", and a hero
+                                that announced itself twice was the thing RipcordMark's own comment warns
+                                about.
+                            -->
+                            <controls:RipcordWordmark
+                                Height="30"
+                                HorizontalAlignment="Left"
+                                Ink="{ThemeResource TextFillColorPrimaryBrush}" />
                             <TextBlock
                                 Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                 x:Uid="AboutPage_RemotePlayWindowsDirect"

@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!--
+    The Ripcord wordmark: the word alone, as outlines.
+
+    GENERATED ARTWORK, COPIED. The path below is the single path from brand/ripcord-wordmark.svg, which
+    brand/outline-wordmark.py writes from Outfit SemiBold. Do not edit it by hand and do not tidy it - if
+    the type, the tracking or the lockup rules change, rerun that script and copy the path again. The font
+    itself is never committed; these are outlines of it.
+
+    Drawn rather than loaded for the reason RipcordMark is: an SVG asset would need a raster per scale
+    factor, and the one thing a wordmark cannot afford is to be slightly soft.
+
+    **Never shown without the mark.** brand/README.md is explicit: without the mark the colour disappears
+    and it is just a word in a nice font. Every surface using this places it beside the mark or the tile,
+    which is also why it is decorative to a screen reader - the mark beside it carries the name, and two
+    voices saying "Ripcord" is worse than one.
+
+    Lowercase is correct here and is not a typo. In artwork the word is lowercase; in running text the name
+    is "Ripcord". brand/README.md gives the reason: title case puts a tall R beside the wedge and the two
+    tallest shapes compete for the left edge.
+-->
+<UserControl
+    x:Class="Ripcord_App.Controls.RipcordWordmark"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d">
+
+    <!--
+        Viewbox rather than a fixed size: the source is in typographic coordinates with a negative Y origin
+        (the baseline is zero), and a Viewbox measures the geometry and normalises it. Height is what a
+        caller should set - the width follows the word.
+    -->
+    <Viewbox
+        AutomationProperties.AccessibilityView="Raw"
+        Stretch="Uniform">
+        <Path x:Name="Word" Fill="{x:Bind Ink, Mode=OneWay}" Data="M57.5 0V-483H189V0ZM189 -266.8 137.8 -301.2Q147.2 -389.5 190.2 -441.2Q233.2 -493 313.8 -493Q349.2 -493 377.1 -481.2Q405 -469.5 427.5 -444L346 -349.5Q334.5 -362 319.1 -367.9Q303.7 -373.8 283.5 -373.8Q241.5 -373.8 215.2 -347.6Q189 -321.4 189 -266.8ZM459 0V-483H590.5V0ZM524.8 -560.5Q493 -560.5 472 -582.1Q451 -603.8 451 -635.5Q451 -667.2 472 -688.9Q493 -710.5 524.8 -710.5Q557.5 -710.5 578 -688.9Q598.5 -667.2 598.5 -635.5Q598.5 -603.8 578 -582.1Q557.5 -560.5 524.8 -560.5ZM960 10Q907.8 10 865.8 -11.2Q823.8 -32.5 798.6 -69.8Q773.5 -107 771.5 -154.5V-326Q773.5 -373.5 799 -411.4Q824.5 -449.2 866.5 -471.1Q908.4 -493 960 -493Q1027 -493 1080 -459.8Q1133 -426.5 1163.5 -369.6Q1194 -312.8 1194 -240.8Q1194 -169.5 1163.5 -112.8Q1133 -56 1080 -23Q1027 10 960 10ZM691.5 202.5V-483H823V-356.1L800.8 -238.5L821.8 -121.5V202.5ZM937.1 -111Q973.3 -111 1000.9 -127.6Q1028.5 -144.2 1044.2 -173.8Q1060 -203.3 1060 -241.6Q1060 -280 1044.2 -309.4Q1028.5 -338.8 1001 -355.4Q973.5 -372 937.5 -372Q901.5 -372 873.6 -355.5Q845.8 -338.9 830.4 -309.5Q815 -280 815 -241.5Q815 -203.2 830.2 -173.8Q845.5 -144.2 873.4 -127.6Q901.2 -111 937.1 -111ZM1492.5 10.5Q1419.2 10.5 1360.1 -22.5Q1301 -55.5 1267 -112.9Q1233 -170.2 1233 -241.2Q1233 -313.2 1267.1 -370.2Q1301.2 -427.2 1360.5 -460.4Q1419.8 -493.5 1493.2 -493.5Q1549.8 -493.5 1597.8 -472.9Q1645.8 -452.2 1681.2 -413L1596.5 -327.5Q1577.5 -349.2 1551.4 -360.1Q1525.2 -371 1493.2 -371Q1456.5 -371 1428 -354.5Q1399.5 -338 1383.4 -309.2Q1367.2 -280.5 1367.2 -241.8Q1367.2 -203.8 1383.4 -174.5Q1399.5 -145.2 1428.1 -128.6Q1456.8 -112 1493.2 -112Q1526 -112 1552.4 -123.4Q1578.8 -134.8 1597.8 -157L1682.5 -71.5Q1646.2 -31.5 1598.1 -10.5Q1550 10.5 1492.5 10.5ZM1957.5 10.5Q1884.8 10.5 1826.1 -23Q1767.5 -56.5 1733.2 -114Q1699 -171.5 1699 -242.5Q1699 -313.5 1733.1 -370Q1767.2 -426.5 1825.9 -460Q1884.5 -493.5 1957.2 -493.5Q2030.8 -493.5 2089.2 -460.4Q2147.8 -427.2 2182 -370.4Q2216.2 -313.5 2216.2 -242.5Q2216.2 -171.5 2182.1 -114Q2148 -56.5 2089.5 -23Q2031 10.5 1957.5 10.5ZM1957.2 -112Q1994.2 -112 2022.5 -128.5Q2050.8 -145 2066.4 -174.6Q2082 -204.2 2082 -242.2Q2082 -280.2 2065.9 -309.1Q2049.8 -338 2022 -354.5Q1994.2 -371 1957.2 -371Q1921.2 -371 1893 -354.4Q1864.8 -337.8 1849 -308.9Q1833.2 -280 1833.2 -242Q1833.2 -204.2 1849 -174.6Q1864.8 -145 1893 -128.5Q1921.2 -112 1957.2 -112ZM2284.5 0V-483H2416V0ZM2416 -266.8 2364.8 -301.2Q2374.2 -389.5 2417.2 -441.2Q2460.2 -493 2540.8 -493Q2576.2 -493 2604.1 -481.2Q2632 -469.5 2654.5 -444L2573 -349.5Q2561.5 -362 2546.1 -367.9Q2530.7 -373.8 2510.5 -373.8Q2468.5 -373.8 2442.2 -347.6Q2416 -321.4 2416 -266.8ZM2876.5 10Q2809.5 10 2756.5 -23Q2703.6 -56 2673 -112.7Q2642.5 -169.5 2642.5 -240.9Q2642.5 -313.1 2673 -369.8Q2703.5 -426.5 2756.4 -459.8Q2809.2 -493 2876.5 -493Q2928.8 -493 2970.4 -471.8Q3012 -450.5 3037.6 -413.2Q3063.2 -376 3065 -328.5V-157Q3063.2 -109.5 3038 -71.6Q3012.8 -33.8 2970.8 -11.9Q2928.8 10 2876.5 10ZM2899 -111Q2936 -111 2963.3 -127.6Q2990.6 -144.2 3006 -173.6Q3021.5 -203 3021.5 -241.5Q3021.5 -280.3 3006.1 -309.4Q2990.7 -338.6 2963.3 -355.3Q2936 -372 2899.6 -372Q2863.2 -372 2835.8 -355.2Q2808.4 -338.5 2792.4 -309.1Q2776.5 -279.7 2776.5 -241.5Q2776.5 -203.2 2792.2 -173.8Q2807.9 -144.3 2835.7 -127.7Q2863.6 -111 2899 -111ZM3145 0H3014.8V-129.8L3035.8 -247.5L3013.5 -364.2V-723H3145Z" />
+    </Viewbox>
+</UserControl>
