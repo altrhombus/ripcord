@@ -89,6 +89,8 @@ ACCOUNT_ID_TARGET := $(BUILD)/account_id_test
 PAIRING_SET_TARGET := $(BUILD)/pairing_set_test
 STUN_TARGET := $(BUILD)/stun_test
 REGISTRATION_VECTORS := vectors/registration-crypto.kat
+ACCOUNT_PAIRING_TARGET := $(BUILD)/account_pairing_test
+ACCOUNT_PAIRING_VECTORS := vectors/account-pairing.kat
 
 # A SECOND generated constants file, with --registration. The rest of this suite deliberately builds
 # without the registration tables - that is the shape ripcord-3ds links - and checking the registration
@@ -229,7 +231,8 @@ REGISTRATION_SOURCES := \
 all: check
 
 check: $(TARGET) $(VECTORS) $(DISCOVERY_TARGET) $(SESSION_TARGET) $(TAKION_TARGET) $(STREAM_CRYPTO_TARGET) $(STREAM_VECTORS) $(FEC_TARGET) $(STREAM_HEADER_TARGET) $(STREAM_DEMUX_TARGET) $(ECDH_TARGET) $(SESSION_VECTORS) $(CONTROL_PROTO_TARGET) $(PROTO_VECTORS) $(INPUT_TARGET) \
-         $(REGISTRATION_TARGET) $(REGISTRATION_VECTORS) $(REGIST_FLOW_TARGET) $(MENU_TARGET) $(ACCOUNT_ID_TARGET) $(PAIRING_SET_TARGET) $(STUN_TARGET)
+         $(REGISTRATION_TARGET) $(REGISTRATION_VECTORS) $(REGIST_FLOW_TARGET) $(MENU_TARGET) $(ACCOUNT_ID_TARGET) $(PAIRING_SET_TARGET) $(STUN_TARGET) \
+         $(ACCOUNT_PAIRING_TARGET) $(ACCOUNT_PAIRING_VECTORS)
 	./$(TARGET) $(VECTORS)
 	./$(DISCOVERY_TARGET)
 	./$(SESSION_TARGET)
@@ -247,6 +250,7 @@ check: $(TARGET) $(VECTORS) $(DISCOVERY_TARGET) $(SESSION_TARGET) $(TAKION_TARGE
 	./$(ACCOUNT_ID_TARGET)
 	./$(PAIRING_SET_TARGET) $(BUILD)
 	./$(STUN_TARGET)
+	./$(ACCOUNT_PAIRING_TARGET) $(ACCOUNT_PAIRING_VECTORS)
 
 build: $(TARGET) $(DISCOVERY_TARGET) $(SESSION_TARGET) $(TAKION_TARGET) $(STREAM_CRYPTO_TARGET) $(FEC_TARGET) $(STREAM_HEADER_TARGET) $(STREAM_DEMUX_TARGET) $(ECDH_TARGET) $(CONTROL_PROTO_TARGET)
 
@@ -394,6 +398,33 @@ $(REGISTRATION_TARGET): $(REGISTRATION_SOURCES) $(REGISTRATION_GENERATED)
 	$(CC) $(CFLAGS) $(INCLUDES) -I$(CORE)/session -I$(CORE)/util -o $@ $(REGISTRATION_SOURCES) \
 	    $(REGISTRATION_GENERATED)
 
+# Account (no-PIN) pairing: seed recovery, the account wrap and key, and /sess/rgst request and reply,
+# checked against the .NET side's vectors, then the flow against a fake console behind the transport
+# callback. No sockets - the 9303 association is the caller's - so no host seam and no pthreads.
+ACCOUNT_PAIRING_SOURCES := \
+	$(CORE)/halyard/halyard_registration.c \
+	$(CORE)/halyard/halyard_account_seed.c \
+	$(CORE)/halyard/halyard_control_crypto.c \
+	$(CORE)/crypto/rc_aes.c \
+	$(CORE)/crypto/rc_sha256.c \
+	$(CORE)/crypto/rc_modes.c \
+	$(CORE)/session/halyard_regist_message.c \
+	$(CORE)/session/halyard_account_regist.c \
+	$(CORE)/session/halyard_account_regist_flow.c \
+	$(CORE)/util/rc_base64.c \
+	$(CORE)/util/rc_hex.c \
+	account_pairing_test.c
+
+$(ACCOUNT_PAIRING_TARGET): $(ACCOUNT_PAIRING_SOURCES) $(REGISTRATION_GENERATED)
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $(ACCOUNT_PAIRING_SOURCES) $(REGISTRATION_GENERATED)
+
+$(ACCOUNT_PAIRING_VECTORS):
+	@echo "missing $(ACCOUNT_PAIRING_VECTORS)"
+	@echo "generate it from the repository root with:"
+	@echo "    dotnet run --project tools/Ripcord.ProtocolLab -- vectors"
+	@false
+
 # Not a rule that generates it: the emitter is a .NET project and quietly shelling out to `dotnet` from a
 # C makefile would be a surprising amount of machinery to hide behind `make`. Say what to run instead.
 $(VECTORS):
@@ -464,13 +495,15 @@ compile:
 #
 # The whole core is archived and each harness links against the archive, so a harness pulls in only
 # the objects it references, exactly as a port does.
-FUZZ_HARNESSES := discovery takion control stream stun
+FUZZ_HARNESSES := discovery takion control stream stun account
 FUZZ_CC        ?= clang
 FUZZ_SECONDS   ?= 60
 FUZZ_RANDOM    ?= 20000
 FUZZ_SAN       := -O1 -g -fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer
 FUZZ_WARN      := -std=c99 -Wall -Wextra -Werror -Wshadow -Wconversion -Wsign-conversion
-FUZZ_CORE_SRCS  = $(COMPILE_ALL) $(GENERATED) rc_platform_host.c
+# The registration build of the constants, so the account harness can link the registration code it
+# reaches. A superset of the control-only file: every other harness sees the same control constants.
+FUZZ_CORE_SRCS  = $(COMPILE_ALL) $(REGISTRATION_GENERATED) rc_platform_host.c
 
 # $(1) = build directory, $(2) = compiler, $(3) = extra flags for the core objects
 define fuzz_build_core
@@ -485,7 +518,7 @@ endef
 
 .PHONY: fuzz-replay fuzz-run
 
-fuzz-replay: $(GENERATED)
+fuzz-replay: $(REGISTRATION_GENERATED)
 	$(call fuzz_build_core,$(BUILD)/fuzz-replay,$(CC),)
 	@for h in $(FUZZ_HARNESSES); do \
 		$(CC) $(FUZZ_WARN) $(FUZZ_SAN) -D_DEFAULT_SOURCE $(INCLUDES) -o $(BUILD)/fuzz-replay/fuzz_$$h \
@@ -495,7 +528,7 @@ fuzz-replay: $(GENERATED)
 
 # The core is instrumented for coverage (-fsanitize=fuzzer-no-link) but only the harness links
 # libFuzzer's main, so the archive stays usable by either kind of link.
-fuzz-run: $(GENERATED)
+fuzz-run: $(REGISTRATION_GENERATED)
 	$(call fuzz_build_core,$(BUILD)/fuzz,$(FUZZ_CC),-fsanitize=fuzzer-no-link)
 	@for h in $(FUZZ_HARNESSES); do \
 		mkdir -p $(BUILD)/fuzz/corpus/$$h; \
