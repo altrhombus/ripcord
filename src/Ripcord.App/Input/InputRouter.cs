@@ -114,6 +114,28 @@ public sealed class InputRouter : IDisposable
         _source = null;
     }
 
+    /// <summary>
+    /// Controller ids currently reporting themselves connected. A set rather than a count because sources
+    /// re-announce: a pad that reconnects without a disconnect in between would otherwise leave the count
+    /// permanently one too high.
+    /// </summary>
+    private readonly HashSet<string> _attached = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Whether any pad is attached right now — and unlike <see cref="PadFamily"/>, this IS revoked on
+    /// disconnect, because it answers a different question.
+    ///
+    /// <para>
+    /// <b>Why it cannot be read off <see cref="PadFamily"/>.</b> That has no "none": it is Generic or Vendor,
+    /// and Generic is also what it reports before any pad has identified itself. So a surface asking "is
+    /// there a pad" got "Generic" whether or not one existed.
+    /// </para>
+    /// </summary>
+    public bool PadAttached { get; private set; }
+
+    /// <summary>Raised on the polling thread when the answer to <see cref="PadAttached"/> changes.</summary>
+    public event Action<bool>? PadAttachedChanged;
+
     /// <summary>Which family of pad last connected, for prompt labelling. See <see cref="OnConnection"/>.</summary>
     public PadFamily PadFamily { get; private set; } = PadFamily.Generic;
 
@@ -162,6 +184,30 @@ public sealed class InputRouter : IDisposable
     /// </summary>
     private void OnConnection(ControllerConnectionEvent evt)
     {
+        // Attachment first, and it tracks both directions. The family below deliberately does not — see the
+        // note above on why a sleeping pad must not relabel the screen — so the two are kept apart rather
+        // than one being inferred from the other.
+        bool attached;
+        lock (_attached)
+        {
+            if (evt.Connected)
+            {
+                _attached.Add(evt.ControllerId);
+            }
+            else
+            {
+                _attached.Remove(evt.ControllerId);
+            }
+
+            attached = _attached.Count > 0;
+        }
+
+        if (attached != PadAttached)
+        {
+            PadAttached = attached;
+            PadAttachedChanged?.Invoke(attached);
+        }
+
         if (!evt.Connected)
         {
             return;
