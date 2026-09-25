@@ -186,7 +186,10 @@ static void test_init_validation(void)
 
     config.route = HALYARD_ROUTE_RENDEZVOUS;
     CHECK(halyard_client_init(g_storage, g_storage_size, &config, &cb) == NULL,
-          "RENDEZVOUS is not implemented yet and says so by refusing");
+          "RENDEZVOUS without poll_media is refused: the A/V leg cannot exist without it");
+    config.route = (halyard_route)2;
+    CHECK(halyard_client_init(g_storage, g_storage_size, &config, &cb) == NULL,
+          "an RP-ConPath nobody has seen (2) is refused rather than sent");
     config.route = HALYARD_ROUTE_LOCAL;
 
     c = halyard_client_init(g_storage, g_storage_size, &config, &cb);

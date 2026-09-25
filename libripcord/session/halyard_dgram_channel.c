@@ -134,6 +134,9 @@ void halyard_dgram_options_default(halyard_dgram_options *options)
     options->hello_addressing = HALYARD_DGRAM_ADDRESS_PORT_PAIR;
     options->log = NULL;
     options->log_ctx = NULL;
+    options->tick = NULL;
+    options->abort = NULL;
+    options->tick_ctx = NULL;
 }
 
 halyard_dgram_channel_status halyard_dgram_channel_init(halyard_dgram_channel *channel,
@@ -169,7 +172,7 @@ halyard_dgram_channel_status halyard_dgram_channel_init(halyard_dgram_channel *c
 
 /*
  * Waits for one datagram, at most `window_ms` and never past the stage deadline. Returns its length,
- * 0 for a quiet window, or -1 for a transport failure.
+ * 0 for a quiet window, -1 for a transport failure, or -2 when options.abort asked to stop.
  */
 static long wait_datagram(halyard_dgram_channel *channel, uint32_t window_ms, uint64_t stage_start,
                           uint32_t stage_ms)
@@ -183,6 +186,10 @@ static long wait_datagram(halyard_dgram_channel *channel, uint32_t window_ms, ui
 
         if (n != 0)
             return n < 0 ? -1 : n;
+        if (channel->options.tick != NULL)
+            channel->options.tick(channel->options.tick_ctx);
+        if (channel->options.abort != NULL && channel->options.abort(channel->options.tick_ctx))
+            return -2;
         now = rc_time_ms();
         if (now - start >= (uint64_t)window_ms || now - stage_start >= (uint64_t)stage_ms)
             return 0;
@@ -240,6 +247,8 @@ static halyard_dgram_channel_status pump(halyard_dgram_channel *channel, pump_go
         }
 
         n = wait_datagram(channel, channel->options.receive_timeout_ms, stage_start, stage_ms);
+        if (n == -2)
+            return HALYARD_DGRAM_CHANNEL_ABORTED;
         if (n < 0)
             return HALYARD_DGRAM_CHANNEL_TRANSPORT_ERROR;
         if (n == 0) {
@@ -286,6 +295,8 @@ halyard_dgram_channel_status halyard_dgram_channel_establish(halyard_dgram_chann
         long n = wait_datagram(channel, channel->options.listen_before_opening_ms, start,
                                channel->options.listen_before_opening_ms);
 
+        if (n == -2)
+            return HALYARD_DGRAM_CHANNEL_ABORTED;
         if (n < 0)
             return HALYARD_DGRAM_CHANNEL_TRANSPORT_ERROR;
         if (n > 0) {

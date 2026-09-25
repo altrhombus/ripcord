@@ -71,6 +71,19 @@ typedef struct {
     halyard_dgram_addressing hello_addressing; /* PORT_PAIR, the shape every capture carries */
     void (*log)(void *ctx, const char *line);  /* optional progress sink */
     void *log_ctx;
+
+    /*
+     * C only: what a single-threaded caller does while a blocking stage waits. `tick` (optional) is called
+     * on every empty poll - roughly every 5 ms - so the caller can keep something else alive meanwhile:
+     * libripcord/client services the control session and pulls its host's commands there, because the
+     * media leg's prelude is run while the console expects heartbeats answered. `abort` (optional) is asked
+     * after each tick, and a non-zero answer ends the stage with HALYARD_DGRAM_CHANNEL_ABORTED. .NET needs
+     * neither: its keep-alive is another task, and its cancellation is a token. A tick must not call into
+     * this same channel.
+     */
+    void (*tick)(void *ctx);
+    int (*abort)(void *ctx);
+    void *tick_ctx;
 } halyard_dgram_options;
 
 void halyard_dgram_options_default(halyard_dgram_options *options);
@@ -84,7 +97,8 @@ typedef enum {
     HALYARD_DGRAM_CHANNEL_NOT_CONNECTED,
     HALYARD_DGRAM_CHANNEL_TOO_LONG,         /* payload over HALYARD_DGRAM_MAX_PAYLOAD */
     HALYARD_DGRAM_CHANNEL_BUFFER_TOO_SMALL, /* the complete response did not fit the caller's buffer */
-    HALYARD_DGRAM_CHANNEL_BAD_ARGUMENT
+    HALYARD_DGRAM_CHANNEL_BAD_ARGUMENT,
+    HALYARD_DGRAM_CHANNEL_ABORTED           /* options.abort asked to stop */
 } halyard_dgram_channel_status;
 
 /* Big enough for any datagram this transport carries; a larger one is truncated by the transport. */
