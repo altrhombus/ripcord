@@ -68,7 +68,10 @@ public struct SessionHandlers: Sendable {
 
 public final class ConsoleSession: Sendable {
     public struct Options: Sendable {
-        public var width = 1920, height = 1080, fps = 60, bitrateKbps = 0
+        /// 25 Mb/s because the console grants resolution by bitrate, not by request alone. Measured on a
+        /// PS5, 2026-09-25: asked for 1920x1080 at the core's 10 Mb/s default, it streamed 1280x720; asked
+        /// again at 25 Mb/s, it streamed 1920x1080. 23.2 Mb/s is the recorded 1080p60 figure (README).
+        public var width = 1920, height = 1080, fps = 60, bitrateKbps = 25_000
         public var allowHEVC = true
         public var hdr = false
         public init() {}
