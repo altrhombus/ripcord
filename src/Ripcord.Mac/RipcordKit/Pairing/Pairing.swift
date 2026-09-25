@@ -21,6 +21,31 @@ public struct PairedConsole: Sendable {
     public var family: ConsoleFamily { record.is_ps5 != 0 ? .ps5 : .ps4 }
 
     var record: halyard_pairing_record
+
+    init(record: halyard_pairing_record) { self.record = record }
+
+    /// rc_pair_ps3.c, "The record is the product of all of this, and the only place it exists." One format,
+    /// whichever route produced the registration: the PIN route (Pairing.register) and the account route
+    /// (the rendezvous transports) both end here, so the LAN path and PairingStore read either the same way.
+    init(host: String, name: String, consoleID: String, accountID: String, registration: halyard_regist_record) {
+        var record = halyard_pairing_record()
+        copy(host, into: &record.host)
+        copy(name, into: &record.name)
+        copy(consoleID, into: &record.console_id)
+        copy(accountID, into: &record.account_id)
+        record.is_ps5 = registration.is_ps5
+        withUnsafeMutableBytes(of: &record.registkey) { dst in
+            withUnsafeBytes(of: registration.registration_key) {
+                dst.copyMemory(from: UnsafeRawBufferPointer(rebasing: $0.prefix(min(registration.registration_key_length, dst.count))))
+            }
+        }
+        record.registkey_length = min(registration.registration_key_length, MemoryLayout.size(ofValue: record.registkey))
+        record.companion = registration.companion
+        self.record = record
+    }
+
+    /// The registration key's length, for a caller checking a record is usable. Not the key.
+    public var hasRegistrationKey: Bool { record.registkey_length > 0 }
 }
 
 public enum PairingError: Error, Sendable, CustomStringConvertible {
@@ -31,6 +56,10 @@ public enum PairingError: Error, Sendable, CustomStringConvertible {
     /// answered and said no", which is the first question anyone debugging this asks.
     case failed(status: String, httpStatus: Int, consoleReason: String, sawSearchReply: Bool)
     case couldNotSave(path: String)
+    /// The account route's /sess/rgst, over the 9303 association (halyard_account_regist_status).
+    case accountRegistrationFailed(status: String, httpStatus: Int, consoleReason: String)
+    /// The association could not be opened or aimed (a halyard_dgram_channel_status, or a bad argument).
+    case associationFailed(String)
 
     public var description: String {
         switch self {
@@ -40,6 +69,9 @@ public enum PairingError: Error, Sendable, CustomStringConvertible {
         case let .failed(status, http, reason, saw):
             "pairing failed: \(status); HTTP \(http)\(reason.isEmpty ? "" : ", console reason \(reason)"); the search probe was \(saw ? "answered" : "NOT answered")"
         case .couldNotSave(let path): "paired, but the record could not be saved to \(path)"
+        case let .accountRegistrationFailed(status, http, reason):
+            "account pairing failed: \(status); HTTP \(http)\(reason.isEmpty ? "" : ", console reason \(reason)")"
+        case .associationFailed(let why): "the 9303 control association failed: \(why)"
         }
     }
 }
@@ -73,23 +105,22 @@ public enum Pairing {
                           sawSearchReply: result.saw_search_reply != 0)
         }
 
-        // rc_pair_ps3.c, "The record is the product of all of this, and the only place it exists."
-        var record = halyard_pairing_record()
-        copy(host, into: &record.host)
-        copy(name, into: &record.name)
-        copy(consoleID, into: &record.console_id)
-        withUnsafeMutableBytes(of: &record.account_id) { dst in
-            withUnsafeBytes(of: params.account_id) { dst.copyMemory(from: UnsafeRawBufferPointer(rebasing: $0.prefix(dst.count))) }
+        let accountText = withUnsafeBytes(of: params.account_id) { raw in
+            String(decoding: raw.prefix(while: { $0 != 0 }), as: UTF8.self)
         }
-        record.is_ps5 = result.record.is_ps5
-        withUnsafeMutableBytes(of: &record.registkey) { dst in
-            withUnsafeBytes(of: result.record.registration_key) {
-                dst.copyMemory(from: UnsafeRawBufferPointer(rebasing: $0.prefix(result.record.registration_key_length)))
-            }
+        return PairedConsole(host: host, name: name, consoleID: consoleID, accountID: accountText,
+                             registration: result.record)
+    }
+
+    /// An account id as the registration wants it: normalised to decimal when it reads as a 64-bit id, as
+    /// the PIN route insists; otherwise as given, which is what the .NET account route sends (the cloud tier
+    /// supplies it, not a person, so there is no typing mistake to catch).
+    static func normalisedAccountID(_ accountID: String) -> String {
+        var normalised = [CChar](repeating: 0, count: 64)
+        guard halyard_account_id_normalise(accountID, &normalised, normalised.count) == HALYARD_ACCOUNT_ID_OK else {
+            return accountID
         }
-        record.registkey_length = result.record.registration_key_length
-        record.companion = result.record.companion
-        return PairedConsole(record: record)
+        return String(decoding: normalised.prefix(while: { $0 != 0 }).map { UInt8(bitPattern: $0) }, as: UTF8.self)
     }
 
     /// This Mac's address on the interface that routes to `host`: what the console expects in the

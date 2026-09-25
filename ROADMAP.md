@@ -313,7 +313,14 @@ Step 1, promoting the core to `libripcord/` with fuzzing and a CI job, is done a
     - `SignOut` leaves the token provider seeded.
     - `HalyardSignalingMessage.TryParse` misses `InvalidOperationException`, so a malformed frame is
       lost silently.
-- [ ] **Swift session actor's lifecycle.** Reconnect, watchdog and backoff, ported from `SessionController`.
+- [x] **The cloud tier joined to the C rendezvous route.** Done 2026-09-25. `ripcord-lab account-pair
+      <duid>` pairs with no PIN, `connect --route account` connects through the account, and `connect
+      --route internet` runs the WAN rendezvous. 12 tests, including account pairing end to end against the
+      core's loopback console. **None of it has met PSN or a console:** it is the verification pass's to run.
+  - [ ] Whether the 9303 association needs servicing between `begin` and the first exchange. .NET
+        services it in the background, and C has no call for it `[X]`.
+  - [ ] Whether a connect needs registration every time (`--no-register` tests it) `[X]`.
+- [x] **Swift session actor's lifecycle.** Done 2026-09-25 (`SessionController`).
 - [ ] **The first coverage-guided fuzz run.** It happens in CI's `libripcord` job on Linux. It has never
       run, because the author's Mac has no libFuzzer-capable clang, so the first run may find real bugs.
 - [ ] **The `mac` CI job's first run.** `runs-on: macos-26` and whatever Xcode that image carries have not

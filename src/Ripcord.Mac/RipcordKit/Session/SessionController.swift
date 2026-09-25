@@ -66,7 +66,7 @@ public struct SessionPolicy: Sendable {
     public func isRetryable(_ reason: SessionEndReason) -> Bool {
         switch reason {
         case .signInCancelled, .signInRejected, .refused, .userDisconnect, .hostCancel: false
-        case .none, .consoleClosed, .channelError, .signInNoSession, .timeout: true
+        case .none, .consoleClosed, .channelError, .signInNoSession, .timeout, .noMedia, .rendezvousFailed: true
         }
     }
 }
@@ -202,6 +202,8 @@ public final class SessionController: Sendable {
             case .consoleClosed: "The console closed the session."
             case .channelError: "The connection failed (at \(o.stage))."
             case .userDisconnect, .hostCancel: "Disconnected."
+            case .noMedia: "The console never opened its audio and video connection."
+            case .rendezvousFailed: "Could not reach the console through the account" + (o.failure.map { ": \($0)" } ?? ".")
             case .none: "The session ended."
             }
         }
