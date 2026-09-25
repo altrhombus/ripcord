@@ -65,6 +65,15 @@ int takion_channel_connect_ticked(takion_reliable_channel *ch, int sock, struct 
                                   unsigned max_attempts, unsigned per_attempt_timeout_ms,
                                   takion_tick_fn tick, void *tick_ctx)
 {
+    return takion_channel_connect_abortable(ch, sock, peer, max_attempts, per_attempt_timeout_ms,
+                                            tick, tick_ctx, NULL, NULL);
+}
+
+int takion_channel_connect_abortable(takion_reliable_channel *ch, int sock, struct sockaddr_in peer,
+                                     unsigned max_attempts, unsigned per_attempt_timeout_ms,
+                                     takion_tick_fn tick, void *tick_ctx,
+                                     takion_abort_fn abort_fn, void *abort_ctx)
+{
     uint8_t init_chunk[32];
     size_t init_chunk_len;
     unsigned attempt;
@@ -120,6 +129,8 @@ int takion_channel_connect_ticked(takion_reliable_channel *ch, int sock, struct 
             }
             if (tick != NULL)
                 tick(tick_ctx);
+            if (abort_fn != NULL && abort_fn(abort_ctx))
+                return 0;
             rc_sleep_ms(20); /* 20 ms */
         }
     }
@@ -184,6 +195,8 @@ int takion_channel_connect_ticked(takion_reliable_channel *ch, int sock, struct 
             }
             if (tick != NULL)
                 tick(tick_ctx);
+            if (abort_fn != NULL && abort_fn(abort_ctx))
+                return 0;
             rc_sleep_ms(20);
         }
     }
