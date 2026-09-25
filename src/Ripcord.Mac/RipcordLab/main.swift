@@ -10,6 +10,7 @@ let usage = """
       check                 the build's key-agreement backend and interop constants
       discover [host...]    SRCH for consoles and list every one that answers. With hosts, probe
                             each directly; without, broadcast. Wait with --wait <ms> (default 3000)
+      bench                 time libripcord's per-packet stream crypto (GMAC verify + CTR decrypt)
 
     """
 
@@ -51,6 +52,12 @@ case "discover":
     } catch {
         fail("discover: \(error)")
     }
+
+case "bench":
+    _ = PacketCryptoBenchmark.run(packets: 2_000)   // warm caches and the branch predictor
+    let r = PacketCryptoBenchmark.run()
+    print(String(format: "%d packets of %d bytes: %.2f us/packet, %.0f packets/s, %.0f Mb/s on one core",
+                 r.packets, r.packetBytes, r.microsecondsPerPacket, r.packetsPerSecond, r.megabitsPerSecond))
 
 default:
     fail(usage, code: 2)
