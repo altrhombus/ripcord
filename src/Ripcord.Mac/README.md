@@ -14,6 +14,7 @@ yet.
 | `Ripcord.xcodeproj` | The project. Every source folder is an Xcode *synchronized* folder, so adding a file never touches the project file |
 | `Config/` | Every build setting, in xcconfig files. The project file holds none of its own |
 | `Libripcord/` | The Mac's half of the C core: the platform seam (`rc_platform_darwin.c`) and the module map that lets Swift import the core |
+| `RipcordEngine/` | The module map for the Rust engine's generated header (`engine/target/include/ripcord.h`), read in place. Phase 1 of [`docs/engine-plan.md`](../../docs/engine-plan.md): linked alongside the C core, used only by `ripcord-lab bench` so far |
 | `RipcordKit/` | The Swift layer over the core. It imports the C module *internally*, so no C type reaches its callers |
 | `RipcordKitTests/` | Swift Testing suites for RipcordKit |
 | `TestSupport/` | Tests only: the core's scripted 9303 console (`libripcord/tests/fake_dgram_console.h`) as a Swift module, on a loopback socket, for the C-backed rendezvous transport tests |
@@ -46,7 +47,8 @@ extensions need a project anyway.
 ## Building
 
 Xcode 26 or later, and Python 3 for the constants generator (the one Xcode's command-line tools install is
-enough). From the repository root:
+enough). A stable Rust toolchain (`rustup`) as well: RipcordKit's "Build the Rust engine" phase runs
+cargo, which it looks for in `~/.cargo/bin` and Homebrew's `rustup` prefix. From the repository root:
 
 ```sh
 # The known-answer vectors, generated from the .NET reference (needs the .NET 10 SDK)

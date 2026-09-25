@@ -1,0 +1,26 @@
+# cargo-deny: the engine's dependency policy (docs/engine-plan.md, "Dependencies"). Every dependency is
+# argued for there; this file enforces that the list stays short, maintained and permissively licensed.
+#   cargo deny check
+
+[graph]
+all-features = true
+
+[advisories]
+yanked = "deny"
+
+[licenses]
+# Compatible with the project's Apache-2.0. Unicode-3.0 is unicode-ident's data licence (via the
+# binding generators, build time only).
+allow = ["Apache-2.0", "MIT", "Unicode-3.0", "MPL-2.0"]
+confidence-threshold = 0.9
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+allow-wildcard-paths = true
+# No async runtime, ever: hosts own their threads.
+deny = [{ crate = "tokio" }, { crate = "async-std" }, { crate = "smol" }]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"

@@ -12,7 +12,7 @@ let usage = """
       check                 the build's key-agreement backend and interop constants
       discover [host...]    SRCH for consoles and list every one that answers. With hosts, probe
                             each directly; without, broadcast. Wait with --wait <ms> (default 3000)
-      bench                 time libripcord's per-packet stream crypto (GMAC verify + CTR decrypt)
+      bench [c|rust]        time the per-packet stream crypto (GMAC verify + CTR decrypt), both engines by default
       pair <host> <PIN> <account-id>
                             PIN-pair with a console showing Settings > System > Remote Play > Pair
                             Device. The record is kept in ~/Library/Application Support/Ripcord/lab
@@ -70,10 +70,16 @@ case "discover":
     }
 
 case "bench":
-    _ = PacketCryptoBenchmark.run(packets: 2_000)   // warm caches and the branch predictor
-    let r = PacketCryptoBenchmark.run()
-    print(String(format: "%d packets of %d bytes: %.2f us/packet, %.0f packets/s, %.0f Mb/s on one core",
-                 r.packets, r.packetBytes, r.microsecondsPerPacket, r.packetsPerSecond, r.megabitsPerSecond))
+    // Both engines by default, from the same workload, so the figures compare (docs/engine-plan.md, Phase 1).
+    let engines = arguments.count == 2 ? PacketCryptoBenchmark.Engine(rawValue: arguments[1]).map { [$0] } : PacketCryptoBenchmark.Engine.allCases
+    guard let engines else { fail(usage, code: 2) }
+    for engine in engines {
+        _ = PacketCryptoBenchmark.run(engine: engine, packets: 2_000)   // warm caches and the branch predictor
+        let r = PacketCryptoBenchmark.run(engine: engine)
+        print(String(format: "%@  %d packets of %d bytes: %.2f us/packet, %.0f packets/s, %.0f Mb/s on one core",
+                     engine.rawValue.padding(toLength: 4, withPad: " ", startingAt: 0),
+                     r.packets, r.packetBytes, r.microsecondsPerPacket, r.packetsPerSecond, r.megabitsPerSecond))
+    }
 
 case "pair":
     guard arguments.count == 4 else { fail(usage, code: 2) }
