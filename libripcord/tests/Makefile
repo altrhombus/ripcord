@@ -2,7 +2,7 @@
 #
 # Builds for THIS machine, not for any console: plain C99, no devkitPro, no vitasdk, no libctru, no
 # handheld. The core in ../ is portable C and there is no reason to need hardware to find out it is
-# wrong. These tests belong to ports/common rather than to any one port because what they check - the
+# wrong. These tests belong to libripcord rather than to any one port because what they check - the
 # crypto, the framing, the FEC, the parsers - is the code every port shares.
 #
 #     make            build and run every runner
@@ -25,7 +25,7 @@ PYTHON  ?= python3
 CFLAGS  ?= -std=c99 -O2 -g -Wall -Wextra -Werror -Wshadow -Wconversion -Wsign-conversion
 
 CORE      := ..
-REPO_ROOT := ../../..
+REPO_ROOT := ../..
 
 BUNDLE    := $(REPO_ROOT)/src/Ripcord.Protocol.Halyard/Data/halyard-v1-constants.json
 VECTORS   := vectors/control-crypto.kat
@@ -264,11 +264,11 @@ constants: $(GENERATED)
 # rule, so stating it earlier silently declares /mbedtls/lib/libmbedcrypto.a at the filesystem root
 # while the prerequisite resolves to build/mbedtls/..., and the two never meet.
 $(MBEDTLS_PREFIX)/lib/libmbedcrypto.a: $(CORE)/tools/build-mbedtls.sh $(CORE)/tools/ripcord-mbedtls-config.h
-	PREFIX=$(abspath $(MBEDTLS_PREFIX)) CROSS= $(CORE)/tools/build-mbedtls.sh
+	PREFIX=$(abspath $(MBEDTLS_PREFIX)) CROSS= sh $(CORE)/tools/build-mbedtls.sh
 
 $(GENERATED): $(BUNDLE) $(CORE)/tools/gen_constants.py
 	@mkdir -p $(@D)
-	$(PYTHON) $(CORE)/tools/gen_constants.py --for 'ports/common/tests' $(BUNDLE) $@
+	$(PYTHON) $(CORE)/tools/gen_constants.py --for 'libripcord/tests' $(BUNDLE) $@
 
 $(TARGET): $(SOURCES) $(GENERATED)
 	@mkdir -p $(@D)
@@ -316,7 +316,7 @@ $(INPUT_TARGET): $(INPUT_SOURCES)
 
 $(REGISTRATION_GENERATED): $(BUNDLE) $(CORE)/tools/gen_constants.py
 	@mkdir -p $(@D)
-	$(PYTHON) $(CORE)/tools/gen_constants.py --registration --for 'ports/common/tests' $(BUNDLE) $@
+	$(PYTHON) $(CORE)/tools/gen_constants.py --registration --for 'libripcord/tests' $(BUNDLE) $@
 
 REGIST_FLOW_SOURCES := \
 	$(CORE)/halyard/halyard_registration.c \
@@ -429,3 +429,61 @@ compile:
 		$(CC) $(CFLAGS) -D_DEFAULT_SOURCE $(INCLUDES) -c $$src -o $(BUILD)/compile/`basename $$src .c`.o || exit 1; \
 	done
 	@echo "the entire portable core compiles on the host"
+
+# Fuzzing the parsers that face the network. See fuzz/ for the harnesses and what each one reaches.
+#
+# WHY THIS EXISTS. The core parses bytes from the LAN and from a console, much of it before anything is
+# authenticated: discovery replies from whatever answers a broadcast, the Takion handshake, SACK, DATA
+# and reassembly, and stream headers. It is C, so a length it trusts is a memory-safety bug rather than
+# an exception. The macOS client links this core directly, which is what made that worth guarding
+# rather than assuming, and the console ports benefit from the same guard.
+#
+# TWO MODES, because Apple's clang ships the sanitizers but not libFuzzer:
+#
+#   make fuzz-replay   any compiler. Every harness under ASan+UBSan, driven by fuzz/replay_main.c with
+#                      FUZZ_RANDOM deterministic inputs. Proves the harnesses are sound on every host,
+#                      and replays a crash file:  build/fuzz-replay/fuzz_takion crash-<hash>
+#   make fuzz-run      a clang with libFuzzer (Linux clang, or Homebrew's llvm on a Mac). Coverage-guided,
+#                      FUZZ_SECONDS per harness, keeping each harness's corpus in build/fuzz/corpus/.
+#
+# The whole core is archived and each harness links against the archive, so a harness pulls in only
+# the objects it references, exactly as a port does.
+FUZZ_HARNESSES := discovery takion control stream
+FUZZ_CC        ?= clang
+FUZZ_SECONDS   ?= 60
+FUZZ_RANDOM    ?= 20000
+FUZZ_SAN       := -O1 -g -fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer
+FUZZ_WARN      := -std=c99 -Wall -Wextra -Werror -Wshadow -Wconversion -Wsign-conversion
+FUZZ_CORE_SRCS  = $(COMPILE_ALL) $(GENERATED) rc_platform_host.c
+
+# $(1) = build directory, $(2) = compiler, $(3) = extra flags for the core objects
+define fuzz_build_core
+	@mkdir -p $(1)/obj
+	@for src in $(FUZZ_CORE_SRCS); do \
+		$(2) $(FUZZ_WARN) $(FUZZ_SAN) $(3) -D_DEFAULT_SOURCE $(INCLUDES) -c $$src \
+			-o $(1)/obj/`basename $$src .c`.o || exit 1; \
+	done
+	@rm -f $(1)/libripcord-fuzz.a
+	@ar rcs $(1)/libripcord-fuzz.a $(1)/obj/*.o
+endef
+
+.PHONY: fuzz-replay fuzz-run
+
+fuzz-replay: $(GENERATED)
+	$(call fuzz_build_core,$(BUILD)/fuzz-replay,$(CC),)
+	@for h in $(FUZZ_HARNESSES); do \
+		$(CC) $(FUZZ_WARN) $(FUZZ_SAN) -D_DEFAULT_SOURCE $(INCLUDES) -o $(BUILD)/fuzz-replay/fuzz_$$h \
+			fuzz/fuzz_$$h.c fuzz/replay_main.c $(BUILD)/fuzz-replay/libripcord-fuzz.a || exit 1; \
+		./$(BUILD)/fuzz-replay/fuzz_$$h -random=$(FUZZ_RANDOM) || exit 1; \
+	done
+
+# The core is instrumented for coverage (-fsanitize=fuzzer-no-link) but only the harness links
+# libFuzzer's main, so the archive stays usable by either kind of link.
+fuzz-run: $(GENERATED)
+	$(call fuzz_build_core,$(BUILD)/fuzz,$(FUZZ_CC),-fsanitize=fuzzer-no-link)
+	@for h in $(FUZZ_HARNESSES); do \
+		mkdir -p $(BUILD)/fuzz/corpus/$$h; \
+		$(FUZZ_CC) $(FUZZ_WARN) $(FUZZ_SAN) -fsanitize=fuzzer -D_DEFAULT_SOURCE $(INCLUDES) \
+			-o $(BUILD)/fuzz/fuzz_$$h fuzz/fuzz_$$h.c $(BUILD)/fuzz/libripcord-fuzz.a || exit 1; \
+		( cd $(BUILD)/fuzz && ./fuzz_$$h -max_total_time=$(FUZZ_SECONDS) -print_final_stats=1 corpus/$$h ) || exit 1; \
+	done

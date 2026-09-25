@@ -141,6 +141,56 @@ jobs:
           dotnet test tests/Ripcord.Protocol.Halyard.Tests/Ripcord.Protocol.Halyard.Tests.csproj -c Release
           dotnet test tests/Ripcord.Presentation.Tests/Ripcord.Presentation.Tests.csproj -c Release
 
+  # The portable C core's own gates. Until this job existed, nothing in CI ran libripcord/tests at all:
+  # the PS3 job cross-compiles the core and runs some of its suites on a console, but the host suite,
+  # `make compile` and the ECDH cases went unexercised. When this job was written, `make compile` had
+  # rotted in three places (an unused static under -Werror, and bare includes that only resolved with a
+  # port's -I flags), and the default mbedTLS build could not start on a fresh clone because the script
+  # is committed without its execute bit. Nothing had noticed.
+  #
+  # Both hosts, because the macOS client links this core and the ports are built on Linux. The
+  # coverage-guided fuzz run is Linux-only because Apple's clang ships no libFuzzer; the macOS leg still
+  # runs every harness under the sanitizers through fuzz/replay_main.c.
+  libripcord:
+    name: libripcord (${{ matrix.host }})
+    runs-on: ${{ matrix.host }}
+    strategy:
+      fail-fast: false
+      matrix:
+        host: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      # The known-answer vectors are generated from the .NET reference, never committed.
+      - name: Generate the known-answer vectors
+        run: dotnet run --project tools/Ripcord.ProtocolLab -c Release -- vectors
+      - name: Host suite
+        run: make -C libripcord/tests
+      - name: Every portable file compiles
+        run: make -C libripcord/tests compile
+      - name: Host suite under AddressSanitizer and UndefinedBehaviorSanitizer
+        run: >-
+          make -C libripcord/tests BUILD=build/sanitize
+          CFLAGS="-std=c99 -O1 -g -Wall -Wextra -Werror -Wshadow -Wconversion -Wsign-conversion
+          -fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer"
+      - name: Fuzz harnesses, sanitized replay
+        run: make -C libripcord/tests fuzz-replay
+      - name: Fuzz, coverage-guided
+        if: runner.os == 'Linux'
+        run: make -C libripcord/tests fuzz-run FUZZ_CC=clang FUZZ_SECONDS=60
+      - name: Keep what the fuzzer found
+        if: failure() && runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: libripcord-fuzz-findings
+          path: |
+            libripcord/tests/build/fuzz/crash-*
+            libripcord/tests/build/fuzz/leak-*
+            libripcord/tests/build/fuzz/timeout-*
+          if-no-files-found: ignore
+
   # The PS3 port's installable package. Not in Ripcord.slnx and buildable by neither dotnet nor
   # MSBuild - it is a Makefile driving a PowerPC cross-compiler plus a second one for the SPEs - so it
   # gets its own job rather than a leg on one of the matrices above.
@@ -154,7 +204,7 @@ jobs:
   #
   # NOT PATH-FILTERED, deliberately. A per-job `paths:` needs either its own workflow file or a
   # third-party filter action, and the second is not something this repository takes - but the
-  # honest reason is that the filter would be wrong anyway. This build consumes ports/common/** and
+  # honest reason is that the filter would be wrong anyway. This build consumes libripcord/** and
   # src/Ripcord.Protocol.Halyard/Data/halyard-v1-constants.json, so a change under src/ really can
   # break it, and "the PS3 job only runs when PS3 files change" is how that stays unnoticed.
   ps3-package:
@@ -211,7 +261,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ports/ripcord-ps3/third-party
-          key: ps3-thirdparty-${{ env.PS3DEV_RELEASE }}-${{ hashFiles('ports/ripcord-ps3/tools/build-openh264.sh', 'ports/ripcord-ps3/tools/build-opus.sh', 'ports/common/tools/build-mbedtls.sh', 'ports/common/tools/ripcord-mbedtls-config.h') }}
+          key: ps3-thirdparty-${{ env.PS3DEV_RELEASE }}-${{ hashFiles('ports/ripcord-ps3/tools/build-openh264.sh', 'ports/ripcord-ps3/tools/build-opus.sh', 'libripcord/tools/build-mbedtls.sh', 'libripcord/tools/ripcord-mbedtls-config.h') }}
 
       # SKIPPED ON A CACHE HIT rather than left to short-circuit itself. build-mbedtls.sh does check
       # whether its output is up to date; build-openh264.sh does not - it clears obj/ and recompiles
@@ -224,7 +274,7 @@ jobs:
         run: |
           sh tools/build-openh264.sh
           sh tools/build-opus.sh
-          PREFIX="$PWD/third-party/mbedtls" CROSS=powerpc64-ps3-elf- sh ../common/tools/build-mbedtls.sh
+          PREFIX="$PWD/third-party/mbedtls" CROSS=powerpc64-ps3-elf- sh ../../libripcord/tools/build-mbedtls.sh
 
       # THE BUILD NUMBER IS THE RUN NUMBER, and this is not decoration. The Makefile explains at
       # length why every build gets an id: for five hardware runs the only evidence of WHICH binary

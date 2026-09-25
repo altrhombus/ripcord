@@ -35,6 +35,44 @@ different purpose.
 > anything. The list above is short, it is checkable in one `git log --format=%B | grep`, and it stops
 > growing the moment someone notices — which is the property that actually matters.
 
+### The C core leaves `ports/`, and CI runs it for the first time (2026-09-24)
+
+The macOS client chose `libripcord` as its protocol core, so the core moved from `ports/common` to the top
+level. The reasoning, including why the .NET stack was first favoured and then set aside, is in
+[`macos-plan.md`](macos-plan.md). A first-class client depending on a folder called "ports" misdescribes
+both of them. Nothing about the core's contents or rules changed in the move.
+
+**The move nearly weakened a guard, again.** `PublishedTreeSweepTests.IsProductCode` decides which files get
+the strict hex and base64 rules, by path prefix. `ports/` was a prefix and a new top-level directory was
+not, so the move would have reclassified the core as test code. That is the same silent demotion the test's
+own comment records from the first extraction. `libripcord/` is now named explicitly, and the comment says a
+new top-level code directory must be added with it.
+
+**Moving the core showed that nothing in CI had ever run the core's own suite.** The PS3 job cross-compiles
+it and runs some suites on a console. But the host suite, `make compile` and the ECDH cases ran only when
+someone typed `make`. Running them found three problems that were not caused by the move:
+
+- `tools/build-mbedtls.sh` is committed without its execute bit, and the host Makefile executed it
+  directly. The default `ECDH_BACKEND=local` therefore failed on every fresh clone, which contradicts the
+  README's "any machine with a C compiler and nothing else installed". The Makefile now runs it through
+  `sh`, as the PS3 Makefile and CI already did.
+- `make compile` had rotted in two ways. `rc_ecdh.c` defined a static helper that only the Mbed TLS branch
+  calls, which is an unused function under `-Werror` when compiling with no backend. And three files
+  included `rc_tcp.h`, `rc_log.h`, `rc_base64.h` and `rc_hex.h` bare, which resolved only where a port's
+  Makefile added `-I` for those directories. They now use the core's relative-include convention.
+
+**Now guarded.** A `libripcord` CI job runs on Linux and macOS. It generates the vectors, runs the host
+suite, compiles every file, runs the suite again under AddressSanitizer and UndefinedBehaviorSanitizer, and
+runs four new fuzz harnesses (discovery, Takion, control, stream). Locally, on macOS: 3,766 assertions pass
+plain and sanitized, `make compile` is clean, and every harness is clean for 20,000 deterministic inputs
+under the sanitizers. **The coverage-guided run has not happened yet.** Apple's clang ships no libFuzzer,
+so the first real fuzzing will be CI's Linux leg, and it may find something.
+
+Verified otherwise: both .NET suites green (790 and 452), the PS3 port's host tests green, and every
+`$(CORE)/…` path in the 3DS and PS3 Makefiles resolves (41 and 67). The console cross-builds were not run
+locally, because neither toolchain is installed on this machine. CI's PS3 package job covers the PS3
+build. **Nothing covers the 3DS build.**
+
 ### The wordmark, and a tile that is layers rather than a drawing (2026-09-24)
 
 The last one-way door in the design direction. It was chosen from an options page comparing the three

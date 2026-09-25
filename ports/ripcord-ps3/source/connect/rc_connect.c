@@ -290,7 +290,7 @@ static int send_wakeup(const halyard_pairing_record *rec, rc_connect_result *out
 }
 
 /*
- * A TCP CONNECT WITH A DEADLINE, which ports/common's does not have.
+ * A TCP CONNECT WITH A DEADLINE, which libripcord's does not have.
  *
  * rc_tcp_connect calls connect() on a BLOCKING socket and only sets O_NONBLOCK afterwards, so a console
  * that does not accept on the control port leaves halyard_control_session_open stuck inside it with no
@@ -1450,7 +1450,7 @@ static void send_periodic(halyard_control_session *session, rc_connect_result *o
     /*
      * ASK FOR LESS WHEN THE PICTURES ARE TOO FINELY SLICED FOR THIS DECODER.
      *
-     * The protocol half of this lives in ports/common; the POLICY is here, because what triggers it is a
+     * The protocol half of this lives in libripcord; the POLICY is here, because what triggers it is a
      * property of cellVdec and not of Halyard. 65 slices in a 720p picture decode on this hardware and
      * 136 do not, and the console slices so that each network unit stands alone - so slice count follows
      * the bitrate it is sending. Another port would throttle for entirely different reasons, or not at
@@ -1580,7 +1580,7 @@ static unsigned g_ingest_calls;
  * stream_demux_packet_crypto's does and times it. Whatever is left of the 829 is header parsing, FEC
  * bookkeeping and the assembly copy - and one of those is then the thing to attack.
  *
- * Wrapping rather than editing ports/common, because this is a question about this platform's
+ * Wrapping rather than editing libripcord, because this is a question about this platform's
  * performance and not a change to how the demuxer works.
  */
 static uint64_t g_crypto_ticks;
@@ -2849,7 +2849,7 @@ static int stream_session_exchange(const halyard_pairing_record *rec,
          * the control point fails here too, the environment at this call site is the subject and the
          * console's key is innocent. If the control passes and the console's does not, the reverse.
          *
-         * The control is one of the vectors from ports/common/tests/vectors/session-crypto.kat, which
+         * The control is one of the vectors from libripcord/tests/vectors/session-crypto.kat, which
          * this project generates from its own .NET side - generic test material, tied to no console and
          * no account.
          */
@@ -3624,7 +3624,7 @@ static void signin_absorb(const halyard_control_event *ev)
 
         /*
          * THE CONSOLE'S VERDICT ON THE PASSCODE, which b41 could not read and so had to report a wrong
-         * passcode and a silent console as the same thing. ports/common decrypts the console's
+         * passcode and a silent console as the same thing. libripcord decrypts the console's
          * direction now, so the one byte is here; the .NET side reads plaintext[0] the same way and
          * established both values by controlled experiment - see HALYARD_CTRL_LOGIN_ACCEPTED.
          */
@@ -3867,7 +3867,7 @@ rc_connect_stage rc_connect(unsigned wake_timeout_ms, rc_connect_log_fn log,
      *
      * fcntl is asked to set O_NONBLOCK and then asked to read the flags back. If sockets are not newlib
      * file descriptors here - which is what SO_NBIO existing suggests - the readback will not carry the
-     * flag, and every poll loop in ports/common that relies on it has been running against a blocking
+     * flag, and every poll loop in libripcord that relies on it has been running against a blocking
      * socket.
      */
     {
@@ -4037,7 +4037,7 @@ answered:
 
     /*
      * The control plane: ARM, /sess/init, /sess/ctrl, then the persistent binary channel. All of it is
-     * ports/common's, proven against a real PS5 from the 3DS - this contributes nothing but the call.
+     * libripcord's, proven against a real PS5 from the 3DS - this contributes nothing but the call.
      */
     say(RC_PHASE_CONNECTING, "Connecting", "Asking for a session", NULL);
     SAY("opening the control session (ARM, /sess/init, /sess/ctrl)");

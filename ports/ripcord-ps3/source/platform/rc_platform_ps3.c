@@ -1,8 +1,8 @@
 /*
  * ripcord-ps3 - the platform seam, PSL1GHT side.
  *
- * Everything the portable core (ports/common) needs from an OS, for the PlayStation 3. See
- * ports/common/platform/rc_platform.h for what each function promises; this file only says how the PPE
+ * Everything the portable core (libripcord) needs from an OS, for the PlayStation 3. See
+ * libripcord/platform/rc_platform.h for what each function promises; this file only says how the PPE
  * delivers it.
  *
  * *** COMPILED, RUN, AND MEASURED ON A CONSOLE. ***

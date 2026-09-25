@@ -1,7 +1,7 @@
 /* See rc_session_state.h. */
 #include "rc_session_state.h"
 
-#include "rc_log.h"
+#include "../util/rc_log.h"
 #include "rc_platform.h"
 
 #include <string.h>

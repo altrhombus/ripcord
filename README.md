@@ -69,7 +69,7 @@ Verified end-to-end against real hardware on a LAN, on **PS5 and PS4** alike:
 
 ### The console ports
 
-The protocol core was factored into portable C (`ports/common`) and carried onto hardware Sony never shipped
+The protocol core was factored into portable C (`libripcord`) and carried onto hardware Sony never shipped
 a client for. Each port is a **completeness test for the specification** — a spec is only as good as its
 ability to produce a working implementation by someone who wasn't in the room when it was written, and every
 place a port had to guess is a defect in the document. Three of them have now read it.
@@ -191,7 +191,7 @@ PlayStation.
 | `Ripcord.Diagnostics` | Tracing/metrics behind the diagnostics overlay |
 | `tools/Ripcord.ProtocolLab` | Console harness — drives the connect flow and replays captures |
 | `tools/Ripcord.HidCapture` | Standalone HID capture utility for controller work |
-| `ports/common` | The protocol core in portable C, shared by every console port |
+| `libripcord` | The protocol core in portable C, shared by every console port |
 | `ports/ripcord-ps3` | PlayStation 3 client — streams 720p60, ships a `.pkg`; not part of the solution |
 | `ports/ripcord-3ds` | New 3DS client, in C — not part of the solution |
 

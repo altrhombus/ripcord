@@ -195,7 +195,7 @@ public class BundledInteropConstantsTests
     /// <para><c>CLAUDE.md</c> lists this constant beside the bundled interop constants as the one value
     /// that travels with them while living in source rather than in the JSON, because a message builder
     /// needs it inline. It has two homes: <see cref="HalyardRegistrationMessage.ClientTypeHex"/> and
-    /// <c>ports/common/session/halyard_regist_message.h</c>, the C ports building a registration request
+    /// <c>libripcord/session/halyard_regist_message.h</c>, the C core building a registration request
     /// without linking against any of this.</para>
     ///
     /// <para><b>Nothing made those equal except somebody typing the same thing twice.</b> The published
@@ -204,7 +204,7 @@ public class BundledInteropConstantsTests
     /// reporting an unexplained hex literal in product code. That is the wrong sentence to be reading at
     /// the time. This value is the first thing inside the encrypted registration field, so a wrong one
     /// corrupts exactly its first 16 bytes and the console answers 403 / 80108b09 without saying why;
-    /// <c>ports/common/halyard/halyard_registration.c</c> carries the same warning about the field IV for
+    /// <c>libripcord/halyard/halyard_registration.c</c> carries the same warning about the field IV for
     /// the same reason. This test exists to put the right sentence in front of whoever edits one of the
     /// two.</para>
     ///
@@ -212,20 +212,20 @@ public class BundledInteropConstantsTests
     /// file's rule — shape, never values — intact.</para>
     /// </summary>
     [SkippableFact]
-    public void ClientType_PortsCopyMatchesTheReferenceImplementation()
+    public void ClientType_CCoreCopyMatchesTheReferenceImplementation()
     {
-        string portsDir = Path.Combine(RepoRoot(), "ports");
+        string coreDir = Path.Combine(RepoRoot(), "libripcord");
 
-        // A source archive may legitimately carry no ports tree. A ports tree missing THIS file may not:
-        // that means the definition moved and this check silently stopped covering it.
-        Skip.IfNot(Directory.Exists(portsDir), "No ports/ tree in this checkout.");
+        // A source archive may legitimately carry no C core. A C core missing THIS file may not: that
+        // means the definition moved and this check silently stopped covering it.
+        Skip.IfNot(Directory.Exists(coreDir), "No libripcord/ tree in this checkout.");
 
-        string header = Path.Combine(portsDir, "common", "session", "halyard_regist_message.h");
+        string header = Path.Combine(coreDir, "session", "halyard_regist_message.h");
         Assert.True(
             File.Exists(header),
-            "ports/ is present but its registration header is not, at " + header + ". The ports' "
-            + "Client-Type definition has moved; point this test at the new location rather than "
-            + "deleting it.");
+            "libripcord/ is present but its registration header is not, at " + header + ". The C "
+            + "core's Client-Type definition has moved; point this test at the new location rather "
+            + "than deleting it.");
 
         Match found = Regex.Match(
             File.ReadAllText(header),
@@ -239,7 +239,7 @@ public class BundledInteropConstantsTests
         Assert.True(
             string.Equals(found.Groups[1].Value, HalyardRegistrationMessage.ClientTypeHex,
                           StringComparison.OrdinalIgnoreCase),
-            "The C ports and the reference implementation disagree about Client-Type, so one of them "
+            "The C core and the reference implementation disagree about Client-Type, so one of them "
             + "cannot register. The failure on hardware is a 403 that explains nothing, because this "
             + "value sits at the front of the encrypted field and a wrong one corrupts its first 16 "
             + "bytes. Reconcile these two, and CLAUDE.md's inventory if a third appears:"

@@ -121,7 +121,7 @@ Console ports, fetched and built from source
 
   openh264 2.6.0    BSD-2-Clause   ports/ripcord-ps3/tools/build-openh264.sh
   Opus 1.5.2        BSD-3-Clause   ports/ripcord-ps3/tools/build-opus.sh
-  Mbed TLS 2.28.8   Apache-2.0     ports/common/tools/build-mbedtls.sh
+  Mbed TLS 2.28.8   Apache-2.0     libripcord/tools/build-mbedtls.sh
                     (elected - see below)
 
   Each script pins a version and a digest and refuses a mismatch. ripcord-ps3
