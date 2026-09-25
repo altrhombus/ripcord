@@ -27,12 +27,18 @@ Windows layer as a reference for them, not as code.
 | Architecture | **Apple Silicon only.** Same reasoning as the Windows client shipping x64 only: it is the architecture that can be tested |
 | Distribution | **Developer ID, notarized, direct download** is the primary release. See "The App Store" below |
 | First-release scope | **At least feature parity with the Windows client as of 2026-09-24**, including internet play and account sign-in |
-| Protocol core | **`libripcord`, the portable C core**, brought up to parity first. See "Why the C core" below |
+| Protocol core | **`libripcord`, the portable C core**, brought up to parity first. See "Why the C core" below. **Succeeded 2026-09-25** by the Rust engine in [`engine-plan.md`](engine-plan.md), which the Mac adopts by relinking at parity |
 | Location | **`src/Ripcord.Mac/`**, beside `Ripcord.App` |
 | Build | **An Xcode project, not a Swift package.** A package cannot compile the core from where it lives, or compile the constants generated from the bundle. Measured, not assumed; see [`../src/Ripcord.Mac/README.md`](../src/Ripcord.Mac/README.md) |
 | Key agreement | **CryptoKit**, behind the core's ECDH seam (`RC_ECDH_EXTERNAL_BACKEND`), checked against the .NET vectors by the core's own test |
 
 ## Why the C core
+
+> **Superseded in part, 2026-09-25.** [`engine-plan.md`](engine-plan.md) keeps this section's conclusion
+> that the Mac runs a native core behind a C ABI, with no second runtime and threads owned by the app, and
+> changes which core: a Rust engine that presents the same contract as `halyard_client.h`. The Mac keeps
+> building on `libripcord` until that engine reaches parity, then relinks. CryptoKit stays as the Mac's key
+> agreement. What follows is kept as the record of why a C-ABI core was chosen over .NET.
 
 This was decided twice, and the first answer was wrong for a reason worth keeping. While the C core
 lacked internet play and the account tier, the .NET stack looked like the better engine. It could be

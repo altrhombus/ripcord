@@ -12,6 +12,7 @@ subject from different angles, which is why picking by topic alone leads you to 
 | How is the code arranged, and what rules keep it that way? | [`architecture.md`](architecture.md) |
 | What does the app look like, and what decides that? | [`design.md`](design.md) |
 | What is the macOS client, what is it built on, and in what order? | [`macos-plan.md`](macos-plan.md) |
+| Which protocol engine does each client run, and how does the project get to one? | [`engine-plan.md`](engine-plan.md) |
 | **What is left to do?** | [`ROADMAP.md`](../ROADMAP.md) |
 | **What happened, and when?** | [`journal.md`](journal.md) |
 | **What outside material was consulted, and what did each item inform?** | [`protocol-research-log.md`](protocol-research-log.md) |

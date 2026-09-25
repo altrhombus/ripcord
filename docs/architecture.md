@@ -109,6 +109,13 @@ The core sat at `ports/common` until 2026-09-24. It moved to the top level becau
 client (`docs/macos-plan.md`) links it too, and a first-class client depending on a folder called "ports"
 misdescribes both. Nothing about its contents or its rules changed in the move.
 
+**Where this is heading.** [`engine-plan.md`](engine-plan.md), settled 2026-09-25, gives the first-class
+clients a single protocol engine written in Rust, which presents the same C contract as the C core
+(`halyard_client.h`). The macOS client moves to it by relinking once it reaches parity, and Windows moves
+after its 1.0, one seam at a time behind the interfaces `Ripcord.Presentation` already defines.
+`libripcord` then stays as the console ports' core. Until those moves happen, this section describes the
+tree as it is.
+
 - **`libripcord`** — the protocol in portable C99: `crypto/`, `halyard/` (the control KDF and the field
   ciphers), `session/`, `discovery/`, `takion/`, `stream/` (A/V framing and Cauchy Reed-Solomon FEC over
   GF(2^8)), `input/`, `net/`, `util/`, plus `tests/` — a host-side known-answer suite that needs no

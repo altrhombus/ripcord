@@ -218,11 +218,38 @@ pass has to exercise.
 
 ## Backlog
 
+### One engine for the first-class clients — planned 2026-09-25, Phase 0 done
+
+One protocol engine, in Rust, under every first-class client (Windows, macOS and Linux; iOS, iPadOS and
+Android later). `libripcord` stays as the console ports' core. The decisions, the reasoning and the phases
+are in [`docs/engine-plan.md`](docs/engine-plan.md); this entry lists only what is open. Phase 0, bringing
+the documents into line, is done and in the journal.
+
+- [ ] **Phase 1 — the spike, and the gate.** Stream packet crypto, the demuxer and FEC in `ripcord-proto`,
+      exported through `ripcord-ffi`. Passes `stream-crypto.kat`; per-packet cost at or below the C core's
+      8.1 µs on the same M4 Max, and measured on Windows x64 and ARM64; links into the Mac lab and a .NET
+      test harness through generated bindings. **If it fails, the C core is the engine** and the plan's
+      fallback applies.
+- [ ] **Phase 2 — the engine at parity.** Bottom-up in the C core's layer order, each layer done when its
+      vectors pass, its fuzz target runs and differential fuzzing against the C core is clean. Includes the
+      `Ecdh` backends (CryptoKit carried over, CNG new, RustCrypto), each checked on its own platform in
+      CI, and the scripted console ported to Rust. Parity is a measured matrix, not a list.
+- [ ] **Phase 3 — the Mac switches engines,** by relinking at Phase 2's exit.
+- [ ] **Phase 4 — Windows onto the engine,** after 1.0, one seam at a time behind `RIPCORD_ENGINE`.
+  - [ ] Before step 3: `src/Ripcord.App/Pages/SessionPage.xaml.cs` imports three
+        `Ripcord.Protocol.Halyard*` namespaces. Stale usings, or a dependency around the seams.
+- [ ] **When the Rust engine first holds a copy of `Client-Type`:** name it in `CLAUDE.md`'s inventory and
+      in `BundledInteropConstantsTests` in the same change.
+
 ### macOS client — planned 2026-09-24, step 1 done
 
 A native Mac app built on `libripcord`, with at least parity with the Windows client, internet play and
 sign-in included. The decisions, the reasoning behind choosing the C core, the App Store analysis and the
 order of work are in [`docs/macos-plan.md`](docs/macos-plan.md). This entry lists only what is open.
+
+The Mac keeps building on `libripcord` until the Rust engine in [`docs/engine-plan.md`](docs/engine-plan.md)
+reaches parity, then relinks. Protocol work it needs before then lands in C, and the port to Rust picks it
+up.
 
 Step 1, promoting the core to `libripcord/` with fuzzing and a CI job, is done and in the journal. Open:
 
