@@ -218,6 +218,25 @@ pass has to exercise.
 
 ## Backlog
 
+### macOS client — planned 2026-09-24, step 1 done
+
+A native Mac app built on `libripcord`, with at least parity with the Windows client, internet play and
+sign-in included. The decisions, the reasoning behind choosing the C core, the App Store analysis and the
+order of work are in [`docs/macos-plan.md`](docs/macos-plan.md). This entry lists only what is open.
+
+Step 1, promoting the core to `libripcord/` with fuzzing and a CI job, is done and in the journal. Open:
+
+- [ ] **Mac engine spike.** A Swift command-line tool that discovers, pairs, connects and dumps frames from a
+      real console through `libripcord`. It also measures the core's AES-GCM at 1080p60 on Apple Silicon.
+- [ ] **Port STUN to `libripcord`.** Classic RFC 3489 Binding Requests, per the working internet-play path.
+- [ ] **Port the internet-play connect sequence to `libripcord`.** The UDP half of
+      `Ripcord.Cloud.Halyard/Rendezvous/`. The HTTPS half goes to Swift.
+- [ ] **Port account-pairing derivations to `libripcord`.**
+- [ ] **Swift cloud tier and session actor.** Ported from `Ripcord.Cloud.Halyard` and `SessionController`.
+- [ ] **The first coverage-guided fuzz run.** It happens in CI's `libripcord` job on Linux. It has never
+      run, because the author's Mac has no libFuzzer-capable clang, so the first run may find real bugs.
+- [ ] **Everything after first picture:** see steps 4–9 of the plan.
+
 ### Account pairing — resolved, and one thing owed (2026-09-23 to 09-24)
 
 **The console was signed out of PlayStation Network.** The account's PSN security options had been changed,
@@ -688,7 +707,7 @@ live end-to-end connect.)*
     signs in and streams, and (b) unlocked still streams now that RP-StreamingType is dropped.
   - **If it turns out to be needed:** it is a 16-byte binary control frame — `u32 0, u32-BE mtu, 8 bytes 0` —
     at the counter after the passcode (5 with one, 4 without), not a `/sess/ctrl` header. The fix is a
-    post-`EnsureSignedIn` send, family-gated, in both `HalyardStreamingSession` and `ports/common`.
+    post-`EnsureSignedIn` send, family-gated, in both `HalyardStreamingSession` and `libripcord`.
 - [ ] **Does the console honour a mid-session target bitrate?** Unresolved, and the answer changes the design
       of everything downstream. Evidence leans *no* (16.1 Mbps measured against a 13.5 Mbps target), but later
       readings were confounded by VBR noise (20 → 34 → 20 Mbps at a fixed 40 Mbps cap).
@@ -930,7 +949,7 @@ Both need a console or a capture to settle, hence here rather than in Track D.
       than making them easier, and it removes them for **every** port rather than for the one that happened
       to have a readable cache.
 
-      **Where it belongs.** In `ports/common` and behind a `Ripcord.Presentation` seam, not in any one port.
+      **Where it belongs.** In `libripcord` and behind a `Ripcord.Presentation` seam, not in any one port.
       The console half is a UDP announce and a small transfer; the desktop half is a discovery source, a
       confirmation, and a reuse of the registration it already performs. Neither half is PS3-specific and
       writing it as though it were would mean writing it twice.
