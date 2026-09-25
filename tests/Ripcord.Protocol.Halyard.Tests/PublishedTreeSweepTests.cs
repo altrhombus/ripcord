@@ -278,6 +278,19 @@ public class PublishedTreeSweepTests
         relative.EndsWith(".pbxproj", StringComparison.OrdinalIgnoreCase)
         || relative.EndsWith(".xcscheme", StringComparison.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// A package checksum in a Cargo lock file: the SHA-256 of a published crates.io archive, one per
+    /// dependency, which cargo writes and rewrites whenever a dependency changes. It identifies a public
+    /// package and nobody else, so a value allowlist would be dozens of entries that break on the next
+    /// update. The same shape as <see cref="XcodeObjectIdentifier"/>: a property of the syntax, applied only
+    /// in a file named <c>Cargo.lock</c>, only to a whole line of exactly this form (lowercase, as cargo
+    /// writes it), and only to the long-hex rule. Hex anywhere else in the lock file is still reported.
+    /// </summary>
+    private static readonly Regex CargoLockChecksum = new(@"^checksum = ""[0-9a-f]{64}""$", RegexOptions.Compiled);
+
+    private static bool IsCargoLockFile(string relative) =>
+        Path.GetFileName(relative).Equals("Cargo.lock", StringComparison.Ordinal);
+
     /// <summary>Matches when the text immediately before a literal is a XAML identifier attribute.</summary>
     private static readonly Regex XamlIdentifierAttribute =
         new(@"x:(Uid|Name|Key)=$", RegexOptions.Compiled);
@@ -347,9 +360,9 @@ public class PublishedTreeSweepTests
         [".md", ".cs", ".c", ".h", ".cpp", ".hpp", ".idl", ".def", ".json", ".yml", ".yaml", ".xaml",
          ".py", ".props", ".targets", ".csproj", ".vcxproj", ".slnx", ".proto", ".sh", ".ps1",
          ".editorconfig", ".gitattributes", ".appxmanifest", ".manifest", ".svg", ".resx", ".resw",
-         ".html", ".swift", ".xcconfig", ".modulemap", ".pbxproj", ".xcscheme"];
+         ".html", ".swift", ".xcconfig", ".modulemap", ".pbxproj", ".xcscheme", ".rs", ".toml"];
 
-    private static readonly string[] NamedFiles = ["NOTICE", "LICENSE", ".gitignore", "Makefile"];
+    private static readonly string[] NamedFiles = ["NOTICE", "LICENSE", ".gitignore", "Makefile", "Cargo.lock"];
 
     /// <summary>
     /// Extensions that are genuinely not text, so their absence from the corpus is not a gap.
@@ -487,6 +500,11 @@ public class PublishedTreeSweepTests
         /// <see cref="XcodeObjectIdentifier"/>.
         /// </summary>
         XcodeProject,
+
+        /// <summary>
+        /// A package checksum line of a <c>Cargo.lock</c>. See <see cref="CargoLockChecksum"/>.
+        /// </summary>
+        CargoLock,
     }
 
     /// <summary>
@@ -675,6 +693,16 @@ public class PublishedTreeSweepTests
           "sixteen bytes in a project file is a value, not an identifier, and is reported" },
         { "0A1B2C3D4E5F60718293A4B5", LineContext.Prose, true,
           "the same token outside a project file has no such excuse and is reported" },
+
+        // --- Cargo lock checksums: the SHA-256 of a public crate archive, one per dependency -------------
+        { "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff", LineContext.CargoLock, false,
+          "a lock file's checksum line names a published package, and cargo rewrites it on every update" },
+        { "00112233445566778899AABBCCDDEEFF00112233445566778899AABBCCDDEEFF", LineContext.CargoLock, true,
+          "uppercase is not the form cargo writes, so it is not assumed to be a checksum" },
+        { "00112233445566778899aabbccddeeff", LineContext.CargoLock, true,
+          "sixteen bytes on a checksum line is not a SHA-256 and is reported" },
+        { "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff", LineContext.Prose, true,
+          "the same digest outside a lock file's checksum line has no such excuse and is reported" },
 
         // --- must tolerate: things that are not disclosures --------------------------------------------
         { "and so on, continued…", LineContext.Prose, false, "an ordinary prose ellipsis" },
@@ -1038,7 +1066,7 @@ public class PublishedTreeSweepTests
     /// </summary>
     private static List<string> ScanLine(
         string line, bool isProse, bool applyAllowlist, string at, bool isProductCode = false,
-        bool isMessage = false, bool isXcodeProject = false)
+        bool isMessage = false, bool isXcodeProject = false, bool isCargoLock = false)
     {
         bool Allow(string v) => applyAllowlist && IsAllowed(v, isMessage);
 
@@ -1074,6 +1102,7 @@ public class PublishedTreeSweepTests
                 string hex = m.Groups[1].Value;
                 if (IsSyntheticFiller(hex)) continue;
                 if (isXcodeProject && XcodeObjectIdentifier.IsMatch(hex)) continue;
+                if (isCargoLock && CargoLockChecksum.IsMatch(line)) continue;
                 if (Allow(hex)) continue;
                 found.Add($"{at}|hex|{hex}");
             }
@@ -1175,7 +1204,7 @@ public class PublishedTreeSweepTests
 
                 found.AddRange(
                     ScanLine(lines[i], isProse, applyAllowlist, Where(root, path, i + 1), isProductCode,
-                             isXcodeProject: IsXcodeProjectFile(relative)));
+                             isXcodeProject: IsXcodeProjectFile(relative), isCargoLock: IsCargoLockFile(relative)));
             }
         }
 
@@ -1433,7 +1462,8 @@ public class PublishedTreeSweepTests
             {
                 found.AddRange(ScanLine(
                     lines[i].TrimEnd((char)0x0d), isProse, applyAllowlist,
-                    $"{sha[..8]} {rel}:{i + 1}", isProductCode, isXcodeProject: IsXcodeProjectFile(rel)));
+                    $"{sha[..8]} {rel}:{i + 1}", isProductCode, isXcodeProject: IsXcodeProjectFile(rel),
+                    isCargoLock: IsCargoLockFile(rel)));
             }
         }
 
@@ -1686,6 +1716,7 @@ public class PublishedTreeSweepTests
             LineContext.XamlIdentifier => $"                    x:Uid=\"{input}\" />",
             LineContext.XcodeProject =>
                 $"\t\t{input} /* RipcordKit.framework in Frameworks */ = {{isa = PBXBuildFile; fileRef = {input}; }};",
+            LineContext.CargoLock => $"checksum = \"{input}\"",
             LineContext.Comment => $"        StartSession();   // as captured: {input}",
             LineContext.Code => $"        var fixture = Decode(\"{input}\");",
             _ => throw new ArgumentOutOfRangeException(nameof(context)),
@@ -1693,11 +1724,13 @@ public class PublishedTreeSweepTests
 
         List<string> hits = ScanLine(
             line,
-            isProse: context == LineContext.Prose,
+            // A lock file is on NamedFiles, so the file sweep reads it as prose; the contract has to as well.
+            isProse: context is LineContext.Prose or LineContext.CargoLock,
             applyAllowlist: false,
             at: "contract",
             isProductCode: context == LineContext.ProductCode,
-            isXcodeProject: context == LineContext.XcodeProject);
+            isXcodeProject: context == LineContext.XcodeProject,
+            isCargoLock: context == LineContext.CargoLock);
 
         Assert.True(
             hits.Count > 0 == shouldMatch,
