@@ -11,12 +11,13 @@ subject from different angles, which is why picking by topic alone leads you to 
 | What is this, does it work, can I run it? | [`README.md`](../README.md) |
 | How is the code arranged, and what rules keep it that way? | [`architecture.md`](architecture.md) |
 | What does the app look like, and what decides that? | [`design.md`](design.md) |
+| What is the macOS client, what is it built on, and in what order? | [`macos-plan.md`](macos-plan.md) |
 | **What is left to do?** | [`ROADMAP.md`](../ROADMAP.md) |
 | **What happened, and when?** | [`journal.md`](journal.md) |
 | **What outside material was consulted, and what did each item inform?** | [`protocol-research-log.md`](protocol-research-log.md) |
 | How does the PS5 Remote Play protocol actually work? | [`protocol/`](protocol/) |
 | In what order would I build a client from the spec? | [`protocol/IMPLEMENTATION.md`](protocol/IMPLEMENTATION.md) |
-| What is the portable C core the console ports share? | [`ports/common/README.md`](../ports/common/README.md) |
+| What is the portable C core the console ports share? | [`libripcord/README.md`](../libripcord/README.md) |
 | How do I build or run a console port? | [The console ports](#the-console-ports), below |
 | How do I contribute, and what must I attest to? | [`CONTRIBUTING.md`](../CONTRIBUTING.md) |
 | How was it built, historically? | [`history/`](history/) |
@@ -45,7 +46,7 @@ these answer "what is it, and how do I build it".
 
 | Document | Answers |
 |---|---|
-| [`ports/common/README.md`](../ports/common/README.md) | What the portable C99 core holds, and what the platform seam does and does not ask of an OS |
+| [`libripcord/README.md`](../libripcord/README.md) | What the portable C99 core holds, and what the platform seam does and does not ask of an OS |
 | [`ports/ripcord-3ds/README.md`](../ports/ripcord-3ds/README.md) | The 3DS port: status, design, what runs on hardware |
 | [`ports/ripcord-3ds/SETUP.md`](../ports/ripcord-3ds/SETUP.md) | Building it and getting it onto a console |
 | [`ports/ripcord-3ds/HARDWARE-PROBES.md`](../ports/ripcord-3ds/HARDWARE-PROBES.md) | What each on-device probe measured |
