@@ -60,6 +60,28 @@ Internet play's UDP half, tied together in `halyard_client`, ported from `Halyar
 - **`regist_flow_test` no longer broadcasts.** The ARM probe is stubbed at link time, and the host suite now
   stays on loopback.
 
+### Internet play from rest: SESSION_ID waits for the A/V leg (2026-09-25)
+
+Three more internet connects from rest, the Mac on a phone hotspot and PS5-<redacted> in rest mode, settled what
+the first failure only suggested.
+
+- **Run 1:** no login prompt in the rendezvous route's 1 s window, and the console then never offered a
+  media connection. That looked like a late prompt, so a late prompt is now answered wherever it lands in
+  the media wait. That change is still unproven, since no late prompt has been logged since.
+- **Run 2:** the prompt came on time and the passcode was accepted, then **30 s** passed with no
+  SESSION_ID. So the longer post-passcode wait committed earlier was not the answer: a woken console does
+  not send it at that point at all.
+- **Run 3, the change:** after an accepted passcode, the rendezvous route no longer fails for want of
+  SESSION_ID and goes on to the A/V leg, as an unlocked console's connect already does. **It streamed.**
+  SESSION_ID arrived during the A/V leg, 8.5 s after the passcode. Streaming began at 46.13 s, with 0
+  packets lost of 4,710, 80 control messages verified, and 888 frames of 1080p HEVC.
+
+So on this route, a console woken from rest sends SESSION_ID after the A/V prelude even when a passcode
+was needed. An awake console sends it 1 s after the passcode. .NET's `EnsureSignedInAsync` fails the
+session at exactly that point ("accepted the passcode but didn't start a session"). **The Windows client
+very likely cannot connect over the internet to a console woken from rest.** That is in the roadmap to
+confirm on Windows.
+
 ### Internet play from the Mac, and a console slow to wake (2026-09-25)
 
 **The Mac plays over the internet.** With the Mac on a phone hotspot and PS5-<redacted> at home, `connect --route
