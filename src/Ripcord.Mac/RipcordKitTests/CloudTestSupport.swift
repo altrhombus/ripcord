@@ -172,12 +172,13 @@ enum Frames {
     static var consoleOffer: String { signaling(from: "PROSPERO", consoleOfferBody) }
 
     /// A console OFFER with one candidate, and the hashed id and sid the account route keys on.
-    static func accountOffer(hashedID: [UInt8], sid: Int, address: String = "192.168.1.50", from platform: String = "PROSPERO") -> String {
+    static func accountOffer(hashedID: [UInt8], sid: Int, address: String = "192.168.1.50", port: Int = 9303,
+                             from platform: String = "PROSPERO") -> String {
         signaling(from: platform,
                   #"{"action":"OFFER","reqId":1,"error":0,"connRequest":{"sid":"# + String(sid) + #","peerSid":0,"#
                   + #""skey":"AAAAAAAAAAAAAAAAAAAAAA==","natType":2,"#
                   + #""candidate":[{"type":"LOCAL","addr":""# + address + #"","mappedAddr":"0.0.0.0","#
-                  + #""port":9303,"mappedPort":0}],"#
+                  + #""port":"# + String(port) + #","mappedPort":0}],"#
                   + #""localHashedId":""# + Data(hashedID).base64EncodedString() + #""}}"#)
     }
 

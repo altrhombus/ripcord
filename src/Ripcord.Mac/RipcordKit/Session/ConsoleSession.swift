@@ -27,6 +27,11 @@ public enum SessionStage: Int, Sendable, Comparable {
 public enum SessionEndReason: Int, Sendable {
     case none, userDisconnect, hostCancel, consoleClosed, channelError, signInCancelled, signInRejected,
          signInNoSession, timeout, refused
+    /// RENDEZVOUS: the media negotiation gave up, or no media peer answered in time (END_NO_MEDIA).
+    case noMedia
+    /// RENDEZVOUS, Swift's own: the cloud half failed or stopped before the connect began. Not a C value;
+    /// `SessionOutcome.failure` says why.
+    case rendezvousFailed = 100
 }
 
 public struct SessionStreamInfo: Sendable {
@@ -47,6 +52,16 @@ public struct SessionOutcome: Sendable {
     public let endReason: SessionEndReason
     public let controlError: Int
     public let curve: Int
+    /// Why a rendezvous never reached the connect, in words; nil otherwise.
+    public let failure: String?
+
+    init(stage: SessionStage, endReason: SessionEndReason, controlError: Int, curve: Int, failure: String? = nil) {
+        self.stage = stage
+        self.endReason = endReason
+        self.controlError = controlError
+        self.curve = curve
+        self.failure = failure
+    }
 }
 
 /// What a session produces. Every handler runs on the session thread.
@@ -74,7 +89,21 @@ public final class ConsoleSession: Sendable {
         public var width = 1920, height = 1080, fps = 60, bitrateKbps = 25_000
         public var allowHEVC = true
         public var hdr = false
+        /// How the console is reached. `.local` is the LAN (TCP 9295 and the console's UDP ports), and is
+        /// exactly what this session did before the rendezvous route existed; `.rendezvous` is the account
+        /// route over 9303 and a negotiated A/V leg, driven with the cloud tier (RendezvousLink.swift).
+        public var route: Route = .local
         public init() {}
+    }
+
+    public enum Route: Sendable {
+        case local
+        case rendezvous(RendezvousRoute)
+
+        var rendezvous: RendezvousRoute? {
+            if case .rendezvous(let r) = self { return r }
+            return nil
+        }
     }
 
     private let state: Mutex<SharedState>
@@ -89,6 +118,9 @@ public final class ConsoleSession: Sendable {
         var passcodeAsked = -1
         var commands: UInt32 = 0
         var started = false
+        /// Latched by cancel() and disconnect(): unlike `commands`, the core's pull does not clear it, so the
+        /// rendezvous wait before connect sees a stop the core already consumed inside a blocking 9303 stage.
+        var stopRequested = false
     }
 
     public init(console: PairedConsole, options: Options = Options(), handlers: SessionHandlers) {
@@ -114,12 +146,17 @@ public final class ConsoleSession: Sendable {
     public func update(pad: PadSnapshot?) { state.withLock { $0.pad = pad?.wireState } }
     public func supplyPasscode(_ digits: String) { state.withLock { $0.passcode = digits } }
     public func requestKeyframe() { state.withLock { $0.commands |= HALYARD_CLIENT_CMD_KEYFRAME } }
-    public func cancel() { state.withLock { $0.commands |= HALYARD_CLIENT_CMD_CANCEL; $0.passcodeCancelled = true } }
+    public func cancel() {
+        state.withLock { $0.commands |= HALYARD_CLIENT_CMD_CANCEL; $0.passcodeCancelled = true; $0.stopRequested = true }
+    }
 
     /// Goodbye: the console is asked to rest first only when `restConsole`, which should mean a person
     /// chose it (halyard_client.h).
     public func disconnect(restConsole: Bool = false) {
-        state.withLock { $0.commands |= HALYARD_CLIENT_CMD_DISCONNECT | (restConsole ? HALYARD_CLIENT_CMD_REST_CONSOLE : 0) }
+        state.withLock {
+            $0.commands |= HALYARD_CLIENT_CMD_DISCONNECT | (restConsole ? HALYARD_CLIENT_CMD_REST_CONSOLE : 0)
+            $0.stopRequested = true
+        }
     }
 
     // MARK: - The session thread
@@ -130,15 +167,53 @@ public final class ConsoleSession: Sendable {
         var builder: AnnexBSampleBuilder?
         var opus: OpusDecoder?
         var frameIndex: Int64 = 0
+        /// RENDEZVOUS: set before connect, read by poll_media.
+        var link: RendezvousLink?
+        var media: (@Sendable (RendezvousLeg) async throws -> MediaEndpoint?)?
         init(_ session: ConsoleSession) { self.session = session }
+
+        /// poll_media: the first call starts the host's negotiation on a task of its own and says "not yet";
+        /// later calls say "not yet" until it answers, then hand the console's endpoint to the core.
+        func pollMedia(_ leg: halyard_client_leg, _ out: UnsafeMutablePointer<halyard_client_peer>) -> Int32 {
+            guard let link, let media else { return -1 }
+            switch link.mediaState() {
+            case .notAsked:
+                link.markMediaPending()
+                let info = RendezvousLeg(leg)
+                let log = session.handlers.log
+                log("rendezvous: A/V leg on local port \(info.localPort)\(info.reflexive.map { ", reflexive \($0)" } ?? ""); negotiating")
+                Task {
+                    var answer: MediaEndpoint?
+                    do { answer = try await media(info) } catch { log("rendezvous: the media negotiation failed: \(error)") }
+                    link.answerMedia(answer)
+                }
+                return 0
+            case .pending:
+                return 0
+            case .answered(let endpoint):
+                guard let endpoint, let peer = ConsoleSession.peer(address: endpoint.address, port: endpoint.port,
+                                                                    hashedID: endpoint.consoleHashedID) else { return -1 }
+                out.pointee = peer
+                return 1
+            }
+        }
     }
 
-    private func run() {
-        let size = halyard_client_struct_size()
-        let storage = UnsafeMutableRawPointer.allocate(byteCount: size, alignment: 16)
-        defer { storage.deallocate() }
+    /// A halyard_client_peer, or nil when the address is not a dotted quad or the id not 20 bytes.
+    static func peer(address: String, port: Int, hashedID: [UInt8]) -> halyard_client_peer? {
+        guard let path = ConsolePath(address: address, port: port),
+              hashedID.count == Int(HALYARD_CLIENT_HASHED_ID_LENGTH) else { return nil }
+        var peer = halyard_client_peer()
+        withUnsafeMutableBytes(of: &peer.address) { $0.copyBytes(from: path.address) }
+        peer.port = path.port
+        withUnsafeMutableBytes(of: &peer.console_hashed_id) { $0.copyBytes(from: hashedID) }
+        return peer
+    }
 
-        var record = console.record
+    /// The C configuration for `options`, minus the three pointers (record, STUN list, bind address), which
+    /// run() fills for the duration of halyard_client_init - the core copies all three there. On `.local` it
+    /// is exactly the LAN configuration this session has always used; the rendezvous fields stay zero.
+    static func makeConfig(_ options: Options) -> halyard_client_config {
         var config = halyard_client_config()
         config.route = HALYARD_ROUTE_LOCAL
         config.width = Int32(options.width)
@@ -149,30 +224,207 @@ public final class ConsoleSession: Sendable {
         config.hdr = options.hdr ? 1 : 0
         config.require_session_ready = 1
 
+        if let r = options.route.rendezvous {
+            config.route = HALYARD_ROUTE_RENDEZVOUS
+            config.control_local_port = r.controlLocalPort
+            config.media_local_port = r.mediaLocalPort
+            config.media_offer_timeout_ms = r.mediaOfferTimeout.clampedMilliseconds
+            config.dgram_stage_timeout_ms = r.dgramStageTimeout.clampedMilliseconds
+            config.dgram_receive_timeout_ms = r.dgramReceiveTimeout.clampedMilliseconds
+        }
+        return config
+    }
+
+    private func run() {
+        let size = halyard_client_struct_size()
+        let storage = UnsafeMutableRawPointer.allocate(byteCount: size, alignment: 16)
+        defer { storage.deallocate() }
+
+        let rendezvous = options.route.rendezvous
+        var config = Self.makeConfig(options)
+        var record = console.record
+        // Resolved here, on the session thread, so building Options touches no network. Copied at init.
+        var stun = rendezvous.map { StunServer.resolve($0.stunServers) } ?? []
+        var bind: [UInt8] = []
+        if let address = rendezvous?.bindAddress {
+            guard let parsed = ConsolePath.ipv4(address) else {
+                handlers.ended(SessionOutcome(stage: .idle, endReason: .channelError, controlError: 0, curve: 0,
+                                              failure: "\(address) is not an IPv4 address to bind"))
+                return
+            }
+            bind = parsed
+        }
+        if let rendezvous, !rendezvous.stunServers.isEmpty {
+            handlers.log("rendezvous: \(stun.count) of \(rendezvous.stunServers.count) STUN server(s) resolved")
+        }
+
         let context = Context(self)
         context.opus = try? OpusDecoder()
         let user = Unmanaged.passRetained(context)
         defer { user.release() }
 
-        let outcome: SessionOutcome = withUnsafePointer(to: &record) { recordPointer in
-            config.record = recordPointer
-            var callbacks = Self.callbacks(user.toOpaque())
-            guard let client = halyard_client_init(storage, size, &config, &callbacks) else {
-                return SessionOutcome(stage: .idle, endReason: .channelError, controlError: 0, curve: 0)
+        let client: OpaquePointer? = withUnsafePointer(to: &record) { recordPointer in
+            stun.withUnsafeMutableBufferPointer { servers in
+                bind.withUnsafeMutableBufferPointer { address in
+                    config.record = recordPointer
+                    config.stun_servers = servers.isEmpty ? nil : UnsafePointer(servers.baseAddress)
+                    config.stun_server_count = servers.count
+                    config.bind_address = address.isEmpty ? nil : UnsafePointer(address.baseAddress)
+                    var callbacks = Self.callbacks(user.toOpaque(), rendezvous: rendezvous != nil)
+                    return halyard_client_init(storage, size, &config, &callbacks)
+                }
             }
-            defer { halyard_client_destroy(client) }
+        }
+        guard let client else {
+            handlers.ended(SessionOutcome(stage: .idle, endReason: .channelError, controlError: 0, curve: 0))
+            return
+        }
 
+        var plan = RendezvousPlan()
+        if let rendezvous {
+            plan = runRendezvous(client, rendezvous, context: context)
+        }
+
+        if rendezvous == nil || plan.proceed != nil {
             if halyard_client_connect(client).rawValue >= HALYARD_CLIENT_STAGE_STREAM_READY.rawValue {
                 var next: UInt32 = 0
                 while halyard_client_pump(client, &next) == 1 {
                     Self.wait(on: client, milliseconds: next)
                 }
             }
-            let r = halyard_client_result_get(client)!.pointee
-            return SessionOutcome(stage: SessionStage(r.stage), endReason: SessionEndReason(rawValue: Int(r.end_reason.rawValue)) ?? .none,
-                                  controlError: Int(r.control_error), curve: Int(r.curve))
+        }
+        let r = halyard_client_result_get(client)!.pointee
+        var outcome = SessionOutcome(stage: SessionStage(r.stage), endReason: SessionEndReason(rawValue: Int(r.end_reason.rawValue)) ?? .none,
+                                     controlError: Int(r.control_error), curve: Int(r.curve))
+        if let failure = plan.failure {
+            outcome = SessionOutcome(stage: outcome.stage, endReason: plan.cancelled ? .hostCancel : .rendezvousFailed,
+                                     controlError: outcome.controlError, curve: outcome.curve, failure: failure)
+        }
+        halyard_client_destroy(client)
+
+        // Step 8: the sockets are closed and the console told; only now is the cloud session left.
+        plan.link?.close("the session has ended")
+        if let proceed = plan.proceed {
+            Self.waitFor(Self.teardownBound) { await proceed.onEnd() }
+        } else if let driver = plan.driver {
+            // Never proceeded: stop the cloud half, and let it leave its session before reporting the end.
+            driver.task.cancel()
+            _ = driver.done.wait(timeout: .now() + .milliseconds(Int(Self.teardownBound.clampedMilliseconds)))
         }
         handlers.ended(outcome)
+    }
+
+    // MARK: - The rendezvous, on the session thread
+
+    private struct RendezvousPlan {
+        var link: RendezvousLink?
+        var driver: (task: Task<Void, Never>, done: DispatchSemaphore)?
+        var proceed: RendezvousLink.Proceed?
+        var failure: String?
+        var cancelled = false
+    }
+
+    /// How long the end of a session waits for the cloud half to leave its session.
+    static let teardownBound: Duration = .seconds(10)
+
+    /// Steps 2 to 5a of halyard_client.h's route: prepare the control leg, start the cloud half with a link
+    /// to it, and run what it asks for until it says proceed (or fails, or the host stops the session).
+    private func runRendezvous(_ client: OpaquePointer, _ route: RendezvousRoute, context: Context) -> RendezvousPlan {
+        var plan = RendezvousPlan()
+        var leg = halyard_client_leg()
+        guard halyard_client_rendezvous_prepare(client, &leg) == 1 else {
+            plan.failure = "the control leg could not be bound"
+            return plan
+        }
+        let link = RendezvousLink(controlLeg: RendezvousLeg(leg))
+        plan.link = link
+        handlers.log("rendezvous: control leg on local port \(link.controlLeg.localPort)"
+                     + (link.controlLeg.reflexive.map { ", reflexive \($0)" } ?? ", no reflexive address"))
+
+        let done = DispatchSemaphore(value: 0)
+        let drive = route.drive
+        let task = Task {
+            defer { done.signal() }
+            do {
+                try await drive(link)
+                link.abandon("the rendezvous finished without letting the session proceed")
+            } catch {
+                link.abandon("\(error)")
+            }
+        }
+        plan.driver = (task, done)
+
+        let deadline = ContinuousClock.now.advanced(by: route.driveTimeout)
+        while plan.failure == nil {
+            if state.withLock({ $0.stopRequested }) {
+                plan.failure = "cancelled before the connect began"
+                plan.cancelled = true
+                break
+            }
+            if ContinuousClock.now >= deadline {
+                plan.failure = "the cloud half did not finish within \(route.driveTimeout)"
+                break
+            }
+            guard let job = link.takeJob() else {
+                usleep(5_000)
+                continue
+            }
+            switch job {
+            case .begin(let request, let continuation):
+                var peer = halyard_client_peer()
+                withUnsafeMutableBytes(of: &peer.address) { $0.copyBytes(from: request.path.address) }
+                peer.port = request.path.port
+                withUnsafeMutableBytes(of: &peer.console_hashed_id) { $0.copyBytes(from: request.consoleHashedID) }
+                if halyard_client_rendezvous_begin(client, request.localHashedID, &peer) == 1 {
+                    continuation.resume()
+                } else {
+                    let status = halyard_client_result_get(client)!.pointee.dgram_status
+                    continuation.resume(throwing: PairingError.associationFailed("our Init (9303 status \(status))"))
+                }
+
+            case .register(let request, let continuation):
+                do {
+                    continuation.resume(returning: try register(request, client: client))
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+
+            case .proceed(let proceed):
+                plan.proceed = proceed
+                context.link = link
+                context.media = proceed.media
+                link.close("the session has moved on to its connect")
+                return plan
+
+            case .abandon(let reason):
+                plan.failure = reason
+            }
+        }
+        link.close(plan.failure ?? "the rendezvous ended")
+        return plan
+    }
+
+    /// Step 5a on the session thread: /sess/rgst over the session's own association. The record names the
+    /// console this session was opened for.
+    private func register(_ request: RendezvousLink.RegisterRequest, client: OpaquePointer) throws(PairingError) -> PairedConsole {
+        guard let path = ConsolePath.control(request.context) else { throw .associationFailed("no console endpoint to register with") }
+        let clientIP = try Pairing.localAddress(toward: path.text)
+        let registration = try AccountRegistration.run(family: request.family, accountID: request.accountID,
+                                                       clientIP: clientIP, seed: request.seed,
+                                                       exchange: halyard_client_rendezvous_exchange,
+                                                       user: UnsafeMutableRawPointer(client))
+        return PairedConsole(host: console.host, name: console.name, consoleID: console.consoleID,
+                             accountID: Pairing.normalisedAccountID(request.accountID), registration: registration)
+    }
+
+    /// Runs async work from the session thread and waits for it, at most `bound`.
+    private static func waitFor(_ bound: Duration, _ work: @escaping @Sendable () async -> Void) {
+        let done = DispatchSemaphore(value: 0)
+        Task {
+            await work()
+            done.signal()
+        }
+        _ = done.wait(timeout: .now() + .milliseconds(Int(bound.clampedMilliseconds)))
     }
 
     /// Sleeps on the session's sockets until data arrives or the core's next deadline, whichever is first.
@@ -184,7 +436,7 @@ public final class ConsoleSession: Sendable {
         _ = poll(&descriptors, nfds_t(descriptors.count), Int32(min(milliseconds, 100)))
     }
 
-    private static func callbacks(_ user: UnsafeMutableRawPointer) -> halyard_client_callbacks {
+    private static func callbacks(_ user: UnsafeMutableRawPointer, rendezvous: Bool) -> halyard_client_callbacks {
         var c = halyard_client_callbacks()
         c.user = user
         c.log = { user, _, line in
@@ -253,6 +505,13 @@ public final class ConsoleSession: Sendable {
                 audioFrames: s.audio_frames, keyframes: s.keyframes, kbps: s.kbps,
                 msSinceConsoleActivity: s.ms_since_console_activity, msSinceVideoFrame: s.ms_since_video_frame,
                 idrRequests: s.idr_requests))
+        }
+        // Only on the rendezvous route: a LAN session's callbacks are exactly what they were.
+        if rendezvous {
+            c.poll_media = { user, media, out in
+                guard let media, let out else { return -1 }
+                return sessionContext(user).pollMedia(media.pointee, out)
+            }
         }
         return c
     }
