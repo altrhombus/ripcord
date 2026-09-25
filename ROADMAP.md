@@ -234,11 +234,16 @@ Step 1, promoting the core to `libripcord/` with fuzzing and a CI job, is done a
       (44/44).
     - Swift Testing runs.
     - `ripcord-lab check` and `ripcord-lab discover` work.
-  - [ ] **Connect orchestration: where it lives.** The core has every stage but no sequence. The PS3's
-        4,330-line `rc_connect.c` and the 3DS's `main.c` each wrote their own, interleaved with their
-        platform's UI. The recommendation is a portable, callback-driven connect sequence in
-        `libripcord`, extracted from the PS3 flow (the most complete, and hardware-verified), which Swift
-        then wraps. The ports migrate to it later, each on its own hardware.
+  - [x] **The connect sequence, slices 0 and 1.** Done 2026-09-25: `libripcord/client/halyard_client.c`,
+        behind the contract in `halyard_client.h`, ported from `rc_connect.c` and `HalyardStreamingSession`.
+        The core also gained a connect deadline in `rc_tcp` (the b31 hang's real fix), a log sink, and an
+        abortable Takion connect. 111 host assertions; none of it has met a console. Left for later
+        slices: senkusha echo/MTU probes, CORRUPT_FRAME, CONNECTION_QUALITY, discovery/wake inside the
+        sequence, and RENDEZVOUS.
+    - [ ] `regist_flow_test` sends an ARM probe to the LAN broadcast address on every `make` run: the
+          host suite leaves loopback. Found while writing `client_test`, which now does not.
+    - [ ] `select()` and `suseconds_t` in the new `rc_tcp` deadline have not been built for the 3DS,
+          Vita or PS3 SDKs `[X]`.
   - [x] **Crypto throughput: measured, and not a concern.** `ripcord-lab bench` on an M4 Max:
         **8.1 µs per packet** (GMAC verify plus CTR decrypt, 1,426 bytes, across rotated-key windows).
         That is about 1.4 Gb/s on one core, roughly 60 times a 23 Mb/s 1080p60 stream, from the portable

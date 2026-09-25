@@ -29,6 +29,26 @@ void rc_log_open(const char *argv0, const char *filename);
  */
 void rc_log(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
 
+/*
+ * A LINE SINK, for a host that has somewhere better than stdout to put these.
+ *
+ * The core logs through rc_log() from deep inside the control session, and on a console that output
+ * belongs on the screen. A desktop host (the macOS client, via halyard_client's `log` callback) wants the
+ * same lines in its own logger instead, and without a sink it had no way to receive them.
+ *
+ * With a sink set, each complete line goes to `sink` INSTEAD OF stdout - without its newline and with
+ * any ANSI colour sequences removed, since those are for a terminal - and the ring and the log file
+ * behave exactly as before. A line split across several rc_log() calls is delivered once, when its
+ * newline arrives. `sink` NULL restores the default. The sink is process-wide, like the rest of this
+ * module, and single-threaded for the same reason s_format is static: see rc_log.c.
+ */
+typedef void (*rc_log_sink_fn)(void *user, const char *line);
+
+void rc_log_set_sink(rc_log_sink_fn sink, void *user);
+
+/* The sink's `user`, or NULL - so a caller can clear a sink only if it is still its own. */
+void *rc_log_sink_user(void);
+
 /* Closes the log file if one was opened. Safe to call even if rc_log_open() was never called or failed. */
 void rc_log_close(void);
 

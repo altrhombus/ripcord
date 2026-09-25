@@ -124,6 +124,57 @@ void rc_log_replay(void)
     }
 }
 
+/* The optional line sink - see rc_log_set_sink. Its line buffer is static for the s_format reason. */
+static rc_log_sink_fn s_sink;
+static void *s_sink_user;
+static char s_sink_line[256];
+static size_t s_sink_len;
+
+void rc_log_set_sink(rc_log_sink_fn sink, void *user)
+{
+    s_sink = sink;
+    s_sink_user = (sink != NULL) ? user : NULL;
+    s_sink_len = 0u;
+}
+
+void *rc_log_sink_user(void)
+{
+    return s_sink_user;
+}
+
+/*
+ * Feeds formatted text to the sink a line at a time. ESC '[' ... final-letter sequences are dropped:
+ * the core colours FAIL and NOTE for a console screen, and a host's logger would show them as noise.
+ * A line longer than the buffer is delivered truncated, which is the ring's rule too.
+ */
+static void sink_append(const char *text)
+{
+    size_t i;
+    int in_escape = 0;
+
+    for (i = 0; text[i] != '\0'; i++) {
+        char ch = text[i];
+
+        if (in_escape) {
+            if ((ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z'))
+                in_escape = 0;
+            continue;
+        }
+        if (ch == '\x1b' && text[i + 1] == '[') {
+            in_escape = 1;
+            i++;
+            continue;
+        }
+        if (ch == '\n') {
+            s_sink_line[s_sink_len] = '\0';
+            s_sink(s_sink_user, s_sink_line);
+            s_sink_len = 0u;
+        } else if (s_sink_len < sizeof(s_sink_line) - 1u) {
+            s_sink_line[s_sink_len++] = ch;
+        }
+    }
+}
+
 void rc_log(const char *fmt, ...)
 {
     va_list args;
@@ -131,7 +182,10 @@ void rc_log(const char *fmt, ...)
     va_start(args, fmt);
     (void)vsnprintf(s_format, sizeof(s_format), fmt, args);
     va_end(args);
-    fputs(s_format, stdout);
+    if (s_sink != NULL)
+        sink_append(s_format);
+    else
+        fputs(s_format, stdout);
     ring_append(s_format);
 
     if (s_log != NULL) {

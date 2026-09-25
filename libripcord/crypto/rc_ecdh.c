@@ -447,4 +447,17 @@ int rc_ecdh_derive_shared(const rc_ecdh_keypair *pair,
     return 0;
 }
 
+/*
+ * The fifth entry point, which this stub was missing: the header names five, and without this one any
+ * backend-less build that links takion_session_negotiator.c (its precheck calls it) fails to link at all.
+ * Found when libripcord/client's host test became the first such build. Fails closed like the rest.
+ */
+int rc_ecdh_check_peer_point(unsigned curve, const uint8_t *point, size_t length)
+{
+    (void)curve;
+    (void)point;
+    (void)length;
+    return 0;
+}
+
 #endif /* RC_ECDH_EXTERNAL_BACKEND / RC_CRYPTO_MBEDTLS */

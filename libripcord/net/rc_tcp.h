@@ -13,12 +13,39 @@
 #include <stddef.h>
 #include <sys/types.h>
 
-/* Opens a TCP connection to host:port (the connect itself blocks until it succeeds or fails - callers
- * that want a non-blocking socket for what follows set O_NONBLOCK themselves afterward, same as
- * source/linktest and source/discovery already do for UDP). Returns the socket descriptor, or -1 on
- * failure (including resolution failure - `host` must be a dotted-quad IPv4 address; this port never
- * needs DNS, since consoles are only ever addressed by an IP a discovery/pairing step already resolved). */
+/* Opens a TCP connection to host:port and returns it as a BLOCKING socket - callers that want a
+ * non-blocking socket for what follows set it themselves afterward, same as source/linktest and
+ * source/discovery already do for UDP. Returns the socket descriptor, or -1 on failure (including
+ * resolution failure - `host` must be a dotted-quad IPv4 address; this port never needs DNS, since
+ * consoles are only ever addressed by an IP a discovery/pairing step already resolved).
+ *
+ * BOUNDED BY RC_TCP_CONNECT_TIMEOUT_MS, and it was not always. This used to be a plain blocking
+ * connect(), which on a console that does not accept on the port waits for the platform's own TCP
+ * timeout - on the PS3 indefinitely, which is the b31 lockup. The PS3 port worked around it with a
+ * pre-flight connect of its own (ports/ripcord-ps3 rc_connect.c tcp_port_accepts) and recorded that the
+ * fix belonged here; this is that fix, and the same non-blocking-connect-plus-select shape that
+ * pre-flight proved on the PS3's hardware. Equivalent to rc_tcp_connect_timeout(host, port,
+ * RC_TCP_CONNECT_TIMEOUT_MS). */
 int rc_tcp_connect(const char *host, unsigned short port);
+
+/*
+ * The default deadline, the PS3 pre-flight's own figure: a LAN console that is going to accept does so
+ * in milliseconds, and one that has not in four seconds is not listening.
+ */
+#ifndef RC_TCP_CONNECT_TIMEOUT_MS
+#define RC_TCP_CONNECT_TIMEOUT_MS 4000u
+#endif
+
+/*
+ * As rc_tcp_connect, with an explicit deadline in milliseconds (0 takes RC_TCP_CONNECT_TIMEOUT_MS).
+ *
+ * The connect is issued on a non-blocking socket and its completion awaited with select(), then SO_ERROR
+ * says whether it succeeded; the socket is switched back to blocking before it is returned, so every
+ * existing caller sees exactly the socket it used to. select() rather than poll() because select is what
+ * the PS3 pre-flight ran on hardware, and poll has no caller in the core. [X] select() has not been run on
+ * the 3DS or the Vita; both SDKs declare it.
+ */
+int rc_tcp_connect_timeout(const char *host, unsigned short port, unsigned timeout_ms);
 
 /* Sends the entire buffer, looping over short writes and retrying on EAGAIN/EWOULDBLOCK (a non-blocking
  * socket's send buffer can be momentarily full even for a small request) up to a 5-second bound. Returns
