@@ -1,0 +1,716 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wordmark and Tile</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=Poppins:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #F6F7F9; --surface: #FFFFFF; --text: #17191D; --muted: #5B6270; --line: #DDE1E7;
+    --tile-a: #23272E; --tile-b: #12151A;
+    --green: #2FBF5B; --blue: #2D7DF6; --red: #F0433A;
+    --good: #1C7C3E; --warn: #A15C00; --bad: #B3261E;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0E1014; --surface: #171A20; --text: #ECEEF2; --muted: #9AA2AF; --line: #2A2F38;
+      --good: #5BD17F; --warn: #F0A948; --bad: #FF7B72;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.55 Inter, "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif; }
+  main { max-width: 1080px; margin: 0 auto; padding: 40px 16px 96px; }
+  h1 { font-size: 28px; line-height: 1.2; margin: 0 0 6px; letter-spacing: -0.01em; }
+  h2 { font-size: 20px; margin: 56px 0 8px; padding-top: 20px; border-top: 1px solid var(--line); }
+  h3 { font-size: 15px; margin: 24px 0 6px; }
+  p, li { max-width: 72ch; }
+  .lede { color: var(--muted); margin: 0 0 24px; }
+  code { font: 13px/1.4 "Cascadia Code", Consolas, monospace; background: color-mix(in srgb, var(--line) 55%, transparent); padding: 1px 5px; border-radius: 4px; }
+  .muted { color: var(--muted); }
+  .tag { display: inline-block; font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase;
+    padding: 2px 8px; border-radius: 999px; border: 1px solid currentColor; margin-left: 8px; vertical-align: 2px; }
+  .rec { color: var(--good); } .caution { color: var(--warn); } .no { color: var(--bad); }
+
+  .callout { background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--blue);
+    border-radius: 8px; padding: 14px 18px; margin: 16px 0; }
+  .callout.push { border-left-color: var(--red); }
+  .callout p { margin: 6px 0; }
+
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 14px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-weight: 600; color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+  td.n { font-variant-numeric: tabular-nums; }
+  .table-wrap { overflow-x: auto; }
+
+  /* ---- specimens ---- */
+  .face { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; margin: 16px 0; overflow: hidden; }
+  .face header { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; padding: 14px 18px 0; }
+  .face header b { font-size: 16px; }
+  .face .notes { padding: 0 18px 14px; color: var(--muted); font-size: 14px; }
+  .face .notes p { margin: 6px 0; }
+  .grounds { display: grid; grid-template-columns: 1fr 1fr; }
+  .ground { padding: 28px 22px; display: flex; flex-direction: column; gap: 18px; align-items: flex-start; min-width: 0; }
+  .ground.dark { background: linear-gradient(135deg, var(--tile-a), var(--tile-b)); color: #fff; }
+  .ground.light { background: #FFFFFF; color: #17191D; }
+  @media (max-width: 720px) { .grounds { grid-template-columns: 1fr; } }
+
+  .lockup { display: inline-flex; align-items: center; gap: .2em; line-height: 1; white-space: nowrap; }
+  .lockup svg { width: 1.08em; height: 1.08em; flex: none; margin-right: .02em; }
+  .lockup span { letter-spacing: -0.015em; }
+  .xl { font-size: 56px; } .md { font-size: 28px; } .sm { font-size: 15px; }
+  @media (max-width: 520px) { .xl { font-size: 40px; } }
+  .weights { display: flex; flex-wrap: wrap; gap: 8px 22px; font-size: 26px; }
+  .weights span { line-height: 1.1; }
+  .weights small { display: block; font: 11px Inter, sans-serif; opacity: .6; letter-spacing: .04em; }
+
+  .f-outfit { font-family: Outfit, sans-serif; }
+  .f-poppins { font-family: Poppins, sans-serif; }
+  .f-jakarta { font-family: "Plus Jakarta Sans", sans-serif; }
+  .f-segoe { font-family: "Segoe UI Variable Display", "Segoe UI", sans-serif; }
+
+  /* ---- lockup forms ---- */
+  .forms { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin: 16px 0; }
+  @media (max-width: 820px) { .forms { grid-template-columns: 1fr; } }
+  .form { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .form .stage { background: linear-gradient(135deg, var(--tile-a), var(--tile-b)); color: #fff; height: 180px;
+    display: flex; align-items: center; justify-content: center; font-family: Outfit, sans-serif; font-weight: 600; }
+  .form .body { padding: 12px 16px 16px; font-size: 14px; }
+  .form .body p { margin: 6px 0; color: var(--muted); }
+  .stacked { display: flex; flex-direction: column; align-items: center; gap: 10px; font-size: 32px; }
+  .stacked svg { width: 64px; height: 64px; }
+
+  /* ---- tile options ---- */
+  .tiles { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; margin: 16px 0; }
+  @media (max-width: 820px) { .tiles { grid-template-columns: 1fr; } }
+  .tileopt { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .tileopt header { padding: 14px 16px 4px; }
+  .tileopt header b { font-size: 16px; }
+  .strips { display: grid; grid-template-rows: auto auto; }
+  .strip { display: flex; align-items: flex-end; gap: 22px; padding: 18px 16px; flex-wrap: wrap; }
+  .strip.lt { background: #F3F3F3; } .strip.dk { background: #1C1C1C; }
+  .strip .lbl { font-size: 11px; letter-spacing: .04em; text-transform: uppercase; align-self: center; width: 100%; margin-bottom: -10px; }
+  .strip.lt .lbl { color: #5B6270; } .strip.dk .lbl { color: #9AA2AF; }
+  .strip svg { display: block; flex: none; }
+  .tileopt .body { padding: 10px 16px 16px; font-size: 14px; }
+  .tileopt .body p { margin: 6px 0; }
+  .tileopt .body ul { margin: 6px 0; padding-left: 18px; }
+
+  ol.plan li { margin: 6px 0; }
+
+  /* ---- platforms ---- */
+  .layers { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 10px 14px; margin: 16px 0;
+    background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 18px; }
+  .layer { display: flex; flex-direction: column; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); text-align: center; width: 92px; }
+  .layer .well { width: 72px; height: 72px; border-radius: 8px; display: grid; place-items: center;
+    background-color: #C9CED6; background-image: conic-gradient(#B8BEC7 25%, transparent 0 50%, #B8BEC7 0 75%, transparent 0);
+    background-size: 12px 12px; }
+  .layer b { color: var(--text); font-size: 13px; }
+  .op { font-size: 22px; color: var(--muted); line-height: 72px; }
+  .platforms { display: grid; grid-template-columns: 1fr; gap: 16px; margin: 16px 0; }
+  .plat { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .plat header { padding: 14px 16px 6px; display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; }
+  .plat header b { font-size: 16px; }
+  .scene { display: flex; flex-wrap: wrap; gap: 20px 28px; padding: 22px 18px; align-items: flex-end; }
+  .scene figure { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  .scene figcaption { font-size: 11px; letter-spacing: .03em; }
+  .scene.wall-dk { background: radial-gradient(120% 140% at 20% 0%, #3B2F55 0%, #1A1B2A 55%, #0F1016 100%); color: #C8CCD6; }
+  .scene.wall-lt { background: radial-gradient(120% 140% at 80% 0%, #E9D9F4 0%, #DDE6F6 50%, #EEF1F6 100%); color: #3A404C; }
+  .scene.gnome { background: #242424; color: #BDBDBD; } .scene.gnome-lt { background: #FAFAFA; color: #555; }
+  .plat .body { padding: 12px 16px 16px; font-size: 14px; border-top: 1px solid var(--line); }
+  .plat .body p { margin: 6px 0; }
+  .plat .body ul { margin: 6px 0; padding-left: 18px; }
+  .divider { width: 1px; align-self: stretch; background: currentColor; opacity: .25; }
+  .choice { font-weight: 600; }
+</style>
+</head>
+<body>
+
+<!-- One definition of each mark, reused everywhere by <use>. Geometry is copied from brand/*.svg. -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <linearGradient id="g-current" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#23272E"/><stop offset="1" stop-color="#12151A"/></linearGradient>
+    <linearGradient id="g-lifted" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#303743"/><stop offset="1" stop-color="#1B1F26"/></linearGradient>
+    <linearGradient id="g-light" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FFFFFF"/><stop offset="1" stop-color="#E7EAEE"/></linearGradient>
+    <linearGradient id="g-hl" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFFFFF" stop-opacity=".16"/><stop offset=".5" stop-color="#FFFFFF" stop-opacity="0"/></linearGradient>
+
+    <symbol id="mark-dark" viewBox="0 0 64 64"><!-- ripcord-mark-ondark.svg -->
+      <path d="M29 17L53 32L29 47Z" fill="#FFFFFF" stroke="#FFFFFF" stroke-width="6" stroke-linejoin="round"/>
+      <rect x="12" y="18" width="9" height="7" rx="3.5" fill="#2FBF5B"/>
+      <rect x="5" y="28.5" width="16" height="7" rx="3.5" fill="#2D7DF6"/>
+      <rect x="9" y="39" width="12" height="7" rx="3.5" fill="#F0433A"/>
+    </symbol>
+    <symbol id="mark-light" viewBox="0 0 64 64"><!-- ripcord-mark.svg -->
+      <path d="M29 17L53 32L29 47Z" fill="#17191D" stroke="#17191D" stroke-width="6" stroke-linejoin="round"/>
+      <rect x="12" y="18" width="9" height="7" rx="3.5" fill="#2FBF5B"/>
+      <rect x="5" y="28.5" width="16" height="7" rx="3.5" fill="#2D7DF6"/>
+      <rect x="9" y="39" width="12" height="7" rx="3.5" fill="#F0433A"/>
+    </symbol>
+
+    <!-- Tiles: the mark at 72%, centred, as in ripcord-tile.svg -->
+    <symbol id="tile-current" viewBox="0 0 64 64">
+      <rect width="64" height="64" rx="15" fill="url(#g-current)"/>
+      <g transform="translate(32,32) scale(0.72) translate(-30.5,-32)"><use href="#mark-dark" width="64" height="64"/></g>
+    </symbol>
+    <symbol id="tile-lifted" viewBox="0 0 64 64">
+      <rect width="64" height="64" rx="15" fill="url(#g-lifted)"/>
+      <rect width="64" height="64" rx="15" fill="url(#g-hl)"/>
+      <rect x=".5" y=".5" width="63" height="63" rx="14.5" fill="none" stroke="#FFFFFF" stroke-opacity=".14"/>
+      <g transform="translate(32,32) scale(0.72) translate(-30.5,-32)"><use href="#mark-dark" width="64" height="64"/></g>
+    </symbol>
+    <symbol id="tile-light" viewBox="0 0 64 64">
+      <rect width="64" height="64" rx="15" fill="url(#g-light)"/>
+      <rect x=".5" y=".5" width="63" height="63" rx="14.5" fill="none" stroke="#000" stroke-opacity=".10"/>
+      <g transform="translate(32,32) scale(0.72) translate(-30.5,-32)"><use href="#mark-light" width="64" height="64"/></g>
+    </symbol>
+    <!-- Plateless: the mark alone at ~88% so it holds the same optical weight as a plated icon -->
+    <symbol id="bare-dark" viewBox="0 0 64 64"><g transform="translate(32,32) scale(0.94) translate(-29.5,-32)"><use href="#mark-dark" width="64" height="64"/></g></symbol>
+    <symbol id="bare-light" viewBox="0 0 64 64"><g transform="translate(32,32) scale(0.94) translate(-29.5,-32)"><use href="#mark-light" width="64" height="64"/></g></symbol>
+
+    <!-- ===== Source layers (section 5). The master is ground + mark, with no shape. ===== -->
+    <symbol id="mono" viewBox="0 0 64 64"><!-- ripcord-mono.svg -->
+      <g fill="currentColor">
+        <path d="M30 16L54 32L30 48Z" stroke="currentColor" stroke-width="6" stroke-linejoin="round"/>
+        <rect x="14" y="17" width="8" height="7" rx="3.5"/><rect x="8" y="28.5" width="14" height="7" rx="3.5"/><rect x="12" y="40" width="10" height="7" rx="3.5"/>
+      </g>
+    </symbol>
+    <symbol id="layer-ground" viewBox="0 0 64 64"><rect width="64" height="64" fill="url(#g-lifted)"/></symbol>
+    <symbol id="layer-finish" viewBox="0 0 64 64">
+      <rect width="64" height="64" rx="15" fill="url(#g-hl)"/>
+      <rect x=".5" y=".5" width="63" height="63" rx="14.5" fill="none" stroke="#FFFFFF" stroke-opacity=".5"/>
+    </symbol>
+
+    <!-- ===== Android adaptive: 108-unit layers, 72 visible, the launcher's mask applied on top. ===== -->
+    <linearGradient id="g-andr" gradientUnits="userSpaceOnUse" x1="18" y1="18" x2="90" y2="90"><stop offset="0" stop-color="#303743"/><stop offset="1" stop-color="#1B1F26"/></linearGradient>
+    <g id="andr-art">
+      <rect width="108" height="108" fill="url(#g-andr)"/>
+      <!-- the 64-box tile maps onto the 72-unit visible area, so the mark keeps its tile placement -->
+      <g transform="translate(18,18) scale(1.125) translate(32,32) scale(0.72) translate(-30.5,-32)"><use href="#mark-dark" width="64" height="64"/></g>
+    </g>
+    <g id="andr-bordered"><!-- option B's finished tile, handed to Android as if it were the background -->
+      <use href="#andr-art"/>
+      <rect x="18.5" y="18.5" width="71" height="71" rx="16.4" fill="none" stroke="#FFFFFF" stroke-opacity=".5" stroke-width="1"/>
+    </g>
+    <clipPath id="m-circle"><circle cx="54" cy="54" r="36"/></clipPath>
+    <clipPath id="m-squircle"><path d="M90.00 54.00L89.97 66.09L89.88 69.94L89.72 72.72L89.50 74.97L89.22 76.86L88.88 78.52L88.47 79.98L87.99 81.28L87.44 82.46L86.82 83.52L86.12 84.48L85.34 85.34L84.48 86.12L83.52 86.82L82.46 87.44L81.28 87.99L79.98 88.47L78.52 88.88L76.86 89.22L74.97 89.50L72.72 89.72L69.94 89.88L66.09 89.97L54.00 90.00L41.91 89.97L38.06 89.88L35.28 89.72L33.03 89.50L31.14 89.22L29.48 88.88L28.02 88.47L26.72 87.99L25.54 87.44L24.48 86.82L23.52 86.12L22.66 85.34L21.88 84.48L21.18 83.52L20.56 82.46L20.01 81.28L19.53 79.98L19.12 78.52L18.78 76.86L18.50 74.97L18.28 72.72L18.12 69.94L18.03 66.09L18.00 54.00L18.03 41.91L18.12 38.06L18.28 35.28L18.50 33.03L18.78 31.14L19.12 29.48L19.53 28.02L20.01 26.72L20.56 25.54L21.18 24.48L21.88 23.52L22.66 22.66L23.52 21.88L24.48 21.18L25.54 20.56L26.72 20.01L28.02 19.53L29.48 19.12L31.14 18.78L33.03 18.50L35.28 18.28L38.06 18.12L41.91 18.03L54.00 18.00L66.09 18.03L69.94 18.12L72.72 18.28L74.97 18.50L76.86 18.78L78.52 19.12L79.98 19.53L81.28 20.01L82.46 20.56L83.52 21.18L84.48 21.88L85.34 22.66L86.12 23.52L86.82 24.48L87.44 25.54L87.99 26.72L88.47 28.02L88.88 29.48L89.22 31.14L89.50 33.03L89.72 35.28L89.88 38.06L89.97 41.91Z"/></clipPath>
+    <clipPath id="m-teardrop"><path d="M54 18A36 36 0 0 1 90 54L90 82A8 8 0 0 1 82 90L54 90A36 36 0 0 1 18 54A36 36 0 0 1 54 18Z"/></clipPath>
+    <clipPath id="m-rsquare"><rect x="18" y="18" width="72" height="72" rx="14"/></clipPath>
+    <symbol id="andr-circle" viewBox="18 18 72 72"><g clip-path="url(#m-circle)"><use href="#andr-art"/></g></symbol>
+    <symbol id="andr-squircle" viewBox="18 18 72 72"><g clip-path="url(#m-squircle)"><use href="#andr-art"/></g></symbol>
+    <symbol id="andr-teardrop" viewBox="18 18 72 72"><g clip-path="url(#m-teardrop)"><use href="#andr-art"/></g></symbol>
+    <symbol id="andr-rsquare" viewBox="18 18 72 72"><g clip-path="url(#m-rsquare)"><use href="#andr-art"/></g></symbol>
+    <symbol id="andr-circle-bordered" viewBox="18 18 72 72"><g clip-path="url(#m-circle)"><use href="#andr-bordered"/></g></symbol>
+    <symbol id="andr-teardrop-bordered" viewBox="18 18 72 72"><g clip-path="url(#m-teardrop)"><use href="#andr-bordered"/></g></symbol>
+    <!-- Android 13+ themed icon: the system tints the monochrome layer from the wallpaper palette -->
+    <symbol id="andr-themed" viewBox="18 18 72 72">
+      <circle cx="54" cy="54" r="36" fill="#DCE3F5"/>
+      <g transform="translate(18,18) scale(1.125) translate(32,32) scale(0.72) translate(-31,-32)" color="#2E3F61"><use href="#mono" width="64" height="64"/></g>
+    </symbol>
+    <symbol id="andr-themed-dark" viewBox="18 18 72 72">
+      <circle cx="54" cy="54" r="36" fill="#2E3F61"/>
+      <g transform="translate(18,18) scale(1.125) translate(32,32) scale(0.72) translate(-31,-32)" color="#DCE3F5"><use href="#mono" width="64" height="64"/></g>
+    </symbol>
+
+    <!-- ===== macOS: 100-unit canvas standing in for 1024. Body is Apple's rounded square at ~80% with a margin. ===== -->
+    <linearGradient id="g-mac" gradientUnits="userSpaceOnUse" x1="10" y1="10" x2="90" y2="90"><stop offset="0" stop-color="#303743"/><stop offset="1" stop-color="#1B1F26"/></linearGradient>
+    <linearGradient id="g-glass-edge" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FFFFFF" stop-opacity=".85"/><stop offset=".45" stop-color="#FFFFFF" stop-opacity=".08"/><stop offset=".8" stop-color="#FFFFFF" stop-opacity=".05"/><stop offset="1" stop-color="#FFFFFF" stop-opacity=".45"/></linearGradient>
+    <radialGradient id="g-glass-sheen" cx=".3" cy=".15" r=".8"><stop offset="0" stop-color="#FFFFFF" stop-opacity=".22"/><stop offset=".6" stop-color="#FFFFFF" stop-opacity="0"/></radialGradient>
+    <filter id="mac-shadow" x="-20%" y="-20%" width="140%" height="150%"><feDropShadow dx="0" dy="1.6" stdDeviation="1.6" flood-color="#000" flood-opacity=".32"/></filter>
+    <path id="mac-body" d="M90.25 50.00L90.22 63.52L90.11 67.83L89.94 70.93L89.70 73.44L89.38 75.56L89.00 77.41L88.54 79.04L88.00 80.50L87.39 81.82L86.69 83.00L85.91 84.07L85.04 85.04L84.07 85.91L83.00 86.69L81.82 87.39L80.50 88.00L79.04 88.54L77.41 89.00L75.56 89.38L73.44 89.70L70.93 89.94L67.83 90.11L63.52 90.22L50.00 90.25L36.48 90.22L32.17 90.11L29.07 89.94L26.56 89.70L24.44 89.38L22.59 89.00L20.96 88.54L19.50 88.00L18.18 87.39L17.00 86.69L15.93 85.91L14.96 85.04L14.09 84.07L13.31 83.00L12.61 81.82L12.00 80.50L11.46 79.04L11.00 77.41L10.62 75.56L10.30 73.44L10.06 70.93L9.89 67.83L9.78 63.52L9.75 50.00L9.78 36.48L9.89 32.17L10.06 29.07L10.30 26.56L10.62 24.44L11.00 22.59L11.46 20.96L12.00 19.50L12.61 18.18L13.31 17.00L14.09 15.93L14.96 14.96L15.93 14.09L17.00 13.31L18.18 12.61L19.50 12.00L20.96 11.46L22.59 11.00L24.44 10.62L26.56 10.30L29.07 10.06L32.17 9.89L36.48 9.78L50.00 9.75L63.52 9.78L67.83 9.89L70.93 10.06L73.44 10.30L75.56 10.62L77.41 11.00L79.04 11.46L80.50 12.00L81.82 12.61L83.00 13.31L84.07 14.09L85.04 14.96L85.91 15.93L86.69 17.00L87.39 18.18L88.00 19.50L88.54 20.96L89.00 22.59L89.38 24.44L89.70 26.56L89.94 29.07L90.11 32.17L90.22 36.48Z"/>
+    <clipPath id="m-mac"><use href="#mac-body"/></clipPath>
+    <g id="mac-art">
+      <g clip-path="url(#m-mac)"><rect width="100" height="100" fill="url(#g-mac)"/></g>
+      <g transform="translate(9.75,9.75) scale(1.2578) translate(32,32) scale(0.72) translate(-30.5,-32)"><use href="#mark-dark" width="64" height="64"/></g>
+    </g>
+    <symbol id="mac-classic" viewBox="0 0 100 100"><g filter="url(#mac-shadow)"><use href="#mac-art"/></g></symbol>
+    <symbol id="mac-glass" viewBox="0 0 100 100"><!-- an impression of what the system adds, not something we draw -->
+      <g filter="url(#mac-shadow)"><use href="#mac-art"/></g>
+      <use href="#mac-body" fill="url(#g-glass-sheen)"/>
+      <use href="#mac-body" fill="none" stroke="url(#g-glass-edge)" stroke-width="1.1"/>
+    </symbol>
+  </defs>
+</svg>
+
+<main>
+  <h1>Wordmark and tile: what we picked</h1>
+  <p class="lede">Why the wordmark and the tile look the way they do. Written 2026-09-24 to settle the
+  ROADMAP item <em>Settle the wordmark</em>, and kept afterwards for the reasoning rather than as
+  instructions &mdash; it was a page of open questions before the decisions were taken, and the arguments
+  are the part worth keeping.</p>
+
+  <p class="lede"><b>The standing answer is <code>brand/README.md</code></b>, not this page. It has the rules
+  a later change has to obey; this has the alternatives they were chosen over. Where the two disagree, the
+  README is right and this is out of date. Everything below shipped the same day: the word was outlined, the
+  lockups drawn, the tile lifted and every icon regenerated from it.</p>
+
+  <div class="callout">
+    <p><b>Short version.</b> Outfit 600, lowercase, set horizontally beside the mark. Keep the dark tile, lift it
+    a little, and give it an edge on Windows and Linux only (section 5 explains why only there). Where Windows asks for an <em>unplated</em> icon, drop the tile there only.
+    Every choice below names the alternative it was picked over, and the specimens are live rather than
+    screenshots &mdash; the type is fetched from Google Fonts and the geometry is copied from
+    <code>brand/*.svg</code>, so a change to the artwork shows up here.</p>
+  </div>
+
+  <!-- ============================================================ -->
+  <h2>1. Where the wordmark appears</h2>
+  <p>This is what decided how much the choice mattered. Two earlier decisions already kept it off the app's
+  own surfaces. First run shows the full mark and no wordmark, because the title bar already carries the name
+  (<code>ConsolesPage.xaml</code>, design review 2026-09-21). The PS3 shell also dropped its title moment on
+  2026-09-17. So the wordmark lives almost entirely <em>outside</em> the app:</p>
+  <div class="table-wrap"><table>
+    <tr><th>Surface</th><th>Seen by</th><th>Before this landed</th><th>Notes</th></tr>
+    <tr><td>README / GitHub header and social preview</td><td>Everyone, before they install</td><td>Nothing</td><td>Probably the most-seen place. It needs a dark and a light cut, because GitHub serves both themes.</td></tr>
+    <tr><td>MSIX splash (<code>SplashScreen.scale-200.png</code>)</td><td>MSIX users, for about a second</td><td>Mark only</td><td>The zip build never shows a splash.</td></tr>
+    <tr><td>Wide tile (<code>Wide310x150Logo</code>)</td><td>Almost nobody</td><td>Mark only</td><td>Windows 11 has no live tiles. Make it for completeness, not effort.</td></tr>
+    <tr><td>Release page, Store listing if it ever happens</td><td>Downloaders</td><td>Nothing</td><td>Same art as the README.</td></tr>
+    <tr><td>About page hero</td><td>Curious users</td><td>Mark only</td><td>Optional. The About page could stay mark-only like first run.</td></tr>
+    <tr><td>PS3 port, display size</td><td>Port users</td><td>Font atlas</td><td><code>SHELL-DESIGN.md</code> names "a wordmark drawn as shapes" as the fallback. A path-outlined wordmark provides that for free.</td></tr>
+  </table></div>
+  <p class="muted">What this means for the choice: the wordmark will mostly be seen at display sizes, on a
+  GitHub page, next to other projects' logos. How it holds up at 13 px matters much less than whether it has
+  its own character at 40–60 px.</p>
+
+  <!-- ============================================================ -->
+  <h2>2. The typeface</h2>
+  <p>All three shortlisted faces are SIL OFL 1.1. OFL allows outlining a face into artwork with no attribution
+  in the artwork itself. We would commit the outlined paths, not the font, so the build takes on no font
+  dependency. Each face below is shown at display size on both grounds, in the two cases worth comparing, with
+  a weight ladder.</p>
+
+  <!-- Outfit -->
+  <section class="face">
+    <header><b class="f-outfit">Outfit</b><span class="tag rec">Picked</span><span class="muted">600 · lowercase</span></header>
+    <div class="grounds">
+      <div class="ground dark">
+        <span class="lockup xl f-outfit" style="font-weight:600"><svg><use href="#mark-dark"/></svg><span>ripcord</span></span>
+        <span class="lockup md f-outfit" style="font-weight:600"><svg><use href="#mark-dark"/></svg><span>Ripcord</span></span>
+        <div class="weights f-outfit"><span style="font-weight:400">ripcord<small>400</small></span><span style="font-weight:500">ripcord<small>500</small></span><span style="font-weight:600">ripcord<small>600</small></span><span style="font-weight:700">ripcord<small>700</small></span></div>
+      </div>
+      <div class="ground light">
+        <span class="lockup xl f-outfit" style="font-weight:600"><svg><use href="#mark-light"/></svg><span>ripcord</span></span>
+        <span class="lockup md f-outfit" style="font-weight:600"><svg><use href="#mark-light"/></svg><span>Ripcord</span></span>
+        <span class="lockup sm f-outfit" style="font-weight:600"><svg><use href="#mark-light"/></svg><span>ripcord</span></span>
+      </div>
+    </div>
+    <div class="notes">
+      <p><b>For:</b> it has the most geometric bowls of the three. The <i>o c d p</i> are nearly circular, which
+      echoes the wedge's rounded joins and the dashes' pill ends. It is the face already used in the design
+      drawings, so choosing it re-cuts nothing. It is also less common than Poppins.</p>
+      <p><b>Against:</b> it has a low stroke contrast, and the <i>r</i> terminal is short, so at 400 it can look
+      thin next to a mark this solid. That is why 600 is recommended.</p>
+    </div>
+  </section>
+
+  <!-- Poppins -->
+  <section class="face">
+    <header><b class="f-poppins">Poppins</b><span class="tag caution">Viable</span><span class="muted">600 · lowercase</span></header>
+    <div class="grounds">
+      <div class="ground dark">
+        <span class="lockup xl f-poppins" style="font-weight:600"><svg><use href="#mark-dark"/></svg><span>ripcord</span></span>
+        <span class="lockup md f-poppins" style="font-weight:600"><svg><use href="#mark-dark"/></svg><span>Ripcord</span></span>
+        <div class="weights f-poppins"><span style="font-weight:400">ripcord<small>400</small></span><span style="font-weight:500">ripcord<small>500</small></span><span style="font-weight:600">ripcord<small>600</small></span><span style="font-weight:700">ripcord<small>700</small></span></div>
+      </div>
+      <div class="ground light">
+        <span class="lockup xl f-poppins" style="font-weight:600"><svg><use href="#mark-light"/></svg><span>ripcord</span></span>
+        <span class="lockup md f-poppins" style="font-weight:600"><svg><use href="#mark-light"/></svg><span>Ripcord</span></span>
+        <span class="lockup sm f-poppins" style="font-weight:600"><svg><use href="#mark-light"/></svg><span>ripcord</span></span>
+      </div>
+    </div>
+    <div class="notes">
+      <p><b>For:</b> it is the sturdiest of the three and the most legible when small. Its wide set gives
+      "ripcord" a confident horizontal run that balances a mark wider than it is tall.</p>
+      <p><b>Against:</b> it is everywhere, especially in startup and SaaS branding. On a GitHub page it reads as
+      a default rather than a choice, which cuts against <code>design.md</code>'s premise that identity
+      comes from form, not decoration.</p>
+    </div>
+  </section>
+
+  <!-- Jakarta -->
+  <section class="face">
+    <header><b class="f-jakarta">Plus Jakarta Sans</b><span class="tag caution">Viable</span><span class="muted">700 · lowercase</span></header>
+    <div class="grounds">
+      <div class="ground dark">
+        <span class="lockup xl f-jakarta" style="font-weight:700"><svg><use href="#mark-dark"/></svg><span>ripcord</span></span>
+        <span class="lockup md f-jakarta" style="font-weight:700"><svg><use href="#mark-dark"/></svg><span>Ripcord</span></span>
+        <div class="weights f-jakarta"><span style="font-weight:500">ripcord<small>500</small></span><span style="font-weight:600">ripcord<small>600</small></span><span style="font-weight:700">ripcord<small>700</small></span><span style="font-weight:800">ripcord<small>800</small></span></div>
+      </div>
+      <div class="ground light">
+        <span class="lockup xl f-jakarta" style="font-weight:700"><svg><use href="#mark-light"/></svg><span>ripcord</span></span>
+        <span class="lockup md f-jakarta" style="font-weight:700"><svg><use href="#mark-light"/></svg><span>Ripcord</span></span>
+        <span class="lockup sm f-jakarta" style="font-weight:700"><svg><use href="#mark-light"/></svg><span>ripcord</span></span>
+      </div>
+    </div>
+    <div class="notes">
+      <p><b>For:</b> it has the most personality. The tall x-height and slightly condensed set make it compact,
+      and the angled terminals pick up the wedge's diagonal rather than its roundness. It is the best of the
+      three for an app that wants to feel sharp rather than friendly.</p>
+      <p><b>Against:</b> it is the least "rounded geometric" of the shortlist, so it matches the dashes less than
+      the wedge. Its humanist details sit close to Segoe UI Variable, which could make the wordmark look like
+      part of the app's UI text rather than a mark.</p>
+    </div>
+  </section>
+
+  <!-- Segoe control -->
+  <section class="face">
+    <header><b class="f-segoe">Segoe UI Variable Display</b><span class="tag no">Control, not a candidate</span></header>
+    <div class="grounds">
+      <div class="ground dark">
+        <span class="lockup xl f-segoe" style="font-weight:600"><svg><use href="#mark-dark"/></svg><span>ripcord</span></span>
+      </div>
+      <div class="ground light">
+        <span class="lockup xl f-segoe" style="font-weight:600"><svg><use href="#mark-light"/></svg><span>ripcord</span></span>
+      </div>
+    </div>
+    <div class="notes">
+      <p>This is here to show what the wordmark looks like if we skip the decision. It is the app's own UI face
+      (it only renders if your system has it). Two problems rule it out. First, a wordmark in the same face as
+      the title bar is not a mark, just the title again. Second, Segoe is not OFL: outlining it into
+      redistributable artwork is at best a grey area under Microsoft's font licence, and the project has
+      enough licence arguments already.</p>
+    </div>
+  </section>
+
+  <h3>Case: lowercase, in artwork only</h3>
+  <p><span class="choice">Picked: lowercase.</span> "ripcord" has a descender (<i>p</i>), two
+  ascenders (<i>i</i>'s dot, <i>d</i>) and no capital to fight the wedge for the left edge. Title case puts a
+  tall <i>R</i> right next to the mark, and the two tallest shapes then compete. In running text the name
+  stays "Ripcord". This is only about the artwork. <span class="muted">Alternative: title case, if you want
+  the artwork to match the title bar exactly. It is an easy call either way, and it does not change the
+  generator work.</span></p>
+
+  <!-- ============================================================ -->
+  <h2>3. The lockup</h2>
+  <p>A lockup is how the mark and the word are arranged together. One form is primary; a second is worth
+  making only if a real surface needs it.</p>
+  <div class="forms">
+    <div class="form">
+      <div class="stage"><span class="lockup" style="font-size:40px"><svg><use href="#mark-dark"/></svg><span>ripcord</span></span></div>
+      <div class="body"><b>Horizontal</b> <span class="tag rec">Primary</span>
+        <p>Mark height ≈ cap height + descender. The wedge points into the word, which suits a mark whose whole
+        idea is motion to the right. It fits the README header, the wide tile and the splash.</p></div>
+    </div>
+    <div class="form">
+      <div class="stage"><span class="stacked"><svg><use href="#mark-dark"/></svg><span>ripcord</span></span></div>
+      <div class="body"><b>Stacked</b> <span class="tag caution">Only if needed</span>
+        <p>Useful for square spaces: social preview, a square Store hero, the PS3 title area. Skip it until one
+        of those is actually being built. It is cheap to add later because it uses the same outlined word.</p></div>
+    </div>
+    <div class="form">
+      <div class="stage"><span style="font-size:40px"><span style="letter-spacing:-0.015em">ripcord</span></span></div>
+      <div class="body"><b>Word alone</b> <span class="tag no">Not recommended</span>
+        <p>Without the mark, the colour disappears and "ripcord" becomes just a word in a nice font. The mark
+        carries the identity; the word should never appear without it in branded artwork.</p></div>
+    </div>
+  </div>
+  <p class="muted">Spacing rule to write into <code>brand/README.md</code> once chosen: the gap between mark
+  and word equals the width of the shortest (green) dash, and the clear space around the lockup is one blue
+  dash on every side. Both are defined by the mark's own parts, so they scale without a separate spec.</p>
+
+  <!-- ============================================================ -->
+  <h2>4. The tile's dark ground</h2>
+
+  <div class="callout push">
+    <p><b>Pushback: keep the ground dark.</b> The plate is doing work that is easy to miss, and the
+    numbers show it. But I think your instinct points at a real problem. It is just not the colour.</p>
+  </div>
+
+  <p><b>What the dark plate protects.</b> Non-text graphics need 3:1 contrast against what surrounds them
+  (WCAG 1.4.11). The dashes are the part of the mark that carries meaning.</p>
+  <div class="table-wrap"><table>
+    <tr><th>Ground</th><th>Green dash</th><th>Blue dash</th><th>Red dash</th><th>Wedge</th></tr>
+    <tr><td>White <code>#FFFFFF</code></td><td class="n no">2.41</td><td class="n">3.91</td><td class="n">3.77</td><td class="n">17.6 (graphite)</td></tr>
+    <tr><td>Light taskbar <code>#F3F3F3</code></td><td class="n no">2.17</td><td class="n">3.52</td><td class="n">3.40</td><td class="n">15.9 (graphite)</td></tr>
+    <tr><td>Current tile <code>#12151A</code> (dark end)</td><td class="n">7.60</td><td class="n">4.68</td><td class="n">4.85</td><td class="n">18.3 (white)</td></tr>
+    <tr><td>Current tile <code>#23272E</code> (light end)</td><td class="n">6.23</td><td class="n">3.84</td><td class="n">3.97</td><td class="n">15.0 (white)</td></tr>
+    <tr><td>Lifted tile <code>#303743</code> (option B's light end)</td><td class="n">5.0</td><td class="n caution">3.1</td><td class="n caution">3.2</td><td class="n">12.0 (white)</td></tr>
+  </table></div>
+  <p>On a light ground the green dash fails, and it is the dash <code>brand/README.md</code> already calls the
+  palette's weak point. The plate is what lets the three colours stay the three colours. The README's own
+  rule is that the ground stays out of the mark's way. The table also shows how far the plate can be lifted:
+  about <code>#303743</code>, where blue and red reach 3:1.</p>
+
+  <p><b>What I think actually bothers you.</b> The same numbers show it. The current tile against a dark
+  Windows taskbar (<code>#1C1C1C</code>) has <b>1.07:1</b> contrast, so in dark mode the plate is invisible
+  and the icon already reads as plateless. It only "shows" in light mode, where it is a solid near-black
+  square among Windows 11 icons, most of which have no plate at all (Explorer, Settings, Edge, Terminal).
+  The heaviness is real, but it comes from the plate being <em>present where Windows expects none</em> and
+  <em>flat where it should have an edge</em>, not from the plate being dark.</p>
+
+  <div class="tiles">
+    <!-- A -->
+    <div class="tileopt">
+      <header><b>A. As is</b> <span class="muted">graphite plate everywhere</span></header>
+      <div class="strips">
+        <div class="strip lt"><span class="lbl">Light taskbar / Start</span>
+          <svg width="96" height="96"><use href="#tile-current"/></svg><svg width="48" height="48"><use href="#tile-current"/></svg><svg width="24" height="24"><use href="#tile-current"/></svg></div>
+        <div class="strip dk"><span class="lbl">Dark taskbar / Start</span>
+          <svg width="96" height="96"><use href="#tile-current"/></svg><svg width="48" height="48"><use href="#tile-current"/></svg><svg width="24" height="24"><use href="#tile-current"/></svg></div>
+      </div>
+      <div class="body"><p>A heavy square in light mode, and no visible edge in dark mode. Costs nothing.</p></div>
+    </div>
+    <!-- B -->
+    <div class="tileopt">
+      <header><b>B. Lifted, with an edge</b> <span class="tag rec">Picked</span></header>
+      <div class="strips">
+        <div class="strip lt"><span class="lbl">Light taskbar / Start</span>
+          <svg width="96" height="96"><use href="#tile-lifted"/></svg><svg width="48" height="48"><use href="#tile-lifted"/></svg><svg width="24" height="24"><use href="#tile-lifted"/></svg></div>
+        <div class="strip dk"><span class="lbl">Dark taskbar / Start</span>
+          <svg width="96" height="96"><use href="#tile-lifted"/></svg><svg width="48" height="48"><use href="#tile-lifted"/></svg><svg width="24" height="24"><use href="#tile-lifted"/></svg></div>
+      </div>
+      <div class="body">
+        <p><code>#303743 → #1B1F26</code>, a top highlight and a hairline inner stroke. That is the same
+        "gradient, hairline, inner top highlight" material <code>design.md</code> already gives the console
+        cards, so the icon and the cards finally match.</p>
+        <p>The edge is added by the generator for Windows and Linux; it is not part of the master art. Section 5 shows why.</p>
+        <p>Reads as slate rather than black in light mode, and gains a visible edge in dark mode. Dashes stay
+        at 3:1 or better. <b>Knock-on:</b> the card's dark-theme gradient cites "the tile's own values", so
+        either the cards move with it or that sentence is rewritten. <b>The sentence was rewritten and the
+        cards stayed.</b> Moving them was this page's proposal and it lost to a reason found while doing the
+        work: the wedge's facet is defined as the card lifted, so a card at the new values leaves the facet
+        with nothing to be lighter than. <code>Ripcord.Card.xaml</code> carries the note.</p>
+      </div>
+    </div>
+    <!-- C -->
+    <div class="tileopt">
+      <header><b>C. Plateless where Windows asks for it</b> <span class="tag">Offered, not taken</span></header>
+      <div class="strips">
+        <div class="strip lt"><span class="lbl">Light taskbar / Start: <code>lightunplated</code> asset</span>
+          <svg width="96" height="96"><use href="#bare-light"/></svg><svg width="48" height="48"><use href="#bare-light"/></svg><svg width="24" height="24"><use href="#bare-light"/></svg></div>
+        <div class="strip dk"><span class="lbl">Dark taskbar / Start: <code>unplated</code> asset</span>
+          <svg width="96" height="96"><use href="#bare-dark"/></svg><svg width="48" height="48"><use href="#bare-dark"/></svg><svg width="24" height="24"><use href="#bare-dark"/></svg></div>
+      </div>
+      <div class="body">
+        <p>MSIX has exactly this hook. <code>targetsize-*_altform-unplated</code> and
+        <code>_altform-lightunplated</code> are the theme-aware, plateless icons Windows uses on the
+        taskbar and in Start. <b>We generate both names today, but both are rendered from the plated
+        tile.</b> The "unplated" assets have a plate.</p>
+        <ul>
+          <li>The light variant brings back the green-dash problem (2.2:1). At taskbar size the dash lengths do
+          the differentiating and the graphite wedge carries recognition, so this page argued for accepting
+        it. The
+          alternative is a light-ground green (<code>#1F9444</code> reaches 3.5:1), which the README
+          would have to approve as a second palette entry.</li>
+          <li><b>The zip build can't do this.</b> An unpackaged exe's taskbar icon comes from
+          <code>AppIcon.ico</code>, which has one image for both themes. A plateless icon there means a white
+          wedge that disappears on a light taskbar or a graphite one that disappears on a dark taskbar. So
+          the <code>.ico</code> keeps its plate, and this is the strongest single reason the plate has to
+          exist.</li>
+        </ul>
+      </div>
+    </div>
+    <!-- D -->
+    <div class="tileopt">
+      <header><b>D. Light plate</b> <span class="tag no">Shown to rule out</span></header>
+      <div class="strips">
+        <div class="strip lt"><span class="lbl">Light taskbar / Start</span>
+          <svg width="96" height="96"><use href="#tile-light"/></svg><svg width="48" height="48"><use href="#tile-light"/></svg><svg width="24" height="24"><use href="#tile-light"/></svg></div>
+        <div class="strip dk"><span class="lbl">Dark taskbar / Start</span>
+          <svg width="96" height="96"><use href="#tile-light"/></svg><svg width="48" height="48"><use href="#tile-light"/></svg><svg width="24" height="24"><use href="#tile-light"/></svg></div>
+      </div>
+      <div class="body"><p>The green dash fails on every size (2.4:1). It becomes a bright tile on a dark
+      taskbar, which is louder than what we have now. It also breaks the ground-stays-out-of-the-way rule. It
+      is the "just make it lighter" answer, and it is worse on every count.</p></div>
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
+  <h2>5. The tile on macOS, Linux and Android</h2>
+  <p>Added 2026-09-24, before the macOS, Linux and Android builds start. Option B's border and highlight
+  are <b>material</b>, and on two of the four platforms the operating system owns the material. Android
+  applies its own mask shape to the icon; macOS 26 puts non-standard icons inside its own rounded square and adds its own glass edge.
+  A border drawn into the master art gets cut up on Android and doubled on macOS. So the master is
+  split into layers, and the edge is a finish that only some generator targets add.</p>
+
+  <div class="layers" role="img" aria-label="Source layers: ground, mark and mono are the master; the finish is added for each platform">
+    <div class="layer"><div class="well"><svg width="72" height="72"><use href="#layer-ground"/></svg></div><b>Ground</b>slate gradient, full-bleed, no shape<br><code>ripcord-ground.svg</code> (new)</div>
+    <span class="op">+</span>
+    <div class="layer"><div class="well"><svg width="60" height="60"><use href="#mark-dark"/></svg></div><b>Mark</b>unchanged<br><code>ripcord-mark-ondark.svg</code></div>
+    <span class="op">·</span>
+    <div class="layer"><div class="well" style="color:#17191D"><svg width="60" height="60"><use href="#mono"/></svg></div><b>Mono</b>unchanged<br><code>ripcord-mono.svg</code></div>
+    <span class="op">|</span>
+    <div class="layer"><div class="well" style="background:#1B1F26"><svg width="60" height="60"><use href="#layer-finish"/></svg></div><b>Finish</b>shape, hairline, highlight<br>Windows and Linux only</div>
+  </div>
+  <p class="muted">The finish is shown exaggerated on its own here. When composited it is the 14%-opacity hairline from option B.
+  The ground on its own has no shape. A shape is added only by a platform that asks us for one.</p>
+
+  <div class="platforms">
+    <!-- Windows / Linux -->
+    <div class="plat">
+      <header><b>Windows and Linux</b><span class="muted">ground + mark + finish (option B, unchanged)</span></header>
+      <div class="scene wall-lt">
+        <figure><svg width="96" height="96"><use href="#tile-lifted"/></svg><figcaption>Windows, light</figcaption></figure>
+        <figure><svg width="48" height="48"><use href="#tile-lifted"/></svg><figcaption>taskbar</figcaption></figure>
+        <span class="divider"></span>
+        <figure><svg width="96" height="96"><use href="#tile-lifted"/></svg><figcaption>GNOME, light</figcaption></figure>
+      </div>
+      <div class="scene gnome">
+        <figure><svg width="96" height="96"><use href="#tile-lifted"/></svg><figcaption>Windows, dark</figcaption></figure>
+        <figure><svg width="48" height="48"><use href="#tile-lifted"/></svg><figcaption>taskbar</figcaption></figure>
+        <span class="divider"></span>
+        <figure><svg width="96" height="96"><use href="#tile-lifted"/></svg><figcaption>GNOME / KDE, dark</figcaption></figure>
+      </div>
+      <div class="body">
+        <p>Neither platform crops or restyles the icon. Linux icons go into the freedesktop
+        <code>hicolor</code> theme as an SVG plus PNGs, and are shown exactly as drawn. GNOME's style guide
+        prefers plateless icons in its own style, but nothing enforces that, and a Flathub listing accepts
+        this. <b>The hairline earns its place here:</b> both desktops have dark themes, and without an edge the
+        tile disappears into them, the same way it does on a dark Windows taskbar today.</p>
+      </div>
+    </div>
+
+    <!-- Android -->
+    <div class="plat">
+      <header><b>Android adaptive icon</b><span class="muted">background = ground · foreground = mark · monochrome = mono</span></header>
+      <div class="scene wall-dk">
+        <figure><svg width="80" height="80"><use href="#andr-circle"/></svg><figcaption>circle</figcaption></figure>
+        <figure><svg width="80" height="80"><use href="#andr-squircle"/></svg><figcaption>squircle</figcaption></figure>
+        <figure><svg width="80" height="80"><use href="#andr-teardrop"/></svg><figcaption>teardrop</figcaption></figure>
+        <figure><svg width="80" height="80"><use href="#andr-rsquare"/></svg><figcaption>rounded square</figcaption></figure>
+        <span class="divider"></span>
+        <figure><svg width="80" height="80"><use href="#andr-themed-dark"/></svg><figcaption>themed (13+), dark</figcaption></figure>
+      </div>
+      <div class="scene wall-lt">
+        <figure><svg width="80" height="80"><use href="#andr-circle"/></svg><figcaption>circle</figcaption></figure>
+        <figure><svg width="80" height="80"><use href="#andr-squircle"/></svg><figcaption>squircle</figcaption></figure>
+        <figure><svg width="80" height="80"><use href="#andr-teardrop"/></svg><figcaption>teardrop</figcaption></figure>
+        <figure><svg width="80" height="80"><use href="#andr-rsquare"/></svg><figcaption>rounded square</figcaption></figure>
+        <span class="divider"></span>
+        <figure><svg width="80" height="80"><use href="#andr-themed"/></svg><figcaption>themed (13+), light</figcaption></figure>
+        <span class="divider"></span>
+        <figure><svg width="80" height="80"><use href="#andr-circle-bordered"/></svg><figcaption class="no">B's border, circle mask</figcaption></figure>
+        <figure><svg width="80" height="80"><use href="#andr-teardrop-bordered"/></svg><figcaption class="no">B's border, teardrop</figcaption></figure>
+      </div>
+      <div class="body">
+        <p><b>The last two figures are why the border can't be in the master.</b> When the launcher's mask is
+        applied, B's hairline is left as four slivers on a circle and as one corner on a teardrop. The same
+        drawing in a different launcher looks broken.</p>
+        <ul>
+          <li><b>The existing geometry already fits.</b> <code>brand/README.md</code>'s rule that the mark stays
+          inside a centred ø58 circle of the 64 box is Android's safe zone: a 66 dp safe circle within a 72 dp
+          visible area, scaled to a 64 box, is ø58.7. The mark keeps its tile placement exactly, as it does
+          above. Only the ground grows from 72 to 108 units, to fill Android's larger background layer.</li>
+          <li><b>The themed icon is the mono cut, with no changes.</b> The system tints it from the wallpaper,
+          which takes away the three colours. That is the one place the dash lengths alone have to identify
+          the mark, and <code>ripcord-mono.svg</code> already opened its gaps for exactly this.</li>
+          <li>Launchers also add parallax and a shadow, which is one more reason not to draw a highlight.</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- macOS -->
+    <div class="plat">
+      <header><b>macOS</b><span class="muted">ground + mark on Apple's rounded square · no hairline</span></header>
+      <div class="scene wall-dk">
+        <figure><svg width="96" height="96"><use href="#mac-classic"/></svg><figcaption>macOS 11–15</figcaption></figure>
+        <figure><svg width="96" height="96"><use href="#mac-glass"/></svg><figcaption>macOS 26 (impression)</figcaption></figure>
+        <span class="divider"></span>
+        <figure><svg width="56" height="56"><use href="#mac-classic"/></svg><figcaption>Dock</figcaption></figure>
+        <figure><svg width="56" height="56"><use href="#mac-glass"/></svg><figcaption>Dock, 26</figcaption></figure>
+      </div>
+      <div class="scene wall-lt">
+        <figure><svg width="96" height="96"><use href="#mac-classic"/></svg><figcaption>macOS 11–15</figcaption></figure>
+        <figure><svg width="96" height="96"><use href="#mac-glass"/></svg><figcaption>macOS 26 (impression)</figcaption></figure>
+        <span class="divider"></span>
+        <figure><svg width="56" height="56"><use href="#mac-classic"/></svg><figcaption>Dock</figcaption></figure>
+        <figure><svg width="56" height="56"><use href="#mac-glass"/></svg><figcaption>Dock, 26</figcaption></figure>
+      </div>
+      <div class="body">
+        <ul>
+          <li><b>Before 26:</b> the <code>.icns</code> artwork has to include Apple's rounded square, drawn at
+          roughly 80% of the canvas with a margin, plus the conventional soft drop shadow. Our
+          <code>rx=15</code> tile only approximates that shape, and a Windows tile reused on a Mac looks
+          slightly off, so this is its own target that reuses the ground and mark layers. There is no
+          hairline, because a macOS icon's edge comes from its shadow.</li>
+          <li><b>macOS 26:</b> the ground and mark go into Icon Composer as separate layers, and the system
+          renders the glass. The right-hand figure is only my impression of that effect, to show why a
+          drawn hairline would double up with the system's edge. It is not something we would ship. Don't
+          judge the look from it.</li>
+          <li><b>Not verified in this session:</b> Apple's exact grid, the 26 layer format, and how 26
+          treats an old-style <code>.icns</code>. All three come from my knowledge rather than a check.
+          Read Apple's current icon guidance before the macOS build starts, and fix this section if it
+          disagrees.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="callout">
+    <p><b>What this changes about option B:</b> not the look on Windows, only where the border lives. The
+    slate colour goes into the master, because it is what the contrast table depends on and every platform
+    keeps it. The border and highlight become a generator step that the Windows and Linux targets add and
+    the macOS and Android targets leave out. That also means <b>the border is no longer a one-way
+    door</b>: it can be removed from one platform, or all of them, without redrawing anything.</p>
+  </div>
+
+  <h2>6. Found along the way</h2>
+  <ul>
+    <li><b>The wide tile's comment contradicts its code.</b> <code>generate-assets.ps1</code> says the wide
+    tile is "the mark on a transparent field rather than a stretched tile… a second rounded rectangle inside
+    that reads as a sticker". It then renders <code>ripcord-tile.svg</code>, which is the tile, rounded
+    rectangle included. The splash does the same. Both get replaced by the lockup anyway, so fixing the
+    wordmark fixes this.</li>
+    <li><b>The "unplated" assets are plated</b>, as covered under C &mdash; and they still are, since C was
+    not taken. Worth fixing independently of
+    everything else on this page, because the asset names promise Windows something the images don't
+    deliver.</li>
+    <li><b>The About page hero has its own copy of the tile geometry</b> (<code>brand/README.md</code>,
+    geometry rules). Option B has to update it by hand in the same change.</li>
+  </ul>
+
+  <!-- ============================================================ -->
+  <h2>7. What landed</h2>
+  <p class="muted">Written as a plan and kept as a record: all of it was done on 2026-09-24, in this order.
+  The steps were deliberately independent, so a "no" on the tile would not have blocked the wordmark.</p>
+  <ol class="plan">
+    <li><b>Outline the word.</b> Render "ripcord" in the chosen face and weight to paths with
+    <code>fontTools</code> (a one-off script, committed next to the output so it can be regenerated), and
+    hand-check the kerning of <i>rc</i>, <i>co</i> and <i>rd</i>. Add
+    <code>brand/ripcord-wordmark.svg</code> (word only, <code>currentColor</code>). Also record the face,
+    weight, version and OFL notice in <code>brand/README.md</code>, and commit the font's
+    <code>OFL.txt</code> beside it.</li>
+    <li><b>Draw the lockups.</b> Add <code>ripcord-lockup.svg</code> and <code>ripcord-lockup-ondark.svg</code>
+    (horizontal) using the spacing rule above. Leave stacked out until a surface asks for it.</li>
+    <li><b>Generator.</b> Point the wide tile and splash at the dark lockup on a transparent field, which is
+    what the existing comment intended. Add a README header pair (<code>docs/</code> or <code>brand/</code>,
+    dark and light, served with GitHub's <code>&lt;picture&gt;</code>/<code>prefers-color-scheme</code>).</li>
+    <li><b>Tile (B), as layers.</b> Add <code>ripcord-ground.svg</code> (the lifted gradient, with no shape) and
+    make the generator build each platform's tile from ground + mark, adding the shape and finish itself.
+    Windows gets the hairline and highlight. The small cut gets the lift but no hairline, because a
+    half-pixel stroke at 16 px is mud. <code>ripcord-tile.svg</code> becomes a generated preview or is
+    removed, so there aren't two sources for one drawing. Update the About hero and the
+    card's dark gradient in <code>Ripcord.xaml</code> in the same commit, and re-point the design.md sentence.</li>
+    <li><b>Unplated (C).</b> Render the two <code>altform</code> assets from the bare marks (white wedge for
+    <code>unplated</code>, graphite for <code>lightunplated</code>), and add the missing targetsizes Windows
+    looks for (16, 24, 32, 48, 256). The <code>.ico</code> is unchanged.</li>
+    <li><b>Record.</b> Close the ROADMAP item into the journal and amend <code>brand/README.md</code>'s
+    "Not done yet" and palette table.</li>
+  </ol>
+  <p class="muted"><b>Later, per platform, when each build lands:</b> a Linux <code>hicolor</code> target
+  (the same composite as Windows); an Android target (ground as a 108-unit background, mark as foreground,
+  mono as monochrome); a macOS target (Apple's rounded square without a hairline, and Icon Composer layers
+  for 26). None of these needs a new drawing. This is the payoff of splitting the layers now.</p>
+  <p class="muted">The ROADMAP price (about 1 h to choose, about 2 h to draw and wire) holds for steps 1–3.
+  B and C add roughly another hour, mostly checking assets on a real taskbar in both themes, because that is
+  the only place C can be verified.</p>
+
+  <h2>What was decided</h2>
+  <ol class="plan">
+    <li><b>Face:</b> Outfit SemiBold (600). Poppins was ruled out as too common to read as a choice; Plus
+    Jakarta Sans sat too close to Segoe UI Variable, where the wordmark would have looked like UI text.</li>
+    <li><b>Case:</b> lowercase, in artwork only. In running text the name is "Ripcord".</li>
+    <li><b>Tile:</b> the ground lifted to <code>#303743 &rarr; #1B1F26</code>, with the edge added per target
+    by the generator rather than drawn into the art &mdash; Android masks adaptive icons to a shape the
+    launcher chooses and macOS 26 draws its own, so a drawn border survives neither. Option C, plateless
+    unplated taskbar icons, was offered and not taken; <code>brand/README.md</code> lists it under
+    <em>Not done yet</em>.</li>
+  </ol>
+
+  <p class="muted">One thing the page got wrong about itself: it said the wordmark "lives almost entirely
+  outside the app". The About page hero now carries it, which section 1 had listed as optional. The first-run
+  surface still does not, for the reason given there.</p>
+</main>
+</body>
+</html>

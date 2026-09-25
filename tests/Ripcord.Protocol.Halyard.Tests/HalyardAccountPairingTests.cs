@@ -98,6 +98,43 @@ public sealed class HalyardAccountPairingTests
         Assert.Null(registration.LastRequest);                   // never reached registration
     }
 
+    [SkippableFact]
+    public async Task PairAsync_WhenTheConsoleNeverJoins_SaysSoRatherThanBlamingTheSeed()
+    {
+        // Reported from hardware as a seed timeout. The trace showed the console had never joined the session
+        // at all, and a console that never turned up cannot have published anything — so naming the seed
+        // named a consequence and hid the cause. The join is only waited for when LocalHashedId is set, which
+        // is the route that needs it, so that is what this fixture differs by.
+        byte[] contextKey = BundledContextKeyOrSkip();
+
+        var socket = new ScriptedSocket();                       // never joins, never publishes
+        var signaling = new SilentSignaling();
+        var registration = new CapturingRegistration();
+
+        var pairing = new HalyardAccountPairing(
+            signaling,
+            _ => registration,
+            contextKey,
+            new HalyardAccountPairingOptions
+            {
+                OfferTimeout = TimeSpan.FromMilliseconds(150),
+                SeedTimeout = TimeSpan.FromMilliseconds(150),
+            });
+
+        var request = new HalyardAccountPairingRequest(
+            "c", "h", "d", "a", RandomNumberGenerator.GetBytes(16),
+            LocalHashedId: RandomNumberGenerator.GetBytes(20));
+
+        await using var channel = new HalyardPushChannel(socket);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+
+        HalyardRegistrationResult result = await pairing.PairAsync(request, channel, Server, "token", cts.Token);
+
+        Assert.False(result.Succeeded);
+        Assert.Contains("never joined", result.FailureReason);
+        Assert.Null(registration.LastRequest);
+    }
+
     // ---- fakes ----
 
     private static readonly HalyardPushServerInfo Server = new(

@@ -286,11 +286,26 @@ public sealed class SettingsViewModel : ObservableState<SettingsViewState>
 
     public void SetRestOnDisconnect(bool on) => Apply(() => _draft with { RestConsoleOnDisconnect = on });
 
-    public void SetShowDiagnostics(bool on) => Apply(() => _draft with { ShowDiagnosticsOverlay = on });
-
-    public void SetLargeUiScale(bool on) => Apply(() => _draft with { LargeUiScale = on });
+    /// <summary>
+    /// Pick how much of the HUD a stream opens at. Goes through
+    /// <see cref="RipcordSettings.WithDiagnosticsRung"/> so the legacy bool stays in step — a user who moves
+    /// between builds should not lose the preference in either direction.
+    /// </summary>
+    public void SetDiagnosticsRung(int index) => Apply(
+        () => _draft.WithDiagnosticsRung(DiagnosticsRungs[Math.Clamp(index, 0, DiagnosticsRungs.Length - 1)]));
 
     // ---- internals -----------------------------------------------------------------------------
+
+    /// <summary>The rungs offered, in the order they are shown. Index into this, never cast.</summary>
+    private static readonly DiagnosticsRung[] DiagnosticsRungs =
+        [DiagnosticsRung.Hidden, DiagnosticsRung.Summary, DiagnosticsRung.Full];
+
+    private static readonly string[] DiagnosticsLabels =
+    [
+        Strings.Settings_DiagnosticsOff,
+        Strings.Settings_DiagnosticsSummary,
+        Strings.Settings_DiagnosticsFull,
+    ];
 
     /// <summary>
     /// Adopt a new draft and persist it — but only if it differs. This is the one place a save happens, and the
@@ -423,8 +438,8 @@ public sealed class SettingsViewModel : ObservableState<SettingsViewState>
             FullScreenOnConnect: _draft.FullScreenOnConnect,
             ConfirmOnDisconnect: _draft.ConfirmOnDisconnect,
             RestConsoleOnDisconnect: _draft.RestConsoleOnDisconnect,
-            ShowDiagnosticsOverlay: _draft.ShowDiagnosticsOverlay,
-            LargeUiScale: _draft.LargeUiScale,
+            DiagnosticsOptions: DiagnosticsLabels,
+            DiagnosticsIndex: Array.IndexOf(DiagnosticsRungs, _draft.DiagnosticsRungOnConnect),
 
             CredentialTitle: _consoles.CredentialsEncrypted
                 ? Strings.Settings_ConsolesEncrypted

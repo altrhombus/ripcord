@@ -148,10 +148,6 @@
     <value>Handy when you have more than one. You can change it any time.</value>
     <comment>Static text on the add-a-console flow.</comment>
   </data>
-  <data name="AddConsolePage_HowShouldConsoleConfirm.Header" xml:space="preserve">
-    <value>How should the console confirm this PC?</value>
-    <comment>The header above a control on the add-a-console flow.</comment>
-  </data>
   <data name="AddConsolePage_LinkCode.Header" xml:space="preserve">
     <value>Link code</value>
     <comment>The header above a control on the add-a-console flow.</comment>
@@ -173,12 +169,12 @@
     <comment>Static text on the add-a-console flow.</comment>
   </data>
   <data name="AddConsolePage_NumericIdBehindPsn.Text" xml:space="preserve">
-    <value>This is the numeric id behind your PSN account — not your online ID or email address. Sign in under Settings → Account and this fills itself in; otherwise you'll need to get it from an account-id lookup tool.</value>
+    <value>The numeric id behind your PSN account — not your online ID or email address. An account-id lookup tool will find it.</value>
     <comment>Static text on the add-a-console flow.</comment>
   </data>
   <data name="AddConsolePage_Paired.Text" xml:space="preserve">
-    <value>Paired</value>
-    <comment>Static text on the add-a-console flow.</comment>
+    <value>Paired.</value>
+    <comment>The pairing celebration headline. The full stop is deliberate: the app states a fact rather than congratulating anybody, so never "Success!".</comment>
   </data>
   <data name="AddConsolePage_Pairing.Text" xml:space="preserve">
     <value>Pairing…</value>
@@ -225,16 +221,16 @@
     <comment>Static text on the console list (the home screen).</comment>
   </data>
   <data name="ConsolesPage_AddConsoleOnceStays.Text" xml:space="preserve">
-    <value>Add your console once and it stays paired. Ripcord finds it on your network, so you won't need its address.</value>
+    <value>Ripcord finds your console on your network — keep both on the same Wi‑Fi or wired connection. Add it once and it stays paired.</value>
     <comment>Static text on the console list (the home screen). Ripcord is a product or standard name - do not translate.</comment>
   </data>
   <data name="ConsolesPage_Consoles.Text" xml:space="preserve">
     <value>Consoles</value>
     <comment>Static text on the console list (the home screen).</comment>
   </data>
-  <data name="ConsolesPage_ConsolesYet.Text" xml:space="preserve">
-    <value>No consoles yet</value>
-    <comment>Static text on the console list (the home screen).</comment>
+  <data name="ConsolesPage_FirstRunTitle.Text" xml:space="preserve">
+    <value>Play your console on this PC.</value>
+    <comment>First-run headline on the console list. Deliberately names no vendor: the brand is invoked only where it is factually necessary, and Xbox support is coming, so a headline naming one platform would date the moment it lands. Replaced "No consoles yet", which reported a deficiency to somebody who had done nothing wrong.</comment>
   </data>
   <data name="ConsolesPage_MoreOptionsConsole.AutomationProperties.Name" xml:space="preserve">
     <value>More options for this console</value>
@@ -243,10 +239,6 @@
   <data name="ConsolesPage_MoreOptionsConsole.ToolTipService.ToolTip" xml:space="preserve">
     <value>More options</value>
     <comment>ToolTip on the console list (the home screen).</comment>
-  </data>
-  <data name="ConsolesPage_MoreOptionsConsole2.AutomationProperties.Name" xml:space="preserve">
-    <value>More options for this console</value>
-    <comment>Name on the console list (the home screen).</comment>
   </data>
   <data name="ConsolesPage_PickOneStartStreaming.Text" xml:space="preserve">
     <value>Pick one to start streaming. A console in rest mode will be woken for you.</value>
@@ -335,6 +327,10 @@
   <data name="MainWindow_Settings.ToolTipService.ToolTip" xml:space="preserve">
     <value>Settings</value>
     <comment>ToolTip on the main window title bar.</comment>
+  </data>
+  <data name="SessionPage_BackConsoles2.Content" xml:space="preserve">
+    <value>Back to consoles</value>
+    <comment>Quiet link on the connecting screen, shown once a connect has run a few seconds.</comment>
   </data>
   <data name="SessionPage_BackConsoles.Content" xml:space="preserve">
     <value>Back to consoles</value>
@@ -472,14 +468,6 @@
     <value>Rest console when I disconnect</value>
     <comment>The header above a control on the Settings page.</comment>
   </data>
-  <data name="SettingsPage_EasierReadHandheldFrom.Description" xml:space="preserve">
-    <value>Makes Ripcord's own text and buttons bigger, on top of your Windows text size. Takes effect next time Ripcord starts.</value>
-    <comment>The description under a control on the Settings page.</comment>
-  </data>
-  <data name="SettingsPage_EasierReadHandheldFrom.Header" xml:space="preserve">
-    <value>Larger text and controls</value>
-    <comment>The header above a control on the Settings page.</comment>
-  </data>
   <data name="SettingsPage_FrameRateLatencyPacket.Description" xml:space="preserve">
     <value>Frame rate, latency and packet loss over the video. You can also toggle this with F3 while streaming.</value>
     <comment>The description under a control on the Settings page. F3 is a product or standard name - do not translate.</comment>
@@ -510,10 +498,6 @@
   </data>
   <data name="SettingsPage_ImageScaling.AutomationProperties.Name" xml:space="preserve">
     <value>Image scaling</value>
-    <comment>Name on the Settings page.</comment>
-  </data>
-  <data name="SettingsPage_LargerTextControls.AutomationProperties.Name" xml:space="preserve">
-    <value>Larger text and controls</value>
     <comment>Name on the Settings page.</comment>
   </data>
   <data name="SettingsPage_LeaveStreamController.AutomationProperties.Name" xml:space="preserve">
@@ -632,10 +616,6 @@
     <value>Report an issue</value>
     <comment>Static text on the About page.</comment>
   </data>
-  <data name="AboutPage_Ripcord.Text" xml:space="preserve">
-    <value>Ripcord</value>
-    <comment>Static text on the About page. Ripcord is a product or standard name - do not translate.</comment>
-  </data>
   <data name="AboutPage_Source.Text" xml:space="preserve">
     <value>Source</value>
     <comment>Static text on the About page.</comment>
@@ -692,14 +672,6 @@
     <value>Controls</value>
     <comment>Static text on the Settings page.</comment>
   </data>
-  <data name="SettingsPage_Display.Text" xml:space="preserve">
-    <value>Display</value>
-    <comment>Static text on the Settings page.</comment>
-  </data>
-  <data name="SettingsPage_GraphicsDevice.Text" xml:space="preserve">
-    <value>Graphics device</value>
-    <comment>Static text on the Settings page.</comment>
-  </data>
   <data name="SettingsPage_HowStreamScaledUp.Description" xml:space="preserve">
     <value>How the stream is scaled up to fill the window.</value>
     <comment>The description under a control on the Settings page.</comment>
@@ -707,6 +679,14 @@
   <data name="SettingsPage_HowStreamScaledUp.Header" xml:space="preserve">
     <value>Image scaling</value>
     <comment>The header above a control on the Settings page.</comment>
+  </data>
+  <data name="SettingsPage_LivePadReadout.Header" xml:space="preserve">
+    <value>Controller test</value>
+    <comment>Settings row showing what the attached controller is reporting right now.</comment>
+  </data>
+  <data name="SettingsPage_LivePadReadout.Description" xml:space="preserve">
+    <value>Press buttons or move a stick to check the controller is reaching Ripcord.</value>
+    <comment>Description under the live controller readout in Settings.</comment>
   </data>
   <data name="SettingsPage_KeysGamepadMapping.Header" xml:space="preserve">
     <value>Keys and gamepad mapping</value>
@@ -728,10 +708,6 @@
     <value>Request HDR</value>
     <comment>The screen-reader name (not visible on screen) on the Settings page. HDR is a product or standard name - do not translate.</comment>
   </data>
-  <data name="SettingsPage_SavedConsoles.Text" xml:space="preserve">
-    <value>Saved consoles</value>
-    <comment>Static text on the Settings page.</comment>
-  </data>
   <data name="SettingsPage_Settings.Text" xml:space="preserve">
     <value>Settings</value>
     <comment>Static text on the Settings page.</comment>
@@ -744,12 +720,54 @@
     <value>Sign out</value>
     <comment>The label on a control on the Settings page.</comment>
   </data>
-  <data name="SettingsPage_Video.Text" xml:space="preserve">
-    <value>Video</value>
-    <comment>Static text on the Settings page.</comment>
-  </data>
   <data name="SettingsPage_VideoCodec.Header" xml:space="preserve">
     <value>Video codec</value>
     <comment>The header above a control on the Settings page.</comment>
+  </data>
+  <data name="SessionPage_AlertMoreTap.Text" xml:space="preserve">
+    <value>Tap for detail</value>
+    <comment>Shown on the stream health notice on a touch device, where the whole notice opens the diagnostics summary.</comment>
+  </data>
+  <data name="SessionPage_AlertMoreKey.Text" xml:space="preserve">
+    <value>F3</value>
+    <comment>Keyboard key shown on the stream health notice, opening the diagnostics summary. Usually not translated.</comment>
+  </data>
+  <data name="SessionPage_SummaryPicture.Text" xml:space="preserve">
+    <value>picture</value>
+    <comment>Label under the resolution on the stream diagnostics summary.</comment>
+  </data>
+  <data name="SessionPage_SummaryFrames.Text" xml:space="preserve">
+    <value>frames/s</value>
+    <comment>Label under the frame rate on the stream diagnostics summary. Units belong in the label.</comment>
+  </data>
+  <data name="SessionPage_SummaryMbps.Text" xml:space="preserve">
+    <value>Mbps</value>
+    <comment>Label under the measured bitrate on the stream diagnostics summary.</comment>
+  </data>
+  <data name="SessionPage_SummaryLoss.Text" xml:space="preserve">
+    <value>loss</value>
+    <comment>Label under the packet loss percentage on the stream diagnostics summary.</comment>
+  </data>
+  <data name="SessionPage_DiagnosticsLess.Content" xml:space="preserve">
+    <value>Less</value>
+    <comment>Button in the full instrument panel that goes back to the summary strip. The inverse of
+SessionPage_DiagnosticsDetails, and it must stay the inverse: without it a promotion to the full panel
+lasts the rest of the session, because F3 restores the rung it was left on.</comment>
+  </data>
+  <data name="SessionPage_DiagnosticsDetails.Content" xml:space="preserve">
+    <value>Details</value>
+    <comment>Button on the diagnostics summary that opens the full instrument panel.</comment>
+  </data>
+  <data name="SettingsPage_Picture.Text" xml:space="preserve">
+    <value>Picture</value>
+    <comment>Settings section heading: resolution, bitrate, scaling, codec and HDR.</comment>
+  </data>
+  <data name="SettingsPage_WhenYouPlay.Text" xml:space="preserve">
+    <value>When you play</value>
+    <comment>Settings section heading: what the app does when a stream starts and ends.</comment>
+  </data>
+  <data name="SettingsPage_AdvancedExpander.Header" xml:space="preserve">
+    <value>Advanced</value>
+    <comment>Collapsed section at the end of Settings, holding the options a casual player should not have to scroll past.</comment>
   </data>
 </root>

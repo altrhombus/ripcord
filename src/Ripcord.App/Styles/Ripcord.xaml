@@ -13,6 +13,7 @@
       Text      the type ramp. Roles BasedOn stock styles, no sizes, no margins.
       Surfaces  the boxes, and the elevation rules about when a box is allowed to exist.
       Motion    durations and easings, aliased onto WinUI's own.
+      Card      the console card's own material, and the only dictionary here with theme dictionaries.
 
     Order matters within the merge: Surfaces resolves radius tokens from Tokens with StaticResource, and
     StaticResource is a parse-time lookup, so a dictionary may only reference one merged before it. Order
@@ -32,6 +33,7 @@
         <ResourceDictionary Source="ms-appx:///Styles/Ripcord.Text.xaml" />
         <ResourceDictionary Source="ms-appx:///Styles/Ripcord.Surfaces.xaml" />
         <ResourceDictionary Source="ms-appx:///Styles/Ripcord.Motion.xaml" />
+        <ResourceDictionary Source="ms-appx:///Styles/Ripcord.Card.xaml" />
     </ResourceDictionary.MergedDictionaries>
 
 </ResourceDictionary>

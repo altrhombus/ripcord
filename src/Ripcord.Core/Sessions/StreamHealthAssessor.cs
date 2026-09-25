@@ -23,7 +23,7 @@ public readonly record struct StreamHealthSignals(
     double PacketLossRatio,   // 0..1, A/V unit loss over the last congestion window
     int DecodeMode,           // 0 = software, 1 = hardware + CPU readback, 2 = hardware zero-copy
     // Liveness. These are deliberately NOT defaulted: they gate every rule below, and when they were optional
-    // a caller that forgot them silently pinned the verdict to "Starting up…" forever with a live stream on
+    // a caller that forgot them silently pinned the verdict to "Starting…" forever with a live stream on
     // screen. Making them required turns that into a compile error.
     bool HasReceivedFrames,          // has ANY frame ever arrived this session?
     double MillisecondsSinceConnect, // since the handshake completed (drives the startup grace period)
@@ -31,7 +31,34 @@ public readonly record struct StreamHealthSignals(
     double RoundTripTimeMs = 0);           // measured network RTT in ms (fractional; 0 = not yet known)
 
 /// <summary>A plain-language health verdict: severity, a short headline, and an actionable tip.</summary>
-public readonly record struct StreamHealthVerdict(StreamHealthLevel Level, string Headline, string Tip);
+/// <param name="Level">How bad it is.</param>
+/// <param name="Headline">What is wrong, in the player's words. The same sentence at every rung.</param>
+/// <param name="Tip">What to do about it, in full. Rung 3, and rung 2's expanded reading.</param>
+/// <param name="Remedy">
+/// The shortest useful form of <paramref name="Tip"/> — a clause, not a sentence, and empty when there is
+/// nothing a player can do.
+///
+/// <para>
+/// <b>Why a third string and not just a shorter tip.</b> Rung 1 is one line over a running game, and a
+/// headline on its own is a diagnosis with no remedy: "Losing packets on the network" tells a player what is
+/// happening and nothing about what to try. The full tip is two sentences and belongs at a rung someone has
+/// chosen to open. This is the clause that fits on the line they did not choose to see — and it stays
+/// separate so the headline is still identical at all three rungs, which is what lets rung 2 and rung 3 be
+/// recognisably the same verdict rather than a second opinion.
+/// </para>
+/// </param>
+public readonly record struct StreamHealthVerdict(
+    StreamHealthLevel Level,
+    string Headline,
+    string Tip,
+    string Remedy = "")
+{
+    /// <summary>
+    /// The rung-1 line: the verdict and, when there is one, what to try. Composed here rather than at the
+    /// call site so the em dash and the empty-remedy case have one answer.
+    /// </summary>
+    public string Notice => Remedy.Length == 0 ? Headline : $"{Headline} — {Remedy}";
+}
 
 /// <summary>
 /// Turns raw stream telemetry into a single plain-language verdict a non-technical user can act on ("why is
@@ -45,9 +72,33 @@ public static class StreamHealthAssessor
     public const double LossWarnRatio = 0.02; // 2%
     public const double LossBadRatio = 0.10;  // 10%
 
-    // The receive queue is normally ~0 (the processor drains instantly). A sustained build-up means OUR
-    // processing is falling behind — so loss at the same time is a device/compute problem, not the network.
+    // The receive queue is normally ~0 (the processor drains instantly).
+    //
+    // It is NOT a usable discriminator and is no longer used as one. Measured on ARM64 over four sessions
+    // (~2100 live samples, 2026-09-19) it never once pointed at the right cause, and in the device-starved
+    // run it pointed confidently at the wrong one: every sample carrying real loss read a depth of exactly 0
+    // while the machine was demonstrably the bottleneck, and every excursion above 16 happened on a sample
+    // with exactly zero loss. What it actually records is an instantaneous depth sampled at 2 Hz against
+    // frame-sized arrival bursts - 0 → 34 → 0 inside two seconds, peaking at 266 during a stall whose
+    // neighbouring samples both read 0. No threshold survives that, which is why this is a shape problem and
+    // retuning the number was the wrong fix. Kept as a displayed diagnostic and as the low-water guard on
+    // rule 4, where a spurious reading suppresses a warning rather than inventing one.
     public const int ReceiveQueueBusyDepth = 16;
+
+    /// <summary>
+    /// Presenting below this share of what we decode means the device is shedding frames it has already paid
+    /// to decode — the signal that actually separates "this device cannot keep up" from "the network is
+    /// dropping packets".
+    ///
+    /// <para>
+    /// The logic is mechanical rather than tuned: if the <em>network</em> is the bottleneck the frames never
+    /// arrive, so decode and present fall together and the ratio stays near 1. If the <em>device</em> is the
+    /// bottleneck the frames arrive and decode fine and we fail to put them on screen, so the ratio collapses.
+    /// Measured on the device-starved run, all six samples carrying loss sat between 0.00 and 0.11 against a
+    /// session median of 0.87–0.93, so 0.5 has daylight on both sides rather than being fitted to the data.
+    /// </para>
+    /// </summary>
+    public const double PresentedShareBusyRatio = 0.5;
 
     // demux→present latency this high (with the queues near empty) means the GPU decode itself is slow.
     public const double PipelineLatencyWarnMs = 60;
@@ -74,7 +125,8 @@ public static class StreamHealthAssessor
             return new StreamHealthVerdict(StreamHealthLevel.Critical,
                 "The stream has stopped",
                 "Video stopped arriving from the console. Check your network connection — if the console went to "
-                + "sleep or another player took over the session, you'll need to reconnect.");
+                + "sleep or another player took over the session, you'll need to reconnect.",
+                "try reconnecting");
         }
 
         if (!s.HasReceivedFrames)
@@ -82,32 +134,35 @@ public static class StreamHealthAssessor
             // Still inside the startup window: genuinely just waiting.
             if (s.MillisecondsSinceConnect < StartupGraceMs)
             {
-                return new StreamHealthVerdict(StreamHealthLevel.Info, "Starting up…", "Waiting for video from the console.");
+                return new StreamHealthVerdict(StreamHealthLevel.Info, "Starting…", "Waiting for video from the console.");
             }
 
             // Past it: the handshake succeeded but no picture ever came. That is a real failure, and saying
-            // "Starting up…" forever is the single most misleading thing this class could do.
+            // "Starting…" forever is the single most misleading thing this class could do.
             return new StreamHealthVerdict(StreamHealthLevel.Critical,
                 "No video from the console",
                 "The connection succeeded but no video arrived. Make sure a user is logged in on the console and "
-                + "that its remote-play setting is enabled, then try reconnecting.");
+                + "that its remote-play setting is enabled, then try reconnecting.",
+                "check someone is logged in on the console");
         }
 
         // 1) Packet loss is the most impactful problem. Split "our device can't keep up" from "the network is
-        //    dropping packets" using the receive-queue depth: a full/climbing queue means we're shedding.
+        //    dropping packets" by asking whether we are presenting what we decode - see IsSheddingFrames.
         if (s.PacketLossRatio >= LossWarnRatio)
         {
             StreamHealthLevel level = s.PacketLossRatio >= LossBadRatio ? StreamHealthLevel.Critical : StreamHealthLevel.Warning;
-            if (s.ReceiveQueueDepth >= ReceiveQueueBusyDepth)
+            if (IsSheddingFrames(s))
             {
                 return new StreamHealthVerdict(level,
                     "Your device is struggling to keep up",
-                    "Close other apps, or lower the stream resolution/quality. A more powerful device will also help.");
+                    "Close other apps, or lower the stream resolution/quality. A more powerful device will also help.",
+                    "closing other apps will help");
             }
 
             return new StreamHealthVerdict(level,
                 "Losing packets on the network",
-                "If you're on Wi‑Fi, switch to a wired connection, move closer to the router, or turn off your Wi‑Fi adapter's power saving.");
+                "If you're on Wi‑Fi, switch to a wired connection, move closer to the router, or turn off your Wi‑Fi adapter's power saving.",
+                "a wired connection will help");
         }
 
         // 2) Software decode — high CPU/battery, and it can't hold higher resolutions.
@@ -115,7 +170,8 @@ public static class StreamHealthAssessor
         {
             return new StreamHealthVerdict(StreamHealthLevel.Warning,
                 "Video is decoding on the CPU (software)",
-                "Update your graphics drivers to enable hardware decoding — software decode uses far more CPU and battery.");
+                "Update your graphics drivers to enable hardware decoding — software decode uses far more CPU and battery.",
+                "updating your graphics drivers will help");
         }
 
         // 3) GPU decode is slow (queues aren't backed up, so it's the decode itself, not delivery).
@@ -123,7 +179,22 @@ public static class StreamHealthAssessor
         {
             return new StreamHealthVerdict(StreamHealthLevel.Warning,
                 "Video is decoding slowly on this device",
-                "Try a lower resolution; a more capable GPU will reduce the delay.");
+                "Try a lower resolution; a more capable GPU will reduce the delay.",
+                "try a lower resolution");
+        }
+
+        // 3b) Decoding fine, failing to present. Ranked above the readback note below because that note says
+        //     "This is fine", and it was reaching the screen while the stream presented 4 fps out of 60
+        //     decoded - 16-17% of samples in both device-starved runs got a Healthy/Info verdict while
+        //     presenting under 45 fps. A verdict that says everything is fine during a visible stutter is
+        //     worse than no verdict, because it is the one the player checks before giving up.
+        if (IsSheddingFrames(s))
+        {
+            return new StreamHealthVerdict(StreamHealthLevel.Warning,
+                "This device is dropping frames it already decoded",
+                "The video is arriving and decoding, but not reaching the screen fast enough. Try a lower "
+                + "resolution, close other apps, or pick a GPU that supports the zero-copy path.",
+                "try a lower resolution");
         }
 
         // 4) Hardware decode works but isn't zero-copy — a minor extra memory copy per frame.
@@ -150,9 +221,21 @@ public static class StreamHealthAssessor
                 s.RoundTripTimeMs >= RttBadMs ? StreamHealthLevel.Warning : StreamHealthLevel.Info,
                 $"Network delay is high ({s.RoundTripTimeMs:F0} ms)",
                 "The picture is clean but controls will feel delayed. A wired connection, or moving closer to the "
-                + "router, is the only thing that helps — this is round-trip time, not a device limitation.");
+                + "router, is the only thing that helps — this is round-trip time, not a device limitation.",
+                "a wired connection will help");
         }
 
         return new StreamHealthVerdict(StreamHealthLevel.Healthy, "Connection healthy", "Everything looks good.");
     }
+
+    /// <summary>
+    /// Are we decoding frames and then failing to put them on screen?
+    ///
+    /// <para>
+    /// <c>DecodeFps &gt; 1</c> guards the degenerate cases: a stream that has stopped, and the first sample of
+    /// one that has not started, both present zero out of zero and would otherwise read as total shedding.
+    /// </para>
+    /// </summary>
+    private static bool IsSheddingFrames(in StreamHealthSignals s)
+        => s.DecodeFps > 1 && s.PresentFps < s.DecodeFps * PresentedShareBusyRatio;
 }

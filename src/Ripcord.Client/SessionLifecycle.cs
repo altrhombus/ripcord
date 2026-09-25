@@ -85,6 +85,25 @@ public sealed record SessionControllerOptions
     public int MaxReconnectAttempts { get; init; } = 6;
 
     /// <summary>
+    /// The longest a single connect attempt may take before it counts as failed.
+    ///
+    /// <para>
+    /// <b>A backstop against never finishing, not a performance target.</b> The retry budget above only bounds
+    /// the number of attempts; it does nothing about an attempt that never returns, and an attempt that never
+    /// returns is a window reading "Connecting…" for as long as the user is willing to watch it. Reported that
+    /// way from hardware, where an HTTP call with a hundred-second default sat inside a loop that could not
+    /// advance past it.
+    /// </para>
+    ///
+    /// <para>
+    /// Two minutes because it has to clear the account rendezvous's own budget — thirty seconds each for the
+    /// console to join, publish its seed and offer its candidates — or it would cut off connects that were
+    /// legitimately slow rather than stuck. It is meant never to fire.
+    /// </para>
+    /// </summary>
+    public TimeSpan ConnectTimeout { get; init; } = TimeSpan.FromMinutes(2);
+
+    /// <summary>
     /// How long a session must last before it counts as a real one and earns a fresh retry budget.
     ///
     /// <para>

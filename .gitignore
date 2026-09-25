@@ -82,6 +82,10 @@ ports/*/tests/build/
 ## is the one that does. Kept here beside the other ports/ rules rather than in the port that needed
 ## it first, so a working tree cannot lose the fetch just by standing on a branch without that port.
 ports/*/third-party/
+## Ripcord: the same rule for the brand folder. brand/outline-wordmark.py fetches the wordmark's
+## typeface here, pinned and hash-checked, so the font is never vendored - only the outlined
+## artwork made from it is committed. See NOTICE, "Brand artwork".
+brand/third-party/
 
 ## Ripcord: the ports' per-machine build counter - how many times somebody pressed make, which is not a
 ## fact about the project. ports/ripcord-ps3/Makefile explains what it is for.

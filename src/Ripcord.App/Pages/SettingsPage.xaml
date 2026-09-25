@@ -54,47 +54,10 @@
             XYFocusUpNavigationStrategy="RectilinearDistance">
             <TextBlock x:Uid="SettingsPage_Settings" Style="{StaticResource TitleTextBlockStyle}" />
 
-            <!--
-                ============ Account ============
 
-                First, because it is the only section that changes what the others can do: signed in, pairing
-                stops asking for an account ID and a console that is not on this network can still be woken.
-            -->
+            <!--  ============ Picture ============  -->
             <StackPanel Spacing="4">
-                <TextBlock x:Uid="SettingsPage_Account" Style="{StaticResource RipcordSectionHeaderStyle}" />
-
-                <tk:SettingsCard x:Uid="SettingsPage_PlaystationNetwork" x:Name="AccountCard">
-                    <tk:SettingsCard.HeaderIcon>
-                        <FontIcon Glyph="&#xE77B;" />
-                    </tk:SettingsCard.HeaderIcon>
-
-                    <StackPanel Orientation="Horizontal" Spacing="8">
-                        <ProgressRing x:Name="AccountBusy" Width="20" Height="20" IsActive="False" />
-                        <Button x:Uid="SettingsPage_SignIn" x:Name="SignInButton" />
-                        <Button x:Uid="SettingsPage_SignOut" x:Name="SignOutButton" Visibility="Collapsed" />
-                    </StackPanel>
-                </tk:SettingsCard>
-
-                <!--  Only shown when there is something to say — an error, or the account's console list.  -->
-                <InfoBar
-                    x:Name="AccountError"
-                    IsOpen="False"
-                    IsClosable="False"
-                    Severity="Warning" />
-
-                <tk:SettingsExpander
-                    x:Name="CloudConsolesExpander"
-                    Visibility="Collapsed"
-                    x:Uid="SettingsPage_ConsolesAccount">
-                    <tk:SettingsExpander.HeaderIcon>
-                        <FontIcon Glyph="&#xE7F4;" />
-                    </tk:SettingsExpander.HeaderIcon>
-                </tk:SettingsExpander>
-            </StackPanel>
-
-            <!--  ============ Video ============  -->
-            <StackPanel Spacing="4">
-                <TextBlock x:Uid="SettingsPage_Video" Style="{StaticResource RipcordSectionHeaderStyle}" />
+                <TextBlock x:Uid="SettingsPage_Picture" Style="{StaticResource RipcordSectionHeaderStyle}" />
 
                 <tk:SettingsCard
                     x:Uid="SettingsPage_PVerifiedGoodDefault">
@@ -143,43 +106,6 @@
                         MinWidth="180"
                         x:Uid="SettingsPage_ImageScaling" />
                 </tk:SettingsCard>
-
-                <tk:SettingsCard
-                    x:Uid="SettingsPage_SendsMeasuredDelayPacket">
-                    <ToggleSwitch
-                        x:Name="ConnectionQualityToggle"
-                        x:Uid="SettingsPage_TellConsoleAboutConnection" />
-                </tk:SettingsCard>
-            </StackPanel>
-
-            <!--  ============ Graphics device ============  -->
-            <StackPanel Spacing="4">
-                <TextBlock x:Uid="SettingsPage_GraphicsDevice" Style="{StaticResource RipcordSectionHeaderStyle}" />
-
-                <tk:SettingsCard
-                    x:Uid="SettingsPage_AutomaticPicksGpuDriving">
-                    <ComboBox
-                        x:Name="GpuCombo"
-                        MinWidth="180"
-                        x:Uid="SettingsPage_WhichGpuUse" />
-                </tk:SettingsCard>
-
-                <!--  Shown only for the "specific GPU" preference — see SettingsViewModel.AdapterPickerVisible.  -->
-                <tk:SettingsCard
-                    x:Name="AdapterCard"
-                    x:Uid="SettingsPage_SpecificAdapter"
-                    Visibility="Collapsed">
-                    <ComboBox
-                        x:Name="AdapterCombo"
-                        MinWidth="280"
-                        x:Uid="SettingsPage_SpecificGraphicsAdapter" />
-                </tk:SettingsCard>
-
-                <InfoBar
-                    x:Name="AdapterWarning"
-                    IsClosable="False"
-                    IsOpen="False"
-                    Severity="Warning" />
 
                 <!--
                     HEVC is offered only when a decoder for it exists on this machine, so the option cannot be
@@ -236,6 +162,32 @@
                         x:Uid="SettingsPage_SendKeyboardInputConsole" />
                 </tk:SettingsCard>
 
+                <!--
+                    The live pad readout, moved here from the stream's rung 3.
+
+                    It is a CONTROLLER diagnostic, not a stream one: what it answers is "is this pad reaching
+                    Ripcord, and is that stick centred", and both questions are asked while looking at the
+                    bindings rather than while looking at a game. On rung 3 it was competing with twenty
+                    instruments about the picture, on a surface you have to be streaming to open - so the one
+                    place it could not be read was the place somebody would be holding the pad to test it.
+                -->
+                <tk:SettingsCard x:Uid="SettingsPage_LivePadReadout">
+                    <StackPanel MinWidth="260" HorizontalAlignment="Right">
+                        <TextBlock
+                            x:Name="PadButtonsText"
+                            HorizontalAlignment="Right"
+                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                            Style="{StaticResource CaptionTextBlockStyle}"
+                            TextWrapping="Wrap" />
+                        <TextBlock
+                            x:Name="PadSticksText"
+                            HorizontalAlignment="Right"
+                            Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                            Style="{StaticResource CaptionTextBlockStyle}"
+                            TextWrapping="Wrap" />
+                    </StackPanel>
+                </tk:SettingsCard>
+
                 <tk:SettingsCard x:Uid="SettingsPage_KeysGamepadMapping" x:Name="KeyBindingsCard">
                     <Button
                         x:Name="KeyBindingsButton"
@@ -273,9 +225,9 @@
                 </tk:SettingsCard>
             </StackPanel>
 
-            <!--  ============ Display ============  -->
+            <!--  ============ When you play ============  -->
             <StackPanel Spacing="4">
-                <TextBlock x:Uid="SettingsPage_Display" Style="{StaticResource RipcordSectionHeaderStyle}" />
+                <TextBlock x:Uid="SettingsPage_WhenYouPlay" Style="{StaticResource RipcordSectionHeaderStyle}" />
 
                 <tk:SettingsCard
                     x:Uid="SettingsPage_HidesTitleBarNavigation">
@@ -300,29 +252,124 @@
 
                 <tk:SettingsCard
                     x:Uid="SettingsPage_FrameRateLatencyPacket">
-                    <ToggleSwitch
-                        x:Name="DiagnosticsToggle"
+                    <!--
+                        A picker, not a switch: there are three answers now. It is also the only control a
+                        pad-only player has over the HUD, since nothing in the stream layer takes gamepad
+                        input by design, so "which rung" has to be answerable before connecting.
+                    -->
+                    <ComboBox
+                        x:Name="DiagnosticsPicker"
+                        MinWidth="180"
                         x:Uid="SettingsPage_ShowConnectionDiagnostics" />
                 </tk:SettingsCard>
-
-                <tk:SettingsCard
-                    x:Uid="SettingsPage_EasierReadHandheldFrom">
-                    <ToggleSwitch
-                        x:Name="LargeUiToggle"
-                        x:Uid="SettingsPage_LargerTextControls" />
-                </tk:SettingsCard>
             </StackPanel>
 
-            <!--  ============ Saved consoles ============  -->
+            <!--
+                ============ Account ============
+
+                NOT first, though it was, and the argument for putting it there was a real one: it is the
+                only section that changes what the others can do - signed in, pairing stops asking for an
+                account ID and a console off this network can still be woken.
+
+                That is about capability, not about use. LAN play against a paired console needs none of it,
+                the README says so outright, and a settings page that opens on a sign-in prompt makes an
+                optional account read as a prerequisite. Ordering follows what people change; a
+                cross-cutting enabler does not earn the top by being cross-cutting.
+            -->
             <StackPanel Spacing="4">
-                <TextBlock x:Uid="SettingsPage_SavedConsoles" Style="{StaticResource RipcordSectionHeaderStyle}" />
+                <TextBlock x:Uid="SettingsPage_Account" Style="{StaticResource RipcordSectionHeaderStyle}" />
 
+                <tk:SettingsCard x:Uid="SettingsPage_PlaystationNetwork" x:Name="AccountCard">
+                    <tk:SettingsCard.HeaderIcon>
+                        <FontIcon Glyph="&#xE77B;" />
+                    </tk:SettingsCard.HeaderIcon>
+
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <ProgressRing x:Name="AccountBusy" Width="20" Height="20" IsActive="False" />
+                        <Button x:Uid="SettingsPage_SignIn" x:Name="SignInButton" />
+                        <Button x:Uid="SettingsPage_SignOut" x:Name="SignOutButton" Visibility="Collapsed" />
+                    </StackPanel>
+                </tk:SettingsCard>
+
+                <!--  Only shown when there is something to say — an error, or the account's console list.  -->
                 <InfoBar
-                    x:Name="CredentialProtectionBar"
+                    x:Name="AccountError"
+                    IsOpen="False"
                     IsClosable="False"
-                    IsOpen="True"
-                    Severity="Informational" />
+                    Severity="Warning" />
+
+                <tk:SettingsExpander
+                    x:Name="CloudConsolesExpander"
+                    Visibility="Collapsed"
+                    x:Uid="SettingsPage_ConsolesAccount">
+                    <tk:SettingsExpander.HeaderIcon>
+                        <FontIcon Glyph="&#xE7F4;" />
+                    </tk:SettingsExpander.HeaderIcon>
+                </tk:SettingsExpander>
             </StackPanel>
+
+            <!--  ============ Advanced ============  -->
+            <!--
+                Collapsed, and last. These are the settings a casual player should never scroll past, and
+                an expander is the ordinary Windows way to say so - it is a Fluent behaviour, which is the
+                half of the position the app borrows rather than invents.
+
+                NO SEARCH BOX, and docs/design.md is amended in the same commit for prescribing one.
+                Twenty settings on one scrolling page do not need search; it is a Windows Settings
+                mannerism rather than a Fluent behaviour, and the distinction is exactly the line the
+                design position draws. A search box would also be the only control here that has to be
+                taught what every setting is called.
+            -->
+            <Expander
+                HorizontalAlignment="Stretch"
+                HorizontalContentAlignment="Stretch"
+                x:Uid="SettingsPage_AdvancedExpander">
+                <StackPanel Spacing="4">
+
+                    <tk:SettingsCard
+                        x:Uid="SettingsPage_AutomaticPicksGpuDriving">
+                        <ComboBox
+                            x:Name="GpuCombo"
+                            MinWidth="180"
+                            x:Uid="SettingsPage_WhichGpuUse" />
+                    </tk:SettingsCard>
+
+                    <!--  Shown only for the "specific GPU" preference — see SettingsViewModel.AdapterPickerVisible.  -->
+                    <tk:SettingsCard
+                        x:Name="AdapterCard"
+                        x:Uid="SettingsPage_SpecificAdapter"
+                        Visibility="Collapsed">
+                        <ComboBox
+                            x:Name="AdapterCombo"
+                            MinWidth="280"
+                            x:Uid="SettingsPage_SpecificGraphicsAdapter" />
+                    </tk:SettingsCard>
+
+                    <InfoBar
+                        x:Name="AdapterWarning"
+                        IsClosable="False"
+                        IsOpen="False"
+                        Severity="Warning" />
+
+                    <tk:SettingsCard
+                        x:Uid="SettingsPage_SendsMeasuredDelayPacket">
+                        <ToggleSwitch
+                            x:Name="ConnectionQualityToggle"
+                            x:Uid="SettingsPage_TellConsoleAboutConnection" />
+                    </tk:SettingsCard>
+
+                    <!--
+                        Moved here from a section of its own. It is one always-open InfoBar reporting whether
+                        pairing credentials are encrypted at rest - a fact about how the app stores things, which
+                        is what this section is for, and not something a heading of its own made easier to find.
+                    -->
+                    <InfoBar
+                        x:Name="CredentialProtectionBar"
+                        IsClosable="False"
+                        IsOpen="True"
+                        Severity="Informational" />
+                </StackPanel>
+            </Expander>
         </StackPanel>
     </ScrollViewer>
 </Page>

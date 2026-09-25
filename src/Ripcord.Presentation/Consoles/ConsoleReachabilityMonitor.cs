@@ -23,6 +23,26 @@ public sealed class ConsoleReachabilityMonitor
 
     public const int DefaultRestSettleMaxChecks = 6; // 6 × 10s = 60s
 
+    /// <summary>
+    /// How many times to ask before believing silence.
+    ///
+    /// <para>
+    /// One datagram was the defect. The probe sends a single SRCH and waits a second, and on hardware a
+    /// console that was powered on for an entire session was reported unreachable because that one packet
+    /// crossed a VLAN boundary onto a 2.4 GHz link and did not come back. UDP does not retransmit and the
+    /// radio's own retry can outlast the window, so a single loss - unremarkable on that path - became a
+    /// verdict.
+    /// </para>
+    ///
+    /// <para>
+    /// Retries rather than a longer wait, because the failure is a lost packet and not a slow console: three
+    /// chances at a second each beats one chance at three. It costs nothing in the common case - a console
+    /// that is there answers the first ask - and this is a snapshot taken when the list is built, not a poll,
+    /// so even the worst case is a few seconds once per visit.
+    /// </para>
+    /// </summary>
+    public const int DefaultSilenceRetries = 2; // 3 asks in total
+
     private readonly IConsoleReachabilityProbe _probe;
     private readonly Func<CancellationToken, Task<IReadOnlyCollection<DiscoveredConsole>>>? _rediscover;
     private readonly Action<PairedConsole>? _addressChanged;
@@ -30,6 +50,7 @@ public sealed class ConsoleReachabilityMonitor
     private readonly Func<TimeSpan, CancellationToken, Task> _delay;
     private readonly TimeSpan _restSettleInterval;
     private readonly int _restSettleMaxChecks;
+    private readonly int _silenceRetries;
 
     /// <param name="delay">
     /// Injected for the same reason <c>SessionController</c> injects one: the rest watch's whole contract is
@@ -51,6 +72,7 @@ public sealed class ConsoleReachabilityMonitor
         Func<TimeSpan, CancellationToken, Task>? delay = null,
         TimeSpan? restSettleInterval = null,
         int? restSettleMaxChecks = null,
+        int? silenceRetries = null,
         Func<CancellationToken, Task<IReadOnlyCollection<string>>>? remotelyAvailable = null,
         Func<CancellationToken, Task<IReadOnlyCollection<DiscoveredConsole>>>? rediscover = null,
         Action<PairedConsole>? addressChanged = null)
@@ -62,6 +84,7 @@ public sealed class ConsoleReachabilityMonitor
         _delay = delay ?? Task.Delay;
         _restSettleInterval = restSettleInterval ?? DefaultRestSettleInterval;
         _restSettleMaxChecks = restSettleMaxChecks ?? DefaultRestSettleMaxChecks;
+        _silenceRetries = Math.Max(0, silenceRetries ?? DefaultSilenceRetries);
     }
 
     /// <summary>
@@ -112,7 +135,7 @@ public sealed class ConsoleReachabilityMonitor
     {
         try
         {
-            bool? awake = await _probe.ProbeAsync(card.Console, cancellationToken).ConfigureAwait(false);
+            bool? awake = await AskUntilAnsweredAsync(card, cancellationToken).ConfigureAwait(false);
             if (cancellationToken.IsCancellationRequested)
             {
                 return;
@@ -125,6 +148,27 @@ public sealed class ConsoleReachabilityMonitor
         catch (OperationCanceledException)
         {
             // The page was left or the list rebuilt: the card is gone and there is nothing to update.
+        }
+    }
+
+    /// <summary>
+    /// Ask the console, and keep asking while it says nothing. Returns the first real answer, or null once the
+    /// retries are spent.
+    ///
+    /// <para>
+    /// Only silence is retried. An answer of either kind is ground truth and is taken immediately, so a
+    /// console that is awake, or resting, costs exactly one datagram as before.
+    /// </para>
+    /// </summary>
+    private async Task<bool?> AskUntilAnsweredAsync(ConsoleCardViewModel card, CancellationToken cancellationToken)
+    {
+        for (int attempt = 0; ; attempt++)
+        {
+            bool? awake = await _probe.ProbeAsync(card.Console, cancellationToken).ConfigureAwait(false);
+            if (awake is not null || attempt >= _silenceRetries || cancellationToken.IsCancellationRequested)
+            {
+                return awake;
+            }
         }
     }
 
