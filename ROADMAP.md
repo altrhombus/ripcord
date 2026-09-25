@@ -320,7 +320,9 @@ Step 1, promoting the core to `libripcord/` with fuzzing and a CI job, is done a
   - **Verified 2026-09-25 against PSN and PS5-<redacted>, on the same LAN:** sign-in, the console list, the WAN
     rendezvous up to the console's candidates, a full 1080p stream over the account route, and no-PIN
     account pairing. See the journal.
-  - [ ] Internet play from another network: the Mac on a phone hotspot.
+  - [x] Internet play from another network. Done 2026-09-25, from a phone hotspot: 1080p60 peer to peer.
+  - [ ] Prove the 30 s post-passcode wait on a connect from rest over the internet. The first attempt
+        from rest failed at 8 s; see the journal.
   - [ ] After a rendezvous session, the console briefly refuses TCP 9295. The app's retry covers it; decide
         whether the lab or the sequence should wait for it.
   - [ ] Whether the 9303 association needs servicing between `begin` and the first exchange. .NET

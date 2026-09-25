@@ -92,6 +92,17 @@
 #define CLIENT_SIGNIN_ATTEMPTS 5
 #define CLIENT_SIGNIN_WAIT_MS  8000u
 
+/*
+ * After an ACCEPTED passcode, how long SESSION_ID may take. Separate from the per-attempt wait above
+ * because the two answer different questions: that one is "did the console hear the passcode", this one
+ * is "how long does a signed-in console take to offer a session", and the second depends on how awake it
+ * was. Measured on a PS5 over the internet on 2026-09-25: woken from rest by the account's command, it
+ * sent nothing for 8.5 s after accepting, and the 8 s this used to share failed the session. The same
+ * console, already awake, sent SESSION_ID 1 s after accepting. The wait ends the moment SESSION_ID
+ * arrives, so a longer budget costs only a failure's time, never a success's.
+ */
+#define CLIENT_SESSION_AFTER_LOGIN_MS 30000u
+
 /* The stream channel's own cadences (rc_connect.c 804-811; HalyardTakionStream HeartbeatInterval and
  * CongestionInterval). The congestion window is also the stats window. */
 #define CLIENT_HEARTBEAT_MS  1000u
@@ -609,7 +620,7 @@ static int signin_passcode(halyard_client *c)
                  * rendezvous route while the console renegotiates (the .NET note). */
                 reach(c, HALYARD_CLIENT_STAGE_SIGNED_IN);
                 announce(c, HALYARD_CLIENT_STAGE_SESSION_READY);
-                signin_wait(c, rc_time_ms() + CLIENT_SIGNIN_WAIT_MS);
+                signin_wait(c, rc_time_ms() + CLIENT_SESSION_AFTER_LOGIN_MS);
                 return c->end_pending == HALYARD_CLIENT_END_NONE;
             }
             client_log(c, HALYARD_CLIENT_LOG_WARN, "client: a verdict byte nobody has seen - not retrying");
