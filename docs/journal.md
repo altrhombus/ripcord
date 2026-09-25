@@ -60,6 +60,22 @@ Internet play's UDP half, tied together in `halyard_client`, ported from `Halyar
 - **`regist_flow_test` no longer broadcasts.** The ARM probe is stubbed at link time, and the host suite now
   stays on loopback.
 
+### Internet play from the Mac, and a console slow to wake (2026-09-25)
+
+**The Mac plays over the internet.** With the Mac on a phone hotspot and PS5-<redacted> at home, `connect --route
+account` streamed 1080p60 HEVC peer to peer, through both NATs, with no relay. Both legs mapped
+consistently, and streaming began at 22.85 s. 2 packets were lost of 5,749, 105 control messages verified
+and none failed, and the capture's 1,189 frames all decode.
+
+**The first attempt failed, and it was the wake, not the protocol.** The console was in rest. The account's
+connect command woke it, it joined the session, the association and registration went through, `/sess`
+opened, and the passcode was accepted. Then no SESSION_ID came within the 8 s the post-passcode wait
+shared with each sign-in attempt, and the session ended as `signInNoSession`. The next attempt, against the
+now-awake console, received SESSION_ID 1 s after the passcode. So the post-passcode wait now has its own
+30 s budget (`CLIENT_SESSION_AFTER_LOGIN_MS`). It ends the moment SESSION_ID arrives, so it costs only a
+failure's time. The session controller would have retried `signInNoSession` anyway, but a 45-second
+failure before a retry is not a first run anyone should see. **The fix is not yet proven from rest.**
+
 ### The Mac's cloud tier and rendezvous route meet PSN and the console (2026-09-25)
 
 The pieces that until now had only met fakes and loopback, run against PSN and PS5-<redacted>. The owner did the
