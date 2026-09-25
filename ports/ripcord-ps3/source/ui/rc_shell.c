@@ -151,7 +151,7 @@ static void load_record(const char *const *dirs, int dir_count)
         rc_log("shell: %d console(s) paired\n", s_set.count);
     } else {
         /*
-         * The loader defaults every optional field whether or not it found a file - but to ports/common's
+         * The loader defaults every optional field whether or not it found a file - but to libripcord's
          * defaults, which are a 3DS's. Overwritten here with this port's measured ones so the settings
          * screen opens showing what an unpaired PS3 would actually stream at, rather than 960x540 at 30.
          */

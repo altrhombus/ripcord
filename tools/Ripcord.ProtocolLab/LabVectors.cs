@@ -49,7 +49,7 @@ internal static class LabVectors
 {
     /// <summary>
     /// The KDF domain separator baked into every emitted vector. It still says <c>ripcord-3ds</c> after
-    /// the suite moved to <c>ports/common</c>, and that is deliberate: changing it changes the derived
+    /// the suite moved to <c>ports/common</c> and then to <c>libripcord</c>, and that is deliberate: changing it changes the derived
     /// bytes, so every <c>.kat</c> file and the C runners that check against them would have to move
     /// together for a rename that buys nothing. A historical name in a domain string is not a bug; a
     /// domain string that quietly changes value is.
@@ -60,14 +60,15 @@ internal static class LabVectors
     public static int Emit(string[] args)
     {
         // The default follows the suite, which moved to ports/common/tests when the portable core was
-        // extracted - ports/common/tests/Makefile reads `vectors/*.kat` relative to itself. It pointed at
+        // extracted, and to libripcord/tests on 2026-09-24 - libripcord/tests/Makefile reads
+        // `vectors/*.kat` relative to itself. It pointed at
         // ports/ripcord-3ds/tests/vectors until 2026-09-11, which stopped existing in that same
         // extraction: the emitter went on succeeding, wrote four files into a directory nothing reads,
         // and the C suite then reported missing vectors while telling you to run the command you had
         // just run. Nothing failed, so nothing said so.
         string outPath = args.Length > 1
             ? args[1]
-            : Path.Combine("ports", "common", "tests", "vectors", "control-crypto.kat");
+            : Path.Combine("libripcord", "tests", "vectors", "control-crypto.kat");
 
         var secrets = HalyardInteropConstants.Control();
         if (secrets is null)

@@ -10,7 +10,7 @@
 #
 # WHAT IT DOES NOT DO: vendor openh264 into this repository. Fetched from a pinned, hash-verified
 # upstream release at build time, into a gitignored directory - the same reasoning that keeps the interop
-# constants generated rather than copied, and the same shape as ports/common/tools/build-mbedtls.sh. A
+# constants generated rather than copied, and the same shape as libripcord/tools/build-mbedtls.sh. A
 # checked-in 23,000-line third-party codec would be a maintenance and provenance liability nobody asked
 # for.
 #

@@ -6,7 +6,7 @@
  * connect, so it is worth having rather than pulling in a TLS stack for.
  *
  * Until 2026-09-18 that reference named a halyard_field_iv translation unit under the old source/
- * layout: a file that does not exist, at a path that predates the extraction into ports/common. The
+ * layout: a file that does not exist, at a path that predates the extraction into ports/common (since moved to libripcord/). The
  * FUNCTION name survived the merge into halyard_control_crypto.c, which is why it looked plausible. The
  * dead path is described rather than quoted here, so a scan for unresolvable references stays quiet.
  */

@@ -9,7 +9,7 @@
 #include "halyard_control_arm.h"
 
 #include "rc_platform.h"
-#include "rc_tcp.h"
+#include "../net/rc_tcp.h"
 
 #include <string.h>
 

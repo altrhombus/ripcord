@@ -5,7 +5,7 @@
 #include "halyard_registration.h"
 #include "halyard_v1.h"
 #include "rc_platform.h"
-#include "rc_tcp.h"
+#include "../net/rc_tcp.h"
 
 #include <string.h>
 

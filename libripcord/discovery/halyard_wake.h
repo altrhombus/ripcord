@@ -8,7 +8,7 @@
  * Derived from docs/protocol/ps5-local-discovery.md, "LAN wake (rest mode -> awake)", marked [V] from
  * cap49 - a capture taken with the console's internet blocked at the router, which is what establishes
  * that the wake is purely local and needs no cloud, no OAuth and no TLS. That is also why this belongs in
- * ports/common at all, while registration does not (see ports/ripcord-3ds/README.md, "Pairing happens on
+ * libripcord at all, while registration does not (see ports/ripcord-3ds/README.md, "Pairing happens on
  * a PC, not here").
  *
  * THE SEQUENCE, all on the discovery port - 9302 for PS5, 987 for PS4, never the `host-request-port:997`

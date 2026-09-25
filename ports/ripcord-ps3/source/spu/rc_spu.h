@@ -24,7 +24,7 @@
 /*
  * Brings up the SPU subsystem and imports the embedded probe image. Returns 1 on success, 0 on failure -
  * the same convention as rc_random_init, and deliberately NOT the 0-on-success lv2 convention, because
- * ports/common/platform/rc_platform.h having documented that backwards once is enough.
+ * libripcord/platform/rc_platform.h having documented that backwards once is enough.
  *
  * Call once. Safe to call again; the second call is a no-op that reports the first call's result.
  */

@@ -1,10 +1,14 @@
-# ports/common — the portable protocol core
+# libripcord — the portable protocol core
 
-The PS5 Remote Play protocol in portable C99, shared by every Ripcord port. No console SDK, no
-platform headers, no `#ifdef` naming a target.
+The PS5 Remote Play protocol in portable C99, shared by every Ripcord port and by the planned macOS
+client. No console SDK, no platform headers, no `#ifdef` naming a target.
+
+It lived at `ports/common` until 2026-09-24, and older records use that name. It moved to the top level
+when the macOS client (see [`docs/macos-plan.md`](../docs/macos-plan.md)) chose it as its protocol core,
+because a first-class client depending on a folder called "ports" misdescribes both.
 
 This is not a library anyone designed. It is what was left over when the [3DS
-port](../ripcord-3ds) — written as a single-platform tree — was audited for a second target: **71 of
+port](../ports/ripcord-3ds) — written as a single-platform tree — was audited for a second target: **71 of
 its 88 source files referenced no operating system at all.** The entire coupling was three libctru
 calls in three files, plus sockets. Extracting it was mostly `git mv`.
 
@@ -66,10 +70,14 @@ No console, no cross-compiler, just a C compiler:
 dotnet run --project tools/Ripcord.ProtocolLab -- vectors
 
 # 2. Run them
-make -C ports/common/tests
+make -C libripcord/tests
 
 # 3. Compile EVERY portable file, including the ones no runner links
-make -C ports/common/tests compile
+make -C libripcord/tests compile
+
+# 4. Fuzz the parsers that face the network (see "Fuzzing" below)
+make -C libripcord/tests fuzz-replay                 # any compiler, ASan+UBSan
+make -C libripcord/tests fuzz-run FUZZ_CC=clang      # needs a clang with libFuzzer
 ```
 
 `make compile` exists because the runners stop at the socket boundary, which used to leave
@@ -93,6 +101,28 @@ compiler and nothing else installed" is now true rather than aspirational.
 
 The version is pinned to 2.28.8 because that is what devkitPro packages as `3ds-mbedtls`: one version,
 one `rc_ecdh.c`, two ports.
+
+## Fuzzing
+
+This core parses bytes from the LAN and from a console, much of it before anything is authenticated:
+discovery replies from whatever answers a broadcast, the Takion handshake, SACK, DATA and reassembly,
+and the stream headers. It is C, so a length it trusts is a memory-safety bug rather than an exception.
+`tests/fuzz/` has one harness per surface:
+
+| Harness | Reaches |
+|---|---|
+| `fuzz_discovery.c` | The SRCH reply parser |
+| `fuzz_takion.c` | Message framing, every handshake chunk, SACK, DATA, and a reassembler that lives across datagrams |
+| `fuzz_control.c` | The `/sess/ctrl` byte stream and every Takion control-message parser |
+| `fuzz_stream.c` | Stream headers, frame assembly and FEC recovery, with the passthrough crypto seam so it also reaches what an authenticated console could drive |
+
+Stateful harnesses read their input as a sequence of length-prefixed records, one per datagram
+(`fuzz/fuzz_input.h`), so a second packet can find the state the first one left.
+
+There are two modes because Apple's clang ships the sanitizers but not libFuzzer. `fuzz-replay` links each
+harness against `fuzz/replay_main.c`, a deterministic driver that is not a fuzzer. It proves every harness
+runs cleanly under the sanitizers on every host and replays a crash file found elsewhere. `fuzz-run` is the
+coverage-guided run, and CI does it on Linux for 60 seconds per harness.
 
 ## The interop constants are generated, never copied
 

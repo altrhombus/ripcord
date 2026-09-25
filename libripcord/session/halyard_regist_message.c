@@ -1,8 +1,8 @@
 /* See halyard_regist_message.h, and HalyardRegistrationMessage.cs for the provenance of the wire shape. */
 #include "halyard_regist_message.h"
 
-#include "rc_base64.h"
-#include "rc_hex.h"
+#include "../util/rc_base64.h"
+#include "../util/rc_hex.h"
 
 #include <stdio.h>
 #include <stdlib.h>

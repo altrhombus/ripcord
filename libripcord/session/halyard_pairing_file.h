@@ -269,7 +269,7 @@ typedef struct {
  * The file used to hold exactly one console, which meant pairing a second one silently destroyed the
  * first one's keys - and getting them back means standing in front of that console reading a PIN off it
  * again. `Ripcord.Core`'s IPairedConsoleStore has been a list with Upsert and Remove throughout; this is
- * ports/common catching up to the source of truth rather than inventing something.
+ * libripcord catching up to the source of truth rather than inventing something.
  *
  * THE SPLIT IS THE SAME ONE .NET MAKES. Per console: its address, its name, its family, and the keys
  * that identify this client to it. Shared: everything else - the account id, the picture size, the frame

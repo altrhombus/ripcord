@@ -34,9 +34,9 @@ OBJCOPY := $(PREFIX)objcopy
 
 CTRULIB := $(DEVKITPRO)/libctru
 
-# The portable protocol core, shared with every other Ripcord port. See ports/common/platform/
+# The portable protocol core, shared with every other Ripcord port. See libripcord/platform/
 # rc_platform.h for the seam this build implements in source/platform/rc_platform_3ds.c.
-CORE    := ../common
+CORE    := ../../libripcord
 
 TARGET    := ripcord-3ds
 LINKTEST  := ripcord-3ds-linktest

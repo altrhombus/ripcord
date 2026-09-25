@@ -58,12 +58,16 @@ unsigned rc_ecdh_last_curve(void) { return s_last_curve; }
 int rc_ecdh_last_error_step(void) { return s_last_error_step; }
 int rc_ecdh_last_error_code(void) { return s_last_error_code; }
 
+/* Only the Mbed TLS branch below reports a failing step, so without it this would be an unused static
+ * and -Werror stops `make compile`, which builds every file without a backend. */
+#if defined(RC_CRYPTO_MBEDTLS)
 static int ecdh_fail(int step, int code)
 {
     s_last_error_step = step;
     s_last_error_code = code;
     return 0;
 }
+#endif
 
 unsigned rc_ecdh_curve_for_public_key_length(size_t length)
 {

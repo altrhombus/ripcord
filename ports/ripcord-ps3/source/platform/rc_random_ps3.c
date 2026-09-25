@@ -1,7 +1,7 @@
 /*
  * ripcord-ps3 - the random-bytes seam.
  *
- * ports/common/util/rc_random.h holds the argument for why this is a named seam with a hard-failing
+ * libripcord/util/rc_random.h holds the argument for why this is a named seam with a hard-failing
  * contract, and it is not repeated here: two callers need real entropy - the 16-byte handshakeKey that
  * authenticates the ECDH exchange, and the ephemeral ECDH private scalar - and NEITHER SHOWS A SYMPTOM
  * when it does not get it. A session keyed from a counter connects, plays, and looks exactly like a

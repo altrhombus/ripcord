@@ -1,7 +1,7 @@
 /*
- * ripcord-ps3 - run ports/common's own test suites on the console.
+ * ripcord-ps3 - run libripcord's own test suites on the console.
  *
- * WHY. Every assertion in ports/common has only ever been checked on little-endian x86. The PPE is
+ * WHY. Every assertion in libripcord has only ever been checked on little-endian x86. The PPE is
  * big-endian. openh264 was in exactly that position two days ago and the answer turned out to be fine -
  * but it was established by decoding 400 MB and comparing hashes, not by reading the source and
  * concluding it looked careful. The core deserves the same standard, and it is the code every port
