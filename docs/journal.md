@@ -35,6 +35,48 @@ different purpose.
 > anything. The list above is short, it is checkable in one `git log --format=%B | grep`, and it stops
 > growing the moment someone notices — which is the property that actually matters.
 
+### The wordmark, and a tile that is layers rather than a drawing (2026-09-24)
+
+The last one-way door in the design direction. It was chosen from an options page comparing the three
+shortlisted faces on both grounds, with Segoe UI Variable as a control. **Outfit SemiBold, lowercase,
+horizontal lockup.** The page itself stays uncommitted in `brand/explorations/`, as working material. What it
+decided is in `brand/README.md`.
+
+**The word is outlines, and the font is not in the tree.** `brand/outline-wordmark.py` fetches Outfit
+from a pinned google/fonts commit into the gitignored `brand/third-party/`, checks its SHA-256 and writes
+the lockups as plain paths. That keeps `NOTICE`'s "nothing below is vendored" literally true: the font is
+listed there beside the ports' dependencies on the same terms. It also means the generator's headless
+Edge, and any port without a font engine, draws the word with no font at all. The lockup's spacing is
+defined by the type rather than in pixels: the mark runs from the baseline to the cap height, and the gap
+from the wedge's tip to the *r* is one x-height. The mark came out about 10% larger relative to the word
+than on the options page, because the page had centred it on the line box and floated it off the
+baseline.
+
+**The black tile was questioned, and kept dark on the numbers.** The green dash is 2.4:1 on white, under
+the 3:1 a non-text graphic needs, so a light plate fails the mark. The discomfort was real, though, and
+measuring found the cause. The old tile was 1.07:1 against a dark taskbar, so it was invisible there,
+and it only showed on a light taskbar, as a flat black square. The fix is a lift to `#303743 → #1B1F26`,
+as far as the dashes allow (blue 3.1:1, red 3.2:1 at the light end), plus a top highlight and hairline.
+
+**The edge is not in the drawing, because two of the next three platforms own their icon's edge.**
+Android masks adaptive icons to a shape of the launcher's choosing, which leaves a drawn border as
+slivers. macOS 26 draws its own rounded square and glass. So `ripcord-tile.svg` and
+`ripcord-tile-small.svg` are gone. `generate-assets.ps1` now composes each tile from a shapeless ground
+(`ripcord-ground.svg`) and a mark, and adds the shape and edge only for Windows. It turned out the
+README's old ø58 rule is Android's safe zone to within a unit, so the mark's placement carries over
+unchanged.
+
+Three smaller things came out of it:
+
+- **The wide tile and splash had been rendering the plated tile** while the generator's comment said
+  they did not. Both are the lockup now. The splash pins its `BackgroundColor` to the ground's dark end,
+  so the white word never lands on a theme-chosen colour.
+- **The card did not follow the tile**, and the reason is recorded rather than smoothed over. The wedge
+  facet is "the card lifted", and at the new values it would vanish. The question is open in
+  `ROADMAP.md`.
+- **The "unplated" taskbar assets are plated.** A theme-aware plateless variant was offered and not
+  taken. `brand/README.md` records it under "Not done yet".
+
 ### Remote play works through the app, and eight reports came back with it (2026-09-24)
 
 Pairing over the account route, connecting from a different network, waking a console from rest over the
