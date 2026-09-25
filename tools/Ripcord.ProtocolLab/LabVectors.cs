@@ -164,6 +164,12 @@ internal static class LabVectors
         Console.WriteLine($"wrote {protoOutPath}");
         Console.WriteLine($"  sessionreq={protoCounts.Request} sessionreply={protoCounts.Reply}");
 
+        // The account route's 9303 association, as transcripts: see LabDatagramVectors for why.
+        string dgramOutPath = string.IsNullOrEmpty(dir) ? "dgram-transport.kat" : Path.Combine(dir, "dgram-transport.kat");
+        int dgramSteps = LabDatagramVectors.EmitFile(dgramOutPath);
+        Console.WriteLine($"wrote {dgramOutPath}");
+        Console.WriteLine($"  steps={dgramSteps}");
+
         return 0;
     }
 

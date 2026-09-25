@@ -248,8 +248,20 @@ Step 1, promoting the core to `libripcord/` with fuzzing and a CI job, is done a
   - [ ] **Pair, connect, dump frames.**
 - [x] **Port STUN to `libripcord`.** Done 2026-09-24: `net/rc_stun.{h,c}` and `net/rc_stun_client.c`, with
       102 host assertions reusing the .NET side's vectors, and a fuzz harness. See the journal.
-- [ ] **Port the internet-play connect sequence to `libripcord`.** The UDP half of
-      `Ripcord.Cloud.Halyard/Rendezvous/`. The HTTPS half goes to Swift.
+- [x] **Port the internet-play connect sequence's UDP half to `libripcord`.** Done 2026-09-25:
+  - The UDP 9303 transport is ported: prelude, chunks, association and pump.
+  - So are candidate choice and STUN NAT classification.
+  - `dgram-transport.kat` replays 59 steps through the real .NET association byte for byte.
+  - Still open:
+    - [ ] `halyard_control_session.c` is hard-wired to TCP. Internet play and the account route need
+          `/sess/init` and `/sess/ctrl` over the datagram channel, through a byte-pipe seam in that
+          file, which was left alone because it is hardware-validated.
+    - [ ] The A/V leg's driver: STUN on the media socket, the 9297 prelude, then wait for
+          session-ready before Takion INIT.
+    - [ ] Two HTTP-completeness checks now exist, `halyard_dgram_http_complete` and
+          `halyard_account_regist_response_complete`. Keep one.
+    - [ ] The spec says the 0x40 request word appears in no capture and is a counter; .NET and C both
+          send 0x40 `[X]`. Change both together.
 - [x] **Port account-pairing derivations to `libripcord`.** Done 2026-09-25:
   - The seed delivery, the account wrap and key, and building and opening the `/sess/rgst` request are
     ported, with a flow driven through a transport callback.

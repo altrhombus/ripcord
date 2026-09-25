@@ -171,4 +171,41 @@ rc_stun_gather_status rc_stun_gather(int sock, const struct sockaddr_in *servers
                                      unsigned attempts_per_server, uint32_t per_attempt_timeout_ms,
                                      rc_stun_address *out_reflexive, size_t *out_server_index);
 
+/* ---- NAT classification (rc_stun_mapping.c) ---- */
+
+/*
+ * StunReflexiveAddress.DiscoverAsync's StunMapping: a reflexive address, and whether the NAT was measured
+ * to map it the same way for two different destinations.
+ *
+ *   endpoint_independent   1  two servers saw the same address and port: usable by anyone, a console included
+ *                          0  they differed: a per-destination (symmetric) NAT, where NO advertised
+ *                             candidate can work however right it looked when measured
+ *                         -1  only one server answered, so there was nothing to compare
+ */
+typedef struct {
+    rc_stun_address reflexive;
+    int endpoint_independent;
+} rc_stun_mapping;
+
+/* Same family, port and address bytes (4 for IPv4, 16 for IPv6). Pure; 0 for NULL. */
+int rc_stun_address_equal(const rc_stun_address *a, const rc_stun_address *b);
+
+/*
+ * DiscoverAsync, on the caller's socket: asks `servers` in order, one server at a time through
+ * rc_stun_gather, until two have answered, and classifies the NAT from the pair. RC_STUN_GATHER_OK with
+ * *out set when at least one answered; RC_STUN_GATHER_NO_ANSWER when none did (a normal outcome).
+ *
+ * THE SERVERS SHOULD BE ON DIFFERENT OPERATORS. The comparison turns on two genuinely different
+ * destinations; two names of one provider can resolve to one host, and a symmetric NAT would then look
+ * endpoint-independent. Which servers is the caller's (and the Mac's DNS resolver's) business.
+ *
+ * DELIBERATE DIFFERENCE: .NET binds a throwaway socket on the chosen port, asks, closes it, and binds the
+ * real one afterwards, leaving a window where something else can take the port. This asks on the socket
+ * that will carry the traffic, which is what rc_stun_gather's contract says a reflexive address needs
+ * anyway. It stops at the second answer, as .NET does, rather than asking every server.
+ */
+rc_stun_gather_status rc_stun_discover_mapping(int sock, const struct sockaddr_in *servers, size_t server_count,
+                                               unsigned attempts_per_server, uint32_t per_attempt_timeout_ms,
+                                               rc_stun_mapping *out);
+
 #endif /* RC_STUN_H */
