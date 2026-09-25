@@ -104,7 +104,6 @@ public class SettingsStoreTests : IDisposable
             UiStickDeadzone = 0.35,
             FullScreenOnConnect = false,
             ShowDiagnosticsOverlay = true,
-            LargeUiScale = true,
         };
 
         store.Save(updated);
@@ -180,5 +179,114 @@ public class SettingsStoreTests : IDisposable
 
         Assert.Empty(Directory.GetFiles(_dir, "*.tmp"));
         Assert.True(File.Exists(Path.Combine(_dir, "settings.json")));
+    }
+
+    // ---- the diagnostics setting's bool-to-rung migration ---------------------------------------
+
+    /// <summary>Write a settings file by hand, the way an older build would have left one.</summary>
+    private void WriteSettingsFile(string json)
+        => File.WriteAllText(Path.Combine(_dir, "settings.json"), json);
+
+    [Fact]
+    public void AFileFromAnOlderBuildKeepsEveryOtherSetting()
+    {
+        // The failure this migration exists to avoid, and the reason it is not a type change. The store
+        // catches JsonException and falls back to defaults, so had ShowDiagnosticsOverlay simply BECOME an
+        // enum, this file would not have lost one preference - it would have lost all of them, silently, on
+        // the next launch.
+        WriteSettingsFile(
+            """
+            {
+              "ShowDiagnosticsOverlay": true,
+              "BitrateKbps": 23000,
+              "FullScreenOnConnect": false
+            }
+            """);
+
+        RipcordSettings loaded = new SettingsStore(_paths).Current;
+
+        Assert.Equal(23_000, loaded.BitrateKbps);
+        Assert.False(loaded.FullScreenOnConnect);
+    }
+
+    [Theory]
+    [InlineData("true", DiagnosticsRung.Summary)]
+    [InlineData("false", DiagnosticsRung.Hidden)]
+    public void AnOlderBuildsAnswerIsHonoured(string legacy, DiagnosticsRung expected)
+    {
+        WriteSettingsFile($$"""{"ShowDiagnosticsOverlay": {{legacy}}}""");
+
+        RipcordSettings loaded = new SettingsStore(_paths).Current;
+
+        Assert.Null(loaded.DiagnosticsOnConnect);
+        Assert.Equal(expected, loaded.DiagnosticsRungOnConnect);
+    }
+
+    [Fact]
+    public void ThisBuildsAnswerWinsWhenTheFileHasOne()
+    {
+        // Null means "the file did not say", which is what makes it distinguishable from an answer of
+        // Hidden - so a user who deliberately turned the HUD off is not re-migrated from the stale bool.
+        WriteSettingsFile(
+            """
+            {
+              "ShowDiagnosticsOverlay": true,
+              "DiagnosticsOnConnect": "Hidden"
+            }
+            """);
+
+        Assert.Equal(DiagnosticsRung.Hidden, new SettingsStore(_paths).Current.DiagnosticsRungOnConnect);
+    }
+
+    [Fact]
+    public void AnAbsentSettingIsHidden()
+    {
+        WriteSettingsFile("{}");
+
+        Assert.Equal(DiagnosticsRung.Hidden, new SettingsStore(_paths).Current.DiagnosticsRungOnConnect);
+    }
+
+    [Theory]
+    [InlineData(DiagnosticsRung.Hidden, false)]
+    [InlineData(DiagnosticsRung.Summary, true)]
+    [InlineData(DiagnosticsRung.Full, true)]
+    public void SavingTheRungKeepsTheLegacyBoolInStep(DiagnosticsRung rung, bool expectedLegacy)
+    {
+        // Downgrade safety: someone who moves back to an older build should find the HUD where they left it
+        // rather than discovering the setting quietly reverted.
+        var store = new SettingsStore(_paths);
+        store.Save(store.Current.WithDiagnosticsRung(rung));
+
+        RipcordSettings reloaded = new SettingsStore(_paths).Current;
+
+        Assert.Equal(rung, reloaded.DiagnosticsOnConnect);
+        Assert.Equal(expectedLegacy, reloaded.ShowDiagnosticsOverlay);
+        Assert.Equal(rung, reloaded.DiagnosticsRungOnConnect);
+    }
+
+    [Fact]
+    public void TheRungPersistsByNameRatherThanByOrdinal()
+    {
+        // Same reason every other enum here does: reordering or extending the enum must not silently change
+        // what an already-saved file means.
+        var store = new SettingsStore(_paths);
+        store.Save(store.Current.WithDiagnosticsRung(DiagnosticsRung.Full));
+
+        string json = File.ReadAllText(Path.Combine(_dir, "settings.json"));
+
+        Assert.Contains("\"Full\"", json, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TheComputedRungIsNotItselfWrittenToTheFile()
+    {
+        // It is derived from two other keys. Writing it would put a third answer to the same question in the
+        // file, and a file that can disagree with itself.
+        var store = new SettingsStore(_paths);
+        store.Save(store.Current.WithDiagnosticsRung(DiagnosticsRung.Summary));
+
+        string json = File.ReadAllText(Path.Combine(_dir, "settings.json"));
+
+        Assert.DoesNotContain(nameof(RipcordSettings.DiagnosticsRungOnConnect), json, StringComparison.Ordinal);
     }
 }

@@ -22,6 +22,9 @@ public sealed class ConsoleCardViewModel : ObservableState<ConsoleCardState>
     private PairedConsole _console;
     private ConsoleReachability _reachability = ConsoleReachability.Checking;
     private bool _highlighted;
+    private CardDensity _density = CardDensity.Grid;
+    private bool _pointerOver;
+    private bool _pressed;
 
     /// <param name="clock">
     /// Injected so the last-played caption is testable at its boundaries. Same seam, and same reason, as
@@ -59,6 +62,47 @@ public sealed class ConsoleCardViewModel : ObservableState<ConsoleCardState>
     {
         get => _highlighted;
         set => Mutate(() => _highlighted = value);
+    }
+
+    /// <summary>
+    /// How large this card is being drawn, and therefore how much it is allowed to say.
+    ///
+    /// <para>
+    /// Set by the page from <see cref="CardMetrics.For"/> when the viewport or the console count changes. It
+    /// lives on the card rather than being read from the page by each binding because a card has to be able
+    /// to answer for itself: the front end selects a wedge width, a type role and a margin from it, and a
+    /// binding that had to reach back up to the page for that would be a second path to the same fact.
+    /// </para>
+    /// </summary>
+    public CardDensity Density
+    {
+        get => _density;
+        set => Mutate(() => _density = value);
+    }
+
+    /// <summary>
+    /// The pointer is over this card. Distinct from <see cref="IsHighlighted"/>, which is hover <em>or</em>
+    /// focus and drives the card's wash.
+    ///
+    /// <para>
+    /// Separate because the wedge responds to this and must not respond to focus: focus is the ring's job,
+    /// and a second focus mark on the wedge would rebuild the confusion that splitting them removed.
+    /// </para>
+    /// </summary>
+    public bool IsPointerOver
+    {
+        get => _pointerOver;
+        set => Mutate(() => _pointerOver = value);
+    }
+
+    /// <summary>
+    /// The card is being pressed. The primary action of the product had no pressed state at all until this
+    /// existed - the wedge read unmistakably as a button and answered nothing.
+    /// </summary>
+    public bool IsPressed
+    {
+        get => _pressed;
+        set => Mutate(() => _pressed = value);
     }
 
     /// <summary>
@@ -131,9 +175,13 @@ public sealed class ConsoleCardViewModel : ObservableState<ConsoleCardState>
                 ConsoleReachability.Resting or ConsoleReachability.PreparingForRest => StatusTone.Caution,
                 ConsoleReachability.Offline => StatusTone.Neutral,
 
-                // Positive: it is ready to play. The label carries "elsewhere"; the colour should not also
-                // suggest something is wrong, because nothing is.
-                ConsoleReachability.Away => StatusTone.Positive,
+                // **Caution, and the Positive this replaces was over-claiming.** The argument for green was
+                // that nothing is wrong, which is true, and that it is ready to play, which we do not know:
+                // Away means the account lists the console, not that it is awake. A console asleep in another
+                // house is Away, and seen on hardware as a green dot over a console that then had to be woken
+                // during the connect. Caution is the same tone Resting wears and says the same thing — it
+                // will work, and it will take a moment longer.
+                ConsoleReachability.Away => StatusTone.Caution,
                 _ => StatusTone.Unknown,
             },
 
@@ -147,12 +195,20 @@ public sealed class ConsoleCardViewModel : ObservableState<ConsoleCardState>
             // label already says "Not reachable", and a console being switched off is not a fault.
             ActionGlyph: wake ? ActionGlyph.Wake : ActionGlyph.Play,
 
-            // False only when the console did not answer at all. Everything else is worth attempting: a console
-            // can answer 620 and still be woken, and a merely slow probe should not lock the user out.
-            // Away is connectable -- that is the point of distinguishing it from Offline.
-            CanConnect: _reachability != ConsoleReachability.Offline,
+            // False only when the console did not answer at all. Presentation only: it dims the action so the
+            // card admits we could not reach it. It deliberately does NOT gate connecting, and the old name
+            // (CanConnect) said otherwise while a front end wired it to IsEnabled.
+            //
+            // Silence is the only route to Offline, and silence is not knowledge -- a console powered on for a
+            // whole session was reported unreachable because one datagram was lost. Blocking on it turns a lost
+            // packet into a dead end, while allowing the attempt costs a failed connect that can at least say
+            // what went wrong. Away is reachable -- that is the point of distinguishing it from Offline.
+            IsReachable: _reachability != ConsoleReachability.Offline,
             LastConnectedLabel: LastPlayed.Describe(_console.LastConnectedUtc, _clock()),
             IsHighlighted: _highlighted,
+            Density: _density,
+            IsPointerOver: _pointerOver,
+            IsPressed: _pressed,
 
             // A grid item whose content is a panel has no accessible name of its own, so without this a screen
             // reader announces a list of unlabelled tiles. Composed rather than left to the reading order, so it

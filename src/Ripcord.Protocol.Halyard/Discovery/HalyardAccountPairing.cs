@@ -370,14 +370,34 @@ public sealed class HalyardAccountPairing(
         // ignored so a stray frame cannot resolve the wait with garbage.
         var seed = new TaskCompletionSource<byte[]>(TaskCreationOptions.RunContinuationsAsynchronously);
 
+        // Counted, because otherwise the two failures are indistinguishable and they are not the same fault.
+        // Ignoring a customData1 that will not decrypt is right — a stray frame must not resolve the wait with
+        // garbage — but reporting the timeout afterwards as "the console did not publish the seed" asserts
+        // something we do not know. A seed that arrived and did not open means our key material, our context
+        // key or our encoding is wrong; a seed that never arrived means the console never got as far as
+        // publishing one. They have nothing in common but the symptom, and the wrong one sends the next
+        // person looking in the wrong place.
+        int customDataSeen = 0;
+        int customDataUnreadable = 0;
+
         void OnCustomData1(string customData1)
         {
+            Interlocked.Increment(ref customDataSeen);
+
             try
             {
                 seed.TrySetResult(HalyardAccountSeedDelivery.RecoverSeed(data1, data2, customData1, _contextKey));
             }
-            catch (FormatException) { /* not a valid double-base64 customData1 for us — keep waiting */ }
-            catch (ArgumentException) { /* wrong length after decode — keep waiting */ }
+            catch (FormatException)
+            {
+                // Not a valid double-base64 customData1 for us — keep waiting.
+                Interlocked.Increment(ref customDataUnreadable);
+            }
+            catch (ArgumentException)
+            {
+                // Wrong length after decode — keep waiting.
+                Interlocked.Increment(ref customDataUnreadable);
+            }
         }
 
         // The console's OFFER, which carries where it is and the id it will name itself by in the prelude.
@@ -389,6 +409,67 @@ public sealed class HalyardAccountPairing(
         string? liveSessionId = null;
         var acked = new HashSet<(string Action, int ReqId)>();
         var ackLock = new object();
+
+        // Ask the session service who is in the session, independently of the push channel.
+        //
+        // **This is the question a join timeout cannot answer on its own.** "The console never joined" is what
+        // our push channel failed to hear, which is not the same fact as the console not being there. If the
+        // service lists it as a member, the command worked and our subscription missed the announcement — our
+        // bug. If the service lists only us, the command was accepted by the cloud and the console never acted
+        // on it, which is a console or account problem and nothing in this process will fix it. The two send
+        // you to opposite ends of the stack, and the readback endpoint already exists for exactly this.
+        //
+        // Diagnostic only: it never changes what the flow does, and it cannot fail the pairing.
+        async Task LogMembershipAsync(string when)
+        {
+            if (_options.Log is null || liveSessionId is null)
+            {
+                return;
+            }
+
+            try
+            {
+                IReadOnlyList<HalyardCloudSession> sessions = await _signaling
+                    .GetSessionAsync(liveSessionId, cancellationToken)
+                    .ConfigureAwait(false);
+
+                HalyardCloudSession? mine = sessions.FirstOrDefault(x => x.SessionId == liveSessionId);
+
+                if (mine is null)
+                {
+                    Log($"session readback {when}: the service does not have our session at all");
+                    return;
+                }
+
+                HalyardSessionMember[] members = mine.Members ?? [];
+
+                // Identified by the duid we commanded, which is the only unambiguous test.
+                //
+                // The first version of this guessed: "a console member is the one carrying a deviceUniqueId,
+                // we are the one that does not". That is wrong — we create the session with
+                // deviceUniqueId "me" and the service resolves it, so THIS CLIENT has one too. The readback
+                // duly reported one member with a deviceUniqueId and the note invited reading it as the
+                // console having joined, which is the opposite of what it meant.
+                bool consoleIsAMember = members.Any(
+                    m => string.Equals(m.DeviceUniqueId, request.ConsoleDuid, StringComparison.Ordinal));
+
+                Log($"session readback {when}: {members.Length} member(s); "
+                    + $"the console {(consoleIsAMember ? "IS" : "is NOT")} among them");
+
+                foreach (HalyardSessionMember member in members)
+                {
+                    bool isConsole = string.Equals(
+                        member.DeviceUniqueId, request.ConsoleDuid, StringComparison.Ordinal);
+
+                    Log($"  member platform={member.Platform} account={member.AccountId} "
+                        + $"{(isConsole ? "<- the console we commanded" : "(not the commanded console)")}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Log($"session readback {when} failed: {ex.GetType().Name}");
+            }
+        }
 
         // Answer every signaling message the console sends with a RESULT carrying its reqId.
         //
@@ -508,16 +589,24 @@ public sealed class HalyardAccountPairing(
             // OFFER breaks the exchange, because on this route the console initiates the signaling (its OFFER
             // arrives unprompted, with its own reqId) and we are the responder. Tried live; the console
             // answered by TERMINATE-ing and never opened a control association at all.
+            // Three states, not two: joined, waited-and-it-never-came, and never-waited. The join wait only
+            // runs on the route that needs it, and "false" would otherwise let a failure message downstream
+            // claim the console never turned up when nothing ever looked.
+            bool? consoleJoined = null;
+
             if (!request.LocalHashedId.IsEmpty)
             {
                 try
                 {
                     await joined.Task.WaitAsync(_options.OfferTimeout, cancellationToken).ConfigureAwait(false);
+                    consoleJoined = true;
                     Log("console joined the session");
                 }
                 catch (TimeoutException)
                 {
+                    consoleJoined = false;
                     Log("the console never joined the session");
+                    await LogMembershipAsync("after the join wait").ConfigureAwait(false);
                 }
             }
 
@@ -534,7 +623,50 @@ public sealed class HalyardAccountPairing(
                 }
                 catch (TimeoutException)
                 {
-                    return fail("The console did not publish the registration seed (customData1) in time.");
+                    int seen = Volatile.Read(ref customDataSeen);
+                    int unreadable = Volatile.Read(ref customDataUnreadable);
+
+                    Log($"seed wait timed out after {_options.SeedTimeout.TotalSeconds:0}s "
+                        + $"(customData1 frames seen: {seen}, unreadable: {unreadable})");
+
+                    await LogMembershipAsync("after the seed wait").ConfigureAwait(false);
+
+                    // Ordered by how far upstream the fault is, because the first true statement is the useful
+                    // one. A console that never joined cannot have published anything, so blaming the seed
+                    // there names a consequence and hides the cause — reported from hardware as a seed
+                    // timeout when the trace showed the console had never turned up at all.
+                    //
+                    // Ordered by how far upstream the fault is, because the first true statement is the
+                    // useful one. A console that never joined cannot have published anything, so blaming the
+                    // seed there names a consequence and hides the cause — reported from hardware as a seed
+                    // timeout when the trace showed the console had never turned up at all.
+                    //
+                    // **Signed out of the account service is one of these, and it is the one that is
+                    // invisible.** Five runs (2026-09-24) against a console signed out of PSN after the
+                    // account's security options changed: it answered LAN discovery under its own name
+                    // throughout, the console list still reported remote play enabled and both standby wake
+                    // modes, and every command was accepted with a commandId in ~150 ms. Signing in on the
+                    // console fixed it from rest mode, first attempt, no restart.
+                    //
+                    // Nothing in the console list reports it — the fields are name, language,
+                    // wakeupEnabledPowerModes, enabledFeatures, updatedDateTime, duid, platform, with no
+                    // presence or online flag — so a client cannot check for it and can only name it among
+                    // the things to look at. It is listed rather than ranked: one observation is not a base
+                    // rate, and the other causes here have been seen too.
+                    return fail(
+                        consoleJoined == false && seen == 0
+                            ? "The console never joined the session, so it never got as far as publishing a "
+                              + "registration seed. It has to be awake or able to be woken over the internet "
+                              + "from rest mode, reachable by the account service, and signed in to "
+                              + "PlayStation Network — a console that is signed out still answers on your "
+                              + "network and still looks available here."
+                        : unreadable > 0
+                            ? $"The console published a registration seed ({unreadable} of {seen} customData1 "
+                              + "frames) but none of them could be decrypted with this session's key material."
+                        : consoleJoined == true
+                            ? "The console joined the session but did not publish the registration seed "
+                              + "(customData1) in time."
+                        : "The console did not publish the registration seed (customData1) in time.");
                 }
 
                 Log("registration seed recovered from customData1");

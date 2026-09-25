@@ -59,8 +59,63 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
     /// </summary>
     private readonly IAccountConsolePairing? _accountPairing;
 
-    private AddConsoleStep _step = AddConsoleStep.Family;
+    /// <summary>
+    /// DISCOVERY LEADS. The flow used to open on "which console are you connecting to?", which is a question
+    /// the scan answers by itself: every console found on the network reports its own platform, and
+    /// <see cref="SelectDiscovered"/> has always taken the family from the console rather than from whatever
+    /// the user guessed. So the step existed to display a shape.
+    ///
+    /// <para>
+    /// It still exists, for the one case where the family genuinely is not knowable: a hand-typed address,
+    /// reached either deliberately or because nothing answered. See <see cref="DescribeScanOutcome"/>.
+    /// </para>
+    /// </summary>
+    private AddConsoleStep _step = AddConsoleStep.Find;
+
+    /// <summary>
+    /// The family to PREFER, for result ordering and for the account-pairing capability question. Always
+    /// concrete, because both of those want an answer before anybody has given one.
+    /// </summary>
     private ConsoleFamily _family = ConsoleFamily.Ps5;
+
+    /// <summary>
+    /// The family the user actually chose, as opposed to the one assumed. Null until they say so, which is
+    /// most of the time now — so the scan heading must not name one, and the ordering preference in
+    /// <see cref="Accept"/> must not claim one.
+    /// </summary>
+    private ConsoleFamily? _chosenFamily;
+
+    /// <summary>
+    /// A scan has finished and found nothing. Selecting a family after that must not start another scan: the
+    /// scanner is family-agnostic, so it would look for the same consoles in the same place and find the same
+    /// nothing, having spent the search window doing it.
+    /// </summary>
+    private bool _scanFoundNothing;
+
+    /// <summary>
+    /// The code form has been asked for. False until then, when somebody is not signed in.
+    ///
+    /// <para>
+    /// <b>Because the code route is not the lazy one, however it looks.</b> docs/design.md had it leading on
+    /// the grounds that it "needs nothing the player does not already have" - and that is simply false. It
+    /// needs them at the console, through its menus, reading an 8-digit code, AND holding their numeric
+    /// account id, which almost nobody knows and which this app's own caption sends them to a third-party
+    /// lookup tool to find. Signing in needs a password they already have.
+    /// </para>
+    ///
+    /// <para>
+    /// So sign-in leads and the code form waits to be asked for. Never a wall: the link to it is right there,
+    /// unexplained and unweighted, for anybody who would rather not connect an account - and that is a trade
+    /// they are entitled to make without being argued with.
+    /// </para>
+    /// </summary>
+    private bool _codeRouteRevealed;
+
+    /// <summary>
+    /// Why a sign-in started from this flow could not run, or null. Not set when the user simply cancelled —
+    /// closing a window you opened is not an error and must not leave a red bar behind.
+    /// </summary>
+    private string? _signInError;
     private string? _familyNote;
     private string _findSubheading = ScanningMessage;
     private bool _isScanning;
@@ -186,6 +241,17 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
     // ---- transitions ---------------------------------------------------------------------------
 
     /// <summary>
+    /// Begin. Scans immediately, because the first thing the flow should do is look.
+    ///
+    /// <para>
+    /// A method rather than constructor work: the scan is asynchronous and the constructor cannot await it,
+    /// and a fire-and-forget scan begun during construction would be running before the caller had wired up
+    /// the change notification it needs to see results arrive.
+    /// </para>
+    /// </summary>
+    public Task StartAsync() => EnterFindAsync();
+
+    /// <summary>
     /// Choose a family. An unsupported one surfaces its caveat and goes no further; a supported one starts the
     /// scan. A family with a caveat that <em>is</em> usable shows the caveat and proceeds — being honest about
     /// rough edges is not the same as refusing.
@@ -194,13 +260,69 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
     {
         ArgumentNullException.ThrowIfNull(family);
 
+        bool skipScan = _scanFoundNothing;
+
         Mutate(() =>
         {
             _family = family;
+            _chosenFamily = family;
             _familyNote = family.SupportNote;
         });
 
-        return family.IsSelectable ? EnterFindAsync() : Task.CompletedTask;
+        if (!family.IsSelectable)
+        {
+            return Task.CompletedTask;
+        }
+
+        // Straight to the typed-address panel when a scan has already come back empty. Scanning again would
+        // look for the same consoles in the same place and find the same nothing, having spent the search
+        // window doing it - and the only reason we are asking the family at all is that somebody is about to
+        // type an address.
+        if (skipScan)
+        {
+            Mutate(() =>
+            {
+                _step = AddConsoleStep.Find;
+                _manualEntryOpen = true;
+            });
+            return Task.CompletedTask;
+        }
+
+        return EnterFindAsync();
+    }
+
+    /// <summary>
+    /// Show the code form. For somebody who would rather type a code than connect an account.
+    /// </summary>
+    public void RevealCodeRoute() => Mutate(() => _codeRouteRevealed = true);
+
+    /// <summary>
+    /// A sign-in the user started from this flow has finished, one way or the other.
+    ///
+    /// <para>
+    /// <b>Why the flow has to be told.</b> The account is read live — <see cref="AccountIdIsAutomatic"/> asks
+    /// the session every time the state is composed — but nothing here subscribes to it, so a sign-in that
+    /// happens beside the flow changes every answer and recomposes nothing. Before this existed the invitation
+    /// navigated to the settings page to sign in, which abandoned the flow outright; the user came back by
+    /// starting pairing again.
+    /// </para>
+    ///
+    /// <para>
+    /// On success the console-list lookup is started, because it was skipped while there was no account to
+    /// ask, and whether the account already knows this console is what decides the route. The route itself
+    /// needs no nudging: <see cref="DefaultRoute"/> follows availability and <c>_chosenRoute</c> is still null
+    /// for anyone who has not picked one, so the step re-aims itself as the answers arrive.
+    /// </para>
+    /// </summary>
+    /// <param name="failure">A sentence to show, or null for signed in or cancelled.</param>
+    public void AccountSignInFinished(string? failure = null)
+    {
+        Mutate(() => _signInError = failure);
+
+        if (failure is null)
+        {
+            StartCloudConsoleLookup();
+        }
     }
 
     /// <summary>Search again from scratch, discarding what the previous scan found.</summary>
@@ -303,7 +425,10 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
     private PairingRoute DefaultRoute =>
         _accountPairing is not null && AccountIdIsAutomatic
         && (_accountPairingCapability?.Available ?? false)
-        && ResolveCloudDeviceId() is not null
+        // Remote play switched off on the console is the one flag that makes this route impossible rather
+        // than merely conditional, so the step must not aim at it. Being unable to WAKE the console is a
+        // condition, not a refusal — an awake console pairs normally — and does not change the route.
+        && ResolveCloudConsole() is { RemotePlayEnabled: true }
             ? PairingRoute.Account
             : PairingRoute.Code;
 
@@ -433,6 +558,19 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
             }
 
             PairedConsole paired = BuildRecord(result.CredentialRecord);
+
+            // **Stored here, where it becomes true, and not on the way out of the celebration.**
+            //
+            // The step that follows says "Paired." and that the console is linked to this PC. That was a
+            // promise about something still only in memory: the record was written by Finish, so abandoning
+            // the flow at the celebration — or closing the app, or a crash — lost it. The console, meanwhile,
+            // HAS registered, so the loss is not symmetric. It believes the pairing exists and we no longer
+            // have the credential, and recovering means a fresh code off the console's screen.
+            //
+            // So the surface stops needing a save. Finish re-stores only when the user typed a different name,
+            // which makes it a rename rather than the moment the pairing is committed.
+            _store.Upsert(paired);
+
             Mutate(() =>
             {
                 _paired = paired;
@@ -467,9 +605,14 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
     }
 
     /// <summary>
-    /// Save the paired console, optionally starting a session. A nickname is stored only when it differs from
-    /// what the console would be called anyway — otherwise a user who accepts the prefilled name silently gets it
+    /// Leave the celebration, optionally starting a session — and apply a nickname if one was typed.
+    ///
+    /// <para>
+    /// <b>Not the save.</b> The record went to the store the moment the console registered, because that is
+    /// when it became true. This only writes again when the user typed a name that differs from what the
+    /// console would be called anyway — otherwise somebody who accepts the prefilled name silently gets it
     /// pinned, and it stops tracking the console if the console is ever renamed.
+    /// </para>
     /// </summary>
     public void Finish(string typedName, bool connect)
     {
@@ -479,11 +622,15 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
         }
 
         string typed = (typedName ?? string.Empty).Trim();
-        PairedConsole toSave = typed.Length > 0 && typed != _paired.DisplayName
-            ? _paired with { Nickname = typed }
-            : _paired;
+        bool renamed = typed.Length > 0 && typed != _paired.DisplayName;
+        PairedConsole toSave = renamed ? _paired with { Nickname = typed } : _paired;
 
-        _store.Upsert(toSave);
+        // Only on a rename. The unnamed case is already stored, byte for byte, from the moment of pairing.
+        if (renamed)
+        {
+            _store.Upsert(toSave);
+        }
+
         Completed?.Invoke(new AddConsoleCompletion(toSave, connect));
     }
 
@@ -498,6 +645,16 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
         {
             case AddConsoleStep.Find:
                 CancelScan();
+
+                // Back to the family question only if that is where we came from. Find is the FIRST step now,
+                // so for everybody whose scan found something there is nothing behind it and Back means
+                // leaving - anything else would invent a step to go back to.
+                if (_chosenFamily is null && !_scanFoundNothing)
+                {
+                    await DisposeAsync().ConfigureAwait(false);
+                    return false;
+                }
+
                 Mutate(() =>
                 {
                     _step = AddConsoleStep.Family;
@@ -704,11 +861,14 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
             return;
         }
 
-        // The family the user picked first, then everything else — their console is almost certainly the one they
-        // said it was, and it should not be listed below one they were not looking for.
+        // The family the user picked first, then everything else — their console is almost certainly the one
+        // they said it was, and it should not be listed below one they were not looking for.
+        //
+        // Only when they actually picked one. Ordering by the assumed default would sort a mixed list on a
+        // preference nobody expressed, which is worse than arrival order because it looks deliberate.
         DiscoveredConsoleCard card = DiscoveredConsoleCard.From(console);
-        int insertAt = card.Family == _family
-            ? Discovered.Count(d => d.Family == _family)
+        int insertAt = _chosenFamily is { } chosen && card.Family == chosen
+            ? Discovered.Count(d => d.Family == chosen)
             : Discovered.Count;
         Discovered.Insert(insertAt, card);
     }
@@ -719,9 +879,25 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
         if (Discovered.Count == 0)
         {
             _findSubheading = Strings.Pairing_NothingAnswered;
+            _scanFoundNothing = true;
+
+            // Nothing answered, so nothing has told us what we are looking for - and a hand-typed address
+            // cannot be paired without knowing its family. THIS is where the question belongs: it is asked
+            // only when it is genuinely unanswerable, rather than in front of everybody on the way in.
+            if (_chosenFamily is null)
+            {
+                _step = AddConsoleStep.Family;
+                _familyNote = Strings.Pairing_FamilyNeededForAddress;
+                return;
+            }
+
             _manualEntryOpen = true;
             return;
         }
+
+        // Something answered, so the scan has told us what it is. Anybody who reaches the link step from here
+        // never sees the family question.
+        _scanFoundNothing = false;
 
         _findSubheading = Discovered.Any(d => d.Family != _family)
             ? Strings.Pairing_PickConsoleMixedFamilies
@@ -792,8 +968,20 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
     /// paired before sign-in existed — see <see cref="CloudConsoleMatch"/> for the matching rule and why an
     /// ambiguous match deliberately yields nothing.
     /// </summary>
-    private string? ResolveCloudDeviceId()
-        => CloudConsoleMatch.ResolveId(_cloudConsoles, _selected?.Console.DisplayName);
+    private string? ResolveCloudDeviceId() => ResolveCloudConsole()?.Id;
+
+    /// <summary>
+    /// The account service's record for the console being paired, or null when it does not know it (or knows
+    /// two by the same name, which yields nothing rather than a guess).
+    ///
+    /// <para>
+    /// Wanted for its flags as much as its id. <c>RemotePlayEnabled</c> and <c>CanWakeRemotely</c> decide
+    /// whether the account route can work at all and whether it can work on a sleeping console, and the step
+    /// used to offer the route on the strength of the record merely existing.
+    /// </para>
+    /// </summary>
+    private CloudConsole? ResolveCloudConsole()
+        => CloudConsoleMatch.Resolve(_cloudConsoles, _selected?.Console.DisplayName);
 
     /// <summary>The signed-in account's name in parentheses, or nothing when it has none to show.</summary>
     private string FormatAccountName()
@@ -879,23 +1067,65 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
         // account has to already know this console.
         bool accountPairingOffered = _accountPairing is not null && AccountIdIsAutomatic;
         bool accountCapable = _accountPairingCapability?.Available ?? false;
-        bool consoleKnownToAccount = ResolveCloudDeviceId() is not null;
+        CloudConsole? cloudConsole = ResolveCloudConsole();
+        bool consoleKnownToAccount = cloudConsole is not null;
+
+        // **Two flags the account's own record carries, and the step used to ignore both.** It offered the
+        // account route because the console appeared in the list, which says only that the account has seen
+        // it. The failure for getting this wrong is expensive and silent: sixty seconds of waiting, and then
+        // a message about a registration seed for a console that was never going to answer.
+        //
+        // They are not the same kind of fact and must not be treated as one:
+        //
+        //   RemotePlayEnabled  false → the route cannot work. Fixable, on the console.
+        //   CanWakeRemotely    false → the route works on an AWAKE console. A condition, not a refusal.
+        //
+        // Both default to true when the account does not know the console, because then it is
+        // consoleKnownToAccount that has the answer and these would otherwise say something false about a
+        // record that does not exist.
+        bool remotePlayEnabled = cloudConsole?.RemotePlayEnabled ?? true;
+        bool canWakeRemotely = cloudConsole?.CanWakeRemotely ?? true;
+
+        // Signing in is POSSIBLE but has not happened. Every question above asks whether the account route is
+        // available to somebody already signed in, so all of them are false here - which meant the step said
+        // nothing at all about the account, and left a first-time user hunting for an account id by hand.
+        //
+        // The design has always called for this: "not signed in, the code route leads, since it needs nothing
+        // the player does not already have; sign-in sits beside it, PHRASED AS WHAT IT SAVES THEM." The
+        // second half was never built. It is an invitation and not a requirement, which is why it says what
+        // it buys rather than what is missing.
+        bool couldSignIn = _account is not null && _accountPairing is not null && !AccountIdIsAutomatic;
+
+        // Sign-in leads until it is declined. Computed once, because the form's visibility is its exact
+        // inverse and deriving the two separately is how they come to disagree.
+        bool signInLeads = couldSignIn && Route == PairingRoute.Code && !_codeRouteRevealed;
 
         return new AddConsoleFlowState(
             Step: _step,
 
-            // Pairing shares the link step's dash: it is the same step from the user's point of view, just the
-            // part they are not doing anything during.
+            // THREE dashes, not four, and they are the mark's own three.
+            //
+            // Pairing shares the link step's dash: it is the same step from the user's point of view, just
+            // the part they are not doing anything during. Family shares FIND's, because discovery leads now
+            // and the family question is the exception rather than a stage - it appears only on the manual
+            // path and when a scan finds nothing, and counting it as its own step would make the common
+            // journey look like it skipped one.
+            //
+            // Four equal dashes were a progress bar. Three uneven ones are the trail from the mark, which is
+            // the same shape the connect sequence fills in and the celebration assembles.
             ReachedDash: _step switch
             {
-                AddConsoleStep.Family => 1,
-                AddConsoleStep.Find => 2,
-                AddConsoleStep.Link or AddConsoleStep.Pairing => 3,
-                _ => 4,
+                AddConsoleStep.Family or AddConsoleStep.Find => 1,
+                AddConsoleStep.Link or AddConsoleStep.Pairing => 2,
+                _ => 3,
             },
             Family: _family,
             FamilyNote: _familyNote,
-            FindHeading: string.Format(Strings.Pairing_LookingFor, _family.ShortName),
+            // Generic until somebody has actually chosen. It used to read "Looking for your PS5" on the way
+            // in, which was the app telling the user what they were looking for on the strength of a default.
+            FindHeading: _chosenFamily is { } chosen
+                ? string.Format(Strings.Pairing_LookingFor, chosen.ShortName)
+                : Strings.Pairing_LookingForAny,
             FindSubheading: _findSubheading,
             IsScanning: _isScanning,
             ManualEntryOpen: _manualEntryOpen,
@@ -915,17 +1145,48 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
                 : _passcode.Length >= _options.MinimumPasscodeLength && EffectiveAccountId.Length > 0,
 
             AccountPairingOffered: accountPairingOffered,
-            CanPairWithAccount: accountPairingOffered && accountCapable && consoleKnownToAccount,
+            CanPairWithAccount: accountPairingOffered && accountCapable && consoleKnownToAccount
+                                && remotePlayEnabled,
 
             Route: Route,
 
             // Only worth asking when both can actually work. Where the account route cannot, the step shows
             // the code route without putting a decision in front of someone who has none to make.
             RouteChoiceOffered: accountPairingOffered && accountCapable && consoleKnownToAccount,
-            CodeEntryShown: Route == PairingRoute.Code,
-            PairActionLabel: Route == PairingRoute.Account
-                ? Strings.Pairing_ActionWithAccount
-                : Strings.Pairing_ActionWithCode,
+            SwitchRouteLabel: Route == PairingRoute.Account
+                ? Strings.Pairing_UseCodeInstead
+                : Strings.Pairing_UseAccountInstead,
+            // The invitation, on the code route only. Offered beside the code route rather than instead of it:
+            // somebody who came here to type the code on their screen should not be stopped to sign in.
+            // The QUIET one, beside the account-id field, and only once the form is up. It must not appear
+            // alongside the lead offer below: the two say different things because they sit in different
+            // places, and the lead's "no code to fetch" would be a contradiction above a code box.
+            SignInInvitation: couldSignIn && Route == PairingRoute.Code && _codeRouteRevealed
+                ? Strings.Pairing_SignInFillsField
+                : string.Empty,
+
+            SignInActionLabel: Strings.Pairing_SignInAction,
+            CodeRouteLabel: Strings.Pairing_UseCodeAnyway,
+            SignInLeadText: Strings.Pairing_SignInSaves,
+
+            // Withheld only while something is being offered INSTEAD. Keyed off the offer rather than off
+            // being signed out, because those are not the same question: a build with no account tier has
+            // nobody to sign in, and hiding the form there left a step that showed nothing and offered
+            // nothing. A test caught it.
+            CodeEntryShown: Route == PairingRoute.Code && !signInLeads,
+
+            SignInLeads: signInLeads,
+            SignInError: _signInError ?? string.Empty,
+            // At Done the record is already on disk, so this is not a save button - it is the thing the
+            // player came for, named as such. It was the literal string "Save & connect" in the page's
+            // code-behind, past the catalogue entirely.
+            PairActionLabel: _step == AddConsoleStep.Done
+                ? Strings.Pairing_PlayNow
+                : Route == PairingRoute.Account
+                    ? Strings.Pairing_ActionWithAccount
+                    : Strings.Pairing_ActionWithCode,
+
+            DoneActionLabel: Strings.Pairing_DoneAction,
 
             // Three different things to say, and the difference matters: one is an invitation, one is fixable on
             // the console, and one is a property of the build the user cannot do anything about.
@@ -938,9 +1199,28 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
                     ? _accountPairingCapability?.Detail ?? NoAccountPairingMessage
                     : !consoleKnownToAccount
                         ? NotInAccountListMessage
-                        : Route == PairingRoute.Account
-                            ? string.Format(Strings.Pairing_NoCodeNeeded, name)
-                            : string.Empty,
+
+                        // Ordered fatal-before-conditional. Remote play being off stops the route; not being
+                        // allowed to wake the console only requires that it is already on.
+                        : !remotePlayEnabled
+                            ? string.Format(Strings.Pairing_RemotePlayOff, name)
+                            : Route != PairingRoute.Account
+                                ? string.Empty
+                                : canWakeRemotely
+                                    ? string.Format(Strings.Pairing_NoCodeNeeded, name)
+                                    : string.Format(Strings.Pairing_NoCodeNeededButAwake, name),
+
+            // Caution for both of the console-side answers, and they are the two that carry an instruction:
+            // one says turn a setting on, the other says turn the console on. Positive only when the route is
+            // available with nothing attached; everything else is Neutral, because a build without the
+            // constants and a console the account has not seen are not faults of the user's.
+            AccountPairingNoteTone: !accountPairingOffered || !accountCapable || !consoleKnownToAccount
+                ? StatusTone.Neutral
+                : !remotePlayEnabled || (Route == PairingRoute.Account && !canWakeRemotely)
+                    ? StatusTone.Caution
+                    : Route == PairingRoute.Account
+                        ? StatusTone.Positive
+                        : StatusTone.Neutral,
 
             // When signed in, the account id stops being something the user has to find. This is the whole point
             // of the account tier for someone who only ever plays on their own network.

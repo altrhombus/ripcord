@@ -232,6 +232,13 @@ public class AddConsoleFlowTests
             Flow.Completed += Completions.Add;
         }
 
+        /// <summary>Seed one console for the scan to find, so StartAsync has something to report.</summary>
+        public Harness WithConsole(DiscoveredConsole? console = null)
+        {
+            Scanner.Yields(console ?? Console("10.0.0.7"));
+            return this;
+        }
+
         /// <summary>Drive the flow to the Link step with a console picked from the scan.</summary>
         public async Task<DiscoveredConsoleCard> ToLinkViaScanAsync(DiscoveredConsole? console = null)
         {
@@ -299,24 +306,103 @@ public class AddConsoleFlowTests
     // ---- family step ---------------------------------------------------------------------------
 
     [Fact]
-    public async Task StartsOnTheFamilyStep()
+    public async Task StartsByLooking_NotByAsking()
     {
-        var h = new Harness();
-        Assert.Equal(AddConsoleStep.Family, h.Flow.State.Step);
+        // DISCOVERY LEADS. The flow used to open on "which console are you connecting to?" - a question the
+        // scan answers by itself, since every console found reports its own platform and SelectDiscovered has
+        // always taken the family from the console rather than the guess. The step existed to display a shape.
+        var h = new Harness().WithConsole();
+
+        await h.Flow.StartAsync();
+
+        Assert.Equal(AddConsoleStep.Find, h.Flow.State.Step);
+        Assert.Equal(1, h.Scanner.ScanCount);
         Assert.Equal(1, h.Flow.State.ReachedDash);
-        await Task.CompletedTask;
+    }
+
+    [Fact]
+    public async Task TheScanHeadingNamesNoFamilyUntilSomebodyPicksOne()
+    {
+        // It read "Looking for your PS5" on the way in, which is the app telling the user what they are
+        // looking for on the strength of a default nobody chose.
+        var h = new Harness().WithConsole();
+
+        await h.Flow.StartAsync();
+        Assert.DoesNotContain("PS5", h.Flow.State.FindHeading);
+
+        await h.Flow.SelectFamilyAsync(ConsoleFamily.Ps5);
+        Assert.Contains("PS5", h.Flow.State.FindHeading);
+    }
+
+    [Fact]
+    public async Task AConsoleFoundByScanningNeverAsksItsFamily()
+    {
+        // The whole point. The console reports what it is, so the question never reaches the player.
+        var h = new Harness().WithConsole();
+
+        await h.Flow.StartAsync();
+        h.Flow.SelectDiscovered(h.Flow.Discovered[0]);
+
+        Assert.Equal(AddConsoleStep.Link, h.Flow.State.Step);
+        Assert.Equal(ConsoleFamily.Ps5, h.Flow.State.Family);
+    }
+
+    [Fact]
+    public async Task AnEmptyScanIsWhereTheFamilyQuestionBelongs()
+    {
+        // Nothing answered, so nothing has said what we are looking for - and an address typed by hand cannot
+        // be paired without knowing its family. This is the one place the question is genuinely unanswerable.
+        var h = new Harness();
+
+        await h.Flow.StartAsync();
+
+        Assert.Equal(AddConsoleStep.Family, h.Flow.State.Step);
+        Assert.NotNull(h.Flow.State.FamilyNote);
+    }
+
+    [Fact]
+    public async Task PickingAFamilyAfterAnEmptyScanDoesNotScanAgain()
+    {
+        // The scanner is family-agnostic, so a second scan would look for the same consoles in the same place
+        // and find the same nothing, having spent the search window doing it. Go where they were headed.
+        var h = new Harness();
+
+        await h.Flow.StartAsync();
+        Assert.Equal(1, h.Scanner.ScanCount);
+
+        await h.Flow.SelectFamilyAsync(ConsoleFamily.Ps5);
+
+        Assert.Equal(1, h.Scanner.ScanCount);
+        Assert.Equal(AddConsoleStep.Find, h.Flow.State.Step);
+        Assert.True(h.Flow.State.ManualEntryOpen);
+    }
+
+    [Fact]
+    public async Task BackFromTheFirstScanLeavesTheFlow()
+    {
+        // Find is the first step now. For anybody whose scan found something there is nothing behind it, and
+        // Back means leaving - inventing a step to go back to would be worse.
+        var h = new Harness().WithConsole();
+
+        await h.Flow.StartAsync();
+
+        Assert.False(await h.Flow.BackAsync());
     }
 
     [Fact]
     public async Task UnsupportedFamily_ShowsTheCaveatAndGoesNoFurther()
     {
+        // Reached the way a player now reaches it: a scan found nothing, so the family is asked. Picking one
+        // the app cannot stream must say so and stay put.
         var h = new Harness();
+        await h.Flow.StartAsync();
+        Assert.Equal(AddConsoleStep.Family, h.Flow.State.Step);
 
         await h.Flow.SelectFamilyAsync(ConsoleFamily.Xbox);
 
         Assert.Equal(AddConsoleStep.Family, h.Flow.State.Step);
         Assert.NotNull(h.Flow.State.FamilyNote);
-        Assert.Equal(0, h.Scanner.ScanCount);
+        Assert.Equal(1, h.Scanner.ScanCount);
     }
 
     [Fact]
@@ -327,7 +413,11 @@ public class AddConsoleFlowTests
         await h.Flow.SelectFamilyAsync(ConsoleFamily.Ps5);
 
         Assert.Equal(AddConsoleStep.Find, h.Flow.State.Step);
-        Assert.Equal(2, h.Flow.State.ReachedDash);
+
+        // Still the first dash. Family and Find share one: discovery leads, and the family question is the
+        // exception rather than a stage - counting it separately made the common journey look like it had
+        // skipped a step.
+        Assert.Equal(1, h.Flow.State.ReachedDash);
         Assert.Equal(1, h.Scanner.ScanCount);
         Assert.Contains("PS5", h.Flow.State.FindHeading);
     }
@@ -667,6 +757,172 @@ public class AddConsoleFlowTests
     // ---- account id, typed or automatic ---------------------------------------------------------
 
     [Fact]
+    public async Task NotSignedIn_SignInLeadsAndTheCodeFormWaits()
+    {
+        // The code route LOOKS like the low-friction one and is not. It wants somebody at the console,
+        // through its menus, reading an 8-digit code, and holding a numeric account id almost nobody knows -
+        // this app's own caption sends them to a third-party lookup tool for it, and the vendor's client
+        // never asks for that number at all. Signing in wants a password they already have.
+        var h = new Harness(account: new FakeAccountSession());
+
+        await h.ToLinkViaScanAsync();
+
+        Assert.True(h.Flow.State.SignInLeads);
+        Assert.False(h.Flow.State.CodeEntryShown);
+        Assert.NotEmpty(h.Flow.State.SignInLeadText);
+        Assert.NotEmpty(h.Flow.State.CodeRouteLabel);
+    }
+
+    [Fact]
+    public async Task TheCodeRouteIsAlwaysOnePressAway()
+    {
+        // Local pairing is a legitimate choice, not a fallback being grudgingly allowed. Somebody who does
+        // not want an account connected reaches the form in one press and without being argued with.
+        var h = new Harness(account: new FakeAccountSession());
+        await h.ToLinkViaScanAsync();
+
+        h.Flow.RevealCodeRoute();
+
+        Assert.False(h.Flow.State.SignInLeads);
+        Assert.True(h.Flow.State.CodeEntryShown);
+    }
+
+    [Fact]
+    public async Task OnceTheCodeFormIsUp_TheOfferIsTheQuietOneBesideTheField()
+    {
+        // Two offers, never both, because they say different things: the lead one promises no code to fetch,
+        // which would be a contradiction sitting above a box asking for a code.
+        var h = new Harness(account: new FakeAccountSession());
+        await h.ToLinkViaScanAsync();
+
+        Assert.Empty(h.Flow.State.SignInInvitation);
+
+        h.Flow.RevealCodeRoute();
+
+        Assert.NotEmpty(h.Flow.State.SignInInvitation);
+        Assert.False(h.Flow.State.SignInLeads);
+    }
+
+    [Fact]
+    public async Task SignedIn_TheFormIsNotWithheld()
+    {
+        // Nothing to defer: the account supplies the id, so the form is only ever the code box and there is
+        // no work to spare anybody by hiding it.
+        var account = new FakeAccountSession { Current = new AccountIdentity("4200000000000000042", "somebody", "GB") };
+        var h = new Harness(account: account);
+
+        await h.ToLinkViaScanAsync();
+
+        Assert.False(h.Flow.State.SignInLeads);
+        Assert.True(h.Flow.State.CodeEntryShown);
+    }
+
+    [Fact]
+    public async Task AlreadySignedIn_NothingInvitesThemToSignInAgain()
+    {
+        var account = new FakeAccountSession { Current = new AccountIdentity("4200000000000000042", "somebody", "GB") };
+        var h = new Harness(account: account);
+
+        await h.ToLinkViaScanAsync();
+
+        Assert.Empty(h.Flow.State.SignInInvitation);
+    }
+
+    // ---- signing in without leaving the flow -----------------------------------------------------
+    //
+    // The invitation used to navigate to the settings page, because that is where the sign-in sequence was
+    // written. Reported from hardware: sign-in completes and you are standing on a settings page with the
+    // pairing flow abandoned behind you, and the way back is to start pairing over. Sign-in is now a modal over
+    // this step, so what is tested is that the step re-aims itself when told the account arrived.
+
+    [Fact]
+    public async Task SigningInMidFlow_TurnsTheStepOverWithoutLeavingIt()
+    {
+        var account = new FakeAccountSession();
+        var h = new Harness(account: account);
+        await h.ToLinkViaScanAsync();
+
+        Assert.True(h.Flow.State.SignInLeads);
+
+        // What the dialog does, as far as this flow can see: the session now has an identity.
+        account.Current = new AccountIdentity("4200000000000000042", "somebody", "GB");
+        h.Flow.AccountSignInFinished();
+
+        // The offer is spent and the form appears with the id already answered. Nothing navigated.
+        Assert.False(h.Flow.State.SignInLeads);
+        Assert.True(h.Flow.State.CodeEntryShown);
+        Assert.True(h.Flow.State.AccountIdIsAutomatic);
+        Assert.Empty(h.Flow.State.SignInInvitation);
+        Assert.Equal(AddConsoleStep.Link, h.Flow.State.Step);
+    }
+
+    [Fact]
+    public async Task SigningInMidFlow_WhenTheAccountKnowsTheConsole_DropsTheCodeEntirely()
+    {
+        // The whole point of signing in here. The console-list lookup is skipped while there is no account to
+        // ask, so being told about the sign-in has to start it — otherwise the account route stays unavailable
+        // until something unrelated moves, and the user types a code they did not need.
+        var account = new FakeAccountSession();
+        var h = new Harness(account: account);
+        await h.ToLinkViaScanAsync(Console("10.0.0.7", name: "PS5-8A2F"));
+
+        Assert.Equal(PairingRoute.Code, h.Flow.State.Route);
+
+        account.Current = new AccountIdentity("4200000000000000042", "somebody", "GB");
+        account.Consoles = [new CloudConsole("duid-living-room", "PS5-8A2F", true, true)];
+        h.Flow.AccountSignInFinished();
+
+        Assert.True(await WaitUntil(() => h.Flow.State.Route == PairingRoute.Account));
+        Assert.True(h.Flow.State.CanPairWithAccount);
+    }
+
+    [Fact]
+    public async Task ASignInThatCouldNotRun_SaysSoOnTheStepThatAskedForIt()
+    {
+        var h = new Harness(account: new FakeAccountSession());
+        await h.ToLinkViaScanAsync();
+
+        h.Flow.AccountSignInFinished("Couldn't open the sign-in page.");
+
+        Assert.Equal("Couldn't open the sign-in page.", h.Flow.State.SignInError);
+
+        // Still offered, because the failure was ours and retrying is reasonable.
+        Assert.True(h.Flow.State.SignInLeads);
+    }
+
+    [Fact]
+    public async Task ACancelledSignIn_LeavesNothingBehind()
+    {
+        // Closing a window you opened is not an error. Reporting it would leave a red bar on the step for
+        // somebody who simply changed their mind.
+        var h = new Harness(account: new FakeAccountSession());
+        await h.ToLinkViaScanAsync();
+
+        h.Flow.AccountSignInFinished("Couldn't open the sign-in page.");
+        h.Flow.AccountSignInFinished();
+
+        Assert.Empty(h.Flow.State.SignInError);
+        Assert.True(h.Flow.State.SignInLeads);
+    }
+
+    [Fact]
+    public async Task ABuildWithNoAccountTier_InvitesNobodyToSignIn()
+    {
+        // Offering a sign-in this build cannot perform would be worse than saying nothing: it names a way out
+        // that does not exist, on the one screen somebody is already stuck on.
+        var h = new Harness(withAccountPairing: false);
+
+        await h.ToLinkViaScanAsync();
+
+        Assert.Empty(h.Flow.State.SignInInvitation);
+        Assert.False(h.Flow.State.SignInLeads);
+
+        // And the form is there immediately: with no account to offer, withholding it would be a step that
+        // shows nothing and offers nothing.
+        Assert.True(h.Flow.State.CodeEntryShown);
+    }
+
+    [Fact]
     public async Task WhenSignedIn_TheAccountIdIsSuppliedRatherThanTyped()
     {
         // The point of the whole account tier for a LAN-only user: the account id was previously something you
@@ -826,6 +1082,89 @@ public class AddConsoleFlowTests
             Current = new AccountIdentity("4200000000000000042", "somebody", "GB"),
             Consoles = [new CloudConsole(duid, name, true, true)],
         };
+
+    // ---- the account's own flags on the console ---------------------------------------------------
+    //
+    // The record carries two, and the step used to ignore both: it offered the account route because the
+    // console appeared in the list, which says only that the account has seen it. Getting this wrong is
+    // expensive and silent - sixty seconds of waiting, then a message about a registration seed for a console
+    // that was never going to answer. The two are not the same KIND of fact, which is the thing these pin.
+
+    [Fact]
+    public async Task AccountPairing_WhenRemotePlayIsOffOnTheConsole_IsRefusedAndSaysWhere()
+    {
+        // Fatal, and fixable on the console. Offering the route here would be offering something that cannot
+        // work, so the step does not aim at it either.
+        var account = new FakeAccountSession
+        {
+            Current = new AccountIdentity("4200000000000000042", "somebody", "GB"),
+            Consoles = [new CloudConsole("duid-living-room", "PS5-8A2F", RemotePlayEnabled: false, CanWakeRemotely: true)],
+        };
+        var h = new Harness(account: account);
+        await h.ToLinkViaScanAsync(Console("10.0.0.7", name: "PS5-8A2F"));
+
+        Assert.False(h.Flow.State.CanPairWithAccount);
+        Assert.Equal(PairingRoute.Code, h.Flow.State.Route);
+        Assert.Contains("Remote Play is switched off", h.Flow.State.AccountPairingNote);
+
+        // Caution, not an error tone: a setting being off is not a fault. See StatusTone.Neutral's note.
+        Assert.Equal(StatusTone.Caution, h.Flow.State.AccountPairingNoteTone);
+    }
+
+    [Fact]
+    public async Task AccountPairing_WhenTheConsoleCannotBeWoken_IsStillOfferedWithTheCondition()
+    {
+        // A condition, not a refusal: an awake console pairs normally, so refusing would take away a route
+        // that works. What the user needs is to know it before pressing Pair rather than after two timeouts.
+        var account = new FakeAccountSession
+        {
+            Current = new AccountIdentity("4200000000000000042", "somebody", "GB"),
+            Consoles = [new CloudConsole("duid-living-room", "PS5-8A2F", RemotePlayEnabled: true, CanWakeRemotely: false)],
+        };
+        var h = new Harness(account: account);
+        await h.ToLinkViaScanAsync(Console("10.0.0.7", name: "PS5-8A2F"));
+
+        Assert.True(h.Flow.State.CanPairWithAccount);
+        Assert.Equal(PairingRoute.Account, h.Flow.State.Route);
+        Assert.Contains("Turn the console on first", h.Flow.State.AccountPairingNote);
+
+        // And still says the code is unnecessary, because that is also true and is why they chose this route.
+        Assert.Contains("No code needed", h.Flow.State.AccountPairingNote);
+
+        // NOT Positive. A green bar carrying an instruction reads as the opposite of its own sentence.
+        Assert.Equal(StatusTone.Caution, h.Flow.State.AccountPairingNoteTone);
+    }
+
+    [Fact]
+    public async Task AccountPairing_WithBothFlagsSet_CarriesNoCondition()
+    {
+        var h = new Harness(account: SignedInKnowing());
+        await h.ToLinkViaScanAsync(Console("10.0.0.7", name: "PS5-8A2F"));
+
+        Assert.True(h.Flow.State.CanPairWithAccount);
+        Assert.Contains("No code needed", h.Flow.State.AccountPairingNote);
+        Assert.DoesNotContain("Turn the console on first", h.Flow.State.AccountPairingNote);
+        Assert.Equal(StatusTone.Positive, h.Flow.State.AccountPairingNoteTone);
+    }
+
+    [Fact]
+    public async Task AccountPairing_WhenTheAccountDoesNotKnowTheConsole_TheFlagsClaimNothing()
+    {
+        // The flags default to true for an unknown console, so that the note reports the thing that is
+        // actually true - the console is not in the list - rather than inventing a fact about a record that
+        // does not exist.
+        var account = new FakeAccountSession
+        {
+            Current = new AccountIdentity("4200000000000000042", "somebody", "GB"),
+            Consoles = [new CloudConsole("duid-other", "Some other console", true, true)],
+        };
+        var h = new Harness(account: account);
+        await h.ToLinkViaScanAsync(Console("10.0.0.7", name: "PS5-8A2F"));
+
+        Assert.False(h.Flow.State.CanPairWithAccount);
+        Assert.DoesNotContain("Remote Play is switched off", h.Flow.State.AccountPairingNote);
+        Assert.Contains("isn't in your account's console list", h.Flow.State.AccountPairingNote);
+    }
 
     [Fact]
     public async Task AccountPairing_WhenSignedOut_IsNotOfferedAtAll()
@@ -1304,12 +1643,62 @@ public class AddConsoleFlowTests
         await h.Flow.PairAsync();
 
         Assert.Equal(AddConsoleStep.Done, h.Flow.State.Step);
-        Assert.Equal(4, h.Flow.State.ReachedDash);
+
+        // Three dashes now, not four - the mark's own trail rather than a progress bar.
+        Assert.Equal(3, h.Flow.State.ReachedDash);
         Assert.Equal("PS5-8A2F", h.Flow.State.SuggestedName);
         Assert.Contains("won't need the code again", h.Flow.State.DoneSubtext);
 
-        // Nothing is stored until the user confirms.
-        Assert.Empty(h.Store.Load());
+        // Stored ALREADY, which is the point of the step being allowed to say "Paired."
+        Assert.Equal("PS5-8A2F", h.Store.Load().Single().DisplayName);
+    }
+
+    [Fact]
+    public async Task Pair_Success_SurvivesWalkingAwayFromTheCelebration()
+    {
+        // The step says the console is linked to this PC. It used to be saying that about something only in
+        // memory - Finish did the storing - so closing the app at the celebration lost it. And the loss is not
+        // symmetric: the console HAS registered, so it believes the pairing exists while we no longer hold the
+        // credential, and recovering means fetching a fresh code off its screen.
+        var h = new Harness();
+        await h.ToLinkViaScanAsync();
+        h.EnterValidLinkInput();
+
+        await h.Flow.PairAsync();
+        await h.Flow.DisposeAsync();          // the user closed the app, or navigated away
+
+        Assert.Equal("PS5-8A2F", h.Store.Load().Single().DisplayName);
+    }
+
+    [Fact]
+    public async Task Finish_WithoutARename_DoesNotStoreASecondTime()
+    {
+        // Finish is a way out and a rename, not the save. Accepting the prefilled name must not pin it as a
+        // nickname - a pinned name stops tracking the console if the console is ever renamed.
+        var h = new Harness();
+        await h.ToLinkViaScanAsync();
+        h.EnterValidLinkInput();
+        await h.Flow.PairAsync();
+
+        h.Flow.Finish("PS5-8A2F", connect: false);
+
+        PairedConsole stored = h.Store.Load().Single();
+        Assert.True(string.IsNullOrEmpty(stored.Nickname), $"nickname was pinned to '{stored.Nickname}'");
+        Assert.Equal("PS5-8A2F", stored.DisplayName);
+    }
+
+    [Fact]
+    public async Task Finish_WithARename_UpdatesTheStoredRecord()
+    {
+        var h = new Harness();
+        await h.ToLinkViaScanAsync();
+        h.EnterValidLinkInput();
+        await h.Flow.PairAsync();
+
+        h.Flow.Finish("Living room", connect: false);
+
+        Assert.Equal("Living room", h.Store.Load().Single().Nickname);
+        Assert.Single(h.Store.Load());
     }
 
     [Fact]

@@ -52,6 +52,25 @@ public sealed record AddConsoleFlowState(
     string AccountPairingNote,
 
     /// <summary>
+    /// What the note above means, as a tone rather than a colour.
+    ///
+    /// <para>
+    /// <b>It follows the note, not <see cref="CanPairWithAccount"/>,</b> which is the change worth explaining.
+    /// The front end used to derive severity from whether the route was available — Success when it was,
+    /// Informational when it was not — and that was fine while the note only ever said one of two things. It
+    /// stopped being fine when the route could be available <em>with a condition attached</em>: a green
+    /// Success bar reading "turn the console on first" tells the reader the opposite of what the sentence
+    /// says.
+    /// </para>
+    ///
+    /// <para>
+    /// Nothing here is Critical, deliberately, for the same reason <see cref="StatusTone.Neutral"/> exists:
+    /// remote play switched off is a setting, not a fault, and colouring a setting like a failure cries wolf.
+    /// </para>
+    /// </summary>
+    StatusTone AccountPairingNoteTone,
+
+    /// <summary>
     /// Which route the link step is currently set up for. Everything below follows from it: the step used to
     /// show both routes at once — "no code needed", then how to find a code, then a box asking for one — which
     /// contradicted itself and left two commit buttons with nothing to say which belonged to what.
@@ -64,11 +83,68 @@ public sealed record AddConsoleFlowState(
     /// </summary>
     bool RouteChoiceOffered,
 
+    /// <summary>
+    /// What the quiet link to the other route says, named for what it gets the player rather than for
+    /// the mechanism behind it. Empty when there is only one route.
+    /// </summary>
+    string SwitchRouteLabel,
+
     /// <summary>Show the console's own instructions and the code box.</summary>
+    /// <summary>
+    /// What signing in would save this user, or empty when it would save nothing — because they already have,
+    /// or because this build ships no account credential and cannot.
+    ///
+    /// <para>
+    /// An invitation rather than a requirement. The code route works without it and is offered regardless;
+    /// this only says what the other route would spare them, which for a first-time user is finding their
+    /// account id by hand.
+    /// </para>
+    /// </summary>
+    string SignInInvitation,
+
+    /// <summary>The invitation's own button label. Empty when there is no invitation.</summary>
+    string SignInActionLabel,
+
+    /// <summary>
+    /// Sign-in is being offered ahead of the code form, because it is genuinely less work.
+    ///
+    /// <para>
+    /// The code route looks like the low-friction one and is not: it wants the player at the console, through
+    /// its menus, reading an 8-digit code, and holding a numeric account id almost nobody knows. Signing in
+    /// wants a password they already have. When this is true the form is not drawn yet and the offer is the
+    /// step's content; <see cref="CodeRouteLabel"/> is the way past it.
+    /// </para>
+    /// </summary>
+    bool SignInLeads,
+
+    /// <summary>
+    /// Why a sign-in started from this step could not run, or empty. Empty after a cancelled sign-in too —
+    /// the user closing a window they opened is not a failure to report.
+    /// </summary>
+    string SignInError,
+
+    /// <summary>The way to the code form for somebody who would rather not connect an account.</summary>
+    string CodeRouteLabel,
+
+    /// <summary>What the lead offer says. Empty unless <see cref="SignInLeads"/>.</summary>
+    string SignInLeadText,
+
     bool CodeEntryShown,
 
     /// <summary>The label for the step's single commit button, which names the route it will take.</summary>
     string PairActionLabel,
+
+    /// <summary>
+    /// The way out of the celebration, beside Play now — and deliberately not a save button.
+    ///
+    /// <para>
+    /// It read <c>"Save"</c>, from a literal in the page's code-behind, past the string catalogue. Two
+    /// things wrong with that and the second is the worse one: the label was unlocalisable, and it was
+    /// offering to save a record that had been on disk since the console registered. A step that announces
+    /// "Paired." and then offers to save reads as though the first claim were conditional on the second.
+    /// </para>
+    /// </summary>
+    string DoneActionLabel,
     bool AccountIdIsAutomatic,
     string AccountIdNote,
     string? LinkError,

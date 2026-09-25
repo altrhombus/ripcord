@@ -1,4 +1,5 @@
 using Ripcord.Client;
+using Ripcord.Core.Input;
 using Ripcord.Core.Sessions;
 using Ripcord.Core.Settings;
 using Ripcord.Diagnostics;
@@ -35,6 +36,35 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
 {
     private readonly IVideoPipelineStats _pipeline;
     private readonly Func<DateTimeOffset> _clock;
+
+    // Holds each connect line long enough to be read. See ShowConnectStage.
+    private readonly ConnectGate _gate = new();
+
+    private DateTimeOffset? _connectStartedAt;
+    private bool _connectEscapeVisible;
+
+    /// <summary>Decides which health verdicts are worth interrupting the player about. See the class note.</summary>
+    private readonly HealthAlertGate _alertGate = new();
+
+    private bool _alertRaised;
+
+    /// <summary>
+    /// How the player is driving right now, so the rung-1 notice can offer a route they can actually walk.
+    /// Pointer is the startup assumption, the same one <c>InputModeTracker</c> makes.
+    /// </summary>
+    private InputMode _inputMode = InputMode.Pointer;
+
+    private DiagnosticsRung _rung;
+
+    private ConnectPhase? _phase;
+
+    private DateTimeOffset? _traceStartedAt;
+
+    /// <summary>
+    /// Which rung to come back to. Someone who lives at rung 3 gets rung 3, which is the whole reason the
+    /// key is a toggle rather than a cycle: it returns you where you were, not one step further in.
+    /// </summary>
+    private DiagnosticsRung _lastShown = DiagnosticsRung.Summary;
 
     private RipcordSettings _settings;
 
@@ -84,6 +114,11 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
         _pipeline = pipeline ?? throw new ArgumentNullException(nameof(pipeline));
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         _clock = clock ?? (() => DateTimeOffset.UtcNow);
+
+        // The setting is "how much of the HUD is up when a stream starts", so it is read once here rather
+        // than watched: changing it mid-session and having the panel appear over the game would be a
+        // surprise, and the key that shows it is one press away regardless.
+        _rung = _settings.DiagnosticsRungOnConnect;
     }
 
     /// <summary>
@@ -97,6 +132,14 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
     /// </summary>
     public MetricHistory FpsHistory { get; } = new(60);
 
+    /// <summary>
+    /// The most recent sample as raw numbers, for the session trace. Null until a live sample has been
+    /// taken. Outside the state record for the same reason the histories are: the front end reads it on
+    /// the tick that produced it, and copying it into an immutable record twice a second to hand back the
+    /// same values would be ceremony.
+    /// </summary>
+    public SessionSample? LastSample { get; private set; }
+
     public MetricHistory LossHistory { get; } = new(60);
 
     public MetricHistory RttHistory { get; } = new(60);
@@ -105,9 +148,32 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
 
     /// <summary>
     /// Full scale for the bitrate plot: a little above the configured cap, so a stream sitting at its ceiling
-    /// draws near the top rather than off it.
+    /// draws near the top rather than off it. No threshold rule — bitrate is a magnitude, not a verdict.
     /// </summary>
     public double BitrateFullScaleMbps => Math.Max(1, _settings.BitrateKbps / 1000.0 * 1.2);
+
+    /// <summary>The bitrate plot. Never carries a severity: there is no bitrate that is wrong by itself.</summary>
+    public MetricPlot BitratePlot => new(BitrateFullScaleMbps, WarnFraction: null);
+
+    /// <summary>
+    /// The frame-rate plot. Scaled to the requested rate with headroom, so "at target" sits high but not
+    /// clipped and a shortfall reads as a drop. This is the one plot whose threshold is not its ceiling, so
+    /// the rule is drawn where a shortfall actually begins.
+    /// </summary>
+    public MetricPlot FramesPlot => new(
+        FramesFullScale,
+        WarnFraction: StreamHealthAssessor.FpsShortfallFactor / FramesHeadroom);
+
+    /// <summary>The latency plot. Full scale is the warn threshold, so the rule sits along the top.</summary>
+    public static MetricPlot LatencyPlot { get; } = new(RttFullScaleMs, WarnFraction: 1);
+
+    /// <summary>The loss plot. Full scale is the warn threshold, so the rule sits along the top.</summary>
+    public static MetricPlot LossPlot { get; } = new(LossFullScalePercent, WarnFraction: 1);
+
+    /// <summary>Headroom above the requested frame rate, so a stream exactly at target is not drawn clipped.</summary>
+    private const double FramesHeadroom = 1.2;
+
+    private double FramesFullScale => Math.Max(1, _settings.TargetFps * FramesHeadroom);
 
     /// <summary>
     /// Full scale for the loss plot: the health assessor's warn threshold, so the line touching the top means
@@ -121,6 +187,59 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
     public static double RttFullScaleMs => StreamHealthAssessor.RttWarnMs;
 
     // ---- transitions ---------------------------------------------------------------------------
+
+    /// <summary>
+    /// Show the HUD, or hide it. <b>It never reveals more.</b>
+    ///
+    /// <para>
+    /// Toggling is the learned convention for a debug overlay everywhere else, so a key that cycled deeper on
+    /// its second press would do the opposite of what the muscle expects - and the failure is the worst one
+    /// available: MORE of the game covered at the moment someone was trying to uncover it. Going deeper is a
+    /// visible control instead, which is also what makes rung 3 discoverable; a hidden second keypress is not
+    /// an affordance.
+    /// </para>
+    /// </summary>
+    public void ToggleDiagnostics() => Mutate(() =>
+    {
+        if (_rung == DiagnosticsRung.Hidden)
+        {
+            _rung = _lastShown;
+        }
+        else
+        {
+            _lastShown = _rung;
+            _rung = DiagnosticsRung.Hidden;
+        }
+    });
+
+    /// <summary>Go one rung deeper, from the summary strip to the full instrument panel.</summary>
+    /// <summary>
+    /// Tell the surface how the player is driving. Called from the front end's input-mode tracker, which
+    /// already exists and already debounces — this layer takes the answer rather than deciding it.
+    /// </summary>
+    public void SetInputMode(InputMode mode) => Mutate(() => _inputMode = mode);
+
+    /// <summary>
+    /// Which hint rung 1 may offer, given the input in the player's hands.
+    ///
+    /// <para>
+    /// <b>The controller case is deliberately none.</b> Nothing in the stream layer takes gamepad input, by
+    /// design, so naming any route at all would name one the pad cannot walk. The honest answer for a pad-only
+    /// player is the three-way diagnostics setting they chose before connecting — and, on a handheld, the
+    /// touch route below, which needs no foresight at all.
+    /// </para>
+    /// </summary>
+    private static AlertHint HintFor(InputMode mode) => mode switch
+    {
+        InputMode.Touch => AlertHint.Tap,
+        InputMode.Controller => AlertHint.None,
+        _ => AlertHint.Key,
+    };
+
+    public void ShowDiagnosticsDetail() => Mutate(() => _rung = DiagnosticsRung.Full);
+
+    /// <summary>Come back up to the summary strip.</summary>
+    public void HideDiagnosticsDetail() => Mutate(() => _rung = DiagnosticsRung.Summary);
 
     /// <summary>Settings can change under a live session (the user has another window open).</summary>
     public void UseSettings(RipcordSettings settings)
@@ -140,6 +259,83 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
         _statusDetail = detail ?? string.Empty;
         _statusBusy = !terminal;
         _statusTerminal = terminal;
+
+        // Cleared, not kept. This overload is what a reconnect, a stall and a close all go through, and a
+        // trail still sitting at "waking" during a reconnect is claiming progress that belongs to a
+        // sequence which already finished.
+        _phase = null;
+    });
+
+    /// <summary>
+    /// Show one step of the connect sequence. Separate from <see cref="ShowStatus"/> because only these
+    /// carry a phase — see the note on <see cref="SessionViewState.Phase"/>.
+    /// </summary>
+    public void ShowConnectStage(ConnectStage stage)
+    {
+        ArgumentNullException.ThrowIfNull(stage);
+
+        // Offered to the gate rather than shown. A warm connect reports three stages inside a second and the
+        // player sees a flicker they cannot read; the gate holds each line long enough to be read, and drops
+        // a line that was overtaken before anyone could. Null means nothing has earned the screen yet, so
+        // whatever is up stays up.
+        if (_gate.Offer(stage, _clock()) is { } shown)
+        {
+            Apply(shown);
+        }
+    }
+
+    /// <summary>
+    /// Let the connect gate see the clock.
+    ///
+    /// <para>
+    /// Called from the same timer that samples telemetry. <see cref="ConnectFlow"/> reports only when
+    /// something changes, so a stage that hangs reports once and then goes quiet - and without this, a
+    /// four-second stall would never be named, which is exactly backwards.
+    /// </para>
+    /// </summary>
+    public void TickConnect()
+    {
+        if (_gate.Tick(_clock()) is { } shown && shown.Headline != _statusHeadline)
+        {
+            Apply(shown);
+        }
+
+        // The way out, once a connect has run long enough to feel stuck. Not offered on entry: a Cancel
+        // shown the instant you press Play is the ceremony this composition exists to avoid, and it invites
+        // abandoning a connect that was about to succeed.
+        bool escape = _statusVisible
+                      && !_statusTerminal
+                      && _connectStartedAt is { } started
+                      && _clock() - started >= ConnectEscapeAfter;
+
+        if (escape != _connectEscapeVisible)
+        {
+            Mutate(() => _connectEscapeVisible = escape);
+        }
+    }
+
+    /// <summary>How long a connect runs before it offers a way out of itself.</summary>
+    public static readonly TimeSpan ConnectEscapeAfter = TimeSpan.FromSeconds(3);
+
+    /// <summary>Forget the previous attempt. Its last line must not be up while the next one decides.</summary>
+    public void ResetConnect()
+    {
+        _gate.Reset();
+        Mutate(() =>
+        {
+            _connectStartedAt = _clock();
+            _connectEscapeVisible = false;
+        });
+    }
+
+    private void Apply(ConnectStage stage) => Mutate(() =>
+    {
+        _statusVisible = true;
+        _statusHeadline = stage.Headline;
+        _statusDetail = stage.Detail;
+        _statusBusy = !stage.Terminal;
+        _statusTerminal = stage.Terminal;
+        _phase = stage.Phase;
     });
 
     public void HideStatus() => Mutate(() =>
@@ -178,6 +374,13 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
 
             case SessionLifecycle.Connecting:
             case SessionLifecycle.Reconnecting:
+                // A fresh attempt starts with nothing sustained, so the previous session's notice cannot
+                // survive into a stream that has not been measured yet.
+                Mutate(() =>
+                {
+                    _alertGate.Reset();
+                    _alertRaised = false;
+                });
                 ShowStatus(
                     status.Lifecycle == SessionLifecycle.Connecting
                         ? Strings.Session_Connecting
@@ -266,7 +469,8 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
         }
 
         VideoPipelineSnapshot s = _pipeline.Read();
-        long nowTicks = _clock().UtcTicks;
+        DateTimeOffset now = _clock();
+        long nowTicks = now.UtcTicks;
         double seconds = _prevSampleTicks == 0
             ? 0
             : (nowTicks - _prevSampleTicks) / (double)TimeSpan.TicksPerSecond;
@@ -296,7 +500,41 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
             BitrateHistory.Add(stats.BitrateKbps / 1000.0);
         }
 
-        Mutate(() => _diagnostics = ComposeDiagnostics(s, telemetry, decodeFps, presentFps, audioFps));
+        Mutate(() =>
+        {
+            _diagnostics = ComposeDiagnostics(s, telemetry, decodeFps, presentFps, audioFps);
+
+            // The same numbers, unformatted, for the trace. Built here rather than in the front end because
+            // every one of them has already been computed at this point, and a second implementation of
+            // "frames over the interval" is a second chance to disagree with the panel.
+            //
+            // Written AFTER the recompose above, and that ordering is the whole point: reading
+            // _diagnostics.HealthLevel before it was recomposed put the PREVIOUS tick's verdict next to this
+            // tick's numbers, so every trace disagreed with itself by one row - a sample logging 11.48% loss
+            // carried the verdict from the calm sample half a second earlier. Found by noticing a row whose
+            // health could not be derived from the rest of the row.
+            if (telemetry.HasSession)
+            {
+                _traceStartedAt ??= now;
+                LastSample = new SessionSample(
+                    ElapsedSeconds: (now - _traceStartedAt.Value).TotalSeconds,
+                    PresentFps: presentFps,
+                    DecodeFps: decodeFps,
+                    LossPercent: stats.PacketLossRatio * 100.0,
+                    RttMs: stats.RoundTripTimeMs,
+                    BitrateMbps: stats.BitrateKbps / 1000.0,
+                    ReceiveQueueDepth: stats.ReceiveQueueDepth,
+                    DecodeQueueDepth: s.QueueDepth,
+                    PipelineLatencyMs: s.PipelineLatencyMs,
+                    DecodeMode: s.DecodeMode,
+                    HealthLevel: _diagnostics.HealthLevel);
+            }
+
+            // The verdict is recomputed twice a second and is right to be twitchy - the panel wants the live
+            // value. The notice over the game is not: the gate is what stops a two-second wobble becoming a
+            // banner, and a banner nobody trusts is worse than none.
+            _alertRaised = _alertGate.Update(_diagnostics.HealthLevel, now);
+        });
         return telemetry.HasSession;
     }
 
@@ -345,7 +583,7 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
         double capMbps = Math.Max(0.1, _settings.BitrateKbps / 1000.0);
         double usedFraction = Math.Clamp(stats.BitrateKbps / 1000.0 / capMbps, 0, 1);
 
-        (string health, string healthTip, StreamHealthLevel level) =
+        (string health, string healthTip, string healthNotice, StreamHealthLevel level) =
             ComposeHealth(s, telemetry, decodeFps, presentFps);
 
         return new SessionDiagnosticsState(
@@ -387,8 +625,47 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
 
             Health: health,
             HealthTip: healthTip,
-            HealthLevel: level);
+
+            // The rung-1 line. Same verdict, plus the one clause a player can act on - see StreamHealthVerdict.
+            HealthNotice: healthNotice,
+            HealthLevel: level,
+            HeroLoss: $"{stats.PacketLossRatio * 100:F1}%",
+            VideoWidth: s.DecodedWidth,
+            VideoHeight: s.DecodedHeight,
+
+            FramesSeverity: FramesSeverityFor(presentFps),
+            LatencySeverity: LatencySeverityFor(stats.RoundTripTimeMs),
+            LossSeverity: LossSeverityFor(stats.PacketLossRatio));
     }
+
+    /// <summary>
+    /// Where the frame rate stands. Warning only: there is no "catastrophically low but still arriving" frame
+    /// rate that is worse than the shortfall the assessor already names, and a stream with no frames at all is
+    /// a verdict about the stream, not about this row.
+    /// </summary>
+    private MetricSeverity FramesSeverityFor(double presentFps)
+        => presentFps < _settings.TargetFps * StreamHealthAssessor.FpsShortfallFactor
+            ? MetricSeverity.Warning
+            : MetricSeverity.Normal;
+
+    /// <summary>
+    /// Where latency stands. Thresholds come from the assessor rather than being restated here: the row and
+    /// the verdict must agree, and two copies of a threshold is how they stop agreeing.
+    /// </summary>
+    private static MetricSeverity LatencySeverityFor(double rttMs) => rttMs switch
+    {
+        >= StreamHealthAssessor.RttBadMs => MetricSeverity.Critical,
+        >= StreamHealthAssessor.RttWarnMs => MetricSeverity.Warning,
+        _ => MetricSeverity.Normal,
+    };
+
+    /// <summary>Where loss stands, on the assessor's thresholds for the same reason as latency.</summary>
+    private static MetricSeverity LossSeverityFor(double lossRatio) => lossRatio switch
+    {
+        >= StreamHealthAssessor.LossBadRatio => MetricSeverity.Critical,
+        >= StreamHealthAssessor.LossWarnRatio => MetricSeverity.Warning,
+        _ => MetricSeverity.Normal,
+    };
 
     /// <summary>
     /// Which capabilities the picture currently has.
@@ -485,7 +762,7 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
         return why;
     }
 
-    private (string Health, string Tip, StreamHealthLevel Level) ComposeHealth(
+    private (string Health, string Tip, string Notice, StreamHealthLevel Level) ComposeHealth(
         VideoPipelineSnapshot s,
         SessionTelemetry telemetry,
         double decodeFps,
@@ -495,7 +772,8 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
         {
             // The assessor's inputs are all zero without a session, and "frame rate is below target" is a
             // misleading thing to say about a stream that has not started.
-            return (Strings.Session_NotConnectedYet, Strings.Session_WaitingToStart, StreamHealthLevel.Info);
+            return (Strings.Session_NotConnectedYet, Strings.Session_WaitingToStart,
+                Strings.Session_NotConnectedYet, StreamHealthLevel.Info);
         }
 
         SessionStatistics stats = telemetry.Statistics;
@@ -514,7 +792,7 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
             MillisecondsSinceLastFrame: telemetry.MillisecondsSinceLastFrame ?? 0,
             RoundTripTimeMs: stats.RoundTripTimeMs));
 
-        return (verdict.Headline, verdict.Tip, verdict.Level);
+        return (verdict.Headline, verdict.Tip, verdict.Notice, verdict.Level);
     }
 
     /// <summary>
@@ -544,7 +822,23 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
         StatusDetail: _statusDetail,
         StatusBusy: _statusBusy,
         StatusActionsVisible: _statusTerminal,
+        ConnectEscapeVisible: _connectEscapeVisible,
         IsStreamLive: _isStreamLive,
+
+        // Suppressed while the status overlay is up: that overlay is a stronger statement about the same
+        // situation, and two notices about one problem read as two problems.
+        //
+        // And suppressed once the HUD itself is open, for the same reason one layer down. Rung 2 leads with
+        // the verdict, in the same words, so leaving rung 1 up stacked the identical sentence twice against
+        // the bottom edge — under the touch bar, on a handheld, at the moment the stream was already unwell.
+        AlertVisible: _alertRaised && !_statusVisible && _rung == DiagnosticsRung.Hidden,
+
+        // Which hint the notice may offer, given how the player is actually driving. The notice used to end
+        // in a bare "F3" pill whatever was in their hands, which on a handheld names a key the device does
+        // not have.
+        AlertHint: HintFor(_inputMode),
+        Rung: _rung,
+        Phase: _phase,
 
         // All of them, one per line: with several pads merged into one virtual controller, which devices are
         // contributing is exactly the thing that is otherwise invisible.

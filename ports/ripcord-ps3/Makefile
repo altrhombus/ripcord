@@ -58,7 +58,8 @@ PKG            := $(PS3DEV)/bin/pkg
 PKG_FINALIZE   := $(PS3DEV)/bin/package_finalize
 SFOXML         := $(PS3DEV)/bin/sfo.xml
 
-# THE ICON THE XMB SHOWS. Drawn from brand/ripcord-tile.svg by tools/make-icon.py rather than copied
+# THE ICON THE XMB SHOWS. Drawn from brand/ripcord-ground.svg and brand/ripcord-mark-ondark.svg by
+# tools/make-icon.py rather than copied
 # from $(PS3DEV)/bin/ICON0.PNG, which is PSL1GHT's placeholder and says PSL1GHT - so every screenshot of
 # this port on a television advertised the wrong project. The generator needs python3 and nothing else;
 # see its header for why it does not use brand/generate-assets.ps1.
@@ -721,7 +722,7 @@ $(APP).self: $(BUILD)/$(APP).ready.elf
 # The steps are PSL1GHT's own, from the %.pkg rule in $(PSL1GHT)/ppu_rules, spelled out here rather than
 # inherited because this Makefile deliberately does not include ppu_rules - it sets its own warning and
 # architecture flags and including that file would quietly replace them.
-$(ICON0): tools/make-icon.py ../../brand/ripcord-tile.svg
+$(ICON0): tools/make-icon.py ../../brand/ripcord-ground.svg ../../brand/ripcord-mark-ondark.svg
 	@mkdir -p $(BUILD)
 	python3 tools/make-icon.py $@
 

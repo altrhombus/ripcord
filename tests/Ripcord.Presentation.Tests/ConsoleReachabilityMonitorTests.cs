@@ -37,6 +37,67 @@ public class ConsoleReachabilityMonitorTests
     private static PairedConsole WithHostId(string host, string hostId) =>
         Console(host) with { HostId = hostId };
 
+    // ---- silence is not an answer ------------------------------------------------------------------
+    //
+    // Found on hardware: a console powered on for an entire session was reported unreachable, and picking it
+    // while the status still read "detecting" connected first time. One SRCH datagram, one second, no retry.
+
+    [Fact]
+    public async Task AProbeThatIsLostOnce_DoesNotCondemnAConsoleThatIsThere()
+    {
+        // The exact hardware symptom: the first ask is lost crossing a VLAN onto 2.4 GHz, the console is awake.
+        var probe = new FakeProbe().Answers("10.0.0.5", null, true);
+        var card = new ConsoleCardViewModel(Console("10.0.0.5"), new ImmediateUiDispatcher());
+        var monitor = new ConsoleReachabilityMonitor(probe);
+
+        await monitor.RefreshAsync([card], restRequestedHost: null, CancellationToken.None);
+
+        Assert.Equal(ConsoleReachability.Online, card.Reachability);
+    }
+
+    [Fact]
+    public async Task AConsoleThatAnswers_IsNotAskedTwice()
+    {
+        // Retrying silence must not become polling. An answer of either kind is ground truth, so the common
+        // case still costs exactly one datagram per console.
+        var probe = new FakeProbe().Answers("10.0.0.5", true);
+        var card = new ConsoleCardViewModel(Console("10.0.0.5"), new ImmediateUiDispatcher());
+
+        await new ConsoleReachabilityMonitor(probe)
+            .RefreshAsync([card], restRequestedHost: null, CancellationToken.None);
+
+        Assert.Single(probe.Probed);
+    }
+
+    [Fact]
+    public async Task SustainedSilence_StillLandsOnOffline_AndIsBounded()
+    {
+        // The retry must not turn a genuinely absent console into an unbounded wait.
+        var probe = new FakeProbe().Answers("10.0.0.5", (bool?)null);
+        var card = new ConsoleCardViewModel(Console("10.0.0.5"), new ImmediateUiDispatcher());
+
+        await new ConsoleReachabilityMonitor(probe)
+            .RefreshAsync([card], restRequestedHost: null, CancellationToken.None);
+
+        Assert.Equal(ConsoleReachability.Offline, card.Reachability);
+        Assert.Equal(ConsoleReachabilityMonitor.DefaultSilenceRetries + 1, probe.Probed.Count);
+    }
+
+    [Fact]
+    public async Task AnUnreachableConsole_IsDimmedButStillOfferedToTheUser()
+    {
+        // The dead end this removes: silence is the only route to Offline, and silence is not knowledge. It
+        // may dim the action to admit we could not reach the console; it may not take the action away.
+        var card = new ConsoleCardViewModel(Console("10.0.0.5"), new ImmediateUiDispatcher());
+
+        await new ConsoleReachabilityMonitor(new FakeProbe().Answers("10.0.0.5", (bool?)null))
+            .RefreshAsync([card], restRequestedHost: null, CancellationToken.None);
+
+        Assert.Equal(ConsoleReachability.Offline, card.Reachability);
+        Assert.False(card.State.IsReachable);
+        Assert.Equal(ActionGlyph.Play, card.State.ActionGlyph);
+    }
+
     [Fact]
     public async Task AConsoleThatMoved_IsFoundByHostIdAndFollowed()
     {
@@ -180,7 +241,7 @@ public class ConsoleReachabilityMonitorTests
         await monitor.RefreshAsync([card], restRequestedHost: null, CancellationToken.None);
 
         Assert.Equal(ConsoleReachability.Away, card.Reachability);
-        Assert.True(card.State.CanConnect);
+        Assert.True(card.State.IsReachable);
     }
 
     [Fact]
@@ -196,7 +257,7 @@ public class ConsoleReachabilityMonitorTests
         await monitor.RefreshAsync([card], restRequestedHost: null, CancellationToken.None);
 
         Assert.Equal(ConsoleReachability.Offline, card.Reachability);
-        Assert.False(card.State.CanConnect);
+        Assert.False(card.State.IsReachable);
     }
 
     [Fact]

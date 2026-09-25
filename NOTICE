@@ -131,6 +131,21 @@ Console ports, fetched and built from source
   it. ports/ripcord-ps3/DECODE.md records why a permissive-only line was held
   for these and why an LGPL decoder was declined.
 
+Brand artwork, fetched when the wordmark is redrawn
+
+  Outfit 1.100      OFL-1.1        brand/outline-wordmark.py
+  Copyright 2021 The Outfit Project Authors
+  (https://github.com/Outfitio/Outfit-Fonts)
+
+  The wordmark in brand/ripcord-wordmark.svg and the two brand/ripcord-lockup
+  SVGs is Outfit SemiBold converted to plain outlines. The font itself is not
+  in this repository and does not ship with the app. The script fetches it,
+  with its OFL.txt, from a pinned google/fonts commit into the gitignored
+  brand/third-party/, and refuses a SHA-256 mismatch. The SIL Open Font
+  Licence governs the font software. It places no condition on artwork made
+  with the font, which is what the committed SVGs and the PNGs generated from
+  them are. The font declares no Reserved Font Name.
+
   MBED TLS IS DUAL-LICENSED and the table above states a choice, so the choice
   is recorded here. Upstream offers Apache-2.0 or GPL-2.0-or-later at the option
   of the user of the library. RIPCORD ELECTS THE APACHE-2.0 ARM, for the same

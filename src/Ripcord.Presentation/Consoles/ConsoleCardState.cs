@@ -60,7 +60,7 @@ public enum StatusTone
 /// <summary>Which glyph the card's primary action shows.</summary>
 public enum ActionGlyph
 {
-    /// <summary>Play. Also used for an unreachable console — see <see cref="ConsoleCardState.CanConnect"/>.</summary>
+    /// <summary>Play. Also used for an unreachable console — see <see cref="ConsoleCardState.IsReachable"/>.</summary>
     Play,
 
     /// <summary>Power, for when connecting implies waking the console first.</summary>
@@ -95,9 +95,20 @@ public sealed record ConsoleCardState(
     bool IsChecking,
     string PrimaryActionLabel,
     ActionGlyph ActionGlyph,
-    bool CanConnect,
+    bool IsReachable,
     string? LastConnectedLabel,
     bool IsHighlighted,
+
+    /// <summary>How large the card is drawn. The front end reads a wedge width, a type role and a
+    /// content margin from this; see <see cref="CardMetrics"/> for why it is one rule and not three
+    /// layouts.</summary>
+    CardDensity Density,
+
+    /// <summary>The pointer is over the card. Hover only - focus is the ring's, not the wedge's.</summary>
+    bool IsPointerOver,
+
+    /// <summary>The card is being pressed.</summary>
+    bool IsPressed,
     string AutomationName)
 {
     /// <summary>True when there is a last-played caption to show at all.</summary>

@@ -76,8 +76,77 @@ public sealed class HalyardAccountGateway
     /// <summary>The signed-in account, or null. Populated by a successful sign-in or restore.</summary>
     public HalyardAccount? Account => _account;
 
-    /// <summary>True once there is a usable session.</summary>
+    /// <summary>True once there is a usable session <em>in memory</em>.</summary>
+    ///
+    /// <para>
+    /// <b>Not the same question as "is this user signed in".</b> A stored refresh token is a signed-in user
+    /// whose session has not been restored yet, and this reports false for them. Anything deciding whether a
+    /// feature is <em>available</em> wants <see cref="EnsureSignedInAsync"/>; this is for surfaces that are
+    /// already showing state and want to know what is loaded.
+    /// </para>
     public bool IsSignedIn => _account is not null;
+
+    /// <summary>
+    /// Make sure the session is loaded, restoring it from the stored refresh token if it is not, and report
+    /// whether there is one. Safe to call repeatedly and from anywhere; the restore happens at most once.
+    ///
+    /// <para>
+    /// <b>The bug this exists for.</b> Nothing restored the session except the settings page. A user who
+    /// launched Ripcord and connected to a console straight away had a gateway with no account in memory, so
+    /// the account route refused with "sign in to your PlayStation Network account" — to somebody who was
+    /// signed in, and whose stored token was perfectly good. Remote play from outside your own network worked
+    /// only if you happened to open Settings first. Found on a phone hotspot, after the route had already
+    /// been confirmed working.
+    /// </para>
+    ///
+    /// <para>
+    /// Restoring lazily rather than at startup keeps launch free of a network round trip that most sessions
+    /// never need — a LAN connect does not touch the account tier at all.
+    /// </para>
+    /// </summary>
+    public async Task<bool> EnsureSignedInAsync(CancellationToken cancellationToken)
+    {
+        if (_account is not null)
+        {
+            return true;
+        }
+
+        if (!CanSignIn || !HasStoredSession)
+        {
+            return false;
+        }
+
+        // One restore, however many callers arrive together: a connect and a console-list refresh racing each
+        // other would otherwise both spend the refresh token, and the second would find it already rotated.
+        Task<HalyardAccount?> restore;
+        lock (_restoreGate)
+        {
+            restore = _restore ??= RestoreAsync(cancellationToken);
+        }
+
+        try
+        {
+            return await restore.ConfigureAwait(false) is not null;
+        }
+        catch (Exception)
+        {
+            // A failed restore is "not signed in", which is what the caller asked. It is not this method's
+            // business to decide whether that is worth reporting.
+            return false;
+        }
+        finally
+        {
+            lock (_restoreGate)
+            {
+                if (ReferenceEquals(_restore, restore) && restore.IsCompleted)
+                {
+                    // Cleared only when it failed, so a later attempt can try again; a success is already
+                    // short-circuited by the _account check above.
+                    _restore = _account is null ? null : _restore;
+                }
+            }
+        }
+    }
 
     /// <summary>
     /// The authenticated cloud surface. Only meaningful once signed in; calls will throw from the token provider
@@ -103,6 +172,9 @@ public sealed class HalyardAccountGateway
 
     /// <summary>Whether a stored credential exists to restore from, without touching the network.</summary>
     public bool HasStoredSession => _store.Load() is not null;
+
+    private readonly object _restoreGate = new();
+    private Task<HalyardAccount?>? _restore;
 
     /// <summary>The URL to open in the account web flow.</summary>
     public string BeginSignIn()

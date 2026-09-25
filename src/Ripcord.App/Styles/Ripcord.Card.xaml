@@ -1,0 +1,173 @@
+﻿<?xml version="1.0" encoding="utf-8" ?>
+<!--
+    The card's material: the gradient, the stroke, the top highlight, and the focus ring.
+
+    Split from Surfaces because this is the first dictionary in the app with THEME DICTIONARIES. Everything
+    else resolves theme through {ThemeResource} onto a system brush; the card cannot, because the gradient is
+    Ripcord's own and Windows has no stock brush for it.
+
+    > The gradient's direction and its ratio are Ripcord's; its lightness belongs to the theme.
+
+    In dark theme the card runs deeper than the Mica ground (#23272E to #12151A). These were the app tile's own
+    values until the tile was lifted to #303743 to #1B1F26 on 2026-09-24. The card deliberately did not follow:
+    the wedge facet below is defined as the card lifted, and its values are almost exactly the new tile's, so
+    moving the card would erase the facet. Whether the card and tile rejoin is an open item in ROADMAP.md.
+    In light theme it runs LIGHTER than the ground, so it reads as raised paper rather than a hole cut in the
+    page. A dark card on a light desktop was drawn, considered and rejected: it overrules a preference the
+    user stated to the operating system, which is not a thing an app gets to do for style.
+
+    High contrast takes neither. Every brush below falls back to a system colour there, because a gradient is
+    decoration and high contrast is the one theme where decoration is not permitted to carry meaning. What
+    replaces it is the stroke, which high contrast draws in the system window text colour and which is
+    therefore the only card edge that survives.
+-->
+<ResourceDictionary
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <ResourceDictionary.ThemeDictionaries>
+
+        <!--  Dark. The tile's original two values, in the tile's own direction. See the note above.  -->
+        <ResourceDictionary x:Key="Default">
+            <LinearGradientBrush x:Key="RipcordCardFillBrush" StartPoint="0,0" EndPoint="1,1">
+                <GradientStop Offset="0" Color="#23272E" />
+                <GradientStop Offset="1" Color="#12151A" />
+            </LinearGradientBrush>
+
+            <!--
+                The inner top highlight: one hairline of light along the top edge, which is what stops a dark
+                card reading as a cut-out. Drawn as a gradient that is opaque for the first pixel or so and
+                transparent immediately after, rather than as a second Border, so it costs no layout.
+            -->
+            <LinearGradientBrush x:Key="RipcordCardHighlightBrush" StartPoint="0,0" EndPoint="0,1">
+                <GradientStop Offset="0" Color="#26FFFFFF" />
+                <GradientStop Offset="0.04" Color="#00FFFFFF" />
+            </LinearGradientBrush>
+
+            <SolidColorBrush x:Key="RipcordCardStrokeBrush" Color="#2EFFFFFF" />
+
+            <!--  The pointer wash. Lifts the card a little; deliberately quieter than focus. See below.  -->
+            <SolidColorBrush x:Key="RipcordCardHoverOverlayBrush" Color="#16FFFFFF" />
+
+            <!--  The wedge's plane: the card's own gradient, lifted. See the facet note below.  -->
+            <LinearGradientBrush x:Key="RipcordWedgeFacetBrush" StartPoint="0,1" EndPoint="1,0">
+                <GradientStop Offset="0" Color="#2E333C" />
+                <GradientStop Offset="1" Color="#1B1F26" />
+            </LinearGradientBrush>
+        </ResourceDictionary>
+
+        <!--  Light. Lighter than the ground, not darker. The whole point of the rule.  -->
+        <ResourceDictionary x:Key="Light">
+            <LinearGradientBrush x:Key="RipcordCardFillBrush" StartPoint="0,0" EndPoint="1,1">
+                <GradientStop Offset="0" Color="#FFFFFF" />
+                <GradientStop Offset="1" Color="#EEF0F4" />
+            </LinearGradientBrush>
+
+            <LinearGradientBrush x:Key="RipcordCardHighlightBrush" StartPoint="0,0" EndPoint="0,1">
+                <GradientStop Offset="0" Color="#B3FFFFFF" />
+                <GradientStop Offset="0.04" Color="#00FFFFFF" />
+            </LinearGradientBrush>
+
+            <SolidColorBrush x:Key="RipcordCardStrokeBrush" Color="#1A000000" />
+            <SolidColorBrush x:Key="RipcordCardHoverOverlayBrush" Color="#12000000" />
+
+            <!--
+                Deeper, not lighter, and that is not an inconsistency with the card's own rule. The card runs
+                lighter than the GROUND so it reads as raised paper; the facet runs deeper than the CARD so it
+                reads as a plane cut into that paper. There is no room above white to go lighter anyway.
+            -->
+            <LinearGradientBrush x:Key="RipcordWedgeFacetBrush" StartPoint="0,1" EndPoint="1,0">
+                <GradientStop Offset="0" Color="#F4F6FA" />
+                <GradientStop Offset="1" Color="#E2E6EE" />
+            </LinearGradientBrush>
+        </ResourceDictionary>
+
+        <!--
+            High contrast. No gradient, no wash, no hairline: the card is its stroke and nothing else.
+
+            These alias the STOCK card brushes rather than naming SystemColor* keys directly. WinUI already
+            remaps CardBackgroundFillColorDefaultBrush and CardStrokeColorDefaultBrush to the right system
+            colours under high contrast, so aliasing gets the same result through a key this repository has
+            used for a year. Naming a system colour by hand buys nothing and risks a key that resolves
+            nowhere - which in a theme dictionary is a crash in the one theme nobody can casually test.
+        -->
+        <ResourceDictionary x:Key="HighContrast">
+            <StaticResource x:Key="RipcordCardFillBrush" ResourceKey="CardBackgroundFillColorDefaultBrush" />
+            <StaticResource x:Key="RipcordCardStrokeBrush" ResourceKey="CardStrokeColorDefaultBrush" />
+            <SolidColorBrush x:Key="RipcordCardHighlightBrush" Color="Transparent" />
+            <SolidColorBrush x:Key="RipcordCardHoverOverlayBrush" Color="Transparent" />
+
+            <!--
+                Transparent, so the wedge is its rim and nothing else. This is the case the whole facet idea
+                is built to satisfy: strip every decorative colour and the diagonal must still be there. The
+                version this replaced filled the zone with the accent, which in high contrast resolved to the
+                TEXT colour - a third of the card became a solid slab of it, with the play mark lost inside.
+            -->
+            <SolidColorBrush x:Key="RipcordWedgeFacetBrush" Color="Transparent" />
+        </ResourceDictionary>
+
+    </ResourceDictionary.ThemeDictionaries>
+
+    <!--
+        THE FACET, AND WHY THE WEDGE IS NOT A PANEL OF COLOUR.
+
+        docs/design.md puts this one section above the wedge itself: "Identity therefore comes from material
+        and form... That is also what survives high contrast, where decorative colour must disappear entirely
+        and only shape is left."
+
+        The first build inverted that. It filled the zone with the vendor accent at full strength, so the
+        wedge was a field of colour that happened to be diagonal - which reads as loud (a third of the card
+        shouting) while being weak in the way that matters, because removing the colour left nothing behind.
+        In high contrast, where AccentResources resolves the accent to the TEXT brush, that became a solid
+        slab of text colour with the play mark invisible inside it.
+
+        So the zone is now a FACET: the card's own gradient, shifted, so it reads as a plane cut into the same
+        material. The accent survives as a RIM along the diagonal - a line, not a field - which is what makes
+        the diagonal the loud thing rather than the area, and what lets high contrast keep the shape while
+        dropping the colour.
+
+        The mark takes the ordinary foreground brush for the same reason. It was fixed white when the zone
+        behind it was always a saturated accent; on a facet it is a glyph on a surface like any other, and a
+        fixed colour would be a contrast bug waiting for the first theme that disagrees.
+
+        The mark and label brushes are deliberately NOT aliased into this dictionary. Two StaticResource
+        entries at this dictionary's root, pointing at TextFillColorPrimaryBrush and
+        TextFillColorSecondaryBrush, rendered the ENTIRE WINDOW BLACK. StaticResource is a parse-time lookup,
+        and while this dictionary is being built it cannot reliably see XamlControlsResources even though
+        App.xaml merges that first. Nothing throws and no crash is logged - the page simply comes up empty,
+        which is the worst possible failure mode for a resource dictionary.
+
+        Callers reference the system brushes with ThemeResource at the point of use instead, which resolves
+        later and tracks theme changes properly. The aliases inside the theme dictionaries above are a
+        different case and are fine: those resolve only when that theme becomes active, by which time
+        everything they name exists.
+    -->
+
+    <!--
+        The focus ring, and why it is these numbers.
+
+        Hover and focus were the same picture until 2026-09-20: both ran through one IsHighlighted flag onto
+        one accent wash, moving it from 0.10 to 0.22 opacity on a gradient that fades out at 90%. That is a
+        tint delta rather than an outline, it was invisible on a real screen, and in high contrast the wash
+        was suppressed to zero, leaving nothing at all. A pad user could not tell where focus was.
+
+        So the two states are now different KINDS of thing, not two strengths of one thing:
+
+          hover  a wash over the card - pointer feedback, low stakes, and it follows the mouse
+          focus  a ring drawn outside the card - the keyboard and pad answer to "where am I?"
+
+        The ring is the system focus visual rather than something drawn here, which is what makes it correct
+        in high contrast for free: Windows draws it in the system focus colour and it cannot be suppressed by
+        an app that forgot to think about it. What IS set here is its weight - 3px primary against a 2px
+        secondary, against WinUI's 2 and 1 - because the standing invariant for this app is that focus is
+        legible at 2 m, and the stock weight was drawn for a mouse at desk distance.
+
+        The negative margin lifts the ring off the card's own stroke. Without it the two lines sit adjacent
+        and read as one thick edge, which is the failure mode that makes a focus ring easy to miss on a
+        surface that already has a border.
+    -->
+    <Thickness x:Key="RipcordFocusPrimaryThickness">3</Thickness>
+    <Thickness x:Key="RipcordFocusSecondaryThickness">2</Thickness>
+    <Thickness x:Key="RipcordFocusMargin">-4</Thickness>
+
+</ResourceDictionary>

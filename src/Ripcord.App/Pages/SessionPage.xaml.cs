@@ -26,13 +26,16 @@ using Ripcord.Diagnostics;
 using Ripcord.Input;
 using Ripcord.Media;
 using Ripcord.Presentation;
+using Ripcord.Presentation.Consoles;
 using Ripcord.Presentation.Sessions;
 using Ripcord.Core.Security;
 using Ripcord.Protocol.Halyard.Common.Crypto;
 using Ripcord.Protocol.Halyard.Common.Discovery;
 using Ripcord.Protocol.Halyard.Session;
+using Ripcord_App.Accents;
 using Ripcord_App.Dialogs;
 using Ripcord_App.Input;
+using Ripcord_App.Converters;
 using Ripcord_App.Services;
 using WinRT;
 using Ripcord.Core.Reactive;
@@ -44,7 +47,7 @@ namespace Ripcord_App.Pages;
 /// lifecycle (connect, degrade, reconnect, tear down), so this page renders status, routes controller input,
 /// and handles the immersive-mode concerns a Page is actually responsible for.
 /// </summary>
-public sealed partial class SessionPage : Page
+public sealed partial class SessionPage : Page, IVideoPipelinePreparer
 {
     private readonly DispatcherQueue _dispatcherQueue = DispatcherQueue.GetForCurrentThread();
     private readonly RipcordAppServices _services = App.Services;
@@ -71,6 +74,20 @@ public sealed partial class SessionPage : Page
 
     private D3D12VideoDecodePipeline? _pipeline;
     private SessionController? _controller;
+
+    /// <summary>
+    /// The teardown this page started when it unloaded, for a caller that has to know when the session has
+    /// actually finished ending.
+    ///
+    /// <para>
+    /// <b>Only the shutdown path needs this.</b> Leaving a stream in the ordinary way unloads the page while
+    /// the window lives on, so the teardown completes on its own and nobody waits. Closing the window
+    /// mid-stream is different: the process is about to exit, and the teardown's last acts are a control-channel
+    /// close and — on the account route — an HTTPS call leaving the cloud session. A dropped task does neither,
+    /// and the console is then holding a session nobody told it about.
+    /// </para>
+    /// </summary>
+    public Task? Teardown { get; private set; }
     private IDisposable? _statusSubscription;
     private DispatcherTimer? _statsTimer;
 
@@ -82,6 +99,33 @@ public sealed partial class SessionPage : Page
     // What Render last applied, so the capability pills — the one part that builds elements rather than setting
     // text — are rebuilt only when the SET changes and not twice a second.
     private string _renderedPillSignature = string.Empty;
+
+    private string _renderedSummaryPillSignature = string.Empty;
+
+    private double _appliedDiagnosticsInset = 16;
+
+    private StreamWriter? _trace;
+
+    private string? _tracePath;
+
+    private int _traceRowsSinceFlush;
+
+    /// <summary>
+    /// False until the preamble has been written. The preamble carries the GPU name, and the GPU is not known
+    /// at connect time - the adapter is resolved when the decode pipeline initialises, which is the first
+    /// frame, not the first tick. Writing the preamble eagerly produced an empty <c>adapter:</c> line in every
+    /// trace taken so far.
+    /// </summary>
+    private bool _tracePreambleWritten;
+
+    /// <summary>
+    /// Rows seen while still waiting for the adapter name. Bounded so a session that never decodes a frame
+    /// still produces a file with a header rather than an unreadable list of bare numbers.
+    /// </summary>
+    private int _tracePreambleWaits;
+
+    /// <summary>Which arrangement the panel is currently in, so the rebuild only runs when it changes.</summary>
+    private bool _diagnosticsIsSheet;
 
     private PairedConsole? _console;
     private IPowerThermalMonitor? _powerMonitor;
@@ -129,7 +173,53 @@ public sealed partial class SessionPage : Page
     protected override void OnNavigatedTo(NavigationEventArgs e)
     {
         base.OnNavigatedTo(e);
+
+        // The shelf the touch bar lives in. Sized here rather than in markup because the token is a double
+        // and this is a GridLength; XAML will not convert, and binding it threw at page load - which is to
+        // say when somebody opened a stream, not when anybody built.
+        TouchShelfRow.Height = new GridLength(ThemeBrush.LookupDouble("RipcordTouchShelfHeight", fallback: 90));
         _console = e.Parameter as PairedConsole;
+        ShowConnectIdentity();
+
+        // Rung 1 names a route out of itself, and which route exists depends on what the player is holding.
+        // The router's tracker already decides and debounces that; this layer takes the answer rather than
+        // forming its own opinion from raw events. Seeded with the current mode because ModeChanged only
+        // fires on a change, and someone who has been on a pad all evening would otherwise be told about a
+        // key until they touched something.
+        _viewModel.SetInputMode(App.Input.Mode);
+        App.Input.ModeChanged += OnInputModeChanged;
+    }
+
+    protected override void OnNavigatedFrom(NavigationEventArgs e)
+    {
+        base.OnNavigatedFrom(e);
+
+        // The router outlives every page, so a page that stayed subscribed would be kept alive by it - and
+        // would go on setting state on a view-model nobody is rendering.
+        App.Input.ModeChanged -= OnInputModeChanged;
+    }
+
+    private void OnInputModeChanged(InputMode mode)
+        => DispatcherQueue.TryEnqueue(() => _viewModel.SetInputMode(mode));
+
+    /// <summary>
+    /// On touch, the notice itself is the way deeper.
+    ///
+    /// <para>
+    /// Only on touch. With a keyboard the pill names F3 and the notice is a label; with a pad there is no
+    /// route at all and there is deliberately no pill. Making the notice tappable in every mode would give a
+    /// mouse a target that says nothing about itself, which is how an invisible affordance gets built.
+    /// </para>
+    /// </summary>
+    private void OnHealthAlertTapped(object sender, TappedRoutedEventArgs e)
+    {
+        if (_viewModel.State.AlertHint != AlertHint.Tap)
+        {
+            return;
+        }
+
+        _viewModel.ToggleDiagnostics();
+        e.Handled = true;
     }
 
     /// <summary>
@@ -173,7 +263,6 @@ public sealed partial class SessionPage : Page
 
         _exitDetector = new ExitGestureDetector(_settings.ExitGesture);
 
-        DiagnosticsPanel.Visibility = _settings.ShowDiagnosticsOverlay ? Visibility.Visible : Visibility.Collapsed;
 
         // Input set-up is ISOLATED and non-fatal. It reaches native code (GameInput via Ripcord.Input.Interop), and
         // a stream is perfectly watchable without a controller — so a failure here must degrade to "no input", never
@@ -242,87 +331,98 @@ public sealed partial class SessionPage : Page
 
     private async Task StartSessionAsync()
     {
+        // The previous attempt's last line must not be up while this one is deciding what to say. Covers
+        // retry as well as a first connect, since retry comes back through here.
+        _viewModel.ResetConnect();
+
         _connectCts = new CancellationTokenSource();
-        if (_console is null)
-        {
-            ShowStatus("No console selected", "Choose a console from the Consoles page to start streaming.", terminal: true);
-            return;
-        }
 
-        SessionConfig config = _settings.ToSessionConfig();
-
-        // PS4 Remote Play is H.264 / SDR only — HEVC and HDR are PS5 features. Requesting HEVC makes the
-        // console reject the launchSpec silently (no SESSION_REPLY, so no stream), and the decoder codec must
-        // match the launchSpec anyway. Force both for a PS4 regardless of the user's setting; the same config
-        // feeds the launchSpec and the decode pipeline below, so they stay in agreement.
-        if (string.Equals(_console?.Platform, "Ps4", StringComparison.OrdinalIgnoreCase))
-        {
-            config = config with { CodecPreference = VideoCodec.H264, RequestedDynamicRange = DynamicRange.Sdr };
-        }
-
-        // Each phase announces itself BEFORE it runs, so if one hangs the last message on screen names it. Video
-        // device creation in particular is a plausible place to stall on unfamiliar hardware, and it used to be
-        // indistinguishable from a network problem because the overlay said "Connecting…" throughout.
-        ShowStatus("Preparing video…", "Creating the graphics device and decoder.", terminal: false);
-
-        try
-        {
-            await InitVideoPipelineAsync(config);
-        }
-        catch (Exception ex)
-        {
-            ShowStatus("Video setup failed", ex.Message, terminal: true);
-            return;
-        }
-
-        ShowStatus("Checking credentials…", "Loading control secrets and pairing.", terminal: false);
-        // Diagnostics run from here on, before the session exists: an empty panel is least useful precisely while
-        // something is failing to connect, and the GPU/adapter rows are already meaningful at this point.
+        // Diagnostics run from here on, before the session exists: an empty panel is least useful precisely
+        // while something is failing to connect, and the GPU/adapter rows are already meaningful at this point.
         _statsTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
         _statsTimer.Tick += StatsTick;
         _statsTimer.Start();
 
-        StreamingAvailability streaming = _services.Sessions.Availability;
-        if (!streaming.Available)
+        StartTrace();
+
+        // A diagnostics row, not a gate. ConnectFlow independently refuses to connect without the constants;
+        // this is the panel saying so, and it has to be written whether or not anyone opens the panel.
+        if (_services.Sessions.Availability is { Available: false } unavailable)
         {
-            // FATAL, and it must say so. Without the control secrets the session crypto is a passthrough stub, so
-            // the handshake can never complete — this used to be noted in the diagnostics panel and then the connect
-            // was attempted anyway, leaving "Connecting…" on screen indefinitely with no stated cause.
-            D3D12StatusText.Text = $"Control constants NOT loaded — {streaming.Detail}";
-            ShowStatus("Missing control constants", streaming.Detail, terminal: true);
-            return;
+            D3D12StatusText.Text = $"Control constants NOT loaded — {unavailable.Detail}";
         }
 
-        // Wake the console if it is in standby, before attempting to connect. A connect to a sleeping console
-        // cannot succeed, and without this it just hung on "Connecting…" until timeout with no cause given.
-        // Non-fatal except for the one case that genuinely blocks streaming (asked to wake, did not).
-        if (!await EnsureConsoleAwakeAsync())
+        // The sequence itself is portable and tested off-device; this page supplies the one part that needs a
+        // GPU (IVideoPipelinePreparer, implemented below) and renders each stage as it is announced.
+        var flow = new ConnectFlow(_services.Sessions, _services.WakeCoordinator, this);
+        var stages = new Progress<ConnectStage>(stage =>
         {
+            _viewModel.ShowConnectStage(stage);
+
+            // And to the trace, because the surface keeps only the current stage. A connect that sits in one
+            // of these for minutes is indistinguishable, on screen, from a connect that never started - which
+            // is exactly how an account connect over a hotspot was reported.
+            _services.DiagnosticTrace?.Invoke(
+                $"connect stage [{stage.Phase}] {stage.Headline} - {stage.Detail}");
+        });
+
+        ConnectPlan? plan = await flow.RunAsync(_console, _settings, stages, _connectCts.Token);
+        if (plan is null)
+        {
+            // The flow reported a terminal stage saying why, or the page was left mid-connect.
             return;
         }
 
         // A real power monitor, so the adaptive controller's battery / energy-saver / critical-battery caps can
         // actually engage. Without one injected, SessionController falls back to UnknownPowerThermalMonitor,
         // which always claims external power — meaning a handheld on battery streamed at full desktop quality.
+        // Bracketed, because this window had no instrumentation at all and a connect was reported sitting in
+        // it indefinitely: the flow's last stage reached the trace, the account route's first line never did,
+        // and everything between them is device work on the UI path - a power monitor, a controller, the open.
+        void Trace(string line) => _services.DiagnosticTrace?.Invoke(line);
+
+        Trace("connect: building the power monitor");
         _powerMonitor = PowerThermalMonitor.ForCurrentPlatform();
+        Trace("connect: power monitor built");
 
-        // Which route, and why — said out loud before it is taken. The account route costs tens of seconds,
-        // and silence for that long reads as a hang; "connecting through your account because this console
-        // isn't on your network" is the difference between a slow connect that makes sense and a broken one.
-        StreamingRouteChoice choice = await _services.Sessions
-            .ChooseRouteAsync(_console!, _connectCts!.Token);
+        // Keep whatever headline the flow last set and replace only the detail, so the console's own progress
+        // lines land under "Connecting to your console…" instead of replacing it.
+        var connectProgress = new Progress<string>(line =>
+        {
+            _services.DiagnosticTrace?.Invoke($"connect: {line}");
 
-        ShowStatus("Connecting to your console…", choice.Reason, terminal: false);
+            // **Nothing on screen once the picture is up.** The control channel goes on narrating after the
+            // stream is live - "DataReceived" and its neighbours - and every one of those lines used to call
+            // ShowStatus, which re-raised the overlay that Streaming had just dismissed. Seen on hardware as
+            // "Connecting to your console…" sitting over a running stream with a protocol word underneath it.
+            //
+            // The right half to guard is this one, not ShowStatus: a connect reporter has nothing to say
+            // after the connect, while ShowStatus still has to work for Degraded and for a failure.
+            if (_viewModel.State.IsStreamLive)
+            {
+                return;
+            }
 
-        var connectProgress = new Progress<string>(
-            line => ShowStatus("Connecting to your console…", line, terminal: false));
+            // **The stages are for everybody; this line is not.** What the flow reports - "Preparing video",
+            // "Checking credentials", "Connecting to your console" - is written for a player. What arrives
+            // here is the protocol narrating itself: PreludeEstablished, DataReceived, registered. It is the
+            // difference between a connect that explains itself and one that looks like it is leaking, so it
+            // follows the diagnostics setting the user already has rather than a second switch meaning the
+            // same thing.
+            if (_settings.DiagnosticsRungOnConnect != DiagnosticsRung.Full)
+            {
+                return;
+            }
+
+            ShowStatus(_viewModel.State.StatusHeadline, line, terminal: false);
+        });
 
         // The controller owns everything from here: handshake, media/input routing, stall detection, reconnect.
         // The session it is handed owns whatever its route holds open, so teardown stays the controller's
         // ordinary dispose regardless of how the console was reached.
         _controller = new SessionController(
             token => _services.Sessions.OpenAsync(
-                _console!, choice.Route, RequestLoginPinAsync, connectProgress, token),
+                _console!, plan.Route, RequestLoginPinAsync, connectProgress, token),
             _pipeline!,
             _inputSource,
             _powerMonitor);
@@ -331,44 +431,10 @@ public sealed partial class SessionPage : Page
             new AnonymousObserver<SessionStatus>(OnStatusChanged));
 
         OnStatusChanged(_controller.CurrentStatus);
-        await _controller.StartAsync(config);
-    }
 
-    /// <summary>
-    /// Make sure the console is awake before connecting. Returns false only when we sent a wake and the
-    /// console never came up — the one outcome that genuinely cannot lead to a stream, so the connect stops
-    /// with a stated reason. Everything else (already awake, woke, or not answering discovery) proceeds:
-    /// a console that does not answer SRCH may still be reachable, and letting the connect surface that is
-    /// more useful than refusing to try.
-    /// </summary>
-    private async Task<bool> EnsureConsoleAwakeAsync()
-    {
-        var progress = new Progress<string>(line => ShowStatus(line, "The console was in standby.", terminal: false));
-
-        ConsoleWakeOutcome outcome;
-        try
-        {
-            // Everything family-specific about waking — ports, protocol versions, the pairing credential the
-            // wake has to be signed with — now lives behind IConsoleWakeCoordinator.
-            outcome = await _services.WakeCoordinator
-                .EnsureAwakeAsync(_console!, progress, _connectCts!.Token);
-        }
-        catch (OperationCanceledException)
-        {
-            return false; // the user left the page mid-wake
-        }
-
-        if (outcome == ConsoleWakeOutcome.TimedOut)
-        {
-            ShowStatus(
-                "Console didn't wake",
-                "The console reported standby and did not wake within 30 seconds. Turn it on manually, or "
-                + "check it is set to allow being woken from rest mode, then reconnect.",
-                terminal: true);
-            return false;
-        }
-
-        return true;
+        Trace("connect: handing over to the session controller");
+        await _controller.StartAsync(plan.Config);
+        Trace("connect: the session controller returned");
     }
 
     /// <summary>
@@ -404,6 +470,15 @@ public sealed partial class SessionPage : Page
 
         return tcs.Task;
     }
+
+    /// <summary>
+    /// <see cref="IVideoPipelinePreparer"/>, implemented explicitly because it is a seam ConnectFlow calls,
+    /// not part of the page's own surface. Implemented by the page rather than by an adapter class because
+    /// the pipeline it creates is a page field with a page lifetime — an adapter would exist only to hold a
+    /// reference back here.
+    /// </summary>
+    Task IVideoPipelinePreparer.PrepareAsync(SessionConfig config, CancellationToken cancellationToken)
+        => InitVideoPipelineAsync(config);
 
     /// <summary>Stand up the D3D12 decode pipeline and bind its swap chain to the panel.</summary>
     private async Task InitVideoPipelineAsync(SessionConfig config)
@@ -482,25 +557,136 @@ public sealed partial class SessionPage : Page
     private void HideStatus() => _viewModel.HideStatus();
 
     /// <summary>
+    /// Take the connect composition off the picture, identity last.
+    ///
+    /// <para>
+    /// Identity last because it is the element the <c>ConnectedAnimation</c> carried here from the card: the
+    /// console's mark arrives first and leaves last, so the whole sequence reads as one object travelling
+    /// rather than two screens swapping.
+    /// </para>
+    /// </summary>
+    private void FadeOutStatusOverlay()
+    {
+        var fade = new Storyboard();
+
+        var opacity = new DoubleAnimation
+        {
+            To = 0,
+            Duration = new Duration(TimeSpan.FromMilliseconds(150)),
+            EnableDependentAnimation = true,
+        };
+
+        Storyboard.SetTarget(opacity, StatusOverlay);
+        Storyboard.SetTargetProperty(opacity, "Opacity");
+        fade.Children.Add(opacity);
+
+        // Collapsed only once it is invisible: leaving it Visible at zero opacity would keep it in the hit
+        // test, and a transparent panel over a running game swallows the first click.
+        fade.Completed += (_, _) =>
+        {
+            StatusOverlay.Visibility = Visibility.Collapsed;
+            StatusOverlay.Opacity = 1;
+        };
+
+        fade.Begin();
+    }
+
+    /// <summary>
     /// Project the whole view-model state onto the controls. One method rather than per-property handlers,
     /// because the state arrives as one value and cannot be half-applied.
     /// </summary>
     private void Render(SessionViewState s)
     {
-        StatusOverlay.Visibility = Vis(s.StatusVisible);
+        // Faded rather than switched, on the way out only. The first decoded frame is the moment the player
+        // has been waiting for, and a hard cut from the connect composition to the picture throws away the
+        // one transition worth having. Opacity ONLY, which is exactly and only what Ripcord.Motion.xaml
+        // permits on the video layer, and skipped entirely when motion is off.
+        if (!s.StatusVisible && StatusOverlay.Visibility == Visibility.Visible && AppMotion.Enabled)
+        {
+            FadeOutStatusOverlay();
+        }
+        else
+        {
+            StatusOverlay.Opacity = 1;
+            StatusOverlay.Visibility = Vis(s.StatusVisible);
+        }
         StatusHeadline.Text = s.StatusHeadline;
         StatusDetail.Text = s.StatusDetail;
-        StatusRing.IsActive = s.StatusBusy;
+        RenderTrail(s);
         StatusActions.Visibility = Vis(s.StatusActionsVisible);
+        ConnectEscape.Visibility = Vis(s.ConnectEscapeVisible);
 
         ControllerConnectedText.Text = s.ConnectedControllers;
 
+        // Rung 1. Cheap enough to keep current unconditionally, unlike the panel below: it is two
+        // properties, and it has to be right the instant it becomes visible.
+        HealthAlert.Visibility = Vis(s.AlertVisible);
+        if (s.AlertVisible)
+        {
+            // The NOTICE, not the bare verdict: a verdict plus one clause saying what to do about it. Rung 1
+            // is the only rung most players will ever see, and "Losing packets on the network" on its own
+            // names a problem and offers nothing.
+            AlertText.Text = s.Diagnostics.HealthNotice;
+            RenderHealthDot(AlertDot, s.Diagnostics.HealthLevel);
+
+            // Named for the input actually in the player's hands. A pad gets neither pill: every route out
+            // of rung 1 is one a pad cannot walk, and naming one would be worse than saying nothing.
+            AlertKeyPill.Visibility = Vis(s.AlertHint == AlertHint.Key);
+            AlertTapPill.Visibility = Vis(s.AlertHint == AlertHint.Tap);
+        }
+
+        // One source of truth for how much of the HUD is up. It used to be DiagnosticsPanel.Visibility,
+        // consulted from eight places, three of which had to agree about a panel they did not own.
+        // The decoded size is not known until the first frame, so placement cannot be settled at load.
+        ApplyDiagnosticsPlacement();
+
+        DiagnosticsSummary.Visibility = Vis(s.Rung == DiagnosticsRung.Summary);
+        DiagnosticsPanel.Visibility = Vis(s.Rung == DiagnosticsRung.Full);
+
+        if (s.Rung == DiagnosticsRung.Summary)
+        {
+            RenderSummary(s.Diagnostics);
+        }
+
         // The state is kept current twice a second regardless; assigning two dozen text properties on a
-        // collapsed panel is the part worth skipping. ToggleDiagnosticsPanel renders on the way in, so opening
-        // the overlay shows the latest sample rather than whatever was there when it was last closed.
-        if (DiagnosticsPanel.Visibility == Visibility.Visible)
+        // collapsed panel is the part worth skipping.
+        if (s.Rung == DiagnosticsRung.Full)
         {
             RenderDiagnostics(s.Diagnostics);
+        }
+    }
+
+    /// <summary>
+    /// Rung 2. Four numbers, and colour only where a reading has crossed its own threshold — the same grammar
+    /// the sparklines use, for the same reason: a row of four coloured numbers would say nothing.
+    /// </summary>
+    private void RenderSummary(SessionDiagnosticsState d)
+    {
+        SummaryHealthText.Text = d.Health;
+        SummaryTipText.Text = d.HealthTip;
+        RenderHealthDot(SummaryDot, d.HealthLevel);
+
+        SummaryResolutionText.Text = d.HeroResolution;
+        SummaryFpsText.Text = d.HeroFps;
+        SummaryBitrateText.Text = d.HeroBitrate;
+        SummaryLossText.Text = d.HeroLoss;
+
+        // Resolution and bitrate have no threshold of their own: the first is what was asked for and the
+        // second is a magnitude. Only frames and loss can be wrong by themselves.
+        ApplySeverity(SummaryFpsText, d.FramesSeverity);
+        ApplySeverity(SummaryLossText, d.LossSeverity);
+
+        RenderPills(SummaryPills, d, ref _renderedSummaryPillSignature);
+    }
+
+    /// <summary>Paint a value with its severity, or leave it in the default foreground when it is fine.</summary>
+    private static void ApplySeverity(TextBlock value, MetricSeverity severity)
+    {
+        value.ClearValue(TextBlock.ForegroundProperty);
+
+        if (severity != MetricSeverity.Normal && SeverityBrush(severity) is { } brush)
+        {
+            value.Foreground = brush;
         }
     }
 
@@ -539,7 +725,7 @@ public sealed partial class SessionPage : Page
 
         HealthText.Text = d.Health;
         HealthTipText.Text = d.HealthTip;
-        RenderHealthDot(d.HealthLevel);
+        RenderHealthDot(HealthDot, d.HealthLevel);
     }
 
     /// <summary>
@@ -548,18 +734,30 @@ public sealed partial class SessionPage : Page
     /// visible difference. The view-model decides WHICH pills; this decides when redrawing is worth it.
     /// </summary>
     private void RenderCapabilityPills(SessionDiagnosticsState d)
+        => RenderPills(CapabilityPills, d, ref _renderedPillSignature);
+
+    /// <summary>
+    /// Rebuild a pill row, but only when the set has actually changed - these are otherwise reconstructed
+    /// twice a second for a row that changes about twice a session.
+    ///
+    /// <para>
+    /// The cached signature belongs to the TARGET, not to the page. Two rungs show the same pills, and one
+    /// shared cache would let whichever rendered first convince the other it was already up to date.
+    /// </para>
+    /// </summary>
+    private static void RenderPills(ItemsControl target, SessionDiagnosticsState d, ref string cachedSignature)
     {
-        if (d.CapabilityPillSignature == _renderedPillSignature)
+        if (d.CapabilityPillSignature == cachedSignature)
         {
             return;
         }
 
-        _renderedPillSignature = d.CapabilityPillSignature;
-        CapabilityPills.Items.Clear();
+        cachedSignature = d.CapabilityPillSignature;
+        target.Items.Clear();
 
         foreach (CapabilityPill pill in d.CapabilityPills)
         {
-            CapabilityPills.Items.Add(new Border
+            target.Items.Add(new Border
             {
                 // Application.Current.Resources, not this page's: the pill styles are shared now, and a page's
                 // own dictionary does not see app-level ones.
@@ -582,7 +780,7 @@ public sealed partial class SessionPage : Page
     /// the previous LimeGreen/Orange were wrong in light theme and invisible in high contrast — and looked up
     /// defensively, so a missing key can never crash the overlay.
     /// </summary>
-    private void RenderHealthDot(StreamHealthLevel level)
+    private void RenderHealthDot(Shape dot, StreamHealthLevel level)
     {
         string brushKey = level switch
         {
@@ -594,8 +792,149 @@ public sealed partial class SessionPage : Page
 
         if (Application.Current.Resources.TryGetValue(brushKey, out object? brush) && brush is Brush themed)
         {
-            HealthDot.Fill = themed;
+            dot.Fill = themed;
         }
+    }
+
+    /// <summary>
+    /// A plotted metric's stroke. Neutral while the reading is inside its threshold, which is what makes a
+    /// coloured line worth looking at; resolved defensively, like the health dot, so a missing key leaves the
+    /// previous stroke rather than crashing the overlay or inventing a colour the design system does not own.
+    /// </summary>
+    private static Brush? SeverityBrush(MetricSeverity severity)
+    {
+        string key = severity switch
+        {
+            MetricSeverity.Warning => "SystemFillColorCautionBrush",
+            MetricSeverity.Critical => "SystemFillColorCriticalBrush",
+            _ => "TextFillColorSecondaryBrush",
+        };
+
+        return Application.Current.Resources.TryGetValue(key, out object? brush) && brush is Brush themed
+            ? themed
+            : null;
+    }
+
+    /// <summary>
+    /// Put the console's identity where its card's mark sat.
+    ///
+    /// <para>
+    /// This is the whole of "connect is the card becoming the window rather than a new place you navigated
+    /// to": the ConnectedAnimation lands the card's mark up here, and finding the same mark and the same name
+    /// still on screen is what makes the transition read as continuous rather than as a jump.
+    /// </para>
+    /// </summary>
+    private void ShowConnectIdentity()
+    {
+        if (_console is null)
+        {
+            ConnectIdentity.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        ConsoleFamily family = ConsoleFamily.ForPlatformName(_console.Platform);
+        ConnectMark.Accent = AccentResources.Brush(family.Accent);
+        ConnectConsoleName.Text = _console.DisplayName;
+        ConnectIdentity.Visibility = Visibility.Visible;
+    }
+
+    /// <summary>
+    /// Light the trail as far as the connect has travelled.
+    ///
+    /// <para>
+    /// A terminal stage keeps the phase it failed in and stops there rather than dimming to nothing: where it
+    /// got to is the useful half of what went wrong, and a player who watched it stop at the second dash
+    /// already knows the console never came up.
+    /// </para>
+    /// </summary>
+    private void RenderTrail(SessionViewState s)
+    {
+        bool hasPhase = s.StatusVisible && s.Phase is not null;
+
+        StatusTrail.Visibility = Vis(hasPhase);
+
+        // Only when there is something in progress that the trail cannot describe. Both hidden at rest, so a
+        // terminal state does not leave a bar cycling under a message saying it stopped.
+        StatusBusyBar.Visibility = Vis(s.StatusVisible && s.Phase is null && s.StatusBusy);
+
+        if (!hasPhase)
+        {
+            return;
+        }
+
+        int reached = s.Phase switch
+        {
+            ConnectPhase.Preparing => 1,
+            ConnectPhase.Waking => 2,
+            _ => 3,
+        };
+
+        // The console's own accent for the trail, resolved through AccentResources so high contrast drops it
+        // to a system brush rather than painting decorative colour where the palette forbids it. The wedge
+        // takes the ordinary foreground: it is the app's mark, not the console's.
+        ConsoleFamily family = ConsoleFamily.ForPlatformName(_console?.Platform);
+        StatusTrail.Accent = AccentResources.Brush(family.Accent);
+        StatusTrail.WedgeFill = ThemeBrush.Lookup("TextFillColorPrimaryBrush");
+        StatusTrail.Reached = reached;
+    }
+
+    /// <summary>Groups of the instrument panel, in the order they read. Column order in a sheet, row order otherwise.</summary>
+    private IEnumerable<FrameworkElement> DiagnosticsGroups()
+        => [DiagGroupStatus, DiagGroupTarget, DiagGroupMetrics, DiagGroupPipeline, DiagGroupDevice];
+
+    /// <summary>
+    /// Turn the panel on its side when it is sitting in a letterbox bar.
+    ///
+    /// <para>
+    /// One set of facts in two arrangements, which is why this is a layout change and not a second panel: two
+    /// copies of that markup would be two things to keep in step, and the one that is off screen is the one
+    /// that would quietly stop matching.
+    /// </para>
+    ///
+    /// <para>
+    /// A bar is wide and short, so the column becomes a row and the panel stops being something you scroll.
+    /// Everywhere else - the pillarbox rail, and the overlay when there is no dead space at all - it stays the
+    /// tall narrow column it has always been.
+    /// </para>
+    /// </summary>
+    private void ApplyDiagnosticsLayout(DiagnosticsPlacement placement)
+    {
+        bool sheet = placement == DiagnosticsPlacement.Sheet;
+        if (sheet == _diagnosticsIsSheet)
+        {
+            return;
+        }
+
+        _diagnosticsIsSheet = sheet;
+
+        DiagnosticsBody.RowDefinitions.Clear();
+        DiagnosticsBody.ColumnDefinitions.Clear();
+
+        int index = 0;
+        foreach (FrameworkElement group in DiagnosticsGroups())
+        {
+            if (sheet)
+            {
+                // Star-sized rather than auto: the groups hold wildly different amounts of text, and letting
+                // them size to content puts the sparklines in whatever width is left over.
+                DiagnosticsBody.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                Grid.SetRow(group, 0);
+                Grid.SetColumn(group, index);
+            }
+            else
+            {
+                DiagnosticsBody.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+                Grid.SetRow(group, index);
+                Grid.SetColumn(group, 0);
+            }
+
+            index++;
+        }
+
+        // The panel itself: a bar spans the width it was given, a rail keeps the width it was designed for.
+        DiagnosticsPanel.MaxWidth = sheet ? double.PositiveInfinity : 400;
+        DiagnosticsPanel.HorizontalAlignment = sheet ? HorizontalAlignment.Stretch : HorizontalAlignment.Left;
+        DiagnosticsPanel.VerticalAlignment = sheet ? VerticalAlignment.Bottom : VerticalAlignment.Top;
     }
 
     private static Visibility Vis(bool on) => on ? Visibility.Visible : Visibility.Collapsed;
@@ -969,13 +1308,8 @@ public sealed partial class SessionPage : Page
             ExitProgressBar.Value = progress;
             ExitProgressPanel.Visibility = progress is > 0 and < 1 ? Visibility.Visible : Visibility.Collapsed;
 
-            if (DiagnosticsPanel.Visibility == Visibility.Visible)
-            {
-                ControllerButtonsText.Text = $"Buttons: {frame.Buttons}";
-                ControllerSticksText.Text =
-                    $"L: ({frame.LeftStickX:F2}, {frame.LeftStickY:F2})  R: ({frame.RightStickX:F2}, {frame.RightStickY:F2})";
-                ControllerTriggersText.Text = $"LT: {frame.LeftTrigger:F2}  RT: {frame.RightTrigger:F2}";
-            }
+            // The live pad readout moved to Settings, beside the bindings it helps check. Nothing here
+            // reads the frame any more except the exit gesture above.
         });
     }
 
@@ -1148,6 +1482,69 @@ public sealed partial class SessionPage : Page
         // The panel's own 16px margins top and bottom, plus a little room so it never touches the edge.
         double available = ActualHeight - 48;
         DiagnosticsPanel.MaxHeight = available > 120 ? available : 120;
+
+        ApplyDiagnosticsPlacement();
+    }
+
+    /// <summary>
+    /// Put the instrument panel where the video isn't.
+    ///
+    /// <para>
+    /// The stream is 16:9 and the window usually is not, so there is nearly always a bar that is already black
+    /// and carrying nothing. Claiming it costs the player no picture — which is also the answer to "nobody
+    /// leaves the panel open": today it is expensive to, and it does not have to be.
+    /// </para>
+    ///
+    /// <para>
+    /// Only the pillarbox case is wired here. The panel is already a tall narrow column, so moving it into a
+    /// pillar is a position change; the letterbox <see cref="DiagnosticsPlacement.Sheet"/> wants a four-column
+    /// re-flow that does not exist yet, and until it does that case is handled as an overlay — which is what
+    /// happens today, so nothing regresses while it is missing.
+    /// </para>
+    /// </summary>
+    private void ApplyDiagnosticsPlacement()
+    {
+        SessionDiagnosticsState d = _viewModel.State.Diagnostics;
+        HudLayout layout = HudPlacement.For(ActualWidth, ActualHeight, d.VideoWidth, d.VideoHeight);
+
+        // The panel is MaxWidth-constrained rather than fixed, so Width is NaN until it has been measured -
+        // and NaN propagates silently through Math.Max into a Thickness nobody can read.
+        double panelWidth = DiagnosticsPanel.ActualWidth > 0
+            ? DiagnosticsPanel.ActualWidth
+            : DiagnosticsPanel.MaxWidth;
+
+        // **The summary strip belongs to the picture, not to the window.** It stretched the full width
+        // whatever the stream was doing, so a 16:9 stream in a wide window put a bar of instruments out over
+        // both pillarboxes - reading as chrome bolted to the window rather than as something measuring the
+        // thing above it. PillarWidth is one bar, so the picture is the viewport less two of them; with no
+        // pillarboxing that is the viewport and the strip is exactly as wide as it was.
+        double pictureWidth = ActualWidth - (layout.PillarWidth * 2);
+        DiagnosticsSummary.MaxWidth = pictureWidth > 120 && double.IsFinite(pictureWidth)
+            ? pictureWidth
+            : double.PositiveInfinity;
+
+        ApplyDiagnosticsLayout(layout.Placement);
+
+        // A sheet must not grow past the bar it is sitting in. Without this it keeps the window-height cap set
+        // above and quietly covers the picture - which is the one thing claiming dead space exists to avoid.
+        if (layout.Placement == DiagnosticsPlacement.Sheet)
+        {
+            DiagnosticsPanel.MaxHeight = Math.Max(120, layout.BarHeight - 32);
+        }
+
+        // Centre the panel in the pillar it is claiming rather than pinning it to the window edge: a rail
+        // hard against the bezel reads as something that fell off the side.
+        double inset = layout.Placement == DiagnosticsPlacement.Rail && double.IsFinite(panelWidth)
+            ? Math.Max(16, (layout.PillarWidth - panelWidth) / 2)
+            : 16;
+
+        // Only when it actually moves. This runs on every state change, and reassigning a Thickness
+        // invalidates layout whether or not the value differs.
+        if (Math.Abs(inset - _appliedDiagnosticsInset) > 0.5)
+        {
+            _appliedDiagnosticsInset = inset;
+            DiagnosticsPanel.Margin = new Thickness(inset, 16, 16, 16);
+        }
     }
 
     private void SaveDiagnosticsAccelerator_Invoked(
@@ -1173,6 +1570,150 @@ public sealed partial class SessionPage : Page
     /// anywhere and pasted whole.
     /// </para>
     /// </summary>
+    /// <summary>
+    /// Open the session trace. One CSV per session, beside the F8 reports, recording every stats tick.
+    ///
+    /// <para>
+    /// The F8 report answers "what is wrong right now"; this answers "what happened over the last ten
+    /// minutes", which is the shape of question a threshold needs. Reading a twice-a-second figure off a
+    /// screen and trying to catch its peak is not a measurement, and it is what the receive-queue question
+    /// currently asks of whoever is holding the handheld.
+    /// </para>
+    /// </summary>
+    private void StartTrace()
+    {
+        try
+        {
+            string path = System.IO.Path.Combine(
+                _services.Paths.StateDirectory,
+                $"session-trace-{DateTime.Now:yyyyMMdd-HHmmss}.csv");
+
+            _trace = new StreamWriter(path, append: false) { AutoFlush = false };
+            _tracePreambleWritten = false;
+            _tracePreambleWaits = 0;
+
+            // Say WHERE, for the same reason the F8 report does: on a handheld there is no other way to
+            // find it, and a trace nobody can locate is a trace nobody sends.
+            _tracePath = path;
+            DiagnosticsSavedText.Text = $"tracing to: {path}";
+
+            // The preamble is deliberately NOT written here - see WriteTracePreamble.
+        }
+        catch (Exception ex)
+        {
+            // Same rule as the F8 report: a diagnostics action never takes a live session with it.
+            _trace = null;
+            Debug.WriteLine($"[Ripcord] session trace could not be started: {ex}");
+        }
+    }
+
+    /// <summary>Rows to wait for an adapter name before writing the preamble without one.</summary>
+    private const int TracePreambleMaxWaits = 40;
+
+    /// <summary>
+    /// Write the preamble, once, as late as the adapter name allows.
+    ///
+    /// <para>
+    /// The preamble exists so a trace that arrives on its own still says what it was a trace OF, and the GPU
+    /// is the one piece of machine detail in it - "which adapter" changes the answer to most questions a
+    /// trace is taken to settle. But the adapter is only resolved when the decode pipeline initialises, and
+    /// that happens on the first decoded frame. <see cref="StartTrace"/> runs at the top of the connect,
+    /// before there is a pipeline at all, so asking then reliably yields an empty string - which is exactly
+    /// what the first traces taken off hardware contained.
+    /// </para>
+    ///
+    /// <para>
+    /// So the preamble waits for a name, but not indefinitely: after <see cref="TracePreambleMaxWaits"/> rows
+    /// it is written regardless. A session that fails before it ever decodes is precisely when a trace is most
+    /// worth having, and a file of bare numbers with no header is not one.
+    /// </para>
+    /// </summary>
+    private void WriteTracePreamble()
+    {
+        if (_trace is null || _tracePreambleWritten)
+        {
+            return;
+        }
+
+        string adapter = _pipelineStats.AdapterDescription;
+        if (string.IsNullOrWhiteSpace(adapter))
+        {
+            if (++_tracePreambleWaits < TracePreambleMaxWaits)
+            {
+                return;
+            }
+
+            // Said plainly rather than left blank: "not known yet" and "there is no GPU row at all" are
+            // different findings, and a reader months later cannot tell an empty field from a missing one.
+            adapter = "unknown (no frame decoded)";
+        }
+
+        SessionConfig config = _settings.ToSessionConfig();
+        foreach (string line in SessionSampleLog.Preamble(
+            typeof(SessionPage).Assembly.GetName().Version?.ToString() ?? "unknown",
+            adapter, config.CodecPreference.ToString(),
+            _settings.Width, _settings.Height, _settings.TargetFps, _settings.BitrateKbps))
+        {
+            _trace.WriteLine(line);
+        }
+
+        _tracePreambleWritten = true;
+        _trace.Flush();
+    }
+
+    /// <summary>
+    /// One row. Flushed on a cadence rather than every line: a trace that loses its last second to a hard
+    /// kill is still useful, and a trace that costs a disk write twice a second on a handheld is not.
+    /// </summary>
+    private void AppendTrace()
+    {
+        if (_trace is null || _viewModel.LastSample is not { } sample)
+        {
+            return;
+        }
+
+        try
+        {
+            // Rows written before the header would be unreadable, so the preamble gates them. The wait is
+            // bounded (see WriteTracePreamble) and what it costs is the pre-connect all-zero rows.
+            WriteTracePreamble();
+            if (!_tracePreambleWritten)
+            {
+                return;
+            }
+
+            _trace.WriteLine(SessionSampleLog.Row(sample));
+
+            if (++_traceRowsSinceFlush >= 20)
+            {
+                _traceRowsSinceFlush = 0;
+                _trace.Flush();
+            }
+        }
+        catch (Exception ex)
+        {
+            // Stop tracing rather than throwing every tick for the rest of the session.
+            Debug.WriteLine($"[Ripcord] session trace stopped: {ex}");
+            StopTrace();
+        }
+    }
+
+    private void StopTrace()
+    {
+        StreamWriter? trace = _trace;
+        _trace = null;
+
+        try
+        {
+            trace?.Flush();
+            trace?.Dispose();
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[Ripcord] session trace close failed: {ex}");
+        }
+    }
+
     private void SaveDiagnostics()
     {
         try
@@ -1188,7 +1729,9 @@ public sealed partial class SessionPage : Page
             File.WriteAllText(path, BuildDiagnosticsReport());
 
             // Show WHERE it went. On a handheld there is no other way to find out.
-            DiagnosticsSavedText.Text = $"saved: {path}";
+            DiagnosticsSavedText.Text = _tracePath is null
+                ? $"saved: {path}"
+                : $"saved: {path}  ·  trace: {_tracePath}";
         }
         catch (Exception ex)
         {
@@ -1296,6 +1839,21 @@ public sealed partial class SessionPage : Page
         args.Handled = true;
     }
 
+    private void DiagnosticsDetailButton_Click(object sender, RoutedEventArgs e)
+    {
+        _viewModel.ShowDiagnosticsDetail();
+
+        // Same reason as the touch toggle: the button would otherwise keep focus and swallow every
+        // subsequent Space before it reached the console.
+        FocusStreamSurface();
+    }
+
+    private void DiagnosticsLessButton_Click(object sender, RoutedEventArgs e)
+    {
+        _viewModel.HideDiagnosticsDetail();
+        FocusStreamSurface();
+    }
+
     private void DiagnosticsToggleButton_Click(object sender, RoutedEventArgs e)
     {
         ToggleDiagnosticsPanel();
@@ -1305,16 +1863,19 @@ public sealed partial class SessionPage : Page
         FocusStreamSurface();
     }
 
+    /// <summary>
+    /// Show the HUD or hide it, at whatever rung it was last at. Never a step deeper — see
+    /// <see cref="SessionViewModel.ToggleDiagnostics"/> for why that matters.
+    /// </summary>
     private void ToggleDiagnosticsPanel()
     {
-        bool showing = DiagnosticsPanel.Visibility != Visibility.Visible;
-        DiagnosticsPanel.Visibility = showing ? Visibility.Visible : Visibility.Collapsed;
+        _viewModel.ToggleDiagnostics();
 
-        if (showing)
+        // Catch it up in one pass: rendering is skipped while a rung is hidden, so without this it would show
+        // the last sample from before it was closed until the next tick. Render already ran for the text;
+        // the graph is the part it does not cover.
+        if (_viewModel.State.Rung == DiagnosticsRung.Full)
         {
-            // Catch the panel up in one pass: rendering is skipped while it is collapsed, so without this it
-            // would show the last sample from before it was closed until the next tick.
-            RenderDiagnostics(_viewModel.State.Diagnostics);
             RenderGraph();
         }
     }
@@ -1345,7 +1906,21 @@ public sealed partial class SessionPage : Page
         //
         // False means the sample was skipped — no pipeline yet, or too little time since the last one for a rate
         // to mean anything — so there is nothing new to plot either.
-        if (_viewModel.Sample(ReadTelemetry()) && DiagnosticsPanel.Visibility == Visibility.Visible)
+        // The connect gate needs the clock, not just reports. ConnectFlow reports only when something
+        // changes, so a stage that hangs reports once and then goes quiet - without this, a four-second
+        // stall would never promote its own line and the screen would sit on a stage that had already
+        // stopped being true. Ticked before sampling, and unconditionally, because the connect sequence runs
+        // before there is any telemetry to sample.
+        _viewModel.TickConnect();
+
+        bool sampled = _viewModel.Sample(ReadTelemetry());
+
+        if (sampled)
+        {
+            AppendTrace();
+        }
+
+        if (sampled && _viewModel.State.Rung == DiagnosticsRung.Full)
         {
             RenderGraph();
         }
@@ -1389,12 +1964,14 @@ public sealed partial class SessionPage : Page
         // Frame rate is scaled against the requested rate with headroom, so "at target" sits high but not
         // clipped and a shortfall is immediately visible as a drop. The other three scales belong to the
         // view-model, because each is derived from a threshold it already reasons about.
-        double fpsFullScale = Math.Max(1, _settings.TargetFps * 1.2);
+        SessionDiagnosticsState d = _viewModel.State.Diagnostics;
 
-        PlotSpark(FpsLine, FpsSpark, fps, fpsFullScale);
-        PlotSpark(RttLine, RttSpark, rtt, SessionViewModel.RttFullScaleMs);
-        PlotSpark(LossLine, LossSpark, loss, SessionViewModel.LossFullScalePercent);
-        PlotSpark(BitrateLine, BitrateSpark, bitrate, _viewModel.BitrateFullScaleMbps);
+        PlotSpark(FpsLine, FpsSpark, fps, _viewModel.FramesPlot, d.FramesSeverity);
+        PlotSpark(RttLine, RttSpark, rtt, SessionViewModel.LatencyPlot, d.LatencySeverity);
+        PlotSpark(LossLine, LossSpark, loss, SessionViewModel.LossPlot, d.LossSeverity);
+
+        // Bitrate never carries a severity: there is no bitrate that is wrong by itself.
+        PlotSpark(BitrateLine, BitrateSpark, bitrate, _viewModel.BitratePlot, MetricSeverity.Normal);
 
         // Value and peak beside each line, because a sparkline shows shape and says nothing about magnitude.
         FpsValueText.Text = $"{fps.Latest:F0}";
@@ -1416,8 +1993,19 @@ public sealed partial class SessionPage : Page
     /// line was identifiable. Each is now labelled, scaled independently, and sits beside its own value and peak.
     /// </para>
     /// </summary>
-    private static void PlotSpark(Polyline line, Canvas host, MetricHistory history, double fullScale)
+    private static void PlotSpark(
+        Polyline line, Canvas host, MetricHistory history, MetricPlot plot, MetricSeverity severity)
     {
+        // The stroke's colour is the reading, not the row's identity. These were fixed per metric in markup,
+        // so the loss line was red at zero loss and the frames line green while frames collapsed - colour that
+        // looked like it meant something and never did.
+        if (SeverityBrush(severity) is { } stroke)
+        {
+            line.Stroke = stroke;
+        }
+
+        double fullScale = plot.FullScale;
+
         // ActualWidth is 0 until the first layout pass, and these canvases are star-sized so there is no declared
         // Width to fall back on — skip rather than draw a degenerate line at x=0.
         double width = host.ActualWidth;
@@ -1474,14 +2062,17 @@ public sealed partial class SessionPage : Page
 
         LeaveImmersiveMode();
 
-        // Fire-and-forget the async teardown. The previous version blocked the UI thread on
-        // DisposeAsync().AsTask().Wait() twice, which froze the window on exit and risked a deadlock: session
-        // disposal awaits the control keep-alive task and joins the decode worker.
-        _ = TeardownAsync();
+        // Still not awaited HERE — blocking the UI thread on it froze the window on exit and risked a
+        // deadlock, since session disposal awaits the control keep-alive task and joins the decode worker.
+        // But the task is no longer dropped: the window needs something to wait on when the app is closing
+        // mid-stream, or the process exits before the session is ended properly. See Teardown.
+        Teardown = TeardownAsync();
     }
 
     private async Task TeardownAsync()
     {
+        StopTrace();
+
         await TeardownControllerAsync();
 
         D3D12VideoDecodePipeline? pipeline = _pipeline;

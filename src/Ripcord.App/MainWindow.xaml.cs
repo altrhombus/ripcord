@@ -112,9 +112,12 @@ public sealed partial class MainWindow : Window, IShellNavigator
         // The standing guarantee that something is always focused. Everything else that seeds focus — window
         // activation, navigation, the first pad press — predates it and each was written for one situation
         // somebody hit; this one covers the situations nobody has hit yet.
+        // needsSeed is the SHELL's question, not the pilot's. This used to ask the pilot directly, which
+        // skipped the modal guard and left the watchdog as the one seeding path with nothing in front of
+        // it - see ModalOwnsFocus for what that cost.
         _focusWatchdog = new FocusWatchdog(
             _dispatcherQueue,
-            needsSeed: () => _focus.NeedsFocusSeed(),
+            needsSeed: ShellShouldSeedFocus,
             seed: FocusFirstContentElement);
 
         // Focus is seeded on every navigation, not only when the chrome scope activates. Going to the pair flow
@@ -144,6 +147,7 @@ public sealed partial class MainWindow : Window, IShellNavigator
             // a different scope taking over, and the user picking up a different input device. It is never
             // told about pages.
             HintBar.SetPadFamily(_input.PadFamily);
+            HintBar.SetPadAttached(_input.PadAttached);
             HintBar.SetMode(_input.Mode);
             HintBar.Show(_input.Scopes.Top?.Prompts);
 
@@ -156,6 +160,9 @@ public sealed partial class MainWindow : Window, IShellNavigator
             // Connection events arrive on a polling thread, hence the marshal — the router says so.
             _input.PadFamilyChanged += family =>
                 _dispatcherQueue.TryEnqueue(() => HintBar.SetPadFamily(family));
+
+            _input.PadAttachedChanged += attached =>
+                _dispatcherQueue.TryEnqueue(() => HintBar.SetPadAttached(attached));
         };
 
         // What the other two input methods look like, for the mode tracker. Handled events count too: a click
@@ -201,6 +208,16 @@ public sealed partial class MainWindow : Window, IShellNavigator
             }
         };
 
+        // Closing mid-stream has to end the session before the process goes.
+        //
+        // The session page's teardown is deliberately not awaited on the UI thread — doing that froze the
+        // window on exit once — so on an ordinary "leave the stream" it simply completes while the window
+        // lives on. At shutdown there is no window to live on: the task is dropped, the process exits, and the
+        // teardown's last acts never happen. Those acts are the control-channel close and, on the account
+        // route, an HTTPS call leaving the cloud session, which is what tells PSN and the console we are gone.
+        // Without it the console can be left holding a session nobody is in.
+        AppWindow.Closing += OnAppWindowClosing;
+
         Closed += (_, _) =>
         {
             AppEffects.Changed -= OnEffectsChanged;
@@ -234,6 +251,56 @@ public sealed partial class MainWindow : Window, IShellNavigator
         // Hide the chrome underneath so nothing renders behind the video.
         ChromeFrame.Visibility = Visibility.Collapsed;
         ApplyStreamChrome();
+    }
+
+    /// <summary>
+    /// Set once the close has been allowed through, so the second <c>Close()</c> is not intercepted again.
+    /// </summary>
+    private bool _closeAllowed;
+
+    private void OnAppWindowClosing(AppWindow sender, AppWindowClosingEventArgs args)
+    {
+        // Nothing streaming, or we are already on the way out: let it close.
+        if (_closeAllowed || StreamFrame.Content is not SessionPage page)
+        {
+            return;
+        }
+
+        args.Cancel = true;
+        _ = CloseWhenSessionHasEndedAsync(page);
+    }
+
+    /// <summary>
+    /// End the session, then close for real.
+    ///
+    /// <para>
+    /// <b>Bounded, because a hang here is worse than an unclean exit.</b> The teardown's own cloud call carries
+    /// a three-second timeout, so four is enough for the whole of it and still short enough that a user who
+    /// clicked the X is not left wondering. If it overruns we close anyway — the alternative is a window that
+    /// will not shut, which is the bug the fire-and-forget was introduced to fix.
+    /// </para>
+    /// </summary>
+    private async Task CloseWhenSessionHasEndedAsync(SessionPage page)
+    {
+        try
+        {
+            // Unloads the page, which is what starts the teardown and sets its task.
+            CloseStream();
+
+            if (page.Teardown is { } teardown)
+            {
+                await Task.WhenAny(teardown, Task.Delay(TimeSpan.FromSeconds(4)));
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[Ripcord] session teardown on close failed: {ex}");
+        }
+        finally
+        {
+            _closeAllowed = true;
+            Close();
+        }
     }
 
     /// <summary>
@@ -506,11 +573,20 @@ public sealed partial class MainWindow : Window, IShellNavigator
     /// would make back feel broken in exactly the way a repeated click invites.
     /// </para>
     /// </summary>
-    private void NavigateToUtility(Type pageType)
+    /// <summary>
+    /// <see cref="IShellNavigator.ShowSettings"/>. The same route the gear button takes, carrying where the
+    /// caller wanted somebody to end up.
+    /// </summary>
+    public void ShowSettings(SettingsDestination destination = SettingsDestination.Top)
+        => NavigateToUtility(typeof(SettingsPage), destination);
+
+    private void NavigateToUtility(Type pageType, object? parameter = null)
     {
-        if (ChromeFrame.Content?.GetType() != pageType)
+        // Re-navigated when a parameter is carried, even if the page is already up: "take me to the account"
+        // has to be honoured by a page that happens to be showing already, or the second press does nothing.
+        if (ChromeFrame.Content?.GetType() != pageType || parameter is not null)
         {
-            ChromeFrame.Navigate(pageType);
+            ChromeFrame.Navigate(pageType, parameter);
         }
     }
 
@@ -613,12 +689,46 @@ public sealed partial class MainWindow : Window, IShellNavigator
     /// </para>
     /// </summary>
     /// <summary>
+    /// True while a modal owns focus, in which case the shell must keep its hands off.
+    ///
+    /// <para>
+    /// <b>The bug that named this.</b> The PSN sign-in dialog hosts a WebView2, which is a native child HWND.
+    /// Click into an HTML text box and Win32 focus goes there — but XAML focus goes NOWHERE, because the
+    /// focused thing is not in the XAML tree at all. <c>FocusManager.GetFocusedElement</c> returns null,
+    /// <see cref="FocusPilot.NeedsFocusSeed"/> reads that as "nothing has focus", and the shell put focus back
+    /// into the dialog. The password box deselected the instant it was clicked, every time.
+    /// </para>
+    ///
+    /// <para>
+    /// XAML focus being nowhere is not the same as focus being nowhere.
+    /// </para>
+    ///
+    /// <para>
+    /// But the narrow reading is the wrong one, and fixing only the web view is how this took two attempts.
+    /// <see cref="FocusFirstContentElement"/> focuses the page inside <c>ChromeFrame</c> — which while a modal
+    /// is up is the content BEHIND it. Doing that is never right, whatever the modal contains and whatever
+    /// prompted it. So the guard belongs at the chokepoint rather than at the symptom, and a modal keeps focus
+    /// for as long as it is showing: <c>ContentDialog</c> seeds and traps its own.
+    /// </para>
+    /// </summary>
+    private bool ModalOwnsFocus => _input.Scopes.Top?.Kind == InputScopeKind.Modal;
+
+    /// <summary>
+    /// Whether the shell should put focus into the page — the question every seeding path has to ask, and the
+    /// reason it is a method: the focus watchdog asked <see cref="FocusPilot.NeedsFocusSeed"/> on its own and
+    /// so had no <see cref="ModalOwnsFocus"/> guard, which is what kept the sign-in box unusable after the
+    /// guard was added here.
+    /// </summary>
+    private bool ShellShouldSeedFocus() => !ModalOwnsFocus && _focus.NeedsFocusSeed();
+
+    /// <summary>
     /// Put focus somewhere if it is nowhere. Returns true when it had to act, so a caller can treat the press
-    /// that prompted it as spent.
+    /// that prompted it as spent — which is also why the modal case returns false rather than swallowing the
+    /// press: nothing moved, so nothing was spent.
     /// </summary>
     private bool SeedFocusIfNothingHasIt()
     {
-        if (!_focus.NeedsFocusSeed())
+        if (!ShellShouldSeedFocus())
         {
             return false;
         }
@@ -629,6 +739,15 @@ public sealed partial class MainWindow : Window, IShellNavigator
 
     private void FocusFirstContentElement()
     {
+        // The chokepoint. Every other seeding path leads here — window activation, navigation, chrome scope
+        // activation, a pad direction with nothing focused, the watchdog, region cycling — and each was
+        // written for one situation somebody hit, so guarding them one at a time is how one gets missed.
+        // Focusing the page behind a modal is wrong in all of them.
+        if (ModalOwnsFocus)
+        {
+            return;
+        }
+
         if (ChromeFrame.Content is not FrameworkElement content)
         {
             return;

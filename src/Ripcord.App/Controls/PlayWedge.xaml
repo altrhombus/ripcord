@@ -1,0 +1,111 @@
+﻿<?xml version="1.0" encoding="utf-8" ?>
+<!--
+    The play wedge: Ripcord's action language, and on a console card it IS the primary action rather than an
+    icon sitting inside a button.
+
+    Two shapes:
+
+      the zone   a slanted band at the trailing edge, leaning forward like an italic. It is what makes "the
+                 whole card is one focus stop" visually true - a card does not need a Connect button when its
+                 trailing edge already says it launches something.
+      the mark   the play triangle from brand/ripcord-mark.svg, "M29 17 L53 32 L29 47 Z" with a round join.
+                 brand/*.svg is the source of truth; keep this in step with it rather than re-drawing it.
+
+    WHY THE GEOMETRY IS BUILT IN CODE AND NOT A VIEWBOX.
+
+    The first version wrapped a fixed 92x176 canvas in a Uniform Viewbox, which is wrong in two ways at once
+    and only looks right at exactly one size. Uniform letterboxes: asked for 184 wide beside a 150-tall hero
+    card it would scale to the height and leave the zone 78 wide, so the wedge simply would not reach the
+    card's edge. Stretch="Fill" fixes the size and breaks the angle instead - the slant would be near 9
+    degrees on a grid card and near 20 on the hero, which is the one thing about this shape that has to stay
+    constant, because the diagonal is the app's signature and a signature that changes slope is not one.
+
+    So the slant is held as a RATIO of the height (28/176, the mark's own proportion) and the path is rebuilt
+    on every size change. The angle is then identical at 92px beside a grid card and at 184px beside the
+    hero, which is what docs/design.md means by "it scales with its container, not as a fixed chip".
+
+    ON THE UNREACHABLE CASE, WHICH DEPARTS FROM THE WRITTEN DESIGN - see Muted in the code-behind. In short:
+    docs/design.md said an unreachable console has no wedge at all, that was written when "cannot be reached"
+    was believed to be knowledge, and it is not. The wedge goes quiet instead of vanishing. The design doc
+    records the amendment; if the two ever disagree again, the doc wins and this comment is what to correct.
+-->
+<UserControl
+    x:Class="Ripcord_App.Controls.PlayWedge"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d"
+    SizeChanged="OnSizeChanged">
+
+    <!--
+        Decorative to assistive technology. The card hosting this composes its own AutomationName from the
+        console's name, its state and what activating it will do, so announcing the wedge as well would add a
+        second voice saying "play" after the sentence that already said it.
+    -->
+    <Grid AutomationProperties.AccessibilityView="Raw">
+
+        <!--
+            ALL THREE PATHS LIVE IN A CANVAS, AND THAT IS LOAD-BEARING RATHER THAN TIDY.
+
+            Their geometry is rebuilt in OnSizeChanged. In a Grid that is a feedback loop: assigning Data
+            changes the Path's desired size, which invalidates layout, which raises SizeChanged again. The
+            plane alone survived it by accident - its quadrilateral fills the container exactly, so its
+            desired size never changed. The rim is a single diagonal, its bounds are smaller, and adding it
+            turned the whole window black with no exception thrown and nothing in the crash log.
+
+            A Canvas does not size to its children, so the loop cannot start. Add shapes here, not to the Grid.
+            The Viewbox stays a Grid child because it needs centring, and it is sized from code.
+        -->
+        <Canvas>
+
+            <!--
+                The plane. Its brush comes from the CALLER, for the same reason FamilyMark takes its accent
+                from the caller rather than defaulting: a UserControl that names app-level resources in its
+                own markup is a lookup waiting to fail, and in XAML that failure is silent.
+            -->
+            <Path x:Name="Zone" Fill="{x:Bind FacetFill, Mode=OneWay}" />
+
+            <!--
+                The bleed: the accent falling off the rim into the plane, built in code from AccentColor.
+
+                This is what stops the rim reading as a drawn edge rather than a lit one, and it is the
+                answer to "the wedge is too quiet" that does NOT reintroduce the slab - it is a gradient to
+                transparent, so there is no field of colour anywhere, only a falloff. Suppressed entirely
+                when Muted, and it carries no information a colour-blind or high-contrast user could miss,
+                because the rim and the mark both say the same thing without it.
+            -->
+            <Path x:Name="Bleed" />
+
+            <!--
+                The rim: the leading diagonal alone, in the family's accent. A LINE, NOT A FIELD - this is
+                the wedge's whole colour budget and Ripcord.Card.xaml has the argument for why that matters.
+                Thickness is a literal rather than a token, for the resource-lookup reason above.
+            -->
+            <Path
+                x:Name="Rim"
+                Stroke="{x:Bind RimBrush, Mode=OneWay}"
+                StrokeThickness="3" />
+        </Canvas>
+
+        <!--
+            The mark, centred in the zone. Its own Viewbox so the triangle keeps the brand proportions
+            whatever the zone is doing, and its round join is the mark's own - stroke-linejoin="round" in the
+            SVG - which is what stops it reading as a sharp arrowhead.
+        -->
+        <Viewbox
+            x:Name="MarkBox"
+            HorizontalAlignment="Center"
+            VerticalAlignment="Center"
+            Stretch="Uniform">
+            <Canvas Width="30" Height="36">
+                <Path
+                    Data="M 5,3 L 27,18 L 5,33 Z"
+                    Fill="{x:Bind MarkFill, Mode=OneWay}"
+                    Stroke="{x:Bind MarkFill, Mode=OneWay}"
+                    StrokeLineJoin="Round"
+                    StrokeThickness="6" />
+            </Canvas>
+        </Viewbox>
+    </Grid>
+</UserControl>
