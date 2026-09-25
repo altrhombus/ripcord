@@ -22,8 +22,13 @@ let usage = """
                             stream from a paired console for `seconds` (default 20), printing each
                             stage and a stats line, and writing every video frame, as the console
                             sent it, to out.h264 (Annex-B; ffplay or VLC plays it)
+          [--route account|internet] [--duid <duid>] [--no-register]
+                            account: reach the console through the account (the 9303 association and a
+                            negotiated A/V leg), on this network or not; `seconds` counts from the stream.
+                            internet: the WAN rendezvous, which ends at the console's candidates.
+                            Both need `signin`; --duid when the account has several consoles
 
-    """ + cloudUsage
+    """ + cloudUsage + accountUsage
 
 func fail(_ message: String, code: Int32 = 1) -> Never {
     FileHandle.standardError.write(Data((message + "\n").utf8))
@@ -107,12 +112,22 @@ case "consoles":
 case "connect":
     var positional: [String] = []
     var options = ConsoleSession.Options()
+    var route = LabRoute.local
+    var duid: String?
+    var registerFirst = true
     var rest = arguments.dropFirst()
     while let next = rest.popFirst() {
         switch next {
         case "--bitrate": options.bitrateKbps = rest.popFirst().flatMap(Int.init) ?? 0
         case "--720": options.width = 1280; options.height = 720
         case "--h264": options.allowHEVC = false
+        case "--route":
+            guard let value = rest.popFirst().flatMap(LabRoute.init(rawValue:)) else { fail(usage, code: 2) }
+            route = value
+        case "--duid":
+            guard let value = rest.popFirst() else { fail(usage, code: 2) }
+            duid = value
+        case "--no-register": registerFirst = false
         default: positional.append(next)
         }
     }
@@ -123,11 +138,18 @@ case "connect":
     guard let console = PairingStore.lab.load().first(where: { $0.host == host }) else {
         fail("connect: no paired console at \(host); run `ripcord-lab pair` first")
     }
-    // A resting console is woken first, as the Windows client does on connect.
-    do {
-        try LANWake.wakeIfResting(console) { _ in }
-    } catch {
-        fail("connect: \(error)")
+    // A resting console is woken first, as the Windows client does on connect. The rendezvous routes wake
+    // it through the account instead (the connect command), which also reaches a console off this network.
+    let candidates = CandidateBox()
+    if route == .local {
+        do {
+            try LANWake.wakeIfResting(console) { _ in }
+        } catch {
+            fail("connect: \(error)")
+        }
+    } else {
+        options.route = .rendezvous(labRendezvousRoute(route, console: console, duid: duid, registerFirst: registerFirst,
+                                                       candidates: candidates))
     }
     FileManager.default.createFile(atPath: outPath, contents: nil)
     guard let out = FileHandle(forWritingAtPath: outPath) else { fail("connect: cannot write \(outPath)") }
@@ -143,7 +165,18 @@ case "connect":
 
     var handlers = SessionHandlers()
     handlers.log = { line in FileHandle.standardError.write(Data("  core: \(line)\n".utf8)) }
-    handlers.stage = { stage in print("\(stamp())  stage \(stage)") }
+    // On the LAN, `seconds` runs from the start, as it always has; on a rendezvous route the cloud half alone
+    // can take longer than that, so it runs from the stream being ready.
+    let armed = Mutex(route == .local)
+    handlers.stage = { stage in
+        print("\(stamp())  stage \(stage)")
+        guard stage >= .streamReady, stage != .ended else { return }
+        let arm = armed.withLock { done -> Bool in
+            defer { done = true }
+            return !done
+        }
+        if arm { DispatchQueue.global().asyncAfter(deadline: .now() + seconds) { sessionBox.withLock { $0?.disconnect() } } }
+    }
     handlers.streamInfo = { info in print("\(stamp())  stream \(info.width)x\(info.height) \(info.codec)") }
     handlers.video = { sample, _ in out.write(annexB(sample)) }
     handlers.stats = { s in
@@ -166,6 +199,7 @@ case "connect":
     }
     handlers.ended = { outcome in
         print("\(stamp())  ended at \(outcome.stage), reason \(outcome.endReason), control error \(outcome.controlError)")
+        if let failure = outcome.failure { print("\(stamp())  \(failure)") }
         done.signal()
     }
     let session = ConsoleSession(console: console, options: options, handlers: handlers)
@@ -175,13 +209,24 @@ case "connect":
     let input = InputHub()
     input.start { pad in session.update(pad: pad) }
     session.start()
-    DispatchQueue.global().asyncAfter(deadline: .now() + seconds) { session.disconnect() }
+    if route == .local {
+        DispatchQueue.global().asyncAfter(deadline: .now() + seconds) { session.disconnect() }
+    }
     done.wait()
     try? out.close()
     print("video written to \(outPath)")
+    if route == .internet {
+        let found = candidates.value.withLock { $0 }
+        if found.isEmpty { fail("connect: the console never answered the WAN rendezvous") }
+        print("the console's candidates:")
+        for c in found { print("    \(c.type)  \(c.address):\(c.port)") }
+    }
 
 case "cloud", "signin", "signout", "cloud-consoles", "cloud-wake":
     runCloud(arguments)
+
+case "account-pair":
+    runAccountPair(arguments)
 
 default:
     fail(usage, code: 2)
