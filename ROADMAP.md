@@ -234,14 +234,18 @@ Step 1, promoting the core to `libripcord/` with fuzzing and a CI job, is done a
       (44/44).
     - Swift Testing runs.
     - `ripcord-lab check` and `ripcord-lab discover` work.
-  - [ ] **`discover` against a console.** It has only ever reported silence, because no console was on the
-        network. The .NET ProtocolLab heard nothing on the same network either.
   - [ ] **Connect orchestration: where it lives.** The core has every stage but no sequence. The PS3's
         4,330-line `rc_connect.c` and the 3DS's `main.c` each wrote their own, interleaved with their
         platform's UI. The recommendation is a portable, callback-driven connect sequence in
         `libripcord`, extracted from the PS3 flow (the most complete, and hardware-verified), which Swift
         then wraps. The ports migrate to it later, each on its own hardware.
-  - [ ] **Pair, connect, dump frames, measure.** Needs a console on the Mac's network.
+  - [x] **Crypto throughput: measured, and not a concern.** `ripcord-lab bench` on an M4 Max:
+        **8.1 µs per packet** (GMAC verify plus CTR decrypt, 1,426 bytes, across rotated-key windows).
+        That is about 1.4 Gb/s on one core, roughly 60 times a 23 Mb/s 1080p60 stream, from the portable
+        C with no intrinsics. The ARMv8 AES/PMULL work this item anticipated is not needed.
+  - [x] **`discover` against a console.** Found by unicast; broadcast is filtered on this network. See the
+        journal.
+  - [ ] **Pair, connect, dump frames.**
 - [x] **Port STUN to `libripcord`.** Done 2026-09-24: `net/rc_stun.{h,c}` and `net/rc_stun_client.c`, with
       102 host assertions reusing the .NET side's vectors, and a fuzz harness. See the journal.
 - [ ] **Port the internet-play connect sequence to `libripcord`.** The UDP half of
