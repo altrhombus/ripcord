@@ -147,6 +147,7 @@ public sealed partial class MainWindow : Window, IShellNavigator
             // a different scope taking over, and the user picking up a different input device. It is never
             // told about pages.
             HintBar.SetPadFamily(_input.PadFamily);
+            HintBar.SetPadAttached(_input.PadAttached);
             HintBar.SetMode(_input.Mode);
             HintBar.Show(_input.Scopes.Top?.Prompts);
 
@@ -159,6 +160,9 @@ public sealed partial class MainWindow : Window, IShellNavigator
             // Connection events arrive on a polling thread, hence the marshal — the router says so.
             _input.PadFamilyChanged += family =>
                 _dispatcherQueue.TryEnqueue(() => HintBar.SetPadFamily(family));
+
+            _input.PadAttachedChanged += attached =>
+                _dispatcherQueue.TryEnqueue(() => HintBar.SetPadAttached(attached));
         };
 
         // What the other two input methods look like, for the mode tracker. Handled events count too: a click
