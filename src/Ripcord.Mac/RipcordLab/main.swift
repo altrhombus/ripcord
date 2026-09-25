@@ -23,7 +23,7 @@ let usage = """
                             stage and a stats line, and writing every video frame, as the console
                             sent it, to out.h264 (Annex-B; ffplay or VLC plays it)
 
-    """
+    """ + cloudUsage
 
 func fail(_ message: String, code: Int32 = 1) -> Never {
     FileHandle.standardError.write(Data((message + "\n").utf8))
@@ -179,6 +179,9 @@ case "connect":
     done.wait()
     try? out.close()
     print("video written to \(outPath)")
+
+case "cloud", "signin", "signout", "cloud-consoles", "cloud-wake":
+    runCloud(arguments)
 
 default:
     fail(usage, code: 2)

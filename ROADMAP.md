@@ -287,7 +287,26 @@ Step 1, promoting the core to `libripcord/` with fuzzing and a CI job, is done a
     - [ ] `encode_account_id` in `halyard_regist_message.c` accumulates digits into a u64 with no
           overflow check. A 20-digit id past `UINT64_MAX` wraps silently, where .NET falls back to
           UTF-8.
-- [ ] **Swift cloud tier and session actor.** Ported from `Ripcord.Cloud.Halyard` and `SessionController`.
+- [x] **Swift cloud tier.** Done 2026-09-25, in `RipcordKit/Cloud/`: sign-in, tokens in the Keychain,
+      console list, cloud wake, sessions, the push WebSocket, signaling, and both rendezvous timelines
+      behind transport protocols the C side will implement. Request bodies were compared byte for byte
+      against what the real .NET code sends, including System.Text.Json's escaping.
+  - **Sign-in cannot use `ASWebAuthenticationSession`.** The credential's redirect lands on the
+    vendor's own https domain, which no app can claim, so a `WKWebView` watches for it and cancels it,
+    as the Windows WebView2 dialog does.
+  - [ ] Wire the credential's Run Script copy into the app target (the agent's recipe is in the commit
+        message) once there is an app target.
+  - [ ] Live-verify: the push upgrade through URLSession, sign-in in the web view (passkeys may need an
+        entitlement), and the Keychain under an ad hoc signature `[X]`.
+  - [ ] **`rc_ecdh.c`'s diagnostics are process-wide statics**, so concurrent derivations race on
+        `s_last_error_step`, which the Swift tests caught. A session derives on one thread, but the
+        state should live in the keypair or be thread-local.
+  - [ ] **.NET bugs the port found, for the Windows client:**
+    - `HalyardTokenProvider` lets two concurrent refreshes spend the same rotating refresh token.
+    - `SignOut` leaves the token provider seeded.
+    - `HalyardSignalingMessage.TryParse` misses `InvalidOperationException`, so a malformed frame is
+      lost silently.
+- [ ] **Swift session actor's lifecycle.** Reconnect, watchdog and backoff, ported from `SessionController`.
 - [ ] **The first coverage-guided fuzz run.** It happens in CI's `libripcord` job on Linux. It has never
       run, because the author's Mac has no libFuzzer-capable clang, so the first run may find real bugs.
 - [ ] **The `mac` CI job's first run.** `runs-on: macos-26` and whatever Xcode that image carries have not

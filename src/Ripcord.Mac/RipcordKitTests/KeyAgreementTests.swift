@@ -5,7 +5,9 @@
 import CLibripcord
 import Testing
 
-@Suite("CryptoKit key agreement")
+// Serialized: the core reports its last failure step in one process-wide variable (rc_ecdh.c), so a
+// derivation in a parallel test could overwrite the step another test is about to read.
+@Suite("CryptoKit key agreement", .serialized)
 struct KeyAgreementTests {
     private func generate(_ curve: CUnsignedInt) throws -> rc_ecdh_keypair {
         var pair = rc_ecdh_keypair()
