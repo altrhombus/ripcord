@@ -44,6 +44,7 @@ public sealed class InputHintBar : ContentControl
     private IReadOnlyList<InputPrompt> _current = [];
     private InputMode _mode = InputMode.Pointer;
     private PadFamily _family = PadFamily.Generic;
+    private bool _padAttached;
 
     public InputHintBar()
     {
@@ -75,6 +76,33 @@ public sealed class InputHintBar : ContentControl
         }
 
         _mode = mode;
+        Rebuild();
+    }
+
+    /// <summary>
+    /// Whether a pad is attached at all, which decides whether a keyboard user is shown anything.
+    ///
+    /// <para>
+    /// <b>Because the bar was appearing and vanishing on a desk with no controller on it.</b> In Keyboard
+    /// mode it offers the one prompt a keyboard user might not know — the Menu key for a context menu — and
+    /// the input mode follows whichever device was touched last. So alternating between keyboard and mouse
+    /// made the bar flicker, for a hint about a key, to somebody who had no pad and never would.
+    /// </para>
+    ///
+    /// <para>
+    /// With a pad attached the prompt is worth keeping in Keyboard mode: that is somebody who has both and
+    /// may be about to pick one up. Controller mode is unaffected either way — a pad in hand is a pad
+    /// attached.
+    /// </para>
+    /// </summary>
+    public void SetPadAttached(bool attached)
+    {
+        if (_padAttached == attached)
+        {
+            return;
+        }
+
+        _padAttached = attached;
         Rebuild();
     }
 
@@ -112,10 +140,10 @@ public sealed class InputHintBar : ContentControl
             case InputMode.Controller:
                 return _current;
 
-            // Only what a keyboard user would not already know. A prompt earns its place by having a key label
-            // at all — see InputPrompt.KeyLabel.
+            // Only what a keyboard user would not already know, and only when a pad exists to make the
+            // question live. A prompt earns its place by having a key label at all — see InputPrompt.KeyLabel.
             case InputMode.Keyboard:
-                return Where(_current, p => p.KeyLabel is not null);
+                return _padAttached ? Where(_current, p => p.KeyLabel is not null) : [];
 
             // Touch and pointer: every action has a visible control, so a bar restating them is noise.
             default:
