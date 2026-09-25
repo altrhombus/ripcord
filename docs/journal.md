@@ -35,6 +35,30 @@ different purpose.
 > anything. The list above is short, it is checkable in one `git log --format=%B | grep`, and it stops
 > growing the moment someone notices — which is the property that actually matters.
 
+### One engine for the first-class clients, in Rust (2026-09-25)
+
+The question started as whether two protocol backends, .NET for Windows and C for everything else, were
+worth keeping. The answer, recorded in full in [`engine-plan.md`](engine-plan.md):
+
+- **One engine, not one per platform.** Native apps are native in everything a person sees or feels; the
+  wire protocol is not experienced, and every extra implementation multiplies the hardware verification
+  that 1.0 already names as its bottleneck.
+- **Rust, not C, for that engine,** once it sits in front of the network on every first-class platform.
+  The console ports were first weighed as a blocker (no PS3 target), then a tier 3 `powerpc64-sony-ps3`
+  target turned up, and finally the owner ruled that retro consoles do not shape the architecture:
+  `libripcord` stays as their core.
+- **What keeps a second implementation:** derivations keep the .NET reference and its vectors; sequencing
+  lives in the Rust engine only. The vectors cannot be frozen as files, because they are derived from
+  the bundled constants.
+- **Key agreement** uses the OS where it has one (CryptoKit, CNG) and RustCrypto elsewhere. Linux and
+  Android will share a `ripcord-cloud` crate. Kotlin's bindings and the Linux toolkit are left to those
+  platforms' own plans.
+
+Phase 0 brought the documents into line: `CLAUDE.md`, `architecture.md`, `docs/README.md`,
+`macos-plan.md`, `libripcord/README.md` and `ROADMAP.md` now describe `libripcord` as the Mac's core until
+the Rust engine reaches parity and the ports' core after, and `CLAUDE.md`'s same-project porting rule
+names the C core and the Rust engine explicitly.
+
 ### `libripcord`: the rendezvous route's C side, and a byte-pipe seam in the control session (2026-09-25)
 
 Internet play's UDP half, tied together in `halyard_client`, ported from `HalyardStreamingSession`,
