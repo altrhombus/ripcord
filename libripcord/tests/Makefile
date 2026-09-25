@@ -91,6 +91,7 @@ STUN_TARGET := $(BUILD)/stun_test
 DGRAM_TARGET := $(BUILD)/dgram_test
 WAN_TARGET := $(BUILD)/wan_test
 DGRAM_VECTORS := vectors/dgram-transport.kat
+CLIENT_TARGET := $(BUILD)/client_test
 REGISTRATION_VECTORS := vectors/registration-crypto.kat
 ACCOUNT_PAIRING_TARGET := $(BUILD)/account_pairing_test
 ACCOUNT_PAIRING_VECTORS := vectors/account-pairing.kat
@@ -236,7 +237,7 @@ all: check
 check: $(TARGET) $(VECTORS) $(DISCOVERY_TARGET) $(SESSION_TARGET) $(TAKION_TARGET) $(STREAM_CRYPTO_TARGET) $(STREAM_VECTORS) $(FEC_TARGET) $(STREAM_HEADER_TARGET) $(STREAM_DEMUX_TARGET) $(ECDH_TARGET) $(SESSION_VECTORS) $(CONTROL_PROTO_TARGET) $(PROTO_VECTORS) $(INPUT_TARGET) \
          $(REGISTRATION_TARGET) $(REGISTRATION_VECTORS) $(REGIST_FLOW_TARGET) $(MENU_TARGET) $(ACCOUNT_ID_TARGET) $(PAIRING_SET_TARGET) $(STUN_TARGET) \
          $(ACCOUNT_PAIRING_TARGET) $(ACCOUNT_PAIRING_VECTORS) \
-         $(DGRAM_TARGET) $(DGRAM_VECTORS) $(WAN_TARGET)
+         $(DGRAM_TARGET) $(DGRAM_VECTORS) $(WAN_TARGET) $(CLIENT_TARGET)
 	./$(TARGET) $(VECTORS)
 	./$(DISCOVERY_TARGET)
 	./$(SESSION_TARGET)
@@ -257,6 +258,7 @@ check: $(TARGET) $(VECTORS) $(DISCOVERY_TARGET) $(SESSION_TARGET) $(TAKION_TARGE
 	./$(ACCOUNT_PAIRING_TARGET) $(ACCOUNT_PAIRING_VECTORS)
 	./$(DGRAM_TARGET) $(DGRAM_VECTORS)
 	./$(WAN_TARGET)
+	./$(CLIENT_TARGET)
 
 build: $(TARGET) $(DISCOVERY_TARGET) $(SESSION_TARGET) $(TAKION_TARGET) $(STREAM_CRYPTO_TARGET) $(FEC_TARGET) $(STREAM_HEADER_TARGET) $(STREAM_DEMUX_TARGET) $(ECDH_TARGET) $(CONTROL_PROTO_TARGET)
 
@@ -435,6 +437,56 @@ $(DGRAM_VECTORS):
 	@echo "generate it from the repository root with:"
 	@echo "    dotnet run --project tools/Ripcord.ProtocolLab -- vectors"
 	@false
+
+# The connect sequence (client/). Links most of the core, because that is what the sequence strings
+# together, but runs none of it against a console: see client_test.c for what it can check here. rc_ecdh.c
+# is built WITHOUT a backend - nothing here agrees a key - so the suite still needs no package.
+CLIENT_SOURCES := \
+	$(CORE)/client/halyard_client.c \
+	$(CORE)/client/halyard_client_policy.c \
+	$(CORE)/crypto/rc_aes.c \
+	$(CORE)/crypto/rc_sha256.c \
+	$(CORE)/crypto/rc_modes.c \
+	$(CORE)/crypto/rc_gcm.c \
+	$(CORE)/crypto/rc_ecdh.c \
+	$(CORE)/halyard/halyard_control_crypto.c \
+	$(CORE)/session/halyard_control_arm.c \
+	$(CORE)/session/halyard_control_probe.c \
+	$(CORE)/session/halyard_control_session.c \
+	$(CORE)/session/halyard_ctrl_message.c \
+	$(CORE)/session/halyard_launch_spec.c \
+	$(CORE)/session/halyard_sess_fields.c \
+	$(CORE)/session/halyard_sess_request.c \
+	$(CORE)/takion/takion_message.c \
+	$(CORE)/takion/takion_handshake.c \
+	$(CORE)/takion/takion_data_chunk.c \
+	$(CORE)/takion/takion_sack_chunk.c \
+	$(CORE)/takion/takion_reassembler.c \
+	$(CORE)/takion/takion_reliable_channel.c \
+	$(CORE)/takion/takion_control_proto.c \
+	$(CORE)/takion/takion_control_sealer.c \
+	$(CORE)/takion/takion_session_negotiator.c \
+	$(CORE)/stream/stream_demux.c \
+	$(CORE)/stream/stream_header.c \
+	$(CORE)/stream/stream_packet_crypto.c \
+	$(CORE)/stream/stream_key_schedule.c \
+	$(CORE)/stream/fec_galois.c \
+	$(CORE)/stream/fec_reed_solomon.c \
+	$(CORE)/input/halyard_input.c \
+	$(CORE)/net/rc_tcp.c \
+	$(CORE)/net/rc_udp.c \
+	$(CORE)/util/rc_base64.c \
+	$(CORE)/util/rc_hex.c \
+	$(CORE)/util/rc_text.c \
+	$(CORE)/util/rc_log.c \
+	$(CORE)/util/rc_program_dir.c \
+	rc_platform_host.c \
+	client_test.c
+
+$(CLIENT_TARGET): $(CLIENT_SOURCES) $(GENERATED) $(wildcard $(CORE)/client/*.h)
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) -D_DEFAULT_SOURCE $(INCLUDES) -I$(CORE)/session -I$(CORE)/util -I$(CORE)/net \
+	    -o $@ $(CLIENT_SOURCES) $(GENERATED)
 
 $(REGISTRATION_TARGET): $(REGISTRATION_SOURCES) $(REGISTRATION_GENERATED)
 	@mkdir -p $(@D)

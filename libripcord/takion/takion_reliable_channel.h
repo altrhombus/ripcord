@@ -105,6 +105,22 @@ int takion_channel_connect_ticked(takion_reliable_channel *ch, int sock, struct 
                                   takion_tick_fn tick, void *tick_ctx);
 
 /*
+ * As takion_channel_connect_ticked, but `abort` (may be NULL) is asked after every tick and a non-zero
+ * answer gives up at once, returning 0.
+ *
+ * Exists for libripcord/client: the stream handshake's budget is the vendor's ~30 s per phase (cap55),
+ * and without a way out a host that cancels, or a control session that dies underneath the wait, would
+ * sit out the whole budget first. A tick cannot say "stop" by itself because takion_tick_fn returns
+ * nothing, and changing that type would break every port that already passes one.
+ */
+typedef int (*takion_abort_fn)(void *ctx);
+
+int takion_channel_connect_abortable(takion_reliable_channel *ch, int sock, struct sockaddr_in peer,
+                                     unsigned max_attempts, unsigned per_attempt_timeout_ms,
+                                     takion_tick_fn tick, void *tick_ctx,
+                                     takion_abort_fn abort_fn, void *abort_ctx);
+
+/*
  * Switches on GMAC sealing for everything sent from now on. Call immediately after the stream keys are
  * derived and BEFORE sending anything else.
  *
