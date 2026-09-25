@@ -16,8 +16,8 @@ calls in three files, plus sockets. Extracting it was mostly `git mv`.
 
 ```
 crypto/     AES-128, SHA-256, HMAC, GCM/GMAC, cipher modes, the ECDH seam
-halyard/    the control KDF, field IV derivation, field ciphers
-session/    /sess/init -> /sess/ctrl, the binary control channel, launchSpec, pairing records
+halyard/    the control KDF, field IV derivation, field ciphers, registration (PIN and account), the account seed
+session/    /sess/rgst (PIN and account), /sess/init -> /sess/ctrl, the binary control channel, launchSpec, pairing records
 discovery/  the SRCH probe and its response parser, and the LAN wake datagram
 takion/     the SCTP-over-UDP transport: handshake, DATA/SACK, reassembly, senkusha, key negotiation
 stream/     A/V framing, Cauchy Reed-Solomon FEC over GF(2^8), packet crypto, frame reassembly
@@ -25,7 +25,7 @@ input/      controller state -> input packet
 net/        rc_tcp.c, a minimal TCP client; rc_udp.c; rc_stun*.c, the STUN reflexive-address client
 util/       base64, hex, text/header parsing, logging, program-dir resolution
 platform/   rc_platform.h - the seam, and the ONLY thing here that names an OS
-tests/      the host-side known-answer suite (3,868 assertions on 2026-09-24), plus the host seam implementation
+tests/      the host-side known-answer suite (4,225 assertions on 2026-09-25), plus the host seam implementation
 tools/      gen_constants.py, udp_link_test_sender.py, build-mbedtls.sh + its minimal config
 ```
 
@@ -122,6 +122,7 @@ and the stream headers. It is C, so a length it trusts is a memory-safety bug ra
 | `fuzz_control.c` | The `/sess/ctrl` byte stream and every Takion control-message parser |
 | `fuzz_stream.c` | Stream headers, frame assembly and FEC recovery, with the passthrough crypto seam so it also reaches what an authenticated console could drive |
 | `fuzz_stun.c` | The STUN Binding Response parser - the one surface that faces the open internet rather than the LAN |
+| `fuzz_account.c` | Account pairing: the console's `customData1` seed, and the `/sess/rgst` reply - completeness, split, decrypt, pairing-record parse |
 
 Stateful harnesses read their input as a sequence of length-prefixed records, one per datagram
 (`fuzz/fuzz_input.h`), so a second packet can find the state the first one left.

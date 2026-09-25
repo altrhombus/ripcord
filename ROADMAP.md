@@ -250,7 +250,19 @@ Step 1, promoting the core to `libripcord/` with fuzzing and a CI job, is done a
       102 host assertions reusing the .NET side's vectors, and a fuzz harness. See the journal.
 - [ ] **Port the internet-play connect sequence to `libripcord`.** The UDP half of
       `Ripcord.Cloud.Halyard/Rendezvous/`. The HTTPS half goes to Swift.
-- [ ] **Port account-pairing derivations to `libripcord`.**
+- [x] **Port account-pairing derivations to `libripcord`.** Done 2026-09-25:
+  - The seed delivery, the account wrap and key, and building and opening the `/sess/rgst` request are
+    ported, with a flow driven through a transport callback.
+  - `ProtocolLab` generates `account-pairing.kat`, and the C runner adds 357 assertions against it.
+    Changing one bias constant made 40 of them fail, so the vectors bite.
+  - Still open:
+    - [ ] The UDP 9303 control association the flow runs over. It belongs to the internet-play port,
+          since `/sess/init` and `/sess/ctrl` use the same association.
+    - [ ] The Swift cloud tier, including `localHashedId` (SHA-1 of the device id).
+    - [ ] PS4's account route and the search probe on this route, both `[X]`.
+    - [ ] `encode_account_id` in `halyard_regist_message.c` accumulates digits into a u64 with no
+          overflow check. A 20-digit id past `UINT64_MAX` wraps silently, where .NET falls back to
+          UTF-8.
 - [ ] **Swift cloud tier and session actor.** Ported from `Ripcord.Cloud.Halyard` and `SessionController`.
 - [ ] **The first coverage-guided fuzz run.** It happens in CI's `libripcord` job on Linux. It has never
       run, because the author's Mac has no libFuzzer-capable clang, so the first run may find real bugs.
