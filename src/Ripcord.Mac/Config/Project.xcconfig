@@ -15,7 +15,15 @@ GCC_C_LANGUAGE_STANDARD = c99
 // directories, exactly as libripcord/tests/Makefile's INCLUDES. Swift's importer needs them too.
 RIPCORD_CORE_HEADER_PATHS = $(LIBRIPCORD)/crypto $(LIBRIPCORD)/halyard $(LIBRIPCORD)/platform
 HEADER_SEARCH_PATHS = $(inherited) $(RIPCORD_CORE_HEADER_PATHS)
-SWIFT_INCLUDE_PATHS = $(inherited) $(SRCROOT)/Libripcord/include
+SWIFT_INCLUDE_PATHS = $(inherited) $(SRCROOT)/Libripcord/include $(SRCROOT)/RipcordEngine/include
+
+// The Rust engine (docs/engine-plan.md), during Phase 1 alongside the C core rather than instead of it.
+// RipcordKit's "Build the Rust engine" phase runs cargo; every executable that links RipcordKit links the
+// static archive by full path, because cargo writes a dylib of the same name beside it and -l would
+// prefer that. Static-library targets link with libtool, which does not read OTHER_LDFLAGS.
+RIPCORD_ENGINE = $(RIPCORD_REPO_ROOT)/engine
+RIPCORD_ENGINE_LIB = $(RIPCORD_ENGINE)/target/release/libripcord.a
+OTHER_LDFLAGS = $(inherited) $(RIPCORD_ENGINE_LIB)
 
 // Ad hoc signing until distribution is set up (docs/macos-plan.md, step 9).
 CODE_SIGN_IDENTITY = -

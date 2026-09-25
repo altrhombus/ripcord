@@ -35,6 +35,38 @@ different purpose.
 > anything. The list above is short, it is checkable in one `git log --format=%B | grep`, and it stops
 > growing the moment someone notices — which is the property that actually matters.
 
+### The Rust engine's Phase 1 spike: the stream plane, and the gate on the Mac (2026-09-25)
+
+`engine/` is a Cargo workspace. `ripcord-proto` holds the stream plane, ported from `libripcord/stream/`:
+header, key schedule, packet crypto, FEC and demuxer, with no `unsafe`. `ripcord-ffi` is the C ABI,
+`ripcord-kat` runs the vector files, and `hosts/dotnet/` is a .NET harness. Measured on the M4 Max:
+
+- **`stream-crypto.kat`: 65 of 65.** The file is the one the C core's `stream_crypto_test.c` reads,
+  unchanged. Unlike the C runners, `ripcord-kat` fails on a line kind it does not know rather than
+  skipping it.
+- **Per packet, 0.53–0.57 µs against the C core's 7.71–8.11 µs,** from one Swift harness.
+  `PacketCryptoBenchmark` now takes an engine, and `ripcord-lab bench` runs both. The workload is
+  unchanged, and every packet in it is in a new GMAC rotation window, which is the worst case. From .NET,
+  the engine takes 0.67–0.71 µs through P/Invoke and the managed `HalyardPacketCrypto` takes 16–17 µs.
+  Hardware AES and PMULL account for most of the difference. Structure accounts for the rest: CTR
+  borrows a key schedule expanded once, and the GMAC cache is keyed by window, so the key is not derived
+  on every packet.
+- **Both hosts link through generated bindings.** cbindgen writes `ripcord.h`, which the Mac reads in
+  place through a `CRipcordEngine` module map. csbindgen writes `NativeMethods.g.cs`, which the harness
+  drives with `[UnmanagedCallersOnly]` callbacks and a `GCHandle`, as Phase 4 will. The harness also
+  runs a differential against `HalyardPacketCrypto`: 80 key positions × 4 checks, across window
+  boundaries and the 32-bit edge.
+- **One header problem, fixed in the source.** cbindgen writes a `repr(i32)` enum as an `enum` tag plus
+  a same-named `int32_t` typedef before C23, and Swift imported those as two types. The ABI's enums are
+  `repr(C)` now, which is `int`-sized on every target and which csbindgen maps to `uint`.
+- **Open:** the Windows x64 and ARM64 figures, and why the lab grows 1.2 MB stripped when the engine
+  dylib is 386 KB. Both are in the roadmap. A CI job now runs the engine on Linux, macOS and both
+  Windows architectures.
+
+The C core's fixed caps are kept exactly: 512 slots per frame, a 4,096-byte stride, FEC groups of 64 and
+a 2,048-byte packet limit. This keeps differential runs comparable. The Rust decoder's scratch belongs
+to its caller, where the C core's is `static`, so decoding is reentrant.
+
 ### One engine for the first-class clients, in Rust (2026-09-25)
 
 The question started as whether two protocol backends, .NET for Windows and C for everything else, were

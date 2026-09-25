@@ -1,0 +1,44 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The .NET side of engine-plan.md's Phase 1 gate: the Rust engine reached through its generated
+    bindings (NativeMethods.g.cs), the way Phase 4's Ripcord.Protocol.Halyard.Native will reach it.
+    Deliberately outside Ripcord.slnx until then, so the Windows build does not need cargo yet.
+
+    The engine is built by cargo before this project compiles, so `dotnet run` alone is enough on any
+    machine with a Rust toolchain. -p:RipcordCargoProfile=debug for a debug engine.
+  -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <IsPackable>false</IsPackable>
+    <RipcordCargoProfile Condition="'$(RipcordCargoProfile)' == ''">release</RipcordCargoProfile>
+    <RipcordEngineDir>$(MSBuildThisFileDirectory)../../../</RipcordEngineDir>
+    <RipcordEngineTarget>$(RipcordEngineDir)target/</RipcordEngineTarget>
+    <RipcordCargoFlag Condition="'$(RipcordCargoProfile)' == 'release'">--release</RipcordCargoFlag>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../../../src/Ripcord.Protocol.Halyard.Common/Ripcord.Protocol.Halyard.Common.csproj" />
+  </ItemGroup>
+
+  <Target Name="BuildRipcordEngine" BeforeTargets="CoreCompile">
+    <Exec Command="cargo build -p ripcord-ffi $(RipcordCargoFlag)" WorkingDirectory="$(RipcordEngineDir)" />
+    <ItemGroup>
+      <Compile Include="$(RipcordEngineTarget)include/NativeMethods.g.cs" Link="NativeMethods.g.cs" />
+    </ItemGroup>
+  </Target>
+
+  <!-- Whichever of the three a platform produces; the others do not exist and are skipped. -->
+  <Target Name="CopyRipcordEngine" AfterTargets="Build">
+    <ItemGroup>
+      <RipcordEngineLibrary Include="$(RipcordEngineTarget)$(RipcordCargoProfile)/libripcord.dylib;$(RipcordEngineTarget)$(RipcordCargoProfile)/libripcord.so;$(RipcordEngineTarget)$(RipcordCargoProfile)/ripcord.dll" />
+    </ItemGroup>
+    <Copy SourceFiles="@(RipcordEngineLibrary)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" Condition="Exists('%(RipcordEngineLibrary.FullPath)')" />
+  </Target>
+
+</Project>
