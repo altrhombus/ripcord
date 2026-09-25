@@ -146,3 +146,83 @@ int halyard_registration_gather(const uint8_t *context, size_t context_length, u
     memcpy(out_wrapped + 8, context + HALYARD_REGISTRATION_WRAPPED_HIGH, 8);
     return 1;
 }
+
+/* ---- The account ("web"/no-PIN) route - see the header for why it is a sibling, not a flag ---- */
+
+/*
+ * The account route's additive constant, for both families. Ported from HalyardRegistrationKdf.
+ * AccountWrapBias, which is where the provenance lives. It sits beside the PIN route's biases above for
+ * the same reason they do: it is part of the transform, like the scatter offsets, and not one of the
+ * bundled tables.
+ */
+#define ACCOUNT_WRAP_BIAS 0x2b
+
+int halyard_registration_wrap_account_material(int is_ps5, const uint8_t material[16],
+                                               const uint8_t *context, size_t context_length,
+                                               uint8_t out_wrapped[16])
+{
+    const uint8_t *table = wrap_table(is_ps5);
+    int i;
+
+    if (!halyard_v1_registration_bundled || table == NULL || material == NULL || context == NULL
+        || out_wrapped == NULL || context_length <= MATERIAL_SELECTOR_OFFSET)
+        return 0;
+
+    table += (size_t)(context[MATERIAL_SELECTOR_OFFSET] >> 3) * HALYARD_REGISTRATION_KEY_LENGTH;
+    for (i = 0; i < HALYARD_REGISTRATION_KEY_LENGTH; i++) {
+        /* Truncated to a byte BEFORE the XOR, as .NET's (byte)(material[i] - i + 0x2b) is. */
+        uint8_t shifted = (uint8_t)(material[i] - i + ACCOUNT_WRAP_BIAS);
+
+        out_wrapped[i] = (uint8_t)(shifted ^ table[i]);
+    }
+    return 1;
+}
+
+int halyard_registration_unwrap_account_material(int is_ps5, const uint8_t wrapped[16],
+                                                 const uint8_t *context, size_t context_length,
+                                                 uint8_t out_material[16])
+{
+    const uint8_t *table = wrap_table(is_ps5);
+    int i;
+
+    if (!halyard_v1_registration_bundled || table == NULL || wrapped == NULL || context == NULL
+        || out_material == NULL || context_length <= MATERIAL_SELECTOR_OFFSET)
+        return 0;
+
+    table += (size_t)(context[MATERIAL_SELECTOR_OFFSET] >> 3) * HALYARD_REGISTRATION_KEY_LENGTH;
+    for (i = 0; i < HALYARD_REGISTRATION_KEY_LENGTH; i++)
+        out_material[i] = (uint8_t)((wrapped[i] ^ table[i]) - ACCOUNT_WRAP_BIAS + i);
+    return 1;
+}
+
+int halyard_registration_derive_account_key(int is_ps5, const uint8_t *context, size_t context_length,
+                                            const uint8_t seed[16], uint8_t out_key[16])
+{
+    int i;
+
+    if (seed == NULL)
+        return 0;
+    /* A zero passcode folds nothing, so this is the raw table entry - the one the seed then covers. */
+    if (!halyard_registration_derive_key(is_ps5, context, context_length, 0u, out_key))
+        return 0;
+    for (i = 0; i < HALYARD_REGISTRATION_KEY_LENGTH; i++)
+        out_key[i] ^= seed[i];
+    return 1;
+}
+
+int halyard_registration_account_field_init(struct halyard_control_field_tag *field, int is_ps5,
+                                            const uint8_t *context, size_t context_length,
+                                            const uint8_t seed[16], const uint8_t material[16])
+{
+    if (field == NULL || material == NULL)
+        return 0;
+    if (!halyard_registration_derive_account_key(is_ps5, context, context_length, seed, field->key))
+        return 0;
+
+    memcpy(field->material, material, HALYARD_MATERIAL_LENGTH);
+    /* The same per-family context key as the PIN route - see halyard_registration_field_init. */
+    memcpy(field->context_key,
+           is_ps5 ? halyard_v1_ctx_selector_one : halyard_v1_ctx_selector_zero,
+           HALYARD_CONTEXT_KEY_LENGTH);
+    return 1;
+}
