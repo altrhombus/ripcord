@@ -345,6 +345,33 @@ follow-up, listed under the accessibility and polish items: whether the console 
       comparison shots later: a diff across two machines shows display scale and GPU rather than the change
       under review. Record the machine, its scale and the window size beside the files.
 
+### Hardware verification owed for the design work (merged to `main` 2026-09-24)
+
+The design direction landed as 95 commits and **almost none of its surfaces have been walked deliberately**.
+What has been exercised is what got hit while chasing something else — which is exactly how the eight defects
+recorded in the journal for 2026-09-24 were found, none of them a crash and not one catchable by either test
+suite. That list is the argument for this item; the suites cannot replace it.
+
+- [ ] **Run the manual script.** [`docs/design-branch-test-pass.md`](docs/design-branch-test-pass.md), §1–§8,
+      plus the per-input matrix it defines: pad-only with mouse and keyboard physically denied, touch on a
+      handheld, high contrast, transparency off, reduce motion, Narrator over the card grid, and a TV at 2–3 m
+      for the focus-ring legibility judgement the one-adaptive-UI decision rests on.
+
+- [ ] **Two judgements nobody has made yet**, both cosmetic and both written blind:
+      - the connect screen reserves a fixed 112 px block below its message so the text cannot be pushed
+        around. Does that read as breathing room or as a gap? The number is the thing to change, not the
+        approach.
+      - the diagnostics summary strip now tracks the picture's width rather than the window's. When the
+        stream is letterboxed it still sits on the black bar at the bottom — whether it should rise to the
+        picture's edge was not decided, only left alone.
+
+- [ ] **The account-pairing flag check**, which needs a console with remote play *or* rest-mode wake
+      deliberately switched off — i.e. changing a setting on a working console and changing it back. Landed
+      untested; see the account-pairing entry above for what it does.
+
+Everything else the design work owed is done: the two one-way doors (the wordmark and the card rebuild) are
+closed, and the regression baselines are the item above this one.
+
 ### Follow-ups from the settings-page crash (cause found and fixed 2026-08-06)
 **Pre-existing, and it predates the Stage A work.** Opening Settings terminated the process every time on this
 ARM64 host: no managed exception, nothing in `crash.log`, window simply gone. WER records a stowed exception,
