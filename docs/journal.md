@@ -35,6 +35,43 @@ different purpose.
 > anything. The list above is short, it is checkable in one `git log --format=%B | grep`, and it stops
 > growing the moment someone notices — which is the property that actually matters.
 
+### The Mac streams: first pairing and first picture through `libripcord` (2026-09-25)
+
+The engine spike's question is answered: a Mac, through the C core and nothing else, pairs with a PS5 and
+streams from it. PS5-<redacted>, on the LAN at home, and the first time any of the new pieces met a console.
+
+**Pairing** ran `halyard_regist_run` from `ripcord-lab pair` on the first attempt. That is the core's PIN
+flow, driven by a host other than a console port for the first time. The record is in the core's own file
+format, owner-only, under Application Support.
+
+**The first session**, `ripcord-lab connect`, went through `halyard_client`, the connect sequence
+committed a day earlier and never yet run:
+
+    0.01s  control open        4.46s  takion up         4.73s  streaming
+    2.28s  signed in           4.50s  stream keys
+    4.35s  senkusha up         4.57s  stream ready
+
+It then held a steady 60 video frames and 100 audio packets a second for 16 s, with **0 packets lost of
+2,404**. 91 control messages were verified and none failed, and the goodbye was clean. `ffprobe` read all
+976 frames of the capture. The frame at 600 is the console's own Remote Play settings screen, where it had
+been left after pairing.
+
+**The console grants resolution by bitrate, not by request.** Asked for 1920x1080 at the core's 10 Mb/s
+default, it streamed 1280x720. Asked again at 25 Mb/s, it streamed 1920x1080 HEVC, and all 471 frames
+decode. The Mac now defaults to 25 Mb/s. The Windows client also defaults to 10,000 kb/s, so a user who
+picks 1080p there may be getting 720p. That is recorded in the roadmap to check rather than asserted.
+
+**Getting there needed three fixes along the way**, each in its own commit:
+
+- **Unicast discovery.** This network filters broadcast, so the console only answers probes addressed to
+  it directly.
+- **Repeated probes.** A resting console answers its first probe in about 2 s, so a single short probe
+  missed it.
+- **The session's handlers.** The lab's first draft of `connect` set them after the session had copied
+  them.
+
+The account id came from the lab notebook, read locally and never printed.
+
 ### The Mac client's foundation, and STUN in the core (2026-09-24)
 
 Step 2 of [`macos-plan.md`](macos-plan.md) started on two tracks at once.

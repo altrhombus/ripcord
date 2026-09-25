@@ -250,7 +250,14 @@ Step 1, promoting the core to `libripcord/` with fuzzing and a CI job, is done a
         C with no intrinsics. The ARMv8 AES/PMULL work this item anticipated is not needed.
   - [x] **`discover` against a console.** Found by unicast; broadcast is filtered on this network. See the
         journal.
-  - [ ] **Pair, connect, dump frames.**
+  - [x] **Pair, connect, dump frames.** Done 2026-09-25, against PS5-<redacted>: paired on the first attempt,
+        streaming in 4.73 s, 60 fps, 0 lost of 2,404, the capture decodes, 1080p HEVC at 25 Mb/s. See
+        the journal. **The spike's question is answered: the C core is the Mac's engine.**
+  - [ ] **Controller input, live.** The sequence sends it, but the lab has had no pad attached, so it
+        has not been seen to steer the console.
+- [ ] **Check the Windows client's resolution against its bitrate.** The console grants resolution by
+      bitrate (journal, 2026-09-25): 1080p asked at 10 Mb/s streamed 720p. The Windows default is
+      10,000 kb/s. Measure what a default Windows session actually receives.
 - [x] **Port STUN to `libripcord`.** Done 2026-09-24: `net/rc_stun.{h,c}` and `net/rc_stun_client.c`, with
       102 host assertions reusing the .NET side's vectors, and a fuzz harness. See the journal.
 - [x] **Port the internet-play connect sequence's UDP half to `libripcord`.** Done 2026-09-25:
