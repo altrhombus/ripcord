@@ -13,7 +13,8 @@
     is reached. Progress is the trail filling in behind something that has already launched, which is what
     the mark has always meant.
 
-    Geometry is brand/ripcord-tile.svg exactly, transform included. The dashes are in the CONSOLE's accent
+    Geometry is brand/ripcord-mark-ondark.svg exactly, placed with the tile transform generate-assets.ps1
+    applies (72%, centred). The dashes are in the CONSOLE's accent
     rather than the three family colours, because this is one console's connect and not the app's logo -
     resolved through AccentResources, so high contrast drops it to a system brush rather than painting
     decorative colour where the palette forbids it.
