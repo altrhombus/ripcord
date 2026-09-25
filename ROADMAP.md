@@ -300,7 +300,7 @@ exists for.
   own (`rc_connect` returns to `rc_shell_run`), so this is a loop around the connect call with a limit, not
   a lift of the C# object.
 
-### Design direction — settled 2026-09-13, two items still open
+### Design direction — settled 2026-09-13, one item still open
 
 The UX review is done and its decisions are recorded in [`docs/design.md`](docs/design.md), which is now
 the standing answer to "what does the app look like". Four questions were left open rather than guessed,
@@ -319,12 +319,9 @@ Both are in the journal, and one confirmation is still outstanding — see Track
 hover; both were fixed when the card was rebuilt on 2026-09-20 — hover is a wash, focus is the system
 ring, and neither can be mistaken for the other. See the journal.
 
-- [ ] **Settle the wordmark.** Outfit is used throughout the design drawings and is explicitly provisional.
-      `brand/README.md` shortlists Poppins and Plus Jakarta Sans alongside it; all three are open-licensed,
-      so this is a look decision with a licence check attached, not a procurement.
-      **Price: ~1 hour to choose, ~2 hours to draw the lockup and add it to `generate-assets.ps1`.**
-      **One-way door**: once the tile, splash and store assets are cut from a face, changing it re-cuts all
-      of them. Decide before generating, not after.
+**The wordmark was settled on 2026-09-24**: Outfit SemiBold, lowercase, horizontal lockup. The tile was
+lifted and given an edge in the same pass. See the journal and `brand/README.md`. It left one small
+follow-up, listed under the accessibility and polish items: whether the console card rejoins the tile.
 
 - [ ] **Capture regression baselines — of the NEW card now, not the old one.**
       The original item said "capture these before touching the card". That moment has gone: the card was
@@ -885,8 +882,13 @@ Both need a console or a capture to settle, hence here rather than in Track D.
     Nintendo-red would sit adjacent in the family picker the day one does. `brand/README.md` already flags
     this trio as the palette's weak point. The mitigation is in the design — the text label is the primary
     carrier, never the colour — but it wants re-checking rather than assuming.
-- [ ] **Wordmark.** No typeface chosen, so nothing ships the name as artwork. Blocks a proper wide tile and
-      splash lockup — both currently mark-only.
+- [ ] **Does the console card rejoin the tile? — opened 2026-09-24.** The card's dark gradient used to be
+      the tile's own values. The tile was lifted to `#303743 → #1B1F26` and the card was not, because the
+      wedge facet is defined as "the card lifted" (`#2E333C → #1B1F26`), which is almost exactly the new
+      tile, so moving the card alone would erase the facet. Rejoining means lifting the card *and* the facet
+      together, a visible change to every card in dark theme. That is a look decision to make on a real
+      screen, not here. Until then `Ripcord.Card.xaml` and `docs/design.md` say they have diverged, and why.
+      **Price: ~30 minutes to try, most of it looking.**
 - [ ] **Pair a console port from the desktop app — proposed 2026-09-16, not started.** A port asks the
       desktop to sign in on its behalf: the port enters a pairing mode and announces itself on the LAN, a
       running Ripcord on a PC or Mac sees it offered in its own UI, does the PSN sign-in and the console
