@@ -71,6 +71,12 @@ public static class HalyardAppServices
 
         IPlatformPaths resolvedPaths = paths ?? new DefaultPlatformPaths();
 
+        // **One sink for the whole graph, not one per consumer.** Pairing and the session source each built
+        // their own, so a trace opened with two headers and every line had two clocks to be measured against.
+        // Null unless RIPCORD_TRACE_PAIRING asks, and passed on as a plain Action so nothing below has to
+        // know what a trace is.
+        Action<string>? sharedTrace = HalyardPairingTrace.SinkIfEnabled(resolvedPaths);
+
         // One gateway serves the account tier and account pairing, built at most once and only if something
         // asks — a caller that substitutes both seams must not pay for a device-id lookup, or fail on a host
         // that cannot supply one. Hence a memoised local rather than a field or an eager call.
@@ -101,14 +107,23 @@ public static class HalyardAppServices
             // streams named the PlayStation backend directly. Choosing between the local and account routes
             // needs the account tier as well, and a page deciding that for itself would be the second place in
             // the app with an opinion about what "signed in" means.
-            Sessions = sessions ?? BuildSessionSource(resolvedConsoles, Gateway),
+            Sessions = sessions ?? BuildSessionSource(resolvedConsoles, Gateway, sharedTrace),
 
             // Absent rather than broken when there is no gateway: the code route is unaffected, and the flow
             // renders the reason instead of offering an action that cannot work.
             AccountPairing = accountPairing
                 ?? (Gateway() is { } forPairing
-                    ? new HalyardAccountConsolePairing(forPairing)
+                    // The trace sink is null unless RIPCORD_TRACE_PAIRING says otherwise. The rendezvous
+                    // narrates its own stages and the app was throwing that away, which left an account
+                    // pairing that failed saying only what it had been waiting for.
+                    ? new HalyardAccountConsolePairing(
+                        forPairing,
+                        options: new HalyardAccountPairingOptions { Log = sharedTrace })
                     : new UnavailableAccountPairing()),
+            // The connect sequence reports its stages here as well as to the surface. The surface shows the
+            // latest line; a connect that sits in one stage for minutes needs the one that came before it.
+            DiagnosticTrace = sharedTrace,
+
             Dispatcher = dispatcher,
             VideoCapabilities = videoCapabilities,
             Paths = resolvedPaths,
@@ -158,7 +173,7 @@ public static class HalyardAppServices
     /// </para>
     /// </summary>
     private static IStreamingSessionSource BuildSessionSource(
-        IPairedConsoleStore consoles, Func<HalyardAccountGateway?> gateway)
+        IPairedConsoleStore consoles, Func<HalyardAccountGateway?> gateway, Action<string>? trace)
     {
         var factory = new HalyardSessionFactory(
             HalyardControlSecretsLoader.Load(out string cryptoSource),
@@ -174,11 +189,39 @@ public static class HalyardAppServices
                     {
                         // The rendezvous takes tens of seconds and says useful things while it does; without
                         // this the surface shows one unchanging line and reads as a hang.
-                        Log = progress is null ? null : progress.Report,
+                        Log = Tee(progress is null ? null : progress.Report, trace),
                     })
                 : null,
             () => gateway() is not null,
             cryptoSource);
+    }
+
+    /// <summary>
+    /// Send each line to both sinks, or to whichever one exists.
+    ///
+    /// <para>
+    /// The surface and the trace want the same lines for different lifetimes: the surface shows the current
+    /// one, the file keeps all of them. Returning null when neither exists matters — the options field reads
+    /// null as "no log" and skips the formatting entirely.
+    /// </para>
+    /// </summary>
+    private static Action<string>? Tee(Action<string>? first, Action<string>? second)
+    {
+        if (first is null)
+        {
+            return second;
+        }
+
+        if (second is null)
+        {
+            return first;
+        }
+
+        return line =>
+        {
+            first(line);
+            second(line);
+        };
     }
 
     private static HalyardAccountGateway? TryBuildGateway(
@@ -193,7 +236,15 @@ public static class HalyardAppServices
         try
         {
             return new HalyardAccountGateway(
-                new HttpClient(),
+
+                // **Not HttpClient's default hundred seconds.** Every call through here is a short REST
+                // request the user is waiting on, and the connect path retries six times - so one
+                // hundred-second hang is ten minutes of a window reading "Connecting" with a flash of
+                // "Reconnecting" between attempts. Observed exactly that way on a phone hotspot, with an
+                // empty trace, which looks like the code never ran. Twenty seconds is long enough for a
+                // slow link to finish a token refresh and short enough to report a dead one while the
+                // user is still watching.
+                new HttpClient { Timeout = TimeSpan.FromSeconds(20) },
                 config,
                 tokens ?? new AccountTokenStore(paths),
                 deviceIdentity ?? new DefaultDeviceIdentity());

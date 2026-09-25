@@ -6,14 +6,14 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Documents;
 using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Navigation;
 using System.Threading.Tasks;
 using CommunityToolkit.WinUI.Controls;
 using Ripcord.Presentation;
 using Ripcord.Presentation.Accounts;
 using Ripcord.Presentation.Consoles;
 using Ripcord.Presentation.Settings;
-using Ripcord_App.Input;
-using Ripcord_App.Dialogs;
+using Ripcord.Core.Input;
 using Ripcord_App.Services;
 
 namespace Ripcord_App.Pages;
@@ -41,7 +41,7 @@ namespace Ripcord_App.Pages;
 /// places and one more to forget in the fifteenth. Attaching afterwards means the event cannot happen at all.
 /// </para>
 /// </summary>
-public sealed partial class SettingsPage : Page
+public sealed partial class SettingsPage : Page, IInitialFocusTarget
 {
     private readonly SettingsViewModel _viewModel;
 
@@ -63,6 +63,34 @@ public sealed partial class SettingsPage : Page
 
         _viewModel.PropertyChanged += (_, _) => Render(_viewModel.State);
         _account.PropertyChanged += (_, _) => RenderAccount(_account.State);
+
+        // The live pad readout. Attached on Loaded and released on Unloaded because the router outlives every
+        // page: a settings page that stayed subscribed would be held alive by it, and would go on formatting
+        // stick positions into a page nobody is looking at.
+        Loaded += (_, _) => App.Input.FrameReceived += OnPadFrame;
+        Unloaded += (_, _) => App.Input.FrameReceived -= OnPadFrame;
+    }
+
+    /// <summary>
+    /// Show what the pad is reporting, right now.
+    ///
+    /// <para>
+    /// Frames arrive off the UI thread and at the pad's own rate, which is far faster than anybody can read.
+    /// Marshalled, and only the two lines that answer the question somebody opened this row to ask: is the
+    /// controller reaching Ripcord at all, and is that stick actually centred.
+    /// </para>
+    /// </summary>
+    private void OnPadFrame(ControllerStateFrame frame)
+    {
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            // The enum's own name for "nothing held" needs no translation and no second string to maintain.
+            PadButtonsText.Text = $"{frame.Buttons}";
+
+            PadSticksText.Text =
+                $"L ({frame.LeftStickX:F2}, {frame.LeftStickY:F2})   R ({frame.RightStickX:F2}, {frame.RightStickY:F2})   "
+                + $"LT {frame.LeftTrigger:F2}  RT {frame.RightTrigger:F2}";
+        });
     }
 
     /// <summary>
@@ -70,6 +98,70 @@ public sealed partial class SettingsPage : Page
     /// view-model or caught here. The load has to be asynchronous because the capability probes are native and
     /// crash the process if run on this thread — see <see cref="IVideoCapabilitiesProbe"/>.
     /// </summary>
+    /// <summary>
+    /// Where the caller asked us to land. <see cref="SettingsDestination.Top"/> for an ordinary visit
+    /// through the gear button.
+    /// </summary>
+    private SettingsDestination _destination;
+
+    /// <summary>
+    /// The sign-in button, but only for somebody who came here to press it.
+    ///
+    /// <para>
+    /// This has to be the shell's answer rather than a Focus() call of this page's own. The shell seeds focus
+    /// from ChromeFrame.Navigated at Low dispatcher priority - which is AFTER Loaded - so anything focused
+    /// during load is overwritten a moment later by first-in-tree-order, and the button came up unfocused
+    /// with the resolution dropdown holding focus instead. Answering here is answering the question the shell
+    /// actually asks.
+    /// </para>
+    ///
+    /// <para>
+    /// Returned unconditionally when that is where they were headed, because the button is COLLAPSED unless
+    /// the build can sign in at all - and the shell already treats a Focus() that does not land as a reason
+    /// to fall through to tree order. Second-guessing that here would be two guards for one question.
+    /// </para>
+    ///
+    /// <para>
+    /// Null for an ordinary visit: tree order is the right default for a settings page, where no single
+    /// control is the reason you are there.
+    /// </para>
+    /// </summary>
+    public Control? InitialFocus
+        => _destination == SettingsDestination.Account ? SignInButton : null;
+
+    protected override void OnNavigatedTo(NavigationEventArgs e)
+    {
+        base.OnNavigatedTo(e);
+        _destination = e.Parameter as SettingsDestination? ?? SettingsDestination.Top;
+    }
+
+    /// <summary>
+    /// Put the account section in front of somebody who asked for it.
+    ///
+    /// <para>
+    /// The pairing step's sign-in button used to open this page at the top, where the account is the last
+    /// card on a long scroll — so a button reading "Sign in to PlayStation Network" delivered them to a
+    /// resolution dropdown and left them hunting. Landing on the right page is only half of taking somebody
+    /// somewhere.
+    /// </para>
+    ///
+    /// <para>
+    /// After the load, because the account card's own contents decide its height and bringing it into view
+    /// before then scrolls to where it used to be.
+    /// </para>
+    /// </summary>
+    private void GoToDestination()
+    {
+        if (_destination != SettingsDestination.Account)
+        {
+            return;
+        }
+
+        // Scrolling only. Focus is answered through InitialFocus, because the shell seeds it after this
+        // runs and would overwrite anything set here - which is exactly what happened.
+        AccountCard.StartBringIntoView(new BringIntoViewOptions { VerticalAlignmentRatio = 0 });
+    }
+
     private async void Page_Loaded(object sender, RoutedEventArgs e)
     {
         try
@@ -86,6 +178,9 @@ public sealed partial class SettingsPage : Page
         Render(_viewModel.State);
         RenderAccount(_account.State);
         WireHandlers();
+
+        // Now the cards are their real heights, so bringing one into view scrolls to where it actually is.
+        GoToDestination();
 
         // After the first render, and not awaited above: restoring a stored session is a network round trip,
         // and the rest of the page must not wait on it. It renders itself when it lands.
@@ -152,8 +247,8 @@ public sealed partial class SettingsPage : Page
         FullScreenToggle.Toggled += (_, _) => Edit(() => _viewModel.SetFullScreenOnConnect(FullScreenToggle.IsOn));
         ConfirmOnDisconnectToggle.Toggled += (_, _) => Edit(() => _viewModel.SetConfirmOnDisconnect(ConfirmOnDisconnectToggle.IsOn));
         RestOnDisconnectToggle.Toggled += (_, _) => Edit(() => _viewModel.SetRestOnDisconnect(RestOnDisconnectToggle.IsOn));
-        DiagnosticsToggle.Toggled += (_, _) => Edit(() => _viewModel.SetShowDiagnostics(DiagnosticsToggle.IsOn));
-        LargeUiToggle.Toggled += (_, _) => Edit(() => _viewModel.SetLargeUiScale(LargeUiToggle.IsOn));
+        DiagnosticsPicker.SelectionChanged += (_, _) =>
+            Edit(() => _viewModel.SetDiagnosticsRung(DiagnosticsPicker.SelectedIndex));
     }
 
     /// <summary>Forward a user edit, unless the change came from Render assigning the control itself.</summary>
@@ -173,49 +268,18 @@ public sealed partial class SettingsPage : Page
     /// what they used to do when a change handler updated one and left the other until the page was reopened.
     /// </summary>
     /// <summary>
-    /// Run the sign-in flow: show the web view, then hand whatever it caught back to the view-model.
-    ///
-    /// <para>
-    /// The exchange happens <em>after</em> the dialog has closed, deliberately. Awaiting a network call while a
-    /// modal is still up means the dialog owns the failure, and a dialog that has to render an error is a
-    /// dialog that has to stay open — which is how the user ends up looking at a spent authorization code.
-    /// </para>
+    /// Run the sign-in flow. The sequence lives in <see cref="AccountSignIn"/> because this page is no longer
+    /// the only surface that starts one — the pairing flow signs in where it stands rather than sending the
+    /// user here and stranding them.
     /// </summary>
     private async Task SignInAsync()
     {
-        var dialog = new AccountSignInDialog(_account) { XamlRoot = XamlRoot };
+        AccountSignInResult result = await AccountSignIn.RunAsync(_account, XamlRoot);
 
-        try
-        {
-            // Through ModalHost, never ContentDialog.ShowAsync directly: the dialog needs a Modal input scope
-            // pushed for it, or the settings page underneath keeps the pad and a controller-only user is left
-            // looking at a sign-in page they cannot reach. ModalHostTests enforces this.
-            await ModalHost.ShowAsync(dialog);
-        }
-        catch (Exception ex)
-        {
-            // Another dialog already up, most likely. Nothing has been started, so there is nothing to undo.
-            Debug.WriteLine($"[Ripcord] sign-in dialog failed to show: {ex}");
-            return;
-        }
-
-        if (dialog.Failure is { } failure)
+        if (result.Failure is { } failure)
         {
             AccountError.Message = failure;
             AccountError.IsOpen = true;
-            return;
-        }
-
-        if (dialog.CompletedRedirect is not { } redirect)
-        {
-            return; // cancelled, which is not worth reporting
-        }
-
-        await _account.CompleteSignInAsync(redirect);
-
-        if (_account.State.Step == AccountStep.SignedIn)
-        {
-            await _account.LoadConsolesAsync();
         }
     }
 
@@ -309,8 +373,7 @@ public sealed partial class SettingsPage : Page
             FullScreenToggle.IsOn = s.FullScreenOnConnect;
             ConfirmOnDisconnectToggle.IsOn = s.ConfirmOnDisconnect;
             RestOnDisconnectToggle.IsOn = s.RestConsoleOnDisconnect;
-            DiagnosticsToggle.IsOn = s.ShowDiagnosticsOverlay;
-            LargeUiToggle.IsOn = s.LargeUiScale;
+            FillCombo(DiagnosticsPicker, s.DiagnosticsOptions, s.DiagnosticsIndex);
 
             RenderCredentialBar(s);
         }

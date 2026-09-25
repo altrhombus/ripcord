@@ -103,7 +103,16 @@ public sealed class HalyardAccountConsoleSession
         ArgumentException.ThrowIfNullOrEmpty(consoleHost);
         ArgumentException.ThrowIfNullOrEmpty(consoleDuid);
 
-        if (!_gateway.IsSignedIn)
+        // The very first thing, ahead of even the signed-in check. A route that reports nothing until after
+        // its preconditions is indistinguishable from one that was never entered, and telling those two apart
+        // is the whole reason this trace exists.
+        _options.Log?.Invoke("account route entered");
+
+        // Restores the session if it is only on disk, rather than reading "not loaded yet" as "not signed in".
+        // This asked IsSignedIn, which is an in-memory question, and refused a user whose stored token was
+        // perfectly good but whom nothing had got round to restoring - which nothing did except the settings
+        // page, so this route worked only for somebody who had happened to open it.
+        if (!await _gateway.EnsureSignedInAsync(cancellationToken).ConfigureAwait(false))
         {
             return HalyardAccountSessionResult.Failed(
                 "Sign in to your PlayStation Network account to connect over the account route.");
@@ -113,10 +122,20 @@ public sealed class HalyardAccountConsoleSession
         HalyardPushChannel? pushChannel = null;
         try
         {
+            // **Announced before they are attempted, not after.** These are the first two things a connect
+            // does and both are HTTPS to the account service, so both can be slow or hang — and until this
+            // was here, a connect stuck in either wrote nothing at all. Reported from hardware as five
+            // minutes of "Connecting" with an empty trace, which is the worst shape a log can take: it looks
+            // like the code never ran.
+            _options.Log?.Invoke("requesting an access token");
             string token = await _gateway.AccessTokenAsync(cancellationToken).ConfigureAwait(false);
+
+            _options.Log?.Invoke("access token acquired; resolving the push server");
             HalyardPushServerInfo pushServer = await _gateway.Cloud
                 .GetPushServerAsync(cancellationToken)
                 .ConfigureAwait(false);
+
+            _options.Log?.Invoke("push server resolved; discovering our reflexive address");
 
             byte[] localHashedId = HalyardLocalHashedId.For(_gateway.ClientDeviceId);
 

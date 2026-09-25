@@ -1,6 +1,13 @@
 #!/usr/bin/env python3
 """
-Draws this port's XMB icon - build/ICON0.PNG - from brand/ripcord-tile.svg.
+Draws this port's XMB icon - build/ICON0.PNG - from brand/ripcord-ground.svg and
+brand/ripcord-mark-ondark.svg.
+
+TWO FILES, because the tile became layers on 2026-09-24. brand/ripcord-tile.svg was replaced by a
+shapeless ground plus the mark, so that a platform which crops the icon to its own shape (Android's
+adaptive mask, macOS 26's rounded square) is not fighting a shape drawn into the art. This port wants
+no shape either - see the note about the XMB's own frame below - so the split suits it: the ground
+supplies the gradient and the mark supplies the wedge and the dashes.
 
 WHY THIS EXISTS RATHER THAN brand/generate-assets.ps1. That script rasterises with headless Edge, which
 is a reasonable dependency for the Windows app and is not available to a cross-compile that otherwise
@@ -8,14 +15,15 @@ needs nothing but the ps3dev toolchain and a shell. This draws the same five sha
 gradient, a triangle and three rounded rectangles, all of which have exact distance functions, so the
 edges are antialiased from geometry rather than from supersampling and there is nothing to install.
 
-THE GEOMETRY IS READ OUT OF THE SVG, NOT COPIED FROM IT. Every number below comes from parsing
-brand/ripcord-tile.svg, so editing the mark updates this icon too and the two cannot drift. A parse that
-does not find what it expects fails loudly - a silently different icon is worse than no icon, because it
-looks like the build worked.
+THE GEOMETRY IS READ OUT OF THE SVGs, NOT COPIED FROM THEM. Every number below comes from parsing them,
+so editing the mark updates this icon too and the two cannot drift. A parse that does not find what it
+expects fails loudly - a silently different icon is worse than no icon, because it looks like the build
+worked. That is also how this was caught: the tile split landed on a branch that touched nothing in this
+port, and the PS3 package job failed on the missing file rather than shipping the previous icon.
 
-The PS3 wants 320x176. That is a landscape frame for a square mark, so the tile's own rounded corners are
-dropped and the gradient goes full bleed: the XMB draws this inside its own frame and a rounded rectangle
-floating in a rectangle reads as a mistake.
+The PS3 wants 320x176. That is a landscape frame for a square mark, so nothing rounds the corners and the
+gradient goes full bleed: the XMB draws this inside its own frame and a rounded rectangle floating in a
+rectangle reads as a mistake. The ground is already shapeless, so there is nothing to drop.
 """
 import re
 import struct
@@ -35,25 +43,23 @@ def fail(why):
     sys.exit(1)
 
 
-def parse(svg_text):
-    """The five shapes, as the SVG states them. Anything missing is a failure, not a default."""
+def parse(ground_text, mark_text):
+    """The five shapes, as the two SVGs state them. Anything missing is a failure, not a default."""
     out = {}
 
-    stops = re.findall(r'<stop[^>]*stop-color="#([0-9A-Fa-f]{6})"', svg_text)
+    stops = re.findall(r'<stop[^>]*stop-color="#([0-9A-Fa-f]{6})"', ground_text)
     if len(stops) != 2:
-        fail("expected two gradient stops in ripcord-tile.svg, found %d" % len(stops))
+        fail("expected two gradient stops in ripcord-ground.svg, found %d" % len(stops))
     out["grad"] = [tuple(int(s[i:i + 2], 16) for i in (0, 2, 4)) for s in stops]
 
-    m = re.search(r'<g transform="translate\(([-\d.]+),([-\d.]+)\) scale\(([-\d.]+)\) '
-                  r'translate\(([-\d.]+),([-\d.]+)\)"', svg_text)
-    if m is None:
-        fail("could not read the mark group's transform from ripcord-tile.svg")
-    out["xform"] = [float(v) for v in m.groups()]
-
+    # No group transform to read any more, and none to want: the mark file is the mark at full size in
+    # its own 64-unit box. The old tile nested it under a translate/scale/translate, which this script
+    # parsed, validated and then deliberately ignored - the mark is placed by its own bounding box,
+    # below, because the square is mostly padding for a crop the XMB has already done.
     m = re.search(r'<path d="M([\d.]+) ([\d.]+)L([\d.]+) ([\d.]+)L([\d.]+) ([\d.]+)Z"'
-                  r'[^>]*fill="#([0-9A-Fa-f]{6})"[^>]*stroke-width="([\d.]+)"', svg_text)
+                  r'[^>]*fill="#([0-9A-Fa-f]{6})"[^>]*stroke-width="([\d.]+)"', mark_text)
     if m is None:
-        fail("could not read the play wedge from ripcord-tile.svg")
+        fail("could not read the play wedge from ripcord-mark-ondark.svg")
     g = m.groups()
     out["wedge"] = [(float(g[0]), float(g[1])), (float(g[2]), float(g[3])),
                     (float(g[4]), float(g[5]))]
@@ -61,9 +67,9 @@ def parse(svg_text):
     out["wedge_stroke"] = float(g[7])
 
     dashes = re.findall(r'<rect x="([\d.]+)" y="([\d.]+)" width="([\d.]+)" height="([\d.]+)" '
-                        r'rx="([\d.]+)" fill="#([0-9A-Fa-f]{6})"', svg_text)
+                        r'rx="([\d.]+)" fill="#([0-9A-Fa-f]{6})"', mark_text)
     if len(dashes) != 3:
-        fail("expected three dashes in ripcord-tile.svg, found %d" % len(dashes))
+        fail("expected three dashes in ripcord-mark-ondark.svg, found %d" % len(dashes))
     out["dashes"] = [(float(x), float(y), float(w), float(h), float(r),
                       tuple(int(c[i:i + 2], 16) for i in (0, 2, 4))) for x, y, w, h, r, c in dashes]
     return out
@@ -110,10 +116,13 @@ def over(dst, rgb, a):
 
 def main():
     root = Path(__file__).resolve().parents[3]
-    svg = root / "brand" / "ripcord-tile.svg"
-    if not svg.is_file():
-        fail("cannot find %s" % svg)
-    art = parse(svg.read_text(encoding="utf-8"))
+    ground = root / "brand" / "ripcord-ground.svg"
+    mark = root / "brand" / "ripcord-mark-ondark.svg"
+    for svg in (ground, mark):
+        if not svg.is_file():
+            fail("cannot find %s" % svg)
+
+    art = parse(ground.read_text(encoding="utf-8"), mark.read_text(encoding="utf-8"))
 
     out = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("build/ICON0.PNG")
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -121,11 +130,6 @@ def main():
     tri = art["wedge"]
     halo = art["wedge_stroke"] / 2.0
     g0, g1 = art["grad"]
-
-    # The group's transform is translate(tx,ty) . scale(s) . translate(ix,iy), applied right to left -
-    # so the inverse SUBTRACTS the inner translate. Getting that sign wrong put the mark off the corner
-    # of the icon, which is the sort of mistake that is obvious in a picture and invisible in a diff.
-    tx, ty, scale, ix, iy = art["xform"]
 
     # The mark's own bounding box, in its own coordinates, stroke included.
     lo_x = min(min(p[0] for p in tri) - halo, min(d[0] for d in art["dashes"]))
@@ -142,7 +146,6 @@ def main():
         """An icon pixel centre in the mark's own coordinates."""
         return (cx + (px - W / 2.0) / per_px, cy + (py - H / 2.0) / per_px)
 
-    _ = (tx, ty, scale, ix, iy)   # read and checked above; the mark is placed by its own box
 
     rows = []
     for py in range(H):
