@@ -1,7 +1,15 @@
 # libripcord — the portable protocol core
 
-The PS5 Remote Play protocol in portable C99, shared by every Ripcord port and by the planned macOS
+The PS5 Remote Play protocol in portable C99, shared by every Ripcord port and, for now, by the macOS
 client. No console SDK, no platform headers, no `#ifdef` naming a target.
+
+**Its scope, from 2026-09-25.** [`docs/engine-plan.md`](../docs/engine-plan.md) gives the first-class
+clients a Rust engine that presents this core's contract (`client/halyard_client.h`). The Mac moves to it
+at parity. From then on this is **the console ports' core**: it keeps its tests, its fuzz harnesses and its
+CI job, and it takes fixes and the protocol work a port needs, but it no longer promises parity with the
+first-class clients. Until the Rust engine reaches parity it has a second job, as the other implementation
+the Rust engine is differentially tested against. It is retired when the last port moves off it or is
+retired.
 
 It lived at `ports/common` until 2026-09-24, and older records use that name. It moved to the top level
 when the macOS client (see [`docs/macos-plan.md`](../docs/macos-plan.md)) chose it as its protocol core,

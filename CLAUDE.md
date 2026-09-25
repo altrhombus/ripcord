@@ -115,11 +115,15 @@ accepts a nonce length `System.Security.Cryptography.AesGcm` refuses. A comment 
 - **`tools/Ripcord.ProtocolLab`** — the console harness: drives the connect flow against a real PS5 and
   replays captures through the parsers. The iteration/verification tool for every protocol stage.
 - **`tools/Ripcord.HidCapture`** — standalone HID capture utility for controller RE work.
-- **`libripcord/`** — the protocol in portable C99 (it was `ports/common` until 2026-09-24). Shared by the
-  console ports under `ports/` and by the planned macOS client (`docs/macos-plan.md`). It is a same-project
-  port of `src/`, not linked against it. The .NET side stays the reference implementation, and
-  `ProtocolLab vectors` generates the known-answer vectors it is tested against. Not part of `Ripcord.slnx`:
-  `make -C libripcord/tests` runs its host suite.
+- **`libripcord/`** — the protocol in portable C99 (it was `ports/common` until 2026-09-24). Today it is the
+  protocol core of the console ports under `ports/` and of the macOS client (`src/Ripcord.Mac`). **It is
+  being succeeded for the first-class clients by a Rust engine** (`docs/engine-plan.md`, settled
+  2026-09-25): the Mac moves to that engine once it reaches parity, Windows after its 1.0, and
+  `libripcord` then stays as the ports' core, taking fixes and port-driven work only. It is a same-project
+  port of `src/`, not linked against it. The .NET side stays the reference implementation for
+  *derivations* (key schedules, KDFs, field ciphers, codecs), and `ProtocolLab vectors` generates the
+  known-answer vectors the C core, and later the Rust engine, are tested against. Not part of
+  `Ripcord.slnx`: `make -C libripcord/tests` runs its host suite.
 
 ### The crypto seam pattern
 
@@ -209,8 +213,9 @@ When working in `Ripcord.Protocol.Halyard*`, `Ripcord.Cloud.Halyard`, or anythin
   boundary is *what gets obtained*, not whether a model was involved: AI assistance is normal here, and the
   method is the one this project has used throughout — **derive independently first, then confirm.**
 - **"Another implementation" means another project's, not Ripcord's own.** A same-project port —
-  `ports/ripcord-3ds` today, any future one — may read, port, and directly adapt code from `src/` at will;
-  it is this project's own reference implementation, not the external source this rule exists to keep out.
+  `ports/ripcord-3ds`, `libripcord`, the Rust engine planned in `docs/engine-plan.md`, any future one — may
+  read, port, and directly adapt code from `src/` or from each other at will; all of it is this project's
+  own work, not the external source this rule exists to keep out.
   There is no independent-derivation ritual to perform between Ripcord's own front ends. Citing what a
   file was ported from is still good practice (it tells the next reader where to look when the two
   diverge), but it is a courtesy, not a requirement the way it is for `docs/protocol/` itself.
@@ -302,6 +307,8 @@ See `docs/protocol/README.md` for the full provenance writeup.
 - `ROADMAP.md` — the open backlog (start here for "what's next").
 - `docs/README.md` — the documentation index: which document answers which question.
 - `docs/architecture.md` — the canonical architecture writeup (this file's Architecture section in full).
+- `docs/engine-plan.md` — one protocol engine for the first-class clients, in Rust: what runs where, and in
+  what order.
 - `docs/journal.md` — the dated engineering record; completed backlog items land here.
 - `docs/history/phase1-lan-build-plan.md` — the historical build plan and seam architecture rationale.
 - `docs/protocol/IMPLEMENTATION.md` — the crypto/protocol build order and "definition of done" checklist.
