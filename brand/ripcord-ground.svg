@@ -1,0 +1,18 @@
+<!--
+  Ripcord ground — the tile's material with no shape. Full-bleed on purpose: a platform that crops the icon
+  (Android's adaptive mask, macOS 26's rounded square) supplies its own shape, and generate-assets.ps1 adds
+  the shape and the edge only for targets that draw their own (Windows, and Linux when it lands).
+
+  Lifted from #23272E → #12151A on 2026-09-24 so the tile reads as slate rather than a black hole on a light
+  taskbar. This is also as far as it can go: at the light end the blue and red dashes are at 3.1:1 and 3.2:1,
+  just over the 3:1 a non-text graphic needs. Do not lift it further without re-running that check.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <defs>
+    <linearGradient id="ground" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#303743" />
+      <stop offset="1" stop-color="#1B1F26" />
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" fill="url(#ground)" />
+</svg>

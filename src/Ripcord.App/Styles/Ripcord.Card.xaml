@@ -8,7 +8,10 @@
 
     > The gradient's direction and its ratio are Ripcord's; its lightness belongs to the theme.
 
-    In dark theme the card runs deeper than the Mica ground (#23272E to #12151A, the app tile's own values).
+    In dark theme the card runs deeper than the Mica ground (#23272E to #12151A). These were the app tile's own
+    values until the tile was lifted to #303743 to #1B1F26 on 2026-09-24. The card deliberately did not follow:
+    the wedge facet below is defined as the card lifted, and its values are almost exactly the new tile's, so
+    moving the card would erase the facet. Whether the card and tile rejoin is an open item in ROADMAP.md.
     In light theme it runs LIGHTER than the ground, so it reads as raised paper rather than a hole cut in the
     page. A dark card on a light desktop was drawn, considered and rejected: it overrules a preference the
     user stated to the operating system, which is not a thing an app gets to do for style.
@@ -24,7 +27,7 @@
 
     <ResourceDictionary.ThemeDictionaries>
 
-        <!--  Dark. The tile's own two values, in the tile's own direction.  -->
+        <!--  Dark. The tile's original two values, in the tile's own direction. See the note above.  -->
         <ResourceDictionary x:Key="Default">
             <LinearGradientBrush x:Key="RipcordCardFillBrush" StartPoint="0,0" EndPoint="1,1">
                 <GradientStop Offset="0" Color="#23272E" />

@@ -110,7 +110,7 @@
             <TextBlock x:Uid="AddConsolePage_AddConsole" Style="{StaticResource TitleTextBlockStyle}" />
             <Grid ColumnSpacing="6" Width="220" HorizontalAlignment="Left">
                 <!--
-                    Three, uneven, in the mark's own proportions - 9 : 16 : 12, from brand/ripcord-tile.svg.
+                    Three, uneven, in the mark's own proportions - 9 : 16 : 12, from brand/ripcord-mark.svg.
                     Four equal dashes were a progress bar wearing the mark's clothes. These are the trail,
                     which is the same shape the connect sequence fills in and the celebration assembles, so
                     the three moments that matter all speak the same language.
