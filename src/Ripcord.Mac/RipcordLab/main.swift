@@ -8,7 +8,8 @@ let usage = """
     usage: ripcord-lab <command>
 
       check                 the build's key-agreement backend and interop constants
-      discover [ms]         broadcast SRCH and list every console that answers (default 1500 ms)
+      discover [host...]    SRCH for consoles and list every one that answers. With hosts, probe
+                            each directly; without, broadcast. Wait with --wait <ms> (default 3000)
 
     """
 
@@ -26,10 +27,19 @@ case "check", nil:
     exit(Core.keyAgreementAvailable && Core.interopConstantsBundled ? 0 : 1)
 
 case "discover":
-    let milliseconds = arguments.count > 1 ? Int(arguments[1]) : 1500
-    guard let milliseconds, milliseconds > 0 else { fail(usage, code: 2) }
+    var hosts: [String] = []
+    var milliseconds = 3000
+    var rest = arguments.dropFirst()
+    while let next = rest.popFirst() {
+        if next == "--wait" {
+            guard let value = rest.popFirst().flatMap(Int.init), value > 0 else { fail(usage, code: 2) }
+            milliseconds = value
+        } else {
+            hosts.append(next)
+        }
+    }
     do {
-        let consoles = try LANDiscovery.search(timeout: .milliseconds(milliseconds))
+        let consoles = try LANDiscovery.search(hosts: hosts, timeout: .milliseconds(milliseconds))
         if consoles.isEmpty {
             print("no console answered within \(milliseconds) ms")
             exit(1)
