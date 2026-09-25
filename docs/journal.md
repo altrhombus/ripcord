@@ -35,6 +35,52 @@ different purpose.
 > anything. The list above is short, it is checkable in one `git log --format=%B | grep`, and it stops
 > growing the moment someone notices — which is the property that actually matters.
 
+### The Mac client's foundation, and STUN in the core (2026-09-24)
+
+Step 2 of [`macos-plan.md`](macos-plan.md) started on two tracks at once.
+
+**STUN is in `libripcord`**: `net/rc_stun.{h,c}` (messages) and `net/rc_stun_client.c` (the socket), ported
+from `src/Ripcord.Core.Net/Stun/`. It is two translation units for a reason the fuzz build forced. An
+object links whole, and a parser sharing a file with a CSPRNG caller would pull in entropy the host
+deliberately does not provide. The host tests reuse the .NET side's own vectors byte for byte, RFC 5769's
+among them, so both implementations answer to one set. Where C differs from .NET, the header says so and
+why: receive errors run out the window instead of ending the attempt, a send failure is a status rather
+than an exception, and there is no DNS. That makes 3,868 host assertions in all, clean under ASan and
+UBSan, plus a fifth fuzz harness.
+
+**The Mac tree builds the core from where it lives.** `src/Ripcord.Mac/Ripcord.xcodeproj` compiles
+`libripcord/` through Xcode's synchronized folders. The choice of an Xcode project over a Swift package was
+measured, not assumed:
+
+- SwiftPM refuses a target outside the package root.
+- A symlink gets past that, but trips the sweep and breaks on Windows.
+- SwiftPM will not compile a plugin-generated C file ("C source file generation not enabled"), and the
+  interop constants must be generated from the one committed bundle, never copied.
+
+**The first attempt at generating the constants built cleanly and did not work.** Xcode ran the Run Script
+phase and left the output uncompiled, and every `halyard_v1_*` symbol was undefined in the archive. Only
+`nm` showed it. A file reference rooted at `DERIVED_FILE_DIR` in the Sources phase fixed it.
+
+**Key agreement is CryptoKit's.** Rather than build Mbed TLS for the Mac, the core gained
+`RC_ECDH_EXTERNAL_BACKEND`. It compiles only the backend-neutral half of `rc_ecdh.c`, plus two hooks so an
+external backend reports into the same diagnostics. `CryptoKitECDH.swift` supplies the five entry points
+under their C names. The proof is the core's own `ecdh_test.c`, unmodified, linked against CryptoKit: **44
+passed, 0 failed** against the .NET vectors, the same count as Mbed TLS. Rebuilding a pair from a known
+private scalar, which those vectors need, is possible in CryptoKit and not in Security.framework's C API.
+That is why the backend is Swift. Writing it also showed that the no-backend stub had never defined
+`rc_ecdh_check_peer_point` at all.
+
+**The sweep learned two file types.** It refused 20 unclassified Mac files, as designed. Once they were
+classified, it flagged the project file's 24-digit hex object IDs as possible unredacted values. Those IDs
+are now tolerated only by syntax, following the XAML-identifier precedent: exactly 24 uppercase hex digits,
+only in `.pbxproj` and `.xcscheme` files, and only for the long-hex rule. Four contract rows pin both
+halves.
+
+**`ripcord-lab discover` has only heard silence.** The .NET ProtocolLab's discovery, which is
+hardware-verified, heard nothing either, on both the limited and the subnet broadcast. So no console was
+reachable from the Mac's network at the time. That is not a result about the code, and the spike's
+hardware steps wait on it.
+
 ### The C core leaves `ports/`, and CI runs it for the first time (2026-09-24)
 
 The macOS client chose `libripcord` as its protocol core, so the core moved from `ports/common` to the top
