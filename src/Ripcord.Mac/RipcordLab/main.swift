@@ -17,6 +17,7 @@ let usage = """
                             PIN-pair with a console showing Settings > System > Remote Play > Pair
                             Device. The record is kept in ~/Library/Application Support/Ripcord/lab
       consoles              list the consoles the lab has paired with
+      wake <host>           wake a paired console from rest and wait until it reports awake
       connect <host> [seconds] [out.h264] [--bitrate kbps] [--720] [--h264]
                             stream from a paired console for `seconds` (default 20), printing each
                             stage and a stats line, and writing every video frame, as the console
@@ -86,6 +87,18 @@ case "pair":
         fail("pair: \(error)")
     }
 
+case "wake":
+    guard arguments.count == 2, let console = PairingStore.lab.load().first(where: { $0.host == arguments[1] }) else {
+        fail("wake: no paired console at that address")
+    }
+    let started = ContinuousClock.now
+    do {
+        try LANWake.wakeIfResting(console)
+        print("\(console.name) is awake (\(ContinuousClock.now - started))")
+    } catch {
+        fail("wake: \(error)")
+    }
+
 case "consoles":
     let consoles = PairingStore.lab.load()
     if consoles.isEmpty { print("no paired consoles in \(PairingStore.lab.directory.path)") }
@@ -109,6 +122,12 @@ case "connect":
     let outPath = positional.count > 2 ? positional[2] : "ripcord-lab-capture.h264"
     guard let console = PairingStore.lab.load().first(where: { $0.host == host }) else {
         fail("connect: no paired console at \(host); run `ripcord-lab pair` first")
+    }
+    // A resting console is woken first, as the Windows client does on connect.
+    do {
+        try LANWake.wakeIfResting(console) { _ in }
+    } catch {
+        fail("connect: \(error)")
     }
     FileManager.default.createFile(atPath: outPath, contents: nil)
     guard let out = FileHandle(forWritingAtPath: outPath) else { fail("connect: cannot write \(outPath)") }
