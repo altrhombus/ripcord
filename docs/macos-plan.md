@@ -28,7 +28,9 @@ Windows layer as a reference for them, not as code.
 | Distribution | **Developer ID, notarized, direct download** is the primary release. See "The App Store" below |
 | First-release scope | **At least feature parity with the Windows client as of 2026-09-24**, including internet play and account sign-in |
 | Protocol core | **`libripcord`, the portable C core**, brought up to parity first. See "Why the C core" below |
-| Location | **`src/Ripcord.Mac/`**, an Xcode project plus a Swift package, beside `Ripcord.App` |
+| Location | **`src/Ripcord.Mac/`**, beside `Ripcord.App` |
+| Build | **An Xcode project, not a Swift package.** A package cannot compile the core from where it lives, or compile the constants generated from the bundle. Measured, not assumed; see [`../src/Ripcord.Mac/README.md`](../src/Ripcord.Mac/README.md) |
+| Key agreement | **CryptoKit**, behind the core's ECDH seam (`RC_ECDH_EXTERNAL_BACKEND`), checked against the .NET vectors by the core's own test |
 
 ## Why the C core
 

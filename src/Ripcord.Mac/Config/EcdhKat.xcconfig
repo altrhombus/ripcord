@@ -1,0 +1,7 @@
+// libripcord/tests/ecdh_test.c, unmodified, against the CryptoKit backend instead of Mbed TLS. Run it
+// with the vectors ProtocolLab generates:
+//   libripcord-ecdh-kat libripcord/tests/vectors/session-crypto.kat
+
+PRODUCT_NAME = libripcord-ecdh-kat
+WARNING_CFLAGS = -Wall -Wextra -Wshadow -Wconversion -Wsign-conversion
+GCC_TREAT_WARNINGS_AS_ERRORS = YES

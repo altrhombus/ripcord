@@ -1,0 +1,11 @@
+// The Swift layer over libripcord, shared by the command-line lab now and the app and its
+// extensions later.
+
+PRODUCT_NAME = RipcordKit
+PRODUCT_BUNDLE_IDENTIFIER = io.github.altrhombus.Ripcord.Kit
+GENERATE_INFOPLIST_FILE = YES
+DEFINES_MODULE = YES
+SKIP_INSTALL = YES
+// Static for now, so a command-line tool can link it without an rpath. The app may want it dynamic,
+// shared between the app and its extensions; that is a one-line change here.
+MACH_O_TYPE = staticlib

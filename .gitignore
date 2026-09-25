@@ -81,6 +81,11 @@ pairing.txt
 ## build/ so it cannot quietly swallow a directory somebody adds elsewhere.
 ports/*/build/
 ports/*/tests/build/
+## Ripcord: the macOS client. `build/` is where CI (and anyone following src/Ripcord.Mac/README.md) points
+## xcodebuild's DerivedData; the xcuserdata folders are Xcode's per-user window and breakpoint state, and
+## are nobody else's business.
+src/Ripcord.Mac/build/
+xcuserdata/
 ## The same rule for the C core, which left ports/ on 2026-09-24 and so left those globs too.
 libripcord/build/
 libripcord/tests/build/

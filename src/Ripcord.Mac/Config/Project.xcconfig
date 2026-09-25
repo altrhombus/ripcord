@@ -1,0 +1,22 @@
+// Settings every target shares. Target files include nothing; Xcode layers them over this one.
+
+RIPCORD_REPO_ROOT = $(SRCROOT)/../..
+LIBRIPCORD = $(RIPCORD_REPO_ROOT)/libripcord
+
+SDKROOT = macosx
+MACOSX_DEPLOYMENT_TARGET = 26.0
+// Apple Silicon only: see docs/macos-plan.md, "Decisions".
+ARCHS = arm64
+SWIFT_VERSION = 6.0
+CLANG_ENABLE_MODULES = YES
+GCC_C_LANGUAGE_STANDARD = c99
+
+// The core's include discipline: its own files reach each other by relative path, plus these three
+// directories, exactly as libripcord/tests/Makefile's INCLUDES. Swift's importer needs them too.
+RIPCORD_CORE_HEADER_PATHS = $(LIBRIPCORD)/crypto $(LIBRIPCORD)/halyard $(LIBRIPCORD)/platform
+HEADER_SEARCH_PATHS = $(inherited) $(RIPCORD_CORE_HEADER_PATHS)
+SWIFT_INCLUDE_PATHS = $(inherited) $(SRCROOT)/Libripcord/include
+
+// Ad hoc signing until distribution is set up (docs/macos-plan.md, step 9).
+CODE_SIGN_IDENTITY = -
+CODE_SIGN_STYLE = Manual

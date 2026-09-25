@@ -226,15 +226,32 @@ order of work are in [`docs/macos-plan.md`](docs/macos-plan.md). This entry list
 
 Step 1, promoting the core to `libripcord/` with fuzzing and a CI job, is done and in the journal. Open:
 
-- [ ] **Mac engine spike.** A Swift command-line tool that discovers, pairs, connects and dumps frames from a
-      real console through `libripcord`. It also measures the core's AES-GCM at 1080p60 on Apple Silicon.
-- [ ] **Port STUN to `libripcord`.** Classic RFC 3489 Binding Requests, per the working internet-play path.
+- [ ] **Mac engine spike.** `ripcord-lab` should discover, pair, connect and dump frames from a real console
+      through `libripcord`, and measure the core's AES-GCM at 1080p60 on Apple Silicon.
+  - [x] **Foundation.** Landed 2026-09-24:
+    - The Xcode project builds the core from where it lives.
+    - CryptoKit is the ECDH backend and passes the core's own `ecdh_test.c` against the .NET vectors
+      (44/44).
+    - Swift Testing runs.
+    - `ripcord-lab check` and `ripcord-lab discover` work.
+  - [ ] **`discover` against a console.** It has only ever reported silence, because no console was on the
+        network. The .NET ProtocolLab heard nothing on the same network either.
+  - [ ] **Connect orchestration: where it lives.** The core has every stage but no sequence. The PS3's
+        4,330-line `rc_connect.c` and the 3DS's `main.c` each wrote their own, interleaved with their
+        platform's UI. The recommendation is a portable, callback-driven connect sequence in
+        `libripcord`, extracted from the PS3 flow (the most complete, and hardware-verified), which Swift
+        then wraps. The ports migrate to it later, each on its own hardware.
+  - [ ] **Pair, connect, dump frames, measure.** Needs a console on the Mac's network.
+- [x] **Port STUN to `libripcord`.** Done 2026-09-24: `net/rc_stun.{h,c}` and `net/rc_stun_client.c`, with
+      102 host assertions reusing the .NET side's vectors, and a fuzz harness. See the journal.
 - [ ] **Port the internet-play connect sequence to `libripcord`.** The UDP half of
       `Ripcord.Cloud.Halyard/Rendezvous/`. The HTTPS half goes to Swift.
 - [ ] **Port account-pairing derivations to `libripcord`.**
 - [ ] **Swift cloud tier and session actor.** Ported from `Ripcord.Cloud.Halyard` and `SessionController`.
 - [ ] **The first coverage-guided fuzz run.** It happens in CI's `libripcord` job on Linux. It has never
       run, because the author's Mac has no libFuzzer-capable clang, so the first run may find real bugs.
+- [ ] **The `mac` CI job's first run.** `runs-on: macos-26` and whatever Xcode that image carries have not
+      been checked. The job may need its runner label or Xcode selection adjusted before it goes green.
 - [ ] **Everything after first picture:** see steps 4–9 of the plan.
 
 ### Account pairing — resolved, and one thing owed (2026-09-23 to 09-24)

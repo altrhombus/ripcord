@@ -1,0 +1,138 @@
+// LAN discovery: the SRCH broadcast and its replies (docs/protocol/ps5-local-discovery.md).
+//
+// The wire format is entirely libripcord's (halyard_discovery.h builds the probe and parses the reply);
+// this file is only the socket. It follows the PS3 port's broadcast_find, which is hardware-verified:
+// one UDP socket with SO_BROADCAST, the probe to the limited broadcast address on each family's port,
+// and every reply fed to the core's parser. One socket serves both families, since a PS5 and a PS4
+// answer on different ports and nothing else about the exchange differs.
+//
+// Synchronous and blocking for now, because its first caller is ripcord-lab. The session actor will
+// wrap it rather than change it.
+
+internal import CLibripcord
+import Darwin
+
+public enum ConsoleFamily: String, Sendable, CaseIterable {
+    case ps5 = "PS5"
+    case ps4 = "PS4"
+
+    fileprivate var profile: halyard_discovery_profile {
+        switch self {
+        case .ps5: halyard_discovery_profile_ps5
+        case .ps4: halyard_discovery_profile_ps4
+        }
+    }
+}
+
+public struct DiscoveredConsole: Sendable, Hashable {
+    public let hostID: String
+    /// Nil for a host-type this build does not know, which is reported rather than dropped.
+    public let family: ConsoleFamily?
+    public let hostType: String
+    public let name: String
+    public let systemVersion: String
+    public let address: String
+    /// False for "620 Server Standby": the console is in rest mode, and connecting will wake it.
+    public let isAwake: Bool
+}
+
+public enum DiscoveryError: Error, Sendable {
+    case socket(operation: String, errno: Int32)
+}
+
+public enum LANDiscovery {
+    /// Broadcasts one SRCH probe per family and collects replies until `timeout` has passed.
+    public static func search(families: [ConsoleFamily] = ConsoleFamily.allCases,
+                              timeout: Duration = .milliseconds(1500)) throws(DiscoveryError) -> [DiscoveredConsole] {
+        let sock = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP)
+        guard sock >= 0 else { throw .socket(operation: "socket", errno: errno) }
+        defer { close(sock) }
+
+        var on: Int32 = 1
+        guard setsockopt(sock, SOL_SOCKET, SO_BROADCAST, &on, socklen_t(MemoryLayout<Int32>.size)) == 0 else {
+            throw .socket(operation: "setsockopt(SO_BROADCAST)", errno: errno)
+        }
+
+        for family in families {
+            var profile = family.profile
+            var probe = [CChar](repeating: 0, count: 128)
+            let length = halyard_discovery_build_probe(&profile, &probe, probe.count)
+            guard length > 0 else { continue }
+            var destination = sockaddr_in.ipv4(broadcastPort: profile.port)
+            let sent = withUnsafePointer(to: &destination) { address in
+                address.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                    sendto(sock, probe, length, 0, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+                }
+            }
+            guard sent >= 0 else { throw .socket(operation: "sendto(\(family.rawValue))", errno: errno) }
+        }
+
+        var found: [String: DiscoveredConsole] = [:]
+        let deadline = ContinuousClock.now + timeout
+        var buffer = [CChar](repeating: 0, count: 2048)
+        while ContinuousClock.now < deadline {
+            let remaining = deadline - ContinuousClock.now
+            var descriptor = pollfd(fd: sock, events: Int16(POLLIN), revents: 0)
+            let ready = poll(&descriptor, 1, Int32(max(1, remaining.milliseconds)))
+            if ready < 0 {
+                if errno == EINTR { continue }
+                throw .socket(operation: "poll", errno: errno)
+            }
+            if ready == 0 { break }
+
+            var from = sockaddr_in()
+            var fromLength = socklen_t(MemoryLayout<sockaddr_in>.size)
+            let received = withUnsafeMutablePointer(to: &from) { address in
+                address.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                    recvfrom(sock, &buffer, buffer.count - 1, 0, $0, &fromLength)
+                }
+            }
+            guard received > 0 else { continue }
+
+            var console = halyard_discovered_console()
+            var sender = [CChar](repeating: 0, count: Int(INET_ADDRSTRLEN))
+            inet_ntop(AF_INET, &from.sin_addr, &sender, socklen_t(sender.count))
+            guard halyard_discovery_parse_response(buffer, received, sender, &console) == 1 else { continue }
+
+            let reply = DiscoveredConsole(console)
+            found[reply.hostID] = reply
+        }
+        return found.values.sorted { ($0.name, $0.address) < ($1.name, $1.address) }
+    }
+}
+
+private extension DiscoveredConsole {
+    init(_ c: halyard_discovered_console) {
+        let hostType = cString(c.host_type)
+        self.init(hostID: cString(c.host_id), family: ConsoleFamily(rawValue: hostType), hostType: hostType,
+                  name: cString(c.host_name), systemVersion: cString(c.system_version),
+                  address: cString(c.address), isAwake: c.is_awake == 1)
+    }
+}
+
+/// A C `char name[N]` field, imported as a tuple, read as the NUL-terminated string it holds. The core
+/// always terminates these; the bound is the field's own size regardless.
+func cString<T>(_ field: T) -> String {
+    withUnsafeBytes(of: field) { raw in
+        let bytes = raw.prefix(while: { $0 != 0 })
+        return String(decoding: bytes, as: UTF8.self)
+    }
+}
+
+private extension sockaddr_in {
+    static func ipv4(broadcastPort port: UInt16) -> sockaddr_in {
+        var address = sockaddr_in()
+        address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+        address.sin_family = sa_family_t(AF_INET)
+        address.sin_port = port.bigEndian
+        address.sin_addr.s_addr = 0xFFFF_FFFF  // 255.255.255.255, the same in either byte order
+        return address
+    }
+}
+
+private extension Duration {
+    var milliseconds: Int64 {
+        let (seconds, attoseconds) = components
+        return seconds * 1000 + attoseconds / 1_000_000_000_000_000
+    }
+}
