@@ -6,7 +6,7 @@ namespace Ripcord_App.Controls;
 
 /// <summary>
 /// The full Ripcord mark — the play wedge and its three trailing dashes. See the XAML for its provenance in
-/// <c>brand/ripcord-tile.svg</c> and for why this is not <see cref="FamilyMark"/>.
+/// <c>brand/ripcord-mark-ondark.svg</c> and for why this is not <see cref="FamilyMark"/>.
 /// </summary>
 public sealed partial class RipcordMark : UserControl
 {

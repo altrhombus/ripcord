@@ -39,9 +39,11 @@
                         </Grid.ColumnDefinitions>
 
                         <!--
-                            The app mark, drawn rather than loaded: identical geometry to brand/ripcord-tile.svg,
-                            so it stays sharp at any scale factor and needs no separate asset. Keep the two in
-                            step — the SVG is the source of truth and every shipped icon is generated from it.
+                            The app tile, drawn rather than loaded, so it stays sharp at any scale factor and needs
+                            no separate asset. It is the Windows tile brand/generate-assets.ps1 composes: the ground
+                            (brand/ripcord-ground.svg), the edge, and the mark (brand/ripcord-mark-ondark.svg).
+                            Keep the three in step with those sources - they are the truth, and every shipped icon
+                            is generated from them.
                         -->
                         <Viewbox
                             Width="72"
@@ -56,8 +58,23 @@
                                     RadiusY="15">
                                     <Rectangle.Fill>
                                         <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
-                                            <GradientStop Offset="0" Color="#23272E" />
-                                            <GradientStop Offset="1" Color="#12151A" />
+                                            <GradientStop Offset="0" Color="#303743" />
+                                            <GradientStop Offset="1" Color="#1B1F26" />
+                                        </LinearGradientBrush>
+                                    </Rectangle.Fill>
+                                </Rectangle>
+                                <!--  The edge: a top highlight and a hairline. A XAML stroke is drawn inside the bounds, as the SVG's inset rect is.  -->
+                                <Rectangle
+                                    Width="64"
+                                    Height="64"
+                                    RadiusX="15"
+                                    RadiusY="15"
+                                    Stroke="#24FFFFFF"
+                                    StrokeThickness="0.75">
+                                    <Rectangle.Fill>
+                                        <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                            <GradientStop Offset="0" Color="#29FFFFFF" />
+                                            <GradientStop Offset="0.5" Color="#00FFFFFF" />
                                         </LinearGradientBrush>
                                     </Rectangle.Fill>
                                 </Rectangle>

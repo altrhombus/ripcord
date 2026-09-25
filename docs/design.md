@@ -98,7 +98,7 @@ tile has always used and the app itself never did.
 
 > **The gradient's direction and its ratio are Ripcord's; its lightness belongs to the theme.**
 
-In dark theme the card runs deeper than the Mica ground (`#23272E → #12151A`, the tile's own values). In
+In dark theme the card runs deeper than the Mica ground (`#23272E → #12151A`, the tile's values until it was lifted on 2026-09-24; the card stays deeper so the wedge facet, which is the card lifted, keeps its contrast). In
 light theme it runs *lighter* than the ground, so it reads as raised paper rather than a hole cut in the
 page. A dark card in light theme was considered and rejected: it defies a preference the user stated to the
 operating system, which is not something an app gets to overrule for style.

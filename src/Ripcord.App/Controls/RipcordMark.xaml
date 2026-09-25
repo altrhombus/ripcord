@@ -8,9 +8,10 @@
     that full logo, for the places that are about Ripcord rather than about a console: first run, and the
     pairing celebration.
 
-    Geometry is brand/ripcord-tile.svg exactly, including the transform it applies - the mark is drawn in a
-    64-unit box, scaled to 72% and centred, which is what keeps it surviving an adaptive-icon crop. Do not
-    re-draw it by eye; brand/*.svg is the source of truth and generate-assets.ps1 renders from the same file.
+    Geometry is brand/ripcord-mark-ondark.svg exactly, placed with the transform generate-assets.ps1 applies
+    when it composes the tile - the mark is drawn in a 64-unit box, scaled to 72% and centred, which is what
+    keeps it surviving an adaptive-icon crop. Do not re-draw it by eye; brand/*.svg is the source of truth and
+    generate-assets.ps1 renders from the same files.
 
     The dashes are uneven and right-aligned BECAUSE OF their relationship to the wedge - brand/README.md is
     explicit that a tidy trio reads as a fast-forward button and that the raggedness belongs on the outside
