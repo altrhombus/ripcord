@@ -60,6 +60,39 @@ Internet play's UDP half, tied together in `halyard_client`, ported from `Halyar
 - **`regist_flow_test` no longer broadcasts.** The ARM probe is stubbed at link time, and the host suite now
   stays on loopback.
 
+### The Mac's cloud tier and rendezvous route meet PSN and the console (2026-09-25)
+
+The pieces that until now had only met fakes and loopback, run against PSN and PS5-<redacted>. The owner did the
+one step a terminal cannot, pasting the sign-in redirect back into `ripcord-lab signin`. Everything after
+it ran unattended.
+
+- **Sign-in and the account.** The token went into the login Keychain and restored on the next run. The
+  console list returned PS5-<redacted> with remote play on and wake allowed.
+- **`connect --route internet`: the WAN rendezvous, up to the console's candidates.** STUN found a
+  consistent NAT mapping, the good case for peer to peer. The cloud session was created, the wake command
+  sent, and the console's OFFER came back with a public (STATIC) and a LAN (LOCAL) candidate on 9303. The
+  first OFFER was refused with a 404, most likely because the console had not yet joined the session; the
+  one-second re-offer ported from .NET is what carried it.
+- **`connect --route account`: a full stream through the account route.** It ran the push channel, the
+  session, the connect command, the console joining, and the seed from customData1. The 9303 association
+  was opened between our OFFER and our ACCEPT, and `/sess/rgst` went over it. `/sess/init` and `/sess/ctrl`
+  returned 200 over the datagram transport, and the passcode was accepted. Then came the A/V leg's
+  negotiation and prelude, senkusha, PROBE_REPORT and Takion. The capture holds 895 frames of 1080p HEVC,
+  about 15 s at 60 fps.
+- **`account-pair`: no-PIN pairing.** It registered and left the session. The resulting record was
+  **byte-identical** to the PIN-paired one, and it streams on the plain LAN route. That is consistent with
+  the console issuing the same registration key to the same client whichever route pairs it. That reading
+  is observed, not confirmed `[X]`.
+
+**One transient finding.** The first LAN connect right after the account-route session failed at TCP 9295,
+with a non-blocking connect still in progress at its deadline. A few seconds later the port accepted and
+the same connect streamed. For a short window after a rendezvous session ends, the console does not accept
+LAN control connections. The session controller treats that failure as retryable, so the app rides through
+it. `ripcord-lab`, which does not retry, does not.
+
+Still owed: internet play from another network (the Mac on a phone hotspot), a controller steering the
+console, and LAN wake from rest.
+
 ### The passcode gate, live, and a refactor cleared by A/B (2026-09-25)
 
 After the rendezvous work reshaped the control session, a LAN regression run met something new: the console
