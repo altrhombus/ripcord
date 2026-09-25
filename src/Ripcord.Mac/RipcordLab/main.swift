@@ -17,7 +17,7 @@ let usage = """
                             PIN-pair with a console showing Settings > System > Remote Play > Pair
                             Device. The record is kept in ~/Library/Application Support/Ripcord/lab
       consoles              list the consoles the lab has paired with
-      connect <host> [seconds] [out.h264]
+      connect <host> [seconds] [out.h264] [--bitrate kbps] [--720] [--h264]
                             stream from a paired console for `seconds` (default 20), printing each
                             stage and a stats line, and writing every video frame, as the console
                             sent it, to out.h264 (Annex-B; ffplay or VLC plays it)
@@ -92,10 +92,21 @@ case "consoles":
     for c in consoles { print("\(c.family.rawValue)  \(c.host)  \(c.name)  id \(c.consoleID)") }
 
 case "connect":
-    guard arguments.count >= 2 else { fail(usage, code: 2) }
-    let host = arguments[1]
-    let seconds = arguments.count > 2 ? (Double(arguments[2]) ?? 20) : 20
-    let outPath = arguments.count > 3 ? arguments[3] : "ripcord-lab-capture.h264"
+    var positional: [String] = []
+    var options = ConsoleSession.Options()
+    var rest = arguments.dropFirst()
+    while let next = rest.popFirst() {
+        switch next {
+        case "--bitrate": options.bitrateKbps = rest.popFirst().flatMap(Int.init) ?? 0
+        case "--720": options.width = 1280; options.height = 720
+        case "--h264": options.allowHEVC = false
+        default: positional.append(next)
+        }
+    }
+    guard !positional.isEmpty else { fail(usage, code: 2) }
+    let host = positional[0]
+    let seconds = positional.count > 1 ? (Double(positional[1]) ?? 20) : 20
+    let outPath = positional.count > 2 ? positional[2] : "ripcord-lab-capture.h264"
     guard let console = PairingStore.lab.load().first(where: { $0.host == host }) else {
         fail("connect: no paired console at \(host); run `ripcord-lab pair` first")
     }
@@ -138,7 +149,7 @@ case "connect":
         print("\(stamp())  ended at \(outcome.stage), reason \(outcome.endReason), control error \(outcome.controlError)")
         done.signal()
     }
-    let session = ConsoleSession(console: console, handlers: handlers)
+    let session = ConsoleSession(console: console, options: options, handlers: handlers)
     sessionBox.withLock { $0 = session }
     session.start()
     DispatchQueue.global().asyncAfter(deadline: .now() + seconds) { session.disconnect() }
