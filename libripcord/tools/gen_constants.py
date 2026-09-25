@@ -157,7 +157,7 @@ def main(argv):
         "/*",
         " * GENERATED FILE - DO NOT EDIT, DO NOT COMMIT.",
         " *",
-        f" * Produced by ports/common/tools/gen_constants.py from {bundle_path}"
+        f" * Produced by libripcord/tools/gen_constants.py from {bundle_path}"
         + (f", for {requested_by}." if requested_by else "."),
         " * Regenerate with `make constants` (the normal build does it for you).",
         " *",

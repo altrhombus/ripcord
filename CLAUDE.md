@@ -116,6 +116,11 @@ accepts a nonce length `System.Security.Cryptography.AesGcm` refuses. A comment 
 - **`tools/Ripcord.ProtocolLab`** — the console harness: drives the connect flow against a real PS5 and
   replays captures through the parsers. The iteration/verification tool for every protocol stage.
 - **`tools/Ripcord.HidCapture`** — standalone HID capture utility for controller RE work.
+- **`libripcord/`** — the protocol in portable C99 (it was `ports/common` until 2026-09-24). Shared by the
+  console ports under `ports/` and by the planned macOS client (`docs/macos-plan.md`). It is a same-project
+  port of `src/`, not linked against it. The .NET side stays the reference implementation, and
+  `ProtocolLab vectors` generates the known-answer vectors it is tested against. Not part of `Ripcord.slnx`:
+  `make -C libripcord/tests` runs its host suite.
 
 ### The crypto seam pattern
 
@@ -263,11 +268,11 @@ When working in `Ripcord.Protocol.Halyard*`, `Ripcord.Cloud.Halyard`, or anythin
     redacts *all* observed field values by default.
     - **It has two homes, and both are the inventory:**
       `HalyardRegistrationMessage.ClientTypeHex` and `HALYARD_REGIST_CLIENT_TYPE_HEX` in
-      `ports/common/session/halyard_regist_message.h`. The C ports build a registration request without
+      `libripcord/session/halyard_regist_message.h`. The C ports build a registration request without
       linking against the .NET side, so the value is written twice on purpose. This is **not** a
       widening of the exception — no new value is exposed, the same one appears in two places — but a
       sentence claiming to be a complete inventory has to name both, and for a while it named one.
-      `BundledInteropConstantsTests.ClientType_PortsCopyMatchesTheReferenceImplementation` asserts the
+      `BundledInteropConstantsTests.ClientType_CCoreCopyMatchesTheReferenceImplementation` asserts the
       two agree, so a third copy or a drifted one fails with that sentence rather than as an
       unexplained hex literal. If you add a home, add it here and to that test together.
 - **Bounded exception 2: the application OAuth credential** in

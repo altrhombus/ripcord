@@ -1,9 +1,9 @@
 /*
  * ripcord-ps3 - the handful of things that are true of this port's seam and of nothing else.
  *
- * ports/common/platform/rc_platform.h is the seam the portable core sees, and it is deliberately
+ * libripcord/platform/rc_platform.h is the seam the portable core sees, and it is deliberately
  * platform-free. This header is the other side of that: PS3-only facts that a PS3-only program - the
- * bring-up in source/app/ - has a legitimate reason to read. Nothing in ports/common may include it.
+ * bring-up in source/app/ - has a legitimate reason to read. Nothing in libripcord may include it.
  *
  * It exists to stop one specific thing: a second copy of the expected time base frequency. main.c wants
  * to cross-check what lv2 reports against what this port expects, and the alternative to declaring it

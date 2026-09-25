@@ -28,7 +28,7 @@ static rc_session_state s_state;
 /*
  * WHAT A FIRST PAIRING SHOULD ASK FOR ON THIS HARDWARE.
  *
- * ports/common's defaults are 960x540 at 30 fps with software scaling, which is right for the port
+ * libripcord's defaults are 960x540 at 30 fps with software scaling, which is right for the port
  * that set them - a 3DS, whose screen is 400x240 and whose decoder is a different thing entirely. They
  * are wrong here, and b324 showed exactly how: the first machine ever paired by this port streamed at
  * 29 fps through the SPE scaler, because a record written from scratch inherited a handheld's
