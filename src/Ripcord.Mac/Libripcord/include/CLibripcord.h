@@ -23,5 +23,8 @@
 #include "../../../../libripcord/halyard/halyard_v1.h"
 #include "../../../../libripcord/stream/stream_packet_crypto.h"
 #include "../../../../libripcord/input/halyard_input.h"
+#include "../../../../libripcord/session/halyard_account_id.h"
+#include "../../../../libripcord/session/halyard_pairing_file.h"
+#include "../../../../libripcord/session/halyard_regist_flow.h"
 
 #endif /* CLIBRIPCORD_H */
