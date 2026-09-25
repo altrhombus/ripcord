@@ -1,0 +1,14 @@
+[workspace]
+resolver = "3"
+members = ["ripcord-proto", "ripcord-ffi", "ripcord-kat"]
+
+[workspace.package]
+edition = "2024"
+license = "Apache-2.0"
+publish = false
+
+# Release is what every host links and what the Phase 1 figures were measured on. Unwinding stays on:
+# the C ABI's catch_unwind is how a panic becomes an error instead of an abort.
+[profile.release]
+codegen-units = 1
+lto = "thin"

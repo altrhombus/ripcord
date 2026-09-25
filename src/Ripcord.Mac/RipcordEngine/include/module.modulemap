@@ -1,0 +1,7 @@
+// The Rust engine as a Swift module, through its generated header (docs/engine-plan.md, the C ABI).
+// The header is written by cargo into engine/target/include and read from there; nothing is copied.
+// RipcordKit's "Build the Rust engine" phase produces it before Swift compiles.
+module CRipcordEngine {
+    header "../../../../engine/target/include/ripcord.h"
+    export *
+}
