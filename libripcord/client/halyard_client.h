@@ -109,7 +109,9 @@ typedef struct {
     int rcvbuf_bytes;
 
     /* 1 = wait for SESSION_ID before Takion. PS3 and 3DS both require it on hardware; .NET's claim that a
-     * LAN console streams without it is unconfirmed [X]. Default 1. */
+     * LAN console streams without it is unconfirmed [X]. Default 1. Like the budgets, 0 takes the default
+     * - which here is 1, so a zero-initialised config waits - and a NEGATIVE value is the explicit "do not
+     * wait"; see halyard_client_config_resolve. */
     int require_session_ready;
 } halyard_client_config;
 
@@ -132,6 +134,11 @@ typedef struct {
     uint32_t ms_since_console_activity;   /* any datagram at all from the console */
     uint32_t ms_since_video_frame;
     uint32_t idr_requests;
+
+    /* Additions. The window this report covers, measured rather than assumed (a late pump makes it
+     * longer than 200 ms), and how many incoming control packets failed authentication and were dropped. */
+    uint32_t window_ms;
+    uint64_t verify_dropped;
 } halyard_client_stats;
 
 /* Protocol facts about how a session went, for diagnosis. Text is the host's job, from these values. */
@@ -147,7 +154,25 @@ typedef struct {
     int reply_reject_reason;              /* SESSION_REPLY's reason, when it refused */
     uint64_t verify_checked, verify_failed;
     int disconnect_sent, rest_requested;
+
+    /* Additions - all protocol facts, none of them text a host would show as is. */
+    int login_prompted;                   /* the console asked for a passcode */
+    int login_verdict_byte;               /* the raw verdict byte, -1 if none arrived */
+    unsigned stream_version;              /* the protocol version the stream channel agreed */
+    int version_rtt_ms;                   /* senkusha's PROTOCOL_VERSION round trip, declared as rtt */
+    int stream_info_parsed;
+    uint32_t stream_width, stream_height; /* what STREAM_INFO said, 0 until then */
+    int stream_is_hevc;
+    uint64_t heartbeats_sent, congestion_sent, input_history_sent, input_state_sent;
+    uint64_t stream_info_repeats;         /* STREAM_INFO re-sent by the console and re-acked */
+    char console_disconnect_reason[64];   /* DISCONNECT's reason string, when the console hung up */
 } halyard_client_result;
+
+/* Levels for the log callback. Lines the core itself logs (through rc_log) arrive at INFO. */
+#define HALYARD_CLIENT_LOG_DEBUG 0
+#define HALYARD_CLIENT_LOG_INFO  1
+#define HALYARD_CLIENT_LOG_WARN  2
+#define HALYARD_CLIENT_LOG_ERROR 3
 
 /*
  * The callbacks. All are called on the host's thread, from inside connect() or pump(). A buffer passed to
@@ -157,8 +182,12 @@ typedef struct {
 typedef struct {
     void *user;
 
+    /* HALYARD_CLIENT_LOG_*. The core's own rc_log lines are routed here too, through rc_log_set_sink,
+     * which is process-wide: one client at a time owns it (the one initialised last). */
     void (*log)(void *user, int level, const char *line);
-    /* Before each stage begins, so a host can show progress without polling. */
+    /* Before each stage begins, so a host can show progress without polling: the stage named is the one
+     * being worked towards. ENDED is delivered once, when the session is over. result.stage keeps the
+     * furthest stage REACHED, so it still locates a failure after the ending. */
     void (*stage)(void *user, halyard_client_stage stage);
     void (*stream_info)(void *user, const halyard_client_stream_info *info);
     /* One Annex-B access unit; keyframes carry the parameter sets. */
