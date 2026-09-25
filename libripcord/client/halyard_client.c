@@ -620,7 +620,9 @@ static int signin_passcode(halyard_client *c)
                  * rendezvous route while the console renegotiates (the .NET note). */
                 reach(c, HALYARD_CLIENT_STAGE_SIGNED_IN);
                 announce(c, HALYARD_CLIENT_STAGE_SESSION_READY);
-                signin_wait(c, rc_time_ms() + CLIENT_SESSION_AFTER_LOGIN_MS);
+                /* The rendezvous route waits less here and does not insist: see connect_signin. */
+                signin_wait(c, rc_time_ms() + (c->is_rendezvous ? CLIENT_SIGNIN_WAIT_MS
+                                                                 : CLIENT_SESSION_AFTER_LOGIN_MS));
                 return c->end_pending == HALYARD_CLIENT_END_NONE;
             }
             client_log(c, HALYARD_CLIENT_LOG_WARN, "client: a verdict byte nobody has seen - not retrying");
@@ -674,11 +676,17 @@ static int connect_signin(halyard_client *c)
     if (c->is_rendezvous) {
         if (c->session_ready)
             reach(c, HALYARD_CLIENT_STAGE_SESSION_READY);
-        if (c->login_prompt && !c->session_ready) {
-            client_log(c, HALYARD_CLIENT_LOG_WARN, "client: passcode accepted but no SESSION_ID followed");
-            end_request(c, HALYARD_CLIENT_END_SIGNIN_NO_SESSION);
-            return 0;
-        }
+        /*
+         * AFTER A PASSCODE, SESSION_ID MAY STILL WAIT FOR THE A/V LEG. .NET fails the session here, and an
+         * awake console justified it by sending SESSION_ID 1 s after the passcode. A console woken from
+         * rest by the account's command did not, on 2026-09-25: it accepted the passcode, and 30 s later
+         * had still sent nothing. An unlocked console on this route sends SESSION_ID only after the A/V
+         * prelude, and connect_media already waits for it there without insisting. So a woken console is
+         * given the same chance rather than failed. [X] until a stream from rest proves it.
+         */
+        if (c->login_prompt && !c->session_ready)
+            client_log(c, HALYARD_CLIENT_LOG_WARN,
+                       "client: passcode accepted, no SESSION_ID yet - continuing to the A/V leg, which waits for it [X]");
         return 1;
     }
 
