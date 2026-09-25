@@ -323,8 +323,11 @@ Step 1, promoting the core to `libripcord/` with fuzzing and a CI job, is done a
     rendezvous up to the console's candidates, a full 1080p stream over the account route, and no-PIN
     account pairing. See the journal.
   - [x] Internet play from another network. Done 2026-09-25, from a phone hotspot: 1080p60 peer to peer.
-  - [ ] Prove the 30 s post-passcode wait on a connect from rest over the internet. The first attempt
-        from rest failed at 8 s; see the journal.
+  - [x] **Internet play from rest.** Done 2026-09-25, from a hotspot: SESSION_ID waits for the A/V leg
+        even after a passcode. The route now continues rather than failing. See the journal.
+- [ ] **Windows: internet connect to a console woken from rest.** `HalyardStreamingSession.EnsureSignedInAsync`
+      fails the session when SESSION_ID does not follow a passcode. On the Mac, a woken console sent it only
+      after the A/V leg (journal, 2026-09-25). Confirm on Windows, then give .NET the same continuation.
   - [ ] After a rendezvous session, the console briefly refuses TCP 9295. The app's retry covers it; decide
         whether the lab or the sequence should wait for it.
   - [ ] Whether the 9303 association needs servicing between `begin` and the first exchange. .NET
