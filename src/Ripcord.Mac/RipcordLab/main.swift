@@ -170,6 +170,10 @@ case "connect":
     }
     let session = ConsoleSession(console: console, options: options, handlers: handlers)
     sessionBox.withLock { $0 = session }
+    // Any controller attached to the Mac drives the console; the terminal's keyboard does not, because
+    // GameController only sees keys when the app is frontmost, and a terminal tool never is.
+    let input = InputHub()
+    input.start { pad in session.update(pad: pad) }
     session.start()
     DispatchQueue.global().asyncAfter(deadline: .now() + seconds) { session.disconnect() }
     done.wait()
