@@ -58,6 +58,20 @@
 #define HALYARD_CTRL_TYPE_SESSION_ID     0x0033u
 
 /*
+ * Client -> console: the report sent after the bandwidth probe, which on the rendezvous route the console
+ * answers (TYPE_PROBE_REPORT_ACK) before it will send TYPE_STREAM_READY. Required there, confirmed on
+ * hardware by the .NET side: without it the console never sends stream-ready and answers SESSION_REQUEST
+ * with no key. Its payload is a control FIELD - four big-endian uint32 slots, encrypted at the session's
+ * next counter (halyard_control_session_send_field). Structure from our own binary (builder
+ * FUN_1020c1c0); **[X]** which measurement each slot carries - .NET sends [bitrate kbps, declared MTU, 0,
+ * rtt ms] and found the console indifferent to the values (HalyardStreamingSession.SendProbeReportAsync).
+ */
+#define HALYARD_CTRL_TYPE_PROBE_REPORT     0x000du
+#define HALYARD_CTRL_PROBE_REPORT_LENGTH   16u
+/* Console -> client: the 8-byte answer to PROBE_REPORT. **[X]** contents. */
+#define HALYARD_CTRL_TYPE_PROBE_REPORT_ACK 0x0010u
+
+/*
  * Console -> client: the stream service is ready for its Takion association. Empty payload.
  *
  * PRESENT SO A PORT CAN RECOGNISE IT, NOT BECAUSE A LAN PORT SHOULD WAIT FOR IT. The reference
@@ -66,10 +80,10 @@
  * milliseconds - "whereas a LAN console answers the SESSION_REQUEST whether or not anything like this
  * has passed", and its LAN sessions reach SESSION_ID and the probe without this ever arriving.
  *
- * Every port in this tree is LAN-only, so a port that blocks on this would wait forever for something
- * the route does not send. It is here so an unexpected frame is named in a log rather than reported as
- * an unknown type, and so the table matches the reference's. **[X]** what the console requires before
- * sending it is unknown on the reference side too.
+ * The console ports are LAN-only, so a port that blocks on this would wait forever for something the
+ * route does not send. libripcord/client waits for it only on the rendezvous route, and only for 10 s
+ * after PROBE_REPORT, non-fatally, as .NET does. **[X]** what the console requires before sending it is
+ * unknown on the reference side too, beyond PROBE_REPORT.
  */
 #define HALYARD_CTRL_TYPE_STREAM_READY   0x0034u
 

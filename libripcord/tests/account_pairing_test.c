@@ -25,6 +25,7 @@
 #include "../halyard/halyard_v1.h"
 #include "../session/halyard_account_regist.h"
 #include "../session/halyard_account_regist_flow.h"
+#include "../session/halyard_dgram.h"
 #include "../util/rc_base64.h"
 
 #include <stdio.h>
@@ -248,9 +249,9 @@ static int run_rgst(char *rest)
         return 0;
     memcpy(response + head, reply_cipher, cipher_len);
 
-    check(halyard_account_regist_response_complete(response, (size_t)head + cipher_len),
+    check(halyard_dgram_http_complete(response, (size_t)head + cipher_len),
           "a whole reply is complete", __LINE__);
-    check(!halyard_account_regist_response_complete(response, (size_t)head + cipher_len - 1u),
+    check(!halyard_dgram_http_complete(response, (size_t)head + cipher_len - 1u),
           "one byte short is not", __LINE__);
 
     status = halyard_account_regist_open_response(&ex, response, (size_t)head + cipher_len, &http_status,
@@ -339,11 +340,11 @@ static void test_response_edges(void)
               == HALYARD_ACCOUNT_REGIST_ERR_MALFORMED,
           "no HTTP head is malformed", __LINE__);
 
-    check(halyard_account_regist_response_complete((const uint8_t *)no_length, sizeof(no_length) - 1),
+    check(halyard_dgram_http_complete((const uint8_t *)no_length, sizeof(no_length) - 1),
           "no Content-Length: complete once the head ends", __LINE__);
-    check(halyard_account_regist_response_complete((const uint8_t *)bad_length, sizeof(bad_length) - 1),
+    check(halyard_dgram_http_complete((const uint8_t *)bad_length, sizeof(bad_length) - 1),
           "an unreadable Content-Length is treated as absent", __LINE__);
-    check(!halyard_account_regist_response_complete((const uint8_t *)head_only, sizeof(head_only) - 1),
+    check(!halyard_dgram_http_complete((const uint8_t *)head_only, sizeof(head_only) - 1),
           "an unterminated head is not complete", __LINE__);
 }
 

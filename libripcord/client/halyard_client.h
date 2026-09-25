@@ -38,8 +38,12 @@
 #include <stddef.h>
 #include <stdint.h>
 
-/* How the session reaches the console. The value is RP-ConPath on the wire. Only LOCAL is implemented;
- * RENDEZVOUS arrives with internet play and needs the transport seams below. */
+/* Declared, not included, as rc_stun.h does: only the STUN server list takes one, by pointer. */
+struct sockaddr_in;
+
+/* How the session reaches the console. The value is RP-ConPath on the wire. LOCAL is TCP 9295 and the
+ * console's own UDP ports; RENDEZVOUS is internet play, driven with the cloud tier as described under
+ * "THE RENDEZVOUS ROUTE" below. */
 typedef enum {
     HALYARD_ROUTE_LOCAL = 1,
     HALYARD_ROUTE_RENDEZVOUS = 3
@@ -76,7 +80,8 @@ typedef enum {
     HALYARD_CLIENT_END_SIGNIN_REJECTED,   /* every passcode attempt was refused */
     HALYARD_CLIENT_END_SIGNIN_NO_SESSION, /* signed in, but SESSION_ID never came */
     HALYARD_CLIENT_END_TIMEOUT,           /* a stage ran out of time; the stage says which */
-    HALYARD_CLIENT_END_REFUSED            /* the console refused the session (SESSION_REPLY, or /sess) */
+    HALYARD_CLIENT_END_REFUSED,           /* the console refused the session (SESSION_REPLY, or /sess) */
+    HALYARD_CLIENT_END_NO_MEDIA           /* RENDEZVOUS: poll_media gave up, or no media peer in time */
 } halyard_client_end_reason;
 
 /* Commands the host can ask for, pulled once per wait or pump. Flags, so one pull can carry several. */
@@ -113,7 +118,78 @@ typedef struct {
      * - which here is 1, so a zero-initialised config waits - and a NEGATIVE value is the explicit "do not
      * wait"; see halyard_client_config_resolve. */
     int require_session_ready;
+
+    /*
+     * ---- RENDEZVOUS only; ignored on LOCAL. Everything the cloud tier knows before a connect starts. ----
+     *
+     * stun_servers        IPv4 addresses in network order, as rc_stun_gather takes them - the core
+     *                     resolves no names (StunClient.DefaultServers are DNS names; resolving them is the
+     *                     host's). Asked in order until two answer, per leg, so a NAT that maps per
+     *                     destination is detected; on different operators, for the reason rc_stun.h gives.
+     *                     Copied at init, at most HALYARD_CLIENT_STUN_MAX. NULL or 0: no STUN, and each
+     *                     leg offers only its LOCAL candidate, as .NET does when discovery fails.
+     * stun_attempts       per server, 0: 3            (StunClient's defaults)
+     * stun_timeout_ms     per attempt, 0: 500
+     * bind_address        4 bytes, network order, for both legs' sockets. NULL: INADDR_ANY. Copied.
+     * control_local_port  the control leg's local port, 0: any. The OFFER advertises whatever was bound.
+     * media_local_port    the A/V leg's, 0: any.
+     * media_offer_timeout_ms   how long poll_media may answer "not yet" before the session ends with
+     *                     END_NO_MEDIA. 0: 30000, .NET's OfferTimeout for the console's next OFFER.
+     * dgram_stage_timeout_ms   each 9303 stage (prelude, connection, response), 0: 30000   (.NET's
+     * dgram_receive_timeout_ms the quiet window before a re-send, 0: 5000    HalyardDatagramControlOptions)
+     *
+     * The signaling ids, the console's candidates and its media offer are NOT here: they are learned
+     * during the rendezvous, and arrive through halyard_client_rendezvous_begin and poll_media.
+     *
+     * signin_prompt_window_ms defaults to 1000 on this route, not 20000: .NET's LoginPromptWindow. On the
+     * LAN the wait ends early at SESSION_ID; on this route SESSION_ID comes only after the A/V prelude, so
+     * the window is always spent in full, and 20 s of it would be added to every unlocked connect.
+     * require_session_ready is not consulted here: SESSION_ID is waited for after the A/V prelude, for up
+     * to 8 s and non-fatally, as .NET does - except after a passcode, when it must follow the sign-in.
+     */
+    const struct sockaddr_in *stun_servers;
+    size_t stun_server_count;
+    unsigned stun_attempts;
+    unsigned stun_timeout_ms;
+    const uint8_t *bind_address;
+    uint16_t control_local_port;
+    uint16_t media_local_port;
+    unsigned media_offer_timeout_ms;
+    unsigned dgram_stage_timeout_ms;
+    unsigned dgram_receive_timeout_ms;
 } halyard_client_config;
+
+/* The most STUN servers a config may name; more are ignored. */
+#define HALYARD_CLIENT_STUN_MAX 4
+
+/* A localHashedId: the 20 bytes each side publishes in its signaling OFFER (HALYARD_DGRAM_HASHED_ID_LENGTH). */
+#define HALYARD_CLIENT_HASHED_ID_LENGTH 20
+
+/*
+ * One of our two rendezvous legs, as the cloud tier needs it for an OFFER: the port the leg's socket is
+ * bound to, and what STUN said the NAT maps it to. Feed these to halyard_wan_our_candidates along with this
+ * host's own address toward the console (the LOCAL candidate) - the ports must be these, because a NAT
+ * maps per source port.
+ */
+typedef struct {
+    uint16_t local_port;                  /* host order */
+    int has_reflexive;                    /* STUN answered with an IPv4 mapping */
+    uint8_t reflexive_address[4];         /* network order */
+    uint16_t reflexive_port;              /* host order */
+    int endpoint_independent;             /* 1 consistent; 0 per-destination (symmetric: a console on
+                                           * another network will NOT reach this); -1 only one answer */
+} halyard_client_leg;
+
+/*
+ * The console, for one leg, as its OFFER described it: the candidate chosen with
+ * halyard_wan_choose_candidate (and its fallback to the paired host on 9303 when nothing parses), and the
+ * localHashedId that OFFER carried.
+ */
+typedef struct {
+    uint8_t address[4];                   /* network order */
+    uint16_t port;                        /* host order */
+    uint8_t console_hashed_id[HALYARD_CLIENT_HASHED_ID_LENGTH];
+} halyard_client_peer;
 
 /* What STREAM_INFO said, for the host to configure its decoder before the first frame. */
 typedef struct {
@@ -166,6 +242,15 @@ typedef struct {
     uint64_t heartbeats_sent, congestion_sent, input_history_sent, input_state_sent;
     uint64_t stream_info_repeats;         /* STREAM_INFO re-sent by the console and re-acked */
     char console_disconnect_reason[64];   /* DISCONNECT's reason string, when the console hung up */
+
+    /* RENDEZVOUS only. */
+    uint16_t control_local_port, media_local_port;
+    int media_prelude_ok;                 /* the A/V leg's 88-byte prelude completed */
+    int session_ready_waited_ms;          /* how long after the A/V prelude SESSION_ID took, -1 never */
+    int probe_report_sent;
+    int stream_ready_seen;                /* STREAM_READY arrived within its window */
+    int dgram_status;                     /* the last failing halyard_dgram_channel_status, 0 none */
+    uint64_t stray_dropped;               /* datagrams on the media socket from anyone but the console */
 } halyard_client_result;
 
 /* Levels for the log callback. Lines the core itself logs (through rc_log) arrive at INFO. */
@@ -203,6 +288,15 @@ typedef struct {
     /* HALYARD_CLIENT_CMD_* flags, or 0. */
     unsigned (*poll_commands)(void *user);
     void (*stats)(void *user, const halyard_client_stats *stats);
+
+    /*
+     * RENDEZVOUS only, and required there. The A/V leg's socket is bound and STUN has been asked about it:
+     * `media` is what our media OFFER must advertise. The host negotiates the media connection with the
+     * cloud and answers with the console's end of it. Return 1 with `out` filled; 0 if not ready yet (the
+     * core keeps the control session alive and asks again, bounded by media_offer_timeout_ms); -1 to give
+     * up (END_NO_MEDIA). See "THE RENDEZVOUS ROUTE", step 6, for what the host does in between.
+     */
+    int (*poll_media)(void *user, const halyard_client_leg *media, halyard_client_peer *out);
 } halyard_client_callbacks;
 
 typedef struct halyard_client halyard_client;
@@ -235,5 +329,79 @@ const halyard_client_result *halyard_client_result_get(const halyard_client *cli
 
 /* Wipes the keys and closes every socket. Safe at any point after init. */
 void halyard_client_destroy(halyard_client *client);
+
+/*
+ * ==== THE RENDEZVOUS ROUTE ===============================================================================
+ *
+ * Internet play, and any account-route connect. Ported from HalyardAccountConsoleSession.ConnectAsync,
+ * HalyardAccountPairing.ConnectAsync/RunAsync and HalyardStreamingSession.ConnectAsync/StartStreamingAsync.
+ *
+ * THE SPLIT. The cloud tier (sign-in, the session, the push WebSocket, OFFER/ACCEPT/RESULT signaling) is
+ * the host's, in Swift on the Mac; everything on UDP is here. The two interleave at exact points - the
+ * console discards an Init it cannot tie to an OFFER, and races one sent too late - so the core exposes
+ * those points as calls and one pull callback, and the host drives the signaling around them:
+ *
+ *   1. halyard_client_init            route = RENDEZVOUS, poll_media set, the STUN servers resolved.
+ *   2. halyard_client_rendezvous_prepare
+ *                                     binds the CONTROL leg's socket and asks STUN about it. Blocking, at
+ *                                     most servers x attempts x timeout. Any time before our OFFER; .NET does
+ *                                     it before creating the cloud session.
+ *   3. (host) the cloud session up to the console's OFFER - create it, send `commands` (data1/data2, from
+ *      halyard_account_regist_generate_key_material), wait for the console to join, recover the seed from
+ *      customData1 if one is published, and receive the console's OFFER.
+ *   4. (host) OUR OFFER, carrying the candidates halyard_wan_our_candidates builds from the leg step 2
+ *      returned, and our localHashedId. Not before the console's OFFER: a sessionMessage 404s until the
+ *      console is a member.
+ *   5. halyard_client_rendezvous_begin
+ *                                     AFTER OUR OFFER, BEFORE OUR ACCEPT. Aims the control leg at the
+ *                                     console's chosen candidate and puts our Init on the wire, without
+ *                                     waiting. Both neighbouring orderings are falsified on hardware
+ *                                     (HalyardAccountPairing.RunAsync says how).
+ *      (host) OUR ACCEPT, naming that same candidate (sid 1, reqId 2, peerSid = the console's sid), and
+ *      from here RESULT-acknowledge every console message for the life of the session - a console that is
+ *      not acked TERMINATEs. Keep the cloud session joined until the stream ends: leaving it ends the
+ *      session the console joined.
+ *   5a. optional - .NET does it on every connect that has a seed: registration on the same association,
+ *      halyard_account_regist_run(&params, halyard_client_rendezvous_exchange, client, &result). The
+ *      captured client runs rgst, init and ctrl as three connections over one association. **[X]** whether
+ *      a connect needs it at all; .NET does not store the record it returns.
+ *   6. halyard_client_connect         blocking, as on the LAN. /sess/init and /sess/ctrl over the control
+ *                                     leg (no ARM probe, RP-ConPath 3), the sign-in gate, then the A/V leg:
+ *                                     its socket is bound, STUN asked, and poll_media is called ON THIS
+ *                                     THREAD, repeatedly, until it answers. While it says "not yet" the
+ *                                     host, on its own task:
+ *        - waits for the console's NEXT OFFER (the A/V leg arriving - a second OFFER is not a duplicate);
+ *        - sends our media OFFER with the candidates built from `media` (sid 2, reqId 3);
+ *        - sends our media ACCEPT naming the console's chosen media candidate (sid 2, reqId 4, peerSid =
+ *          that OFFER's sid), chosen by the same rule as step 5;
+ *        - then answers poll_media with that candidate and that OFFER's localHashedId.
+ *      The core then preludes the A/V leg, waits up to 8 s for SESSION_ID (non-fatal), runs senkusha as a
+ *      first Takion association on that socket, sends PROBE_REPORT, waits up to 10 s for STREAM_READY
+ *      (non-fatal), opens the stream's Takion association on the same socket, and continues exactly as on
+ *      the LAN. Takion on that socket reads only datagrams from the console's media endpoint.
+ *   7. halyard_client_pump            as on the LAN. halyard_client_fds includes the control leg's socket.
+ *   8. halyard_client_destroy         ends the control connection politely (on datagrams nothing says it
+ *                                     implicitly), then closes both legs. THEN the host leaves the cloud
+ *                                     session.
+ *
+ * Every call here is on the thread connect() and pump() run on. A console that is never reached ends in
+ * connect() like any other failure; result.dgram_status says which 9303 stage gave up.
+ *
+ * Returns 1 on success and 0 on failure (the log says why) for prepare and begin; both refuse a client
+ * that is not RENDEZVOUS, or one whose connect has started.
+ */
+int halyard_client_rendezvous_prepare(halyard_client *client, halyard_client_leg *out_control_leg);
+
+int halyard_client_rendezvous_begin(halyard_client *client,
+                                    const uint8_t local_hashed_id[HALYARD_CLIENT_HASHED_ID_LENGTH],
+                                    const halyard_client_peer *console);
+
+/*
+ * A halyard_account_regist_exchange_fn over the control leg (`user` is the halyard_client): step 5a.
+ * Only between begin and connect. Blocking, bounded by the 9303 stage deadline, cancellable through
+ * poll_commands.
+ */
+int halyard_client_rendezvous_exchange(void *user, const uint8_t *request, size_t request_length,
+                                       uint8_t *response, size_t response_size, size_t *out_response_length);
 
 #endif /* HALYARD_CLIENT_H */

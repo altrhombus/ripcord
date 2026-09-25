@@ -44,6 +44,21 @@
 #define HALYARD_CLIENT_DEFAULT_BITRATE_KBPS 10000
 
 /*
+ * The rendezvous route's, each from the .NET class that owns the wait:
+ *   signin window   HalyardStreamingSession.LoginPromptWindow - see halyard_client_config for why the LAN's
+ *                   20 s would be wrong here
+ *   media offer     HalyardAccountPairingOptions.OfferTimeout, the wait for the console's next OFFER
+ *   9303 stages     HalyardDatagramControlOptions' StageTimeout and ReceiveTimeout
+ *   STUN            StunClient's per-attempt timeout and attempts per server
+ */
+#define HALYARD_CLIENT_DEFAULT_RENDEZVOUS_SIGNIN_WINDOW_MS 1000u
+#define HALYARD_CLIENT_DEFAULT_MEDIA_OFFER_TIMEOUT_MS 30000u
+#define HALYARD_CLIENT_DEFAULT_DGRAM_STAGE_TIMEOUT_MS 30000u
+#define HALYARD_CLIENT_DEFAULT_DGRAM_RECEIVE_TIMEOUT_MS 5000u
+#define HALYARD_CLIENT_DEFAULT_STUN_ATTEMPTS 3u
+#define HALYARD_CLIENT_DEFAULT_STUN_TIMEOUT_MS 500u
+
+/*
  * Fills every 0 in `in` with its default and normalises the rest, into `out` (which may be `in`).
  *
  * fps: anything above 30 becomes 60 and anything else 30, because the only two rates either reference
@@ -53,7 +68,8 @@
  * wait". The header's "Default 1" and its "0 takes the default" could not both hold for a flag
  * otherwise, and a zero-initialised config is how every host starts.
  * rcvbuf_bytes: 0 is the default ask; negative asks for nothing and keeps the platform's size.
- * route: 0 is LOCAL.
+ * route: 0 is LOCAL. The signin window's default depends on the route (see above); the rendezvous fields
+ * are defaulted on either route, and read only on RENDEZVOUS.
  */
 void halyard_client_config_resolve(const halyard_client_config *in, halyard_client_config *out);
 

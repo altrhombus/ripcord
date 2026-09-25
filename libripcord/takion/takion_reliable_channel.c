@@ -55,6 +55,42 @@ static void send_sack(takion_reliable_channel *ch)
     }
 }
 
+/*
+ * One read from the channel's socket. Unfiltered it is exactly the recvfrom every caller made before
+ * filtering existed. Filtered, a datagram from anyone but the peer is consumed and dropped - taken for
+ * real even when the caller only peeked, or it would sit at the head of the queue and be peeked forever -
+ * and the read reports "nothing yet" (-1 with EAGAIN) once a bounded number of strays have gone, so a
+ * flood from elsewhere cannot hold the caller here.
+ */
+#define TAKION_STRAYS_PER_READ 16
+
+static ssize_t channel_recv(takion_reliable_channel *ch, int sock, void *buf, size_t length, int flags)
+{
+    int strays;
+
+    if (!ch->filter_peer)
+        return recvfrom(sock, buf, length, flags, NULL, NULL);
+
+    for (strays = 0; strays < TAKION_STRAYS_PER_READ; strays++) {
+        struct sockaddr_in from;
+        socklen_t from_length = (socklen_t)sizeof(from);
+        ssize_t n;
+
+        memset(&from, 0, sizeof(from));
+        n = recvfrom(sock, buf, length, flags, (struct sockaddr *)&from, &from_length);
+        if (n < 0)
+            return n;
+        if (from.sin_family == AF_INET && from.sin_addr.s_addr == ch->peer.sin_addr.s_addr
+            && from.sin_port == ch->peer.sin_port)
+            return n;
+        if (flags & MSG_PEEK)
+            (void)recvfrom(sock, buf, length, 0, NULL, NULL);
+        ch->stray_dropped++;
+    }
+    errno = EAGAIN;
+    return -1;
+}
+
 int takion_channel_connect(takion_reliable_channel *ch, int sock, struct sockaddr_in peer,
                            unsigned max_attempts, unsigned per_attempt_timeout_ms)
 {
@@ -69,10 +105,31 @@ int takion_channel_connect_ticked(takion_reliable_channel *ch, int sock, struct 
                                             tick, tick_ctx, NULL, NULL);
 }
 
+static int connect_impl(takion_reliable_channel *ch, int sock, struct sockaddr_in peer,
+                        unsigned max_attempts, unsigned per_attempt_timeout_ms,
+                        takion_tick_fn tick, void *tick_ctx,
+                        takion_abort_fn abort_fn, void *abort_ctx, int filter_peer);
+
 int takion_channel_connect_abortable(takion_reliable_channel *ch, int sock, struct sockaddr_in peer,
                                      unsigned max_attempts, unsigned per_attempt_timeout_ms,
                                      takion_tick_fn tick, void *tick_ctx,
                                      takion_abort_fn abort_fn, void *abort_ctx)
+{
+    return connect_impl(ch, sock, peer, max_attempts, per_attempt_timeout_ms, tick, tick_ctx, abort_fn, abort_ctx, 0);
+}
+
+int takion_channel_connect_filtered(takion_reliable_channel *ch, int sock, struct sockaddr_in peer,
+                                    unsigned max_attempts, unsigned per_attempt_timeout_ms,
+                                    takion_tick_fn tick, void *tick_ctx,
+                                    takion_abort_fn abort_fn, void *abort_ctx)
+{
+    return connect_impl(ch, sock, peer, max_attempts, per_attempt_timeout_ms, tick, tick_ctx, abort_fn, abort_ctx, 1);
+}
+
+static int connect_impl(takion_reliable_channel *ch, int sock, struct sockaddr_in peer,
+                        unsigned max_attempts, unsigned per_attempt_timeout_ms,
+                        takion_tick_fn tick, void *tick_ctx,
+                        takion_abort_fn abort_fn, void *abort_ctx, int filter_peer)
 {
     uint8_t init_chunk[32];
     size_t init_chunk_len;
@@ -85,6 +142,7 @@ int takion_channel_connect_abortable(takion_reliable_channel *ch, int sock, stru
     memset(ch, 0, sizeof(*ch));
     ch->sock = sock;
     ch->peer = peer;
+    ch->filter_peer = filter_peer;
 
     /* Not a cryptographic value - SCTP's own verification tag only needs to be "probably unique enough
      * to reject stale packets from a prior association," the same bar rc_tick() clears. */
@@ -114,7 +172,7 @@ int takion_channel_connect_abortable(takion_reliable_channel *ch, int sock, stru
         start_ms = rc_time_ms();
         while (rc_time_ms() - start_ms <= (uint64_t)per_attempt_timeout_ms) {
             uint8_t recv_buf[TAKION_MAX_PACKET];
-            ssize_t n = recvfrom(sock, recv_buf, sizeof(recv_buf), 0, NULL, NULL);
+            ssize_t n = channel_recv(ch, sock, recv_buf, sizeof(recv_buf), 0);
 
             if (n > 0) {
                 takion_message_header in_header;
@@ -171,7 +229,7 @@ int takion_channel_connect_abortable(takion_reliable_channel *ch, int sock, stru
              * with - peeking leaves it in the socket's receive queue so the first takion_channel_poll()
              * call handles it exactly like any other incoming DATA chunk, instead of this function
              * quietly dropping it. */
-            ssize_t n = recvfrom(sock, peek_buf, sizeof(peek_buf), MSG_PEEK, NULL, NULL);
+            ssize_t n = channel_recv(ch, sock, peek_buf, sizeof(peek_buf), MSG_PEEK);
 
             if (n > 0) {
                 takion_message_header in_header;
@@ -183,7 +241,7 @@ int takion_channel_connect_abortable(takion_reliable_channel *ch, int sock, stru
                     int chunk_type = takion_chunk_type(in_chunk, in_chunk_len);
 
                     if (chunk_type == (int)TAKION_CHUNK_COOKIE_ACK) {
-                        recvfrom(sock, peek_buf, sizeof(peek_buf), 0, NULL, NULL); /* consume for real */
+                        channel_recv(ch, sock, peek_buf, sizeof(peek_buf), 0); /* consume for real */
                         established = 1;
                         break;
                     }
@@ -390,7 +448,7 @@ int takion_channel_poll(takion_reliable_channel *ch, unsigned *out_channel,
      * Peeking costs one syscall on a packet this function is about to read anyway, and it makes a reader
      * that shares a socket leave alone what it does not own.
      */
-    n = recvfrom(ch->sock, recv_buf, sizeof(recv_buf), MSG_PEEK, NULL, NULL);
+    n = channel_recv(ch, ch->sock, recv_buf, sizeof(recv_buf), MSG_PEEK);
     if (n < 0)
         return (errno == EAGAIN || errno == EWOULDBLOCK) ? 0 : -1;
     if (n == 0)
@@ -398,7 +456,7 @@ int takion_channel_poll(takion_reliable_channel *ch, unsigned *out_channel,
     if ((size_t)n >= 1u && (unsigned)(recv_buf[0] & 0x0fu) != TAKION_BASE_TYPE_CONTROL)
         return 0;   /* somebody else's - left in the queue for the reader that wants it */
 
-    n = recvfrom(ch->sock, recv_buf, sizeof(recv_buf), 0, NULL, NULL);
+    n = channel_recv(ch, ch->sock, recv_buf, sizeof(recv_buf), 0);
     if (n < 0)
         return (errno == EAGAIN || errno == EWOULDBLOCK) ? 0 : -1;
     if (n == 0)

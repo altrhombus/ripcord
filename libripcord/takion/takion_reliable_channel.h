@@ -74,6 +74,14 @@ typedef struct {
     void *verify_ctx;
     int verify_enforces;           /* 0 = count only, 1 = drop packets that fail */
     unsigned long verify_dropped;
+
+    /*
+     * Opt-in peer filtering; see takion_channel_connect_filtered. 0 (every existing caller) reads any
+     * source, exactly as before. `stray_dropped` counts datagrams from anyone else that were taken off the
+     * socket and thrown away.
+     */
+    int filter_peer;
+    unsigned long stray_dropped;
     takion_reassembler reassembler;
     takion_unacked_chunk unacked[TAKION_MAX_UNACKED];
 } takion_reliable_channel;
@@ -119,6 +127,24 @@ int takion_channel_connect_abortable(takion_reliable_channel *ch, int sock, stru
                                      unsigned max_attempts, unsigned per_attempt_timeout_ms,
                                      takion_tick_fn tick, void *tick_ctx,
                                      takion_abort_fn abort_fn, void *abort_ctx);
+
+/*
+ * As takion_channel_connect_abortable, and from here on this channel reads ONLY datagrams whose source is
+ * `peer` (address and port); anything else is taken off the socket and dropped, counted in
+ * `stray_dropped`.
+ *
+ * WHY, AND WHY OPT-IN. On the LAN the socket is a fresh one aimed at the console and nothing else writes to
+ * it. On the rendezvous route it is the media socket: its port was advertised through the cloud, STUN
+ * servers were asked from it (and may answer late), and it carries a senkusha association, then the
+ * stream's own. .NET reads every datagram there with RemoteEndPoint.Equals(console) and skips the rest
+ * (TakionConnection, TakionReliableChannel, HalyardTakionStream.ReceiveLoopAsync). The LAN path, which is
+ * hardware-validated on the PS3 and 3DS, never asked for this, so it stays byte-for-byte what it was:
+ * with filtering off, every read below is the same recvfrom it always was.
+ */
+int takion_channel_connect_filtered(takion_reliable_channel *ch, int sock, struct sockaddr_in peer,
+                                    unsigned max_attempts, unsigned per_attempt_timeout_ms,
+                                    takion_tick_fn tick, void *tick_ctx,
+                                    takion_abort_fn abort_fn, void *abort_ctx);
 
 /*
  * Switches on GMAC sealing for everything sent from now on. Call immediately after the stream keys are

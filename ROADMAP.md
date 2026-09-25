@@ -240,8 +240,8 @@ Step 1, promoting the core to `libripcord/` with fuzzing and a CI job, is done a
         abortable Takion connect. 111 host assertions; none of it has met a console. Left for later
         slices: senkusha echo/MTU probes, CORRUPT_FRAME, CONNECTION_QUALITY, discovery/wake inside the
         sequence, and RENDEZVOUS.
-    - [ ] `regist_flow_test` sends an ARM probe to the LAN broadcast address on every `make` run: the
-          host suite leaves loopback. Found while writing `client_test`, which now does not.
+    - [x] `regist_flow_test` sent an ARM probe to the LAN broadcast address on every `make` run. Fixed
+          2026-09-25: the probe is stubbed at link time, and the suite stays on loopback.
     - [ ] `select()` and `suseconds_t` in the new `rc_tcp` deadline have not been built for the 3DS,
           Vita or PS3 SDKs `[X]`.
   - [x] **Crypto throughput: measured, and not a concern.** `ripcord-lab bench` on an M4 Max:
@@ -264,14 +264,19 @@ Step 1, promoting the core to `libripcord/` with fuzzing and a CI job, is done a
   - The UDP 9303 transport is ported: prelude, chunks, association and pump.
   - So are candidate choice and STUN NAT classification.
   - `dgram-transport.kat` replays 59 steps through the real .NET association byte for byte.
+  - [x] **The C side of the rendezvous route.** Done 2026-09-25, and not yet run against a console. See
+        the journal:
+    - The control session's byte-pipe seam. The TCP path is unchanged, and an A/B build proves it.
+    - `/sess` over 9303, byte for byte with .NET's own requests.
+    - `HALYARD_ROUTE_RENDEZVOUS` in `halyard_client`, with the A/V leg's whole driver.
+    - One HTTP-completeness check, where there had been two.
   - Still open:
-    - [ ] `halyard_control_session.c` is hard-wired to TCP. Internet play and the account route need
-          `/sess/init` and `/sess/ctrl` over the datagram channel, through a byte-pipe seam in that
-          file, which was left alone because it is hardware-validated.
-    - [ ] The A/V leg's driver: STUN on the media socket, the 9297 prelude, then wait for
-          session-ready before Takion INIT.
-    - [ ] Two HTTP-completeness checks now exist, `halyard_dgram_http_complete` and
-          `halyard_account_regist_response_complete`. Keep one.
+    - [ ] **Run the rendezvous route against a console**, first on the LAN and then off it. The Swift cloud
+          tier drives it through the contract in `halyard_client.h` ("THE RENDEZVOUS ROUTE"). Nothing in it
+          has met hardware, and a console's answers there were only ever seen through .NET.
+    - [ ] A login prompt arriving after the rendezvous route's 1 s sign-in window is not handled. .NET does
+          not handle one either `[X]`.
+    - [ ] `rc_udp_open_bound` (bind, getsockname) has not been built for the PS3, 3DS or Vita SDKs `[X]`.
     - [ ] The spec says the 0x40 request word appears in no capture and is a counter; .NET and C both
           send 0x40 `[X]`. Change both together.
 - [x] **Port account-pairing derivations to `libripcord`.** Done 2026-09-25:
@@ -280,8 +285,9 @@ Step 1, promoting the core to `libripcord/` with fuzzing and a CI job, is done a
   - `ProtocolLab` generates `account-pairing.kat`, and the C runner adds 357 assertions against it.
     Changing one bias constant made 40 of them fail, so the vectors bite.
   - Still open:
-    - [ ] The UDP 9303 control association the flow runs over. It belongs to the internet-play port,
-          since `/sess/init` and `/sess/ctrl` use the same association.
+    - [x] The UDP 9303 control association the flow runs over: `halyard_dgram_regist_exchange`, and
+          `halyard_client_rendezvous_exchange` on a connect. Done 2026-09-25, and not yet run against a
+          console.
     - [ ] The Swift cloud tier, including `localHashedId` (SHA-1 of the device id).
     - [ ] PS4's account route and the search probe on this route, both `[X]`.
     - [ ] `encode_account_id` in `halyard_regist_message.c` accumulates digits into a u64 with no

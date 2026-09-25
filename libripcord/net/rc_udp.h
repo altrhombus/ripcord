@@ -13,6 +13,7 @@
 #define RC_UDP_H
 
 #include <netinet/in.h>
+#include <stdint.h>
 
 /*
  * Opens a non-blocking UDP socket and fills `out_peer` with the address of `host`:`port`. Returns the
@@ -41,5 +42,21 @@ int rc_udp_open(const char *host, unsigned port, struct sockaddr_in *out_peer, i
  * symptom is loss that looks exactly like the network.
  */
 int rc_udp_rcvbuf_actual(int sock);
+
+/*
+ * A non-blocking UDP socket BOUND to a local port, for a socket whose port must be known before anything
+ * is sent on it: the rendezvous route advertises that port in a signaling OFFER and asks STUN what the NAT
+ * maps it to (rc_stun_gather needs a bound socket), and only then talks to the console from it.
+ *
+ * `bind_address` is 4 bytes in network order, or NULL for INADDR_ANY. `port` 0 lets the platform choose.
+ * The port actually bound is read back into *out_port (host order; may be NULL). `rcvbuf_bytes` as for
+ * rc_udp_open. Returns the socket or -1. The socket is not connect()ed: every reader in the core uses
+ * sendto/recvfrom, and on BSD sockets a sendto with an address on a connected UDP socket fails.
+ *
+ * .NET chooses the port with a throwaway bind (HalyardAccountConsoleSession.FreeUdpPort) and binds the real
+ * socket later, leaving a window where something else can take the port; this binds once and keeps it.
+ */
+int rc_udp_open_bound(const uint8_t bind_address[4], unsigned short port, int rcvbuf_bytes,
+                      unsigned short *out_port);
 
 #endif /* RC_UDP_H */

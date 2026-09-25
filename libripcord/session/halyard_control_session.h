@@ -47,6 +47,79 @@
 /* How many parsed frames of history the resync diagnostic keeps - see `recent` below. */
 #define HALYARD_CONTROL_RECENT 4
 
+/*
+ * THE BYTE PIPE: what the control session asks of the transport underneath it, and nothing else.
+ *
+ * WHY A SEAM, AND WHY THIS NARROW. A LAN console serves /sess/init, /sess/ctrl and the binary frames on
+ * TCP 9295. A console reached through the cloud rendezvous serves the same three things over the UDP 9303
+ * association (halyard_dgram_channel.h) and refuses 9295 with a generic 403. Everything that knows about
+ * HTTP, the frame format and the counters is identical on both, and lives in this file; the only thing
+ * that differs is what fills the buffer. So the seam is a byte pipe - the same cut the .NET side made with
+ * IHalyardControlChannel and its two implementations, HalyardTcpControlChannel and
+ * HalyardDatagramSessionControlChannel - and duplicating the HTTP or frame knowledge per transport is how
+ * two codecs would drift apart.
+ *
+ *   open      ONE REQUEST CONNECTION. /sess/init and /sess/ctrl each get a fresh one (init is served
+ *             Connection: close). TCP: a connect to host:port, made non-blocking. Datagram: a fresh chunk
+ *             connection over the existing prelude (HalyardDatagramSessionControlChannel.ConnectAsync).
+ *             Returns a handle >= 0 - for TCP the socket, for the datagram pipe the UDP socket a host can
+ *             wait on - or -1. May block, bounded by the transport's own deadline.
+ *   send_all  every byte, or failure: 0 on success, -1 on failure (rc_tcp_send_all's contract).
+ *   recv      MUST NOT BLOCK: > 0 bytes read into `buffer`; 0 nothing available right now; -1 an error;
+ *             -2 the peer closed the connection.
+ *   close     end the connection. `polite` is 0 for /sess/init, which the console closes itself, and 1
+ *             otherwise: on TCP closing the socket says everything, but on datagrams nothing says it
+ *             implicitly, and a console never told keeps the session live and refuses further cloud
+ *             sessions until it is rebooted (HalyardDatagramSessionControlChannel.DisposeAsync).
+ *   name      for log lines only ("TCP", "datagram").
+ *
+ * The TCP pipe below is not a new implementation: its four functions are the four call sites this file
+ * always had (rc_tcp_connect + rc_socket_set_nonblocking, rc_tcp_send_all, rc_tcp_recv, close), moved
+ * behind the pointer unchanged, so the LAN path's syscalls are the same in the same order.
+ */
+typedef struct {
+    const char *name;
+    int (*open)(void *ctx, const char *host, unsigned short port);
+    int (*send_all)(void *ctx, int handle, const uint8_t *data, size_t length);
+    long (*recv)(void *ctx, int handle, uint8_t *buffer, size_t capacity);
+    void (*close)(void *ctx, int handle, int polite);
+    void *ctx;
+} halyard_control_pipe;
+
+/* TCP to the console, the LAN default and the hardware-validated path. `ctx` is unused (NULL). */
+extern const halyard_control_pipe halyard_control_pipe_tcp;
+
+/*
+ * How to open, beyond the pairing record. A zeroed struct - or passing NULL - is exactly
+ * halyard_control_session_open(): TCP 9295, the ARM probe first, RP-ConPath 1, the record's host as the
+ * Host header, and "RP-Version" on /sess/init.
+ *
+ * The datagram route differs in four places, each taken from HalyardStreamingSession.ConnectAsync and its
+ * request builders rather than decided here:
+ *
+ *   skip_arm_probe       the probe arms a TCP listener; on the rendezvous route the control plane rides
+ *                        the 9303 association instead, and off-network the probe fires at an address that
+ *                        may not route. .NET sends it only when ConnectionPath is Local.
+ *   connection_path      RP-ConPath: 1 LOCAL, 3 RENDEZVOUS ([W] both seen on the wire; 2 unclaimed). The
+ *                        console runs a different A/V bring-up for each, so this is not decoration.
+ *   host_header          .NET's HostHeader(): the address right-aligned in three columns with the port
+ *                        (halyard_dgram_host_header). A LAN console accepts the plain form this file has
+ *                        always sent, so the TCP path keeps it.
+ *   init_version_header  .NET sends "Rp-Version" on /sess/init (as the captured client does) and
+ *                        "RP-Version" on /sess/ctrl. The TCP path's "RP-Version" is hardware-validated and
+ *                        stays; the datagram route follows the capture.
+ *
+ * `port` exists so the host suite can run the TCP pipe against a loopback console on a port it owns.
+ */
+typedef struct {
+    const halyard_control_pipe *pipe;   /* NULL: halyard_control_pipe_tcp */
+    unsigned short port;                /* 0: HALYARD_CONTROL_ARM_PORT (9295) */
+    int skip_arm_probe;
+    int connection_path;                /* 0: 1 */
+    const char *host_header;            /* NULL: record->host */
+    const char *init_version_header;    /* NULL: "RP-Version" */
+} halyard_control_open_options;
+
 /* What service() observed on this call. */
 typedef enum {
     HALYARD_CONTROL_EVENT_NONE = 0,     /* nothing happened; the common case, call again */
@@ -134,6 +207,11 @@ typedef struct {
     int recent_count;
     uint8_t buffer[HALYARD_CONTROL_SESSION_BUFFER];
     size_t buffered;
+
+    /* The transport `sock` belongs to - see halyard_control_pipe. Set by open; NULL reads as TCP, so a
+     * session some older caller zeroed by hand behaves as it always did. Last, so the fields above keep
+     * their offsets. */
+    const halyard_control_pipe *pipe;
 } halyard_control_session;
 
 /*
@@ -144,6 +222,15 @@ typedef struct {
  * `next_counter` is positioned after the five /sess/ctrl fields.
  */
 int halyard_control_session_open(const halyard_pairing_record *record, halyard_control_session *out);
+
+/*
+ * halyard_control_session_open over a chosen pipe and with the route's request differences - see
+ * halyard_control_open_options. NULL options is halyard_control_session_open exactly. The pipe must
+ * outlive the session.
+ */
+int halyard_control_session_open_with(const halyard_pairing_record *record,
+                                      const halyard_control_open_options *options,
+                                      halyard_control_session *out);
 
 /*
  * One non-blocking step. Answers HEARTBEAT_REQ automatically (the caller never has to remember to), and
@@ -188,6 +275,16 @@ int halyard_control_session_submit_login(halyard_control_session *session,
 /* Sends a binary control frame. Returns 1 on success, 0 on failure. */
 int halyard_control_session_send(halyard_control_session *session, unsigned type,
                                  const uint8_t *payload, size_t payload_length);
+
+/*
+ * Sends a frame whose payload is a control FIELD: `plaintext` encrypted at the session's next counter,
+ * which is taken and advanced here, as submit_login does and for the same reason - a counter reused is
+ * an IV reused. The rendezvous route's PROBE_REPORT is the caller (HalyardStreamingSession.
+ * SendProbeReportAsync: EncryptControlField(_clientFieldCounter++, ...)). At most
+ * HALYARD_CONTROL_PLAINTEXT_MAX bytes. Returns 1 if the frame was sent.
+ */
+int halyard_control_session_send_field(halyard_control_session *session, unsigned type,
+                                       const uint8_t *plaintext, size_t length);
 
 /* Closes the connection and wipes the key material. Safe on an already-closed session. */
 void halyard_control_session_close(halyard_control_session *session);

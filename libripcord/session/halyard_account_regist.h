@@ -106,13 +106,10 @@ size_t halyard_account_regist_build_request(halyard_account_regist_exchange *exc
                                             uint8_t *buf, size_t buf_size);
 
 /*
- * Whether `message` holds a complete HTTP message: the head is terminated, and at least Content-Length
- * bytes follow it (or there is no Content-Length). From HalyardDatagramControlChannel.
- * IsCompleteHttpMessage, because on 9303 a datagram boundary says nothing about a message boundary and
- * the reply arrives as a byte stream the transport accumulates. A Content-Length that is not a number is
- * treated as absent, as .NET's int.TryParse falling through does.
+ * "Is the reply complete?" is not asked here. It was, in a second copy of .NET's IsCompleteHttpMessage,
+ * until the 9303 transport arrived with its own; there is one now, halyard_dgram_http_complete
+ * (halyard_dgram.h), and the transport that accumulates the reply is the one that asks it.
  */
-int halyard_account_regist_response_complete(const uint8_t *message, size_t length);
 
 /*
  * Open the console's reply: split the HTTP, require 2xx, decrypt the body under the exchange's key and

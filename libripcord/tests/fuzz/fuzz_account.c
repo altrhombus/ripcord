@@ -6,7 +6,8 @@
  *   - customData1, the double-base64 seed ciphertext the console publishes over the cloud. The cloud
  *     tier hands it to the core as an opaque string, so its two decodes and the recovery are the core's
  *     to get right whatever arrives;
- *   - the /sess/rgst reply over 9303: the completeness check the transport runs on a partial stream,
+ *   - the /sess/rgst reply over 9303: the completeness check the transport runs on a partial stream
+ *     (halyard_dgram_http_complete, the one check there is),
  *     then the HTTP split, the decrypt and the pairing-record parse - which the PIN route shares, and
  *     which had no harness before this one.
  *
@@ -16,6 +17,7 @@
  */
 #include "../../halyard/halyard_account_seed.h"
 #include "../../session/halyard_account_regist.h"
+#include "../../session/halyard_dgram.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -58,7 +60,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
         }
     }
 
-    (void)halyard_account_regist_response_complete(data, size);
+    (void)halyard_dgram_http_complete(data, size);
     (void)halyard_account_regist_open_response(&ex, data, size, &http_status, reason, sizeof(reason), &record);
 
     /*

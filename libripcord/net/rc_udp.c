@@ -42,6 +42,46 @@ int rc_udp_open(const char *host, unsigned port, struct sockaddr_in *out_peer, i
     return sock;
 }
 
+int rc_udp_open_bound(const uint8_t bind_address[4], unsigned short port, int rcvbuf_bytes,
+                      unsigned short *out_port)
+{
+    struct sockaddr_in local;
+    socklen_t length = (socklen_t)sizeof(local);
+    int sock;
+
+    sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (sock < 0)
+        return -1;
+    if (!rc_socket_set_nonblocking(sock)) {
+        (void)close(sock);
+        return -1;
+    }
+    if (rcvbuf_bytes > 0)
+        (void)setsockopt(sock, SOL_SOCKET, SO_RCVBUF, &rcvbuf_bytes, (socklen_t)sizeof(rcvbuf_bytes));
+
+    memset(&local, 0, sizeof(local));
+    local.sin_family = AF_INET;
+    local.sin_port = htons(port);
+    if (bind_address != NULL)
+        memcpy(&local.sin_addr.s_addr, bind_address, 4);
+    else
+        local.sin_addr.s_addr = htonl(INADDR_ANY);
+    if (bind(sock, (const struct sockaddr *)&local, (socklen_t)sizeof(local)) != 0) {
+        (void)close(sock);
+        return -1;
+    }
+
+    /* What was bound is what an OFFER must advertise, so it is read back rather than assumed. */
+    memset(&local, 0, sizeof(local));
+    if (getsockname(sock, (struct sockaddr *)&local, &length) != 0) {
+        (void)close(sock);
+        return -1;
+    }
+    if (out_port != NULL)
+        *out_port = ntohs(local.sin_port);
+    return sock;
+}
+
 int rc_udp_rcvbuf_actual(int sock)
 {
     int value = 0;

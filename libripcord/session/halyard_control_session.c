@@ -21,12 +21,78 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <netinet/in.h>
+#include <stdio.h>
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
 
 #define SESS_RESPONSE_TIMEOUT_MS 5000u
+
+/*
+ * ---- The TCP pipe -------------------------------------------------------------------------------------
+ *
+ * The four call sites this file always had, moved behind halyard_control_pipe with nothing else changed:
+ * the connect and non-blocking switch run_sess_init/run_sess_ctrl made, the send halyard_control_session_send
+ * made, the recv and errno reading buffer_fill made, and the close. Same calls, same order, same results.
+ */
+static int tcp_open(void *ctx, const char *host, unsigned short port)
+{
+    int sock;
+
+    (void)ctx;
+    sock = rc_tcp_connect(host, port);
+    if (sock < 0)
+        return -1;
+    rc_socket_set_nonblocking(sock);
+    return sock;
+}
+
+static int tcp_send_all(void *ctx, int handle, const uint8_t *data, size_t length)
+{
+    (void)ctx;
+    return rc_tcp_send_all(handle, data, length);
+}
+
+/* >0 bytes read, 0 nothing available right now (not an error), -1 real error, -2 peer closed. */
+static long tcp_recv(void *ctx, int handle, uint8_t *buffer, size_t capacity)
+{
+    ssize_t n;
+
+    (void)ctx;
+    n = rc_tcp_recv(handle, buffer, capacity);
+    if (n < 0) {
+        if (errno == EAGAIN || errno == EWOULDBLOCK)
+            return 0;
+        return -1;
+    }
+    if (n == 0)
+        return -2;
+    return (long)n;
+}
+
+static void tcp_close(void *ctx, int handle, int polite)
+{
+    (void)ctx;
+    (void)polite;
+    close(handle);
+}
+
+const halyard_control_pipe halyard_control_pipe_tcp = {
+    "TCP", tcp_open, tcp_send_all, tcp_recv, tcp_close, NULL
+};
+
+static const halyard_control_pipe *pipe_of(const halyard_control_session *s)
+{
+    return s->pipe != NULL ? s->pipe : &halyard_control_pipe_tcp;
+}
+
+static void pipe_close(halyard_control_session *s, int polite)
+{
+    const halyard_control_pipe *p = pipe_of(s);
+
+    p->close(p->ctx, s->sock, polite);
+}
 
 static void buffer_consume(halyard_control_session *s, size_t n)
 {
@@ -37,24 +103,25 @@ static void buffer_consume(halyard_control_session *s, size_t n)
 /* >0 bytes read, 0 nothing available right now (not an error), -1 real error, -2 peer closed. */
 static int buffer_fill(halyard_control_session *s)
 {
-    ssize_t n;
+    long n;
 
     if (s->buffered >= sizeof(s->buffer))
         return -1; /* no legitimate response or frame is this large - treat it as a protocol error */
 
     s->recv_calls++;
-    n = rc_tcp_recv(s->sock, s->buffer + s->buffered, sizeof(s->buffer) - s->buffered);
-    if (n < 0) {
-        if (errno == EAGAIN || errno == EWOULDBLOCK) {
-            s->recv_would_block++;
-            return 0;
-        }
-        return -1;
+    {
+        const halyard_control_pipe *p = pipe_of(s);
+
+        n = p->recv(p->ctx, s->sock, s->buffer + s->buffered, sizeof(s->buffer) - s->buffered);
     }
-    if (n == 0)
-        return -2;
+    if (n == 0) {
+        s->recv_would_block++;
+        return 0;
+    }
+    if (n < 0)
+        return n == -2 ? -2 : -1;
     s->buffered += (size_t)n;
-    s->recv_bytes += (long)n;
+    s->recv_bytes += n;
     return (int)n;
 }
 
@@ -104,7 +171,7 @@ static void arm_control_listener(const char *host, int is_ps5)
 
 /* /sess/init: presents RP-Registkey in plaintext, returns the console's RP-Nonce. 1 on success. */
 static int run_sess_init(halyard_control_session *s, const halyard_pairing_record *rec,
-                         uint8_t out_nonce[HALYARD_KEY_LENGTH])
+                         const halyard_control_open_options *o, uint8_t out_nonce[HALYARD_KEY_LENGTH])
 {
     halyard_sess_request req;
     halyard_sess_response resp;
@@ -114,24 +181,23 @@ static int run_sess_init(halyard_control_session *s, const halyard_pairing_recor
     size_t n;
     int ok = 0;
 
-    s->sock = rc_tcp_connect(rec->host, HALYARD_CONTROL_ARM_PORT);
+    s->sock = pipe_of(s)->open(pipe_of(s)->ctx, rec->host, o->port);
     if (s->sock < 0) {
-        rc_log("\x1b[31mFAIL\x1b[0m TCP connect for /sess/init failed: %d\n", errno);
+        rc_log("\x1b[31mFAIL\x1b[0m %s connect for /sess/init failed: %d\n", pipe_of(s)->name, errno);
         s->sock = -1;
         return 0;
     }
-    rc_socket_set_nonblocking(s->sock);
 
     rc_hex_encode(rec->registkey, rec->registkey_length, regist_hex);
     halyard_sess_request_init(&req, "GET", halyard_sess_path(rec->is_ps5, "init"));
-    halyard_sess_request_add_header(&req, "Host", rec->host);
+    halyard_sess_request_add_header(&req, "Host", o->host_header);
     halyard_sess_request_add_header(&req, "User-Agent", "remoteplay Windows");
     halyard_sess_request_add_header(&req, "Connection", "close");
     halyard_sess_request_add_header(&req, "RP-Registkey", regist_hex);
-    halyard_sess_request_add_header(&req, "RP-Version", halyard_sess_version(rec->is_ps5));
+    halyard_sess_request_add_header(&req, o->init_version_header, halyard_sess_version(rec->is_ps5));
 
     n = halyard_sess_request_serialize(&req, buf, sizeof(buf));
-    if (n == 0 || rc_tcp_send_all(s->sock, buf, n) != 0) {
+    if (n == 0 || pipe_of(s)->send_all(pipe_of(s)->ctx, s->sock, (const uint8_t *)buf, n) != 0) {
         rc_log("\x1b[31mFAIL\x1b[0m could not send /sess/init\n");
         goto done;
     }
@@ -159,37 +225,40 @@ static int run_sess_init(halyard_control_session *s, const halyard_pairing_recor
     ok = 1;
 
 done:
-    /* /sess/init is served Connection: close - the console has already closed its end either way. */
-    close(s->sock);
+    /* /sess/init is served Connection: close - the console has already closed its end either way, which is
+     * also why this close is not the polite kind on a datagram pipe: .NET sends no Close for it. */
+    pipe_close(s, 0);
     s->sock = -1;
     s->buffered = 0;
     return ok;
 }
 
 /* /sess/ctrl on a FRESH connection, carrying the five encrypted fields. Leaves the socket open. */
-static int run_sess_ctrl(halyard_control_session *s, const halyard_pairing_record *rec)
+static int run_sess_ctrl(halyard_control_session *s, const halyard_pairing_record *rec,
+                         const halyard_control_open_options *o)
 {
     halyard_sess_request req;
     halyard_sess_response resp;
     char buf[1024];
+    char conpath[12];
     size_t n;
 
-    s->sock = rc_tcp_connect(rec->host, HALYARD_CONTROL_ARM_PORT);
+    s->sock = pipe_of(s)->open(pipe_of(s)->ctx, rec->host, o->port);
     if (s->sock < 0) {
-        rc_log("\x1b[31mFAIL\x1b[0m TCP connect for /sess/ctrl failed: %d\n", errno);
+        rc_log("\x1b[31mFAIL\x1b[0m %s connect for /sess/ctrl failed: %d\n", pipe_of(s)->name, errno);
         s->sock = -1;
         return 0;
     }
-    rc_socket_set_nonblocking(s->sock);
 
+    snprintf(conpath, sizeof(conpath), "%d", o->connection_path);
     halyard_sess_request_init(&req, "GET", halyard_sess_path(rec->is_ps5, "ctrl"));
-    halyard_sess_request_add_header(&req, "Host", rec->host);
+    halyard_sess_request_add_header(&req, "Host", o->host_header);
     halyard_sess_request_add_header(&req, "User-Agent", "remoteplay Windows");
     halyard_sess_request_add_header(&req, "Connection", "keep-alive");
     halyard_sess_request_add_header(&req, "RP-Version", halyard_sess_version(rec->is_ps5));
     halyard_sess_request_add_header(&req, "RP-ControllerType", "0");
     halyard_sess_request_add_header(&req, "RP-ClientType", "11");
-    halyard_sess_request_add_header(&req, "RP-ConPath", "1");
+    halyard_sess_request_add_header(&req, "RP-ConPath", conpath);
     halyard_sess_request_add_header(&req, "RP-PadProcNo", "2");
     halyard_sess_request_add_header(&req, "RP-SupportCmd", "060000");
 
@@ -249,9 +318,9 @@ static int run_sess_ctrl(halyard_control_session *s, const halyard_pairing_recor
         n = halyard_sess_request_serialize(&req, buf, sizeof(buf));
     }
 
-    if (n == 0 || rc_tcp_send_all(s->sock, buf, n) != 0) {
+    if (n == 0 || pipe_of(s)->send_all(pipe_of(s)->ctx, s->sock, (const uint8_t *)buf, n) != 0) {
         rc_log("\x1b[31mFAIL\x1b[0m could not send /sess/ctrl\n");
-        close(s->sock);
+        pipe_close(s, 1);
         s->sock = -1;
         return 0;
     }
@@ -260,13 +329,13 @@ static int run_sess_ctrl(halyard_control_session *s, const halyard_pairing_recor
     n = wait_for_response(s, &resp);
     if (n == 0) {
         rc_log("\x1b[31mFAIL\x1b[0m /sess/ctrl: no response\n");
-        close(s->sock);
+        pipe_close(s, 1);
         s->sock = -1;
         return 0;
     }
     rc_log("/sess/ctrl -> %d\n", resp.status_code);
     if (resp.status_code < 200 || resp.status_code >= 300) {
-        close(s->sock);
+        pipe_close(s, 1);
         s->sock = -1;
         return 0;
     }
@@ -278,18 +347,43 @@ static int run_sess_ctrl(halyard_control_session *s, const halyard_pairing_recor
 
 int halyard_control_session_open(const halyard_pairing_record *record, halyard_control_session *out)
 {
+    return halyard_control_session_open_with(record, NULL, out);
+}
+
+int halyard_control_session_open_with(const halyard_pairing_record *record,
+                                      const halyard_control_open_options *options,
+                                      halyard_control_session *out)
+{
     uint8_t nonce[HALYARD_KEY_LENGTH];
     int version_selector;
+    halyard_control_open_options o;
 
     if (record == NULL || out == NULL)
         return 0;
 
+    /* Every zero is today's LAN behaviour - see halyard_control_open_options. */
+    memset(&o, 0, sizeof(o));
+    if (options != NULL)
+        o = *options;
+    if (o.pipe == NULL)
+        o.pipe = &halyard_control_pipe_tcp;
+    if (o.port == 0)
+        o.port = HALYARD_CONTROL_ARM_PORT;
+    if (o.connection_path == 0)
+        o.connection_path = 1;
+    if (o.host_header == NULL)
+        o.host_header = record->host;
+    if (o.init_version_header == NULL)
+        o.init_version_header = "RP-Version";
+
     memset(out, 0, sizeof(*out));
     out->sock = -1;
+    out->pipe = o.pipe;
 
-    arm_control_listener(record->host, record->is_ps5);
+    if (!o.skip_arm_probe)
+        arm_control_listener(record->host, record->is_ps5);
 
-    if (!run_sess_init(out, record, nonce))
+    if (!run_sess_init(out, record, &o, nonce))
         return 0;
 
     version_selector = record->is_ps5 ? HALYARD_VERSION_SELECTOR_PS5 : HALYARD_VERSION_SELECTOR_PS4;
@@ -303,7 +397,7 @@ int halyard_control_session_open(const halyard_pairing_record *record, halyard_c
     }
     memset(nonce, 0, sizeof(nonce));
 
-    if (!run_sess_ctrl(out, record)) {
+    if (!run_sess_ctrl(out, record, &o)) {
         memset(&out->ctrl, 0, sizeof(out->ctrl));
         return 0;
     }
@@ -333,7 +427,25 @@ int halyard_control_session_send(halyard_control_session *session, unsigned type
     frame_len = halyard_ctrl_message_build(type, payload, payload_length, frame, sizeof(frame));
     if (frame_len == 0)
         return 0;
-    return rc_tcp_send_all(session->sock, frame, frame_len) == 0;
+    return pipe_of(session)->send_all(pipe_of(session)->ctx, session->sock, frame, frame_len) == 0;
+}
+
+int halyard_control_session_send_field(halyard_control_session *session, unsigned type,
+                                       const uint8_t *plaintext, size_t length)
+{
+    uint8_t cipher[HALYARD_CONTROL_PLAINTEXT_MAX];
+    uint64_t counter;
+    int sent;
+
+    if (session == NULL || session->sock < 0 || (plaintext == NULL && length > 0u) || length > sizeof(cipher))
+        return 0;
+
+    /* Taken and advanced together, as submit_login does: see the header on reusing a counter. */
+    counter = session->next_counter++;
+    halyard_control_field_encrypt(&session->ctrl, counter, plaintext, cipher, length);
+    sent = halyard_control_session_send(session, type, cipher, length);
+    memset(cipher, 0, sizeof(cipher));
+    return sent;
 }
 
 /* Newest at index 0, oldest pushed off the end. See `recent` in the header for why this is kept. */
@@ -557,7 +669,7 @@ void halyard_control_session_close(halyard_control_session *session)
     if (session == NULL)
         return;
     if (session->sock >= 0) {
-        close(session->sock);
+        pipe_close(session, 1);
         session->sock = -1;
     }
     memset(&session->ctrl, 0, sizeof(session->ctrl));
