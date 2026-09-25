@@ -170,6 +170,14 @@ internal static class LabVectors
         Console.WriteLine($"wrote {dgramOutPath}");
         Console.WriteLine($"  steps={dgramSteps}");
 
+        // The rendezvous route's /sess requests, from the session itself: see LabRendezvousVectors.
+        string rendezvousOutPath = string.IsNullOrEmpty(dir)
+            ? "rendezvous-control.kat"
+            : Path.Combine(dir, "rendezvous-control.kat");
+        int rendezvousCases = LabRendezvousVectors.EmitFile(rendezvousOutPath);
+        Console.WriteLine($"wrote {rendezvousOutPath}");
+        Console.WriteLine($"  cases={rendezvousCases}");
+
         return 0;
     }
 

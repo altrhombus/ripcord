@@ -92,6 +92,9 @@ DGRAM_TARGET := $(BUILD)/dgram_test
 WAN_TARGET := $(BUILD)/wan_test
 DGRAM_VECTORS := vectors/dgram-transport.kat
 CLIENT_TARGET := $(BUILD)/client_test
+CONTROL_PIPE_TARGET := $(BUILD)/control_pipe_test
+RENDEZVOUS_VECTORS := vectors/rendezvous-control.kat
+RENDEZVOUS_TARGET := $(BUILD)/rendezvous_test
 REGISTRATION_VECTORS := vectors/registration-crypto.kat
 ACCOUNT_PAIRING_TARGET := $(BUILD)/account_pairing_test
 ACCOUNT_PAIRING_VECTORS := vectors/account-pairing.kat
@@ -237,7 +240,8 @@ all: check
 check: $(TARGET) $(VECTORS) $(DISCOVERY_TARGET) $(SESSION_TARGET) $(TAKION_TARGET) $(STREAM_CRYPTO_TARGET) $(STREAM_VECTORS) $(FEC_TARGET) $(STREAM_HEADER_TARGET) $(STREAM_DEMUX_TARGET) $(ECDH_TARGET) $(SESSION_VECTORS) $(CONTROL_PROTO_TARGET) $(PROTO_VECTORS) $(INPUT_TARGET) \
          $(REGISTRATION_TARGET) $(REGISTRATION_VECTORS) $(REGIST_FLOW_TARGET) $(MENU_TARGET) $(ACCOUNT_ID_TARGET) $(PAIRING_SET_TARGET) $(STUN_TARGET) \
          $(ACCOUNT_PAIRING_TARGET) $(ACCOUNT_PAIRING_VECTORS) \
-         $(DGRAM_TARGET) $(DGRAM_VECTORS) $(WAN_TARGET) $(CLIENT_TARGET)
+         $(DGRAM_TARGET) $(DGRAM_VECTORS) $(WAN_TARGET) $(CLIENT_TARGET) $(CONTROL_PIPE_TARGET) $(RENDEZVOUS_VECTORS) \
+         $(RENDEZVOUS_TARGET)
 	./$(TARGET) $(VECTORS)
 	./$(DISCOVERY_TARGET)
 	./$(SESSION_TARGET)
@@ -259,6 +263,8 @@ check: $(TARGET) $(VECTORS) $(DISCOVERY_TARGET) $(SESSION_TARGET) $(TAKION_TARGE
 	./$(DGRAM_TARGET) $(DGRAM_VECTORS)
 	./$(WAN_TARGET)
 	./$(CLIENT_TARGET)
+	./$(CONTROL_PIPE_TARGET) $(RENDEZVOUS_VECTORS)
+	./$(RENDEZVOUS_TARGET)
 
 build: $(TARGET) $(DISCOVERY_TARGET) $(SESSION_TARGET) $(TAKION_TARGET) $(STREAM_CRYPTO_TARGET) $(FEC_TARGET) $(STREAM_HEADER_TARGET) $(STREAM_DEMUX_TARGET) $(ECDH_TARGET) $(CONTROL_PROTO_TARGET)
 
@@ -341,7 +347,6 @@ REGIST_FLOW_SOURCES := \
 	$(CORE)/session/halyard_regist_message.c \
 	$(CORE)/session/halyard_regist_flow.c \
 	$(CORE)/session/halyard_control_arm.c \
-	$(CORE)/session/halyard_control_probe.c \
 	$(CORE)/net/rc_tcp.c \
 	$(CORE)/util/rc_base64.c \
 	$(CORE)/util/rc_hex.c \
@@ -454,9 +459,17 @@ CLIENT_SOURCES := \
 	$(CORE)/session/halyard_control_probe.c \
 	$(CORE)/session/halyard_control_session.c \
 	$(CORE)/session/halyard_ctrl_message.c \
+	$(CORE)/session/halyard_dgram_wire.c \
+	$(CORE)/session/halyard_dgram_assoc.c \
+	$(CORE)/session/halyard_dgram_channel.c \
+	$(CORE)/session/halyard_dgram_session.c \
+	$(CORE)/session/halyard_wan_candidates.c \
 	$(CORE)/session/halyard_launch_spec.c \
 	$(CORE)/session/halyard_sess_fields.c \
 	$(CORE)/session/halyard_sess_request.c \
+	$(CORE)/net/rc_stun.c \
+	$(CORE)/net/rc_stun_client.c \
+	$(CORE)/net/rc_stun_mapping.c \
 	$(CORE)/takion/takion_message.c \
 	$(CORE)/takion/takion_handshake.c \
 	$(CORE)/takion/takion_data_chunk.c \
@@ -488,6 +501,58 @@ $(CLIENT_TARGET): $(CLIENT_SOURCES) $(GENERATED) $(wildcard $(CORE)/client/*.h)
 	$(CC) $(CFLAGS) -D_DEFAULT_SOURCE $(INCLUDES) -I$(CORE)/session -I$(CORE)/util -I$(CORE)/net \
 	    -o $@ $(CLIENT_SOURCES) $(GENERATED)
 
+# The control session's byte-pipe seam, on both pipes: TCP against a loopback console in a thread (the
+# ARM probe is stubbed at link time - halyard_control_probe.c is deliberately not linked - so nothing
+# leaves loopback), and the datagram pipe and the registration adapter against a scripted console
+# in-process. The registration build of the constants, because the adapter test runs the whole rgst flow.
+CONTROL_PIPE_SOURCES := \
+	$(CORE)/crypto/rc_aes.c \
+	$(CORE)/crypto/rc_sha256.c \
+	$(CORE)/crypto/rc_modes.c \
+	$(CORE)/halyard/halyard_control_crypto.c \
+	$(CORE)/halyard/halyard_registration.c \
+	$(CORE)/session/halyard_account_regist.c \
+	$(CORE)/session/halyard_account_regist_flow.c \
+	$(CORE)/session/halyard_regist_message.c \
+	$(CORE)/session/halyard_control_arm.c \
+	$(CORE)/session/halyard_control_session.c \
+	$(CORE)/session/halyard_ctrl_message.c \
+	$(CORE)/session/halyard_dgram_wire.c \
+	$(CORE)/session/halyard_dgram_assoc.c \
+	$(CORE)/session/halyard_dgram_channel.c \
+	$(CORE)/session/halyard_dgram_session.c \
+	$(CORE)/session/halyard_wan_candidates.c \
+	$(CORE)/session/halyard_sess_fields.c \
+	$(CORE)/session/halyard_sess_request.c \
+	$(CORE)/net/rc_stun.c \
+	$(CORE)/net/rc_stun_client.c \
+	$(CORE)/net/rc_stun_mapping.c \
+	$(CORE)/net/rc_tcp.c \
+	$(CORE)/net/rc_udp.c \
+	$(CORE)/util/rc_base64.c \
+	$(CORE)/util/rc_hex.c \
+	$(CORE)/util/rc_text.c \
+	$(CORE)/util/rc_log.c \
+	$(CORE)/util/rc_program_dir.c \
+	rc_platform_host.c \
+	control_pipe_test.c
+
+$(CONTROL_PIPE_TARGET): $(CONTROL_PIPE_SOURCES) $(REGISTRATION_GENERATED) fake_dgram_console.h
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) -D_DEFAULT_SOURCE $(INCLUDES) -o $@ $(CONTROL_PIPE_SOURCES) $(REGISTRATION_GENERATED) -lpthread
+
+# The rendezvous route through halyard_client, as far as it runs without a console: a fake console in a
+# thread on 127.0.0.1 answers both legs, so the stage order, the media callback, the prelude, the probe
+# report and the peer filter can be watched. Every socket is bound to loopback and every datagram goes
+# to loopback.
+RENDEZVOUS_SOURCES := $(filter-out client_test.c $(CORE)/session/halyard_control_probe.c,$(CLIENT_SOURCES)) \
+	rendezvous_test.c
+
+$(RENDEZVOUS_TARGET): $(RENDEZVOUS_SOURCES) $(GENERATED) $(wildcard $(CORE)/client/*.h) fake_dgram_console.h
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) -D_DEFAULT_SOURCE $(INCLUDES) -I$(CORE)/session -I$(CORE)/util -I$(CORE)/net \
+	    -o $@ $(RENDEZVOUS_SOURCES) $(GENERATED) -lpthread
+
 $(REGISTRATION_TARGET): $(REGISTRATION_SOURCES) $(REGISTRATION_GENERATED)
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) $(INCLUDES) -I$(CORE)/session -I$(CORE)/util -o $@ $(REGISTRATION_SOURCES) \
@@ -506,6 +571,7 @@ ACCOUNT_PAIRING_SOURCES := \
 	$(CORE)/session/halyard_regist_message.c \
 	$(CORE)/session/halyard_account_regist.c \
 	$(CORE)/session/halyard_account_regist_flow.c \
+	$(CORE)/session/halyard_dgram_wire.c \
 	$(CORE)/util/rc_base64.c \
 	$(CORE)/util/rc_hex.c \
 	account_pairing_test.c
@@ -513,6 +579,12 @@ ACCOUNT_PAIRING_SOURCES := \
 $(ACCOUNT_PAIRING_TARGET): $(ACCOUNT_PAIRING_SOURCES) $(REGISTRATION_GENERATED)
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) $(INCLUDES) -o $@ $(ACCOUNT_PAIRING_SOURCES) $(REGISTRATION_GENERATED)
+
+$(RENDEZVOUS_VECTORS):
+	@echo "missing $(RENDEZVOUS_VECTORS)"
+	@echo "generate it from the repository root with:"
+	@echo "    dotnet run --project tools/Ripcord.ProtocolLab -- vectors"
+	@false
 
 $(ACCOUNT_PAIRING_VECTORS):
 	@echo "missing $(ACCOUNT_PAIRING_VECTORS)"
@@ -590,7 +662,7 @@ compile:
 #
 # The whole core is archived and each harness links against the archive, so a harness pulls in only
 # the objects it references, exactly as a port does.
-FUZZ_HARNESSES := discovery takion control stream stun account dgram wan
+FUZZ_HARNESSES := discovery takion control stream stun account dgram wan rendezvous
 FUZZ_CC        ?= clang
 FUZZ_SECONDS   ?= 60
 FUZZ_RANDOM    ?= 20000

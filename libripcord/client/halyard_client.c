@@ -23,6 +23,16 @@
  * session is recorded with end_request() and every loop checks it, so a cancel, a console that closes
  * the control session, and a console that says DISCONNECT all leave by the same road.
  *
+ * THE RENDEZVOUS ROUTE (halyard_client.h, "THE RENDEZVOUS ROUTE") reuses every stage above and changes
+ * three things, each ported from HalyardStreamingSession and HalyardAccountConsoleSession:
+ *
+ *   connect_control      over the control leg's 9303 association (halyard_dgram_session.h), no ARM probe
+ *   connect_media        new: the A/V leg - its socket, STUN, the host's media negotiation (poll_media),
+ *                        the prelude, and up to 8 s for SESSION_ID (StartStreamingAsync)
+ *   connect_senkusha     on the A/V leg's socket rather than a socket of its own (RunSenkushaAsync)
+ *   connect_stream_ready new: PROBE_REPORT, then up to 10 s for STREAM_READY (SendProbeReportAsync)
+ *   connect_takion       on the A/V leg's socket, reading only the console's endpoint
+ *
  * WHAT IS NOT HERE, deliberately (the PS3's own concerns, or later slices):
  *   - discovery, wake and re-addressing: the host supplies an address for an awake console
  *   - senkusha's echo and MTU probes: the declared rtt falls back to the PROTOCOL_VERSION round trip,
@@ -41,7 +51,9 @@
 #include "../platform/rc_platform.h"
 #include "../session/halyard_control_session.h"
 #include "../session/halyard_ctrl_message.h"
+#include "../session/halyard_dgram_session.h"
 #include "../session/halyard_launch_spec.h"
+#include "../session/halyard_wan_candidates.h"
 #include "../stream/stream_demux.h"
 #include "../stream/stream_header.h"
 #include "../takion/takion_control_proto.h"
@@ -110,6 +122,16 @@
 /* The PS3's pre-flight bound for the control port, now inside rc_tcp_connect (slice 0). Stated for the
  * log line only. */
 
+/*
+ * The rendezvous route's two waits on the console, both non-fatal, as HalyardStreamingSession has them:
+ * SESSION_ID after the A/V prelude (measured 2.3-2.9 s across three captured sessions, so about triple
+ * the longest: SessionReadyWindow), and STREAM_READY after PROBE_REPORT (0.5-1.5 s: StreamReadyWindow).
+ * Neither ends the session on expiry, because a console that never sends one is better diagnosed by what
+ * SESSION_REPLY then says than by a timeout that hides it.
+ */
+#define CLIENT_SESSION_READY_WINDOW_MS  8000u
+#define CLIENT_STREAM_READY_WINDOW_MS  10000u
+
 struct halyard_client {
     halyard_client_config config;          /* resolved; config.record points at `record` */
     halyard_client_callbacks cb;
@@ -130,6 +152,7 @@ struct halyard_client {
     int session_ready;
     int login_prompt;
     int verdict_new;                       /* a verdict arrived and is unread - see connect_signin */
+    int stream_ready;                      /* STREAM_READY seen (the rendezvous route waits for it) */
 
     /* Takion. */
     int senkusha_sock;
@@ -141,6 +164,21 @@ struct halyard_client {
     takion_control_sealer sealer;
     takion_control_verifier verifier;
     uint8_t handshake_key[16];
+
+    /* The rendezvous route. The legs themselves are at the end, with the other large members. */
+    int is_rendezvous;
+    int rv_prepared;                       /* the control leg is bound */
+    int rv_begun;                          /* and aimed at the console, our Init sent */
+    int filter_peer;                       /* the A/V socket reads only `media_peer` */
+    struct sockaddr_in media_peer;
+    uint64_t stray_dropped;                /* drain_av's share; Takion counts its own */
+    struct sockaddr_in stun[HALYARD_CLIENT_STUN_MAX];
+    size_t stun_count;
+    uint8_t bind_address[4];
+    int have_bind_address;
+    uint8_t local_hashed_id[HALYARD_CLIENT_HASHED_ID_LENGTH];
+    char host_header[48];
+    halyard_dgram_control_pipe control_pipe;
 
     /* Streaming. */
     int streaming;                         /* STREAM_READY reached; pump() does work */
@@ -164,6 +202,8 @@ struct halyard_client {
     /* The two associations (~50 KB each) and the demuxer (megabytes: its frame slots), last. */
     takion_reliable_channel senkusha;
     takion_reliable_channel stream;
+    halyard_rendezvous_leg control_leg;    /* ~23 KB each: a 9303 association and its buffers */
+    halyard_rendezvous_leg media_leg;
     stream_demux demux;
 };
 
@@ -259,6 +299,12 @@ static void absorb(halyard_client *c, const halyard_control_event *ev)
     }
     if (ev->kind != HALYARD_CONTROL_EVENT_MESSAGE)
         return;
+
+    /* RunCtrlKeepAliveAsync's TypeStreamReady case: the rendezvous route's A/V leg waits on this. */
+    if (ev->type == HALYARD_CTRL_TYPE_STREAM_READY) {
+        c->stream_ready = 1;
+        return;
+    }
 
     /* b39 confirmed the gate on hardware: one frame of type 0x0004, no heartbeats, no SESSION_ID. */
     if (ev->type == HALYARD_CTRL_TYPE_LOGIN_PROMPT) {
@@ -430,9 +476,13 @@ static int await_control(halyard_client *c, takion_reliable_channel *ch, int is_
  * [X] halyard_control_session_open returns only a bool, so a console refusing /sess and a socket that
  * failed are the same ending here - CHANNEL_ERROR - and its log lines are what tell them apart.
  */
+static int connect_control_rendezvous(halyard_client *c);
+
 static int connect_control(halyard_client *c)
 {
     announce(c, HALYARD_CLIENT_STAGE_CONTROL_OPEN);
+    if (c->is_rendezvous)
+        return connect_control_rendezvous(c);
     client_log(c, HALYARD_CLIENT_LOG_INFO, "client: opening the control session (ARM, /sess/init, /sess/ctrl)");
 
     if (!halyard_control_session_open(&c->record, &c->control)) {
@@ -604,6 +654,23 @@ static int connect_signin(halyard_client *c)
     }
     reach(c, HALYARD_CLIENT_STAGE_SIGNED_IN);
 
+    /*
+     * THE RENDEZVOUS ROUTE DOES NOT WAIT HERE for SESSION_ID: the console sends it only after the A/V leg's
+     * prelude, which connect_media runs. The exception is a passcode, after which it does come here - about
+     * five seconds later, while the console renegotiates the connection - and .NET's EnsureSignedInAsync
+     * fails the session when it does not ("accepted the passcode but didn't start a session").
+     */
+    if (c->is_rendezvous) {
+        if (c->session_ready)
+            reach(c, HALYARD_CLIENT_STAGE_SESSION_READY);
+        if (c->login_prompt && !c->session_ready) {
+            client_log(c, HALYARD_CLIENT_LOG_WARN, "client: passcode accepted but no SESSION_ID followed");
+            end_request(c, HALYARD_CLIENT_END_SIGNIN_NO_SESSION);
+            return 0;
+        }
+        return 1;
+    }
+
     if (c->session_ready) {
         reach(c, HALYARD_CLIENT_STAGE_SESSION_READY);
         return 1;
@@ -685,18 +752,34 @@ static int connect_senkusha(halyard_client *c)
     int ok;
 
     announce(c, HALYARD_CLIENT_STAGE_SENKUSHA_UP);
-    client_log(c, HALYARD_CLIENT_LOG_INFO, "client: senkusha bring-up on %u", CLIENT_SENKUSHA_PORT);
 
-    /* No receive cushion asked for: the handshake and both legs are a handful of small datagrams. */
-    c->senkusha_sock = rc_udp_open(c->record.host, CLIENT_SENKUSHA_PORT, &peer, 0);
-    if (c->senkusha_sock < 0) {
-        client_log(c, HALYARD_CLIENT_LOG_WARN, "client: no senkusha socket - continuing without it");
-        return 1;
+    if (c->is_rendezvous) {
+        /*
+         * On the A/V leg's own socket, as the captured client does: a first Takion association there, torn
+         * down, then a second for the stream. On this route :9297 answers nobody who has not completed a
+         * prelude on it, so the LAN's fresh socket would only ever time out - and skipping senkusha got a
+         * SESSION_REPLY with no key at all (StartStreamingAsync). Nothing is sent to tear it down, as
+         * HalyardSenkusha.DisposeAsync sends nothing; its stale datagrams fail the stream's tag check.
+         */
+        client_log(c, HALYARD_CLIENT_LOG_INFO, "client: senkusha bring-up on the A/V leg");
+        c->phase_deadline_ms = box;
+        ok = takion_channel_connect_filtered(&c->senkusha, c->stream_sock, c->media_peer,
+                                             c->config.senkusha_attempts, c->config.attempt_interval_ms,
+                                             client_tick, c, client_abort, c);
+    } else {
+        client_log(c, HALYARD_CLIENT_LOG_INFO, "client: senkusha bring-up on %u", CLIENT_SENKUSHA_PORT);
+
+        /* No receive cushion asked for: the handshake and both legs are a handful of small datagrams. */
+        c->senkusha_sock = rc_udp_open(c->record.host, CLIENT_SENKUSHA_PORT, &peer, 0);
+        if (c->senkusha_sock < 0) {
+            client_log(c, HALYARD_CLIENT_LOG_WARN, "client: no senkusha socket - continuing without it");
+            return 1;
+        }
+
+        c->phase_deadline_ms = box;
+        ok = takion_channel_connect_abortable(&c->senkusha, c->senkusha_sock, peer, c->config.senkusha_attempts,
+                                              c->config.attempt_interval_ms, client_tick, c, client_abort, c);
     }
-
-    c->phase_deadline_ms = box;
-    ok = takion_channel_connect_abortable(&c->senkusha, c->senkusha_sock, peer, c->config.senkusha_attempts,
-                                          c->config.attempt_interval_ms, client_tick, c, client_abort, c);
     if (ok) {
         c->senkusha_up = 1;
         reach(c, HALYARD_CLIENT_STAGE_SENKUSHA_UP);
@@ -718,20 +801,31 @@ static int connect_takion(halyard_client *c)
 {
     struct sockaddr_in peer;
 
+    int ok;
+
     announce(c, HALYARD_CLIENT_STAGE_TAKION_UP);
-    client_log(c, HALYARD_CLIENT_LOG_INFO, "client: Takion handshake for the stream on %u", CLIENT_STREAM_PORT);
 
-    c->stream_sock = rc_udp_open(c->record.host, CLIENT_STREAM_PORT, &peer, c->config.rcvbuf_bytes);
-    if (c->stream_sock < 0) {
-        end_request(c, HALYARD_CLIENT_END_CHANNEL_ERROR);
-        return 0;
+    if (c->is_rendezvous) {
+        /* The A/V leg's socket, already bound with the receive cushion and preluded (connect_media). */
+        client_log(c, HALYARD_CLIENT_LOG_INFO, "client: Takion handshake for the stream on the A/V leg");
+        ok = takion_channel_connect_filtered(&c->stream, c->stream_sock, c->media_peer, c->config.stream_attempts,
+                                             c->config.attempt_interval_ms, client_tick, c, client_abort, c);
+    } else {
+        client_log(c, HALYARD_CLIENT_LOG_INFO, "client: Takion handshake for the stream on %u", CLIENT_STREAM_PORT);
+
+        c->stream_sock = rc_udp_open(c->record.host, CLIENT_STREAM_PORT, &peer, c->config.rcvbuf_bytes);
+        if (c->stream_sock < 0) {
+            end_request(c, HALYARD_CLIENT_END_CHANNEL_ERROR);
+            return 0;
+        }
+        /* Reported, not assumed: SO_RCVBUF is a hint (rc_udp.h), and b128 found lv2 granting 124,800 of 1 MB. */
+        c->result.rcvbuf_asked = c->config.rcvbuf_bytes;
+        c->result.rcvbuf_granted = rc_udp_rcvbuf_actual(c->stream_sock);
+
+        ok = takion_channel_connect_abortable(&c->stream, c->stream_sock, peer, c->config.stream_attempts,
+                                              c->config.attempt_interval_ms, client_tick, c, client_abort, c);
     }
-    /* Reported, not assumed: SO_RCVBUF is a hint (rc_udp.h), and b128 found lv2 granting 124,800 of 1 MB. */
-    c->result.rcvbuf_asked = c->config.rcvbuf_bytes;
-    c->result.rcvbuf_granted = rc_udp_rcvbuf_actual(c->stream_sock);
-
-    if (!takion_channel_connect_abortable(&c->stream, c->stream_sock, peer, c->config.stream_attempts,
-                                          c->config.attempt_interval_ms, client_tick, c, client_abort, c)) {
+    if (!ok) {
         if (c->end_pending == HALYARD_CLIENT_END_NONE) {
             client_log(c, HALYARD_CLIENT_LOG_WARN, "client: the stream's Takion handshake was not answered");
             end_request(c, HALYARD_CLIENT_END_TIMEOUT);
@@ -1145,9 +1239,29 @@ static int drain_av(halyard_client *c)
 
         send_periodic(c);
 
-        peeked = recvfrom(c->stream_sock, peek, sizeof(peek), MSG_PEEK, NULL, NULL);
-        if (peeked <= 0)
-            break;
+        if (c->filter_peer) {
+            /* The rendezvous A/V socket: only the console's endpoint is the console (HalyardTakionStream.
+             * ReceiveLoopAsync's RemoteEndPoint check). Anything else is taken and dropped, and is not
+             * activity. Counted against the burst, so a flood cannot hold the pump here. */
+            struct sockaddr_in from;
+            socklen_t from_length = (socklen_t)sizeof(from);
+
+            memset(&from, 0, sizeof(from));
+            peeked = recvfrom(c->stream_sock, peek, sizeof(peek), MSG_PEEK, (struct sockaddr *)&from, &from_length);
+            if (peeked <= 0)
+                break;
+            if (from.sin_family != AF_INET || from.sin_addr.s_addr != c->media_peer.sin_addr.s_addr
+                || from.sin_port != c->media_peer.sin_port) {
+                (void)recvfrom(c->stream_sock, c->rx, sizeof(c->rx), 0, NULL, NULL);
+                c->stray_dropped++;
+                drained++;
+                continue;
+            }
+        } else {
+            peeked = recvfrom(c->stream_sock, peek, sizeof(peek), MSG_PEEK, NULL, NULL);
+            if (peeked <= 0)
+                break;
+        }
         c->last_activity_ms = rc_time_ms();
         if ((unsigned)(peek[0] & 0x0fu) == 0u)
             break;
@@ -1255,6 +1369,20 @@ static void client_end(halyard_client *c)
     takion_control_verifier_reset(&c->verifier);
     memset(c->handshake_key, 0, sizeof(c->handshake_key));
 
+    if (c->is_rendezvous) {
+        /*
+         * The control connection first, while its socket is open: on datagrams its polite close is a
+         * Close chunk, and a console never sent one keeps the session live and refuses further cloud
+         * sessions until rebooted. The A/V socket is the media leg's, and closes with it.
+         */
+        if (c->control_open)
+            halyard_control_session_close(&c->control);
+        c->result.stray_dropped = c->stray_dropped + (uint64_t)c->stream.stray_dropped
+                                  + (uint64_t)c->senkusha.stray_dropped;
+        halyard_rendezvous_leg_close(&c->media_leg);
+        halyard_rendezvous_leg_close(&c->control_leg);
+        c->stream_sock = -1;
+    }
     if (c->stream_sock >= 0)
         (void)close(c->stream_sock);
     if (c->senkusha_sock >= 0)
@@ -1279,6 +1407,322 @@ static void client_end(halyard_client *c)
     announce(c, HALYARD_CLIENT_STAGE_ENDED);
 }
 
+/* ---- The rendezvous route -------------------------------------------------------------------------- */
+
+static void control_leg_log(void *ctx, const char *line)
+{
+    client_log((halyard_client *)ctx, HALYARD_CLIENT_LOG_DEBUG, "client: control 9303: %s", line);
+}
+
+static void media_leg_log(void *ctx, const char *line)
+{
+    client_log((halyard_client *)ctx, HALYARD_CLIENT_LOG_DEBUG, "client: A/V leg: %s", line);
+}
+
+/*
+ * HalyardDatagramControlOptions for a leg, with the one thing only C needs: every blocking 9303 stage ticks
+ * the client, so the control session keeps answering heartbeats while the A/V leg's prelude runs, and a
+ * host's cancel ends a stage at once rather than at its deadline.
+ */
+static void leg_options(halyard_client *c, halyard_dgram_options *o, void (*log)(void *, const char *))
+{
+    halyard_dgram_options_default(o);
+    o->stage_timeout_ms = c->config.dgram_stage_timeout_ms;
+    o->receive_timeout_ms = c->config.dgram_receive_timeout_ms;
+    o->log = log;
+    o->log_ctx = c;
+    o->tick = client_tick;
+    o->abort = client_abort;
+    o->tick_ctx = c;
+}
+
+/* What a failed 9303 stage costs the session. ABORTED means an end is already pending, and it stands. */
+static void dgram_failed(halyard_client *c, halyard_dgram_channel_status status, const char *what)
+{
+    c->result.dgram_status = (int)status;
+    if (status == HALYARD_DGRAM_CHANNEL_ABORTED)
+        return;
+    client_log(c, HALYARD_CLIENT_LOG_WARN, "client: %s failed (9303 status %d)", what, (int)status);
+    end_request(c, status == HALYARD_DGRAM_CHANNEL_TIMEOUT ? HALYARD_CLIENT_END_TIMEOUT
+                                                            : HALYARD_CLIENT_END_CHANNEL_ERROR);
+}
+
+static void describe_leg(const halyard_rendezvous_leg *leg, halyard_client_leg *out)
+{
+    memset(out, 0, sizeof(*out));
+    out->local_port = leg->local_port;
+    out->endpoint_independent = -1;
+    if (leg->have_mapping) {
+        out->has_reflexive = 1;
+        memcpy(out->reflexive_address, leg->mapping.reflexive.address, 4);
+        out->reflexive_port = leg->mapping.reflexive.port;
+        out->endpoint_independent = leg->mapping.endpoint_independent;
+    }
+}
+
+/* Binds a leg and asks STUN about it: the half of HalyardAccountConsoleSession that precedes an OFFER. */
+static int open_leg(halyard_client *c, halyard_rendezvous_leg *leg, uint16_t port, int rcvbuf, const char *name)
+{
+    rc_stun_gather_status gathered;
+
+    if (!halyard_rendezvous_leg_open(leg, c->have_bind_address ? c->bind_address : NULL, port, rcvbuf)) {
+        client_log(c, HALYARD_CLIENT_LOG_ERROR, "client: could not bind the %s leg's socket", name);
+        return 0;
+    }
+    gathered = halyard_rendezvous_leg_gather(leg, c->stun_count > 0u ? c->stun : NULL, c->stun_count,
+                                             c->config.stun_attempts, c->config.stun_timeout_ms);
+    if (leg->have_mapping) {
+        client_log(c, HALYARD_CLIENT_LOG_INFO,
+                   "client: %s leg on local port %u, reflexive %u.%u.%u.%u:%u (%s)", name,
+                   (unsigned)leg->local_port, (unsigned)leg->mapping.reflexive.address[0],
+                   (unsigned)leg->mapping.reflexive.address[1], (unsigned)leg->mapping.reflexive.address[2],
+                   (unsigned)leg->mapping.reflexive.address[3], (unsigned)leg->mapping.reflexive.port,
+                   leg->mapping.endpoint_independent == 1   ? "the NAT maps consistently"
+                   : leg->mapping.endpoint_independent == 0 ? "the NAT maps per destination: a distant console "
+                                                              "will NOT reach this"
+                                                            : "NAT behaviour undetermined");
+    } else {
+        client_log(c, HALYARD_CLIENT_LOG_INFO,
+                   "client: %s leg on local port %u, no reflexive address (STUN status %d); LOCAL only", name,
+                   (unsigned)leg->local_port, (int)gathered);
+    }
+    return 1;
+}
+
+/*
+ * HalyardStreamingSession.ConnectAsync's control plane, over HalyardDatagramSessionControlChannel: no ARM
+ * probe (it arms a TCP listener this route does not use), RP-ConPath 3, and the request spelled as the
+ * capture spells it. The prelude was begun by halyard_client_rendezvous_begin and is established by the
+ * first open, which is idempotent, exactly as ConnectAsync's EstablishAsync is.
+ */
+static int connect_control_rendezvous(halyard_client *c)
+{
+    halyard_control_open_options options;
+
+    client_log(c, HALYARD_CLIENT_LOG_INFO, "client: opening the control session over 9303 (/sess/init, /sess/ctrl)");
+
+    halyard_dgram_control_pipe_init(&c->control_pipe, &c->control_leg.channel, c->control_leg.sock);
+    memset(&options, 0, sizeof(options));
+    options.pipe = &c->control_pipe.pipe;
+    options.skip_arm_probe = 1;
+    options.connection_path = HALYARD_ROUTE_RENDEZVOUS;
+    options.host_header = c->host_header;
+    options.init_version_header = "Rp-Version";
+
+    if (!halyard_control_session_open_with(&c->record, &options, &c->control)) {
+        c->control.sock = -1;
+        if (c->control_pipe.last_status != HALYARD_DGRAM_CHANNEL_OK)
+            dgram_failed(c, c->control_pipe.last_status, "the control association");
+        end_request(c, HALYARD_CLIENT_END_CHANNEL_ERROR);
+        return 0;
+    }
+    c->control_open = 1;
+    reach(c, HALYARD_CLIENT_STAGE_CONTROL_OPEN);
+    return 1;
+}
+
+/* Services until `flag` is set or `window_ms` passes. Returns how long it took, or -1 for never. */
+static int wait_flag(halyard_client *c, const int *flag, unsigned window_ms)
+{
+    uint64_t start = rc_time_ms();
+
+    while (!*flag && rc_time_ms() - start < (uint64_t)window_ms) {
+        client_tick(c);
+        if (c->end_pending != HALYARD_CLIENT_END_NONE)
+            return -1;
+        if (!*flag)
+            rc_sleep_ms(10u);
+    }
+    return *flag ? (int)(rc_time_ms() - start) : -1;
+}
+
+/*
+ * StartStreamingAsync's rendezvous branch, up to the senkusha probe, with PrepareStreamAsync inlined:
+ *
+ *   the A/V leg's own socket and STUN mapping - its own connection on its own port, so its own discovery
+ *   (offering only the local candidate left the control plane working off-network while the media prelude
+ *   went unanswered); then the host's media negotiation (NegotiateMediaAsync, through poll_media); then the
+ *   same 88-byte prelude the control association opened with, on the socket Takion will use; then up to
+ *   8 s for SESSION_ID, because the console does not serve Takion the moment the prelude finishes - every
+ *   captured session sits quiet two to three seconds, sends SESSION_ID, and only then is a single Takion
+ *   INIT answered. Waiting is non-fatal: a console that never sends it is diagnosed by what follows.
+ */
+static int connect_media(halyard_client *c)
+{
+    halyard_client_leg info;
+    halyard_client_peer peer;
+    halyard_dgram_options options;
+    halyard_dgram_channel_status status;
+    uint64_t asked;
+    int answer = 0;
+
+    announce(c, HALYARD_CLIENT_STAGE_SESSION_READY);
+
+    if (!open_leg(c, &c->media_leg, c->config.media_local_port, c->config.rcvbuf_bytes, "A/V")) {
+        end_request(c, HALYARD_CLIENT_END_CHANNEL_ERROR);
+        return 0;
+    }
+    c->stream_sock = c->media_leg.sock;
+    c->result.media_local_port = c->media_leg.local_port;
+    c->result.rcvbuf_asked = c->config.rcvbuf_bytes;
+    c->result.rcvbuf_granted = rc_udp_rcvbuf_actual(c->stream_sock);
+    describe_leg(&c->media_leg, &info);
+
+    /* The host's turn: its media OFFER and ACCEPT go out while this keeps the control session alive. */
+    asked = rc_time_ms();
+    memset(&peer, 0, sizeof(peer));
+    for (;;) {
+        client_tick(c);
+        if (c->end_pending != HALYARD_CLIENT_END_NONE)
+            return 0;
+        answer = c->cb.poll_media(c->cb.user, &info, &peer);
+        if (answer != 0)
+            break;
+        if (rc_time_ms() - asked >= (uint64_t)c->config.media_offer_timeout_ms)
+            break;
+        rc_sleep_ms(10u);
+    }
+    if (answer <= 0) {
+        client_log(c, HALYARD_CLIENT_LOG_WARN, "client: %s - there is no A/V path",
+                   answer < 0 ? "the host gave up on the media connection"
+                              : "the console never offered a media connection");
+        end_request(c, HALYARD_CLIENT_END_NO_MEDIA);
+        return 0;
+    }
+
+    leg_options(c, &options, media_leg_log);
+    status = halyard_rendezvous_leg_attach(&c->media_leg, peer.address, peer.port, c->local_hashed_id,
+                                           peer.console_hashed_id, &options);
+    if (status != HALYARD_DGRAM_CHANNEL_OK) {
+        dgram_failed(c, status, "aiming the A/V leg");
+        return 0;
+    }
+    c->media_peer = c->media_leg.peer;
+    c->filter_peer = 1;
+    client_log(c, HALYARD_CLIENT_LOG_INFO, "client: A/V leg to %u.%u.%u.%u:%u, prelude", (unsigned)peer.address[0],
+               (unsigned)peer.address[1], (unsigned)peer.address[2], (unsigned)peer.address[3], (unsigned)peer.port);
+
+    status = halyard_dgram_channel_establish(&c->media_leg.channel);
+    if (status != HALYARD_DGRAM_CHANNEL_OK) {
+        dgram_failed(c, status, "the A/V leg's prelude");
+        return 0;
+    }
+    c->result.media_prelude_ok = 1;
+
+    c->result.session_ready_waited_ms = wait_flag(c, &c->session_ready, CLIENT_SESSION_READY_WINDOW_MS);
+    if (c->end_pending != HALYARD_CLIENT_END_NONE)
+        return 0;
+    if (c->session_ready)
+        reach(c, HALYARD_CLIENT_STAGE_SESSION_READY);
+    else
+        client_log(c, HALYARD_CLIENT_LOG_WARN, "client: no SESSION_ID after the A/V prelude - continuing, as .NET does");
+    return 1;
+}
+
+static void put_be32(uint8_t *out, uint32_t value)
+{
+    out[0] = (uint8_t)(value >> 24);
+    out[1] = (uint8_t)(value >> 16);
+    out[2] = (uint8_t)(value >> 8);
+    out[3] = (uint8_t)value;
+}
+
+/*
+ * SendProbeReportAsync, then the StreamReadyWindow wait. PROBE_REPORT is required on this route (without it
+ * the console never sends STREAM_READY and answers SESSION_REQUEST with no key); its slots are .NET's
+ * [bitrate, declared MTU, 0, rtt] and **[X]** which slot means what - the console was indifferent to all
+ * values tried. The rtt here is senkusha's PROTOCOL_VERSION round trip, the figure the launch spec declares
+ * too; .NET's is its echo probe's, which this core does not run yet.
+ */
+static int connect_stream_ready(halyard_client *c)
+{
+    uint8_t report[HALYARD_CTRL_PROBE_REPORT_LENGTH];
+    int rtt = c->result.version_rtt_ms;
+
+    put_be32(report, (uint32_t)c->config.bitrate_kbps);
+    put_be32(report + 4, (uint32_t)CLIENT_DECLARED_MTU);
+    put_be32(report + 8, 0u);
+    put_be32(report + 12, (uint32_t)(rtt < 0 ? 0 : (rtt > 1000 ? 1000 : rtt)));
+    if (halyard_control_session_send_field(&c->control, HALYARD_CTRL_TYPE_PROBE_REPORT, report, sizeof(report))) {
+        c->result.probe_report_sent = 1;
+        client_log(c, HALYARD_CLIENT_LOG_INFO, "client: probe report sent");
+    } else {
+        client_log(c, HALYARD_CLIENT_LOG_WARN, "client: the probe report could not be sent");
+    }
+
+    (void)wait_flag(c, &c->stream_ready, CLIENT_STREAM_READY_WINDOW_MS);
+    if (c->end_pending != HALYARD_CLIENT_END_NONE)
+        return 0;
+    c->result.stream_ready_seen = c->stream_ready;
+    if (!c->stream_ready)
+        client_log(c, HALYARD_CLIENT_LOG_WARN, "client: STREAM_READY never arrived; opening the stream anyway");
+    return 1;
+}
+
+int halyard_client_rendezvous_prepare(halyard_client *client, halyard_client_leg *out_control_leg)
+{
+    halyard_client *c = client;
+
+    if (c == NULL || !c->is_rendezvous || c->connect_started || c->ended || c->rv_begun)
+        return 0;
+    if (!open_leg(c, &c->control_leg, c->config.control_local_port, 0, "control"))
+        return 0;
+    c->rv_prepared = 1;
+    c->result.control_local_port = c->control_leg.local_port;
+    if (out_control_leg != NULL)
+        describe_leg(&c->control_leg, out_control_leg);
+    return 1;
+}
+
+int halyard_client_rendezvous_begin(halyard_client *client,
+                                    const uint8_t local_hashed_id[HALYARD_CLIENT_HASHED_ID_LENGTH],
+                                    const halyard_client_peer *console)
+{
+    halyard_client *c = client;
+    halyard_dgram_options options;
+    halyard_dgram_channel_status status;
+
+    if (c == NULL || local_hashed_id == NULL || console == NULL || !c->rv_prepared || c->rv_begun
+        || c->connect_started || c->ended)
+        return 0;
+
+    memcpy(c->local_hashed_id, local_hashed_id, sizeof(c->local_hashed_id));
+    /* The paired host on 9303, not the candidate: HalyardAccountConsoleSession's ControlEndpoint. */
+    if (halyard_dgram_host_header(c->record.host, HALYARD_WAN_CONTROL_PORT, c->host_header, sizeof(c->host_header))
+        == 0u)
+        return 0;
+
+    leg_options(c, &options, control_leg_log);
+    status = halyard_rendezvous_leg_attach(&c->control_leg, console->address, console->port, local_hashed_id,
+                                           console->console_hashed_id, &options);
+    if (status == HALYARD_DGRAM_CHANNEL_OK)
+        status = halyard_dgram_channel_begin(&c->control_leg.channel);
+    if (status != HALYARD_DGRAM_CHANNEL_OK) {
+        c->result.dgram_status = (int)status;
+        client_log(c, HALYARD_CLIENT_LOG_ERROR, "client: could not begin the control association (9303 status %d)",
+                   (int)status);
+        return 0;
+    }
+    client_log(c, HALYARD_CLIENT_LOG_INFO, "client: control association begun toward %u.%u.%u.%u:%u",
+               (unsigned)console->address[0], (unsigned)console->address[1], (unsigned)console->address[2],
+               (unsigned)console->address[3], (unsigned)console->port);
+    c->rv_begun = 1;
+    return 1;
+}
+
+int halyard_client_rendezvous_exchange(void *user, const uint8_t *request, size_t request_length,
+                                       uint8_t *response, size_t response_size, size_t *out_response_length)
+{
+    halyard_client *c = (halyard_client *)user;
+
+    if (out_response_length != NULL)
+        *out_response_length = 0u;
+    if (c == NULL || !c->rv_begun || c->connect_started || c->ended)
+        return 0;
+    return halyard_dgram_regist_exchange(&c->control_leg.channel, request, request_length, response, response_size,
+                                         out_response_length);
+}
+
 /* ---- The API ----------------------------------------------------------------------------------------- */
 
 halyard_client *halyard_client_init(void *storage, size_t storage_size, const halyard_client_config *config,
@@ -1298,8 +1742,11 @@ halyard_client *halyard_client_init(void *storage, size_t storage_size, const ha
         return NULL;
 
     halyard_client_config_resolve(config, &resolved);
-    if (resolved.route != HALYARD_ROUTE_LOCAL)
-        return NULL;   /* RENDEZVOUS arrives with internet play */
+    if (resolved.route != HALYARD_ROUTE_LOCAL && resolved.route != HALYARD_ROUTE_RENDEZVOUS)
+        return NULL;
+    /* The media negotiation is the host's, and without it the A/V leg cannot exist. */
+    if (resolved.route == HALYARD_ROUTE_RENDEZVOUS && callbacks->poll_media == NULL)
+        return NULL;
 
     c = (halyard_client *)storage;
     /* Not the whole of storage: the demuxer is megabytes and is initialised when it is first needed. */
@@ -1316,6 +1763,21 @@ halyard_client *halyard_client_init(void *storage, size_t storage_size, const ha
     memset(&c->stream, 0, sizeof(c->stream));
     c->senkusha.sock = -1;
     c->stream.sock = -1;
+    halyard_rendezvous_leg_init(&c->control_leg);
+    halyard_rendezvous_leg_init(&c->media_leg);
+
+    /* Copied, like the record: the config's pointers need not outlive this call. */
+    c->is_rendezvous = resolved.route == HALYARD_ROUTE_RENDEZVOUS;
+    c->stun_count = resolved.stun_server_count;
+    if (c->stun_count > 0u)
+        memcpy(c->stun, resolved.stun_servers, c->stun_count * sizeof(c->stun[0]));
+    c->config.stun_servers = NULL;
+    if (resolved.bind_address != NULL) {
+        memcpy(c->bind_address, resolved.bind_address, sizeof(c->bind_address));
+        c->have_bind_address = 1;
+    }
+    c->config.bind_address = NULL;
+    c->result.session_ready_waited_ms = -1;
 
     c->result.stage = HALYARD_CLIENT_STAGE_IDLE;
     c->result.end_reason = HALYARD_CLIENT_END_NONE;
@@ -1340,8 +1802,17 @@ halyard_client_stage halyard_client_connect(halyard_client *client)
     /* A cancel that arrived before anything opened costs nothing to honour. */
     c->in_connect = 1;
     poll_commands(c);
+    if (c->is_rendezvous && c->end_pending == HALYARD_CLIENT_END_NONE && !c->rv_begun) {
+        client_log(c, HALYARD_CLIENT_LOG_ERROR,
+                   "client: RENDEZVOUS needs halyard_client_rendezvous_prepare and _begin before connect");
+        end_request(c, HALYARD_CLIENT_END_CHANNEL_ERROR);
+    }
     if (c->end_pending == HALYARD_CLIENT_END_NONE
-        && connect_control(c) && connect_signin(c) && connect_senkusha(c) && connect_takion(c)
+        && connect_control(c) && connect_signin(c)
+        && (!c->is_rendezvous || connect_media(c))
+        && connect_senkusha(c)
+        && (!c->is_rendezvous || connect_stream_ready(c))
+        && connect_takion(c)
         && connect_keys(c) && connect_stream_info(c)) {
         begin_streaming(c);
         c->in_connect = 0;
