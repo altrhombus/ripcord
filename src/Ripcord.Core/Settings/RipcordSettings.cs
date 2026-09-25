@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 using Ripcord.Core.Input;
 using Ripcord.Core.Sessions;
 
@@ -128,11 +130,54 @@ public sealed record RipcordSettings
     /// <summary>
     /// Show the diagnostics overlay from the start. Default false — it used to be visible by default, printing
     /// live stick coordinates over the game.
+    ///
+    /// <para>
+    /// <b>Superseded by <see cref="DiagnosticsOnConnect"/>, and kept anyway.</b> It is what a settings file
+    /// written by an older build carries, and it is still written by this one, so a user who moves between
+    /// builds does not lose the preference in either direction. Read it through
+    /// <see cref="DiagnosticsRungOnConnect"/> rather than directly.
+    /// </para>
     /// </summary>
     public bool ShowDiagnosticsOverlay { get; set; }
 
+    /// <summary>
+    /// How much of the HUD a stream opens at.
+    ///
+    /// <para>
+    /// <b>Nullable, and that is the migration.</b> This could not simply replace the bool above: the settings
+    /// store catches <c>JsonException</c> and falls back to defaults, so a file carrying
+    /// <c>"ShowDiagnosticsOverlay": false</c> against a property that had become an enum would not lose one
+    /// preference — it would silently lose all of them. Null therefore means "no answer in the file", which is
+    /// distinguishable from an answer of <see cref="DiagnosticsRung.Hidden"/>, and lets the old bool supply
+    /// one. It stops being null the first time the user touches the setting.
+    /// </para>
+    /// </summary>
+    public DiagnosticsRung? DiagnosticsOnConnect { get; set; }
+
+    /// <summary>
+    /// The rung a stream should open at: this build's answer if the file has one, otherwise the older build's
+    /// bool, otherwise hidden.
+    /// </summary>
+    [JsonIgnore]
+    public DiagnosticsRung DiagnosticsRungOnConnect =>
+        DiagnosticsOnConnect ?? (ShowDiagnosticsOverlay ? DiagnosticsRung.Summary : DiagnosticsRung.Hidden);
+
+    /// <summary>
+    /// Set the rung, keeping the legacy bool in step so an older build reading this file still opens the HUD
+    /// when the user asked for it.
+    /// </summary>
+    public RipcordSettings WithDiagnosticsRung(DiagnosticsRung rung)
+    {
+        RipcordSettings updated = this with
+        {
+            DiagnosticsOnConnect = rung,
+            ShowDiagnosticsOverlay = rung != DiagnosticsRung.Hidden,
+        };
+
+        return updated;
+    }
+
     /// <summary>Larger text and controls, for handhelds and TV viewing distances.</summary>
-    public bool LargeUiScale { get; set; }
 
     /// <summary>Build the session configuration these settings describe.</summary>
     public SessionConfig ToSessionConfig()

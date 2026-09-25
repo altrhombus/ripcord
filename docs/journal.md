@@ -35,6 +35,407 @@ different purpose.
 > anything. The list above is short, it is checkable in one `git log --format=%B | grep`, and it stops
 > growing the moment someone notices — which is the property that actually matters.
 
+### The wordmark, and a tile that is layers rather than a drawing (2026-09-24)
+
+The last one-way door in the design direction. It was chosen from an options page comparing the three
+shortlisted faces on both grounds, with Segoe UI Variable as a control. **Outfit SemiBold, lowercase,
+horizontal lockup.** The page itself stays uncommitted in `brand/explorations/`, as working material. What it
+decided is in `brand/README.md`.
+
+**The word is outlines, and the font is not in the tree.** `brand/outline-wordmark.py` fetches Outfit
+from a pinned google/fonts commit into the gitignored `brand/third-party/`, checks its SHA-256 and writes
+the lockups as plain paths. That keeps `NOTICE`'s "nothing below is vendored" literally true: the font is
+listed there beside the ports' dependencies on the same terms. It also means the generator's headless
+Edge, and any port without a font engine, draws the word with no font at all. The lockup's spacing is
+defined by the type rather than in pixels: the mark runs from the baseline to the cap height, and the gap
+from the wedge's tip to the *r* is one x-height. The mark came out about 10% larger relative to the word
+than on the options page, because the page had centred it on the line box and floated it off the
+baseline.
+
+**The black tile was questioned, and kept dark on the numbers.** The green dash is 2.4:1 on white, under
+the 3:1 a non-text graphic needs, so a light plate fails the mark. The discomfort was real, though, and
+measuring found the cause. The old tile was 1.07:1 against a dark taskbar, so it was invisible there,
+and it only showed on a light taskbar, as a flat black square. The fix is a lift to `#303743 → #1B1F26`,
+as far as the dashes allow (blue 3.1:1, red 3.2:1 at the light end), plus a top highlight and hairline.
+
+**The edge is not in the drawing, because two of the next three platforms own their icon's edge.**
+Android masks adaptive icons to a shape of the launcher's choosing, which leaves a drawn border as
+slivers. macOS 26 draws its own rounded square and glass. So `ripcord-tile.svg` and
+`ripcord-tile-small.svg` are gone. `generate-assets.ps1` now composes each tile from a shapeless ground
+(`ripcord-ground.svg`) and a mark, and adds the shape and edge only for Windows. It turned out the
+README's old ø58 rule is Android's safe zone to within a unit, so the mark's placement carries over
+unchanged.
+
+Three smaller things came out of it:
+
+- **The wide tile and splash had been rendering the plated tile** while the generator's comment said
+  they did not. Both are the lockup now. The splash pins its `BackgroundColor` to the ground's dark end,
+  so the white word never lands on a theme-chosen colour.
+- **The card did not follow the tile**, and the reason is recorded rather than smoothed over. The wedge
+  facet is "the card lifted", and at the new values it would vanish. The question is open in
+  `ROADMAP.md`.
+- **The "unplated" taskbar assets are plated.** A theme-aware plateless variant was offered and not
+  taken. `brand/README.md` records it under "Not done yet".
+
+### Remote play works through the app, and eight reports came back with it (2026-09-24)
+
+Pairing over the account route, connecting from a different network, waking a console from rest over the
+internet, and disconnecting cleanly — all through the app's own UI, which none of it had ever been.
+`README.md` carried "internet play through the app's own UI" under *what does not work yet* until today.
+
+**One bug had three faces, and finding it took five traced runs.** A stored refresh token is a signed-in
+user whose session has not been loaded, and `IsSignedIn` asks the second question while reading like the
+first. Only the settings page ever called `RestoreAsync`, so a launch that went straight to a console had
+no account in memory. That refused an account-route connect outright, made `ListConsolesAsync` return an
+empty list — which is why a console away from home read `Offline` when `Away` existed and described it
+exactly — and made a cloud wake throw at a signed-in user. The gateway restores on demand now, lazily,
+because a LAN connect never touches the account tier and should not pay a round trip for it.
+
+**What the five runs cost, and what they bought.** Each layer narrated itself to a surface that shows one
+line at a time, and each had to be found separately: the app passed `null` for the pairing log; the trace
+clock ran from app start, so the first line of a pairing read `44690 ms` and looked like a 44-second stall
+that was really somebody walking to the Pair button; the connect flow's stages went to the screen and
+nowhere else; and the account route's first log sat *after* its preconditions, so a refusal was
+indistinguishable from never being entered. The tracing now reaches from the connect flow down into the
+route, and that is the part that outlasts this bug.
+
+**Then eight observations from the first sessions that worked**, which is what a person in the chair
+produces and automation does not:
+
+- The connect overlay stayed over the running stream. `Streaming` dismisses it; the control channel goes
+  on narrating afterwards, and each line raised it again.
+- A console away from home wore a green dot. The comment defending it argued that nothing is wrong (true)
+  and that it is ready to play (not knowable — `Away` means the account lists it, not that it is awake).
+- Rung 3 was a one-way door. `HideDiagnosticsDetail` had existed with no caller since it was written.
+- The summary strip spanned the window regardless of the picture it was measuring.
+- The connect message moved while being read, pushed by four things below it on a bottom-anchored panel.
+- The "checking" ring read as a faint sparkle: stock `ProgressRing`, at 10px, below the 16 its template
+  needs before its dots stop landing on fractions of a pixel.
+- A retry replaced its own reason with "Reconnecting to your console…" under a heading saying the same
+  thing, so the informative line was the one that flickered.
+- And the one that was a real hole rather than a rough edge: nothing bounded a single connect *attempt*.
+  The retry budget bounds how many there are and says nothing about one that never returns.
+
+**That last fix was wrong once before it was right, and explaining it is what caught it.** The first
+version stopped waiting (`Task.WaitAsync`) rather than cancelling, which leaves the attempt running — and
+an account-route attempt that is still running is still joined to its cloud session, the half-open state
+that makes a console refuse every later connection. A backstop built that way trades a stuck window for a
+stranded console. Cancelling was awkward because the session keeps the token it was opened with for its
+whole lifetime, so a token cancelling itself two minutes in would tear down a working stream: hence armed
+for the attempt, disarmed on success, disposed with the session. The test that matters asserts a live
+session's token survives past the deadline, and fails if the disarm is removed.
+
+The verbose connect narration that made the last three days tractable now follows the diagnostics setting
+that already existed — stages for everybody, the protocol's own words at Full — rather than earning a
+second switch meaning the same thing.
+
+### The console was signed out, and five runs went looking elsewhere (2026-09-23 to 09-24)
+
+Account pairing has now completed through the app's own UI — the first time it has, rather than through
+`ProtocolLab`. Getting there took five failed attempts and three wrong conclusions, and the wrong
+conclusions are the useful part of the record.
+
+**What it was.** The console was signed out of PlayStation Network. The account's PSN security options had
+been changed, which signs devices out, and the console had been sitting in rest mode signed out ever since.
+Signing in on the console fixed it immediately: from rest mode, no restart, first attempt. The trigger
+matters less than the class — whatever signs a console out produces this.
+
+**Why it took five runs.** Nothing visible said so. The console answered LAN `SRCH` under its own name, so
+discovery listed it normally. The account's console list still reported `enabledFeatures: [remotePlay]` and
+`wakeupEnabledPowerModes: [networkStandby, mainOnStandby]`. Every `commands` POST was accepted with a
+`commandId` inside 150 ms. The command is delivered to a console's own PSN session, and a console that has
+none receives nothing — the 202 means queued, not read. The console-list response has no presence field at
+all, so a client cannot detect this and can only name it.
+
+**The three wrong answers, in order.**
+
+The first was mine twice over. The app was passing `null` for the pairing layer's `Log` sink, so a failure
+reported only the last thing it had been waiting for — `customData1` — which is where the code happened to
+give up, not where the fault was. Worse, the timeout message asserted the console had not published a seed
+when a seed that arrived and failed to decrypt was silently ignored on the same path. Both fixed: the
+frames are counted, the failures are ordered by how far upstream they are, and `RIPCORD_TRACE_PAIRING=1`
+now writes the rendezvous to `state/pairing-trace.log`.
+
+The trace then produced a false lead of its own. Its clock ran from app start, because the sink is built
+with the service graph, so the first line of a pairing read `44690 ms` — which looks exactly like a push
+channel taking 44 seconds to connect and was in fact the user walking to the Pair button. Lines now carry
+wall clock and the gap since the previous line, a gap being the only number that means anything in a
+sequence made entirely of waits.
+
+The second wrong answer was the name match. The duid is resolved against the console's *display name*, so a
+differently-named account record would produce a command the cloud accepts and nothing receives. Plausible,
+and wrong: the trace now prints the account's consoles with their flags and marks the one being commanded.
+
+The third was a marked `[X]`. With every client-side hypothesis dead I marked the spec's "this command
+wakes a sleeping console" as unconfirmed, on the grounds that every capture behind that section was taken
+against an awake console. The owner then suggested reading the dirty room, which is where the RE log
+records that same command waking that same console repeatedly on 2026-09-04 — so the claim was `[V]` and my
+mark was wrong. The log also documents the half-open-session trap, which I then blamed instead, and that
+was wrong twice: it was not this, and it was an artefact of the account route being mid-build. A failed
+attempt used to leave the console holding a session nobody was in; completed sessions clear that state
+themselves now. Reading a resolved entry as a standing cause is its own kind of mistake, and the fix was
+not to put it in front of users.
+
+**The lesson that generalises.** Every one of those hypotheses was about something the client sends. The
+signal that would have pointed the right way was an asymmetry between two things the client only observes:
+reachable on the LAN, unreachable through the account. That combination is about the console's session with
+PSN and cannot be about the command. It is written into the spec next to the wake, because it is the cheap
+discriminator nobody had named.
+
+A side finding, ruled out on the way: `POST {userProfileBase}/userProfile/v1/users/{onlineId}/remoteConsole/
+wakeUp` is a real dedicated wake endpoint, reached after a `baseUrls/userProfile` lookup, and it is
+**PS4-only** — the format string in our own copy of the vendor control library hard-codes `platform=PS4`,
+and none of the fifteen PS5 flow captures contains the call. Recorded so it is not mistaken for a missing
+PS5 step.
+
+### Sign-in leads pairing, and a focus bug that took three tries (2026-09-22 to 09-23)
+
+Discovery now leads the pairing flow, closing the item the previous session left open. The flow starts at
+`Find`, the family is derived from the console that answered, and the family question survives only on the
+two paths that genuinely cannot answer it — a typed address, and a scan that found nothing.
+
+**The design document was wrong about which route is lazier, and the wording had been repeating it.**
+`docs/design.md` had the code route leading when nobody is signed in, on the grounds that it "needs nothing
+the player does not already have". That is false. The code route needs the player at the console, through its
+menus, reading an eight-digit code, *and* holding the numeric PSN account id — which almost nobody knows, and
+which the app's own caption sent them to a third-party lookup tool to find. Signing in needs a password they
+already have.
+
+So sign-in leads and the code form waits to be asked for. The link to it sits alongside, unexplained and
+unweighted, because somebody who would rather not connect an account is making a trade they are entitled to
+make. The local route stays a first-class path; it stopped being the *default* one.
+
+Two smaller things fell out of testing that by hand. The invitation was telling the same story twice in two
+voices — an `InfoBar` above the step and the account-id caption below it — and the `InfoBar` promised "you
+won't need the code" directly above a box asking for a code, which is the exact contradiction `design.md`
+records the step as having opened with once before. And accepting the invitation opened Settings scrolled to
+the top with the resolution dropdown focused, the account card being near the bottom; `IShellNavigator` now
+carries a `SettingsDestination`, and the page answers `IInitialFocusTarget` rather than trying to move focus
+in `Loaded`, which is too early — the shell seeds focus at Low priority *after* that.
+
+**Then the sign-in box would not hold focus, and finding out why took three commits and a log.**
+
+Clicking into the PSN password field deselected it instantly. A `WebView2` is a native child HWND: when its
+HTML content has focus, Win32 focus is inside that window and XAML focus is *nowhere*, so
+`FocusManager.GetFocusedElement` returns null. `FocusPilot.NeedsFocusSeed` reads null as "nothing has focus",
+and the shell put focus back into the dialog — on every click.
+
+The first fix guarded `SeedFocusIfNothingHasIt`. Still dropped focus: `FocusWatchdog` asked
+`NeedsFocusSeed` itself and called `FocusFirstContentElement` directly, so it never saw that guard. The second
+fix moved the check to `FocusFirstContentElement`, where all six seeding paths converge — window activation,
+navigation, chrome scope activation, region cycling, a pad direction with nothing focused, and the watchdog.
+**Guarding callers one at a time is how one gets missed, and focusing the page behind a modal is wrong on all
+six paths regardless of what the modal contains.** `ModalHostTests` now asserts the guard is the first
+statement in that method and that `NeedsFocusSeed` is asked exactly once; both halves were checked by
+breaking them.
+
+The third commit is the one worth keeping. Two fixes had been aimed by reasoning about the symptom, and a
+symptom seen by hand does not say whose call stack it came from — so `RIPCORD_TRACE_FOCUS=1` now writes every
+focus move, with the frames that caused it, to `state/focus-trace.log`. A move our code made lists Ripcord
+frames; a move the platform made reads `PLATFORM ONLY`. It logs element type and `x:Name` only, never `Text`
+and never a web view source, because the surface it exists for is a password box.
+
+It found its own bug first: every frame in the process sits under `Program.Main`, so the blame column counted
+that and reported platform-dispatched mouse clicks as ours. The entry point and bootstrap no longer count.
+
+The trace then settled it. A complete sign-in — email, password, submit, PSN's redirect chain — ran ninety
+seconds with XAML focus resting on the `WebView2` the whole time and not one focus event in between. The only
+move logged was the dialog tearing down at the end, `PLATFORM ONLY`, which is correct. The account tier has
+now been driven end to end through the app's own UI by a person, rather than through `ProtocolLab`.
+
+The tracer stays. This repo has found focus bugs by hand five or six times now, and the cost of leaving an
+env-gated trace in the tree is one unused class.
+
+### The second design review, built (2026-09-20 to 09-22)
+
+A second review of `feat/app-design-direction` landed as a written handoff, and most of it is now in the
+tree. The reasoning lives in `docs/design-review-2026-09-21.md`; what follows is what changed and the three
+things the work found that nobody was looking for.
+
+**The console card stopped being two cards.** The one-console hero had its own markup and its own
+`RenderHero()`, and the two copies drifted three ways in a single release: the hero could not show the
+"checking" spinner, its overflow button sat under the touch minimum, and changes made to the grid card were
+routinely not made to it. Every fact `RenderHero()` set by hand was already on `ConsoleCardState` — the hero
+needed code-behind only because it was not inside an items control. It is now a hero-sized cell in the same
+`GridView`, which deleted ~115 lines and made divergence unrepresentable rather than discouraged. A test
+counts `PlayWedge` declarations in the page, because a second copy of the card has to draw one.
+
+**The wedge stopped being inert.** It was the loudest element in the app and answered nothing — no hover, no
+press, no pressed state anywhere on the primary action of the product. Hover, press and focus are now three
+different kinds of mark: a wash, a brighter bleed, and the system focus ring, all suppressed in high
+contrast where the shape already carries the meaning.
+
+**Ripcord can be launched at a console.** `--play "Living room PS5"` and `--play-last`, parsed in
+`Ripcord.Core` with thirteen tests, plus a desktop-shortcut writer and a jump list guarded on package
+identity. The fastest path to a game was launch, home, press A; the audience for this launches from Steam,
+from a handheld launcher, from a pinned icon, and none of those could say which console until the executable
+took an argument saying so.
+
+**Three faults found in passing, and the first one is the instructive one.**
+
+The touch shelf bound `RowDefinition.Height` to an `x:Double` token where the property is a `GridLength`.
+XAML does not convert — it throws when the page *loads*, which for a stream page means when somebody starts
+a stream. It built clean, no test could reach it, and the first thing ever to open a session page was the
+launch argument added three commits later. That is the second token type-mismatch on this branch invisible
+to the build; the first was `FocusVisualPrimaryThickness`. **A token bound to a property of a different type
+is a page that opens to nothing, and nothing catches it but opening the page.**
+
+The pairing celebration's primary action read `"Save & connect"` from a literal in code-behind, past the
+string catalogue, on a step where the record is already on disk. And focus landed on the name box, which
+opens a soft keyboard on a handheld — so the celebration arrived with half the screen covered, for a field
+nobody has to fill in.
+
+**What was not done at the time.** The review asked for discovery to lead the pairing flow, with the family
+question demoted to the manual and not-found paths. That was left open here because it is a state-machine
+change to `AddConsoleFlow` — the initial step, a heading that names a family it would not yet know, deriving
+the family from the picked console, the no-results fallback — with twenty-seven tests calling
+`SelectFamilyAsync` directly and forty-seven reaching it through helpers. It got its own sitting and landed
+the next day; see the section above.
+
+### A lost probe no longer subtracts a capability (2026-09-19)
+
+Reported from the ARM64 test machine: the console list said the console could not be reached, though it was
+powered on for the whole session. Closing the app and picking the console *while the status still read
+"detecting"* connected first time.
+
+That workaround named the mechanism exactly, and both halves of it were wrong.
+
+**One datagram was the defect.** `HalyardReachabilityProbe` sent a single SRCH and waited one second. UDP does
+not retransmit, the console was across a VLAN boundary on a 2.4 GHz link, and 802.11's own retry can outlast
+the window — so one lost packet, entirely unremarkable on that path, became a verdict. The probe's comment
+argued the short wait well ("a console that has not answered in a second is not going to look any more online
+in three") and it is true of a console that is *off*; it is not true of a packet that was dropped. The fix is
+therefore retries, not a longer wait: three chances at a second each rather than one chance at three.
+`ConsoleReachabilityMonitor` owns the retry, not the probe, because the seam is deliberately dumb and
+judgement belongs where it can be tested without opening a socket. Only silence is retried — an answer of
+either kind is ground truth and is taken immediately, so a console that is there still costs one datagram.
+
+**And silence was taking the Play button away.** `ConsoleCardState.CanConnect` was false for `Offline`, which
+the front end wired to `IsEnabled`. But *silence is the only route to `Offline`* — there is no reply that
+means "I am switched off" — so the state was never knowledge, and a state that is never knowledge must not
+remove an ability. The user was let through only because the wrong verdict had not arrived yet, which is an
+accident, not a design.
+
+The property is now `IsReachable` and is presentation-only: it dims the action so the card admits it could not
+reach the console, and nothing more. Pressing it produces a connect attempt that can explain what went wrong,
+which is strictly more useful than a control that does nothing. The old name was load-bearing in the lie —
+anything called `CanConnect` invites exactly the binding it got.
+
+**The general rule this is an instance of, worth stating once:** a probe's failure to answer is evidence about
+the probe as much as about the thing probed. It may change what a surface *says*; it should not change what a
+surface *permits*. The existing relocate and account-fallback ladder was already built on that principle — it
+exists precisely so that silence gets interrogated rather than believed — and this closes the one rung that
+still treated a non-answer as a fact.
+
+### The receive-queue threshold was never the problem (2026-09-19)
+
+Four ARM64 sessions, ~2100 live samples, and the answer to "is 16 right on this hardware" turned out to be
+that the question was wrong. `ReceiveQueueBusyDepth` is no longer a discriminator; `PresentedShareBusyRatio`
+is.
+
+**What it was for.** Loss is the most impactful thing the health assessor can report, and the same loss
+figure means two opposite things: the network is dropping packets, or this device cannot keep up and is
+shedding. The advice diverges completely — move closer to the router, versus lower the resolution — so
+something has to split them. Receive-queue depth was that something, on the reasoning that a queue backing
+up means our own processing is behind.
+
+**What the measurements said.** Run A put the client on a 2.4 GHz VLAN; run B pointed decode at the
+Microsoft Basic Render Driver, which took the readback path at 8 ms RTT. Across both:
+
+- **Every** sample carrying loss ≥ 2% read a receive queue of exactly 0 — including the device-starved
+  samples presenting 0 fps out of 61 decoded. The verdict shown was "Losing packets on the network", on a
+  flawless link.
+- **Every** excursion above 16 in the lossy run sat on a sample with exactly 0.00 loss.
+- The reading is an instantaneous depth sampled at 2 Hz against frame-sized arrival bursts: 0 → 34 → 0
+  inside two seconds, 17 excursions of which 15 were a single sample, peaking at 266 during a stall whose
+  neighbouring samples both read 0.
+
+So it was not mistuned. No threshold survives a signal that spikes to 266 and returns to 0 between samples,
+which is why raising 16 would have bought nothing.
+
+**The obvious alternative was tested and failed.** Requiring the decode queue to agree would have suppressed
+every false reading — and would also have made the branch unfireable: the decode queue never reached 16 in
+either run (max 10 and 9) while the receive queue reached 266. Run B was taken specifically to answer that
+question, and the answer is no. Worth recording as a case where the cheap fix was checked rather than
+adopted.
+
+**What replaced it.** Ask whether we are presenting what we decode. If the network is the bottleneck the
+frames never arrive, so decode and present fall together and the ratio stays near 1; if the device is, they
+arrive and decode fine and never reach the screen. The six loss-carrying samples sat at 0.00–0.11 against a
+session median of 0.87–0.93. The threshold is 0.5 because that is the middle of the gap, not because it fit.
+
+**Two further faults the traces exposed, both found by the data disagreeing with itself.**
+
+The health column was lagged one row: the trace sample read `_diagnostics.HealthLevel` before the `Mutate`
+that recomposed it, so every row carried the verdict belonging to the sample half a second earlier. Nothing
+on screen was ever wrong — the panel always showed the fresh value — but every correlation drawn between the
+health column and any other column in its own row was silently off by one. Found by noticing a row that
+logged 11.48% loss and read `Info`, which that row's own numbers cannot produce.
+
+And the readback note outranked the frame-rate check, so a stream presenting 4 fps out of 60 decoded was
+told "Hardware decode active (with a memory copy). This is fine." 16–17% of past-startup samples in both
+device-starved runs took a Healthy/Info verdict while presenting under 45 fps.
+
+**The instrument needed fixing before it could be trusted.** The first traces recorded an empty `adapter:`
+line, because the preamble was written at the top of the connect and the adapter is not resolved until the
+decode pipeline initialises on the first frame. On a run whose entire subject is which GPU is in use, that
+is the one field that mattered.
+
+**What is still owed.** The device-starved half is measured sample-for-sample; the network half is reasoned.
+Run A's traces were deleted before the presented/decoded ratio was computed from them, so the claim that the
+ratio stays near 1 under pure network loss rests on the mechanism rather than on those files. It does not
+change the decision — the old discriminator falls on its own evidence — but the confirmation is outstanding
+and the next naturally lossy session closes it.
+
+### Removed — Ripcord's own text scaling (2026-09-19)
+
+`LargeUiScale`, `UiScale` and `AppScale` are gone: the app-level "larger text and controls" switch, the
+portable policy that decided what it was worth, and the front end that wrote scaled sizes into the WinUI
+resources before the first window existed. With them went `UiScaleTests`, the Accessibility settings section
+that held the switch, and the persisted `RipcordSettings.LargeUiScale`.
+
+**This reverses a decision, and the reasoning is the point.** The feature had been argued for twice: the
+re-imagining plan called the inert toggle "a broken promise", and the 1.0 scope listed wiring it as in-scope
+work. Both were right that a switch which does nothing is worse than no switch. Neither asked whether the
+switch should exist.
+
+The position that settles it: **an app should be a good citizen of the desktop environment it runs in.**
+Text size is something the user has already told Windows, in one place, for everything they run. A second
+control inside Ripcord competes with that answer, asks them to solve the same problem twice, and is the kind
+of feature that looks like care and behaves like another setting to get wrong. The one place Ripcord is
+deliberately *more* than a good citizen is controller input — because nothing in the desktop environment
+does that for it.
+
+**Three things fall out, and all three are simplifications.**
+
+The unverified premise underneath the feature stops mattering. `UiScale.AppliesOsTextScaleItself` was a
+constant documenting a disagreement — Microsoft's text-scaling documentation says WinUI honours
+`UISettings.TextScaleFactor` with no work from the app; the re-imagining plan asserted the opposite and said
+in italics to verify it before building on it. It was never verified, and being wrong meant a user at 150%
+rendering at 225%. Nothing multiplies anything now, so there is no premise left to be wrong about.
+
+The console card's fixed `ItemsWrapGrid.ItemHeight` stops blocking the card redesign. It was recorded as
+incompatible with the planned scaling, but the incompatibility was ours: the cell only had to grow because
+the app was growing the text inside it. The note stays in the roadmap, struck through, because the reasoning
+still applies if the *platform* grows that text on its own.
+
+And one of the four priced items from the design review is closed by deletion rather than by work — which
+is the cheapest way an open question ever closes.
+
+**What Ripcord still owes the environment:** theme, accent, high contrast, transparency, reduced motion, and
+whatever the platform does with text scale. Those are all read and acted on already (`AppEffects`,
+`AppMotion`). Removing a competing control is not the same as ignoring the ones that remain, and it would be
+a regression to read it that way.
+
+**Worth knowing for anyone re-reading the removed code:** `AppScale` carried a genuine platform finding that
+is not written down anywhere else. WinUI's stock text styles resolve their size through `StaticResource`, not
+`ThemeResource`, and `XamlControlsResources` *defines* those keys itself — so a reference inside it resolves
+locally and never escalates to `Application.Resources`. Overriding `BodyTextBlockFontSize` at app level
+therefore changes nothing at all, which is exactly the mechanism the re-imagining plan proposed. Control-
+internal text is the opposite case: `ControlContentThemeFontSize` is a `ThemeResource` and does honour an
+app-level override. Anyone who tries to scale WinUI text in future will meet both halves of that, and the
+file that recorded them is in the history of this branch.
+
 > **↻ RESUME HERE (2026-09-05 — VIDEO OVER THE INTERNET. The account route works off-network.)**
 >
 > Client on a phone hotspot, console on a different network, both behind NAT, no port forwarding, direct

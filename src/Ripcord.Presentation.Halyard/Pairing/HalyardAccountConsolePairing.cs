@@ -69,6 +69,75 @@ public sealed class HalyardAccountConsolePairing : IAccountConsolePairing
     }
 
     /// <summary>
+    /// Write down which console we are about to command, and what the account says about it.
+    ///
+    /// <para>
+    /// <b>Because the duid is matched by NAME.</b> The flow resolves it with
+    /// <c>CloudConsoleMatch.ResolveId</c> against the console's display name, so a console whose account
+    /// record is named differently — or an account holding more than one console with similar names —
+    /// produces a command the cloud accepts, addressed to something that is not there. The symptom is
+    /// identical to a console that will not wake: nothing joins, and nothing says why.
+    /// </para>
+    ///
+    /// <para>
+    /// Only runs when a trace is on, because it costs a cloud round trip to answer a question nobody is
+    /// asking the rest of the time. Never fails the pairing.
+    /// </para>
+    /// </summary>
+    private async Task LogTargetAsync(AccountPairingRequest request, CancellationToken cancellationToken)
+    {
+        if (_options.Log is null)
+        {
+            return;
+        }
+
+        void Log(string line) => _options.Log!(line);
+
+        try
+        {
+            IReadOnlyList<HalyardConsoleClient> consoles = await _gateway.Cloud
+                .ListConsolesAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+            Log($"pairing target: platform={request.Family.Key} duid={request.CloudDeviceId}");
+            Log($"the account lists {consoles.Count} console(s):");
+
+            foreach (HalyardConsoleClient console in consoles)
+            {
+                bool isTarget = string.Equals(console.Duid, request.CloudDeviceId, StringComparison.Ordinal);
+
+                // The MODES, not just whether the list is non-empty. CanWake collapses
+                // wakeupEnabledPowerModes to a bool, and the spec records values like
+                // ["networkStandby", "mainOnStandby"] — a console that permits waking from one standby mode
+                // and is currently in the other is wakeable by that bool and not in fact wakeable. The
+                // features list is here for the same reason: "remotePlay is enabled" is one entry in it.
+                string modes = console.Device.WakeupEnabledPowerModes is { Length: > 0 } w
+                    ? string.Join(",", w)
+                    : "(none)";
+
+                string features = console.Device.EnabledFeatures is { Length: > 0 } f
+                    ? string.Join(",", f)
+                    : "(none)";
+
+                Log($"  {(isTarget ? "->" : "  ")} name=\"{console.Device.Name}\" platform={console.Platform} "
+                    + $"remotePlay={console.RemotePlayEnabled} duid={console.Duid}");
+                Log($"       wakeupEnabledPowerModes=[{modes}]");
+                Log($"       enabledFeatures=[{features}]");
+            }
+
+            if (!consoles.Any(c => string.Equals(c.Duid, request.CloudDeviceId, StringComparison.Ordinal)))
+            {
+                Log("NONE of them is the duid being commanded - the name match resolved to something the "
+                    + "account does not list, so the command will be accepted and go nowhere");
+            }
+        }
+        catch (Exception ex)
+        {
+            Log($"could not read the account console list: {ex.GetType().Name}");
+        }
+    }
+
+    /// <summary>
     /// Where to open the control transport.
     ///
     /// <para>
@@ -143,11 +212,16 @@ public sealed class HalyardAccountConsolePairing : IAccountConsolePairing
             return new ConsoleRegistrationResult(false, CheckAvailability(request.Family).Detail, null);
         }
 
-        if (!_gateway.IsSignedIn)
+        // Same reasoning as the connect path: a stored session that nothing has restored is a signed-in user,
+        // not a signed-out one. Pairing happened to work because it is reached from surfaces that had already
+        // restored, which is luck rather than design.
+        if (!await _gateway.EnsureSignedInAsync(cancellationToken).ConfigureAwait(false))
         {
             return new ConsoleRegistrationResult(false,
                 "Sign in to your PlayStation Network account to pair without a code.", null);
         }
+
+        await LogTargetAsync(request, cancellationToken).ConfigureAwait(false);
 
         try
         {

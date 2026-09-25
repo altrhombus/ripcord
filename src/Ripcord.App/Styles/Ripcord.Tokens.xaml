@@ -3,9 +3,10 @@
     Values, not appearances. Nothing in this file styles anything — it is the vocabulary the other three
     dictionaries and the pages spend.
 
-    Why tokens rather than literals: every size here has to be reachable at runtime for text scaling to be
-    possible at all (see the LargeUiScale work), and a literal in a page is a value no scale factor can find.
-    That indirection is the whole mechanism, so it is worth the extra hop even where the value never changes.
+    Why tokens rather than literals: one name, one value, spent from many places - so a size can be reviewed
+    once rather than found by grep. Ripcord no longer scales its own text (Windows does that, and the app's
+    job is to honour it rather than compete with it), so the indirection is about consistency now rather
+    than about being reachable by a scale factor.
 
     Consumers should use ThemeResource for anything that can change at runtime and StaticResource only for
     values that genuinely cannot.
@@ -85,18 +86,26 @@
         The vocabulary already in use across the app, named so the next surface picks from the set rather
         than inventing a seventh value.
 
-        Two rules that go with them:
+        Three rules that go with them:
 
         1. NEVER override ControlCornerRadius or OverlayCornerRadius. Stock controls keep the system's
            radii — a button that is rounder here than everywhere else in Windows reads as a foreign app,
            and these tokens are for Ripcord's own surfaces only.
         2. A nested surface's radius must not exceed its parent's minus the padding between them, or the
            inner corner visibly crosses the outer one. This is why the set is graded rather than uniform.
+        3. A CAPSULE IS NOT A MEMBER OF THIS SET, and must not be tokenised into it. Where a radius is half
+           the element's own height - the 4px headroom bar in SessionPage, the step dash, the connect trail -
+           it is a shape, not a pick from this vocabulary, and it stays a literal at the site that needs it.
+           The set above is graded specifically so a nested corner cannot cross its parent's; a value chosen
+           from an element's own height has nothing to do with nesting, and filing it here would make the
+           grading meaningless. This is why one CornerRadius="2" survives the migration to these keys.
         ================================================================================================
     -->
     <CornerRadius x:Key="RipcordTagCornerRadius">4</CornerRadius>
     <CornerRadius x:Key="RipcordCardCornerRadius">8</CornerRadius>
     <CornerRadius x:Key="RipcordPillCornerRadius">10</CornerRadius>
+    <CornerRadius x:Key="RipcordPanelCornerRadius">12</CornerRadius>
+    <CornerRadius x:Key="RipcordHeroCornerRadius">16</CornerRadius>
     <!--
         ================================================================================================
         Touch targets
@@ -117,8 +126,21 @@
     <x:Double x:Key="RipcordTouchTarget">48</x:Double>
     <x:Double x:Key="RipcordTouchTargetCompact">40</x:Double>
 
-    <CornerRadius x:Key="RipcordPanelCornerRadius">12</CornerRadius>
-    <CornerRadius x:Key="RipcordHeroCornerRadius">16</CornerRadius>
+    <!--
+        The strip along the bottom of a stream that belongs to the touch bar, reserved whether or not the
+        bar is showing.
+
+        A RESERVATION, not a control size, which is why it is here with the touch targets rather than on
+        TouchControls itself. 52px buttons plus 8 padding plus a border plus its 20px lift; the number is
+        the space the bar needs when it appears, and the HUD is kept out of it permanently.
+
+        Permanently, because the bar times out after four seconds. A row that collapsed when it went away
+        would bounce rung 1 and rung 2 down and back every time somebody moved the mouse - which is how the
+        bar is summoned on a desktop, so this is not a handheld-only concern. 90px of unused edge on a
+        machine that never summons it is the cheaper of the two.
+    -->
+    <x:Double x:Key="RipcordTouchShelfHeight">90</x:Double>
+
 
     <!--
         ================================================================================================
