@@ -69,6 +69,7 @@ public class PublishedTreeSweepTests
         ["0000000700410080"] = "the duid's 8-byte constant prefix - identical for every client",
         ["1a2b3c4d5e6f0011"] = "this project's synthetic registration key",
         ["00112233445566778899aabbccddeeff"] = "synthetic filler used in the 3DS probe examples",
+        ["32767"] = "Int16.MaxValue, the wire's full stick deflection; written as a range with an ellipsis in PadSnapshot.swift",
         ["00:11:22:33:44:55"] = "synthetic MAC fixture",
         ["77c3673f"] = "a code pointer into the vendor binary, cited by RVA as the naming rules require",
         ["00b18cd0"] = "a Takion TSN sequence number - protocol structure",
