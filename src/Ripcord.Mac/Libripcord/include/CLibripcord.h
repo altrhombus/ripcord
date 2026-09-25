@@ -22,5 +22,6 @@
 #include "../../../../libripcord/discovery/halyard_wake.h"
 #include "../../../../libripcord/halyard/halyard_v1.h"
 #include "../../../../libripcord/stream/stream_packet_crypto.h"
+#include "../../../../libripcord/input/halyard_input.h"
 
 #endif /* CLIBRIPCORD_H */
