@@ -262,6 +262,21 @@ public class PublishedTreeSweepTests
 
     private static readonly Regex PureHex = new("^[0-9a-fA-F]+$", RegexOptions.Compiled);
 
+    /// <summary>
+    /// An Xcode object identifier, as it appears throughout a <c>.pbxproj</c> and as a scheme's
+    /// <c>BlueprintIdentifier</c>: exactly 24 uppercase hex digits, which is twelve bytes and so inside
+    /// <see cref="LongHex"/>'s reach. Xcode assigns one to every file, target and build phase, and assigns
+    /// new ones whenever the IDE edits the project, so a value allowlist would break on the first edit.
+    /// Like <see cref="XamlIdentifierAttribute"/>, this is a property of the syntax rather than an exemption
+    /// for a place: it applies only in those two file types, only to that exact shape, and only to the
+    /// long-hex rule. A 16-byte value, a lowercase run, or the same token anywhere else is still reported.
+    /// </summary>
+    private static readonly Regex XcodeObjectIdentifier = new("^[0-9A-F]{24}$", RegexOptions.Compiled);
+
+    private static bool IsXcodeProjectFile(string relative) =>
+        relative.EndsWith(".pbxproj", StringComparison.OrdinalIgnoreCase)
+        || relative.EndsWith(".xcscheme", StringComparison.OrdinalIgnoreCase);
+
     /// <summary>Matches when the text immediately before a literal is a XAML identifier attribute.</summary>
     private static readonly Regex XamlIdentifierAttribute =
         new(@"x:(Uid|Name|Key)=$", RegexOptions.Compiled);
@@ -331,7 +346,7 @@ public class PublishedTreeSweepTests
         [".md", ".cs", ".c", ".h", ".cpp", ".hpp", ".idl", ".def", ".json", ".yml", ".yaml", ".xaml",
          ".py", ".props", ".targets", ".csproj", ".vcxproj", ".slnx", ".proto", ".sh", ".ps1",
          ".editorconfig", ".gitattributes", ".appxmanifest", ".manifest", ".svg", ".resx", ".resw",
-         ".html"];
+         ".html", ".swift", ".xcconfig", ".modulemap", ".pbxproj", ".xcscheme"];
 
     private static readonly string[] NamedFiles = ["NOTICE", "LICENSE", ".gitignore", "Makefile"];
 
@@ -465,6 +480,12 @@ public class PublishedTreeSweepTests
         /// is a row rather than something a reader has to infer from the absence of a finding.
         /// </summary>
         XamlIdentifier,
+
+        /// <summary>
+        /// A line of an Xcode project file, where every object is named by a 24-digit hex identifier. See
+        /// <see cref="XcodeObjectIdentifier"/>.
+        /// </summary>
+        XcodeProject,
     }
 
     /// <summary>
@@ -643,6 +664,16 @@ public class PublishedTreeSweepTests
           "a descriptive x:Uid is 40+ base64-alphabet characters and is an identifier, not a value" },
         { "SettingsPage_CredentialsAreProtectedWithDpapi", LineContext.ProductCode, true,
           "the same text as a bare literal is not an identifier attribute and is reported" },
+
+        // --- Xcode object identifiers: twelve bytes of hex on every line of a project file ----------------
+        { "0A1B2C3D4E5F60718293A4B5", LineContext.XcodeProject, false,
+          "Xcode names every object with 24 uppercase hex digits; they are assigned, not derived from anything" },
+        { "0a1b2c3d4e5f60718293a4b5", LineContext.XcodeProject, true,
+          "lowercase is not the form Xcode writes, so it is not assumed to be an identifier" },
+        { "0A1B2C3D4E5F60718293A4B5C6D7E8F9", LineContext.XcodeProject, true,
+          "sixteen bytes in a project file is a value, not an identifier, and is reported" },
+        { "0A1B2C3D4E5F60718293A4B5", LineContext.Prose, true,
+          "the same token outside a project file has no such excuse and is reported" },
 
         // --- must tolerate: things that are not disclosures --------------------------------------------
         { "and so on, continued…", LineContext.Prose, false, "an ordinary prose ellipsis" },
@@ -1006,7 +1037,7 @@ public class PublishedTreeSweepTests
     /// </summary>
     private static List<string> ScanLine(
         string line, bool isProse, bool applyAllowlist, string at, bool isProductCode = false,
-        bool isMessage = false)
+        bool isMessage = false, bool isXcodeProject = false)
     {
         bool Allow(string v) => applyAllowlist && IsAllowed(v, isMessage);
 
@@ -1041,6 +1072,7 @@ public class PublishedTreeSweepTests
             {
                 string hex = m.Groups[1].Value;
                 if (IsSyntheticFiller(hex)) continue;
+                if (isXcodeProject && XcodeObjectIdentifier.IsMatch(hex)) continue;
                 if (Allow(hex)) continue;
                 found.Add($"{at}|hex|{hex}");
             }
@@ -1141,7 +1173,8 @@ public class PublishedTreeSweepTests
                 if (exempt[i]) continue;
 
                 found.AddRange(
-                    ScanLine(lines[i], isProse, applyAllowlist, Where(root, path, i + 1), isProductCode));
+                    ScanLine(lines[i], isProse, applyAllowlist, Where(root, path, i + 1), isProductCode,
+                             isXcodeProject: IsXcodeProjectFile(relative)));
             }
         }
 
@@ -1399,7 +1432,7 @@ public class PublishedTreeSweepTests
             {
                 found.AddRange(ScanLine(
                     lines[i].TrimEnd((char)0x0d), isProse, applyAllowlist,
-                    $"{sha[..8]} {rel}:{i + 1}", isProductCode));
+                    $"{sha[..8]} {rel}:{i + 1}", isProductCode, isXcodeProject: IsXcodeProjectFile(rel)));
             }
         }
 
@@ -1650,6 +1683,8 @@ public class PublishedTreeSweepTests
             LineContext.DeclaredConstant or LineContext.ProductCode =>
                 $"    private const string Fixture = \"{input}\";",
             LineContext.XamlIdentifier => $"                    x:Uid=\"{input}\" />",
+            LineContext.XcodeProject =>
+                $"\t\t{input} /* RipcordKit.framework in Frameworks */ = {{isa = PBXBuildFile; fileRef = {input}; }};",
             LineContext.Comment => $"        StartSession();   // as captured: {input}",
             LineContext.Code => $"        var fixture = Decode(\"{input}\");",
             _ => throw new ArgumentOutOfRangeException(nameof(context)),
@@ -1660,7 +1695,8 @@ public class PublishedTreeSweepTests
             isProse: context == LineContext.Prose,
             applyAllowlist: false,
             at: "contract",
-            isProductCode: context == LineContext.ProductCode);
+            isProductCode: context == LineContext.ProductCode,
+            isXcodeProject: context == LineContext.XcodeProject);
 
         Assert.True(
             hits.Count > 0 == shouldMatch,

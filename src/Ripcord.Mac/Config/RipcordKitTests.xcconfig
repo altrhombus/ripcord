@@ -1,0 +1,3 @@
+PRODUCT_NAME = RipcordKitTests
+PRODUCT_BUNDLE_IDENTIFIER = io.github.altrhombus.Ripcord.KitTests
+GENERATE_INFOPLIST_FILE = YES

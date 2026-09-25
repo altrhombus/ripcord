@@ -1,0 +1,5 @@
+// The C core as a Swift module. RipcordKit imports it internally, so no C type reaches the app.
+module CLibripcord {
+    header "CLibripcord.h"
+    export *
+}

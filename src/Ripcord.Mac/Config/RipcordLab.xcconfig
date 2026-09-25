@@ -1,0 +1,4 @@
+// The Mac's protocol lab: a command-line driver for the core against a real console, the Mac-side
+// counterpart of tools/Ripcord.ProtocolLab.
+
+PRODUCT_NAME = ripcord-lab
