@@ -430,7 +430,15 @@
             <!--
                 The FULL mark, not FamilyMark. This surface is about Ripcord rather than about a console, and
                 FamilyMark is the console badge - its own XAML says the wedge is left out because the wedge is
-                the app's identity. No wordmark either: the title bar already carries the name.
+                the app's identity.
+
+                **Still no wordmark, asked again and answered the same way (2026-09-24).** The first time,
+                there was no wordmark to add; there is one now, and RipcordWordmark beside this mark would
+                be a legitimate lockup rather than the bare word brand/README.md forbids. It is left out
+                anyway. The title bar already carries the name, so a lockup here is the third time it is on
+                screen - and this screen is a task, not an introduction, which is the same reason the
+                connect sequence stopped being a ceremony. About is the surface that gets the lockup,
+                because it is the one that is about Ripcord rather than about getting you to a console.
             -->
             <controls:RipcordMark
                 Width="88"
