@@ -1,8 +1,10 @@
 // ripcord-lab: drives libripcord from the Mac, against a real console. The Mac counterpart of
 // tools/Ripcord.ProtocolLab, and the tool the engine spike (docs/macos-plan.md, step 2) grows in.
 
+import CoreMedia
 import Foundation
 import RipcordKit
+import Synchronization
 
 let usage = """
     usage: ripcord-lab <command>
@@ -15,6 +17,10 @@ let usage = """
                             PIN-pair with a console showing Settings > System > Remote Play > Pair
                             Device. The record is kept in ~/Library/Application Support/Ripcord/lab
       consoles              list the consoles the lab has paired with
+      connect <host> [seconds] [out.h264]
+                            stream from a paired console for `seconds` (default 20), printing each
+                            stage and a stats line, and writing every video frame, as the console
+                            sent it, to out.h264 (Annex-B; ffplay or VLC plays it)
 
     """
 
@@ -85,6 +91,112 @@ case "consoles":
     if consoles.isEmpty { print("no paired consoles in \(PairingStore.lab.directory.path)") }
     for c in consoles { print("\(c.family.rawValue)  \(c.host)  \(c.name)  id \(c.consoleID)") }
 
+case "connect":
+    guard arguments.count >= 2 else { fail(usage, code: 2) }
+    let host = arguments[1]
+    let seconds = arguments.count > 2 ? (Double(arguments[2]) ?? 20) : 20
+    let outPath = arguments.count > 3 ? arguments[3] : "ripcord-lab-capture.h264"
+    guard let console = PairingStore.lab.load().first(where: { $0.host == host }) else {
+        fail("connect: no paired console at \(host); run `ripcord-lab pair` first")
+    }
+    FileManager.default.createFile(atPath: outPath, contents: nil)
+    guard let out = FileHandle(forWritingAtPath: outPath) else { fail("connect: cannot write \(outPath)") }
+    let done = DispatchSemaphore(value: 0)
+    let started = ContinuousClock.now
+    @Sendable func stamp() -> String {
+        let d = ContinuousClock.now - started
+        return String(format: "%6.2fs", Double(d.components.seconds) + Double(d.components.attoseconds) / 1e18)
+    }
+    let lastStats = Mutex(ContinuousClock.now - .seconds(10))
+    // The session is created after every handler is set: it copies them at init.
+    let sessionBox = Mutex<ConsoleSession?>(nil)
+
+    var handlers = SessionHandlers()
+    handlers.log = { line in FileHandle.standardError.write(Data("  core: \(line)\n".utf8)) }
+    handlers.stage = { stage in print("\(stamp())  stage \(stage)") }
+    handlers.streamInfo = { info in print("\(stamp())  stream \(info.width)x\(info.height) \(info.codec)") }
+    handlers.video = { sample, _ in out.write(annexB(sample)) }
+    handlers.stats = { s in
+        let due = lastStats.withLock { last -> Bool in
+            guard ContinuousClock.now - last >= .seconds(1) else { return false }
+            last = ContinuousClock.now
+            return true
+        }
+        guard due else { return }
+        print("\(stamp())  \(s.kbps) kb/s  video \(s.videoFrames) (key \(s.keyframes))  audio \(s.audioFrames)  lost \(s.packetsLost)/\(s.packetsReceived)  idr \(s.idrRequests)")
+    }
+    handlers.passcodeRequested = { retry in
+        // Off the session thread: reading a terminal blocks, and the session must keep being serviced.
+        DispatchQueue.global().async {
+            print(retry == 0 ? "the console asks for its passcode: " : "refused; passcode again: ", terminator: "")
+            fflush(stdout)
+            let digits = readLine() ?? ""
+            sessionBox.withLock { digits.isEmpty ? $0?.cancel() : $0?.supplyPasscode(digits) }
+        }
+    }
+    handlers.ended = { outcome in
+        print("\(stamp())  ended at \(outcome.stage), reason \(outcome.endReason), control error \(outcome.controlError)")
+        done.signal()
+    }
+    let session = ConsoleSession(console: console, handlers: handlers)
+    sessionBox.withLock { $0 = session }
+    session.start()
+    DispatchQueue.global().asyncAfter(deadline: .now() + seconds) { session.disconnect() }
+    done.wait()
+    try? out.close()
+    print("video written to \(outPath)")
+
 default:
     fail(usage, code: 2)
+}
+
+/// A sample as the console sent it: length prefixes back to start codes, and a keyframe's parameter
+/// sets written in front, so the file is a plain Annex-B elementary stream.
+func annexB(_ sample: CMSampleBuffer) -> Data {
+    guard let block = CMSampleBufferGetDataBuffer(sample) else { return Data() }
+    var length = 0
+    var pointer: UnsafeMutablePointer<CChar>?
+    guard CMBlockBufferGetDataPointer(block, atOffset: 0, lengthAtOffsetOut: nil, totalLengthOut: &length,
+                                      dataPointerOut: &pointer) == noErr, let pointer else { return Data() }
+    var data = Data()
+    if let format = CMSampleBufferGetFormatDescription(sample), !sample.isNotSync { data.append(parameterSets(format)) }
+    let raw = UnsafeRawBufferPointer(start: pointer, count: length)
+    var offset = 0
+    while offset + 4 <= length {
+        let n = Int(raw.loadUnaligned(fromByteOffset: offset, as: UInt32.self).bigEndian)
+        offset += 4
+        guard offset + n <= length else { break }
+        data.append(contentsOf: [0, 0, 0, 1])
+        data.append(contentsOf: raw[offset..<(offset + n)])
+        offset += n
+    }
+    return data
+}
+
+/// The format description's parameter sets as Annex-B, for a keyframe written to a raw stream file.
+func parameterSets(_ format: CMFormatDescription) -> Data {
+    var data = Data()
+    let isHEVC = CMFormatDescriptionGetMediaSubType(format) == kCMVideoCodecType_HEVC
+    var count = 0
+    _ = isHEVC
+        ? CMVideoFormatDescriptionGetHEVCParameterSetAtIndex(format, parameterSetIndex: 0, parameterSetPointerOut: nil, parameterSetSizeOut: nil, parameterSetCountOut: &count, nalUnitHeaderLengthOut: nil)
+        : CMVideoFormatDescriptionGetH264ParameterSetAtIndex(format, parameterSetIndex: 0, parameterSetPointerOut: nil, parameterSetSizeOut: nil, parameterSetCountOut: &count, nalUnitHeaderLengthOut: nil)
+    for i in 0..<count {
+        var pointer: UnsafePointer<UInt8>?
+        var size = 0
+        _ = isHEVC
+            ? CMVideoFormatDescriptionGetHEVCParameterSetAtIndex(format, parameterSetIndex: i, parameterSetPointerOut: &pointer, parameterSetSizeOut: &size, parameterSetCountOut: nil, nalUnitHeaderLengthOut: nil)
+            : CMVideoFormatDescriptionGetH264ParameterSetAtIndex(format, parameterSetIndex: i, parameterSetPointerOut: &pointer, parameterSetSizeOut: &size, parameterSetCountOut: nil, nalUnitHeaderLengthOut: nil)
+        guard let pointer else { continue }
+        data.append(contentsOf: [0, 0, 0, 1])
+        data.append(pointer, count: size)
+    }
+    return data
+}
+
+extension CMSampleBuffer {
+    var isNotSync: Bool {
+        let attachments = CMSampleBufferGetSampleAttachmentsArray(self, createIfNecessary: false) as? [[CFString: Any]]
+        return (attachments?.first?[kCMSampleAttachmentKey_NotSync] as? Bool) ?? false
+    }
 }
