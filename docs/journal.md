@@ -60,6 +60,20 @@ Internet play's UDP half, tied together in `halyard_client`, ported from `Halyar
 - **`regist_flow_test` no longer broadcasts.** The ARM probe is stubbed at link time, and the host suite now
   stays on loopback.
 
+### The passcode gate, live, and a refactor cleared by A/B (2026-09-25)
+
+After the rendezvous work reshaped the control session, a LAN regression run met something new: the console
+said its user was locked and asked for a passcode. The morning's run had not been asked, because the console
+had just been in use. To be sure the refactor was not the cause, the lab was rebuilt from the commit before
+it and run against the console in the same state. It got the identical answer, so the console had changed,
+not the code.
+
+That made it the first live test of `halyard_client`'s sign-in gate. A wrong passcode was refused (verdict
+0x01), and the gate asked again rather than guessing. The owner then supplied the right passcode, and the
+console accepted it (verdict 0x00). SESSION_ID followed at 2.56 s and streaming at 4.98 s, in 1080p HEVC at
+60 fps, with 47 control messages verified and none failed. Two packets were lost in the opening keyframe
+burst, out of 1,243, and the stream recovered without an IDR. The passcode itself is recorded nowhere.
+
 ### The Mac streams: first pairing and first picture through `libripcord` (2026-09-25)
 
 The engine spike's question is answered: a Mac, through the C core and nothing else, pairs with a PS5 and
