@@ -99,7 +99,9 @@ case "wake":
     let started = ContinuousClock.now
     do {
         try LANWake.wakeIfResting(console)
-        print("\(console.name) is awake (\(ContinuousClock.now - started))")
+        let took = ContinuousClock.now - started
+        print(String(format: "%@ is awake (%.1f s)", console.name,
+                     Double(took.components.seconds) + Double(took.components.attoseconds) / 1e18))
     } catch {
         fail("wake: \(error)")
     }

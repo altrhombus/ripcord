@@ -254,6 +254,8 @@ Step 1, promoting the core to `libripcord/` with fuzzing and a CI job, is done a
         streaming in 4.73 s, 60 fps, 0 lost of 2,404, the capture decodes, 1080p HEVC at 25 Mb/s. See
         the journal. **The spike's question is answered: the C core is the Mac's engine.**
   - [x] **The passcode gate, live.** Refused, asked again, then accepted and streamed. See the journal.
+  - [x] **LAN wake, live.** Done 2026-09-25: resting to awake in 11.7 s (the PS3 measured 12.3 s), then streaming
+        at 5.03 s.
   - [ ] **Controller input, live.** The sequence sends it, but the lab has had no pad attached, so it
         has not been seen to steer the console.
 - [ ] **Check the Windows client's resolution against its bitrate.** The console grants resolution by
