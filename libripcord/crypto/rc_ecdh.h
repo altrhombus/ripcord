@@ -182,4 +182,24 @@ int rc_ecdh_derive_shared(const rc_ecdh_keypair *pair,
                           rc_rng_fn rng, void *rng_ctx,
                           uint8_t *out_secret, size_t out_secret_size, size_t *out_secret_length);
 
+/*
+ * AN EXTERNAL BACKEND. A build that defines RC_ECDH_EXTERNAL_BACKEND compiles neither the Mbed TLS branch
+ * of rc_ecdh.c nor its fail-closed stub, and must itself define the five backend entry points:
+ * rc_ecdh_available, rc_ecdh_generate, rc_ecdh_keypair_from_private, rc_ecdh_derive_shared and
+ * rc_ecdh_check_peer_point, with exactly the contracts stated above. That includes validating the peer
+ * point before it is used, and failing rather than returning anything key-shaped.
+ *
+ * It exists for the macOS client (src/Ripcord.Mac), whose backend is CryptoKit: the platform's own
+ * audited curve implementation, and one that needs no build-time fetch. That makes two real backends
+ * behind this seam, which is the bar for having one.
+ *
+ * The backend reports into the same diagnostics as the Mbed TLS branch through these two hooks. `code`
+ * is whatever the backend's own error value is, verbatim, as above.
+ */
+#if defined(RC_ECDH_EXTERNAL_BACKEND)
+void rc_ecdh_backend_record_failure(int step, int code);
+void rc_ecdh_backend_record_derivation(unsigned curve, size_t private_length,
+                                       const uint8_t *peer_public_key, size_t peer_public_key_length);
+#endif
+
 #endif /* RC_ECDH_H */
