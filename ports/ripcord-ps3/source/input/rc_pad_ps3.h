@@ -2,7 +2,7 @@
  * ripcord-ps3 - the DualShock 3, mapped to the wire's controller state.
  *
  * The mapping is the only part of input this port owns. Everything else - the two packet shapes, the
- * transition history, the sealing and the encryption - is in ports/common and in the sealer, where it
+ * transition history, the sealing and the encryption - is in libripcord and in the sealer, where it
  * is shared with every other front end and with the .NET client that derived it.
  *
  * WHAT THIS PAD CAN AND CANNOT SEND. A DualShock 3 has both stick clicks and pressure-sensitive

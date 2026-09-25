@@ -1,7 +1,7 @@
 /*
  * ripcord ports - a minimal Mbed TLS configuration: elliptic curves and bignums, nothing else.
  *
- * ports/common/crypto/rc_ecdh.c delegates exactly one primitive to this library - ECDH over P-256 and
+ * libripcord/crypto/rc_ecdh.c delegates exactly one primitive to this library - ECDH over P-256 and
  * P-521 - and uses only its mbedtls_ecp_* and mbedtls_mpi_* entry points. There is no TLS here, no
  * X.509, no cipher suites, no entropy source, no filesystem and no clock: this port supplies its own
  * randomness through the platform seam's rc_random_bytes (platform/rc_platform.h) and speaks a protocol
@@ -47,7 +47,7 @@
  * build ECP unless MBEDTLS_CTR_DRBG_C and MBEDTLS_ENTROPY_C come with it - which would drag in an
  * entropy source that, per rc_ecdh.h, cannot work on a console anyway.
  *
- * VERIFIED BEFORE SETTING IT: all three call sites in ports/common/crypto/rc_ecdh.c pass a real
+ * VERIFIED BEFORE SETTING IT: all three call sites in libripcord/crypto/rc_ecdh.c pass a real
  * (rng, rng_ctx) pair - mbedtls_ecp_gen_keypair, and both mbedtls_ecp_mul calls (public-key derivation
  * and the shared-secret computation). None passes NULL. So blinding is active on every operation this
  * port performs, sourced from the platform CSPRNG (sceKernelGetRandomNumber on Vita).
@@ -64,7 +64,7 @@
  *       on device mbedtls's own entropy sources assume a hosted OS, and in tests a known-answer vector
  *       needs a FIXED private key, which a curve implementation that insists on generating its own
  *       randomness cannot be checked against at all.
- *   MBEDTLS_SELF_TEST     - the known-answer checking lives in ports/common/tests, against the .NET
+ *   MBEDTLS_SELF_TEST     - the known-answer checking lives in libripcord/tests, against the .NET
  *                           implementation, which is a stronger check than mbedtls checking itself.
  *   MBEDTLS_PLATFORM_C    - mbedtls_calloc/mbedtls_free then resolve straight to calloc/free.
  *   MBEDTLS_FS_IO, MBEDTLS_HAVE_TIME, MBEDTLS_NET_C - no filesystem, no clock, no sockets wanted here.

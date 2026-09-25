@@ -2,7 +2,7 @@
 #
 # ripcord ports - cross-build the Mbed TLS ECP/MPI layer, and nothing else.
 #
-# WHY THIS EXISTS. ports/common/crypto/rc_ecdh.c delegates one primitive - ECDH over P-256/P-521 - to
+# WHY THIS EXISTS. libripcord/crypto/rc_ecdh.c delegates one primitive - ECDH over P-256/P-521 - to
 # Mbed TLS, for the reason rc_ecdh.h gives at length: a hand-written constant-time bigint is the last
 # thing this project should write twice. devkitPro packages that library for the 3DS as `3ds-mbedtls`.
 # vitasdk packages no equivalent (its vdpm list has openssl and libsodium; libsodium is
@@ -21,7 +21,7 @@
 #     PREFIX=<dir> CROSS= ./build-mbedtls.sh                 build for THIS machine, for the host tests
 #     PREFIX=<dir> CROSS=arm-none-eabi- ./build-mbedtls.sh   some other toolchain
 #
-# It lives in ports/common/tools rather than in one port because it serves ports/common/crypto/rc_ecdh.c,
+# It lives in libripcord/tools rather than in one port because it serves libripcord/crypto/rc_ecdh.c,
 # and two different builds already want it: the Vita port, which has no packaged mbedtls, and the host
 # test suite, whose ecdh_test otherwise skips on any machine without libmbedtls-dev installed. The 3DS
 # does not need it - devkitPro packages 3ds-mbedtls - which is why the version here is pinned to match

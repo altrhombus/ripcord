@@ -5,7 +5,7 @@
  * companion key tied to one console and one account. Registration itself is not here and is not coming -
  * ports/ripcord-3ds/README.md settles that ("Pairing happens on a PC, not here"), and the record is
  * transcribed from `ProtocolLab -- register` into a key=value file. That is why halyard_wake lives in
- * ports/common while registration does not: wake is purely local, and cap49 proved it by working with
+ * libripcord while registration does not: wake is purely local, and cap49 proved it by working with
  * the console's internet blocked at the router.
  *
  * THE RECORD IS DIRTY-ROOM MATERIAL. registkey and companion are tied to a specific console and account,
@@ -85,7 +85,7 @@ typedef struct {
     int  tcp_preflight_ok;   /* the control port accepted a bounded TCP connect            */
 
     /*
-     * DOES inet_aton WORK ON THIS PLATFORM? The port has only ever used inet_pton; ports/common uses
+     * DOES inet_aton WORK ON THIS PLATFORM? The port has only ever used inet_pton; libripcord uses
      * inet_aton and nothing else - in rc_tcp_connect and in the ARM step. So the core's address parsing
      * has never been exercised here, and rc_tcp_connect's connect() is BLOCKING WITH NO TIMEOUT: an
      * address that parses to the wrong value there is not a failed connect, it is a hang, which is what
@@ -101,7 +101,7 @@ typedef struct {
     /*
      * Whether fcntl can make a PS3 socket non-blocking. Probed with calls that cannot block: set the
      * flag, read it back, and separately try SO_NBIO. If the readback does not carry O_NONBLOCK, every
-     * poll loop in ports/common has been running against a blocking socket - which makes a bounded
+     * poll loop in libripcord has been running against a blocking socket - which makes a bounded
      * deadline unreachable, because the recv guarding it never returns.
      */
     int  fcntl_set_rc;             /* what F_SETFL returned                                   */

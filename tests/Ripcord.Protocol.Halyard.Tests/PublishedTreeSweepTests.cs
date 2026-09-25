@@ -809,11 +809,18 @@ public class PublishedTreeSweepTests
     /// product code until a <c>tests</c> segment says otherwise, so the next port to invent a directory
     /// layout is over-covered rather than under-covered. For a guard, that is the direction to be wrong in.
     /// <see cref="ProductCodeClassification"/> pins both halves.</para>
+    ///
+    /// <para><b>The negative marker only fails closed inside a prefix this rule names.</b> On 2026-09-24
+    /// the core moved again, from <c>ports/common/</c> to <c>libripcord/</c>, when the macOS client made it
+    /// more than the ports' core, and a top-level directory is outside every prefix above. Left alone,
+    /// the move would have demoted the same ninety files a second time. So <c>libripcord/</c> is named
+    /// here explicitly, and a new top-level code directory has to be added here with it.</para>
     /// </summary>
     private static bool IsProductCode(string relative) =>
         relative.StartsWith("src/", StringComparison.Ordinal)
         || relative.StartsWith("tools/", StringComparison.Ordinal)
-        || (relative.StartsWith("ports/", StringComparison.Ordinal)
+        || ((relative.StartsWith("ports/", StringComparison.Ordinal)
+                || relative.StartsWith("libripcord/", StringComparison.Ordinal))
             && !relative.Split('/').Contains("tests", StringComparer.Ordinal));
 
     /// <summary>
@@ -1716,9 +1723,9 @@ public class PublishedTreeSweepTests
     [InlineData("ports/ripcord-3ds/source/util/rc_random.c", true)]
     [InlineData("ports/ripcord-ps3/source/media/rc_h264_bits.c", true)]
     [InlineData("ports/ripcord-ps3/tests/h264_test.c", false)]
-    [InlineData("ports/common/crypto/rc_aes.c", true)]
-    [InlineData("ports/common/util/rc_base64.c", true)]
-    [InlineData("ports/common/tests/fec_test.c", false)]
+    [InlineData("libripcord/crypto/rc_aes.c", true)]
+    [InlineData("libripcord/util/rc_base64.c", true)]
+    [InlineData("libripcord/tests/fec_test.c", false)]
     [InlineData("ports/a-port-that-does-not-exist-yet/media/decoder.c", true)]
     [InlineData("ports/a-port-that-does-not-exist-yet/tests/decoder_test.c", false)]
     public void ProductCodeClassification(string relative, bool expected)
