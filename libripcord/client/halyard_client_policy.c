@@ -27,7 +27,9 @@ void halyard_client_config_resolve(const halyard_client_config *in, halyard_clie
     c.hdr = (c.hdr != 0);
 
     if (c.signin_prompt_window_ms == 0u)
-        c.signin_prompt_window_ms = HALYARD_CLIENT_DEFAULT_SIGNIN_WINDOW_MS;
+        c.signin_prompt_window_ms = (c.route == HALYARD_ROUTE_RENDEZVOUS)
+                                        ? HALYARD_CLIENT_DEFAULT_RENDEZVOUS_SIGNIN_WINDOW_MS
+                                        : HALYARD_CLIENT_DEFAULT_SIGNIN_WINDOW_MS;
     if (c.senkusha_attempts == 0u)
         c.senkusha_attempts = HALYARD_CLIENT_DEFAULT_SENKUSHA_ATTEMPTS;
     if (c.stream_attempts == 0u)
@@ -40,6 +42,21 @@ void halyard_client_config_resolve(const halyard_client_config *in, halyard_clie
         c.rcvbuf_bytes = 0;
 
     c.require_session_ready = (c.require_session_ready >= 0) ? 1 : 0;
+
+    if (c.stun_servers == NULL)
+        c.stun_server_count = 0u;
+    if (c.stun_server_count > HALYARD_CLIENT_STUN_MAX)
+        c.stun_server_count = HALYARD_CLIENT_STUN_MAX;
+    if (c.stun_attempts == 0u)
+        c.stun_attempts = HALYARD_CLIENT_DEFAULT_STUN_ATTEMPTS;
+    if (c.stun_timeout_ms == 0u)
+        c.stun_timeout_ms = HALYARD_CLIENT_DEFAULT_STUN_TIMEOUT_MS;
+    if (c.media_offer_timeout_ms == 0u)
+        c.media_offer_timeout_ms = HALYARD_CLIENT_DEFAULT_MEDIA_OFFER_TIMEOUT_MS;
+    if (c.dgram_stage_timeout_ms == 0u)
+        c.dgram_stage_timeout_ms = HALYARD_CLIENT_DEFAULT_DGRAM_STAGE_TIMEOUT_MS;
+    if (c.dgram_receive_timeout_ms == 0u)
+        c.dgram_receive_timeout_ms = HALYARD_CLIENT_DEFAULT_DGRAM_RECEIVE_TIMEOUT_MS;
 
     *out = c;
 }

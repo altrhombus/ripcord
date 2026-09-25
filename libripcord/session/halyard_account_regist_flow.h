@@ -20,9 +20,10 @@
  * association whose prelude names both peers by the 20-byte ids they published in their signaling
  * OFFERs (HalyardDatagramControlChannel over HalyardControlAssociation). That association is shared
  * with the internet-play connect sequence, which carries /sess/init and /sess/ctrl over the SAME
- * association once rgst is done, so it is ported with that work rather than here. This file takes it
- * as a callback: "send these request bytes on a fresh connection, and give me back the complete HTTP
- * reply" - ExchangeAsync's contract - and stays usable, and testable, before that port lands.
+ * association once rgst is done. This file takes it as a callback: "send these request bytes on a
+ * fresh connection, and give me back the complete HTTP reply" - ExchangeAsync's contract - and the
+ * callback over the real association is halyard_dgram_regist_exchange (halyard_dgram_session.h), with
+ * the channel as `user`.
  *
  * NO SEARCH PROBE. The .NET client sends its SRC3/SRC2 probe to the console's host before every
  * registration POST, best effort, on both routes (HalyardRegistrationClient.RegisterAsync). Whether the
@@ -47,7 +48,7 @@ int halyard_account_regist_generate_key_material(uint8_t data1[16], uint8_t data
 
 /*
  * The transport: send `request` as one HTTP request on the account control association and return the
- * complete reply in `response` (halyard_account_regist_response_complete decides "complete"). Returns 1
+ * complete reply in `response` (halyard_dgram_http_complete decides "complete"). Returns 1
  * with *out_response_length set, or 0 on any failure - which is reported as ERR_TRANSPORT.
  */
 typedef int (*halyard_account_regist_exchange_fn)(void *user,

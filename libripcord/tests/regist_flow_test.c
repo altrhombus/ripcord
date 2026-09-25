@@ -28,6 +28,24 @@
 #include <unistd.h>
 
 /*
+ * THE SEARCH PROBE, REPLACED AT LINK TIME. The real one (halyard_control_probe.c) sends to the LAN
+ * broadcast address as well as the host, because a console that has not been spoken to recently answers
+ * only the broadcast - so linking it put a datagram on the network on every `make`. This suite sends
+ * nothing beyond loopback, so the probe is a stub that records the call and reports what an unanswered
+ * probe reports: no reply. That is still the best-effort case the flow has to tolerate, and the call
+ * itself is now checked rather than merely survived.
+ */
+static int g_probe_calls;
+
+int halyard_control_arm_probe(const char *host, int is_ps5)
+{
+    (void)host;
+    (void)is_ps5;
+    g_probe_calls++;
+    return 0;
+}
+
+/*
  * THE TEST'S OWN RANDOMNESS, AND IT IS NOT RANDOM.
  *
  * rc_platform_host.c deliberately provides no rc_random_bytes: "offering a host one would make 'built
@@ -221,9 +239,9 @@ static int start_fake(fake_mode mode, uint32_t pin, int is_ps5, pthread_t *threa
 }
 
 /*
- * THE WHOLE FLOW, against the fake. The search probe goes to a loopback address nothing answers, which
- * is exactly the best-effort case the real one has to tolerate - so this also checks that an unanswered
- * probe does not stop the POST.
+ * THE WHOLE FLOW, against the fake. The search probe is the stub above, unanswered, which is exactly the
+ * best-effort case the real one has to tolerate - so this also checks that an unanswered probe does not
+ * stop the POST, and that the flow still sends one first.
  */
 static void test_full_flow(fake_mode mode, uint32_t console_pin, uint32_t client_pin,
                            halyard_regist_status expect, const char *what)
@@ -245,10 +263,12 @@ static void test_full_flow(fake_mode mode, uint32_t console_pin, uint32_t client
     p.is_ps5 = 1;
     p.passcode = client_pin;
 
+    g_probe_calls = 0;
     (void)halyard_regist_run(&p, &r);
     pthread_join(thread, NULL);
     close(g_fake.listener);
 
+    check(g_probe_calls == 1 && !r.saw_search_reply, "the search probe was sent once, and went unanswered", __LINE__);
     check(g_fake.saw_request, "the fake console received a request", __LINE__);
     check(r.status == expect, what, __LINE__);
 

@@ -35,6 +35,31 @@ different purpose.
 > anything. The list above is short, it is checkable in one `git log --format=%B | grep`, and it stops
 > growing the moment someone notices — which is the property that actually matters.
 
+### `libripcord`: the rendezvous route's C side, and a byte-pipe seam in the control session (2026-09-25)
+
+Internet play's UDP half, tied together in `halyard_client`, ported from `HalyardStreamingSession`,
+`HalyardAccountConsoleSession` and `HalyardDatagramSessionControlChannel`. None of it has met a console.
+
+- **The seam.** `halyard_control_session.c` now reaches its transport through `halyard_control_pipe`
+  (open, send_all, non-blocking recv, close). The TCP pipe is the file's four old socket calls moved behind
+  the pointer. A loopback console checks the bytes whole, and an A/B build of the previous file against the
+  same console sent the same 626 bytes, byte for byte. The datagram pipe (`halyard_dgram_session.c`) runs
+  each request on a fresh chunk connection and the persistent frames over the last one.
+- **Byte for byte with .NET.** `ProtocolLab vectors` now writes `rendezvous-control.kat`, the `/sess/init`
+  and `/sess/ctrl` requests `HalyardStreamingSession` itself sends with `ConnectionPath = Rendezvous`, for
+  PS5 and PS4. The datagram pipe reproduces both exactly: the padded Host, `Rp-Version` on init, and
+  `RP-ConPath: 3`.
+- **The route.** `halyard_client_rendezvous_prepare` and `_begin` sit at the points where the signaling
+  interleaves, and a `poll_media` pull callback covers the media negotiation. `connect()` then runs the A/V
+  leg: STUN on its socket, the 88-byte prelude, up to 8 s for SESSION_ID, senkusha and then the stream's
+  Takion on that same socket, PROBE_REPORT at the next field counter, and up to 10 s for STREAM_READY.
+  Takion there reads only the console's endpoint (`takion_channel_connect_filtered`, off for the LAN).
+  `rendezvous_test` watches that order against a loopback fake console.
+- **Account pairing's transport** is `halyard_dgram_regist_exchange`. The duplicate HTTP-completeness check
+  is gone: `halyard_dgram_http_complete`, the exact port of .NET's, is the one kept.
+- **`regist_flow_test` no longer broadcasts.** The ARM probe is stubbed at link time, and the host suite now
+  stays on loopback.
+
 ### The Mac streams: first pairing and first picture through `libripcord` (2026-09-25)
 
 The engine spike's question is answered: a Mac, through the C core and nothing else, pairs with a PS5 and
