@@ -28,4 +28,13 @@
 #include "../../../../libripcord/session/halyard_regist_flow.h"
 #include "../../../../libripcord/client/halyard_client.h"
 
+/* The rendezvous route, for RipcordKit/Cloud/Rendezvous/LibripcordTransports.swift and ConsoleSession: the
+ * account seed (data1/data2 out, customData1 back), /sess/rgst over the 9303 association, the association
+ * itself as a standalone leg (account pairing has no halyard_client), the candidate rules and STUN. */
+#include "../../../../libripcord/net/rc_stun.h"
+#include "../../../../libripcord/halyard/halyard_account_seed.h"
+#include "../../../../libripcord/session/halyard_account_regist_flow.h"
+#include "../../../../libripcord/session/halyard_dgram_session.h"
+#include "../../../../libripcord/session/halyard_wan_candidates.h"
+
 #endif /* CLIBRIPCORD_H */

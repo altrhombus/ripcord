@@ -94,7 +94,7 @@ func runCloud(_ arguments: [String]) -> Never {
     exit(0)
 }
 
-private func requireSession(_ gateway: AccountGateway) async throws {
+func requireSession(_ gateway: AccountGateway) async throws {
     guard await gateway.ensureSignedIn() else { throw CloudError.notSignedIn }
 }
 

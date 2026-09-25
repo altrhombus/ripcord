@@ -16,6 +16,7 @@ yet.
 | `Libripcord/` | The Mac's half of the C core: the platform seam (`rc_platform_darwin.c`) and the module map that lets Swift import the core |
 | `RipcordKit/` | The Swift layer over the core. It imports the C module *internally*, so no C type reaches its callers |
 | `RipcordKitTests/` | Swift Testing suites for RipcordKit |
+| `TestSupport/` | Tests only: the core's scripted 9303 console (`libripcord/tests/fake_dgram_console.h`) as a Swift module, on a loopback socket, for the C-backed rendezvous transport tests |
 | `RipcordLab/` | `ripcord-lab`, a command-line driver against a real console: the Mac counterpart of `tools/Ripcord.ProtocolLab` |
 | `EcdhKat/` | `libripcord-ecdh-kat`: the core's own `tests/ecdh_test.c`, unmodified, linked against the CryptoKit backend |
 

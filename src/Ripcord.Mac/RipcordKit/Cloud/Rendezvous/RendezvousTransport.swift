@@ -143,6 +143,12 @@ public enum LocalNetwork {
         try? Pairing.localAddress(toward: "192.0.2.1")
     }
 
+    /// This host's address on the interface that routes to `host` (IPv4), the same way. Nil when there is
+    /// no route. Sends nothing.
+    public static func address(toward host: String) -> String? {
+        try? Pairing.localAddress(toward: host)
+    }
+
     /// Whether `address` (IPv4) falls inside the subnet of any interface that is up.
     public static func sharesSubnetWithLocalInterface(_ address: String) -> Bool {
         var target = in_addr()
