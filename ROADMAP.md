@@ -316,7 +316,13 @@ Step 1, promoting the core to `libripcord/` with fuzzing and a CI job, is done a
 - [x] **The cloud tier joined to the C rendezvous route.** Done 2026-09-25. `ripcord-lab account-pair
       <duid>` pairs with no PIN, `connect --route account` connects through the account, and `connect
       --route internet` runs the WAN rendezvous. 12 tests, including account pairing end to end against the
-      core's loopback console. **None of it has met PSN or a console:** it is the verification pass's to run.
+      core's loopback console.
+  - **Verified 2026-09-25 against PSN and PS5-<redacted>, on the same LAN:** sign-in, the console list, the WAN
+    rendezvous up to the console's candidates, a full 1080p stream over the account route, and no-PIN
+    account pairing. See the journal.
+  - [ ] Internet play from another network: the Mac on a phone hotspot.
+  - [ ] After a rendezvous session, the console briefly refuses TCP 9295. The app's retry covers it; decide
+        whether the lab or the sequence should wait for it.
   - [ ] Whether the 9303 association needs servicing between `begin` and the first exchange. .NET
         services it in the background, and C has no call for it `[X]`.
   - [ ] Whether a connect needs registration every time (`--no-register` tests it) `[X]`.
