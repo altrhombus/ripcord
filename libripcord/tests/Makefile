@@ -87,6 +87,7 @@ REGIST_FLOW_TARGET := $(BUILD)/regist_flow_test
 MENU_TARGET := $(BUILD)/menu_test
 ACCOUNT_ID_TARGET := $(BUILD)/account_id_test
 PAIRING_SET_TARGET := $(BUILD)/pairing_set_test
+STUN_TARGET := $(BUILD)/stun_test
 REGISTRATION_VECTORS := vectors/registration-crypto.kat
 
 # A SECOND generated constants file, with --registration. The rest of this suite deliberately builds
@@ -228,7 +229,7 @@ REGISTRATION_SOURCES := \
 all: check
 
 check: $(TARGET) $(VECTORS) $(DISCOVERY_TARGET) $(SESSION_TARGET) $(TAKION_TARGET) $(STREAM_CRYPTO_TARGET) $(STREAM_VECTORS) $(FEC_TARGET) $(STREAM_HEADER_TARGET) $(STREAM_DEMUX_TARGET) $(ECDH_TARGET) $(SESSION_VECTORS) $(CONTROL_PROTO_TARGET) $(PROTO_VECTORS) $(INPUT_TARGET) \
-         $(REGISTRATION_TARGET) $(REGISTRATION_VECTORS) $(REGIST_FLOW_TARGET) $(MENU_TARGET) $(ACCOUNT_ID_TARGET) $(PAIRING_SET_TARGET)
+         $(REGISTRATION_TARGET) $(REGISTRATION_VECTORS) $(REGIST_FLOW_TARGET) $(MENU_TARGET) $(ACCOUNT_ID_TARGET) $(PAIRING_SET_TARGET) $(STUN_TARGET)
 	./$(TARGET) $(VECTORS)
 	./$(DISCOVERY_TARGET)
 	./$(SESSION_TARGET)
@@ -245,6 +246,7 @@ check: $(TARGET) $(VECTORS) $(DISCOVERY_TARGET) $(SESSION_TARGET) $(TAKION_TARGE
 	./$(MENU_TARGET)
 	./$(ACCOUNT_ID_TARGET)
 	./$(PAIRING_SET_TARGET) $(BUILD)
+	./$(STUN_TARGET)
 
 build: $(TARGET) $(DISCOVERY_TARGET) $(SESSION_TARGET) $(TAKION_TARGET) $(STREAM_CRYPTO_TARGET) $(FEC_TARGET) $(STREAM_HEADER_TARGET) $(STREAM_DEMUX_TARGET) $(ECDH_TARGET) $(CONTROL_PROTO_TARGET)
 
@@ -373,6 +375,20 @@ $(PAIRING_SET_TARGET): $(PAIRING_SET_SOURCES)
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) -I$(CORE)/util -o $@ $(PAIRING_SET_SOURCES)
 
+# Reflexive-address discovery (STUN), both layers. The message layer is checked against the .NET suite's
+# own vectors; the socket layer runs on loopback against a fake server in a second thread, which is why
+# this one links the host seam and pthreads. No vectors, no bundle: STUN is public RFC material.
+STUN_SOURCES := \
+	$(CORE)/net/rc_stun.c \
+	$(CORE)/net/rc_stun_client.c \
+	$(CORE)/net/rc_tcp.c \
+	rc_platform_host.c \
+	stun_test.c
+
+$(STUN_TARGET): $(STUN_SOURCES) $(CORE)/net/rc_stun.h
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) -D_DEFAULT_SOURCE -I$(CORE)/platform -o $@ $(STUN_SOURCES) -lpthread
+
 $(REGISTRATION_TARGET): $(REGISTRATION_SOURCES) $(REGISTRATION_GENERATED)
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) $(INCLUDES) -I$(CORE)/session -I$(CORE)/util -o $@ $(REGISTRATION_SOURCES) \
@@ -448,7 +464,7 @@ compile:
 #
 # The whole core is archived and each harness links against the archive, so a harness pulls in only
 # the objects it references, exactly as a port does.
-FUZZ_HARNESSES := discovery takion control stream
+FUZZ_HARNESSES := discovery takion control stream stun
 FUZZ_CC        ?= clang
 FUZZ_SECONDS   ?= 60
 FUZZ_RANDOM    ?= 20000

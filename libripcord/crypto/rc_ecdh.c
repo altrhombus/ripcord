@@ -80,7 +80,27 @@ unsigned rc_ecdh_curve_for_public_key_length(size_t length)
     return 0;
 }
 
-#if defined(RC_CRYPTO_MBEDTLS)
+#if defined(RC_ECDH_EXTERNAL_BACKEND)
+
+/* See the header: the build supplies the five backend entry points itself, and reports into the same
+ * diagnostics the Mbed TLS branch below fills in, through these two hooks. */
+void rc_ecdh_backend_record_failure(int step, int code)
+{
+    s_last_error_step = step;
+    s_last_error_code = code;
+}
+
+void rc_ecdh_backend_record_derivation(unsigned curve, size_t private_length,
+                                       const uint8_t *peer_public_key, size_t peer_public_key_length)
+{
+    s_last_curve = curve;
+    s_last_private_length = private_length;
+    s_last_peer_fingerprint = rc_ecdh_fingerprint(peer_public_key, peer_public_key_length);
+    s_last_error_step = RC_ECDH_STEP_NONE;
+    s_last_error_code = 0;
+}
+
+#elif defined(RC_CRYPTO_MBEDTLS)
 
 #include <mbedtls/bignum.h>
 #include <mbedtls/ecp.h>
@@ -374,7 +394,7 @@ int rc_ecdh_derive_shared(const rc_ecdh_keypair *pair,
     return ok;
 }
 
-#else /* !RC_CRYPTO_MBEDTLS */
+#else /* neither RC_ECDH_EXTERNAL_BACKEND nor RC_CRYPTO_MBEDTLS */
 
 /*
  * No backend. Every entry point fails; see the header for why there is deliberately no fallback
@@ -427,4 +447,4 @@ int rc_ecdh_derive_shared(const rc_ecdh_keypair *pair,
     return 0;
 }
 
-#endif /* RC_CRYPTO_MBEDTLS */
+#endif /* RC_ECDH_EXTERNAL_BACKEND / RC_CRYPTO_MBEDTLS */
