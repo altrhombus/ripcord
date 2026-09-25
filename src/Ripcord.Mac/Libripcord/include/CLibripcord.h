@@ -26,5 +26,6 @@
 #include "../../../../libripcord/session/halyard_account_id.h"
 #include "../../../../libripcord/session/halyard_pairing_file.h"
 #include "../../../../libripcord/session/halyard_regist_flow.h"
+#include "../../../../libripcord/client/halyard_client.h"
 
 #endif /* CLIBRIPCORD_H */
