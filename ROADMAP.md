@@ -218,22 +218,35 @@ pass has to exercise.
 
 ## Backlog
 
-### One engine for the first-class clients — planned 2026-09-25, Phase 0 done
+### One engine for the first-class clients — planned 2026-09-25, Phase 1 all but Windows
 
 One protocol engine, in Rust, under every first-class client (Windows, macOS and Linux; iOS, iPadOS and
 Android later). `libripcord` stays as the console ports' core. The decisions, the reasoning and the phases
 are in [`docs/engine-plan.md`](docs/engine-plan.md); this entry lists only what is open. Phase 0, bringing
-the documents into line, is done and in the journal.
+the documents into line, is done and in the journal. The engine lives in [`engine/`](engine/).
 
-- [ ] **Phase 1 — the spike, and the gate.** Stream packet crypto, the demuxer and FEC in `ripcord-proto`,
-      exported through `ripcord-ffi`. Passes `stream-crypto.kat`; per-packet cost at or below the C core's
-      8.1 µs on the same M4 Max, and measured on Windows x64 and ARM64; links into the Mac lab and a .NET
-      test harness through generated bindings. **If it fails, the C core is the engine** and the plan's
-      fallback applies.
+- [ ] **Phase 1 — the spike, and the gate.** Every criterion that could be checked on the M4 Max is met
+      (journal, 2026-09-25; figures in [`engine/README.md`](engine/README.md)): `stream-crypto.kat`
+      passes 65 of 65, and the per-packet cost is 0.53–0.57 µs against the C core's 7.71–8.11 µs from one
+      Swift harness. It links into the Mac lab and a .NET harness through generated bindings, and its
+      binary size is recorded. Open:
+  - [ ] **Measured on Windows x64 and ARM64.** Run the .NET harness on each; `engine/README.md` has the
+        three commands. The C core was never measured on Windows, so the comparison there is against the
+        managed engine the client ships, which runs at 16–17 µs per packet on the M4 Max. The CI job prints
+        both figures on a shared runner. That shows the engine builds and runs there, but it is not the
+        measurement.
+  - [ ] **Why the lab grows 1.2 MB stripped when the engine dylib is 386 KB.** Probably dead stripping
+        and the standard library's panic and backtrace machinery in the static archive. Settle it before
+        the XCFramework work in Phase 3, because the app and its extensions will each link the engine.
 - [ ] **Phase 2 — the engine at parity.** Bottom-up in the C core's layer order, each layer done when its
       vectors pass, its fuzz target runs and differential fuzzing against the C core is clean. Includes the
       `Ecdh` backends (CryptoKit carried over, CNG new, RustCrypto), each checked on its own platform in
       CI, and the scripted console ported to Rust. Parity is a measured matrix, not a list.
+  - [ ] **A nightly CI leg** for Miri over `ripcord-ffi`'s tests and a coverage-guided `cargo-fuzz` run
+        with a kept corpus. Neither runs yet; the stable sweep in `demux.rs` stands in for fuzzing.
+  - [ ] **Differential runs against the C core**, not only against .NET. Phase 1's differential was
+        against `HalyardPacketCrypto`, which is the reference for derivations. For sequencing, the C core
+        is the only other implementation.
 - [ ] **Phase 3 — the Mac switches engines,** by relinking at Phase 2's exit.
 - [ ] **Phase 4 — Windows onto the engine,** after 1.0, one seam at a time behind `RIPCORD_ENGINE`.
   - [ ] Before step 3: `src/Ripcord.App/Pages/SessionPage.xaml.cs` imports three

@@ -317,6 +317,7 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = 3616762A9FF47AAAF6685F43 /* Build configuration list for PBXNativeTarget "RipcordKit" */;
 			buildPhases = (
+				A1E0C0DE5EED0001B0A7C0DE /* Build the Rust engine */,
 				BBB04FE955F30E6089C8B495 /* Sources */,
 				0BCA245BBEF9717245C40A67 /* Frameworks */,
 			);
@@ -419,6 +420,27 @@
 /* End PBXProject section */
 
 /* Begin PBXShellScriptBuildPhase section */
+		A1E0C0DE5EED0001B0A7C0DE /* Build the Rust engine */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Build the Rust engine";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(RIPCORD_ENGINE)/target/include/ripcord.h",
+				"$(RIPCORD_ENGINE_LIB)",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# The Rust engine (docs/engine-plan.md). cargo is incremental, so this runs every build and is\n# quick when nothing changed. It writes ripcord.h, which CRipcordEngine's module map reads in place.\nset -eu\nexport PATH=\"${HOME}/.cargo/bin:/opt/homebrew/opt/rustup/bin:/usr/local/opt/rustup/bin:${PATH}\"\nunset CARGO_TARGET_DIR\ncd \"${RIPCORD_ENGINE}\"\ncargo build --release -p ripcord-ffi\n";
+		};
 		8E29F53282D818B11CE3764B /* Generate interop constants */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;

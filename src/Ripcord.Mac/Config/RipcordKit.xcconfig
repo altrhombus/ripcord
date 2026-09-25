@@ -9,3 +9,6 @@ SKIP_INSTALL = YES
 // Static for now, so a command-line tool can link it without an rpath. The app may want it dynamic,
 // shared between the app and its extensions; that is a one-line change here.
 MACH_O_TYPE = staticlib
+
+// The engine phase runs cargo, which reads and writes under engine/, outside what the sandbox allows.
+ENABLE_USER_SCRIPT_SANDBOXING = NO

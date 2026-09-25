@@ -125,6 +125,12 @@ accepts a nonce length `System.Security.Cryptography.AesGcm` refuses. A comment 
   *derivations* (key schedules, KDFs, field ciphers, codecs), and `ProtocolLab vectors` generates the
   known-answer vectors the C core, and later the Rust engine, are tested against. Not part of
   `Ripcord.slnx`: `make -C libripcord/tests` runs its host suite.
+- **`engine/`** — the Rust engine that succeeds it for the first-class clients, as a Cargo workspace:
+  `ripcord-proto` (sans-IO, `#![forbid(unsafe_code)]`), `ripcord-ffi` (the C ABI, the only crate that
+  uses `unsafe`; its `build.rs` generates `ripcord.h` and `NativeMethods.g.cs`, never committed and never
+  edited), `ripcord-kat` (the `.kat` runner) and `hosts/dotnet/` (the .NET harness). As of 2026-09-25 it
+  holds Phase 1, the stream plane only. Not part of `Ripcord.slnx`: `cargo test --workspace` in `engine/`.
+  [`engine/README.md`](engine/README.md) has the build and the measured gate.
 
 ### The crypto seam pattern
 

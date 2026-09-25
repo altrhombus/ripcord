@@ -191,6 +191,42 @@ jobs:
             libripcord/tests/build/fuzz/timeout-*
           if-no-files-found: ignore
 
+  # The Rust engine (engine/, docs/engine-plan.md). Phase 1 is the stream plane only; this job grows
+  # with it. Four hosts, because each one links the engine differently and Windows is where the plan's
+  # gate still wants a figure: the .NET harness runs its checks everywhere and prints the per-packet
+  # cost on each, which is informational only on a shared runner. windows-11-arm is the one label here
+  # not verified before this was committed. Miri and cargo-fuzz arrive with a nightly leg.
+  engine:
+    name: Rust engine (${{ matrix.host }})
+    runs-on: ${{ matrix.host }}
+    strategy:
+      fail-fast: false
+      matrix:
+        host: [ubuntu-latest, macos-latest, windows-latest, windows-11-arm]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Toolchain
+        run: rustup toolchain install stable --profile minimal --component clippy,rustfmt && rustup default stable && cargo --version
+      # The known-answer vectors are generated from the .NET reference, never committed.
+      - name: Generate the known-answer vectors
+        run: dotnet run --project tools/Ripcord.ProtocolLab -c Release -- vectors
+      - name: Tests and the vector runner
+        working-directory: engine
+        run: cargo test --workspace --release
+      - name: Clippy and formatting
+        working-directory: engine
+        run: cargo clippy --workspace --all-targets -- -D warnings && cargo fmt --check
+      - name: Dependency policy
+        if: runner.os == 'Linux'
+        uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          manifest-path: engine/Cargo.toml
+      - name: The engine from .NET, through its generated bindings
+        run: dotnet run -c Release --project engine/hosts/dotnet/Ripcord.Engine.Harness
+
   # The macOS client's Xcode project (src/Ripcord.Mac). It builds libripcord from where it lives, with
   # CryptoKit as the ECDH backend, so this job also checks that backend against the .NET vectors: it
   # runs the core's own unmodified ecdh_test.c linked against CryptoKit instead of Mbed TLS.
