@@ -35,6 +35,31 @@ different purpose.
 > anything. The list above is short, it is checkable in one `git log --format=%B | grep`, and it stops
 > growing the moment someone notices — which is the property that actually matters.
 
+### The Rust engine: Takion, the scripted console, and CryptoKit (2026-09-26)
+
+Three pieces of Phase 2, and a change of method on the way. The owner confirmed that the C core is a
+port of the .NET reference, so the Rust engine reads both. Before Takion was written, a side-by-side read
+of the .NET Takion code against its C port listed 27 behavioural differences, and each was decided on
+purpose (`engine/README.md` has the table). .NET wins by default; C wins where it is strictly safer or
+.NET is wrong.
+
+- **Takion** is in `ripcord-proto` as framing, the control protobuf codec, the sealer, the session
+  negotiator and a sans-IO connection. The connection takes datagrams and the time and returns datagrams
+  and messages, so the handshake, retransmission and reassembly are tested against a scripted peer with no
+  sockets. That includes a full sealed session with key agreement. `control-proto.kat` passes 60 of 60,
+  and every captured packet rebuilds byte for byte.
+- **The scripted console** is `fake_dgram_console.h` ported behaviour for behaviour, on top of a port of
+  the 9303 wire codec. It runs beside the C fixture in `ripcord-diff` over 200 generated sessions, and
+  `ripcord-ffi` exports it under `test-support` for host suites.
+- **CryptoKit backs the engine's key agreement on the Mac** through a new `RipcordEcdhBackend` table in the
+  C ABI, now at version 2. `EngineKeyAgreementTests` runs `session-crypto.kat` through the engine on
+  CryptoKit and gets results identical to RustCrypto's.
+- **The differential runs found two C bugs,** both fixed. The C scripted console read past a short
+  HELLO_ECHO chunk. The C protocol-version parser accepted a field-0 tag, which every other C parser and
+  Google.Protobuf reject. The C host suite is unchanged by the fixes.
+- **The comparison found two faults in the .NET reference,** now on the roadmap. The SACK handler stops
+  at a TSN wrap and resends one chunk forever. The negotiator does not check `versionAccepted`.
+
 ### The Rust engine, Phase 2's first layer: crypto, the Halyard derivations, and the C core as a second opinion (2026-09-26)
 
 `ripcord-proto` now holds the control plane (the KDF for both families, context keys, field IVs, and the

@@ -10,7 +10,7 @@ description = "Differential tests: the Rust engine against the C core, same inpu
 # ripcord-ffi that uses unsafe, and only in src/lib.rs's thin wrappers over shim/diff_shim.c.
 
 [dependencies]
-ripcord-proto = { path = "../ripcord-proto" }
+ripcord-proto = { path = "../ripcord-proto", features = ["scripted-console"] }
 
 [build-dependencies]
 cc = "1"

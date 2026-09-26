@@ -24,6 +24,9 @@ SWIFT_INCLUDE_PATHS = $(inherited) $(SRCROOT)/Libripcord/include $(SRCROOT)/Ripc
 RIPCORD_ENGINE = $(RIPCORD_REPO_ROOT)/engine
 RIPCORD_ENGINE_LIB = $(RIPCORD_ENGINE)/target/release/libripcord.a
 OTHER_LDFLAGS = $(inherited) $(RIPCORD_ENGINE_LIB)
+// The engine is built with its test-support exports (ripcord_kat_run) for RipcordKitTests; ripcord.h guards
+// them behind this define. Both go when the app links the engine for real (Phase 3).
+OTHER_SWIFT_FLAGS = $(inherited) -Xcc -DRIPCORD_TEST_SUPPORT
 
 // Ad hoc signing until distribution is set up (docs/macos-plan.md, step 9).
 CODE_SIGN_IDENTITY = -
