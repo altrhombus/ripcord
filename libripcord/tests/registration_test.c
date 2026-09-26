@@ -155,6 +155,29 @@ static void test_message(void)
         check(rec.companion[0] == 0x00 && rec.companion[15] == 0x0f, "companion decoded", __LINE__);
     }
 
+    /* The reason as the LAST header, which the header walk used to stop short of. */
+    {
+        static const char last[] = "HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nRP-Application-Reason: 80108b09\r\n\r\n";
+        int status = 0;
+        const uint8_t *body = NULL;
+        size_t body_length = 0;
+        char reason[32];
+
+        check(halyard_regist_split_response((const uint8_t *)last, sizeof(last) - 1, &status, &body, &body_length,
+                                            reason, sizeof(reason))
+                  && strcmp(reason, "80108b09") == 0,
+              "a reason sent as the final header is read", __LINE__);
+    }
+
+    /* A RegistKey that is not hex is refused, not accepted with a length of SIZE_MAX. */
+    {
+        static const char bad[] = "PS5-RegistKey: not-hex!\r\nRP-Key: 000102030405060708090a0b0c0d0e0f\r\n";
+        halyard_regist_record rec;
+
+        check(!halyard_regist_parse_record((const uint8_t *)bad, sizeof(bad) - 1, &rec),
+              "a malformed RegistKey is refused", __LINE__);
+    }
+
     /* A reply missing either required field is not a pairing record. */
     {
         static const char partial[] = "PS5-RegistKey: 3161326233633464\r\n";
