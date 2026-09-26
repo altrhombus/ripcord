@@ -130,7 +130,7 @@ accepts a nonce length `System.Security.Cryptography.AesGcm` refuses. A comment 
   uses `unsafe`; its `build.rs` generates `ripcord.h` and `NativeMethods.g.cs`, never committed and never
   edited), `ripcord-kat` (the `.kat` runner), `ripcord-diff` (differential tests against the C core) and
   `hosts/dotnet/` (the .NET harness). As of 2026-09-26 it holds the stream plane, the Halyard
-  derivations, Takion and the scripted console. When porting a layer, read both the .NET reference and the
+  derivations, Takion, the scripted console, discovery and wake, and the /sess control plane. When porting a layer, read both the .NET reference and the
   C port; the C core is itself a port of .NET, and where they differ .NET wins unless C is strictly safer
   or .NET is wrong, recorded in `engine/README.md`. Not part of `Ripcord.slnx`: `cargo test --workspace
   --all-features` in `engine/`.
@@ -290,6 +290,11 @@ When working in `Ripcord.Protocol.Halyard*`, `Ripcord.Cloud.Halyard`, or anythin
       `BundledInteropConstantsTests.ClientType_CCoreCopyMatchesTheReferenceImplementation` asserts the
       two agree, so a third copy or a drifted one fails with that sentence rather than as an
       unexplained hex literal. If you add a home, add it here and to that test together.
+    - **The Rust engine reads it rather than holding a third home.** `engine/ripcord-proto/build.rs`
+      extracts `ClientTypeHex` from `HalyardRegistrationMessage.cs` at build time into `OUT_DIR`, the way it
+      generates the bundle constants, so no committed file in `engine/` carries the value.
+      `BundledInteropConstantsTests.ClientType_RustEngineDerivesItFromTheReference` asserts both halves:
+      the build script points at the reference, and no file under `engine/` contains the literal.
 - **Bounded exception 2: the application OAuth credential** in
   `src/Ripcord.Cloud.Halyard/Data/halyard-oauth-client.json` (added 2026-08-07, deliberately, by the project
   owner's decision — this one had sat unresolved as "the OAuth decision" for months). It is the vendor desktop
