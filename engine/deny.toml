@@ -10,8 +10,9 @@ yanked = "deny"
 
 [licenses]
 # Compatible with the project's Apache-2.0. Unicode-3.0 is unicode-ident's data licence (via the
-# binding generators, build time only).
-allow = ["Apache-2.0", "MIT", "Unicode-3.0", "MPL-2.0"]
+# binding generators, build time only). BSD-3-Clause is subtle's, the constant-time helpers under
+# RustCrypto's curves.
+allow = ["Apache-2.0", "MIT", "BSD-3-Clause", "Unicode-3.0", "MPL-2.0"]
 confidence-threshold = 0.9
 
 [bans]

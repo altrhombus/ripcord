@@ -4,10 +4,13 @@ The protocol engine the first-class clients are moving to. Why it exists, what i
 order are in [`docs/engine-plan.md`](../docs/engine-plan.md). This file covers the tree, the build and
 where Phase 1 stands. What is still open is in [`ROADMAP.md`](../ROADMAP.md).
 
-**Status: Phase 1, the spike.** The stream plane only: packet framing, the stream key schedule, per-packet
-crypto, Cauchy Reed-Solomon FEC and the demuxer, ported from [`libripcord/stream/`](../libripcord/stream/).
-Nothing here talks to a console yet. The Mac and Windows clients still run their existing engines; the
-Mac lab links this one alongside the C core, only for the benchmark.
+**Status: Phase 2, the first layer.** Phase 1's stream plane (framing, the stream key schedule, packet
+crypto, FEC, the demuxer) plus the crypto and Halyard derivations: the cipher modes, the control KDF,
+field IVs and ciphers, PIN and account registration, the account seed, and key agreement behind the
+`Ecdh` trait with the RustCrypto backend. Ported from [`libripcord/stream/`](../libripcord/stream/),
+[`libripcord/crypto/`](../libripcord/crypto/) and [`libripcord/halyard/`](../libripcord/halyard/). Nothing
+here talks to a console yet. The Mac and Windows clients still run their existing engines; the Mac lab
+links this one alongside the C core, only for the benchmark.
 
 ## Layout
 
@@ -16,12 +19,19 @@ Mac lab links this one alongside the C core, only for the benchmark.
 | `ripcord-proto/` | The protocol as sans-IO state machines. No sockets, no clock, no threads | forbidden |
 | `ripcord-ffi/` | The C ABI: every export. Its `build.rs` generates `ripcord.h` (cbindgen) and `NativeMethods.g.cs` (csbindgen) into `target/include/` | the only crate that uses it |
 | `ripcord-kat/` | Runs the `.kat` files `ProtocolLab vectors` generates, unchanged | forbidden |
+| `ripcord-diff/` | Differential tests: builds the C core from `libripcord/` with the `cc` crate and runs it beside the Rust engine on generated inputs | in its wrappers only: test tooling, never linked into a host |
 | `hosts/dotnet/` | The .NET harness: the engine through its generated C# bindings, a differential run against the managed engine, and the benchmark on both | — |
 | `deny.toml` | The dependency policy `cargo deny check` enforces | — |
 
 `ripcord-net` (sockets and the pump loop) and `fuzz/` (cargo-fuzz, which needs nightly) arrive with
 Phase 2. Until then, `demux::tests::random_packets_never_panic` is a stable-Rust sweep of hostile
 packets.
+
+**The interop constants are generated, never copied.** `ripcord-proto/build.rs` reads the one committed
+bundle and writes a Rust module into `OUT_DIR`, with `gen_constants.py`'s checks. `ripcord-diff` builds
+the C core's copy the way the C core does, with `gen_constants.py` itself. The engine has no copy of
+`Client-Type` yet; that arrives with the `/sess/rgst` message layer, together with the `CLAUDE.md` and
+`BundledInteropConstantsTests` changes it requires.
 
 The generated bindings are never committed. Nobody edits them: change `ripcord-ffi/src/lib.rs`, and
 the next `cargo build` rewrites both.
@@ -36,7 +46,7 @@ repository root:
 dotnet run --project tools/Ripcord.ProtocolLab -- vectors
 
 cd engine
-cargo test --workspace --release      # unit tests, and the vector runner against stream-crypto.kat
+cargo test --workspace --release      # unit tests, every vector file, and the differential runs against C
 cargo clippy --workspace --all-targets -- -D warnings
 cargo deny check
 cargo run --release --example packet_bench -p ripcord-proto
@@ -45,7 +55,7 @@ cargo run --release --example packet_bench -p ripcord-proto
 dotnet run -c Release --project hosts/dotnet/Ripcord.Engine.Harness
 ```
 
-Without the vectors, the vector test prints `SKIP` and passes, like the .NET suite's capture-backed
+`ripcord-diff` needs Python 3 and a C compiler as well. Without the vectors, each vector test prints `SKIP` and passes, like the .NET suite's capture-backed
 tests. `cargo run -p ripcord-kat` fails instead, because running it without vectors is a mistake.
 
 The Mac lab (`src/Ripcord.Mac`) builds this engine itself: RipcordKit's "Build the Rust engine" phase
@@ -85,3 +95,19 @@ Most of the gap is hardware AES and PMULL, which RustCrypto detects at run time,
 portable table implementation. The rest is structure. The CTR cipher borrows a key schedule expanded
 once, where the C core expands the key on every packet. The GMAC cache is keyed by rotation window,
 where the C core derives the key with a SHA-256 on every packet just to check its cache.
+
+## Phase 2, the first layer, measured (2026-09-26)
+
+| What | Result |
+|---|---|
+| `control-crypto.kat` | 172 of 172: KDF (both families), context keys, field IVs, CFB and OFB, the field and streaminfo chains |
+| `registration-crypto.kat` | 97 of 97: transport key, wrap, unwrap and scatter/gather on both families |
+| `account-pairing.kat` | 81 of 81 for `seed` and `accountwrap`. The 8 `accountrgst` lines are deferred, and each run lists them, until the `/sess/rgst` message layer lands |
+| `session-crypto.kat` | 34 of 34 on the RustCrypto backend: public keys, shared secrets and stream keys on P-256 and P-521, and the key signature |
+| Differential against the C core | Packet crypto, FEC, the control plane, registration and seed decoding, 800 to 5,000 generated cases each. The demuxer runs 300 hostile streams, half with real crypto, and agrees event for event and counter for counter: 7,300 frames, 3,000 loss reports, 4,900 authentication failures |
+| Mutation check | Changing one KDF constant fails 54 control lines, and one account-wrap constant fails 16 account lines |
+
+The first differential run failed, and the cause was the harness. Test threads decoded FEC in the C core
+at the same time, and `fec_reed_solomon_decode` keeps its matrices in `static` buffers, as its source
+warns. `ripcord-diff` now holds one lock around every call into C. The Rust decoder's scratch belongs to
+its caller, so it has no such limit.
