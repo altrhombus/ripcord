@@ -18,7 +18,8 @@ where Phase 1 stands. What is still open is in [`ROADMAP.md`](../ROADMAP.md).
 - **the connect sequence and the running session** (`connect::Session`), LAN and rendezvous, from the
   arm probe to video, with scripted consoles for both routes.
 
-`ripcord-net` runs that session on `std::net` sockets on the caller's thread. Ported from `libripcord/`
+`ripcord-net` runs that session on `std::net` sockets on the caller's thread, and `ripcord-ffi` exports it
+as the client ABI (`ripcord_client_*`), which Swift and .NET both drive end to end. Ported from `libripcord/`
 and cross-checked against the .NET reference, which wins where the two differ unless the reasons below
 say otherwise. Nothing here has talked to a real console yet. The Mac and Windows clients still run their
 existing engines; the Mac links this one alongside the C core, for the benchmark and the CryptoKit
@@ -288,3 +289,29 @@ sent through `ControlSession::send_field`), the STREAM_READY wait and Takion.
 The scripted LAN console (`testing::scripted_lan_console`) computes the console's side of every
 derivation from what the client sent, so a client that gets a key wrong fails there as it would on a
 console. None of this has run against hardware.
+
+## The client ABI (2026-09-26)
+
+`ripcord_client_*` in `ripcord-ffi/src/client.rs` is `halyard_client.h`'s contract, so the Mac can move
+engines by relinking: one host thread calls connect, then pump until the session ends; every callback runs
+on that thread; buffers are borrowed for the call; the pad, the passcode, the media answer and the
+commands are pulled. The differences:
+
+| `halyard_client.h` | The Rust ABI | Why |
+|---|---|---|
+| Storage the host sizes and places (`struct_size`, `init`) | An opaque handle from `ripcord_client_new`, freed with `ripcord_client_free` | No hot-path allocation was a console-port constraint; the first-class hosts have a heap |
+| The core's own CSPRNG and ECDH | `RipcordRandom` (required) and `RipcordEcdhBackend` (null: RustCrypto) | The engine reads no entropy source of its own, and key agreement is the platform's |
+| `halyard_client_fds` and a deadline out | `ripcord_client_pump(client, max_wait_ms, &alive)` waits on the sockets itself | `std` has no portable readiness API, and a host only ever slept or polled on them |
+| A `halyard_pairing_record` | Its fields in `RipcordClientConfig` | The engine does not parse pairing files |
+| A process-wide log sink | The session's own `log` callback | engine-plan.md rule 9 |
+| Results and stats | The same facts, plus the stream's SACK round trip in the stats | .NET reports it; C has none |
+
+`RipcordClientConfig`'s port fields and `no_arm_broadcast` exist for tests. The `test-support` feature adds
+`ripcord_loopback_console_*`, the scripted LAN console on loopback sockets, so each host's suite runs a real
+session.
+
+| What | Result |
+|---|---|
+| Rust, through the ABI | `ripcord-ffi/tests/client_abi.rs`: a LAN session with a passcode, video, stats, input and the goodbye; bad configs refused; layouts reported |
+| .NET | The harness hosts a session through `[UnmanagedCallersOnly]` callbacks and a GCHandle, as Phase 4 will, and checks 16 struct layouts |
+| Swift | `EngineClientTests`: the same session from `@convention(c)` callbacks, with CryptoKit doing the key agreement and `SecRandomCopyBytes` the randomness |

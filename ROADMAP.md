@@ -246,11 +246,12 @@ the documents into line, is done and in the journal. The engine lives in [`engin
       2026-09-26). It still needs its fuzz target. Next in order:
   - [ ] **The CNG `Ecdh` backend,** against `session-crypto.kat` on Windows. RustCrypto and CryptoKit
         pass it (journal, 2026-09-26).
-  - [ ] **The client's C ABI.** Every layer through the connect sequence and `ripcord-net` is done and
-        tested against scripted consoles on both routes (journal, 2026-09-26); none of it has met a console.
-        What remains before the Mac can relink: `ripcord_client_*` exports mirroring `halyard_client.h`
-        (config, the callbacks, connect, pump, fds, disconnect, the rendezvous calls, the result), driven
-        by `ripcord-net`, plus discovery, wake, pairing and STUN as `CLibripcord.h` pulls them in.
+  - [ ] **The rest of the Mac's C-core surface, in the ABI.** The client ABI is done and driven end to
+        end from Rust, .NET and Swift (journal, 2026-09-26). What `CLibripcord.h` still pulls in from the C
+        core before the Mac can relink: discovery (probe and reply), wake (credential and payload), the PIN
+        and account registration flows (TCP 9295, and the account route over a rendezvous leg), the
+        account-id normaliser, the account seed and its key material, and the pairing-file load and save,
+        which the engine does not do today and may stay the host's.
   - [ ] **What the connect sequence does not do yet**, each a .NET behaviour: senkusha's echo and MTU
         probes (so the declared RTT is the version and session round trips, and the MTU is the
         interface's or 1454, never a confirmed one); CORRUPT_FRAME on video loss; CONNECTION_QUALITY and the
