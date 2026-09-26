@@ -65,6 +65,9 @@ static unsafe class Checks
             (RipcordStructId.Peer, sizeof(RipcordPeer)),
             (RipcordStructId.Endpoint, sizeof(RipcordEndpoint)),
             (RipcordStructId.Random, sizeof(RipcordRandom)),
+            (RipcordStructId.DiscoveredConsole, sizeof(RipcordDiscoveredConsole)),
+            (RipcordStructId.PairingRecord, sizeof(RipcordPairingRecord)),
+            (RipcordStructId.RegistResult, sizeof(RipcordRegistResult)),
         ];
         foreach (var (id, size) in structs)
         {

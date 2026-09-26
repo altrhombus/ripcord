@@ -214,3 +214,40 @@ fn association_sequences() {
     }
     assert!(totals.iter().all(|&n| n > 500), "sends, data events, connected steps: {totals:?}");
 }
+
+#[test]
+fn account_id_normalising() {
+    use ripcord_proto::sess::account_id::{Refusal, normalise};
+    let mut rng = Rng::new(0x5eed_0303);
+    let alphabet = b"0123456789abcdefABCDEFxX+/= \t-q";
+    let fixed = [
+        "",
+        " ",
+        "0x",
+        "0x0",
+        "0",
+        "18446744073709551615",
+        "18446744073709551616",
+        "FRGJ6fQQIhE",
+        "FRGJ6fQQIhE=",
+    ];
+    let mut inputs: Vec<String> = fixed.iter().map(|s| s.to_string()).collect();
+    for _ in 0..20_000 {
+        let len = rng.below(24) as usize;
+        let mut s: String =
+            (0..len).map(|_| alphabet[rng.below(alphabet.len() as u64) as usize] as char).collect();
+        if rng.below(4) == 0 {
+            s = format!("0x{s}");
+        }
+        inputs.push(s);
+    }
+    for input in inputs {
+        let rust = match normalise(&input) {
+            Ok(d) => (0, d),
+            Err(Refusal::Empty) => (1, String::new()),
+            Err(Refusal::Base64) => (2, String::new()),
+            Err(Refusal::Unreadable) => (3, String::new()),
+        };
+        assert_eq!(rust, c_account_id(&input), "input {input:?}");
+    }
+}

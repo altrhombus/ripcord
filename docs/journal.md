@@ -35,6 +35,21 @@ different purpose.
 > anything. The list above is short, it is checkable in one `git log --format=%B | grep`, and it stops
 > growing the moment someone notices — which is the property that actually matters.
 
+### The Rust engine: discovery, wake, the account id and registration in the ABI (2026-09-26)
+
+The rest of what the Mac takes from the C core, apart from the pairing file:
+
+- **Discovery and wake**: the SRCH probe and reply, and the wake payload, as pure exports.
+- **The account-id normaliser**: ported from C, which alone has one. It is checked against C on 20,000
+  generated inputs.
+- **The account route's key material and seed recovery.**
+- **PIN registration over TCP 9295**, in `ripcord-net`, with C's arm probe and read-until-close.
+- **Account registration on a rendezvous client's control leg.**
+
+The scripted LAN console now answers /sess/rgst with the console's real half of the derivation, so the
+PIN route runs end to end on loopback, including a wrong PIN and a refusal. A CSPRNG that refuses a draw
+fails the registration rather than supplying zeroes.
+
 ### The Rust engine: the client ABI, from Rust, .NET and Swift (2026-09-26)
 
 `ripcord_client_*` exports the connect sequence with `halyard_client.h`'s contract: one host thread,

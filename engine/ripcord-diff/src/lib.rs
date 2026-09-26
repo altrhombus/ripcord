@@ -1037,3 +1037,21 @@ impl Drop for CAssoc {
         unsafe { diff_assoc_free(self.raw) }
     }
 }
+
+// ---- the account-id normaliser ----
+
+unsafe extern "C" {
+    fn diff_account_id(input: *const c_char, out: *mut c_char, size: usize) -> c_int;
+}
+
+/// C's verdict on a typed account id: (status, decimal text).
+pub fn c_account_id(input: &str) -> (i32, String) {
+    let _core = c_core();
+    let input = std::ffi::CString::new(input).unwrap();
+    let mut out = [0 as c_char; 32];
+    // SAFETY: a NUL-terminated input and a 32-byte out buffer, over the 21 the C side needs.
+    let status = unsafe { diff_account_id(input.as_ptr(), out.as_mut_ptr(), out.len()) };
+    // SAFETY: the C side NUL-terminates what it writes, and zeroes the first byte otherwise.
+    let text = unsafe { std::ffi::CStr::from_ptr(out.as_ptr()) }.to_string_lossy().into_owned();
+    (status, text)
+}
