@@ -104,8 +104,8 @@ func runAccountPair(_ arguments: [String]) -> Never {
                 throw error
             }
         }
-        try PairingStore.lab.save(paired)
-        print("paired with \(paired.name) (\(paired.family.rawValue), \(paired.host)); saved to \(PairingStore.lab.directory.path)")
+        try PairingFileStore.lab.save(paired)
+        print("paired with \(paired.name) (\(paired.family.rawValue), \(paired.host)); saved to \(PairingFileStore.lab.directory.path)")
     } catch {
         fail("account-pair: \(error)")
     }

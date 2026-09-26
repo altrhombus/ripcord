@@ -2,7 +2,6 @@
 // through a GameController snapshot pad so the reader is exercised too.
 
 @testable import RipcordKit
-import CLibripcord
 import GameController
 import Testing
 

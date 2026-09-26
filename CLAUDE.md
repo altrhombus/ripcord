@@ -116,10 +116,10 @@ accepts a nonce length `System.Security.Cryptography.AesGcm` refuses. A comment 
   replays captures through the parsers. The iteration/verification tool for every protocol stage.
 - **`tools/Ripcord.HidCapture`** — standalone HID capture utility for controller RE work.
 - **`libripcord/`** — the protocol in portable C99 (it was `ports/common` until 2026-09-24). Today it is the
-  protocol core of the console ports under `ports/` and of the macOS client (`src/Ripcord.Mac`). **It is
-  being succeeded for the first-class clients by a Rust engine** (`docs/engine-plan.md`, settled
-  2026-09-25): the Mac moves to that engine once it reaches parity, Windows after its 1.0, and
-  `libripcord` then stays as the ports' core, taking fixes and port-driven work only. It is a same-project
+  protocol core of the console ports under `ports/`. **It is being succeeded for the first-class clients
+  by a Rust engine** (`docs/engine-plan.md`, settled 2026-09-25): the macOS client (`src/Ripcord.Mac`)
+  moved to that engine on 2026-09-26, Windows follows after its 1.0, and `libripcord` stays as the ports'
+  core, taking fixes and port-driven work only. It is a same-project
   port of `src/`, not linked against it. The .NET side stays the reference implementation for
   *derivations* (key schedules, KDFs, field ciphers, codecs), and `ProtocolLab vectors` generates the
   known-answer vectors the C core, and later the Rust engine, are tested against. Not part of
