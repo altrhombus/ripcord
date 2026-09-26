@@ -126,12 +126,13 @@ accepts a nonce length `System.Security.Cryptography.AesGcm` refuses. A comment 
   known-answer vectors the C core, and later the Rust engine, are tested against. Not part of
   `Ripcord.slnx`: `make -C libripcord/tests` runs its host suite.
 - **`engine/`** — the Rust engine that succeeds it for the first-class clients, as a Cargo workspace:
-  `ripcord-proto` (sans-IO, `#![forbid(unsafe_code)]`), `ripcord-ffi` (the C ABI, the only crate that
+  `ripcord-proto` (sans-IO, `#![forbid(unsafe_code)]`), `ripcord-net` (the `std::net` driver that runs
+  its connect sequence on the caller's thread), `ripcord-ffi` (the C ABI, the only crate that
   uses `unsafe`; its `build.rs` generates `ripcord.h` and `NativeMethods.g.cs`, never committed and never
   edited), `ripcord-kat` (the `.kat` runner), `ripcord-diff` (differential tests against the C core) and
   `hosts/dotnet/` (the .NET harness). As of 2026-09-26 it holds the stream plane, the Halyard
-  derivations, Takion, the scripted console, discovery and wake, the /sess control plane, STUN,
-  the 9303 association and the rendezvous control plane. When porting a layer, read both the .NET reference and the
+  derivations, Takion, discovery and wake, the /sess control plane, STUN, the 9303 association,
+  input, and the connect sequence on both routes, with scripted consoles for each. When porting a layer, read both the .NET reference and the
   C port; the C core is itself a port of .NET, and where they differ .NET wins unless C is strictly safer
   or .NET is wrong, recorded in `engine/README.md`. Not part of `Ripcord.slnx`: `cargo test --workspace
   --all-features` in `engine/`.
