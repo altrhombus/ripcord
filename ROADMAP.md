@@ -246,11 +246,17 @@ the documents into line, is done and in the journal. The engine lives in [`engin
       2026-09-26). It still needs its fuzz target. Next in order:
   - [ ] **The CNG `Ecdh` backend,** against `session-crypto.kat` on Windows. RustCrypto and CryptoKit
         pass it (journal, 2026-09-26).
-  - [ ] **The connect sequence.** Takion, the scripted console, discovery, wake, the /sess layer, STUN, the
-        9303 association and the rendezvous control plane are done (journal, 2026-09-26). `ripcord-net`,
-        the I/O driver, arrives with the connect sequence, which also owns the launch spec's MTU and RTT
-        clamping, the order /sess, Takion and key agreement run in, the sign-in policy, peer filtering and
-        the overall control-plane deadline.
+  - [ ] **The client's C ABI.** Every layer through the connect sequence and `ripcord-net` is done and
+        tested against scripted consoles on both routes (journal, 2026-09-26); none of it has met a console.
+        What remains before the Mac can relink: `ripcord_client_*` exports mirroring `halyard_client.h`
+        (config, the callbacks, connect, pump, fds, disconnect, the rendezvous calls, the result), driven
+        by `ripcord-net`, plus discovery, wake, pairing and STUN as `CLibripcord.h` pulls them in.
+  - [ ] **What the connect sequence does not do yet**, each a .NET behaviour: senkusha's echo and MTU
+        probes (so the declared RTT is the version and session round trips, and the MTU is the
+        interface's or 1454, never a confirmed one); CORRUPT_FRAME on video loss; CONNECTION_QUALITY and the
+        adaptive bitrate; the echo probe on the control channel.
+  - [ ] **First run against a console,** LAN then rendezvous, with `ripcord-net` from a small lab binary.
+        The sequencing is shared with the C core, mistakes included, so hardware is what checks it.
   - [ ] **A nightly CI leg** for Miri over `ripcord-ffi`'s tests and a coverage-guided `cargo-fuzz` run
         with a kept corpus. Neither runs yet; the stable sweep in `demux.rs` stands in for fuzzing.
   - [ ] **Differential runs for each new layer.** `ripcord-diff` exists and covers every layer ported so
@@ -298,6 +304,19 @@ the Windows client ships. None has been seen on hardware.
       `IPAddress.Parse` on that fallback throws. The pairing route
       (`HalyardAccountConsolePairing`) uses a third rule. The C core and the Rust engine return one choice and
       leave the consoleHost:9303 fallback to the caller, which applies it to both.
+- [ ] **The .NET session never ends when the console hangs up.** `HalyardTakionStream`'s control loop
+      ignores a Takion DISCONNECT, and `RunCtrlKeepAliveAsync` returns quietly when the control channel
+      closes, so the session carries on until `SessionController`'s watchdog sees silence. A DISCONNECT
+      with a reason (a rejected launch spec sends one) is lost. The C core and the Rust engine end the
+      session with the reason.
+- [ ] **Rest on disconnect applies to every .NET teardown.** `DisposeAsync` sends REST_MODE whenever
+      `RestConsoleOnDisconnect` is set, and `SessionController` tears the old session down that way between
+      reconnect attempts too, so a flapping connection can put the console to sleep. The C core and the Rust
+      engine rest only on a disconnect a person asked for.
+- [ ] **.NET's keyless senkusha SESSION_REQUEST sends an empty encrypted key.** `HalyardSenkusha` sets
+      `EncryptedKey = ByteString.Empty`, while `TakionSessionNegotiator` notes the console drops a
+      SESSION_REQUEST without one. Senkusha is non-fatal, which would hide it. The C core and the Rust engine
+      send four zero bytes, as the stream's request does. [X] which the console wants.
 
 ### macOS client — planned 2026-09-24, step 1 done
 

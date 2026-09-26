@@ -4,21 +4,25 @@ The protocol engine the first-class clients are moving to. Why it exists, what i
 order are in [`docs/engine-plan.md`](../docs/engine-plan.md). This file covers the tree, the build and
 where Phase 1 stands. What is still open is in [`ROADMAP.md`](../ROADMAP.md).
 
-**Status: Phase 2, through discovery, wake and /sess.** In `ripcord-proto`:
+**Status: Phase 2, through the connect sequence.** In `ripcord-proto`:
 - the stream plane (framing, the stream key schedule, packet crypto, FEC, the demuxer);
 - the crypto and Halyard derivations;
 - key agreement behind the `Ecdh` trait, with RustCrypto and CryptoKit backends;
 - Takion: framing, the control protobuf codec, the sealer, the session negotiator and a sans-IO
   connection;
-- the 9303 datagram wire codec, and the scripted console the plan asks for;
 - discovery (SRCH), wake and the arm probe;
 - the /sess control plane: registration on both routes and the pairing record, /sess/init and /sess/ctrl
-  with their encrypted fields, the launch spec, and the binary control channel as a sans-IO session.
+  with their encrypted fields, the launch spec, and the binary control channel as a sans-IO session;
+- STUN, the candidates, the 9303 association and the rendezvous control plane over it;
+- controller input;
+- **the connect sequence and the running session** (`connect::Session`), LAN and rendezvous, from the
+  arm probe to video, with scripted consoles for both routes.
 
-Ported from `libripcord/` and cross-checked against the .NET reference, which wins where the two differ
-unless the reasons below say otherwise. Nothing here talks to a console yet. The Mac and Windows clients
-still run their existing engines; the Mac links this one alongside the C core, for the benchmark and the
-CryptoKit vector test.
+`ripcord-net` runs that session on `std::net` sockets on the caller's thread. Ported from `libripcord/`
+and cross-checked against the .NET reference, which wins where the two differ unless the reasons below
+say otherwise. Nothing here has talked to a real console yet. The Mac and Windows clients still run their
+existing engines; the Mac links this one alongside the C core, for the benchmark and the CryptoKit
+vector test.
 
 ## Layout
 
@@ -27,17 +31,17 @@ CryptoKit vector test.
 | `ripcord-proto/` | The protocol as sans-IO state machines. No sockets, no clock, no threads | forbidden |
 | `ripcord-ffi/` | The C ABI: every export. Its `build.rs` generates `ripcord.h` (cbindgen) and `NativeMethods.g.cs` (csbindgen) into `target/include/` | the only crate that uses it |
 | `ripcord-kat/` | Runs the `.kat` files `ProtocolLab vectors` generates, unchanged | forbidden |
+| `ripcord-net/` | The I/O driver: runs `connect::Session` on `std::net` sockets (plus `socket2` for the receive buffer), on the caller's thread, with the C client's threading contract | forbidden |
 | `ripcord-diff/` | Differential tests: builds the C core from `libripcord/` with the `cc` crate and runs it beside the Rust engine on generated inputs | in its wrappers only: test tooling, never linked into a host |
+| `hosts/dotnet/` | The .NET harness: the engine through its generated C# bindings, a differential run against the managed engine, and the benchmark on both | — |
+| `deny.toml` | The dependency policy `cargo deny check` enforces | — |
 
 `ripcord-ffi`'s `test-support` feature adds `ripcord_kat_run` (a vector file through any `Ecdh` backend) and
 the scripted console, for host test suites. `ripcord-proto`'s `scripted-console` feature exposes the
 console to other crates. Neither belongs in a shipping engine. A host supplies its platform's key agreement
 through `RipcordEcdhBackend`; the Mac's is `src/Ripcord.Mac/RipcordKit/Engine/CryptoKitEngineECDH.swift`.
-| `hosts/dotnet/` | The .NET harness: the engine through its generated C# bindings, a differential run against the managed engine, and the benchmark on both | — |
-| `deny.toml` | The dependency policy `cargo deny check` enforces | — |
 
-`ripcord-net` (sockets and the pump loop) and `fuzz/` (cargo-fuzz, which needs nightly) arrive with
-Phase 2. Until then, `demux::tests::random_packets_never_panic` is a stable-Rust sweep of hostile
+`fuzz/` (cargo-fuzz, which needs nightly) arrives with Phase 2. Until then, `demux::tests::random_packets_never_panic` is a stable-Rust sweep of hostile
 packets.
 
 **The interop constants are generated, never copied.** `ripcord-proto/build.rs` reads the one committed
@@ -242,3 +246,45 @@ host's), then `Channel::begin` between our OFFER and our ACCEPT, an optional `Ex
 then `ControlPlane`. The A/V leg repeats STUN and signaling for the media OFFER, and `Channel::establish`
 on the media socket is the hole punch before the probe, the PROBE_REPORT (`ctrl::probe_report_plaintext`,
 sent through `ControlSession::send_field`), the STREAM_READY wait and Takion.
+
+## The connect sequence: where the port follows .NET and where it follows C (2026-09-26)
+
+`connect::Session` is the C client's sequence (`halyard_client.c`) as a sans-IO machine. Where C and
+.NET differ, these are the choices.
+
+| Topic | Rust follows | Why |
+|---|---|---|
+| Control-plane deadline | .NET: 20 s on the LAN and 60 s on rendezvous, over the arm probe, both TCP connects and /sess | C has no overall deadline, cannot cancel the LAN open, and times each /sess response from the start |
+| Stream bring-up | .NET: one 35 s box from the Takion handshake to STREAM_INFO's ack | C gives SESSION_REPLY 5 s and STREAM_INFO 10 s, and no box around the handshake |
+| PROTOCOL_VERSION_ACK on the stream | C: 5 s, then fall back to the offered version | .NET fails; falling back is harmless and was run on hardware |
+| SESSION_ID before Takion on the LAN | C: required, inside a 20 s prompt window | The PS3 and 3DS ports found that a console without it drops every INIT; .NET's claim otherwise is [X] |
+| Sign-in | C: a stored passcode first, silence re-submits the same digits, an unknown verdict byte stops, 30 s for SESSION_ID after an accepted passcode on the LAN | Each from a C port's hardware run. .NET re-asks on silence and treats an unknown byte as accepted |
+| Accepted passcode, no SESSION_ID, on rendezvous | C: carry on to the A/V leg ([X], one wake-from-rest run) | |
+| A late prompt during the media wait | C's handling, [X], but without insisting on SESSION_ID after it | C insists there and not after its own gate, which contradicts itself |
+| Peer filtering | .NET: every socket reads only the console's endpoint | C filters on rendezvous only |
+| The console hanging up | C: a Takion DISCONNECT (with its reason) or a closed control session ends the session | .NET notices neither, and relies on its watchdog (roadmap) |
+| Declared MTU | .NET: the interface MTU less 46, clamped to 530–1454, when the host knows it; otherwise 1454 | C always declares 1454 |
+| Declared RTT | .NET: the least of senkusha's version and session round trips, rounded | C truncates, so a sub-millisecond LAN reads as a measured 0. .NET's echo probe is not ported yet |
+| RP-StartBitrate and RP-StreamingType | .NET: the configured bitrate, and 0 | C reads both from the pairing record |
+| Senkusha | C's two legs, then .NET's DISCONNECT and the socket closed | The echo and MTU probes are not ported yet (roadmap) |
+| Keyless senkusha SESSION_REQUEST | C: a 4-byte zero encrypted key | .NET sends it empty, though its negotiator notes the console drops a SESSION_REQUEST without one (roadmap) |
+| Incoming control GMAC | C: verified and enforced | .NET never verifies |
+| IDR | C: the latch armed at the start and re-asked every 200 ms until a keyframe arrives | C's b141 and b124. CORRUPT_FRAME is not sent yet |
+| Input | .NET's writer (state on a stick change or every 200 ms), polled every 4 ms as C polls | |
+| Rest | C: only on an explicit disconnect | .NET rests on every teardown when the setting is on (roadmap) |
+| Teardown on rendezvous | C: the polite 9303 close before any socket closes | A console never sent the Close keeps the session live |
+| fps, HDR | C: 30 or 60; HDR only with HEVC | A third rate's answer is [X]; HDR is an HEVC profile |
+
+## The connect sequence, measured (2026-09-26)
+
+| What | Result |
+|---|---|
+| LAN, scripted | The arm probe, /sess/init and /sess/ctrl over TCP, senkusha, Takion, key agreement on the real crypto, STREAM_INFO, the IDR latch, heartbeats, congestion, input, sealed video, and the goodbye (`connect::tests`) |
+| LAN, failures | A refused and then accepted passcode, a stored passcode, a cancelled one, no SESSION_ID, a console refusing the stream with a reason, a console hanging up mid-stream, a stray datagram, the declared MTU |
+| Rendezvous, scripted | Prepare, begin, /sess over the 9303 association, the A/V leg's prelude, SESSION_ID, senkusha and the stream on that one socket, PROBE_REPORT and STREAM_READY, a stray dropped, and the polite Close |
+| Real sockets | `ripcord-net`'s loopback test runs the LAN sequence over `std::net` on 127.0.0.1 to five video frames and the goodbye, in about 0.35 s |
+| Mutation check | Encrypting the launch spec at counter 1 fails seven of the nine connect tests; one sign-in attempt instead of five fails the refusal test |
+
+The scripted LAN console (`testing::scripted_lan_console`) computes the console's side of every
+derivation from what the client sent, so a client that gets a key wrong fails there as it would on a
+console. None of this has run against hardware.
