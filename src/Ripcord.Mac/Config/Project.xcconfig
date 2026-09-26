@@ -1,7 +1,6 @@
 // Settings every target shares. Target files include nothing; Xcode layers them over this one.
 
 RIPCORD_REPO_ROOT = $(SRCROOT)/../..
-LIBRIPCORD = $(RIPCORD_REPO_ROOT)/libripcord
 
 SDKROOT = macosx
 MACOSX_DEPLOYMENT_TARGET = 26.0
@@ -9,24 +8,19 @@ MACOSX_DEPLOYMENT_TARGET = 26.0
 ARCHS = arm64
 SWIFT_VERSION = 6.0
 CLANG_ENABLE_MODULES = YES
-GCC_C_LANGUAGE_STANDARD = c99
 
-// The core's include discipline: its own files reach each other by relative path, plus these three
-// directories, exactly as libripcord/tests/Makefile's INCLUDES. Swift's importer needs them too.
-RIPCORD_CORE_HEADER_PATHS = $(LIBRIPCORD)/crypto $(LIBRIPCORD)/halyard $(LIBRIPCORD)/platform
-HEADER_SEARCH_PATHS = $(inherited) $(RIPCORD_CORE_HEADER_PATHS)
-SWIFT_INCLUDE_PATHS = $(inherited) $(SRCROOT)/Libripcord/include $(SRCROOT)/RipcordEngine/include
+// The protocol engine is the Rust one (docs/engine-plan.md, Phase 3), reached through its generated header.
+SWIFT_INCLUDE_PATHS = $(inherited) $(SRCROOT)/RipcordEngine/include
 
-// The Rust engine (docs/engine-plan.md), during Phase 1 alongside the C core rather than instead of it.
 // RipcordKit's "Build the Rust engine" phase runs cargo; every executable that links RipcordKit links the
 // static archive by full path, because cargo writes a dylib of the same name beside it and -l would
 // prefer that. Static-library targets link with libtool, which does not read OTHER_LDFLAGS.
 RIPCORD_ENGINE = $(RIPCORD_REPO_ROOT)/engine
 RIPCORD_ENGINE_LIB = $(RIPCORD_ENGINE)/target/release/libripcord.a
 OTHER_LDFLAGS = $(inherited) $(RIPCORD_ENGINE_LIB)
-// The engine is built with its test-support exports (ripcord_kat_run) for RipcordKitTests; ripcord.h guards
-// them behind this define. Both go when the app links the engine for real (Phase 3).
-OTHER_SWIFT_FLAGS = $(inherited) -Xcc -DRIPCORD_TEST_SUPPORT
+// The engine is built with its test-support exports (the loopback consoles, ripcord_kat_run) because
+// RipcordKitTests uses them; RipcordKit itself calls none, and ripcord.h hides them unless
+// RipcordKitTests.xcconfig defines RIPCORD_TEST_SUPPORT. An app target will link a build without them.
 
 // Ad hoc signing until distribution is set up (docs/macos-plan.md, step 9).
 CODE_SIGN_IDENTITY = -

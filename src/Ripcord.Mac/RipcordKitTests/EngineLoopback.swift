@@ -3,7 +3,8 @@
 // pointer, CryptoKit as the key agreement, the system CSPRNG, connect, then pump until the session ends.
 // The console is the engine's loopback one (test-support), so nothing leaves the machine.
 
-internal import CRipcordEngine
+import CRipcordEngine
+@testable import RipcordKit
 import Foundation
 import Security
 

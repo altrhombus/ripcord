@@ -277,6 +277,13 @@ either engine against the same console, which is the comparison that matters mos
 
 **Exit:** the Mac's parity checklist in `macos-plan.md` passes on the Rust engine, on hardware.
 
+**Where it stands (2026-09-26).** The relink is done, ahead of Phase 2's formal exit, at the project
+owner's direction: RipcordKit reaches the protocol only through `ripcord.h`, and the Mac project no longer
+compiles `libripcord/`. The Rust engine links as a static library built by cargo from a build phase; the
+XCFramework waits for the iOS targets. Instead of one lab that runs either engine, the comparison run
+uses a lab built from the commit before the relink, which is the C core's last Mac build, against the
+same console. The exit criterion, the parity checklist on hardware, is still open.
+
 ### Phase 4 — Windows onto the engine
 
 **After the Windows 1.0, not before.** 1.0's scope was settled on 2026-09-11, and changing the engine

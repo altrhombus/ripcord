@@ -21,9 +21,8 @@ where Phase 1 stands. What is still open is in [`ROADMAP.md`](../ROADMAP.md).
 `ripcord-net` runs that session on `std::net` sockets on the caller's thread, and `ripcord-ffi` exports it
 as the client ABI (`ripcord_client_*`), which Swift and .NET both drive end to end. Ported from `libripcord/`
 and cross-checked against the .NET reference, which wins where the two differ unless the reasons below
-say otherwise. Nothing here has talked to a real console yet. The Mac and Windows clients still run their
-existing engines; the Mac links this one alongside the C core, for the benchmark and the CryptoKit
-vector test.
+say otherwise. Nothing here has talked to a real console yet. The Mac runs on this engine since 2026-09-26
+(Phase 3's relink); Windows still runs its managed engine.
 
 ## Layout
 
@@ -102,7 +101,7 @@ Windows client ships today, so on Windows that pair is the comparison that matte
 | Differential against `HalyardPacketCrypto` | 80 key positions × 4 checks (CTR, both seal directions, the control AAD rule, tamper), across rotation windows and the 32-bit edge |
 | Per packet, one Swift harness for both engines (`ripcord-lab bench`) | C core **7.71–8.11 µs**, Rust **0.53–0.57 µs** |
 | Per packet, from .NET | Rust through P/Invoke **0.67–0.71 µs**, managed `HalyardPacketCrypto` 16.1–17.3 µs |
-| Mac lab | Links through the generated header; the RipcordKit tests and EcdhKat still build and pass |
+| Mac lab | Links through the generated header; the RipcordKit tests still build and pass (Phase 1; the Mac has since moved onto the engine entirely) |
 | .NET | Links through the generated bindings: `[UnmanagedCallersOnly]` callbacks, a `GCHandle` user pointer |
 | Size | `libripcord.dylib` 386 KB stripped. `ripcord-lab` grows from 1.10 MB to 2.35 MB stripped, which is more than the engine's own size and still to be explained |
 

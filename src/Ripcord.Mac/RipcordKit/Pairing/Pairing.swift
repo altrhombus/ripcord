@@ -1,52 +1,10 @@
-// PIN pairing, and where the result is kept.
-//
-// The exchange itself is libripcord's halyard_regist_run (session/halyard_regist_flow.h): the search
-// probe the console insists precede a registration, the encrypted request, and the decrypted reply. This
-// file supplies what only the host knows (this Mac's own address, the person's account id and PIN) and
-// turns the result into a stored record exactly as the PS3 port does (rc_pair_ps3.c), so the record
-// format stays one format.
-//
-// STORAGE IS THE LAB'S FOR NOW. The record holds the console's registration key, which is a secret, so the
-// file is written readable by its owner only. The app keeps records in the Keychain instead
-// (docs/macos-plan.md); until then this is the core's own pairing file, under Application Support.
+// PIN pairing: what only the host knows (this Mac's own address, the person's account id and PIN) handed
+// to the engine's registration (ripcord_regist_pin: the arm probe, the encrypted request, the decrypted
+// reply). The record comes back as a PairedConsole, and where it is kept is PairingStore.swift's.
 
-internal import CLibripcord
+internal import CRipcordEngine
 import Darwin
 import Foundation
-
-public struct PairedConsole: Sendable {
-    public var host: String { cString(record.host) }
-    public var name: String { cString(record.name) }
-    public var consoleID: String { cString(record.console_id) }
-    public var family: ConsoleFamily { record.is_ps5 != 0 ? .ps5 : .ps4 }
-
-    var record: halyard_pairing_record
-
-    init(record: halyard_pairing_record) { self.record = record }
-
-    /// rc_pair_ps3.c, "The record is the product of all of this, and the only place it exists." One format,
-    /// whichever route produced the registration: the PIN route (Pairing.register) and the account route
-    /// (the rendezvous transports) both end here, so the LAN path and PairingStore read either the same way.
-    init(host: String, name: String, consoleID: String, accountID: String, registration: halyard_regist_record) {
-        var record = halyard_pairing_record()
-        copy(host, into: &record.host)
-        copy(name, into: &record.name)
-        copy(consoleID, into: &record.console_id)
-        copy(accountID, into: &record.account_id)
-        record.is_ps5 = registration.is_ps5
-        withUnsafeMutableBytes(of: &record.registkey) { dst in
-            withUnsafeBytes(of: registration.registration_key) {
-                dst.copyMemory(from: UnsafeRawBufferPointer(rebasing: $0.prefix(min(registration.registration_key_length, dst.count))))
-            }
-        }
-        record.registkey_length = min(registration.registration_key_length, MemoryLayout.size(ofValue: record.registkey))
-        record.companion = registration.companion
-        self.record = record
-    }
-
-    /// The registration key's length, for a caller checking a record is usable. Not the key.
-    public var hasRegistrationKey: Bool { record.registkey_length > 0 }
-}
 
 public enum PairingError: Error, Sendable, CustomStringConvertible {
     case invalidAccountID(String)
@@ -56,9 +14,9 @@ public enum PairingError: Error, Sendable, CustomStringConvertible {
     /// answered and said no", which is the first question anyone debugging this asks.
     case failed(status: String, httpStatus: Int, consoleReason: String, sawSearchReply: Bool)
     case couldNotSave(path: String)
-    /// The account route's /sess/rgst, over the 9303 association (halyard_account_regist_status).
+    /// The account route's /sess/rgst, over the 9303 association.
     case accountRegistrationFailed(status: String, httpStatus: Int, consoleReason: String)
-    /// The association could not be opened or aimed (a halyard_dgram_channel_status, or a bad argument).
+    /// The association could not be opened or aimed.
     case associationFailed(String)
 
     public var description: String {
@@ -77,50 +35,45 @@ public enum PairingError: Error, Sendable, CustomStringConvertible {
 }
 
 public enum Pairing {
-    /// Registers this Mac with a console showing its pairing PIN.
+    /// Registers this Mac with a console showing its pairing PIN. Blocking: about two seconds arming the
+    /// console's listener, then the exchange.
     public static func register(host: String, family: ConsoleFamily, accountID: String, pin: String,
                                 name: String = "", consoleID: String = "") throws(PairingError) -> PairedConsole {
         let digits = pin.filter { !$0.isWhitespace }
         guard digits.count == 8, digits.allSatisfy(\.isNumber), let passcode = UInt32(digits) else { throw .invalidPIN }
+        let account = try normalise(accountID)
+        guard let address = ConsolePath.ipv4(host) else { throw .noRouteToConsole(errno: EINVAL) }
+        let clientIP = try localAddress(toward: host)
 
-        var normalised = [CChar](repeating: 0, count: 64)
-        let accountStatus = halyard_account_id_normalise(accountID, &normalised, normalised.count)
-        guard accountStatus == HALYARD_ACCOUNT_ID_OK else {
-            throw .invalidAccountID(String(cString: halyard_account_id_status_text(accountStatus)))
+        var random = EngineRandom.table
+        var result = RipcordRegistResult()
+        let status = address.withUnsafeBufferPointer { a in
+            ripcord_regist_pin(a.baseAddress, family == .ps5, account, passcode, clientIP, 0, false, &random, &result)
         }
+        defer { EngineRecords.wipe(&result) }
+        guard status == RIPCORD_STATUS_OK, result.status == UInt32(RIPCORD_REGIST_OK) else {
+            throw .failed(status: EngineRecords.statusText(result.status), httpStatus: Int(result.http_status),
+                          consoleReason: EngineRecords.reason(result), sawSearchReply: result.saw_arm_reply)
+        }
+        return EngineRecords.console(result.record, host: host, name: name, consoleID: consoleID, accountID: account)
+    }
 
-        var params = halyard_regist_params()
-        copy(host, into: &params.host)
-        params.is_ps5 = family == .ps5 ? 1 : 0
-        withUnsafeMutableBytes(of: &params.account_id) { dst in
-            normalised.withUnsafeBytes { src in dst.copyMemory(from: UnsafeRawBufferPointer(rebasing: src.prefix(dst.count - 1))) }
+    /// A typed account id as decimal, or why it is not one, in words a person can act on.
+    static func normalise(_ accountID: String) throws(PairingError) -> String {
+        var out = [UInt8](repeating: 0, count: 32)
+        var reason = [UInt8](repeating: 0, count: 128)
+        let code = ripcord_account_id_normalise(accountID, &out, out.count, &reason, reason.count)
+        guard code == UInt32(RIPCORD_ACCOUNT_ID_OK) else {
+            throw .invalidAccountID(String(decoding: reason.prefix(while: { $0 != 0 }), as: UTF8.self))
         }
-        params.passcode = passcode
-        copy(try localAddress(toward: host), into: &params.client_ip)
-
-        var result = halyard_regist_result()
-        guard halyard_regist_run(&params, &result) == 1, result.status == HALYARD_REGIST_OK else {
-            throw .failed(status: String(cString: halyard_regist_status_text(result.status)),
-                          httpStatus: Int(result.http_status), consoleReason: cString(result.console_reason),
-                          sawSearchReply: result.saw_search_reply != 0)
-        }
-
-        let accountText = withUnsafeBytes(of: params.account_id) { raw in
-            String(decoding: raw.prefix(while: { $0 != 0 }), as: UTF8.self)
-        }
-        return PairedConsole(host: host, name: name, consoleID: consoleID, accountID: accountText,
-                             registration: result.record)
+        return String(decoding: out.prefix(while: { $0 != 0 }), as: UTF8.self)
     }
 
     /// An account id as the registration wants it: normalised to decimal when it reads as a 64-bit id, as
     /// the PIN route insists; otherwise as given, which is what the .NET account route sends (the cloud tier
     /// supplies it, not a person, so there is no typing mistake to catch).
     static func normalisedAccountID(_ accountID: String) -> String {
-        var normalised = [CChar](repeating: 0, count: 64)
-        guard halyard_account_id_normalise(accountID, &normalised, normalised.count) == HALYARD_ACCOUNT_ID_OK else {
-            return accountID
-        }
-        return String(decoding: normalised.prefix(while: { $0 != 0 }).map { UInt8(bitPattern: $0) }, as: UTF8.self)
+        (try? normalise(accountID)) ?? accountID
     }
 
     /// This Mac's address on the interface that routes to `host`: what the console expects in the
@@ -146,47 +99,3 @@ public enum Pairing {
     }
 }
 
-/// The lab's pairing store: the core's own pairing file, in a directory of the caller's choosing.
-public struct PairingStore: Sendable {
-    public let directory: URL
-
-    public init(directory: URL) { self.directory = directory }
-
-    /// ~/Library/Application Support/Ripcord/lab
-    public static var lab: PairingStore {
-        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        return PairingStore(directory: base.appending(path: "Ripcord/lab", directoryHint: .isDirectory))
-    }
-
-    /// The core's file functions take a path whose DIRECTORY they use (they were written for argv[0]).
-    private var anchor: String { directory.appending(path: "ripcord").path }
-
-    public func save(_ console: PairedConsole) throws(PairingError) {
-        do {
-            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true,
-                                                    attributes: [.posixPermissions: 0o700])
-        } catch { throw .couldNotSave(path: directory.path) }
-        var record = console.record
-        let previous = umask(0o077)   // the file carries registration keys: owner-only
-        defer { umask(previous) }
-        guard halyard_pairing_file_save(anchor, &record) == 1 else { throw .couldNotSave(path: directory.path) }
-    }
-
-    public func load() -> [PairedConsole] {
-        var set = halyard_pairing_set()
-        guard halyard_pairing_file_load_set(anchor, &set) > 0 else { return [] }
-        return withUnsafeBytes(of: set.console) { raw in
-            let records = raw.bindMemory(to: halyard_pairing_record.self)
-            return (0..<Int(set.count)).map { PairedConsole(record: records[$0]) }
-        }
-    }
-}
-
-/// Copies a Swift string into a C `char[N]` field, NUL-terminated and truncated to fit.
-func copy<T>(_ string: String, into field: inout T) {
-    withUnsafeMutableBytes(of: &field) { dst in
-        dst.initializeMemory(as: UInt8.self, repeating: 0)
-        let bytes = Array(string.utf8.prefix(dst.count - 1))
-        bytes.withUnsafeBytes { dst.copyMemory(from: $0) }
-    }
-}

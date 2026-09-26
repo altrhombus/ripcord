@@ -4,7 +4,7 @@
 // Two conventions differ between Apple's framework and the console, and both are handled here, once:
 //
 //   - Stick Y. GameController reports up as positive; the wire has up NEGATIVE (libripcord/input/
-//     halyard_input.h, established in capture cap48, where full up drove left-Y to -32767).
+//     the engine's input writer, established in capture cap48, where full up drove left-Y to -32767).
 //   - Triggers. GameController gives 0...1; the wire carries a level of 0...255 and a pressed bit.
 //
 // Face buttons map by POSITION, not by label: GameController's buttonA is the south button on every pad
@@ -15,30 +15,30 @@
 // history is diffed against all belong to the core's connect sequence, which pulls this state; a second
 // copy of that cadence here would drift from the one the ports use.
 
-internal import CLibripcord
+internal import CRipcordEngine
 import GameController
 
 public struct PadButtons: OptionSet, Sendable, Hashable {
     public let rawValue: UInt32
     public init(rawValue: UInt32) { self.rawValue = rawValue }
 
-    public static let cross     = PadButtons(rawValue: HALYARD_PAD_CROSS)
-    public static let circle    = PadButtons(rawValue: HALYARD_PAD_CIRCLE)
-    public static let square    = PadButtons(rawValue: HALYARD_PAD_SQUARE)
-    public static let triangle  = PadButtons(rawValue: HALYARD_PAD_TRIANGLE)
-    public static let dpadUp    = PadButtons(rawValue: HALYARD_PAD_DPAD_UP)
-    public static let dpadDown  = PadButtons(rawValue: HALYARD_PAD_DPAD_DOWN)
-    public static let dpadLeft  = PadButtons(rawValue: HALYARD_PAD_DPAD_LEFT)
-    public static let dpadRight = PadButtons(rawValue: HALYARD_PAD_DPAD_RIGHT)
-    public static let l1        = PadButtons(rawValue: HALYARD_PAD_L1)
-    public static let r1        = PadButtons(rawValue: HALYARD_PAD_R1)
-    public static let l2        = PadButtons(rawValue: HALYARD_PAD_L2)
-    public static let r2        = PadButtons(rawValue: HALYARD_PAD_R2)
-    public static let options   = PadButtons(rawValue: HALYARD_PAD_OPTIONS)
-    public static let create    = PadButtons(rawValue: HALYARD_PAD_CREATE)
-    public static let ps        = PadButtons(rawValue: HALYARD_PAD_PS)
-    public static let l3        = PadButtons(rawValue: HALYARD_PAD_L3)
-    public static let r3        = PadButtons(rawValue: HALYARD_PAD_R3)
+    public static let cross     = PadButtons(rawValue: UInt32(RIPCORD_PAD_CROSS))
+    public static let circle    = PadButtons(rawValue: UInt32(RIPCORD_PAD_CIRCLE))
+    public static let square    = PadButtons(rawValue: UInt32(RIPCORD_PAD_SQUARE))
+    public static let triangle  = PadButtons(rawValue: UInt32(RIPCORD_PAD_TRIANGLE))
+    public static let dpadUp    = PadButtons(rawValue: UInt32(RIPCORD_PAD_DPAD_UP))
+    public static let dpadDown  = PadButtons(rawValue: UInt32(RIPCORD_PAD_DPAD_DOWN))
+    public static let dpadLeft  = PadButtons(rawValue: UInt32(RIPCORD_PAD_DPAD_LEFT))
+    public static let dpadRight = PadButtons(rawValue: UInt32(RIPCORD_PAD_DPAD_RIGHT))
+    public static let l1        = PadButtons(rawValue: UInt32(RIPCORD_PAD_L1))
+    public static let r1        = PadButtons(rawValue: UInt32(RIPCORD_PAD_R1))
+    public static let l2        = PadButtons(rawValue: UInt32(RIPCORD_PAD_L2))
+    public static let r2        = PadButtons(rawValue: UInt32(RIPCORD_PAD_R2))
+    public static let options   = PadButtons(rawValue: UInt32(RIPCORD_PAD_OPTIONS))
+    public static let create    = PadButtons(rawValue: UInt32(RIPCORD_PAD_CREATE))
+    public static let ps        = PadButtons(rawValue: UInt32(RIPCORD_PAD_PS))
+    public static let l3        = PadButtons(rawValue: UInt32(RIPCORD_PAD_L3))
+    public static let r3        = PadButtons(rawValue: UInt32(RIPCORD_PAD_R3))
 }
 
 /// One instant of a pad, in GameController's own units: sticks -1...1 with up POSITIVE, triggers 0...1.
@@ -79,8 +79,8 @@ public struct PadSnapshot: Sendable, Equatable {
     }
 
     /// The console's wire form of this snapshot.
-    var wireState: halyard_input_state {
-        var s = halyard_input_state()
+    var wireState: RipcordInputState {
+        var s = RipcordInputState()
         s.buttons = buttons.rawValue
         s.left_x = Self.axis(leftStick.x)
         s.left_y = Self.axis(-leftStick.y)      // up is negative on the wire

@@ -1,11 +1,11 @@
 # libripcord — the portable protocol core
 
-The PS5 Remote Play protocol in portable C99, shared by every Ripcord port and, for now, by the macOS
-client. No console SDK, no platform headers, no `#ifdef` naming a target.
+The PS5 Remote Play protocol in portable C99, shared by every Ripcord port. The macOS client used it until
+2026-09-26, when it moved to the Rust engine. No console SDK, no platform headers, no `#ifdef` naming a target.
 
 **Its scope, from 2026-09-25.** [`docs/engine-plan.md`](../docs/engine-plan.md) gives the first-class
-clients a Rust engine that presents this core's contract (`client/halyard_client.h`). The Mac moves to it
-at parity. From then on this is **the console ports' core**: it keeps its tests, its fuzz harnesses and its
+clients a Rust engine that presents this core's contract (`client/halyard_client.h`). The Mac has moved to
+it (2026-09-26). This is now **the console ports' core**: it keeps its tests, its fuzz harnesses and its
 CI job, and it takes fixes and the protocol work a port needs, but it no longer promises parity with the
 first-class clients. Until the Rust engine reaches parity it has a second job, as the other implementation
 the Rust engine is differentially tested against. It is retired when the last port moves off it or is
@@ -115,9 +115,8 @@ compiler and nothing else installed" is now true rather than aspirational.
 
 **A build can supply its own backend instead.** Defining `RC_ECDH_EXTERNAL_BACKEND` compiles only the
 backend-neutral half of `rc_ecdh.c`, and the build provides the five backend entry points itself. The macOS
-client does this with CryptoKit (`src/Ripcord.Mac/RipcordKit/Crypto/CryptoKitECDH.swift`), and its
-`libripcord-ecdh-kat` target runs this tree's `tests/ecdh_test.c`, unmodified, against it. Mbed TLS and
-CryptoKit are therefore two real backends behind one seam, and both are checked against the same vectors.
+client did this with CryptoKit, checked by running this tree's `tests/ecdh_test.c` against it, until it moved
+to the Rust engine on 2026-09-26; the seam stays for any port whose platform has its own implementation.
 
 The version is pinned to 2.28.8 because that is what devkitPro packages as `3ds-mbedtls`: one version,
 one `rc_ecdh.c`, two ports.

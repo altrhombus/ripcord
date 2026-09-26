@@ -1,25 +1,21 @@
-// The C-backed rendezvous transports, against libripcord's own scripted console on loopback.
+// The engine-backed rendezvous transports, against the engine's scripted 9303 console on loopback.
 //
 // RendezvousTests.swift pins the cloud timelines against a fake transport; this pins the transports those
-// timelines drive, with everything below them real: the seed crypto against the core's own seal function,
-// the 9303 association and /sess/rgst against libripcord/tests/fake_dgram_console.h (reached through
-// TestSupport/include, which adds its /sess/rgst answer), and ConsoleSession's rendezvous route through
-// prepare, begin, registration and connect, as far as a console with no A/V leg lets it go.
+// timelines drive, with everything below them real: the seed crypto against the engine's own seal, the
+// 9303 association and /sess/rgst against the engine's scripted console (ripcord_loopback_dgram_console_*,
+// test-support, which answers the account route's /sess/rgst under a seed), and ConsoleSession's rendezvous
+// route through prepare, begin, registration and connect, as far as a console with no A/V leg lets it go.
 //
 // NOTHING LEAVES LOOPBACK. Every socket binds 127.0.0.1, every peer is 127.0.0.1, no STUN server is named,
 // and the cloud is FakeSignaling and FakeWebSocket. Every id, key and account number is synthetic.
-//
-// Serialized: /sess/rgst runs one at a time in the process (its buffers are statics in the core), and the
-// core's log sink is process-wide.
 
-import CLibripcord
-import CLibripcordTestSupport
+import CRipcordEngine
 import Foundation
 @testable import RipcordKit
 import Synchronization
 import Testing
 
-/// A scripted console on its own thread, stepping a loopback socket until finished.
+/// The engine's scripted 9303 console, on its own thread in the engine, until finished.
 final class LoopbackConsole: @unchecked Sendable {
     struct Report: Sendable {
         var rgstRequests: Int
@@ -31,78 +27,52 @@ final class LoopbackConsole: @unchecked Sendable {
     let port: Int
     let consoleID: [UInt8]
     let clientID: [UInt8]
-
-    // Touched by the console thread only, until `finish` has joined it.
-    private let console: UnsafeMutablePointer<rc_test_console>
-    private let stopped = Mutex(false)
-    private let done = DispatchSemaphore(value: 0)
+    private let console: OpaquePointer
 
     init(seed: [UInt8], isPS5: Bool = true) throws {
-        console = .allocate(capacity: 1)
-        console.initialize(to: rc_test_console())
-        let nonce = Data((0..<16).map { UInt8(0x10 + $0) }).base64EncodedString()
-        guard rc_test_console_open(console, isPS5 ? 1 : 0, seed, nonce) == 1 else {
-            console.deallocate()
+        let nonce = (0..<16).map { UInt8(0x10 + $0) }
+        var port: UInt16 = 0
+        guard let console = ripcord_loopback_dgram_console_start(isPS5, seed, nonce, &port) else {
             throw PairingError.associationFailed("the loopback console could not bind")
         }
-        port = Int(console.pointee.port)
+        self.console = console
+        self.port = Int(port)
         var cid = [UInt8](repeating: 0, count: 20), clid = [UInt8](repeating: 0, count: 20)
-        rc_test_console_ids(&cid, &clid)
+        _ = ripcord_loopback_dgram_console_ids(&cid, &clid)
         consoleID = cid
         clientID = clid
-        let thread = Thread { [self] in
-            while !stopped.withLock({ $0 }) {
-                if rc_test_console_step(console) == 0 { usleep(1_000) }
-            }
-            done.signal()
-        }
-        // As high as the test that waits on it, or finish() is a priority inversion.
-        thread.qualityOfService = .userInitiated
-        thread.start()
     }
 
-    /// Stops the thread (after a moment for the client's last datagrams) and reads what the console saw.
+    /// Reads what the console saw, after a moment for the client's last datagrams, and stops it.
     func finish() -> Report {
         usleep(50_000)
-        stopped.withLock { $0 = true }
-        done.wait()
-        let c = console.pointee
-        let paths = ["/sess/rgst", "/sess/init", "/sess/ctrl"]
-        let requests = (0..<Int(min(c.console.requests, FAKE_MAX_REQUESTS))).map { i in
-            paths.first { rc_test_console_request_contains(console, Int32(i), $0) == 1 } ?? "?"
-        }
-        let report = Report(rgstRequests: Int(c.rgst_requests), rgstFieldOK: c.rgst_field_ok == 1,
-                            inits: Int(c.console.inits), requests: requests)
-        rc_test_console_close(console)
-        return report
+        var r = RipcordDgramConsoleReport()
+        _ = ripcord_loopback_dgram_console_report(console, &r)
+        let codes = withUnsafeBytes(of: r.requests) { Array($0.prefix(Int(min(r.request_count, 4)))) }
+        let paths = codes.map { ["?", "/sess/rgst", "/sess/init", "/sess/ctrl"][Int(min($0, 3))] }
+        return Report(rgstRequests: Int(r.rgst_requests), rgstFieldOK: r.rgst_field_ok, inits: Int(r.inits),
+                      requests: paths)
     }
 
-    deinit {
-        console.deinitialize(count: 1)
-        console.deallocate()
-    }
+    deinit { ripcord_loopback_dgram_console_stop(console) }
 }
 
 /// customData1 as the console publishes it: the seed sealed under data1/data2, double base64.
 func sealedCustomData1(seed: [UInt8], data1: [UInt8], data2: [UInt8], isPS5: Bool = true) -> String {
-    var ciphertext = [UInt8](repeating: 0, count: 16)
-    halyard_account_seed_seal(isPS5 ? 1 : 0, data1, data2, seed, &ciphertext)
-    var text = [CChar](repeating: 0, count: 128)
-    _ = halyard_account_seed_encode_custom_data1(ciphertext, ciphertext.count, &text, text.count)
-    return String(decoding: text.prefix(while: { $0 != 0 }).map { UInt8(bitPattern: $0) }, as: UTF8.self)
+    var text = [UInt8](repeating: 0, count: 128)
+    _ = ripcord_account_seed_seal(isPS5, data1, data2, seed, &text, text.count)
+    return String(decoding: text.prefix(while: { $0 != 0 }), as: UTF8.self)
 }
 
 private let accountID = "1234567890123456"   // synthetic, the C suites' own
 
-private func registrationKey(_ console: PairedConsole) -> [UInt8] {
-    withUnsafeBytes(of: console.record.registkey) { Array($0.prefix(console.record.registkey_length)) }
-}
+private func registrationKey(_ console: PairedConsole) -> [UInt8] { console.registrationKey }
 
-@Suite("libripcord rendezvous transports", .serialized)
-struct LibripcordRendezvousTests {
+@Suite("engine rendezvous transports", .serialized)
+struct EngineRendezvousTests {
     // MARK: - The seed
 
-    @Test("seed material is fresh, and a customData1 sealed by the core opens to the console's seed")
+    @Test("seed material is fresh, and a customData1 sealed by the engine opens to the console's seed")
     func seedRoundTrip() throws {
         let material = try AccountSeed.makeKeyMaterial()
         #expect(material.data1.count == 16 && material.data2.count == 16)
@@ -171,14 +141,14 @@ struct LibripcordRendezvousTests {
         #expect(paired.name == "Loopback console")
         #expect(paired.family == .ps5)
         #expect(registrationKey(paired) == Array("1a2b3c4d".utf8))
-        #expect(cString(paired.record.account_id) == accountID)
+        #expect(paired.accountID == accountID)
         #expect(signaling.accepts.first?.peerSid == 24043)
         #expect(signaling.timeline.last == "leave")
 
-        // The record is the one the LAN path reads: through PairingStore and back.
+        // The record is the one the LAN path reads: through the lab's store and back.
         let directory = FileManager.default.temporaryDirectory.appending(path: "ripcord-test-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: directory) }
-        let store = PairingStore(directory: directory)
+        let store = PairingFileStore(directory: directory)
         try store.save(paired)
         let loaded = try #require(store.load().first)
         #expect(loaded.host == "127.0.0.1" && loaded.name == "Loopback console" && loaded.family == .ps5)
@@ -239,17 +209,9 @@ struct LibripcordRendezvousTests {
 
     /// A record the session can open with: synthetic key, host 127.0.0.1.
     static func loopbackRecord() -> PairedConsole {
-        var registration = halyard_regist_record()
-        withUnsafeMutableBytes(of: &registration.registration_key) { $0.copyBytes(from: Array("1a2b3c4d".utf8)) }
-        registration.registration_key_length = 8
-        withUnsafeMutableBytes(of: &registration.companion) { $0.copyBytes(from: (0..<16).map { UInt8(0xC0 + $0) }) }
-        registration.is_ps5 = 1
-        var console = PairedConsole(host: "127.0.0.1", name: "Loopback console", consoleID: "", accountID: accountID,
-                                    registration: registration)
-        withUnsafeMutableBytes(of: &console.record.device_id) { $0.copyBytes(from: (0..<16).map { UInt8(0x30 + $0) }) }
-        console.record.device_id_length = 16
-        console.record.os_major = 10
-        return console
+        PairedConsole(host: "127.0.0.1", name: "Loopback console", consoleID: "", accountID: accountID, family: .ps5,
+                      registrationKey: Array("1a2b3c4d".utf8), companion: (0..<16).map { UInt8(0xC0 + $0) },
+                      deviceID: (0..<16).map { UInt8(0x30 + $0) })
     }
 
     static func route(_ drive: @escaping @Sendable (RendezvousLink) async throws -> Void) -> RendezvousRoute {
@@ -349,10 +311,11 @@ struct LibripcordRendezvousTests {
     func routeSelection() {
         var options = ConsoleSession.Options()
         let lan = ConsoleSession.makeConfig(options)
-        #expect(lan.route == HALYARD_ROUTE_LOCAL)
+        #expect(lan.route == UInt32(RIPCORD_ROUTE_LOCAL))
         #expect(lan.width == 1920 && lan.height == 1080 && lan.fps == 60 && lan.bitrate_kbps == 25_000)
-        #expect(lan.allow_hevc == 1 && lan.hdr == 0 && lan.require_session_ready == 1)
-        #expect(lan.record == nil && lan.stun_servers == nil && lan.stun_server_count == 0 && lan.bind_address == nil)
+        #expect(lan.allow_hevc && !lan.hdr && lan.require_session_ready == 0)
+        #expect(lan.registration_key == nil && lan.stun_servers == nil && lan.stun_server_count == 0)
+        #expect(lan.bind_address == (0, 0, 0, 0))
         #expect(lan.control_local_port == 0 && lan.media_local_port == 0)
         #expect(lan.media_offer_timeout_ms == 0 && lan.dgram_stage_timeout_ms == 0 && lan.dgram_receive_timeout_ms == 0)
         #expect(lan.signin_prompt_window_ms == 0 && lan.senkusha_attempts == 0 && lan.stream_attempts == 0)
@@ -364,7 +327,7 @@ struct LibripcordRendezvousTests {
         route.dgramStageTimeout = .milliseconds(2500)
         options.route = .rendezvous(route)
         let rendezvous = ConsoleSession.makeConfig(options)
-        #expect(rendezvous.route == HALYARD_ROUTE_RENDEZVOUS)
+        #expect(rendezvous.route == UInt32(RIPCORD_ROUTE_RENDEZVOUS))
         #expect(rendezvous.control_local_port == 50_001 && rendezvous.media_local_port == 50_002)
         #expect(rendezvous.media_offer_timeout_ms == 12_000 && rendezvous.dgram_stage_timeout_ms == 2_500)
         // Everything the LAN route reads is the same on both.
@@ -377,18 +340,17 @@ struct LibripcordRendezvousTests {
     func stunResolution() {
         let resolved = StunServer.resolve([StunServer(host: "127.0.0.1", port: 3478), StunServer(host: "127.0.0.2", port: 19302)])
         #expect(resolved.count == 2)
-        #expect(resolved.first.map { UInt16(bigEndian: $0.sin_port) } == 3478)
-        #expect(resolved.first.map { UInt32(bigEndian: $0.sin_addr.s_addr) } == 0x7F00_0001)
-        #expect(StunServer.resolve(Array(repeating: StunServer(host: "127.0.0.1", port: 1), count: 9)).count
-                == Int(HALYARD_CLIENT_STUN_MAX))
+        #expect(resolved.first?.port == 3478)
+        #expect(resolved.first.map { [$0.address.0, $0.address.1, $0.address.2, $0.address.3] } == [127, 0, 0, 1])
+        #expect(StunServer.resolve(Array(repeating: StunServer(host: "127.0.0.1", port: 1), count: 9)).count == 4)
         #expect(StunServer.defaults.count == 3)
     }
 
-    @Test("a media answer becomes the peer the core aims the A/V leg at; an unusable one gives up")
+    @Test("a media answer becomes the peer the engine aims the A/V leg at; an unusable one gives up")
     func mediaPeer() throws {
         let peer = try #require(ConsoleSession.peer(address: "127.0.0.1", port: 9297, hashedID: Array(1...20)))
-        #expect(peer.port == 9297)
-        #expect(withUnsafeBytes(of: peer.address) { Array($0) } == [127, 0, 0, 1])
+        #expect(peer.endpoint.port == 9297)
+        #expect(withUnsafeBytes(of: peer.endpoint.address) { Array($0) } == [127, 0, 0, 1])
         #expect(withUnsafeBytes(of: peer.console_hashed_id) { Array($0) } == Array(1...20))
         #expect(ConsoleSession.peer(address: "::1", port: 9297, hashedID: Array(1...20)) == nil)
         #expect(ConsoleSession.peer(address: "127.0.0.1", port: 0, hashedID: Array(1...20)) == nil)

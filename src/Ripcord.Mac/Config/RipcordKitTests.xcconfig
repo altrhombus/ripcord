@@ -2,5 +2,5 @@ PRODUCT_NAME = RipcordKitTests
 PRODUCT_BUNDLE_IDENTIFIER = io.github.altrhombus.Ripcord.KitTests
 GENERATE_INFOPLIST_FILE = YES
 
-// The scripted loopback console (TestSupport/include), for the C-backed rendezvous transport tests.
-SWIFT_INCLUDE_PATHS = $(inherited) $(SRCROOT)/TestSupport/include
+// The engine's test-support exports: the loopback consoles and the vector runner.
+OTHER_SWIFT_FLAGS = $(inherited) -Xcc -DRIPCORD_TEST_SUPPORT

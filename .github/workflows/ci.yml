@@ -240,9 +240,10 @@ jobs:
       - name: The engine from .NET, through its generated bindings
         run: dotnet run -c Release --project engine/hosts/dotnet/Ripcord.Engine.Harness
 
-  # The macOS client's Xcode project (src/Ripcord.Mac). It builds libripcord from where it lives, with
-  # CryptoKit as the ECDH backend, so this job also checks that backend against the .NET vectors: it
-  # runs the core's own unmodified ecdh_test.c linked against CryptoKit instead of Mbed TLS.
+  # The macOS client's Xcode project (src/Ripcord.Mac), on the Rust engine since Phase 3: its build phase
+  # runs cargo, so this job needs a Rust toolchain. RipcordKitTests checks CryptoKit as the engine's key
+  # agreement against the .NET vectors (EngineKeyAgreementTests) and runs whole sessions against the
+  # engine's loopback consoles.
   #
   # macos-26 because the deployment target is macOS 26 (docs/macos-plan.md), which needs that SDK. The
   # runner label and its Xcode are the one part of this job not verified before it was committed.
@@ -255,23 +256,17 @@ jobs:
         with:
           dotnet-version: '10.0.x'
       - name: Toolchain
-        run: xcodebuild -version && swift --version
+        run: rustup toolchain install stable --profile minimal && rustup default stable && xcodebuild -version && swift --version && cargo --version
       - name: Generate the known-answer vectors
         run: dotnet run --project tools/Ripcord.ProtocolLab -c Release -- vectors
-      - name: Build the lab and the ECDH known-answer tool
+      - name: Build the lab
         working-directory: src/Ripcord.Mac
-        run: |
-          for scheme in RipcordLab EcdhKat; do
-            xcodebuild -project Ripcord.xcodeproj -scheme "$scheme" -configuration Release \
-              -derivedDataPath build build
-          done
+        run: xcodebuild -project Ripcord.xcodeproj -scheme RipcordLab -configuration Release -derivedDataPath build build
       - name: RipcordKit tests
         working-directory: src/Ripcord.Mac
         run: >-
           xcodebuild -project Ripcord.xcodeproj -scheme RipcordKit -destination 'platform=macOS,arch=arm64'
           -derivedDataPath build test
-      - name: CryptoKit against the .NET vectors
-        run: src/Ripcord.Mac/build/Build/Products/Release/libripcord-ecdh-kat libripcord/tests/vectors/session-crypto.kat
       - name: Lab self-check
         run: src/Ripcord.Mac/build/Build/Products/Release/ripcord-lab check
 

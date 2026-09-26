@@ -1,6 +1,7 @@
 // LAN discovery: the SRCH broadcast and its replies (docs/protocol/ps5-local-discovery.md).
 //
-// The wire format is entirely libripcord's (halyard_discovery.h builds the probe and parses the reply);
+// The wire format is entirely the engine's (ripcord_discovery_probe builds it, ripcord_discovery_parse reads
+// the reply);
 // this file is only the socket. It follows the PS3 port's broadcast_find, which is hardware-verified:
 // one UDP socket with SO_BROADCAST, the probe to the limited broadcast address on each family's port,
 // and every reply fed to the core's parser. One socket serves both families, since a PS5 and a PS4
@@ -9,19 +10,12 @@
 // Synchronous and blocking for now, because its first caller is ripcord-lab. The session actor will
 // wrap it rather than change it.
 
-internal import CLibripcord
+internal import CRipcordEngine
 import Darwin
 
 public enum ConsoleFamily: String, Sendable, CaseIterable {
     case ps5 = "PS5"
     case ps4 = "PS4"
-
-    fileprivate var profile: halyard_discovery_profile {
-        switch self {
-        case .ps5: halyard_discovery_profile_ps5
-        case .ps4: halyard_discovery_profile_ps4
-        }
-    }
 }
 
 public struct DiscoveredConsole: Sendable, Hashable {
@@ -68,17 +62,18 @@ public enum LANDiscovery {
         }
 
         // Every (probe, destination) pair, built once.
-        var datagrams: [(probe: [CChar], length: Int, destination: sockaddr_in)] = []
+        var datagrams: [(probe: [UInt8], length: Int, destination: sockaddr_in)] = []
         for family in families {
-            var profile = family.profile
-            var probe = [CChar](repeating: 0, count: 128)
-            let length = halyard_discovery_build_probe(&profile, &probe, probe.count)
-            guard length > 0 else { continue }
+            var probe = [UInt8](repeating: 0, count: 128)
+            var length = 0
+            var port: UInt16 = 0
+            guard ripcord_discovery_probe(family == .ps5, &probe, probe.count, &length, &port) == RIPCORD_STATUS_OK
+            else { continue }
             if hosts.isEmpty {
-                datagrams.append((probe, length, .ipv4(broadcastPort: profile.port)))
+                datagrams.append((probe, length, .ipv4(broadcastPort: port)))
             } else {
                 for host in hosts {
-                    guard let address = sockaddr_in.ipv4(host, port: profile.port) else {
+                    guard let address = sockaddr_in.ipv4(host, port: port) else {
                         throw .socket(operation: "inet_pton(\(host))", errno: EINVAL)
                     }
                     datagrams.append((probe, length, address))
@@ -101,7 +96,7 @@ public enum LANDiscovery {
         var answered = Set<String>()
         let deadline = ContinuousClock.now + timeout
         var nextSend = ContinuousClock.now
-        var buffer = [CChar](repeating: 0, count: 2048)
+        var buffer = [UInt8](repeating: 0, count: 2048)
 
         while ContinuousClock.now < deadline {
             if !hosts.isEmpty && answered.isSuperset(of: hosts) { break }
@@ -128,12 +123,12 @@ public enum LANDiscovery {
             }
             guard received > 0 else { continue }
 
-            var console = halyard_discovered_console()
+            var console = RipcordDiscoveredConsole()
             var sender = [CChar](repeating: 0, count: Int(INET_ADDRSTRLEN))
             inet_ntop(AF_INET, &from.sin_addr, &sender, socklen_t(sender.count))
-            guard halyard_discovery_parse_response(buffer, received, sender, &console) == 1 else { continue }
+            guard ripcord_discovery_parse(buffer, received, &console) == RIPCORD_STATUS_OK else { continue }
 
-            let reply = DiscoveredConsole(console)
+            let reply = DiscoveredConsole(console, address: String(cString: sender))
             found[reply.hostID] = reply
             answered.insert(reply.address)
         }
@@ -142,15 +137,15 @@ public enum LANDiscovery {
 }
 
 private extension DiscoveredConsole {
-    init(_ c: halyard_discovered_console) {
+    init(_ c: RipcordDiscoveredConsole, address: String) {
         let hostType = cString(c.host_type)
         self.init(hostID: cString(c.host_id), family: ConsoleFamily(rawValue: hostType), hostType: hostType,
                   name: cString(c.host_name), systemVersion: cString(c.system_version),
-                  address: cString(c.address), isAwake: c.is_awake == 1)
+                  address: address, isAwake: c.is_awake)
     }
 }
 
-/// A C `char name[N]` field, imported as a tuple, read as the NUL-terminated string it holds. The core
+/// A C `char name[N]` field, imported as a tuple, read as the NUL-terminated string it holds. The engine
 /// always terminates these; the bound is the field's own size regardless.
 func cString<T>(_ field: T) -> String {
     withUnsafeBytes(of: field) { raw in

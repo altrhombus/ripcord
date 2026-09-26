@@ -12,7 +12,7 @@ let usage = """
       check                 the build's key-agreement backend and interop constants
       discover [host...]    SRCH for consoles and list every one that answers. With hosts, probe
                             each directly; without, broadcast. Wait with --wait <ms> (default 3000)
-      bench [c|rust]        time the per-packet stream crypto (GMAC verify + CTR decrypt), both engines by default
+      bench                 time the per-packet stream crypto (GMAC verify + CTR decrypt) on the engine
       pair <host> <PIN> <account-id>
                             PIN-pair with a console showing Settings > System > Remote Play > Pair
                             Device. The record is kept in ~/Library/Application Support/Ripcord/lab
@@ -70,7 +70,7 @@ case "discover":
     }
 
 case "bench":
-    // Both engines by default, from the same workload, so the figures compare (docs/engine-plan.md, Phase 1).
+    // The engine the Mac links; Phase 1 compared it with the C core from this same workload (engine/README.md).
     let engines = arguments.count == 2 ? PacketCryptoBenchmark.Engine(rawValue: arguments[1]).map { [$0] } : PacketCryptoBenchmark.Engine.allCases
     guard let engines else { fail(usage, code: 2) }
     for engine in engines {
@@ -92,14 +92,14 @@ case "pair":
     do {
         let paired = try Pairing.register(host: host, family: console.family ?? .ps5, accountID: arguments[3],
                                           pin: arguments[2], name: console.name, consoleID: console.hostID)
-        try PairingStore.lab.save(paired)
-        print("paired with \(paired.name) (\(paired.family.rawValue), \(paired.host)); saved to \(PairingStore.lab.directory.path)")
+        try PairingFileStore.lab.save(paired)
+        print("paired with \(paired.name) (\(paired.family.rawValue), \(paired.host)); saved to \(PairingFileStore.lab.directory.path)")
     } catch {
         fail("pair: \(error)")
     }
 
 case "wake":
-    guard arguments.count == 2, let console = PairingStore.lab.load().first(where: { $0.host == arguments[1] }) else {
+    guard arguments.count == 2, let console = PairingFileStore.lab.load().first(where: { $0.host == arguments[1] }) else {
         fail("wake: no paired console at that address")
     }
     let started = ContinuousClock.now
@@ -113,8 +113,8 @@ case "wake":
     }
 
 case "consoles":
-    let consoles = PairingStore.lab.load()
-    if consoles.isEmpty { print("no paired consoles in \(PairingStore.lab.directory.path)") }
+    let consoles = PairingFileStore.lab.load()
+    if consoles.isEmpty { print("no paired consoles in \(PairingFileStore.lab.directory.path)") }
     for c in consoles { print("\(c.family.rawValue)  \(c.host)  \(c.name)  id \(c.consoleID)") }
 
 case "connect":
@@ -143,7 +143,7 @@ case "connect":
     let host = positional[0]
     let seconds = positional.count > 1 ? (Double(positional[1]) ?? 20) : 20
     let outPath = positional.count > 2 ? positional[2] : "ripcord-lab-capture.h264"
-    guard let console = PairingStore.lab.load().first(where: { $0.host == host }) else {
+    guard let console = PairingFileStore.lab.load().first(where: { $0.host == host }) else {
         fail("connect: no paired console at \(host); run `ripcord-lab pair` first")
     }
     // A resting console is woken first, as the Windows client does on connect. The rendezvous routes wake

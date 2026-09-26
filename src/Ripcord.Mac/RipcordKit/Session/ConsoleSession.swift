@@ -1,9 +1,10 @@
-// One streaming session, over libripcord's connect sequence (libripcord/client/halyard_client.h).
+// One streaming session, over the Rust engine's connect sequence (ripcord.h, `ripcord_client_*`, whose
+// contract is libripcord/client/halyard_client.h's).
 //
-// The contract there is one host-owned thread, and this is that thread: a dedicated Thread at
-// user-interactive priority, not a task on the cooperative pool, because connect() blocks. Everything
+// The contract is one host-owned thread, and this is that thread: a dedicated Thread at user-interactive
+// priority, not a task on the cooperative pool, because connect blocks. Everything
 // else in the app talks to the session through three lock-protected slots (the latest pad state, a
-// pending passcode, pending commands) that the core pulls on this thread, and receives what the session
+// pending passcode, pending commands) that the engine pulls on this thread, and receives what the session
 // produces through the handlers below, also called on this thread. A handler copies what it needs and
 // returns: the PS3's shutdown lockups (b129-b142) came from work that did not.
 //
@@ -11,7 +12,7 @@
 // The conversions (AnnexBSampleBuilder, OpusDecoder) run here, on the session thread, since both are
 // cheap and both need state that belongs to one stream.
 
-internal import CLibripcord
+internal import CRipcordEngine
 import AVFAudio
 import CoreMedia
 import Foundation
@@ -20,7 +21,7 @@ import Synchronization
 public enum SessionStage: Int, Sendable, Comparable {
     case idle, controlOpen, signedIn, sessionReady, senkushaUp, takionUp, streamKeys, streamReady, streaming, ended
 
-    init(_ c: halyard_client_stage) { self = SessionStage(rawValue: Int(c.rawValue)) ?? .idle }
+    init(_ c: RipcordClientStage) { self = SessionStage(rawValue: Int(c.rawValue)) ?? .idle }
     public static func < (a: Self, b: Self) -> Bool { a.rawValue < b.rawValue }
 }
 
@@ -50,7 +51,10 @@ public struct SessionStats: Sendable {
 public struct SessionOutcome: Sendable {
     public let stage: SessionStage
     public let endReason: SessionEndReason
+    /// Always 0 on the Rust engine, which has no separate control-session error code; kept so a caller
+    /// written against the C core still compiles. The end reason says what happened.
     public let controlError: Int
+    /// RIPCORD_CURVE_* of the stream's key agreement: 1 P-256, 2 P-521, 0 before it ran.
     public let curve: Int
     /// Why a rendezvous never reached the connect, in words; nil otherwise.
     public let failure: String?
@@ -112,7 +116,7 @@ public final class ConsoleSession: Sendable {
     private let handlers: SessionHandlers
 
     struct SharedState {
-        var pad: halyard_input_state?
+        var pad: RipcordInputState?
         var passcode: String?
         var passcodeCancelled = false
         var passcodeAsked = -1
@@ -145,23 +149,23 @@ public final class ConsoleSession: Sendable {
 
     public func update(pad: PadSnapshot?) { state.withLock { $0.pad = pad?.wireState } }
     public func supplyPasscode(_ digits: String) { state.withLock { $0.passcode = digits } }
-    public func requestKeyframe() { state.withLock { $0.commands |= HALYARD_CLIENT_CMD_KEYFRAME } }
+    public func requestKeyframe() { state.withLock { $0.commands |= UInt32(RIPCORD_CMD_KEYFRAME) } }
     public func cancel() {
-        state.withLock { $0.commands |= HALYARD_CLIENT_CMD_CANCEL; $0.passcodeCancelled = true; $0.stopRequested = true }
+        state.withLock { $0.commands |= UInt32(RIPCORD_CMD_CANCEL); $0.passcodeCancelled = true; $0.stopRequested = true }
     }
 
     /// Goodbye: the console is asked to rest first only when `restConsole`, which should mean a person
-    /// chose it (halyard_client.h).
+    /// chose it.
     public func disconnect(restConsole: Bool = false) {
         state.withLock {
-            $0.commands |= HALYARD_CLIENT_CMD_DISCONNECT | (restConsole ? HALYARD_CLIENT_CMD_REST_CONSOLE : 0)
+            $0.commands |= UInt32(RIPCORD_CMD_DISCONNECT) | (restConsole ? UInt32(RIPCORD_CMD_REST_CONSOLE) : 0)
             $0.stopRequested = true
         }
     }
 
     // MARK: - The session thread
 
-    /// Everything the C callbacks need, reached through the `user` pointer. Owned by run().
+    /// Everything the engine's callbacks need, reached through the `user` pointer. Owned by run().
     final class Context {
         let session: ConsoleSession
         var builder: AnnexBSampleBuilder?
@@ -173,8 +177,8 @@ public final class ConsoleSession: Sendable {
         init(_ session: ConsoleSession) { self.session = session }
 
         /// poll_media: the first call starts the host's negotiation on a task of its own and says "not yet";
-        /// later calls say "not yet" until it answers, then hand the console's endpoint to the core.
-        func pollMedia(_ leg: halyard_client_leg, _ out: UnsafeMutablePointer<halyard_client_peer>) -> Int32 {
+        /// later calls say "not yet" until it answers, then hand the console's endpoint to the engine.
+        func pollMedia(_ leg: RipcordLeg, _ out: UnsafeMutablePointer<RipcordPeer>) -> Int32 {
             guard let link, let media else { return -1 }
             switch link.mediaState() {
             case .notAsked:
@@ -199,33 +203,28 @@ public final class ConsoleSession: Sendable {
         }
     }
 
-    /// A halyard_client_peer, or nil when the address is not a dotted quad or the id not 20 bytes.
-    static func peer(address: String, port: Int, hashedID: [UInt8]) -> halyard_client_peer? {
-        guard let path = ConsolePath(address: address, port: port),
-              hashedID.count == Int(HALYARD_CLIENT_HASHED_ID_LENGTH) else { return nil }
-        var peer = halyard_client_peer()
-        withUnsafeMutableBytes(of: &peer.address) { $0.copyBytes(from: path.address) }
-        peer.port = path.port
-        withUnsafeMutableBytes(of: &peer.console_hashed_id) { $0.copyBytes(from: hashedID) }
-        return peer
+    /// A RipcordPeer, or nil when the address is not a dotted quad or the id not 20 bytes.
+    static func peer(address: String, port: Int, hashedID: [UInt8]) -> RipcordPeer? {
+        guard let path = ConsolePath(address: address, port: port), hashedID.count == 20 else { return nil }
+        return RipcordPeer.make(path: path, consoleHashedID: hashedID)
     }
 
-    /// The C configuration for `options`, minus the three pointers (record, STUN list, bind address), which
-    /// run() fills for the duration of halyard_client_init - the core copies all three there. On `.local` it
-    /// is exactly the LAN configuration this session has always used; the rendezvous fields stay zero.
-    static func makeConfig(_ options: Options) -> halyard_client_config {
-        var config = halyard_client_config()
-        config.route = HALYARD_ROUTE_LOCAL
+    /// The engine's configuration for `options`, minus the pairing's pointers and the STUN list, which run()
+    /// fills for the duration of ripcord_client_new - the engine copies them there. On `.local` it is the LAN
+    /// configuration this session has always used; the rendezvous fields stay zero.
+    static func makeConfig(_ options: Options) -> RipcordClientConfig {
+        var config = RipcordClientConfig()
+        config.route = UInt32(RIPCORD_ROUTE_LOCAL)
         config.width = Int32(options.width)
         config.height = Int32(options.height)
         config.fps = Int32(options.fps)
         config.bitrate_kbps = Int32(options.bitrateKbps)
-        config.allow_hevc = options.allowHEVC ? 1 : 0
-        config.hdr = options.hdr ? 1 : 0
-        config.require_session_ready = 1
+        config.allow_hevc = options.allowHEVC
+        config.hdr = options.hdr
+        config.require_session_ready = 0   // the default: wait for SESSION_ID on the LAN
 
         if let r = options.route.rendezvous {
-            config.route = HALYARD_ROUTE_RENDEZVOUS
+            config.route = UInt32(RIPCORD_ROUTE_RENDEZVOUS)
             config.control_local_port = r.controlLocalPort
             config.media_local_port = r.mediaLocalPort
             config.media_offer_timeout_ms = r.mediaOfferTimeout.clampedMilliseconds
@@ -236,23 +235,25 @@ public final class ConsoleSession: Sendable {
     }
 
     private func run() {
-        let size = halyard_client_struct_size()
-        let storage = UnsafeMutableRawPointer.allocate(byteCount: size, alignment: 16)
-        defer { storage.deallocate() }
-
         let rendezvous = options.route.rendezvous
         var config = Self.makeConfig(options)
-        var record = console.record
+        guard let host = ConsolePath.ipv4(console.host) else {
+            handlers.ended(SessionOutcome(stage: .idle, endReason: .channelError, controlError: 0, curve: 0,
+                                          failure: "\(console.host) is not an IPv4 address"))
+            return
+        }
+        config.console = (host[0], host[1], host[2], host[3])
+        config.is_ps5 = console.family == .ps5
+        withUnsafeMutableBytes(of: &config.companion) { $0.copyBytes(from: console.companion.prefix(16)) }
         // Resolved here, on the session thread, so building Options touches no network. Copied at init.
         var stun = rendezvous.map { StunServer.resolve($0.stunServers) } ?? []
-        var bind: [UInt8] = []
         if let address = rendezvous?.bindAddress {
             guard let parsed = ConsolePath.ipv4(address) else {
                 handlers.ended(SessionOutcome(stage: .idle, endReason: .channelError, controlError: 0, curve: 0,
                                               failure: "\(address) is not an IPv4 address to bind"))
                 return
             }
-            bind = parsed
+            config.bind_address = (parsed[0], parsed[1], parsed[2], parsed[3])
         }
         if let rendezvous, !rendezvous.stunServers.isEmpty {
             handlers.log("rendezvous: \(stun.count) of \(rendezvous.stunServers.count) STUN server(s) resolved")
@@ -263,20 +264,30 @@ public final class ConsoleSession: Sendable {
         let user = Unmanaged.passRetained(context)
         defer { user.release() }
 
-        let client: OpaquePointer? = withUnsafePointer(to: &record) { recordPointer in
-            stun.withUnsafeMutableBufferPointer { servers in
-                bind.withUnsafeMutableBufferPointer { address in
-                    config.record = recordPointer
-                    config.stun_servers = servers.isEmpty ? nil : UnsafePointer(servers.baseAddress)
-                    config.stun_server_count = servers.count
-                    config.bind_address = address.isEmpty ? nil : UnsafePointer(address.baseAddress)
-                    var callbacks = Self.callbacks(user.toOpaque(), rendezvous: rendezvous != nil)
-                    return halyard_client_init(storage, size, &config, &callbacks)
+        let key = console.registrationKey, device = console.deviceID
+        let pin = console.loginPIN
+        let client: OpaquePointer? = key.withUnsafeBufferPointer { k in
+            device.withUnsafeBufferPointer { d in
+                stun.withUnsafeMutableBufferPointer { servers in
+                    withOptionalCString(pin) { p in
+                        config.registration_key = k.baseAddress
+                        config.registration_key_length = k.count
+                        config.device_id = d.baseAddress
+                        config.device_id_length = d.count
+                        config.login_pin = p
+                        config.stun_servers = servers.isEmpty ? nil : UnsafePointer(servers.baseAddress)
+                        config.stun_server_count = servers.count
+                        var callbacks = Self.callbacks(user.toOpaque(), rendezvous: rendezvous != nil)
+                        var random = EngineRandom.table
+                        var ecdh = CryptoKitEngineECDH.backend
+                        return ripcord_client_new(&config, &callbacks, &ecdh, &random)
+                    }
                 }
             }
         }
         guard let client else {
-            handlers.ended(SessionOutcome(stage: .idle, endReason: .channelError, controlError: 0, curve: 0))
+            handlers.ended(SessionOutcome(stage: .idle, endReason: .channelError, controlError: 0, curve: 0,
+                                          failure: RipcordEngineLayout.matches() ? nil : "the engine's ABI does not match RipcordKit"))
             return
         }
 
@@ -286,21 +297,24 @@ public final class ConsoleSession: Sendable {
         }
 
         if rendezvous == nil || plan.proceed != nil {
-            if halyard_client_connect(client).rawValue >= HALYARD_CLIENT_STAGE_STREAM_READY.rawValue {
-                var next: UInt32 = 0
-                while halyard_client_pump(client, &next) == 1 {
-                    Self.wait(on: client, milliseconds: next)
-                }
+            var stage = RIPCORD_CLIENT_STAGE_IDLE
+            _ = ripcord_client_connect(client, &stage)
+            if stage.rawValue >= RIPCORD_CLIENT_STAGE_STREAM_READY.rawValue {
+                // The engine waits on its own sockets inside pump, for at most this long a call.
+                var alive = true
+                while alive, ripcord_client_pump(client, 10, &alive) == RIPCORD_STATUS_OK {}
             }
         }
-        let r = halyard_client_result_get(client)!.pointee
-        var outcome = SessionOutcome(stage: SessionStage(r.stage), endReason: SessionEndReason(rawValue: Int(r.end_reason.rawValue)) ?? .none,
-                                     controlError: Int(r.control_error), curve: Int(r.curve))
+        var r = RipcordClientResult()
+        _ = ripcord_client_result(client, &r)
+        var outcome = SessionOutcome(stage: SessionStage(r.stage),
+                                     endReason: SessionEndReason(rawValue: Int(r.end_reason.rawValue)) ?? .none,
+                                     controlError: 0, curve: Int(r.curve))
         if let failure = plan.failure {
             outcome = SessionOutcome(stage: outcome.stage, endReason: plan.cancelled ? .hostCancel : .rendezvousFailed,
-                                     controlError: outcome.controlError, curve: outcome.curve, failure: failure)
+                                     controlError: 0, curve: outcome.curve, failure: failure)
         }
-        halyard_client_destroy(client)
+        ripcord_client_free(client)
 
         // Step 8: the sockets are closed and the console told; only now is the cloud session left.
         plan.link?.close("the session has ended")
@@ -327,12 +341,12 @@ public final class ConsoleSession: Sendable {
     /// How long the end of a session waits for the cloud half to leave its session.
     static let teardownBound: Duration = .seconds(10)
 
-    /// Steps 2 to 5a of halyard_client.h's route: prepare the control leg, start the cloud half with a link
+    /// Steps 2 to 5a of the route: prepare the control leg, start the cloud half with a link
     /// to it, and run what it asks for until it says proceed (or fails, or the host stops the session).
     private func runRendezvous(_ client: OpaquePointer, _ route: RendezvousRoute, context: Context) -> RendezvousPlan {
         var plan = RendezvousPlan()
-        var leg = halyard_client_leg()
-        guard halyard_client_rendezvous_prepare(client, &leg) == 1 else {
+        var leg = RipcordLeg()
+        guard ripcord_client_rendezvous_prepare(client, &leg) == RIPCORD_STATUS_OK else {
             plan.failure = "the control leg could not be bound"
             return plan
         }
@@ -371,15 +385,11 @@ public final class ConsoleSession: Sendable {
             }
             switch job {
             case .begin(let request, let continuation):
-                var peer = halyard_client_peer()
-                withUnsafeMutableBytes(of: &peer.address) { $0.copyBytes(from: request.path.address) }
-                peer.port = request.path.port
-                withUnsafeMutableBytes(of: &peer.console_hashed_id) { $0.copyBytes(from: request.consoleHashedID) }
-                if halyard_client_rendezvous_begin(client, request.localHashedID, &peer) == 1 {
+                var peer = RipcordPeer.make(path: request.path, consoleHashedID: request.consoleHashedID)
+                if ripcord_client_rendezvous_begin(client, request.localHashedID, &peer) == RIPCORD_STATUS_OK {
                     continuation.resume()
                 } else {
-                    let status = halyard_client_result_get(client)!.pointee.dgram_status
-                    continuation.resume(throwing: PairingError.associationFailed("our Init (9303 status \(status))"))
+                    continuation.resume(throwing: PairingError.associationFailed("our Init"))
                 }
 
             case .register(let request, let continuation):
@@ -409,12 +419,9 @@ public final class ConsoleSession: Sendable {
     private func register(_ request: RendezvousLink.RegisterRequest, client: OpaquePointer) throws(PairingError) -> PairedConsole {
         guard let path = ConsolePath.control(request.context) else { throw .associationFailed("no console endpoint to register with") }
         let clientIP = try Pairing.localAddress(toward: path.text)
-        let registration = try AccountRegistration.run(family: request.family, accountID: request.accountID,
-                                                       clientIP: clientIP, seed: request.seed,
-                                                       exchange: halyard_client_rendezvous_exchange,
-                                                       user: UnsafeMutableRawPointer(client))
-        return PairedConsole(host: console.host, name: console.name, consoleID: console.consoleID,
-                             accountID: Pairing.normalisedAccountID(request.accountID), registration: registration)
+        return try AccountRegistration.run(client, family: request.family, accountID: request.accountID,
+                                           clientIP: clientIP, seed: request.seed, host: console.host,
+                                           name: console.name, consoleID: console.consoleID)
     }
 
     /// Runs async work from the session thread and waits for it, at most `bound`.
@@ -427,17 +434,8 @@ public final class ConsoleSession: Sendable {
         _ = done.wait(timeout: .now() + .milliseconds(Int(bound.clampedMilliseconds)))
     }
 
-    /// Sleeps on the session's sockets until data arrives or the core's next deadline, whichever is first.
-    private static func wait(on client: OpaquePointer, milliseconds: UInt32) {
-        guard milliseconds > 0 else { return }
-        var fds = [Int32](repeating: -1, count: 8)
-        let n = Int(halyard_client_fds(client, &fds, Int32(fds.count)))
-        var descriptors = fds.prefix(n).map { pollfd(fd: $0, events: Int16(POLLIN), revents: 0) }
-        _ = poll(&descriptors, nfds_t(descriptors.count), Int32(min(milliseconds, 100)))
-    }
-
-    private static func callbacks(_ user: UnsafeMutableRawPointer, rendezvous: Bool) -> halyard_client_callbacks {
-        var c = halyard_client_callbacks()
+    private static func callbacks(_ user: UnsafeMutableRawPointer, rendezvous: Bool) -> RipcordClientCallbacks {
+        var c = RipcordClientCallbacks()
         c.user = user
         c.log = { user, _, line in
             guard let line else { return }
@@ -447,7 +445,7 @@ public final class ConsoleSession: Sendable {
         c.stream_info = { user, info in
             guard let info = info?.pointee else { return }
             let ctx = sessionContext(user)
-            let codec: VideoCodec = info.is_hevc != 0 ? .hevc : .h264
+            let codec: VideoCodec = info.is_hevc ? .hevc : .h264
             ctx.builder = AnnexBSampleBuilder(codec: codec)
             ctx.session.handlers.streamInfo(SessionStreamInfo(width: Int(info.width), height: Int(info.height), codec: codec))
         }
@@ -461,8 +459,8 @@ public final class ConsoleSession: Sendable {
             let pts = CMTime(value: ctx.frameIndex, timescale: 60)
             ctx.frameIndex += 1
             if let sample = try? builder.sampleBuffer(fromAccessUnit: UnsafeRawBufferPointer(start: data, count: length),
-                                                      isKeyframe: isKeyframe != 0, presentationTime: pts) {
-                ctx.session.handlers.video(sample, isKeyframe != 0)
+                                                      isKeyframe: isKeyframe, presentationTime: pts) {
+                ctx.session.handlers.video(sample, isKeyframe)
             }
         }
         c.audio_frame = { user, data, length in
@@ -473,9 +471,9 @@ public final class ConsoleSession: Sendable {
             }
         }
         c.poll_input = { user, out in
-            guard let out, let pad = sessionContext(user).session.state.withLock({ $0.pad }) else { return 0 }
+            guard let out, let pad = sessionContext(user).session.state.withLock({ $0.pad }) else { return false }
             out.pointee = pad
-            return 1
+            return true
         }
         c.poll_passcode = { user, retry, out, outSize in
             let session = sessionContext(user).session
@@ -517,8 +515,14 @@ public final class ConsoleSession: Sendable {
     }
 }
 
-/// The C callbacks' way back to Swift. At file scope because a C function pointer cannot capture, and a
+/// The engine callbacks' way back to Swift. At file scope because a C function pointer cannot capture, and a
 /// static method called from inside one counts as capturing its type.
 private func sessionContext(_ user: UnsafeMutableRawPointer?) -> ConsoleSession.Context {
     Unmanaged<ConsoleSession.Context>.fromOpaque(user!).takeUnretainedValue()
+}
+
+/// A C string for an optional Swift string, valid for the closure; nil stays nil.
+private func withOptionalCString<R>(_ text: String?, _ body: (UnsafePointer<CChar>?) -> R) -> R {
+    guard let text else { return body(nil) }
+    return text.withCString { body($0) }
 }

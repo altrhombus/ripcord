@@ -3,9 +3,11 @@
 The macOS client, on macOS 26 and Apple Silicon. What it is, what it is built on and in what order are
 in [`docs/macos-plan.md`](../../docs/macos-plan.md). This file covers the tree and the build.
 
-**Status: the engine spike's foundation.** The protocol core builds and links, key agreement runs on
-CryptoKit and matches the .NET vectors, and `ripcord-lab` can discover consoles on the LAN. There is no app
-yet.
+**Status: on the Rust engine (Phase 3 of [`docs/engine-plan.md`](../../docs/engine-plan.md)).** RipcordKit
+reaches the protocol only through the engine's generated header: the connect sequence, discovery, wake,
+registration and the account seed. Key agreement runs on CryptoKit behind the engine's backend table and
+matches the .NET vectors, and `ripcord-lab` can discover, pair, wake and connect. The C core is no longer
+built here. There is no app yet.
 
 ## Layout
 
@@ -13,41 +15,33 @@ yet.
 |---|---|
 | `Ripcord.xcodeproj` | The project. Every source folder is an Xcode *synchronized* folder, so adding a file never touches the project file |
 | `Config/` | Every build setting, in xcconfig files. The project file holds none of its own |
-| `Libripcord/` | The Mac's half of the C core: the platform seam (`rc_platform_darwin.c`) and the module map that lets Swift import the core |
-| `RipcordEngine/` | The module map for the Rust engine's generated header (`engine/target/include/ripcord.h`), read in place. [`docs/engine-plan.md`](../../docs/engine-plan.md), Phase 2: linked alongside the C core, used by `ripcord-lab bench` and by `EngineKeyAgreementTests`, which checks CryptoKit (`RipcordKit/Engine/CryptoKitEngineECDH.swift`) as the engine's key agreement against the .NET vectors |
-| `RipcordKit/` | The Swift layer over the core. It imports the C module *internally*, so no C type reaches its callers |
-| `RipcordKitTests/` | Swift Testing suites for RipcordKit |
-| `TestSupport/` | Tests only: the core's scripted 9303 console (`libripcord/tests/fake_dgram_console.h`) as a Swift module, on a loopback socket, for the C-backed rendezvous transport tests |
+| `RipcordEngine/` | The module map for the Rust engine's generated header (`engine/target/include/ripcord.h`), read in place |
+| `RipcordKit/` | The Swift layer over the engine. It imports the engine's C module *internally*, so no C type reaches its callers |
+| `RipcordKitTests/` | Swift Testing suites for RipcordKit, including whole sessions against the engine's loopback consoles (`EngineClientTests`, `EngineRendezvousTests`) and CryptoKit against the .NET vectors (`EngineKeyAgreementTests`) |
 | `RipcordLab/` | `ripcord-lab`, a command-line driver against a real console: the Mac counterpart of `tools/Ripcord.ProtocolLab` |
-| `EcdhKat/` | `libripcord-ecdh-kat`: the core's own `tests/ecdh_test.c`, unmodified, linked against the CryptoKit backend |
 
-## Two decisions the build rests on
+## Decisions the build rests on
 
-**The core is compiled from where it lives, not copied.** The `Libripcord` target's sources are
-`libripcord/` itself, through synchronized folders that reach out of this tree. Nothing under `src/Ripcord.Mac`
-is a copy of core code.
+**The engine is built from where it lives.** RipcordKit's "Build the Rust engine" phase runs cargo in
+`engine/`, and every executable links the static archive by full path. The header is generated there and
+read in place; nothing under `src/Ripcord.Mac` is a copy of engine code or of the interop constants, which
+the engine generates from the one committed bundle.
 
-**An Xcode project, not a Swift package, and that was measured.** A package cannot hold the core:
+**An Xcode project, not a Swift package.** It was first chosen because a package could not compile the C
+core from outside its root or compile a generated C file; the app and its extensions need a project
+anyway, and that reason stands.
 
-- SwiftPM refuses a target whose sources lie outside the package root.
-- A symlink inside the package would get past that, but it trips the published-tree sweep and becomes a
-  plain file on a Windows checkout.
-- The interop constants have to be *generated* at build time from the one committed bundle, and on this
-  toolchain SwiftPM will not compile a C file a plugin generates. It reports "C source file generation
-  not enabled".
+**Key agreement is CryptoKit's**, supplied to the engine through `RipcordEcdhBackend`
+(`RipcordKit/Engine/CryptoKitEngineECDH.swift`), and checked against the .NET vectors by
+`EngineKeyAgreementTests` before it is used.
 
-An Xcode project does all three: synchronized folders reach the core, and a Run Script phase generates
-`halyard_v1_constants.g.c` into `DERIVED_FILE_DIR`, where a file reference compiles it. The app and its
-extensions need a project anyway.
-
-**Key agreement is CryptoKit's.** `Libripcord` is built with `RC_ECDH_EXTERNAL_BACKEND`, and
-`RipcordKit/Crypto/CryptoKitECDH.swift` supplies the five backend functions under their C names. See
-`libripcord/crypto/rc_ecdh.h` for the contract, and `EcdhKat` for the proof that it holds.
+**Pairings are kept by the host.** The lab keeps them in an owner-only `pairings.json`
+(`PairingFileStore`); the app will keep them in the Keychain (`KeychainPairingStore`). The lab imported the
+C core's old `pairing.txt` once, leaving it as `pairing.txt.imported`.
 
 ## Building
 
-Xcode 26 or later, and Python 3 for the constants generator (the one Xcode's command-line tools install is
-enough). A stable Rust toolchain (`rustup`) as well: RipcordKit's "Build the Rust engine" phase runs
+Xcode 26 or later, and a stable Rust toolchain (`rustup`): RipcordKit's "Build the Rust engine" phase runs
 cargo, which it looks for in `~/.cargo/bin` and Homebrew's `rustup` prefix. From the repository root:
 
 ```sh
@@ -56,18 +50,16 @@ dotnet run --project tools/Ripcord.ProtocolLab -- vectors
 
 cd src/Ripcord.Mac
 xcodebuild -project Ripcord.xcodeproj -scheme RipcordLab -derivedDataPath build build
-xcodebuild -project Ripcord.xcodeproj -scheme EcdhKat    -derivedDataPath build build
 xcodebuild -project Ripcord.xcodeproj -scheme RipcordKit -destination 'platform=macOS,arch=arm64' \
   -derivedDataPath build test
 
 cd ../..
-src/Ripcord.Mac/build/Build/Products/Debug/libripcord-ecdh-kat libripcord/tests/vectors/session-crypto.kat
 src/Ripcord.Mac/build/Build/Products/Debug/ripcord-lab check
 src/Ripcord.Mac/build/Build/Products/Debug/ripcord-lab discover
 ```
 
-Or open `Ripcord.xcodeproj` in Xcode. The shared schemes run from the repository root, so the lab and the
-KAT find their paths.
+Or open `Ripcord.xcodeproj` in Xcode. The shared schemes run from the repository root, so the lab finds its
+paths.
 
 If every `xcodebuild` run prints pages about `DVTCoreDeviceCore` or "CoreSimulator is out of date", the
 install's device support is behind Xcode itself. It does not affect a macOS build. `xcodebuild
