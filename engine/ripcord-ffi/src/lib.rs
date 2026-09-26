@@ -22,7 +22,9 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use ripcord_proto::crypto::ecdh::{Curve, Ecdh};
 
 mod client;
+mod pairing;
 pub use client::*;
+pub use pairing::*;
 use ripcord_proto::stream::demux::{DemuxSink, PacketOpener, Passthrough, StreamDemux};
 use ripcord_proto::stream::header::StreamHeader;
 use ripcord_proto::stream::packet_crypto::PacketCrypto;
@@ -69,6 +71,9 @@ pub enum RipcordStructId {
     Peer = 14,
     Endpoint = 15,
     Random = 16,
+    DiscoveredConsole = 17,
+    PairingRecord = 18,
+    RegistResult = 19,
 }
 
 /// The parsed A/V header, as the demuxer hands it to a control-packet callback.
@@ -335,6 +340,9 @@ pub extern "C" fn ripcord_struct_size(id: u32) -> usize {
         x if x == RipcordStructId::Peer as u32 => size_of::<RipcordPeer>(),
         x if x == RipcordStructId::Endpoint as u32 => size_of::<RipcordEndpoint>(),
         x if x == RipcordStructId::Random as u32 => size_of::<RipcordRandom>(),
+        x if x == RipcordStructId::DiscoveredConsole as u32 => size_of::<RipcordDiscoveredConsole>(),
+        x if x == RipcordStructId::PairingRecord as u32 => size_of::<RipcordPairingRecord>(),
+        x if x == RipcordStructId::RegistResult as u32 => size_of::<RipcordRegistResult>(),
         _ => 0,
     }
 }
