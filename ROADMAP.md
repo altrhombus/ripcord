@@ -246,12 +246,6 @@ the documents into line, is done and in the journal. The engine lives in [`engin
       2026-09-26). It still needs its fuzz target. Next in order:
   - [ ] **The CNG `Ecdh` backend,** against `session-crypto.kat` on Windows. RustCrypto and CryptoKit
         pass it (journal, 2026-09-26).
-  - [ ] **The pairing file, then Phase 3's relink.** Everything else the Mac's `CLibripcord.h` takes from
-        the C core is now in the engine's ABI: the client, discovery, wake, the account id, the seed, and
-        registration on both routes (journal, 2026-09-26). What remains is the pairing-file load and save
-        (`halyard_pairing_file_*`), which the engine does not do: port it, or let the Mac keep its records
-        in Swift. Then the Mac's `ConsoleSession` and `RendezvousLink` move from `halyard_client_*` to
-        `ripcord_client_*`, which is Phase 3.
   - [ ] **What the connect sequence does not do yet**, each a .NET behaviour: senkusha's echo and MTU
         probes (so the declared RTT is the version and session round trips, and the MTU is the
         interface's or 1454, never a confirmed one); CORRUPT_FRAME on video loss; CONNECTION_QUALITY and the
@@ -263,7 +257,17 @@ the documents into line, is done and in the journal. The engine lives in [`engin
   - [ ] **Differential runs for each new layer.** `ripcord-diff` exists and covers every layer ported so
         far. Each later layer adds its surface to `shim/diff_shim.c` in the change that
         ports it. For sequencing, the C core is the only other implementation.
-- [ ] **Phase 3 — the Mac switches engines,** by relinking at Phase 2's exit.
+- [ ] **Phase 3 — the Mac switches engines.** The relink is done (journal, 2026-09-26): RipcordKit reaches
+      the protocol only through `ripcord.h`, and the Mac project no longer compiles `libripcord/`. What is
+      open is the exit criterion:
+  - [ ] **The Mac on hardware, on the Rust engine.** `ripcord-lab connect` against a PS5 on the LAN, then
+        over the account route, with the figures the C core recorded (1080p60, 0 lost of 2,404, first
+        picture under 5 s), and `pair` and `account-pair` against a console. The comparison run is a lab
+        built from the commit before the relink, against the same console. None of the engine's
+        sequencing has met a console yet.
+  - [ ] **Build the app against an engine without `test-support`.** The Mac builds one engine library,
+        with the loopback consoles and the vector runner in it, because RipcordKitTests uses them;
+        RipcordKit calls none. An app target needs a second cargo invocation without the feature.
 - [ ] **Phase 4 — Windows onto the engine,** after 1.0, one seam at a time behind `RIPCORD_ENGINE`.
   - [ ] Before step 3: `src/Ripcord.App/Pages/SessionPage.xaml.cs` imports three
         `Ripcord.Protocol.Halyard*` namespaces. Stale usings, or a dependency around the seams.
@@ -325,9 +329,9 @@ A native Mac app built on `libripcord`, with at least parity with the Windows cl
 sign-in included. The decisions, the reasoning behind choosing the C core, the App Store analysis and the
 order of work are in [`docs/macos-plan.md`](docs/macos-plan.md). This entry lists only what is open.
 
-The Mac keeps building on `libripcord` until the Rust engine in [`docs/engine-plan.md`](docs/engine-plan.md)
-reaches parity, then relinks. Protocol work it needs before then lands in C, and the port to Rust picks it
-up.
+Since 2026-09-26 the Mac builds on the Rust engine in [`docs/engine-plan.md`](docs/engine-plan.md), not
+`libripcord`: Phase 3's relink is done, and new protocol work for the Mac lands in the engine. The items
+below that name the C core were written before the switch.
 
 Step 1, promoting the core to `libripcord/` with fuzzing and a CI job, is done and in the journal. Open:
 

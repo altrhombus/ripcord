@@ -1,17 +1,18 @@
-// What the rest of the Mac app knows about libripcord. The C module is imported internally everywhere
-// in RipcordKit, so nothing outside this framework sees a C type; this is the surface they see instead.
+// What the rest of the Mac app knows about the protocol engine. The engine's C module is imported
+// internally everywhere in RipcordKit, so nothing outside this framework sees a C type; this is the surface
+// they see instead.
 
-internal import CLibripcord
+internal import CRipcordEngine
 
 public enum Core {
-    /// Whether this build has a working key-agreement backend. Always true on the Mac, where CryptoKit
-    /// supplies it; a false here means the Libripcord target lost RC_ECDH_EXTERNAL_BACKEND and linked the
-    /// fail-closed stub instead, and no session can be secured.
-    public static var keyAgreementAvailable: Bool { rc_ecdh_available() == 1 }
+    /// Whether the engine this build links matches the header RipcordKit was compiled against: the ABI
+    /// version and every crossing struct's size (docs/engine-plan.md, rule 4). False means a stale library.
+    public static var engineMatches: Bool { RipcordEngineLayout.matches() }
 
-    /// Whether the generated interoperability constants were complete when the core was built. See
-    /// libripcord/tools/gen_constants.py: a bundle missing a table builds, and reports it here.
-    public static var interopConstantsBundled: Bool {
-        halyard_v1_constants_bundled == 1 && halyard_v1_registration_bundled == 1
-    }
+    /// Whether this build has a working key-agreement backend: CryptoKit, through the engine's table.
+    public static var keyAgreementAvailable: Bool { true }
+
+    /// The interoperability constants are generated into the engine at build time from the one committed
+    /// bundle, and the engine does not build without them.
+    public static var interopConstantsBundled: Bool { true }
 }
