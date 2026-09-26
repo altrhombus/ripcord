@@ -4,13 +4,16 @@ The protocol engine the first-class clients are moving to. Why it exists, what i
 order are in [`docs/engine-plan.md`](../docs/engine-plan.md). This file covers the tree, the build and
 where Phase 1 stands. What is still open is in [`ROADMAP.md`](../ROADMAP.md).
 
-**Status: Phase 2, through Takion.** In `ripcord-proto`:
+**Status: Phase 2, through discovery, wake and /sess.** In `ripcord-proto`:
 - the stream plane (framing, the stream key schedule, packet crypto, FEC, the demuxer);
 - the crypto and Halyard derivations;
 - key agreement behind the `Ecdh` trait, with RustCrypto and CryptoKit backends;
 - Takion: framing, the control protobuf codec, the sealer, the session negotiator and a sans-IO
   connection;
-- the 9303 datagram wire codec, and the scripted console the plan asks for.
+- the 9303 datagram wire codec, and the scripted console the plan asks for;
+- discovery (SRCH), wake and the arm probe;
+- the /sess control plane: registration on both routes and the pairing record, /sess/init and /sess/ctrl
+  with their encrypted fields, the launch spec, and the binary control channel as a sans-IO session.
 
 Ported from `libripcord/` and cross-checked against the .NET reference, which wins where the two differ
 unless the reasons below say otherwise. Nothing here talks to a console yet. The Mac and Windows clients
@@ -39,9 +42,10 @@ packets.
 
 **The interop constants are generated, never copied.** `ripcord-proto/build.rs` reads the one committed
 bundle and writes a Rust module into `OUT_DIR`, with `gen_constants.py`'s checks. `ripcord-diff` builds
-the C core's copy the way the C core does, with `gen_constants.py` itself. The engine has no copy of
-`Client-Type` yet; that arrives with the `/sess/rgst` message layer, together with the `CLAUDE.md` and
-`BundledInteropConstantsTests` changes it requires.
+the C core's copy the way the C core does, with `gen_constants.py` itself. `Client-Type` is read the same
+way, from `HalyardRegistrationMessage.ClientTypeHex` at build time, so the engine is not a third home for
+it; `BundledInteropConstantsTests.ClientType_RustEngineDerivesItFromTheReference` checks both that and
+that no file under `engine/` carries the value.
 
 The generated bindings are never committed. Nobody edits them: change `ripcord-ffi/src/lib.rs`, and
 the next `cargo build` rewrites both.
@@ -160,3 +164,42 @@ when that layer lands.
 The differential runs found two C bugs, both fixed in `libripcord`. The C scripted console read two bytes
 past a short HELLO_ECHO chunk. `takion_control_parse_protocol_version_ack` accepted a field-0 tag that every
 other C parser, and Google.Protobuf, refuse.
+
+## Discovery, wake and /sess: where the port follows .NET and where it follows C (2026-09-26)
+
+The same method as for Takion. A side-by-side read found 26 differences; for each, the Rust port follows
+.NET unless C is strictly safer or .NET is wrong.
+
+| Topic | Rust follows | Why |
+|---|---|---|
+| Wake credential sign | C: signed 32-bit decimal | C cites a PS4 capture with a negative credential; .NET writes it unsigned (roadmap) |
+| Wake credential input | .NET's tolerance, refusing instead of throwing | |
+| SRCH awake test | an exact `200` token with the CR stripped | .NET misses a bare `200\r`; C prefix-matches `2000` |
+| SRCH fields | .NET: host-request-port read, no truncation | Non-ASCII host names are kept as lossy UTF-8 |
+| /sess/init Host and version header | .NET's padded Host and `Rp-Version`, with C's LAN forms as options | Both are proven on hardware |
+| A bad or missing RP-Nonce | C: a hard failure | .NET carries on unauthenticated and would send the launch spec in plaintext (roadmap) |
+| /sess response parsing | C's digit rules; .NET's last-wins for repeated headers | .NET waits forever on a malformed status and throws on a negative length |
+| RP-OSType and device id | the caller's | The engine runs on any OS; a non-Windows host should send 10.0 |
+| Pairing record | .NET: trimmed fields, last wins, a non-hex key taken as ASCII | C had two bugs here, now fixed |
+| Np-AccountId | .NET: whitespace and `+` allowed, overflow falls back to UTF-8 | An empty id is refused, as in C |
+| Login passcode | C: at most 32 digits, refused rather than thrown | |
+| Control-frame length | C: overflow guarded, and the resynchronisation C's hardware runs needed | .NET's int cast can stall or throw |
+| Control frame types | .NET's fuller list | |
+
+Launch-spec MTU and RTT clamping, and the RP-Nonce and launch-spec order of the connect sequence, belong to
+that layer when it lands.
+
+## Discovery, wake and /sess, measured (2026-09-26)
+
+| What | Result |
+|---|---|
+| `rendezvous-control.kat` | 4 of 4: both cases' /sess/init and /sess/ctrl byte for byte with the .NET session's own requests |
+| `account-pairing.kat` | 121 of 121, now with all 8 `accountrgst` exchanges: body, transport key and the opened pairing record |
+| `control-proto.kat` | 65 of 65, now with the 5 launch specs |
+| Deferred vector lines | none |
+| Differential against the C core | Discovery replies, wake credentials and payloads, the field plaintexts, control frames and /sess responses agree across 5,000 to 20,000 generated cases each, with the chosen differences excluded |
+| Mutation check | Changing RP-SupportCmd fails the rendezvous vectors; changing one launch-spec literal fails the launch-spec vectors |
+
+The comparison found two more C bugs, both fixed. `halyard_regist_parse_record` checked `rc_hex_decode`
+for 0 when failure is `(size_t)-1`, accepting a malformed key with a length of `SIZE_MAX`.
+`halyard_regist_split_response` never read an `RP-Application-Reason` sent as the last header.

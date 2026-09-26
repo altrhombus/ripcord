@@ -19,6 +19,7 @@ use ripcord_proto::base64;
 use ripcord_proto::crypto::ecdh::{self, Curve, Ecdh, RustCryptoEcdh};
 use ripcord_proto::crypto::modes;
 use ripcord_proto::halyard::{self, account_seed, control, registration};
+use ripcord_proto::sess::{launch_spec, regist, requests};
 use ripcord_proto::stream::{key_schedule, packet_crypto};
 use ripcord_proto::takion::control as takion_control;
 
@@ -30,14 +31,12 @@ pub const FILES: &[&str] = &[
     "account-pairing.kat",
     "session-crypto.kat",
     "control-proto.kat",
+    "rendezvous-control.kat",
 ];
 
 /// Line kinds that belong to a layer not yet ported, and which layer. Remove an entry in the change that
 /// ports its layer.
-pub const DEFERRED: &[(&str, &str)] = &[
-    ("accountrgst", "the /sess/rgst message layer, which also brings the Rust engine's copy of Client-Type"),
-    ("launchspec", "the /sess layer's launch-spec builder"),
-];
+pub const DEFERRED: &[(&str, &str)] = &[];
 
 #[derive(Default)]
 pub struct Report {
@@ -366,6 +365,41 @@ fn run_line(report: &mut Report, line: &Line<'_>, ecdh: &dyn Ecdh) -> Result<(),
             check_text(report, line, "no truncation accepted", &format!("{truncated:?}"), "None");
         }
 
+        "launchspec" => {
+            let params = launch_spec::Params {
+                width: number(f(1)?)?,
+                height: number(f(2)?)?,
+                fps: number(f(3)?)?,
+                bitrate_kbps: number(f(4)?)?,
+                mtu: number(f(5)?)?,
+                rtt_ms: number(f(6)?)?,
+                hevc: number::<u8>(f(7)?)? != 0,
+                hdr: number::<u8>(f(8)?)? != 0,
+            };
+            check(report, line, "json", launch_spec::build(&params, &hex16(f(9)?)?).as_bytes(), f(10)?);
+        }
+
+        // ---- account-pairing.kat: the whole account-route exchange ----
+        "accountrgst" => {
+            let is_ps5 = number::<u8>(f(1)?)? != 0;
+            let context: [u8; 0x1e0] = hex(f(3)?)?.try_into().map_err(|_| "context is not 0x1e0 bytes")?;
+            let (material, seed) = (hex16(f(4)?)?, hex16(f(5)?)?);
+            let (exchange, request) =
+                regist::Exchange::account(is_ps5, &seed, f(2)?, "192.0.2.10", &context, &material)
+                    .map_err(|e| format!("exchange refused: {e:?}"))?;
+            check(report, line, "transport key", &exchange.transport_key(), f(6)?);
+            let body = hex(f(7)?)?;
+            let tail = request.get(request.len().saturating_sub(body.len())..).unwrap_or_default();
+            check(report, line, "body", tail, f(7)?);
+            // The console's reply, opened with the same key, gives the reference's record.
+            let mut response = b"HTTP/1.1 200 OK\r\n\r\n".to_vec();
+            response.extend(hex(f(9)?)?);
+            let record = exchange.open(&response).map_err(|e| format!("reply refused: {e:?}"))?;
+            check(report, line, "registration key", &record.registration_key, f(10)?);
+            check(report, line, "companion", &record.companion, f(11)?);
+            check_text(report, line, "key type", &record.key_type.to_string(), f(12)?);
+        }
+
         other => return Err(format!("no runner for line kind {other:?}")),
     }
     Ok(())
@@ -380,6 +414,7 @@ pub fn run(text: &str) -> Report {
 /// against the .NET vectors on its own platform (docs/engine-plan.md, "Dependencies").
 pub fn run_with(text: &str, ecdh: &dyn Ecdh) -> Report {
     let mut report = Report::default();
+    let mut case: Option<RendezvousCase> = None;
     for (i, raw) in text.lines().enumerate() {
         let fields: Vec<&str> = raw.split_whitespace().collect();
         let Some(&kind) = fields.first() else { continue };
@@ -391,6 +426,13 @@ pub fn run_with(text: &str, ecdh: &dyn Ecdh) -> Report {
             continue;
         }
         let line = Line { kind, number: i + 1, fields };
+        // rendezvous-control.kat: a case line, then the init and ctrl requests the .NET session sent for it.
+        if matches!(kind, "case" | "init" | "ctrl") {
+            if let Err(e) = run_rendezvous(&mut report, &line, &mut case) {
+                report.failures.push(format!("{} line {}: {e}", line.kind, line.number));
+            }
+            continue;
+        }
         // A PS4 line where this build has no PS4 tables cannot be checked; ps4tables says whether that is
         // expected, and fails if the generator had tables this build lacks.
         if unavailable_ps4_line(&line) {
@@ -401,4 +443,82 @@ pub fn run_with(text: &str, ecdh: &dyn Ecdh) -> Report {
         }
     }
     report
+}
+
+/// One `case` of rendezvous-control.kat: a pairing and a nonce, whose /sess/init and /sess/ctrl the .NET
+/// session sent over the rendezvous route (padded Host with port 9303, "Rp-Version" on init, ConPath 3).
+struct RendezvousCase {
+    is_ps5: bool,
+    addressing: requests::Addressing,
+    registration_key: Vec<u8>,
+    companion: [u8; 16],
+    device_id: Vec<u8>,
+    nonce: [u8; 16],
+    os_major: i32,
+    os_minor: i32,
+    bitrate: i32,
+}
+
+fn run_rendezvous(
+    report: &mut Report,
+    line: &Line<'_>,
+    case: &mut Option<RendezvousCase>,
+) -> Result<(), String> {
+    let f = |i| line.field(i);
+    match line.kind {
+        "case" => {
+            let address: std::net::Ipv4Addr = f(2)?.parse().map_err(|_| format!("bad host {:?}", f(2)))?;
+            *case = Some(RendezvousCase {
+                is_ps5: f(1)? == "ps5",
+                addressing: requests::Addressing::new(
+                    address.octets(),
+                    9303,
+                    requests::ConnectionPath::Rendezvous,
+                ),
+                registration_key: hex(f(3)?)?,
+                companion: hex16(f(4)?)?,
+                device_id: hex(f(5)?)?,
+                nonce: hex16(f(6)?)?,
+                os_major: number(f(7)?)?,
+                os_minor: number(f(8)?)?,
+                bitrate: number(f(9)?)?,
+            });
+        }
+        "init" => {
+            let c = case.as_ref().ok_or("init before any case")?;
+            check(
+                report,
+                line,
+                "/sess/init",
+                &requests::init(c.is_ps5, &c.addressing, &c.registration_key),
+                f(1)?,
+            );
+        }
+        _ => {
+            let c = case.take().ok_or("ctrl before any case")?;
+            let reply = format!(
+                "HTTP/1.1 200 OK\r\nRP-Nonce: {}\r\nContent-Length: 0\r\n\r\n",
+                base64::encode(&c.nonce)
+            );
+            let reply = ripcord_proto::sess::http::Response::parse(reply.as_bytes())
+                .ok_or("the synthetic reply did not parse")?;
+            let field = requests::open_init(c.is_ps5, &reply, &c.companion).map_err(|e| format!("{e:?}"))?;
+            let values = requests::CtrlFields {
+                registration_key: &c.registration_key,
+                device_id: &c.device_id,
+                os_major: c.os_major,
+                os_minor: c.os_minor,
+                start_bitrate_kbps: c.bitrate,
+                streaming_type: 0,
+            };
+            check(
+                report,
+                line,
+                "/sess/ctrl",
+                &requests::ctrl(c.is_ps5, &c.addressing, &field, &values),
+                f(1)?,
+            );
+        }
+    }
+    Ok(())
 }

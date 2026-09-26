@@ -413,3 +413,57 @@ size_t diff_console_request(void *c, int i, const char **text)
     *text = f->request[i];
     return f->request_length[i];
 }
+
+/* ---- discovery, wake, /sess ---- */
+#include "../../../libripcord/discovery/halyard_discovery.h"
+#include "../../../libripcord/discovery/halyard_wake.h"
+#include "../../../libripcord/session/halyard_sess_fields.h"
+#include "../../../libripcord/session/halyard_sess_request.h"
+#include "../../../libripcord/session/halyard_ctrl_message.h"
+
+/* Four NUL-terminated fields into `out` (host_id, host_type, host_name, system_version), 128 bytes each. */
+int diff_discovery_parse(const uint8_t *data, size_t length, char out[4][128], int *is_awake)
+{
+    halyard_discovered_console c;
+    if (!halyard_discovery_parse_response((const char *)data, length, NULL, &c))
+        return 0;
+    snprintf(out[0], 128, "%s", c.host_id);
+    snprintf(out[1], 128, "%s", c.host_type);
+    snprintf(out[2], 128, "%s", c.host_name);
+    snprintf(out[3], 128, "%s", c.system_version);
+    *is_awake = c.is_awake;
+    return 1;
+}
+
+int diff_wake_credential(const uint8_t *key, size_t length, char out[16])
+{
+    return halyard_wake_credential(key, length, out, 16);
+}
+
+size_t diff_wake_payload(int ps5, const char *credential, char *out, size_t size)
+{
+    return halyard_wake_build_payload(ps5 ? &halyard_discovery_profile_ps5 : &halyard_discovery_profile_ps4,
+                                      credential, out, size);
+}
+
+void diff_sess_auth(const uint8_t *key, size_t length, uint8_t out[16]) { halyard_sess_field_auth_plaintext(key, length, out); }
+void diff_sess_did(const uint8_t *id, size_t length, uint8_t out[32]) { halyard_sess_field_did_plaintext(id, length, out); }
+size_t diff_sess_os(int major, int minor, char *out, size_t size) { return halyard_sess_field_os_type_plaintext(major, minor, out, size); }
+
+size_t diff_ctrl_parse(const uint8_t *data, size_t length, unsigned *type, size_t *payload_length)
+{
+    const uint8_t *payload;
+    return halyard_ctrl_message_parse(data, length, type, &payload, payload_length);
+}
+
+/* Returns bytes consumed (0 = incomplete); the status, and the named header's value into out. */
+size_t diff_sess_response(const char *data, size_t length, int *status, const char *name, char *out, size_t size, int *has)
+{
+    halyard_sess_response r;
+    size_t n = halyard_sess_response_parse(data, length, &r);
+    if (n == 0)
+        return 0;
+    *status = r.status_code;
+    *has = halyard_sess_response_header(data, &r, name, out, size);
+    return n;
+}

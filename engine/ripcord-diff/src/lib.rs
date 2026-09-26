@@ -764,3 +764,105 @@ impl Drop for CConsole {
         unsafe { diff_console_free(self.raw) }
     }
 }
+
+// ---- discovery, wake, /sess ----
+
+unsafe extern "C" {
+    fn diff_discovery_parse(
+        data: *const u8,
+        length: usize,
+        out: *mut [c_char; 128],
+        awake: *mut c_int,
+    ) -> c_int;
+    fn diff_wake_credential(key: *const u8, length: usize, out: *mut c_char) -> c_int;
+    fn diff_wake_payload(ps5: c_int, credential: *const c_char, out: *mut c_char, size: usize) -> usize;
+    fn diff_sess_auth(key: *const u8, length: usize, out: *mut u8);
+    fn diff_sess_did(id: *const u8, length: usize, out: *mut u8);
+    fn diff_sess_os(major: c_int, minor: c_int, out: *mut c_char, size: usize) -> usize;
+    fn diff_ctrl_parse(data: *const u8, length: usize, kind: *mut u32, payload_length: *mut usize) -> usize;
+    fn diff_sess_response(
+        data: *const c_char,
+        length: usize,
+        status: *mut c_int,
+        name: *const c_char,
+        out: *mut c_char,
+        size: usize,
+        has: *mut c_int,
+    ) -> usize;
+}
+
+fn c_string(buf: &[c_char]) -> String {
+    let bytes: Vec<u8> = buf.iter().take_while(|&&c| c != 0).map(|&c| c as u8).collect();
+    String::from_utf8_lossy(&bytes).into_owned()
+}
+
+/// A SRCH reply as C parses it: (host id, host type, host name, system version, awake).
+pub fn c_discovery_parse(data: &[u8]) -> Option<(String, String, String, String, bool)> {
+    let _core = c_core();
+    let mut out = [[0 as c_char; 128]; 4];
+    let mut awake = 0;
+    // SAFETY: a valid slice, four 128-byte buffers and an out-int.
+    if unsafe { diff_discovery_parse(data.as_ptr(), data.len(), out.as_mut_ptr(), &mut awake) } != 1 {
+        return None;
+    }
+    Some((c_string(&out[0]), c_string(&out[1]), c_string(&out[2]), c_string(&out[3]), awake != 0))
+}
+
+pub fn c_wake_credential(key: &[u8]) -> Option<String> {
+    let _core = c_core();
+    let mut out = [0 as c_char; 16];
+    // SAFETY: a valid slice and a 16-byte buffer, which the C side is told the size of.
+    (unsafe { diff_wake_credential(key.as_ptr(), key.len(), out.as_mut_ptr()) } == 1).then(|| c_string(&out))
+}
+
+pub fn c_wake_payload(ps5: bool, credential: &str) -> Vec<u8> {
+    let _core = c_core();
+    let credential = std::ffi::CString::new(credential).unwrap();
+    let mut out = [0 as c_char; 512];
+    // SAFETY: a NUL-terminated string and a buffer whose size is passed.
+    let n = unsafe { diff_wake_payload(c_int::from(ps5), credential.as_ptr(), out.as_mut_ptr(), out.len()) };
+    out[..n].iter().map(|&c| c as u8).collect()
+}
+
+/// (RP-Auth, RP-Did, RP-OSType) plaintexts as C builds them.
+pub fn c_sess_fields(key: &[u8], device_id: &[u8], major: i32, minor: i32) -> ([u8; 16], [u8; 32], Vec<u8>) {
+    let _core = c_core();
+    let (mut auth, mut did, mut os) = ([0u8; 16], [0u8; 32], [0 as c_char; 32]);
+    // SAFETY: valid slices and outputs of the sizes the C side writes.
+    let n = unsafe {
+        diff_sess_auth(key.as_ptr(), key.len(), auth.as_mut_ptr());
+        diff_sess_did(device_id.as_ptr(), device_id.len(), did.as_mut_ptr());
+        diff_sess_os(major, minor, os.as_mut_ptr(), os.len())
+    };
+    (auth, did, os[..n].iter().map(|&c| c as u8).collect())
+}
+
+/// (type, payload length, bytes used) as C parses a control frame.
+pub fn c_ctrl_parse(data: &[u8]) -> Option<(u16, usize, usize)> {
+    let _core = c_core();
+    let (mut kind, mut len) = (0u32, 0usize);
+    // SAFETY: a valid slice.
+    let used = unsafe { diff_ctrl_parse(data.as_ptr(), data.len(), &mut kind, &mut len) };
+    (used > 0).then_some((kind as u16, len, used))
+}
+
+/// (status, bytes used, the named header) as C parses a /sess response.
+pub fn c_sess_response(data: &[u8], header: &str) -> Option<(i32, usize, Option<String>)> {
+    let _core = c_core();
+    let name = std::ffi::CString::new(header).unwrap();
+    let (mut status, mut has) = (0, 0);
+    let mut out = [0 as c_char; 256];
+    // SAFETY: a valid slice, a NUL-terminated name and a buffer whose size is passed.
+    let used = unsafe {
+        diff_sess_response(
+            data.as_ptr().cast(),
+            data.len(),
+            &mut status,
+            name.as_ptr(),
+            out.as_mut_ptr(),
+            out.len(),
+            &mut has,
+        )
+    };
+    (used > 0).then(|| (status, used, (has == 1).then(|| c_string(&out))))
+}

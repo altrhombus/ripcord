@@ -28,6 +28,12 @@ const SOURCES: &[&str] = &[
     "takion/takion_control_sealer.c",
     "takion/senkusha_echo.c",
     "session/halyard_dgram_wire.c",
+    "discovery/halyard_discovery.c",
+    "discovery/halyard_wake.c",
+    "session/halyard_sess_fields.c",
+    "session/halyard_sess_request.c",
+    "session/halyard_ctrl_message.c",
+    "util/rc_text.c",
 ];
 
 fn main() {
@@ -49,7 +55,7 @@ fn main() {
 
     let mut build = cc::Build::new();
     build.std("c99").warnings(false);
-    for dir in ["crypto", "halyard", "platform"] {
+    for dir in ["crypto", "halyard", "platform", "session", "util"] {
         build.include(core.join(dir));
     }
     for source in SOURCES {
@@ -62,7 +68,7 @@ fn main() {
     println!("cargo:rerun-if-changed=shim/diff_shim.c");
     // Headers the shim includes whole: the C scripted console is header-only.
     println!("cargo:rerun-if-changed={}", core.join("tests/fake_dgram_console.h").display());
-    for dir in ["crypto", "halyard", "stream", "takion", "session"] {
+    for dir in ["crypto", "halyard", "stream", "takion", "session", "discovery", "util"] {
         println!("cargo:rerun-if-changed={}", core.join(dir).display());
     }
     println!("cargo:rerun-if-changed={}", bundle.display());

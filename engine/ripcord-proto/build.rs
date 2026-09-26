@@ -14,6 +14,32 @@ use std::path::PathBuf;
 
 const BUNDLE: &str = "../../src/Ripcord.Protocol.Halyard/Data/halyard-v1-constants.json";
 
+/// Where the reference implementation keeps `Client-Type`: the 32-byte value the console parses by content,
+/// generic to the application (CLAUDE.md, "Bounded exception 1"). The engine reads it from here at build
+/// time rather than holding a third committed copy.
+const CLIENT_TYPE_SOURCE: &str =
+    "../../src/Ripcord.Protocol.Halyard.Common/Crypto/HalyardRegistrationMessage.cs";
+
+/// The value of `public const string ClientTypeHex = "...";` in the reference, checked for shape.
+fn client_type(manifest: &std::path::Path) -> String {
+    let path = manifest.join(CLIENT_TYPE_SOURCE);
+    println!("cargo:rerun-if-changed={}", path.display());
+    let source = std::fs::read_to_string(&path).unwrap_or_else(|e| {
+        panic!("the reference's Client-Type source {} could not be read: {e}", path.display())
+    });
+    let marker = "const string ClientTypeHex = \"";
+    let start =
+        source.find(marker).unwrap_or_else(|| panic!("no ClientTypeHex definition in {}", path.display()))
+            + marker.len();
+    let value = &source[start..start + source[start..].find('"').expect("an unterminated ClientTypeHex")];
+    assert!(
+        value.len() == 64 && value.bytes().all(|b| b.is_ascii_hexdigit()),
+        "ClientTypeHex in {} is not 64 hex digits; it was reshaped, and the registration field would be wrong",
+        path.display()
+    );
+    value.to_owned()
+}
+
 fn unhex(name: &str, value: &serde_json::Value, len: usize) -> Option<Vec<u8>> {
     let text = value.as_str()?;
     let bytes: Vec<u8> = (0..text.len())
@@ -103,6 +129,8 @@ fn main() {
     emit_optional(&mut out, "PS4_KDF_TABLE2", ps4_kdf2.as_deref(), 512);
     emit_optional(&mut out, "PS4_REGISTRATION_TABLE", ps4_registration.as_deref(), 512);
     emit_optional(&mut out, "PS4_MATERIAL_WRAP_TABLE", ps4_wrap.as_deref(), 512);
+
+    writeln!(out, "pub(crate) const CLIENT_TYPE_HEX: &str = \"{}\";", client_type(&manifest)).unwrap();
 
     let dest = PathBuf::from(std::env::var("OUT_DIR").unwrap()).join("halyard_v1_constants.rs");
     std::fs::write(dest, out).expect("write the generated constants");

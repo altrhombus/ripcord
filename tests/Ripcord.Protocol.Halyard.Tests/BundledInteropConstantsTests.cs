@@ -247,6 +247,49 @@ public class BundledInteropConstantsTests
             + "\n  src/Ripcord.Protocol.Halyard.Common/Crypto/HalyardRegistrationMessage.cs");
     }
 
+    /// <summary>
+    /// The Rust engine's <c>Client-Type</c> is the reference's, read at build time, and never a third literal.
+    ///
+    /// <para><c>engine/ripcord-proto/build.rs</c> extracts <see cref="HalyardRegistrationMessage.ClientTypeHex"/>
+    /// from this repository's source into the build directory, as it generates the bundle constants, so the
+    /// engine cannot drift from the reference and <c>CLAUDE.md</c>'s inventory stays at two homes. This checks
+    /// both halves of that claim: the build script names the reference file and the constant, and no committed
+    /// file under <c>engine/</c> contains the value. Shape and location, never the value itself.</para>
+    /// </summary>
+    [SkippableFact]
+    public void ClientType_RustEngineDerivesItFromTheReference()
+    {
+        string engineDir = Path.Combine(RepoRoot(), "engine");
+        Skip.IfNot(Directory.Exists(engineDir), "No engine/ tree in this checkout.");
+
+        string buildScript = Path.Combine(engineDir, "ripcord-proto", "build.rs");
+        Assert.True(File.Exists(buildScript),
+            "engine/ is present but ripcord-proto/build.rs is not. The engine's Client-Type derivation has moved; "
+            + "point this test at it rather than deleting it.");
+        string script = File.ReadAllText(buildScript);
+        Assert.True(
+            script.Contains("HalyardRegistrationMessage.cs", StringComparison.Ordinal)
+                && script.Contains("ClientTypeHex", StringComparison.Ordinal),
+            "ripcord-proto/build.rs no longer reads ClientTypeHex from HalyardRegistrationMessage.cs. If the engine "
+            + "now holds its own copy, that is a third home: CLAUDE.md's inventory and this test change with it.");
+
+        string[] extensions = [".rs", ".toml", ".swift", ".cs", ".c", ".h", ".md", ".json"];
+        foreach (string file in Directory.EnumerateFiles(engineDir, "*", SearchOption.AllDirectories))
+        {
+            string rel = Path.GetRelativePath(engineDir, file);
+            if (rel.StartsWith("target", StringComparison.Ordinal) || rel.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}")
+                || rel.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}")
+                || !extensions.Contains(Path.GetExtension(file)))
+            {
+                continue;
+            }
+            Assert.False(
+                File.ReadAllText(file).Contains(HalyardRegistrationMessage.ClientTypeHex, StringComparison.OrdinalIgnoreCase),
+                "engine/" + rel + " carries a literal copy of Client-Type. The engine reads it from the reference at "
+                + "build time; a copy here is an undeclared third home (CLAUDE.md, Bounded exception 1).");
+        }
+    }
+
     /// <summary>Locates the repository root by walking up to the solution file, as the other
     /// tree-reading suites in this project do.</summary>
     private static string RepoRoot()
