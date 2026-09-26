@@ -35,6 +35,21 @@ different purpose.
 > anything. The list above is short, it is checkable in one `git log --format=%B | grep`, and it stops
 > growing the moment someone notices — which is the property that actually matters.
 
+### The Rust engine: the client ABI, from Rust, .NET and Swift (2026-09-26)
+
+`ripcord_client_*` exports the connect sequence with `halyard_client.h`'s contract: one host thread,
+callbacks on that thread, borrowed buffers, and the pad, passcode, media answer and commands pulled. The
+differences (an opaque handle, the host's CSPRNG and key agreement, a pump that waits on its own sockets,
+and the pairing record's fields flattened into the config) are listed in `engine/README.md`. The ABI is
+at version 3.
+
+- **A loopback console for every host.** The scripted LAN console moved into `ripcord-net` behind a
+  feature and is exported under `test-support`, so each host's suite runs a real session on 127.0.0.1.
+- **Rust, .NET and Swift each run one**: a passcode, video, stats, input and the goodbye. The .NET
+  harness does it through `[UnmanagedCallersOnly]` callbacks as Phase 4 will. The Swift test does it on
+  CryptoKit's key agreement, so the Mac's backend has now carried a whole session and not only the
+  vectors.
+
 ### The Rust engine: the connect sequence and ripcord-net (2026-09-26)
 
 The last layer of Phase 2's protocol work, from the C client and the .NET session side by side. The

@@ -132,7 +132,8 @@ accepts a nonce length `System.Security.Cryptography.AesGcm` refuses. A comment 
   edited), `ripcord-kat` (the `.kat` runner), `ripcord-diff` (differential tests against the C core) and
   `hosts/dotnet/` (the .NET harness). As of 2026-09-26 it holds the stream plane, the Halyard
   derivations, Takion, discovery and wake, the /sess control plane, STUN, the 9303 association,
-  input, and the connect sequence on both routes, with scripted consoles for each. When porting a layer, read both the .NET reference and the
+  input, and the connect sequence on both routes, with scripted consoles for each; `ripcord-ffi`
+  exports it as the client ABI (`ripcord_client_*`, `halyard_client.h`'s contract). When porting a layer, read both the .NET reference and the
   C port; the C core is itself a port of .NET, and where they differ .NET wins unless C is strictly safer
   or .NET is wrong, recorded in `engine/README.md`. Not part of `Ripcord.slnx`: `cargo test --workspace
   --all-features` in `engine/`.
