@@ -20,6 +20,7 @@ if (mode is "all" or "check")
     failures += Checks.Layout();
     failures += Checks.DifferentialAgainstManaged();
     failures += Checks.DemuxThroughCallbacks();
+    failures += Checks.ClientSession();
     Console.WriteLine(failures == 0 ? "checks: all passed" : $"checks: {failures} FAILED");
 }
 
@@ -43,7 +44,7 @@ static unsafe class Checks
     public static int Layout()
     {
         var f = 0;
-        const uint expectedApi = 2;
+        const uint expectedApi = 3;
         if (NativeMethods.ripcord_api_version() != expectedApi)
             f += Fail($"api version {NativeMethods.ripcord_api_version()}, bindings expect {expectedApi}");
         (RipcordStructId id, int size)[] structs =
@@ -54,6 +55,16 @@ static unsafe class Checks
             (RipcordStructId.EcdhBackend, sizeof(RipcordEcdhBackend)),
             (RipcordStructId.KatResult, sizeof(RipcordKatResult)),
             (RipcordStructId.ScriptedConsoleCounts, sizeof(RipcordScriptedConsoleCounts)),
+            (RipcordStructId.ClientConfig, sizeof(RipcordClientConfig)),
+            (RipcordStructId.ClientCallbacks, sizeof(RipcordClientCallbacks)),
+            (RipcordStructId.ClientResult, sizeof(RipcordClientResult)),
+            (RipcordStructId.ClientStats, sizeof(RipcordClientStats)),
+            (RipcordStructId.InputState, sizeof(RipcordInputState)),
+            (RipcordStructId.StreamInfo, sizeof(RipcordStreamInfo)),
+            (RipcordStructId.Leg, sizeof(RipcordLeg)),
+            (RipcordStructId.Peer, sizeof(RipcordPeer)),
+            (RipcordStructId.Endpoint, sizeof(RipcordEndpoint)),
+            (RipcordStructId.Random, sizeof(RipcordRandom)),
         ];
         foreach (var (id, size) in structs)
         {
@@ -224,6 +235,151 @@ static unsafe class Checks
             handle.Free();
         }
         Console.WriteLine("demux: managed-sealed packets through native callbacks");
+        return f;
+    }
+
+    public static int ClientSession() => ClientCheck.Run(Fail);
+}
+
+/// <summary>
+/// A whole LAN session through the client ABI, hosted as Phase 4 will host it: <c>[UnmanagedCallersOnly]</c>
+/// statics, a GCHandle as the user pointer, connect, then pump until the session ends. The console is the
+/// engine's loopback one (test-support), so nothing leaves the machine.
+/// </summary>
+static unsafe class ClientCheck
+{
+    // ripcord.h's RIPCORD_ROUTE_LOCAL and RIPCORD_CMD_DISCONNECT: csbindgen emits no constants.
+    const uint RouteLocal = 1;
+    const uint CmdDisconnect = 1 << 2;
+
+    sealed class Session
+    {
+        public int Video;
+        public int Stats;
+        public int Passcodes;
+        public readonly List<RipcordClientStage> Stages = [];
+        public (uint, uint)? Info;
+    }
+
+    static Session Of(void* user) => (Session)GCHandle.FromIntPtr((nint)user).Target!;
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static void OnStage(void* user, RipcordClientStage stage) => Of(user).Stages.Add(stage);
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static void OnInfo(void* user, RipcordStreamInfo* info) => Of(user).Info = (info->width, info->height);
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static void OnVideo(void* user, byte* data, nuint length, bool keyframe) => Of(user).Video++;
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static void OnStats(void* user, RipcordClientStats* stats) => Of(user).Stats++;
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static int OnPasscode(void* user, uint retry, byte* output, nuint size)
+    {
+        Of(user).Passcodes++;
+        ReadOnlySpan<byte> digits = "2468\0"u8;
+        digits.CopyTo(new Span<byte>(output, (int)size));
+        return 1;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static bool OnInput(void* user, RipcordInputState* state)
+    {
+        state->left_x = 1200;
+        return true;
+    }
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static uint OnCommands(void* user) => Of(user).Video >= 15 ? CmdDisconnect : 0;
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    static bool Fill(void* user, byte* output, nuint length)
+    {
+        System.Security.Cryptography.RandomNumberGenerator.Fill(new Span<byte>(output, (int)length));
+        return true;
+    }
+
+    public static int Run(Func<string, int> fail)
+    {
+        var f = 0;
+        ushort control, senkusha, stream;
+        var pin = "2468\0"u8.ToArray();
+        RipcordLoopbackConsole* console;
+        fixed (byte* p = pin)
+            console = NativeMethods.ripcord_loopback_console_start(p, &control, &senkusha, &stream);
+        if (console == null)
+            return fail("the loopback console did not start");
+
+        var session = new Session();
+        var handle = GCHandle.Alloc(session);
+        var key = Enumerable.Repeat((byte)0xab, 8).ToArray();
+        var device = Enumerable.Repeat((byte)0x22, 32).ToArray();
+        RipcordClient* client = null;
+        try
+        {
+            var config = new RipcordClientConfig
+            {
+                route = RouteLocal,
+                is_ps5 = true,
+                registration_key_length = (nuint)key.Length,
+                device_id_length = (nuint)device.Length,
+                control_port = control,
+                senkusha_port = senkusha,
+                stream_port = stream,
+                no_arm_broadcast = true,
+            };
+            config.console[0] = 127;
+            config.console[3] = 1;
+            NativeMethods.ripcord_loopback_console_companion(config.companion);
+            var callbacks = new RipcordClientCallbacks
+            {
+                user = (void*)GCHandle.ToIntPtr(handle),
+                stage = &OnStage,
+                stream_info = &OnInfo,
+                video_frame = &OnVideo,
+                poll_input = &OnInput,
+                poll_passcode = &OnPasscode,
+                poll_commands = &OnCommands,
+                stats = &OnStats,
+            };
+            var random = new RipcordRandom { fill = &Fill };
+            fixed (byte* k = key, d = device)
+            {
+                config.registration_key = k;
+                config.device_id = d;
+                client = NativeMethods.ripcord_client_new(&config, &callbacks, null, &random);
+            }
+            if (client == null)
+                return f + fail("ripcord_client_new refused a valid config");
+
+            RipcordClientStage stage;
+            NativeMethods.ripcord_client_connect(client, &stage);
+            if (stage != RipcordClientStage.StreamReady)
+                f += fail($"connect reached {stage}, not StreamReady");
+            var alive = true;
+            var clock = Stopwatch.StartNew();
+            while (alive && clock.Elapsed < TimeSpan.FromSeconds(10))
+                NativeMethods.ripcord_client_pump(client, 2, &alive);
+
+            RipcordClientResult result;
+            NativeMethods.ripcord_client_result(client, &result);
+            if (result.end_reason != RipcordClientEnd.UserDisconnect)
+                f += fail($"the session ended with {result.end_reason}, not the disconnect it was asked for");
+            if (session.Video < 15 || session.Stats < 1 || session.Passcodes != 1 || session.Info != (1280u, 720u))
+                f += fail($"{session.Video} frames, {session.Stats} stats, {session.Passcodes} passcode asks, info {session.Info}");
+            if (session.Stages.LastOrDefault() != RipcordClientStage.Ended)
+                f += fail("no ENDED stage");
+            Console.WriteLine($"client: a LAN session through the ABI to {session.Video} frames and the goodbye");
+        }
+        finally
+        {
+            if (client != null)
+                NativeMethods.ripcord_client_free(client);
+            NativeMethods.ripcord_loopback_console_stop(console);
+            handle.Free();
+        }
         return f;
     }
 }

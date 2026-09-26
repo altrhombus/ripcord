@@ -25,12 +25,19 @@ fn main() {
 
     csbindgen::Builder::default()
         .input_extern_file(crate_dir.join("src/lib.rs"))
+        .input_extern_file(crate_dir.join("src/client.rs"))
         .csharp_dll_name("ripcord")
         .csharp_namespace("Ripcord.Engine.Native")
         .csharp_class_name("NativeMethods")
         .csharp_class_accessibility("internal")
         .csharp_use_function_pointer(true)
-        .always_included_types(["RipcordStructId", "RipcordKatResult", "RipcordScriptedConsoleCounts"])
+        .always_included_types([
+            "RipcordStructId",
+            "RipcordKatResult",
+            "RipcordScriptedConsoleCounts",
+            "RipcordClientStage",
+            "RipcordClientEnd",
+        ])
         .generate_csharp_file(include.join("NativeMethods.g.cs"))
         .expect("generate NativeMethods.g.cs");
 }
