@@ -159,8 +159,10 @@ int halyard_regist_split_response(const uint8_t *response, size_t response_lengt
     {
         size_t line_start = 0;
 
-        for (i = 0; i < head_end; i++) {
-            if (!(text[i] == '\r' && i + 1 < head_end && text[i + 1] == '\n'))
+        /* Up to AND INCLUDING head_end: the last header line ends there, not at a CRLF of its own, and a
+         * reason sent as the final header used to be skipped (found comparing this with .NET). */
+        for (i = 0; i <= head_end; i++) {
+            if (i < head_end && !(text[i] == '\r' && i + 1 < head_end && text[i + 1] == '\n'))
                 continue;
             {
                 const char *line = text + line_start;
@@ -250,7 +252,9 @@ int halyard_regist_parse_record(const uint8_t *decrypted, size_t length, halyard
      * digits, so this halves a 16-character field to the 8 bytes /sess/init re-encodes.
      */
     n = rc_hex_decode(value, out->registration_key, sizeof(out->registration_key));
-    if (n == 0)
+    /* rc_hex_decode reports failure as (size_t)-1, not 0: checking only 0 accepted a malformed key with a
+     * length of SIZE_MAX (found comparing this with .NET, which falls back to the key's ASCII instead). */
+    if (n == 0 || n == (size_t)-1)
         return 0;
     out->registration_key_length = n;
 
