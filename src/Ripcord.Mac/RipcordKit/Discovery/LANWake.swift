@@ -1,6 +1,6 @@
 // Waking a resting console on the LAN, and waiting for it.
 //
-// The datagram is libripcord's (halyard_wake.h derives the credential from the pairing record's
+// The datagram is the engine's (ripcord_wake_payload derives the credential from the pairing's
 // registration key and builds the payload); this is the socket, ported from the PS3's send_wakeup
 // (rc_connect.c), which is hardware-verified. Two of its lessons are kept exactly:
 //
@@ -11,7 +11,7 @@
 //     only by probing until the console reports it (discovery's 200 Ok instead of 620 Server Standby).
 //     The PS3 measured 12.3 s from wake to answering (b36), so the default budget is its 30 s.
 
-internal import CLibripcord
+internal import CRipcordEngine
 import Darwin
 
 public enum WakeError: Error, Sendable, CustomStringConvertible {
@@ -32,17 +32,13 @@ public enum LANWake {
     /// Sends one WAKEUP. Returns whether it went out from the vendor's source port.
     @discardableResult
     public static func send(to console: PairedConsole) throws(WakeError) -> Bool {
-        var record = console.record
-        var credential = [CChar](repeating: 0, count: Int(HALYARD_WAKE_CREDENTIAL_MAX))
-        guard withUnsafeBytes(of: &record.registkey, { key in
-            halyard_wake_credential(key.baseAddress!.assumingMemoryBound(to: UInt8.self), record.registkey_length,
-                                    &credential, credential.count)
-        }) == 1 else { throw .noCredential }
-
-        var profile = console.family == .ps5 ? halyard_discovery_profile_ps5 : halyard_discovery_profile_ps4
-        var payload = [CChar](repeating: 0, count: 256)
-        let length = halyard_wake_build_payload(&profile, credential, &payload, payload.count)
-        guard length > 0 else { throw .noCredential }
+        var payload = [UInt8](repeating: 0, count: 256)
+        var length = 0
+        var port: UInt16 = 0
+        var sourcePort: UInt16 = 0
+        let key = console.registrationKey
+        guard ripcord_wake_payload(console.family == .ps5, key, key.count, &payload, payload.count, &length, &port,
+                                   &sourcePort) == RIPCORD_STATUS_OK else { throw .noCredential }
 
         let sock = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP)
         guard sock >= 0 else { throw .socket(operation: "socket", errno: errno) }
@@ -51,7 +47,7 @@ public enum LANWake {
         var local = sockaddr_in()
         local.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
         local.sin_family = sa_family_t(AF_INET)
-        local.sin_port = profile.wake_source_port.bigEndian
+        local.sin_port = sourcePort.bigEndian
         var boundSourcePort = bindSocket(sock, &local)
         if !boundSourcePort {
             local.sin_port = 0
@@ -59,7 +55,7 @@ public enum LANWake {
             boundSourcePort = false
         }
 
-        guard var peer = sockaddr_in.ipv4(console.host, port: profile.port) else {
+        guard var peer = sockaddr_in.ipv4(console.host, port: port) else {
             throw .socket(operation: "inet_pton(\(console.host))", errno: EINVAL)
         }
         let sent = withUnsafePointer(to: &peer) {
@@ -68,7 +64,7 @@ public enum LANWake {
             }
         }
         guard sent >= 0 else { throw .socket(operation: "sendto", errno: errno) }
-        return boundSourcePort && profile.wake_source_port != 0
+        return boundSourcePort && sourcePort != 0
     }
 
     /// Wakes the console if it is resting, and waits until it reports awake. Returns at once if it

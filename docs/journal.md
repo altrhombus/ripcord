@@ -35,6 +35,35 @@ different purpose.
 > anything. The list above is short, it is checkable in one `git log --format=%B | grep`, and it stops
 > growing the moment someone notices — which is the property that actually matters.
 
+### The Mac on the Rust engine: Phase 3's relink, and pairings kept by the host (2026-09-26)
+
+RipcordKit now reaches the protocol only through the Rust engine's `ripcord.h`, and the Mac project no longer
+compiles `libripcord/`. This came ahead of Phase 2's formal exit, at the project owner's direction. The
+parity checklist on hardware is still open, and none of the engine's sequencing has met a console.
+
+- **What moved:**
+  - `ConsoleSession` drives `ripcord_client_*` on its session thread, and pump waits on the engine's own
+    sockets.
+  - The rendezvous link and transports use the client's prepare, begin and register. Account pairing is a
+    rendezvous client that only ever registers.
+  - Discovery, wake, PIN pairing, the account-id normaliser, the seed and pad input all use the engine's
+    exports.
+  - The C-side CryptoKit backend, `EcdhKat`, the `Libripcord` target and the C test console are gone.
+  - The tests that used the C console run against the engine's loopback 9303 console, which now answers
+    the account route's /sess/rgst.
+- **The ABI went to version 4** for what the Mac needed:
+  - a bind address for the rendezvous legs;
+  - the negotiated curve in the result;
+  - the pad button bits;
+  - the wake source port;
+  - clients made only to register, which have no key or console address yet.
+- **Pairings are the host's.** `PairedConsole` is plain Swift. The lab keeps pairings in an owner-only
+  `pairings.json` (`PairingFileStore`), and the app will use the Keychain (`KeychainPairingStore`). The C
+  core's `pairing.txt` is imported once by a Swift reader and renamed `pairing.txt.imported`. The lab's
+  real pairing imported with its key, companion and device id intact.
+- **CI's Mac job** installs Rust, and no longer builds or runs the C ECDH tool. CryptoKit is checked
+  against the vectors through the engine instead.
+
 ### The Rust engine: discovery, wake, the account id and registration in the ABI (2026-09-26)
 
 The rest of what the Mac takes from the C core, apart from the pairing file:

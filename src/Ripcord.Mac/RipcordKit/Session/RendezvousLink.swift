@@ -1,38 +1,38 @@
 // The rendezvous route's meeting point between the session thread and Swift's cloud work.
 //
-// halyard_client.h's "THE RENDEZVOUS ROUTE" interleaves two timelines at exact points: the UDP one, which
-// libripcord runs on the session's one host-owned thread, and the cloud one (sign-in, the session, the push
-// channel, OFFER/ACCEPT/RESULT), which is async Swift. Neither may drive the other's calls: the core is not
+// The rendezvous route (ripcord.h, after halyard_client.h's "THE RENDEZVOUS ROUTE") interleaves two
+// timelines at exact points: the UDP one, which the engine runs on the session's one host-owned thread, and the cloud one (sign-in, the session, the push
+// channel, OFFER/ACCEPT/RESULT), which is async Swift. Neither may drive the other's calls: the engine is not
 // thread-safe and the cloud work must not block a thread. So the session thread prepares the control leg,
 // hands this link to the route's `drive` closure on a task of its own, and then waits on the link, running
 // what the cloud work asks for as it asks for it:
 //
-//   drive (Swift, async)                       the session thread (C)
+//   drive (Swift, async)                       the session thread (the engine)
 //   ------------------------------------       ---------------------------------------------------------
-//                                              halyard_client_rendezvous_prepare  -> link.controlLeg
+//                                              ripcord_client_rendezvous_prepare  -> link.controlLeg
 //   cloud session, command, console's OFFER,
 //   OUR OFFER (link.controlLeg's port/mapping)
-//   transport.openAssociation  --- begin -->   halyard_client_rendezvous_begin
+//   transport.openAssociation  --- begin -->   ripcord_client_rendezvous_begin
 //   OUR ACCEPT
-//   transport.register (optional) - rgst -->   halyard_account_regist_run over halyard_client_rendezvous_exchange
-//   link.proceed(media:onEnd:)  -- proceed ->  halyard_client_connect ... poll_media, repeatedly:
+//   transport.register (optional) - rgst -->   ripcord_client_rendezvous_register
+//   link.proceed(media:onEnd:)  -- proceed ->  ripcord_client_connect ... poll_media, repeatedly:
 //     media(leg) on a task of its own  <----     the A/V leg, bound and STUN-asked
 //     (next OFFER, our OFFER, our ACCEPT)
 //     ... answer ------------------------->      1 with the console's A/V endpoint, and on to the stream
-//                                              halyard_client_pump until the end, halyard_client_destroy
-//   onEnd (leave the cloud session)  <------   after destroy, as step 8 orders
+//                                              ripcord_client_pump until the end, ripcord_client_free
+//   onEnd (leave the cloud session)  <------   after free, as step 8 orders
 //
 // Every hand-over is a Mutex-protected slot, as ConsoleSession's pad and passcode are: Swift posts, the
 // session thread polls, and the answer goes back through a continuation. The session thread takes no
-// Swift lock while in C.
+// Swift lock while in the engine.
 
-internal import CLibripcord
+internal import CRipcordEngine
 import Darwin
 import Foundation
 import Synchronization
 
 /// A STUN server by name. Resolved to IPv4 on the session thread when a rendezvous session starts, since the
-/// core resolves no names (rc_stun.h) - and only then, so building a configuration touches no network.
+/// engine resolves no names - and only then, so building a configuration touches no network.
 public struct StunServer: Sendable, Hashable, CustomStringConvertible {
     public var host: String
     public var port: UInt16
@@ -46,7 +46,7 @@ public struct StunServer: Sendable, Hashable, CustomStringConvertible {
 
     /// StunClient.DefaultServers' three, reordered so the first two are different operators: the core asks
     /// in order until two answer and classifies the NAT from the pair, and two names of one provider can be
-    /// one host, which would make a symmetric NAT look consistent (rc_stun.h, rc_stun_discover_mapping).
+    /// one host, which would make a symmetric NAT look consistent (the engine's STUN gatherer).
     public static let defaults = [
         StunServer(host: "stun.l.google.com", port: 19302),
         StunServer(host: "stun.cloudflare.com", port: 3478),
@@ -55,8 +55,8 @@ public struct StunServer: Sendable, Hashable, CustomStringConvertible {
 
     /// The first IPv4 address of each server that resolves, at most `limit` of them. A name that does not
     /// resolve is skipped, as .NET's ResolveAsync skips it.
-    static func resolve(_ servers: [StunServer], limit: Int = Int(HALYARD_CLIENT_STUN_MAX)) -> [sockaddr_in] {
-        var out: [sockaddr_in] = []
+    static func resolve(_ servers: [StunServer], limit: Int = 4) -> [RipcordEndpoint] {
+        var out: [RipcordEndpoint] = []
         for server in servers where out.count < limit {
             var hints = addrinfo()
             hints.ai_family = AF_INET
@@ -65,14 +65,16 @@ public struct StunServer: Sendable, Hashable, CustomStringConvertible {
             guard getaddrinfo(server.host, String(server.port), &hints, &list) == 0, let first = list else { continue }
             defer { freeaddrinfo(list) }
             if let addr = first.pointee.ai_addr, addr.pointee.sa_family == sa_family_t(AF_INET) {
-                out.append(addr.withMemoryRebound(to: sockaddr_in.self, capacity: 1) { $0.pointee })
+                let v4 = addr.withMemoryRebound(to: sockaddr_in.self, capacity: 1) { $0.pointee }
+                let a = withUnsafeBytes(of: v4.sin_addr.s_addr) { Array($0) }   // network order
+                out.append(RipcordEndpoint(address: (a[0], a[1], a[2], a[3]), port: UInt16(bigEndian: v4.sin_port)))
             }
         }
         return out
     }
 }
 
-/// One of our rendezvous legs, as an OFFER needs it (halyard_client_leg).
+/// One of our rendezvous legs, as an OFFER needs it (RipcordLeg).
 public struct RendezvousLeg: Sendable, Equatable {
     /// The bound socket's port.
     public var localPort: Int
@@ -88,17 +90,17 @@ public struct RendezvousLeg: Sendable, Equatable {
         self.endpointIndependent = endpointIndependent
     }
 
-    init(_ c: halyard_client_leg) {
+    init(_ c: RipcordLeg) {
         localPort = Int(c.local_port)
-        if c.has_reflexive != 0 {
-            let a = c.reflexive_address
-            reflexive = UDPEndpoint(address: "\(a.0).\(a.1).\(a.2).\(a.3)", port: Int(c.reflexive_port))
+        if c.has_reflexive {
+            let a = c.reflexive.address
+            reflexive = UDPEndpoint(address: "\(a.0).\(a.1).\(a.2).\(a.3)", port: Int(c.reflexive.port))
         }
         endpointIndependent = c.endpoint_independent < 0 ? nil : c.endpoint_independent == 1
     }
 }
 
-/// How a session reaches the console over the internet (halyard_client.h, RENDEZVOUS). Everything the
+/// How a session reaches the console over the internet (ripcord.h, RENDEZVOUS). Everything the
 /// cloud tier knows before a connect starts; what it learns during one comes back through the link.
 public struct RendezvousRoute: Sendable {
     /// Asked in order, until two answer, per leg. Empty: no STUN, and each leg offers only its LOCAL candidate.
@@ -144,7 +146,7 @@ public final class RendezvousLink: Sendable {
     /// Lets the stream go ahead: connect, then pump. `media` is the A/V leg's negotiation (for the account
     /// route, `AccountConnection.negotiateMedia`), called once, off the session thread, with our A/V leg; nil
     /// or a throw means there is no A/V path. `onEnd` runs after the session's sockets are closed: leave the
-    /// cloud session there, never before (halyard_client.h, step 8).
+    /// cloud session there, never before (the route's step 8).
     public func proceed(media: @escaping @Sendable (RendezvousLeg) async throws -> MediaEndpoint?,
                         onEnd: @escaping @Sendable () async -> Void) {
         post(.proceed(Proceed(media: media, onEnd: onEnd)))

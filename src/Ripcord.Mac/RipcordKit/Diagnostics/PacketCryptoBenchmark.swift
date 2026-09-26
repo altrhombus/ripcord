@@ -1,20 +1,18 @@
 // How long the stream crypto takes per A/V packet on this machine: the question the plan's "crypto
-// throughput" item asks (docs/macos-plan.md), answered by measurement rather than estimate, and since
-// docs/engine-plan.md's Phase 1, answered for both engines from the same workload.
+// throughput" item asks (docs/macos-plan.md), answered by measurement rather than estimate. Phase 1
+// measured both engines from this workload (C 7.71-8.11 us, Rust 0.53-0.57 us, engine/README.md); since
+// Phase 3 the Mac links only the Rust engine, so only it is measured here.
 //
-// Each iteration does what the demuxer does to every packet (stream_demux's open_packet): verify the
+// Each iteration does what the demuxer does to every packet: verify the
 // 4-byte GMAC tag, then CTR-decrypt the payload. The key position advances by the payload length times
 // 64, so every packet lands in its own GMAC rotation window and pays for a fresh key: the worst case. The
 // keys are synthetic, so nothing here depends on a console.
 
-internal import CLibripcord
 internal import CRipcordEngine
 import Foundation
 
 public enum PacketCryptoBenchmark {
     public enum Engine: String, CaseIterable, Sendable {
-        /// libripcord, the C core the Mac ships on today.
-        case c
         /// The Rust engine, through its generated C ABI.
         case rust
     }
@@ -41,16 +39,6 @@ public enum PacketCryptoBenchmark {
     private static let headerLength = 18   // STREAM_HEADER_LENGTH: the tag and key position live in it
     private static let tagOffset = 10      // the A/V tag offset, in both engines
 
-    private static func makeC(key: [UInt8], iv: [UInt8]) -> Crypto {
-        let ctx = UnsafeMutablePointer<stream_packet_crypto>.allocate(capacity: 1)
-        stream_packet_crypto_init(ctx, key, iv)
-        return Crypto(
-            seal: { stream_packet_crypto_seal(ctx, $0, $1.baseAddress, $1.count, Int32(tagOffset), 0) == 1 },
-            verify: { stream_packet_crypto_verify(ctx, $0, $1.baseAddress, $1.count, Int32(tagOffset), 0) == 1 },
-            decrypt: { stream_packet_crypto_crypt_payload(ctx, $0, $1.baseAddress, $1.count) },
-            release: { ctx.deallocate() })
-    }
-
     private static func makeRust(key: [UInt8], iv: [UInt8]) -> Crypto {
         precondition(RipcordEngineLayout.matches(), "the Rust engine's ABI does not match the header RipcordKit was built against")
         guard let ctx = ripcord_packet_crypto_new(key, iv) else { fatalError("ripcord_packet_crypto_new refused its keys") }
@@ -61,9 +49,9 @@ public enum PacketCryptoBenchmark {
             release: { ripcord_packet_crypto_free(ctx) })
     }
 
-    public static func run(engine: Engine = .c, packets: Int = 20_000, packetBytes: Int = 1426) -> Result {
+    public static func run(engine: Engine = .rust, packets: Int = 20_000, packetBytes: Int = 1426) -> Result {
         let key = [UInt8](repeating: 0x5a, count: 16), iv = [UInt8](repeating: 0xa5, count: 16)
-        let crypto = engine == .c ? makeC(key: key, iv: iv) : makeRust(key: key, iv: iv)
+        let crypto = makeRust(key: key, iv: iv)
         defer { crypto.release() }
 
         var template = [UInt8](repeating: 0, count: packetBytes)
