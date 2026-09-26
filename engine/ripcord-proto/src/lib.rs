@@ -9,4 +9,7 @@
 //! `ProtocolLab vectors` generates the known-answer files `ripcord-kat` checks this crate against.
 #![forbid(unsafe_code)]
 
+pub mod base64;
+pub mod crypto;
+pub mod halyard;
 pub mod stream;

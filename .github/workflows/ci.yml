@@ -213,12 +213,22 @@ jobs:
       # The known-answer vectors are generated from the .NET reference, never committed.
       - name: Generate the known-answer vectors
         run: dotnet run --project tools/Ripcord.ProtocolLab -c Release -- vectors
-      - name: Tests and the vector runner
+      # ripcord-diff builds the C core with its own Python constants generator and runs it beside the Rust
+      # engine. The C core has never been built with MSVC, so the Windows legs leave that crate out.
+      - name: Tests, the vector runner and the differential runs against the C core
+        if: runner.os != 'Windows'
         working-directory: engine
         run: cargo test --workspace --release
+      - name: Tests and the vector runner
+        if: runner.os == 'Windows'
+        working-directory: engine
+        run: cargo test --workspace --release --exclude ripcord-diff
       - name: Clippy and formatting
         working-directory: engine
-        run: cargo clippy --workspace --all-targets -- -D warnings && cargo fmt --check
+        shell: bash
+        run: |
+          exclude=""; [ "$RUNNER_OS" = Windows ] && exclude="--exclude ripcord-diff"
+          cargo clippy --workspace $exclude --all-targets -- -D warnings && cargo fmt --check
       - name: Dependency policy
         if: runner.os == 'Linux'
         uses: EmbarkStudios/cargo-deny-action@v2
