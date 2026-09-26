@@ -111,3 +111,34 @@ fn pin_registration_over_loopback() {
         Err(PinError::Regist(RegistError::Refused { status: 403, reason: Some("80108b10".into()) }))
     );
 }
+
+#[test]
+fn account_registration_over_a_pairing_only_client() {
+    use ripcord_net::testing::LoopbackDgramConsole;
+    use ripcord_proto::testing::scripted_console::{ACCOUNT_REGISTRATION_KEY, client_id, console_id};
+
+    let seed = [0x40u8; 16];
+    let console = LoopbackDgramConsole::start(true, seed, [0x10; 16]).unwrap();
+    let pairing = Pairing::new(true, Vec::new(), [0; 16]);
+    let mut cfg = Config::new(Route::Rendezvous, [0; 4], pairing, Vec::new());
+    cfg.bind_address = Some([127, 0, 0, 1]);
+    cfg.dgram_stage_timeout_us = 5_000_000;
+    cfg.dgram_receive_timeout_us = 200_000;
+    let mut client = Client::new(cfg, Box::new(RustCryptoEcdh), counting());
+    let mut host = Recorder::default();
+    let leg = client.rendezvous_prepare(&mut host).expect("the control leg");
+    assert_ne!(leg.local_port, 0);
+    let peer =
+        Peer { endpoint: Endpoint::new([127, 0, 0, 1], console.port), console_hashed_id: console_id() };
+    assert!(client.rendezvous_begin(client_id(), peer));
+    let record = client.rendezvous_register(&mut host, true, &seed, "1234567890123456", "127.0.0.1").unwrap();
+    assert_eq!(record.registration_key, ACCOUNT_REGISTRATION_KEY);
+    let report = console.report();
+    assert_eq!(report.rgst_requests, 1);
+    assert!(report.rgst_field_ok, "the console read our field under the seed key");
+    assert!(report.inits >= 1);
+
+    // With no key it was made only to register: its connect ends at once, saying so.
+    assert!(client.connect(&mut host) < Stage::ControlOpen);
+    assert!(client.is_ended());
+}

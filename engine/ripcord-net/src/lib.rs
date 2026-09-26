@@ -105,7 +105,12 @@ fn endpoint(a: SocketAddr) -> Option<Endpoint> {
     }
 }
 
-fn open_udp(socket: Socket, local_port: u16, rcvbuf: usize) -> std::io::Result<(UdpSocket, usize)> {
+fn open_udp(
+    socket: Socket,
+    bind: Ipv4Addr,
+    local_port: u16,
+    rcvbuf: usize,
+) -> std::io::Result<(UdpSocket, usize)> {
     let s = socket2::Socket::new(socket2::Domain::IPV4, socket2::Type::DGRAM, Some(socket2::Protocol::UDP))?;
     if socket == Socket::Arm {
         s.set_broadcast(true)?;
@@ -114,7 +119,7 @@ fn open_udp(socket: Socket, local_port: u16, rcvbuf: usize) -> std::io::Result<(
         // A hint: the granted size is reported, since a platform may cap it.
         let _ = s.set_recv_buffer_size(rcvbuf);
     }
-    s.bind(&SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, local_port)).into())?;
+    s.bind(&SocketAddr::V4(SocketAddrV4::new(bind, local_port)).into())?;
     s.set_nonblocking(true)?;
     let granted = s.recv_buffer_size().unwrap_or(0);
     Ok((s.into(), granted))
@@ -129,13 +134,17 @@ pub struct Client {
     want_passcode: Option<u32>,
     want_media: Option<Leg>,
     control_leg: Option<Leg>,
+    /// Where the rendezvous legs bind (the config's `bind_address`); the LAN sockets bind every interface.
+    leg_bind: Ipv4Addr,
     rx: Vec<u8>,
 }
 
 impl Client {
     /// `random` must be the platform's CSPRNG; `ecdh` its key agreement.
     pub fn new(config: Config, ecdh: Box<dyn Ecdh + Send>, random: RandomSource) -> Self {
+        let leg_bind = config.bind_address.map_or(Ipv4Addr::UNSPECIFIED, Ipv4Addr::from);
         Self {
+            leg_bind,
             session: Session::new(config, ecdh, random),
             udp: HashMap::new(),
             tcp: None,
@@ -168,14 +177,20 @@ impl Client {
         while let Some(io) = self.session.poll_io() {
             let now = self.now();
             match io {
-                Io::UdpOpen { socket, local_port, rcvbuf } => match open_udp(socket, local_port, rcvbuf) {
-                    Ok((s, granted)) => {
-                        let port = s.local_addr().map_or(0, |a| a.port());
-                        self.udp.insert(socket, s);
-                        self.session.on_udp_opened(now, socket, port, granted);
+                Io::UdpOpen { socket, local_port, rcvbuf } => {
+                    let bind = match socket {
+                        Socket::ControlLeg | Socket::MediaLeg => self.leg_bind,
+                        _ => Ipv4Addr::UNSPECIFIED,
+                    };
+                    match open_udp(socket, bind, local_port, rcvbuf) {
+                        Ok((s, granted)) => {
+                            let port = s.local_addr().map_or(0, |a| a.port());
+                            self.udp.insert(socket, s);
+                            self.session.on_udp_opened(now, socket, port, granted);
+                        }
+                        Err(_) => self.session.on_udp_failed(now, socket),
                     }
-                    Err(_) => self.session.on_udp_failed(now, socket),
-                },
+                }
                 Io::UdpSend { socket, to, data } => {
                     // Best-effort, as UDP is: a full buffer or an unreachable host drops the datagram.
                     if let Some(s) = self.udp.get(&socket) {
