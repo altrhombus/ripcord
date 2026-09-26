@@ -35,6 +35,33 @@ different purpose.
 > anything. The list above is short, it is checkable in one `git log --format=%B | grep`, and it stops
 > growing the moment someone notices — which is the property that actually matters.
 
+### The Rust engine, Phase 2's first layer: crypto, the Halyard derivations, and the C core as a second opinion (2026-09-26)
+
+`ripcord-proto` now holds the control plane (the KDF for both families, context keys, field IVs, and the
+CFB and OFB field ciphers), PIN and account registration, the account seed and its strict base64, and key
+agreement behind an `Ecdh` trait with a RustCrypto backend. `build.rs` generates the interop constants
+from the one committed bundle, with `gen_constants.py`'s checks, so the engine keeps no copy of them.
+
+- **Every vector file passes.** Control 172, registration 97, account pairing 81, session 34, and the
+  stream plane's 65. The 8 `accountrgst` lines are deferred, and every run lists them, because they
+  build the `/sess/rgst` body. That is the layer where the engine first holds `Client-Type`, and it has
+  to name that copy in `CLAUDE.md` and `BundledInteropConstantsTests` in the same change.
+- **A mutation check,** so a green first run is not taken on trust. Changing one KDF constant fails 54
+  control lines; changing the account-wrap bias fails 16.
+- **`ripcord-diff` runs the C core beside the Rust engine.** It builds `libripcord` with the `cc` crate
+  and constants from its own `gen_constants.py`, behind a small shim that keeps every C struct on the C
+  side. Packet crypto, FEC, the control plane, registration and seed decoding agree on thousands of
+  generated cases each. The demuxer agrees event for event and counter for counter on 300 hostile
+  streams, and coverage assertions confirm the streams reach every path: 7,300 frames, 3,000 loss
+  reports and 4,900 authentication failures across the two seams.
+- **Its first failure was the harness, and it was worth having.** Parallel test threads decoded FEC in
+  C at the same time, and the decoder's `static` matrices, which its source says are single-threaded
+  only, corrupted each other. The harness now serialises every call into C. The Rust decoder's scratch
+  belongs to its caller.
+- **Two policy notes.** `ripcord-diff` uses `unsafe`, which the plan reserves for `ripcord-ffi`. It is
+  test tooling, never linked into a host, and the README says so. cargo-deny now allows BSD-3-Clause,
+  for `subtle`, the constant-time helpers under RustCrypto's curves.
+
 ### The Rust engine's Phase 1 spike: the stream plane, and the gate on the Mac (2026-09-25)
 
 `engine/` is a Cargo workspace. `ripcord-proto` holds the stream plane, ported from `libripcord/stream/`:
