@@ -467,6 +467,11 @@ impl Session {
             return;
         }
         self.started = true;
+        if self.cfg.pairing.registration_key.is_empty() {
+            // A client made only to register (the account route's pairing) has no key to connect with.
+            self.log(LogLevel::Error, "there is no registration key to connect with: pair first");
+            self.request_end(EndReason::ChannelError);
+        }
         if self.end.is_none() {
             self.start_control(now_us);
         }
@@ -1841,6 +1846,7 @@ impl Session {
             self.request_end(EndReason::ChannelError);
             return;
         };
+        self.outcome.curve = Some(neg.curve());
         self.negotiator = Some(neg);
         let _ = self.stream.as_mut().map(|s| s.send(now, CHANNEL_SESSION, &request));
         self.step = Step::KeysReply { deadline: self.stream_box };

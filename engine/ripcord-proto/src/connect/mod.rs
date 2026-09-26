@@ -267,6 +267,9 @@ pub struct Config {
     pub stun_timeout_us: u64,
     pub control_local_port: u16,
     pub media_local_port: u16,
+    /// The address both rendezvous legs bind; `None` binds every interface. A test binds 127.0.0.1. The
+    /// driver applies it; the session never names an address of its own.
+    pub bind_address: Option<[u8; 4]>,
     pub media_offer_timeout_us: u64,
     pub dgram_stage_timeout_us: u64,
     pub dgram_receive_timeout_us: u64,
@@ -307,6 +310,7 @@ impl Config {
             stun_timeout_us: crate::net::stun::DEFAULT_TIMEOUT_US,
             control_local_port: 0,
             media_local_port: 0,
+            bind_address: None,
             media_offer_timeout_us: 30_000_000,
             dgram_stage_timeout_us: 30_000_000,
             dgram_receive_timeout_us: 5_000_000,
@@ -341,6 +345,8 @@ pub struct Outcome {
     pub senkusha_ok: bool,
     pub version_rtt_ms: Option<u32>,
     pub stream_version: u32,
+    /// The curve the stream's key agreement ran on.
+    pub curve: Option<crate::crypto::ecdh::Curve>,
     pub reply_reject: Option<crate::takion::negotiator::Reject>,
     pub stream_info_parsed: bool,
     pub stream_width: u32,

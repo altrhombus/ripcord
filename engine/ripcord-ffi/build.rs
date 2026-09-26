@@ -38,6 +38,7 @@ fn main() {
             "RipcordScriptedConsoleCounts",
             "RipcordClientStage",
             "RipcordClientEnd",
+            "RipcordDgramConsoleReport",
         ])
         .generate_csharp_file(include.join("NativeMethods.g.cs"))
         .expect("generate NativeMethods.g.cs");

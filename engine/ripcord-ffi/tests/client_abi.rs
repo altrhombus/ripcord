@@ -106,6 +106,7 @@ fn config(ports: (u16, u16, u16), key: &[u8], device: &[u8], companion: [u8; 16]
         stun_timeout_ms: 0,
         control_local_port: 0,
         media_local_port: 0,
+        bind_address: [0; 4],
         media_offer_timeout_ms: 0,
         dgram_stage_timeout_ms: 0,
         dgram_receive_timeout_ms: 0,
@@ -171,6 +172,7 @@ fn a_session_through_the_c_abi() {
     assert!(result.senkusha_ok);
     assert!(result.disconnect_sent);
     assert!(result.input_state_sent >= 1);
+    assert_eq!(result.curve, RIPCORD_CURVE_P521);
     assert_eq!(recorder.passcodes_asked, 1);
     assert_eq!(recorder.info, Some((1280, 720)));
     assert!(recorder.keyframes >= 15 && recorder.stats >= 1 && recorder.lines > 0);
@@ -226,5 +228,5 @@ fn bad_configs_are_refused_and_layouts_are_reported() {
     }
     assert_eq!(ripcord_struct_size(RipcordStructId::ClientConfig as u32), size_of::<RipcordClientConfig>());
     assert_eq!(ripcord_struct_size(RipcordStructId::ClientResult as u32), size_of::<RipcordClientResult>());
-    assert_eq!(ripcord_api_version(), 3);
+    assert_eq!(ripcord_api_version(), 4);
 }

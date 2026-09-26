@@ -110,8 +110,10 @@ pub unsafe extern "C" fn ripcord_discovery_parse(
     })
 }
 
-/// The wake datagram for a pairing's registration key (the record's bytes, which are hex text), and the
-/// port it goes to. `Rejected` for a key that is not a 32-bit hex number.
+/// The wake datagram for a pairing's registration key (the record's bytes, which are hex text), the port
+/// it goes to, and the source port to send it from where it can be bound (a resting console may honour
+/// only the vendor's; fall back to an ephemeral port rather than not waking). `Rejected` for a key that is
+/// not a 32-bit hex number.
 ///
 /// # Safety
 /// `registration_key` valid for `key_length` bytes; `out` for `capacity`; the others for writes.
@@ -124,6 +126,7 @@ pub unsafe extern "C" fn ripcord_wake_payload(
     capacity: usize,
     out_length: *mut usize,
     out_port: *mut u16,
+    out_source_port: *mut u16,
 ) -> RipcordStatus {
     guard(RipcordStatus::Panicked, || {
         // SAFETY: forwarded.
@@ -131,7 +134,7 @@ pub unsafe extern "C" fn ripcord_wake_payload(
         let (Some(key), Some(out)) = args else {
             return RipcordStatus::InvalidArgument;
         };
-        if out_length.is_null() || out_port.is_null() {
+        if out_length.is_null() || out_port.is_null() || out_source_port.is_null() {
             return RipcordStatus::InvalidArgument;
         }
         let Some(credential) = discovery::wake_credential(key) else { return RipcordStatus::Rejected };
@@ -145,6 +148,7 @@ pub unsafe extern "C" fn ripcord_wake_payload(
         unsafe {
             out_length.write(payload.len());
             out_port.write(profile.port);
+            out_source_port.write(profile.wake_source_port);
         }
         RipcordStatus::Ok
     })
@@ -450,6 +454,160 @@ pub unsafe extern "C" fn ripcord_client_rendezvous_register(
         });
         // SAFETY: non-null, checked above.
         unsafe { out.write(result_of(false, r)) };
+        RipcordStatus::Ok
+    })
+}
+
+// ---- test support: the account route's console, on loopback ----
+
+/// The scripted 9303 console on a loopback socket, answering the account route's /sess/rgst under a seed.
+/// Opaque. Test builds only (`test-support`).
+#[cfg(feature = "test-support")]
+pub struct RipcordLoopbackDgramConsole {
+    inner: ripcord_net::testing::LoopbackDgramConsole,
+}
+
+/// What the loopback 9303 console saw. `requests` holds each HTTP request's path as a code, in order: 1
+/// /sess/rgst, 2 /sess/init, 3 /sess/ctrl, 0 anything else.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct RipcordDgramConsoleReport {
+    pub inits: u32,
+    pub rgst_requests: u32,
+    pub rgst_field_ok: bool,
+    pub request_count: u32,
+    pub requests: [u8; 4],
+}
+
+/// Starts the console on 127.0.0.1 and writes its port. The ids a client needs to reach it are
+/// [`ripcord_loopback_dgram_console_ids`]'s.
+///
+/// # Safety
+/// `seed` and `nonce` valid for 16 bytes; `out_port` valid for a write.
+#[cfg(feature = "test-support")]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ripcord_loopback_dgram_console_start(
+    is_ps5: bool,
+    seed: *const u8,
+    nonce: *const u8,
+    out_port: *mut u16,
+) -> *mut RipcordLoopbackDgramConsole {
+    guard(std::ptr::null_mut(), || {
+        // SAFETY: forwarded.
+        let args = unsafe { (bytes(seed, 16), bytes(nonce, 16)) };
+        let (Some(seed), Some(nonce), false) = (args.0, args.1, out_port.is_null()) else {
+            return std::ptr::null_mut();
+        };
+        let Ok(inner) = ripcord_net::testing::LoopbackDgramConsole::start(
+            is_ps5,
+            seed.try_into().expect("16"),
+            nonce.try_into().expect("16"),
+        ) else {
+            return std::ptr::null_mut();
+        };
+        // SAFETY: non-null, checked above.
+        unsafe { out_port.write(inner.port) };
+        Box::into_raw(Box::new(RipcordLoopbackDgramConsole { inner }))
+    })
+}
+
+/// The scripted console's localHashedId and the one it expects of its client, 20 bytes each.
+///
+/// # Safety
+/// Both valid for 20 bytes.
+#[cfg(feature = "test-support")]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ripcord_loopback_dgram_console_ids(
+    console_id: *mut u8,
+    client_id: *mut u8,
+) -> RipcordStatus {
+    use ripcord_proto::testing::scripted_console;
+    // SAFETY: forwarded.
+    let args = unsafe { (bytes_mut(console_id, 20), bytes_mut(client_id, 20)) };
+    let (Some(c), Some(k)) = args else { return RipcordStatus::InvalidArgument };
+    c.copy_from_slice(&scripted_console::console_id());
+    k.copy_from_slice(&scripted_console::client_id());
+    RipcordStatus::Ok
+}
+
+/// # Safety
+/// `console` from [`ripcord_loopback_dgram_console_start`]; `out` valid for a write.
+#[cfg(feature = "test-support")]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ripcord_loopback_dgram_console_report(
+    console: *const RipcordLoopbackDgramConsole,
+    out: *mut RipcordDgramConsoleReport,
+) -> RipcordStatus {
+    guard(RipcordStatus::Panicked, || {
+        // SAFETY: valid per the contract.
+        let (Some(c), false) = (unsafe { console.as_ref() }, out.is_null()) else {
+            return RipcordStatus::InvalidArgument;
+        };
+        let r = c.inner.report();
+        let mut report = RipcordDgramConsoleReport {
+            inits: r.inits as u32,
+            rgst_requests: r.rgst_requests as u32,
+            rgst_field_ok: r.rgst_field_ok,
+            request_count: r.requests.len() as u32,
+            requests: [0; 4],
+        };
+        for (slot, path) in report.requests.iter_mut().zip(&r.requests) {
+            *slot = match path.as_str() {
+                "/sess/rgst" => 1,
+                "/sess/init" => 2,
+                "/sess/ctrl" => 3,
+                _ => 0,
+            };
+        }
+        // SAFETY: non-null, checked above.
+        unsafe { out.write(report) };
+        RipcordStatus::Ok
+    })
+}
+
+/// # Safety
+/// `console` null or from [`ripcord_loopback_dgram_console_start`], not used after this call.
+#[cfg(feature = "test-support")]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ripcord_loopback_dgram_console_stop(console: *mut RipcordLoopbackDgramConsole) {
+    guard((), || {
+        if !console.is_null() {
+            // SAFETY: from Box::into_raw, freed once.
+            drop(unsafe { Box::from_raw(console) });
+        }
+    })
+}
+
+/// customData1 as a console publishes it: `seed` sealed under data1/data2, double base64, NUL-terminated
+/// into `out`. The console's side, for tests (`test-support`).
+///
+/// # Safety
+/// `data1`, `data2` and `seed` valid for 16 bytes; `out` for `capacity`.
+#[cfg(feature = "test-support")]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ripcord_account_seed_seal(
+    is_ps5: bool,
+    data1: *const u8,
+    data2: *const u8,
+    seed: *const u8,
+    out: *mut u8,
+    capacity: usize,
+) -> RipcordStatus {
+    guard(RipcordStatus::Panicked, || {
+        // SAFETY: forwarded.
+        let args = unsafe { (bytes(data1, 16), bytes(data2, 16), bytes(seed, 16), bytes_mut(out, capacity)) };
+        let (Some(d1), Some(d2), Some(seed), Some(out)) = args else { return RipcordStatus::InvalidArgument };
+        let sealed = account_seed::seal(
+            is_ps5,
+            &d1.try_into().expect("16"),
+            &d2.try_into().expect("16"),
+            &seed.try_into().expect("16"),
+        );
+        let text = account_seed::encode_custom_data1(&sealed);
+        if text.len() >= out.len() {
+            return RipcordStatus::InvalidArgument;
+        }
+        write_text(&text, out);
         RipcordStatus::Ok
     })
 }

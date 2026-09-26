@@ -41,6 +41,29 @@ pub const RIPCORD_CMD_DISCONNECT: u32 = 1 << 2;
 /// With DISCONNECT: ask the console to rest first.
 pub const RIPCORD_CMD_REST_CONSOLE: u32 = 1 << 3;
 
+/// Controller button bits for [`RipcordInputState::buttons`]: the wire's own names. Literals, since the
+/// header generator cannot follow a constant into another crate; `pad_bits_match_the_writer` holds them to
+/// `ripcord_proto::input`.
+pub const RIPCORD_PAD_CROSS: u32 = 1 << 0;
+pub const RIPCORD_PAD_CIRCLE: u32 = 1 << 1;
+pub const RIPCORD_PAD_SQUARE: u32 = 1 << 2;
+pub const RIPCORD_PAD_TRIANGLE: u32 = 1 << 3;
+pub const RIPCORD_PAD_DPAD_UP: u32 = 1 << 4;
+pub const RIPCORD_PAD_DPAD_DOWN: u32 = 1 << 5;
+pub const RIPCORD_PAD_DPAD_LEFT: u32 = 1 << 6;
+pub const RIPCORD_PAD_DPAD_RIGHT: u32 = 1 << 7;
+pub const RIPCORD_PAD_L1: u32 = 1 << 8;
+pub const RIPCORD_PAD_R1: u32 = 1 << 9;
+/// With a zero trigger level, fully pressed.
+pub const RIPCORD_PAD_L2: u32 = 1 << 10;
+pub const RIPCORD_PAD_R2: u32 = 1 << 11;
+pub const RIPCORD_PAD_OPTIONS: u32 = 1 << 12;
+pub const RIPCORD_PAD_CREATE: u32 = 1 << 13;
+pub const RIPCORD_PAD_PS: u32 = 1 << 14;
+pub const RIPCORD_PAD_L3: u32 = 1 << 15;
+pub const RIPCORD_PAD_R3: u32 = 1 << 16;
+pub const RIPCORD_PAD_TOUCHPAD: u32 = 1 << 17;
+
 /// The furthest point a session reached, `halyard_client_stage`'s values.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -177,6 +200,8 @@ pub struct RipcordClientConfig {
     pub stun_timeout_ms: u32,
     pub control_local_port: u16,
     pub media_local_port: u16,
+    /// The address both rendezvous legs bind, network order; 0.0.0.0 binds every interface.
+    pub bind_address: [u8; 4],
     pub media_offer_timeout_ms: u32,
     pub dgram_stage_timeout_ms: u32,
     pub dgram_receive_timeout_ms: u32,
@@ -286,6 +311,8 @@ pub struct RipcordClientResult {
     /// -1 when not measured.
     pub version_rtt_ms: i32,
     pub stream_version: u32,
+    /// `RIPCORD_CURVE_*` of the stream's key agreement; 0 before it ran.
+    pub curve: u32,
     pub stream_info_parsed: bool,
     pub stream_width: u32,
     pub stream_height: u32,
@@ -533,7 +560,12 @@ unsafe fn config_of(c: &RipcordClientConfig) -> Option<Config> {
     let registration_key = unsafe { bytes(c.registration_key, c.registration_key_length) }?.to_vec();
     // SAFETY: forwarded.
     let device_id = unsafe { bytes(c.device_id, c.device_id_length) }?.to_vec();
-    if registration_key.is_empty() || c.console == [0; 4] {
+    // An empty registration key is a client made only to register (the account route's pairing): its
+    // connect ends at once, saying so. A LAN client has nothing to do without one.
+    // A pairing-only client learns the console's address from begin, so it may have none yet.
+    if registration_key.is_empty() && route == Route::Local
+        || c.console == [0; 4] && !registration_key.is_empty()
+    {
         return None;
     }
     let mut pairing = Pairing::new(c.is_ps5, registration_key, c.companion);
@@ -581,6 +613,7 @@ unsafe fn config_of(c: &RipcordClientConfig) -> Option<Config> {
     cfg.stun_timeout_us = us(c.stun_timeout_ms, cfg.stun_timeout_us);
     cfg.control_local_port = c.control_local_port;
     cfg.media_local_port = c.media_local_port;
+    cfg.bind_address = (c.bind_address != [0; 4]).then_some(c.bind_address);
     cfg.media_offer_timeout_us = us(c.media_offer_timeout_ms, cfg.media_offer_timeout_us);
     cfg.dgram_stage_timeout_us = us(c.dgram_stage_timeout_ms, cfg.dgram_stage_timeout_us);
     cfg.dgram_receive_timeout_us = us(c.dgram_receive_timeout_ms, cfg.dgram_receive_timeout_us);
@@ -599,8 +632,9 @@ unsafe fn config_of(c: &RipcordClientConfig) -> Option<Config> {
 
 /// A new session from a config (copied; the host may free it after this call) and callbacks (copied).
 /// `ecdh` null uses the engine's RustCrypto backend; `random` is required. Opens nothing. Null for a bad
-/// argument: no registration key, no console address, an unknown route, a null `video_frame` or `fill`,
-/// or a rendezvous config without `poll_media`. Free with [`ripcord_client_free`].
+/// argument: no console address, no registration key on the LAN (a rendezvous client may have none, to
+/// register with; its connect then ends at once), an unknown route, a null `video_frame` or `fill`, or a
+/// rendezvous config without `poll_media`. Free with [`ripcord_client_free`].
 ///
 /// # Safety
 /// Every pointer valid per its field's documentation; the callbacks do not unwind.
@@ -752,6 +786,7 @@ pub unsafe extern "C" fn ripcord_client_result(
             senkusha_ok: o.senkusha_ok,
             version_rtt_ms: o.version_rtt_ms.map_or(-1, |v| v as i32),
             stream_version: o.stream_version,
+            curve: o.curve.map_or(0, super::curve_id),
             stream_info_parsed: o.stream_info_parsed,
             stream_width: o.stream_width,
             stream_height: o.stream_height,
@@ -957,4 +992,36 @@ pub unsafe extern "C" fn ripcord_loopback_console_stop(console: *mut RipcordLoop
             drop(unsafe { Box::from_raw(console) });
         }
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pad_bits_match_the_writer() {
+        let pairs = [
+            (RIPCORD_PAD_CROSS, input::CROSS),
+            (RIPCORD_PAD_CIRCLE, input::CIRCLE),
+            (RIPCORD_PAD_SQUARE, input::SQUARE),
+            (RIPCORD_PAD_TRIANGLE, input::TRIANGLE),
+            (RIPCORD_PAD_DPAD_UP, input::DPAD_UP),
+            (RIPCORD_PAD_DPAD_DOWN, input::DPAD_DOWN),
+            (RIPCORD_PAD_DPAD_LEFT, input::DPAD_LEFT),
+            (RIPCORD_PAD_DPAD_RIGHT, input::DPAD_RIGHT),
+            (RIPCORD_PAD_L1, input::L1),
+            (RIPCORD_PAD_R1, input::R1),
+            (RIPCORD_PAD_L2, input::L2),
+            (RIPCORD_PAD_R2, input::R2),
+            (RIPCORD_PAD_OPTIONS, input::OPTIONS),
+            (RIPCORD_PAD_CREATE, input::CREATE),
+            (RIPCORD_PAD_PS, input::PS),
+            (RIPCORD_PAD_L3, input::L3),
+            (RIPCORD_PAD_R3, input::R3),
+            (RIPCORD_PAD_TOUCHPAD, input::TOUCHPAD),
+        ];
+        for (abi, writer) in pairs {
+            assert_eq!(abi, writer);
+        }
+    }
 }
