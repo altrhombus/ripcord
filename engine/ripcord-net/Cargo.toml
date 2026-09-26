@@ -1,0 +1,15 @@
+[package]
+name = "ripcord-net"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "The I/O driver: runs ripcord-proto's connect sequence on std::net sockets, on the caller's thread"
+
+[dependencies]
+ripcord-proto = { path = "../ripcord-proto" }
+# SO_RCVBUF, which std::net does not expose: the stream socket asks for 4 MB and reports what it got.
+socket2 = "0.6"
+
+[dev-dependencies]
+ripcord-proto = { path = "../ripcord-proto", features = ["scripted-console"] }

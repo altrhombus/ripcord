@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["ripcord-proto", "ripcord-ffi", "ripcord-kat", "ripcord-diff"]
+members = ["ripcord-proto", "ripcord-net", "ripcord-ffi", "ripcord-kat", "ripcord-diff"]
 
 [workspace.package]
 edition = "2024"

@@ -456,6 +456,32 @@ pub fn parse_protocol_version_ack(data: &[u8]) -> Option<u32> {
     found
 }
 
+/// The console's PROTOCOL_VERSION_ACK. Only the scripted console sends one.
+pub fn build_protocol_version_ack(version: u32) -> Vec<u8> {
+    let mut inner = Vec::new();
+    put_varint_field(&mut inner, 1, u64::from(version));
+    let mut out = Vec::new();
+    put_varint_field(&mut out, F_MSG_TYPE, u64::from(PROTOCOL_VERSION_ACK));
+    put_len_field(&mut out, F_MSG_PROTOCOL_VERSION_ACK, &inner);
+    out
+}
+
+/// The console's STREAM_INFO with one resolution entry, as [`parse_stream_info`] reads it. Only the
+/// scripted console sends one.
+pub fn build_stream_info(width: u32, height: u32, video_header: &[u8], audio_header: &[u8]) -> Vec<u8> {
+    let mut resolution = Vec::new();
+    put_varint_field(&mut resolution, 1, u64::from(width));
+    put_varint_field(&mut resolution, 2, u64::from(height));
+    put_len_field(&mut resolution, 3, video_header);
+    let mut p = Vec::new();
+    put_len_field(&mut p, 1, &resolution);
+    put_len_field(&mut p, 2, audio_header);
+    let mut out = Vec::new();
+    put_varint_field(&mut out, F_MSG_TYPE, u64::from(STREAM_INFO));
+    put_len_field(&mut out, F_MSG_STREAM_INFO, &p);
+    out
+}
+
 // ---- bandwidth probe and connection quality (channel 0x0008) ----
 
 fn wrap_bandwidth_probe(command: u32, field: u32, inner: &[u8]) -> Vec<u8> {

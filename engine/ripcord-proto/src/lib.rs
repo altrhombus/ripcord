@@ -10,10 +10,12 @@
 #![forbid(unsafe_code)]
 
 pub mod base64;
+pub mod connect;
 pub mod crypto;
 pub mod dgram;
 pub mod discovery;
 pub mod halyard;
+pub mod input;
 pub mod net;
 pub mod sess;
 pub mod stream;
