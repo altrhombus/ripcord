@@ -203,3 +203,42 @@ that layer when it lands.
 The comparison found two more C bugs, both fixed. `halyard_regist_parse_record` checked `rc_hex_decode`
 for 0 when failure is `(size_t)-1`, accepting a malformed key with a length of `SIZE_MAX`.
 `halyard_regist_split_response` never read an `RP-Application-Reason` sent as the last header.
+
+## STUN, 9303 and the rendezvous route: where the port follows .NET and where it follows C (2026-09-26)
+
+The 9303 association matches rule for rule in the two references, and `dgram-transport.kat` holds both
+to it byte for byte, so the association has no row here. The differences are in what surrounds it.
+
+| Topic | Rust follows | Why |
+|---|---|---|
+| STUN parser | `StunMessage`, which C ports: XOR-MAPPED (both codes) before MAPPED, IPv4 and IPv6, keeping what was found before an overrun | .NET's production path, `StunReflexiveAddress`, reads XOR-mapped IPv4 only. The lenient parser is a superset of it, and an IPv6 mapping is never offered (`Address::ipv4`) |
+| STUN timing | 3 attempts of 500 ms per server, a fresh id each time, as `StunClient` and C do | `StunReflexiveAddress` makes one 3 s attempt per server; a host that wants that passes it |
+| STUN socket | the host's choice: the gatherer never names a socket | C asks on the socket that will carry the traffic, .NET on a throwaway socket it binds again later |
+| RFC 3489 16-byte ids | not carried | C keeps them for a port; no Halyard route uses them |
+| Candidate addresses | C: strict dotted-quad IPv4 | .NET's `IPAddress.TryParse` accepts IPv6, short and octal forms, and then maps the address to IPv4 |
+| Candidate fallback | C: the choice is always an index, and the caller applies consoleHost:9303 when it does not parse | .NET's transport and its ACCEPT can pick different candidates when none parses (roadmap) |
+| Inbound bound | C: 16 KB, and a chunk that would overflow it is left unacked so the peer resends | .NET buffers without limit |
+| An oversized payload or cookie echo | C: a status or an `Unhandled` event | .NET throws out of `Send` or `OnDatagram` |
+| A close arriving with data | C: latched | .NET's `ReceiveBytesAsync` loses it |
+| /sess response wait | .NET: each stage's own 30 s | C waits 5 s from the start of each response. The overall deadline belongs to the connect sequence |
+| Keep-alive after 30 s of silence | C: the channel keeps running | .NET's loop ends silently when a read times out (roadmap) |
+| PROBE_REPORT slots | .NET: the measured MTU and RTT, RTT clamped to 0–1000 ms | C sends a fixed 1454 and the version exchange's RTT. .NET notes the console ignores both |
+| Opener's request word | both: 0x40, [X] | In no capture; the vendor client sends a small growing counter. The two references and the vectors change together |
+
+Sign-in policy (re-prompting on silence, a stored passcode, what an accepted passcode without a
+SESSION_ID means) and peer filtering belong to the connect sequence, not to this layer.
+
+## STUN, 9303 and the rendezvous route, measured (2026-09-26)
+
+| What | Result |
+|---|---|
+| `dgram-transport.kat` | 177 of 177: the initiator, responder and wrap transcripts, every send and event byte for byte |
+| Differential against the C core | 20,000 generated STUN messages (over 3,000 carrying an address), 10,000 candidate choices with their address parses, and 300 generated operation sequences of 80 steps on both associations, sharing the transcripts' counting random source |
+| Control plane | Scripted-console tests run /sess/init, the reopened connection, /sess/ctrl with RP-ConPath 3 and the padded Host, a heartbeat answered on the kept connection, and the console's close. A missing nonce stops before /sess/ctrl |
+| Mutation check | Changing the opener's request word fails both the transcripts and the association differential |
+
+The route's order, which the connect sequence will drive: STUN on the control leg, then signaling (the
+host's), then `Channel::begin` between our OFFER and our ACCEPT, an optional `Exchange` carrying /sess/rgst,
+then `ControlPlane`. The A/V leg repeats STUN and signaling for the media OFFER, and `Channel::establish`
+on the media socket is the hole punch before the probe, the PROBE_REPORT (`ctrl::probe_report_plaintext`,
+sent through `ControlSession::send_field`), the STREAM_READY wait and Takion.

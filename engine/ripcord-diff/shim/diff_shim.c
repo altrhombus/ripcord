@@ -467,3 +467,104 @@ size_t diff_sess_response(const char *data, size_t length, int *status, const ch
     *has = halyard_sess_response_header(data, &r, name, out, size);
     return n;
 }
+
+/* ---- STUN, candidates, and the 9303 association ---- */
+#include "../../../libripcord/net/rc_stun.h"
+#include "../../../libripcord/session/halyard_wan_candidates.h"
+
+/* 0 none; else family, port, 16 address bytes. Returns 1 if it parsed as STUN. */
+int diff_stun_parse(const uint8_t *data, size_t length, uint16_t *type, uint8_t txid[12], int *has, uint8_t *family,
+                    uint16_t *port, uint8_t address[16])
+{
+    rc_stun_message m;
+    if (!rc_stun_parse(data, length, &m))
+        return 0;
+    *type = m.type;
+    memcpy(txid, m.transaction_id, 12);
+    *has = m.has_mapped_address;
+    *family = m.mapped_address.family;
+    *port = m.mapped_address.port;
+    memcpy(address, m.mapped_address.address, 16);
+    return 1;
+}
+
+int diff_parse_ipv4(const char *text, uint8_t out[4]) { return halyard_wan_parse_ipv4(text, out); }
+
+int diff_choose_candidate(const char (*addresses)[64], size_t count, const uint8_t *iface, size_t iface_count,
+                          const char *host)
+{
+    halyard_wan_candidate c[16];
+    halyard_wan_interface nic[4];
+    size_t i;
+    for (i = 0; i < count && i < 16; i++) {
+        memset(&c[i], 0, sizeof(c[i]));
+        snprintf(c[i].type, sizeof(c[i].type), "X");
+        snprintf(c[i].address, sizeof(c[i].address), "%s", addresses[i]);
+    }
+    for (i = 0; i < iface_count && i < 4; i++) {
+        memcpy(nic[i].address, iface + 8 * i, 4);
+        memcpy(nic[i].netmask, iface + 8 * i + 4, 4);
+    }
+    return halyard_wan_choose_candidate(c, count, nic, iface_count, host);
+}
+
+typedef struct {
+    halyard_dgram_assoc assoc;
+    uint8_t next;
+    diff_emit_fn emit;   /* every send */
+    diff_event_fn event; /* kind, a = opened_by_peer, data = whole inbound for DataReceived */
+    void *user;
+} diff_assoc;
+
+static void assoc_send(void *ctx, const uint8_t *d, size_t n) { diff_assoc *a = ctx; a->emit(a->user, d, n); }
+static void assoc_event(void *ctx, const halyard_dgram_event *e)
+{
+    diff_assoc *a = ctx;
+    a->event(a->user, (int)e->kind, e->opened_by_peer, (int)e->chunk_type, e->data, e->data_length);
+}
+static int assoc_random(void *ctx, uint8_t *out, size_t n)
+{
+    diff_assoc *a = ctx;
+    size_t i;
+    for (i = 0; i < n; i++)
+        out[i] = a->next++;
+    return 1;
+}
+
+void *diff_assoc_new(const uint8_t local[20], const uint8_t peer[20], const uint8_t address[4], uint16_t port,
+                     diff_emit_fn emit, diff_event_fn event, void *user)
+{
+    diff_assoc *a = calloc(1, sizeof(*a));
+    halyard_dgram_callbacks cb;
+    if (a == NULL)
+        return NULL;
+    a->next = 0x40;
+    a->emit = emit;
+    a->event = event;
+    a->user = user;
+    cb.send = assoc_send;
+    cb.event = assoc_event;
+    cb.random = assoc_random;
+    cb.ctx = a;
+    halyard_dgram_assoc_init(&a->assoc, &cb, local, peer, address, port);
+    return a;
+}
+
+void diff_assoc_free(void *a) { free(a); }
+
+/* op: 0 open, 1 retry, 2 openconn(arg = words), 3 reopen, 4 closeconn, 5 send, 6 recv, 7 clear. Returns the phase. */
+int diff_assoc_op(void *p, int op, int arg, const uint8_t *data, size_t length)
+{
+    diff_assoc *a = p;
+    switch (op) {
+    case 0: halyard_dgram_assoc_open(&a->assoc); break;
+    case 1: halyard_dgram_assoc_retry(&a->assoc); break;
+    case 2: halyard_dgram_assoc_open_connection(&a->assoc, (halyard_dgram_addressing)arg); break;
+    case 3: halyard_dgram_assoc_reopen_connection(&a->assoc); break;
+    case 4: halyard_dgram_assoc_close_connection(&a->assoc); break;
+    case 5: halyard_dgram_assoc_send(&a->assoc, data, length); break;
+    case 6: halyard_dgram_assoc_on_datagram(&a->assoc, data, length); break;
+    default: halyard_dgram_assoc_clear_inbound(&a->assoc); break;
+    }
+    return (int)a->assoc.phase;
+}

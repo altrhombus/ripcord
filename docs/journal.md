@@ -35,6 +35,25 @@ different purpose.
 > anything. The list above is short, it is checkable in one `git log --format=%B | grep`, and it stops
 > growing the moment someone notices — which is the property that actually matters.
 
+### The Rust engine: STUN, the 9303 association and the rendezvous control plane (2026-09-26)
+
+The internet route's UDP layers, by the same method. The 9303 association matches rule for rule in .NET
+and C, so the side-by-side read's differences were all in what surrounds it, each decided in
+`engine/README.md`.
+
+- **STUN**: the RFC 5389 codec and a sans-IO gatherer (attempts, timeouts and transaction-id matching per
+  server, and the two-server mapping check), with the candidates we offer and the choice among the
+  console's.
+- **The 9303 association and its channel**: the prelude, connections, data, acks and close, then the
+  quiet-window resends and stage deadlines around them. `dgram-transport.kat` passes 177 of 177.
+- **The rendezvous control plane**: one request on a fresh connection (how /sess/rgst travels on this
+  route), and /sess/init, the reopened connection, /sess/ctrl and the binary channel over the association.
+  Also the PROBE_REPORT plaintext the A/V leg sends before STREAM_READY.
+- **Differential runs against the C core** for STUN parsing, the candidate choice and generated operation
+  sequences on both associations. No C bugs this time.
+- **Two more .NET findings, on the roadmap.** The rendezvous keep-alive stops answering heartbeats after
+  30 s of silence, and the transport and the ACCEPT can name different console candidates.
+
 ### The Rust engine: discovery, wake and the /sess control plane (2026-09-26)
 
 The next layers of Phase 2, by the same method as Takion. A side-by-side read of .NET and C listed 26

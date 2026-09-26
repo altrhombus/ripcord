@@ -18,6 +18,7 @@ use std::path::{Path, PathBuf};
 use ripcord_proto::base64;
 use ripcord_proto::crypto::ecdh::{self, Curve, Ecdh, RustCryptoEcdh};
 use ripcord_proto::crypto::modes;
+use ripcord_proto::dgram::assoc::{self, Association};
 use ripcord_proto::halyard::{self, account_seed, control, registration};
 use ripcord_proto::sess::{launch_spec, regist, requests};
 use ripcord_proto::stream::{key_schedule, packet_crypto};
@@ -32,6 +33,7 @@ pub const FILES: &[&str] = &[
     "session-crypto.kat",
     "control-proto.kat",
     "rendezvous-control.kat",
+    "dgram-transport.kat",
 ];
 
 /// Line kinds that belong to a layer not yet ported, and which layer. Remove an entry in the change that
@@ -415,6 +417,7 @@ pub fn run(text: &str) -> Report {
 pub fn run_with(text: &str, ecdh: &dyn Ecdh) -> Report {
     let mut report = Report::default();
     let mut case: Option<RendezvousCase> = None;
+    let mut association: Option<Association> = None;
     for (i, raw) in text.lines().enumerate() {
         let fields: Vec<&str> = raw.split_whitespace().collect();
         let Some(&kind) = fields.first() else { continue };
@@ -427,6 +430,13 @@ pub fn run_with(text: &str, ecdh: &dyn Ecdh) -> Report {
         }
         let line = Line { kind, number: i + 1, fields };
         // rendezvous-control.kat: a case line, then the init and ctrl requests the .NET session sent for it.
+        // dgram-transport.kat: an assoc line starts a fresh association, and each step replays one call.
+        if matches!(kind, "assoc" | "step") {
+            if let Err(e) = run_transcript(&mut report, &line, &mut association) {
+                report.failures.push(format!("{} line {}: {e}", line.kind, line.number));
+            }
+            continue;
+        }
         if matches!(kind, "case" | "init" | "ctrl") {
             if let Err(e) = run_rendezvous(&mut report, &line, &mut case) {
                 report.failures.push(format!("{} line {}: {e}", line.kind, line.number));
@@ -520,5 +530,79 @@ fn run_rendezvous(
             );
         }
     }
+    Ok(())
+}
+
+/// The counting random source the .NET transcripts were generated with: successive bytes from 0x40.
+fn counting_random() -> ripcord_proto::RandomSource {
+    let mut next = 0x40u8;
+    Box::new(move |out: &mut [u8]| {
+        for b in out {
+            *b = next;
+            next = next.wrapping_add(1);
+        }
+    })
+}
+
+fn phase_name(p: assoc::Phase) -> &'static str {
+    match p {
+        assoc::Phase::Idle => "idle",
+        assoc::Phase::Handshaking => "handshaking",
+        assoc::Phase::Established => "established",
+        assoc::Phase::Connected => "connected",
+        assoc::Phase::Closed => "closed",
+    }
+}
+
+fn event_name(e: &assoc::Event) -> String {
+    match e {
+        assoc::Event::PreludeEstablished => "established".into(),
+        assoc::Event::ConnectionOpened { by_peer } => format!("opened:{}", u8::from(*by_peer)),
+        assoc::Event::DataReceived { data, .. } => format!("data:{}", to_hex(data)),
+        assoc::Event::PeerClosed => "closed".into(),
+        assoc::Event::Unhandled { .. } => "unhandled".into(),
+    }
+}
+
+fn run_transcript(
+    report: &mut Report,
+    line: &Line<'_>,
+    association: &mut Option<Association>,
+) -> Result<(), String> {
+    let f = |i| line.field(i);
+    if line.kind == "assoc" {
+        let id = |i| -> Result<[u8; 20], String> {
+            hex(f(i)?)?.try_into().map_err(|_| "an id is not 20 bytes".to_owned())
+        };
+        let address: [u8; 4] = hex(f(4)?)?.try_into().map_err(|_| "the address is not 4 bytes")?;
+        *association = Some(Association::new(counting_random(), id(2)?, id(3)?, address, number(f(5)?)?));
+        return Ok(());
+    }
+    let a = association.as_mut().ok_or("a step before any assoc")?;
+    match f(1)? {
+        "open" => a.open(),
+        "retry" => a.retry(),
+        "openconn" => {
+            let words = match number::<u8>(f(2)?)? {
+                1 => assoc::Addressing::PeerOnly,
+                2 => assoc::Addressing::SinglePort,
+                _ => assoc::Addressing::PortPair,
+            };
+            a.open_connection(words);
+        }
+        "reopen" => a.reopen_connection(),
+        "closeconn" => a.close_connection(),
+        "send" => {
+            let _ = a.send(&hex(f(2)?)?);
+        }
+        "recv" => a.on_datagram(&hex(f(2)?)?),
+        "clear" => a.clear_inbound(),
+        other => return Err(format!("unknown op {other:?}")),
+    }
+    check_text(report, line, "phase", phase_name(a.phase()), f(3)?);
+    let sends: Vec<String> = std::iter::from_fn(|| a.poll_transmit()).map(|d| to_hex(&d)).collect();
+    check_text(report, line, "sends", &if sends.is_empty() { "-".into() } else { sends.join(",") }, f(4)?);
+    let events: Vec<String> = std::iter::from_fn(|| a.poll_event()).map(|e| event_name(&e)).collect();
+    check_text(report, line, "events", &if events.is_empty() { "-".into() } else { events.join(",") }, f(5)?);
     Ok(())
 }
