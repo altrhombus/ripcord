@@ -241,12 +241,21 @@ the documents into line, is done and in the journal. The engine lives in [`engin
 - [ ] **Phase 2 — the engine at parity.** Bottom-up in the C core's layer order, each layer done when its
       vectors pass, its fuzz target runs and differential fuzzing against the C core is clean. Includes the
       `Ecdh` backends (CryptoKit carried over, CNG new, RustCrypto), each checked on its own platform in
-      CI, and the scripted console ported to Rust. Parity is a measured matrix, not a list.
+      CI, and the scripted console ported to Rust. Parity is a measured matrix, not a list. The first layer,
+      crypto and the Halyard derivations, has its vectors passing and its differential runs clean (journal,
+      2026-09-26). It still needs its fuzz target. Next in order:
+  - [ ] **The CryptoKit and CNG `Ecdh` backends,** each against `session-crypto.kat` on its own platform.
+        RustCrypto passes it now.
+  - [ ] **The scripted console in Rust,** before Takion, because every layer above Takion is tested
+        against it.
+  - [ ] **Takion, then discovery and wake, `/sess` and registration (which brings `accountrgst` and the
+        engine's copy of `Client-Type`), STUN and the 9303 transport, the rendezvous route, and the
+        connect sequence.**
   - [ ] **A nightly CI leg** for Miri over `ripcord-ffi`'s tests and a coverage-guided `cargo-fuzz` run
         with a kept corpus. Neither runs yet; the stable sweep in `demux.rs` stands in for fuzzing.
-  - [ ] **Differential runs against the C core**, not only against .NET. Phase 1's differential was
-        against `HalyardPacketCrypto`, which is the reference for derivations. For sequencing, the C core
-        is the only other implementation.
+  - [ ] **Differential runs for each new layer.** `ripcord-diff` exists and covers the stream plane and the
+        Halyard derivations. Each later layer adds its surface to `shim/diff_shim.c` in the change that
+        ports it. For sequencing, the C core is the only other implementation.
 - [ ] **Phase 3 — the Mac switches engines,** by relinking at Phase 2's exit.
 - [ ] **Phase 4 — Windows onto the engine,** after 1.0, one seam at a time behind `RIPCORD_ENGINE`.
   - [ ] Before step 3: `src/Ripcord.App/Pages/SessionPage.xaml.cs` imports three
