@@ -502,6 +502,19 @@ pub struct RipcordClient {
     poisoned: bool,
 }
 
+impl RipcordClient {
+    pub(crate) fn register(
+        &mut self,
+        is_ps5: bool,
+        seed: &[u8; 16],
+        account_id: &str,
+        client_ip: &str,
+    ) -> Result<ripcord_proto::sess::regist::PairingRecord, ripcord_net::RegisterError> {
+        let callbacks = &self.callbacks;
+        self.inner.rendezvous_register(&mut FfiHost(callbacks), is_ps5, seed, account_id, client_ip)
+    }
+}
+
 impl Handle for RipcordClient {
     fn poisoned(&mut self) -> &mut bool {
         &mut self.poisoned

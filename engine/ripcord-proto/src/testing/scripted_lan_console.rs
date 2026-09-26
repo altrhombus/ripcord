@@ -22,6 +22,8 @@ use crate::takion::sealer::Sealer;
 
 pub const NONCE: [u8; 16] = [0x5a; 16];
 pub const COMPANION: [u8; 16] = [0x3c; 16];
+/// The registration key the console hands out on /sess/rgst.
+pub const REGISTRATION_KEY: [u8; 8] = [0xab; 8];
 pub const WIDTH: u32 = 1280;
 pub const HEIGHT: u32 = 720;
 pub const SPS_PPS: [u8; 7] = [0x00, 0x00, 0x00, 0x01, 0x67, 0xaa, 0xbb];
@@ -110,6 +112,11 @@ pub struct ScriptedLanConsole {
     pub stream_version: u32,
     /// Refuse the stream's SESSION_REQUEST with a DISCONNECT carrying this reason.
     pub refuse_with: Option<&'static str>,
+    /// The PIN /sess/rgst is answered under: the console's side of the registration derivation, so a
+    /// client with another PIN decrypts noise, as on hardware.
+    pub regist_pin: u32,
+    /// Refuse /sess/rgst with this RP-Application-Reason instead.
+    pub regist_refuse: Option<&'static str>,
 
     tcp_buf: Vec<u8>,
     field: Option<ControlField>,
@@ -145,6 +152,8 @@ impl ScriptedLanConsole {
             send_session_id: true,
             stream_version: negotiator::CLIENT_VERSION,
             refuse_with: None,
+            regist_pin: 12_345_678,
+            regist_refuse: None,
             tcp_buf: Vec::new(),
             field: None,
             console_counter: fields::COUNTER_CONSOLE_START,
@@ -202,6 +211,14 @@ impl ScriptedLanConsole {
         let mut out = Vec::new();
         if self.field.is_none() || !self.requests.iter().any(|r| r.contains("/sess/ctrl")) {
             let Some(end) = self.tcp_buf.windows(4).position(|w| w == b"\r\n\r\n") else { return out };
+            if let Some(reply) = self.answer_regist(end) {
+                out.push(Tcp::Data(reply));
+                out.push(Tcp::Close);
+                return out;
+            }
+            if self.tcp_buf.starts_with(b"POST") {
+                return out; // a registration body still arriving
+            }
             let text = String::from_utf8_lossy(&self.tcp_buf[..end]).into_owned();
             self.tcp_buf.drain(..end + 4);
             self.requests.push(text.clone());
@@ -249,6 +266,53 @@ impl ScriptedLanConsole {
             }
         }
         out
+    }
+
+    /// /sess/rgst, once its whole body has arrived: the console's half of the PIN route. The material comes
+    /// back out of the context, the field is derived under [`Self::regist_pin`], and a pairing record for
+    /// this console's registration key and companion goes back under it.
+    fn answer_regist(&mut self, header_end: usize) -> Option<Vec<u8>> {
+        use crate::halyard::registration;
+        let head = String::from_utf8_lossy(&self.tcp_buf[..header_end]).into_owned();
+        if !head.contains("/sess/rgst") {
+            return None;
+        }
+        let length: usize = head
+            .lines()
+            .find_map(|l| l.strip_prefix("Content-Length:"))
+            .and_then(|v| v.trim().parse().ok())
+            .unwrap_or(0);
+        let body_start = header_end + 4;
+        if self.tcp_buf.len() < body_start + length {
+            return None;
+        }
+        let body = self.tcp_buf[body_start..body_start + length].to_vec();
+        self.tcp_buf.clear();
+        self.requests.push(head);
+        if let Some(reason) = self.regist_refuse {
+            return Some(
+                format!(
+                    "HTTP/1.1 403 Forbidden\r\nRP-Application-Reason: {reason}\r\nContent-Length: 0\r\n\r\n"
+                )
+                .into_bytes(),
+            );
+        }
+        let context = &body[..registration::CONTEXT_LENGTH.min(body.len())];
+        let wrapped = registration::gather(context)?;
+        let material = registration::unwrap_material(self.is_ps5, &wrapped, context)?;
+        let field = registration::field(self.is_ps5, context, self.regist_pin, &material)?;
+        let family = if self.is_ps5 { "PS5" } else { "PS4" };
+        let hex = |b: &[u8]| b.iter().map(|x| format!("{x:02x}")).collect::<String>();
+        let mut record = format!(
+            "AP-Ssid: scripted\r\n{family}-RegistKey: {}\r\nRP-KeyType: 2\r\nRP-Key: {}\r\n",
+            hex(&REGISTRATION_KEY),
+            hex(&COMPANION)
+        )
+        .into_bytes();
+        field.encrypt(registration::FIELD_COUNTER, &mut record);
+        let mut reply = format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n", record.len()).into_bytes();
+        reply.extend(record);
+        Some(reply)
     }
 
     /// A datagram to one of the console's ports; what it sends back.

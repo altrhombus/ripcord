@@ -26,6 +26,7 @@ fn main() {
     csbindgen::Builder::default()
         .input_extern_file(crate_dir.join("src/lib.rs"))
         .input_extern_file(crate_dir.join("src/client.rs"))
+        .input_extern_file(crate_dir.join("src/pairing.rs"))
         .csharp_dll_name("ripcord")
         .csharp_namespace("Ripcord.Engine.Native")
         .csharp_class_name("NativeMethods")
