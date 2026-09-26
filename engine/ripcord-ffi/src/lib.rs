@@ -19,12 +19,13 @@
 use std::ffi::c_void;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
+use ripcord_proto::crypto::ecdh::{Curve, Ecdh};
 use ripcord_proto::stream::demux::{DemuxSink, PacketOpener, Passthrough, StreamDemux};
 use ripcord_proto::stream::header::StreamHeader;
 use ripcord_proto::stream::packet_crypto::PacketCrypto;
 
 /// Bumped whenever an export's signature or a crossing struct's layout changes.
-pub const RIPCORD_API_VERSION: u32 = 1;
+pub const RIPCORD_API_VERSION: u32 = 2;
 
 /// `repr(C)`, not `repr(i32)`, for the header's sake: cbindgen writes a fixed-width enum as an `enum` tag
 /// plus a same-named integer typedef before C23, and Swift imports those as two different types. A C
@@ -52,6 +53,9 @@ pub enum RipcordStructId {
     StreamHeader = 1,
     DemuxSink = 2,
     DemuxCounters = 3,
+    EcdhBackend = 4,
+    KatResult = 5,
+    ScriptedConsoleCounts = 6,
 }
 
 /// The parsed A/V header, as the demuxer hands it to a control-packet callback.
@@ -106,6 +110,100 @@ pub struct RipcordDemuxSink {
 pub struct RipcordDemuxCounters {
     pub auth_failures: u64,
     pub frames_too_many_units: u64,
+}
+
+/// Curve ids for [`RipcordEcdhBackend`]: the same numbers as `libripcord/crypto/rc_ecdh.h`.
+pub const RIPCORD_CURVE_P256: u32 = 1;
+pub const RIPCORD_CURVE_P521: u32 = 2;
+
+/// Key agreement supplied by the host: CryptoKit on Apple platforms, CNG on Windows
+/// (docs/engine-plan.md, "Dependencies"). Both functions write at most `out_capacity` bytes, set
+/// `*out_length`, and return false on any failure, never anything key-shaped. The contract is
+/// `ripcord_proto::crypto::ecdh`'s:
+///
+/// - `public_key`: the uncompressed SEC1 point (`0x04 || X || Y`) for a private scalar, refusing zero or a
+///   scalar at or above the group order.
+/// - `shared_secret`: the X coordinate at the curve's full width, after validating that the peer's
+///   uncompressed point is on the curve.
+///
+/// `curve` is a `RIPCORD_CURVE_*` value. A backend is used on a platform only once it has passed
+/// `session-crypto.kat` there.
+#[repr(C)]
+pub struct RipcordEcdhBackend {
+    pub user: *mut c_void,
+    pub public_key: Option<
+        extern "C" fn(
+            user: *mut c_void,
+            curve: u32,
+            private_key: *const u8,
+            private_key_length: usize,
+            out: *mut u8,
+            out_capacity: usize,
+            out_length: *mut usize,
+        ) -> bool,
+    >,
+    pub shared_secret: Option<
+        extern "C" fn(
+            user: *mut c_void,
+            curve: u32,
+            private_key: *const u8,
+            private_key_length: usize,
+            peer_public_key: *const u8,
+            peer_public_key_length: usize,
+            out: *mut u8,
+            out_capacity: usize,
+            out_length: *mut usize,
+        ) -> bool,
+    >,
+}
+
+/// A host backend behind the engine's `Ecdh` trait. Only the test-support exports use it until the
+/// connect sequence's key agreement is exported.
+#[cfg_attr(not(feature = "test-support"), allow(dead_code))]
+pub(crate) struct HostEcdh<'a>(pub(crate) &'a RipcordEcdhBackend);
+
+#[cfg_attr(not(feature = "test-support"), allow(dead_code))]
+fn curve_id(curve: Curve) -> u32 {
+    match curve {
+        Curve::P256 => RIPCORD_CURVE_P256,
+        Curve::P521 => RIPCORD_CURVE_P521,
+    }
+}
+
+impl Ecdh for HostEcdh<'_> {
+    fn public_key(&self, curve: Curve, private_key: &[u8]) -> Option<Vec<u8>> {
+        let f = self.0.public_key?;
+        let mut out = vec![0u8; curve.public_key_length()];
+        let mut n = 0usize;
+        let ok = f(
+            self.0.user,
+            curve_id(curve),
+            private_key.as_ptr(),
+            private_key.len(),
+            out.as_mut_ptr(),
+            out.len(),
+            &mut n,
+        );
+        (ok && n == out.len()).then_some(out)
+    }
+
+    fn shared_secret(&self, curve: Curve, private_key: &[u8], peer_public_key: &[u8]) -> Option<Vec<u8>> {
+        let f = self.0.shared_secret?;
+        let mut out = vec![0u8; curve.secret_length()];
+        let mut n = 0usize;
+        let ok = f(
+            self.0.user,
+            curve_id(curve),
+            private_key.as_ptr(),
+            private_key.len(),
+            peer_public_key.as_ptr(),
+            peer_public_key.len(),
+            out.as_mut_ptr(),
+            out.len(),
+            &mut n,
+        );
+        (ok && n == out.len()).then_some(out)
+    }
 }
 
 /// One direction's per-packet stream crypto. Opaque.
@@ -214,6 +312,9 @@ pub extern "C" fn ripcord_struct_size(id: u32) -> usize {
         x if x == RipcordStructId::StreamHeader as u32 => size_of::<RipcordStreamHeader>(),
         x if x == RipcordStructId::DemuxSink as u32 => size_of::<RipcordDemuxSink>(),
         x if x == RipcordStructId::DemuxCounters as u32 => size_of::<RipcordDemuxCounters>(),
+        x if x == RipcordStructId::EcdhBackend as u32 => size_of::<RipcordEcdhBackend>(),
+        x if x == RipcordStructId::KatResult as u32 => size_of::<RipcordKatResult>(),
+        x if x == RipcordStructId::ScriptedConsoleCounts as u32 => size_of::<RipcordScriptedConsoleCounts>(),
         _ => 0,
     }
 }
@@ -500,6 +601,246 @@ pub unsafe extern "C" fn ripcord_stream_demux_video_is_hevc(
     })
 }
 
+// ---- test support ----
+
+/// Results of [`ripcord_kat_run`].
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct RipcordKatResult {
+    pub passed: u64,
+    pub failed: u64,
+    pub deferred: u64,
+}
+
+/// Runs a known-answer vector file (the text of one `.kat` file) through the engine, with key agreement
+/// on `backend`, or on the engine's RustCrypto backend when `backend` is null. This is how a host checks
+/// its own platform's backend against the .NET vectors. [`RipcordStatus::Ok`] only if every line passed
+/// and at least one was checked; failures print to stderr. Test builds only (`test-support`).
+///
+/// # Safety
+/// `text` valid for `length` bytes; `backend` null or valid, with callbacks that do not unwind; `out`
+/// null or valid for a write.
+#[cfg(feature = "test-support")]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ripcord_kat_run(
+    text: *const u8,
+    length: usize,
+    backend: *const RipcordEcdhBackend,
+    out: *mut RipcordKatResult,
+) -> RipcordStatus {
+    guard(RipcordStatus::Panicked, || {
+        // SAFETY: forwarded from this function's contract.
+        let Some(text) = (unsafe { bytes(text, length) }).and_then(|t| std::str::from_utf8(t).ok()) else {
+            return RipcordStatus::InvalidArgument;
+        };
+        // SAFETY: as above.
+        let report = match unsafe { backend.as_ref() } {
+            Some(b) => ripcord_kat::run_with(text, &HostEcdh(b)),
+            None => ripcord_kat::run(text),
+        };
+        for failure in &report.failures {
+            eprintln!("FAIL {failure}");
+        }
+        if !out.is_null() {
+            let result = RipcordKatResult {
+                passed: report.passed as u64,
+                failed: report.failures.len() as u64,
+                deferred: report.deferred.values().sum::<usize>() as u64,
+            };
+            // SAFETY: non-null and valid for a write per the contract.
+            unsafe { out.write(result) };
+        }
+        if report.ok() { RipcordStatus::Ok } else { RipcordStatus::Rejected }
+    })
+}
+
+/// The scripted 9303 console (`ripcord_proto::testing::scripted_console`), for host test suites: the same
+/// scenarios in every client's tests (docs/engine-plan.md, "What each client must agree on"). Opaque.
+#[cfg(feature = "test-support")]
+pub struct RipcordScriptedConsole {
+    inner: ripcord_proto::testing::scripted_console::ScriptedConsole,
+}
+
+/// What the scripted console has seen.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct RipcordScriptedConsoleCounts {
+    pub inits: u64,
+    pub hellos: u64,
+    pub closes_received: u64,
+    pub requests: u64,
+    pub ctrl_open: bool,
+    pub frames: u64,
+}
+
+/// Receives each datagram the scripted console sends, borrowed for the call.
+pub type RipcordEmitFn = Option<extern "C" fn(user: *mut c_void, datagram: *const u8, length: usize)>;
+
+#[cfg(feature = "test-support")]
+fn emit_all(datagrams: Vec<Vec<u8>>, emit: RipcordEmitFn, user: *mut c_void) {
+    if let Some(f) = emit {
+        for d in &datagrams {
+            f(user, d.as_ptr(), d.len());
+        }
+    }
+}
+
+#[cfg(feature = "test-support")]
+#[unsafe(no_mangle)]
+pub extern "C" fn ripcord_scripted_console_new() -> *mut RipcordScriptedConsole {
+    guard(std::ptr::null_mut(), || {
+        Box::into_raw(Box::new(RipcordScriptedConsole { inner: Default::default() }))
+    })
+}
+
+/// # Safety
+/// `console` null or from [`ripcord_scripted_console_new`], not used after this call.
+#[cfg(feature = "test-support")]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ripcord_scripted_console_free(console: *mut RipcordScriptedConsole) {
+    if !console.is_null() {
+        // SAFETY: per the contract.
+        guard((), || drop(unsafe { Box::from_raw(console) }));
+    }
+}
+
+/// Configures the console: `init_reply` answers /sess/init and `other_reply` anything else that is not
+/// /sess/ctrl (either null for a plain 200); `close_before_answering` tears down such requests instead.
+///
+/// # Safety
+/// `console` live; each reply null or valid for its length.
+#[cfg(feature = "test-support")]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ripcord_scripted_console_configure(
+    console: *mut RipcordScriptedConsole,
+    init_reply: *const u8,
+    init_reply_length: usize,
+    other_reply: *const u8,
+    other_reply_length: usize,
+    close_before_answering: bool,
+) -> RipcordStatus {
+    guard(RipcordStatus::Panicked, || {
+        // SAFETY: per the contract.
+        let Some(c) = (unsafe { console.as_mut() }) else { return RipcordStatus::InvalidArgument };
+        // SAFETY: per the contract.
+        let reply = |p: *const u8, n: usize| {
+            (!p.is_null()).then(|| unsafe { bytes(p, n) }.map(<[u8]>::to_vec)).flatten()
+        };
+        c.inner.init_reply = reply(init_reply, init_reply_length);
+        c.inner.other_reply = reply(other_reply, other_reply_length);
+        c.inner.close_before_answering = close_before_answering;
+        RipcordStatus::Ok
+    })
+}
+
+/// Feeds the console one datagram from the client; what it answers goes to `emit`.
+///
+/// # Safety
+/// `console` live; `datagram` valid for `length`; `emit` does not unwind.
+#[cfg(feature = "test-support")]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ripcord_scripted_console_on_datagram(
+    console: *mut RipcordScriptedConsole,
+    datagram: *const u8,
+    length: usize,
+    emit: RipcordEmitFn,
+    user: *mut c_void,
+) -> RipcordStatus {
+    guard(RipcordStatus::Panicked, || {
+        // SAFETY: per the contract.
+        let (Some(c), Some(d)) = (unsafe { console.as_mut() }, unsafe { bytes(datagram, length) }) else {
+            return RipcordStatus::InvalidArgument;
+        };
+        emit_all(c.inner.on_datagram(d), emit, user);
+        RipcordStatus::Ok
+    })
+}
+
+/// A console-originated payload on the open connection (a control frame, say), to `emit`.
+///
+/// # Safety
+/// As for [`ripcord_scripted_console_on_datagram`].
+#[cfg(feature = "test-support")]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ripcord_scripted_console_push(
+    console: *mut RipcordScriptedConsole,
+    payload: *const u8,
+    length: usize,
+    emit: RipcordEmitFn,
+    user: *mut c_void,
+) -> RipcordStatus {
+    guard(RipcordStatus::Panicked, || {
+        // SAFETY: per the contract.
+        let (Some(c), Some(p)) = (unsafe { console.as_mut() }, unsafe { bytes(payload, length) }) else {
+            return RipcordStatus::InvalidArgument;
+        };
+        match c.inner.push(p) {
+            Some(d) => {
+                emit_all(vec![d], emit, user);
+                RipcordStatus::Ok
+            }
+            None => RipcordStatus::Rejected,
+        }
+    })
+}
+
+/// # Safety
+/// `console` live; `out` valid for a write.
+#[cfg(feature = "test-support")]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ripcord_scripted_console_counts(
+    console: *const RipcordScriptedConsole,
+    out: *mut RipcordScriptedConsoleCounts,
+) -> RipcordStatus {
+    guard(RipcordStatus::Panicked, || {
+        // SAFETY: per the contract.
+        let Some(c) = (unsafe { console.as_ref() }) else { return RipcordStatus::InvalidArgument };
+        if out.is_null() {
+            return RipcordStatus::InvalidArgument;
+        }
+        let i = &c.inner;
+        let counts = RipcordScriptedConsoleCounts {
+            inits: i.inits as u64,
+            hellos: i.hellos as u64,
+            closes_received: i.closes_received as u64,
+            requests: i.request_count as u64,
+            ctrl_open: i.ctrl_open,
+            frames: i.frames.len() as u64,
+        };
+        // SAFETY: non-null and valid per the contract.
+        unsafe { out.write(counts) };
+        RipcordStatus::Ok
+    })
+}
+
+/// Control frame `index` as the console recorded it, borrowed until the next call on the console.
+///
+/// # Safety
+/// `console` live; `data` and `length` valid for writes.
+#[cfg(feature = "test-support")]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ripcord_scripted_console_frame(
+    console: *const RipcordScriptedConsole,
+    index: usize,
+    data: *mut *const u8,
+    length: *mut usize,
+) -> RipcordStatus {
+    guard(RipcordStatus::Panicked, || {
+        // SAFETY: per the contract.
+        let Some(c) = (unsafe { console.as_ref() }) else { return RipcordStatus::InvalidArgument };
+        let Some(frame) = c.inner.frames.get(index) else { return RipcordStatus::Rejected };
+        if data.is_null() || length.is_null() {
+            return RipcordStatus::InvalidArgument;
+        }
+        // SAFETY: non-null and valid per the contract.
+        unsafe {
+            data.write(frame.as_ptr());
+            length.write(frame.len());
+        }
+        RipcordStatus::Ok
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -511,6 +852,7 @@ mod tests {
         assert_eq!(ripcord_struct_size(RipcordStructId::StreamHeader as u32), 20);
         assert_eq!(ripcord_struct_size(RipcordStructId::DemuxSink as u32), 5 * size_of::<usize>());
         assert_eq!(ripcord_struct_size(RipcordStructId::DemuxCounters as u32), 16);
+        assert_eq!(ripcord_struct_size(RipcordStructId::EcdhBackend as u32), 3 * size_of::<usize>());
         assert_eq!(ripcord_struct_size(0), 0);
         assert_eq!(ripcord_struct_size(999), 0);
     }
@@ -658,5 +1000,69 @@ mod tests {
         assert_eq!(status, RipcordStatus::Panicked);
         assert_eq!(with_handle(&mut h, |_| RipcordStatus::Ok), RipcordStatus::Poisoned);
         assert_eq!(guard(7, || panic!("constructor bug")), 7);
+    }
+
+    extern "C" fn rust_public_key(
+        _: *mut c_void,
+        curve: u32,
+        k: *const u8,
+        n: usize,
+        out: *mut u8,
+        cap: usize,
+        len: *mut usize,
+    ) -> bool {
+        use ripcord_proto::crypto::ecdh::RustCryptoEcdh;
+        let curve = if curve == RIPCORD_CURVE_P256 { Curve::P256 } else { Curve::P521 };
+        let key = unsafe { std::slice::from_raw_parts(k, n) };
+        match RustCryptoEcdh.public_key(curve, key) {
+            Some(p) if p.len() <= cap => unsafe {
+                std::ptr::copy_nonoverlapping(p.as_ptr(), out, p.len());
+                *len = p.len();
+                true
+            },
+            _ => false,
+        }
+    }
+
+    #[test]
+    fn a_host_backend_is_called_through_the_table() {
+        let backend =
+            RipcordEcdhBackend { user: null_mut(), public_key: Some(rust_public_key), shared_secret: None };
+        let host = HostEcdh(&backend);
+        let mut private = [0u8; 32];
+        private[31] = 7;
+        assert_eq!(host.public_key(Curve::P256, &private).map(|p| p.len()), Some(65));
+        assert_eq!(
+            host.shared_secret(Curve::P256, &private, &[4; 65]),
+            None,
+            "a missing callback is a refusal"
+        );
+    }
+
+    #[cfg(feature = "test-support")]
+    #[test]
+    fn the_scripted_console_answers_through_the_abi() {
+        use ripcord_proto::dgram::wire;
+        extern "C" fn collect(user: *mut c_void, d: *const u8, n: usize) {
+            unsafe { &mut *(user as *mut Vec<Vec<u8>>) }
+                .push(unsafe { std::slice::from_raw_parts(d, n) }.to_vec());
+        }
+        let mut out: Vec<Vec<u8>> = Vec::new();
+        let user = &mut out as *mut Vec<Vec<u8>> as *mut c_void;
+        unsafe {
+            let c = ripcord_scripted_console_new();
+            let init =
+                wire::Prelude { kind: wire::PRELUDE_INIT, tag_pair: 0x0001_0002, ..Default::default() }
+                    .write();
+            assert_eq!(
+                ripcord_scripted_console_on_datagram(c, init.as_ptr(), init.len(), Some(collect), user),
+                RipcordStatus::Ok
+            );
+            let mut counts = RipcordScriptedConsoleCounts::default();
+            assert_eq!(ripcord_scripted_console_counts(c, &mut counts), RipcordStatus::Ok);
+            assert_eq!(counts.inits, 1);
+            ripcord_scripted_console_free(c);
+        }
+        assert_eq!(out.len(), 2, "an Init answer and a CookieEcho");
     }
 }

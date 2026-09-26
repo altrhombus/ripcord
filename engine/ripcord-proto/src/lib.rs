@@ -11,5 +11,9 @@
 
 pub mod base64;
 pub mod crypto;
+pub mod dgram;
 pub mod halyard;
 pub mod stream;
+pub mod takion;
+#[cfg(any(test, feature = "scripted-console"))]
+pub mod testing;

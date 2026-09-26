@@ -547,6 +547,7 @@ version = "0.1.0"
 dependencies = [
  "cbindgen",
  "csbindgen",
+ "ripcord-kat",
  "ripcord-proto",
 ]
 

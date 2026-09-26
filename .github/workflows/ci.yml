@@ -218,17 +218,20 @@ jobs:
       - name: Tests, the vector runner and the differential runs against the C core
         if: runner.os != 'Windows'
         working-directory: engine
-        run: cargo test --workspace --release
+        run: cargo test --workspace --release --all-features
       - name: Tests and the vector runner
         if: runner.os == 'Windows'
         working-directory: engine
-        run: cargo test --workspace --release --exclude ripcord-diff
+        run: cargo test --workspace --release --all-features --exclude ripcord-diff
       - name: Clippy and formatting
         working-directory: engine
         shell: bash
         run: |
           exclude=""; [ "$RUNNER_OS" = Windows ] && exclude="--exclude ripcord-diff"
-          cargo clippy --workspace $exclude --all-targets -- -D warnings && cargo fmt --check
+          # Twice: the shipping build, and with the test-support exports on.
+          cargo clippy --workspace $exclude --all-targets -- -D warnings
+          cargo clippy --workspace $exclude --all-targets --all-features -- -D warnings
+          cargo fmt --check
       - name: Dependency policy
         if: runner.os == 'Linux'
         uses: EmbarkStudios/cargo-deny-action@v2

@@ -15,3 +15,6 @@ prefix_with_name = true
 prefix = ""
 # Named by ripcord_struct_size's documentation rather than its signature, which takes a plain integer.
 include = ["RipcordStructId"]
+
+[defines]
+"feature = test-support" = "RIPCORD_TEST_SUPPORT"

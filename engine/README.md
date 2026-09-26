@@ -4,13 +4,18 @@ The protocol engine the first-class clients are moving to. Why it exists, what i
 order are in [`docs/engine-plan.md`](../docs/engine-plan.md). This file covers the tree, the build and
 where Phase 1 stands. What is still open is in [`ROADMAP.md`](../ROADMAP.md).
 
-**Status: Phase 2, the first layer.** Phase 1's stream plane (framing, the stream key schedule, packet
-crypto, FEC, the demuxer) plus the crypto and Halyard derivations: the cipher modes, the control KDF,
-field IVs and ciphers, PIN and account registration, the account seed, and key agreement behind the
-`Ecdh` trait with the RustCrypto backend. Ported from [`libripcord/stream/`](../libripcord/stream/),
-[`libripcord/crypto/`](../libripcord/crypto/) and [`libripcord/halyard/`](../libripcord/halyard/). Nothing
-here talks to a console yet. The Mac and Windows clients still run their existing engines; the Mac lab
-links this one alongside the C core, only for the benchmark.
+**Status: Phase 2, through Takion.** In `ripcord-proto`:
+- the stream plane (framing, the stream key schedule, packet crypto, FEC, the demuxer);
+- the crypto and Halyard derivations;
+- key agreement behind the `Ecdh` trait, with RustCrypto and CryptoKit backends;
+- Takion: framing, the control protobuf codec, the sealer, the session negotiator and a sans-IO
+  connection;
+- the 9303 datagram wire codec, and the scripted console the plan asks for.
+
+Ported from `libripcord/` and cross-checked against the .NET reference, which wins where the two differ
+unless the reasons below say otherwise. Nothing here talks to a console yet. The Mac and Windows clients
+still run their existing engines; the Mac links this one alongside the C core, for the benchmark and the
+CryptoKit vector test.
 
 ## Layout
 
@@ -20,6 +25,11 @@ links this one alongside the C core, only for the benchmark.
 | `ripcord-ffi/` | The C ABI: every export. Its `build.rs` generates `ripcord.h` (cbindgen) and `NativeMethods.g.cs` (csbindgen) into `target/include/` | the only crate that uses it |
 | `ripcord-kat/` | Runs the `.kat` files `ProtocolLab vectors` generates, unchanged | forbidden |
 | `ripcord-diff/` | Differential tests: builds the C core from `libripcord/` with the `cc` crate and runs it beside the Rust engine on generated inputs | in its wrappers only: test tooling, never linked into a host |
+
+`ripcord-ffi`'s `test-support` feature adds `ripcord_kat_run` (a vector file through any `Ecdh` backend) and
+the scripted console, for host test suites. `ripcord-proto`'s `scripted-console` feature exposes the
+console to other crates. Neither belongs in a shipping engine. A host supplies its platform's key agreement
+through `RipcordEcdhBackend`; the Mac's is `src/Ripcord.Mac/RipcordKit/Engine/CryptoKitEngineECDH.swift`.
 | `hosts/dotnet/` | The .NET harness: the engine through its generated C# bindings, a differential run against the managed engine, and the benchmark on both | — |
 | `deny.toml` | The dependency policy `cargo deny check` enforces | — |
 
@@ -111,3 +121,42 @@ The first differential run failed, and the cause was the harness. Test threads d
 at the same time, and `fec_reed_solomon_decode` keeps its matrices in `static` buffers, as its source
 warns. `ripcord-diff` now holds one lock around every call into C. The Rust decoder's scratch belongs to
 its caller, so it has no such limit.
+
+## Takion: where the port follows .NET and where it follows C (2026-09-26)
+
+The C core is a port of the .NET reference, and the two differ in places. A side-by-side read of both
+found 27 differences. For each one the Rust port follows .NET, unless C is strictly safer or .NET is
+wrong:
+
+| Topic | Rust follows | Why |
+|---|---|---|
+| Local verification tag | .NET: the host's CSPRNG | C uses a clock tick |
+| INIT_ACK checks | .NET: our tag, base type 0, length at least 52 | C checks neither tag nor base type |
+| DATA that proves establishment | C: processed | .NET discards it and waits for the peer to retransmit |
+| Tag check and GMAC verification after the handshake | C | Defences .NET lacks. Verification starts in counting mode |
+| Incoming SACK length | .NET: at least 16 | |
+| SACK clearing across a TSN wrap | C: a full serial-number scan | .NET's sorted-key scan leaves pre-wrap chunks unacknowledged forever (roadmap) |
+| RTT | .NET: seeded, then EWMA alpha 0.125, Karn's rule | The stats need it; C has none |
+| Retransmission | C: each chunk once it is 300 ms old | .NET resends everything on every tick |
+| In-flight chunks and message size | .NET: unbounded, except a 64 KB message cap | C's 32 and 2048 are console memory limits |
+| Reassembly | .NET: per channel | C's single slot rests on a premise its own header contradicts |
+| Curve for an unvalidated version | .NET: an error | C falls back to P-256, which .NET removed as a guess |
+| SESSION_REPLY checks | C: version, required fields, signature length, curve | .NET does not check `versionAccepted` (roadmap) |
+| Session key | .NET: the caller's, with the observed literal as the default | |
+
+Sequencing that belongs to the connect sequence, such as version negotiation and its timeouts, is decided
+when that layer lands.
+
+## Phase 2, through Takion, measured (2026-09-26)
+
+| What | Result |
+|---|---|
+| `control-proto.kat` | 60 of 60 for `sessionreq` and `sessionreply`. The 5 `launchspec` lines wait for the `/sess` layer |
+| Captured vectors | The INIT, three DATA packets, both SACKs and the PROTOCOL_VERSION_REQUEST and echo-command payloads all rebuild byte for byte |
+| Differential against the C core | 20,000 generated cases each for the protobuf codec, the chunk parsers and the 9303 wire; 500 sealer sequences; and 200 scripted-console sessions of 60 datagrams against `fake_dgram_console.h` |
+| CryptoKit | `session-crypto.kat` through the engine on CryptoKit gives results identical to RustCrypto (`EngineKeyAgreementTests`) |
+| Takion connection | Scripted-peer tests cover the handshake with retries and failure, DATA in place of COOKIE_ACK, fragmentation, per-channel reassembly, re-SACK on reordering, verbatim retransmission, Karn, the TSN wrap, and a full sealed session with key agreement |
+
+The differential runs found two C bugs, both fixed in `libripcord`. The C scripted console read two bytes
+past a short HELLO_ECHO chunk. `takion_control_parse_protocol_version_ack` accepted a field-0 tag that every
+other C parser, and Google.Protobuf, refuse.

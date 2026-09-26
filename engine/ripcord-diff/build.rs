@@ -20,6 +20,14 @@ const SOURCES: &[&str] = &[
     "halyard/halyard_registration.c",
     "halyard/halyard_account_seed.c",
     "util/rc_base64.c",
+    "takion/takion_data_chunk.c",
+    "takion/takion_sack_chunk.c",
+    "takion/takion_handshake.c",
+    "takion/takion_message.c",
+    "takion/takion_control_proto.c",
+    "takion/takion_control_sealer.c",
+    "takion/senkusha_echo.c",
+    "session/halyard_dgram_wire.c",
 ];
 
 fn main() {
@@ -52,6 +60,11 @@ fn main() {
     build.compile("ripcord_c_core");
 
     println!("cargo:rerun-if-changed=shim/diff_shim.c");
+    // Headers the shim includes whole: the C scripted console is header-only.
+    println!("cargo:rerun-if-changed={}", core.join("tests/fake_dgram_console.h").display());
+    for dir in ["crypto", "halyard", "stream", "takion", "session"] {
+        println!("cargo:rerun-if-changed={}", core.join(dir).display());
+    }
     println!("cargo:rerun-if-changed={}", bundle.display());
     println!("cargo:rerun-if-changed={}", core.join("tools/gen_constants.py").display());
 }
