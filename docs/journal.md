@@ -35,6 +35,30 @@ different purpose.
 > anything. The list above is short, it is checkable in one `git log --format=%B | grep`, and it stops
 > growing the moment someone notices — which is the property that actually matters.
 
+### The Rust engine: discovery, wake and the /sess control plane (2026-09-26)
+
+The next layers of Phase 2, by the same method as Takion. A side-by-side read of .NET and C listed 26
+differences, each decided in `engine/README.md`.
+
+- **Discovery and wake**: the SRCH probe and reply parser, the wake datagram and its credential, and the
+  arm probe that opens the console's TCP listener.
+- **/sess**: registration on both routes with the pairing record, /sess/init and /sess/ctrl with the
+  encrypted fields, the launch spec, and the binary control channel as a sans-IO session. The session
+  answers heartbeats, reports the sign-in gate, the verdict, SESSION_ID and STREAM_READY, and keeps both
+  directions' counters.
+- **Every vector line now runs, and none is deferred.** `rendezvous-control.kat` compares both /sess
+  requests byte for byte with the .NET session's. `account-pairing.kat` includes the whole account
+  exchange, and `control-proto.kat` the launch specs.
+- **`Client-Type` has no third home.** `ripcord-proto/build.rs` reads it from the .NET reference at build
+  time. `CLAUDE.md`'s inventory says so, and a new `BundledInteropConstantsTests` case checks the build
+  script's source and that no file under `engine/` carries the value.
+- **Two more C bugs, fixed.** The pairing-record parser treated a hex-decode failure as success, and the
+  registration response never read a reason sent as the last header. Both fixes come with regression
+  checks in `registration_test.c`.
+- **Two more .NET findings, on the roadmap.** The wake credential is written unsigned where a PS4 capture
+  shows it signed. A bad RP-Nonce lets the session carry on unauthenticated, with the launch spec in
+  plaintext.
+
 ### The Rust engine: Takion, the scripted console, and CryptoKit (2026-09-26)
 
 Three pieces of Phase 2, and a change of method on the way. The owner confirmed that the C core is a

@@ -246,10 +246,10 @@ the documents into line, is done and in the journal. The engine lives in [`engin
       2026-09-26). It still needs its fuzz target. Next in order:
   - [ ] **The CNG `Ecdh` backend,** against `session-crypto.kat` on Windows. RustCrypto and CryptoKit
         pass it (journal, 2026-09-26).
-  - [ ] **Discovery and wake, `/sess` and registration (which brings `accountrgst`, `launchspec` and the
-        engine's copy of `Client-Type`), STUN and the 9303 association, the rendezvous route, and the
-        connect sequence.** Takion and the scripted console are done. `ripcord-net`, the I/O driver, arrives
-        with the connect sequence.
+  - [ ] **STUN and the 9303 association, the rendezvous route, and the connect sequence.** Takion, the
+        scripted console, discovery, wake and the /sess layer are done (journal, 2026-09-26). `ripcord-net`,
+        the I/O driver, arrives with the connect sequence, which also owns the launch spec's MTU and RTT
+        clamping and the order /sess, Takion and key agreement run in.
   - [ ] **A nightly CI leg** for Miri over `ripcord-ffi`'s tests and a coverage-guided `cargo-fuzz` run
         with a kept corpus. Neither runs yet; the stable sweep in `demux.rs` stands in for fuzzing.
   - [ ] **Differential runs for each new layer.** `ripcord-diff` exists and covers the stream plane and the
@@ -262,10 +262,10 @@ the documents into line, is done and in the journal. The engine lives in [`engin
 - [ ] **When the Rust engine first holds a copy of `Client-Type`:** name it in `CLAUDE.md`'s inventory and
       in `BundledInteropConstantsTests` in the same change.
 
-### The .NET reference: two findings from the Takion comparison (2026-09-26)
+### The .NET reference: findings from the engine comparisons (2026-09-26)
 
-A side-by-side read of the .NET Takion code and its C port, done for the Rust engine, found two faults
-in what the Windows client ships. Neither has been seen on hardware.
+Side-by-side reads of the .NET code and its C port, done for the Rust engine, found these faults in what
+the Windows client ships. None has been seen on hardware.
 
 - [ ] **`TakionReliableChannel.HandleSack` stops at a TSN wrap.** It walks `_unacked` in numeric key
       order and breaks at the first key that is not at or below the cumulative TSN. With chunks at
@@ -273,6 +273,14 @@ in what the Windows client ships. Neither has been seen on hardware.
       resends 0xFFFFFFFF every 300 ms for the rest of the session. The send TSN starts at a random 32-bit
       tag, so a session only hits this if it starts within a few hundred chunks of the top. The C core and
       the Rust engine compare every outstanding chunk by serial number.
+- [ ] **`HalyardPairingRecord.WakeCredential` writes the credential unsigned.** The C core writes it as a
+      signed 32-bit decimal and cites a PS4 capture that carried a negative one
+      (`docs/protocol/ps5-local-discovery.md`). If the capture is right, .NET cannot wake a console whose
+      registration key reads 0x80000000 or above. It also throws on a malformed key, and `WakeAsync` does not
+      catch it.
+- [ ] **A missing or malformed RP-Nonce does not stop the .NET session.** `HalyardStreamingSession` skips
+      the key setup and carries on to an unauthenticated /sess/ctrl, and would then send the launch spec,
+      and with it the handshake key, in plaintext. Both other engines fail the session there.
 - [ ] **`TakionSessionNegotiator` does not check SESSION_REPLY's `versionAccepted`,** nor that the reply
       carries the required fields and a 32-byte signature before verifying it. A console that refuses the
       version then surfaces as a signature or derivation failure instead of as a refusal. Both other
