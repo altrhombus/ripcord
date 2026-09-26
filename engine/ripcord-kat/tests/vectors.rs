@@ -42,8 +42,13 @@ fn session_crypto() {
 }
 
 #[test]
+fn control_proto() {
+    run_file("control-proto.kat");
+}
+
+#[test]
 fn every_file_has_a_test() {
-    assert_eq!(ripcord_kat::FILES.len(), 5, "a file added to FILES needs a test above");
+    assert_eq!(ripcord_kat::FILES.len(), 6, "a file added to FILES needs a test above");
 }
 
 #[test]

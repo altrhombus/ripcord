@@ -43,7 +43,7 @@ static unsafe class Checks
     public static int Layout()
     {
         var f = 0;
-        const uint expectedApi = 1;
+        const uint expectedApi = 2;
         if (NativeMethods.ripcord_api_version() != expectedApi)
             f += Fail($"api version {NativeMethods.ripcord_api_version()}, bindings expect {expectedApi}");
         (RipcordStructId id, int size)[] structs =
@@ -51,6 +51,9 @@ static unsafe class Checks
             (RipcordStructId.StreamHeader, sizeof(RipcordStreamHeader)),
             (RipcordStructId.DemuxSink, sizeof(RipcordDemuxSink)),
             (RipcordStructId.DemuxCounters, sizeof(RipcordDemuxCounters)),
+            (RipcordStructId.EcdhBackend, sizeof(RipcordEcdhBackend)),
+            (RipcordStructId.KatResult, sizeof(RipcordKatResult)),
+            (RipcordStructId.ScriptedConsoleCounts, sizeof(RipcordScriptedConsoleCounts)),
         ];
         foreach (var (id, size) in structs)
         {

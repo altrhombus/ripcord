@@ -463,3 +463,304 @@ impl Rng {
         v
     }
 }
+
+// ---- Takion, the 9303 wire and the scripted console ----
+
+unsafe extern "C" {
+    fn diff_takion_data(
+        first: c_int,
+        chunk: *const u8,
+        length: usize,
+        tsn: *mut u32,
+        channel: *mut u32,
+        ending: *mut c_int,
+        off: *mut usize,
+        len: *mut usize,
+    ) -> c_int;
+    fn diff_takion_sack(chunk: *const u8, length: usize, out: *mut u32) -> c_int;
+    fn diff_takion_init_ack(
+        chunk: *const u8,
+        length: usize,
+        tag: *mut u32,
+        tsn: *mut u32,
+        cookie: *mut u8,
+    ) -> c_int;
+    fn diff_control_peek(data: *const u8, length: usize, kind: *mut u32) -> c_int;
+    fn diff_control_validate(data: *const u8, length: usize) -> c_int;
+    fn diff_control_reply(data: *const u8, length: usize, nums: *mut u32, spans: *mut usize) -> c_int;
+    fn diff_control_stream_info(data: *const u8, length: usize, nums: *mut u32, spans: *mut usize) -> c_int;
+    fn diff_control_disconnect(data: *const u8, length: usize, span: *mut usize) -> c_int;
+    fn diff_control_version_ack(data: *const u8, length: usize, version: *mut u32) -> c_int;
+    fn diff_seal_sequence(
+        key: *const u8,
+        iv: *const u8,
+        kinds: *const c_int,
+        packets: *const *mut u8,
+        lengths: *const usize,
+        offsets: *const usize,
+        count: usize,
+    );
+    fn diff_verify_control(key: *const u8, iv: *const u8, packet: *const u8, length: usize) -> c_int;
+    fn diff_senkusha_echo(datagram: *const u8, length: usize, sequence: *mut u8) -> c_int;
+    fn diff_dgram_prelude(data: *const u8, length: usize, out: *mut u8) -> c_int;
+    fn diff_dgram_chunks(data: *const u8, length: usize, out: *mut usize, max: usize) -> usize;
+    fn diff_http_complete(data: *const u8, length: usize) -> c_int;
+    fn diff_console_new(
+        emit: ConsoleEmitFn,
+        user: *mut c_void,
+        init: *const c_char,
+        other: *const c_char,
+        close: c_int,
+    ) -> *mut c_void;
+    fn diff_console_free(c: *mut c_void);
+    fn diff_console_datagram(c: *mut c_void, d: *const u8, n: usize);
+    fn diff_console_counts(c: *mut c_void, out: *mut c_int);
+    fn diff_console_frame(c: *mut c_void, i: c_int, data: *mut *const u8) -> usize;
+    fn diff_console_request(c: *mut c_void, i: c_int, text: *mut *const c_char) -> usize;
+}
+
+type ConsoleEmitFn = extern "C" fn(user: *mut c_void, datagram: *const u8, length: usize);
+
+/// A DATA chunk as the C parser reads it: (tsn, channel, ending, payload).
+pub fn c_takion_data(first: bool, chunk: &[u8]) -> Option<(u32, u16, bool, Vec<u8>)> {
+    let _core = c_core();
+    let (mut tsn, mut channel, mut ending, mut off, mut len) = (0u32, 0u32, 0, 0usize, 0usize);
+    // SAFETY: a valid slice and five out-pointers.
+    let ok = unsafe {
+        diff_takion_data(
+            c_int::from(first),
+            chunk.as_ptr(),
+            chunk.len(),
+            &mut tsn,
+            &mut channel,
+            &mut ending,
+            &mut off,
+            &mut len,
+        )
+    };
+    (ok == 1).then(|| (tsn, channel as u16, ending != 0, chunk[off..off + len].to_vec()))
+}
+
+pub fn c_takion_sack(chunk: &[u8]) -> Option<[u32; 4]> {
+    let _core = c_core();
+    let mut out = [0u32; 4];
+    // SAFETY: a valid slice and a 4-element out array.
+    (unsafe { diff_takion_sack(chunk.as_ptr(), chunk.len(), out.as_mut_ptr()) } == 1).then_some(out)
+}
+
+pub fn c_takion_init_ack(chunk: &[u8]) -> Option<(u32, u32, [u8; 32])> {
+    let _core = c_core();
+    let (mut tag, mut tsn, mut cookie) = (0u32, 0u32, [0u8; 32]);
+    // SAFETY: a valid slice and outputs of the right sizes.
+    (unsafe { diff_takion_init_ack(chunk.as_ptr(), chunk.len(), &mut tag, &mut tsn, cookie.as_mut_ptr()) }
+        == 1)
+        .then_some((tag, tsn, cookie))
+}
+
+pub fn c_control_peek(data: &[u8]) -> Option<u32> {
+    let _core = c_core();
+    let mut t = 0;
+    // SAFETY: a valid slice.
+    (unsafe { diff_control_peek(data.as_ptr(), data.len(), &mut t) } == 1).then_some(t)
+}
+
+pub fn c_control_validate(data: &[u8]) -> bool {
+    let _core = c_core();
+    // SAFETY: a valid slice.
+    unsafe { diff_control_validate(data.as_ptr(), data.len()) == 1 }
+}
+
+fn span(data: &[u8], offset: usize, length: usize) -> Option<Vec<u8>> {
+    (offset != usize::MAX).then(|| data[offset..offset + length].to_vec())
+}
+
+/// SESSION_REPLY as the C parser reads it: the four numbers, then session key, server version string,
+/// public key and signature (optional ones `None` when absent).
+pub type CReply = ([u32; 4], Option<Vec<u8>>, Option<Vec<u8>>, Option<Vec<u8>>, Option<Vec<u8>>);
+
+pub fn c_control_reply(data: &[u8]) -> Option<CReply> {
+    let _core = c_core();
+    let (mut nums, mut spans) = ([0u32; 4], [0usize; 8]);
+    // SAFETY: a valid slice and outputs of the right sizes.
+    if unsafe { diff_control_reply(data.as_ptr(), data.len(), nums.as_mut_ptr(), spans.as_mut_ptr()) } != 1 {
+        return None;
+    }
+    Some((
+        nums,
+        span(data, spans[0], spans[1]),
+        span(data, spans[2], spans[3]),
+        span(data, spans[4], spans[5]),
+        span(data, spans[6], spans[7]),
+    ))
+}
+
+pub fn c_control_stream_info(data: &[u8]) -> Option<([u32; 3], Vec<u8>, Vec<u8>)> {
+    let _core = c_core();
+    let (mut nums, mut spans) = ([0u32; 3], [0usize; 4]);
+    // SAFETY: as above.
+    if unsafe { diff_control_stream_info(data.as_ptr(), data.len(), nums.as_mut_ptr(), spans.as_mut_ptr()) }
+        != 1
+    {
+        return None;
+    }
+    Some((
+        nums,
+        span(data, spans[0], spans[1]).unwrap_or_default(),
+        span(data, spans[2], spans[3]).unwrap_or_default(),
+    ))
+}
+
+pub fn c_control_disconnect(data: &[u8]) -> Option<Vec<u8>> {
+    let _core = c_core();
+    let mut s = [0usize; 2];
+    // SAFETY: as above.
+    (unsafe { diff_control_disconnect(data.as_ptr(), data.len(), s.as_mut_ptr()) } == 1)
+        .then(|| data[s[0]..s[0] + s[1]].to_vec())
+}
+
+pub fn c_control_version_ack(data: &[u8]) -> Option<u32> {
+    let _core = c_core();
+    let mut v = 0;
+    // SAFETY: as above.
+    (unsafe { diff_control_version_ack(data.as_ptr(), data.len(), &mut v) } == 1).then_some(v)
+}
+
+/// Seals `packets` in order through one C sealer: kind 0 control, 1 congestion, 2 input at `offset`.
+pub fn c_seal_sequence(key: &[u8; 16], iv: &[u8; 16], packets: &mut [(i32, Vec<u8>, usize)]) {
+    let _core = c_core();
+    let kinds: Vec<c_int> = packets.iter().map(|p| p.0).collect();
+    let lengths: Vec<usize> = packets.iter().map(|p| p.1.len()).collect();
+    let offsets: Vec<usize> = packets.iter().map(|p| p.2).collect();
+    let ptrs: Vec<*mut u8> = packets.iter_mut().map(|p| p.1.as_mut_ptr()).collect();
+    // SAFETY: every pointer is a live buffer of its listed length, and the arrays share one length.
+    unsafe {
+        diff_seal_sequence(
+            key.as_ptr(),
+            iv.as_ptr(),
+            kinds.as_ptr(),
+            ptrs.as_ptr(),
+            lengths.as_ptr(),
+            offsets.as_ptr(),
+            packets.len(),
+        )
+    }
+}
+
+pub fn c_verify_control(key: &[u8; 16], iv: &[u8; 16], packet: &[u8]) -> bool {
+    let _core = c_core();
+    // SAFETY: 16-byte keys and a valid slice.
+    unsafe { diff_verify_control(key.as_ptr(), iv.as_ptr(), packet.as_ptr(), packet.len()) == 1 }
+}
+
+pub fn c_senkusha_echo(datagram: &[u8]) -> Option<u8> {
+    let _core = c_core();
+    let mut s = 0u8;
+    // SAFETY: a valid slice.
+    (unsafe { diff_senkusha_echo(datagram.as_ptr(), datagram.len(), &mut s) } == 1).then_some(s)
+}
+
+/// The prelude as C parses it, re-serialised.
+pub fn c_dgram_prelude(data: &[u8]) -> Option<[u8; 88]> {
+    let _core = c_core();
+    let mut out = [0u8; 88];
+    // SAFETY: a valid slice and an 88-byte out buffer.
+    (unsafe { diff_dgram_prelude(data.as_ptr(), data.len(), out.as_mut_ptr()) } == 1).then_some(out)
+}
+
+/// Every chunk as C iterates them: (kind, flags, body, source, destination, words).
+pub fn c_dgram_chunks(data: &[u8]) -> Vec<(u8, u8, Vec<u8>, u16, u16, u8)> {
+    let _core = c_core();
+    let mut out = vec![0usize; 7 * 64];
+    // SAFETY: a valid slice and room for 64 chunks.
+    let n = unsafe { diff_dgram_chunks(data.as_ptr(), data.len(), out.as_mut_ptr(), 64) };
+    out.chunks(7)
+        .take(n)
+        .map(|c| {
+            (c[0] as u8, c[1] as u8, data[c[2]..c[2] + c[3]].to_vec(), c[4] as u16, c[5] as u16, c[6] as u8)
+        })
+        .collect()
+}
+
+pub fn c_http_complete(data: &[u8]) -> bool {
+    let _core = c_core();
+    // SAFETY: a valid slice.
+    unsafe { diff_http_complete(data.as_ptr(), data.len()) == 1 }
+}
+
+extern "C" fn console_emit(user: *mut c_void, datagram: *const u8, length: usize) {
+    // SAFETY: `user` is the Box<Vec<Vec<u8>>> CConsole owns; the datagram is valid for the call.
+    let out = unsafe { &mut *(user as *mut Vec<Vec<u8>>) };
+    out.push(slice(datagram, length).to_vec());
+}
+
+/// `libripcord/tests/fake_dgram_console.h`, the C scripted console.
+pub struct CConsole {
+    raw: *mut c_void,
+    // Boxed for a fixed address, which the C side holds.
+    #[allow(clippy::box_collection)]
+    emitted: Box<Vec<Vec<u8>>>,
+    _replies: (Option<std::ffi::CString>, Option<std::ffi::CString>),
+}
+
+impl CConsole {
+    pub fn new(init_reply: Option<&str>, other_reply: Option<&str>, close_before_answering: bool) -> Self {
+        let _core = c_core();
+        let mut emitted = Box::new(Vec::new());
+        let init = init_reply.map(|s| std::ffi::CString::new(s).unwrap());
+        let other = other_reply.map(|s| std::ffi::CString::new(s).unwrap());
+        let user = &mut *emitted as *mut Vec<Vec<u8>> as *mut c_void;
+        // SAFETY: the strings and the emit buffer outlive the console, all three living in Self.
+        let raw = unsafe {
+            diff_console_new(
+                console_emit,
+                user,
+                init.as_ref().map_or(std::ptr::null(), |s| s.as_ptr()),
+                other.as_ref().map_or(std::ptr::null(), |s| s.as_ptr()),
+                c_int::from(close_before_answering),
+            )
+        };
+        assert!(!raw.is_null());
+        Self { raw, emitted, _replies: (init, other) }
+    }
+
+    /// What the console sends in answer to `datagram`.
+    pub fn on_datagram(&mut self, datagram: &[u8]) -> Vec<Vec<u8>> {
+        let _core = c_core();
+        // SAFETY: a live console and a valid slice.
+        unsafe { diff_console_datagram(self.raw, datagram.as_ptr(), datagram.len()) };
+        std::mem::take(&mut self.emitted)
+    }
+
+    /// (inits, hellos, closes received, requests, ctrl open, frames)
+    pub fn counts(&self) -> [i32; 6] {
+        let _core = c_core();
+        let mut out = [0; 6];
+        // SAFETY: a live console and a 6-element out array.
+        unsafe { diff_console_counts(self.raw, out.as_mut_ptr()) };
+        out
+    }
+
+    pub fn frame(&self, i: usize) -> Vec<u8> {
+        let _core = c_core();
+        let mut p = std::ptr::null();
+        // SAFETY: i is below the frame count the caller read from counts().
+        let n = unsafe { diff_console_frame(self.raw, i as c_int, &mut p) };
+        slice(p, n).to_vec()
+    }
+
+    pub fn request(&self, i: usize) -> Vec<u8> {
+        let _core = c_core();
+        let mut p = std::ptr::null();
+        // SAFETY: as above.
+        let n = unsafe { diff_console_request(self.raw, i as c_int, &mut p) };
+        slice(p.cast(), n).to_vec()
+    }
+}
+
+impl Drop for CConsole {
+    fn drop(&mut self) {
+        let _core = c_core();
+        // SAFETY: allocated by diff_console_new and freed once.
+        unsafe { diff_console_free(self.raw) }
+    }
+}

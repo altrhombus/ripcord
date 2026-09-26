@@ -198,3 +198,218 @@ int diff_seed_recover(int is_ps5, const uint8_t d1[16], const uint8_t d2[16], co
 {
     return halyard_account_seed_recover_custom_data1(is_ps5, d1, d2, text, length, out);
 }
+
+/* ---- Takion ---- */
+#include "../../../libripcord/takion/takion_data_chunk.h"
+#include "../../../libripcord/takion/takion_sack_chunk.h"
+#include "../../../libripcord/takion/takion_handshake.h"
+#include "../../../libripcord/takion/takion_control_proto.h"
+#include "../../../libripcord/takion/takion_control_sealer.h"
+#include "../../../libripcord/takion/senkusha_echo.h"
+
+/* first: 1 first-fragment parser, 0 continuation. out: tsn, channel, ending, payload offset, length. */
+int diff_takion_data(int first, const uint8_t *chunk, size_t length, uint32_t *tsn, unsigned *channel,
+                     int *ending, size_t *payload_offset, size_t *payload_length)
+{
+    const uint8_t *payload;
+    int ok = first ? takion_data_parse_first(chunk, length, tsn, channel, ending, &payload, payload_length)
+                   : takion_data_parse_continuation(chunk, length, tsn, channel, ending, &payload, payload_length);
+    if (ok)
+        *payload_offset = (size_t)(payload - chunk);
+    return ok;
+}
+
+int diff_takion_sack(const uint8_t *chunk, size_t length, uint32_t out[4])
+{
+    takion_sack_info info;
+    if (!takion_sack_parse(chunk, length, &info))
+        return 0;
+    out[0] = info.cumulative_tsn_ack;
+    out[1] = info.a_rwnd;
+    out[2] = info.gap_ack_block_count;
+    out[3] = info.dup_tsn_count;
+    return 1;
+}
+
+int diff_takion_init_ack(const uint8_t *chunk, size_t length, uint32_t *tag, uint32_t *tsn, uint8_t cookie[32])
+{
+    return takion_parse_init_ack(chunk, length, tag, tsn, cookie);
+}
+
+int diff_control_peek(const uint8_t *data, size_t length, uint32_t *type)
+{
+    return takion_control_peek_type(data, length, type);
+}
+
+int diff_control_validate(const uint8_t *data, size_t length) { return takion_control_validate(data, length); }
+
+/* Flattens a parsed reply: 4 numbers, then (offset, length) pairs into `data` for the byte fields, with
+ * offset SIZE_MAX for an absent optional. */
+int diff_control_reply(const uint8_t *data, size_t length, uint32_t nums[4], size_t spans[8])
+{
+    takion_session_reply r;
+    if (!takion_control_parse_session_reply(data, length, &r))
+        return 0;
+    nums[0] = r.server_version;
+    nums[1] = r.token;
+    nums[2] = (uint32_t)r.encrypted_key_accepted;
+    nums[3] = (uint32_t)r.version_accepted;
+#define SPAN(i, p, n) do { spans[2*(i)] = (p) ? (size_t)((const uint8_t *)(p) - data) : (size_t)-1; spans[2*(i)+1] = (n); } while (0)
+    SPAN(0, r.session_key, r.session_key_length);
+    SPAN(1, r.server_version_string, r.server_version_string_length);
+    SPAN(2, r.ecdh_public_key, r.ecdh_public_key_length);
+    SPAN(3, r.ecdh_signature, r.ecdh_signature_length);
+    return 1;
+}
+
+int diff_control_stream_info(const uint8_t *data, size_t length, uint32_t nums[3], size_t spans[4])
+{
+    takion_stream_info i;
+    if (!takion_control_parse_stream_info(data, length, &i))
+        return 0;
+    nums[0] = i.width;
+    nums[1] = i.height;
+    nums[2] = (uint32_t)i.has_resolution;
+    SPAN(0, i.video_header, i.video_header_length);
+    SPAN(1, i.audio_header, i.audio_header_length);
+    return 1;
+}
+
+int diff_control_disconnect(const uint8_t *data, size_t length, size_t span[2])
+{
+    const char *reason;
+    size_t n;
+    if (!takion_control_parse_disconnect(data, length, &reason, &n))
+        return 0;
+    span[0] = (size_t)((const uint8_t *)reason - data);
+    span[1] = n;
+    return 1;
+}
+
+int diff_control_version_ack(const uint8_t *data, size_t length, uint32_t *version)
+{
+    return takion_control_parse_protocol_version_ack(data, length, version);
+}
+
+/* kind: 0 control, 1 congestion, 2 input (payload_offset used). Seals `count` packets in sequence
+ * through one sealer, each in place, so the shared key position is compared too. */
+void diff_seal_sequence(const uint8_t key[16], const uint8_t iv[16], const int *kinds, uint8_t **packets,
+                        const size_t *lengths, const size_t *payload_offsets, size_t count)
+{
+    takion_control_sealer s;
+    size_t i;
+    takion_control_sealer_init(&s, key, iv);
+    for (i = 0; i < count; i++) {
+        if (kinds[i] == 0)
+            takion_control_sealer_seal(&s, packets[i], lengths[i]);
+        else if (kinds[i] == 1)
+            takion_control_sealer_seal_congestion(&s, packets[i], lengths[i]);
+        else
+            takion_control_sealer_seal_input(&s, packets[i], lengths[i], payload_offsets[i]);
+    }
+}
+
+int diff_verify_control(const uint8_t key[16], const uint8_t iv[16], const uint8_t *packet, size_t length)
+{
+    takion_control_verifier v;
+    takion_control_verifier_init(&v, key, iv);
+    return takion_control_verifier_check(&v, packet, length);
+}
+
+int diff_senkusha_echo(const uint8_t *datagram, size_t length, uint8_t *sequence)
+{
+    return senkusha_echo_is_echo(datagram, length, sequence);
+}
+
+/* ---- the 9303 wire, and the scripted console ---- */
+#include "../../../libripcord/tests/fake_dgram_console.h"
+
+int diff_dgram_prelude(const uint8_t *data, size_t length, uint8_t out[88])
+{
+    halyard_dgram_prelude p;
+    if (!halyard_dgram_prelude_parse(data, length, &p))
+        return 0;
+    halyard_dgram_prelude_write(&p, out, 88);
+    return 1;
+}
+
+/* Every chunk's (kind, flags, body offset, body length, source, destination, words), 7 values each. */
+size_t diff_dgram_chunks(const uint8_t *data, size_t length, size_t *out, size_t max_chunks)
+{
+    halyard_dgram_chunk c;
+    size_t offset = 0, n = 0;
+    while (n < max_chunks && halyard_dgram_chunk_next(data, length, &offset, &c)) {
+        size_t *o = out + 7 * n++;
+        o[0] = c.type; o[1] = c.flags; o[2] = (size_t)(c.body - data); o[3] = c.body_length;
+        o[4] = c.source_port; o[5] = c.destination_port; o[6] = c.word_count;
+    }
+    return n;
+}
+
+int diff_http_complete(const uint8_t *data, size_t length) { return halyard_dgram_http_complete(data, length); }
+
+typedef void (*diff_emit_fn)(void *user, const uint8_t *datagram, size_t length);
+
+typedef struct {
+    fake_console fc;
+    diff_emit_fn emit;
+    void *user;
+    char init_reply[512];
+    char other_reply[512];
+} diff_console;
+
+static void console_emit(void *ctx, const uint8_t *d, size_t n)
+{
+    diff_console *c = ctx;
+    c->emit(c->user, d, n);
+}
+
+void *diff_console_new(diff_emit_fn emit, void *user, const char *init_reply, const char *other_reply,
+                       int close_before_answering)
+{
+    diff_console *c = calloc(1, sizeof(*c));
+    if (c == NULL)
+        return NULL;
+    c->emit = emit;
+    c->user = user;
+    fake_console_init(&c->fc, console_emit, c);
+    if (init_reply != NULL) {
+        strncpy(c->init_reply, init_reply, sizeof(c->init_reply) - 1);
+        c->fc.init_reply = c->init_reply;
+    }
+    if (other_reply != NULL) {
+        strncpy(c->other_reply, other_reply, sizeof(c->other_reply) - 1);
+        c->fc.other_reply = c->other_reply;
+    }
+    c->fc.close_before_answering = close_before_answering;
+    return c;
+}
+
+void diff_console_free(void *c) { free(c); }
+
+void diff_console_datagram(void *c, const uint8_t *d, size_t n)
+{
+    fake_console_on_datagram(&((diff_console *)c)->fc, d, n);
+}
+
+/* inits, hellos, closes, requests, ctrl_open, frames */
+void diff_console_counts(void *c, int out[6])
+{
+    fake_console *f = &((diff_console *)c)->fc;
+    out[0] = f->inits; out[1] = f->hellos; out[2] = f->closes_received;
+    out[3] = f->requests; out[4] = f->ctrl_open; out[5] = f->frames;
+}
+
+size_t diff_console_frame(void *c, int i, const uint8_t **data)
+{
+    fake_console *f = &((diff_console *)c)->fc;
+    *data = f->frame[i];
+    return f->frame_length[i];
+}
+
+size_t diff_console_request(void *c, int i, const char **text)
+{
+    fake_console *f = &((diff_console *)c)->fc;
+    *text = f->request[i];
+    return f->request_length[i];
+}

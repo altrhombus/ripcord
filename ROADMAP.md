@@ -244,13 +244,12 @@ the documents into line, is done and in the journal. The engine lives in [`engin
       CI, and the scripted console ported to Rust. Parity is a measured matrix, not a list. The first layer,
       crypto and the Halyard derivations, has its vectors passing and its differential runs clean (journal,
       2026-09-26). It still needs its fuzz target. Next in order:
-  - [ ] **The CryptoKit and CNG `Ecdh` backends,** each against `session-crypto.kat` on its own platform.
-        RustCrypto passes it now.
-  - [ ] **The scripted console in Rust,** before Takion, because every layer above Takion is tested
-        against it.
-  - [ ] **Takion, then discovery and wake, `/sess` and registration (which brings `accountrgst` and the
-        engine's copy of `Client-Type`), STUN and the 9303 transport, the rendezvous route, and the
-        connect sequence.**
+  - [ ] **The CNG `Ecdh` backend,** against `session-crypto.kat` on Windows. RustCrypto and CryptoKit
+        pass it (journal, 2026-09-26).
+  - [ ] **Discovery and wake, `/sess` and registration (which brings `accountrgst`, `launchspec` and the
+        engine's copy of `Client-Type`), STUN and the 9303 association, the rendezvous route, and the
+        connect sequence.** Takion and the scripted console are done. `ripcord-net`, the I/O driver, arrives
+        with the connect sequence.
   - [ ] **A nightly CI leg** for Miri over `ripcord-ffi`'s tests and a coverage-guided `cargo-fuzz` run
         with a kept corpus. Neither runs yet; the stable sweep in `demux.rs` stands in for fuzzing.
   - [ ] **Differential runs for each new layer.** `ripcord-diff` exists and covers the stream plane and the
@@ -262,6 +261,22 @@ the documents into line, is done and in the journal. The engine lives in [`engin
         `Ripcord.Protocol.Halyard*` namespaces. Stale usings, or a dependency around the seams.
 - [ ] **When the Rust engine first holds a copy of `Client-Type`:** name it in `CLAUDE.md`'s inventory and
       in `BundledInteropConstantsTests` in the same change.
+
+### The .NET reference: two findings from the Takion comparison (2026-09-26)
+
+A side-by-side read of the .NET Takion code and its C port, done for the Rust engine, found two faults
+in what the Windows client ships. Neither has been seen on hardware.
+
+- [ ] **`TakionReliableChannel.HandleSack` stops at a TSN wrap.** It walks `_unacked` in numeric key
+      order and breaks at the first key that is not at or below the cumulative TSN. With chunks at
+      0xFFFFFFFF and 0x00000000 outstanding and 0xFFFFFFFF acknowledged, it sees 0 first, stops, and
+      resends 0xFFFFFFFF every 300 ms for the rest of the session. The send TSN starts at a random 32-bit
+      tag, so a session only hits this if it starts within a few hundred chunks of the top. The C core and
+      the Rust engine compare every outstanding chunk by serial number.
+- [ ] **`TakionSessionNegotiator` does not check SESSION_REPLY's `versionAccepted`,** nor that the reply
+      carries the required fields and a 32-byte signature before verifying it. A console that refuses the
+      version then surfaces as a signature or derivation failure instead of as a refusal. Both other
+      engines check.
 
 ### macOS client — planned 2026-09-24, step 1 done
 

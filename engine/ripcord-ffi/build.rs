@@ -30,7 +30,7 @@ fn main() {
         .csharp_class_name("NativeMethods")
         .csharp_class_accessibility("internal")
         .csharp_use_function_pointer(true)
-        .always_included_types(["RipcordStructId"])
+        .always_included_types(["RipcordStructId", "RipcordKatResult", "RipcordScriptedConsoleCounts"])
         .generate_csharp_file(include.join("NativeMethods.g.cs"))
         .expect("generate NativeMethods.g.cs");
 }
