@@ -14,18 +14,21 @@
 //!   threads and takes no locks.
 //! - **Borrowed buffers.** Every pointer passed to a callback is valid for that call only.
 //!
-//! This is the Phase 1 surface: the stream plane only. Phase 2 grows it toward `halyard_client.h`.
+//! The stream plane, and the client (`client.rs`), whose contract is `halyard_client.h`'s.
 
 use std::ffi::c_void;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use ripcord_proto::crypto::ecdh::{Curve, Ecdh};
+
+mod client;
+pub use client::*;
 use ripcord_proto::stream::demux::{DemuxSink, PacketOpener, Passthrough, StreamDemux};
 use ripcord_proto::stream::header::StreamHeader;
 use ripcord_proto::stream::packet_crypto::PacketCrypto;
 
 /// Bumped whenever an export's signature or a crossing struct's layout changes.
-pub const RIPCORD_API_VERSION: u32 = 2;
+pub const RIPCORD_API_VERSION: u32 = 3;
 
 /// `repr(C)`, not `repr(i32)`, for the header's sake: cbindgen writes a fixed-width enum as an `enum` tag
 /// plus a same-named integer typedef before C23, and Swift imports those as two different types. A C
@@ -56,6 +59,16 @@ pub enum RipcordStructId {
     EcdhBackend = 4,
     KatResult = 5,
     ScriptedConsoleCounts = 6,
+    ClientConfig = 7,
+    ClientCallbacks = 8,
+    ClientResult = 9,
+    ClientStats = 10,
+    InputState = 11,
+    StreamInfo = 12,
+    Leg = 13,
+    Peer = 14,
+    Endpoint = 15,
+    Random = 16,
 }
 
 /// The parsed A/V header, as the demuxer hands it to a control-packet callback.
@@ -157,12 +170,9 @@ pub struct RipcordEcdhBackend {
     >,
 }
 
-/// A host backend behind the engine's `Ecdh` trait. Only the test-support exports use it until the
-/// connect sequence's key agreement is exported.
-#[cfg_attr(not(feature = "test-support"), allow(dead_code))]
+/// A host backend behind the engine's `Ecdh` trait.
 pub(crate) struct HostEcdh<'a>(pub(crate) &'a RipcordEcdhBackend);
 
-#[cfg_attr(not(feature = "test-support"), allow(dead_code))]
 fn curve_id(curve: Curve) -> u32 {
     match curve {
         Curve::P256 => RIPCORD_CURVE_P256,
@@ -315,6 +325,16 @@ pub extern "C" fn ripcord_struct_size(id: u32) -> usize {
         x if x == RipcordStructId::EcdhBackend as u32 => size_of::<RipcordEcdhBackend>(),
         x if x == RipcordStructId::KatResult as u32 => size_of::<RipcordKatResult>(),
         x if x == RipcordStructId::ScriptedConsoleCounts as u32 => size_of::<RipcordScriptedConsoleCounts>(),
+        x if x == RipcordStructId::ClientConfig as u32 => size_of::<RipcordClientConfig>(),
+        x if x == RipcordStructId::ClientCallbacks as u32 => size_of::<RipcordClientCallbacks>(),
+        x if x == RipcordStructId::ClientResult as u32 => size_of::<RipcordClientResult>(),
+        x if x == RipcordStructId::ClientStats as u32 => size_of::<RipcordClientStats>(),
+        x if x == RipcordStructId::InputState as u32 => size_of::<RipcordInputState>(),
+        x if x == RipcordStructId::StreamInfo as u32 => size_of::<RipcordStreamInfo>(),
+        x if x == RipcordStructId::Leg as u32 => size_of::<RipcordLeg>(),
+        x if x == RipcordStructId::Peer as u32 => size_of::<RipcordPeer>(),
+        x if x == RipcordStructId::Endpoint as u32 => size_of::<RipcordEndpoint>(),
+        x if x == RipcordStructId::Random as u32 => size_of::<RipcordRandom>(),
         _ => 0,
     }
 }

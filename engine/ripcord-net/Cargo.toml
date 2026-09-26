@@ -12,4 +12,8 @@ ripcord-proto = { path = "../ripcord-proto" }
 socket2 = "0.6"
 
 [dev-dependencies]
-ripcord-proto = { path = "../ripcord-proto", features = ["scripted-console"] }
+ripcord-net = { path = ".", features = ["loopback-console"] }
+
+[features]
+# The scripted LAN console on loopback sockets (src/testing.rs), for tests. Never in a shipping engine.
+loopback-console = ["ripcord-proto/scripted-console"]

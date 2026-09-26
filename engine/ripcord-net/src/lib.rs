@@ -24,6 +24,9 @@ pub use ripcord_proto::connect::{
 use ripcord_proto::crypto::ecdh::Ecdh;
 use ripcord_proto::dgram::rendezvous;
 
+#[cfg(feature = "loopback-console")]
+pub mod testing;
+
 /// The most datagrams read from one socket before the others get a turn: a burst's worth (C's
 /// RC_AV_DRAIN_BURST).
 const DRAIN_BURST: usize = 256;
