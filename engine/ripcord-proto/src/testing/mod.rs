@@ -3,3 +3,4 @@
 //! suites under its `test-support` feature). Never part of a shipping engine.
 
 pub mod scripted_console;
+pub mod scripted_lan_console;

@@ -35,6 +35,33 @@ different purpose.
 > anything. The list above is short, it is checkable in one `git log --format=%B | grep`, and it stops
 > growing the moment someone notices — which is the property that actually matters.
 
+### The Rust engine: the connect sequence and ripcord-net (2026-09-26)
+
+The last layer of Phase 2's protocol work, from the C client and the .NET session side by side. The
+comparison listed about forty differences, each decided in `engine/README.md`.
+
+- **`connect::Session`**: the whole sequence as a sans-IO machine, both routes. On the LAN: the arm
+  probe, /sess over TCP, the sign-in gate, senkusha, Takion, key agreement, STREAM_INFO and the running
+  session (input, heartbeats, congestion feedback, the IDR latch, stats, the goodbye). On rendezvous:
+  prepare, begin and the exchange, /sess over the 9303 association, the A/V leg's STUN, media
+  negotiation, prelude and SESSION_ID wait, senkusha and the stream on that socket, PROBE_REPORT and
+  STREAM_READY.
+- **What it takes from .NET**: a 20 s (LAN) or 60 s (rendezvous) control-plane deadline and a 35 s box
+  around the stream bring-up, peer filtering on every socket, the declared MTU from the interface, and
+  a rounded RTT.
+- **What it takes from C**: SESSION_ID before Takion on the LAN, the sign-in policy, ending the session
+  when the console hangs up, enforced GMAC verification, the IDR latch, and rest only when asked.
+- **Controller input** is ported too, following the .NET writer, which sends every event of a poll where
+  the C core's could drop the fifth.
+- **`ripcord-net`**, the driver: `std::net` sockets on the caller's thread, the C client's threading
+  contract, and `socket2` for the receive buffer.
+- **Tested end to end without a console.** A scripted LAN console computes its side of every derivation
+  from what the client sent. The LAN and rendezvous sequences run against scripted consoles, and a
+  loopback test runs the LAN sequence over real sockets to video and the goodbye. The C client could only
+  have its timing policy tested, because it owned its sockets.
+- **Three more .NET findings, on the roadmap.** The session never ends when the console hangs up; rest
+  applies to every teardown, reconnects included; and the keyless senkusha request sends an empty key.
+
 ### The Rust engine: STUN, the 9303 association and the rendezvous control plane (2026-09-26)
 
 The internet route's UDP layers, by the same method. The 9303 association matches rule for rule in .NET
