@@ -47,8 +47,13 @@ fn control_proto() {
 }
 
 #[test]
+fn rendezvous_control() {
+    run_file("rendezvous-control.kat");
+}
+
+#[test]
 fn every_file_has_a_test() {
-    assert_eq!(ripcord_kat::FILES.len(), 6, "a file added to FILES needs a test above");
+    assert_eq!(ripcord_kat::FILES.len(), 7, "a file added to FILES needs a test above");
 }
 
 #[test]
