@@ -306,6 +306,14 @@ commands are pulled. The differences:
 | A process-wide log sink | The session's own `log` callback | engine-plan.md rule 9 |
 | Results and stats | The same facts, plus the stream's SACK round trip in the stats | .NET reports it; C has none |
 
+Around the session, `ripcord-ffi/src/pairing.rs` exports the rest of what the Mac takes from the C core:
+the SRCH probe and reply parser, the wake payload (the host owns those sockets), the account-id
+normaliser (ported from C, which alone has one, and differentially checked against it on 20,000
+generated inputs), the account key material and seed recovery, PIN registration over TCP 9295
+(`ripcord-net::pairing`, with C's arm probe and read-until-close), and account registration on a
+rendezvous client's control leg. A registration returns a `RipcordPairingRecord`; saving it is the host's.
+A CSPRNG that refuses a draw fails the registration rather than supplying zeroes.
+
 `RipcordClientConfig`'s port fields and `no_arm_broadcast` exist for tests. The `test-support` feature adds
 `ripcord_loopback_console_*`, the scripted LAN console on loopback sockets, so each host's suite runs a real
 session.
@@ -315,3 +323,4 @@ session.
 | Rust, through the ABI | `ripcord-ffi/tests/client_abi.rs`: a LAN session with a passcode, video, stats, input and the goodbye; bad configs refused; layouts reported |
 | .NET | The harness hosts a session through `[UnmanagedCallersOnly]` callbacks and a GCHandle, as Phase 4 will, and checks 16 struct layouts |
 | Swift | `EngineClientTests`: the same session from `@convention(c)` callbacks, with CryptoKit doing the key agreement and `SecRandomCopyBytes` the randomness |
+| Pairing | `pairing_abi.rs`: discovery, wake, the account id, the seed, and PIN registration against the loopback console, whose `/sess/rgst` answer is the console's real side of the derivation |

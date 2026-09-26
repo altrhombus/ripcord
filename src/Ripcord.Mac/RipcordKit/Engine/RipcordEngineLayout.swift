@@ -24,6 +24,9 @@ enum RipcordEngineLayout {
             (RIPCORD_STRUCT_ID_PEER, MemoryLayout<RipcordPeer>.size),
             (RIPCORD_STRUCT_ID_ENDPOINT, MemoryLayout<RipcordEndpoint>.size),
             (RIPCORD_STRUCT_ID_RANDOM, MemoryLayout<RipcordRandom>.size),
+            (RIPCORD_STRUCT_ID_DISCOVERED_CONSOLE, MemoryLayout<RipcordDiscoveredConsole>.size),
+            (RIPCORD_STRUCT_ID_PAIRING_RECORD, MemoryLayout<RipcordPairingRecord>.size),
+            (RIPCORD_STRUCT_ID_REGIST_RESULT, MemoryLayout<RipcordRegistResult>.size),
         ]
         return structs.allSatisfy { ripcord_struct_size($0.0.rawValue) == $0.1 }
     }

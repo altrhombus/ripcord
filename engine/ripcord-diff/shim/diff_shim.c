@@ -568,3 +568,8 @@ int diff_assoc_op(void *p, int op, int arg, const uint8_t *data, size_t length)
     }
     return (int)a->assoc.phase;
 }
+
+/* ---- the account-id normaliser ---- */
+#include "../../../libripcord/session/halyard_account_id.h"
+
+int diff_account_id(const char *in, char *out, size_t size) { return (int)halyard_account_id_normalise(in, out, size); }

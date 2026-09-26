@@ -23,7 +23,18 @@ pub use ripcord_proto::connect::{
 };
 use ripcord_proto::crypto::ecdh::Ecdh;
 use ripcord_proto::dgram::rendezvous;
+use ripcord_proto::sess::regist;
 
+/// Why account registration over the control leg did not produce a record.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum RegisterError {
+    /// Not between begin and connect.
+    NotReady,
+    Transport(rendezvous::Error),
+    Regist(regist::RegistError),
+}
+
+pub mod pairing;
 #[cfg(feature = "loopback-console")]
 pub mod testing;
 
@@ -385,6 +396,31 @@ impl Client {
         let ok = self.session.rendezvous_begin(now, local_hashed_id, console);
         self.run_io();
         ok
+    }
+
+    /// Account registration on the control leg, between begin and connect: the request built from the
+    /// seed the console published, exchanged, and the answer opened into a pairing record. Blocking,
+    /// bounded by the 9303 stage deadline.
+    pub fn rendezvous_register(
+        &mut self,
+        host: &mut impl Host,
+        is_ps5: bool,
+        seed: &[u8; 16],
+        account_id: &str,
+        client_ip: &str,
+    ) -> Result<regist::PairingRecord, RegisterError> {
+        let mut context = [0u8; ripcord_proto::halyard::registration::CONTEXT_LENGTH];
+        let mut material = [0u8; 16];
+        self.session.fill_random(&mut context);
+        self.session.fill_random(&mut material);
+        let built = regist::Exchange::account(is_ps5, seed, account_id, client_ip, &context, &material);
+        material.fill(0);
+        let (exchange, request) = built.map_err(RegisterError::Regist)?;
+        match self.rendezvous_exchange(host, request) {
+            None => Err(RegisterError::NotReady),
+            Some(Err(e)) => Err(RegisterError::Transport(e)),
+            Some(Ok(reply)) => exchange.open(&reply).map_err(RegisterError::Regist),
+        }
     }
 
     /// One request and its answer on the control leg (registration on this route), between begin and

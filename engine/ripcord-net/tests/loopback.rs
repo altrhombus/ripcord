@@ -81,3 +81,33 @@ fn a_lan_session_over_loopback_sockets() {
     }
     assert!(c.state.lock().unwrap().disconnect_received);
 }
+
+#[test]
+fn pin_registration_over_loopback() {
+    use ripcord_net::pairing::{PinError, PinParams, register_pin};
+    use ripcord_proto::sess::regist::RegistError;
+
+    let c = LoopbackConsole::start(|s| s.regist_pin = 87_654_321);
+    let mut params = PinParams::new([127, 0, 0, 1], true, "1234567890123456789", 87_654_321, "127.0.0.1");
+    (params.port, params.arm_broadcast) = (c.ports.0, false);
+    let mut random = counting();
+    let outcome = register_pin(&params, &mut random);
+    assert!(outcome.saw_arm_reply);
+    let record = outcome.result.expect("a pairing record");
+    assert_eq!(record.registration_key, console::REGISTRATION_KEY);
+    assert_eq!(record.companion, console::COMPANION);
+    assert!(record.is_ps5);
+    assert!(c.state.lock().unwrap().requests.iter().any(|r| r.starts_with("POST /sie/ps5/rp/sess/rgst")));
+
+    // A wrong PIN decrypts to noise, which is not a record.
+    params.passcode = 11_111_111;
+    assert_eq!(register_pin(&params, &mut random).result, Err(PinError::Regist(RegistError::BadRecord)));
+    drop(c);
+
+    let c = LoopbackConsole::start(|s| s.regist_refuse = Some("80108b10"));
+    (params.port, params.passcode) = (c.ports.0, 87_654_321);
+    assert_eq!(
+        register_pin(&params, &mut random).result,
+        Err(PinError::Regist(RegistError::Refused { status: 403, reason: Some("80108b10".into()) }))
+    );
+}

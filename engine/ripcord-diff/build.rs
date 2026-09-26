@@ -35,6 +35,7 @@ const SOURCES: &[&str] = &[
     "session/halyard_ctrl_message.c",
     "util/rc_text.c",
     "net/rc_stun.c",
+    "session/halyard_account_id.c",
     "session/halyard_wan_candidates.c",
     "session/halyard_dgram_assoc.c",
 ];

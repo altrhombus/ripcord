@@ -285,6 +285,11 @@ impl Session {
         }
     }
 
+    /// Bytes from the host's CSPRNG, for what a host builds around the session (a registration request).
+    pub fn fill_random(&self, out: &mut [u8]) {
+        self.fill(out)
+    }
+
     fn fill(&self, out: &mut [u8]) {
         (self.random.lock().unwrap_or_else(|p| p.into_inner()))(out)
     }
