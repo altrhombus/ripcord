@@ -44,7 +44,7 @@ static unsafe class Checks
     public static int Layout()
     {
         var f = 0;
-        const uint expectedApi = 3;
+        const uint expectedApi = 4;
         if (NativeMethods.ripcord_api_version() != expectedApi)
             f += Fail($"api version {NativeMethods.ripcord_api_version()}, bindings expect {expectedApi}");
         (RipcordStructId id, int size)[] structs =

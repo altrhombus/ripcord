@@ -1,6 +1,0 @@
-// A scripted console for RipcordKitTests, over the core's own test fixture. Tests only: nothing that ships
-// imports it.
-module CLibripcordTestSupport {
-    header "CLibripcordTestSupport.h"
-    export *
-}

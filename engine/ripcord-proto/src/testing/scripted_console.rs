@@ -35,6 +35,13 @@ pub struct ScriptedConsole {
     pub other_reply: Option<Vec<u8>>,
     /// For a POST that is not /sess/init: tear down instead of replying.
     pub close_before_answering: bool,
+    /// Answer /sess/rgst as the account route's console would, under this seed: the field decrypted with
+    /// the console's half of the derivation, and a pairing record for [`ACCOUNT_REGISTRATION_KEY`] back.
+    pub account_seed: Option<[u8; 16]>,
+    pub is_ps5: bool,
+    pub rgst_requests: usize,
+    /// Whether the last /sess/rgst field decrypted to what a client sends (`Client-Type: ...`).
+    pub rgst_field_ok: bool,
 
     pub inits: usize,
     pub hellos: usize,
@@ -54,6 +61,10 @@ impl Default for ScriptedConsole {
             init_reply: None,
             other_reply: None,
             close_before_answering: false,
+            account_seed: None,
+            is_ps5: true,
+            rgst_requests: 0,
+            rgst_field_ok: false,
             inits: 0,
             hellos: 0,
             closes_received: 0,
@@ -63,6 +74,40 @@ impl Default for ScriptedConsole {
             frames: Vec::new(),
         }
     }
+}
+
+/// The registration key the account-route console hands out: the ASCII hex a record carries, as the C
+/// suites' console hands out.
+pub const ACCOUNT_REGISTRATION_KEY: &[u8] = b"1a2b3c4d";
+
+/// The account route's console side of /sess/rgst: the material unwrapped from the context, the field
+/// derived under the seed, the client's field checked, and a pairing record sealed back. `None` for a
+/// request too short to carry a context.
+pub fn account_rgst_reply(is_ps5: bool, seed: &[u8; 16], request: &[u8]) -> Option<(Vec<u8>, bool)> {
+    use crate::halyard::registration;
+    let end = request.windows(4).position(|w| w == b"\r\n\r\n")? + 4;
+    let body = &request[end..];
+    let context = body.get(..registration::CONTEXT_LENGTH)?;
+    let wrapped = registration::gather(context)?;
+    let material = registration::unwrap_account_material(is_ps5, &wrapped, context)?;
+    let field = registration::account_field(is_ps5, context, seed, &material)?;
+    let mut plain = body[registration::CONTEXT_LENGTH..].to_vec();
+    field.decrypt(registration::FIELD_COUNTER, &mut plain);
+    let field_ok = plain.starts_with(b"Client-Type: ");
+    let family = if is_ps5 { "PS5" } else { "PS4" };
+    let hex = |b: &[u8]| b.iter().map(|x| format!("{x:02x}")).collect::<String>();
+    let mut record = format!(
+        "AP-Ssid: scripted\r\n{family}-RegistKey: {}\r\nRP-KeyType: 2\r\nRP-Key: {}\r\n",
+        hex(ACCOUNT_REGISTRATION_KEY),
+        hex(&[
+            0xc0, 0xc1, 0xc2, 0xc3, 0xc4, 0xc5, 0xc6, 0xc7, 0xc8, 0xc9, 0xca, 0xcb, 0xcc, 0xcd, 0xce, 0xcf
+        ])
+    )
+    .into_bytes();
+    field.encrypt(registration::FIELD_COUNTER, &mut record);
+    let mut reply = format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n", record.len()).into_bytes();
+    reply.extend(record);
+    Some((reply, field_ok))
 }
 
 fn chunk(kind: u8, flags: u8, body: &[u8]) -> Vec<u8> {
@@ -124,6 +169,17 @@ impl ScriptedConsole {
         if !is_init && self.close_before_answering {
             out.push(Self::close());
             return;
+        }
+        if !is_init && contains(b"/sess/rgst") {
+            self.rgst_requests += 1;
+            if let Some(seed) = self.account_seed
+                && let Some((reply, field_ok)) = account_rgst_reply(self.is_ps5, &seed, text)
+            {
+                self.rgst_field_ok = field_ok;
+                out.extend(self.push(&reply));
+                out.push(Self::close());
+                return;
+            }
         }
         let reply = match (is_init, &self.init_reply, &self.other_reply) {
             (true, Some(r), _) | (false, _, Some(r)) => r.clone(),

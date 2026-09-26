@@ -59,6 +59,11 @@ pub struct Negotiator {
 }
 
 impl Negotiator {
+    /// The curve this negotiation's key pair is on.
+    pub fn curve(&self) -> Curve {
+        self.curve
+    }
+
     /// Generates the ephemeral pair and builds SESSION_REQUEST. `launch_spec` is the already-encrypted,
     /// already-base64 spec carrying this same `handshake_key`. `None` for an unvalidated version or a
     /// failed key generation.

@@ -99,3 +99,76 @@ impl Drop for LoopbackConsole {
         let _ = self.thread.take().map(|t| t.join());
     }
 }
+
+/// What the loopback 9303 console saw.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct DgramReport {
+    pub inits: usize,
+    pub rgst_requests: usize,
+    pub rgst_field_ok: bool,
+    /// Each HTTP request's path, in order: `/sess/rgst`, `/sess/init` or `/sess/ctrl`.
+    pub requests: Vec<String>,
+}
+
+/// The scripted 9303 console on a loopback socket, on its own thread: the association, /sess/init with a
+/// nonce, /sess/ctrl, and the account route's /sess/rgst under `seed`. It offers no A/V leg.
+pub struct LoopbackDgramConsole {
+    stop: Arc<AtomicBool>,
+    state: Arc<Mutex<ripcord_proto::testing::scripted_console::ScriptedConsole>>,
+    pub port: u16,
+    thread: Option<std::thread::JoinHandle<()>>,
+}
+
+impl LoopbackDgramConsole {
+    pub fn start(is_ps5: bool, seed: [u8; 16], nonce: [u8; 16]) -> std::io::Result<Self> {
+        use ripcord_proto::testing::scripted_console::ScriptedConsole;
+        let socket = UdpSocket::bind("127.0.0.1:0")?;
+        socket.set_read_timeout(Some(Duration::from_millis(2)))?;
+        let port = socket.local_addr()?.port();
+        let mut console = ScriptedConsole::new();
+        console.is_ps5 = is_ps5;
+        console.account_seed = Some(seed);
+        let nonce = ripcord_proto::base64::encode(&nonce);
+        console.init_reply =
+            Some(format!("HTTP/1.1 200 OK\r\nRP-Nonce: {nonce}\r\nContent-Length: 0\r\n\r\n").into_bytes());
+        let stop = Arc::new(AtomicBool::new(false));
+        let state = Arc::new(Mutex::new(console));
+        let (stop2, state2) = (stop.clone(), state.clone());
+        let thread = std::thread::spawn(move || {
+            let mut buf = [0u8; 4096];
+            while !stop2.load(Ordering::Relaxed) {
+                if let Ok((n, from)) = socket.recv_from(&mut buf) {
+                    let replies = state2.lock().unwrap().on_datagram(&buf[..n]);
+                    for r in replies {
+                        let _ = socket.send_to(&r, from);
+                    }
+                }
+            }
+        });
+        Ok(Self { stop, state, port, thread: Some(thread) })
+    }
+
+    pub fn report(&self) -> DgramReport {
+        let c = self.state.lock().unwrap();
+        let path = |r: &Vec<u8>| {
+            ["/sess/rgst", "/sess/init", "/sess/ctrl"]
+                .into_iter()
+                .find(|p| r.windows(p.len()).any(|w| w == p.as_bytes()))
+                .unwrap_or("?")
+                .to_string()
+        };
+        DgramReport {
+            inits: c.inits,
+            rgst_requests: c.rgst_requests,
+            rgst_field_ok: c.rgst_field_ok,
+            requests: c.requests.iter().map(path).collect(),
+        }
+    }
+}
+
+impl Drop for LoopbackDgramConsole {
+    fn drop(&mut self) {
+        self.stop.store(true, Ordering::Relaxed);
+        let _ = self.thread.take().map(|t| t.join());
+    }
+}

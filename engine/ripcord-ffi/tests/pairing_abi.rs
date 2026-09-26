@@ -23,7 +23,7 @@ fn text(b: &[u8]) -> String {
 
 #[test]
 fn discovery_and_wake() {
-    let (mut buf, mut n, mut port) = ([0u8; 256], 0usize, 0u16);
+    let (mut buf, mut n, mut port, mut source) = ([0u8; 256], 0usize, 0u16, 0u16);
     // SAFETY: valid buffers throughout.
     unsafe {
         assert_eq!(
@@ -51,13 +51,15 @@ fn discovery_and_wake() {
                 buf.as_mut_ptr(),
                 buf.len(),
                 &mut n,
-                &mut port
+                &mut port,
+                &mut source
             ),
             RipcordStatus::Ok
         );
         let payload = String::from_utf8_lossy(&buf[..n]).into_owned();
         assert!(payload.contains("user-credential:-2\n"), "signed, as C writes it: {payload}");
         assert_eq!(port, 9302);
+        assert_eq!(source, ripcord_proto::discovery::PS5.wake_source_port);
         let bad = b"not hex";
         assert_eq!(
             ripcord_wake_payload(
@@ -67,7 +69,8 @@ fn discovery_and_wake() {
                 buf.as_mut_ptr(),
                 buf.len(),
                 &mut n,
-                &mut port
+                &mut port,
+                &mut source
             ),
             RipcordStatus::Rejected
         );
