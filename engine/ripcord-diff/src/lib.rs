@@ -866,3 +866,174 @@ pub fn c_sess_response(data: &[u8], header: &str) -> Option<(i32, usize, Option<
     };
     (used > 0).then(|| (status, used, (has == 1).then(|| c_string(&out))))
 }
+
+// ---- STUN, candidates, and the 9303 association ----
+
+unsafe extern "C" {
+    fn diff_stun_parse(
+        data: *const u8,
+        length: usize,
+        kind: *mut u16,
+        txid: *mut u8,
+        has: *mut c_int,
+        family: *mut u8,
+        port: *mut u16,
+        address: *mut u8,
+    ) -> c_int;
+    fn diff_parse_ipv4(text: *const c_char, out: *mut u8) -> c_int;
+    fn diff_choose_candidate(
+        addresses: *const [c_char; 64],
+        count: usize,
+        iface: *const u8,
+        iface_count: usize,
+        host: *const c_char,
+    ) -> c_int;
+    fn diff_assoc_new(
+        local: *const u8,
+        peer: *const u8,
+        address: *const u8,
+        port: u16,
+        emit: ConsoleEmitFn,
+        event: EventFn,
+        user: *mut c_void,
+    ) -> *mut c_void;
+    fn diff_assoc_free(a: *mut c_void);
+    fn diff_assoc_op(a: *mut c_void, op: c_int, arg: c_int, data: *const u8, length: usize) -> c_int;
+}
+
+/// A STUN message as C parses it: (type, transaction id, mapped address as (family, port, bytes)).
+pub type CStun = (u16, [u8; 12], Option<(u8, u16, Vec<u8>)>);
+
+pub fn c_stun_parse(data: &[u8]) -> Option<CStun> {
+    let _core = c_core();
+    let (mut kind, mut txid, mut has, mut family, mut port, mut address) =
+        (0u16, [0u8; 12], 0, 0u8, 0u16, [0u8; 16]);
+    // SAFETY: a valid slice and outputs of the sizes the C side writes.
+    if unsafe {
+        diff_stun_parse(
+            data.as_ptr(),
+            data.len(),
+            &mut kind,
+            txid.as_mut_ptr(),
+            &mut has,
+            &mut family,
+            &mut port,
+            address.as_mut_ptr(),
+        )
+    } != 1
+    {
+        return None;
+    }
+    let len = if family == 2 { 16 } else { 4 };
+    Some((kind, txid, (has == 1).then(|| (family, port, address[..len].to_vec()))))
+}
+
+pub fn c_parse_ipv4(text: &str) -> Option<[u8; 4]> {
+    let _core = c_core();
+    let text = std::ffi::CString::new(text).ok()?;
+    let mut out = [0u8; 4];
+    // SAFETY: a NUL-terminated string and a 4-byte out buffer.
+    (unsafe { diff_parse_ipv4(text.as_ptr(), out.as_mut_ptr()) } == 1).then_some(out)
+}
+
+/// C's choice among candidate addresses (each under 64 bytes) and interfaces (address, netmask).
+pub fn c_choose_candidate(addresses: &[&str], interfaces: &[([u8; 4], [u8; 4])], host: Option<&str>) -> i32 {
+    let _core = c_core();
+    let rows: Vec<[c_char; 64]> = addresses
+        .iter()
+        .map(|a| {
+            let mut row = [0 as c_char; 64];
+            for (i, b) in a.bytes().take(63).enumerate() {
+                row[i] = b as c_char;
+            }
+            row
+        })
+        .collect();
+    let nics: Vec<u8> = interfaces.iter().flat_map(|(a, m)| a.iter().chain(m.iter()).copied()).collect();
+    let host = host.map(|h| std::ffi::CString::new(h).unwrap());
+    // SAFETY: rows of 64 NUL-terminated bytes, 8 bytes per interface, an optional NUL-terminated host.
+    unsafe {
+        diff_choose_candidate(
+            rows.as_ptr(),
+            rows.len(),
+            nics.as_ptr(),
+            interfaces.len(),
+            host.as_ref().map_or(std::ptr::null(), |h| h.as_ptr()),
+        )
+    }
+}
+
+#[derive(Default)]
+struct AssocLog {
+    sends: Vec<Vec<u8>>,
+    events: Vec<String>,
+}
+
+extern "C" fn assoc_emit(user: *mut c_void, d: *const u8, n: usize) {
+    // SAFETY: `user` is the Box<AssocLog> CAssoc owns.
+    unsafe { &mut *(user as *mut AssocLog) }.sends.push(slice(d, n).to_vec());
+}
+
+extern "C" fn assoc_event(
+    user: *mut c_void,
+    kind: c_int,
+    a: c_int,
+    _chunk: c_int,
+    data: *const u8,
+    length: usize,
+) {
+    // SAFETY: as above.
+    let log = unsafe { &mut *(user as *mut AssocLog) };
+    log.events.push(match kind {
+        0 => "established".into(),
+        1 => format!("opened:{a}"),
+        2 => format!("data:{}", slice(data, length).iter().map(|b| format!("{b:02x}")).collect::<String>()),
+        3 => "closed".into(),
+        _ => "unhandled".into(),
+    });
+}
+
+/// The C association with the counting random source, its sends and events recorded per call.
+pub struct CAssoc {
+    raw: *mut c_void,
+    log: Box<AssocLog>,
+}
+
+impl CAssoc {
+    pub fn new(local: &[u8; 20], peer: &[u8; 20], address: [u8; 4], port: u16) -> Self {
+        let _core = c_core();
+        let mut log = Box::<AssocLog>::default();
+        let user = &mut *log as *mut AssocLog as *mut c_void;
+        // SAFETY: fixed-size inputs, and a log that lives as long as the association.
+        let raw = unsafe {
+            diff_assoc_new(
+                local.as_ptr(),
+                peer.as_ptr(),
+                address.as_ptr(),
+                port,
+                assoc_emit,
+                assoc_event,
+                user,
+            )
+        };
+        assert!(!raw.is_null());
+        Self { raw, log }
+    }
+
+    /// Runs one op and returns (phase, sends, events) for it: 0 open, 1 retry, 2 openconn(words),
+    /// 3 reopen, 4 closeconn, 5 send, 6 recv, 7 clear. Phases are C's enum order.
+    pub fn op(&mut self, op: i32, arg: i32, data: &[u8]) -> (i32, Vec<Vec<u8>>, Vec<String>) {
+        let _core = c_core();
+        // SAFETY: a live association and a valid slice.
+        let phase = unsafe { diff_assoc_op(self.raw, op, arg, data.as_ptr(), data.len()) };
+        (phase, std::mem::take(&mut self.log.sends), std::mem::take(&mut self.log.events))
+    }
+}
+
+impl Drop for CAssoc {
+    fn drop(&mut self) {
+        let _core = c_core();
+        // SAFETY: allocated by diff_assoc_new and freed once.
+        unsafe { diff_assoc_free(self.raw) }
+    }
+}

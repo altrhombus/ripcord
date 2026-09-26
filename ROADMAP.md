@@ -246,14 +246,15 @@ the documents into line, is done and in the journal. The engine lives in [`engin
       2026-09-26). It still needs its fuzz target. Next in order:
   - [ ] **The CNG `Ecdh` backend,** against `session-crypto.kat` on Windows. RustCrypto and CryptoKit
         pass it (journal, 2026-09-26).
-  - [ ] **STUN and the 9303 association, the rendezvous route, and the connect sequence.** Takion, the
-        scripted console, discovery, wake and the /sess layer are done (journal, 2026-09-26). `ripcord-net`,
+  - [ ] **The connect sequence.** Takion, the scripted console, discovery, wake, the /sess layer, STUN, the
+        9303 association and the rendezvous control plane are done (journal, 2026-09-26). `ripcord-net`,
         the I/O driver, arrives with the connect sequence, which also owns the launch spec's MTU and RTT
-        clamping and the order /sess, Takion and key agreement run in.
+        clamping, the order /sess, Takion and key agreement run in, the sign-in policy, peer filtering and
+        the overall control-plane deadline.
   - [ ] **A nightly CI leg** for Miri over `ripcord-ffi`'s tests and a coverage-guided `cargo-fuzz` run
         with a kept corpus. Neither runs yet; the stable sweep in `demux.rs` stands in for fuzzing.
-  - [ ] **Differential runs for each new layer.** `ripcord-diff` exists and covers the stream plane and the
-        Halyard derivations. Each later layer adds its surface to `shim/diff_shim.c` in the change that
+  - [ ] **Differential runs for each new layer.** `ripcord-diff` exists and covers every layer ported so
+        far. Each later layer adds its surface to `shim/diff_shim.c` in the change that
         ports it. For sequencing, the C core is the only other implementation.
 - [ ] **Phase 3 — the Mac switches engines,** by relinking at Phase 2's exit.
 - [ ] **Phase 4 — Windows onto the engine,** after 1.0, one seam at a time behind `RIPCORD_ENGINE`.
@@ -285,6 +286,18 @@ the Windows client ships. None has been seen on hardware.
       carries the required fields and a 32-byte signature before verifying it. A console that refuses the
       version then surfaces as a signature or derivation failure instead of as a refusal. Both other
       engines check.
+- [ ] **On the rendezvous route, the control keep-alive ends silently after 30 s of silence.**
+      `HalyardDatagramControlChannel.ReceiveBytesAsync` pumps under the 30 s stage deadline and throws
+      `TimeoutException` when it passes; `RunCtrlKeepAliveAsync` swallows every exception and returns, so
+      heartbeats stop being answered while the session carries on. The console's own heartbeats normally
+      keep the channel from going quiet that long, which is why it has not been seen. The C pipe and the
+      Rust engine have no deadline once the channel runs.
+- [ ] **The rendezvous transport and the ACCEPT can name different console candidates.** When none of the
+      console's candidates parses, `CandidateEndpoint` falls back to consoleHost:9303 for the transport,
+      while `PreferredCandidate` names the first candidate in the ACCEPT, and the media leg's
+      `IPAddress.Parse` on that fallback throws. The pairing route
+      (`HalyardAccountConsolePairing`) uses a third rule. The C core and the Rust engine return one choice and
+      leave the consoleHost:9303 fallback to the caller, which applies it to both.
 
 ### macOS client — planned 2026-09-24, step 1 done
 

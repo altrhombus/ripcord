@@ -52,8 +52,13 @@ fn rendezvous_control() {
 }
 
 #[test]
+fn dgram_transport() {
+    run_file("dgram-transport.kat");
+}
+
+#[test]
 fn every_file_has_a_test() {
-    assert_eq!(ripcord_kat::FILES.len(), 7, "a file added to FILES needs a test above");
+    assert_eq!(ripcord_kat::FILES.len(), 8, "a file added to FILES needs a test above");
 }
 
 #[test]
