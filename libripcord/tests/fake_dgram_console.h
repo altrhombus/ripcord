@@ -177,7 +177,11 @@ static void fake_console_on_datagram(fake_console *fc, const uint8_t *datagram, 
             n = halyard_dgram_chunk_write(wire, sizeof(wire), HALYARD_DGRAM_CHUNK_COOKIE, 0x00, cookie, 42, 3);
             fc->emit(fc->emit_ctx, wire, n);
         } else if (chunk.type == HALYARD_DGRAM_CHUNK_HELLO_ECHO) {
-            uint16_t hello_seq = (uint16_t)((chunk.body[0] << 8) | chunk.body[1]);
+            /* A body too short to hold the sequence is read as zero rather than past the chunk: found by
+             * engine/ripcord-diff, where the Rust port of this console disagreed with bytes that were
+             * never part of the datagram. */
+            uint16_t hello_seq = chunk.body_length >= 2u
+                                     ? (uint16_t)((chunk.body[0] << 8) | chunk.body[1]) : (uint16_t)0;
             uint8_t accept[12] = { 0 };
 
             accept[0] = (uint8_t)(fc->sequence >> 8);

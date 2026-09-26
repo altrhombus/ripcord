@@ -328,6 +328,10 @@ int takion_control_parse_protocol_version_ack(const uint8_t *data, size_t length
             return 0;
         field = (uint32_t)(tag >> 3);
         wire = (unsigned)(tag & 7u);
+        /* Field 0 is not a valid tag: every other parser here refuses it, and so does Google.Protobuf on the
+         * .NET side. This one accepted it until engine/ripcord-diff put the two engines side by side. */
+        if (field == 0u)
+            return 0;
 
         if (field == F_MSG_PROTOCOL_VERSION_ACK && wire == WT_LEN) {
             uint64_t inner_len = 0u;
@@ -342,7 +346,7 @@ int takion_control_parse_protocol_version_ack(const uint8_t *data, size_t length
                 uint64_t inner_tag = 0u;
                 uint64_t value = 0u;
 
-                if (!varint_read(data, inner_end, &offset, &inner_tag))
+                if (!varint_read(data, inner_end, &offset, &inner_tag) || (inner_tag >> 3) == 0u)
                     return 0;
                 if ((uint32_t)(inner_tag >> 3) == F_PV_PROTOCOL_VERSION
                     && (unsigned)(inner_tag & 7u) == WT_VARINT) {
