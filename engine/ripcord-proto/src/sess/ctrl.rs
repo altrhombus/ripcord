@@ -61,6 +61,23 @@ pub fn login_submit_payload(field: &ControlField, counter: u64, pin: &str) -> Op
     Some(payload)
 }
 
+/// PROBE_REPORT's plaintext, sent as a control field on the rendezvous route before waiting for
+/// STREAM_READY (without it the console never sends STREAM_READY). Four big-endian slots, as both
+/// references fill them: bitrate, declared MTU, 0, and the RTT clamped to 0..=1000 ms. [X] which slot means
+/// what: the console was indifferent to every value tried.
+pub fn probe_report_plaintext(
+    bitrate_kbps: u32,
+    declared_mtu: u32,
+    rtt_ms: f64,
+) -> [u8; PROBE_REPORT_LENGTH] {
+    let rtt = rtt_ms.clamp(0.0, 1000.0).round() as u32;
+    let mut out = [0u8; PROBE_REPORT_LENGTH];
+    for (i, v) in [bitrate_kbps, declared_mtu, 0, rtt].into_iter().enumerate() {
+        out[i * 4..i * 4 + 4].copy_from_slice(&v.to_be_bytes());
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -72,5 +89,8 @@ mod tests {
         assert_eq!(parse(&f), Some((HEARTBEAT_REP, &[1u8, 2, 3][..], 11)));
         assert_eq!(parse(&f[..10]), None);
         assert_eq!(parse(&[0xff; 8]), None, "a length past the data");
+        let r = probe_report_plaintext(15000, 1454, 1234.6);
+        assert_eq!(&r[..8], &[0, 0, 0x3a, 0x98, 0, 0, 0x05, 0xae]);
+        assert_eq!(&r[12..], &1000u32.to_be_bytes(), "the RTT is clamped");
     }
 }
