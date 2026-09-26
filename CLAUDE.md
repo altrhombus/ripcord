@@ -127,8 +127,12 @@ accepts a nonce length `System.Security.Cryptography.AesGcm` refuses. A comment 
 - **`engine/`** — the Rust engine that succeeds it for the first-class clients, as a Cargo workspace:
   `ripcord-proto` (sans-IO, `#![forbid(unsafe_code)]`), `ripcord-ffi` (the C ABI, the only crate that
   uses `unsafe`; its `build.rs` generates `ripcord.h` and `NativeMethods.g.cs`, never committed and never
-  edited), `ripcord-kat` (the `.kat` runner) and `hosts/dotnet/` (the .NET harness). As of 2026-09-25 it
-  holds Phase 1, the stream plane only. Not part of `Ripcord.slnx`: `cargo test --workspace` in `engine/`.
+  edited), `ripcord-kat` (the `.kat` runner), `ripcord-diff` (differential tests against the C core) and
+  `hosts/dotnet/` (the .NET harness). As of 2026-09-26 it holds the stream plane, the Halyard
+  derivations, Takion and the scripted console. When porting a layer, read both the .NET reference and the
+  C port; the C core is itself a port of .NET, and where they differ .NET wins unless C is strictly safer
+  or .NET is wrong, recorded in `engine/README.md`. Not part of `Ripcord.slnx`: `cargo test --workspace
+  --all-features` in `engine/`.
   [`engine/README.md`](engine/README.md) has the build and the measured gate.
 
 ### The crypto seam pattern

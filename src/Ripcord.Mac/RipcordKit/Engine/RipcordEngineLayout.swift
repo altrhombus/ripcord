@@ -11,6 +11,9 @@ enum RipcordEngineLayout {
             (RIPCORD_STRUCT_ID_STREAM_HEADER, MemoryLayout<RipcordStreamHeader>.size),
             (RIPCORD_STRUCT_ID_DEMUX_SINK, MemoryLayout<RipcordDemuxSink>.size),
             (RIPCORD_STRUCT_ID_DEMUX_COUNTERS, MemoryLayout<RipcordDemuxCounters>.size),
+            (RIPCORD_STRUCT_ID_ECDH_BACKEND, MemoryLayout<RipcordEcdhBackend>.size),
+            (RIPCORD_STRUCT_ID_KAT_RESULT, MemoryLayout<RipcordKatResult>.size),
+            (RIPCORD_STRUCT_ID_SCRIPTED_CONSOLE_COUNTS, MemoryLayout<RipcordScriptedConsoleCounts>.size),
         ]
         return structs.allSatisfy { ripcord_struct_size($0.0.rawValue) == $0.1 }
     }

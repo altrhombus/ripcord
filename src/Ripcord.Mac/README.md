@@ -14,7 +14,7 @@ yet.
 | `Ripcord.xcodeproj` | The project. Every source folder is an Xcode *synchronized* folder, so adding a file never touches the project file |
 | `Config/` | Every build setting, in xcconfig files. The project file holds none of its own |
 | `Libripcord/` | The Mac's half of the C core: the platform seam (`rc_platform_darwin.c`) and the module map that lets Swift import the core |
-| `RipcordEngine/` | The module map for the Rust engine's generated header (`engine/target/include/ripcord.h`), read in place. Phase 1 of [`docs/engine-plan.md`](../../docs/engine-plan.md): linked alongside the C core, used only by `ripcord-lab bench` so far |
+| `RipcordEngine/` | The module map for the Rust engine's generated header (`engine/target/include/ripcord.h`), read in place. [`docs/engine-plan.md`](../../docs/engine-plan.md), Phase 2: linked alongside the C core, used by `ripcord-lab bench` and by `EngineKeyAgreementTests`, which checks CryptoKit (`RipcordKit/Engine/CryptoKitEngineECDH.swift`) as the engine's key agreement against the .NET vectors |
 | `RipcordKit/` | The Swift layer over the core. It imports the C module *internally*, so no C type reaches its callers |
 | `RipcordKitTests/` | Swift Testing suites for RipcordKit |
 | `TestSupport/` | Tests only: the core's scripted 9303 console (`libripcord/tests/fake_dgram_console.h`) as a Swift module, on a loopback socket, for the C-backed rendezvous transport tests |

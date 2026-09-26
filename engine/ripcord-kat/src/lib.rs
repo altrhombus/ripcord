@@ -20,6 +20,7 @@ use ripcord_proto::crypto::ecdh::{self, Curve, Ecdh, RustCryptoEcdh};
 use ripcord_proto::crypto::modes;
 use ripcord_proto::halyard::{self, account_seed, control, registration};
 use ripcord_proto::stream::{key_schedule, packet_crypto};
+use ripcord_proto::takion::control as takion_control;
 
 /// The vector files this engine has runners for, in the order `ripcord-kat` runs them.
 pub const FILES: &[&str] = &[
@@ -28,14 +29,15 @@ pub const FILES: &[&str] = &[
     "registration-crypto.kat",
     "account-pairing.kat",
     "session-crypto.kat",
+    "control-proto.kat",
 ];
 
 /// Line kinds that belong to a layer not yet ported, and which layer. Remove an entry in the change that
 /// ports its layer.
-pub const DEFERRED: &[(&str, &str)] = &[(
-    "accountrgst",
-    "the /sess/rgst message layer, which also brings the Rust engine's copy of Client-Type",
-)];
+pub const DEFERRED: &[(&str, &str)] = &[
+    ("accountrgst", "the /sess/rgst message layer, which also brings the Rust engine's copy of Client-Type"),
+    ("launchspec", "the /sess layer's launch-spec builder"),
+];
 
 #[derive(Default)]
 pub struct Report {
@@ -150,7 +152,7 @@ fn unavailable_ps4_line(line: &Line<'_>) -> bool {
     }
 }
 
-fn run_line(report: &mut Report, line: &Line<'_>) -> Result<(), String> {
+fn run_line(report: &mut Report, line: &Line<'_>, ecdh: &dyn Ecdh) -> Result<(), String> {
     let f = |i| line.field(i);
     match line.kind {
         // The generator had the PS4 tables; so must this build, or its PS4 lines would silently skip.
@@ -292,13 +294,12 @@ fn run_line(report: &mut Report, line: &Line<'_>) -> Result<(), String> {
 
         // ---- session-crypto.kat ----
         "ecdhpub" => {
-            let public = RustCryptoEcdh
-                .public_key(curve(f(1)?)?, &hex(f(2)?)?)
-                .ok_or("a scalar .NET accepted was refused")?;
+            let public =
+                ecdh.public_key(curve(f(1)?)?, &hex(f(2)?)?).ok_or("a scalar .NET accepted was refused")?;
             check(report, line, "publicKey", &public, f(3)?);
         }
         "ecdhshared" => {
-            let shared = RustCryptoEcdh
+            let shared = ecdh
                 .shared_secret(curve(f(1)?)?, &hex(f(2)?)?, &hex(f(3)?)?)
                 .ok_or("shared_secret refused")?;
             check(report, line, "shared", &shared, f(4)?);
@@ -314,7 +315,7 @@ fn run_line(report: &mut Report, line: &Line<'_>) -> Result<(), String> {
         }
         "streamkeys" => {
             let keys = ecdh::stream_keys(
-                &RustCryptoEcdh,
+                ecdh,
                 curve(f(1)?)?,
                 &hex(f(2)?)?,
                 &hex(f(3)?)?,
@@ -326,13 +327,58 @@ fn run_line(report: &mut Report, line: &Line<'_>) -> Result<(), String> {
             check(report, line, "baseIv", &keys.base_iv, f(7)?);
         }
 
+        // ---- control-proto.kat ----
+        // "-" in a required field is present-but-empty; in an optional one it is absent.
+        "sessionreq" => {
+            let (session_key, launch_spec, encrypted_key) = (hex(f(2)?)?, hex(f(3)?)?, hex(f(4)?)?);
+            let (public_key, signature) = (hex(f(5)?)?, hex(f(6)?)?);
+            let request = takion_control::SessionRequest {
+                client_version: number(f(1)?)?,
+                session_key: &session_key,
+                launch_spec: &launch_spec,
+                encrypted_key: &encrypted_key,
+                ecdh_public_key: (f(5)? != "-").then_some(&public_key[..]),
+                ecdh_signature: (f(6)? != "-").then_some(&signature[..]),
+            };
+            let encoded = request.build();
+            check(report, line, "encoded", &encoded, f(7)?);
+            let peeked = takion_control::peek_type(&encoded).map_or("none".into(), |t| t.to_string());
+            check_text(report, line, "peeked type", &peeked, &takion_control::SESSION_REQUEST.to_string());
+        }
+        "sessionreply" => {
+            let encoded = hex(f(1)?)?;
+            let reply = takion_control::parse_session_reply(&encoded).ok_or("parse failed")?;
+            let flag = |b: bool| u8::from(b).to_string();
+            check_text(report, line, "serverVersion", &reply.server_version.to_string(), f(2)?);
+            check_text(report, line, "token", &reply.token.to_string(), f(3)?);
+            check_text(report, line, "encryptedKeyAccepted", &flag(reply.encrypted_key_accepted), f(4)?);
+            check_text(report, line, "versionAccepted", &flag(reply.version_accepted), f(5)?);
+            let opt = |v: Option<&[u8]>| v.map_or("-".to_owned(), to_hex);
+            let key = if reply.session_key.is_empty() { "-".to_owned() } else { to_hex(reply.session_key) };
+            check_text(report, line, "sessionKey", &key, f(6)?);
+            check_text(report, line, "serverVersionString", &opt(reply.server_version_string), f(7)?);
+            check_text(report, line, "ecdhPublicKey", &opt(reply.ecdh_public_key), f(8)?);
+            check_text(report, line, "ecdhSignature", &opt(reply.ecdh_signature), f(9)?);
+            check_text(report, line, "has_ecdh", &reply.has_ecdh().to_string(), &(f(8)? != "-").to_string());
+            // No proper prefix of a reply may parse as a complete one.
+            let truncated =
+                (1..encoded.len()).find(|&n| takion_control::parse_session_reply(&encoded[..n]).is_some());
+            check_text(report, line, "no truncation accepted", &format!("{truncated:?}"), "None");
+        }
+
         other => return Err(format!("no runner for line kind {other:?}")),
     }
     Ok(())
 }
 
-/// Runs every line of a vector file.
+/// Runs every line of a vector file, with key agreement on the RustCrypto backend.
 pub fn run(text: &str) -> Report {
+    run_with(text, &RustCryptoEcdh)
+}
+
+/// Runs every line of a vector file with key agreement on `ecdh`: how each platform's backend is checked
+/// against the .NET vectors on its own platform (docs/engine-plan.md, "Dependencies").
+pub fn run_with(text: &str, ecdh: &dyn Ecdh) -> Report {
     let mut report = Report::default();
     for (i, raw) in text.lines().enumerate() {
         let fields: Vec<&str> = raw.split_whitespace().collect();
@@ -350,7 +396,7 @@ pub fn run(text: &str) -> Report {
         if unavailable_ps4_line(&line) {
             continue;
         }
-        if let Err(e) = run_line(&mut report, &line) {
+        if let Err(e) = run_line(&mut report, &line, ecdh) {
             report.failures.push(format!("{} line {}: {e}", line.kind, line.number));
         }
     }
