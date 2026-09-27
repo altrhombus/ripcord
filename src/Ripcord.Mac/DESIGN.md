@@ -194,6 +194,9 @@ attention:
    Instead** sits beside it as a plain button, with neither argued for.
 4. **The code form** has the eight-digit code field and the account id field. Its caption says where the
    code appears on the console. The account id is remembered once entered, and never asked for twice.
+   **Scan from the TV…** beside the code field reads the code through a camera, preferring an iPhone
+   nearby as a Continuity Camera. It fills the field once two frames agree, and leaves the Pair press to
+   the person.
 
 The sheet makes no claims about account safety in either direction, for the reason recorded in the dotnet client's
 design document.

@@ -4,9 +4,5 @@
 <dict>
 	<key>com.apple.security.device.camera</key>
 	<true/>
-	<key>com.apple.security.application-groups</key>
-	<array>
-		<string>group.io.github.altrhombus.Ripcord</string>
-	</array>
 </dict>
 </plist>

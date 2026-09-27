@@ -115,7 +115,8 @@ the surfaces are built, the way [`design.md`](design.md) settled the Windows one
   console's own bitstream into a movie file with no re-encode.
 - **Present across the Mac.** A menu bar extra, a desktop widget, a Control Center control, and App Intents
   for Spotlight and Shortcuts.
-- **Stretch.** Scanning the pairing code off the TV through Continuity Camera, pressing the PS button to
+- **Stretch.** Scanning the pairing code off the TV through Continuity Camera (written 2026-09-26, not yet
+  pointed at a console), pressing the PS button to
   start playing, HDR on XDR displays, and DualSense haptics and triggers.
 
 ## Open questions, to settle by measurement
