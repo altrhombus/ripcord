@@ -35,6 +35,55 @@ different purpose.
 > anything. The list above is short, it is checkable in one `git log --format=%B | grep`, and it stops
 > growing the moment someone notices — which is the property that actually matters.
 
+### The engine comparisons' findings, fixed in .NET and the C core (2026-09-26)
+
+The side-by-side reads done for the Rust engine had listed ten faults in the .NET reference and two in the C
+core. All twelve are fixed. Each fix has a test, and each .NET test was run against the old code and seen
+to fail.
+
+- **Security.**
+  - **The RP-Nonce.** A missing or malformed RP-Nonce, or a pairing without its companion, used to skip the
+    control key and carry on. The launchSpec, handshakeKey and all, would then have gone out in the clear.
+    The session now stops at /sess/init, and the launchSpec builder refuses to send unencrypted.
+  - **SESSION_REPLY.** It is checked before its signature: the required fields, `versionAccepted`, the
+    ECDH material, and a 32-byte signature. The old null checks never fired, because an unset proto2 bytes
+    field reads as empty.
+- **Sessions that end.**
+  - **Hang-ups.** A Takion DISCONNECT, or the control connection closing or faulting, now closes the session
+    with its reason. `IStreamingSession.EndReason` carries that reason into the reconnect's status line.
+  - **The rendezvous control channel.** It no longer carries the 30 s stage deadline once running, so its
+    keep-alive no longer dies quietly after half a minute of silence.
+- **Rest only on a person's stop.** Teardown between reconnect attempts used to rest the console. While
+  fixing that, a second fault turned up: a rest choice made after connecting was lost on the first
+  reconnect.
+- **Smaller fixes.**
+  - **Takion SACK:** it now clears acknowledged chunks across a TSN wrap.
+  - **The wake credential:** it is rendered signed, per the spec, and a bad key no longer throws out of
+    the wake.
+  - **Console candidates:** there is now one choice for the transport and the ACCEPT, where there used to
+    be three rules.
+  - **Token refresh:** one refresh runs at a time, and sign-out clears the tokens.
+  - **The signaling parser:** it now returns null on wrong-kind JSON instead of throwing.
+- **The C core.**
+  - **Account ids:** an id past `UINT64_MAX` is sent as text instead of wrapping into another account's id.
+  - **ECDH diagnostics:** these can now be written into a struct the caller owns, instead of process-wide
+    statics.
+- **The senkusha `encryptedKey`, reversed on evidence.** The finding said .NET's keyless senkusha request
+  was wrong to send an empty key where the C core sent four zero bytes. Our own PS4 captures say the
+  opposite:
+  - The vendor sends the field present and empty (`22 00`) in every keyless senkusha request in cap53 and
+    cap54, so the C core and the Rust engine changed instead.
+  - The same captures show the vendor's stream request is empty too, where all three implementations send
+    four zero bytes. That works on hardware and stays open in ROADMAP.
+  - The research log records the re-read, and corrects a 2026-08-03 row that had attributed the empty field
+    to the SESSION_REPLY.
+- **Two test fixes found on the way.**
+  - The published-tree sweep failed on file types the Mac app had added: entitlements, a plist and a String
+    Catalog. That would have turned CI red.
+  - The Client-Type check scanned the fuzz workspace's gitignored build output.
+- **What it left open:** the stream request's `encryptedKey`, and the same candidate gap in the Mac's
+  Swift (ROADMAP).
+
 ### The Mac app, steps 4–9 (2026-09-26)
 
 The Mac got its app in one sitting, from a first picture to a release line. It is all written and building
