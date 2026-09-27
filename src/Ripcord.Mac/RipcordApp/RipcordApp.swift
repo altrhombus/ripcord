@@ -19,6 +19,12 @@ struct RipcordApp: App {
                 .frame(minWidth: 560, minHeight: 360)
         }
         .defaultSize(width: 760, height: 480)
+        .commands {
+            CommandGroup(replacing: .newItem) {
+                Button("Pair a Console…") { model.pairing = PairingRequest() }
+                    .keyboardShortcut("n")
+            }
+        }
 
         WindowGroup("Stream", id: "stream", for: StreamTarget.self) { $target in
             if let target {
