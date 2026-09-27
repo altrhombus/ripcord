@@ -72,7 +72,7 @@ struct TileGround: View {
         if contrast == .increased {
             Rectangle().fill(.background.secondary)
         } else if scheme == .dark {
-            // The Windows card's values, deeper than the window (docs/design.md, "Material").
+            // The dotnet client's card values, deeper than the window (docs/design.md, "Material").
             LinearGradient(colors: [Color(red: 0x23 / 255, green: 0x27 / 255, blue: 0x2E / 255),
                                     Color(red: 0x12 / 255, green: 0x15 / 255, blue: 0x1A / 255)],
                            startPoint: .topLeading, endPoint: .bottomTrailing)

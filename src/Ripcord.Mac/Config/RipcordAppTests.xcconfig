@@ -1,0 +1,6 @@
+// The app's own logic (RipcordAppLogic/), tested without the app: the folder is compiled into this bundle as
+// well as the app, so no test launches a window. It links RipcordKit, and the shipping engine is enough.
+
+PRODUCT_NAME = RipcordAppTests
+PRODUCT_BUNDLE_IDENTIFIER = io.github.altrhombus.Ripcord.AppTests
+GENERATE_INFOPLIST_FILE = YES
