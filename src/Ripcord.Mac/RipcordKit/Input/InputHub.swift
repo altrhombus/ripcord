@@ -16,6 +16,8 @@ public final class InputHub: @unchecked Sendable {
     private let queue = DispatchQueue(label: "Ripcord input", qos: .userInteractive)
     private var pads: [ObjectIdentifier: PadSnapshot] = [:]
     private var keyboard = KeyboardTranslator()
+    private var keyboardOn = true
+    private var keyCapture: (@Sendable (GCKeyCode) -> Void)?
     private var observers: [NSObjectProtocol] = []
     private var sink: (@Sendable (PadSnapshot?) -> Void)?
     /// Notifications are delivered straight onto `queue`, so no GameController object crosses a hop.
@@ -66,6 +68,30 @@ public final class InputHub: @unchecked Sendable {
         }
     }
 
+    /// Whether the keyboard plays. Off while the app has not captured it (DESIGN.md, "Capture"): a key
+    /// typed into another window must not reach the console. Held keys are released when it turns off.
+    public var keyboardEnabled: Bool {
+        get { queue.sync { keyboardOn } }
+        set {
+            queue.async {
+                self.keyboardOn = newValue
+                if !newValue { self.keyboard.clear() }
+                self.publish()
+            }
+        }
+    }
+
+    /// Delivers the next key pressed to `handler` instead of the console, once, for rebinding it. The
+    /// hub owns the one keyboard handler GameController allows, so a settings pane asks through here rather
+    /// than installing its own and silently taking the keyboard from a stream. Called on the hub's queue.
+    public func captureNextKey(_ handler: @escaping @Sendable (GCKeyCode) -> Void) {
+        queue.async { self.keyCapture = handler }
+    }
+
+    public func cancelKeyCapture() {
+        queue.async { self.keyCapture = nil }
+    }
+
     public var bindings: InputBindings {
         get { queue.sync { keyboard.bindings } }
         set { queue.async { self.keyboard.bindings = newValue; self.publish() } }
@@ -88,6 +114,12 @@ public final class InputHub: @unchecked Sendable {
         GCKeyboard.coalesced?.handlerQueue = queue
         input.keyChangedHandler = { [weak self] _, _, key, pressed in
             guard let self else { return }
+            if pressed, let capture = keyCapture {
+                keyCapture = nil
+                capture(key)
+                return
+            }
+            guard keyboardOn else { return }
             let changed = pressed ? keyboard.keyDown(key) : keyboard.keyUp(key)
             if changed { publish() }
         }
@@ -95,7 +127,7 @@ public final class InputHub: @unchecked Sendable {
 
     private func publish() {
         var sources = Array(pads.values)
-        if keyboard.hasInput { sources.append(keyboard.snapshot) }
+        if keyboardOn && keyboard.hasInput { sources.append(keyboard.snapshot) }
         sink?(PadMerge.merge(sources).map { PadMerge.applyRemap($0, keyboard.bindings.padRemap) })
     }
 }

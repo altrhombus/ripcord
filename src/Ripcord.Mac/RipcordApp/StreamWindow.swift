@@ -72,7 +72,7 @@ struct StreamWindow: View {
 
     private func start() {
         guard controller == nil, let console = model.console(for: target) else { return }
-        let c = StreamController(console: console, settings: model.settings)
+        let c = StreamController(console: console, settings: model.settings, input: model.input)
         controller = c
         c.start()
     }

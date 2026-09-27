@@ -27,13 +27,14 @@ final class StreamController {
     private let live = Locked<ConsoleSession?>(nil)
     private var controller: SessionController?
     private let audio: AudioOutput?
-    private let input = InputHub()
+    private let input: InputRouter
     private let meter = LatencyMeter()
     private var displayLink: CADisplayLink?
 
-    init(console: PairedConsole, settings: StreamSettings) {
+    init(console: PairedConsole, settings: StreamSettings, input: InputRouter) {
         self.console = console
         self.settings = settings
+        self.input = input
         audio = (try? OpusDecoder()).map { AudioOutput(format: $0.outputFormat) }
     }
 
@@ -74,7 +75,7 @@ final class StreamController {
         })
         self.controller = controller
         audio?.start()
-        input.start { [live] pad in live.withLock { $0?.update(pad: pad) } }
+        claimInput()
         controller.start()
 
         let link = surface.displayLink(target: self, selector: #selector(onFrame(_:)))
@@ -86,11 +87,17 @@ final class StreamController {
     func stop() {
         displayLink?.invalidate()
         displayLink = nil
-        input.stop()
+        input.release(self)
         controller?.stop(restConsole: settings.restConsoleOnDisconnect)
         controller = nil
         audio?.stop()
         surface.displayLayer.sampleBufferRenderer.flush()
+    }
+
+    /// Takes the app's pad, when this stream's window becomes key (InputRouter.swift).
+    func claimInput() {
+        let live = self.live
+        input.claim(self) { pad in live.withLock { $0?.update(pad: pad) } }
     }
 
     func submitPasscode(_ digits: String) {

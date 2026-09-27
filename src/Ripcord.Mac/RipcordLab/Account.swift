@@ -34,9 +34,7 @@ func signedInGateway(_ command: String) -> (AccountGateway, CloudAccount) {
     }
 }
 
-func family(ofPlatform platform: String) -> ConsoleFamily {
-    platform.uppercased().contains("PS4") ? .ps4 : .ps5
-}
+func family(ofPlatform platform: String) -> ConsoleFamily { AccountPairing.family(ofPlatform: platform) }
 
 // MARK: - account-pair
 
@@ -55,54 +53,17 @@ func runAccountPair(_ arguments: [String]) -> Never {
         }
     }
     guard let duid else { fail(usage, code: 2) }
-    let (gateway, account) = signedInGateway("account-pair")
+    let (gateway, _) = signedInGateway("account-pair")
 
     do {
         let consoles = try blocking { try await gateway.cloud.listConsoles() }
         guard let target = consoles.first(where: { $0.duid == duid }) else {
             fail("account-pair: the account has no console with that duid (see `ripcord-lab cloud-consoles`)")
         }
-        let family = family(ofPlatform: target.platform)
-        print("pairing with \(target.device.name) (\(family.rawValue)) through the account")
-
-        // The address the record will carry, and the console's own id, from the LAN when it is there.
-        var consoleID = ""
-        let found = (try? LANDiscovery.search(hosts: host.isEmpty ? [] : [host])) ?? []
-        if let match = found.first(where: { host.isEmpty ? $0.name == target.device.name : $0.address == host }) {
-            host = match.address
-            consoleID = match.hostID
-            print("found it on this network at \(host) (\(match.isAwake ? "awake" : "resting"))")
-        } else if host.isEmpty {
-            print("not found on this network; its address will be taken from its OFFER")
-        }
-
-        guard let localAddress = (host.isEmpty ? nil : LocalNetwork.address(toward: host)) ?? LocalNetwork.primaryAddress() else {
-            fail("account-pair: this Mac has no IPv4 route")
-        }
-        let transport = try DatagramAccountTransport(family: family, accountID: account.accountID,
-                                                     consoleName: target.device.name, consoleID: consoleID,
-                                                     options: .init(log: labLog))
-        let request = AccountRendezvousRequest(
-            consoleID: host.isEmpty ? duid : host, consoleHost: host, consoleDUID: duid, accountID: account.accountID,
-            clientDeviceID: [], family: family,
-            localHashedID: try LocalHashedID.make(clientDeviceID: gateway.clientDeviceID),
-            localEndpoint: UDPEndpoint(address: localAddress, port: transport.localPort))
-        print("control association from \(localAddress):\(transport.localPort)")
-
+        print("pairing with \(target.device.name) (\(family(ofPlatform: target.platform).rawValue)) through the account")
+        let knownHost = host.isEmpty ? nil : host
         let paired = try blocking {
-            let token = try await gateway.accessToken()
-            let pushServer = try await gateway.cloud.pushServer()
-            let push = PushChannel(socket: URLSessionWebSocketChannel())
-            let rendezvous = AccountRendezvous(signaling: gateway.cloud, transport: transport,
-                                               options: AccountRendezvousOptions(log: labLog))
-            do {
-                let paired = try await rendezvous.pair(request, push: push, pushServer: pushServer, accessToken: token)
-                await push.close()
-                return paired
-            } catch {
-                await push.close()
-                throw error
-            }
+            try await AccountPairing.pair(target, gateway: gateway, host: knownHost, log: labLog)
         }
         try PairingFileStore.lab.save(paired)
         print("paired with \(paired.name) (\(paired.family.rawValue), \(paired.host)); saved to \(PairingFileStore.lab.directory.path)")
