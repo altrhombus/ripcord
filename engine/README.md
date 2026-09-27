@@ -21,8 +21,9 @@ where Phase 1 stands. What is still open is in [`ROADMAP.md`](../ROADMAP.md).
 `ripcord-net` runs that session on `std::net` sockets on the caller's thread, and `ripcord-ffi` exports it
 as the client ABI (`ripcord_client_*`), which Swift and .NET both drive end to end. Ported from `libripcord/`
 and cross-checked against the .NET reference, which wins where the two differ unless the reasons below
-say otherwise. Nothing here has talked to a real console yet. The Mac runs on this engine since 2026-09-26
-(Phase 3's relink); Windows still runs its managed engine.
+say otherwise. It first ran against a console on 2026-09-26 (docs/journal.md, "The Rust engine's first session on
+hardware"). The Mac runs on this engine since that day (Phase 3's relink); the dotnet client still runs its
+managed engine.
 
 ## Layout
 
@@ -235,7 +236,7 @@ The same method as for Takion. A side-by-side read found 26 differences; for eac
 | Wake credential input | .NET's tolerance, refusing instead of throwing | |
 | SRCH awake test | an exact `200` token with the CR stripped | .NET misses a bare `200\r`; C prefix-matches `2000` |
 | SRCH fields | .NET: host-request-port read, no truncation | Non-ASCII host names are kept as lossy UTF-8 |
-| /sess/init Host and version header | .NET's padded Host and `Rp-Version`, with C's LAN forms as options | Both are proven on hardware |
+| /sess/init Host and version header | .NET's padded Host and `Rp-Version`, with C's LAN forms as options | The console accepted either form (journal, "Two red herrings") |
 | A bad or missing RP-Nonce | C: a hard failure | .NET carries on unauthenticated and would send the launch spec in plaintext (roadmap) |
 | /sess response parsing | C's digit rules; .NET's last-wins for repeated headers | .NET waits forever on a malformed status and throws on a negative length |
 | RP-OSType and device id | the caller's | The engine runs on any OS; a non-Windows host should send 10.0 |
@@ -281,7 +282,7 @@ to it byte for byte, so the association has no row here. The differences are in 
 | A close arriving with data | C: latched | .NET's `ReceiveBytesAsync` loses it |
 | /sess response wait | .NET: each stage's own 30 s | C waits 5 s from the start of each response. The overall deadline belongs to the connect sequence |
 | Keep-alive after 30 s of silence | C: the channel keeps running | .NET's loop ends silently when a read times out (roadmap) |
-| PROBE_REPORT slots | .NET: the measured MTU and RTT, RTT clamped to 0–1000 ms | C sends a fixed 1454 and the version exchange's RTT. .NET notes the console ignores both |
+| PROBE_REPORT slots | .NET: the measured MTU and RTT, RTT clamped to 0–1000 ms | C sends a fixed 1454 and the version exchange's RTT. Which slot the console reads is `[X]`: .NET found real values, all 500 and all 0 indistinguishable over three sessions |
 | Opener's request word | both: 0x40, [X] | In no capture; the vendor client sends a small growing counter. The two references and the vectors change together |
 
 Sign-in policy (re-prompting on silence, a stored passcode, what an accepted passcode without a
@@ -311,7 +312,7 @@ sent through `ControlSession::send_field`), the STREAM_READY wait and Takion.
 |---|---|---|
 | Control-plane deadline | .NET: 20 s on the LAN and 60 s on rendezvous, over the arm probe, both TCP connects and /sess | C has no overall deadline, cannot cancel the LAN open, and times each /sess response from the start |
 | Stream bring-up | .NET: one 35 s box from the Takion handshake to STREAM_INFO's ack | C gives SESSION_REPLY 5 s and STREAM_INFO 10 s, and no box around the handshake |
-| PROTOCOL_VERSION_ACK on the stream | C: 5 s, then fall back to the offered version | .NET fails; falling back is harmless and was run on hardware |
+| PROTOCOL_VERSION_ACK on the stream | C: 5 s, then fall back to the offered version | .NET fails. C's path has run on hardware, but no console has been seen to withhold the version, so the fallback itself is `[X]` |
 | SESSION_ID before Takion on the LAN | C: required, inside a 20 s prompt window | The PS3 and 3DS ports found that a console without it drops every INIT; .NET's claim otherwise is [X] |
 | Sign-in | C: a stored passcode first, silence re-submits the same digits, an unknown verdict byte stops, 30 s for SESSION_ID after an accepted passcode on the LAN | Each from a C port's hardware run. .NET re-asks on silence and treats an unknown byte as accepted |
 | Accepted passcode, no SESSION_ID, on rendezvous | C: carry on to the A/V leg ([X], one wake-from-rest run) | |
@@ -347,7 +348,7 @@ sent through `ControlSession::send_field`), the STREAM_READY wait and Takion.
 
 The scripted LAN console (`testing::scripted_lan_console`) computes the console's side of every
 derivation from what the client sent, so a client that gets a key wrong fails there as it would on a
-console. None of this has run against hardware.
+console. These tests are scripted; the hardware runs are in the journal from 2026-09-26.
 
 ## The client ABI (2026-09-26)
 
@@ -388,7 +389,7 @@ session.
 
 | What | Result |
 |---|---|
-| Senkusha probes | Scripted-console tests confirm the capture's order (echo on, echo off, the MTU command, the client MTU on and off), eleven echoed pings, the confirmed MTU, and that a console ignoring every probe costs time and never the session. The loopback test through the C ABI measures both over real sockets. On the rendezvous route they run on the A/V leg |
+| Senkusha probes | Scripted-console tests confirm the capture's order (echo on, echo off, the MTU command, the client MTU on and off), ten echoed pings and the echoed MTU packet, the confirmed MTU, and that a console ignoring every probe costs time and never the session. The loopback test through the C ABI measures both over real sockets. On the rendezvous route they run on the A/V leg |
 | A bug the tests found | The first ping went out before the echo-on command it depended on, because the command waited in the association's queue; every probe datagram now follows whatever the association has queued |
 | CORRUPT_FRAME | A gap in the frame index sends the lost range, and the IDR latch asks for the repair |
 | Adaptive ladder | Unit tests hold the ladder, the cooldown, the clean streak, a tiny window's silence and the power caps to .NET's. CONNECTION_QUALITY goes out only when enabled: the first at once, then on changes and the 2 s refresh |

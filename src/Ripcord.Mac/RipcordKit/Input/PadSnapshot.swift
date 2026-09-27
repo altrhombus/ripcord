@@ -3,8 +3,9 @@
 // The snapshot is a plain value so the mapping to the wire can be tested without a controller attached.
 // Two conventions differ between Apple's framework and the console, and both are handled here, once:
 //
-//   - Stick Y. GameController reports up as positive; the wire has up NEGATIVE (libripcord/input/
-//     the engine's input writer, established in capture cap48, where full up drove left-Y to -32767).
+//   - Stick Y. GameController reports up as positive; the wire has up NEGATIVE (the engine's input
+//     writer, ported from libripcord/input/; established in capture cap48, where full up drove left-Y to
+//     -32767).
 //   - Triggers. GameController gives 0...1; the wire carries a level of 0...255 and a pressed bit.
 //
 // Face buttons map by POSITION, not by label: GameController's buttonA is the south button on every pad

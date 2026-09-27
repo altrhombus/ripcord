@@ -146,7 +146,7 @@ case "connect":
     guard let console = PairingFileStore.lab.load().first(where: { $0.host == host }) else {
         fail("connect: no paired console at \(host); run `ripcord-lab pair` first")
     }
-    // A resting console is woken first, as the Windows client does on connect. The rendezvous routes wake
+    // A resting console is woken first, as the dotnet client does on connect. The rendezvous routes wake
     // it through the account instead (the connect command), which also reaches a console off this network.
     let candidates = CandidateBox()
     if route == .local {

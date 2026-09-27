@@ -78,10 +78,10 @@ third of the screen. The library stays in whatever orientation the person holds 
 ### Controls
 
 - **A controller is the first-class input on every device.** It goes to the console, all of it, as on the Mac.
-  - **The PS button is the hard case.** The system claims a controller's home button for its own overlay, and
-    whether an app can take it back is `[X]`. GameController has a per-element system-gesture preference that
-    is understood to allow it, to confirm on a device. If it cannot, the capsule carries a PS button, and so
-    does the watch.
+  - **The PS button is the hard case.** The system is understood to claim a controller's home button for its
+    own overlay, and whether an app can take it back is `[X]`: neither is checked on a device. GameController
+    has a per-element system-gesture preference that is understood to allow it. If it cannot,
+    the capsule carries a PS button, and so does the watch.
 - **Touch controls on iPhone and iPad borrow the OS: Apple's virtual controller** (`GCVirtualController`).
   - **Why borrow it:** it draws a controller over the picture and reports as an extended gamepad, so the
     InputHub takes it with no code of its own.

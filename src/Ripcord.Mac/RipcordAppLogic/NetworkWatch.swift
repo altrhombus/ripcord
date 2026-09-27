@@ -1,9 +1,9 @@
 // What the network says about the consoles: a search every few seconds, for the library's tile states
 // and its Pair tiles.
 //
-// Each round probes the paired consoles directly, since a network that filters broadcast still passes
-// unicast (measured 2026-09-24), then broadcasts briefly for consoles not yet paired. The searches block, so
-// they run off the main actor, and only their results come back to it.
+// Each round probes the paired consoles directly, since a network that filters broadcast still passes unicast
+// (measured 2026-09-25, journal: "The Mac streams"), then broadcasts briefly for consoles not yet paired. The
+// searches block, so they run off the main actor, and only their results come back to it.
 //
 // SILENCE IS NOT KNOWLEDGE (docs/design.md, "Quiet, not absent"). A probe is one datagram, so a console
 // goes to Not found only after two rounds in a row without an answer, and even then its tile keeps the play

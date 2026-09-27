@@ -14,13 +14,13 @@ use std::path::PathBuf;
 
 const BUNDLE: &str = "../../src/Ripcord.Protocol.Halyard/Data/halyard-v1-constants.json";
 
-/// Where the reference implementation keeps `Client-Type`: the 32-byte value the console parses by content,
+/// Where the .NET reference implementation keeps `Client-Type`: the 32-byte value the console parses by content,
 /// generic to the application (CLAUDE.md, "Bounded exception 1"). The engine reads it from here at build
 /// time rather than holding a third committed copy.
 const CLIENT_TYPE_SOURCE: &str =
     "../../src/Ripcord.Protocol.Halyard.Common/Crypto/HalyardRegistrationMessage.cs";
 
-/// The value of `public const string ClientTypeHex = "...";` in the reference, checked for shape.
+/// The value of `public const string ClientTypeHex = "...";` in the .NET reference, checked for shape.
 fn client_type(manifest: &std::path::Path) -> String {
     let path = manifest.join(CLIENT_TYPE_SOURCE);
     println!("cargo:rerun-if-changed={}", path.display());

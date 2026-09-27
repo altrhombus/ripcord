@@ -49,15 +49,16 @@ public enum LANDiscovery {
     /// Searches for consoles until `timeout` has passed, or until every one of `hosts` has answered.
     ///
     /// **Broadcast or direct.** With no `hosts` the probe is broadcast. With hosts, it goes to each of
-    /// them directly, which is the only thing that works on a network that filters broadcast between
-    /// segments (Wi-Fi to wired, commonly). Measured 2026-09-24: a PS5 answered every unicast probe and
-    /// never one broadcast, limited or subnet-directed. The .NET client's known-address probe broadcasts
-    /// and filters by address, so it would not find that console either.
+    /// them directly, which is the only thing that works on a network that filters broadcast between segments
+    /// (Wi-Fi to wired, commonly). Measured 2026-09-25 (journal, "The Mac streams"): a PS5 answered every
+    /// unicast probe and never one broadcast, limited or subnet-directed. The dotnet client's known-address
+    /// probe broadcasts and filters by address, so it would not find that console either.
     ///
     /// **The probe is repeated**, every `resendInterval`, for the whole window. A console that has been
-    /// resting a while answers its first probe slowly (2.05 s, measured) and then in about 120 ms, and one
-    /// three-second run with a single probe heard nothing at all. Repeating it covers a lost datagram and a
-    /// slow wake alike, and costs 64 bytes a time. Replies are de-duplicated by host id.
+    /// resting a while answered its first probe slowly (2.05 s) and then in about 120 ms, in one run, so the
+    /// figures are [X]; and one three-second run with a single probe heard nothing at all. Repeating it
+    /// covers a lost datagram and a slow wake alike, and costs 64 bytes a time. Replies are de-duplicated by
+    /// host id.
     public static let defaultTimeout: Duration = .seconds(3)
     public static let resendInterval: Duration = .milliseconds(500)
 

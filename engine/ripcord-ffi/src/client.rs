@@ -62,6 +62,7 @@ pub const RIPCORD_PAD_CREATE: u32 = 1 << 13;
 pub const RIPCORD_PAD_PS: u32 = 1 << 14;
 pub const RIPCORD_PAD_L3: u32 = 1 << 15;
 pub const RIPCORD_PAD_R3: u32 = 1 << 16;
+/// Its wire code is provisional `[X]`: see `input::TOUCHPAD`.
 pub const RIPCORD_PAD_TOUCHPAD: u32 = 1 << 17;
 
 /// The furthest point a session reached, `halyard_client_stage`'s values.

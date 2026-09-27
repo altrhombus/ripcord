@@ -6,8 +6,8 @@ MARKETING_VERSION = 0.1
 CURRENT_PROJECT_VERSION = 1
 GENERATE_INFOPLIST_FILE = YES
 INFOPLIST_KEY_CFBundleDisplayName = Ripcord
-// A game, so macOS offers Game Mode in full screen (docs/macos-plan.md, "Open questions": measured, not
-// assumed, before anything leans on it).
+// A game, so macOS offers Game Mode in full screen. Whether it engages is [X], an open question in
+// docs/macos-plan.md to measure before anything leans on it.
 INFOPLIST_KEY_LSApplicationCategoryType = public.app-category.games
 INFOPLIST_KEY_NSLocalNetworkUsageDescription = Ripcord finds and streams from PlayStation consoles on your network.
 // Asked only when someone chooses to scan the pairing code off the television (RipcordApp/CodeScanner.swift).

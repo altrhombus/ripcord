@@ -112,6 +112,11 @@ The design stands or falls on two facts no capture of ours has settled.
    - **What our records show.** A PIN registration's body carries only `Client-Type` and the account id. No
      device identity is sent (`libripcord/session/halyard_regist_message.c`). The device id goes out later,
      as `RP-Did` in `/sess/ctrl`.
+   - **What the vendor client shows.** In cap73 (2026-08-20), the vendor client on a second device presented
+     the byte-identical registkey recorded from another device fifteen days earlier. So one registkey
+     served one account and console across two of the vendor's devices (journal, "cap73 ... reframes the
+     whole question"). That is the vendor client's own pairing, not a record moved between clients, and it
+     is itself `[X]`.
    - **What it suggests.** A record made by the desktop should work from the port, which sends its own
      `RP-Did`. But whether the console remembers the first `RP-Did` a pairing was used with, and refuses
      another, is `[X]`.
