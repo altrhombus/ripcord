@@ -12,6 +12,8 @@ subject from different angles, which is why picking by topic alone leads you to 
 | How is the code arranged, and what rules keep it that way? | [`architecture.md`](architecture.md) |
 | What does the app look like, and what decides that? | [`design.md`](design.md) |
 | What is the macOS client, what is it built on, and in what order? | [`macos-plan.md`](macos-plan.md) |
+| What does the Mac app look like, and what decides that? | [`src/Ripcord.Mac/DESIGN.md`](../src/Ripcord.Mac/DESIGN.md) |
+| How do I build, test and release the Mac app? | [`src/Ripcord.Mac/README.md`](../src/Ripcord.Mac/README.md) |
 | Which protocol engine does each client run, and how does the project get to one? | [`engine-plan.md`](engine-plan.md) |
 | How do I build and test the Rust engine, and where does it stand? | [`engine/README.md`](../engine/README.md) |
 | **What is left to do?** | [`ROADMAP.md`](../ROADMAP.md) |

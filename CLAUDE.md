@@ -53,6 +53,18 @@ dotnet test tests/Ripcord.Protocol.Halyard.Tests/Ripcord.Protocol.Halyard.Tests.
 dotnet run --project tools/Ripcord.ProtocolLab -- <command>
 ```
 
+The macOS client (`src/Ripcord.Mac`) is an Xcode project, not part of `Ripcord.slnx`, and needs macOS 26, Xcode
+and a stable Rust toolchain; its build phase runs cargo for the engine. `src/Ripcord.Mac/README.md` has the
+full build, signing and release notes.
+
+```
+cd src/Ripcord.Mac
+xcodebuild -project Ripcord.xcodeproj -scheme Ripcord -derivedDataPath build build        # the app
+xcodebuild -project Ripcord.xcodeproj -scheme RipcordLab -derivedDataPath build build     # ripcord-lab
+xcodebuild -project Ripcord.xcodeproj -scheme RipcordKit -destination 'platform=macOS,arch=arm64' \
+  -derivedDataPath build test   # RipcordKitTests and RipcordAppTests; neither launches the app
+```
+
 `Directory.Build.props` at the repo root owns the cross-architecture wiring, and is the place to look when
 a build resolves the wrong native DLLs. It defines `$(RipcordRepoRoot)` (a `$(SolutionDir)` that is also
 defined outside solution builds) and `$(RipcordNativePlatform)`, which answers "whose native interop output
@@ -115,6 +127,12 @@ accepts a nonce length `System.Security.Cryptography.AesGcm` refuses. A comment 
 - **`tools/Ripcord.ProtocolLab`** — the console harness: drives the connect flow against a real PS5 and
   replays captures through the parsers. The iteration/verification tool for every protocol stage.
 - **`tools/Ripcord.HidCapture`** — standalone HID capture utility for controller RE work.
+- **`src/Ripcord.Mac`** — the macOS client, on the Rust engine. `RipcordKit` is the Swift layer over the
+  engine's C ABI (it imports the engine's C module internally, so no C type reaches its callers), plus the
+  cloud tier and pairing stores. `RipcordApp/` is the app and `RipcordWidgets/` its widget extension.
+  `RipcordAppLogic/` holds the app's window-free logic, compiled into both the app and the host-less
+  `RipcordAppTests`, and `RipcordLab/` is `ripcord-lab`, the Mac counterpart of `ProtocolLab`. `DESIGN.md` beside it settles its
+  surfaces, as `docs/design.md` settles the dotnet client's.
 - **`libripcord/`** — the protocol in portable C99 (it was `ports/common` until 2026-09-24). Today it is the
   protocol core of the console ports under `ports/`. **It is being succeeded for the first-class clients
   by a Rust engine** (`docs/engine-plan.md`, settled 2026-09-25): the macOS client (`src/Ripcord.Mac`)
