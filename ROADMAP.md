@@ -292,63 +292,23 @@ the documents into line, is done and in the journal. The engine lives in [`engin
 
 ### The .NET reference: findings from the engine comparisons (2026-09-26)
 
-Side-by-side reads of the .NET code and its C port, done for the Rust engine, found these faults in what
-the Windows client ships. None has been seen on hardware.
+Side-by-side reads of the .NET code and its C port, done for the Rust engine, found ten faults in what the
+Windows client ships. All ten are fixed and tested (journal, 2026-09-26). What they left open:
 
-- [ ] **`TakionReliableChannel.HandleSack` stops at a TSN wrap.** It walks `_unacked` in numeric key
-      order and breaks at the first key that is not at or below the cumulative TSN. With chunks at
-      0xFFFFFFFF and 0x00000000 outstanding and 0xFFFFFFFF acknowledged, it sees 0 first, stops, and
-      resends 0xFFFFFFFF every 300 ms for the rest of the session. The send TSN starts at a random 32-bit
-      tag, so a session only hits this if it starts within a few hundred chunks of the top. The C core and
-      the Rust engine compare every outstanding chunk by serial number.
-- [ ] **`HalyardPairingRecord.WakeCredential` writes the credential unsigned.** The C core writes it as a
-      signed 32-bit decimal and cites a PS4 capture that carried a negative one
-      (`docs/protocol/ps5-local-discovery.md`). If the capture is right, .NET cannot wake a console whose
-      registration key reads 0x80000000 or above. It also throws on a malformed key, and `WakeAsync` does not
-      catch it.
-- [ ] **A missing or malformed RP-Nonce does not stop the .NET session.** `HalyardStreamingSession` skips
-      the key setup and carries on to an unauthenticated /sess/ctrl, and would then send the launch spec,
-      and with it the handshake key, in plaintext. Both other engines fail the session there.
-- [ ] **`TakionSessionNegotiator` does not check SESSION_REPLY's `versionAccepted`,** nor that the reply
-      carries the required fields and a 32-byte signature before verifying it. A console that refuses the
-      version then surfaces as a signature or derivation failure instead of as a refusal. Both other
-      engines check.
-- [ ] **On the rendezvous route, the control keep-alive ends silently after 30 s of silence.**
-      `HalyardDatagramControlChannel.ReceiveBytesAsync` pumps under the 30 s stage deadline and throws
-      `TimeoutException` when it passes; `RunCtrlKeepAliveAsync` swallows every exception and returns, so
-      heartbeats stop being answered while the session carries on. The console's own heartbeats normally
-      keep the channel from going quiet that long, which is why it has not been seen. The C pipe and the
-      Rust engine have no deadline once the channel runs.
-- [ ] **The rendezvous transport and the ACCEPT can name different console candidates.** When none of the
-      console's candidates parses, `CandidateEndpoint` falls back to consoleHost:9303 for the transport,
-      while `PreferredCandidate` names the first candidate in the ACCEPT, and the media leg's
-      `IPAddress.Parse` on that fallback throws. The pairing route
-      (`HalyardAccountConsolePairing`) uses a third rule. The C core and the Rust engine return one choice and
-      leave the consoleHost:9303 fallback to the caller, which applies it to both.
-- [ ] **The .NET session never ends when the console hangs up.** `HalyardTakionStream`'s control loop
-      ignores a Takion DISCONNECT, and `RunCtrlKeepAliveAsync` returns quietly when the control channel
-      closes, so the session carries on until `SessionController`'s watchdog sees silence. A DISCONNECT
-      with a reason (a rejected launch spec sends one) is lost. The C core and the Rust engine end the
-      session with the reason.
-- [ ] **Rest on disconnect applies to every .NET teardown.** `DisposeAsync` sends REST_MODE whenever
-      `RestConsoleOnDisconnect` is set, and `SessionController` tears the old session down that way between
-      reconnect attempts too, so a flapping connection can put the console to sleep. The C core and the Rust
-      engine rest only on a disconnect a person asked for.
-- [ ] **.NET's keyless senkusha SESSION_REQUEST sends an empty encrypted key.** `HalyardSenkusha` sets
-      `EncryptedKey = ByteString.Empty`, while `TakionSessionNegotiator` notes the console drops a
-      SESSION_REQUEST without one. Senkusha is non-fatal, which would hide it. The C core and the Rust engine
-      send four zero bytes, as the stream's request does. [X] which the console wants.
-
+- [ ] **The stream SESSION_REQUEST's `encryptedKey`.** All three implementations send four zero bytes, which
+      the console accepts on hardware. The vendor sends the field present and empty (`22 00`, cap53 frame
+      10086, `[W]`). Matching the vendor is a one-line change in each, and wants a hardware run to confirm
+      nothing depended on the four bytes.
+- [ ] **The Mac's console-candidate choice has the same gap .NET had.** `preferredCandidate` in
+      `AccountRendezvous.swift` can name an unparseable candidate in the ACCEPT while `ConsolePath.control`
+      falls back to the known host. It fails safely rather than throwing, but the two should be one decision,
+      as `HalyardConsoleCandidates` now is for .NET.
 - [ ] **Check the Windows client's resolution against its bitrate.** The console grants resolution by
       bitrate (journal, 2026-09-25): 1080p asked at 10 Mb/s streamed 720p, and the Windows default is
       10,000 kb/s. Measure what a default Windows session actually receives.
 - [ ] **Windows: internet connect to a console woken from rest.** `HalyardStreamingSession.EnsureSignedInAsync`
       fails the session when SESSION_ID does not follow a passcode; on the Mac, a woken console sent it only
       after the A/V leg (journal, 2026-09-25). Confirm on Windows, then give .NET the same continuation.
-- [ ] **Cloud-tier faults the Mac's port found in .NET:** `HalyardTokenProvider` lets two concurrent
-      refreshes spend the same rotating refresh token; `SignOut` leaves the token provider seeded; and
-      `HalyardSignalingMessage.TryParse` misses `InvalidOperationException`, so a malformed frame is lost
-      silently.
 
 ### macOS client — on the Rust engine since 2026-09-26
 
@@ -400,12 +360,6 @@ moved to the Rust engine, so these are port-driven: each matters when a port bui
 - [ ] **Build the new socket code for the console SDKs** `[X]`: `select()` and `suseconds_t` in the
       `rc_tcp` connect deadline, and `rc_udp_open_bound` (bind, getsockname), have not been built for the
       3DS, Vita or PS3 SDKs.
-- [ ] **`encode_account_id` in `halyard_regist_message.c`** accumulates digits into a u64 with no overflow
-      check, so a 20-digit id past `UINT64_MAX` wraps silently where .NET, and the engine, fall back to
-      UTF-8.
-- [ ] **`rc_ecdh.c`'s diagnostics are process-wide statics**, so concurrent derivations race on
-      `s_last_error_step`, which the Mac's Swift tests caught. A session derives on one thread, but the
-      state should live in the keypair or be thread-local.
 
 ### Account pairing — resolved, and one thing owed (2026-09-23 to 09-24)
 
