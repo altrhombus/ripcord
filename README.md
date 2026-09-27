@@ -237,8 +237,9 @@ pair), two registration key tables, two material-wrap tables, four field context
 context key is one of those four, stored a second time under its own name, so the file holds four distinct
 16-byte keys rather than five — and a byte offset. The console computes against these values; a client
 cannot speak the protocol without them, and changing them breaks interoperability. They are interface facts,
-not authored expression, and they are shipped as **data** read through the same configuration seam that accepts
-a local override — not compiled into program logic.
+not authored expression, and they are **data** in one committed file that no client copies. The dotnet client
+reads it at run time through the same configuration seam that accepts a local override; the Rust engine (the
+Apple clients) and the C core (the console ports) generate lookup tables from it at build time, never committed.
 
 They are **generic to the protocol**: identical for every user and every console.
 
@@ -251,9 +252,11 @@ A build without the constants can be produced at any time:
 
 ```
 msbuild Ripcord.slnx -p:BundleInteropConstants=false
+cargo build --release -p ripcord-ffi --no-default-features   # the Rust engine, in engine/
 ```
 
-That omits the data entirely. The app then reports the constants as unavailable and declines to pair, exactly
+That omits the data entirely. For the Apple clients, `RIPCORD_BUNDLE_INTEROP_CONSTANTS = NO` does the same in the
+engine they build; the C core's console ports have no such switch. The app then reports the constants as unavailable and declines to pair, exactly
 as it behaves on a machine that has none — a clean failure, not a crash.
 
 ### The application OAuth credential

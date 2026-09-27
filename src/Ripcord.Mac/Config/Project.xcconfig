@@ -19,6 +19,10 @@ SWIFT_INCLUDE_PATHS = $(inherited) $(SRCROOT)/RipcordEngine/include
 // static archive by full path, because cargo writes a dylib of the same name beside it and -l would
 // prefer that. Static-library targets link with libtool, which does not read OTHER_LDFLAGS.
 RIPCORD_ENGINE = $(RIPCORD_REPO_ROOT)/engine
+// The v1 interop constants (CLAUDE.md, "Bounded exception 1") are compiled into the engine by default. NO builds
+// the shipping library without them, so pairing and connecting stop before the console: the engine's
+// counterpart of the dotnet client's -p:BundleInteropConstants=false.
+RIPCORD_BUNDLE_INTEROP_CONSTANTS = YES
 // The shipping library: no test-support exports. RipcordKitTests.xcconfig points at the test build instead.
 RIPCORD_ENGINE_LIB = $(RIPCORD_ENGINE)/target/shipping/release/libripcord.a
 // The same library built for each other SDK, by the same phase, into the target's own directory.

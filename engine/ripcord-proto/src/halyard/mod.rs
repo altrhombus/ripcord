@@ -19,6 +19,18 @@ pub const KEY_LENGTH: usize = 16;
 pub const VERSION_SELECTOR_PS4: i32 = 0;
 pub const VERSION_SELECTOR_PS5: i32 = 1;
 
+/// Whether this engine was built with the interop constants (the `interop-constants` feature). Without
+/// them every derivation reports its tables absent, the way a PS4-less bundle already does for PS4.
+pub fn constants_bundled() -> bool {
+    constants::KDF_TABLE1.is_some()
+}
+
+/// Whether the tables for this console family are in this engine: what a connect or a registration
+/// checks before it reaches the console.
+pub fn family_bundled(is_ps5: bool) -> bool {
+    if is_ps5 { constants_bundled() } else { has_ps4_tables() && has_ps4_registration() }
+}
+
 /// Whether the PS4 tables were in the bundle this engine was built from.
 pub fn has_ps4_tables() -> bool {
     constants::PS4_KDF_TABLE1.is_some()
@@ -32,4 +44,33 @@ pub fn has_ps4_registration() -> bool {
 /// Entry `index` (0..32) of a 32-by-16 table.
 fn entry(table: &[u8; 512], index: usize) -> &[u8; 16] {
     table[index * 16..index * 16 + 16].try_into().expect("16-byte entry")
+}
+
+#[cfg(test)]
+mod bundle_tests {
+    use super::*;
+
+    #[cfg(feature = "interop-constants")]
+    #[test]
+    fn the_default_build_carries_the_constants() {
+        assert!(constants_bundled());
+        assert!(family_bundled(true));
+    }
+
+    /// `cargo test -p ripcord-proto --no-default-features --lib bundle_tests`: the other tests need the
+    /// constants, so this one is run by name.
+    #[cfg(not(feature = "interop-constants"))]
+    #[test]
+    fn without_the_feature_every_derivation_reports_its_tables_absent() {
+        assert!(!constants_bundled());
+        assert!(!family_bundled(true) && !family_bundled(false));
+        assert!(control::kdf(&[1; 16], &[2; 16], VERSION_SELECTOR_PS5).is_none());
+        assert!(control::kdf(&[1; 16], &[2; 16], VERSION_SELECTOR_PS4).is_none());
+        assert!(control::context_key(2, 1).is_none());
+        let context = [0u8; registration::CONTEXT_LENGTH];
+        assert!(registration::derive_key(true, &context, 0).is_none());
+        assert!(registration::wrap_material(true, &[3; 16], &context).is_none());
+        assert!(account_seed::recover(true, &[4; 16], &[5; 16], &[6; 16]).is_none());
+        assert!(account_seed::seal(true, &[4; 16], &[5; 16], &[6; 16]).is_none());
+    }
 }

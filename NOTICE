@@ -39,8 +39,13 @@ two material-transform tables likewise, and a byte offset) that the console itse
 computes against. A client cannot speak this protocol without them, and they
 cannot be altered without breaking interoperability, so they are interface facts
 rather than authored expression.
-They are included as data, read at runtime through the same configuration seam
-that accepts a local override, and are not compiled into program logic.
+They are data, kept in one committed file, and every client reads that file
+rather than keeping a copy. The dotnet client includes it as a resource, read at
+run time through the same configuration seam that accepts a local override. The
+Rust engine, which the Apple clients use, and the portable C core, which the
+console ports use, generate lookup tables from the same file at build time and
+compile those in; the generated source is never committed. Either way the values
+are the same tables the derivations look up, not program logic.
 
 One further constant of the same kind is compiled in rather than bundled: the
 32-byte Client-Type value the console parses by content, which a message builder
@@ -54,8 +59,11 @@ record, no session key, no device or account identifier. Those are generated or
 captured per user and stay on the user's own machine.
 
 A build that omits the constants entirely can be produced with
--p:BundleInteropConstants=false; the result is inert and reports the constants as
-unavailable rather than failing at run time.
+-p:BundleInteropConstants=false for the dotnet client, or by building the Rust
+engine without its interop-constants feature (RIPCORD_BUNDLE_INTEROP_CONSTANTS =
+NO for the Apple clients). The result is inert and reports the constants as
+unavailable rather than failing at run time. The C core's console ports have no
+such switch.
 
 Application OAuth credential
 ----------------------------

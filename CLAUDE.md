@@ -298,6 +298,12 @@ When working in `Ripcord.Protocol.Halyard*`, `Ripcord.Cloud.Halyard`, or anythin
   or account — registration keys, pairing records, session keys, device or account ids — stays in the
   dirty room, and `BundledInteropConstantsTests.Bundle_CarriesNoLiveVectorMaterial` enforces that line.
   Do not widen this exception without amending `NOTICE` and this file together.
+  - **How each client carries the one file:** the dotnet client embeds it and reads it at run time;
+    `libripcord/tools/gen_constants.py` and `engine/ripcord-proto/build.rs` generate compiled-in tables from it
+    at build time, never committed. The inert builds are `-p:BundleInteropConstants=false`, the engine's
+    `interop-constants` feature (off with `--no-default-features`; `RIPCORD_BUNDLE_INTEROP_CONSTANTS = NO` for
+    the Apple clients, and `ripcord_interop_constants_bundled()` reports it), and none yet for the C ports.
+    `NOTICE` states the same; change them together.
   - **One further constant travels with these, and is listed here so the inventory is complete:** the
     32-byte `Client-Type` value the console parses by content. Observed on our own wire, generic to the
     application, identical for every client, and tied to no account or console, so it passes the same

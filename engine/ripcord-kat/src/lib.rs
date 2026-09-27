@@ -204,7 +204,8 @@ fn run_line(report: &mut Report, line: &Line<'_>, ecdh: &dyn Ecdh) -> Result<(),
             check(report, line, "key || material", &got, &format!("{}{}", f(4)?, f(5)?));
         }
         "ctxkey" => {
-            check(report, line, "contextKey", control::context_key(number(f(1)?)?, number(f(2)?)?), f(3)?);
+            let key = control::context_key(number(f(1)?)?, number(f(2)?)?).ok_or("family tables absent")?;
+            check(report, line, "contextKey", key, f(3)?);
         }
         "iv" => {
             let iv = control::field_iv(&hex16(f(1)?)?, &hex16(f(2)?)?, number(f(3)?)?);
@@ -269,7 +270,7 @@ fn run_line(report: &mut Report, line: &Line<'_>, ecdh: &dyn Ecdh) -> Result<(),
             let (d1, d2, seed) = (hex16(f(2)?)?, hex16(f(3)?)?, hex16(f(4)?)?);
             let ciphertext = hex(f(5)?)?;
             // The console's ciphertext can run past the seed; the first 16 bytes are the sealed seed.
-            let sealed = account_seed::seal(is_ps5, &d1, &d2, &seed);
+            let sealed = account_seed::seal(is_ps5, &d1, &d2, &seed).ok_or("family tables absent")?;
             check(
                 report,
                 line,

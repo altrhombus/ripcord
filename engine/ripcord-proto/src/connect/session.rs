@@ -514,6 +514,10 @@ impl Session {
             // A client made only to register (the account route's pairing) has no key to connect with.
             self.log(LogLevel::Error, "there is no registration key to connect with: pair first");
             self.request_end(EndReason::ChannelError);
+        } else if !crate::halyard::family_bundled(self.cfg.pairing.is_ps5) {
+            // Stopping here, before the console, rather than at /sess/init, where it would read as a refusal.
+            self.log(LogLevel::Error, "this engine was built without the interop constants for this console");
+            self.request_end(EndReason::ChannelError);
         }
         if self.end.is_none() {
             self.start_control(now_us);
