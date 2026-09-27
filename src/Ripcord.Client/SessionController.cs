@@ -129,6 +129,14 @@ public sealed class SessionController : IAsyncDisposable
     private bool _restConsoleOnDisconnect;
 
     /// <summary>
+    /// Set by <see cref="StopAsync"/>, the one disconnect a person asks for. Only that teardown may rest the
+    /// console: the others replace a stalled or dropped session, and until 2026-09-26 they rested it too, so a
+    /// flapping connection with the setting on could put the console to sleep between reconnect attempts
+    /// (engine comparisons). The C core and the Rust engine rest only on a disconnect a person asked for.
+    /// </summary>
+    private volatile bool _stopRequested;
+
+    /// <summary>
     /// While true, controller frames are dropped instead of forwarded to the console. Used when an in-app
     /// overlay — the disconnect prompt — takes the pad, so button presses drive the dialog rather than leaking
     /// into the game behind it. Setting it true also sends one neutral frame, so a gesture that was being held
@@ -280,6 +288,8 @@ public sealed class SessionController : IAsyncDisposable
             loop = _runLoop;
         }
 
+        // Before the cancel: the loop's own teardown runs as soon as it sees it, and must know this is a stop.
+        _stopRequested = true;
         if (cts is not null)
         {
             await cts.CancelAsync().ConfigureAwait(false);
@@ -847,6 +857,11 @@ public sealed class SessionController : IAsyncDisposable
 
         if (session is not null)
         {
+            // Rest only on a person's stop, and then as they last chose: a replacement session is seeded from the
+            // connect-time config, so the choice is applied here rather than trusted to have reached it. Any
+            // other teardown is on the way to a reconnect.
+            session.RestConsoleOnDisconnect = _stopRequested && _restConsoleOnDisconnect;
+
             try { await session.DisposeAsync().ConfigureAwait(false); }
             catch (Exception) { /* teardown races are not worth failing a reconnect over */ }
         }
