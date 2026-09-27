@@ -2,5 +2,7 @@ PRODUCT_NAME = RipcordKitTests
 PRODUCT_BUNDLE_IDENTIFIER = io.github.altrhombus.Ripcord.KitTests
 GENERATE_INFOPLIST_FILE = YES
 
-// The engine's test-support exports: the loopback consoles and the vector runner.
+// The engine's test-support exports, the loopback consoles and the vector runner: the test build of the
+// library, and the declarations ripcord.h guards behind this define. Nothing else links it.
+RIPCORD_ENGINE_LIB = $(RIPCORD_ENGINE)/target/release/libripcord.a
 OTHER_SWIFT_FLAGS = $(inherited) -Xcc -DRIPCORD_TEST_SUPPORT

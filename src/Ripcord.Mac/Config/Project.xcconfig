@@ -16,11 +16,9 @@ SWIFT_INCLUDE_PATHS = $(inherited) $(SRCROOT)/RipcordEngine/include
 // static archive by full path, because cargo writes a dylib of the same name beside it and -l would
 // prefer that. Static-library targets link with libtool, which does not read OTHER_LDFLAGS.
 RIPCORD_ENGINE = $(RIPCORD_REPO_ROOT)/engine
-RIPCORD_ENGINE_LIB = $(RIPCORD_ENGINE)/target/release/libripcord.a
+// The shipping library: no test-support exports. RipcordKitTests.xcconfig points at the test build instead.
+RIPCORD_ENGINE_LIB = $(RIPCORD_ENGINE)/target/shipping/release/libripcord.a
 OTHER_LDFLAGS = $(inherited) $(RIPCORD_ENGINE_LIB)
-// The engine is built with its test-support exports (the loopback consoles, ripcord_kat_run) because
-// RipcordKitTests uses them; RipcordKit itself calls none, and ripcord.h hides them unless
-// RipcordKitTests.xcconfig defines RIPCORD_TEST_SUPPORT. An app target will link a build without them.
 
 // Ad hoc signing until distribution is set up (docs/macos-plan.md, step 9).
 CODE_SIGN_IDENTITY = -

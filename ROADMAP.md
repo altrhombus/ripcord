@@ -274,9 +274,6 @@ the documents into line, is done and in the journal. The engine lives in [`engin
         2 s for the reply, then settle 200 ms, so about 2.2 s of every LAN connect is this wait. Find out
         whether a reply exists at all (a capture of the vendor client), and if not, what the probe's
         minimum lead time before the TCP connect is. [X] until a capture settles it.
-  - [ ] **Build the app against an engine without `test-support`.** The Mac builds one engine library,
-        with the loopback consoles and the vector runner in it, because RipcordKitTests uses them;
-        RipcordKit calls none. An app target needs a second cargo invocation without the feature.
 - [ ] **Phase 4 — Windows onto the engine,** after 1.0, one seam at a time behind `RIPCORD_ENGINE`.
   - [ ] Before step 3: `src/Ripcord.App/Pages/SessionPage.xaml.cs` imports three
         `Ripcord.Protocol.Halyard*` namespaces. Stale usings, or a dependency around the seams.

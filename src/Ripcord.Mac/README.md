@@ -22,8 +22,10 @@ built here. There is no app yet.
 
 ## Decisions the build rests on
 
-**The engine is built from where it lives.** RipcordKit's "Build the Rust engine" phase runs cargo in
-`engine/`, and every executable links the static archive by full path. The header is generated there and
+**The engine is built from where it lives, twice.** RipcordKit's "Build the Rust engine" phase runs cargo
+in `engine/`: a shipping library without `test-support` in `target/shipping`, which the lab links and an
+app target will, and the test library, which only RipcordKitTests links. Every executable links its
+static archive by full path, and CI checks the shipping build carries no test exports. The header is generated there and
 read in place; nothing under `src/Ripcord.Mac` is a copy of engine code or of the interop constants, which
 the engine generates from the one committed bundle.
 
