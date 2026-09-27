@@ -35,6 +35,23 @@ different purpose.
 > anything. The list above is short, it is checkable in one `git log --format=%B | grep`, and it stops
 > growing the moment someone notices — which is the property that actually matters.
 
+### The Mac app's logic, tested (2026-09-26)
+
+Steps 6 and 7 had shipped their logic untested. The parts that need no window now live in
+`src/Ripcord.Mac/RipcordAppLogic/`, compiled into the app and into a host-less `RipcordAppTests` target, so no
+test launches the app, here or in CI. The RipcordKit scheme runs the target, so CI's existing test step
+includes it. Twenty tests cover:
+
+- the health verdict's thresholds and order, and rung 1's two-in, three-out hysteresis;
+- the rates taken from the engine's cumulative counters;
+- grid navigation and the adaptive column count;
+- the pad's directions, edges and repeat, under an injected clock;
+- settings saved by an older build, and key bindings and names;
+- the three connect stages;
+- the network watch's two-silent-rounds rule, and a record following its console to a new address.
+
+The Mac suite is 181 tests.
+
 ### The engine comparisons' findings, fixed in .NET and the C core (2026-09-26)
 
 The side-by-side reads done for the Rust engine had listed ten faults in the .NET reference and two in the C
@@ -93,10 +110,10 @@ is batched, and ROADMAP lists what it has to check.
 - **Step 4, a first picture.** A library window and one stream window per session: the display layer, an
   audio player node with a short queue, the pad, and the passcode prompt. Latency is measured in the only
   way the layer allows. Each enqueue is timestamped, and a display link watches for the displayed buffer
-  to change. That is the Mac's counterpart of the Windows demux-to-present figure, not the same
+  to change. That is the Mac's counterpart of the dotnet client's demux-to-present figure, not the same
   measurement.
 - **Step 5, design first.** `src/Ripcord.Mac/DESIGN.md` settles the plan's hypotheses the way
-  `docs/design.md` settled Windows', and keeps its principle: borrow the OS, and spend identity on the
+  `docs/design.md` settled the dotnet client's, and keeps its principle: borrow the OS, and spend identity on the
   tile, the launch and the pairing celebration.
   - **The icon** is an Icon Composer bundle generated from the brand SVGs. Apple's grid was **checked by
     compiling it with `actool` and looking at the render**, not recalled. The brand README had asked for
@@ -116,7 +133,7 @@ is batched, and ROADMAP lists what it has to check.
   - the window grows out of its tile;
   - the mark's dashes fill at the engine's three stages;
   - a glass capsule leaves on its own;
-  - the inspector (⌘I) is the Windows HUD's ladder, with the Windows thresholds;
+  - the inspector (⌘I) is the dotnet client's HUD ladder, with its thresholds;
   - clicking the picture captures the keyboard, ⌃⌥ releases it, and ⌘ shortcuts never reach the console;
   - Picture in Picture floats the display layer;
   - recording writes the bitstream in passthrough.
