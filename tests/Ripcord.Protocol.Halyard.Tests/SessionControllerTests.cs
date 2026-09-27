@@ -34,6 +34,8 @@ public class SessionControllerTests
 
         public SessionState State { get; set; } = SessionState.Connecting;
 
+        public string? EndReason { get; set; }
+
         /// <summary>
         /// Null by default = "the console has said nothing", so existing stall tests keep exercising the stall
         /// path. Tests for the idle-but-healthy case set this to a small value.
@@ -602,6 +604,54 @@ public class SessionControllerTests
 
         Assert.True(sessions.Count >= 5, $"expected repeated reconnects, got {sessions.Count}");
         Assert.NotEqual(SessionLifecycle.Failed, controller.Lifecycle);
+    }
+
+    /// <summary>
+    /// A session that closes itself says why, and the reconnect repeats it. Before 2026-09-26 a console that
+    /// hung up left no account of it: the .NET session ran on until the watchdog saw silence, and the reconnect
+    /// that followed said nothing about what it was reconnecting from.
+    /// </summary>
+    [Fact]
+    public async Task ASessionThatEndsItself_HasItsReasonInTheReconnect()
+    {
+        var time = new VirtualTime();
+        var sessions = new List<FakeSession>();
+        var options = new SessionControllerOptions
+        {
+            WatchdogInterval = TimeSpan.FromMilliseconds(1),
+            MaxReconnectAttempts = 3,
+            MinimumHealthySession = TimeSpan.FromSeconds(5),
+        };
+
+        await using var controller = new SessionController(
+            async ct =>
+            {
+                if (sessions.Count == 0)
+                {
+                    var s = new FakeSession { MillisecondsSinceConsoleActivity = 0 };
+                    sessions.Add(s);
+                    return s;
+                }
+
+                // Hold the second attempt open, so its status line can be read.
+                await Task.Delay(Timeout.Infinite, ct);
+                throw new OperationCanceledException();
+            },
+            new FakePipeline(),
+            options: options,
+            clock: time.Now,
+            delay: time.Delay);
+
+        await controller.StartAsync(Config);
+        await WaitFor(() => controller.Lifecycle == SessionLifecycle.Streaming, "the first session to stream");
+
+        time.Advance(TimeSpan.FromSeconds(10));   // a session that lasted
+        sessions[0].EndReason = "The console ended the session: launch spec rejected";
+        sessions[0].State = SessionState.Closed;
+
+        await WaitFor(() => controller.CurrentStatus.Detail.Contains("launch spec rejected", StringComparison.Ordinal),
+            "the reconnect to name why the session ended");
+        Assert.Equal(SessionLifecycle.Reconnecting, controller.Lifecycle);
     }
 
     [Fact]

@@ -53,6 +53,13 @@ public interface IStreamingSession : IAsyncDisposable
     SessionState State { get; }
 
     /// <summary>
+    /// Why the session closed on its own, in words a person can read, or null when it has not, or when the
+    /// backend cannot say. Read by <c>SessionController</c> once the session reaches
+    /// <see cref="SessionState.Closed"/>, so a reconnect can say what it is reconnecting from.
+    /// </summary>
+    string? EndReason => null;
+
+    /// <summary>
     /// Milliseconds since ANYTHING arrived from the console, or null if nothing has yet.
     ///
     /// <para>
