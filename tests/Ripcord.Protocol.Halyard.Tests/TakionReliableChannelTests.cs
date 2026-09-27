@@ -50,6 +50,33 @@ public class TakionReliableChannelTests
         await SwallowAsync(serverTask);
     }
 
+    /// <summary>
+    /// A cumulative SACK across the TSN wrap. The initial TSN is the local tag, so a session whose tag sits at
+    /// the top of the space sends 0xFFFFFFFF and then 0x00000000. Acknowledging 0xFFFFFFFF must clear it even
+    /// though 0 is the lower key; it used to stop at 0 and leave 0xFFFFFFFF outstanding for good.
+    /// </summary>
+    [Fact]
+    public async Task CumulativeSack_AcrossTheTsnWrap_ClearsTheChunkBeforeIt()
+    {
+        using var clientSocket = new UdpChannel();
+        using var sink = new UdpChannel();   // somewhere for the DATA to go; nothing answers
+        var remote = new IPEndPoint(IPAddress.Loopback, sink.LocalEndPoint.Port);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+
+        await using var client = new TakionReliableChannel(
+            clientSocket, remote, localTag: 0xFFFFFFFF, remoteTag: ServerTag, retransmitInterval: TimeSpan.FromMinutes(5));
+        var message = new ControlMessage { Type = ControlMessage.Types.MessageType.Heartbeat };
+        await client.SendMessageAsync(TakionDataChunk.ChannelSession, message, cts.Token);   // TSN 0xFFFFFFFF
+        await client.SendMessageAsync(TakionDataChunk.ChannelSession, message, cts.Token);   // TSN 0x00000000
+        Assert.Equal(2, client.UnackedCount);
+
+        await client.HandlePacketAsync(TakionSackChunk.Build(0xFFFFFFFF, 0xFFFFFFFF), cts.Token);
+        Assert.Equal(1, client.UnackedCount);
+
+        await client.HandlePacketAsync(TakionSackChunk.Build(0xFFFFFFFF, 0x00000000), cts.Token);
+        Assert.Equal(0, client.UnackedCount);
+    }
+
     [Fact]
     public async Task SackTiming_ProducesARoundTripEstimate()
     {
