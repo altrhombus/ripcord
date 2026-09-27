@@ -35,6 +35,20 @@ different purpose.
 > anything. The list above is short, it is checkable in one `git log --format=%B | grep`, and it stops
 > growing the moment someone notices — which is the property that actually matters.
 
+### The Rust engine: fuzz targets, Miri, and the first finding (2026-09-26)
+
+`engine/fuzz` holds nine cargo-fuzz targets. Eight mirror `libripcord/tests/fuzz`: stream, control,
+Takion, the 9303 association, discovery, STUN and candidates, /sess, and the account inputs. The ninth,
+`connect`, drives the whole connect machine with arbitrary host events, which the C core could never be
+fuzzed with.
+
+- **The first run found a bug within a minute.** The SRCH reply parser sliced its first line as a string at
+  byte 8, and a multi-byte character straddling that byte panicked. Any datagram on the discovery port
+  could trigger it. It is fixed, with the fuzzer's input kept as a regression test.
+- **Miri over `ripcord-ffi`'s unit tests is clean** on RustCrypto's portable backends. On the hardware
+  backends it stops inside `sha2`'s intrinsics, which is not the engine's code.
+- **`engine-nightly.yml`** runs both daily, with the fuzz corpus kept between runs.
+
 ### The Rust engine: senkusha's probes, CORRUPT_FRAME and rate control (2026-09-26)
 
 Four behaviours the .NET session had and the C core never did, ported from `HalyardSenkusha.cs`,

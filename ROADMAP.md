@@ -253,8 +253,8 @@ the documents into line, is done and in the journal. The engine lives in [`engin
         the unit.
   - [ ] **First run against a console,** LAN then rendezvous, with `ripcord-net` from a small lab binary.
         The sequencing is shared with the C core, mistakes included, so hardware is what checks it.
-  - [ ] **A nightly CI leg** for Miri over `ripcord-ffi`'s tests and a coverage-guided `cargo-fuzz` run
-        with a kept corpus. Neither runs yet; the stable sweep in `demux.rs` stands in for fuzzing.
+  - [ ] **The nightly CI leg's first run.** `engine-nightly.yml` runs Miri over `ripcord-ffi` and every
+        fuzz target for five minutes with a kept corpus (journal, 2026-09-26); it has not run on GitHub yet.
   - [ ] **Differential runs for each new layer.** `ripcord-diff` exists and covers every layer ported so
         far. Each later layer adds its surface to `shim/diff_shim.c` in the change that
         ports it. For sequencing, the C core is the only other implementation.
