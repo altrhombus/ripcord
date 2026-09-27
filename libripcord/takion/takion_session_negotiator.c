@@ -8,7 +8,9 @@
 
 #include <string.h>
 
-/* The vendor sends four zero bytes for the unused required `encryptedKey` field. */
+/* Four zero bytes for the unused required `encryptedKey` field, which the console accepts on hardware. The
+ * vendor sends it present and EMPTY (`22 00`, cap53 frame 10086): the four bytes are ours, not a copy of the
+ * wire, and whether to match the vendor is open in ROADMAP. */
 static const uint8_t kUnusedEncryptedKey[4] = { 0, 0, 0, 0 };
 
 unsigned takion_session_curve_for_version(uint32_t protocol_version)

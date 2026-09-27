@@ -720,7 +720,6 @@ static void senkusha_legs(halyard_client *c, uint64_t box)
      * (31 << 3) | 2 = 250, a TWO-byte varint tag. client_test checks it against the builder.
      */
     static const uint8_t kVersionRequest[] = { 0x08, 0x1F, 0xFA, 0x01, 0x02, 0x08, 0x09 };
-    static const uint8_t kZeroKey[4] = { 0, 0, 0, 0 };
     takion_session_request request;
     const uint8_t *reply;
     size_t reply_length;
@@ -748,8 +747,11 @@ static void senkusha_legs(halyard_client *c, uint64_t box)
     request.session_key_length = 0;
     request.launch_spec_json = "";
     request.launch_spec_json_length = 0;
-    request.encrypted_key = kZeroKey;
-    request.encrypted_key_length = sizeof(kZeroKey);
+    /* Present and empty, as the vendor sends it: its keyless senkusha SESSION_REQUEST carries encryptedKey
+     * as `22 00` in every instance in cap53 (frames 10030, 14662, 42854) and cap54 (3808). This sent four
+     * zero bytes, the stream request's value, until 2026-09-26. */
+    request.encrypted_key = (const uint8_t *)"";
+    request.encrypted_key_length = 0;
 
     payload_length = takion_control_build_session_request(&request, payload, sizeof(payload));
     if (payload_length == 0u

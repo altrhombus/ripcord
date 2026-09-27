@@ -75,6 +75,21 @@ public class TakionSessionNegotiatorTests
         EcdhSignature = ByteString.CopyFrom(new byte[32]),
     };
 
+    /// <summary>
+    /// The keyless senkusha SESSION_REQUEST carries encryptedKey present and empty, the vendor's `22 00` in every
+    /// instance in cap53 and cap54. An engine comparison once took this for a bug beside the C core's four zero
+    /// bytes; the captures showed it was the one that matched the wire, and the C core and the Rust engine
+    /// changed instead (2026-09-26).
+    /// </summary>
+    [Fact]
+    public void TheKeylessSenkushaRequest_CarriesEncryptedKeyPresentAndEmpty()
+    {
+        byte[] payload = HalyardSenkusha.KeylessSessionRequest().SessionRequestPayload.ToByteArray();
+        Assert.True(HalyardSenkusha.KeylessSessionRequest().SessionRequestPayload.HasEncryptedKey);
+        // clientVersion 9, then sessionKey, launchSpecJson and encryptedKey, each present and zero-length.
+        Assert.Equal("080912001A002200", Convert.ToHexString(payload));
+    }
+
     [Fact]
     public void ReplyProblem_AcceptsAWellFormedReply() => Assert.Null(TakionSessionNegotiator.ReplyProblem(GoodReply()));
 
