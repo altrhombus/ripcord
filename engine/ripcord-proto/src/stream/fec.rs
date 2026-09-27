@@ -44,25 +44,11 @@ const fn build_tables() -> Tables {
 
 static TABLES: Tables = build_tables();
 
-/// Every product, so the coding loops read one row per coefficient rather than two logs and an exp
-/// per byte. 64 KB, built at compile time.
-static MUL: [[u8; 256]; 256] = {
-    let t = build_tables();
-    let mut m = [[0u8; 256]; 256];
-    let mut a = 1;
-    while a < 256 {
-        let mut b = 1;
-        while b < 256 {
-            m[a][b] = t.exp[t.log[a] as usize + t.log[b] as usize];
-            b += 1;
-        }
-        a += 1;
-    }
-    m
-};
-
 pub fn multiply(a: u8, b: u8) -> u8 {
-    MUL[usize::from(a)][usize::from(b)]
+    if a == 0 || b == 0 {
+        return 0;
+    }
+    TABLES.exp[usize::from(TABLES.log[usize::from(a)]) + usize::from(TABLES.log[usize::from(b)])]
 }
 
 /// `None` when `b` is zero, which is undefined in the field.
@@ -82,8 +68,19 @@ pub fn inverse(a: u8) -> Option<u8> {
 }
 
 /// `dest[t] ^= coeff * src[t]` for every byte.
+///
+/// One lookup per byte, from a row of products built for this coefficient: 256 multiplies, against a unit
+/// of a thousand bytes or more. This used to read the row out of a 64 KB table of every product, built at
+/// compile time, which was a tenth of the whole engine's size (2026-09-26) for work done only when a frame
+/// has lost units.
 fn mul_accumulate(dest: &mut [u8], src: &[u8], coeff: u8) {
-    let row = &MUL[usize::from(coeff)];
+    if coeff == 0 {
+        return;
+    }
+    let mut row = [0u8; 256];
+    for (b, product) in row.iter_mut().enumerate().skip(1) {
+        *product = multiply(coeff, b as u8);
+    }
     for (d, s) in dest.iter_mut().zip(src) {
         *d ^= row[usize::from(*s)];
     }
