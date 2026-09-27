@@ -181,6 +181,10 @@ pub struct RipcordClientConfig {
     pub bitrate_kbps: i32,
     pub allow_hevc: bool,
     pub hdr: bool,
+    /// Send CONNECTION_QUALITY with the adaptive ladder's target. Off unless set: the unit is [X].
+    pub report_connection_quality: bool,
+    /// After sign-in, the control channel's echo probe: a diagnostic of the control crypto.
+    pub control_echo_probe: bool,
     /// The MTU of the interface toward the console; 0 when unknown.
     pub interface_mtu: u32,
 
@@ -257,6 +261,9 @@ pub struct RipcordClientStats {
     pub window_ms: u32,
     pub verify_dropped: u64,
     pub rtt_ms: f64,
+    /// The adaptive ladder's bitrate and rung height.
+    pub target_bitrate_kbps: u32,
+    pub target_height: u32,
 }
 
 /// One of our rendezvous legs, for the OFFER.
@@ -310,6 +317,13 @@ pub struct RipcordClientResult {
     pub senkusha_ok: bool,
     /// -1 when not measured.
     pub version_rtt_ms: i32,
+    /// The echo probe's least round trip in microseconds, -1 when a majority of pings did not come back.
+    pub echo_rtt_us: i64,
+    /// The MTU probe confirmed the declared MTU in both directions.
+    pub mtu_confirmed: bool,
+    pub corrupt_frames_sent: u64,
+    pub quality_reports_sent: u64,
+    pub control_echo_answered: bool,
     pub stream_version: u32,
     /// `RIPCORD_CURVE_*` of the stream's key agreement; 0 before it ran.
     pub curve: u32,
@@ -451,6 +465,8 @@ impl Host for FfiHost<'_> {
                         window_ms: s.window_ms,
                         verify_dropped: s.verify_dropped,
                         rtt_ms: s.rtt_ms,
+                        target_bitrate_kbps: s.target_bitrate_kbps,
+                        target_height: s.target_height,
                     };
                     f(cb.user, &out);
                 }
@@ -590,6 +606,8 @@ unsafe fn config_of(c: &RipcordClientConfig) -> Option<Config> {
     }
     cfg.allow_hevc = c.allow_hevc;
     cfg.hdr = c.hdr;
+    cfg.report_connection_quality = c.report_connection_quality;
+    cfg.control_echo_probe = c.control_echo_probe;
     cfg.interface_mtu = (c.interface_mtu != 0).then_some(c.interface_mtu);
     cfg.signin_prompt_window_us = us(c.signin_prompt_window_ms, cfg.signin_prompt_window_us);
     cfg.senkusha_attempts = or(c.senkusha_attempts, cfg.senkusha_attempts);
@@ -785,6 +803,11 @@ pub unsafe extern "C" fn ripcord_client_result(
             login_verdict_byte: o.login_verdict_byte.map_or(-1, i32::from),
             senkusha_ok: o.senkusha_ok,
             version_rtt_ms: o.version_rtt_ms.map_or(-1, |v| v as i32),
+            echo_rtt_us: o.echo_rtt_us.map_or(-1, |v| v.min(i64::MAX as u64) as i64),
+            mtu_confirmed: o.mtu_confirmed,
+            corrupt_frames_sent: o.corrupt_frames_sent,
+            quality_reports_sent: o.quality_reports_sent,
+            control_echo_answered: o.control_echo_answered,
             stream_version: o.stream_version,
             curve: o.curve.map_or(0, super::curve_id),
             stream_info_parsed: o.stream_info_parsed,
@@ -811,6 +834,34 @@ pub unsafe extern "C" fn ripcord_client_result(
         };
         // SAFETY: non-null, checked above, and valid per the contract.
         unsafe { out.write(result) };
+        RipcordStatus::Ok
+    })
+}
+
+/// The host's power and thermal state, which caps the adaptive ladder: a battery at or below 30% at 720p,
+/// and thermal throttling, energy saver or a critical battery one rung lower again. `battery_percent` -1
+/// means unknown, which is never grounds for a cap. Pump-thread only.
+///
+/// # Safety
+/// `client` from [`ripcord_client_new`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ripcord_client_set_power(
+    client: *mut RipcordClient,
+    on_battery: bool,
+    battery_percent: i32,
+    thermal_throttling: bool,
+    energy_saver: bool,
+    battery_critical: bool,
+) -> RipcordStatus {
+    use ripcord_proto::connect::bandwidth::{PowerSource, PowerState};
+    with_handle(client, |c| {
+        c.inner.set_power_state(PowerState {
+            source: if on_battery { PowerSource::Battery } else { PowerSource::External },
+            battery_percent: u8::try_from(battery_percent).ok().filter(|&p| p <= 100),
+            thermal_throttling,
+            energy_saver,
+            battery_critical,
+        });
         RipcordStatus::Ok
     })
 }

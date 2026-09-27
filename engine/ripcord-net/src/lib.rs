@@ -382,6 +382,11 @@ impl Client {
         true
     }
 
+    /// The host's power and thermal state, for the adaptive ladder. Pump-thread only.
+    pub fn set_power_state(&mut self, power: ripcord_proto::connect::bandwidth::PowerState) {
+        self.session.set_power_state(power);
+    }
+
     /// Goodbye: REST_MODE first when `rest_console`, then the Takion DISCONNECT; the session ends here.
     pub fn disconnect(&mut self, host: &mut impl Host, rest_console: bool) {
         let now = self.now();

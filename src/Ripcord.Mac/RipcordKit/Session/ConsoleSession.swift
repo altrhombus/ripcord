@@ -46,6 +46,11 @@ public struct SessionStats: Sendable {
     public let kbps: UInt32
     public let msSinceConsoleActivity, msSinceVideoFrame: UInt32
     public let idrRequests: UInt32
+    /// The stream channel's smoothed round trip, and where the adaptive ladder stands: the bitrate it would
+    /// ask for and its rung's height (sent to the console only with `reportConnectionQuality`).
+    public let rttMs: Double
+    public let targetBitrateKbps: UInt32
+    public let targetHeight: UInt32
 }
 
 public struct SessionOutcome: Sendable {
@@ -93,6 +98,11 @@ public final class ConsoleSession: Sendable {
         public var width = 1920, height = 1080, fps = 60, bitrateKbps = 25_000
         public var allowHEVC = true
         public var hdr = false
+        /// Tell the console the adaptive ladder's target bitrate (CONNECTION_QUALITY). Off by default: its
+        /// unit is unconfirmed, and a wrong guess by 1000x would have the console choose an absurd rate.
+        public var reportConnectionQuality = false
+        /// A diagnostic: the control channel's echo probe, which proves the control crypto is being read.
+        public var controlEchoProbe = false
         /// How the console is reached. `.local` is the LAN (TCP 9295 and the console's UDP ports), and is
         /// exactly what this session did before the rendezvous route existed; `.rendezvous` is the account
         /// route over 9303 and a negotiated A/V leg, driven with the cloud tier (RendezvousLink.swift).
@@ -221,6 +231,8 @@ public final class ConsoleSession: Sendable {
         config.bitrate_kbps = Int32(options.bitrateKbps)
         config.allow_hevc = options.allowHEVC
         config.hdr = options.hdr
+        config.report_connection_quality = options.reportConnectionQuality
+        config.control_echo_probe = options.controlEchoProbe
         config.require_session_ready = 0   // the default: wait for SESSION_ID on the LAN
 
         if let r = options.route.rendezvous {
@@ -502,7 +514,8 @@ public final class ConsoleSession: Sendable {
                 packetsReceived: s.packets_received, packetsLost: s.packets_lost, videoFrames: s.video_frames,
                 audioFrames: s.audio_frames, keyframes: s.keyframes, kbps: s.kbps,
                 msSinceConsoleActivity: s.ms_since_console_activity, msSinceVideoFrame: s.ms_since_video_frame,
-                idrRequests: s.idr_requests))
+                idrRequests: s.idr_requests, rttMs: s.rtt_ms, targetBitrateKbps: s.target_bitrate_kbps,
+                targetHeight: s.target_height))
         }
         // Only on the rendezvous route: a LAN session's callbacks are exactly what they were.
         if rendezvous {

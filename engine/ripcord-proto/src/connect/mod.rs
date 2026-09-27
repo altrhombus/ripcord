@@ -19,6 +19,7 @@
 //!             → key agreement → STREAM_INFO → streaming
 //! ```
 
+pub mod bandwidth;
 mod session;
 
 pub use session::Session;
@@ -166,6 +167,10 @@ pub struct Stats {
     pub verify_dropped: u64,
     /// The stream channel's smoothed round trip from its SACKs (Karn's rule), 0 before a sample.
     pub rtt_ms: f64,
+    /// Where the adaptive ladder stands: the bitrate it would ask for, and its rung's height. The console
+    /// is told only when `Config::report_connection_quality` is on.
+    pub target_bitrate_kbps: u32,
+    pub target_height: u32,
 }
 
 /// What the session says.
@@ -241,6 +246,14 @@ pub struct Config {
     /// overhead, clamped to 530..=1454; unknown declares 1454 (.NET's LinkMetrics).
     pub interface_mtu: Option<u32>,
     pub allow_hevc: bool,
+    /// Send CONNECTION_QUALITY with the adaptive ladder's target, RTT and loss. Off by default, as in .NET:
+    /// the target bitrate's unit is [X], and a wrong guess by 1000x would have the console pick an absurd
+    /// rate.
+    pub report_connection_quality: bool,
+    /// After sign-in, send the control channel's echo probe (0x0910), which the console answers with 0x8910
+    /// on both routes: an answer proves our control-field crypto is being read. A diagnostic, off by
+    /// default, as .NET's RIPCORD_PROBE_ECHO.
+    pub control_echo_probe: bool,
     /// HDR is an HEVC profile, and "HDR" in the launch spec is an inference, never observed [X].
     pub hdr: bool,
 
@@ -291,6 +304,8 @@ impl Config {
             streaming_type: 0,
             interface_mtu: None,
             allow_hevc: false,
+            report_connection_quality: false,
+            control_echo_probe: false,
             hdr: false,
             arm_broadcast: true,
             control_port: 9295,
@@ -344,6 +359,15 @@ pub struct Outcome {
     pub login_verdict_byte: Option<u8>,
     pub senkusha_ok: bool,
     pub version_rtt_ms: Option<u32>,
+    /// The echo probe's least round trip, when a majority of its pings came back.
+    pub echo_rtt_us: Option<u64>,
+    /// Whether the MTU probe confirmed the declared MTU in both directions.
+    pub mtu_confirmed: bool,
+    pub corrupt_frames_sent: u64,
+    pub control_echo_sent: bool,
+    /// The console answered the control echo probe.
+    pub control_echo_answered: bool,
+    pub quality_reports_sent: u64,
     pub stream_version: u32,
     /// The curve the stream's key agreement ran on.
     pub curve: Option<crate::crypto::ecdh::Curve>,
