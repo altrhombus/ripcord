@@ -18,6 +18,8 @@ public final class InputHub: @unchecked Sendable {
     private var keyboard = KeyboardTranslator()
     private var keyboardOn = true
     private var keyCapture: (@Sendable (GCKeyCode) -> Void)?
+    /// ⌘ held: the keys pressed with it are the Mac's shortcuts, never the console's (DESIGN.md, "Capture").
+    private var commandHeld = false
     private var observers: [NSObjectProtocol] = []
     private var sink: (@Sendable (PadSnapshot?) -> Void)?
     /// Notifications are delivered straight onto `queue`, so no GameController object crosses a hop.
@@ -119,7 +121,15 @@ public final class InputHub: @unchecked Sendable {
                 capture(key)
                 return
             }
-            guard keyboardOn else { return }
+            if key == .leftGUI || key == .rightGUI {
+                commandHeld = pressed
+                if pressed && keyboard.hasInput {
+                    keyboard.clear()
+                    publish()
+                }
+                return
+            }
+            guard keyboardOn, !commandHeld || !pressed else { return }
             let changed = pressed ? keyboard.keyDown(key) : keyboard.keyUp(key)
             if changed { publish() }
         }

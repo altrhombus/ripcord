@@ -89,6 +89,9 @@ final class AppModel {
     var selection: String?
     /// Set to show the pairing sheet; `preselected` when it was opened from a console found on the network.
     var pairing: PairingRequest?
+    /// Where on screen each console's tile was when it was opened, so its stream window can grow out of it
+    /// (DESIGN.md, "The launch"). Taken once by the window.
+    @ObservationIgnored var launchOrigins: [String: NSRect] = [:]
     /// Stream windows open now, by console key, so the library and the menu bar can say which are live.
     private(set) var liveStreams: [String: SessionStage] = [:]
 

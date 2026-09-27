@@ -34,6 +34,8 @@ struct RipcordApp: App {
         }
         .defaultSize(width: 1280, height: 720)
         .windowResizability(.contentMinSize)
+        .windowStyle(.hiddenTitleBar)
+        .commands { StreamCommands() }
 
         Settings {
             SettingsView()
