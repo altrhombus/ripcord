@@ -293,7 +293,7 @@ the documents into line, is done and in the journal. The engine lives in [`engin
 ### The .NET reference: findings from the engine comparisons (2026-09-26)
 
 Side-by-side reads of the .NET code and its C port, done for the Rust engine, found ten faults in what the
-Windows client ships. All ten are fixed and tested (journal, 2026-09-26). What they left open:
+dotnet client ships. All ten are fixed and tested (journal, 2026-09-26). What they left open:
 
 - [ ] **The stream SESSION_REQUEST's `encryptedKey`.** All three implementations send four zero bytes, which
       the console accepts on hardware. The vendor sends the field present and empty (`22 00`, cap53 frame
@@ -328,7 +328,7 @@ and in the journal. Open:
       - the launch zoom and the three dashes against the real stage timing;
       - capture, meaning the keyboard plays only while captured and ⌘ shortcuts never reach the console;
       - the inspector's figures against the lab's;
-      - the engine-to-display latency beside the Windows 18 ms, which measure different things (see
+      - the engine-to-display latency beside the dotnet client's 18 ms, which measure different things (see
         `LatencyMeter`).
 - [ ] **Recording and Picture in Picture on a live stream** `[X]`: that passthrough accepts the stream's
       samples and the file plays back, what a mid-recording resolution change does, and that PiP floats
