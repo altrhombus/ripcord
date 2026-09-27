@@ -85,9 +85,8 @@ struct LibraryView: View {
                 .padding(20)
             }
             .onChange(of: geometry.size.width, initial: true) { _, width in
-                // GridItem.adaptive's own arithmetic, so the pad's up and down land on the tile drawn above.
-                let usable = width - 40
-                columns = max(1, Int((usable + Self.spacing) / (Self.tileMinimum + Self.spacing)))
+                columns = GridNavigation.columns(width: width, minimum: Self.tileMinimum, spacing: Self.spacing,
+                                                 padding: 20)
             }
         }
         .focusable()
@@ -147,17 +146,13 @@ struct LibraryView: View {
             model.selection = keys[0]
             return
         }
-        let next: Int
-        switch direction {
-        case .left: next = current - 1
-        case .right: next = current + 1
-        case .up: next = current - columns
-        case .down: next = current + columns
-        case .activate:
+        if direction == .activate {
             if let console = selectedConsole { connect(console) }
             return
         }
-        if keys.indices.contains(next) { model.selection = keys[next] }
+        if let next = GridNavigation.next(from: current, count: keys.count, columns: columns, move: direction) {
+            model.selection = keys[next]
+        }
     }
 
     /// The library takes the pad whenever its window becomes key; a stream window takes it back the same way.
