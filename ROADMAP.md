@@ -557,25 +557,12 @@ looking.
     `"videoEncoderProfile":"hw4.1"` unconditionally (`HalyardStreamingSession.BuildLaunchSpecJson`), an
     H.264-shaped profile token reproduced verbatim from a vendor capture.
 
-### Open question — `AsyncObservable` can end a sequence without signalling it (2026-08-05)
-- [ ] **`AsyncObservable.Create` swallows `OperationCanceledException` and then raises neither `OnCompleted` nor
-      `OnError`** (`src/Ripcord.Core/Reactive/AsyncObservable.cs`). Any consumer that waits for a terminal signal
-      therefore waits forever if the producer ends that way. `AddConsolePage` knew this — its comment said "a
-      disposed subscription raises neither OnCompleted nor OnError" — and guarded it with a per-family
-      cancellation registration, which only helps when *our* token is cancelled, not when the producer throws
-      OCE on its own.
-  - **Symptom seen live (2026-08-05):** the add-console progress bar never disappeared while the user watched the
-    results list, i.e. with nothing cancelled. Worked around in `AddConsoleFlow` by making the search *window*
-    the authority on when a scan ends and treating the scanner's terminal signal as a fast path, so the spinner
-    is now self-limiting no matter what the transport does. Pinned by
-    `Scan_ThatNeverSignalsCompletion_StillEndsAfterTheWindow`.
-  - **Not established:** *why* a discovery family went quiet in that run. The workaround makes the UI symptom
-    impossible, but the cause is unproven, and the same primitive is used by the session/streaming path — where a
-    silently-ended sequence would not have a convenient window to fall back on. Worth understanding before
-    trusting `AsyncObservable` in a new place.
-  - Deliberately **not** changed here: making `Create` signal on cancellation is a one-line change to a Core
-    primitive the streaming path depends on, and it does not belong in an app-layer refactor.
-
+### Open question — why a discovery family went quiet (2026-08-05, narrowed 2026-09-27)
+- [ ] **`AsyncObservable.Create` now signals every end but a dispose** (journal, 2026-09-27): a producer's own
+      cancellation is an `OnError` where it used to be silence, and nothing is signalled after a dispose. What
+      stays open is the 2026-08-05 run's cause. The LAN search catches its own window's cancellation and
+      returns normally, so that was not the missing signal, and the spinner fix in `AddConsoleFlow` (the
+      search window is the authority on when a scan ends) stays for that reason.
 
 ### Stage B — progress, and what is owed (2026-08-06)
 **Landed.**
