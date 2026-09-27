@@ -105,6 +105,30 @@ surfaces (`docs/macos-plan.md`, "The App Store").
 it on each build. From the command line, run `./sync-strings.sh`, which builds and then merges the keys the
 compiler extracted. A string no longer in the source is marked stale, and its translations are kept.
 
+## Size
+
+Measured 2026-09-27, stripped, Release. Dead-code stripping (`Config/Project.xcconfig`) took `ripcord-lab` from
+2.86 MB to 1.72 MB and the app's executable from 3.71 MB to 2.64 MB. `engine/README.md` has the engine's side.
+
+In the stripped lab, RipcordKit's own Swift is the largest part, at 641 KB. It has no hotspot: the largest
+function is 3.9 KB, and the cost spreads across the account and cloud tier (rendezvous, models, the cloud
+client, account pairing, the push channel: well over half). By kind:
+
+| Kind | Share of RipcordKit |
+|---|---|
+| Plain functions and methods | 31% |
+| Async continuations (842 resume functions, mostly the cloud tier's `async` code) | 22% |
+| Generic specialisations | 12% |
+| Type metadata, conformances, witness tables | 12% |
+| Outlined copies and value witnesses | 10% |
+| Synthesised `Codable` | 9% |
+| Closures and thunks | 5% |
+
+The one cheap lever is `SWIFT_OPTIMIZATION_LEVEL = -Osize`: the lab 1.68 MB (41 KB less) and the app 2.50 MB
+(144 KB less). **Not taken yet.** The per-packet work is the engine's, so the cost should be small, but it
+has not been measured. The rest would take restructuring the async cloud code, which size alone does not
+justify.
+
 ## Releasing
 
 A `macos-v*` tag runs all of CI. The `mac` job then signs the app with the Developer ID, notarizes and
