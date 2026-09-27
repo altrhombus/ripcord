@@ -259,9 +259,12 @@ jobs:
         run: rustup toolchain install stable --profile minimal && rustup default stable && xcodebuild -version && swift --version && cargo --version
       - name: Generate the known-answer vectors
         run: dotnet run --project tools/Ripcord.ProtocolLab -c Release -- vectors
-      - name: Build the lab
+      - name: Build the lab and the app
         working-directory: src/Ripcord.Mac
-        run: xcodebuild -project Ripcord.xcodeproj -scheme RipcordLab -configuration Release -derivedDataPath build build
+        run: |
+          for scheme in RipcordLab Ripcord; do
+            xcodebuild -project Ripcord.xcodeproj -scheme "$scheme" -configuration Release -derivedDataPath build build
+          done
       - name: RipcordKit tests
         working-directory: src/Ripcord.Mac
         run: >-
