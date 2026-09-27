@@ -48,6 +48,8 @@ public sealed class SessionController : IAsyncDisposable
     private IDisposable? _statsSub;
 
     private long _lastFrameTicks;      // UtcTicks of the newest video frame; 0 = none this session
+    private int _keyFrameSeen;         // 1 once this session has delivered a keyframe
+    private long _lastBlindKeyFrameAskTicks;   // UtcTicks of the last ask while no keyframe had arrived
     private long _connectedAtTicks;    // UtcTicks of the last successful handshake
     private SessionStatistics? _lastStats;
 
@@ -602,6 +604,8 @@ public sealed class SessionController : IAsyncDisposable
 
         Volatile.Write(ref _connectedAtTicks, _clock().UtcTicks);
         Volatile.Write(ref _lastFrameTicks, 0);
+        Volatile.Write(ref _keyFrameSeen, 0);
+        Volatile.Write(ref _lastBlindKeyFrameAskTicks, 0);
         Subscribe(session);
         return new ConnectOutcome(true, Retryable: true, "Connected.");
     }
@@ -639,6 +643,11 @@ public sealed class SessionController : IAsyncDisposable
         _videoSub = session.VideoFrames.Subscribe(new Sink<EncodedVideoFrame>(frame =>
         {
             Volatile.Write(ref _lastFrameTicks, _clock().UtcTicks);
+            if (frame.IsKeyFrame)
+            {
+                Volatile.Write(ref _keyFrameSeen, 1);
+            }
+
             _pipeline.SubmitEncodedVideo(frame);
         }));
 
@@ -710,6 +719,38 @@ public sealed class SessionController : IAsyncDisposable
 
     private BitrateDecision? _lastTracedQuality;
 
+    /// <summary>
+    /// The first-keyframe latch (<see cref="SessionControllerOptions.FirstKeyFrameGrace"/>): until this session has
+    /// delivered a keyframe, ask for one once the grace has passed and again every retry interval.
+    /// </summary>
+    private void AskForAFirstKeyFrameIfDue(IStreamingSession session)
+    {
+        if (Volatile.Read(ref _keyFrameSeen) != 0)
+        {
+            return;
+        }
+
+        long now = _clock().UtcTicks;
+        long connectedAt = Volatile.Read(ref _connectedAtTicks);
+        long lastAsk = Volatile.Read(ref _lastBlindKeyFrameAskTicks);
+        if (connectedAt == 0 || now - connectedAt < _options.FirstKeyFrameGrace.Ticks
+            || (lastAsk != 0 && now - lastAsk < _options.FirstKeyFrameRetryInterval.Ticks))
+        {
+            return;
+        }
+
+        Volatile.Write(ref _lastBlindKeyFrameAskTicks, now);
+        RipcordEventSource.Log.KeyFrameRequested("no keyframe since the stream started");
+        try
+        {
+            session.RequestKeyFrame();
+        }
+        catch (Exception)
+        {
+            // Best-effort: the next tick asks again.
+        }
+    }
+
     private void OnKeyFrameRequested()
     {
         IStreamingSession? session;
@@ -775,6 +816,8 @@ public sealed class SessionController : IAsyncDisposable
             {
                 return; // the session gave up on its own; the loop decides whether to reconnect
             }
+
+            AskForAFirstKeyFrameIfDue(session);
 
             double sinceFrame = SinceLastFrameOrConnectMs();
 
