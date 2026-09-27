@@ -260,11 +260,15 @@ the documents into line, is done and in the journal. The engine lives in [`engin
 - [ ] **Phase 3 — the Mac switches engines.** The relink is done (journal, 2026-09-26): RipcordKit reaches
       the protocol only through `ripcord.h`, and the Mac project no longer compiles `libripcord/`. What is
       open is the exit criterion:
-  - [ ] **The Mac on hardware, on the Rust engine.** `ripcord-lab connect` against a PS5 on the LAN, then
-        over the account route, with the figures the C core recorded (1080p60, 0 lost of 2,404, first
-        picture under 5 s), and `pair` and `account-pair` against a console. The comparison run is a lab
-        built from the commit before the relink, against the same console. None of the engine's
-        sequencing has met a console yet.
+  - [ ] **The Mac on hardware, on the Rust engine.** The LAN route has streamed (journal, 2026-09-26).
+        Open: the account route (`connect --route account`), `pair` and `account-pair` against a console,
+        and a comparison run against a lab built from the commit before the relink.
+  - [ ] **The arm probe is never answered, and every LAN connect waits out its window.** PS5-<redacted> did
+        not answer SRC3 sent unicast to 9295, whether probed by hand while awake or during a connect
+        (2026-09-26), yet TCP 9295 accepted straight after. The engine, the C core and .NET all wait up to
+        2 s for the reply, then settle 200 ms, so about 2.2 s of every LAN connect is this wait. Find out
+        whether a reply exists at all (a capture of the vendor client), and if not, what the probe's
+        minimum lead time before the TCP connect is. [X] until a capture settles it.
   - [ ] **Build the app against an engine without `test-support`.** The Mac builds one engine library,
         with the loopback consoles and the vector runner in it, because RipcordKitTests uses them;
         RipcordKit calls none. An app target needs a second cargo invocation without the feature.
