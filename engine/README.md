@@ -125,6 +125,40 @@ portable table implementation. The rest is structure. The CTR cipher borrows a k
 once, where the C core expands the key on every packet. The GMAC cache is keyed by rotation window,
 where the C core derives the key with a SHA-256 on every packet just to check its cache.
 
+
+## What the engine costs in size (2026-09-26, M4 Max)
+
+Measured because the app and each extension will link the engine. The shipping library (no
+`test-support`), stripped with `strip -x`:
+
+| Build | Stripped `libripcord.dylib` |
+|---|---|
+| As shipped before this | 719 KB |
+| `panic = "abort"` | 653 KB, **not taken** |
+| `lto = "fat"` | 719 KB, no change |
+| `opt-level = "s"` / `"z"` | 720 KB / 672 KB, **not taken** |
+| Without the FEC product table | **653 KB**, taken |
+
+A linker map of the 719 KB build, totalled by crate: `ripcord_proto` 31%, `core` 17% (formatting and generic
+instantiations), `std` 8%, and std's backtrace symbolizer (`gimli`, `addr2line`, `rustc_demangle`,
+`object`) about 10%. The curve arithmetic (`primeorder`, `p521`, `p256`, `crypto_bigint`) is 6%.
+
+- **The FEC product table** was one static of 64 KB, a table of every GF(2^8) product built at compile
+  time. It was a tenth of the library, for work done only when a frame has lost units. `mul_accumulate`
+  now builds the one row it needs on the stack from the log and exp tables. A worst-case recovery (k 40,
+  m 10, ten 1,400-byte units lost) takes 174 µs where it took 155 µs, against a 16.7 ms frame at 60 fps.
+- **`panic = "abort"` is ruled out by the plan's rule 5.** Every export runs inside `catch_unwind` so that a
+  panic ends one session rather than the host process, and aborting would make every bug a crash.
+- **`opt-level = "z"`** saves 47 KB and costs speed on the per-packet path this README's gate measures.
+  Not taken without a benchmark that shows the cost is small.
+- **The backtrace symbolizer stays** on stable Rust. It is linked by std's default panic hook, which unwinding
+  needs, and removing it takes a nightly `build-std` with `panic_immediate_abort`, which is also an abort.
+
+What an executable carries: `ripcord-lab` is 2.86 MB stripped (2.92 MB before the table went), the app's
+own binary 3.71 MB. Most of the lab's growth over its 1.10 MB before the engine is therefore not the
+engine: the library is 0.65 MB. The rest is still to be explained, and is the next thing to measure before
+the XCFramework.
+
 ## Phase 2, the first layer, measured (2026-09-26)
 
 | What | Result |
