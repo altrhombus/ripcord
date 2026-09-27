@@ -127,6 +127,14 @@ public sealed class HalyardTakionStream : IAsyncDisposable
     /// </summary>
     public event Action<long, long>? PacketStatsSampled;
 
+    /// <summary>
+    /// Raised once when the console sends a Takion DISCONNECT, with its reason (empty when it gave none). A
+    /// rejected launchSpec is announced this way, so the reason is often the only account of why a session
+    /// ended. The control loop stops after it. Until 2026-09-26 the loop ignored the message, and the session
+    /// ran on until the controller's watchdog saw silence (engine comparisons).
+    /// </summary>
+    public event Action<string>? ConsoleDisconnected;
+
     public HalyardTakionStream(UdpChannel socket, IPEndPoint console, IHalyardSessionCrypto crypto, HalyardStreamDemuxer demuxer)
     {
         _socket = socket ?? throw new ArgumentNullException(nameof(socket));
@@ -267,6 +275,9 @@ public sealed class HalyardTakionStream : IAsyncDisposable
                     case ControlMessage.Types.MessageType.StreamInfo:
                         await SendStreamInfoAckAsync(cancellationToken).ConfigureAwait(false);
                         break;
+                    case ControlMessage.Types.MessageType.Disconnect:
+                        ConsoleDisconnected?.Invoke(message.DisconnectPayload?.Reason ?? "");
+                        return;
                     default:
                         break; // heartbeats, bandwidth, cursor, etc. — nothing required yet
                 }
