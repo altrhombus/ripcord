@@ -298,18 +298,16 @@ public sealed class HalyardStreamingSession : IStreamingSession
                 return Fail($"/sess/init rejected ({Describe(initResponse)}).");
             }
 
-            // v1 control-plane key establishment: KDF over (RP-Nonce || companion). Establish the control
-            // key when the pairing record supplies the companion. The version selector is the KDF-variant /
-            // context-key discriminator: PS4 (older protocol) resolves to mode 0, PS5 to mode 1 — wire-derived
-            // from each console's own /sess/ctrl RP-Auth. The codec selector is the value our captures resolve
-            // to; pinning the full RP-KeyType -> selector mapping is a refinement tracked in the spec.
-            byte[] nonce = DecodeBase64Header(initResponse, SessProtocol.HeaderNonce);
-            if (nonce.Length == 16 && _pairing?.Companion is { Length: 16 } companion)
+            // v1 control-plane key establishment: KDF over (RP-Nonce || companion). Without either there is no
+            // control key, and the session stops here rather than going on unauthenticated.
+            HalyardControlKeyMaterial? keyMaterial = ControlKeyMaterial(
+                initResponse.Header(SessProtocol.HeaderNonce), _pairing?.Companion, platform, out string? keyProblem);
+            if (keyMaterial is null)
             {
-                int versionSelector = platform == HalyardConsolePlatform.Ps4 ? 0 : 1;
-                _crypto.EstablishControl(new HalyardControlKeyMaterial(
-                    nonce, companion, CodecSelector: 2, VersionSelector: versionSelector));
+                return Fail(keyProblem!);
             }
+
+            _crypto.EstablishControl(keyMaterial.Value);
 
             // /sess/init was served with Connection: close, so the console closed that socket. Open a fresh
             // connection for /sess/ctrl (keep-alive), which becomes the persistent control channel. The single
@@ -1177,7 +1175,7 @@ public sealed class HalyardStreamingSession : IStreamingSession
     /// literal "InvalidSessionId", <c>encryptedKey</c> is unused (left empty by the negotiator), and
     /// <c>clientVersion</c> is 17 (0x11). The launchSpec is built from the spec §4.3 fields (the template
     /// corroborated against our own client's memory + wire keystream) carrying a fresh handshakeKey,
-    /// out1-encrypted when the control key is available.
+    /// out1-encrypted under the control key.
     /// </summary>
     private TakionSessionRequest BuildSessionRequest()
     {
@@ -1185,7 +1183,7 @@ public sealed class HalyardStreamingSession : IStreamingSession
         string launchSpecPlain = BuildLaunchSpecJson(handshakeKey);
 
         byte[] launchBytes = System.Text.Encoding.UTF8.GetBytes(launchSpecPlain);
-        // out1-encrypt the launchSpec when control is established; otherwise send it as-is (stub/passthrough).
+        // out1-encrypt the launchSpec under the control key.
         //
         // COUNTER 0 IS NOW WIRE-CONFIRMED, and was not before. It had only ever been exercised by a synthetic
         // vector generator, which proves two implementations agree and nothing about what the console wants —
@@ -1194,7 +1192,15 @@ public sealed class HalyardStreamingSession : IStreamingSession
         // launchSpec encrypted exactly this way to a real PS5 and got a SESSION_REPLY whose ecdhSignature
         // verified — which is only possible if the console decrypted this document and recovered the
         // handshakeKey inside it. Do not "fix" the counter.
-        byte[] launchWire = _crypto.IsControlEstablished ? _crypto.CryptStreaminfo(0, launchBytes) : launchBytes;
+        //
+        // Never in the clear: the handshakeKey is in this document. The connect fails before here when there is
+        // no control key (ControlKeyMaterial), so this is the second guard, not the first.
+        if (!_crypto.IsControlEstablished)
+        {
+            throw new InvalidOperationException("The launchSpec would go out unencrypted: the control key was never established.");
+        }
+
+        byte[] launchWire = _crypto.CryptStreaminfo(0, launchBytes);
 
         return new TakionSessionRequest(
             ClientVersion: 17,
@@ -1370,22 +1376,52 @@ public sealed class HalyardStreamingSession : IStreamingSession
         return new SessionHandshakeResult(false, reason);
     }
 
-    private static byte[] DecodeBase64Header(SessResponse response, string name)
+    /// <summary>
+    /// The control key's inputs from /sess/init's RP-Nonce and the pairing's companion, or null with the reason
+    /// the session cannot go on.
+    ///
+    /// <para><b>No key, no session.</b> This used to skip key setup when either input was missing and carry
+    /// on to an unauthenticated /sess/ctrl, after which the launchSpec, and the handshakeKey inside it, would
+    /// have gone out unencrypted. The C core and the Rust engine fail the session here, and so does this now
+    /// (engine comparisons, 2026-09-26).</para>
+    /// </summary>
+    internal static HalyardControlKeyMaterial? ControlKeyMaterial(
+        string? nonceHeader, byte[]? companion, HalyardConsolePlatform platform, out string? problem)
     {
-        string? value = response.Header(name);
-        if (string.IsNullOrEmpty(value))
+        byte[] nonce = [];
+        if (!string.IsNullOrEmpty(nonceHeader))
         {
-            return [];
+            try
+            {
+                nonce = Convert.FromBase64String(nonceHeader);
+            }
+            catch (FormatException)
+            {
+                nonce = [];
+            }
         }
 
-        try
+        if (nonce.Length != 16)
         {
-            return Convert.FromBase64String(value);
+            problem = string.IsNullOrEmpty(nonceHeader)
+                ? "/sess/init succeeded but carried no RP-Nonce, so the control key cannot be derived."
+                : $"/sess/init carried an RP-Nonce that is not 16 bytes of base64 ({nonce.Length} decoded), so the control key cannot be derived.";
+            return null;
         }
-        catch (FormatException)
+
+        if (companion is not { Length: 16 })
         {
-            return [];
+            problem = "The pairing record has no 16-byte companion key, so the control key cannot be derived. Pair the console again.";
+            return null;
         }
+
+        // The version selector is the KDF-variant / context-key discriminator: PS4 (older protocol) resolves to
+        // mode 0, PS5 to mode 1, wire-derived from each console's own /sess/ctrl RP-Auth. The codec selector is
+        // the value our captures resolve to; pinning the full RP-KeyType -> selector mapping is a refinement
+        // tracked in the spec.
+        problem = null;
+        return new HalyardControlKeyMaterial(
+            nonce, companion, CodecSelector: 2, VersionSelector: platform == HalyardConsolePlatform.Ps4 ? 0 : 1);
     }
 
     public async ValueTask DisposeAsync()
