@@ -753,16 +753,16 @@ The stack connects and streams; these are the bits that still lean on dev-machin
 *(Already done, previously listed here: session factory (`HalyardSessionFactory`), DPAPI-backed credential
 store (`PairedConsoleStore`, `dpapi:` prefix), pairing UX (`PairConsoleDialog` → live registration), first
 live end-to-end connect.)*
-- [ ] **Trimming is off. The JSON blocker is gone; three smaller ones are not.** `PublishTrimmed=False` in
+- [ ] **Trimming is off. The app code is clean now; CsWinRT is what is left.** `PublishTrimmed=False` in
       every config. It was breaking Release because trimming disables `System.Text.Json` reflection and the app
       died on first deserialization. **Task #33 landed 2026-08-02** and trim analysis now reports **zero JSON
       warnings** for `Ripcord.Core`, `Ripcord.Protocol.Halyard` and `Ripcord.App`. What still stands between
       here and flipping the flag:
-  - **`Ripcord.Cloud.Halyard` still uses reflection** (6 × IL2026). Not an attribute away: it serialises
-    *anonymous types* and deserialises through a *generic helper*, neither of which source generation can see,
-    so the DTOs need to become real types first. Off the LAN path. **No longer parked behind the OAuth
-    decision** — that closed 2026-08-07 and the account tier shipped, so these six warnings are now the
-    largest app-code blocker to `PublishTrimmed=true` and are workable on their own merits.
+  - ~~**`Ripcord.Cloud.Halyard` still uses reflection.**~~ **GONE 2026-09-27** (journal). Its anonymous
+    request types became named records, in a source-generated `HalyardCloudJsonContext`, and the helpers take
+    a `JsonTypeInfo<T>`. Trim analysis reports zero warnings for the project, where it reported eleven
+    sites (the ROADMAP had counted six). `HalyardCloudClientWireTests` pins every request body byte for
+    byte against what the anonymous types produced, so nothing changed on the wire.
   - ~~**One non-JSON reflection site**: `IDeviceIdentity.cs:69` calls `Type.GetMethod` (IL2075).~~ **GONE
     2026-08-07.** Replaced with a direct `RegGetValueW` P/Invoke. It was not only a trim warning: the
     reflection resolved `Microsoft.Win32.Registry` inside `Ripcord.App` (`net10.0-windows`) and silently

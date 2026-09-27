@@ -145,7 +145,7 @@ public sealed class HalyardAuthClient(HttpClient http, HalyardClientConfig confi
             throw new HalyardCloudException($"Token request failed ({(int)response.StatusCode}).", body);
         }
 
-        HalyardTokenResponse parsed = JsonSerializer.Deserialize<HalyardTokenResponse>(body)
+        HalyardTokenResponse parsed = JsonSerializer.Deserialize(body, HalyardCloudJsonContext.Default.HalyardTokenResponse)
             ?? throw new HalyardCloudException("Token response could not be parsed.", body);
 
         return new HalyardTokens(
