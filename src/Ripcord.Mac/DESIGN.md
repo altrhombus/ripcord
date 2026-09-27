@@ -2,13 +2,13 @@
 
 Settled 2026-09-26, as step 5 of [`../../docs/macos-plan.md`](../../docs/macos-plan.md). The plan's "What makes
 it a Mac app" listed working hypotheses, and this document settles them before the surfaces are built, the
-way [`../../docs/design.md`](../../docs/design.md) settled the Windows ones. Where this file says nothing,
+way [`../../docs/design.md`](../../docs/design.md) settled the dotnet client's. Where this file says nothing,
 that one's reasoning holds. Where the two disagree, this file wins on the Mac, and the disagreement is stated
 here with its reason.
 
 ## The position
 
-The Windows principle carries over unchanged: **borrow the OS's behaviour, and spend identity only where
+The dotnet client's principle carries over unchanged: **borrow the OS's behaviour, and spend identity only where
 the surface is Ripcord's alone.**
 
 On the Mac that line sits in a different place, because the OS supplies more:
@@ -22,7 +22,7 @@ On the Mac that line sits in a different place, because the OS supplies more:
 
 ## The mark, and no fourth hue
 
-Unchanged from Windows: **there is no Ripcord colour.** The three dashes belong to three console makers
+Unchanged from the dotnet client: **there is no Ripcord colour.** The three dashes belong to three console makers
 (see [`../../brand/README.md`](../../brand/README.md), "Which dash is which"), and a fourth hue beside them
 would compete with that meaning.
 
@@ -51,12 +51,12 @@ them. Small sizes render from the same layers, and `ripcord-mark-small.svg` is n
 - **Nothing paired.** Show the mark at hero size, one sentence, and **Pair a Console…** as the one primary
   button. State the same-network limit before anyone meets it. This is not an error, so it is not an alert.
 - **One or more.** A grid of tiles, sorted by name. A console on the network that is not yet paired appears
-  last, as a quieter tile whose action is **Pair**. This is Windows' ghost tile, made useful: it already
+  last, as a quieter tile whose action is **Pair**. This is the dotnet client's ghost tile, made useful: it already
   knows which console is meant.
 
 ### The tile
 
-The tile is the Windows card translated. It keeps the same **gradient rule**: the direction and ratio are
+The tile is the dotnet client's card translated. It keeps the same **gradient rule**: the direction and ratio are
 Ripcord's, and the lightness belongs to the appearance. In Dark Mode the tile is deeper than the window. In
 Light Mode it is lighter, reading as raised paper rather than a hole.
 
@@ -64,10 +64,10 @@ Light Mode it is lighter, reading as raised paper rather than a hole.
   optional), and its state in words: *Ready*, *Resting*, or *Not found*.
 - **A resting console is not a fault.** The state is neutral text, never red, and connecting will wake it.
 - ***Not found* keeps the play action.** It loses the family accent and nothing else, for the reason
-  recorded on 2026-09-20 in the Windows document: a probe is one datagram, and silence is not knowledge.
+  recorded on 2026-09-20 in the dotnet client's design document: a probe is one datagram, and silence is not knowledge.
 - **The wedge sits at the tile's trailing edge and is the tile's action.** It scales with the tile.
 - **Hover is a wash, and focus is the system focus ring.** They are different kinds of mark, never two
-  strengths of one mark (Windows, "Hover and focus are different kinds of mark"). The Mac supplies the focus
+  strengths of one mark (the dotnet client's design, "Hover and focus are different kinds of mark"). The Mac supplies the focus
   ring, so it is correct in Increase Contrast for free.
 
 **Opening a console** works the ways the Finder teaches: double-click, or select and press Return (⌘O as
@@ -97,7 +97,7 @@ not be. Its dashes fill in trail order as the session passes three stages:
 A dash here means *distance covered*, which is the first thing the mark says. That reading does not
 contradict the vendor mapping: the full-colour mark only appears once the picture has arrived.
 
-- **Nothing is centred during connect, because the centre belongs to the game** (Windows, "Connect: no
+- **Nothing is centred during connect, because the centre belongs to the game** (the dotnet client's design, "Connect: no
   ceremony").
 - **One status line sits beside the mark.** There is no checklist and no time estimate, except on the
   account route. There, and only after ten seconds have passed, the line adds that this usually takes
@@ -127,7 +127,7 @@ contradict the vendor mapping: the full-colour mark only appears once the pictur
 
 ### The inspector is the ladder
 
-The Windows HUD's three rungs survive with Mac shapes:
+The dotnet client's three HUD rungs survive with Mac shapes:
 
 | Rung | Question | Mac form |
 |---|---|---|
@@ -135,11 +135,11 @@ The Windows HUD's three rungs survive with Mac shapes:
 | 2 | Is it me or the network? | The top of the inspector (⌘I): a verdict, four numbers, and the codec and HDR pills. |
 | 3 | What exactly is happening? | The inspector's disclosure groups below that: every field the engine reports. |
 
-**⌘I shows and hides; it never reveals more**, for the same reason F3 does not on Windows. Going deeper
+**⌘I shows and hides; it never reveals more**, for the same reason F3 does not in the dotnet client. Going deeper
 is a disclosure group, which is visible, rather than a second keypress, which is not.
 
 **The inspector claims dead space.** It is SwiftUI's trailing `inspector`, and the window widens to make
-room, so it takes the pillarbox rather than covering the picture. That is Windows' "rung 3 goes where the
+room, so it takes the pillarbox rather than covering the picture. That is the dotnet client's "rung 3 goes where the
 video isn't", which the Mac provides as system behaviour. In full screen it overlays, because there is no
 dead space left.
 
@@ -180,7 +180,7 @@ console's HDR metadata reaches the layer intact is `[X]`, a hardware check.
 
 ## Pairing
 
-The Windows rule, amended there on 2026-09-22, applies unchanged: **sign-in leads, and the code route is one
+The dotnet client's rule, amended there on 2026-09-22, applies unchanged: **sign-in leads, and the code route is one
 unweighted press away.** The route is a mechanism, and the player has no stake in it.
 
 **Pairing is a sheet on the library.** It is not a window, because it belongs to the library and needs its
@@ -195,8 +195,8 @@ attention:
 4. **The code form** has the eight-digit code field and the account id field. Its caption says where the
    code appears on the console. The account id is remembered once entered, and never asked for twice.
 
-The sheet makes no claims about account safety in either direction, for the reason recorded in the Windows
-document.
+The sheet makes no claims about account safety in either direction, for the reason recorded in the dotnet client's
+design document.
 
 **The celebration** is the largest of the three personality rooms. The full mark assembles at hero size,
 the wedge first and then the trail, dash by dash. The text is "Paired." with a period. **Play Now** and
@@ -206,7 +206,7 @@ Motion, the mark appears whole.
 ## Settings
 
 **A stock Mac Settings window**, with no wedge, no gradient and no Ripcord colour. Its panes are a toolbar
-of tabs, in the order the Windows document settled, for the same reason (a LAN-only player never signs in):
+of tabs, in the order the dotnet client's design document settled, for the same reason (a LAN-only player never signs in):
 
 | Pane | Holds |
 |---|---|
@@ -250,7 +250,7 @@ These are for step 8, settled now so that step 6 stores what they need:
   never hand-built. Under Increase Contrast the tile's gradient becomes a flat system fill with a border, and
   the family label carries the information the colour did.
 - **Text size.** The app follows the system text size and adds no scale of its own, for the reason the
-  Windows document gives.
+  dotnet client's design document gives.
 
 ## Deliberately not designed
 

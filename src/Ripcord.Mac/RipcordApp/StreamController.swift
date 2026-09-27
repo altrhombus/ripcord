@@ -120,7 +120,7 @@ final class StreamController {
         self.controller = controller
         audio?.start()
         claimInput()
-        // A resting console is woken first, as the Windows client does on connect, and the controller starts
+        // A resting console is woken first, as the dotnet client does on connect, and the controller starts
         // once it answers. An awake console answers the first probe, so this costs one round trip.
         Task { [weak self] in
             let resting = await Task.detached {
@@ -271,14 +271,8 @@ final class StreamController {
     private func absorb(_ stats: SessionStats) {
         defer { previous = stats; self.stats = stats }
         guard let previous else { return }
-        let received = Double(stats.packetsReceived &- previous.packetsReceived)
-        let lost = Double(stats.packetsLost &- previous.packetsLost)
-        let frames = Double(stats.videoFrames &- previous.videoFrames)
-        // The engine reports about once a second; the interval is taken as one second, as the Windows HUD does.
         sampleID += 1
-        let sample = MetricSample(id: sampleID, kbps: Double(stats.kbps),
-                                  lossRatio: received + lost > 0 ? lost / (received + lost) : 0,
-                                  rttMs: stats.rttMs, fps: frames)
+        let sample = MetricSample.between(previous, stats, id: sampleID)
         history.append(sample)
         if history.count > 60 { history.removeFirst(history.count - 60) }
         verdict = StreamHealth.assess(sample, stats: stats, targetFPS: settings.fps)
@@ -312,7 +306,7 @@ final class VideoSink: @unchecked Sendable {
 /// every display refresh the displayed pixel buffer is compared with the last one seen. When it changes,
 /// the oldest outstanding enqueue is taken as the frame now on screen. The figure is refresh-quantised
 /// (up to one display frame late) and approximate under frame drops, and it is the Mac's counterpart of
-/// the Windows client's demux-to-present figure, not the same measurement.
+/// the dotnet client's demux-to-present figure, not the same measurement.
 final class LatencyMeter: @unchecked Sendable {
     private let pending = Locked<[ContinuousClock.Instant]>([])
     private var lastDisplayed: ObjectIdentifier?

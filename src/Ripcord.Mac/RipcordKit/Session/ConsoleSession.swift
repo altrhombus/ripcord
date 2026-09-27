@@ -51,6 +51,24 @@ public struct SessionStats: Sendable {
     public let rttMs: Double
     public let targetBitrateKbps: UInt32
     public let targetHeight: UInt32
+
+    /// For a caller that stands in for the engine: the app's tests.
+    public init(packetsReceived: UInt64 = 0, packetsLost: UInt64 = 0, videoFrames: UInt64 = 0, audioFrames: UInt64 = 0,
+                keyframes: UInt64 = 0, kbps: UInt32 = 0, msSinceConsoleActivity: UInt32 = 0, msSinceVideoFrame: UInt32 = 0,
+                idrRequests: UInt32 = 0, rttMs: Double = 0, targetBitrateKbps: UInt32 = 0, targetHeight: UInt32 = 0) {
+        self.packetsReceived = packetsReceived
+        self.packetsLost = packetsLost
+        self.videoFrames = videoFrames
+        self.audioFrames = audioFrames
+        self.keyframes = keyframes
+        self.kbps = kbps
+        self.msSinceConsoleActivity = msSinceConsoleActivity
+        self.msSinceVideoFrame = msSinceVideoFrame
+        self.idrRequests = idrRequests
+        self.rttMs = rttMs
+        self.targetBitrateKbps = targetBitrateKbps
+        self.targetHeight = targetHeight
+    }
 }
 
 public struct SessionOutcome: Sendable {

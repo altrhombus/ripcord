@@ -46,13 +46,23 @@ final class NetworkWatch {
 
     static let interval: Duration = .seconds(5)
 
+    /// One round of searching: the paired hosts in, whatever answered out. The network by default; a test
+    /// supplies its own.
+    typealias Round = @Sendable ([String]) async -> [DiscoveredConsole]
+    @ObservationIgnored private let round: Round
+
+    init(round: @escaping Round = NetworkWatch.searchNetwork) {
+        self.round = round
+    }
+
     /// Starts the rounds. `consoles` is read at the start of each, so a console paired meanwhile is included.
     func watch(_ consoles: @escaping @MainActor () -> [PairedConsole]) {
         task?.cancel()
         task = Task { [weak self] in
             while !Task.isCancelled {
                 let paired = consoles()
-                let heard = await Self.round(hosts: paired.map(\.host))
+                guard let round = self?.round else { return }
+                let heard = await round(paired.map(\.host))
                 self?.absorb(heard, paired: paired)
                 try? await Task.sleep(for: Self.interval)
             }
@@ -61,7 +71,7 @@ final class NetworkWatch {
 
     /// One round now, for a Refresh or a pairing sheet that has just opened.
     func refresh(_ paired: [PairedConsole]) async {
-        let heard = await Self.round(hosts: paired.map(\.host))
+        let heard = await round(paired.map(\.host))
         absorb(heard, paired: paired)
     }
 
@@ -94,7 +104,7 @@ final class NetworkWatch {
         onRound()
     }
 
-    private nonisolated static func round(hosts: [String]) async -> [DiscoveredConsole] {
+    nonisolated static func searchNetwork(hosts: [String]) async -> [DiscoveredConsole] {
         await Task.detached(priority: .utility) {
             var heard: [String: DiscoveredConsole] = [:]
             if !hosts.isEmpty {

@@ -28,6 +28,17 @@ public struct DiscoveredConsole: Sendable, Hashable {
     public let address: String
     /// False for "620 Server Standby": the console is in rest mode, and connecting will wake it.
     public let isAwake: Bool
+
+    public init(hostID: String, family: ConsoleFamily?, hostType: String, name: String, systemVersion: String,
+                address: String, isAwake: Bool) {
+        self.hostID = hostID
+        self.family = family
+        self.hostType = hostType
+        self.name = name
+        self.systemVersion = systemVersion
+        self.address = address
+        self.isAwake = isAwake
+    }
 }
 
 public enum DiscoveryError: Error, Sendable {

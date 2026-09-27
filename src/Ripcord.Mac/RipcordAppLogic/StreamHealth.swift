@@ -1,5 +1,5 @@
 // Is anything wrong, and is it me or the network: the HUD ladder's first two rungs (DESIGN.md, "The inspector
-// is the ladder"). The thresholds are the Windows client's, from src/Ripcord.Core/Sessions/
+// is the ladder"). The thresholds are the dotnet client's, from src/Ripcord.Core/Sessions/
 // StreamHealthAssessor.cs, so the two clients call the same stream by the same name. Only the rules whose
 // signals the Mac has are ported: the device rules there read decode and present counts the display layer
 // does not expose.
@@ -63,6 +63,18 @@ struct MetricSample: Identifiable, Equatable {
     var lossRatio: Double
     var rttMs: Double
     var fps: Double
+
+    /// The interval between two cumulative reports. The engine reports about once a second, and the interval
+    /// is taken as one second, as the dotnet client's HUD does. Counters are subtracted wrapping, so a restart that
+    /// resets them reads as one odd interval rather than a trap.
+    static func between(_ previous: SessionStats, _ current: SessionStats, id: Int) -> MetricSample {
+        let received = Double(current.packetsReceived &- previous.packetsReceived)
+        let lost = Double(current.packetsLost &- previous.packetsLost)
+        let frames = Double(current.videoFrames &- previous.videoFrames)
+        return MetricSample(id: id, kbps: Double(current.kbps),
+                            lossRatio: received + lost > 0 ? lost / (received + lost) : 0,
+                            rttMs: current.rttMs, fps: frames)
+    }
 }
 
 /// Rung 1's hysteresis: a warning appears after two bad intervals in a row and clears after three good ones,
