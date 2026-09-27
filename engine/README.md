@@ -43,7 +43,8 @@ through `RipcordEcdhBackend`; the Mac's is `src/Ripcord.Mac/RipcordKit/Engine/Cr
 
 `fuzz/` holds the cargo-fuzz targets, one per surface as `libripcord/tests/fuzz` has them, plus `connect`,
 which drives the whole connect machine with arbitrary host events (the C core cannot be fuzzed that way,
-since it owns its sockets). It is its own workspace and needs nightly:
+since it owns its sockets), and `derive`, which feeds the crypto and Halyard derivations arbitrary peer
+points, registration contexts, selectors and counters, and checks that each inverse pair round-trips. It is its own workspace and needs nightly:
 
 ```sh
 cargo +nightly fuzz run connect -- -max_total_time=60      # from engine/fuzz
@@ -386,7 +387,8 @@ session.
 
 | What | Result |
 |---|---|
-| Nine targets, 60 s each on the M4 Max | 0.4 to 5 million runs per target. One finding: the SRCH reply parser sliced its first line at byte 8 as a string, and a multi-byte character straddling that byte panicked. Any datagram on the discovery port could do it. Fixed, with the fuzzer's input as a regression test, and the target then ran clean for 4.7 million runs |
+| Nine targets, 60 s each on the M4 Max (2026-09-26) | 0.4 to 5 million runs per target. One finding: the SRCH reply parser sliced its first line at byte 8 as a string, and a multi-byte character straddling that byte panicked. Any datagram on the discovery port could do it. Fixed, with the fuzzer's input as a regression test, and the target then ran clean for 4.7 million runs |
+| `derive`, 60 s on the M4 Max (2026-09-26) | 716,176 runs, clean, with every round-trip assertion holding. It generates its two key pairs once rather than per input, which took it from 22,000 runs a minute to that |
 | Miri over `ripcord-ffi`'s unit tests | Clean on the portable crypto backends, all seven tests. On the hardware backends Miri stops inside `sha2`'s ARMv8 intrinsics, which is not the engine's code |
 
 ## Key agreement on Windows (2026-09-26)
