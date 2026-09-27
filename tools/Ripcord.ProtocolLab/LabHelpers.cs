@@ -10,7 +10,12 @@ namespace Ripcord.ProtocolLab;
 internal sealed class Observer<T>(Action<T> onNext, Action? onCompleted = null) : IObserver<T>
 {
     public void OnNext(T value) => onNext(value);
-    public void OnError(Exception error) => Console.Error.WriteLine($"observer error: {error.Message}");
+    // An error ends the sequence as surely as completion does, so a caller waiting for the end is released.
+    public void OnError(Exception error)
+    {
+        Console.Error.WriteLine($"observer error: {error.Message}");
+        onCompleted?.Invoke();
+    }
     public void OnCompleted() => onCompleted?.Invoke();
 }
 
