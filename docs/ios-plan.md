@@ -112,7 +112,9 @@ scaffolding, just something to keep building.
 2. **First run on hardware:** an iPhone and an Apple TV on the LAN, pairing by code, a stream. It settles the
    Local Network prompt, the multicast question and the throughput.
 3. **The design pass:** `DESIGN.md` for touch and for the TV's focus, in the Mac's shape, before building
-   surfaces.
+   surfaces. *Done 2026-09-27:* [`../src/Ripcord.Mac/RipcordMobile/DESIGN.md`](../src/Ripcord.Mac/RipcordMobile/DESIGN.md).
+   Its two decisions for the project are touch controls through Apple's virtual controller, and pairings
+   travelling to Apple TV through iCloud Keychain, as an opt-in setting.
 4. **Touch controls,** for a phone with no controller.
 5. **Sign-in on iPhone and iPad,** and Apple TV's pairing route.
 6. **Picture in Picture and background.**
