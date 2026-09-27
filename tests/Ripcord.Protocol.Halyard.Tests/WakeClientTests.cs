@@ -22,16 +22,33 @@ public class WakeClientTests
     [Fact]
     public void WakeCredential_IsTheRegistKeyAsADecimalInteger()
     {
-        Assert.Equal("439041101", RecordWithSyntheticKey().WakeCredential());
+        Assert.True(RecordWithSyntheticKey().TryGetWakeCredential(out string? credential));
+        Assert.Equal("439041101", credential);
     }
 
-    [Fact]
-    public void WakeCredential_HandlesTheFullUnsignedRange()
+    [Theory]
+    // Signed, per ps5-local-discovery.md: the PS4 captures carry a negative credential. This test asserted
+    // the unsigned form until 2026-09-26, which is right for every key below 0x80000000 and wrong for the rest.
+    [InlineData("ffffffff", "-1")]
+    [InlineData("80000000", "-2147483648")]
+    [InlineData("7fffffff", "2147483647")]
+    public void WakeCredential_IsASigned32BitDecimal(string key, string expected)
     {
-        // 0xFFFFFFFF would overflow a signed int; the credential must be unsigned. Regression guard for the
-        // parse choice, since a signed parse passes every low-valued key and only breaks on high ones.
-        var record = new HalyardPairingRecord(Encoding.ASCII.GetBytes("ffffffff"), new byte[16], KeyType: 1);
-        Assert.Equal("4294967295", record.WakeCredential());
+        var record = new HalyardPairingRecord(Encoding.ASCII.GetBytes(key), new byte[16], KeyType: 1);
+        Assert.True(record.TryGetWakeCredential(out string? credential));
+        Assert.Equal(expected, credential);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("zzzzzzzz")]
+    [InlineData("-1a2b3c4")]
+    [InlineData("1ffffffff")]   // past 32 bits
+    public void WakeCredential_ForACorruptKey_IsAbsentRatherThanThrown(string key)
+    {
+        var record = new HalyardPairingRecord(Encoding.ASCII.GetBytes(key), new byte[16], KeyType: 1);
+        Assert.False(record.TryGetWakeCredential(out string? credential));
+        Assert.Null(credential);
     }
 
     [Fact]
