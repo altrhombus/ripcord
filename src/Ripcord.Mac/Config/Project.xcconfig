@@ -35,3 +35,9 @@ RIPCORD_APP_GROUP = NO
 // brought up to date from a command-line build.
 SWIFT_EMIT_LOC_STRINGS = YES
 LOCALIZATION_PREFERS_STRING_CATALOGS = YES
+
+// Drop what nothing references. Off by default for a project whose settings all live here, and it was: every
+// object the linker pulled from the engine's static archive stayed whole, much of std and core included, which
+// is most of why ripcord-lab measured 2.86 MB stripped against the engine's own 0.65 MB. With it, 1.72 MB
+// (engine/README.md, "What the engine costs in size").
+DEAD_CODE_STRIPPING = YES
