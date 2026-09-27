@@ -573,3 +573,53 @@ int diff_assoc_op(void *p, int op, int arg, const uint8_t *data, size_t length)
 #include "../../../libripcord/session/halyard_account_id.h"
 
 int diff_account_id(const char *in, char *out, size_t size) { return (int)halyard_account_id_normalise(in, out, size); }
+
+/* ---- the controller-input writer ---- */
+#include "../../../libripcord/input/halyard_input.h"
+
+static halyard_input_state diff_input_state_of(uint32_t buttons, const int16_t sticks[4], uint8_t lt, uint8_t rt)
+{
+    halyard_input_state s;
+    memset(&s, 0, sizeof(s));
+    s.buttons = buttons;
+    s.left_x = sticks[0];
+    s.left_y = sticks[1];
+    s.right_x = sticks[2];
+    s.right_y = sticks[3];
+    s.left_trigger = lt;
+    s.right_trigger = rt;
+    return s;
+}
+
+void *diff_input_new(void)
+{
+    halyard_input_writer *w = calloc(1, sizeof(*w));
+    if (w != NULL)
+        halyard_input_writer_init(w);
+    return w;
+}
+
+void diff_input_free(void *w) { free(w); }
+
+/* One poll's HISTORY payload, then the caller-side previous advanced, as the client does after building. */
+size_t diff_input_history(void *w, uint32_t buttons, const int16_t sticks[4], uint8_t lt, uint8_t rt,
+                          uint8_t *out, size_t size)
+{
+    halyard_input_writer *writer = w;
+    halyard_input_state s = diff_input_state_of(buttons, sticks, lt, rt);
+    size_t n = halyard_input_build_history_payload(writer, &s, out, size);
+    writer->previous = s;
+    writer->have_previous = 1;
+    return n;
+}
+
+size_t diff_input_state(uint32_t buttons, const int16_t sticks[4], uint8_t lt, uint8_t rt, uint8_t *out, size_t size)
+{
+    halyard_input_state s = diff_input_state_of(buttons, sticks, lt, rt);
+    return halyard_input_build_state_payload(&s, out, size);
+}
+
+size_t diff_input_header(uint8_t type, uint16_t sequence, uint8_t *out, size_t size)
+{
+    return halyard_input_write_header(type, sequence, out, size);
+}
