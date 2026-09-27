@@ -604,21 +604,36 @@ struct AccountCandidateTests {
         #expect(R.ourCandidates(local: nil, reflexive: nil).isEmpty)
     }
 
-    @Test("the ACCEPT prefers a candidate on our own subnet, then the first parseable one")
-    func preferred() {
-        let rendezvous = R(signaling: FakeSignaling(), transport: FakeAccountTransport())
-        let offer = SignalingMessage(action: "OFFER", reqID: 1, fromPlatform: "PROSPERO", candidates: [
+    @Test("the console candidate: our own subnet first, then the first that parses, strict dotted quads only")
+    func chosen() {
+        let home: (String) -> Bool = { $0.hasPrefix("192.168.1.") }
+        let offered = [
+            SignalingCandidate(type: "LOCAL", address: "console.local", port: 9303),
             SignalingCandidate(type: "STATIC", address: "203.0.113.7", port: 9303),
             SignalingCandidate(type: "LOCAL", address: "192.168.1.50", port: 9303),
-        ])
-        #expect(rendezvous.preferredCandidate(offer, consoleHost: "")?.address == "192.168.1.50")
+        ]
+        #expect(ConsoleCandidates.choose(offered, sharesSubnet: home)?.address == "192.168.1.50")
+        #expect(ConsoleCandidates.choose(offered, sharesSubnet: { _ in false })?.address == "203.0.113.7")
+        for bad in ["10", "::1", "1.2.3", "256.1.1.1"] {
+            #expect(ConsoleCandidates.choose([SignalingCandidate(type: "LOCAL", address: bad, port: 9303)],
+                                             sharesSubnet: home) == nil, "\(bad)")
+        }
+    }
 
-        var offWire = offer
-        offWire.candidates.removeLast()
-        #expect(rendezvous.preferredCandidate(offWire, consoleHost: "")?.address == "203.0.113.7")
+    /// The case that used to diverge: nothing parses. The ACCEPT named the unparseable candidate while the
+    /// transport fell back to the known host; now both get the known host on 9303.
+    @Test("with nothing parseable, the association and the ACCEPT fall back to the known host together")
+    func fallback() {
+        let unparseable = [SignalingCandidate(type: "STATIC", address: "console.local", port: 1234)]
+        let named = ConsoleCandidates.resolve(unparseable, consoleHost: "192.168.1.20", fallbackPort: 9303,
+                                              sharesSubnet: { _ in false })
+        #expect(named == SignalingCandidate(type: "LOCAL", address: "192.168.1.20", port: 9303))
+        let context = AccountTransportContext(
+            consoleOffer: SignalingMessage(action: "OFFER", reqID: 1, fromPlatform: "PROSPERO", candidates: unparseable),
+            consoleHost: "192.168.1.20", localHashedID: [], consoleHashedID: [], selectedCandidate: named)
+        #expect(ConsolePath.control(context)?.text == named?.address)
+        #expect(ConsolePath.control(context)?.port == 9303)
 
-        let unparseable = SignalingMessage(action: "OFFER", reqID: 1, fromPlatform: "PROSPERO",
-                                           candidates: [SignalingCandidate(type: "LOCAL", address: "console.local", port: 9303)])
-        #expect(rendezvous.preferredCandidate(unparseable, consoleHost: "console.local")?.address == "console.local")
+        #expect(ConsoleCandidates.resolve(unparseable, consoleHost: "", fallbackPort: 9303, sharesSubnet: { _ in false }) == nil)
     }
 }

@@ -106,10 +106,9 @@ struct ConsolePath: Sendable, Equatable {
         self.text = text
     }
 
-    /// The control association's endpoint: the candidate our ACCEPT names (the transport and the ACCEPT
-    /// must agree, RendezvousTransport.swift), else the host we already had, on 9303. .NET's
-    /// HalyardAccountConsoleSession.ConsoleEndpoint, and the fallback the engine's candidate choice leaves
-    /// to its caller.
+    /// The control association's endpoint: the candidate our ACCEPT names. AccountRendezvous resolves it with
+    /// ConsoleCandidates.resolve, which applies the known-host fallback to both, so the transport and the ACCEPT
+    /// agree. The host on 9303 is kept here as a backstop for a context built without a selected candidate.
     static func control(_ context: AccountTransportContext) -> ConsolePath? {
         if let candidate = context.selectedCandidate, let path = ConsolePath(address: candidate.address, port: candidate.port) {
             return path

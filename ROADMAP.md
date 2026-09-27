@@ -299,10 +299,6 @@ dotnet client ships. All ten are fixed and tested (journal, 2026-09-26). What th
       the console accepts on hardware. The vendor sends the field present and empty (`22 00`, cap53 frame
       10086, `[W]`). Matching the vendor is a one-line change in each, and wants a hardware run to confirm
       nothing depended on the four bytes.
-- [ ] **The Mac's console-candidate choice has the same gap .NET had.** `preferredCandidate` in
-      `AccountRendezvous.swift` can name an unparseable candidate in the ACCEPT while `ConsolePath.control`
-      falls back to the known host. It fails safely rather than throwing, but the two should be one decision,
-      as `HalyardConsoleCandidates` now is for .NET.
 - [ ] **Check the Windows client's resolution against its bitrate.** The console grants resolution by
       bitrate (journal, 2026-09-25): 1080p asked at 10 Mb/s streamed 720p, and the Windows default is
       10,000 kb/s. Measure what a default Windows session actually receives.

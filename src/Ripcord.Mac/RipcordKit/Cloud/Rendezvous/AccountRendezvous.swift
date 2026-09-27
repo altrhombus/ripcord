@@ -356,7 +356,9 @@ public final class AccountRendezvous<Transport: AccountRouteTransport>: Sendable
         }
         log("console OFFER received (\(consoleOffer.candidates.count) candidates)")
 
-        let path = preferredCandidate(consoleOffer, consoleHost: request.consoleHost)
+        // One decision for the association and the ACCEPT, fallback included (ConsoleCandidates).
+        let path = ConsoleCandidates.resolve(consoleOffer.candidates, consoleHost: request.consoleHost,
+                                             fallbackPort: 9303, sharesSubnet: transport.sharesSubnetWithLocalInterface)
         let context = AccountTransportContext(consoleOffer: consoleOffer, consoleHost: request.consoleHost,
                                               localHashedID: request.localHashedID,
                                               consoleHashedID: consoleOffer.localHashedID ?? [],
@@ -414,7 +416,10 @@ public final class AccountRendezvous<Transport: AccountRouteTransport>: Sendable
             log("the console never offered a media connection")
             return nil
         }
-        guard let path = preferredCandidate(mediaOffer, consoleHost: request.consoleHost),
+        // No fallback for the media leg: which port the console would serve A/V on at its known host is not
+        // something to guess, so an offer with no usable candidate is reported as no media path.
+        guard let path = ConsoleCandidates.choose(mediaOffer.candidates,
+                                                  sharesSubnet: transport.sharesSubnetWithLocalInterface),
               let local = request.localEndpoint else { return nil }
 
         // Our sid and reqIds count on from the control connection's, as the captured client's do for its
@@ -460,20 +465,6 @@ public final class AccountRendezvous<Transport: AccountRouteTransport>: Sendable
             candidates.append(SignalingCandidate(type: "LOCAL", address: local.address, port: local.port))
         }
         return candidates
-    }
-
-    /// Which of the console's candidates to name back: one on our own subnet if there is one (a same-network
-    /// session stays on the LAN), else the first parseable one, else the one matching the host we already
-    /// had, else the first at all. An offer we cannot parse is still better answered than ignored.
-    func preferredCandidate(_ offer: SignalingMessage, consoleHost: String) -> SignalingCandidate? {
-        var reflexive: SignalingCandidate?
-        for candidate in offer.candidates {
-            var parsed = in_addr()
-            guard inet_pton(AF_INET, candidate.address, &parsed) == 1 else { continue }
-            if transport.sharesSubnetWithLocalInterface(candidate.address) { return candidate }
-            if reflexive == nil { reflexive = candidate }
-        }
-        return reflexive ?? offer.candidates.first { $0.address == consoleHost } ?? offer.candidates.first
     }
 
     /// The seed-timeout message, ordered by how far upstream the fault is, because the first true statement
