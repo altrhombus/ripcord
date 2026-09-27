@@ -269,6 +269,12 @@ jobs:
           -derivedDataPath build test
       - name: Lab self-check
         run: src/Ripcord.Mac/build/Build/Products/Release/ripcord-lab check
+      # The shipping build must carry none of the test-support exports; the dylib is read because Xcode's nm
+      # cannot read the static archive's Rust bitcode.
+      - name: The shipping engine carries no test exports
+        run: >-
+          ! nm -gU engine/target/shipping/release/libripcord.dylib
+          | grep -E '_ripcord_(kat_run|loopback|scripted|account_seed_seal)'
 
   # The PS3 port's installable package. Not in Ripcord.slnx and buildable by neither dotnet nor
   # MSBuild - it is a Makefile driving a PowerPC cross-compiler plus a second one for the SPEs - so it
