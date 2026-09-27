@@ -7,12 +7,15 @@ Writes, and nothing in either should be edited by hand (change a source here and
 
   - src/Ripcord.Mac/RipcordApp/Ripcord.icon, an Icon Composer bundle that Xcode compiles into the app's
     icon (the target's ASSETCATALOG_COMPILER_APPICON_NAME), and the same bundle in RipcordMobile/ for the
-    iPhone and iPad app. Two copies of generated output, one source. Apple TV wants a different kind of icon
-    (an App Icon & Top Shelf Image collection, which Icon Composer does not produce), still to do;
+    iPhone and iPad app. Two copies of generated output, one source;
+  - src/Ripcord.Mac/RipcordMobile/TV.xcassets, Apple TV's App Icon & Top Shelf Image collection, which Icon
+    Composer does not produce: two-layer image stacks (the ground behind, the mark in front, for the focus
+    parallax) and the Top Shelf banners, as PNGs composed by compose-png.swift. Checked by compiling with
+    actool for appletvos and looking at the layers (2026-09-27);
   - src/Ripcord.Mac/Shared/Brand.xcassets/MenuBarMark.imageset, ripcord-mono.svg as a template image for
     the menu bar extra and the Control, which the system tints (DESIGN.md, "Present across the Mac").
 
-Standard library only.
+Standard library only, plus `xcrun swift` for the Apple TV PNGs.
 
 What goes in follows "The tile is layers" in brand/README.md. macOS 26 draws its own rounded square, its
 own margin and its own glass edge, so the bundle carries the ground and the mark and nothing else:
@@ -35,6 +38,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import subprocess
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -42,6 +46,7 @@ SVG = "http://www.w3.org/2000/svg"
 BRAND = Path(__file__).resolve().parent
 OUT = BRAND.parent / "src" / "Ripcord.Mac" / "RipcordApp" / "Ripcord.icon"
 MOBILE = BRAND.parent / "src" / "Ripcord.Mac" / "RipcordMobile" / "Ripcord.icon"
+TV = BRAND.parent / "src" / "Ripcord.Mac" / "RipcordMobile" / "TV.xcassets"
 MENU_BAR = BRAND.parent / "src" / "Ripcord.Mac" / "Shared" / "Brand.xcassets" / "MenuBarMark.imageset"
 CANVAS = 1024
 
@@ -103,6 +108,55 @@ def main() -> None:
     shutil.copytree(OUT, MOBILE)
     print(f"wrote {MOBILE.relative_to(BRAND.parent)}")
     write_menu_bar_mark()
+    write_tv_brand_assets()
+
+
+def compose(out: Path, width: int, height: int, *parts: str) -> None:
+    subprocess.run(["xcrun", "swift", str(BRAND / "compose-png.swift"), str(out), str(width), str(height), *parts],
+                   check=True)
+
+
+def write_tv_brand_assets() -> None:
+    """Apple TV's app icon and Top Shelf. The icon is an image stack whose back layer must fill it exactly and
+    whose front layer carries the mark, so the focus parallax moves the mark over the ground. The mark sits at
+    62% of the height to leave the parallax room to crop."""
+    info = {"info": {"author": "xcode", "version": 1}}
+    if TV.exists():
+        shutil.rmtree(TV)
+    brand = TV / "App Icon & Top Shelf Image.brandassets"
+    brand.mkdir(parents=True)
+    (TV / "Contents.json").write_text(json.dumps(info, indent=2) + "\n")
+    mark = f"svg={BRAND / 'ripcord-mark-ondark.svg'}"
+    lockup = f"svg={BRAND / 'ripcord-lockup-ondark.svg'}"
+
+    def image_set(folder: Path, name: str, sizes: list[tuple[int, int, str]], *parts: str) -> None:
+        folder.mkdir(parents=True)
+        images = []
+        for width, height, scale in sizes:
+            filename = f"{name}@{scale}.png"
+            compose(folder / filename, width, height, *parts)
+            images.append({"filename": filename, "idiom": "tv", "scale": scale})
+        (folder / "Contents.json").write_text(json.dumps({"images": images, **info}, indent=2) + "\n")
+
+    assets = []
+    for stack_name, (w, h), scales in [("App Icon - App Store", (1280, 768), ["1x"]), ("App Icon", (400, 240), ["1x", "2x"])]:
+        stack = brand / f"{stack_name}.imagestack"
+        stack.mkdir()
+        (stack / "Contents.json").write_text(json.dumps(
+            {"layers": [{"filename": "Front.imagestacklayer"}, {"filename": "Back.imagestacklayer"}], **info}, indent=2) + "\n")
+        sizes = [(w * int(s[0]), h * int(s[0]), s) for s in scales]
+        for layer, parts in [("Front", (mark, "height=0.62")), ("Back", ("ground",))]:
+            folder = stack / f"{layer}.imagestacklayer"
+            folder.mkdir()
+            (folder / "Contents.json").write_text(json.dumps(info, indent=2) + "\n")
+            image_set(folder / "Content.imageset", layer.lower(), sizes, *parts)
+        assets.append({"filename": f"{stack_name}.imagestack", "idiom": "tv", "role": "primary-app-icon", "size": f"{w}x{h}"})
+    for shelf_name, role, (w, h) in [("Top Shelf Image Wide", "top-shelf-image-wide", (2320, 720)),
+                                     ("Top Shelf Image", "top-shelf-image", (1920, 720))]:
+        image_set(brand / f"{shelf_name}.imageset", "shelf", [(w, h, "1x"), (w * 2, h * 2, "2x")], "ground", lockup, "height=0.28")
+        assets.append({"filename": f"{shelf_name}.imageset", "idiom": "tv", "role": role, "size": f"{w}x{h}"})
+    (brand / "Contents.json").write_text(json.dumps({"assets": assets, **info}, indent=2) + "\n")
+    print(f"wrote {TV.relative_to(BRAND.parent)}")
 
 
 def write_menu_bar_mark() -> None:

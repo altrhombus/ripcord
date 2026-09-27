@@ -34,7 +34,8 @@ built for more SDKs, plus an app per form factor, not a port.
 It builds in Debug and Release for iOS and tvOS, device and simulator, and CI builds it. **It has not run on
 any of them.** Device builds are unsigned, because iOS and tvOS refuse an ad hoc signature. Installing one
 needs a team and a profile. The icon is the Mac's Icon Composer bundle declared for iOS as well, compiled with
-`actool` and looked at. Apple TV needs a different kind of icon, still to do.
+`actool` and looked at. Apple TV has its own layered App Icon and Top Shelf images, generated from the same
+brand sources and checked the same way.
 
 ## Decisions
 
