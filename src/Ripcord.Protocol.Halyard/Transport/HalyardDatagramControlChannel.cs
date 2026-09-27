@@ -309,8 +309,18 @@ public sealed class HalyardDatagramControlChannel : IAsyncDisposable
     /// leaving the reassembly to whoever knows the message framing. A caller that wants "the whole HTTP
     /// response" should use <see cref="ExchangeAsync"/>, which does exactly that.
     /// </para>
+    ///
+    /// <para>
+    /// <paramref name="timeout"/> is how long to wait before giving up with <see cref="TimeoutException"/>:
+    /// the stage timeout by default, which suits a request waiting for its answer.
+    /// <see cref="Timeout.InfiniteTimeSpan"/> waits until the peer closes or the token is cancelled, which is
+    /// what a running control channel needs: the console may say nothing for a while, and silence there is not
+    /// a failure. Before 2026-09-26 the running channel also had the 30 s stage deadline, and its keep-alive
+    /// loop swallowed the timeout and stopped answering heartbeats while the session carried on (engine
+    /// comparisons). The C pipe and the Rust engine have no deadline once the channel runs.
+    /// </para>
     /// </summary>
-    public async Task<byte[]?> ReceiveBytesAsync(CancellationToken cancellationToken)
+    public async Task<byte[]?> ReceiveBytesAsync(CancellationToken cancellationToken, TimeSpan? timeout = null)
     {
         byte[]? delta = null;
         bool closed = false;
@@ -320,7 +330,8 @@ public sealed class HalyardDatagramControlChannel : IAsyncDisposable
             onQuiet: null,
             "The console sent nothing on the control connection.",
             cancellationToken,
-            raised =>
+            stageTimeout: timeout,
+            observe: raised =>
             {
                 switch (raised)
                 {
@@ -373,10 +384,11 @@ public sealed class HalyardDatagramControlChannel : IAsyncDisposable
         Func<HalyardControlAction>? onQuiet,
         string timeoutMessage,
         CancellationToken cancellationToken,
-        Action<HalyardControlEvent>? observe = null)
+        Action<HalyardControlEvent>? observe = null,
+        TimeSpan? stageTimeout = null)
     {
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        deadline.CancelAfter(_options.StageTimeout);
+        deadline.CancelAfter(stageTimeout ?? _options.StageTimeout);
 
         while (!done())
         {
