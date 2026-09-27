@@ -123,18 +123,18 @@ struct StreamCapsule: View {
 }
 
 #Preview("Failed") {
-    ConnectOverlay(dashes: 1, line: "PS5-8A2F went to rest", detail: "Connecting will wake it.", dimmed: true,
+    ConnectOverlay(dashes: 1, line: "Living Room went to rest", detail: "Connecting will wake it.", dimmed: true,
                    actions: AnyView(HStack { Button("Try Again") {}; Button("Close") {} }))
         .frame(width: 800, height: 450)
         .background(.black)
 }
 
 #Preview("Paired") {
-    PairedCelebration(consoleName: "PS5-8A2F", playNow: {}, done: {})
+    PairedCelebration(consoleName: "Living Room", playNow: {}, done: {})
 }
 
 #Preview("Stream capsule") {
-    StreamCapsule(consoleName: "PS5-8A2F", recording: true, canPictureInPicture: true, onPictureInPicture: {},
+    StreamCapsule(consoleName: "Living Room", recording: true, canPictureInPicture: true, onPictureInPicture: {},
                   onRecord: {}, onInspector: {}, onDisconnect: {})
         .padding(60)
         .background(LinearGradient(colors: [.indigo, .black], startPoint: .top, endPoint: .bottom))
