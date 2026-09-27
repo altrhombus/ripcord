@@ -546,26 +546,16 @@ looking.
       determines whether the rule is "no MF on the UI thread" or something broader.
 
 
-### Open — nothing requests a keyframe when no frame has *ever* decoded (carried over 2026-08-06)
-- [ ] `KeyFrameRequested` is raised in exactly **one** place: catastrophic decode backlog,
-      `jobs.Count >= MaxQueuedFrames` (`D3D12VideoDecodePipeline.cs:240-251`). **Nothing triggers a keyframe
-      request for "submitted many access units and never decoded a single frame."** That is a loop with no
-      exit: if the first IDR (carrying SPS/PPS) is lost or arrives before the decoder is ready, the MFT accepts
-      every later access unit and returns `MF_E_TRANSFORM_NEED_MORE_INPUT` forever — the failure
-      `VideoRenderer.cpp` already documents — so no frame decodes, so the queue never backs up, so the one
-      trigger never fires. The stall watchdog does not fire either: it distinguishes a static scene from a dead
-      session by console activity, and the console is still talking.
-  - Kept open after the codec-detection fix above, which explained the observed instance without needing this.
-    It remains a genuine hole in the recovery path, reachable whenever a first IDR is genuinely lost.
-  - **Fix shape:** request a keyframe when no frame has decoded within N ms of the stream coming up, bounded
-    and rate-limited. The plumbing already exists — `HalyardStreamingSession.RequestKeyFrame` is a no-op before
-    the stream is up and is rate-limited internally, and `SessionController.OnKeyFrameRequested` already knows
-    about both sides. Only the trigger is missing, and its event-source reason string would need to stop saying
-    "decoder backlog resynchronisation".
+### Open — a keyframe that arrives before the decoder can use it (narrowed 2026-09-27)
+- [ ] The lost-first-keyframe case is closed: `SessionController` now asks for a keyframe from a second after
+      the connect, and every second, until one arrives, as the C core's and the engine's latch do (journal,
+      2026-09-27). What it cannot see is a keyframe that *arrived* but that the decoder could not start from,
+      for example one it received before it was ready. The controller sees encoded frames, not decoded ones.
+      Closing that needs a decoded-frame count from `D3D12VideoDecodePipeline`, which is Windows code, and a
+      Windows build to check it.
   - Still unvaried, and still not implicated by anything: the launchSpec pins
     `"videoEncoderProfile":"hw4.1"` unconditionally (`HalyardStreamingSession.BuildLaunchSpecJson`), an
     H.264-shaped profile token reproduced verbatim from a vendor capture.
-
 
 ### Open question — `AsyncObservable` can end a sequence without signalling it (2026-08-05)
 - [ ] **`AsyncObservable.Create` swallows `OperationCanceledException` and then raises neither `OnCompleted` nor

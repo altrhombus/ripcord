@@ -120,4 +120,23 @@ public sealed record SessionControllerOptions
     /// </para>
     /// </summary>
     public TimeSpan MinimumHealthySession { get; init; } = TimeSpan.FromSeconds(10);
+
+    /// <summary>
+    /// How long after a connect, with no keyframe yet, to ask the console for one; and then how often to ask
+    /// again until one arrives.
+    ///
+    /// <para>
+    /// A decoder cannot start without a keyframe. If the first one is lost, every frame after it is a
+    /// predicted one the decoder can do nothing with: nothing decodes, so no queue backs up and the decoder's
+    /// own backlog trigger never fires, and the console is still talking, so the stall watchdog does not fire
+    /// either. The session would sit on a black picture for good. The C core and the Rust engine arm a latch
+    /// at the start for the same reason and re-ask every 200 ms. Here the first ask waits a second, so the
+    /// keyframe a console sends at the start of every stream is not pre-empted, and the session's own rate
+    /// limit bounds the rest.
+    /// </para>
+    /// </summary>
+    public TimeSpan FirstKeyFrameGrace { get; init; } = TimeSpan.FromSeconds(1);
+
+    /// <inheritdoc cref="FirstKeyFrameGrace"/>
+    public TimeSpan FirstKeyFrameRetryInterval { get; init; } = TimeSpan.FromSeconds(1);
 }

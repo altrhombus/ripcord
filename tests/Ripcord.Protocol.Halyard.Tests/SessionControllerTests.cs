@@ -66,6 +66,8 @@ public class SessionControllerTests
 
         public void EmitFrame() => _video.OnNext(new EncodedVideoFrame(new byte[] { 1, 2, 3 }, 0, false));
 
+        public void EmitKeyFrame() => _video.OnNext(new EncodedVideoFrame(new byte[] { 1, 2, 3 }, 0, true));
+
         public int KeyFrameRequests { get; private set; }
 
         public void RequestKeyFrame() => KeyFrameRequests++;
@@ -740,6 +742,66 @@ public class SessionControllerTests
         await WaitFor(() => controller.CurrentStatus.Detail.Contains("launch spec rejected", StringComparison.Ordinal),
             "the reconnect to name why the session ended");
         Assert.Equal(SessionLifecycle.Reconnecting, controller.Lifecycle);
+    }
+
+    private static SessionControllerOptions LatchOptions => new()
+    {
+        WatchdogInterval = TimeSpan.FromMilliseconds(1),
+        StallTimeout = TimeSpan.FromSeconds(30),
+        ReconnectAfterStall = TimeSpan.FromSeconds(60),
+        FirstKeyFrameGrace = TimeSpan.FromSeconds(1),
+        FirstKeyFrameRetryInterval = TimeSpan.FromSeconds(1),
+    };
+
+    /// <summary>
+    /// A lost first keyframe used to leave the picture black for good: every later frame is predicted, nothing
+    /// decodes, the decoder's backlog trigger never fires, and the console is still talking, so the stall
+    /// watchdog does not either. The latch asks after the grace, and again each interval, until one arrives.
+    /// </summary>
+    [Fact]
+    public async Task NoKeyFrame_AfterTheGrace_AsksForOne_AndKeepsAsking()
+    {
+        var time = new VirtualTime();
+        var session = new FakeSession { MillisecondsSinceConsoleActivity = 0 };
+        await using var controller = new SessionController(
+            _ => Task.FromResult<IStreamingSession>(session), new FakePipeline(), options: LatchOptions,
+            clock: time.Now, delay: time.Delay);
+        await controller.StartAsync(Config);
+        await WaitFor(() => controller.Lifecycle == SessionLifecycle.Streaming, "should connect");
+
+        session.EmitFrame();                               // frames arrive, none of them a keyframe
+        await Task.Delay(30);
+        Assert.Equal(0, session.KeyFrameRequests);          // inside the grace: the console's own keyframe may come
+
+        time.Advance(TimeSpan.FromMilliseconds(1_100));
+        await WaitFor(() => session.KeyFrameRequests == 1, "the first ask after the grace");
+        await Task.Delay(30);
+        Assert.Equal(1, session.KeyFrameRequests);          // not every tick: once per interval
+
+        time.Advance(TimeSpan.FromMilliseconds(1_100));
+        await WaitFor(() => session.KeyFrameRequests == 2, "the ask repeats while none has come");
+
+        session.EmitKeyFrame();
+        time.Advance(TimeSpan.FromSeconds(5));
+        await Task.Delay(30);
+        Assert.Equal(2, session.KeyFrameRequests);          // the latch clears on the first keyframe
+    }
+
+    [Fact]
+    public async Task AKeyFrameInsideTheGrace_MeansNoAskAtAll()
+    {
+        var time = new VirtualTime();
+        var session = new FakeSession { MillisecondsSinceConsoleActivity = 0 };
+        await using var controller = new SessionController(
+            _ => Task.FromResult<IStreamingSession>(session), new FakePipeline(), options: LatchOptions,
+            clock: time.Now, delay: time.Delay);
+        await controller.StartAsync(Config);
+        await WaitFor(() => controller.Lifecycle == SessionLifecycle.Streaming, "should connect");
+
+        session.EmitKeyFrame();
+        time.Advance(TimeSpan.FromSeconds(10));
+        await Task.Delay(30);
+        Assert.Equal(0, session.KeyFrameRequests);
     }
 
     [Fact]
