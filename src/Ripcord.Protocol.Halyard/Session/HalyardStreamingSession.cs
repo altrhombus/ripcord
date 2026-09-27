@@ -413,7 +413,8 @@ public sealed class HalyardStreamingSession : IStreamingSession
 
     /// <summary>
     /// The <c>Host</c> value, with the octets right-aligned in three columns the way every captured vendor
-    /// request writes them (<c>Host: 192.  0.  2.104:9295</c>) -- a <c>%3d.%3d.%3d.%3d</c> format.
+    /// request writes them (<c>Host: 192.  0.  2.104:9295</c>, shown with a documentation address) -- a
+    /// <c>%3d.%3d.%3d.%3d</c> format.
     ///
     /// <para>
     /// A LAN console accepts the unpadded form, so this is not required there. It is one of only two things
