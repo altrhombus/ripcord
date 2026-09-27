@@ -203,6 +203,30 @@ public class HalyardDatagramSessionControlChannelTests
         Assert.Equal(HalyardCtrlMessage.TypeHeartbeatReq, received!.Value.Type);
     }
 
+    /// <summary>
+    /// A running control channel may be quiet for longer than a stage, and that is not a failure. It used to
+    /// carry the 30 s stage deadline, and the keep-alive loop swallowed the timeout and stopped answering
+    /// heartbeats while the session went on. Here the stage is 150 ms and the read outlives it by far, ending
+    /// only when the caller cancels.
+    /// </summary>
+    [Fact]
+    public async Task AQuietControlChannel_WaitsPastTheStageDeadline()
+    {
+        var console = new ScriptedConsole();
+        var options = new HalyardDatagramControlOptions
+        {
+            ReceiveTimeout = TimeSpan.FromMilliseconds(20),
+            StageTimeout = TimeSpan.FromMilliseconds(150),
+        };
+        await using var channel = new HalyardDatagramSessionControlChannel(
+            new HalyardDatagramControlChannel(console, Peer, OurId, ConsoleId, options), ownsChannel: true);
+        using var connect = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        await channel.ConnectAsync(Peer, connect.Token);
+
+        using var quiet = new CancellationTokenSource(TimeSpan.FromMilliseconds(900));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => channel.ReadCtrlMessageAsync(quiet.Token));
+    }
+
     [Fact]
     public async Task SendingBeforeConnecting_SaysSoRatherThanHanging()
     {
