@@ -35,7 +35,7 @@ impl Addressing {
 }
 
 /// The Host value as every captured vendor request writes it: octets right-aligned in three columns, then
-/// the port (`192.  0.  2.104:9295`).
+/// the port (`192.  0.  2.104:9295`, shown with a documentation address).
 pub fn padded_host(a: [u8; 4], port: u16) -> String {
     format!("{:3}.{:3}.{:3}.{:3}:{port}", a[0], a[1], a[2], a[3])
 }

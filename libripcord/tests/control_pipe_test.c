@@ -504,7 +504,7 @@ static void test_dgram_pipe(void)
           "the Host header is right-aligned in three columns, as .NET's HostHeader (%s)", host);
     CHECK(halyard_dgram_host_header("192.0.2.104", 9303, host, sizeof(host)) > 0
               && strcmp(host, "192.  0.  2.104:9303") == 0,
-          "and matches the captured form (%s)", host);
+          "and pads each octet as the captured requests do (%s)", host);
     CHECK(halyard_dgram_host_header("console.local", 9303, host, sizeof(host)) > 0
               && strcmp(host, "console.local:9303") == 0,
           "a name is written as is");
