@@ -35,6 +35,14 @@ different purpose.
 > anything. The list above is short, it is checkable in one `git log --format=%B | grep`, and it stops
 > growing the moment someone notices — which is the property that actually matters.
 
+### The Rust engine: key agreement for Windows (2026-09-26)
+
+The Windows engine host will be .NET, so its CNG backend is C#: `PlatformEcdh` is .NET's `ECDiffieHellman`,
+which is CNG on Windows, behind the engine's backend table. The .NET harness runs `session-crypto.kat`
+through the engine with it and checks the result against RustCrypto's. It passes on macOS, on Apple's
+implementation underneath. CI's Windows legs run the same check on CNG itself, which is the check the
+plan asks for before a backend is used on its platform.
+
 ### The Rust engine: fuzz targets, Miri, and the first finding (2026-09-26)
 
 `engine/fuzz` holds nine cargo-fuzz targets. Eight mirror `libripcord/tests/fuzz`: stream, control,
