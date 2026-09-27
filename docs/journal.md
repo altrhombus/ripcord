@@ -35,6 +35,21 @@ different purpose.
 > anything. The list above is short, it is checkable in one `git log --format=%B | grep`, and it stops
 > growing the moment someone notices — which is the property that actually matters.
 
+### The Rust engine's first session on hardware (2026-09-26)
+
+`ripcord-lab connect` on the Rust engine, against PS5-<redacted> on the LAN, with its user locked behind a
+passcode.
+
+- **Every stage completed on the first try:** the arm probe, /sess/init and /sess/ctrl, the sign-in gate
+  (the passcode accepted with verdict 0x00, then SESSION_ID), senkusha, Takion, key agreement on CryptoKit,
+  and STREAM_INFO.
+- **The stream:** 1920x1080 HEVC at 60 frames a second for 20 s, with 0 of 5,172 packets lost. The first
+  keyframe arrived 7.3 s after the start, including the passcode round trip. The capture decodes cleanly
+  in ffmpeg (820 frames, the PS5 home screen), and the disconnect ended the session as asked.
+- **One finding:** the console never answered the arm probe, so 2.2 s of the connect was its reply window.
+  A probe sent by hand got no answer either. All three engines wait for that reply, so this is not new to
+  Rust; it is on the roadmap.
+
 ### The Mac on the Rust engine: Phase 3's relink, and pairings kept by the host (2026-09-26)
 
 RipcordKit now reaches the protocol only through the Rust engine's `ripcord.h`, and the Mac project no longer
