@@ -10,6 +10,7 @@
 		64420D1B7E301B3263D5C9B3 /* RipcordKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2399FB26F9AE8432A9B15242 /* RipcordKit.framework */; };
 		6662113925C60276EF3E0873 /* RipcordKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2399FB26F9AE8432A9B15242 /* RipcordKit.framework */; };
 		BA2A656B5D78A8E54EE1E907 /* RipcordKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2399FB26F9AE8432A9B15242 /* RipcordKit.framework */; };
+		577989B99543FF4D3D8FEFB1 /* RipcordWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = DD8FCD3B82E64DCB78833D55 /* RipcordWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -34,7 +35,28 @@
 			remoteGlobalIDString = 327FE717A673FCA87781D48B /* RipcordKit */;
 			remoteInfo = RipcordKit;
 		};
+		909A76FA0DCA4F69773A394A /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = D1A947FE076D3FAE73245C34 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 0BECB2BEA06EDB351F3FD275 /* RipcordWidgets */;
+			remoteInfo = RipcordWidgets;
+		};
 /* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		4B5322E6061F993D2DAB40EF /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				577989B99543FF4D3D8FEFB1 /* RipcordWidgets.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		043D028D5B29F56BE890433C /* RipcordKitTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RipcordKitTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -48,7 +70,19 @@
 		EE9201CB815972F6CD1CE63B /* RipcordKitTests.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = RipcordKitTests.xcconfig; sourceTree = "<group>"; };
 		4E35DB6721B656F0D9FEF2BA /* Ripcord.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Ripcord.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		4A70F13DC5A4EE69586464DA /* RipcordApp.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = RipcordApp.xcconfig; sourceTree = "<group>"; };
+		DD8FCD3B82E64DCB78833D55 /* RipcordWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = RipcordWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		1ADC4B5C3C0A9AEF714C6314 /* RipcordWidgets.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = RipcordWidgets.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		E65E3C192233120F0CCB0FD3 /* Exceptions for "RipcordWidgets" folder in "RipcordWidgets" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 0BECB2BEA06EDB351F3FD275 /* RipcordWidgets */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		057A56FD5F76EFF092F0934D /* RipcordKit */ = {
@@ -69,6 +103,19 @@
 		80BC25064A668A741DEAA773 /* RipcordApp */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = RipcordApp;
+			sourceTree = "<group>";
+		};
+		CFAB518E37BC5F2940BC214F /* Shared */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Shared;
+			sourceTree = "<group>";
+		};
+		4B446C3DE6617789127C707F /* RipcordWidgets */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				E65E3C192233120F0CCB0FD3 /* Exceptions for "RipcordWidgets" folder in "RipcordWidgets" target */,
+			);
+			path = RipcordWidgets;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -105,6 +152,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A65123A0B62B75647E367B2D /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -115,6 +169,8 @@
 				D245CE8D073CC31A77EE5A38 /* RipcordKitTests */,
 				8872EDF7E913563D4E89932A /* RipcordLab */,
 				80BC25064A668A741DEAA773 /* RipcordApp */,
+				4B446C3DE6617789127C707F /* RipcordWidgets */,
+				CFAB518E37BC5F2940BC214F /* Shared */,
 				54D22571890C77D6477C7724 /* Config */,
 				A0CF22186B3F8FCC010215B0 /* Products */,
 			);
@@ -130,6 +186,7 @@
 				EE9201CB815972F6CD1CE63B /* RipcordKitTests.xcconfig */,
 				3FEEA24189954B222061E3DD /* RipcordLab.xcconfig */,
 				4A70F13DC5A4EE69586464DA /* RipcordApp.xcconfig */,
+				1ADC4B5C3C0A9AEF714C6314 /* RipcordWidgets.xcconfig */,
 			);
 			path = Config;
 			sourceTree = "<group>";
@@ -141,6 +198,7 @@
 				043D028D5B29F56BE890433C /* RipcordKitTests.xctest */,
 				CB8F1906910099C05BD959CE /* ripcord-lab */,
 				4E35DB6721B656F0D9FEF2BA /* Ripcord.app */,
+				DD8FCD3B82E64DCB78833D55 /* RipcordWidgets.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -216,19 +274,43 @@
 				B70B4127644CE47DDAF89ABE /* Frameworks */,
 				9A26CE3528BC0A01FAE45EA9 /* Resources */,
 				682681A59E6F6BC39D4CCE4D /* Bundle the OAuth credential */,
+				4B5322E6061F993D2DAB40EF /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
 				BF194122A9D1F92B2C8FD01D /* PBXTargetDependency */,
+				E84722A5F0E668E3622E3FF6 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				80BC25064A668A741DEAA773 /* RipcordApp */,
+				CFAB518E37BC5F2940BC214F /* Shared */,
 			);
 			name = Ripcord;
 			productName = Ripcord;
 			productReference = 4E35DB6721B656F0D9FEF2BA /* Ripcord.app */;
 			productType = "com.apple.product-type.application";
+		};
+		0BECB2BEA06EDB351F3FD275 /* RipcordWidgets */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = D8615AD416D892C678D86DC6 /* Build configuration list for PBXNativeTarget "RipcordWidgets" */;
+			buildPhases = (
+				110AD50103CD6A3521EC042B /* Sources */,
+				A65123A0B62B75647E367B2D /* Frameworks */,
+				555870675FEB51968AC01E7D /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				4B446C3DE6617789127C707F /* RipcordWidgets */,
+				CFAB518E37BC5F2940BC214F /* Shared */,
+			);
+			name = RipcordWidgets;
+			productName = RipcordWidgets;
+			productReference = DD8FCD3B82E64DCB78833D55 /* RipcordWidgets.appex */;
+			productType = "com.apple.product-type.app-extension";
 		};
 /* End PBXNativeTarget section */
 
@@ -258,12 +340,20 @@
 				2A17E14A15E31BA114CC6396 /* RipcordKitTests */,
 				1C472B1B2041F429116D2C29 /* RipcordLab */,
 				22FF38B84106BAD0B2B09876 /* Ripcord */,
+				0BECB2BEA06EDB351F3FD275 /* RipcordWidgets */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		9A26CE3528BC0A01FAE45EA9 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		555870675FEB51968AC01E7D /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -346,6 +436,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		110AD50103CD6A3521EC042B /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -363,6 +460,11 @@
 			isa = PBXTargetDependency;
 			target = 327FE717A673FCA87781D48B /* RipcordKit */;
 			targetProxy = FA04D277A788BC3B04D6CACE /* PBXContainerItemProxy */;
+		};
+		E84722A5F0E668E3622E3FF6 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 0BECB2BEA06EDB351F3FD275 /* RipcordWidgets */;
+			targetProxy = 909A76FA0DCA4F69773A394A /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -437,6 +539,20 @@
 			};
 			name = Release;
 		};
+		0346A96B623403CDC7B254E0 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 1ADC4B5C3C0A9AEF714C6314 /* RipcordWidgets.xcconfig */;
+			buildSettings = {
+			};
+			name = Debug;
+		};
+		2D3E5416FAD86AD4962B21D8 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 1ADC4B5C3C0A9AEF714C6314 /* RipcordWidgets.xcconfig */;
+			buildSettings = {
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -481,6 +597,15 @@
 			buildConfigurations = (
 				9137600BA2B699894A68B014 /* Debug */,
 				75AF8B1D4BFF800FFC11DFEE /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		D8615AD416D892C678D86DC6 /* Build configuration list for PBXNativeTarget "RipcordWidgets" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				0346A96B623403CDC7B254E0 /* Debug */,
+				2D3E5416FAD86AD4962B21D8 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

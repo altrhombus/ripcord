@@ -4,6 +4,8 @@
 
 import AppKit
 import Foundation
+import SwiftUI
+import WidgetKit
 import GameController
 import Observation
 import RipcordKit
@@ -72,6 +74,9 @@ struct StreamSettings: Codable, Equatable {
 @MainActor
 @Observable
 final class AppModel {
+    /// The one model. App Intents reach the running app through it, and SwiftUI's scenes hold it.
+    static let shared = AppModel()
+
     /// The app keeps pairings in the Keychain (docs/macos-plan.md, "Credentials").
     let store: any PairingStore
     let account: AccountModel
@@ -94,6 +99,12 @@ final class AppModel {
     @ObservationIgnored var launchOrigins: [String: NSRect] = [:]
     /// Stream windows open now, by console key, so the library and the menu bar can say which are live.
     private(set) var liveStreams: [String: SessionStage] = [:]
+    /// Opens a scene, handed over by the first view to appear, for callers with no view of their own (App
+    /// Intents, the menu bar).
+    @ObservationIgnored var openWindow: OpenWindowAction?
+    /// Closes each open stream window, registered by the window, for Disconnect.
+    @ObservationIgnored var closers: [String: () -> Void] = [:]
+    @ObservationIgnored private var lastSnapshot: ConsoleSnapshot?
 
     init(store: any PairingStore = KeychainPairingStore()) {
         self.store = store
@@ -101,11 +112,14 @@ final class AppModel {
         input = InputRouter(bindings: StreamSettings.load().inputBindings)
         reload()
         network.onAddressChange = { [weak self] console, address in self?.moved(console, to: address) }
+        network.onRound = { [weak self] in self?.shareSnapshot() }
         network.watch { [weak self] in self?.consoles ?? [] }
         Task { await account.restore() }
+        shareSnapshot()
     }
 
     func reload() {
+        defer { shareSnapshot() }
         consoles = store.load().sorted {
             let order = $0.name.localizedStandardCompare($1.name)
             return order == .orderedSame ? $0.host < $1.host : order == .orderedAscending
@@ -178,9 +192,55 @@ final class AppModel {
         try? save(updated)
     }
 
-    func streamStarted(_ key: String) { liveStreams[key] = .idle }
+    func streamStarted(_ key: String) { liveStreams[key] = .idle; shareSnapshot() }
     func streamStage(_ key: String, _ stage: SessionStage) { if liveStreams[key] != nil { liveStreams[key] = stage } }
-    func streamEnded(_ key: String) { liveStreams[key] = nil }
+    func streamEnded(_ key: String) { liveStreams[key] = nil; closers[key] = nil; shareSnapshot() }
+
+    // MARK: Across the Mac (DESIGN.md, "Present across the Mac")
+
+    var consoleEntities: [ConsoleEntity] {
+        consoles.map { ConsoleEntity(id: key(of: $0), name: $0.name.isEmpty ? $0.host : $0.name, family: $0.family.rawValue) }
+    }
+
+    /// Opens the stream window for a console, from anywhere: an intent, the menu bar, a widget.
+    func openStream(_ key: String) {
+        guard console(forKey: key) != nil else { return }
+        NSApp.activate()
+        openWindow?(id: "stream", value: StreamTarget(consoleKey: key))
+    }
+
+    func wake(key: String) {
+        if let console = console(forKey: key) { wake(console) }
+    }
+
+    func disconnect(key: String) {
+        closers[key]?()
+    }
+
+    /// Writes what the widgets show, when it has changed, and asks WidgetKit to redraw. The states come from
+    /// the network watch, so this runs after each scan as well as when the consoles change.
+    func shareSnapshot() {
+        let snapshot = ConsoleSnapshot(consoles: consoles.map { console in
+            let key = key(of: console)
+            let state: String
+            if liveStreams[key] != nil {
+                state = "playing"
+            } else {
+                state = switch reachability(of: console) {
+                case .ready: "ready"
+                case .resting: "resting"
+                case .notFound: "notFound"
+                case .unknown: "unknown"
+                }
+            }
+            return ConsoleSnapshot.Console(id: key, name: console.name.isEmpty ? console.host : console.name,
+                                           family: console.family.rawValue, state: state)
+        }, written: .now)
+        guard snapshot.consoles != lastSnapshot?.consoles else { return }
+        lastSnapshot = snapshot
+        snapshot.save()
+        WidgetCenter.shared.reloadAllTimelines()
+    }
 }
 
 struct PairingRequest: Identifiable {

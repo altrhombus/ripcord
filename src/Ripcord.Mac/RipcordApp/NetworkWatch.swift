@@ -41,6 +41,8 @@ final class NetworkWatch {
     private var task: Task<Void, Never>?
     /// A paired console answered from an address its record does not carry.
     @ObservationIgnored var onAddressChange: ((PairedConsole, String) -> Void)?
+    /// After each round, so what the widgets show follows the tiles.
+    @ObservationIgnored var onRound: () -> Void = {}
 
     static let interval: Duration = .seconds(5)
 
@@ -89,6 +91,7 @@ final class NetworkWatch {
                 misses[key(console), default: 0] += 1
             }
         }
+        onRound()
     }
 
     private nonisolated static func round(hosts: [String]) async -> [DiscoveredConsole] {

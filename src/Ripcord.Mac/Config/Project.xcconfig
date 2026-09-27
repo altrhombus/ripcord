@@ -23,3 +23,9 @@ OTHER_LDFLAGS = $(inherited) $(RIPCORD_ENGINE_LIB)
 // Ad hoc signing until distribution is set up (docs/macos-plan.md, step 9).
 CODE_SIGN_IDENTITY = -
 CODE_SIGN_STYLE = Manual
+
+// The app group the widgets read the paired consoles through (Shared/ConsoleSnapshot.swift). Claiming a group
+// needs a provisioning profile, which an ad hoc build cannot have, so it is off here and a signed build turns
+// it on: RIPCORD_APP_GROUP = YES with a team and a profile that carries the group. With it off the widget
+// builds sandboxed and shows the way into the app, and the app writes no snapshot.
+RIPCORD_APP_GROUP = NO

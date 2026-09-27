@@ -227,12 +227,14 @@ removed, not disabled, because nothing in that edition could make it work.
 These are for step 8, settled now so that step 6 stores what they need:
 
 - **The menu bar extra** shows the mark in one colour (`ripcord-mono.svg`) and lists the paired consoles
-  with their state and Connect. While connecting it shows the three-stage progress. It is off by default and
-  can be turned on in Settings, because an icon nobody asked for in the menu bar is the opposite of a good
-  citizen.
+  with their state and Connect. While a console is connecting, its row counts the three stages. The label
+  itself stays the plain mark until the custom SF Symbol exists. It is off by default and can be turned on
+  in Settings, because an icon nobody asked for in the menu bar is the opposite of a good citizen.
 - **The widget** shows the paired consoles as small tiles, and a tap connects. It reads a snapshot the app
-  writes to a shared container. That snapshot holds names and last-known states, never a key. The widget
-  cannot read the Keychain items, and does not need to.
+  writes to an app group's container. That snapshot holds names and last-known states, never a key. The
+  widget cannot read the Keychain items, and does not need to. Claiming an app group needs a provisioning
+  profile, so only a signed build shares the snapshot (`RIPCORD_APP_GROUP`). An ad hoc build's widget
+  shows the way into the app instead.
 - **The Control Center control** is "Connect to *console*", configured per control.
 - **App Intents:** Connect to Console, Wake Console, and Disconnect, over a console entity. They are
   surfaced through Shortcuts and Spotlight by an `AppShortcutsProvider`.
