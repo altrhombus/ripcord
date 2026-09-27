@@ -21,6 +21,7 @@ if (mode is "all" or "check")
     failures += Checks.DifferentialAgainstManaged();
     failures += Checks.DemuxThroughCallbacks();
     failures += Checks.ClientSession();
+    failures += Checks.PlatformKeyAgreement();
     Console.WriteLine(failures == 0 ? "checks: all passed" : $"checks: {failures} FAILED");
 }
 
@@ -242,6 +243,43 @@ static unsafe class Checks
     }
 
     public static int ClientSession() => ClientCheck.Run(Fail);
+
+    /// <summary>
+    /// The platform's key agreement (CNG on Windows) through the engine, against session-crypto.kat, and
+    /// against RustCrypto on the same vectors: engine-plan.md's condition for using a backend on its
+    /// platform. Skips when the vectors have not been generated.
+    /// </summary>
+    public static int PlatformKeyAgreement()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null && !Directory.Exists(Path.Combine(dir.FullName, "libripcord")))
+        {
+            dir = dir.Parent;
+        }
+        string? path = dir is null ? null : Path.Combine(dir.FullName, "libripcord", "tests", "vectors", "session-crypto.kat");
+        if (path is null || !File.Exists(path))
+        {
+            Console.WriteLine("key agreement: skipped (generate the vectors: dotnet run --project tools/Ripcord.ProtocolLab -- vectors)");
+            return 0;
+        }
+        byte[] text = File.ReadAllBytes(path);
+        RipcordKatResult platform, rust;
+        RipcordStatus platformStatus, rustStatus;
+        var table = PlatformEcdh.Table;
+        fixed (byte* t = text)
+        {
+            platformStatus = NativeMethods.ripcord_kat_run(t, (nuint)text.Length, &table, &platform);
+            rustStatus = NativeMethods.ripcord_kat_run(t, (nuint)text.Length, null, &rust);
+        }
+        var f = 0;
+        if (platformStatus != RipcordStatus.Ok || platform.failed != 0 || platform.passed == 0)
+            f += Fail($"the platform's key agreement failed {platform.failed} of {platform.passed + platform.failed} vector checks");
+        if (platform.passed != rust.passed || rustStatus != RipcordStatus.Ok)
+            f += Fail($"the platform checked {platform.passed} lines, RustCrypto {rust.passed}");
+        string backend = OperatingSystem.IsWindows() ? "CNG" : OperatingSystem.IsMacOS() ? "Apple's (not CNG)" : "OpenSSL (not CNG)";
+        Console.WriteLine($"key agreement: {backend} through the engine passes session-crypto.kat, {platform.passed} checks, as RustCrypto does");
+        return f;
+    }
 }
 
 /// <summary>

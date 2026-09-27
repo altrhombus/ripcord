@@ -244,8 +244,12 @@ the documents into line, is done and in the journal. The engine lives in [`engin
       CI, and the scripted console ported to Rust. Parity is a measured matrix, not a list. The first layer,
       crypto and the Halyard derivations, has its vectors passing and its differential runs clean (journal,
       2026-09-26). It still needs its fuzz target. Next in order:
-  - [ ] **The CNG `Ecdh` backend,** against `session-crypto.kat` on Windows. RustCrypto and CryptoKit
-        pass it (journal, 2026-09-26).
+  - [ ] **The CNG `Ecdh` backend on Windows.** Written as `PlatformEcdh` in the .NET harness (journal,
+        2026-09-26): .NET's `ECDiffieHellman`, which is CNG on Windows, behind the engine's backend table. It
+        passes `session-crypto.kat` through the engine on macOS, on Apple's implementation. The Windows legs
+        of CI's engine job run the same check on CNG itself, and have not run yet. The one call whose
+        behaviour could differ there is importing a private scalar with no public point, which .NET derives
+        on the platforms tried so far.
   - [ ] **The probes and rate control on hardware.** Senkusha's echo and MTU probes, CORRUPT_FRAME, the
         adaptive ladder and CONNECTION_QUALITY are ported (journal, 2026-09-26) and tested against scripted
         consoles only. On a console: whether it answers the probes as the captures show, and, with

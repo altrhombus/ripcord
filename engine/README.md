@@ -354,3 +354,11 @@ session.
 |---|---|
 | Nine targets, 60 s each on the M4 Max | 0.4 to 5 million runs per target. One finding: the SRCH reply parser sliced its first line at byte 8 as a string, and a multi-byte character straddling that byte panicked. Any datagram on the discovery port could do it. Fixed, with the fuzzer's input as a regression test, and the target then ran clean for 4.7 million runs |
 | Miri over `ripcord-ffi`'s unit tests | Clean on the portable crypto backends, all seven tests. On the hardware backends Miri stops inside `sha2`'s ARMv8 intrinsics, which is not the engine's code |
+
+## Key agreement on Windows (2026-09-26)
+
+The Windows host is .NET, so its backend is .NET's `ECDiffieHellman` (CNG, BCrypt, on Windows) behind the
+engine's backend table: `hosts/dotnet/Ripcord.Engine.Harness/PlatformEcdh.cs`, which Phase 4 moves into
+`Ripcord.Protocol.Halyard.Native` unchanged. The harness runs `session-crypto.kat` through the engine with it
+and compares the result with RustCrypto's. It passes on macOS on Apple's implementation (34 checks); CI's
+Windows legs are where it runs on CNG.
