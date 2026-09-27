@@ -32,11 +32,20 @@ static size_t encode_account_id(const char *account_id, char *out, size_t out_si
 
     is_numeric = 1;
     for (p = account_id; *p != '\0'; p++) {
+        uint64_t digit;
+
         if (*p < '0' || *p > '9') {
             is_numeric = 0;
             break;
         }
-        numeric = numeric * 10u + (uint64_t)(*p - '0');
+        /* Past UINT64_MAX it is not a u64, so it is sent as text, as .NET's ulong.TryParse falls back and the
+         * engine does. This used to wrap silently and send a different account's id. */
+        digit = (uint64_t)(*p - '0');
+        if (numeric > (UINT64_MAX - digit) / 10u) {
+            is_numeric = 0;
+            break;
+        }
+        numeric = numeric * 10u + digit;
     }
 
     if (is_numeric) {
