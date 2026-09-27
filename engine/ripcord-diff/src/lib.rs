@@ -1055,3 +1055,69 @@ pub fn c_account_id(input: &str) -> (i32, String) {
     let text = unsafe { std::ffi::CStr::from_ptr(out.as_ptr()) }.to_string_lossy().into_owned();
     (status, text)
 }
+
+// ---- the controller-input writer ----
+
+unsafe extern "C" {
+    fn diff_input_new() -> *mut c_void;
+    fn diff_input_free(w: *mut c_void);
+    fn diff_input_history(w: *mut c_void, buttons: u32, sticks: *const i16, lt: u8, rt: u8, out: *mut u8, size: usize) -> usize;
+    fn diff_input_state(buttons: u32, sticks: *const i16, lt: u8, rt: u8, out: *mut u8, size: usize) -> usize;
+    fn diff_input_header(kind: u8, sequence: u16, out: *mut u8, size: usize) -> usize;
+}
+
+/// The C core's input writer, one per sequence of polls.
+pub struct CInput {
+    raw: *mut c_void,
+}
+
+impl CInput {
+    pub fn new() -> Self {
+        let _core = c_core();
+        // SAFETY: returns a fresh, initialised writer, or null on allocation failure.
+        let raw = unsafe { diff_input_new() };
+        assert!(!raw.is_null());
+        Self { raw }
+    }
+
+    /// One poll's HISTORY payload (empty when nothing changed), the writer's previous then advanced.
+    pub fn history(&mut self, buttons: u32, sticks: [i16; 4], lt: u8, rt: u8) -> Vec<u8> {
+        let _core = c_core();
+        let mut out = [0u8; 64];
+        // SAFETY: a live writer, four sticks, and a 64-byte buffer (the C side's packet bound).
+        let n = unsafe { diff_input_history(self.raw, buttons, sticks.as_ptr(), lt, rt, out.as_mut_ptr(), out.len()) };
+        out[..n].to_vec()
+    }
+}
+
+impl Default for CInput {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Drop for CInput {
+    fn drop(&mut self) {
+        let _core = c_core();
+        // SAFETY: allocated by diff_input_new and freed once.
+        unsafe { diff_input_free(self.raw) }
+    }
+}
+
+/// C's STATE payload for one snapshot.
+pub fn c_input_state(buttons: u32, sticks: [i16; 4], lt: u8, rt: u8) -> Vec<u8> {
+    let _core = c_core();
+    let mut out = [0u8; 64];
+    // SAFETY: four sticks and a 64-byte buffer.
+    let n = unsafe { diff_input_state(buttons, sticks.as_ptr(), lt, rt, out.as_mut_ptr(), out.len()) };
+    out[..n].to_vec()
+}
+
+/// C's 12-byte packet header.
+pub fn c_input_header(kind: u8, sequence: u16) -> Vec<u8> {
+    let _core = c_core();
+    let mut out = [0u8; 16];
+    // SAFETY: a 16-byte buffer, over the 12 the header takes.
+    let n = unsafe { diff_input_header(kind, sequence, out.as_mut_ptr(), out.len()) };
+    out[..n].to_vec()
+}

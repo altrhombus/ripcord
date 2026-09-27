@@ -38,6 +38,7 @@ const SOURCES: &[&str] = &[
     "session/halyard_account_id.c",
     "session/halyard_wan_candidates.c",
     "session/halyard_dgram_assoc.c",
+    "input/halyard_input.c",
 ];
 
 fn main() {
