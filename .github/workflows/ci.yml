@@ -7,7 +7,8 @@ on:
     # ps3-v1.0 is a claim about the port alone. A tag push runs this whole file, not a reduced release
     # pipeline: a release that has not passed the same checks as a pull request is a weaker artifact than
     # the pull request was.
-    tags: ['ps3-v*']
+    # The macOS client does the same on macos-v* (docs/macos-plan.md, step 9).
+    tags: ['ps3-v*', 'macos-v*']
   pull_request:
   workflow_dispatch:
 
@@ -279,6 +280,70 @@ jobs:
           ! nm -gU engine/target/shipping/release/libripcord.dylib
           | grep -E '_ripcord_(kat_run|loopback|scripted|account_seed_seal)'
 
+      # ON A macos-v* TAG, the same app again, signed with the Developer ID, notarized and stapled. The steps
+      # above have already built and tested this commit, so this is packaging, not a second opinion. Six
+      # secrets, none of which this repository had when this was written, so the first tag is the first run:
+      #   MACOS_DEVELOPER_ID_P12 (base64) and MACOS_DEVELOPER_ID_P12_PASSWORD: the Developer ID Application
+      #     certificate and its key;
+      #   MACOS_TEAM_ID;
+      #   MACOS_NOTARY_KEY (base64 .p8), MACOS_NOTARY_KEY_ID, MACOS_NOTARY_ISSUER: an App Store Connect API
+      #     key for notarytool.
+      # The app group stays off (RIPCORD_APP_GROUP = NO): claiming one under a Developer ID needs a
+      # provisioning profile as well, which is a separate decision. The widget then shows the way into the app.
+      - name: Sign, notarize and staple (macos-v* tags)
+        if: startsWith(github.ref, 'refs/tags/macos-v')
+        working-directory: src/Ripcord.Mac
+        env:
+          P12: ${{ secrets.MACOS_DEVELOPER_ID_P12 }}
+          P12_PASSWORD: ${{ secrets.MACOS_DEVELOPER_ID_P12_PASSWORD }}
+          TEAM_ID: ${{ secrets.MACOS_TEAM_ID }}
+          NOTARY_KEY: ${{ secrets.MACOS_NOTARY_KEY }}
+          NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
+          NOTARY_ISSUER: ${{ secrets.MACOS_NOTARY_ISSUER }}
+        run: |
+          set -eu
+          for v in P12 P12_PASSWORD TEAM_ID NOTARY_KEY NOTARY_KEY_ID NOTARY_ISSUER; do
+            eval "[ -n \"\${$v}\" ]" || { echo "::error::the $v secret is not set; see the comment above this step"; exit 1; }
+          done
+          version="${GITHUB_REF_NAME#macos-v}"
+
+          # A keychain of this job's own, holding only the certificate, deleted when the runner is.
+          kc="$RUNNER_TEMP/signing.keychain-db"
+          kcpass="$(uuidgen)"
+          security create-keychain -p "$kcpass" "$kc"
+          security set-keychain-settings -lut 21600 "$kc"
+          security unlock-keychain -p "$kcpass" "$kc"
+          echo "$P12" | base64 --decode > "$RUNNER_TEMP/id.p12"
+          security import "$RUNNER_TEMP/id.p12" -k "$kc" -P "$P12_PASSWORD" -T /usr/bin/codesign
+          rm "$RUNNER_TEMP/id.p12"
+          security set-key-partition-list -S apple-tool:,apple: -k "$kcpass" "$kc" > /dev/null
+          security list-keychains -d user -s "$kc" $(security list-keychains -d user | tr -d '"')
+
+          xcodebuild -project Ripcord.xcodeproj -scheme Ripcord -configuration Release -derivedDataPath build-release \
+            MARKETING_VERSION="$version" CURRENT_PROJECT_VERSION="${{ github.run_number }}" \
+            CODE_SIGN_IDENTITY="Developer ID Application" DEVELOPMENT_TEAM="$TEAM_ID" CODE_SIGN_STYLE=Manual \
+            OTHER_CODE_SIGN_FLAGS="--timestamp --keychain $kc" build
+          app=build-release/Build/Products/Release/Ripcord.app
+          codesign --verify --deep --strict --verbose=2 "$app"
+
+          echo "$NOTARY_KEY" | base64 --decode > "$RUNNER_TEMP/notary.p8"
+          ditto -c -k --keepParent "$app" "$RUNNER_TEMP/submit.zip"
+          xcrun notarytool submit "$RUNNER_TEMP/submit.zip" --key "$RUNNER_TEMP/notary.p8" \
+            --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER" --wait
+          rm "$RUNNER_TEMP/notary.p8"
+          xcrun stapler staple "$app"
+          spctl --assess --type execute --verbose "$app"
+
+          mkdir -p dist
+          ditto -c -k --keepParent "$app" "dist/Ripcord-macos-v$version.zip"
+
+      - uses: actions/upload-artifact@v4
+        if: startsWith(github.ref, 'refs/tags/macos-v')
+        with:
+          name: ripcord-macos-${{ github.ref_name }}
+          path: src/Ripcord.Mac/dist/*.zip
+          if-no-files-found: error
+
   # The PS3 port's installable package. Not in Ripcord.slnx and buildable by neither dotnet nor
   # MSBuild - it is a Makefile driving a PowerPC cross-compiler plus a second one for the SPEs - so it
   # gets its own job rather than a leg on one of the matrices above.
@@ -538,6 +603,41 @@ jobs:
 
           echo "Draft release $GITHUB_REF_NAME created with $asset attached."
           echo "It is NOT public until somebody publishes it."
+
+  # THE MAC RELEASE, on the PS3 release's terms (above): only for a macos-v* tag, only after the rest of this
+  # file has passed, publishing the notarized zip the mac job built rather than building anything, and as a
+  # draft for a person to write the notes on and publish.
+  mac-release:
+    name: macOS release
+    if: startsWith(github.ref, 'refs/tags/macos-v')
+    needs: [tests, app, portable-core, mac]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: ripcord-macos-${{ github.ref_name }}
+          path: dist
+
+      - name: Publish a draft release with the app
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ls -l dist
+          cat > notes.md <<'NOTES'
+          **Draft — release notes go here before publishing.** What this build streams, pairs with and runs
+          on, and what it does not do yet.
+
+          Signed with a Developer ID and notarized. Unzip and move Ripcord to Applications.
+          NOTES
+          sed -i 's/^          //' notes.md
+          gh release create "$GITHUB_REF_NAME" dist/*.zip \
+            -R "$GITHUB_REPOSITORY" \
+            --draft \
+            --title "Ripcord for Mac ${GITHUB_REF_NAME#macos-}" \
+            --notes-file notes.md
+          echo "Draft release $GITHUB_REF_NAME created. It is NOT public until somebody publishes it."
 
   # CONTRIBUTING.md section 1 requires every commit to carry a Signed-off-by line matching its
   # author. Until now the only thing enforcing that was a checkbox in the pull-request template,

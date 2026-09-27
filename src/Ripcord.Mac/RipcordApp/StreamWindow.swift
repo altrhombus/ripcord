@@ -10,7 +10,7 @@ struct StreamWindow: View {
     @Environment(AppModel.self) private var model
     @Environment(\.controlActiveState) private var activeState
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.dismissWindow) private var dismissWindow
+    @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
     @State private var controller: StreamController?
     @State private var digits = ""
     @State private var showControls = true
@@ -76,7 +76,8 @@ struct StreamWindow: View {
         .task(id: lastPointerMove) {
             // The capsule leaves after three seconds of stillness, and the pointer with it.
             try? await Task.sleep(for: .seconds(3))
-            guard controller?.status.isLive == true, !Task.isCancelled else { return }
+            // VoiceOver keeps the capsule: controls that leave on their own cannot be found by touch or keys.
+            guard controller?.status.isLive == true, !voiceOver, !Task.isCancelled else { return }
             withAnimation(reduceMotion ? nil : .easeOut(duration: 0.3)) { showControls = false }
             NSCursor.setHiddenUntilMouseMoves(true)
         }

@@ -174,12 +174,20 @@ reviewed by counsel before submission, as `NOTICE` already advises for anything 
 3. **The Swift cloud tier and the session actor**, ported from `Ripcord.Cloud.Halyard` and
    `SessionController`.
 4. **First picture.** Deliberately plain: video, audio and input, with latency measured against the
-   Windows figure of 18 ms from demux to present.
+   Windows figure of 18 ms from demux to present. *Written 2026-09-26; the latency has not met a console.*
 5. **Design before building.** `DESIGN.md`, the Icon Composer icon (the brand's layers were drawn for it,
    see [`../brand/README.md`](../brand/README.md)), and prototypes of the launch, stream and pairing
-   moments.
-6. **Library, pairing, Settings.**
+   moments. *Done 2026-09-26:* [`../src/Ripcord.Mac/DESIGN.md`](../src/Ripcord.Mac/DESIGN.md) settles the
+   hypotheses above, and the icon is generated.
+6. **Library, pairing, Settings.** *Written 2026-09-26.*
 7. **The stream experience.** Full screen, the inspector, PiP, recording, HDR, pointer and keyboard capture.
-8. **Present across the Mac.** Menu bar, widgets, Controls, App Intents.
+   *Written 2026-09-26. Pointer input is not sent: it has not been derived.*
+8. **Present across the Mac.** Menu bar, widgets, Controls, App Intents. *Written 2026-09-26. The widget's
+   data needs a signed build.*
 9. **Ship.** Accessibility (VoiceOver, Reduce Motion, Reduce Transparency, Increase Contrast), String
-   Catalogs, notarization, and a versioned release on its own `macos-v*` tag line.
+   Catalogs, notarization, and a versioned release on its own `macos-v*` tag line. *Written 2026-09-26,
+   without the signing secrets the release needs.*
+
+"Written" is not "working": steps 4 and 6–9 were written and built together, and have not been run
+against a console, launched for review, or released. What each still has to show is in
+[`../ROADMAP.md`](../ROADMAP.md).
