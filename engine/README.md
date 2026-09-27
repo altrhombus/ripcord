@@ -263,13 +263,16 @@ sent through `ControlSession::send_field`), the STREAM_READY wait and Takion.
 | A late prompt during the media wait | C's handling, [X], but without insisting on SESSION_ID after it | C insists there and not after its own gate, which contradicts itself |
 | Peer filtering | .NET: every socket reads only the console's endpoint | C filters on rendezvous only |
 | The console hanging up | C: a Takion DISCONNECT (with its reason) or a closed control session ends the session | .NET notices neither, and relies on its watchdog (roadmap) |
-| Declared MTU | .NET: the interface MTU less 46, clamped to 530–1454, when the host knows it; otherwise 1454 | C always declares 1454 |
-| Declared RTT | .NET: the least of senkusha's version and session round trips, rounded | C truncates, so a sub-millisecond LAN reads as a measured 0. .NET's echo probe is not ported yet |
+| Declared MTU | .NET: the MTU the senkusha probe confirmed in both directions, else the interface MTU less 46, clamped to 530–1454, else 1454 | C always declares 1454 |
+| Declared RTT | .NET: the echo probe's least round trip when a majority of its ten pings came back, else the least of senkusha's version and session round trips, rounded | C truncates, so a sub-millisecond LAN reads as a measured 0, and has no echo probe |
 | RP-StartBitrate and RP-StreamingType | .NET: the configured bitrate, and 0 | C reads both from the pairing record |
-| Senkusha | C's two legs, then .NET's DISCONNECT and the socket closed | The echo and MTU probes are not ported yet (roadmap) |
+| Senkusha | .NET: the two legs, the echo probe, the MTU probe down then up (the upstream test always closed), then DISCONNECT and the socket closed, all inside the 8 s box | C runs the two legs only |
 | Keyless senkusha SESSION_REQUEST | C: a 4-byte zero encrypted key | .NET sends it empty, though its negotiator notes the console drops a SESSION_REQUEST without one (roadmap) |
 | Incoming control GMAC | C: verified and enforced | .NET never verifies |
-| IDR | C: the latch armed at the start and re-asked every 200 ms until a keyframe arrives | C's b141 and b124. CORRUPT_FRAME is not sent yet |
+| IDR | C: the latch armed at the start and re-asked every 200 ms until a keyframe arrives | C's b141 and b124 |
+| Loss | .NET: CORRUPT_FRAME for each lost range, then the keyframe request | C sends none |
+| Adaptive bitrate | .NET's ladder (bitrate cuts, 720p, 540p, half frame rate), stepped down on 2% loss and up after 12 s clean, capped by a low battery or throttling | C has none. The target reaches the console only in CONNECTION_QUALITY, opt-in because its unit is [X] |
+| Control echo probe | .NET's, opt-in: after senkusha on the LAN, after sign-in on rendezvous | A diagnostic of the control crypto; C has none |
 | Input | .NET's writer (state on a stick change or every 200 ms), polled every 4 ms as C polls | |
 | Rest | C: only on an explicit disconnect | .NET rests on every teardown when the setting is on (roadmap) |
 | Teardown on rendezvous | C: the polite 9303 close before any socket closes | A console never sent the Close keeps the session live |
@@ -323,3 +326,13 @@ session.
 | .NET | The harness hosts a session through `[UnmanagedCallersOnly]` callbacks and a GCHandle, as Phase 4 will, and checks 16 struct layouts |
 | Swift | `EngineClientTests`: the same session from `@convention(c)` callbacks, with CryptoKit doing the key agreement and `SecRandomCopyBytes` the randomness |
 | Pairing | `pairing_abi.rs`: discovery, wake, the account id, the seed, and PIN registration against the loopback console, whose `/sess/rgst` answer is the console's real side of the derivation |
+
+## The .NET behaviours the connect sequence gained (2026-09-26)
+
+| What | Result |
+|---|---|
+| Senkusha probes | Scripted-console tests confirm the capture's order (echo on, echo off, the MTU command, the client MTU on and off), eleven echoed pings, the confirmed MTU, and that a console ignoring every probe costs time and never the session. The loopback test through the C ABI measures both over real sockets. On the rendezvous route they run on the A/V leg |
+| A bug the tests found | The first ping went out before the echo-on command it depended on, because the command waited in the association's queue; every probe datagram now follows whatever the association has queued |
+| CORRUPT_FRAME | A gap in the frame index sends the lost range, and the IDR latch asks for the repair |
+| Adaptive ladder | Unit tests hold the ladder, the cooldown, the clean streak, a tiny window's silence and the power caps to .NET's. CONNECTION_QUALITY goes out only when enabled: the first at once, then on changes and the 2 s refresh |
+| ABI | Version 5: the two switches in the config, the ladder's target in the stats, the probes' results in the outcome, and `ripcord_client_set_power` |

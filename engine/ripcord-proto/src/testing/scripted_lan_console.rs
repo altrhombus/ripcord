@@ -112,6 +112,16 @@ pub struct ScriptedLanConsole {
     pub stream_version: u32,
     /// Refuse the stream's SESSION_REQUEST with a DISCONNECT carrying this reason.
     pub refuse_with: Option<&'static str>,
+    /// Answer senkusha's echo and MTU probes: echo pings while in echo or client-MTU mode, and send the
+    /// downstream MTU datagrams asked for.
+    pub answer_probes: bool,
+    echo_mode: bool,
+    client_mtu_mode: bool,
+    /// Every probe command, as (command, id, mtuReq, num-or-state).
+    pub probe_commands: Vec<(u32, u32, u32, u32)>,
+    pub pings_echoed: u32,
+    /// The control echo probe decrypted to its four zero bytes.
+    pub echo_probe_read: bool,
     /// The PIN /sess/rgst is answered under: the console's side of the registration derivation, so a
     /// client with another PIN decrypts noise, as on hardware.
     pub regist_pin: u32,
@@ -152,6 +162,12 @@ impl ScriptedLanConsole {
             send_session_id: true,
             stream_version: negotiator::CLIENT_VERSION,
             refuse_with: None,
+            answer_probes: true,
+            echo_mode: false,
+            client_mtu_mode: false,
+            probe_commands: Vec::new(),
+            pings_echoed: 0,
+            echo_probe_read: false,
             regist_pin: 12_345_678,
             regist_refuse: None,
             tcp_buf: Vec::new(),
@@ -262,6 +278,16 @@ impl ScriptedLanConsole {
                     out.push(Tcp::Data(reply));
                 }
                 ctrl::REST_MODE => self.rest_requested = true,
+                ctrl::ECHO_PROBE => {
+                    // Read at the client's next counter, as a real console reads it; answered either way.
+                    let mut probe = payload.clone();
+                    if let Some(f) = &self.field {
+                        f.decrypt(self.client_counter, &mut probe);
+                    }
+                    self.client_counter += 1;
+                    self.echo_probe_read = probe == [0; 4];
+                    out.push(Tcp::Data(self.frame(ctrl::ECHO_PROBE_ACK, &[0; 4])));
+                }
                 _ => {}
             }
         }
@@ -326,9 +352,51 @@ impl ScriptedLanConsole {
                 }
             }
             9297 => {
+                if !crate::takion::connection::is_control(data) {
+                    if crate::takion::senkusha::echo_sequence(data).is_some()
+                        && self.answer_probes
+                        && (self.echo_mode || self.client_mtu_mode)
+                    {
+                        self.pings_echoed += 1;
+                        out.push(data.to_vec());
+                    }
+                    return out;
+                }
                 if let Some(message) = self.senkusha.on(data, &mut out) {
                     self.senkusha_messages += 1;
                     match tc::peek_type(&message) {
+                        Some(tc::BANDWIDTH_PROBE) => {
+                            let Some(probe @ (command, id, mtu, extra)) = tc::parse_bandwidth_probe(&message)
+                            else {
+                                return out;
+                            };
+                            self.probe_commands.push(probe);
+                            if !self.answer_probes {
+                                return out;
+                            }
+                            match command {
+                                tc::PROBE_ECHO_COMMAND => self.echo_mode = extra == 1,
+                                tc::PROBE_MTU_COMMAND => {
+                                    let size = (mtu as usize)
+                                        .saturating_sub(crate::takion::senkusha::IP_UDP_OVERHEAD);
+                                    for _ in 0..extra {
+                                        let mut d = vec![0x5au8; size.max(1)];
+                                        d[0] = 0x02;
+                                        out.push(d);
+                                    }
+                                    let reply = tc::build_mtu_command(id, mtu, extra);
+                                    out.push(self.senkusha.data(chunks::CHANNEL_BANDWIDTH, &reply));
+                                }
+                                tc::PROBE_CLIENT_MTU_COMMAND => {
+                                    self.client_mtu_mode = extra == 1;
+                                    if extra == 1 {
+                                        let reply = tc::build_client_mtu_command(id, mtu, true);
+                                        out.push(self.senkusha.data(chunks::CHANNEL_BANDWIDTH, &reply));
+                                    }
+                                }
+                                _ => {}
+                            }
+                        }
                         Some(tc::PROTOCOL_VERSION_REQUEST) => {
                             out.push(self.senkusha.data(CHANNEL_SESSION, &tc::build_protocol_version_ack(9)))
                         }
@@ -450,6 +518,11 @@ impl ScriptedLanConsole {
         *key_pos += p.len().next_multiple_of(16) as u32;
         self.frame = self.frame.wrapping_add(1);
         Some(p)
+    }
+
+    /// Skips frame indices, as a lost burst would, so the next keyframe opens a gap the demuxer reports.
+    pub fn skip_frames(&mut self, n: u16) {
+        self.frame = self.frame.wrapping_add(n);
     }
 
     /// The console hanging up on the stream, with a reason.

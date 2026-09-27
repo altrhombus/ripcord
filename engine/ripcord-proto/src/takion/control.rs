@@ -10,6 +10,7 @@
 pub const SESSION_REQUEST: u32 = 0;
 pub const SESSION_REPLY: u32 = 1;
 pub const HEARTBEAT: u32 = 3;
+pub const CORRUPT_FRAME: u32 = 5;
 pub const DISCONNECT: u32 = 8;
 pub const BANDWIDTH_PROBE: u32 = 12;
 pub const STREAM_INFO: u32 = 13;
@@ -24,6 +25,7 @@ pub const ECDH_SIGNATURE_LENGTH: usize = 32;
 const F_MSG_TYPE: u32 = 1;
 const F_MSG_SESSION_REQUEST: u32 = 2;
 const F_MSG_SESSION_REPLY: u32 = 3;
+const F_MSG_CORRUPT_FRAME: u32 = 6;
 const F_MSG_DISCONNECT: u32 = 10;
 const F_MSG_BANDWIDTH_PROBE: u32 = 14;
 const F_MSG_STREAM_INFO: u32 = 15;
@@ -482,7 +484,67 @@ pub fn build_stream_info(width: u32, height: u32, video_header: &[u8], audio_hea
     out
 }
 
+/// CORRUPT_FRAME: the inclusive range of video frame indices lost, which the console reads as "these did not
+/// arrive whole". .NET sends it on every loss the demuxer reports, then asks for a keyframe.
+pub fn build_corrupt_frame(start: u32, end: u32) -> Vec<u8> {
+    let mut p = Vec::new();
+    put_varint_field(&mut p, 1, u64::from(start));
+    put_varint_field(&mut p, 2, u64::from(end));
+    let mut out = Vec::new();
+    put_varint_field(&mut out, F_MSG_TYPE, u64::from(CORRUPT_FRAME));
+    put_len_field(&mut out, F_MSG_CORRUPT_FRAME, &p);
+    out
+}
+
 // ---- bandwidth probe and connection quality (channel 0x0008) ----
+
+/// Bandwidth probe commands (BandwidthProbePayload.Command).
+pub const PROBE_ECHO_COMMAND: u32 = 0;
+pub const PROBE_MTU_COMMAND: u32 = 1;
+pub const PROBE_CLIENT_MTU_COMMAND: u32 = 4;
+
+/// The console's side of a probe command: (command, id, mtuReq, num-or-state), for the scripted console.
+/// `num` for MTU_COMMAND, `state` (0 or 1) for CLIENT_MTU_COMMAND and ECHO_COMMAND.
+pub fn parse_bandwidth_probe(data: &[u8]) -> Option<(u32, u32, u32, u32)> {
+    let mut r = Reader::new(envelope(data, BANDWIDTH_PROBE, F_MSG_BANDWIDTH_PROBE)?);
+    let (mut command, mut inner) = (None, None);
+    while !r.done() {
+        match r.tag()? {
+            (1, WT_VARINT) => command = Some(r.varint()? as u32),
+            (2..=5, WT_LEN) => inner = Some(r.bytes()?),
+            (_, wire) => r.skip(wire)?,
+        }
+    }
+    let command = command?;
+    let (mut id, mut mtu, mut extra) = (0, 0, 0);
+    let mut n = Reader::new(inner.unwrap_or_default());
+    while !n.done() {
+        let (field, wire) = n.tag()?;
+        let value = if wire == WT_VARINT { n.varint()? as u32 } else { n.skip(wire).map(|_| 0)? };
+        match (command, field) {
+            (PROBE_ECHO_COMMAND, 1) => extra = value,
+            (_, 1) => id = value,
+            (_, 2) => mtu = value,
+            (PROBE_MTU_COMMAND, 4) | (PROBE_CLIENT_MTU_COMMAND, 3) => extra = value,
+            _ => {}
+        }
+    }
+    Some((command, id, mtu, extra))
+}
+
+/// The command a BANDWIDTH_PROBE reply carries, which is how the console's replies to the downstream and
+/// upstream MTU tests are told apart. `None` for anything that is not a well-formed probe.
+pub fn parse_bandwidth_probe_command(data: &[u8]) -> Option<u32> {
+    let mut r = Reader::new(envelope(data, BANDWIDTH_PROBE, F_MSG_BANDWIDTH_PROBE)?);
+    let mut command = None;
+    while !r.done() {
+        match r.tag()? {
+            (1, WT_VARINT) => command = Some(r.varint()? as u32),
+            (_, wire) => r.skip(wire)?,
+        }
+    }
+    command
+}
 
 fn wrap_bandwidth_probe(command: u32, field: u32, inner: &[u8]) -> Vec<u8> {
     let mut p = Vec::new();
@@ -540,6 +602,24 @@ pub fn build_connection_quality(target_bitrate_kbps: u32, rtt_ms: f64, loss_perc
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn corrupt_frame_and_probe_replies() {
+        let c = build_corrupt_frame(10, 12);
+        assert!(validate(&c));
+        assert_eq!(peek_type(&c), Some(CORRUPT_FRAME));
+        assert_eq!(c, [0x08, 0x05, 0x32, 0x04, 0x08, 0x0a, 0x10, 0x0c]);
+        assert_eq!(parse_bandwidth_probe_command(&build_mtu_command(1, 1454, 1)), Some(PROBE_MTU_COMMAND));
+        assert_eq!(
+            parse_bandwidth_probe_command(&build_client_mtu_command(2, 1454, false)),
+            Some(PROBE_CLIENT_MTU_COMMAND)
+        );
+        assert_eq!(parse_bandwidth_probe_command(&build_echo_command(true)), Some(PROBE_ECHO_COMMAND));
+        assert_eq!(parse_bandwidth_probe_command(&build_bare(HEARTBEAT)), None);
+        assert_eq!(parse_bandwidth_probe(&build_mtu_command(1, 1454, 1)), Some((1, 1, 1454, 1)));
+        assert_eq!(parse_bandwidth_probe(&build_client_mtu_command(2, 1254, false)), Some((4, 2, 1254, 0)));
+        assert_eq!(parse_bandwidth_probe(&build_echo_command(true)), Some((0, 0, 0, 1)));
+    }
 
     #[test]
     fn request_and_reply_round_trip() {

@@ -93,6 +93,8 @@ fn config(ports: (u16, u16, u16), key: &[u8], device: &[u8], companion: [u8; 16]
         bitrate_kbps: 0,
         allow_hevc: false,
         hdr: false,
+        report_connection_quality: true,
+        control_echo_probe: true,
         interface_mtu: 0,
         signin_prompt_window_ms: 0,
         senkusha_attempts: 0,
@@ -154,6 +156,8 @@ fn a_session_through_the_c_abi() {
     // SAFETY: a live client and a valid out pointer.
     assert_eq!(unsafe { ripcord_client_connect(client, &mut stage) }, RipcordStatus::Ok);
     assert_eq!(stage, RipcordClientStage::StreamReady);
+    // SAFETY: a live client on this thread.
+    assert_eq!(unsafe { ripcord_client_set_power(client, true, 90, false, false, false) }, RipcordStatus::Ok);
     let mut alive = true;
     let start = Instant::now();
     while alive && start.elapsed() < Duration::from_secs(10) {
@@ -173,6 +177,8 @@ fn a_session_through_the_c_abi() {
     assert!(result.disconnect_sent);
     assert!(result.input_state_sent >= 1);
     assert_eq!(result.curve, RIPCORD_CURVE_P521);
+    assert!(result.echo_rtt_us >= 0 && result.mtu_confirmed, "senkusha's probes, over real sockets");
+    assert!(result.quality_reports_sent >= 1 && result.control_echo_answered);
     assert_eq!(recorder.passcodes_asked, 1);
     assert_eq!(recorder.info, Some((1280, 720)));
     assert!(recorder.keyframes >= 15 && recorder.stats >= 1 && recorder.lines > 0);
@@ -228,5 +234,5 @@ fn bad_configs_are_refused_and_layouts_are_reported() {
     }
     assert_eq!(ripcord_struct_size(RipcordStructId::ClientConfig as u32), size_of::<RipcordClientConfig>());
     assert_eq!(ripcord_struct_size(RipcordStructId::ClientResult as u32), size_of::<RipcordClientResult>());
-    assert_eq!(ripcord_api_version(), 4);
+    assert_eq!(ripcord_api_version(), 5);
 }
