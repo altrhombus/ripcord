@@ -1,0 +1,41 @@
+{
+  "fill": {
+    "linear-gradient": [
+      "srgb:0.18824,0.21569,0.26275,1.00000",
+      "srgb:0.10588,0.12157,0.14902,1.00000"
+    ]
+  },
+  "groups": [
+    {
+      "name": "wedge",
+      "layers": [
+        {
+          "image-name": "wedge.svg",
+          "name": "wedge"
+        }
+      ]
+    },
+    {
+      "name": "trail",
+      "layers": [
+        {
+          "image-name": "dash-green.svg",
+          "name": "dash-green"
+        },
+        {
+          "image-name": "dash-blue.svg",
+          "name": "dash-blue"
+        },
+        {
+          "image-name": "dash-red.svg",
+          "name": "dash-red"
+        }
+      ]
+    }
+  ],
+  "supported-platforms": {
+    "squares": [
+      "macOS"
+    ]
+  }
+}
