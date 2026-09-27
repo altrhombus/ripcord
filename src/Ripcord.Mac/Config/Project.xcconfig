@@ -29,3 +29,9 @@ CODE_SIGN_STYLE = Manual
 // it on: RIPCORD_APP_GROUP = YES with a team and a profile that carries the group. With it off the widget
 // builds sandboxed and shows the way into the app, and the app writes no snapshot.
 RIPCORD_APP_GROUP = NO
+
+// Every user-facing string goes through the one String Catalog, Shared/Localizable.xcstrings, which the app
+// and the widget extension both compile. The compiler extracts the keys; README.md says how the catalog is
+// brought up to date from a command-line build.
+SWIFT_EMIT_LOC_STRINGS = YES
+LOCALIZATION_PREFERS_STRING_CATALOGS = YES
