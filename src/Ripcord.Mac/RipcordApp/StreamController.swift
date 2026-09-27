@@ -1,9 +1,11 @@
 // One stream window's session: the SessionController that connects and reconnects, the live ConsoleSession
-// the pad and the passcode go to, and where its picture and sound are presented.
+// the pad and the passcode go to, where its picture and sound are presented, and the stream window's own
+// state (capture, recording, Picture in Picture, the health verdict).
 //
 // Threads: the session's handlers run on its own thread; they enqueue video and schedule audio directly
 // (both are safe from any thread) and hop to the main actor for anything a view reads.
 
+import AppKit
 import AVFoundation
 import Observation
 import QuartzCore
@@ -16,27 +18,56 @@ final class StreamController {
     private(set) var stage: SessionStage = .idle
     private(set) var info: SessionStreamInfo?
     private(set) var stats: SessionStats?
-    /// Set while the console waits for its user's passcode; `retry` counts refusals.
+    /// Set while the console waits for its user's passcode; the value counts refusals.
     private(set) var passcodeRequest: Int?
     /// Engine-to-display latency, as the display link sees frames change (see `LatencyMeter`).
     private(set) var latencyMs: Double?
+    /// The console was resting and a WAKEUP has gone out; no dash fills until it answers.
+    private(set) var waking = false
+    /// The last minute of stats intervals, for the inspector's lines.
+    private(set) var history: [MetricSample] = []
+    private(set) var verdict = StreamHealth.Verdict(severity: .normal, title: "")
+    /// Rung 1: shown automatically, cleared automatically, with hysteresis.
+    private(set) var warning: StreamHealth.Verdict?
+    /// The keyboard plays, and the pointer is hidden (DESIGN.md, "Capture").
+    private(set) var captured = false
+    private(set) var recording: Recorder?
+    /// Where the last recording went, for a moment's confirmation.
+    private(set) var lastRecording: URL?
+    /// The inspector (⌘I). It returns open or closed as it was left, per window.
+    var inspectorShown = false
 
     let surface = VideoSurface()
+    let pip = PictureInPicture()
     let console: PairedConsole
-    private let settings: StreamSettings
+    let settings: StreamSettings
     private let live = Locked<ConsoleSession?>(nil)
+    private let recorderSlot = Locked<Recorder?>(nil)
     private var controller: SessionController?
     private let audio: AudioOutput?
+    private let audioFormat: AVAudioFormat?
     private let input: InputRouter
     private let meter = LatencyMeter()
     private var displayLink: CADisplayLink?
+    private var latch = WarningLatch()
+    private var previous: SessionStats?
+    private var sampleID = 0
+    private var cursorHidden = false
+    private var monitors: [Any] = []
+    /// Reports stage changes to the app model (the library's "Playing", the menu bar).
+    var onStage: (SessionStage) -> Void = { _ in }
 
     init(console: PairedConsole, settings: StreamSettings, input: InputRouter) {
         self.console = console
         self.settings = settings
         self.input = input
-        audio = (try? OpusDecoder()).map { AudioOutput(format: $0.outputFormat) }
+        let decoder = try? OpusDecoder()
+        audioFormat = decoder?.outputFormat
+        audio = audioFormat.map { AudioOutput(format: $0) }
+        pip.attach(surface.displayLayer)
     }
+
+    var displayName: String { console.name.isEmpty ? console.host : console.name }
 
     func start() {
         guard controller == nil else { return }
@@ -48,19 +79,32 @@ final class StreamController {
         options.allowHEVC = settings.allowHEVC
         options.hdr = settings.hdr
         options.reportConnectionQuality = settings.reportConnectionQuality
+        surface.wantsHDR = settings.hdr
 
         let video = VideoSink(surface.displayLayer.sampleBufferRenderer)
         let audio = self.audio
         let meter = self.meter
+        let recorder = self.recorderSlot
         var handlers = SessionHandlers()
-        handlers.video = { sample, _ in
+        handlers.video = { sample, keyframe in
             meter.enqueued()
             video.enqueue(sample)
+            recorder.withLock { $0 }?.appendVideo(sample, isKeyframe: keyframe)
         }
-        handlers.audio = { audio?.schedule($0) }
+        handlers.audio = { buffer in
+            audio?.schedule(buffer)
+            recorder.withLock { $0 }?.appendAudio(buffer)
+        }
         handlers.streamInfo = { [weak self] info in Task { @MainActor in self?.info = info } }
-        handlers.stats = { [weak self] stats in Task { @MainActor in self?.stats = stats } }
-        handlers.stage = { [weak self] stage in Task { @MainActor in self?.stage = stage } }
+        handlers.stats = { [weak self] stats in Task { @MainActor in self?.absorb(stats) } }
+        handlers.stage = { [weak self] stage in
+            Task { @MainActor in
+                guard let self else { return }
+                self.stage = stage
+                if stage > .idle { self.waking = false }
+                self.onStage(stage)
+            }
+        }
         handlers.passcodeRequested = { [weak self] retry in Task { @MainActor in self?.passcodeRequest = retry } }
 
         let console = self.console
@@ -76,7 +120,21 @@ final class StreamController {
         self.controller = controller
         audio?.start()
         claimInput()
-        controller.start()
+        // A resting console is woken first, as the Windows client does on connect, and the controller starts
+        // once it answers. An awake console answers the first probe, so this costs one round trip.
+        Task { [weak self] in
+            let resting = await Task.detached {
+                ((try? LANDiscovery.search(families: [console.family], hosts: [console.host],
+                                           timeout: .milliseconds(800))) ?? []).first.map { !$0.isAwake } ?? false
+            }.value
+            guard let self, self.controller === controller else { return }
+            if resting {
+                waking = true
+                await Task.detached { _ = try? LANWake.wakeIfResting(console) }.value
+                guard self.controller === controller else { return }
+            }
+            controller.start()
+        }
 
         let link = surface.displayLink(target: self, selector: #selector(onFrame(_:)))
         link.add(to: .main, forMode: .common)
@@ -85,20 +143,116 @@ final class StreamController {
 
     /// Ends the session. The console rests only when the setting says a person chose that.
     func stop() {
+        setCapture(false)
+        removeMonitors()
+        stopRecording()
+        pip.stop()
         displayLink?.invalidate()
         displayLink = nil
         input.release(self)
         controller?.stop(restConsole: settings.restConsoleOnDisconnect)
         controller = nil
+        live.withLock { $0 = nil }
         audio?.stop()
         surface.displayLayer.sampleBufferRenderer.flush()
     }
 
-    /// Takes the app's pad, when this stream's window becomes key (InputRouter.swift).
+    /// Try Again after a failure: a fresh SessionController, in the same window.
+    func retry() {
+        controller?.stop(restConsole: false)
+        controller = nil
+        displayLink?.invalidate()
+        displayLink = nil
+        status = SessionStatus(lifecycle: .idle, detail: "")
+        stage = .idle
+        stats = nil
+        previous = nil
+        history = []
+        latch = WarningLatch()
+        warning = nil
+        start()
+    }
+
+    /// Stop Trying during a reconnect countdown: the session ends, the window stays with the verdict.
+    func stopTrying() {
+        controller?.stop(restConsole: false)
+    }
+
+    /// Takes the app's pad, when this stream's window becomes key (InputRouter.swift). The keyboard follows
+    /// capture, not key status.
     func claimInput() {
         let live = self.live
         input.claim(self) { pad in live.withLock { $0?.update(pad: pad) } }
+        input.hub.keyboardEnabled = captured
     }
+
+    // MARK: Capture
+
+    func setCapture(_ on: Bool) {
+        guard on != captured else { return }
+        captured = on
+        if on {
+            claimInput()
+            if !cursorHidden { NSCursor.hide(); cursorHidden = true }
+        } else {
+            input.hub.keyboardEnabled = false
+            if cursorHidden { NSCursor.unhide(); cursorHidden = false }
+        }
+    }
+
+    /// The window's key handling while it is open: the release chord, swallowing keys the console is
+    /// playing (so AppKit does not beep at every one), and Escape leaving full screen when not captured.
+    func installMonitors(window: @escaping () -> NSWindow?) {
+        guard monitors.isEmpty else { return }
+        let release = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
+            let chord: NSEvent.ModifierFlags = [.control, .option]
+            if event.modifierFlags.intersection(.deviceIndependentFlagsMask) == chord {
+                Task { @MainActor in self?.setCapture(false) }
+            }
+            return event
+        }
+        let keys = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp]) { [weak self] event in
+            guard let self, let window = window(), event.window === window else { return event }
+            if event.modifierFlags.contains(.command) { return event }   // Mac shortcuts always win
+            if MainActor.assumeIsolated({ self.captured }) { return nil }
+            if event.type == .keyDown, event.keyCode == 53, window.styleMask.contains(.fullScreen) {   // Escape
+                window.toggleFullScreen(nil)
+                return nil
+            }
+            return event
+        }
+        monitors = [release, keys].compactMap { $0 }
+    }
+
+    private func removeMonitors() {
+        monitors.forEach(NSEvent.removeMonitor)
+        monitors = []
+    }
+
+    // MARK: Recording
+
+    func toggleRecording() {
+        if recording != nil { stopRecording() } else { startRecording() }
+    }
+
+    private func startRecording() {
+        let recorder = Recorder(consoleName: displayName)
+        if let audioFormat { recorder.prepareAudio(audioFormat) }
+        recorderSlot.withLock { $0 = recorder }
+        recording = recorder
+        requestKeyframe()   // the file starts at a keyframe; ask for one rather than wait for the next
+    }
+
+    private func stopRecording() {
+        guard let recorder = recording else { return }
+        recorderSlot.withLock { $0 = nil }
+        recording = nil
+        Task {
+            lastRecording = await recorder.finish()
+        }
+    }
+
+    // MARK: The session
 
     func submitPasscode(_ digits: String) {
         passcodeRequest = nil
@@ -112,6 +266,24 @@ final class StreamController {
 
     func requestKeyframe() {
         live.withLock { $0?.requestKeyframe() }
+    }
+
+    private func absorb(_ stats: SessionStats) {
+        defer { previous = stats; self.stats = stats }
+        guard let previous else { return }
+        let received = Double(stats.packetsReceived &- previous.packetsReceived)
+        let lost = Double(stats.packetsLost &- previous.packetsLost)
+        let frames = Double(stats.videoFrames &- previous.videoFrames)
+        // The engine reports about once a second; the interval is taken as one second, as the Windows HUD does.
+        sampleID += 1
+        let sample = MetricSample(id: sampleID, kbps: Double(stats.kbps),
+                                  lossRatio: received + lost > 0 ? lost / (received + lost) : 0,
+                                  rttMs: stats.rttMs, fps: frames)
+        history.append(sample)
+        if history.count > 60 { history.removeFirst(history.count - 60) }
+        verdict = StreamHealth.assess(sample, stats: stats, targetFPS: settings.fps)
+        latch.feed(verdict)
+        warning = latch.shown
     }
 
     @objc private func onFrame(_ link: CADisplayLink) {
@@ -160,8 +332,8 @@ final class LatencyMeter: @unchecked Sendable {
         guard id != lastDisplayed else { return nil }
         lastDisplayed = id
         guard let enqueuedAt = pending.withLock({ $0.isEmpty ? nil : $0.removeFirst() }) else { return nil }
-        let ms = Double((ContinuousClock.now - enqueuedAt).components.attoseconds) / 1e15
-            + Double((ContinuousClock.now - enqueuedAt).components.seconds) * 1000
+        let elapsed = (ContinuousClock.now - enqueuedAt).components
+        let ms = Double(elapsed.seconds) * 1000 + Double(elapsed.attoseconds) / 1e15
         smoothed = smoothed.map { $0 * 0.9 + ms * 0.1 } ?? ms
         return smoothed
     }
