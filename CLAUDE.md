@@ -127,7 +127,9 @@ accepts a nonce length `System.Security.Cryptography.AesGcm` refuses. A comment 
 - **`tools/Ripcord.ProtocolLab`** — the console harness: drives the connect flow against a real PS5 and
   replays captures through the parsers. The iteration/verification tool for every protocol stage.
 - **`tools/Ripcord.HidCapture`** — standalone HID capture utility for controller RE work.
-- **`src/Ripcord.Mac`** — the macOS client, on the Rust engine. `RipcordKit` is the Swift layer over the
+- **`src/Ripcord.Mac`** — the Apple clients, on the Rust engine: the macOS app, and since 2026-09-27 the
+  scaffolding for iPhone, iPad and Apple TV (`RipcordMobile/`, one target for all three; `docs/ios-plan.md`).
+  The project keeps its name from when it held only the Mac. `RipcordKit` is the Swift layer over the
   engine's C ABI (it imports the engine's C module internally, so no C type reaches its callers), plus the
   cloud tier and pairing stores. `RipcordApp/` is the app and `RipcordWidgets/` its widget extension.
   `RipcordAppLogic/` holds the app's window-free logic, compiled into both the app and the host-less

@@ -12,6 +12,7 @@
 		BA2A656B5D78A8E54EE1E907 /* RipcordKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2399FB26F9AE8432A9B15242 /* RipcordKit.framework */; };
 		577989B99543FF4D3D8FEFB1 /* RipcordWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = DD8FCD3B82E64DCB78833D55 /* RipcordWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		86872FB223600FCB85838E5E /* RipcordKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2399FB26F9AE8432A9B15242 /* RipcordKit.framework */; };
+		9DF422415C6805822C828768 /* RipcordKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2399FB26F9AE8432A9B15242 /* RipcordKit.framework */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -50,6 +51,13 @@
 			remoteGlobalIDString = 327FE717A673FCA87781D48B /* RipcordKit */;
 			remoteInfo = RipcordKit;
 		};
+		F3725EEC06B2EBC0935BE7A1 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = D1A947FE076D3FAE73245C34 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 327FE717A673FCA87781D48B /* RipcordKit */;
+			remoteInfo = RipcordKit;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -82,6 +90,8 @@
 		1ADC4B5C3C0A9AEF714C6314 /* RipcordWidgets.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = RipcordWidgets.xcconfig; sourceTree = "<group>"; };
 		239ACFFABF9F267AA25275DC /* RipcordAppTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RipcordAppTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		281AB3F2361E20BAB2BAFDBE /* RipcordAppTests.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = RipcordAppTests.xcconfig; sourceTree = "<group>"; };
+		A9D8249F3084D94E4E084368 /* Ripcord.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Ripcord.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		308F6D8F17D246FF1B1A55DE /* RipcordMobile.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = RipcordMobile.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -138,6 +148,11 @@
 			path = RipcordAppTests;
 			sourceTree = "<group>";
 		};
+		4EE4558B21BF9E5AADBDF294 /* RipcordMobile */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = RipcordMobile;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -187,6 +202,14 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		3B384A16540F5C1AB8F56F0F /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				9DF422415C6805822C828768 /* RipcordKit.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -197,6 +220,7 @@
 				D245CE8D073CC31A77EE5A38 /* RipcordKitTests */,
 				8872EDF7E913563D4E89932A /* RipcordLab */,
 				80BC25064A668A741DEAA773 /* RipcordApp */,
+				4EE4558B21BF9E5AADBDF294 /* RipcordMobile */,
 				3DC5425D6103664805CC469D /* RipcordAppLogic */,
 				9EE3950649A2E0552526A629 /* RipcordAppTests */,
 				4B446C3DE6617789127C707F /* RipcordWidgets */,
@@ -216,6 +240,7 @@
 				EE9201CB815972F6CD1CE63B /* RipcordKitTests.xcconfig */,
 				3FEEA24189954B222061E3DD /* RipcordLab.xcconfig */,
 				4A70F13DC5A4EE69586464DA /* RipcordApp.xcconfig */,
+				308F6D8F17D246FF1B1A55DE /* RipcordMobile.xcconfig */,
 				281AB3F2361E20BAB2BAFDBE /* RipcordAppTests.xcconfig */,
 				1ADC4B5C3C0A9AEF714C6314 /* RipcordWidgets.xcconfig */,
 			);
@@ -229,6 +254,7 @@
 				043D028D5B29F56BE890433C /* RipcordKitTests.xctest */,
 				CB8F1906910099C05BD959CE /* ripcord-lab */,
 				4E35DB6721B656F0D9FEF2BA /* Ripcord.app */,
+				A9D8249F3084D94E4E084368 /* Ripcord.app */,
 				239ACFFABF9F267AA25275DC /* RipcordAppTests.xctest */,
 				DD8FCD3B82E64DCB78833D55 /* RipcordWidgets.appex */,
 			);
@@ -366,6 +392,28 @@
 			productReference = 239ACFFABF9F267AA25275DC /* RipcordAppTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
+		D8135FC5D5205C6AB313ED82 /* RipcordMobile */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 08C28E1C0123472B99FD0995 /* Build configuration list for PBXNativeTarget "RipcordMobile" */;
+			buildPhases = (
+				E71A93261A5E68D831B3129C /* Sources */,
+				3B384A16540F5C1AB8F56F0F /* Frameworks */,
+				1BBDF330B9708F09AE32D2BF /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				73D831343AF481833FC6A0C0 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				4EE4558B21BF9E5AADBDF294 /* RipcordMobile */,
+				3DC5425D6103664805CC469D /* RipcordAppLogic */,
+			);
+			name = RipcordMobile;
+			productName = RipcordMobile;
+			productReference = A9D8249F3084D94E4E084368 /* Ripcord.app */;
+			productType = "com.apple.product-type.application";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -396,6 +444,7 @@
 				22FF38B84106BAD0B2B09876 /* Ripcord */,
 				5AFAC1100082732015919C71 /* RipcordAppTests */,
 				0BECB2BEA06EDB351F3FD275 /* RipcordWidgets */,
+				D8135FC5D5205C6AB313ED82 /* RipcordMobile */,
 			);
 		};
 /* End PBXProject section */
@@ -409,6 +458,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		555870675FEB51968AC01E7D /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		1BBDF330B9708F09AE32D2BF /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -438,7 +494,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "# The Rust engine (docs/engine-plan.md): the Mac's protocol engine since Phase 3. Built twice, and\n# cargo is incremental, so this is quick when nothing changed: the shipping library, with no test-support,\n# into target/shipping (what the lab links, and what an app target will), and the test library, with the\n# loopback consoles and the vector runner, into target (what RipcordKitTests links). Both write the same\n# ripcord.h, which CRipcordEngine's module map reads in place; the test exports in it are behind\n# RIPCORD_TEST_SUPPORT.\nset -eu\nexport PATH=\"${HOME}/.cargo/bin:/opt/homebrew/opt/rustup/bin:/usr/local/opt/rustup/bin:${PATH}\"\nunset CARGO_TARGET_DIR\ncd \"${RIPCORD_ENGINE}\"\ncargo build --release -p ripcord-ffi --target-dir target/shipping\ncargo build --release -p ripcord-ffi --features test-support\n";
+			shellScript = "# The Rust engine (docs/engine-plan.md), built for the platform Xcode is building, and cargo is incremental\n# so this is quick when nothing changed. On the Mac, twice: the shipping library, with no test-support, into\n# target/shipping (what the lab and the app link), and the test library, with the loopback consoles and the\n# vector runner, into target (what RipcordKitTests links). For iPhone, iPad and Apple TV, the shipping library\n# for that SDK's Rust target, into target/shipping/<target> (docs/ios-plan.md). Every build writes the same\n# ripcord.h, which CRipcordEngine's module map reads in place; the test exports in it are behind\n# RIPCORD_TEST_SUPPORT.\nset -eu\nexport PATH=\"${HOME}/.cargo/bin:/opt/homebrew/opt/rustup/bin:/usr/local/opt/rustup/bin:${PATH}\"\nunset CARGO_TARGET_DIR\ncd \"${RIPCORD_ENGINE}\"\ncase \"${PLATFORM_NAME}\" in\n  iphoneos) TARGET=aarch64-apple-ios ;;\n  iphonesimulator) TARGET=aarch64-apple-ios-sim ;;\n  appletvos) TARGET=aarch64-apple-tvos ;;\n  appletvsimulator) TARGET=aarch64-apple-tvos-sim ;;\n  *) TARGET= ;;\nesac\nif [ -z \"${TARGET}\" ]; then\n  cargo build --release -p ripcord-ffi --target-dir target/shipping\n  cargo build --release -p ripcord-ffi --features test-support\nelse\n  # Xcode exports this SDK's SDKROOT, which cargo would also hand the host build scripts it compiles and runs\n  # on the Mac; rustc finds the target's SDK through xcrun without it.\n  env -u SDKROOT cargo build --release -p ripcord-ffi --target \"${TARGET}\" --target-dir target/shipping\nfi\n";
 		};
 		682681A59E6F6BC39D4CCE4D /* Bundle the OAuth credential */ = {
 			isa = PBXShellScriptBuildPhase;
@@ -505,6 +561,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		E71A93261A5E68D831B3129C /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -532,6 +595,11 @@
 			isa = PBXTargetDependency;
 			target = 327FE717A673FCA87781D48B /* RipcordKit */;
 			targetProxy = 735EF83436B9A2D0FED86E53 /* PBXContainerItemProxy */;
+		};
+		73D831343AF481833FC6A0C0 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 327FE717A673FCA87781D48B /* RipcordKit */;
+			targetProxy = F3725EEC06B2EBC0935BE7A1 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -634,6 +702,20 @@
 			};
 			name = Release;
 		};
+		A7A873A0D2E383A12FF037CE /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 308F6D8F17D246FF1B1A55DE /* RipcordMobile.xcconfig */;
+			buildSettings = {
+			};
+			name = Debug;
+		};
+		2A7FE1790D1558F923969240 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 308F6D8F17D246FF1B1A55DE /* RipcordMobile.xcconfig */;
+			buildSettings = {
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -696,6 +778,15 @@
 			buildConfigurations = (
 				2BA7C79B5E244C82B0AFD73A /* Debug */,
 				BCFD7B0BE022700387F0CECE /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		08C28E1C0123472B99FD0995 /* Build configuration list for PBXNativeTarget "RipcordMobile" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A7A873A0D2E383A12FF037CE /* Debug */,
+				2A7FE1790D1558F923969240 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

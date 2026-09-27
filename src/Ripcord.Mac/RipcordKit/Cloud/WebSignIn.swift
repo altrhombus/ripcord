@@ -24,6 +24,9 @@
 // in an app's own web view needs the web-browser entitlement or an associated domain, so a passkey prompt
 // may not appear here and the user may need the password or QR route instead. [X]
 
+// macOS only for now: the window below is AppKit's. iPhone and iPad get the same web view in UIKit's
+// presentation later (docs/ios-plan.md), and Apple TV has no WebKit at all.
+#if os(macOS)
 import AppKit
 import WebKit
 
@@ -150,3 +153,4 @@ public final class WebSignInController: NSObject, WKNavigationDelegate, NSWindow
 
     public func windowWillClose(_ notification: Notification) { cancel() }
 }
+#endif

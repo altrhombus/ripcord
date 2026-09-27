@@ -344,6 +344,21 @@ and in the journal. Open:
 - [ ] **The `mac` CI job's first run.** `runs-on: macos-26`, its Xcode, and now its Rust toolchain have not
       been checked. The job may need its runner label or Xcode selection adjusted before it goes green.
 
+### iPhone, iPad, Apple TV and Apple Watch — scaffolding in 2026-09-27
+
+The plan is [`docs/ios-plan.md`](docs/ios-plan.md). RipcordKit and the engine build for iOS and tvOS, and one
+app target for all three builds in Debug and Release, device and simulator, in CI too. Open:
+
+- [ ] **The first run on hardware:** an iPhone and an Apple TV, pairing by code, a stream. It settles the
+      Local Network prompt, whether broadcast discovery needs the multicast entitlement `[X]`, and throughput.
+- [ ] **Signing:** a team and profiles, since iOS and tvOS refuse ad hoc signatures and device builds are
+      unsigned.
+- [ ] **The Apple TV icon:** an App Icon & Top Shelf Image collection, which Icon Composer does not produce.
+- [ ] **Distribution:** the App Store is effectively the only route, so `macos-plan.md`'s guideline analysis
+      decides whether these apps ship.
+- [ ] The rest of the plan's order of work: the design pass, touch controls, sign-in and Apple TV's pairing
+      route, Picture in Picture, and the watch remote.
+
 ### libripcord — the console ports' core
 
 What is open in the C core, which the console ports under `ports/` build on. The first-class clients have

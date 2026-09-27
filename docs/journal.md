@@ -35,6 +35,30 @@ different purpose.
 > anything. The list above is short, it is checkable in one `git log --format=%B | grep`, and it stops
 > growing the moment someone notices — which is the property that actually matters.
 
+### Scaffolding for iPhone, iPad and Apple TV (2026-09-27)
+
+The Mac's Swift layer carried over almost untouched.
+
+- **What carried over.** RipcordKit built for iOS and tvOS, device and simulator, with one change: the sign-in
+  window, which is AppKit's, is now macOS-only. GameController, VideoToolbox, CryptoKit, the Keychain and the
+  sockets all compiled as they were.
+- **The engine.** The engine built on stable Rust for all four iOS and tvOS targets. The Xcode phase now builds
+  it for whichever SDK is being built, clearing Xcode's `SDKROOT` so cargo's host build scripts still link
+  against the Mac, and an SDK-conditional setting links it.
+- **The app.** `RipcordMobile`, one target for all three, has the core loop: the paired consoles, pairing by
+  code, and a stream with picture, sound, a controller, the passcode prompt, and waking a resting console. It
+  builds in Debug and Release everywhere, CI builds it, and the engine is confirmed linked into the device
+  binaries. The audio output and video hand-off moved into `RipcordAppLogic` so both apps share them.
+- **Signing and the icon.** Device builds are unsigned, because iOS and tvOS refuse an ad hoc signature. The
+  Icon Composer bundle compiled for iPhone and iPad once it declared iOS. Apple TV needs a different kind of
+  icon.
+- **The plan.** `docs/ios-plan.md` states the plan and what is `[X]`: the multicast entitlement for broadcast
+  discovery, background and Picture in Picture, Apple TV's pairing route without WebKit, and, most of all,
+  distribution, where the App Store is effectively the only route and the Mac's guideline analysis decides.
+- **The watch.** It is designed as a remote for a streaming iPhone, not a client: PS, Options and Create over
+  WatchConnectivity, a wake, and a state glance. It gets a target when its first feature is built.
+- **Not run.** Nothing has run on a device.
+
 ### Four fixes that needed no console (2026-09-27)
 
 - **A first-keyframe latch in the dotnet client.** A lost first keyframe left it on a black picture for good:
