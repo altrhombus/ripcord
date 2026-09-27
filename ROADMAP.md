@@ -235,10 +235,6 @@ the documents into line, is done and in the journal. The engine lives in [`engin
         managed engine the client ships, which runs at 16–17 µs per packet on the M4 Max. The CI job prints
         both figures on a shared runner. That shows the engine builds and runs there, but it is not the
         measurement.
-  - [ ] **What the engine costs in binary size: the executables' share.** The library itself is measured and
-        trimmed (`engine/README.md`, "What the engine costs in size", 2026-09-26): 653 KB stripped, after
-        dropping a 64 KB FEC table. `ripcord-lab` is still 2.86 MB stripped against 1.10 MB before the
-        engine, so most of that growth is not the library. Find what it is before the XCFramework.
 - [ ] **Phase 2 — the engine at parity.** Bottom-up in the C core's layer order, each layer done when its
       vectors pass, its fuzz target runs and differential fuzzing against the C core is clean. Includes the
       `Ecdh` backends (CryptoKit carried over, CNG new, RustCrypto), each checked on its own platform in

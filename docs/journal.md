@@ -35,6 +35,25 @@ different purpose.
 > anything. The list above is short, it is checkable in one `git log --format=%B | grep`, and it stops
 > growing the moment someone notices — which is the property that actually matters.
 
+### Four fixes that needed no console (2026-09-27)
+
+- **A first-keyframe latch in the dotnet client.** A lost first keyframe left it on a black picture for good:
+  nothing decoded, so the decoder's backlog trigger never fired, and the console kept talking, so the watchdog
+  stayed quiet. `SessionController` now asks for a keyframe from a second after the connect, every second,
+  until one arrives. It reads the demuxer's `IsKeyFrame`, as the C core and the engine arm their latch. A
+  keyframe that arrived but did not decode is still invisible to it, and stays open.
+- **`AsyncObservable` signals every end but a dispose.** A producer's own cancellation used to end the sequence
+  silently, and a producer that returned after a dispose still sent `OnCompleted`. Both are fixed, with four
+  tests. The 2026-08-05 quiet discovery family was not this: the LAN search catches its own window. Its cause
+  stays unproven.
+- **The cloud client trims.** Its anonymous request types became named records in a source-generated context,
+  and trim analysis went from eleven sites to none. Golden tests, written against the unchanged client first,
+  show every request body is byte for byte what it was.
+- **The lab's size was dead-code stripping, left off.** The Mac project never set it, and Xcode's default here is
+  off, so every object the linker pulled from the engine archive stayed whole. With it on, `ripcord-lab` went
+  from 2.86 to 1.72 MB stripped and the app's executable from 3.71 to 2.64 MB. RipcordKit's own Swift is now
+  the largest part of the lab.
+
 ### Smaller work: imports, size, a fuzz target, input differentials, the code scanner (2026-09-26)
 
 - **`SessionPage`'s three protocol imports were stale.** No type or extension method from any of them is
