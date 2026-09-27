@@ -277,7 +277,9 @@ public class BundledInteropConstantsTests
         foreach (string file in Directory.EnumerateFiles(engineDir, "*", SearchOption.AllDirectories))
         {
             string rel = Path.GetRelativePath(engineDir, file);
-            if (rel.StartsWith("target", StringComparison.Ordinal) || rel.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}")
+            // Any cargo target directory, not only the workspace's: engine/fuzz is a workspace of its own, and its
+            // gitignored build output holds the generated constants, which is where they are meant to be.
+            if (rel.Split(Path.DirectorySeparatorChar).Contains("target") || rel.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}")
                 || rel.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}")
                 || !extensions.Contains(Path.GetExtension(file)))
             {

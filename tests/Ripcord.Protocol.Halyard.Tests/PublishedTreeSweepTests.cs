@@ -360,7 +360,8 @@ public class PublishedTreeSweepTests
         [".md", ".cs", ".c", ".h", ".cpp", ".hpp", ".idl", ".def", ".json", ".yml", ".yaml", ".xaml",
          ".py", ".props", ".targets", ".csproj", ".vcxproj", ".slnx", ".proto", ".sh", ".ps1",
          ".editorconfig", ".gitattributes", ".appxmanifest", ".manifest", ".svg", ".resx", ".resw",
-         ".html", ".swift", ".xcconfig", ".modulemap", ".pbxproj", ".xcscheme", ".rs", ".toml"];
+         ".html", ".swift", ".xcconfig", ".modulemap", ".pbxproj", ".xcscheme", ".rs", ".toml",
+         ".entitlements", ".plist", ".xcstrings"];
 
     private static readonly string[] NamedFiles = ["NOTICE", "LICENSE", ".gitignore", "Makefile", "Cargo.lock"];
 
