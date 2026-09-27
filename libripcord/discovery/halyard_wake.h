@@ -55,22 +55,20 @@
  *
  * Returns 1 on success, 0 on a bad key, a bad length, or a buffer under HALYARD_WAKE_CREDENTIAL_MAX.
  *
- * *** THE FIELD IS A SIGNED 32-BIT DECIMAL, AND THIS DISAGREES WITH THE .NET SIDE. ***
+ * *** THE FIELD IS A SIGNED 32-BIT DECIMAL. ***
  *
  * ps5-local-discovery.md pins it in the PS4 section, [W] from cap53-cap57: "the PS4's credential is
  * negative, which pins the field as a signed 32-bit decimal (a detail the positive PS5 sample left
  * ambiguous)". Every PS5 sample we hold is below 2^31, where signed and unsigned render identically,
  * which is exactly why the question went unnoticed.
  *
- * HalyardPairingRecord.WakeCredential() renders it UNSIGNED, and WakeClientTests has a test asserting
- * "4294967295" whose comment reads "the credential must be unsigned". That reasoning is about what fits
- * in a C# type; the spec's is about what a real vendor client put on a real wire. This file follows the
- * spec, per the rule halyard_discovery.h states for exactly this situation: if the two disagree, trust
- * the spec over the .NET code, since both were meant to implement the same document.
+ * The .NET side rendered it unsigned until 2026-09-26, when the engine comparisons brought it into line
+ * (HalyardPairingRecord.TryGetWakeCredential). This file followed the spec throughout, per the rule
+ * halyard_discovery.h states for exactly this situation.
  *
- * The practical consequence, if the spec is right: a key whose ASCII hex is >= 0x80000000 - roughly half
- * of them - gets a credential the console does not recognise, and the only symptom is a console that
- * does not wake. There is no error to read.
+ * Why it matters: a key whose ASCII hex is >= 0x80000000 - roughly half of them - rendered unsigned gets
+ * a credential the console does not recognise, and the only symptom is a console that does not wake.
+ * There is no error to read.
  */
 int halyard_wake_credential(const uint8_t *registkey, size_t registkey_length,
                             char *out, size_t out_size);

@@ -47,7 +47,7 @@ public sealed class HalyardConsoleWakeCoordinator : IConsoleWakeCoordinator
         }
 
         HalyardPairingRecord? record = console.ToPairingRecord(_protector);
-        if (record is null)
+        if (record is null || !record.TryGetWakeCredential(out _))
         {
             // No usable pairing record means no wake credential. Not a failure here: connect will fail with its
             // own, far clearer "not paired / bad credential" message than anything this layer could invent.
