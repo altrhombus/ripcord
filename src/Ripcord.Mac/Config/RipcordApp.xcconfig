@@ -1,0 +1,19 @@
+// The app. Its Info.plist is generated from these keys; nothing needs a hand-written one.
+
+PRODUCT_NAME = Ripcord
+PRODUCT_BUNDLE_IDENTIFIER = io.github.altrhombus.Ripcord
+MARKETING_VERSION = 0.1
+CURRENT_PROJECT_VERSION = 1
+GENERATE_INFOPLIST_FILE = YES
+INFOPLIST_KEY_CFBundleDisplayName = Ripcord
+// A game, so macOS offers Game Mode in full screen (docs/macos-plan.md, "Open questions": measured, not
+// assumed, before anything leans on it).
+INFOPLIST_KEY_LSApplicationCategoryType = public.app-category.games
+INFOPLIST_KEY_NSLocalNetworkUsageDescription = Ripcord finds and streams from PlayStation consoles on your network.
+INFOPLIST_KEY_NSHumanReadableCopyright = Apache-2.0
+ENABLE_HARDENED_RUNTIME = YES
+LD_RUNPATH_SEARCH_PATHS = $(inherited) @executable_path/../Frameworks
+// The bundled OAuth credential (CLAUDE.md, "Bounded exception 2") is copied into the app's resources by the
+// "Bundle the OAuth credential" phase. NO builds the reduced edition docs/macos-plan.md describes for the
+// App Store, with no credential and so no account surfaces.
+RIPCORD_BUNDLE_OAUTH_CLIENT = YES
