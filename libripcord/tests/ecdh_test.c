@@ -284,6 +284,66 @@ static void run_off_curve_guard(void)
     }
 }
 
+/* ---- the caller's own diagnostics ----
+ *
+ * The rc_ecdh_last_* getters read one process-wide record, so two threads deriving at once raced on it
+ * (the Mac's Swift tests caught it). A _diag call must answer in the caller's struct and leave that record
+ * alone: then a concurrent caller's failure can neither overwrite this one's answer nor be overwritten. */
+static void run_caller_owned_diagnostics(void)
+{
+    unsigned char rng_state = 0x21;
+    rc_ecdh_keypair a, b;
+    uint8_t tampered[RC_ECDH_PUBKEY_MAX];
+    uint8_t shared[RC_ECDH_SECRET_MAX];
+    size_t shared_len = 0;
+    rc_ecdh_diagnostics diag;
+    int before_step;
+
+    if (!rc_ecdh_generate(RC_ECDH_CURVE_P521, test_rng, &rng_state, &a)
+        || !rc_ecdh_generate(RC_ECDH_CURVE_P521, test_rng, &rng_state, &b)) {
+        g_failed++;
+        printf("FAIL diag: key generation failed\n");
+        return;
+    }
+
+    /* A known state in the process-wide record: a successful legacy derive clears it. */
+    (void)rc_ecdh_derive_shared(&a, b.public_key, b.public_key_length, test_rng, &rng_state,
+                                shared, sizeof(shared), &shared_len);
+    before_step = rc_ecdh_last_error_step();
+
+    memcpy(tampered, b.public_key, b.public_key_length);
+    tampered[5] = (uint8_t)(tampered[5] ^ 0xffu);
+    if (rc_ecdh_derive_shared_diag(&a, tampered, b.public_key_length, test_rng, &rng_state,
+                                   shared, sizeof(shared), &shared_len, &diag)) {
+        g_failed++;
+        printf("FAIL diag: an off-curve point was accepted\n");
+        return;
+    }
+
+    if (diag.error_step == RC_ECDH_STEP_NONE || diag.curve != RC_ECDH_CURVE_P521
+        || diag.peer_fingerprint != rc_ecdh_fingerprint(tampered, b.public_key_length)) {
+        g_failed++;
+        printf("FAIL diag: the caller's struct does not describe the failed derivation\n");
+    } else {
+        g_passed++;
+    }
+
+    if (rc_ecdh_last_error_step() != before_step) {
+        g_failed++;
+        printf("FAIL diag: a _diag call wrote the process-wide record\n");
+    } else {
+        g_passed++;
+    }
+
+    /* NULL discards the record rather than crashing. */
+    if (rc_ecdh_check_peer_point_diag(RC_ECDH_CURVE_P521, b.public_key, b.public_key_length, NULL) != 1) {
+        g_failed++;
+        printf("FAIL diag: a valid point was refused with a NULL record\n");
+    } else {
+        g_passed++;
+    }
+}
+
 /* ---- a whole negotiation, both sides ---- */
 
 static size_t put_varint(uint8_t *buf, uint64_t value)
@@ -550,6 +610,7 @@ int main(int argc, char **argv)
     fclose(file);
 
     run_off_curve_guard();
+    run_caller_owned_diagnostics();
     run_negotiation();
 
     printf("\n%d passed, %d failed\n", g_passed, g_failed);

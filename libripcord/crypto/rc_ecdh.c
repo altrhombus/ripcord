@@ -29,12 +29,10 @@ size_t rc_ecdh_secret_length(unsigned curve)
     }
 }
 
-/* See the header: diagnostic only, single-threaded, overwritten by every derive. */
-static int s_last_error_step;
-static int s_last_error_code;
-static unsigned long s_last_peer_fingerprint;
-static size_t s_last_private_length;
-static unsigned s_last_curve;
+/* See the header: the process-wide summary behind the rc_ecdh_last_* getters, overwritten by every call to
+ * the functions without _diag. Single-threaded by nature; the _diag variants write the caller's own struct
+ * instead, which is what anything that can derive on two threads must use. */
+static rc_ecdh_diagnostics s_last;
 
 unsigned long rc_ecdh_fingerprint(const unsigned char *data, size_t length)
 {
@@ -51,20 +49,20 @@ unsigned long rc_ecdh_fingerprint(const unsigned char *data, size_t length)
     return hash;
 }
 
-unsigned long rc_ecdh_last_peer_fingerprint(void) { return s_last_peer_fingerprint; }
-size_t rc_ecdh_last_private_length(void) { return s_last_private_length; }
-unsigned rc_ecdh_last_curve(void) { return s_last_curve; }
+unsigned long rc_ecdh_last_peer_fingerprint(void) { return s_last.peer_fingerprint; }
+size_t rc_ecdh_last_private_length(void) { return s_last.private_length; }
+unsigned rc_ecdh_last_curve(void) { return s_last.curve; }
 
-int rc_ecdh_last_error_step(void) { return s_last_error_step; }
-int rc_ecdh_last_error_code(void) { return s_last_error_code; }
+int rc_ecdh_last_error_step(void) { return s_last.error_step; }
+int rc_ecdh_last_error_code(void) { return s_last.error_code; }
 
 /* Only the Mbed TLS branch below reports a failing step, so without it this would be an unused static
  * and -Werror stops `make compile`, which builds every file without a backend. */
 #if defined(RC_CRYPTO_MBEDTLS)
-static int ecdh_fail(int step, int code)
+static int ecdh_fail(rc_ecdh_diagnostics *dg, int step, int code)
 {
-    s_last_error_step = step;
-    s_last_error_code = code;
+    dg->error_step = step;
+    dg->error_code = code;
     return 0;
 }
 #endif
@@ -86,18 +84,39 @@ unsigned rc_ecdh_curve_for_public_key_length(size_t length)
  * diagnostics the Mbed TLS branch below fills in, through these two hooks. */
 void rc_ecdh_backend_record_failure(int step, int code)
 {
-    s_last_error_step = step;
-    s_last_error_code = code;
+    s_last.error_step = step;
+    s_last.error_code = code;
 }
 
 void rc_ecdh_backend_record_derivation(unsigned curve, size_t private_length,
                                        const uint8_t *peer_public_key, size_t peer_public_key_length)
 {
-    s_last_curve = curve;
-    s_last_private_length = private_length;
-    s_last_peer_fingerprint = rc_ecdh_fingerprint(peer_public_key, peer_public_key_length);
-    s_last_error_step = RC_ECDH_STEP_NONE;
-    s_last_error_code = 0;
+    s_last.curve = curve;
+    s_last.private_length = private_length;
+    s_last.peer_fingerprint = rc_ecdh_fingerprint(peer_public_key, peer_public_key_length);
+    s_last.error_step = RC_ECDH_STEP_NONE;
+    s_last.error_code = 0;
+}
+
+/* An external backend reports through the process-wide hooks above, so its _diag variants can only copy the
+ * summary: as single-threaded as the hooks are. See the header. */
+int rc_ecdh_check_peer_point_diag(unsigned curve, const uint8_t *point, size_t length, rc_ecdh_diagnostics *diag)
+{
+    int ok = rc_ecdh_check_peer_point(curve, point, length);
+    if (diag != NULL) { *diag = s_last; }
+    return ok;
+}
+
+int rc_ecdh_derive_shared_diag(const rc_ecdh_keypair *pair,
+                               const uint8_t *peer_public_key, size_t peer_public_key_length,
+                               rc_rng_fn rng, void *rng_ctx,
+                               uint8_t *out_secret, size_t out_secret_size, size_t *out_secret_length,
+                               rc_ecdh_diagnostics *diag)
+{
+    int ok = rc_ecdh_derive_shared(pair, peer_public_key, peer_public_key_length, rng, rng_ctx,
+                                   out_secret, out_secret_size, out_secret_length);
+    if (diag != NULL) { *diag = s_last; }
+    return ok;
 }
 
 #elif defined(RC_CRYPTO_MBEDTLS)
@@ -240,37 +259,39 @@ int rc_ecdh_keypair_from_private(unsigned curve, const uint8_t *private_key, siz
     return ok;
 }
 
-int rc_ecdh_check_peer_point(unsigned curve, const uint8_t *point, size_t length)
+int rc_ecdh_check_peer_point_diag(unsigned curve, const uint8_t *point, size_t length, rc_ecdh_diagnostics *diag)
 {
     mbedtls_ecp_group grp;
     mbedtls_ecp_point pt;
     mbedtls_ecp_group_id id;
+    rc_ecdh_diagnostics scratch;
+    rc_ecdh_diagnostics *dg = (diag != NULL) ? diag : &scratch;
     int rc;
     int ok = 0;
 
-    s_last_error_step = RC_ECDH_STEP_NONE;
-    s_last_error_code = 0;
+    memset(dg, 0, sizeof(*dg));
+    dg->error_step = RC_ECDH_STEP_NONE;
 
     if (point == NULL)
-        return ecdh_fail(RC_ECDH_STEP_ARGUMENTS, 0);
+        return ecdh_fail(dg, RC_ECDH_STEP_ARGUMENTS, 0);
     if (rc_ecdh_curve_for_public_key_length(length) != curve)
-        return ecdh_fail(RC_ECDH_STEP_CURVE, 0);
+        return ecdh_fail(dg, RC_ECDH_STEP_CURVE, 0);
     id = group_id_for(curve);
     if (id == MBEDTLS_ECP_DP_NONE)
-        return ecdh_fail(RC_ECDH_STEP_CURVE, 0);
+        return ecdh_fail(dg, RC_ECDH_STEP_CURVE, 0);
 
     mbedtls_ecp_group_init(&grp);
     mbedtls_ecp_point_init(&pt);
 
     do {
         rc = mbedtls_ecp_group_load(&grp, id);
-        if (rc != 0) { (void)ecdh_fail(RC_ECDH_STEP_GROUP_LOAD, rc); break; }
+        if (rc != 0) { (void)ecdh_fail(dg, RC_ECDH_STEP_GROUP_LOAD, rc); break; }
 
         rc = mbedtls_ecp_point_read_binary(&grp, &pt, point, length);
-        if (rc != 0) { (void)ecdh_fail(RC_ECDH_STEP_PEER_READ, rc); break; }
+        if (rc != 0) { (void)ecdh_fail(dg, RC_ECDH_STEP_PEER_READ, rc); break; }
 
         rc = mbedtls_ecp_check_pubkey(&grp, &pt);
-        if (rc != 0) { (void)ecdh_fail(RC_ECDH_STEP_PEER_CHECK, rc); break; }
+        if (rc != 0) { (void)ecdh_fail(dg, RC_ECDH_STEP_PEER_CHECK, rc); break; }
 
         ok = 1;
     } while (0);
@@ -280,11 +301,14 @@ int rc_ecdh_check_peer_point(unsigned curve, const uint8_t *point, size_t length
     return ok;
 }
 
-int rc_ecdh_derive_shared(const rc_ecdh_keypair *pair,
-                          const uint8_t *peer_public_key, size_t peer_public_key_length,
-                          rc_rng_fn rng, void *rng_ctx,
-                          uint8_t *out_secret, size_t out_secret_size, size_t *out_secret_length)
+int rc_ecdh_derive_shared_diag(const rc_ecdh_keypair *pair,
+                               const uint8_t *peer_public_key, size_t peer_public_key_length,
+                               rc_rng_fn rng, void *rng_ctx,
+                               uint8_t *out_secret, size_t out_secret_size, size_t *out_secret_length,
+                               rc_ecdh_diagnostics *diag)
 {
+    rc_ecdh_diagnostics scratch;
+    rc_ecdh_diagnostics *dg = (diag != NULL) ? diag : &scratch;
     mbedtls_ecp_group grp;
     mbedtls_mpi d;
     mbedtls_ecp_point peer;
@@ -297,34 +321,31 @@ int rc_ecdh_derive_shared(const rc_ecdh_keypair *pair,
 
     int rc;
 
-    s_last_error_step = RC_ECDH_STEP_NONE;
-    s_last_error_code = 0;
-    s_last_peer_fingerprint = 0UL;
-    s_last_private_length = 0u;
-    s_last_curve = 0u;
+    memset(dg, 0, sizeof(*dg));
+    dg->error_step = RC_ECDH_STEP_NONE;
 
     if (pair == NULL || peer_public_key == NULL || out_secret == NULL || rng == NULL) {
-        return ecdh_fail(RC_ECDH_STEP_ARGUMENTS, 0);
+        return ecdh_fail(dg, RC_ECDH_STEP_ARGUMENTS, 0);
     }
 
     /* Taken from the arguments as received, before anything else touches them. */
-    s_last_peer_fingerprint = rc_ecdh_fingerprint(peer_public_key, peer_public_key_length);
-    s_last_private_length = pair->private_key_length;
-    s_last_curve = pair->curve;
+    dg->peer_fingerprint = rc_ecdh_fingerprint(peer_public_key, peer_public_key_length);
+    dg->private_length = pair->private_key_length;
+    dg->curve = pair->curve;
     /* The wire carries no curve id, so the peer key's length is what identifies its curve - and it has
      * to be the same curve we hold a private scalar on. A mismatch here is a protocol-level
      * disagreement about the negotiated version, not something to coerce. */
     if (rc_ecdh_curve_for_public_key_length(peer_public_key_length) != pair->curve) {
-        return ecdh_fail(RC_ECDH_STEP_CURVE, 0);
+        return ecdh_fail(dg, RC_ECDH_STEP_CURVE, 0);
     }
     id = group_id_for(pair->curve);
     if (id == MBEDTLS_ECP_DP_NONE) {
-        return ecdh_fail(RC_ECDH_STEP_CURVE, 0);
+        return ecdh_fail(dg, RC_ECDH_STEP_CURVE, 0);
     }
     secret_length = rc_ecdh_secret_length(pair->curve);
     public_length = rc_ecdh_public_key_length(pair->curve);
     if (out_secret_size < secret_length || pair->private_key_length == 0u) {
-        return ecdh_fail(RC_ECDH_STEP_SIZES, 0);
+        return ecdh_fail(dg, RC_ECDH_STEP_SIZES, 0);
     }
 
     mbedtls_ecp_group_init(&grp);
@@ -338,7 +359,7 @@ int rc_ecdh_derive_shared(const rc_ecdh_keypair *pair,
      */
     do {
         rc = mbedtls_ecp_group_load(&grp, id);
-        if (rc != 0) { (void)ecdh_fail(RC_ECDH_STEP_GROUP_LOAD, rc); break; }
+        if (rc != 0) { (void)ecdh_fail(dg, RC_ECDH_STEP_GROUP_LOAD, rc); break; }
 
         /*
          * PEER FIRST, OUR PRIVATE KEY SECOND, and the order is deliberate twice over.
@@ -357,23 +378,23 @@ int rc_ecdh_derive_shared(const rc_ecdh_keypair *pair,
          * time, and "it came from the console" is not authentication.
          */
         rc = mbedtls_ecp_point_read_binary(&grp, &peer, peer_public_key, peer_public_key_length);
-        if (rc != 0) { (void)ecdh_fail(RC_ECDH_STEP_PEER_READ, rc); break; }
+        if (rc != 0) { (void)ecdh_fail(dg, RC_ECDH_STEP_PEER_READ, rc); break; }
 
         rc = mbedtls_ecp_check_pubkey(&grp, &peer);
-        if (rc != 0) { (void)ecdh_fail(RC_ECDH_STEP_PEER_CHECK, rc); break; }
+        if (rc != 0) { (void)ecdh_fail(dg, RC_ECDH_STEP_PEER_CHECK, rc); break; }
 
         rc = mbedtls_mpi_read_binary(&d, pair->private_key, pair->private_key_length);
-        if (rc != 0) { (void)ecdh_fail(RC_ECDH_STEP_PRIVATE_KEY, rc); break; }
+        if (rc != 0) { (void)ecdh_fail(dg, RC_ECDH_STEP_PRIVATE_KEY, rc); break; }
 
         rc = mbedtls_ecp_mul(&grp, &shared, &d, &peer, rng, rng_ctx);
-        if (rc != 0) { (void)ecdh_fail(RC_ECDH_STEP_MULTIPLY, rc); break; }
+        if (rc != 0) { (void)ecdh_fail(dg, RC_ECDH_STEP_MULTIPLY, rc); break; }
 
         /* The identity has no affine X to take; write_binary would emit a single 0x00 byte and the
          * width check below would catch it, but saying so explicitly documents the case. */
-        if (mbedtls_ecp_is_zero(&shared) != 0) { (void)ecdh_fail(RC_ECDH_STEP_IDENTITY, 0); break; }
+        if (mbedtls_ecp_is_zero(&shared) != 0) { (void)ecdh_fail(dg, RC_ECDH_STEP_IDENTITY, 0); break; }
 
         if (!write_uncompressed(&grp, &shared, point_buf, sizeof(point_buf), public_length)) {
-            (void)ecdh_fail(RC_ECDH_STEP_WRITE, 0);
+            (void)ecdh_fail(dg, RC_ECDH_STEP_WRITE, 0);
             break;
         }
 
@@ -391,6 +412,28 @@ int rc_ecdh_derive_shared(const rc_ecdh_keypair *pair,
     mbedtls_ecp_point_free(&peer);
     mbedtls_mpi_free(&d);
     mbedtls_ecp_group_free(&grp);
+    return ok;
+}
+
+/* The functions without _diag: the same work, with the outcome kept in the process-wide summary the
+ * rc_ecdh_last_* getters read. */
+int rc_ecdh_check_peer_point(unsigned curve, const uint8_t *point, size_t length)
+{
+    rc_ecdh_diagnostics d;
+    int ok = rc_ecdh_check_peer_point_diag(curve, point, length, &d);
+    s_last = d;
+    return ok;
+}
+
+int rc_ecdh_derive_shared(const rc_ecdh_keypair *pair,
+                          const uint8_t *peer_public_key, size_t peer_public_key_length,
+                          rc_rng_fn rng, void *rng_ctx,
+                          uint8_t *out_secret, size_t out_secret_size, size_t *out_secret_length)
+{
+    rc_ecdh_diagnostics d;
+    int ok = rc_ecdh_derive_shared_diag(pair, peer_public_key, peer_public_key_length, rng, rng_ctx,
+                                        out_secret, out_secret_size, out_secret_length, &d);
+    s_last = d;
     return ok;
 }
 
@@ -458,6 +501,27 @@ int rc_ecdh_check_peer_point(unsigned curve, const uint8_t *point, size_t length
     (void)point;
     (void)length;
     return 0;
+}
+
+int rc_ecdh_check_peer_point_diag(unsigned curve, const uint8_t *point, size_t length, rc_ecdh_diagnostics *diag)
+{
+    if (diag != NULL) {
+        memset(diag, 0, sizeof(*diag));
+    }
+    return rc_ecdh_check_peer_point(curve, point, length);
+}
+
+int rc_ecdh_derive_shared_diag(const rc_ecdh_keypair *pair,
+                               const uint8_t *peer_public_key, size_t peer_public_key_length,
+                               rc_rng_fn rng, void *rng_ctx,
+                               uint8_t *out_secret, size_t out_secret_size, size_t *out_secret_length,
+                               rc_ecdh_diagnostics *diag)
+{
+    if (diag != NULL) {
+        memset(diag, 0, sizeof(*diag));
+    }
+    return rc_ecdh_derive_shared(pair, peer_public_key, peer_public_key_length, rng, rng_ctx,
+                                 out_secret, out_secret_size, out_secret_length);
 }
 
 #endif /* RC_ECDH_EXTERNAL_BACKEND / RC_CRYPTO_MBEDTLS */
