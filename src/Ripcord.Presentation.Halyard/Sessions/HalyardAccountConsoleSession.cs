@@ -405,7 +405,6 @@ public sealed class HalyardAccountConsoleSession
         return ((IPEndPoint)probe.LocalEndPoint!).Port;
     }
 
-    /// <summary>Prefer the console's own LOCAL candidate when it matches where we think it is.</summary>
     /// <summary>
     /// Which of the console's offered candidates to actually talk to.
     ///
@@ -425,30 +424,8 @@ public sealed class HalyardAccountConsoleSession
     /// </para>
     /// </summary>
     private static IPEndPoint ConsoleEndpoint(HalyardAccountTransportContext context)
-        => CandidateEndpoint(context.ConsoleOffer.Candidates)
-           ?? new IPEndPoint(
-               IPAddress.Parse(context.ConsoleHost), HalyardDatagramRegistrationTransport.Port);
-
-    /// <inheritdoc cref="ConsoleEndpoint"/>
-    internal static IPEndPoint? CandidateEndpoint(IReadOnlyList<HalyardSignalingCandidate> candidates)
-    {
-        IPEndPoint? reflexive = null;
-
-        foreach (HalyardSignalingCandidate candidate in candidates)
-        {
-            if (!IPAddress.TryParse(candidate.Address, out IPAddress? address))
-            {
-                continue;
-            }
-
-            if (HalyardDatagramRegistrationTransport.SharesSubnetWithLocalInterface(address))
-            {
-                return new IPEndPoint(address, candidate.Port);
-            }
-
-            reflexive ??= new IPEndPoint(address, candidate.Port);
-        }
-
-        return reflexive;
-    }
+        => HalyardConsoleCandidates.Resolve(
+               context.ConsoleOffer.Candidates, context.ConsoleHost, HalyardDatagramRegistrationTransport.Port)?.Endpoint
+           ?? throw new InvalidOperationException(
+               "The console offered no candidate address we can use, and there is no known address to fall back to.");
 }
