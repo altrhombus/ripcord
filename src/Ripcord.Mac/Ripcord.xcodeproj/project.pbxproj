@@ -229,11 +229,12 @@
 			);
 			outputPaths = (
 				"$(RIPCORD_ENGINE)/target/include/ripcord.h",
-				"$(RIPCORD_ENGINE_LIB)",
+				"$(RIPCORD_ENGINE)/target/shipping/release/libripcord.a",
+				"$(RIPCORD_ENGINE)/target/release/libripcord.a",
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "# The Rust engine (docs/engine-plan.md): the Mac's protocol engine since Phase 3. cargo is incremental,\n# so this runs every build and is quick when nothing changed. test-support adds the loopback consoles and\n# ripcord_kat_run, which RipcordKitTests uses; RipcordKit calls none of them, and an app target will link\n# a build without them. It writes ripcord.h, which CRipcordEngine's module map reads in place.\nset -eu\nexport PATH=\"${HOME}/.cargo/bin:/opt/homebrew/opt/rustup/bin:/usr/local/opt/rustup/bin:${PATH}\"\nunset CARGO_TARGET_DIR\ncd \"${RIPCORD_ENGINE}\"\ncargo build --release -p ripcord-ffi --features test-support\n";
+			shellScript = "# The Rust engine (docs/engine-plan.md): the Mac's protocol engine since Phase 3. Built twice, and\n# cargo is incremental, so this is quick when nothing changed: the shipping library, with no test-support,\n# into target/shipping (what the lab links, and what an app target will), and the test library, with the\n# loopback consoles and the vector runner, into target (what RipcordKitTests links). Both write the same\n# ripcord.h, which CRipcordEngine's module map reads in place; the test exports in it are behind\n# RIPCORD_TEST_SUPPORT.\nset -eu\nexport PATH=\"${HOME}/.cargo/bin:/opt/homebrew/opt/rustup/bin:/usr/local/opt/rustup/bin:${PATH}\"\nunset CARGO_TARGET_DIR\ncd \"${RIPCORD_ENGINE}\"\ncargo build --release -p ripcord-ffi --target-dir target/shipping\ncargo build --release -p ripcord-ffi --features test-support\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 

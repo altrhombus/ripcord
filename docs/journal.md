@@ -35,6 +35,12 @@ different purpose.
 > anything. The list above is short, it is checkable in one `git log --format=%B | grep`, and it stops
 > growing the moment someone notices — which is the property that actually matters.
 
+### The Mac links a shipping engine (2026-09-26)
+
+The Mac's build phase now builds the engine twice: a shipping library without `test-support`, which the lab
+links and an app target will, and the test library, which only RipcordKitTests links. The shipping dylib
+exports 33 functions and none of the 17 test ones, and CI's Mac job checks that on every run.
+
 ### The Rust engine: key agreement for Windows (2026-09-26)
 
 The Windows engine host will be .NET, so its CNG backend is C#: `PlatformEcdh` is .NET's `ECDiffieHellman`,
