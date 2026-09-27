@@ -308,19 +308,21 @@ sent through `ControlSession::send_field`), the STREAM_READY wait and Takion.
 | Accepted passcode, no SESSION_ID, on rendezvous | C: carry on to the A/V leg ([X], one wake-from-rest run) | |
 | A late prompt during the media wait | C's handling, [X], but without insisting on SESSION_ID after it | C insists there and not after its own gate, which contradicts itself |
 | Peer filtering | .NET: every socket reads only the console's endpoint | C filters on rendezvous only |
-| The console hanging up | C: a Takion DISCONNECT (with its reason) or a closed control session ends the session | .NET notices neither, and relies on its watchdog (roadmap) |
+| The console hanging up | C: a Takion DISCONNECT (with its reason) or a closed control session ends the session | .NET does the same since 2026-09-26 |
 | Declared MTU | .NET: the MTU the senkusha probe confirmed in both directions, else the interface MTU less 46, clamped to 530–1454, else 1454 | C always declares 1454 |
 | Declared RTT | .NET: the echo probe's least round trip when a majority of its ten pings came back, else the least of senkusha's version and session round trips, rounded | C truncates, so a sub-millisecond LAN reads as a measured 0, and has no echo probe |
 | RP-StartBitrate and RP-StreamingType | .NET: the configured bitrate, and 0 | C reads both from the pairing record |
 | Senkusha | .NET: the two legs, the echo probe, the MTU probe down then up (the upstream test always closed), then DISCONNECT and the socket closed, all inside the 8 s box | C runs the two legs only |
-| Keyless senkusha SESSION_REQUEST | C: a 4-byte zero encrypted key | .NET sends it empty, though its negotiator notes the console drops a SESSION_REQUEST without one (roadmap) |
+| Keyless senkusha SESSION_REQUEST | .NET: the encrypted key present and empty | The vendor sends it so (`22 00` in cap53 and cap54, `[W]`). C sent four zero bytes until 2026-09-26, when both changed to match |
 | Incoming control GMAC | C: verified and enforced | .NET never verifies |
 | IDR | C: the latch armed at the start and re-asked every 200 ms until a keyframe arrives | C's b141 and b124 |
 | Loss | .NET: CORRUPT_FRAME for each lost range, then the keyframe request | C sends none |
 | Adaptive bitrate | .NET's ladder (bitrate cuts, 720p, 540p, half frame rate), stepped down on 2% loss and up after 12 s clean, capped by a low battery or throttling | C has none. The target reaches the console only in CONNECTION_QUALITY, opt-in because its unit is [X] |
 | Control echo probe | .NET's, opt-in: after senkusha on the LAN, after sign-in on rendezvous | A diagnostic of the control crypto; C has none |
 | Input | .NET's writer (state on a stick change or every 200 ms), polled every 4 ms as C polls | |
-| Rest | C: only on an explicit disconnect | .NET rests on every teardown when the setting is on (roadmap) |
+| Input HISTORY window | .NET: four earlier events repeated besides this poll's | C repeats four events in all. `ripcord-diff`'s `input_diff` checks C's window is cut from the same polls |
+| Order of a poll's simultaneous events | .NET: L3 and R3 before Options, Create and PS | C puts L3 and R3 after PS. Each event stands alone on the wire, so the order should not matter to the console; `[X]` until a capture has two of those in one packet. Found by `input_diff` |
+| Rest | C: only on an explicit disconnect | .NET does the same since 2026-09-26 |
 | Teardown on rendezvous | C: the polite 9303 close before any socket closes | A console never sent the Close keeps the session live |
 | fps, HDR | C: 30 or 60; HDR only with HEVC | A third rate's answer is [X]; HDR is an HEVC profile |
 
