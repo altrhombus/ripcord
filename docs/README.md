@@ -13,6 +13,7 @@ subject from different angles, which is why picking by topic alone leads you to 
 | What does the app look like, and what decides that? | [`design.md`](design.md) |
 | What is the macOS client, what is it built on, and in what order? | [`macos-plan.md`](macos-plan.md) |
 | What about iPhone, iPad, Apple TV and Apple Watch? | [`ios-plan.md`](ios-plan.md) |
+| What do the iPhone, iPad and Apple TV apps look like? | [`src/Ripcord.Mac/RipcordMobile/DESIGN.md`](../src/Ripcord.Mac/RipcordMobile/DESIGN.md) |
 | What does the Mac app look like, and what decides that? | [`src/Ripcord.Mac/DESIGN.md`](../src/Ripcord.Mac/DESIGN.md) |
 | How do I build, test and release the Mac app? | [`src/Ripcord.Mac/README.md`](../src/Ripcord.Mac/README.md) |
 | Which protocol engine does each client run, and how does the project get to one? | [`engine-plan.md`](engine-plan.md) |
