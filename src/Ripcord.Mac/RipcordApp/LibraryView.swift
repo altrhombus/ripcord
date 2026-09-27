@@ -57,6 +57,7 @@ struct LibraryView: View {
             ConsoleDetails(console: item.console)
         }
         .background(WindowReader { window = $0 })
+        .onAppear { model.openWindow = openWindow }
         .onChange(of: activeState, initial: true) { _, state in
             if state == .key { claimPad() }
         }

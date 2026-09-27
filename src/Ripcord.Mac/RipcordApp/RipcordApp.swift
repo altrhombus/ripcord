@@ -10,7 +10,7 @@ import RipcordKit
 
 @main
 struct RipcordApp: App {
-    @State private var model = AppModel()
+    @State private var model = AppModel.shared
 
     var body: some Scene {
         Window("Ripcord", id: "library") {
@@ -40,6 +40,14 @@ struct RipcordApp: App {
         Settings {
             SettingsView()
                 .environment(model)
+        }
+
+        // Off unless asked for (DESIGN.md, "Present across the Mac").
+        MenuBarExtra(isInserted: Binding(get: { model.settings.showMenuBarExtra },
+                                         set: { model.settings.showMenuBarExtra = $0 })) {
+            MenuBarContent().environment(model)
+        } label: {
+            Image("MenuBarMark").accessibilityLabel("Ripcord")
         }
     }
 }
