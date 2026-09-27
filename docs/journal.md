@@ -98,8 +98,12 @@ to fail.
   - The published-tree sweep failed on file types the Mac app had added: entitlements, a plist and a String
     Catalog. That would have turned CI red.
   - The Client-Type check scanned the fuzz workspace's gitignored build output.
-- **What it left open:** the stream request's `encryptedKey`, and the same candidate gap in the Mac's
-  Swift (ROADMAP).
+- **The Mac's candidate gap, closed the same day.** Its Swift had the same gap: the ACCEPT could name an
+  unparseable candidate while the transport fell back to the known host. It failed safely rather than
+  throwing, but it was two decisions. `ConsoleCandidates` in RipcordKit now makes one, with the fallback
+  applied to both, as the dotnet client's `HalyardConsoleCandidates` does. A RipcordKit test that had pinned
+  the old behaviour was rewritten.
+- **What it left open:** the stream request's `encryptedKey` (ROADMAP).
 
 ### The Mac app, steps 4–9 (2026-09-26)
 
