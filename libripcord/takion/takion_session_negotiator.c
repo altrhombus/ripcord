@@ -88,6 +88,7 @@ int takion_session_negotiator_accept_reply(takion_session_negotiator *ctx,
     uint8_t expected_signature[RC_SHA256_DIGEST_SIZE];
     uint8_t shared[RC_ECDH_SECRET_MAX];
     size_t shared_length = 0;
+    rc_ecdh_diagnostics diag;
     int ok = 0;
 
     if (ctx == NULL || reply == NULL || rng == NULL) {
@@ -156,16 +157,18 @@ int takion_session_negotiator_accept_reply(takion_session_negotiator *ctx,
      * derivation's own frame. If it refuses here too, the subject is the environment at this moment, and
      * the earlier acceptance was a consequence of the derivation having cleaned up after itself.
      */
-    ctx->last_precheck_ok = rc_ecdh_check_peer_point(ctx->curve, parsed.ecdh_public_key,
-                                                     parsed.ecdh_public_key_length);
-    ctx->last_precheck_step = rc_ecdh_last_error_step();
-    ctx->last_precheck_code = rc_ecdh_last_error_code();
+    /* The _diag variants: this session's answers in this session's own record, not the process-wide one
+     * another session's derivation could overwrite between the call and the read (rc_ecdh.h). */
+    ctx->last_precheck_ok = rc_ecdh_check_peer_point_diag(ctx->curve, parsed.ecdh_public_key,
+                                                          parsed.ecdh_public_key_length, &diag);
+    ctx->last_precheck_step = diag.error_step;
+    ctx->last_precheck_code = diag.error_code;
 
     /* rc_ecdh_derive_shared re-checks that the peer key is on our curve and on the curve at all; the
      * signature above only proves whoever sent it knew handshakeKey, not that the point is well-formed. */
-    if (rc_ecdh_derive_shared(&ctx->local_pair,
-                              parsed.ecdh_public_key, parsed.ecdh_public_key_length,
-                              rng, rng_ctx, shared, sizeof(shared), &shared_length)) {
+    if (rc_ecdh_derive_shared_diag(&ctx->local_pair,
+                                   parsed.ecdh_public_key, parsed.ecdh_public_key_length,
+                                   rng, rng_ctx, shared, sizeof(shared), &shared_length, &diag)) {
         stream_key_schedule_derive_direction(shared, shared_length, ctx->handshake_key,
                                              STREAM_KEY_SCHEDULE_DIRECTION_CLIENT_TO_SERVER,
                                              ctx->send_aes_key, ctx->send_base_iv);
@@ -176,11 +179,11 @@ int takion_session_negotiator_accept_reply(takion_session_negotiator *ctx,
         ok = 1;
     } else {
         ctx->last_reject_reason = TAKION_SESSION_REJECT_DERIVE;
-        ctx->last_ecdh_step = rc_ecdh_last_error_step();
-        ctx->last_ecdh_code = rc_ecdh_last_error_code();
-        ctx->last_derive_fingerprint = rc_ecdh_last_peer_fingerprint();
-        ctx->last_derive_private_length = rc_ecdh_last_private_length();
-        ctx->last_derive_curve = rc_ecdh_last_curve();
+        ctx->last_ecdh_step = diag.error_step;
+        ctx->last_ecdh_code = diag.error_code;
+        ctx->last_derive_fingerprint = diag.peer_fingerprint;
+        ctx->last_derive_private_length = diag.private_length;
+        ctx->last_derive_curve = diag.curve;
     }
 
     memset(shared, 0, sizeof(shared));

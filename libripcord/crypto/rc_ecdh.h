@@ -177,10 +177,39 @@ unsigned rc_ecdh_last_curve(void);
 int rc_ecdh_last_error_step(void);
 int rc_ecdh_last_error_code(void);
 
+/*
+ * WHAT A CALL WAS HANDED AND WHERE IT STOPPED, IN THE CALLER'S OWN STRUCT.
+ *
+ * The rc_ecdh_last_* getters above read one process-wide record that every call without _diag overwrites,
+ * so two threads deriving at once race on it - which the macOS client's Swift tests caught while it still
+ * linked this core (2026-09-26). The _diag variants do the same work and write the record into `diag`
+ * instead (NULL to discard it), so a caller that can derive concurrently reads its own answer. The session
+ * negotiator uses them. The getters stay for single-threaded callers, and are fed by the calls without
+ * _diag only.
+ *
+ * With RC_ECDH_EXTERNAL_BACKEND the backend reports through the process-wide hooks below, so there the
+ * _diag variants can only copy that record, and are as single-threaded as the hooks.
+ */
+typedef struct rc_ecdh_diagnostics {
+    int error_step;                  /* RC_ECDH_STEP_*, RC_ECDH_STEP_NONE on success */
+    int error_code;                  /* the backend's own error value, verbatim */
+    unsigned long peer_fingerprint;  /* rc_ecdh_fingerprint over the peer key as the derivation read it */
+    size_t private_length;
+    unsigned curve;
+} rc_ecdh_diagnostics;
+
+int rc_ecdh_check_peer_point_diag(unsigned curve, const uint8_t *point, size_t length, rc_ecdh_diagnostics *diag);
+
 int rc_ecdh_derive_shared(const rc_ecdh_keypair *pair,
                           const uint8_t *peer_public_key, size_t peer_public_key_length,
                           rc_rng_fn rng, void *rng_ctx,
                           uint8_t *out_secret, size_t out_secret_size, size_t *out_secret_length);
+
+int rc_ecdh_derive_shared_diag(const rc_ecdh_keypair *pair,
+                               const uint8_t *peer_public_key, size_t peer_public_key_length,
+                               rc_rng_fn rng, void *rng_ctx,
+                               uint8_t *out_secret, size_t out_secret_size, size_t *out_secret_length,
+                               rc_ecdh_diagnostics *diag);
 
 /*
  * AN EXTERNAL BACKEND. A build that defines RC_ECDH_EXTERNAL_BACKEND compiles neither the Mbed TLS branch
