@@ -27,18 +27,17 @@ Windows layer as a reference for them, not as code.
 | Architecture | **Apple Silicon only.** Same reasoning as the Windows client shipping x64 only: it is the architecture that can be tested |
 | Distribution | **Developer ID, notarized, direct download** is the primary release. See "The App Store" below |
 | First-release scope | **At least feature parity with the Windows client as of 2026-09-24**, including internet play and account sign-in |
-| Protocol core | **`libripcord`, the portable C core**, brought up to parity first. See "Why the C core" below. **Succeeded 2026-09-25** by the Rust engine in [`engine-plan.md`](engine-plan.md), which the Mac adopts by relinking at parity |
+| Protocol core | **The Rust engine** in [`engine-plan.md`](engine-plan.md), since Phase 3's relink on 2026-09-26. It was first `libripcord`, the portable C core, brought up to parity and proved on hardware; see "Why the C core" below for why a C-ABI core was chosen at all |
 | Location | **`src/Ripcord.Mac/`**, beside `Ripcord.App` |
-| Build | **An Xcode project, not a Swift package.** A package cannot compile the core from where it lives, or compile the constants generated from the bundle. Measured, not assumed; see [`../src/Ripcord.Mac/README.md`](../src/Ripcord.Mac/README.md) |
-| Key agreement | **CryptoKit**, behind the core's ECDH seam (`RC_ECDH_EXTERNAL_BACKEND`), checked against the .NET vectors by the core's own test |
+| Build | **An Xcode project, not a Swift package.** First because a package could not compile the C core from where it lived; the app and its extensions need a project anyway. See [`../src/Ripcord.Mac/README.md`](../src/Ripcord.Mac/README.md) |
+| Key agreement | **CryptoKit**, behind the engine's backend table, checked against the .NET vectors through the engine (`EngineKeyAgreementTests`) |
 
 ## Why the C core
 
 > **Superseded in part, 2026-09-25.** [`engine-plan.md`](engine-plan.md) keeps this section's conclusion
 > that the Mac runs a native core behind a C ABI, with no second runtime and threads owned by the app, and
-> changes which core: a Rust engine that presents the same contract as `halyard_client.h`. The Mac keeps
-> building on `libripcord` until that engine reaches parity, then relinks. CryptoKit stays as the Mac's key
-> agreement. What follows is kept as the record of why a C-ABI core was chosen over .NET.
+> changes which core: a Rust engine that presents the same contract as `halyard_client.h`. The Mac relinked
+> onto it on 2026-09-26. CryptoKit stays as the Mac's key agreement. What follows is kept as the record of why a C-ABI core was chosen over .NET.
 
 This was decided twice, and the first answer was wrong for a reason worth keeping. While the C core
 lacked internet play and the account tier, the .NET stack looked like the better engine. It could be
@@ -79,7 +78,7 @@ Divide by the kind of work, not by the language each piece happens to be in toda
 
 | Layer | Lives in | Why |
 |---|---|---|
-| Wire protocol: transport, crypto, stream, FEC, pairing, wake, discovery (already there). **To port:** STUN, the internet-play connect sequence, account-pairing derivations | **`libripcord`** | Bytes on UDP, the same for every client, and embeddable everywhere |
+| Wire protocol: transport, crypto, stream, FEC, pairing, wake, discovery, STUN, the internet-play connect sequence, account pairing | **The Rust engine** (first `libripcord`) | Bytes on UDP, the same for every client, and embeddable everywhere |
 | Cloud tier: OAuth, the console list, cloud wake, signaling, the push WebSocket (`Ripcord.Cloud.Halyard`, about 2,700 lines) | **Swift** | JSON from the internet is where C parsing is least wanted. `URLSession`, `URLSessionWebSocketTask`, `Codable` and `ASWebAuthenticationSession` are the native tools, and sign-in is a system sheet on the Mac anyway |
 | Session lifecycle: reconnect, watchdog, stats (`SessionController`, about 890 lines) | **Swift**, as the session actor | This is what Swift concurrency is for |
 | Video, audio, input | **Swift** over Apple frameworks | VideoToolbox into `AVSampleBufferDisplayLayer`, Opus through Core Audio, the GameController framework |

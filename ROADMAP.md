@@ -235,9 +235,10 @@ the documents into line, is done and in the journal. The engine lives in [`engin
         managed engine the client ships, which runs at 16–17 µs per packet on the M4 Max. The CI job prints
         both figures on a shared runner. That shows the engine builds and runs there, but it is not the
         measurement.
-  - [ ] **Why the lab grows 1.2 MB stripped when the engine dylib is 386 KB.** Probably dead stripping
-        and the standard library's panic and backtrace machinery in the static archive. Settle it before
-        the XCFramework work in Phase 3, because the app and its extensions will each link the engine.
+  - [ ] **What the engine costs in binary size.** `ripcord-lab` is 2.48 MB stripped, linking only the
+        engine (2026-09-26); in Phase 1, with both engines, it was 2.35 MB, and the engine's dylib alone 386 KB.
+        Find what dominates (dead stripping, the standard library's panic and backtrace machinery, the
+        crypto) before the XCFramework, because the app and its extensions will each link the engine.
 - [ ] **Phase 2 — the engine at parity.** Bottom-up in the C core's layer order, each layer done when its
       vectors pass, its fuzz target runs and differential fuzzing against the C core is clean. Includes the
       `Ecdh` backends (CryptoKit carried over, CNG new, RustCrypto), each checked on its own platform in
@@ -277,8 +278,17 @@ the documents into line, is done and in the journal. The engine lives in [`engin
 - [ ] **Phase 4 — Windows onto the engine,** after 1.0, one seam at a time behind `RIPCORD_ENGINE`.
   - [ ] Before step 3: `src/Ripcord.App/Pages/SessionPage.xaml.cs` imports three
         `Ripcord.Protocol.Halyard*` namespaces. Stale usings, or a dependency around the seams.
-- [ ] **When the Rust engine first holds a copy of `Client-Type`:** name it in `CLAUDE.md`'s inventory and
-      in `BundledInteropConstantsTests` in the same change.
+
+- [ ] **Protocol questions the engine carries from the C core, each `[X]` until a console settles it:**
+  - The opener's request word, 0x40 in both references and the engine, appears in no capture; the spec
+    calls it a counter. Change .NET, the C core and the engine together.
+  - A login prompt arriving after the rendezvous route's 1 s sign-in window is answered where it lands, in
+    the media wait, after a connect from rest reached that wait with no prompt. .NET handles none.
+  - After a rendezvous session, the console briefly refuses TCP 9295; decide whether the sequence waits.
+  - Whether the 9303 association needs servicing between `begin` and the first exchange. .NET services it
+    in the background; the C core and the engine do not.
+  - Whether a connect needs registration every time (`--no-register` tests it).
+  - PS4's account route, and the search probe on the rendezvous route.
 
 ### The .NET reference: findings from the engine comparisons (2026-09-26)
 
@@ -329,133 +339,53 @@ the Windows client ships. None has been seen on hardware.
       SESSION_REQUEST without one. Senkusha is non-fatal, which would hide it. The C core and the Rust engine
       send four zero bytes, as the stream's request does. [X] which the console wants.
 
-### macOS client — planned 2026-09-24, step 1 done
-
-A native Mac app built on `libripcord`, with at least parity with the Windows client, internet play and
-sign-in included. The decisions, the reasoning behind choosing the C core, the App Store analysis and the
-order of work are in [`docs/macos-plan.md`](docs/macos-plan.md). This entry lists only what is open.
-
-Since 2026-09-26 the Mac builds on the Rust engine in [`docs/engine-plan.md`](docs/engine-plan.md), not
-`libripcord`: Phase 3's relink is done, and new protocol work for the Mac lands in the engine. The items
-below that name the C core were written before the switch.
-
-Step 1, promoting the core to `libripcord/` with fuzzing and a CI job, is done and in the journal. Open:
-
-- [ ] **Mac engine spike.** `ripcord-lab` should discover, pair, connect and dump frames from a real console
-      through `libripcord`, and measure the core's AES-GCM at 1080p60 on Apple Silicon.
-  - [x] **Foundation.** Landed 2026-09-24:
-    - The Xcode project builds the core from where it lives.
-    - CryptoKit is the ECDH backend and passes the core's own `ecdh_test.c` against the .NET vectors
-      (44/44).
-    - Swift Testing runs.
-    - `ripcord-lab check` and `ripcord-lab discover` work.
-  - [x] **The connect sequence, slices 0 and 1.** Done 2026-09-25: `libripcord/client/halyard_client.c`,
-        behind the contract in `halyard_client.h`, ported from `rc_connect.c` and `HalyardStreamingSession`.
-        The core also gained a connect deadline in `rc_tcp` (the b31 hang's real fix), a log sink, and an
-        abortable Takion connect. 111 host assertions; none of it has met a console. Left for later
-        slices: senkusha echo/MTU probes, CORRUPT_FRAME, CONNECTION_QUALITY, discovery/wake inside the
-        sequence, and RENDEZVOUS.
-    - [x] `regist_flow_test` sent an ARM probe to the LAN broadcast address on every `make` run. Fixed
-          2026-09-25: the probe is stubbed at link time, and the suite stays on loopback.
-    - [ ] `select()` and `suseconds_t` in the new `rc_tcp` deadline have not been built for the 3DS,
-          Vita or PS3 SDKs `[X]`.
-  - [x] **Crypto throughput: measured, and not a concern.** `ripcord-lab bench` on an M4 Max:
-        **8.1 µs per packet** (GMAC verify plus CTR decrypt, 1,426 bytes, across rotated-key windows).
-        That is about 1.4 Gb/s on one core, roughly 60 times a 23 Mb/s 1080p60 stream, from the portable
-        C with no intrinsics. The ARMv8 AES/PMULL work this item anticipated is not needed.
-  - [x] **`discover` against a console.** Found by unicast; broadcast is filtered on this network. See the
-        journal.
-  - [x] **Pair, connect, dump frames.** Done 2026-09-25, against PS5-<redacted>: paired on the first attempt,
-        streaming in 4.73 s, 60 fps, 0 lost of 2,404, the capture decodes, 1080p HEVC at 25 Mb/s. See
-        the journal. **The spike's question is answered: the C core is the Mac's engine.**
-  - [x] **The passcode gate, live.** Refused, asked again, then accepted and streamed. See the journal.
-  - [x] **LAN wake, live.** Done 2026-09-25: resting to awake in 11.7 s (the PS3 measured 12.3 s), then streaming
-        at 5.03 s.
-  - [ ] **Controller input, live.** The sequence sends it, but the lab has had no pad attached, so it
-        has not been seen to steer the console.
 - [ ] **Check the Windows client's resolution against its bitrate.** The console grants resolution by
-      bitrate (journal, 2026-09-25): 1080p asked at 10 Mb/s streamed 720p. The Windows default is
+      bitrate (journal, 2026-09-25): 1080p asked at 10 Mb/s streamed 720p, and the Windows default is
       10,000 kb/s. Measure what a default Windows session actually receives.
-- [x] **Port STUN to `libripcord`.** Done 2026-09-24: `net/rc_stun.{h,c}` and `net/rc_stun_client.c`, with
-      102 host assertions reusing the .NET side's vectors, and a fuzz harness. See the journal.
-- [x] **Port the internet-play connect sequence's UDP half to `libripcord`.** Done 2026-09-25:
-  - The UDP 9303 transport is ported: prelude, chunks, association and pump.
-  - So are candidate choice and STUN NAT classification.
-  - `dgram-transport.kat` replays 59 steps through the real .NET association byte for byte.
-  - [x] **The C side of the rendezvous route.** Done 2026-09-25, and not yet run against a console. See
-        the journal:
-    - The control session's byte-pipe seam. The TCP path is unchanged, and an A/B build proves it.
-    - `/sess` over 9303, byte for byte with .NET's own requests.
-    - `HALYARD_ROUTE_RENDEZVOUS` in `halyard_client`, with the A/V leg's whole driver.
-    - One HTTP-completeness check, where there had been two.
-  - Still open:
-    - [ ] **Run the rendezvous route against a console**, first on the LAN and then off it. The Swift cloud
-          tier drives it through the contract in `halyard_client.h` ("THE RENDEZVOUS ROUTE"). Nothing in it
-          has met hardware, and a console's answers there were only ever seen through .NET.
-    - [ ] A login prompt arriving after the rendezvous route's 1 s sign-in window. It is now answered
-          where it lands, in the media wait (2026-09-25), after a connect from rest reached that wait with
-          no prompt and the console never offered media. Unproven until a late prompt is actually logged
-          `[X]`. .NET does not handle one either.
-    - [ ] `rc_udp_open_bound` (bind, getsockname) has not been built for the PS3, 3DS or Vita SDKs `[X]`.
-    - [ ] The spec says the 0x40 request word appears in no capture and is a counter; .NET and C both
-          send 0x40 `[X]`. Change both together.
-- [x] **Port account-pairing derivations to `libripcord`.** Done 2026-09-25:
-  - The seed delivery, the account wrap and key, and building and opening the `/sess/rgst` request are
-    ported, with a flow driven through a transport callback.
-  - `ProtocolLab` generates `account-pairing.kat`, and the C runner adds 357 assertions against it.
-    Changing one bias constant made 40 of them fail, so the vectors bite.
-  - Still open:
-    - [x] The UDP 9303 control association the flow runs over: `halyard_dgram_regist_exchange`, and
-          `halyard_client_rendezvous_exchange` on a connect. Done 2026-09-25, and not yet run against a
-          console.
-    - [ ] The Swift cloud tier, including `localHashedId` (SHA-1 of the device id).
-    - [ ] PS4's account route and the search probe on this route, both `[X]`.
-    - [ ] `encode_account_id` in `halyard_regist_message.c` accumulates digits into a u64 with no
-          overflow check. A 20-digit id past `UINT64_MAX` wraps silently, where .NET falls back to
-          UTF-8.
-- [x] **Swift cloud tier.** Done 2026-09-25, in `RipcordKit/Cloud/`: sign-in, tokens in the Keychain,
-      console list, cloud wake, sessions, the push WebSocket, signaling, and both rendezvous timelines
-      behind transport protocols the C side will implement. Request bodies were compared byte for byte
-      against what the real .NET code sends, including System.Text.Json's escaping.
-  - **Sign-in cannot use `ASWebAuthenticationSession`.** The credential's redirect lands on the
-    vendor's own https domain, which no app can claim, so a `WKWebView` watches for it and cancels it,
-    as the Windows WebView2 dialog does.
-  - [ ] Wire the credential's Run Script copy into the app target (the agent's recipe is in the commit
-        message) once there is an app target.
-  - [ ] Live-verify: the push upgrade through URLSession, sign-in in the web view (passkeys may need an
-        entitlement), and the Keychain under an ad hoc signature `[X]`.
-  - [ ] **`rc_ecdh.c`'s diagnostics are process-wide statics**, so concurrent derivations race on
-        `s_last_error_step`, which the Swift tests caught. A session derives on one thread, but the
-        state should live in the keypair or be thread-local.
-  - [ ] **.NET bugs the port found, for the Windows client:**
-    - `HalyardTokenProvider` lets two concurrent refreshes spend the same rotating refresh token.
-    - `SignOut` leaves the token provider seeded.
-    - `HalyardSignalingMessage.TryParse` misses `InvalidOperationException`, so a malformed frame is
-      lost silently.
-- [x] **The cloud tier joined to the C rendezvous route.** Done 2026-09-25. `ripcord-lab account-pair
-      <duid>` pairs with no PIN, `connect --route account` connects through the account, and `connect
-      --route internet` runs the WAN rendezvous. 12 tests, including account pairing end to end against the
-      core's loopback console.
-  - **Verified 2026-09-25 against PSN and PS5-<redacted>, on the same LAN:** sign-in, the console list, the WAN
-    rendezvous up to the console's candidates, a full 1080p stream over the account route, and no-PIN
-    account pairing. See the journal.
-  - [x] Internet play from another network. Done 2026-09-25, from a phone hotspot: 1080p60 peer to peer.
-  - [x] **Internet play from rest.** Done 2026-09-25, from a hotspot: SESSION_ID waits for the A/V leg
-        even after a passcode. The route now continues rather than failing. See the journal.
 - [ ] **Windows: internet connect to a console woken from rest.** `HalyardStreamingSession.EnsureSignedInAsync`
-      fails the session when SESSION_ID does not follow a passcode. On the Mac, a woken console sent it only
+      fails the session when SESSION_ID does not follow a passcode; on the Mac, a woken console sent it only
       after the A/V leg (journal, 2026-09-25). Confirm on Windows, then give .NET the same continuation.
-  - [ ] After a rendezvous session, the console briefly refuses TCP 9295. The app's retry covers it; decide
-        whether the lab or the sequence should wait for it.
-  - [ ] Whether the 9303 association needs servicing between `begin` and the first exchange. .NET
-        services it in the background, and C has no call for it `[X]`.
-  - [ ] Whether a connect needs registration every time (`--no-register` tests it) `[X]`.
-- [x] **Swift session actor's lifecycle.** Done 2026-09-25 (`SessionController`).
+- [ ] **Cloud-tier faults the Mac's port found in .NET:** `HalyardTokenProvider` lets two concurrent
+      refreshes spend the same rotating refresh token; `SignOut` leaves the token provider seeded; and
+      `HalyardSignalingMessage.TryParse` misses `InvalidOperationException`, so a malformed frame is lost
+      silently.
+
+### macOS client — on the Rust engine since 2026-09-26
+
+A native Mac app with at least parity with the Windows client, internet play and sign-in included. The
+decisions, the App Store analysis and the order of work are in [`docs/macos-plan.md`](docs/macos-plan.md).
+Since Phase 3's relink (journal, 2026-09-26) it builds on the Rust engine, and its protocol work lands
+there: the engine's own items, including the hardware runs Phase 3 still owes, are under "One engine"
+above. The spike, the C-core connect sequence, the Swift cloud tier and the internet-play runs are done
+and in the journal. Open:
+
+- [ ] **Everything after first picture:** steps 4–9 of the plan, starting with the app target, video and
+      audio in a window, and pairing on `KeychainPairingStore`.
+- [ ] **Controller input, live.** The sequence sends it, but the lab has had no pad attached, so it has not
+      been seen to steer the console.
+- [ ] **Wire the credential's Run Script copy into the app target** (the recipe is in the commit message
+      that added it) once there is an app target.
+- [ ] **Live-verify** sign-in in the web view with a passkey (it may need an entitlement), and the Keychain
+      under the app's signature rather than the lab's ad hoc one `[X]`.
+- [ ] **The `mac` CI job's first run.** `runs-on: macos-26`, its Xcode, and now its Rust toolchain have not
+      been checked. The job may need its runner label or Xcode selection adjusted before it goes green.
+
+### libripcord — the console ports' core
+
+What is open in the C core, which the console ports under `ports/` build on. The first-class clients have
+moved to the Rust engine, so these are port-driven: each matters when a port builds it.
+
 - [ ] **The first coverage-guided fuzz run.** It happens in CI's `libripcord` job on Linux. It has never
       run, because the author's Mac has no libFuzzer-capable clang, so the first run may find real bugs.
-- [ ] **The `mac` CI job's first run.** `runs-on: macos-26` and whatever Xcode that image carries have not
-      been checked. The job may need its runner label or Xcode selection adjusted before it goes green.
-- [ ] **Everything after first picture:** see steps 4–9 of the plan.
+- [ ] **Build the new socket code for the console SDKs** `[X]`: `select()` and `suseconds_t` in the
+      `rc_tcp` connect deadline, and `rc_udp_open_bound` (bind, getsockname), have not been built for the
+      3DS, Vita or PS3 SDKs.
+- [ ] **`encode_account_id` in `halyard_regist_message.c`** accumulates digits into a u64 with no overflow
+      check, so a 20-digit id past `UINT64_MAX` wraps silently where .NET, and the engine, fall back to
+      UTF-8.
+- [ ] **`rc_ecdh.c`'s diagnostics are process-wide statics**, so concurrent derivations race on
+      `s_last_error_step`, which the Mac's Swift tests caught. A session derives on one thread, but the
+      state should live in the keypair or be thread-local.
 
 ### Account pairing — resolved, and one thing owed (2026-09-23 to 09-24)
 
