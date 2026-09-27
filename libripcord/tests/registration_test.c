@@ -77,6 +77,15 @@ static void test_message(void)
     check(strstr(field, "Np-AccountId: wLqKPNViBAA=\r\n") != NULL,
           "numeric id is a base64 LITTLE-endian u64", __LINE__);
 
+    /* The largest u64 is still one; one past it is text, not a wrapped number (it wrapped to 0 until
+     * 2026-09-26, which is a different account's id). */
+    n = halyard_regist_field_plaintext("18446744073709551615", field, sizeof(field));
+    check(n > 0 && strstr(field, "Np-AccountId: //////////8=\r\n") != NULL,
+          "UINT64_MAX is still a numeric id", __LINE__);
+    n = halyard_regist_field_plaintext("18446744073709551616", field, sizeof(field));
+    check(n > 0 && strstr(field, "Np-AccountId: MTg0NDY3NDQwNzM3MDk1NTE2MTY=\r\n") != NULL,
+          "an id past UINT64_MAX is sent as text, not wrapped", __LINE__);
+
     /* The request head. Uppercase HOST with no port, no Content-Type, no Np-AccountId header. */
     {
         const uint8_t body[4] = { 0xde, 0xad, 0xbe, 0xef };
