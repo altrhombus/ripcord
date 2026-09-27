@@ -319,6 +319,14 @@ pub extern "C" fn ripcord_api_version() -> u32 {
     RIPCORD_API_VERSION
 }
 
+/// Whether this library was built with the v1 interoperability constants (the `interop-constants`
+/// feature, on by default). Without them it is inert: pairing and connecting fail before reaching a
+/// console. A host asks once and says so, as the dotnet client does with `IsBundled`.
+#[unsafe(no_mangle)]
+pub extern "C" fn ripcord_interop_constants_bundled() -> bool {
+    ripcord_proto::halyard::constants_bundled()
+}
+
 /// `sizeof` the struct named by `id` (a [`RipcordStructId`]) as this library was compiled, or 0 for an
 /// id it does not know. Taken as a plain integer so an unknown id is an answer, not undefined behaviour.
 #[unsafe(no_mangle)]

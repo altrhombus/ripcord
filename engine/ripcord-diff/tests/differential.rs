@@ -84,7 +84,7 @@ fn control_plane() {
         let rust = control::kdf(&nonce, &companion, version).map(|k| (k.key, k.material));
         assert_eq!(rust, c_kdf(&nonce, &companion, version), "kdf, iteration {iteration}");
         assert_eq!(
-            *control::context_key(codec, version),
+            *control::context_key(codec, version).unwrap(),
             c_context_key(codec, version),
             "context key, iteration {iteration}"
         );

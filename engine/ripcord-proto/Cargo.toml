@@ -20,5 +20,11 @@ sha2 = "0.11.0"
 serde_json = "1.0.151"
 
 [features]
+default = ["interop-constants"]
+# The v1 interoperability constants, compiled in from the one committed bundle (build.rs; NOTICE,
+# "Interoperability constants"). Without it the engine is inert: every derivation reports its tables as
+# absent, and a connect or a registration stops before reaching the console. The engine's counterpart of
+# .NET's -p:BundleInteropConstants=false.
+interop-constants = []
 # The scripted console (src/testing), for other crates' tests. Never enabled in a shipping engine.
 scripted-console = []

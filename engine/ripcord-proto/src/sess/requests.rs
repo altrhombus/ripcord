@@ -62,6 +62,9 @@ pub enum InitError {
     /// No RP-Nonce, or not 16 bytes of strict base64. A hard failure, as in C: .NET carries on to an
     /// unauthenticated /sess/ctrl (on the roadmap).
     NoNonce,
+    /// This family's interop constants are not in this engine (built without `interop-constants`, or a
+    /// bundle without the PS4 tables).
+    NoTables,
 }
 
 /// The control-field crypto for this connection, from the /sess/init reply and the pairing's companion.
@@ -82,7 +85,7 @@ pub fn open_init(
         .ok_or(InitError::NoNonce)?;
     let selector = if is_ps5 { VERSION_SELECTOR_PS5 } else { VERSION_SELECTOR_PS4 };
     // The KDF can only refuse for a family whose tables are absent.
-    ControlField::new(&nonce, companion, 2, selector).ok_or(InitError::NoNonce)
+    ControlField::new(&nonce, companion, 2, selector).ok_or(InitError::NoTables)
 }
 
 /// The five (PS5) or four (PS4) values the encrypted /sess/ctrl fields carry.

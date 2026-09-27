@@ -27,18 +27,19 @@ const ACCOUNT_WRAP_BIAS: u8 = 0x2b;
 const MATERIAL_SELECTOR_OFFSET: usize = 0;
 
 fn key_table(is_ps5: bool) -> Option<&'static [u8; 512]> {
-    if is_ps5 { Some(&c::REGISTRATION_TABLE) } else { c::PS4_REGISTRATION_TABLE.as_ref() }
+    if is_ps5 { c::REGISTRATION_TABLE.as_ref() } else { c::PS4_REGISTRATION_TABLE.as_ref() }
 }
 
 fn wrap_entry(is_ps5: bool, context: &[u8]) -> Option<&'static [u8; 16]> {
-    let table = if is_ps5 { &c::MATERIAL_WRAP_TABLE } else { c::PS4_MATERIAL_WRAP_TABLE.as_ref()? };
+    let table =
+        if is_ps5 { c::MATERIAL_WRAP_TABLE.as_ref()? } else { c::PS4_MATERIAL_WRAP_TABLE.as_ref()? };
     Some(entry(table, usize::from(*context.get(MATERIAL_SELECTOR_OFFSET)? >> 3)))
 }
 
 /// The transport key from the transmitted context and the 8-digit PIN. `None` if the family's tables are
 /// absent or the context is too short to hold the selector.
 pub fn derive_key(is_ps5: bool, context: &[u8], passcode: u32) -> Option<[u8; 16]> {
-    let index = usize::from(*context.get(c::SELECTOR_OFFSET)? & 0x1f);
+    let index = usize::from(*context.get(c::SELECTOR_OFFSET?)? & 0x1f);
     let mut key = *entry(key_table(is_ps5)?, index);
     // Big-endian into the last four bytes: the other order is a key wrong in four bytes and
     // indistinguishable from a mistyped PIN.
@@ -89,7 +90,7 @@ pub fn gather(context: &[u8]) -> Option<[u8; 16]> {
 
 /// Registration's field-cipher context key is not a fifth key: it is the control plane's selector-one
 /// key for a PS5 and selector-zero for a PS4.
-fn family_context_key(is_ps5: bool) -> [u8; 16] {
+fn family_context_key(is_ps5: bool) -> Option<[u8; 16]> {
     if is_ps5 { c::CTX_SELECTOR_ONE } else { c::CTX_SELECTOR_ZERO }
 }
 
@@ -99,7 +100,7 @@ pub fn field(is_ps5: bool, context: &[u8], passcode: u32, material: &[u8; 16]) -
     Some(ControlField {
         key: derive_key(is_ps5, context, passcode)?,
         material: *material,
-        context_key: family_context_key(is_ps5),
+        context_key: family_context_key(is_ps5)?,
     })
 }
 
@@ -135,12 +136,12 @@ pub fn account_field(
     Some(ControlField {
         key: derive_account_key(is_ps5, context, seed)?,
         material: *material,
-        context_key: family_context_key(is_ps5),
+        context_key: family_context_key(is_ps5)?,
     })
 }
 
 /// The context key the console seals the account seed under: the family's registration context key.
-pub(crate) fn seed_context_key(is_ps5: bool) -> [u8; 16] {
+pub(crate) fn seed_context_key(is_ps5: bool) -> Option<[u8; 16]> {
     family_context_key(is_ps5)
 }
 
