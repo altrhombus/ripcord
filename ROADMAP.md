@@ -276,8 +276,10 @@ the documents into line, is done and in the journal. The engine lives in [`engin
         whether a reply exists at all (a capture of the vendor client), and if not, what the probe's
         minimum lead time before the TCP connect is. [X] until a capture settles it.
 - [ ] **Phase 4 — Windows onto the engine,** after 1.0, one seam at a time behind `RIPCORD_ENGINE`.
-  - [ ] Before step 3: `src/Ripcord.App/Pages/SessionPage.xaml.cs` imports three
-        `Ripcord.Protocol.Halyard*` namespaces. Stale usings, or a dependency around the seams.
+  - [ ] Before step 3: `Ripcord.App.csproj` still references `Ripcord.Protocol.Halyard` and
+        `Ripcord.Protocol.Halyard.Common` directly, though no source file in the app names either since
+        2026-09-26 (`SessionPage`'s three imports were stale, and are gone). Remove the references once a
+        Windows build can confirm nothing needs them beyond what `Ripcord.Presentation.Halyard` brings.
 
 - [ ] **Protocol questions the engine carries from the C core, each `[X]` until a console settles it:**
   - The opener's request word, 0x40 in both references and the engine, appears in no capture; the spec
