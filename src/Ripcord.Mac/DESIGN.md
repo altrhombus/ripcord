@@ -187,8 +187,8 @@ unweighted press away.** The route is a mechanism, and the player has no stake i
 attention:
 
 1. **Which console.** List the consoles found on the network, with *Enter an address…* for a network that
-   filters broadcast (measured 2026-09-24: a PS5 that answers only unicast). Starting from a Pair tile skips
-   this step.
+   filters broadcast (measured 2026-09-25: a PS5 that answers only unicast; journal, "The Mac streams").
+   Starting from a Pair tile skips this step.
 2. **Signed in.** If the console is on the account, it pairs, and the route is stated as a fact.
 3. **Not signed in.** **Sign In to PlayStation Network…** is the default button. **Use a Pairing Code
    Instead** sits beside it as a plain button, with neither argued for.

@@ -53,8 +53,10 @@ const CONTROL_DEADLINE_RENDEZVOUS_US: u64 = 60_000_000;
 /// The sign-in gate: five attempts, eight seconds each (.NET's MaxSignInAttempts/SignInAttemptTimeout).
 const SIGNIN_ATTEMPTS: u32 = 5;
 const SIGNIN_WAIT_US: u64 = 8_000_000;
-/// After an accepted passcode on the LAN, how long SESSION_ID may take: a console woken from rest sent
-/// nothing for 8.5 s after accepting (C, 2026-09-25). The wait ends the moment SESSION_ID arrives.
+/// After an accepted passcode on the LAN, how long SESSION_ID may take. An awake console sends it promptly;
+/// one woken from rest is `[X]` here, since no LAN run from rest has timed it. The bound comes from the
+/// rendezvous route, where a woken console sent it 8.5 s after accepting (journal, 2026-09-25).
+/// The wait ends the moment SESSION_ID arrives.
 const SESSION_AFTER_LOGIN_US: u64 = 30_000_000;
 /// The arm probe's reply window, then the settle before the console is spoken to.
 const ARM_REPLY_WINDOW_US: u64 = 2_000_000;

@@ -117,8 +117,9 @@ The Mac suite is 181 tests.
 ### The engine comparisons' findings, fixed in .NET and the C core (2026-09-26)
 
 The side-by-side reads done for the Rust engine had listed ten faults in the .NET reference and two in the C
-core. All twelve are fixed. Each fix has a test, and each .NET test was run against the old code and seen
-to fail.
+core. Eleven were real and are fixed. The twelfth, the senkusha `encryptedKey`, was reversed on capture
+evidence, so the C core and the engine changed instead (below). Each fix has a test, and each .NET test was run
+against the old code and seen to fail.
 
 - **Security.**
   - **The RP-Nonce.** A missing or malformed RP-Nonce, or a pairing without its companion, used to skip the
@@ -557,11 +558,11 @@ the first failure only suggested.
   SESSION_ID arrived during the A/V leg, 8.5 s after the passcode. Streaming began at 46.13 s, with 0
   packets lost of 4,710, 80 control messages verified, and 888 frames of 1080p HEVC.
 
-So on this route, a console woken from rest sends SESSION_ID after the A/V prelude even when a passcode
-was needed. An awake console sends it 1 s after the passcode. .NET's `EnsureSignedInAsync` fails the
-session at exactly that point ("accepted the passcode but didn't start a session"). **The Windows client
-very likely cannot connect over the internet to a console woken from rest.** That is in the roadmap to
-confirm on Windows.
+So on this route, a console woken from rest sent SESSION_ID after the A/V prelude even when a passcode was
+needed. That is one run, so the rule is `[X]`. An awake console sent it 1 s after the passcode. .NET's
+`EnsureSignedInAsync` fails the session at exactly that point ("accepted the passcode but didn't start a
+session"). **The dotnet client very likely cannot connect over the internet to a console woken from rest.**
+That is in the roadmap to confirm on the dotnet client.
 
 ### Internet play from the Mac, and a console slow to wake (2026-09-25)
 
@@ -604,10 +605,10 @@ it ran unattended.
   is observed, not confirmed `[X]`.
 
 **One transient finding.** The first LAN connect right after the account-route session failed at TCP 9295,
-with a non-blocking connect still in progress at its deadline. A few seconds later the port accepted and
-the same connect streamed. For a short window after a rendezvous session ends, the console does not accept
-LAN control connections. The session controller treats that failure as retryable, so the app rides through
-it. `ripcord-lab`, which does not retry, does not.
+with a non-blocking connect still in progress at its deadline. A few seconds later the port accepted and the
+same connect streamed. So for a short window after a rendezvous session ends, the console appears not to
+accept LAN control connections: one occurrence, `[X]`. The session controller treats that failure as
+retryable, so the app rides through it. `ripcord-lab`, which does not retry, does not.
 
 Still owed: internet play from another network (the Mac on a phone hotspot), a controller steering the
 console, and LAN wake from rest.
@@ -647,10 +648,11 @@ It then held a steady 60 video frames and 100 audio packets a second for 16 s, w
 976 frames of the capture. The frame at 600 is the console's own Remote Play settings screen, where it had
 been left after pairing.
 
-**The console grants resolution by bitrate, not by request.** Asked for 1920x1080 at the core's 10 Mb/s
-default, it streamed 1280x720. Asked again at 25 Mb/s, it streamed 1920x1080 HEVC, and all 471 frames
-decode. The Mac now defaults to 25 Mb/s. The Windows client also defaults to 10,000 kb/s, so a user who
-picks 1080p there may be getting 720p. That is recorded in the roadmap to check rather than asserted.
+**The console grants resolution by bitrate, not by request** `[X]`, from the two runs below. Asked for
+1920x1080 at the core's 10 Mb/s default, it streamed 1280x720. Asked again at 25 Mb/s, it streamed 1920x1080
+HEVC, and all 471 frames decode. The Mac now defaults to 25 Mb/s. The dotnet client also defaults to 10,000
+kb/s, so a user who picks 1080p there may be getting 720p. That is recorded in the roadmap to check rather
+than asserted.
 
 **Getting there needed three fixes along the way**, each in its own commit:
 

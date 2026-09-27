@@ -252,8 +252,9 @@ the documents into line, is done and in the journal. The engine lives in [`engin
         consoles only. On a console: whether it answers the probes as the captures show, and, with
         `report_connection_quality` on, whether a target in kbps moves its encoder sensibly, which settles
         the unit.
-  - [ ] **First run against a console,** LAN then rendezvous, with `ripcord-net` from a small lab binary.
-        The sequencing is shared with the C core, mistakes included, so hardware is what checks it.
+  - [ ] **The rendezvous route against a console.** The LAN half ran on 2026-09-26 (journal, "The Rust
+        engine's first session on hardware"). The rendezvous sequence is shared with the C core, mistakes
+        included, and has met only scripted consoles on the engine, so hardware is what checks it.
   - [ ] **The nightly CI leg's first run.** `engine-nightly.yml` runs Miri over `ripcord-ffi` and every
         fuzz target for five minutes with a kept corpus (journal, 2026-09-26); it has not run on GitHub yet.
   - [ ] **Differential runs for each new layer.** `ripcord-diff` exists and covers every layer ported so
@@ -290,19 +291,22 @@ the documents into line, is done and in the journal. The engine lives in [`engin
 
 ### The .NET reference: findings from the engine comparisons (2026-09-26)
 
-Side-by-side reads of the .NET code and its C port, done for the Rust engine, found ten faults in what the
-dotnet client ships. All ten are fixed and tested (journal, 2026-09-26). What they left open:
+Side-by-side reads of the .NET code and its C port, done for the Rust engine, found ten suspected faults in what
+the dotnet client ships. Nine were real and are fixed and tested; the tenth, the senkusha `encryptedKey`, was
+reversed on capture evidence, and the C core and the engine changed instead (journal, 2026-09-26). What they
+left open:
 
 - [ ] **The stream SESSION_REQUEST's `encryptedKey`.** All three implementations send four zero bytes, which
       the console accepts on hardware. The vendor sends the field present and empty (`22 00`, cap53 frame
       10086, `[W]`). Matching the vendor is a one-line change in each, and wants a hardware run to confirm
       nothing depended on the four bytes.
-- [ ] **Check the Windows client's resolution against its bitrate.** The console grants resolution by
-      bitrate (journal, 2026-09-25): 1080p asked at 10 Mb/s streamed 720p, and the Windows default is
-      10,000 kb/s. Measure what a default Windows session actually receives.
-- [ ] **Windows: internet connect to a console woken from rest.** `HalyardStreamingSession.EnsureSignedInAsync`
-      fails the session when SESSION_ID does not follow a passcode; on the Mac, a woken console sent it only
-      after the A/V leg (journal, 2026-09-25). Confirm on Windows, then give .NET the same continuation.
+- [ ] **Check the dotnet client's resolution against its bitrate.** The console grants resolution by
+      bitrate (journal, 2026-09-25): 1080p asked at 10 Mb/s streamed 720p, and the dotnet client's default is
+      10,000 kb/s. Measure what a default dotnet session actually receives.
+- [ ] **The dotnet client: internet connect to a console woken from rest.**
+      `HalyardStreamingSession.EnsureSignedInAsync` fails the session when SESSION_ID does not follow a passcode; on the Mac, a woken console sent it only
+      after the A/V leg, in the one run from rest that streamed (journal, 2026-09-25) `[X]`. Confirm on the
+      dotnet client, then give .NET the same continuation.
 
 ### macOS client — on the Rust engine since 2026-09-26
 
@@ -318,7 +322,8 @@ and in the journal. Open:
       look at, in order:
       - the library's states against a console that is awake, resting and off, and a tile following a DHCP
         move;
-      - pairing through the sheet, both routes (the account route has not run on hardware in any client);
+      - pairing through the sheet, both routes (the account route has registered on hardware only from
+        `ripcord-lab`, on the C core, 2026-09-25);
       - the launch zoom and the three dashes against the real stage timing;
       - capture, meaning the keyboard plays only while captured and ⌘ shortcuts never reach the console;
       - the inspector's figures against the lab's;
@@ -335,8 +340,10 @@ and in the journal. Open:
       Read the symbol-template format from the SF Symbols app, rather than recalling it `[X]`.
 - [ ] **The first `macos-v*` release.** Six secrets (listed in `ci.yml`) and a Developer ID. The signing,
       notarization and draft-release steps have never run.
-- [ ] **Internet play in the app.** The engine's internet route ends at the console's candidates, so the
-      app streams on the LAN only. It gets a route when the engine has one.
+- [ ] **Internet play in the app.** The app streams on the LAN only. The account route streamed from
+      `ripcord-lab` on the C core (journal, 2026-09-25), and the engine has it too, tested against scripted
+      consoles only; the app offers it once the engine's route has run on hardware. (`--route internet`
+      still ends at the console's candidates.)
 - [ ] **Controller input, live.** The sequence sends it, but no pad has been attached to the lab or the
       app, so it has not been seen to steer the console.
 - [ ] **Live-verify** sign-in in the web view with a passkey (it may need an entitlement), and the Keychain
