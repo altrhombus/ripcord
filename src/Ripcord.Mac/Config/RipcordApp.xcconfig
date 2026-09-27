@@ -10,6 +10,8 @@ INFOPLIST_KEY_CFBundleDisplayName = Ripcord
 // assumed, before anything leans on it).
 INFOPLIST_KEY_LSApplicationCategoryType = public.app-category.games
 INFOPLIST_KEY_NSLocalNetworkUsageDescription = Ripcord finds and streams from PlayStation consoles on your network.
+// Asked only when someone chooses to scan the pairing code off the television (RipcordApp/CodeScanner.swift).
+INFOPLIST_KEY_NSCameraUsageDescription = Ripcord can read the console's pairing code off your TV through a camera, such as an iPhone nearby.
 INFOPLIST_KEY_NSHumanReadableCopyright = Apache-2.0
 ENABLE_HARDENED_RUNTIME = YES
 LD_RUNPATH_SEARCH_PATHS = $(inherited) @executable_path/../Frameworks
@@ -21,8 +23,9 @@ RIPCORD_BUNDLE_OAUTH_CLIENT = YES
 ASSETCATALOG_COMPILER_APPICON_NAME = Ripcord
 // Shared/ is compiled into the app and the widget extension; this is how its files tell which they are in.
 SWIFT_ACTIVE_COMPILATION_CONDITIONS = $(inherited) RIPCORD_APP
-// The app group the widgets read the consoles from (Shared/ConsoleSnapshot.swift), only when the build can
-// claim one (RIPCORD_APP_GROUP, Project.xcconfig). The app is not sandboxed; that entitlement is only the group.
+// The camera, which the hardened runtime withholds without an entitlement, for scanning the pairing code; and
+// the app group the widgets read the consoles from (Shared/ConsoleSnapshot.swift), only when the build can claim
+// one (RIPCORD_APP_GROUP, Project.xcconfig). The app is not sandboxed; those are its only entitlements.
 RIPCORD_APP_ENTITLEMENTS_YES = RipcordApp/Ripcord.entitlements
-RIPCORD_APP_ENTITLEMENTS_NO =
+RIPCORD_APP_ENTITLEMENTS_NO = RipcordApp/Ripcord-camera.entitlements
 CODE_SIGN_ENTITLEMENTS = $(RIPCORD_APP_ENTITLEMENTS_$(RIPCORD_APP_GROUP))
