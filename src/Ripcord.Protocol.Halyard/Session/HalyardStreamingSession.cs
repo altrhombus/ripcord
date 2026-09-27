@@ -151,6 +151,9 @@ public sealed class HalyardStreamingSession : IStreamingSession
     }
 
     public SessionState State { get; private set; } = SessionState.Connecting;
+
+    /// <inheritdoc/>
+    public string? EndReason { get; private set; }
     public IObservable<EncodedVideoFrame> VideoFrames => _video;
     public IObservable<EncodedAudioFrame> AudioFrames => _audio;
     public IObservable<SessionStatistics> Statistics => _stats;
@@ -364,6 +367,13 @@ public sealed class HalyardStreamingSession : IStreamingSession
             if (!streaming.Success)
             {
                 return Fail($"Stream key agreement did not complete (Takion/SESSION): {streaming.FailureReason}");
+            }
+
+            // The console may have hung up while the stream was coming up; that is a failed connect, not a
+            // stream, and marking it Streaming would hide the reason.
+            if (State == SessionState.Closed)
+            {
+                return new SessionHandshakeResult(false, EndReason ?? "The console ended the session while it was starting.");
             }
 
             State = SessionState.Streaming;
@@ -701,7 +711,10 @@ public sealed class HalyardStreamingSession : IStreamingSession
                 HalyardCtrlMessage? message = await _control.ReadCtrlMessageAsync(cancellationToken).ConfigureAwait(false);
                 if (message is null)
                 {
-                    return; // control connection closed
+                    // The console closed the control connection. It used to return quietly and leave the session
+                    // running until the watchdog saw silence; the C core and the Rust engine end it here.
+                    EndedByConsole("The console closed the control connection.");
+                    return;
                 }
 
                 byte[]? plaintext = ObserveCtrlFrame(message.Value);
@@ -741,10 +754,31 @@ public sealed class HalyardStreamingSession : IStreamingSession
         {
             // session shutting down
         }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
+        {
+            // The control channel faulted under a live session: that is the session ending, not a detail.
+            EndedByConsole($"The control connection failed: {ex.Message}");
+        }
         catch (Exception)
         {
-            // control channel faulted (e.g. socket closed under us) — the session teardown will observe it
+            // Faulted during teardown: the session is already ending.
         }
+    }
+
+    /// <summary>
+    /// The console ended the session, or its control connection did. Closes the session with the reason, once;
+    /// SessionController's watchdog sees <see cref="SessionState.Closed"/> within its interval and reads
+    /// <see cref="EndReason"/>. A session already closed keeps the reason it closed with.
+    /// </summary>
+    private void EndedByConsole(string reason)
+    {
+        if (State == SessionState.Closed)
+        {
+            return;
+        }
+
+        EndReason = reason;
+        State = SessionState.Closed;
     }
 
     /// <summary>
@@ -1134,6 +1168,10 @@ public sealed class HalyardStreamingSession : IStreamingSession
 
         _takionStream = new HalyardTakionStream(_streamSocket, streamEndpoint, _crypto, _demuxer);
         _takionStream.PacketStatsSampled += OnPacketStatsSampled;
+        _takionStream.ConsoleDisconnected += reason => EndedByConsole(
+            string.IsNullOrWhiteSpace(reason)
+                ? "The console ended the session."
+                : $"The console ended the session: {reason}");
 
         // Controller input goes up the same socket, sealed by the crypto seam. Enqueue rather than send
         // directly: the drain loop below preserves the order the writer stamped sequence numbers in.

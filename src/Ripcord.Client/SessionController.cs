@@ -334,8 +334,10 @@ public sealed class SessionController : IAsyncDisposable
                     Transition(SessionLifecycle.Streaming, "Connected.");
                     DateTimeOffset streamingSince = _clock();
 
-                    // Returns when the session ends or stalls past the reconnect threshold.
+                    // Returns when the session ends or stalls past the reconnect threshold. Read why before the
+                    // teardown drops the session: a session that closed itself can say (IStreamingSession.EndReason).
                     await WatchSessionAsync(cancellationToken).ConfigureAwait(false);
+                    string? endReason = CurrentEndReason();
                     await TeardownSessionAsync().ConfigureAwait(false);
 
                     if (cancellationToken.IsCancellationRequested)
@@ -353,6 +355,7 @@ public sealed class SessionController : IAsyncDisposable
                     if (_clock() - streamingSince >= _options.MinimumHealthySession)
                     {
                         attempt = 1;
+                        lastReason = endReason;
                         continue;
                     }
 
@@ -368,7 +371,7 @@ public sealed class SessionController : IAsyncDisposable
 
                     // Backoff on a flap too. Reconnecting instantly into a console that is shutting down is
                     // what turned this into a tight loop rather than a slow one.
-                    lastReason = "The stream dropped as soon as it started.";
+                    lastReason = endReason ?? "The stream dropped as soon as it started.";
 
                     TimeSpan flapBackoff = BackoffFor(attempt);
                     Transition(
@@ -532,6 +535,14 @@ public sealed class SessionController : IAsyncDisposable
     }
 
     private readonly record struct ConnectOutcome(bool Connected, bool Retryable, string Detail);
+
+    private string? CurrentEndReason()
+    {
+        lock (_gate)
+        {
+            return _session?.State == SessionState.Closed ? _session.EndReason : null;
+        }
+    }
 
     /// <summary>Build a session, run the handshake, and wire up media/input/stats on success.</summary>
     private async Task<ConnectOutcome> TryConnectAsync(CancellationToken cancellationToken)
