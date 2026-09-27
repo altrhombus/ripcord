@@ -13,8 +13,9 @@ built here.
 Settings, the stream window with its inspector, capture, Picture in Picture and recording, the menu bar
 extra, App Intents, a widget and a Control, and a notarized release line. [`DESIGN.md`](DESIGN.md) settles
 its surfaces. **None of it has met a console yet:** the hardware pass is batched, and what it has to check
-is in [`ROADMAP.md`](../../ROADMAP.md). It streams on the LAN only: the internet route ends at the console's
-candidates in the engine, so there is nothing for the app to offer yet.
+is in [`ROADMAP.md`](../../ROADMAP.md). It streams on the LAN only. The account route streamed from `ripcord-lab` on
+the C core (2026-09-25) and is in the engine, tested against scripted consoles; the app offers it once the
+engine's route has run on hardware. Only `--route internet` still ends at the console's candidates.
 
 ## Layout
 
