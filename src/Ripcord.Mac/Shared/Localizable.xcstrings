@@ -1,0 +1,665 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "" : {
+
+    },
+    "%@" : {
+
+    },
+    "%@ is ready to play from this Mac." : {
+
+    },
+    "%@ · %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ · %2$@"
+          }
+        }
+      }
+    },
+    "%@, %@, not paired" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@, %2$@, not paired"
+          }
+        }
+      }
+    },
+    "%lld Mb/s" : {
+
+    },
+    "1080p" : {
+
+    },
+    "192.168.1.20" : {
+
+    },
+    "30 fps" : {
+
+    },
+    "60 fps" : {
+
+    },
+    "720p" : {
+
+    },
+    "8 digits" : {
+
+    },
+    "A wired connection, or being closer to the router, usually helps." : {
+
+    },
+    "Account" : {
+
+    },
+    "Account ID" : {
+
+    },
+    "Adaptive target" : {
+
+    },
+    "Address" : {
+
+    },
+    "Advanced" : {
+
+    },
+    "Ask before disconnecting" : {
+
+    },
+    "Audio" : {
+
+    },
+    "Bitrate" : {
+
+    },
+    "Bring In" : {
+
+    },
+    "Bring In Consoles Paired with ripcord-lab" : {
+
+    },
+    "Bring in consoles paired from the command line." : {
+
+    },
+    "Cancel" : {
+
+    },
+    "Choose a Console" : {
+
+    },
+    "Choose the console to play from. It needs to be on and on this network." : {
+
+    },
+    "Circle" : {
+
+    },
+    "Click the picture to play with the keyboard. Press Control and Option together to give it back to the Mac." : {
+
+    },
+    "Close" : {
+
+    },
+    "Code" : {
+
+    },
+    "Connect" : {
+
+    },
+    "Connect to ${console}" : {
+
+    },
+    "Connect to Console" : {
+
+    },
+    "Connecting" : {
+
+    },
+    "Connecting to %@…" : {
+
+    },
+    "Connecting, %lld of 3" : {
+
+    },
+    "Console" : {
+
+    },
+    "Console ID" : {
+
+    },
+    "Consoles" : {
+
+    },
+    "Consoles on this account" : {
+
+    },
+    "Continue" : {
+
+    },
+    "Controls" : {
+
+    },
+    "Controls may feel late even though the picture is clean." : {
+
+    },
+    "Couldn’t connect to %@" : {
+
+    },
+    "Create" : {
+
+    },
+    "Cross" : {
+
+    },
+    "D-pad down" : {
+
+    },
+    "D-pad left" : {
+
+    },
+    "D-pad right" : {
+
+    },
+    "D-pad up" : {
+
+    },
+    "Disconnect" : {
+
+    },
+    "Disconnect from ${console}" : {
+
+    },
+    "Disconnect from %@?" : {
+
+    },
+    "Disconnect from Console" : {
+
+    },
+    "Disconnected" : {
+
+    },
+    "Done" : {
+
+    },
+    "Ends the stream from a console, if one is open." : {
+
+    },
+    "Engine to display" : {
+
+    },
+    "Enter Picture in Picture" : {
+
+    },
+    "Enter an address" : {
+
+    },
+    "Enter the passcode of the console's user." : {
+
+    },
+    "Everything looks good" : {
+
+    },
+    "Exit Picture in Picture" : {
+
+    },
+    "Family" : {
+
+    },
+    "Fewer frames than asked for" : {
+
+    },
+    "Forget" : {
+
+    },
+    "Forget %@?" : {
+
+    },
+    "Forget…" : {
+
+    },
+    "Frame rate" : {
+
+    },
+    "Frames" : {
+
+    },
+    "Go full screen when a stream starts" : {
+
+    },
+    "H.264 only" : {
+
+    },
+    "HDR" : {
+
+    },
+    "HDR needs HEVC." : {
+
+    },
+    "HEVC when available" : {
+
+    },
+    "Hide Inspector" : {
+
+    },
+    "Inspector" : {
+
+    },
+    "Keep Playing" : {
+
+    },
+    "Keyboard" : {
+
+    },
+    "Keyframe requests" : {
+
+    },
+    "Keyframes" : {
+
+    },
+    "L1" : {
+
+    },
+    "L2" : {
+
+    },
+    "L3" : {
+
+    },
+    "Left stick down" : {
+
+    },
+    "Left stick left" : {
+
+    },
+    "Left stick right" : {
+
+    },
+    "Left stick up" : {
+
+    },
+    "Lets the console lower its bitrate when the network struggles. Experimental: off unless you are testing it." : {
+
+    },
+    "Looking for a console at %@…" : {
+
+    },
+    "Looking on this network…" : {
+
+    },
+    "Loss" : {
+
+    },
+    "Maximum bitrate" : {
+
+    },
+    "Name" : {
+
+    },
+    "Network" : {
+
+    },
+    "No paired consoles" : {
+
+    },
+    "None of this Mac’s displays shows HDR." : {
+
+    },
+    "None with Remote Play turned on." : {
+
+    },
+    "Not connected" : {
+
+    },
+    "Not found" : {
+
+    },
+    "Nothing answered at %@. Check the address, and that the console is on." : {
+
+    },
+    "Open Ripcord to pair a console." : {
+
+    },
+    "Open Settings → System → Remote Play → Link Device. The console shows an 8-digit code." : {
+
+    },
+    "Opens a stream from a paired console, waking it first if it is resting." : {
+
+    },
+    "Options" : {
+
+    },
+    "PS button" : {
+
+    },
+    "Packets lost" : {
+
+    },
+    "Packets received" : {
+
+    },
+    "Pair" : {
+
+    },
+    "Pair %@" : {
+
+    },
+    "Pair %@ with a code" : {
+
+    },
+    "Pair a Console" : {
+
+    },
+    "Pair a Console (⌘N)" : {
+
+    },
+    "Pair a Console…" : {
+
+    },
+    "Paired" : {
+
+    },
+    "Paired for account" : {
+
+    },
+    "Paired." : {
+
+    },
+    "Pairing with %@ through your account…" : {
+
+    },
+    "Pairing with %@…" : {
+
+    },
+    "Pair…" : {
+
+    },
+    "Passcode" : {
+
+    },
+    "Picture" : {
+
+    },
+    "Picture in Picture" : {
+
+    },
+    "Play Now" : {
+
+    },
+    "Play your PlayStation on this Mac." : {
+
+    },
+    "Playing" : {
+
+    },
+    "Press a key…" : {
+
+    },
+    "Put the console in rest mode when I disconnect" : {
+
+    },
+    "Quit Ripcord" : {
+
+    },
+    "R1" : {
+
+    },
+    "R2" : {
+
+    },
+    "R3" : {
+
+    },
+    "Ready" : {
+
+    },
+    "Reconnect attempt" : {
+
+    },
+    "Reconnecting" : {
+
+    },
+    "Reconnecting to %@…" : {
+
+    },
+    "Record" : {
+
+    },
+    "Recording" : {
+
+    },
+    "Recording saved" : {
+
+    },
+    "Recordings are saved to" : {
+
+    },
+    "Release Keyboard" : {
+
+    },
+    "Release the keyboard" : {
+
+    },
+    "Rename" : {
+
+    },
+    "Rename Console" : {
+
+    },
+    "Rename…" : {
+
+    },
+    "Report connection quality to the console" : {
+
+    },
+    "Request a Keyframe" : {
+
+    },
+    "Resolution" : {
+
+    },
+    "Resting" : {
+
+    },
+    "Restore Defaults" : {
+
+    },
+    "Right stick down" : {
+
+    },
+    "Right stick left" : {
+
+    },
+    "Right stick right" : {
+
+    },
+    "Right stick up" : {
+
+    },
+    "Ripcord" : {
+
+    },
+    "Round trip" : {
+
+    },
+    "Route" : {
+
+    },
+    "Second" : {
+
+    },
+    "Session" : {
+
+    },
+    "Settings…" : {
+
+    },
+    "Show Details" : {
+
+    },
+    "Show Inspector" : {
+
+    },
+    "Show Inspector (⌘I)" : {
+
+    },
+    "Show Library" : {
+
+    },
+    "Show Ripcord in the menu bar" : {
+
+    },
+    "Sign In" : {
+
+    },
+    "Sign In Instead" : {
+
+    },
+    "Sign In to PlayStation Network…" : {
+
+    },
+    "Sign Out" : {
+
+    },
+    "Sign in to PlayStation Network and consoles on your account pair without a code." : {
+
+    },
+    "Signed in as" : {
+
+    },
+    "Signing in lets consoles on your account pair without a code." : {
+
+    },
+    "Signing in…" : {
+
+    },
+    "Since the console was heard" : {
+
+    },
+    "Since the last frame" : {
+
+    },
+    "Square" : {
+
+    },
+    "Stage" : {
+
+    },
+    "Start Recording" : {
+
+    },
+    "Starting" : {
+
+    },
+    "Starts playing from a paired console." : {
+
+    },
+    "Stop Recording" : {
+
+    },
+    "Stop Trying" : {
+
+    },
+    "Stop recording" : {
+
+    },
+    "Stream" : {
+
+    },
+    "That didn’t pair" : {
+
+    },
+    "That passcode was refused" : {
+
+    },
+    "The console chooses the resolution partly by bitrate: 1080p needs about 25 Mb/s." : {
+
+    },
+    "The console is locked" : {
+
+    },
+    "The console is sending fewer frames than the stream's rate." : {
+
+    },
+    "The network is dropping packets" : {
+
+    },
+    "The network is slow to respond" : {
+
+    },
+    "The picture from %@" : {
+
+    },
+    "The stream has stopped" : {
+
+    },
+    "This console is no longer paired" : {
+
+    },
+    "This network" : {
+
+    },
+    "Threshold" : {
+
+    },
+    "To play from it again, you will need to pair it again." : {
+
+    },
+    "Touchpad" : {
+
+    },
+    "Triangle" : {
+
+    },
+    "Try Again" : {
+
+    },
+    "Use a Pairing Code Instead" : {
+
+    },
+    "Used when the game and the console send HDR." : {
+
+    },
+    "Video" : {
+
+    },
+    "Video codec" : {
+
+    },
+    "Video stopped arriving from the console." : {
+
+    },
+    "Wake" : {
+
+    },
+    "Wake ${console}" : {
+
+    },
+    "Wake Console" : {
+
+    },
+    "Wakes a paired console from rest mode, without connecting to it." : {
+
+    },
+    "Waking %@…" : {
+
+    },
+    "Your Mac and your console need to be on the same network." : {
+
+    },
+    "Your paired consoles. Click one to play." : {
+
+    },
+    "numeric account id" : {
+
+    },
+    "ripcord-lab" : {
+
+    }
+  },
+  "version" : "1.0"
+}

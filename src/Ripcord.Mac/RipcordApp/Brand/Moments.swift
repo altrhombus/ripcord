@@ -43,7 +43,11 @@ struct ConnectOverlay: View {
         }
         .padding(28)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .contain)
+        .onChange(of: dashes) { _, _ in
+            // Once per stage, never as a running count (DESIGN.md, "Accessibility").
+            AccessibilityNotification.Announcement(line).post()
+        }
     }
 }
 

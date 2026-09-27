@@ -359,12 +359,32 @@ there: the engine's own items, including the hardware runs Phase 3 still owes, a
 above. The spike, the C-core connect sequence, the Swift cloud tier and the internet-play runs are done
 and in the journal. Open:
 
-- [ ] **Everything after first picture:** steps 4–9 of the plan, starting with the app target, video and
-      audio in a window, and pairing on `KeychainPairingStore`.
-- [ ] **Controller input, live.** The sequence sends it, but the lab has had no pad attached, so it has not
-      been seen to steer the console.
-- [ ] **Wire the credential's Run Script copy into the app target** (the recipe is in the commit message
-      that added it) once there is an app target.
+- [ ] **The app's first run, against a console.** Steps 4–9 are written and build clean (journal,
+      2026-09-26) but have not been launched for review or streamed. The batched hardware pass should
+      look at, in order:
+      - the library's states against a console that is awake, resting and off, and a tile following a DHCP
+        move;
+      - pairing through the sheet, both routes (the account route has not run on hardware in any client);
+      - the launch zoom and the three dashes against the real stage timing;
+      - capture, meaning the keyboard plays only while captured and ⌘ shortcuts never reach the console;
+      - the inspector's figures against the lab's;
+      - the engine-to-display latency beside the Windows 18 ms, which measure different things (see
+        `LatencyMeter`).
+- [ ] **Recording and Picture in Picture on a live stream** `[X]`: that passthrough accepts the stream's
+      samples and the file plays back, what a mid-recording resolution change does, and that PiP floats
+      the layer.
+- [ ] **HDR end to end** `[X]`: whether the console's HDR metadata reaches the display layer intact.
+- [ ] **The widget, the Control and the intents under a signed build** `[X]`. Claiming the app group needs
+      a provisioning profile (`RIPCORD_APP_GROUP`), and whether a widget button and a Control run the
+      intents in the app, as `openAppWhenRun` asks, has not been seen.
+- [ ] **The custom SF Symbol** for the mark, so the menu bar label and widgets can show connect progress.
+      Read the symbol-template format from the SF Symbols app, rather than recalling it `[X]`.
+- [ ] **The first `macos-v*` release.** Six secrets (listed in `ci.yml`) and a Developer ID. The signing,
+      notarization and draft-release steps have never run.
+- [ ] **Internet play in the app.** The engine's internet route ends at the console's candidates, so the
+      app streams on the LAN only. It gets a route when the engine has one.
+- [ ] **Controller input, live.** The sequence sends it, but no pad has been attached to the lab or the
+      app, so it has not been seen to steer the console.
 - [ ] **Live-verify** sign-in in the web view with a passkey (it may need an entitlement), and the Keychain
       under the app's signature rather than the lab's ad hoc one `[X]`.
 - [ ] **The `mac` CI job's first run.** `runs-on: macos-26`, its Xcode, and now its Rust toolchain have not

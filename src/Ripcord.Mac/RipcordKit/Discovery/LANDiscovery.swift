@@ -128,7 +128,7 @@ public enum LANDiscovery {
             inet_ntop(AF_INET, &from.sin_addr, &sender, socklen_t(sender.count))
             guard ripcord_discovery_parse(buffer, received, &console) == RIPCORD_STATUS_OK else { continue }
 
-            let reply = DiscoveredConsole(console, address: String(cString: sender))
+            let reply = DiscoveredConsole(console, address: String(decoding: sender.prefix(while: { $0 != 0 }).map { UInt8(bitPattern: $0) }, as: UTF8.self))
             found[reply.hostID] = reply
             answered.insert(reply.address)
         }
