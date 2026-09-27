@@ -141,6 +141,18 @@ public sealed record HalyardSignalingMessage(
         {
             return null;
         }
+        catch (InvalidOperationException)
+        {
+            // A well-formed document with an element of the wrong kind: GetString on a number, TryGetProperty on
+            // an array. Malformed all the same, and it used to escape this method and lose the frame (found by the
+            // Mac port, 2026-09-26).
+            return null;
+        }
+        catch (FormatException)
+        {
+            // A number too large for the type a getter reads it as.
+            return null;
+        }
     }
 
     /// <summary>Pull the JSON document out of the <c>payload</c> string's <c>body=</c> segment.</summary>

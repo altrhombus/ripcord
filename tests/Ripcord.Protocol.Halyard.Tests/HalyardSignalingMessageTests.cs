@@ -173,6 +173,11 @@ public class HalyardSignalingMessageTests
     [InlineData("not json")]
     [InlineData("{}")]
     [InlineData("{\"dataType\":\"psn:sessionManager:sys:rps:sessionMessage:created\"}")]
+    // Well-formed JSON with an element of the wrong kind. These threw InvalidOperationException out of TryParse
+    // until 2026-09-26, losing the frame silently (found by the Mac port).
+    [InlineData("[1,2,3]")]
+    [InlineData("{\"dataType\":\"psn:sessionManager:sys:rps:sessionMessage:created\",\"body\":[]}")]
+    [InlineData("{\"dataType\":\"psn:sessionManager:sys:rps:sessionMessage:created\",\"body\":{\"data\":{\"sessionMessage\":{\"channel\":\"remote_play:1\",\"payload\":42}}}}")]
     public void MalformedOrIncompleteFramesReturnNull(string frame)
         => Assert.Null(HalyardSignalingMessage.TryParse(frame));
 }
