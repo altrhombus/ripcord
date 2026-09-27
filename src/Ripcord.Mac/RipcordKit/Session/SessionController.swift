@@ -29,6 +29,13 @@ public struct SessionStatus: Sendable, Equatable {
     public var reconnectAttempt = 0
     public var nextRetryIn: Duration?
 
+    public init(lifecycle: SessionLifecycle, detail: String, reconnectAttempt: Int = 0, nextRetryIn: Duration? = nil) {
+        self.lifecycle = lifecycle
+        self.detail = detail
+        self.reconnectAttempt = reconnectAttempt
+        self.nextRetryIn = nextRetryIn
+    }
+
     public var isLive: Bool { lifecycle == .streaming || lifecycle == .degraded }
     public var isTerminal: Bool { lifecycle == .failed || lifecycle == .closed }
 }
