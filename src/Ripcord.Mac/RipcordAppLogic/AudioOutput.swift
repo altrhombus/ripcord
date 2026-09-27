@@ -1,4 +1,4 @@
-// Sound: the session's 10 ms PCM buffers into an AVAudioPlayerNode. A stream has no timeline to honour, so
+// Sound: the session's 10 ms PCM buffers into an AVAudioPlayerNode, for the Mac and mobile apps alike. A stream has no timeline to honour, so
 // the queue is kept short: past about 60 ms queued, a buffer is dropped rather than letting the audio fall
 // behind the picture for good.
 

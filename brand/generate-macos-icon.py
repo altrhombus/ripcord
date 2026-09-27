@@ -6,7 +6,9 @@
 Writes, and nothing in either should be edited by hand (change a source here and rerun this):
 
   - src/Ripcord.Mac/RipcordApp/Ripcord.icon, an Icon Composer bundle that Xcode compiles into the app's
-    icon (the target's ASSETCATALOG_COMPILER_APPICON_NAME);
+    icon (the target's ASSETCATALOG_COMPILER_APPICON_NAME), and the same bundle in RipcordMobile/ for the
+    iPhone and iPad app. Two copies of generated output, one source. Apple TV wants a different kind of icon
+    (an App Icon & Top Shelf Image collection, which Icon Composer does not produce), still to do;
   - src/Ripcord.Mac/Shared/Brand.xcassets/MenuBarMark.imageset, ripcord-mono.svg as a template image for
     the menu bar extra and the Control, which the system tints (DESIGN.md, "Present across the Mac").
 
@@ -39,6 +41,7 @@ from pathlib import Path
 SVG = "http://www.w3.org/2000/svg"
 BRAND = Path(__file__).resolve().parent
 OUT = BRAND.parent / "src" / "Ripcord.Mac" / "RipcordApp" / "Ripcord.icon"
+MOBILE = BRAND.parent / "src" / "Ripcord.Mac" / "RipcordMobile" / "Ripcord.icon"
 MENU_BAR = BRAND.parent / "src" / "Ripcord.Mac" / "Shared" / "Brand.xcassets" / "MenuBarMark.imageset"
 CANVAS = 1024
 
@@ -90,10 +93,15 @@ def main() -> None:
             {"name": "wedge", "layers": [{"image-name": "wedge.svg", "name": "wedge"}]},
             {"name": "trail", "layers": [{"image-name": f"{n}.svg", "name": n} for n in names]},
         ],
-        "supported-platforms": {"squares": ["macOS"]},
+        # iOS as well: compiled with actool for iphoneos and looked at, 2026-09-27.
+        "supported-platforms": {"squares": ["iOS", "macOS"]},
     }
     (OUT / "icon.json").write_text(json.dumps(icon, indent=2) + "\n")
     print(f"wrote {OUT.relative_to(BRAND.parent)}")
+    if MOBILE.exists():
+        shutil.rmtree(MOBILE)
+    shutil.copytree(OUT, MOBILE)
+    print(f"wrote {MOBILE.relative_to(BRAND.parent)}")
     write_menu_bar_mark()
 
 

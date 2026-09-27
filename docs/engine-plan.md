@@ -337,8 +337,9 @@ reduced to what `ProtocolLab` and the vector generator need.
 
 Each gets its own plan file, in the shape of `macos-plan.md`, when it starts.
 
-- **iOS and iPadOS** extend RipcordKit to a multi-platform framework over the same XCFramework. Local
-  Network permission and background limits are the questions to settle by measurement.
+- **iOS and iPadOS** extend RipcordKit to a multi-platform framework. *Started 2026-09-27* in
+  [`ios-plan.md`](ios-plan.md), with Apple TV and a watch remote beside them: RipcordKit builds for iOS and tvOS,
+  over the engine built per SDK rather than an XCFramework for now, and one app target runs on all three.
 - **Linux** starts with two decisions: the toolkit (GTK4 and libadwaita, or Qt and Kirigami) and the
   shell's language. Neither affects the engine or any phase before Linux. If the shell is Rust, it can
   depend on `ripcord-net` and `ripcord-cloud` directly rather than through the C ABI.

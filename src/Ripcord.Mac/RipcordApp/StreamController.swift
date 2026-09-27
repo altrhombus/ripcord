@@ -288,20 +288,6 @@ final class StreamController {
     }
 }
 
-/// The display layer's renderer, handed to the session thread. AVFoundation documents enqueueing on an
-/// AVQueuedSampleBufferRendering from any thread; the type just predates Sendable.
-final class VideoSink: @unchecked Sendable {
-    private let renderer: AVSampleBufferVideoRenderer
-
-    init(_ renderer: AVSampleBufferVideoRenderer) { self.renderer = renderer }
-
-    func enqueue(_ sample: CMSampleBuffer) {
-        // A decode error leaves the renderer failed until flushed; the next keyframe then recovers it.
-        if renderer.status == .failed { renderer.flush() }
-        renderer.enqueue(sample)
-    }
-}
-
 /// Engine-to-display latency, measured the only way the layer allows: each enqueue is timestamped, and on
 /// every display refresh the displayed pixel buffer is compared with the last one seen. When it changes,
 /// the oldest outstanding enqueue is taken as the frame now on screen. The figure is refresh-quantised

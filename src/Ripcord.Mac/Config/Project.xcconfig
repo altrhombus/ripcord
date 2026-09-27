@@ -4,6 +4,9 @@ RIPCORD_REPO_ROOT = $(SRCROOT)/../..
 
 SDKROOT = macosx
 MACOSX_DEPLOYMENT_TARGET = 26.0
+// iPhone, iPad and Apple TV, for RipcordKit and the mobile app (docs/ios-plan.md). Mac-only targets ignore them.
+IPHONEOS_DEPLOYMENT_TARGET = 26.0
+TVOS_DEPLOYMENT_TARGET = 26.0
 // Apple Silicon only: see docs/macos-plan.md, "Decisions".
 ARCHS = arm64
 SWIFT_VERSION = 6.0
@@ -18,11 +21,21 @@ SWIFT_INCLUDE_PATHS = $(inherited) $(SRCROOT)/RipcordEngine/include
 RIPCORD_ENGINE = $(RIPCORD_REPO_ROOT)/engine
 // The shipping library: no test-support exports. RipcordKitTests.xcconfig points at the test build instead.
 RIPCORD_ENGINE_LIB = $(RIPCORD_ENGINE)/target/shipping/release/libripcord.a
+// The same library built for each other SDK, by the same phase, into the target's own directory.
+RIPCORD_ENGINE_LIB[sdk=iphoneos*] = $(RIPCORD_ENGINE)/target/shipping/aarch64-apple-ios/release/libripcord.a
+RIPCORD_ENGINE_LIB[sdk=iphonesimulator*] = $(RIPCORD_ENGINE)/target/shipping/aarch64-apple-ios-sim/release/libripcord.a
+RIPCORD_ENGINE_LIB[sdk=appletvos*] = $(RIPCORD_ENGINE)/target/shipping/aarch64-apple-tvos/release/libripcord.a
+RIPCORD_ENGINE_LIB[sdk=appletvsimulator*] = $(RIPCORD_ENGINE)/target/shipping/aarch64-apple-tvos-sim/release/libripcord.a
 OTHER_LDFLAGS = $(inherited) $(RIPCORD_ENGINE_LIB)
 
 // Ad hoc signing until distribution is set up (docs/macos-plan.md, step 9).
 CODE_SIGN_IDENTITY = -
 CODE_SIGN_STYLE = Manual
+// iPhone, iPad and Apple TV devices refuse an ad hoc signature, so without a team a device build is unsigned:
+// it compiles and links, which is what CI checks, and installing on a device needs DEVELOPMENT_TEAM and a
+// profile (docs/ios-plan.md). The simulators take the ad hoc one.
+CODE_SIGNING_ALLOWED[sdk=iphoneos*] = NO
+CODE_SIGNING_ALLOWED[sdk=appletvos*] = NO
 
 // The app group the widgets read the paired consoles through (Shared/ConsoleSnapshot.swift). Claiming a group
 // needs a provisioning profile, which an ad hoc build cannot have, so it is off here and a signed build turns
