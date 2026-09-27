@@ -35,6 +35,23 @@ different purpose.
 > anything. The list above is short, it is checkable in one `git log --format=%B | grep`, and it stops
 > growing the moment someone notices — which is the property that actually matters.
 
+### The Rust engine: senkusha's probes, CORRUPT_FRAME and rate control (2026-09-26)
+
+Four behaviours the .NET session had and the C core never did, ported from `HalyardSenkusha.cs`,
+`HalyardTakionStream.cs`, `AdaptiveBandwidthController.cs` and `ConnectionQualityReporter.cs`:
+
+- **Senkusha's echo and MTU probes.** Ten timed pings, then the MTU confirmed downstream and upstream, all
+  inside senkusha's 8 s box. The launch spec and PROBE_REPORT now declare a measured RTT and a confirmed
+  MTU wherever the console answers.
+- **CORRUPT_FRAME** for every range of frames the demuxer loses.
+- **The adaptive ladder and CONNECTION_QUALITY.** The report is opt-in, as in .NET, because its bitrate unit
+  is unconfirmed.
+- **The control channel's echo probe**, as an opt-in diagnostic.
+
+The scripted console answers all of them, so the tests cover the probes' order and outcomes on both
+routes. Those tests found a bug: the first ping raced ahead of the echo-on command it depended on. The ABI
+is now at version 5, and the Mac's `ConsoleSession` exposes the switches and the ladder's figures.
+
 ### The Rust engine's first session on hardware (2026-09-26)
 
 `ripcord-lab connect` on the Rust engine, against PS5-<redacted> on the LAN, with its user locked behind a

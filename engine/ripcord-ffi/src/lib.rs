@@ -30,7 +30,7 @@ use ripcord_proto::stream::header::StreamHeader;
 use ripcord_proto::stream::packet_crypto::PacketCrypto;
 
 /// Bumped whenever an export's signature or a crossing struct's layout changes.
-pub const RIPCORD_API_VERSION: u32 = 4;
+pub const RIPCORD_API_VERSION: u32 = 5;
 
 /// `repr(C)`, not `repr(i32)`, for the header's sake: cbindgen writes a fixed-width enum as an `enum` tag
 /// plus a same-named integer typedef before C23, and Swift imports those as two different types. A C
