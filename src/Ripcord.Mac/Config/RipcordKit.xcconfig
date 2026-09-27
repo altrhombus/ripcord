@@ -1,5 +1,5 @@
-// The Swift layer over libripcord, shared by the command-line lab now and the app and its
-// extensions later.
+// The Swift layer over the Rust engine, shared by the lab, the Mac app and its extensions, and the mobile app.
+// One framework for every Apple platform the engine is built for (docs/ios-plan.md).
 
 PRODUCT_NAME = RipcordKit
 PRODUCT_BUNDLE_IDENTIFIER = io.github.altrhombus.Ripcord.Kit
@@ -12,3 +12,8 @@ MACH_O_TYPE = staticlib
 
 // The engine phase runs cargo, which reads and writes under engine/, outside what the sandbox allows.
 ENABLE_USER_SCRIPT_SANDBOXING = NO
+
+SUPPORTED_PLATFORMS = macosx iphoneos iphonesimulator appletvos appletvsimulator
+SDKROOT = auto
+TARGETED_DEVICE_FAMILY = 1,2,3
+SUPPORTS_MACCATALYST = NO

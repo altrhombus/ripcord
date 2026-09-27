@@ -257,7 +257,10 @@ jobs:
         with:
           dotnet-version: '10.0.x'
       - name: Toolchain
-        run: rustup toolchain install stable --profile minimal && rustup default stable && xcodebuild -version && swift --version && cargo --version
+        run: >-
+          rustup toolchain install stable --profile minimal && rustup default stable
+          && rustup target add aarch64-apple-ios aarch64-apple-ios-sim aarch64-apple-tvos aarch64-apple-tvos-sim
+          && xcodebuild -version && swift --version && cargo --version
       - name: Generate the known-answer vectors
         run: dotnet run --project tools/Ripcord.ProtocolLab -c Release -- vectors
       - name: Build the lab and the app
@@ -265,6 +268,16 @@ jobs:
         run: |
           for scheme in RipcordLab Ripcord; do
             xcodebuild -project Ripcord.xcodeproj -scheme "$scheme" -configuration Release -derivedDataPath build build
+          done
+      # The iPhone, iPad and Apple TV app (docs/ios-plan.md): RipcordKit and the engine for each platform, and the
+      # app over them. Device builds are unsigned, since those platforms refuse an ad hoc signature; this checks
+      # they compile and link, not that they install.
+      - name: Build the mobile app for iPhone, iPad and Apple TV
+        working-directory: src/Ripcord.Mac
+        run: |
+          for destination in 'generic/platform=iOS' 'generic/platform=iOS Simulator' 'generic/platform=tvOS'; do
+            xcodebuild -project Ripcord.xcodeproj -scheme RipcordMobile -configuration Release \
+              -destination "$destination" -derivedDataPath build-mobile build
           done
       - name: RipcordKit tests
         working-directory: src/Ripcord.Mac
