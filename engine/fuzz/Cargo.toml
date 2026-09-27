@@ -82,3 +82,10 @@ path = "fuzz_targets/connect.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "derive"
+path = "fuzz_targets/derive.rs"
+test = false
+doc = false
+bench = false

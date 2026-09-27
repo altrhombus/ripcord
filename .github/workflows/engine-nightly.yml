@@ -43,7 +43,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target: [stream, control, takion, dgram, discovery, stun, sess, account, connect]
+        target: [stream, control, takion, dgram, discovery, stun, sess, account, connect, derive]
     steps:
       - uses: actions/checkout@v4
       - name: Toolchain

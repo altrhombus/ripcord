@@ -243,8 +243,8 @@ the documents into line, is done and in the journal. The engine lives in [`engin
       vectors pass, its fuzz target runs and differential fuzzing against the C core is clean. Includes the
       `Ecdh` backends (CryptoKit carried over, CNG new, RustCrypto), each checked on its own platform in
       CI, and the scripted console ported to Rust. Parity is a measured matrix, not a list. The first layer,
-      crypto and the Halyard derivations, has its vectors passing and its differential runs clean (journal,
-      2026-09-26). It still needs its fuzz target. Next in order:
+      crypto and the Halyard derivations, has its vectors passing, its differential runs clean and its fuzz
+      target (`derive`) running clean (journal, 2026-09-26), so it is done. Next in order:
   - [ ] **The CNG `Ecdh` backend on Windows.** Written as `PlatformEcdh` in the .NET harness (journal,
         2026-09-26): .NET's `ECDiffieHellman`, which is CNG on Windows, behind the engine's backend table. It
         passes `session-crypto.kat` through the engine on macOS, on Apple's implementation. The Windows legs
