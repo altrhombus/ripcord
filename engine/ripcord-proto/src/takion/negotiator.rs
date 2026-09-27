@@ -22,6 +22,9 @@ pub const CLIENT_VERSION: u32 = 17;
 pub const OFFERED_VERSIONS: [u32; 8] = [9, 10, 11, 13, 14, 15, 16, 17];
 /// The session-key string the vendor client sends on a direct LAN session: a literal, not a placeholder.
 pub const DEFAULT_SESSION_KEY: &[u8] = b"InvalidSessionId";
+/// The unused required `encryptedKey`: four zero bytes, which the console accepts on hardware. The vendor sends
+/// it present and empty (`22 00`, cap53 frame 10086), so these are ours rather than the wire's; whether to
+/// match the vendor is open in ROADMAP.
 const ENCRYPTED_KEY: [u8; 4] = [0; 4];
 
 /// The curve for a negotiated version: 0x0d to 0x11 are P-521, and nothing else has been validated.

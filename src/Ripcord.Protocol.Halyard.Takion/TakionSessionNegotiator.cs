@@ -93,7 +93,9 @@ public sealed class TakionSessionNegotiator
                 SessionKey = request.SessionKey,
                 LaunchSpecJson = request.LaunchSpecJson,
                 // encryptedKey is a required proto field; the console drops the whole SESSION_REQUEST without it.
-                // The vendor client sends 4 zero bytes (the key rides in the launchSpec, not here).
+                // Four zero bytes, which the console accepts on hardware (the key rides in the launchSpec, not
+                // here). The vendor sends it present and EMPTY (`22 00`, cap53 frame 10086), so the four bytes
+                // are ours, not the wire's; whether to match the vendor is open in ROADMAP.
                 EncryptedKey = ByteString.CopyFrom(new byte[4]),
                 EcdhPublicKey = ByteString.CopyFrom(publicKey),
                 EcdhSignature = ByteString.CopyFrom(signature),

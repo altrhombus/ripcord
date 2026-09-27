@@ -1380,12 +1380,14 @@ impl Session {
                         self.measured_rtt_us = Some(now - asked);
                     }
                     self.senkusha_session_asked = now;
-                    // A keyless SESSION exchange whose whole purpose is to have happened.
+                    // A keyless SESSION exchange whose whole purpose is to have happened. `encryptedKey` is present
+                    // and empty, as the vendor sends it: `22 00` in every keyless senkusha request in cap53 and
+                    // cap54. It was four zero bytes, the stream request's value, until 2026-09-26.
                     let request = SessionRequest {
                         client_version: 9,
                         session_key: b"",
                         launch_spec: b"",
-                        encrypted_key: &[0; 4],
+                        encrypted_key: b"",
                         ecdh_public_key: None,
                         ecdh_signature: None,
                     }
