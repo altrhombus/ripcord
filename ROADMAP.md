@@ -1044,7 +1044,7 @@ Both need a console or a capture to settle, hence here rather than in Track D.
       together, a visible change to every card in dark theme. That is a look decision to make on a real
       screen, not here. Until then `Ripcord.Card.xaml` and `docs/design.md` say they have diverged, and why.
       **Price: ~30 minutes to try, most of it looking.**
-- [ ] **Pair a console port from the desktop app — proposed 2026-09-16, not started.** A port asks the
+- [ ] **Pair a console port from the desktop app — proposed 2026-09-16; design note [`docs/port-pairing.md`](docs/port-pairing.md) 2026-09-27, for review.** A port asks the
       desktop to sign in on its behalf: the port enters a pairing mode and announces itself on the LAN, a
       running Ripcord on a PC or Mac sees it offered in its own UI, does the PSN sign-in and the console
       registration with a real browser and a real keyboard, and hands the finished pairing record back.

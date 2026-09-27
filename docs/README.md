@@ -23,6 +23,7 @@ subject from different angles, which is why picking by topic alone leads you to 
 | **What outside material was consulted, and what did each item inform?** | [`protocol-research-log.md`](protocol-research-log.md) |
 | How does the PS5 Remote Play protocol actually work? | [`protocol/`](protocol/) |
 | In what order would I build a client from the spec? | [`protocol/IMPLEMENTATION.md`](protocol/IMPLEMENTATION.md) |
+| How would a console port pair through a desktop? (design, for review) | [`port-pairing.md`](port-pairing.md) |
 | What is the portable C core the console ports share? | [`libripcord/README.md`](../libripcord/README.md) |
 | How do I build or run a console port? | [The console ports](#the-console-ports), below |
 | How do I contribute, and what must I attest to? | [`CONTRIBUTING.md`](../CONTRIBUTING.md) |
