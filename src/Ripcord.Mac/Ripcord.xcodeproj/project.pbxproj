@@ -102,6 +102,13 @@
 			);
 			target = 0BECB2BEA06EDB351F3FD275 /* RipcordWidgets */;
 		};
+		6CE6B6C32C4DA0E057FBA436 /* Exceptions for "RipcordMobile" folder in "RipcordMobile" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				DESIGN.md,
+			);
+			target = D8135FC5D5205C6AB313ED82 /* RipcordMobile */;
+		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -150,6 +157,9 @@
 		};
 		4EE4558B21BF9E5AADBDF294 /* RipcordMobile */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				6CE6B6C32C4DA0E057FBA436 /* Exceptions for "RipcordMobile" folder in "RipcordMobile" target */,
+			);
 			path = RipcordMobile;
 			sourceTree = "<group>";
 		};
