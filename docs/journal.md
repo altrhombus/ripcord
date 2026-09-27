@@ -35,6 +35,58 @@ different purpose.
 > anything. The list above is short, it is checkable in one `git log --format=%B | grep`, and it stops
 > growing the moment someone notices — which is the property that actually matters.
 
+### The Mac app, steps 4–9 (2026-09-26)
+
+The Mac got its app in one sitting, from a first picture to a release line. It is all written and building
+clean, with the RipcordKit suite green (161 tests), and **none of it has met a console**: the hardware pass
+is batched, and ROADMAP lists what it has to check.
+
+- **Step 4, a first picture.** A library window and one stream window per session: the display layer, an
+  audio player node with a short queue, the pad, and the passcode prompt. Latency is measured in the only
+  way the layer allows. Each enqueue is timestamped, and a display link watches for the displayed buffer
+  to change. That is the Mac's counterpart of the Windows demux-to-present figure, not the same
+  measurement.
+- **Step 5, design first.** `src/Ripcord.Mac/DESIGN.md` settles the plan's hypotheses the way
+  `docs/design.md` settled Windows', and keeps its principle: borrow the OS, and spend identity on the
+  tile, the launch and the pairing celebration.
+  - **The icon** is an Icon Composer bundle generated from the brand SVGs. Apple's grid was **checked by
+    compiling it with `actool` and looking at the render**, not recalled. The brand README had asked for
+    exactly that.
+  - **Two recalled details were taken out before they landed:** the idea that Screen Sharing uses ⌃⌥ as
+    a release convention, and a system game-mode plist key. Neither could be traced.
+- **Step 6, library, pairing and Settings.**
+  - **Tile states.** Tiles say *Ready*, *Resting* or *Not found* from a search every five seconds, and go
+    to Not found only after two silent rounds.
+  - **DHCP moves.** A record follows its console to a new DHCP address, matched by the console's id.
+  - **Pairing** is a sheet. Sign-in leads and the code route is one press away. Account pairing moved
+    into RipcordKit (`AccountPairing`), so the app and the lab run one copy of it.
+  - **One input hub.** The app runs a single `InputHub` and routes its pad to whichever surface was last
+    made key. GameController allows one handler per device, so a second hub silently took the pad from
+    the first.
+- **Step 7, the stream experience.** QuickTime's model:
+  - the window grows out of its tile;
+  - the mark's dashes fill at the engine's three stages;
+  - a glass capsule leaves on its own;
+  - the inspector (⌘I) is the Windows HUD's ladder, with the Windows thresholds;
+  - clicking the picture captures the keyboard, ⌃⌥ releases it, and ⌘ shortcuts never reach the console;
+  - Picture in Picture floats the display layer;
+  - recording writes the bitstream in passthrough.
+
+  Recording, PiP and HDR are `[X]`.
+- **Step 8, present across the Mac.**
+  - **What was built:** a menu bar extra (off by default), App Intents with App Shortcuts, and a widget
+    extension with a Consoles widget and a Connect control.
+  - **The widget needs a signed build.** It reads a snapshot through an app group, and claiming one needs
+    a provisioning profile: the first build with the group failed on exactly that. So
+    `RIPCORD_APP_GROUP` gates it, and the ad hoc build's widget shows the way into the app.
+- **Step 9, ship.**
+  - **Accessibility:** VoiceOver hears each connect stage once, and the capsule does not hide itself while
+    VoiceOver is on.
+  - **Strings:** one String Catalog for both targets, with `sync-strings.sh` for command-line builds.
+  - **Releases:** a `macos-v*` tag line that signs, notarizes and drafts a release.
+  - **A notarization blocker was fixed before it could land:** the Release build was carrying
+    `get-task-allow`, which notarization refuses.
+
 ### The Mac links a shipping engine (2026-09-26)
 
 The Mac's build phase now builds the engine twice: a shipping library without `test-support`, which the lab
