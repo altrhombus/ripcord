@@ -155,10 +155,19 @@ instantiations), `std` 8%, and std's backtrace symbolizer (`gimli`, `addr2line`,
 - **The backtrace symbolizer stays** on stable Rust. It is linked by std's default panic hook, which unwinding
   needs, and removing it takes a nightly `build-std` with `panic_immediate_abort`, which is also an abort.
 
-What an executable carries: `ripcord-lab` is 2.86 MB stripped (2.92 MB before the table went), the app's
-own binary 3.71 MB. Most of the lab's growth over its 1.10 MB before the engine is therefore not the
-engine: the library is 0.65 MB. The rest is still to be explained, and is the next thing to measure before
-the XCFramework.
+What an executable carries, and why the lab was so much larger than the library (2026-09-27): **dead-code
+stripping was off.** Nothing in the Mac project set `DEAD_CODE_STRIPPING`, and Xcode's default for a project
+whose settings all live in xcconfig files is off, so the linker kept every object it pulled from the engine's
+static archive whole. `std` alone was 440 KB of the lab. With it on, from `Config/Project.xcconfig`:
+
+| Binary, stripped | Before | After |
+|---|---|---|
+| `ripcord-lab` | 2.86 MB | **1.72 MB** |
+| The app's own executable | 3.71 MB | **2.64 MB** |
+
+A link map of the stripped lab: RipcordKit's own Swift is the largest part at 641 KB (48% of its code), then
+`ripcord_proto` 240 KB, `std` 181 KB, `core` 35 KB and the crypto curves under 20 KB. The engine's crates total
+576 KB. So the engine is now well under half of the lab, and the next saving is not in the engine.
 
 ## Phase 2, the first layer, measured (2026-09-26)
 
