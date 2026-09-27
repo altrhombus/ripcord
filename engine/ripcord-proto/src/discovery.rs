@@ -64,7 +64,8 @@ pub fn parse_reply(data: &[u8]) -> Option<Console> {
     let text = String::from_utf8_lossy(data);
     let mut lines = text.split('\n').map(|l| l.strip_suffix('\r').unwrap_or(l));
     let status = lines.next()?;
-    if status.len() < 8 || !status[..8].eq_ignore_ascii_case("HTTP/1.1") {
+    // `get`, not indexing: a multi-byte character straddling byte 8 would panic a slice (found by fuzzing).
+    if !status.get(..8).is_some_and(|p| p.eq_ignore_ascii_case("HTTP/1.1")) {
         return None;
     }
     let mut console = Console {
@@ -131,6 +132,14 @@ pub fn is_arm_reply(is_ps5: bool, datagram: &[u8]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_character_straddling_the_status_prefix_is_refused_not_a_panic() {
+        // The fuzzer's input: lossy UTF-8 turns the invalid bytes into three-byte U+FFFD, so byte 8 falls
+        // inside a character.
+        assert_eq!(parse_reply(&[0xc2, 0xc2, 0xc6, 0x35]), None);
+        assert_eq!(parse_reply("HTTP/1.\u{e9}1 200 Ok\nhost-id:X\n".as_bytes()), None);
+    }
 
     #[test]
     fn probes_and_replies() {
