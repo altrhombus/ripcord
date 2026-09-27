@@ -35,6 +35,25 @@ different purpose.
 > anything. The list above is short, it is checkable in one `git log --format=%B | grep`, and it stops
 > growing the moment someone notices — which is the property that actually matters.
 
+### Smaller work: imports, size, a fuzz target, input differentials, the code scanner (2026-09-26)
+
+- **`SessionPage`'s three protocol imports were stale.** No type or extension method from any of them is
+  used, so they are gone. The app's two direct project references to the protocol stay, until a Windows
+  build shows they can go.
+- **The engine is 9% smaller.** A linker map of the shipping dylib (719 KB stripped) showed a 64 KB table of
+  every GF(2^8) product in the FEC code, a tenth of the library. Its rows are now built on the stack, at 653
+  KB, and a worst-case recovery takes 174 µs where it took 155. `panic = "abort"` would save as much, but
+  breaks the plan's rule that a panic ends a session, never the host. The rest is in `engine/README.md`.
+- **The crypto and derivations layer has its fuzz target**, `derive`: arbitrary peer points on both curves,
+  registration contexts of any length, and round-trip assertions. 716,176 runs in a minute, clean.
+- **Controller input has differential runs against the C core.** STATE matches byte for byte. HISTORY differs
+  by design in its repeat window. The runs found one divergence nobody had recorded: the order of a poll's
+  simultaneous events. It is harmless as far as anyone knows, and `[X]` in the README.
+- **The pairing code can be scanned off the TV.** A camera sheet in the code form prefers a Continuity Camera
+  iPhone and reads frames with Vision. `PairingCodeReader` takes exactly eight digits, grouped any way, never
+  cut from a longer number, and believes a code only when two frames agree. It has four tests, and has not
+  been pointed at a console.
+
 ### The Mac app's logic, tested (2026-09-26)
 
 Steps 6 and 7 had shipped their logic untested. The parts that need no window now live in

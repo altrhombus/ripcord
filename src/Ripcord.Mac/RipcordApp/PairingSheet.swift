@@ -27,6 +27,7 @@ struct PairingSheet: View {
     @State private var accountID = ""
     @State private var pairedKey: String?
     @State private var window: NSWindow?
+    @State private var scanning = false
 
     /// The console being paired: from the network, or an address typed in.
     private struct Target: Equatable {
@@ -173,8 +174,12 @@ struct PairingSheet: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             Form {
-                TextField("Code", text: $pin, prompt: Text("8 digits"))
-                    .font(.title3.monospacedDigit())
+                HStack {
+                    TextField("Code", text: $pin, prompt: Text("8 digits"))
+                        .font(.title3.monospacedDigit())
+                    Button("Scan from the TV…") { scanning = true }
+                        .help("Read the code with a camera, such as an iPhone nearby")
+                }
                 if !model.account.isSignedIn {
                     TextField("Account ID", text: $accountID, prompt: Text("numeric account id"))
                 }
@@ -193,6 +198,9 @@ struct PairingSheet: View {
             }
         }
         .onAppear { if accountID.isEmpty { accountID = model.account.rememberedAccountID } }
+        .sheet(isPresented: $scanning) {
+            CodeScannerSheet { pin = $0 }
+        }
     }
 
     private func failedStep(_ why: String) -> some View {
