@@ -597,12 +597,14 @@ pub unsafe extern "C" fn ripcord_account_seed_seal(
         // SAFETY: forwarded.
         let args = unsafe { (bytes(data1, 16), bytes(data2, 16), bytes(seed, 16), bytes_mut(out, capacity)) };
         let (Some(d1), Some(d2), Some(seed), Some(out)) = args else { return RipcordStatus::InvalidArgument };
-        let sealed = account_seed::seal(
+        let Some(sealed) = account_seed::seal(
             is_ps5,
             &d1.try_into().expect("16"),
             &d2.try_into().expect("16"),
             &seed.try_into().expect("16"),
-        );
+        ) else {
+            return RipcordStatus::Rejected;
+        };
         let text = account_seed::encode_custom_data1(&sealed);
         if text.len() >= out.len() {
             return RipcordStatus::InvalidArgument;

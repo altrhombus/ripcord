@@ -41,7 +41,7 @@ fn random_state(rng: &mut Rng, previous: &State) -> State {
     let mut s = *previous;
     let flips = if rng.below(10) == 0 { 1 + rng.below(8) } else { rng.below(3) };
     for _ in 0..flips {
-        s.buttons ^= 1 << rng.below(17);    // the 17 bits C knows; the touchpad bit is the engine's own
+        s.buttons ^= 1 << rng.below(17); // the 17 bits C knows; the touchpad bit is the engine's own
     }
     if rng.below(3) == 0 {
         let i = rng.below(4) as usize;
@@ -80,8 +80,10 @@ fn same_polls(c: &[&[u8]], polls: &[Vec<Vec<u8>>]) {
             whole.sort();
             assert_eq!(ours, whole, "a poll's events differ");
         } else {
-            assert!(ours.iter().all(|x| poll.iter().any(|e| e.as_slice() == *x)),
-                    "C kept an event that poll did not produce");
+            assert!(
+                ours.iter().all(|x| poll.iter().any(|e| e.as_slice() == *x)),
+                "C kept an event that poll did not produce"
+            );
         }
         k += take;
     }
@@ -97,11 +99,18 @@ fn state_payloads_and_headers_match() {
         let mut w = Writer::new();
         let packet = w.step(&s, 0).state.expect("the first poll sends a STATE packet");
         assert_eq!(packet[..input::HEADER_LENGTH], c_input_header(input::TYPE_STATE, 0)[..], "state header");
-        assert_eq!(packet[input::HEADER_LENGTH..], c_input_state(s.buttons, sticks, s.left_trigger, s.right_trigger)[..],
-                   "state payload for {s:?}");
+        assert_eq!(
+            packet[input::HEADER_LENGTH..],
+            c_input_state(s.buttons, sticks, s.left_trigger, s.right_trigger)[..],
+            "state payload for {s:?}"
+        );
     }
     for seq in [0u16, 1, 0x7fff, 0xffff] {
-        assert_eq!(c_input_header(input::TYPE_HISTORY, seq)[1..3], seq.to_be_bytes(), "history header sequence");
+        assert_eq!(
+            c_input_header(input::TYPE_HISTORY, seq)[1..3],
+            seq.to_be_bytes(),
+            "history header sequence"
+        );
     }
 }
 
@@ -114,7 +123,7 @@ fn history_is_c_s_four_events_and_the_same_decisions() {
         let mut c = CInput::new();
         let mut previous = State::default();
         let mut history_seq = 0u16;
-        let mut polls: Vec<Vec<Vec<u8>>> = Vec::new();   // each poll's events, newest poll first
+        let mut polls: Vec<Vec<Vec<u8>>> = Vec::new(); // each poll's events, newest poll first
         let mut kept = 0usize;
         for poll in 0..200u64 {
             let s = if poll == 0 { State::default() } else { random_state(&mut rng, &previous) };
@@ -124,7 +133,10 @@ fn history_is_c_s_four_events_and_the_same_decisions() {
             match out.history {
                 None => assert!(c_payload.is_empty(), "C owed a HISTORY packet the engine did not, at {s:?}"),
                 Some(packet) => {
-                    assert_eq!(packet[..input::HEADER_LENGTH], c_input_header(input::TYPE_HISTORY, history_seq)[..]);
+                    assert_eq!(
+                        packet[..input::HEADER_LENGTH],
+                        c_input_header(input::TYPE_HISTORY, history_seq)[..]
+                    );
                     history_seq = history_seq.wrapping_add(1);
                     let engine = events(&packet[input::HEADER_LENGTH..]);
                     let c_events = events(&c_payload);

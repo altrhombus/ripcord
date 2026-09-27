@@ -119,7 +119,7 @@ fn account_id_and_seed() {
         // The console's side seals a seed; the ABI recovers it from the published double base64.
         use ripcord_proto::halyard::account_seed;
         let seed = [0x42u8; 16];
-        let sealed = account_seed::seal(true, &d1, &d2, &seed);
+        let sealed = account_seed::seal(true, &d1, &d2, &seed).expect("PS5 tables");
         let published = account_seed::encode_custom_data1(&sealed);
         let mut got = [0u8; 16];
         assert_eq!(

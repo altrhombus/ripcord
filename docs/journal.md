@@ -35,6 +35,29 @@ different purpose.
 > anything. The list above is short, it is checkable in one `git log --format=%B | grep`, and it stops
 > growing the moment someone notices — which is the property that actually matters.
 
+### A provenance audit of the branch, and an engine without the constants (2026-09-27)
+
+Before any of `feat/libripcord` is pushed, this branch was read end to end against `CLAUDE.md`'s independence
+rules. No other implementation was opened for it: the question was whether our own work kept our own rules.
+
+- **What held.** No third-party implementation is named or echoed, and no vendor symbol name appears; the
+  protobuf names are the renamed ones. Neither the OAuth credential nor Client-Type is copied into Swift or
+  the engine. Every 19-digit number, long hex string, MAC address and GUID in the captures folder's text files was
+  searched for in the committed tree (33,626 values). The only matches were published test patterns,
+  Client-Type in its known homes, the bundle itself, and the Takion handshake packets that
+  `CaptureProvenanceTests` already allows with a reason.
+- **What was overstated.** About twenty claims read as settled when they rest on one run or two. They are now
+  marked `[X]` or corrected (the commit lists them). The research log gained its missing rows, for the
+  2026-09-25 hardware findings, the unanswered SRC3, and RFC 9382.
+- **An engine without the constants.** `NOTICE` said the constants are "read at runtime, not compiled into
+  program logic". That was true of the dotnet client only: the engine and the C core generate tables from
+  the one file at build time. The engine gained an `interop-constants` feature, on by default. Without it
+  the tables are absent and a connect stops before the console. `ripcord_interop_constants_bundled()`
+  reports which build this is, and the Mac selects it with `RIPCORD_BUNDLE_INTEROP_CONSTANTS = NO`. The
+  release library was searched for the tables' bytes both ways: present by default, absent without the
+  feature. `NOTICE`, `README.md` and `CLAUDE.md` now describe all three carriers. Three smaller gaps in the
+  rule text are in the roadmap.
+
 ### Scaffolding for iPhone, iPad and Apple TV (2026-09-27)
 
 The Mac's Swift layer carried over almost untouched.

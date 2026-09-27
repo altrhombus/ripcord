@@ -64,6 +64,16 @@ way, from `HalyardRegistrationMessage.ClientTypeHex` at build time, so the engin
 it; `BundledInteropConstantsTests.ClientType_RustEngineDerivesItFromTheReference` checks both that and
 that no file under `engine/` carries the value.
 
+**An engine without them is one feature.** `interop-constants`, on by default in `ripcord-proto`,
+`ripcord-net` and `ripcord-ffi`, is what reads the bundle. Built with `--no-default-features`, `build.rs`
+does not open it and every table is `None`. The derivations then report their family absent, as they
+already did for a bundle without PS4. A connect ends before reaching the console, with a log line saying
+why, and `ripcord_interop_constants_bundled()` returns false. This is the counterpart of .NET's
+`-p:BundleInteropConstants=false` (`NOTICE`), and the Mac build's `RIPCORD_BUNDLE_INTEROP_CONSTANTS = NO`
+selects it. On 2026-09-27 the release library built both ways was searched for the tables' bytes: all four
+were in the default build and none in the other. The test that proves it runs by name, since every other
+test needs the constants: `cargo test -p ripcord-proto --no-default-features --lib bundle_tests`.
+
 The generated bindings are never committed. Nobody edits them: change `ripcord-ffi/src/lib.rs`, and
 the next `cargo build` rewrites both.
 

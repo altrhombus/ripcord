@@ -34,7 +34,7 @@ pub fn kdf(nonce: &[u8; 16], companion: &[u8; 16], version_selector: i32) -> Opt
             keys.material[i] = nonce[i].wrapping_add(0x36 + i as u8) ^ e2[i];
         }
     } else {
-        let (e1, e2) = (entry(&c::KDF_TABLE1, i1), entry(&c::KDF_TABLE2, i2));
+        let (e1, e2) = (entry(c::KDF_TABLE1.as_ref()?, i1), entry(c::KDF_TABLE2.as_ref()?, i2));
         for i in 0..16 {
             // PS5 adds to the companion, then XORs the table.
             keys.key[i] = companion[i].wrapping_add(0x18 + i as u8) ^ e1[i] ^ nonce[i];
@@ -45,13 +45,13 @@ pub fn kdf(nonce: &[u8; 16], companion: &[u8; 16], version_selector: i32) -> Opt
 }
 
 /// The field context key from the two negotiated selectors. The high-band codec cases (8, 9) win
-/// regardless of the version selector.
-pub fn context_key(codec_selector: i32, version_selector: i32) -> &'static [u8; 16] {
+/// regardless of the version selector. `None` in an engine built without the constants.
+pub fn context_key(codec_selector: i32, version_selector: i32) -> Option<&'static [u8; 16]> {
     match (codec_selector, version_selector) {
-        (8 | 9, _) => &c::CTX_CODEC_IN_HIGH,
-        (_, 1) => &c::CTX_SELECTOR_ONE,
-        (_, 0) => &c::CTX_SELECTOR_ZERO,
-        _ => &c::CTX_FALLBACK_ZERO,
+        (8 | 9, _) => c::CTX_CODEC_IN_HIGH.as_ref(),
+        (_, 1) => c::CTX_SELECTOR_ONE.as_ref(),
+        (_, 0) => c::CTX_SELECTOR_ZERO.as_ref(),
+        _ => c::CTX_FALLBACK_ZERO.as_ref(),
     }
 }
 
@@ -87,7 +87,7 @@ impl ControlField {
         Some(Self {
             key: keys.key,
             material: keys.material,
-            context_key: *context_key(codec_selector, version_selector),
+            context_key: *context_key(codec_selector, version_selector)?,
         })
     }
 

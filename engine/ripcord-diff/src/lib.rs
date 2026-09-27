@@ -1061,8 +1061,17 @@ pub fn c_account_id(input: &str) -> (i32, String) {
 unsafe extern "C" {
     fn diff_input_new() -> *mut c_void;
     fn diff_input_free(w: *mut c_void);
-    fn diff_input_history(w: *mut c_void, buttons: u32, sticks: *const i16, lt: u8, rt: u8, out: *mut u8, size: usize) -> usize;
-    fn diff_input_state(buttons: u32, sticks: *const i16, lt: u8, rt: u8, out: *mut u8, size: usize) -> usize;
+    fn diff_input_history(
+        w: *mut c_void,
+        buttons: u32,
+        sticks: *const i16,
+        lt: u8,
+        rt: u8,
+        out: *mut u8,
+        size: usize,
+    ) -> usize;
+    fn diff_input_state(buttons: u32, sticks: *const i16, lt: u8, rt: u8, out: *mut u8, size: usize)
+    -> usize;
     fn diff_input_header(kind: u8, sequence: u16, out: *mut u8, size: usize) -> usize;
 }
 
@@ -1085,7 +1094,9 @@ impl CInput {
         let _core = c_core();
         let mut out = [0u8; 64];
         // SAFETY: a live writer, four sticks, and a 64-byte buffer (the C side's packet bound).
-        let n = unsafe { diff_input_history(self.raw, buttons, sticks.as_ptr(), lt, rt, out.as_mut_ptr(), out.len()) };
+        let n = unsafe {
+            diff_input_history(self.raw, buttons, sticks.as_ptr(), lt, rt, out.as_mut_ptr(), out.len())
+        };
         out[..n].to_vec()
     }
 }
