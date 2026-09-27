@@ -199,6 +199,7 @@ struct StreamWindow: View {
         guardian.onAsk = { confirmDisconnect = true }
         closeGuard = guardian
         controller?.installMonitors { [weak window] in window }
+        model.closers[target.consoleKey] = { [weak window] in window?.close() }
         controller?.pip.restore = { [weak window] in window?.makeKeyAndOrderFront(nil) }
         if let origin = model.launchOrigins.removeValue(forKey: target.consoleKey) {
             LaunchZoom.run(window, from: origin, reduceMotion: reduceMotion)
