@@ -339,9 +339,10 @@ impl RvRig {
                     Io::UdpSend { socket: Socket::MediaLeg, data, .. } => {
                         let replies = if crate::dgram::wire::Prelude::parse(&data).is_some() {
                             self.media.on_datagram(&data)
-                        } else if self.lan.senkusha_done || !crate::takion::connection::is_control(&data) {
+                        } else if self.lan.senkusha_done {
                             self.lan.on_udp(9296, &data)
                         } else {
+                            // Senkusha's association, its pings and its MTU packet, until its goodbye.
                             self.lan.on_udp(9297, &data)
                         };
                         for reply in replies {
@@ -414,6 +415,7 @@ fn a_rendezvous_session_runs_over_both_legs_to_the_stream() {
     assert!(o.probe_report_sent);
     assert!(o.stream_ready_seen);
     assert!(o.senkusha_ok, "senkusha on the A/V leg's own socket");
+    assert!(o.echo_rtt_us.is_some() && o.mtu_confirmed, "its probes too");
     assert!(r.lan.senkusha_done, "and it said goodbye before the stream's association");
     assert_eq!(o.session_ready_waited_ms, Some(0));
     let ctrl_request = String::from_utf8_lossy(&r.ctl.requests[1]).into_owned();
@@ -429,4 +431,111 @@ fn a_rendezvous_session_runs_over_both_legs_to_the_stream() {
     assert!(r.s.is_ended());
     assert_eq!(r.ctl.closes_received, closes + 1);
     assert!(r.lan.disconnect_received);
+}
+
+#[test]
+fn senkusha_measures_the_round_trip_and_confirms_the_mtu() {
+    let mut r = Rig::new(config(), ScriptedLanConsole::new(true));
+    r.s.connect(r.now);
+    r.run_until(Session::is_streaming, 60_000_000);
+    assert!(r.s.is_streaming());
+    let o = r.s.outcome().clone();
+    assert!(o.echo_rtt_us.is_some(), "a majority of pings came back");
+    assert!(o.mtu_confirmed);
+    assert_eq!(r.c.pings_echoed, 11, "ten pings and the upstream MTU packet");
+    use crate::takion::control::{
+        PROBE_CLIENT_MTU_COMMAND as CLIENT, PROBE_ECHO_COMMAND as ECHO, PROBE_MTU_COMMAND as MTU,
+    };
+    assert_eq!(
+        r.c.probe_commands,
+        [(ECHO, 0, 0, 1), (ECHO, 0, 0, 0), (MTU, 1, 1454, 1), (CLIENT, 1, 1454, 1), (CLIENT, 2, 1454, 0)],
+        "the capture's order, and the upstream test closed"
+    );
+    assert!(r.c.senkusha_done, "and a polite goodbye after the probes");
+}
+
+#[test]
+fn unanswered_probes_cost_time_but_never_the_session() {
+    let mut c = ScriptedLanConsole::new(true);
+    c.answer_probes = false;
+    let mut r = Rig::new(config(), c);
+    r.s.connect(r.now);
+    r.run_until(Session::is_streaming, 60_000_000);
+    assert!(r.s.is_streaming());
+    let o = r.s.outcome().clone();
+    assert_eq!(o.echo_rtt_us, None);
+    assert!(!o.mtu_confirmed);
+    assert!(o.senkusha_ok);
+    assert_eq!(r.s.declared().0, 1454, "the unverified estimate stands");
+    // Downstream failed, so there was no upstream test to close.
+    assert!(r.c.probe_commands.iter().all(|p| p.0 != crate::takion::control::PROBE_CLIENT_MTU_COMMAND));
+}
+
+#[test]
+fn a_lost_frame_is_reported_as_corrupt_and_repaired() {
+    let mut r = Rig::new(config(), ScriptedLanConsole::new(true));
+    r.s.connect(r.now);
+    r.run_until(Session::is_streaming, 60_000_000);
+    for _ in 0..2 {
+        let k = r.c.video_keyframe().unwrap();
+        r.feed_stream(k);
+    }
+    let asked = r.c.idr_requests;
+    r.c.skip_frames(2);
+    let k = r.c.video_keyframe().unwrap();
+    r.feed_stream(k);
+    assert_eq!(r.s.outcome().corrupt_frames_sent, 1);
+    assert!(r.c.stream_messages.contains(&tc::CORRUPT_FRAME));
+    r.run_until(|_| false, 300_000);
+    assert!(r.c.idr_requests > asked, "and a keyframe asked for");
+}
+
+#[test]
+fn connection_quality_goes_out_only_when_asked_for() {
+    let mut r = Rig::new(config(), ScriptedLanConsole::new(true));
+    r.s.connect(r.now);
+    r.run_until(Session::is_streaming, 60_000_000);
+    r.run_until(|_| false, 3_000_000);
+    assert!(!r.c.stream_messages.contains(&tc::CONNECTION_QUALITY), "off by default: its unit is [X]");
+    let stats =
+        r.events.iter().rev().find_map(|e| if let Event::Stats(s) = e { Some(*s) } else { None }).unwrap();
+    assert_eq!(stats.target_bitrate_kbps, 10_000);
+    assert_eq!(stats.target_height, 720);
+
+    let mut cfg = config();
+    cfg.report_connection_quality = true;
+    let mut r = Rig::new(cfg, ScriptedLanConsole::new(true));
+    r.s.connect(r.now);
+    r.run_until(Session::is_streaming, 60_000_000);
+    r.run_until(|_| false, 3_000_000);
+    let reports = r.c.stream_messages.iter().filter(|&&k| k == tc::CONNECTION_QUALITY).count();
+    assert_eq!(reports as u64, r.s.outcome().quality_reports_sent);
+    assert!((2..=3).contains(&reports), "the first at once, then on the 2 s refresh: {reports}");
+
+    // A low battery caps the ladder at 720p, which a 720p request already is; its bitrate stands.
+    r.s.set_power_state(super::bandwidth::PowerState {
+        source: super::bandwidth::PowerSource::Battery,
+        battery_percent: Some(10),
+        ..Default::default()
+    });
+    r.run_until(|_| false, 500_000);
+    let stats =
+        r.events.iter().rev().find_map(|e| if let Event::Stats(s) = e { Some(*s) } else { None }).unwrap();
+    assert_eq!(stats.target_height, 720);
+}
+
+#[test]
+fn the_control_echo_probe_is_read_and_answered_when_asked_for() {
+    let mut cfg = config();
+    cfg.control_echo_probe = true;
+    let mut r = Rig::new(cfg, ScriptedLanConsole::new(true));
+    r.s.connect(r.now);
+    r.run_until(Session::is_streaming, 60_000_000);
+    assert!(r.s.outcome().control_echo_sent && r.s.outcome().control_echo_answered);
+    assert!(r.c.echo_probe_read, "encrypted at the next client counter");
+
+    let mut r = Rig::new(config(), ScriptedLanConsole::new(true));
+    r.s.connect(r.now);
+    r.run_until(Session::is_streaming, 60_000_000);
+    assert!(!r.s.outcome().control_echo_sent);
 }

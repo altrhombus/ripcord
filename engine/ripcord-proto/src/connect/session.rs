@@ -4,6 +4,7 @@
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex};
 
+use super::bandwidth::Rung;
 use super::*;
 use crate::RandomSource;
 use crate::crypto::ecdh::Ecdh;
@@ -19,14 +20,29 @@ use crate::sess::session::{self as ctrl_session, ControlSession};
 use crate::sess::{ctrl, launch_spec};
 use crate::stream::demux::{DemuxSink, StreamDemux};
 use crate::stream::packet_crypto::PacketCrypto;
-use crate::takion::chunks::{CHANNEL_PROTOCOL_VERSION, CHANNEL_SESSION, CHANNEL_STREAM_INFO};
+use crate::takion::chunks::{
+    CHANNEL_BANDWIDTH, CHANNEL_PROTOCOL_VERSION, CHANNEL_SESSION, CHANNEL_STREAM_INFO,
+};
 use crate::takion::connection::{self, Connection, Message};
 use crate::takion::control::{self as tc, SessionRequest};
 use crate::takion::negotiator::{self, Negotiator, SessionKeys};
 use crate::takion::sealer;
 
-/// Senkusha's whole budget, handshake and legs together: .NET's 8 s box.
+/// Senkusha's whole budget, handshake, legs and probes together: .NET's 8 s box.
 const SENKUSHA_BUDGET_US: u64 = 8_000_000;
+/// The echo probe (HalyardSenkusha.RunEchoProbeAsync): 3 s in all, 80 ms per ping, and a majority of the
+/// ten answered before its figure replaces the handshake round trips.
+const ECHO_BUDGET_US: u64 = 3_000_000;
+const ECHO_REPLY_US: u64 = 80_000;
+/// The MTU probe (RunMtuProbeAsync): 3 s for both directions, 600 ms per console reply, and the close of
+/// the upstream test on its own budget, since it must go out however the test ended.
+const MTU_BUDGET_US: u64 = 3_000_000;
+const MTU_REPLY_US: u64 = 600_000;
+/// The MTU probe's upstream packet is filled with this, not zeros, so a compressing link cannot pass a size
+/// the path cannot carry.
+const MTU_PADDING: u8 = 0x47;
+/// The console's downstream MTU datagrams: base type 2 on the senkusha socket. Only their arrival counts.
+const BASE_TYPE_SENKUSHA_MTU: u8 = 0x02;
 /// One control reply on senkusha, and the stream's PROTOCOL_VERSION_ACK (non-fatal, as in C).
 const TAKION_REPLY_US: u64 = 5_000_000;
 /// The whole stream bring-up, handshake to STREAM_INFO's ack: .NET's box.
@@ -95,6 +111,10 @@ enum Step {
     SenkushaHandshake { deadline: u64 },
     SenkushaVersion { deadline: u64, asked: u64, box_end: u64 },
     SenkushaSession { deadline: u64 },
+    SenkushaEcho { seq: u8, sent_at: u64, deadline: u64, budget_end: u64 },
+    SenkushaMtuDown { mtu: u32, deadline: u64, budget_end: u64 },
+    SenkushaMtuUpReply { mtu: u32, deadline: u64, budget_end: u64 },
+    SenkushaMtuUpEcho { mtu: u32, deadline: u64 },
     StreamReadyWait { deadline: u64 },
     TakionOpen,
     TakionHandshake,
@@ -153,7 +173,7 @@ struct Sink<'a> {
     video: u64,
     audio: u64,
     keyframes: u64,
-    lost: bool,
+    losses: Vec<(u16, u16)>,
 }
 
 impl DemuxSink for Sink<'_> {
@@ -168,8 +188,8 @@ impl DemuxSink for Sink<'_> {
         self.events.push_back(Event::Audio(data.to_vec()));
     }
 
-    fn video_loss(&mut self, _first: u16, _last: u16) {
-        self.lost = true;
+    fn video_loss(&mut self, first: u16, last: u16) {
+        self.losses.push((first, last));
     }
 }
 
@@ -216,6 +236,12 @@ pub struct Session {
     senkusha_session_asked: u64,
     /// The least round trip senkusha measured, in microseconds.
     measured_rtt_us: Option<u64>,
+    senkusha_box: u64,
+    /// Echoed ping sequences and downstream MTU datagrams seen on the senkusha socket.
+    probe_echoes: VecDeque<u8>,
+    mtu_probes_received: u64,
+    echo_samples: Vec<u64>,
+    confirmed_mtu: Option<u32>,
 
     // Takion.
     senkusha: Option<Connection>,
@@ -227,6 +253,9 @@ pub struct Session {
     demux: Option<StreamDemux<PacketCrypto>>,
     live: Option<Streaming>,
     controller: Controller,
+    bandwidth: Option<bandwidth::Controller>,
+    reporter: bandwidth::Reporter,
+    power: bandwidth::PowerState,
 }
 
 fn log(events: &mut VecDeque<Event>, level: LogLevel, text: impl Into<String>) {
@@ -273,6 +302,11 @@ impl Session {
             stream_box: 0,
             senkusha_session_asked: 0,
             measured_rtt_us: None,
+            senkusha_box: 0,
+            probe_echoes: VecDeque::new(),
+            mtu_probes_received: 0,
+            echo_samples: Vec::new(),
+            confirmed_mtu: None,
             senkusha: None,
             senkusha_messages: VecDeque::new(),
             stream: None,
@@ -282,6 +316,9 @@ impl Session {
             demux: None,
             live: None,
             controller: None,
+            bandwidth: None,
+            reporter: bandwidth::Reporter::default(),
+            power: bandwidth::PowerState::default(),
         }
     }
 
@@ -376,11 +413,15 @@ impl Session {
             | Step::SenkushaHandshake { deadline }
             | Step::SenkushaVersion { deadline, .. }
             | Step::SenkushaSession { deadline }
+            | Step::SenkushaMtuUpEcho { deadline, .. }
             | Step::StreamReadyWait { deadline }
             | Step::KeysVersion { deadline }
             | Step::KeysReply { deadline }
             | Step::StreamInfoWait { deadline } => Some(*deadline),
             Step::DgramControl => Some(self.control_deadline),
+            Step::SenkushaEcho { deadline, budget_end, .. }
+            | Step::SenkushaMtuDown { deadline, budget_end, .. }
+            | Step::SenkushaMtuUpReply { deadline, budget_end, .. } => Some((*deadline).min(*budget_end)),
             Step::TakionOpen | Step::TakionHandshake => Some(self.stream_box),
             _ => None,
         }
@@ -476,6 +517,15 @@ impl Session {
             self.start_control(now_us);
         }
         self.advance(now_us);
+    }
+
+    /// The host's power and thermal state, which caps the adaptive ladder (a low battery at 720p, throttling
+    /// one rung lower). Takes effect at the next statistics window.
+    pub fn set_power_state(&mut self, power: bandwidth::PowerState) {
+        self.power = power;
+        if let Some(b) = self.bandwidth.as_mut() {
+            b.set_power(power);
+        }
     }
 
     /// The current controller, polled by the session on its own input cadence.
@@ -621,8 +671,8 @@ impl Session {
                     // Only the console's endpoint is the console (HalyardTakionStream's RemoteEndPoint
                     // check). Not activity either.
                     self.outcome.stray_dropped += 1;
-                } else if let Some(s) = self.senkusha.as_mut() {
-                    self.senkusha_messages.extend(s.on_datagram(now_us, data));
+                } else if self.senkusha.is_some() {
+                    self.on_senkusha_datagram(now_us, data);
                 } else if self.stream.is_some() {
                     self.on_stream_datagram(now_us, data);
                 } else if let Some(c) = self.media_channel.as_mut() {
@@ -636,14 +686,24 @@ impl Session {
             Socket::Stream if from != Endpoint::new(self.cfg.console, self.cfg.stream_port) => {
                 self.outcome.stray_dropped += 1;
             }
-            Socket::Senkusha => {
-                if let Some(s) = self.senkusha.as_mut() {
-                    self.senkusha_messages.extend(s.on_datagram(now_us, data));
-                }
-            }
+            Socket::Senkusha => self.on_senkusha_datagram(now_us, data),
             Socket::Stream => self.on_stream_datagram(now_us, data),
         }
         self.advance(now_us);
+    }
+
+    /// Senkusha's socket carries its Takion association, the echoes of our pings, and the console's
+    /// downstream MTU datagrams.
+    fn on_senkusha_datagram(&mut self, now_us: u64, data: &[u8]) {
+        if connection::is_control(data) {
+            if let Some(s) = self.senkusha.as_mut() {
+                self.senkusha_messages.extend(s.on_datagram(now_us, data));
+            }
+        } else if let Some(seq) = crate::takion::senkusha::echo_sequence(data) {
+            self.probe_echoes.push_back(seq);
+        } else if data.first().is_some_and(|b| b & 0x0f == BASE_TYPE_SENKUSHA_MTU) {
+            self.mtu_probes_received += 1;
+        }
     }
 
     fn on_stream_datagram(&mut self, now_us: u64, data: &[u8]) {
@@ -658,9 +718,11 @@ impl Session {
         }
         let (Some(demux), Some(live)) = (self.demux.as_mut(), self.live.as_mut()) else { return };
         live.window_bytes += data.len() as u64;
-        let mut sink = Sink { events: &mut self.events, video: 0, audio: 0, keyframes: 0, lost: false };
+        let mut sink =
+            Sink { events: &mut self.events, video: 0, audio: 0, keyframes: 0, losses: Vec::new() };
         demux.ingest(data, &mut sink);
-        let (video, audio, keyframes, lost) = (sink.video, sink.audio, sink.keyframes, sink.lost);
+        let (video, audio, keyframes) = (sink.video, sink.audio, sink.keyframes);
+        let losses = std::mem::take(&mut sink.losses);
         live.video_frames += video;
         live.audio_frames += audio;
         live.keyframes += keyframes;
@@ -672,8 +734,21 @@ impl Session {
             // fixed anything.
             live.idr_awaiting = false;
         }
-        if lost {
+        if !losses.is_empty() {
             live.idr_awaiting = true;
+        }
+        // CORRUPT_FRAME for each range the demuxer lost, as .NET reports it; the IDR latch asks for the repair.
+        for (first, last) in losses {
+            if let Some(s) = self.stream.as_mut()
+                && s.send(
+                    now_us,
+                    CHANNEL_SESSION,
+                    &tc::build_corrupt_frame(u32::from(first), u32::from(last)),
+                )
+                .is_ok()
+            {
+                self.outcome.corrupt_frames_sent += 1;
+            }
         }
         if keyframes > 0 && self.reached < Stage::Streaming {
             self.reach(Stage::Streaming);
@@ -823,6 +898,10 @@ impl Session {
                 }
                 ctrl_session::Event::Frame { kind: ctrl::LOGIN, plaintext: Some(p), .. } if !p.is_empty() => {
                     self.record_verdict(p[0])
+                }
+                ctrl_session::Event::Frame { kind: ctrl::ECHO_PROBE_ACK, .. } => {
+                    self.outcome.control_echo_answered = true;
+                    self.log(LogLevel::Info, "the console answered the control echo probe (0x8910)");
                 }
                 ctrl_session::Event::LoginResult { accepted } => {
                     self.record_verdict(if accepted { ctrl::LOGIN_ACCEPTED } else { ctrl::LOGIN_REJECTED })
@@ -1325,11 +1404,100 @@ impl Session {
                     if got {
                         let rtt = now - self.senkusha_session_asked;
                         self.measured_rtt_us = Some(self.measured_rtt_us.map_or(rtt, |r| r.min(rtt)));
+                        self.start_echo_probe(now);
+                    } else {
+                        self.after_senkusha(now);
                     }
-                    self.after_senkusha(now);
                     return true;
                 }
                 self.step = Step::SenkushaSession { deadline };
+                false
+            }
+            Step::SenkushaEcho { seq, sent_at, deadline, budget_end } => {
+                let mut answered = false;
+                while let Some(echoed) = self.probe_echoes.pop_front() {
+                    // A late echo of an earlier ping is dropped, not credited to this one.
+                    if echoed == seq {
+                        answered = true;
+                        break;
+                    }
+                }
+                if answered {
+                    self.echo_samples.push(now - sent_at);
+                }
+                if now >= budget_end || now >= self.senkusha_box {
+                    self.finish_echo_probe(now);
+                    return true;
+                }
+                if answered || now >= deadline {
+                    if seq + 1 >= crate::takion::senkusha::PING_COUNT {
+                        self.finish_echo_probe(now);
+                    } else {
+                        self.send_ping(now, seq + 1);
+                        self.step = Step::SenkushaEcho {
+                            seq: seq + 1,
+                            sent_at: now,
+                            deadline: now + ECHO_REPLY_US,
+                            budget_end,
+                        };
+                    }
+                    return true;
+                }
+                self.step = Step::SenkushaEcho { seq, sent_at, deadline, budget_end };
+                false
+            }
+            Step::SenkushaMtuDown { mtu, deadline, budget_end } => {
+                // The console's reply ends the test; what arrived is the evidence.
+                let replied = self.take_probe_reply(tc::PROBE_MTU_COMMAND);
+                if replied || now >= deadline || now >= budget_end {
+                    if self.mtu_probes_received > 0 && now < budget_end {
+                        self.send_senkusha(now, &tc::build_client_mtu_command(1, mtu, true));
+                        self.step =
+                            Step::SenkushaMtuUpReply { mtu, deadline: now + MTU_REPLY_US, budget_end };
+                    } else {
+                        self.log(LogLevel::Info, format!("MTU {mtu} not confirmed downstream"));
+                        self.after_senkusha(now);
+                    }
+                    return true;
+                }
+                self.step = Step::SenkushaMtuDown { mtu, deadline, budget_end };
+                false
+            }
+            Step::SenkushaMtuUpReply { mtu, deadline, budget_end } => {
+                // As in .NET, the probe packet goes out whether or not the console acknowledged echo mode.
+                if self.take_probe_reply(tc::PROBE_CLIENT_MTU_COMMAND) || now >= deadline || now >= budget_end
+                {
+                    self.probe_echoes.clear();
+                    let payload = (mtu as usize).saturating_sub(crate::takion::senkusha::IP_UDP_OVERHEAD);
+                    if let Some(ping) = crate::takion::senkusha::build(0, now, payload, MTU_PADDING) {
+                        self.send_raw_senkusha(ping);
+                    }
+                    self.step = Step::SenkushaMtuUpEcho {
+                        mtu,
+                        deadline: (now + ECHO_REPLY_US).min(budget_end.max(now)),
+                    };
+                    return true;
+                }
+                self.step = Step::SenkushaMtuUpReply { mtu, deadline, budget_end };
+                false
+            }
+            Step::SenkushaMtuUpEcho { mtu, deadline } => {
+                let echoed = self.probe_echoes.iter().any(|&s| s == 0);
+                if echoed || now >= deadline {
+                    if echoed {
+                        self.confirmed_mtu = Some(mtu);
+                        self.outcome.mtu_confirmed = true;
+                    }
+                    // The console is in client-MTU mode until told otherwise, however the test ended.
+                    self.send_senkusha(now, &tc::build_client_mtu_command(2, mtu, false));
+                    self.log(
+                        LogLevel::Info,
+                        format!("MTU {mtu} {}", if echoed { "confirmed" } else { "not confirmed upstream" }),
+                    );
+                    self.after_senkusha(now);
+                    return true;
+                }
+                self.step = Step::SenkushaMtuUpEcho { mtu, deadline };
                 false
             }
 
@@ -1583,6 +1751,9 @@ impl Session {
     fn finish_signin(&mut self, now: u64) {
         self.reach(Stage::SignedIn);
         if self.cfg.route == Route::Rendezvous {
+            self.send_control_echo_probe();
+        }
+        if self.cfg.route == Route::Rendezvous {
             // SESSION_ID comes only after the A/V leg's prelude on this route.
             if self.session_ready {
                 self.reach(Stage::SessionReady);
@@ -1705,6 +1876,7 @@ impl Session {
     }
 
     fn senkusha_connect(&mut self, now: u64, deadline: u64) {
+        self.senkusha_box = deadline;
         let config = connection::Config {
             max_attempts: self.cfg.senkusha_attempts,
             attempt_timeout_us: self.cfg.attempt_interval_us,
@@ -1713,6 +1885,93 @@ impl Session {
         c.connect(now);
         self.senkusha = Some(c);
         self.step = Step::SenkushaHandshake { deadline };
+    }
+
+    /// The control echo probe, where .NET sends it: after senkusha on the LAN, and after sign-in on the
+    /// rendezvous route, whose senkusha runs later, on the A/V leg. It spends a client field counter.
+    fn send_control_echo_probe(&mut self) {
+        if !self.cfg.control_echo_probe {
+            return;
+        }
+        if let Some(s) = self.control.session() {
+            s.send_field(ctrl::ECHO_PROBE, &[0; 4]);
+            self.outcome.control_echo_sent = true;
+            self.log(LogLevel::Info, "sent the control echo probe (0x0910)");
+        }
+    }
+
+    /// Where senkusha's datagrams go: its own socket on the LAN, the A/V leg on rendezvous.
+    fn senkusha_target(&self) -> (Socket, Endpoint) {
+        match self.cfg.route {
+            Route::Local => (Socket::Senkusha, Endpoint::new(self.cfg.console, self.cfg.senkusha_port)),
+            Route::Rendezvous => (Socket::MediaLeg, self.media_peer.unwrap_or_default()),
+        }
+    }
+
+    /// A raw probe datagram, after whatever the association has queued: the echo-on or client-MTU command
+    /// must reach the console before the packet it announces, as .NET's awaited send puts it on the wire first.
+    fn send_raw_senkusha(&mut self, data: Vec<u8>) {
+        self.flush();
+        let (socket, to) = self.senkusha_target();
+        self.io.push_back(Io::UdpSend { socket, to, data });
+    }
+
+    /// A probe command on senkusha's bandwidth channel.
+    fn send_senkusha(&mut self, now: u64, message: &[u8]) {
+        let _ = self.senkusha.as_mut().map(|s| s.send(now, CHANNEL_BANDWIDTH, message));
+    }
+
+    fn send_ping(&mut self, now: u64, seq: u8) {
+        if let Some(ping) = crate::takion::senkusha::build(seq, now, crate::takion::senkusha::ECHO_PAYLOAD, 0)
+        {
+            self.send_raw_senkusha(ping);
+        }
+    }
+
+    /// Whether a BANDWIDTH_PROBE reply carrying `command` arrived; other probe traffic is dropped, since
+    /// every reply shares one message type.
+    fn take_probe_reply(&mut self, command: u32) -> bool {
+        while let Some(m) = self.senkusha_messages.pop_front() {
+            if tc::peek_type(&m.payload) == Some(tc::BANDWIDTH_PROBE)
+                && tc::parse_bandwidth_probe_command(&m.payload) == Some(command)
+            {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// The echo probe, as the capture orders it: after SESSION_REPLY, before the MTU test. Echo mode on,
+    /// ten pings each timed, echo mode off.
+    fn start_echo_probe(&mut self, now: u64) {
+        self.echo_samples.clear();
+        self.probe_echoes.clear();
+        self.send_senkusha(now, &tc::build_echo_command(true));
+        self.send_ping(now, 0);
+        let budget_end = (now + ECHO_BUDGET_US).min(self.senkusha_box);
+        self.step = Step::SenkushaEcho { seq: 0, sent_at: now, deadline: now + ECHO_REPLY_US, budget_end };
+    }
+
+    /// A majority answered: their least round trip replaces the handshake's. Then the MTU test, at the size
+    /// the session would declare: it confirms or refutes one size, as the vendor does, never searches.
+    fn finish_echo_probe(&mut self, now: u64) {
+        self.send_senkusha(now, &tc::build_echo_command(false));
+        let pings = usize::from(crate::takion::senkusha::PING_COUNT);
+        if self.echo_samples.len() * 2 >= pings
+            && let Some(&least) = self.echo_samples.iter().min()
+        {
+            self.measured_rtt_us = Some(least);
+            self.outcome.echo_rtt_us = Some(least);
+        }
+        if now >= self.senkusha_box {
+            self.after_senkusha(now);
+            return;
+        }
+        let mtu = self.declared().0;
+        self.mtu_probes_received = 0;
+        self.send_senkusha(now, &tc::build_mtu_command(1, mtu, 1));
+        let budget_end = (now + MTU_BUDGET_US).min(self.senkusha_box);
+        self.step = Step::SenkushaMtuDown { mtu, deadline: now + MTU_REPLY_US, budget_end };
     }
 
     /// Non-fatal throughout, as in both references: a failed senkusha leaves the stream to be attempted.
@@ -1732,6 +1991,9 @@ impl Session {
         if !self.outcome.senkusha_ok {
             self.log(LogLevel::Warn, "senkusha did not complete - continuing, as both references do");
         }
+        if self.cfg.route == Route::Local {
+            self.send_control_echo_probe();
+        }
         if self.cfg.route == Route::Rendezvous {
             self.send_probe_report();
             self.step = Step::StreamReadyWait { deadline: now + STREAM_READY_WINDOW_US };
@@ -1740,17 +2002,20 @@ impl Session {
         }
     }
 
-    /// What the launch spec and PROBE_REPORT declare: the interface MTU less the overhead, clamped, and
-    /// the least of the round trips senkusha measured (.NET's LinkMetrics; its echo and MTU probes are
-    /// not ported yet).
+    /// What the launch spec and PROBE_REPORT declare (.NET's LinkMetrics): the MTU the probe confirmed, else
+    /// the interface's less the overhead, clamped; and the echo probe's least round trip when a majority
+    /// answered, else the least of senkusha's handshake round trips.
     pub(super) fn declared(&self) -> (u32, u32) {
-        let mtu = self
-            .cfg
-            .interface_mtu
-            .map_or(DECLARED_MTU, |m| m.saturating_sub(MTU_OVERHEAD).clamp(DECLARED_MTU_MIN, DECLARED_MTU));
+        let mtu = self.confirmed_mtu.unwrap_or_else(|| self.interface_mtu_to_declare());
         // Rounded, not truncated: a sub-millisecond LAN is not "0", which claims nothing was measured.
         let rtt = self.measured_rtt_us.map_or(0, |us| ((us + 500) / 1000).min(1000) as u32);
         (mtu, rtt)
+    }
+
+    fn interface_mtu_to_declare(&self) -> u32 {
+        self.cfg
+            .interface_mtu
+            .map_or(DECLARED_MTU, |m| m.saturating_sub(MTU_OVERHEAD).clamp(DECLARED_MTU_MIN, DECLARED_MTU))
     }
 
     /// PROBE_REPORT is required on the rendezvous route: without it the console never sends STREAM_READY
@@ -1894,6 +2159,15 @@ impl Session {
             None => self.log(LogLevel::Warn, "STREAM_INFO did not parse - acked anyway"),
         }
         self.demux = Some(demux);
+        let mut ladder = bandwidth::Controller::new(
+            self.cfg.width,
+            self.cfg.height,
+            self.cfg.fps,
+            self.cfg.bitrate_kbps,
+            now,
+        );
+        ladder.set_power(self.power);
+        self.bandwidth = Some(ladder);
         self.reach(Stage::StreamReady);
         // The IDR latch is armed at the start, because at the start we are blind by definition (C's b141).
         self.live = Some(Streaming {
@@ -1967,6 +2241,32 @@ impl Session {
                 self.io.push_back(Io::UdpSend { socket, to, data: feedback.to_vec() });
                 self.outcome.congestion_sent += 1;
             }
+            let rtt_ms = stream.round_trip().0 / 1000.0;
+            let observed = got + missed;
+            let loss_ratio = if observed == 0 { 0.0 } else { missed as f64 / observed as f64 };
+            // The ladder decides from what arrived; the console hears about it only when the host opted in.
+            let mut target = Rung {
+                width: self.cfg.width,
+                height: self.cfg.height,
+                fps: self.cfg.fps,
+                bitrate_kbps: self.cfg.bitrate_kbps,
+            };
+            if let Some(ladder) = self.bandwidth.as_mut() {
+                ladder.report(now, bandwidth::Sample { rtt_ms, loss_ratio, observed_units: observed });
+                target = ladder.current();
+                if self.cfg.report_connection_quality
+                    && let Some(r) = self.reporter.next(now, target.bitrate_kbps, rtt_ms, loss_ratio * 100.0)
+                    && stream
+                        .send(
+                            now,
+                            CHANNEL_SESSION,
+                            &tc::build_connection_quality(r.target_bitrate_kbps, r.rtt_ms, r.loss_percent),
+                        )
+                        .is_ok()
+                {
+                    self.outcome.quality_reports_sent += 1;
+                }
+            }
             let window = now - live.window_start;
             let ms = |us: u64| (us / 1000).min(u64::from(u32::MAX)) as u32;
             self.events.push_back(Event::Stats(Stats {
@@ -1987,7 +2287,9 @@ impl Session {
                 idr_requests: live.idr_requests,
                 window_ms: ms(window),
                 verify_dropped: stream.verify_dropped(),
-                rtt_ms: stream.round_trip().0 / 1000.0,
+                rtt_ms,
+                target_bitrate_kbps: target.bitrate_kbps.max(0) as u32,
+                target_height: target.height.max(0) as u32,
             }));
             live.window_start = now;
             live.window_bytes = 0;

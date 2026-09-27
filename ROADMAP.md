@@ -246,10 +246,11 @@ the documents into line, is done and in the journal. The engine lives in [`engin
       2026-09-26). It still needs its fuzz target. Next in order:
   - [ ] **The CNG `Ecdh` backend,** against `session-crypto.kat` on Windows. RustCrypto and CryptoKit
         pass it (journal, 2026-09-26).
-  - [ ] **What the connect sequence does not do yet**, each a .NET behaviour: senkusha's echo and MTU
-        probes (so the declared RTT is the version and session round trips, and the MTU is the
-        interface's or 1454, never a confirmed one); CORRUPT_FRAME on video loss; CONNECTION_QUALITY and the
-        adaptive bitrate; the echo probe on the control channel.
+  - [ ] **The probes and rate control on hardware.** Senkusha's echo and MTU probes, CORRUPT_FRAME, the
+        adaptive ladder and CONNECTION_QUALITY are ported (journal, 2026-09-26) and tested against scripted
+        consoles only. On a console: whether it answers the probes as the captures show, and, with
+        `report_connection_quality` on, whether a target in kbps moves its encoder sensibly, which settles
+        the unit.
   - [ ] **First run against a console,** LAN then rendezvous, with `ripcord-net` from a small lab binary.
         The sequencing is shared with the C core, mistakes included, so hardware is what checks it.
   - [ ] **A nightly CI leg** for Miri over `ripcord-ffi`'s tests and a coverage-guided `cargo-fuzz` run
