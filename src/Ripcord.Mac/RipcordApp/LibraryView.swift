@@ -16,6 +16,8 @@ struct LibraryView: View {
     @State private var forgetting: PairedConsole?
     @State private var details: PairedConsole?
     @State private var navigator: PadNavigator?
+    @State private var tileFrames: [String: CGRect] = [:]
+    @State private var window: NSWindow?
 
     private static let tileMinimum: CGFloat = 250
     private static let spacing: CGFloat = 16
@@ -54,6 +56,7 @@ struct LibraryView: View {
         .sheet(item: Binding(get: { details.map(DetailsItem.init) }, set: { details = $0?.console })) { item in
             ConsoleDetails(console: item.console)
         }
+        .background(WindowReader { window = $0 })
         .onChange(of: activeState, initial: true) { _, state in
             if state == .key { claimPad() }
         }
@@ -72,6 +75,7 @@ struct LibraryView: View {
                             .onTapGesture(count: 2) { connect(console) }
                             .onTapGesture { model.selection = key; gridFocused = true }
                             .contextMenu { menu(for: console) }
+                            .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { tileFrames[key] = $0 }
                     }
                     ForEach(model.unpairedNearby, id: \.hostID) { found in
                         PairTile(console: found) { model.pairing = PairingRequest(preselected: found) }
@@ -127,6 +131,11 @@ struct LibraryView: View {
     private func connect(_ console: PairedConsole) {
         let key = model.key(of: console)
         model.selection = key
+        if let frame = tileFrames[key], let window, let content = window.contentView {
+            // SwiftUI's global space is the window's content, top-left origin; AppKit's is bottom-left.
+            let inWindow = NSRect(x: frame.minX, y: content.bounds.height - frame.maxY, width: frame.width, height: frame.height)
+            model.launchOrigins[key] = window.convertToScreen(content.convert(inWindow, to: nil))
+        }
         openWindow(id: "stream", value: StreamTarget(consoleKey: key))
     }
 

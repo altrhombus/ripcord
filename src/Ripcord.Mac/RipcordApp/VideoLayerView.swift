@@ -1,6 +1,6 @@
 // The picture: an AVSampleBufferDisplayLayer, which decodes H.264 and HEVC through VideoToolbox itself and
-// presents each frame on arrival (AnnexBSampleBuilder marks every sample DisplayImmediately). PiP and
-// HDR come from this layer too (step 7).
+// presents each frame on arrival (AnnexBSampleBuilder marks every sample DisplayImmediately). Picture in
+// Picture floats this same layer (PictureInPicture.swift).
 
 import AppKit
 import AVFoundation
@@ -8,6 +8,13 @@ import SwiftUI
 
 final class VideoSurface: NSView {
     let displayLayer = AVSampleBufferDisplayLayer()
+
+    /// Lets the layer show the stream's extended range on a display that has it. Asked for only when the
+    /// stream was asked to be HDR (DESIGN.md, "HDR"). [X] whether the console's HDR metadata reaches the
+    /// layer intact: a hardware check.
+    var wantsHDR = false {
+        didSet { displayLayer.preferredDynamicRange = wantsHDR ? .high : .standard }
+    }
 
     override init(frame: NSRect) {
         super.init(frame: frame)
