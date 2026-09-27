@@ -195,7 +195,7 @@ jobs:
   # with it. Four hosts, because each one links the engine differently and Windows is where the plan's
   # gate still wants a figure: the .NET harness runs its checks everywhere and prints the per-packet
   # cost on each, which is informational only on a shared runner. windows-11-arm is the one label here
-  # not verified before this was committed. Miri and cargo-fuzz arrive with a nightly leg.
+  # not verified before this was committed. Miri and cargo-fuzz run in engine-nightly.yml.
   engine:
     name: Rust engine (${{ matrix.host }})
     runs-on: ${{ matrix.host }}

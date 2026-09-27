@@ -41,8 +41,19 @@ the scripted console, for host test suites. `ripcord-proto`'s `scripted-console`
 console to other crates. Neither belongs in a shipping engine. A host supplies its platform's key agreement
 through `RipcordEcdhBackend`; the Mac's is `src/Ripcord.Mac/RipcordKit/Engine/CryptoKitEngineECDH.swift`.
 
-`fuzz/` (cargo-fuzz, which needs nightly) arrives with Phase 2. Until then, `demux::tests::random_packets_never_panic` is a stable-Rust sweep of hostile
-packets.
+`fuzz/` holds the cargo-fuzz targets, one per surface as `libripcord/tests/fuzz` has them, plus `connect`,
+which drives the whole connect machine with arbitrary host events (the C core cannot be fuzzed that way,
+since it owns its sockets). It is its own workspace and needs nightly:
+
+```sh
+cargo +nightly fuzz run connect -- -max_total_time=60      # from engine/fuzz
+RUSTFLAGS='--cfg sha2_backend="soft" --cfg aes_backend="soft"' cargo +nightly miri test -p ripcord-ffi --lib
+```
+
+`.github/workflows/engine-nightly.yml` runs both daily, each target for five minutes with a corpus kept
+between runs. Miri runs against RustCrypto's portable backends: its aliasing model rejects the pointer use
+inside their hardware intrinsics, which is theirs; the engine's own `unsafe` is all in `ripcord-ffi`, and
+passes. `demux::tests::random_packets_never_panic` stays as a stable-Rust sweep in the ordinary tests.
 
 **The interop constants are generated, never copied.** `ripcord-proto/build.rs` reads the one committed
 bundle and writes a Rust module into `OUT_DIR`, with `gen_constants.py`'s checks. `ripcord-diff` builds
@@ -336,3 +347,10 @@ session.
 | CORRUPT_FRAME | A gap in the frame index sends the lost range, and the IDR latch asks for the repair |
 | Adaptive ladder | Unit tests hold the ladder, the cooldown, the clean streak, a tiny window's silence and the power caps to .NET's. CONNECTION_QUALITY goes out only when enabled: the first at once, then on changes and the 2 s refresh |
 | ABI | Version 5: the two switches in the config, the ladder's target in the stats, the probes' results in the outcome, and `ripcord_client_set_power` |
+
+## Fuzzing and Miri, first runs (2026-09-26)
+
+| What | Result |
+|---|---|
+| Nine targets, 60 s each on the M4 Max | 0.4 to 5 million runs per target. One finding: the SRCH reply parser sliced its first line at byte 8 as a string, and a multi-byte character straddling that byte panicked. Any datagram on the discovery port could do it. Fixed, with the fuzzer's input as a regression test, and the target then ran clean for 4.7 million runs |
+| Miri over `ripcord-ffi`'s unit tests | Clean on the portable crypto backends, all seven tests. On the hardware backends Miri stops inside `sha2`'s ARMv8 intrinsics, which is not the engine's code |
