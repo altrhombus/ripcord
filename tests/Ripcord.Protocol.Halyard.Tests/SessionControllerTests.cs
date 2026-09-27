@@ -54,6 +54,7 @@ public class SessionControllerTests
         public Task<SessionHandshakeResult> ConnectAsync(SessionConfig config, CancellationToken cancellationToken)
         {
             ConnectCalls++;
+            RestConsoleOnDisconnect = config.RestConsoleOnDisconnect;   // as the real session seeds it
             if (!Succeeds)
             {
                 return Task.FromResult(new SessionHandshakeResult(false, FailureReason));
@@ -69,8 +70,13 @@ public class SessionControllerTests
 
         public void RequestKeyFrame() => KeyFrameRequests++;
 
+        /// <summary>What <see cref="RestConsoleOnDisconnect"/> was when the session was disposed: what a real
+        /// session would have acted on.</summary>
+        public bool? RestedAtDispose { get; private set; }
+
         public ValueTask DisposeAsync()
         {
+            RestedAtDispose ??= RestConsoleOnDisconnect;
             Disposed = true;
             State = SessionState.Closed;
             return ValueTask.CompletedTask;
@@ -521,6 +527,88 @@ public class SessionControllerTests
         await WaitFor(() => controller.Lifecycle == SessionLifecycle.Streaming, "frames should recover it");
         Assert.False(session.Disposed);
         Assert.Equal(1, session.ConnectCalls);
+    }
+
+    /// <summary>
+    /// Rest applies to the disconnect a person asks for, never to replacing a session. It used to apply to
+    /// every teardown, so a stalled session replaced by a reconnect put the console to sleep under the new one.
+    /// </summary>
+    [Fact]
+    public async Task RestConsoleOnDisconnect_OnlyRestsOnAStopNotOnAReplacement()
+    {
+        var time = new VirtualTime();
+        var sessions = new List<FakeSession>();
+        var options = new SessionControllerOptions
+        {
+            StallTimeout = TimeSpan.FromSeconds(2),
+            ReconnectAfterStall = TimeSpan.FromSeconds(6),
+            WatchdogInterval = TimeSpan.FromMilliseconds(1),
+            MaxReconnectAttempts = 3,
+        };
+
+        await using var controller = new SessionController(
+            _ =>
+            {
+                var s = new FakeSession();
+                sessions.Add(s);
+                return Task.FromResult<IStreamingSession>(s);
+            },
+            new FakePipeline(),
+            options: options,
+            clock: time.Now,
+            delay: time.Delay);
+
+        await controller.StartAsync(Config with { RestConsoleOnDisconnect = true });
+        await WaitFor(() => sessions.Count >= 1 && controller.Lifecycle == SessionLifecycle.Streaming, "should connect");
+
+        time.Advance(TimeSpan.FromSeconds(7));   // stalls past the reconnect threshold
+        await WaitFor(() => sessions.Count >= 2 && sessions[0].Disposed, "the stalled session is replaced");
+        Assert.False(sessions[0].RestedAtDispose, "a replaced session must not rest the console");
+
+        await WaitFor(() => controller.Lifecycle == SessionLifecycle.Streaming, "the replacement connects");
+        await controller.StopAsync();
+        Assert.True(sessions[^1].RestedAtDispose, "the person's stop rests the console, as the setting says");
+    }
+
+    /// <summary>
+    /// A choice made after connecting reaches the session a stop disposes, even when that session is a
+    /// replacement seeded from the connect-time config.
+    /// </summary>
+    [Fact]
+    public async Task RestConsoleOnDisconnect_AChoiceMadeLater_SurvivesAReconnect()
+    {
+        var time = new VirtualTime();
+        var sessions = new List<FakeSession>();
+        var options = new SessionControllerOptions
+        {
+            StallTimeout = TimeSpan.FromSeconds(2),
+            ReconnectAfterStall = TimeSpan.FromSeconds(6),
+            WatchdogInterval = TimeSpan.FromMilliseconds(1),
+            MaxReconnectAttempts = 3,
+        };
+
+        await using var controller = new SessionController(
+            _ =>
+            {
+                var s = new FakeSession();
+                sessions.Add(s);
+                return Task.FromResult<IStreamingSession>(s);
+            },
+            new FakePipeline(),
+            options: options,
+            clock: time.Now,
+            delay: time.Delay);
+
+        await controller.StartAsync(Config);   // off at connect
+        await WaitFor(() => sessions.Count >= 1 && controller.Lifecycle == SessionLifecycle.Streaming, "should connect");
+        controller.RestConsoleOnDisconnect = true;
+
+        time.Advance(TimeSpan.FromSeconds(7));
+        await WaitFor(() => sessions.Count >= 2 && controller.Lifecycle == SessionLifecycle.Streaming, "the replacement connects");
+        Assert.False(sessions[0].RestedAtDispose);
+
+        await controller.StopAsync();
+        Assert.True(sessions[^1].RestedAtDispose);
     }
 
     [Fact]
