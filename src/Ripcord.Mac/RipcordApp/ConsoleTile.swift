@@ -4,7 +4,7 @@
 import SwiftUI
 import RipcordKit
 
-/// The trailing wedge zone: a slanted facet, the Windows card's action language (docs/design.md, "Form").
+/// The trailing wedge zone: a slanted facet, the dotnet client's card action language (docs/design.md, "Form").
 struct WedgeFacet: Shape {
     /// How far in from the leading edge the slant starts, as a fraction of the height.
     var slant: CGFloat = 0.32
