@@ -135,7 +135,8 @@ know. It runs only where the captures folder exists, which is the owner's machin
   value, never the value.
 - **Turning it on** is one command in a clone that has the captures folder: `git config core.hooksPath .githooks`.
   `git commit --no-verify` skips the commit-time checks, and the push check still runs.
-  `check.py --history` checks every local branch and tag by hand.
+  `check.py --history` checks every local branch and tag by hand. `tools/leak-guard/test_check.py` tests the
+  checker against a synthetic captures folder, and CI runs it, since CI has no real one.
 - **When a refusal is wrong**, for a synthetic fixture that happens to match or a server address you mean
   to cite, record an exception: `python3 tools/leak-guard/check.py --allow CATEGORY VALUE "reason"`. It goes in
   `docs/protocol/captures/leak-allow.tsv`, beside the denylist and just as uncommitted, and takes effect at
