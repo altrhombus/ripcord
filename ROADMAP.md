@@ -367,16 +367,8 @@ app target for all three builds in Debug and Release, device and simulator, in C
 
 ### Provenance audit follow-ups (2026-09-27)
 
-The branch's provenance audit (journal, 2026-09-27) left three places where the rule text trails the code.
-None is a leak; each wants `NOTICE` and `CLAUDE.md` read together before it is settled.
+The rule-text gaps the branch's provenance audit found are closed (journal, 2026-09-27). One remains:
 
-- [ ] **The Mac's OAuth opt-out.** `RIPCORD_BUNDLE_OAUTH_CLIENT = NO` is the Apple counterpart of
-      `-p:BundleOAuthClient=false`, and neither `NOTICE` nor `CLAUDE.md` names it.
-- [ ] **Where the refresh token lives.** `CLAUDE.md` says the user's `account.json` and `NOTICE` says DPAPI
-      on Windows; the Mac keeps it in the Keychain. Say both.
-- [ ] **A third Client-Type copy.** `LiveRegistrationVectorTests.cs` writes the value as a literal, outside
-      the two-home inventory. Have it read `HalyardRegistrationMessage.ClientTypeHex`, so the inventory
-      stays true without growing.
 - [ ] **An inert build for the C ports.** The dotnet client and the engine can be built without the
       interop constants; the C core's ports cannot (`NOTICE` says so). Add a `gen_constants.py` switch
       if a port ever needs one.
