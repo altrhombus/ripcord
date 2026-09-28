@@ -180,8 +180,8 @@ static void fake_console_on_datagram(fake_console *fc, const uint8_t *datagram, 
             /* A body too short to hold the sequence is read as zero rather than past the chunk: found by
              * engine/ripcord-diff, where the Rust port of this console disagreed with bytes that were
              * never part of the datagram. */
-            uint16_t hello_seq = chunk.body_length >= 2u
-                                     ? (uint16_t)((chunk.body[0] << 8) | chunk.body[1]) : (uint16_t)0;
+            uint16_t hello_seq = (uint16_t)(chunk.body_length >= 2u
+                                                ? ((chunk.body[0] << 8) | chunk.body[1]) : 0);
             uint8_t accept[12] = { 0 };
 
             accept[0] = (uint8_t)(fc->sequence >> 8);
