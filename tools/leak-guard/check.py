@@ -6,13 +6,24 @@ Called by the hooks in .githooks (`git config core.hooksPath .githooks` turns th
   check.py --message FILE    commit-msg: the commit message
   check.py --push REMOTE     pre-push: every outgoing commit's added lines and message (refs on stdin)
   check.py --history         every commit on every local branch, for an audit by hand
+  check.py --allow CATEGORY VALUE REASON
+                             record an exception in the dirty room's leak-allow.tsv
 
 It reads docs/protocol/captures/leak-denylist.tsv, which build-denylist.py writes from the dirty room and which
 is never committed. With no dirty room, as in any clone but the owner's, it does nothing. PublishedTreeSweepTests
 is the check that needs no secrets and runs in CI; this is the one that knows the real values.
 
 A match is reported by where it is and what kind of value it is, never by the value, so the report is safe to
-paste anywhere. Addresses are recognised in every spelling the protocol uses (dotted, the Host header's padded
+paste anywhere. LEAK_GUARD_SHOW=1 adds the value, for your own terminal, when a line is long enough that
+"a hex value" does not say which.
+
+EXCEPTIONS. A value that is denied and should not be (a synthetic fixture that happens to match, a public
+server address you mean to cite) goes in docs/protocol/captures/leak-allow.tsv, one per line:
+category, value, and the reason, tab-separated. It lives in the dirty room beside the denylist, because the
+value is one the captures hold. Both scripts read it: the builder leaves the value out, and this script drops
+it on load, so an exception works at once. `--allow` writes the line for you. A committed value also leaves the
+denylist on its next build, because the builder subtracts whatever the tree already carries; the allow file is
+for the commit that puts it there. Addresses are recognised in every spelling the protocol uses (dotted, the Host header's padded
 columns, byte arrays in decimal or hex) and hex values through any separators, so reformatting a value does
 not hide it.
 """
@@ -23,6 +34,8 @@ import subprocess
 import sys
 
 DENYLIST = os.path.join("docs", "protocol", "captures", "leak-denylist.tsv")
+ALLOWLIST = os.path.join("docs", "protocol", "captures", "leak-allow.tsv")
+CATEGORIES = ("ipv4", "account-id", "number", "online-id", "name", "ssid", "mac", "email", "hex")
 ZERO = "0" * 40
 
 DOTTED = re.compile(r"(?<![\d.])(\d{1,3})\. {0,2}(\d{1,3})\. {0,2}(\d{1,3})\. {0,2}(\d{1,3})(?![\d.])")
@@ -34,19 +47,33 @@ HEX_RUN = re.compile(r"[0-9a-fA-F](?:[ :,._-]?[0-9a-fA-F])*")
 DIGITS = re.compile(r"(?<!\d)\d{19}(?!\d)")
 
 
+def read_allowed(path=ALLOWLIST):
+    """(category, value) pairs excepted from the denylist, each recorded with its reason."""
+    allowed = set()
+    if os.path.exists(path):
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                parts = line.rstrip("\n").split("\t")
+                if len(parts) >= 2 and not line.startswith("#"):
+                    allowed.add((parts[0], parts[1].lower()))
+    return allowed
+
+
 class Denylist:
-    def __init__(self, path):
-        self.ipv4, self.account, self.words, self.hex = set(), set(), {}, {}
+    def __init__(self, path, allowed=frozenset()):
+        self.ipv4, self.numbers, self.words, self.hex = set(), {}, {}, {}
         with open(path, encoding="utf-8") as f:
             for line in f:
                 if line.startswith("#") or "\t" not in line:
                     continue
                 category, value = line.rstrip("\n").split("\t", 1)
+                if (category, value.lower()) in allowed:
+                    continue
                 if category == "ipv4":
                     self.ipv4.add(value)
-                elif category == "account-id":
-                    self.account.add(value)
-                elif category in ("hex", "mac"):
+                elif category in ("account-id", "number") and value.isdigit():
+                    self.numbers[value] = category
+                elif category in ("hex", "mac") or re.fullmatch(r"[0-9a-f]{16}", value):
                     self.hex.setdefault(len(value), {})[value] = category
                 else:
                     self.words[value.lower()] = category
@@ -56,7 +83,7 @@ class Denylist:
                                    + r")(?![\w-])", re.IGNORECASE) if self.words else None)
 
     def scan(self, line):
-        """The categories this line carries, deduplicated."""
+        """(category, value) for each denied value this line carries."""
         hits = set()
         for rx in (DOTTED, BYTES):
             for m in rx.finditer(line):
@@ -64,14 +91,15 @@ class Denylist:
                     octets = [int(g, 16) if g.lower().startswith("0x") else int(g) for g in m.groups()]
                 except ValueError:
                     continue
-                if all(o <= 255 for o in octets) and ".".join(map(str, octets)) in self.ipv4:
-                    hits.add("ipv4")
+                address = ".".join(map(str, octets))
+                if all(o <= 255 for o in octets) and address in self.ipv4:
+                    hits.add(("ipv4", address))
         for m in DIGITS.finditer(line):
-            if m.group(0) in self.account:
-                hits.add("account-id")
+            if m.group(0) in self.numbers:
+                hits.add((self.numbers[m.group(0)], m.group(0)))
         if self.word_rx:
             for m in self.word_rx.finditer(line):
-                hits.add(self.words[m.group(1).lower()])
+                hits.add((self.words[m.group(1).lower()], m.group(1)))
         if self.lengths:
             for m in HEX_RUN.finditer(line):
                 flat = re.sub(r"[ :,._-]", "", m.group(0)).lower()
@@ -82,7 +110,7 @@ class Denylist:
                     for i in range(len(flat) - n + 1):
                         category = table.get(flat[i:i + n])
                         if category:
-                            hits.add(category)
+                            hits.add((category, flat[i:i + n]))
                             break
         return hits
 
@@ -107,13 +135,17 @@ def added_lines(patch):
             number += 1
 
 
+def shown(value):
+    return f" ({value})" if os.environ.get("LEAK_GUARD_SHOW") == "1" else ""
+
+
 def check_patch(deny, patch, label):
     problems = []
     for path, number, text in added_lines(patch):
         if path.startswith("docs/protocol/captures/"):
             continue
-        for category in sorted(deny.scan(text)):
-            problems.append(f"{label}{path}:{number}: a {category} value from the dirty room")
+        for category, value in sorted(deny.scan(text)):
+            problems.append(f"{label}{path}:{number}: a {category} value from the dirty room{shown(value)}")
     return problems
 
 
@@ -122,8 +154,8 @@ def check_message(deny, text, label):
     for number, line in enumerate(text.split("\n"), 1):
         if line.startswith("#"):
             continue
-        for category in sorted(deny.scan(line)):
-            problems.append(f"{label}message line {number}: a {category} value from the dirty room")
+        for category, value in sorted(deny.scan(line)):
+            problems.append(f"{label}message line {number}: a {category} value from the dirty room{shown(value)}")
     return problems
 
 
@@ -156,6 +188,8 @@ def warn_if_stale(captures):
     for top, dirs, files in os.walk(captures, followlinks=True):
         dirs[:] = [d for d in dirs if d not in (".venv", "venv", "site-packages", "node_modules", "__pycache__")]
         for name in files:
+            if name in ("leak-denylist.tsv", "leak-allow.tsv"):
+                continue
             try:
                 if os.path.getmtime(os.path.join(top, name)) > built:
                     print("leak-guard: the dirty room has changed since the denylist was built; run "
@@ -175,10 +209,24 @@ def main():
         print("leak-guard: the dirty room has no denylist; run tools/leak-guard/build-denylist.py",
               file=sys.stderr)
         return 1
-    deny = Denylist(DENYLIST)
+    mode = sys.argv[1] if len(sys.argv) > 1 else "--staged"
+    if mode == "--allow":
+        if len(sys.argv) != 5 or sys.argv[2] not in CATEGORIES or not sys.argv[4].strip():
+            print("usage: check.py --allow CATEGORY VALUE REASON   (category: " + ", ".join(CATEGORIES) + ")",
+                  file=sys.stderr)
+            return 2
+        new = not os.path.exists(ALLOWLIST)
+        with open(ALLOWLIST, "a", encoding="utf-8") as f:
+            if new:
+                f.write("# Exceptions to the leak guard's denylist: category, value, reason. Never commit this.\n")
+            f.write(f"{sys.argv[2]}\t{sys.argv[3]}\t{sys.argv[4].strip()}\n")
+        os.chmod(ALLOWLIST, 0o600)
+        print(f"leak-guard: {sys.argv[2]} excepted; recorded in {ALLOWLIST}")
+        return 0
+
+    deny = Denylist(DENYLIST, read_allowed())
     warn_if_stale(captures)
 
-    mode = sys.argv[1] if len(sys.argv) > 1 else "--staged"
     if mode == "--staged":
         problems = check_patch(deny, git("diff", "--cached", "-U0", "--no-color", "--no-ext-diff"), "")
     elif mode == "--message":

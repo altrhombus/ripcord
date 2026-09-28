@@ -45,8 +45,8 @@ which values are real. Two changes close that from both ends.
   synthetic LAN (`10.0.0.0/24`, `172.31.0.0/24`, `192.168.1.0/24`) or carries an allowlist entry that says
   why not. The sweep also reads the padded `%3d` Host form and bracketed byte arrays, decimal or hex, which
   the dotted pattern could not see. Contract rows pin each.
-- **The value rule, new.** `tools/leak-guard` builds a denylist from the dirty room's own files (78
-  addresses, the console names, SSIDs, MACs, account and online ids, emails and 33,643 hex values) and
+- **The value rule, new.** `tools/leak-guard` builds a denylist from the dirty room's own files (73
+  addresses, the console names, SSIDs, MACs, the account id in each encoding, and 33,643 hex values) and
   keeps it there. Git hooks refuse a commit or a push that carries any of them, in every spelling. The
   denylist is built in 3.4 s, a full-history check takes 11 s, and a commit's check is instant.
 - **Checked both ways.** Every denylisted value, written in each spelling the guard claims (4,563

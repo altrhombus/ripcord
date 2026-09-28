@@ -12,7 +12,9 @@ people's code, and their example addresses would only produce noise.
 
 WHAT IT COLLECTS, by category:
   ipv4        every address, less loopback, multicast, the documentation ranges and the synthetic LANs
-  account-id  19-digit numbers (PSN account ids)
+  account-id  PSN account ids, from an accountId context, as decimal, as 16 hex digits and as base64 of the
+              8 bytes, each in both byte orders (Np-AccountId carries the base64)
+  number      every other 19-digit number: dump counters mostly, denied because it costs nothing
   online-id   "onlineId" values
   name        console names: PS5-/PS4-Nickname, host-name, "name":"PS5-...", and default-style PS5-123
   ssid        AP-Ssid / AP-Name / "ssid" values
@@ -30,6 +32,7 @@ Run it again whenever the dirty room gains a capture; check.py warns when the li
 capture file.
 """
 
+import base64
 import ipaddress
 import os
 import re
@@ -57,11 +60,24 @@ SSID_FIELDS = re.compile(r'(?:AP-Ssid|AP-Name)\s*[:=]\s*"?([^"\r\n,]{3,40})|"ssi
 HOST_ID = re.compile(r"(?:host-id|PS[45]-Mac|AP-Bssid|macAddr\w*)\"?\s*[:=]\s*\"?([0-9a-fA-F:.-]{12,17})",
                      re.IGNORECASE)
 MAC = re.compile(r"(?<![0-9a-fA-F:-])([0-9a-fA-F]{2}(?:[:-][0-9a-fA-F]{2}){5})(?![0-9a-fA-F:-])")
-EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
+EMAIL = re.compile(r"[A-Za-z0-9._%+-]*[A-Za-z][A-Za-z0-9._%+-]*@(?:[A-Za-z0-9-]{2,}\.)+[A-Za-z]{2,6}(?![A-Za-z0-9])")
+ACCOUNT_CONTEXT = re.compile(r"(?i)account.?id[\"\s:=]{0,4}\"?(\d{19})")
 LONG_HEX = re.compile(r"(?<![0-9a-fA-F])([0-9a-fA-F]{32,})(?![0-9a-fA-F])")
 
-LOW_ENTROPY = ("ipv4", "account-id", "online-id", "name", "ssid", "mac", "email")
+LOW_ENTROPY = ("ipv4", "account-id", "number", "online-id", "name", "ssid", "mac", "email")
 PLACEHOLDER = re.compile(r"^<.*>$|redacted|example|placeholder|^x+$", re.IGNORECASE)
+
+
+def read_allowed(path):
+    """The exceptions check.py --allow records: (category, value) pairs never to deny."""
+    allowed = set()
+    if os.path.exists(path):
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                parts = line.rstrip("\n").split("\t")
+                if len(parts) >= 2 and not line.startswith("#"):
+                    allowed.add((parts[0], parts[1].lower()))
+    return allowed
 
 
 def repo_root():
@@ -77,7 +93,7 @@ def own_text_files(captures):
     for top, dirs, files in os.walk(captures, followlinks=True):
         dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
         for name in files:
-            if name == OUTPUT_NAME:
+            if name in (OUTPUT_NAME, "leak-allow.tsv"):
                 continue
             path = os.path.join(top, name)
             if os.path.splitext(name)[1].lower() not in TEXT_SUFFIXES:
@@ -105,6 +121,19 @@ def keep_ipv4(text):
     return not any(ip in n for n in SYNTHETIC_LANS + DOCUMENTATION)
 
 
+def account_forms(number):
+    """The ways an account id travels: decimal, 16 hex digits, and base64 of its 8 bytes, both byte orders."""
+    value = int(number)
+    if value >= 1 << 64:
+        return {number}
+    forms = {number}
+    for order in ("big", "little"):
+        raw = value.to_bytes(8, order)
+        forms.add(raw.hex())
+        forms.add(base64.b64encode(raw).decode("ascii"))
+    return forms
+
+
 def flat_mac(value):
     flat = re.sub(r"[^0-9a-fA-F]", "", value).lower()
     return flat if len(flat) == 12 and len(set(flat)) > 2 and flat != "001122334455" else None
@@ -114,9 +143,13 @@ def collect(text, out):
     for m in IPV4.finditer(text):
         if all(int(g) <= 255 for g in m.groups()) and keep_ipv4(m.group(0)):
             out.add(("ipv4", m.group(0)))
+    accounts = set(ACCOUNT_CONTEXT.findall(text))
+    for number in accounts:
+        for form in account_forms(number):
+            out.add(("account-id", form))
     for m in ACCOUNT_ID.finditer(text):
-        if len(set(m.group(0))) > 3:
-            out.add(("account-id", m.group(0)))
+        if len(set(m.group(0))) > 3 and m.group(0) not in accounts:
+            out.add(("number", m.group(0)))
     for m in ONLINE_ID.finditer(text):
         out.add(("online-id", m.group(1).strip().lower()))
     for m in NAME_FIELDS.finditer(text):
@@ -170,14 +203,16 @@ def already_published(corpus, found):
     for category, value in found:
         if category == "ipv4":
             hit = value in ips
-        elif category == "account-id":
+        elif category in ("account-id", "number") and value.isdigit():
             hit = value in numbers
+        elif category == "account-id" and re.fullmatch(r"[0-9a-f]{16}", value):
+            hit = value in hex_blob
         elif category == "hex":
             hit = value[:32] in windows and value in hex_blob
         elif category == "mac":
             hit = value in hex_blob
         else:
-            hit = value in corpus
+            hit = value.lower() in corpus
         if hit:
             present.add((category, value))
     return present
@@ -196,6 +231,10 @@ def main():
             collect(f.read().decode("utf-8", "replace"), found)
         count += 1
 
+    allowed = read_allowed(os.path.join(captures, "leak-allow.tsv"))
+    found = {(c, v) for c, v in found if (c, v.lower()) not in allowed}
+    accounts = {v for c, v in found if c == "account-id"}
+    found = {(c, v) for c, v in found if not (c == "number" and v in accounts)}
     present = already_published(published_corpus(root), found)
     denied, subtracted = [], []
     for category, value in sorted(found):
