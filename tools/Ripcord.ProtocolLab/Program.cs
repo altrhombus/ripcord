@@ -9,6 +9,10 @@ using Ripcord.ProtocolLab;
 // signing in here signs the app in too; RIPCORD_REFRESH_TOKEN still works for a token obtained
 // out of band.
 
+// Console names, addresses, account ids, MACs and keys print as placeholders unless --show-identifiers is given
+// (LabOutput), so what a hardware run prints is already safe to copy into a record.
+args = LabOutput.Install(args);
+
 if (args.Length == 0)
 {
     PrintUsage();
