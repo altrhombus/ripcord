@@ -35,6 +35,24 @@ different purpose.
 > anything. The list above is short, it is checkable in one `git log --format=%B | grep`, and it stops
 > growing the moment someone notices — which is the property that actually matters.
 
+### A leak guard at commit and push time, and private addresses held to the public rule (2026-09-28)
+
+`PublishedTreeSweepTests` recognises secrets by shape, which is why it can run in CI, and so it can never know
+which values are real. Two changes close that from both ends.
+
+- **The shape rule, tightened.** Private addresses had passed the sweep by stated policy, "published as
+  captured". They are now held to the same rule as public ones: a test or an example takes one from a
+  synthetic LAN (`10.0.0.0/24`, `172.31.0.0/24`, `192.168.1.0/24`) or carries an allowlist entry that says
+  why not. The sweep also reads the padded `%3d` Host form and bracketed byte arrays, decimal or hex, which
+  the dotted pattern could not see. Contract rows pin each.
+- **The value rule, new.** `tools/leak-guard` builds a denylist from the captures folder's own files (78
+  addresses, the console names, SSIDs, MACs, account and online ids, emails and 33,643 hex values) and
+  keeps it there. Git hooks refuse a commit or a push that carries any of them, in every spelling. The
+  denylist is built in 3.4 s, a full-history check takes 11 s, and a commit's check is instant.
+- **Checked both ways.** Every denylisted value, written in each spelling the guard claims (4,563
+  cases), was caught, and no synthetic or documentation value was. A canary value was refused at commit,
+  in a message and at push. The whole history of every branch and tag passes.
+
 ### A provenance audit of the branch, and an engine without the constants (2026-09-27)
 
 Before any of `feat/libripcord` is pushed, this branch was read end to end against `CLAUDE.md`'s independence
