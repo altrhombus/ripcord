@@ -18,7 +18,7 @@ let accountUsage = """
     """
 
 /// Progress lines from the rendezvous and the 9303 transport, beside the core's own.
-let labLog: @Sendable (String) -> Void = { line in FileHandle.standardError.write(Data("  · \(line)\n".utf8)) }
+let labLog: @Sendable (String) -> Void = { line in FileHandle.standardError.write(Data("  · \(shown(line))\n".utf8)) }
 
 /// A gateway with a live session, or the lab exits saying why.
 func signedInGateway(_ command: String) -> (AccountGateway, CloudAccount) {
@@ -60,13 +60,14 @@ func runAccountPair(_ arguments: [String]) -> Never {
         guard let target = consoles.first(where: { $0.duid == duid }) else {
             fail("account-pair: the account has no console with that duid (see `ripcord-lab cloud-consoles`)")
         }
-        print("pairing with \(target.device.name) (\(family(ofPlatform: target.platform).rawValue)) through the account")
+        labRedactor.learnName(target.device.name)
+        say("pairing with \(target.device.name) (\(family(ofPlatform: target.platform).rawValue)) through the account")
         let knownHost = host.isEmpty ? nil : host
         let paired = try blocking {
             try await AccountPairing.pair(target, gateway: gateway, host: knownHost, log: labLog)
         }
         try PairingFileStore.lab.save(paired)
-        print("paired with \(paired.name) (\(paired.family.rawValue), \(paired.host)); saved to \(PairingFileStore.lab.directory.path)")
+        say("paired with \(paired.name) (\(paired.family.rawValue), \(paired.host)); saved to \(PairingFileStore.lab.directory.path)")
     } catch {
         fail("account-pair: \(error)")
     }
@@ -107,7 +108,7 @@ func labRendezvousRoute(_ route: LabRoute, console: PairedConsole, duid duidArgu
     let duid = duidArgument ?? resolveDUID(for: console, gateway: gateway)
     let pushServer: PushServerInfo
     do { pushServer = try blocking { try await gateway.cloud.pushServer() } } catch { fail("connect: \(error)") }
-    print("route \(route.rawValue): account signed in, console duid resolved, push server \(pushServer.fqdn)")
+    say("route \(route.rawValue): account signed in, console duid resolved, push server \(pushServer.fqdn)")
 
     switch route {
     case .account:
