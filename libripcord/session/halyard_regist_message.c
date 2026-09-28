@@ -161,7 +161,17 @@ int halyard_regist_split_response(const uint8_t *response, size_t response_lengt
             sp++;
         if (sp >= head_end)
             return 0;
-        *out_status = atoi(text + sp + 1);
+        /* By hand, and bounded by the head. atoi skips leading whitespace, so a status line ending in a
+         * space walked through the blank line into the body and on past the end of a buffer that carries no
+         * terminator (found by fuzz_account). Nine digits is past any status and short of int overflow. */
+        {
+            size_t d = sp + 1;
+            int status = 0;
+
+            while (d < head_end && d < sp + 10 && text[d] >= '0' && text[d] <= '9')
+                status = status * 10 + (text[d++] - '0');
+            *out_status = status;
+        }
     }
 
     /* Walk the header lines for the console's own explanation. */
