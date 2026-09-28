@@ -7,6 +7,9 @@ import RipcordKit
 import Synchronization
 
 let usage = """
+    Every command prints console names, addresses, ids and keys as placeholders; add --show-identifiers anywhere
+    to see them raw (for your own terminal, not for a record).
+
     usage: ripcord-lab <command>
 
       check                 the build's key-agreement backend and interop constants
@@ -31,16 +34,17 @@ let usage = """
     """ + cloudUsage + accountUsage
 
 func fail(_ message: String, code: Int32 = 1) -> Never {
-    FileHandle.standardError.write(Data((message + "\n").utf8))
+    FileHandle.standardError.write(Data((shown(message) + "\n").utf8))
     exit(code)
 }
 
-let arguments = Array(CommandLine.arguments.dropFirst())
+// --show-identifiers is global (LabOutput.swift), so it is taken out before the command is read.
+let arguments = Array(CommandLine.arguments.dropFirst()).filter { $0 != "--show-identifiers" }
 
 switch arguments.first {
 case "check", nil:
-    print("key agreement:     \(Core.keyAgreementAvailable ? "CryptoKit" : "MISSING")")
-    print("interop constants: \(Core.interopConstantsBundled ? "bundled" : "INCOMPLETE")")
+    say("key agreement:     \(Core.keyAgreementAvailable ? "CryptoKit" : "MISSING")")
+    say("interop constants: \(Core.interopConstantsBundled ? "bundled" : "INCOMPLETE")")
     exit(Core.keyAgreementAvailable && Core.interopConstantsBundled ? 0 : 1)
 
 case "discover":
@@ -58,12 +62,14 @@ case "discover":
     do {
         let consoles = try LANDiscovery.search(hosts: hosts, timeout: .milliseconds(milliseconds))
         if consoles.isEmpty {
-            print("no console answered within \(milliseconds) ms")
+            say("no console answered within \(milliseconds) ms")
             exit(1)
         }
         for c in consoles {
+            labRedactor.learnName(c.name)
+            labRedactor.learnConsoleAddress(c.address)
             let state = c.isAwake ? "awake" : "resting"
-            print("\(c.hostType)  \(c.address.padding(toLength: 15, withPad: " ", startingAt: 0))  \(state.padding(toLength: 7, withPad: " ", startingAt: 0))  \(c.name)  (system \(c.systemVersion))")
+            say("\(c.hostType)  \(c.address.padding(toLength: 15, withPad: " ", startingAt: 0))  \(state.padding(toLength: 7, withPad: " ", startingAt: 0))  \(c.name)  (system \(c.systemVersion))")
         }
     } catch {
         fail("discover: \(error)")
@@ -76,7 +82,7 @@ case "bench":
     for engine in engines {
         _ = PacketCryptoBenchmark.run(engine: engine, packets: 2_000)   // warm caches and the branch predictor
         let r = PacketCryptoBenchmark.run(engine: engine)
-        print(String(format: "%@  %d packets of %d bytes: %.2f us/packet, %.0f packets/s, %.0f Mb/s on one core",
+        say(String(format: "%@  %d packets of %d bytes: %.2f us/packet, %.0f packets/s, %.0f Mb/s on one core",
                      engine.rawValue.padding(toLength: 4, withPad: " ", startingAt: 0),
                      r.packets, r.packetBytes, r.microsecondsPerPacket, r.packetsPerSecond, r.megabitsPerSecond))
     }
@@ -88,12 +94,13 @@ case "pair":
     // wants a search reply before it anyway.
     let found = (try? LANDiscovery.search(hosts: [host])) ?? []
     guard let console = found.first else { fail("pair: \(host) did not answer discovery") }
+    labRedactor.learnName(console.name)
     guard console.isAwake else { fail("pair: \(console.name) is resting; turn it on and open its Pair Device screen") }
     do {
         let paired = try Pairing.register(host: host, family: console.family ?? .ps5, accountID: arguments[3],
                                           pin: arguments[2], name: console.name, consoleID: console.hostID)
         try PairingFileStore.lab.save(paired)
-        print("paired with \(paired.name) (\(paired.family.rawValue), \(paired.host)); saved to \(PairingFileStore.lab.directory.path)")
+        say("paired with \(paired.name) (\(paired.family.rawValue), \(paired.host)); saved to \(PairingFileStore.lab.directory.path)")
     } catch {
         fail("pair: \(error)")
     }
@@ -106,7 +113,7 @@ case "wake":
     do {
         try LANWake.wakeIfResting(console)
         let took = ContinuousClock.now - started
-        print(String(format: "%@ is awake (%.1f s)", console.name,
+        say(String(format: "%@ is awake (%.1f s)", console.name,
                      Double(took.components.seconds) + Double(took.components.attoseconds) / 1e18))
     } catch {
         fail("wake: \(error)")
@@ -114,8 +121,8 @@ case "wake":
 
 case "consoles":
     let consoles = PairingFileStore.lab.load()
-    if consoles.isEmpty { print("no paired consoles in \(PairingFileStore.lab.directory.path)") }
-    for c in consoles { print("\(c.family.rawValue)  \(c.host)  \(c.name)  id \(c.consoleID)") }
+    if consoles.isEmpty { say("no paired consoles in \(PairingFileStore.lab.directory.path)") }
+    for c in consoles { say("\(c.family.rawValue)  \(c.host)  \(c.name)  id \(c.consoleID)") }
 
 case "connect":
     var positional: [String] = []
@@ -172,12 +179,12 @@ case "connect":
     let sessionBox = Mutex<ConsoleSession?>(nil)
 
     var handlers = SessionHandlers()
-    handlers.log = { line in FileHandle.standardError.write(Data("  core: \(line)\n".utf8)) }
+    handlers.log = { line in FileHandle.standardError.write(Data("  core: \(shown(line))\n".utf8)) }
     // On the LAN, `seconds` runs from the start, as it always has; on a rendezvous route the cloud half alone
     // can take longer than that, so it runs from the stream being ready.
     let armed = Mutex(route == .local)
     handlers.stage = { stage in
-        print("\(stamp())  stage \(stage)")
+        say("\(stamp())  stage \(stage)")
         guard stage >= .streamReady, stage != .ended else { return }
         let arm = armed.withLock { done -> Bool in
             defer { done = true }
@@ -185,7 +192,7 @@ case "connect":
         }
         if arm { DispatchQueue.global().asyncAfter(deadline: .now() + seconds) { sessionBox.withLock { $0?.disconnect() } } }
     }
-    handlers.streamInfo = { info in print("\(stamp())  stream \(info.width)x\(info.height) \(info.codec)") }
+    handlers.streamInfo = { info in say("\(stamp())  stream \(info.width)x\(info.height) \(info.codec)") }
     handlers.video = { sample, _ in out.write(annexB(sample)) }
     handlers.stats = { s in
         let due = lastStats.withLock { last -> Bool in
@@ -194,20 +201,20 @@ case "connect":
             return true
         }
         guard due else { return }
-        print("\(stamp())  \(s.kbps) kb/s  video \(s.videoFrames) (key \(s.keyframes))  audio \(s.audioFrames)  lost \(s.packetsLost)/\(s.packetsReceived)  idr \(s.idrRequests)")
+        say("\(stamp())  \(s.kbps) kb/s  video \(s.videoFrames) (key \(s.keyframes))  audio \(s.audioFrames)  lost \(s.packetsLost)/\(s.packetsReceived)  idr \(s.idrRequests)")
     }
     handlers.passcodeRequested = { retry in
         // Off the session thread: reading a terminal blocks, and the session must keep being serviced.
         DispatchQueue.global().async {
-            print(retry == 0 ? "the console asks for its passcode: " : "refused; passcode again: ", terminator: "")
+            say(retry == 0 ? "the console asks for its passcode: " : "refused; passcode again: ", terminator: "")
             fflush(stdout)
             let digits = readLine() ?? ""
             sessionBox.withLock { digits.isEmpty ? $0?.cancel() : $0?.supplyPasscode(digits) }
         }
     }
     handlers.ended = { outcome in
-        print("\(stamp())  ended at \(outcome.stage), reason \(outcome.endReason), control error \(outcome.controlError)")
-        if let failure = outcome.failure { print("\(stamp())  \(failure)") }
+        say("\(stamp())  ended at \(outcome.stage), reason \(outcome.endReason), control error \(outcome.controlError)")
+        if let failure = outcome.failure { say("\(stamp())  \(failure)") }
         done.signal()
     }
     let session = ConsoleSession(console: console, options: options, handlers: handlers)
@@ -222,12 +229,12 @@ case "connect":
     }
     done.wait()
     try? out.close()
-    print("video written to \(outPath)")
+    say("video written to \(outPath)")
     if route == .internet {
         let found = candidates.value.withLock { $0 }
         if found.isEmpty { fail("connect: the console never answered the WAN rendezvous") }
-        print("the console's candidates:")
-        for c in found { print("    \(c.type)  \(c.address):\(c.port)") }
+        say("the console's candidates:")
+        for c in found { say("    \(c.type)  \(c.address):\(c.port)") }
     }
 
 case "cloud", "signin", "signout", "cloud-consoles", "cloud-wake":
