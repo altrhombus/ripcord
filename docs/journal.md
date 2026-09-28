@@ -35,6 +35,22 @@ different purpose.
 > anything. The list above is short, it is checkable in one `git log --format=%B | grep`, and it stops
 > growing the moment someone notices — which is the property that actually matters.
 
+### The fuzzer's first find in CI, and a timing test made honest (2026-09-28)
+
+The first CI run on the new repository failed two jobs, and neither failure was flaky.
+
+- **A heap overread in the C core.** The coverage-guided run of `fuzz_account` found it in 60 seconds.
+  `halyard_regist_split_response` read the status with `atoi`, which skips leading whitespace. So a status
+  line ending in a space walked through the blank line, into the body and past the end of a buffer with no
+  terminator. The status is now parsed by hand, bounded by the head. `registration_test` has the crash's
+  shape in an exactly-sized heap buffer, and under the sanitizers the old code fails it at the same line.
+  The Rust engine's parser is safe Rust and was not affected; `ripcord-diff` agrees with the fix.
+- **An exact count from wall-clock timers.** `WanRendezvousTests/timing` expected exactly three offers
+  from 100 ms waits inside a 250 ms deadline. A loaded runner's timers overran (the test took 1.17 s), and
+  the deadline came after fewer rounds. Each round waits at least one interval, so three is a ceiling. The
+  test now asserts what holds under any scheduling: one to three offers, a readback per three rounds, and
+  an end no earlier than the deadline.
+
 ### A CI review: stale comments, two unverified downloads, and a test for the leak guard (2026-09-28)
 
 Both workflows read end to end, for what each job still proves.
