@@ -178,6 +178,25 @@ static void test_message(void)
               "a reason sent as the final header is read", __LINE__);
     }
 
+    /* An empty status, then a body of digits to the very end of an unterminated buffer. atoi skipped the blank
+     * line and read past the end (found by fuzz_account); the buffer is exactly sized so the sanitizer build
+     * sees any read beyond it. */
+    {
+        static const char head[] = "HTTP/1.1 \r\n\r\n";
+        size_t length = sizeof(head) - 1 + 24;
+        char *raw = (char *)malloc(length);
+        int status = -1;
+        const uint8_t *body = NULL;
+        size_t body_length = 0;
+
+        memcpy(raw, head, sizeof(head) - 1);
+        memset(raw + sizeof(head) - 1, '7', 24);
+        check(halyard_regist_split_response((const uint8_t *)raw, length, &status, &body, &body_length, NULL, 0)
+                  && status == 0 && body_length == 24,
+              "an empty status reads as 0 and never reaches the body", __LINE__);
+        free(raw);
+    }
+
     /* A RegistKey that is not hex is refused, not accepted with a length of SIZE_MAX. */
     {
         static const char bad[] = "PS5-RegistKey: not-hex!\r\nRP-Key: 000102030405060708090a0b0c0d0e0f\r\n";
