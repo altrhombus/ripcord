@@ -55,8 +55,11 @@ rules. No other implementation was opened for it: the question was whether our o
   the tables are absent and a connect stops before the console. `ripcord_interop_constants_bundled()`
   reports which build this is, and the Mac selects it with `RIPCORD_BUNDLE_INTEROP_CONSTANTS = NO`. The
   release library was searched for the tables' bytes both ways: present by default, absent without the
-  feature. `NOTICE`, `README.md` and `CLAUDE.md` now describe all three carriers. Three smaller gaps in the
-  rule text are in the roadmap.
+  feature. `NOTICE`, `README.md` and `CLAUDE.md` now describe all three carriers.
+- **Three smaller gaps, closed the same day.** `NOTICE` and `CLAUDE.md` now name the Mac's OAuth opt-out
+  (`RIPCORD_BUNDLE_OAUTH_CLIENT = NO`) and say the Mac keeps the refresh token in the Keychain.
+  `LiveRegistrationVectorTests` wrote Client-Type as a literal, a copy outside the two-home inventory, and
+  now reads `ClientTypeHex`. The C ports' missing inert build stays in the roadmap.
 
 ### Scaffolding for iPhone, iPad and Apple TV (2026-09-27)
 

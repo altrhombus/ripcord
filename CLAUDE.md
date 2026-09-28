@@ -332,8 +332,8 @@ When working in `Ripcord.Protocol.Halyard*`, `Ripcord.Cloud.Halyard`, or anythin
   no credential of ours to obtain: without it the account tier is unreachable by anyone but Sony.
   - **It passes the generic-vs-personal test** — identical for every user, tied to no account or console,
     authenticating an *application* rather than a person — which is why it qualifies at all. No user
-    credential is ever bundled; the signed-in account's refresh token lives encrypted in the user's own
-    `account.json`.
+    credential is ever bundled; the signed-in account's refresh token lives encrypted on the user's own
+    machine: a DPAPI-encrypted `account.json` in the dotnet client, one Keychain item on the Mac.
   - **But it is NOT an interface fact, and do not let the two arguments merge.** The v1 constants are values
     the console computes against; a client cannot speak the protocol without them. This is an *access
     credential*, and a client demonstrably speaks the protocol without it — a LAN session works against a
@@ -343,7 +343,8 @@ When working in `Ripcord.Protocol.Halyard*`, `Ripcord.Cloud.Halyard`, or anythin
     provenance is our own capture; the comparison against other projects came *afterwards* and is a
     permitted audit (see the auditing bullet above), not the source. Adopting a value *because* another
     implementation has it is exactly the contaminated route this section exists to close.
-  - Omittable with `-p:BundleOAuthClient=false`, and overridden at runtime by `RIPCORD_CLIENT_ID`/
+  - Omittable with `-p:BundleOAuthClient=false`, or `RIPCORD_BUNDLE_OAUTH_CLIENT = NO` for the Apple clients
+    (the reduced edition `docs/macos-plan.md` describes), and overridden at runtime by `RIPCORD_CLIENT_ID`/
     `RIPCORD_CLIENT_SECRET` or a `client.json`. Repopulate from a capture with
     `tools/extract-oauth-client.py`. **The committed file ships populated**: every checkout has the
     credential, so the extractor regenerates the value rather than supplying one a clone lacks.
