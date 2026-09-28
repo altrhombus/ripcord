@@ -458,6 +458,8 @@ internal static class LabCommands
 
         foreach ((HalyardDiscoveryProfile profile, DiscoveredConsole console) in found)
         {
+            LabOutput.Redactor.LearnName(console.DisplayName);
+            LabOutput.Redactor.LearnConsoleAddress(console.IpAddress.ToString());
             Console.WriteLine($"  [{profile.HostType}] {console.DisplayName}  {console.IpAddress}  awake={console.IsAwake}  id={console.Id}");
         }
 
@@ -538,7 +540,8 @@ internal static class LabCommands
     public static int PrintAuthUrl()
     {
         HalyardAuthClient auth = BuildAuth(out _);
-        Console.WriteLine(auth.BuildAuthorizeUrl(HalyardClientDeviceId.For(new DefaultDeviceIdentity())));
+        // Raw: this URL is for opening, and it carries the device id the redactor would otherwise take out.
+        LabOutput.Raw.WriteLine(auth.BuildAuthorizeUrl(HalyardClientDeviceId.For(new DefaultDeviceIdentity())));
         return 0;
     }
 
@@ -563,7 +566,8 @@ internal static class LabCommands
 
         Console.WriteLine("Open this in a browser and sign in:");
         Console.WriteLine();
-        Console.WriteLine(gateway.BeginSignIn());
+        Console.Out.Flush();
+        LabOutput.Raw.WriteLine(gateway.BeginSignIn());   // raw: a URL to open, not a record
         Console.WriteLine();
         Console.WriteLine("When the browser lands on a blank remoteplay/redirect page, paste the full URL here:");
         Console.Write("> ");
@@ -616,6 +620,7 @@ internal static class LabCommands
         IReadOnlyList<HalyardConsoleClient> consoles = await cloud.ListConsolesAsync(CancellationToken.None);
         foreach (HalyardConsoleClient console in consoles)
         {
+            LabOutput.Redactor.LearnName(console.Device.Name);
             Console.WriteLine(
                 $"  {console.Device.Name}  remotePlay={console.RemotePlayEnabled}  canWake={console.CanWake}  duid={console.Duid}");
         }

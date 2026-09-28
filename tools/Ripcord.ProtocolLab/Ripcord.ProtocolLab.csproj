@@ -11,6 +11,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Ripcord.Core\Ripcord.Core.csproj" />
     <ProjectReference Include="..\..\src\Ripcord.Core.Net\Ripcord.Core.Net.csproj" />
+    <ProjectReference Include="..\..\src\Ripcord.Diagnostics\Ripcord.Diagnostics.csproj" />
     <ProjectReference Include="..\..\src\Ripcord.Cloud.Halyard\Ripcord.Cloud.Halyard.csproj" />
     <ProjectReference Include="..\..\src\Ripcord.Protocol.Halyard.Common\Ripcord.Protocol.Halyard.Common.csproj" />
     <ProjectReference Include="..\..\src\Ripcord.Protocol.Halyard\Ripcord.Protocol.Halyard.csproj" />
