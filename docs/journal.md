@@ -35,6 +35,27 @@ different purpose.
 > anything. The list above is short, it is checkable in one `git log --format=%B | grep`, and it stops
 > growing the moment someone notices — which is the property that actually matters.
 
+### The labs print placeholders, and a rule for records (2026-09-28)
+
+The leak guard stops a real value at commit time. This removes the usual way one gets there: a hardware run
+written up from what the harness printed.
+
+- **Redacted at the source.** `ripcord-lab` and `ProtocolLab` put everything they print through an
+  `IdentifierRedactor` (`Ripcord.Diagnostics`, and its Swift port in RipcordKit):
+  - by shape: real addresses, dotted or padded; 19-digit account ids; and hex of twelve or more digits, which
+    covers MACs, host ids, device ids and keys;
+  - by value: every console name the lab meets in discovery, the cloud console list or its pairing store, and,
+    on the owner's machine, the leak guard's denylisted names and words.
+- **What stays readable.** Loopback, documentation and synthetic-LAN addresses, version numbers, plain counts
+  and timestamps print as they are. ProtocolLab installs the redactor over the console's own writers, so the
+  protocol libraries' log lines are covered with no call site changed.
+- **How to see raw values.** `--show-identifiers` prints them, for your own terminal. The sign-in URLs are
+  raw either way, since they are for opening.
+- **Checked.** On the lab's real pairing store, `ripcord-lab consoles` prints `PS5  <console-ip>
+  <hostname>  id <redacted>`. Both redactors have tests whose identifying inputs are assembled at runtime.
+- **The rule, written down.** `CLAUDE.md` now says that hardware records carry placeholders from the moment
+  they are written, and never output from `--show-identifiers`.
+
 ### The fuzzer's first find in CI, and a timing test made honest (2026-09-28)
 
 The first CI run on the new repository failed two jobs, and neither failure was flaky.

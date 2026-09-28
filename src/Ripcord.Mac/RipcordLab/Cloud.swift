@@ -35,17 +35,17 @@ func runCloud(_ arguments: [String]) -> Never {
 
     if arguments.first == "cloud" {
         switch source {
-        case .environment: print("credential:  from RIPCORD_CLIENT_ID / RIPCORD_CLIENT_SECRET")
-        case .configFile(let url): print("credential:  from \(url.path)\(config.isConfigured ? "" : " (unusable)")")
-        case .bundled(let url): print("credential:  bundled (\(url.path))")
-        case .none: print("credential:  none; sign-in is unavailable in this build")
+        case .environment: say("credential:  from RIPCORD_CLIENT_ID / RIPCORD_CLIENT_SECRET")
+        case .configFile(let url): say("credential:  from \(url.path)\(config.isConfigured ? "" : " (unusable)")")
+        case .bundled(let url): say("credential:  bundled (\(url.path))")
+        case .none: say("credential:  none; sign-in is unavailable in this build")
         }
-        print("session:     \(store.load() != nil ? "stored in the Keychain" : "none stored")")
+        say("session:     \(store.load() != nil ? "stored in the Keychain" : "none stored")")
         exit(config.isConfigured ? 0 : 1)
     }
     if arguments.first == "signout" {
         store.clear()
-        print("signed out")
+        say("signed out")
         exit(0)
     }
     guard config.isConfigured else { fail("\(arguments[0]): \(CloudError.notConfigured)") }
@@ -61,21 +61,23 @@ func runCloud(_ arguments: [String]) -> Never {
         switch arguments.first {
         case "signin":
             let url = try gateway.beginSignIn()
-            print("Open this in a browser and sign in:\n\n\(url.absoluteString)\n")
-            print("Then paste the address the browser ends on (it starts \(ClientConfig.defaultRedirectURI)):")
+            say("Open this in a browser and sign in:")
+            print("\n\(url.absoluteString)\n")   // raw: a URL to open, not a record
+            say("Then paste the address the browser ends on (it starts \(ClientConfig.defaultRedirectURI)):")
             guard let line = readLine(), let redirect = URL(string: line.trimmingCharacters(in: .whitespaces)) else {
                 fail("signin: no address")
             }
             guard gateway.redirectMatcher.isCompletion(redirect) else { fail("signin: that is not the redirect with the code") }
             let account = try blocking { try await gateway.completeSignIn(redirect: redirect) }
-            print("signed in as \(account.onlineID); the session is stored in the Keychain")
+            say("signed in as \(account.onlineID); the session is stored in the Keychain")
 
         case "cloud-consoles":
             try blocking { try await requireSession(gateway) }
             let consoles = try blocking { try await gateway.cloud.listConsoles() }
-            if consoles.isEmpty { print("the account has no consoles") }
+            if consoles.isEmpty { say("the account has no consoles") }
             for c in consoles {
-                print("\(c.platform)  \(c.device.name)  remote play \(c.remotePlayEnabled ? "on" : "off")  "
+                labRedactor.learnName(c.device.name)
+                say("\(c.platform)  \(c.device.name)  remote play \(c.remotePlayEnabled ? "on" : "off")  "
                       + "wake \(c.canWake ? "yes" : "no")  duid \(c.duid)")
             }
 
@@ -83,7 +85,7 @@ func runCloud(_ arguments: [String]) -> Never {
             guard arguments.count == 2 else { fail(usage, code: 2) }
             try blocking { try await requireSession(gateway) }
             try blocking { try await SessionCoordinator(cloud: gateway.cloud).wake(consoleDUID: arguments[1]) }
-            print("wake command accepted by the account service (that is not the console being awake yet)")
+            say("wake command accepted by the account service (that is not the console being awake yet)")
 
         default:
             fail(usage, code: 2)
