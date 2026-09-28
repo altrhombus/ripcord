@@ -229,7 +229,7 @@ match. Only **three** wire values differ, and each is a straightforward console-
 |---|---|---|
 | Discovery + wake UDP port (`SRCH`/`WAKEUP`) | **987** | **9302** |
 | `device-discovery-protocol-version` (SRCH + WAKEUP) | **`00020020`** | **`00030010`** |
-| Control-listener-arming probe (UDP 9295 broadcast) | **`SRC2`** → reply **`RES2`** | `SRC3` → `RES3` |
+| Control-listener-arming probe (UDP 9295 broadcast) | **`SRC2`** → reply **`RES2`** | `SRC3` → `RES3` `[X]`: our PS5 has not answered SRC3 sent unicast (ROADMAP, 2026-09-26) |
 | `/sess/*` URL family segment | **`/sie/ps4/rp/sess/…`** | `/sie/ps5/rp/sess/…` |
 | `RP-Version` header on `/sess/rgst` | **`10.0`** | `1.0` |
 
@@ -276,15 +276,16 @@ amend `NOTICE` + `CLAUDE.md`) and the KDF/context selection keyed on console fam
 ### PS4 A/V stream key schedule — same as PS5, **[V]** (2026-08-03)
 
 cap53's Takion `SESSION_REPLY` (frame 10089) parses as the **identical** PS5-v17 protobuf: `clientVersion = 17`,
-`ecdhPublicKey` = 133-byte **P-521**, `ecdhSignature` = 32-byte HMAC-SHA256, empty `encryptedKey`. So the PS4
-this project targets negotiates the **modern P-521/v17 stream handshake** — *not* a P-256 "older protocol" (an
-early high-uncertainty note, now corrected). Unlike the control-field KDF (dispatched by `mode`, giving PS4 its
-own variant), the stream key schedule `DeriveDirection` is a plain SP800-108 block with **no console-family or
-mode input** — only the curve is version-dependent, and `clientVersion 17` selects P-521 through the existing
-`CurveForVersion`. So `HalyardStreamKeySchedule` already covers PS4; no PS4-specific stream algorithm exists to
-derive. Handshake structure is `[W]` (parsed from cap53); the key-schedule *identity* is `[C]` — a passive
-capture has neither ECDH private key, so the derived A/V keys can't be reproduced from cap53. Final `[V]` needs
-a live PS4 stream-key dump (as done for PS5), which would also rule out any separate engine-module re-dispatch.
+`ecdhPublicKey` = 133-byte **P-521**, `ecdhSignature` = 32-byte HMAC-SHA256, empty `serverVersionString` (a
+SESSION_REPLY has no `encryptedKey`; corrected 2026-09-26, research log). So the PS4 this project targets
+negotiates the **modern P-521/v17 stream handshake** — *not* a P-256 "older protocol" (an early high-uncertainty
+note, now corrected). Unlike the control-field KDF (dispatched by `mode`, giving PS4 its own variant), the stream
+key schedule `DeriveDirection` is a plain SP800-108 block with **no console-family or mode input** — only the
+curve is version-dependent, and `clientVersion 17` selects P-521 through the existing `CurveForVersion`. So
+`HalyardStreamKeySchedule` already covers PS4; no PS4-specific stream algorithm exists to derive. Handshake
+structure is `[W]` (parsed from cap53); the key-schedule *identity* is `[C]` — a passive capture has neither ECDH
+private key, so the derived A/V keys can't be reproduced from cap53. Final `[V]` needs a live PS4 stream-key dump
+(as done for PS5), which would also rule out any separate engine-module re-dispatch.
 
 **Validated on PS4 hardware + statically (2026-08-03), two independent ways:**
 - **handshakeKey + ecdhSignature `[V]`** — live Frida dumps of the client's stream-enable path gave the session

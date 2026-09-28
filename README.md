@@ -69,7 +69,7 @@ Verified end-to-end against real hardware on a LAN, on **PS5 and PS4** alike:
 
 ### The console ports
 
-The protocol core was factored into portable C (`ports/common`) and carried onto hardware Sony never shipped
+The protocol core was factored into portable C (`libripcord`) and carried onto hardware Sony never shipped
 a client for. Each port is a **completeness test for the specification** — a spec is only as good as its
 ability to produce a working implementation by someone who wasn't in the room when it was written, and every
 place a port had to guess is a defect in the document. Three of them have now read it.
@@ -191,7 +191,7 @@ PlayStation.
 | `Ripcord.Diagnostics` | Tracing/metrics behind the diagnostics overlay |
 | `tools/Ripcord.ProtocolLab` | Console harness — drives the connect flow and replays captures |
 | `tools/Ripcord.HidCapture` | Standalone HID capture utility for controller work |
-| `ports/common` | The protocol core in portable C, shared by every console port |
+| `libripcord` | The protocol core in portable C, shared by every console port |
 | `ports/ripcord-ps3` | PlayStation 3 client — streams 720p60, ships a `.pkg`; not part of the solution |
 | `ports/ripcord-3ds` | New 3DS client, in C — not part of the solution |
 
@@ -237,8 +237,9 @@ pair), two registration key tables, two material-wrap tables, four field context
 context key is one of those four, stored a second time under its own name, so the file holds four distinct
 16-byte keys rather than five — and a byte offset. The console computes against these values; a client
 cannot speak the protocol without them, and changing them breaks interoperability. They are interface facts,
-and they are shipped as **data** read through the same configuration seam that accepts
-a local override — not compiled into program logic.
+and they are **data** in one committed file that no client copies. The dotnet client
+reads it at run time through the same configuration seam that accepts a local override; the Rust engine (the
+Apple clients) and the C core (the console ports) generate lookup tables from it at build time, never committed.
 
 They are **generic to the protocol**: identical for every user and every console.
 
@@ -251,9 +252,11 @@ A build without the constants can be produced at any time:
 
 ```
 msbuild Ripcord.slnx -p:BundleInteropConstants=false
+cargo build --release -p ripcord-ffi --no-default-features   # the Rust engine, in engine/
 ```
 
-That omits the data entirely. The app then reports the constants as unavailable and declines to pair, exactly
+That omits the data entirely. For the Apple clients, `RIPCORD_BUNDLE_INTEROP_CONSTANTS = NO` does the same in the
+engine they build; the C core's console ports have no such switch. The app then reports the constants as unavailable and declines to pair, exactly
 as it behaves on a machine that has none — a clean failure, not a crash.
 
 ### The application OAuth credential

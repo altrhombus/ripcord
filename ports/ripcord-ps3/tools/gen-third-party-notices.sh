@@ -54,7 +54,7 @@ MBEDTLS_DIR=$(ls -d "$TP"/mbedtls/src/mbedtls-* 2>/dev/null | head -1)
 
 require "openh264" "$OPENH264_DIR" "LICENSE" "run tools/build-openh264.sh first"
 require "Opus"     "$OPUS_DIR"     "COPYING" "run tools/build-opus.sh first"
-require "Mbed TLS" "$MBEDTLS_DIR"  "LICENSE" "run ../common/tools/build-mbedtls.sh first"
+require "Mbed TLS" "$MBEDTLS_DIR"  "LICENSE" "run ../../libripcord/tools/build-mbedtls.sh first"
 
 section() { printf '\n\n%s\n%s\n\n' "$1" "$(echo "$1" | tr '[:print:]' '-')"; }
 

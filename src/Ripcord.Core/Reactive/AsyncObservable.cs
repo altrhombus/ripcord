@@ -15,22 +15,36 @@ public static class AsyncObservable
         public IDisposable Subscribe(IObserver<T> observer)
         {
             var cts = new CancellationTokenSource();
+            // Taken now: the subscription may dispose the source before the task reads it, and a disposed
+            // source's Token throws where a token's IsCancellationRequested does not.
+            CancellationToken token = cts.Token;
             _ = Task.Run(async () =>
             {
+                // Exactly one terminal signal, and none after the subscription is disposed. Until 2026-09-27 an
+                // OperationCanceledException always ended the sequence silently, whoever raised it, so a producer
+                // that cancelled itself (an internal timeout, say) left an observer waiting for an end that never
+                // came. And a producer that returned normally after a dispose was still told OnCompleted. Now only
+                // our own cancellation, meaning a dispose, is silent; any other end is signalled.
                 try
                 {
-                    await producer(observer, cts.Token).ConfigureAwait(false);
-                    observer.OnCompleted();
+                    await producer(observer, token).ConfigureAwait(false);
+                    if (!token.IsCancellationRequested)
+                    {
+                        observer.OnCompleted();
+                    }
                 }
-                catch (OperationCanceledException)
+                catch (OperationCanceledException) when (token.IsCancellationRequested)
                 {
-                    // subscription disposed
+                    // subscription disposed: no signal
                 }
                 catch (Exception ex)
                 {
-                    observer.OnError(ex);
+                    if (!token.IsCancellationRequested)
+                    {
+                        observer.OnError(ex);
+                    }
                 }
-            }, cts.Token);
+            }, token);
 
             return new Subscription(cts);
         }

@@ -35,6 +35,797 @@ different purpose.
 > anything. The list above is short, it is checkable in one `git log --format=%B | grep`, and it stops
 > growing the moment someone notices — which is the property that actually matters.
 
+### The fuzzer's first find in CI, and a timing test made honest (2026-09-28)
+
+The first CI run on the new repository failed two jobs, and neither failure was flaky.
+
+- **A heap overread in the C core.** The coverage-guided run of `fuzz_account` found it in 60 seconds.
+  `halyard_regist_split_response` read the status with `atoi`, which skips leading whitespace. So a status
+  line ending in a space walked through the blank line, into the body and past the end of a buffer with no
+  terminator. The status is now parsed by hand, bounded by the head. `registration_test` has the crash's
+  shape in an exactly-sized heap buffer, and under the sanitizers the old code fails it at the same line.
+  The Rust engine's parser is safe Rust and was not affected; `ripcord-diff` agrees with the fix.
+- **An exact count from wall-clock timers.** `WanRendezvousTests/timing` expected exactly three offers
+  from 100 ms waits inside a 250 ms deadline. A loaded runner's timers overran (the test took 1.17 s), and
+  the deadline came after fewer rounds. Each round waits at least one interval, so three is a ceiling. The
+  test now asserts what holds under any scheduling: one to three offers, a readback per three rounds, and
+  an end no earlier than the deadline.
+
+### A CI review: stale comments, two unverified downloads, and a test for the leak guard (2026-09-28)
+
+Both workflows read end to end, for what each job still proves.
+
+- **Stale.** The engine job still called itself Phase 1's stream plane. Two runner labels were "not
+  verified", though both had run green. libripcord's macOS leg was justified by the Mac linking the C core,
+  which ended on 2026-09-26. All four comments say what is true now.
+- **Two unverified downloads.** cargo-deny came through a third-party action pinned only by its tag, in a
+  file that says it takes first-party actions only. It now installs from crates.io at a pinned version,
+  like every engine dependency, and passes (advisories, bans, licences, sources). The PS3 job's 180 MB
+  toolchain was fetched with no checksum while its libraries were hash-verified. It now checks the SHA-256
+  GitHub records for that release asset.
+- **The leak guard in CI.** CI has no captures folder, so the hooks do nothing there, and a broken checker would
+  have gone unnoticed. `tools/leak-guard/test_check.py` runs the real checker against a synthetic captures folder:
+  every spelling, messages, a push, exceptions, and the no-captures-folder case. Three deliberately broken
+  checkers (one finding nothing, one losing the padded form, one printing the value) each fail it.
+
+### A leak guard at commit and push time, and private addresses held to the public rule (2026-09-28)
+
+`PublishedTreeSweepTests` recognises secrets by shape, which is why it can run in CI, and so it can never know
+which values are real. Two changes close that from both ends.
+
+- **The shape rule, tightened.** Private addresses had passed the sweep by stated policy, "published as
+  captured". They are now held to the same rule as public ones: a test or an example takes one from a
+  synthetic LAN (`10.0.0.0/24`, `172.31.0.0/24`, `192.168.1.0/24`) or carries an allowlist entry that says
+  why not. The sweep also reads the padded `%3d` Host form and bracketed byte arrays, decimal or hex, which
+  the dotted pattern could not see. Contract rows pin each.
+- **The value rule, new.** `tools/leak-guard` builds a denylist from the captures folder's own files (73
+  addresses, the console names, SSIDs, MACs, the account id in each encoding, and 33,643 hex values) and
+  keeps it there. Git hooks refuse a commit or a push that carries any of them, in every spelling. The
+  denylist is built in 3.4 s, a full-history check takes 11 s, and a commit's check is instant.
+- **Checked both ways.** Every denylisted value, written in each spelling the guard claims (4,563
+  cases), was caught, and no synthetic or documentation value was. A canary value was refused at commit,
+  in a message and at push. The whole history of every branch and tag passes.
+
+### A provenance audit of the branch, and an engine without the constants (2026-09-27)
+
+Before any of `feat/libripcord` is pushed, this branch was read end to end against `CLAUDE.md`'s independence
+rules. No other implementation was opened for it: the question was whether our own work kept our own rules.
+
+- **What held.** No third-party implementation is named or echoed, and no vendor symbol name appears; the
+  protobuf names are the renamed ones. Neither the OAuth credential nor Client-Type is copied into Swift or
+  the engine. Every 19-digit number, long hex string, MAC address and GUID in the captures folder's text files was
+  searched for in the committed tree (33,626 values). The only matches were published test patterns,
+  Client-Type in its known homes, the bundle itself, and the Takion handshake packets that
+  `CaptureProvenanceTests` already allows with a reason.
+- **What was overstated.** About twenty claims read as settled when they rest on one run or two. They are now
+  marked `[X]` or corrected (the commit lists them). The research log gained its missing rows, for the
+  2026-09-25 hardware findings, the unanswered SRC3, and RFC 9382.
+- **An engine without the constants.** `NOTICE` said the constants are "read at runtime, not compiled into
+  program logic". That was true of the dotnet client only: the engine and the C core generate tables from
+  the one file at build time. The engine gained an `interop-constants` feature, on by default. Without it
+  the tables are absent and a connect stops before the console. `ripcord_interop_constants_bundled()`
+  reports which build this is, and the Mac selects it with `RIPCORD_BUNDLE_INTEROP_CONSTANTS = NO`. The
+  release library was searched for the tables' bytes both ways: present by default, absent without the
+  feature. `NOTICE`, `README.md` and `CLAUDE.md` now describe all three carriers.
+- **Three smaller gaps, closed the same day.** `NOTICE` and `CLAUDE.md` now name the Mac's OAuth opt-out
+  (`RIPCORD_BUNDLE_OAUTH_CLIENT = NO`) and say the Mac keeps the refresh token in the Keychain.
+  `LiveRegistrationVectorTests` wrote Client-Type as a literal, a copy outside the two-home inventory, and
+  now reads `ClientTypeHex`. The C ports' missing inert build stays in the roadmap.
+
+### Scaffolding for iPhone, iPad and Apple TV (2026-09-27)
+
+The Mac's Swift layer carried over almost untouched.
+
+- **What carried over.** RipcordKit built for iOS and tvOS, device and simulator, with one change: the sign-in
+  window, which is AppKit's, is now macOS-only. GameController, VideoToolbox, CryptoKit, the Keychain and the
+  sockets all compiled as they were.
+- **The engine.** The engine built on stable Rust for all four iOS and tvOS targets. The Xcode phase now builds
+  it for whichever SDK is being built, clearing Xcode's `SDKROOT` so cargo's host build scripts still link
+  against the Mac, and an SDK-conditional setting links it.
+- **The app.** `RipcordMobile`, one target for all three, has the core loop: the paired consoles, pairing by
+  code, and a stream with picture, sound, a controller, the passcode prompt, and waking a resting console. It
+  builds in Debug and Release everywhere, CI builds it, and the engine is confirmed linked into the device
+  binaries. The audio output and video hand-off moved into `RipcordAppLogic` so both apps share them.
+- **Signing and the icon.** Device builds are unsigned, because iOS and tvOS refuse an ad hoc signature. The
+  Icon Composer bundle compiled for iPhone and iPad once it declared iOS. Apple TV needs a different kind of
+  icon.
+- **The plan.** `docs/ios-plan.md` states the plan and what is `[X]`: the multicast entitlement for broadcast
+  discovery, background and Picture in Picture, Apple TV's pairing route without WebKit, and, most of all,
+  distribution, where the App Store is effectively the only route and the Mac's guideline analysis decides.
+- **The watch.** It is designed as a remote for a streaming iPhone, not a client: PS, Options and Create over
+  WatchConnectivity, a wake, and a state glance. It gets a target when its first feature is built.
+- **Not run.** Nothing has run on a device.
+
+### Four fixes that needed no console (2026-09-27)
+
+- **A first-keyframe latch in the dotnet client.** A lost first keyframe left it on a black picture for good:
+  nothing decoded, so the decoder's backlog trigger never fired, and the console kept talking, so the watchdog
+  stayed quiet. `SessionController` now asks for a keyframe from a second after the connect, every second,
+  until one arrives. It reads the demuxer's `IsKeyFrame`, as the C core and the engine arm their latch. A
+  keyframe that arrived but did not decode is still invisible to it, and stays open.
+- **`AsyncObservable` signals every end but a dispose.** A producer's own cancellation used to end the sequence
+  silently, and a producer that returned after a dispose still sent `OnCompleted`. Both are fixed, with four
+  tests. The 2026-08-05 quiet discovery family was not this: the LAN search catches its own window. Its cause
+  stays unproven.
+- **The cloud client trims.** Its anonymous request types became named records in a source-generated context,
+  and trim analysis went from eleven sites to none. Golden tests, written against the unchanged client first,
+  show every request body is byte for byte what it was.
+- **The lab's size was dead-code stripping, left off.** The Mac project never set it, and Xcode's default here is
+  off, so every object the linker pulled from the engine archive stayed whole. With it on, `ripcord-lab` went
+  from 2.86 to 1.72 MB stripped and the app's executable from 3.71 to 2.64 MB. RipcordKit's own Swift is now
+  the largest part of the lab.
+
+### Smaller work: imports, size, a fuzz target, input differentials, the code scanner (2026-09-26)
+
+- **`SessionPage`'s three protocol imports were stale.** No type or extension method from any of them is
+  used, so they are gone. The app's two direct project references to the protocol stay, until a Windows
+  build shows they can go.
+- **The engine is 9% smaller.** A linker map of the shipping dylib (719 KB stripped) showed a 64 KB table of
+  every GF(2^8) product in the FEC code, a tenth of the library. Its rows are now built on the stack, at 653
+  KB, and a worst-case recovery takes 174 µs where it took 155. `panic = "abort"` would save as much, but
+  breaks the plan's rule that a panic ends a session, never the host. The rest is in `engine/README.md`.
+- **The crypto and derivations layer has its fuzz target**, `derive`: arbitrary peer points on both curves,
+  registration contexts of any length, and round-trip assertions. 716,176 runs in a minute, clean.
+- **Controller input has differential runs against the C core.** STATE matches byte for byte. HISTORY differs
+  by design in its repeat window. The runs found one divergence nobody had recorded: the order of a poll's
+  simultaneous events. It is harmless as far as anyone knows, and `[X]` in the README.
+- **The pairing code can be scanned off the TV.** A camera sheet in the code form prefers a Continuity Camera
+  iPhone and reads frames with Vision. `PairingCodeReader` takes exactly eight digits, grouped any way, never
+  cut from a longer number, and believes a code only when two frames agree. It has four tests, and has not
+  been pointed at a console.
+
+### The Mac app's logic, tested (2026-09-26)
+
+Steps 6 and 7 had shipped their logic untested. The parts that need no window now live in
+`src/Ripcord.Mac/RipcordAppLogic/`, compiled into the app and into a host-less `RipcordAppTests` target, so no
+test launches the app, here or in CI. The RipcordKit scheme runs the target, so CI's existing test step
+includes it. Twenty tests cover:
+
+- the health verdict's thresholds and order, and rung 1's two-in, three-out hysteresis;
+- the rates taken from the engine's cumulative counters;
+- grid navigation and the adaptive column count;
+- the pad's directions, edges and repeat, under an injected clock;
+- settings saved by an older build, and key bindings and names;
+- the three connect stages;
+- the network watch's two-silent-rounds rule, and a record following its console to a new address.
+
+The Mac suite is 181 tests.
+
+### The engine comparisons' findings, fixed in .NET and the C core (2026-09-26)
+
+The side-by-side reads done for the Rust engine had listed ten faults in the .NET reference and two in the C
+core. Eleven were real and are fixed. The twelfth, the senkusha `encryptedKey`, was reversed on capture
+evidence, so the C core and the engine changed instead (below). Each fix has a test, and each .NET test was run
+against the old code and seen to fail.
+
+- **Security.**
+  - **The RP-Nonce.** A missing or malformed RP-Nonce, or a pairing without its companion, used to skip the
+    control key and carry on. The launchSpec, handshakeKey and all, would then have gone out in the clear.
+    The session now stops at /sess/init, and the launchSpec builder refuses to send unencrypted.
+  - **SESSION_REPLY.** It is checked before its signature: the required fields, `versionAccepted`, the
+    ECDH material, and a 32-byte signature. The old null checks never fired, because an unset proto2 bytes
+    field reads as empty.
+- **Sessions that end.**
+  - **Hang-ups.** A Takion DISCONNECT, or the control connection closing or faulting, now closes the session
+    with its reason. `IStreamingSession.EndReason` carries that reason into the reconnect's status line.
+  - **The rendezvous control channel.** It no longer carries the 30 s stage deadline once running, so its
+    keep-alive no longer dies quietly after half a minute of silence.
+- **Rest only on a person's stop.** Teardown between reconnect attempts used to rest the console. While
+  fixing that, a second fault turned up: a rest choice made after connecting was lost on the first
+  reconnect.
+- **Smaller fixes.**
+  - **Takion SACK:** it now clears acknowledged chunks across a TSN wrap.
+  - **The wake credential:** it is rendered signed, per the spec, and a bad key no longer throws out of
+    the wake.
+  - **Console candidates:** there is now one choice for the transport and the ACCEPT, where there used to
+    be three rules.
+  - **Token refresh:** one refresh runs at a time, and sign-out clears the tokens.
+  - **The signaling parser:** it now returns null on wrong-kind JSON instead of throwing.
+- **The C core.**
+  - **Account ids:** an id past `UINT64_MAX` is sent as text instead of wrapping into another account's id.
+  - **ECDH diagnostics:** these can now be written into a struct the caller owns, instead of process-wide
+    statics.
+- **The senkusha `encryptedKey`, reversed on evidence.** The finding said .NET's keyless senkusha request
+  was wrong to send an empty key where the C core sent four zero bytes. Our own PS4 captures say the
+  opposite:
+  - The vendor sends the field present and empty (`22 00`) in every keyless senkusha request in cap53 and
+    cap54, so the C core and the Rust engine changed instead.
+  - The same captures show the vendor's stream request is empty too, where all three implementations send
+    four zero bytes. That works on hardware and stays open in ROADMAP.
+  - The research log records the re-read, and corrects a 2026-08-03 row that had attributed the empty field
+    to the SESSION_REPLY.
+- **Two test fixes found on the way.**
+  - The published-tree sweep failed on file types the Mac app had added: entitlements, a plist and a String
+    Catalog. That would have turned CI red.
+  - The Client-Type check scanned the fuzz workspace's gitignored build output.
+- **The Mac's candidate gap, closed the same day.** Its Swift had the same gap: the ACCEPT could name an
+  unparseable candidate while the transport fell back to the known host. It failed safely rather than
+  throwing, but it was two decisions. `ConsoleCandidates` in RipcordKit now makes one, with the fallback
+  applied to both, as the dotnet client's `HalyardConsoleCandidates` does. A RipcordKit test that had pinned
+  the old behaviour was rewritten.
+- **What it left open:** the stream request's `encryptedKey` (ROADMAP).
+
+### The Mac app, steps 4–9 (2026-09-26)
+
+The Mac got its app in one sitting, from a first picture to a release line. It is all written and building
+clean, with the RipcordKit suite green (161 tests), and **none of it has met a console**: the hardware pass
+is batched, and ROADMAP lists what it has to check.
+
+- **Step 4, a first picture.** A library window and one stream window per session: the display layer, an
+  audio player node with a short queue, the pad, and the passcode prompt. Latency is measured in the only
+  way the layer allows. Each enqueue is timestamped, and a display link watches for the displayed buffer
+  to change. That is the Mac's counterpart of the dotnet client's demux-to-present figure, not the same
+  measurement.
+- **Step 5, design first.** `src/Ripcord.Mac/DESIGN.md` settles the plan's hypotheses the way
+  `docs/design.md` settled the dotnet client's, and keeps its principle: borrow the OS, and spend identity on the
+  tile, the launch and the pairing celebration.
+  - **The icon** is an Icon Composer bundle generated from the brand SVGs. Apple's grid was **checked by
+    compiling it with `actool` and looking at the render**, not recalled. The brand README had asked for
+    exactly that.
+  - **Two recalled details were taken out before they landed:** the idea that Screen Sharing uses ⌃⌥ as
+    a release convention, and a system game-mode plist key. Neither could be traced.
+- **Step 6, library, pairing and Settings.**
+  - **Tile states.** Tiles say *Ready*, *Resting* or *Not found* from a search every five seconds, and go
+    to Not found only after two silent rounds.
+  - **DHCP moves.** A record follows its console to a new DHCP address, matched by the console's id.
+  - **Pairing** is a sheet. Sign-in leads and the code route is one press away. Account pairing moved
+    into RipcordKit (`AccountPairing`), so the app and the lab run one copy of it.
+  - **One input hub.** The app runs a single `InputHub` and routes its pad to whichever surface was last
+    made key. GameController allows one handler per device, so a second hub silently took the pad from
+    the first.
+- **Step 7, the stream experience.** QuickTime's model:
+  - the window grows out of its tile;
+  - the mark's dashes fill at the engine's three stages;
+  - a glass capsule leaves on its own;
+  - the inspector (⌘I) is the dotnet client's HUD ladder, with its thresholds;
+  - clicking the picture captures the keyboard, ⌃⌥ releases it, and ⌘ shortcuts never reach the console;
+  - Picture in Picture floats the display layer;
+  - recording writes the bitstream in passthrough.
+
+  Recording, PiP and HDR are `[X]`.
+- **Step 8, present across the Mac.**
+  - **What was built:** a menu bar extra (off by default), App Intents with App Shortcuts, and a widget
+    extension with a Consoles widget and a Connect control.
+  - **The widget needs a signed build.** It reads a snapshot through an app group, and claiming one needs
+    a provisioning profile: the first build with the group failed on exactly that. So
+    `RIPCORD_APP_GROUP` gates it, and the ad hoc build's widget shows the way into the app.
+- **Step 9, ship.**
+  - **Accessibility:** VoiceOver hears each connect stage once, and the capsule does not hide itself while
+    VoiceOver is on.
+  - **Strings:** one String Catalog for both targets, with `sync-strings.sh` for command-line builds.
+  - **Releases:** a `macos-v*` tag line that signs, notarizes and drafts a release.
+  - **A notarization blocker was fixed before it could land:** the Release build was carrying
+    `get-task-allow`, which notarization refuses.
+
+### The Mac links a shipping engine (2026-09-26)
+
+The Mac's build phase now builds the engine twice: a shipping library without `test-support`, which the lab
+links and an app target will, and the test library, which only RipcordKitTests links. The shipping dylib
+exports 33 functions and none of the 17 test ones, and CI's Mac job checks that on every run.
+
+### The Rust engine: key agreement for Windows (2026-09-26)
+
+The Windows engine host will be .NET, so its CNG backend is C#: `PlatformEcdh` is .NET's `ECDiffieHellman`,
+which is CNG on Windows, behind the engine's backend table. The .NET harness runs `session-crypto.kat`
+through the engine with it and checks the result against RustCrypto's. It passes on macOS, on Apple's
+implementation underneath. CI's Windows legs run the same check on CNG itself, which is the check the
+plan asks for before a backend is used on its platform.
+
+### The Rust engine: fuzz targets, Miri, and the first finding (2026-09-26)
+
+`engine/fuzz` holds nine cargo-fuzz targets. Eight mirror `libripcord/tests/fuzz`: stream, control,
+Takion, the 9303 association, discovery, STUN and candidates, /sess, and the account inputs. The ninth,
+`connect`, drives the whole connect machine with arbitrary host events, which the C core could never be
+fuzzed with.
+
+- **The first run found a bug within a minute.** The SRCH reply parser sliced its first line as a string at
+  byte 8, and a multi-byte character straddling that byte panicked. Any datagram on the discovery port
+  could trigger it. It is fixed, with the fuzzer's input kept as a regression test.
+- **Miri over `ripcord-ffi`'s unit tests is clean** on RustCrypto's portable backends. On the hardware
+  backends it stops inside `sha2`'s intrinsics, which is not the engine's code.
+- **`engine-nightly.yml`** runs both daily, with the fuzz corpus kept between runs.
+
+### The Rust engine: senkusha's probes, CORRUPT_FRAME and rate control (2026-09-26)
+
+Four behaviours the .NET session had and the C core never did, ported from `HalyardSenkusha.cs`,
+`HalyardTakionStream.cs`, `AdaptiveBandwidthController.cs` and `ConnectionQualityReporter.cs`:
+
+- **Senkusha's echo and MTU probes.** Ten timed pings, then the MTU confirmed downstream and upstream, all
+  inside senkusha's 8 s box. The launch spec and PROBE_REPORT now declare a measured RTT and a confirmed
+  MTU wherever the console answers.
+- **CORRUPT_FRAME** for every range of frames the demuxer loses.
+- **The adaptive ladder and CONNECTION_QUALITY.** The report is opt-in, as in .NET, because its bitrate unit
+  is unconfirmed.
+- **The control channel's echo probe**, as an opt-in diagnostic.
+
+The scripted console answers all of them, so the tests cover the probes' order and outcomes on both
+routes. Those tests found a bug: the first ping raced ahead of the echo-on command it depended on. The ABI
+is now at version 5, and the Mac's `ConsoleSession` exposes the switches and the ladder's figures.
+
+### The Rust engine's first session on hardware (2026-09-26)
+
+`ripcord-lab connect` on the Rust engine, against PS5-<redacted> on the LAN, with its user locked behind a
+passcode.
+
+- **Every stage completed on the first try:** the arm probe, /sess/init and /sess/ctrl, the sign-in gate
+  (the passcode accepted with verdict 0x00, then SESSION_ID), senkusha, Takion, key agreement on CryptoKit,
+  and STREAM_INFO.
+- **The stream:** 1920x1080 HEVC at 60 frames a second for 20 s, with 0 of 5,172 packets lost. The first
+  keyframe arrived 7.3 s after the start, including the passcode round trip. The capture decodes cleanly
+  in ffmpeg (820 frames, the PS5 home screen), and the disconnect ended the session as asked.
+- **One finding:** the console never answered the arm probe, so 2.2 s of the connect was its reply window.
+  A probe sent by hand got no answer either. All three engines wait for that reply, so this is not new to
+  Rust; it is on the roadmap.
+
+### The Mac on the Rust engine: Phase 3's relink, and pairings kept by the host (2026-09-26)
+
+RipcordKit now reaches the protocol only through the Rust engine's `ripcord.h`, and the Mac project no longer
+compiles `libripcord/`. This came ahead of Phase 2's formal exit, at the project owner's direction. The
+parity checklist on hardware is still open, and none of the engine's sequencing has met a console.
+
+- **What moved:**
+  - `ConsoleSession` drives `ripcord_client_*` on its session thread, and pump waits on the engine's own
+    sockets.
+  - The rendezvous link and transports use the client's prepare, begin and register. Account pairing is a
+    rendezvous client that only ever registers.
+  - Discovery, wake, PIN pairing, the account-id normaliser, the seed and pad input all use the engine's
+    exports.
+  - The C-side CryptoKit backend, `EcdhKat`, the `Libripcord` target and the C test console are gone.
+  - The tests that used the C console run against the engine's loopback 9303 console, which now answers
+    the account route's /sess/rgst.
+- **The ABI went to version 4** for what the Mac needed:
+  - a bind address for the rendezvous legs;
+  - the negotiated curve in the result;
+  - the pad button bits;
+  - the wake source port;
+  - clients made only to register, which have no key or console address yet.
+- **Pairings are the host's.** `PairedConsole` is plain Swift. The lab keeps pairings in an owner-only
+  `pairings.json` (`PairingFileStore`), and the app will use the Keychain (`KeychainPairingStore`). The C
+  core's `pairing.txt` is imported once by a Swift reader and renamed `pairing.txt.imported`. The lab's
+  real pairing imported with its key, companion and device id intact.
+- **CI's Mac job** installs Rust, and no longer builds or runs the C ECDH tool. CryptoKit is checked
+  against the vectors through the engine instead.
+
+### The Rust engine: discovery, wake, the account id and registration in the ABI (2026-09-26)
+
+The rest of what the Mac takes from the C core, apart from the pairing file:
+
+- **Discovery and wake**: the SRCH probe and reply, and the wake payload, as pure exports.
+- **The account-id normaliser**: ported from C, which alone has one. It is checked against C on 20,000
+  generated inputs.
+- **The account route's key material and seed recovery.**
+- **PIN registration over TCP 9295**, in `ripcord-net`, with C's arm probe and read-until-close.
+- **Account registration on a rendezvous client's control leg.**
+
+The scripted LAN console now answers /sess/rgst with the console's real half of the derivation, so the
+PIN route runs end to end on loopback, including a wrong PIN and a refusal. A CSPRNG that refuses a draw
+fails the registration rather than supplying zeroes.
+
+### The Rust engine: the client ABI, from Rust, .NET and Swift (2026-09-26)
+
+`ripcord_client_*` exports the connect sequence with `halyard_client.h`'s contract: one host thread,
+callbacks on that thread, borrowed buffers, and the pad, passcode, media answer and commands pulled. The
+differences (an opaque handle, the host's CSPRNG and key agreement, a pump that waits on its own sockets,
+and the pairing record's fields flattened into the config) are listed in `engine/README.md`. The ABI is
+at version 3.
+
+- **A loopback console for every host.** The scripted LAN console moved into `ripcord-net` behind a
+  feature and is exported under `test-support`, so each host's suite runs a real session on 127.0.0.1.
+- **Rust, .NET and Swift each run one**: a passcode, video, stats, input and the goodbye. The .NET
+  harness does it through `[UnmanagedCallersOnly]` callbacks as Phase 4 will. The Swift test does it on
+  CryptoKit's key agreement, so the Mac's backend has now carried a whole session and not only the
+  vectors.
+
+### The Rust engine: the connect sequence and ripcord-net (2026-09-26)
+
+The last layer of Phase 2's protocol work, from the C client and the .NET session side by side. The
+comparison listed about forty differences, each decided in `engine/README.md`.
+
+- **`connect::Session`**: the whole sequence as a sans-IO machine, both routes. On the LAN: the arm
+  probe, /sess over TCP, the sign-in gate, senkusha, Takion, key agreement, STREAM_INFO and the running
+  session (input, heartbeats, congestion feedback, the IDR latch, stats, the goodbye). On rendezvous:
+  prepare, begin and the exchange, /sess over the 9303 association, the A/V leg's STUN, media
+  negotiation, prelude and SESSION_ID wait, senkusha and the stream on that socket, PROBE_REPORT and
+  STREAM_READY.
+- **What it takes from .NET**: a 20 s (LAN) or 60 s (rendezvous) control-plane deadline and a 35 s box
+  around the stream bring-up, peer filtering on every socket, the declared MTU from the interface, and
+  a rounded RTT.
+- **What it takes from C**: SESSION_ID before Takion on the LAN, the sign-in policy, ending the session
+  when the console hangs up, enforced GMAC verification, the IDR latch, and rest only when asked.
+- **Controller input** is ported too, following the .NET writer, which sends every event of a poll where
+  the C core's could drop the fifth.
+- **`ripcord-net`**, the driver: `std::net` sockets on the caller's thread, the C client's threading
+  contract, and `socket2` for the receive buffer.
+- **Tested end to end without a console.** A scripted LAN console computes its side of every derivation
+  from what the client sent. The LAN and rendezvous sequences run against scripted consoles, and a
+  loopback test runs the LAN sequence over real sockets to video and the goodbye. The C client could only
+  have its timing policy tested, because it owned its sockets.
+- **Three more .NET findings, on the roadmap.** The session never ends when the console hangs up; rest
+  applies to every teardown, reconnects included; and the keyless senkusha request sends an empty key.
+
+### The Rust engine: STUN, the 9303 association and the rendezvous control plane (2026-09-26)
+
+The internet route's UDP layers, by the same method. The 9303 association matches rule for rule in .NET
+and C, so the side-by-side read's differences were all in what surrounds it, each decided in
+`engine/README.md`.
+
+- **STUN**: the RFC 5389 codec and a sans-IO gatherer (attempts, timeouts and transaction-id matching per
+  server, and the two-server mapping check), with the candidates we offer and the choice among the
+  console's.
+- **The 9303 association and its channel**: the prelude, connections, data, acks and close, then the
+  quiet-window resends and stage deadlines around them. `dgram-transport.kat` passes 177 of 177.
+- **The rendezvous control plane**: one request on a fresh connection (how /sess/rgst travels on this
+  route), and /sess/init, the reopened connection, /sess/ctrl and the binary channel over the association.
+  Also the PROBE_REPORT plaintext the A/V leg sends before STREAM_READY.
+- **Differential runs against the C core** for STUN parsing, the candidate choice and generated operation
+  sequences on both associations. No C bugs this time.
+- **Two more .NET findings, on the roadmap.** The rendezvous keep-alive stops answering heartbeats after
+  30 s of silence, and the transport and the ACCEPT can name different console candidates.
+
+### The Rust engine: discovery, wake and the /sess control plane (2026-09-26)
+
+The next layers of Phase 2, by the same method as Takion. A side-by-side read of .NET and C listed 26
+differences, each decided in `engine/README.md`.
+
+- **Discovery and wake**: the SRCH probe and reply parser, the wake datagram and its credential, and the
+  arm probe that opens the console's TCP listener.
+- **/sess**: registration on both routes with the pairing record, /sess/init and /sess/ctrl with the
+  encrypted fields, the launch spec, and the binary control channel as a sans-IO session. The session
+  answers heartbeats, reports the sign-in gate, the verdict, SESSION_ID and STREAM_READY, and keeps both
+  directions' counters.
+- **Every vector line now runs, and none is deferred.** `rendezvous-control.kat` compares both /sess
+  requests byte for byte with the .NET session's. `account-pairing.kat` includes the whole account
+  exchange, and `control-proto.kat` the launch specs.
+- **`Client-Type` has no third home.** `ripcord-proto/build.rs` reads it from the .NET reference at build
+  time. `CLAUDE.md`'s inventory says so, and a new `BundledInteropConstantsTests` case checks the build
+  script's source and that no file under `engine/` carries the value.
+- **Two more C bugs, fixed.** The pairing-record parser treated a hex-decode failure as success, and the
+  registration response never read a reason sent as the last header. Both fixes come with regression
+  checks in `registration_test.c`.
+- **Two more .NET findings, on the roadmap.** The wake credential is written unsigned where a PS4 capture
+  shows it signed. A bad RP-Nonce lets the session carry on unauthenticated, with the launch spec in
+  plaintext.
+
+### The Rust engine: Takion, the scripted console, and CryptoKit (2026-09-26)
+
+Three pieces of Phase 2, and a change of method on the way. The owner confirmed that the C core is a
+port of the .NET reference, so the Rust engine reads both. Before Takion was written, a side-by-side read
+of the .NET Takion code against its C port listed 27 behavioural differences, and each was decided on
+purpose (`engine/README.md` has the table). .NET wins by default; C wins where it is strictly safer or
+.NET is wrong.
+
+- **Takion** is in `ripcord-proto` as framing, the control protobuf codec, the sealer, the session
+  negotiator and a sans-IO connection. The connection takes datagrams and the time and returns datagrams
+  and messages, so the handshake, retransmission and reassembly are tested against a scripted peer with no
+  sockets. That includes a full sealed session with key agreement. `control-proto.kat` passes 60 of 60,
+  and every captured packet rebuilds byte for byte.
+- **The scripted console** is `fake_dgram_console.h` ported behaviour for behaviour, on top of a port of
+  the 9303 wire codec. It runs beside the C fixture in `ripcord-diff` over 200 generated sessions, and
+  `ripcord-ffi` exports it under `test-support` for host suites.
+- **CryptoKit backs the engine's key agreement on the Mac** through a new `RipcordEcdhBackend` table in the
+  C ABI, now at version 2. `EngineKeyAgreementTests` runs `session-crypto.kat` through the engine on
+  CryptoKit and gets results identical to RustCrypto's.
+- **The differential runs found two C bugs,** both fixed. The C scripted console read past a short
+  HELLO_ECHO chunk. The C protocol-version parser accepted a field-0 tag, which every other C parser and
+  Google.Protobuf reject. The C host suite is unchanged by the fixes.
+- **The comparison found two faults in the .NET reference,** now on the roadmap. The SACK handler stops
+  at a TSN wrap and resends one chunk forever. The negotiator does not check `versionAccepted`.
+
+### The Rust engine, Phase 2's first layer: crypto, the Halyard derivations, and the C core as a second opinion (2026-09-26)
+
+`ripcord-proto` now holds the control plane (the KDF for both families, context keys, field IVs, and the
+CFB and OFB field ciphers), PIN and account registration, the account seed and its strict base64, and key
+agreement behind an `Ecdh` trait with a RustCrypto backend. `build.rs` generates the interop constants
+from the one committed bundle, with `gen_constants.py`'s checks, so the engine keeps no copy of them.
+
+- **Every vector file passes.** Control 172, registration 97, account pairing 81, session 34, and the
+  stream plane's 65. The 8 `accountrgst` lines are deferred, and every run lists them, because they
+  build the `/sess/rgst` body. That is the layer where the engine first holds `Client-Type`, and it has
+  to name that copy in `CLAUDE.md` and `BundledInteropConstantsTests` in the same change.
+- **A mutation check,** so a green first run is not taken on trust. Changing one KDF constant fails 54
+  control lines; changing the account-wrap bias fails 16.
+- **`ripcord-diff` runs the C core beside the Rust engine.** It builds `libripcord` with the `cc` crate
+  and constants from its own `gen_constants.py`, behind a small shim that keeps every C struct on the C
+  side. Packet crypto, FEC, the control plane, registration and seed decoding agree on thousands of
+  generated cases each. The demuxer agrees event for event and counter for counter on 300 hostile
+  streams, and coverage assertions confirm the streams reach every path: 7,300 frames, 3,000 loss
+  reports and 4,900 authentication failures across the two seams.
+- **Its first failure was the harness, and it was worth having.** Parallel test threads decoded FEC in
+  C at the same time, and the decoder's `static` matrices, which its source says are single-threaded
+  only, corrupted each other. The harness now serialises every call into C. The Rust decoder's scratch
+  belongs to its caller.
+- **Two policy notes.** `ripcord-diff` uses `unsafe`, which the plan reserves for `ripcord-ffi`. It is
+  test tooling, never linked into a host, and the README says so. cargo-deny now allows BSD-3-Clause,
+  for `subtle`, the constant-time helpers under RustCrypto's curves.
+
+### The Rust engine's Phase 1 spike: the stream plane, and the gate on the Mac (2026-09-25)
+
+`engine/` is a Cargo workspace. `ripcord-proto` holds the stream plane, ported from `libripcord/stream/`:
+header, key schedule, packet crypto, FEC and demuxer, with no `unsafe`. `ripcord-ffi` is the C ABI,
+`ripcord-kat` runs the vector files, and `hosts/dotnet/` is a .NET harness. Measured on the M4 Max:
+
+- **`stream-crypto.kat`: 65 of 65.** The file is the one the C core's `stream_crypto_test.c` reads,
+  unchanged. Unlike the C runners, `ripcord-kat` fails on a line kind it does not know rather than
+  skipping it.
+- **Per packet, 0.53–0.57 µs against the C core's 7.71–8.11 µs,** from one Swift harness.
+  `PacketCryptoBenchmark` now takes an engine, and `ripcord-lab bench` runs both. The workload is
+  unchanged, and every packet in it is in a new GMAC rotation window, which is the worst case. From .NET,
+  the engine takes 0.67–0.71 µs through P/Invoke and the managed `HalyardPacketCrypto` takes 16–17 µs.
+  Hardware AES and PMULL account for most of the difference. Structure accounts for the rest: CTR
+  borrows a key schedule expanded once, and the GMAC cache is keyed by window, so the key is not derived
+  on every packet.
+- **Both hosts link through generated bindings.** cbindgen writes `ripcord.h`, which the Mac reads in
+  place through a `CRipcordEngine` module map. csbindgen writes `NativeMethods.g.cs`, which the harness
+  drives with `[UnmanagedCallersOnly]` callbacks and a `GCHandle`, as Phase 4 will. The harness also
+  runs a differential against `HalyardPacketCrypto`: 80 key positions × 4 checks, across window
+  boundaries and the 32-bit edge.
+- **One header problem, fixed in the source.** cbindgen writes a `repr(i32)` enum as an `enum` tag plus
+  a same-named `int32_t` typedef before C23, and Swift imported those as two types. The ABI's enums are
+  `repr(C)` now, which is `int`-sized on every target and which csbindgen maps to `uint`.
+- **Open:** the Windows x64 and ARM64 figures, and why the lab grows 1.2 MB stripped when the engine
+  dylib is 386 KB. Both are in the roadmap. A CI job now runs the engine on Linux, macOS and both
+  Windows architectures.
+
+The C core's fixed caps are kept exactly: 512 slots per frame, a 4,096-byte stride, FEC groups of 64 and
+a 2,048-byte packet limit. This keeps differential runs comparable. The Rust decoder's scratch belongs
+to its caller, where the C core's is `static`, so decoding is reentrant.
+
+### One engine for the first-class clients, in Rust (2026-09-25)
+
+The question started as whether two protocol backends, .NET for Windows and C for everything else, were
+worth keeping. The answer, recorded in full in [`engine-plan.md`](engine-plan.md):
+
+- **One engine, not one per platform.** Native apps are native in everything a person sees or feels; the
+  wire protocol is not experienced, and every extra implementation multiplies the hardware verification
+  that 1.0 already names as its bottleneck.
+- **Rust, not C, for that engine,** once it sits in front of the network on every first-class platform.
+  The console ports were first weighed as a blocker (no PS3 target), then a tier 3 `powerpc64-sony-ps3`
+  target turned up, and finally the owner ruled that retro consoles do not shape the architecture:
+  `libripcord` stays as their core.
+- **What keeps a second implementation:** derivations keep the .NET reference and its vectors; sequencing
+  lives in the Rust engine only. The vectors cannot be frozen as files, because they are derived from
+  the bundled constants.
+- **Key agreement** uses the OS where it has one (CryptoKit, CNG) and RustCrypto elsewhere. Linux and
+  Android will share a `ripcord-cloud` crate. Kotlin's bindings and the Linux toolkit are left to those
+  platforms' own plans.
+
+Phase 0 brought the documents into line: `CLAUDE.md`, `architecture.md`, `docs/README.md`,
+`macos-plan.md`, `libripcord/README.md` and `ROADMAP.md` now describe `libripcord` as the Mac's core until
+the Rust engine reaches parity and the ports' core after, and `CLAUDE.md`'s same-project porting rule
+names the C core and the Rust engine explicitly.
+
+### `libripcord`: the rendezvous route's C side, and a byte-pipe seam in the control session (2026-09-25)
+
+Internet play's UDP half, tied together in `halyard_client`, ported from `HalyardStreamingSession`,
+`HalyardAccountConsoleSession` and `HalyardDatagramSessionControlChannel`. None of it has met a console.
+
+- **The seam.** `halyard_control_session.c` now reaches its transport through `halyard_control_pipe`
+  (open, send_all, non-blocking recv, close). The TCP pipe is the file's four old socket calls moved behind
+  the pointer. A loopback console checks the bytes whole, and an A/B build of the previous file against the
+  same console sent the same 626 bytes, byte for byte. The datagram pipe (`halyard_dgram_session.c`) runs
+  each request on a fresh chunk connection and the persistent frames over the last one.
+- **Byte for byte with .NET.** `ProtocolLab vectors` now writes `rendezvous-control.kat`, the `/sess/init`
+  and `/sess/ctrl` requests `HalyardStreamingSession` itself sends with `ConnectionPath = Rendezvous`, for
+  PS5 and PS4. The datagram pipe reproduces both exactly: the padded Host, `Rp-Version` on init, and
+  `RP-ConPath: 3`.
+- **The route.** `halyard_client_rendezvous_prepare` and `_begin` sit at the points where the signaling
+  interleaves, and a `poll_media` pull callback covers the media negotiation. `connect()` then runs the A/V
+  leg: STUN on its socket, the 88-byte prelude, up to 8 s for SESSION_ID, senkusha and then the stream's
+  Takion on that same socket, PROBE_REPORT at the next field counter, and up to 10 s for STREAM_READY.
+  Takion there reads only the console's endpoint (`takion_channel_connect_filtered`, off for the LAN).
+  `rendezvous_test` watches that order against a loopback fake console.
+- **Account pairing's transport** is `halyard_dgram_regist_exchange`. The duplicate HTTP-completeness check
+  is gone: `halyard_dgram_http_complete`, the exact port of .NET's, is the one kept.
+- **`regist_flow_test` no longer broadcasts.** The ARM probe is stubbed at link time, and the host suite now
+  stays on loopback.
+
+### Internet play from rest: SESSION_ID waits for the A/V leg (2026-09-25)
+
+Three more internet connects from rest, the Mac on a phone hotspot and PS5-<redacted> in rest mode, settled what
+the first failure only suggested.
+
+- **Run 1:** no login prompt in the rendezvous route's 1 s window, and the console then never offered a
+  media connection. That looked like a late prompt, so a late prompt is now answered wherever it lands in
+  the media wait. That change is still unproven, since no late prompt has been logged since.
+- **Run 2:** the prompt came on time and the passcode was accepted, then **30 s** passed with no
+  SESSION_ID. So the longer post-passcode wait committed earlier was not the answer: a woken console does
+  not send it at that point at all.
+- **Run 3, the change:** after an accepted passcode, the rendezvous route no longer fails for want of
+  SESSION_ID and goes on to the A/V leg, as an unlocked console's connect already does. **It streamed.**
+  SESSION_ID arrived during the A/V leg, 8.5 s after the passcode. Streaming began at 46.13 s, with 0
+  packets lost of 4,710, 80 control messages verified, and 888 frames of 1080p HEVC.
+
+So on this route, a console woken from rest sent SESSION_ID after the A/V prelude even when a passcode was
+needed. That is one run, so the rule is `[X]`. An awake console sent it 1 s after the passcode. .NET's
+`EnsureSignedInAsync` fails the session at exactly that point ("accepted the passcode but didn't start a
+session"). **The dotnet client very likely cannot connect over the internet to a console woken from rest.**
+That is in the roadmap to confirm on the dotnet client.
+
+### Internet play from the Mac, and a console slow to wake (2026-09-25)
+
+**The Mac plays over the internet.** With the Mac on a phone hotspot and PS5-<redacted> at home, `connect --route
+account` streamed 1080p60 HEVC peer to peer, through both NATs, with no relay. Both legs mapped
+consistently, and streaming began at 22.85 s. 2 packets were lost of 5,749, 105 control messages verified
+and none failed, and the capture's 1,189 frames all decode.
+
+**The first attempt failed, and it was the wake, not the protocol.** The console was in rest. The account's
+connect command woke it, it joined the session, the association and registration went through, `/sess`
+opened, and the passcode was accepted. Then no SESSION_ID came within the 8 s the post-passcode wait
+shared with each sign-in attempt, and the session ended as `signInNoSession`. The next attempt, against the
+now-awake console, received SESSION_ID 1 s after the passcode. So the post-passcode wait now has its own
+30 s budget (`CLIENT_SESSION_AFTER_LOGIN_MS`). It ends the moment SESSION_ID arrives, so it costs only a
+failure's time. The session controller would have retried `signInNoSession` anyway, but a 45-second
+failure before a retry is not a first run anyone should see. **The fix is not yet proven from rest.**
+
+### The Mac's cloud tier and rendezvous route meet PSN and the console (2026-09-25)
+
+The pieces that until now had only met fakes and loopback, run against PSN and PS5-<redacted>. The owner did the
+one step a terminal cannot, pasting the sign-in redirect back into `ripcord-lab signin`. Everything after
+it ran unattended.
+
+- **Sign-in and the account.** The token went into the login Keychain and restored on the next run. The
+  console list returned PS5-<redacted> with remote play on and wake allowed.
+- **`connect --route internet`: the WAN rendezvous, up to the console's candidates.** STUN found a
+  consistent NAT mapping, the good case for peer to peer. The cloud session was created, the wake command
+  sent, and the console's OFFER came back with a public (STATIC) and a LAN (LOCAL) candidate on 9303. The
+  first OFFER was refused with a 404, most likely because the console had not yet joined the session; the
+  one-second re-offer ported from .NET is what carried it.
+- **`connect --route account`: a full stream through the account route.** It ran the push channel, the
+  session, the connect command, the console joining, and the seed from customData1. The 9303 association
+  was opened between our OFFER and our ACCEPT, and `/sess/rgst` went over it. `/sess/init` and `/sess/ctrl`
+  returned 200 over the datagram transport, and the passcode was accepted. Then came the A/V leg's
+  negotiation and prelude, senkusha, PROBE_REPORT and Takion. The capture holds 895 frames of 1080p HEVC,
+  about 15 s at 60 fps.
+- **`account-pair`: no-PIN pairing.** It registered and left the session. The resulting record was
+  **byte-identical** to the PIN-paired one, and it streams on the plain LAN route. That is consistent with
+  the console issuing the same registration key to the same client whichever route pairs it. That reading
+  is observed, not confirmed `[X]`.
+
+**One transient finding.** The first LAN connect right after the account-route session failed at TCP 9295,
+with a non-blocking connect still in progress at its deadline. A few seconds later the port accepted and the
+same connect streamed. So for a short window after a rendezvous session ends, the console appears not to
+accept LAN control connections: one occurrence, `[X]`. The session controller treats that failure as
+retryable, so the app rides through it. `ripcord-lab`, which does not retry, does not.
+
+Still owed: internet play from another network (the Mac on a phone hotspot), a controller steering the
+console, and LAN wake from rest.
+
+### The passcode gate, live, and a refactor cleared by A/B (2026-09-25)
+
+After the rendezvous work reshaped the control session, a LAN regression run met something new: the console
+said its user was locked and asked for a passcode. The morning's run had not been asked, because the console
+had just been in use. To be sure the refactor was not the cause, the lab was rebuilt from the commit before
+it and run against the console in the same state. It got the identical answer, so the console had changed,
+not the code.
+
+That made it the first live test of `halyard_client`'s sign-in gate. A wrong passcode was refused (verdict
+0x01), and the gate asked again rather than guessing. The owner then supplied the right passcode, and the
+console accepted it (verdict 0x00). SESSION_ID followed at 2.56 s and streaming at 4.98 s, in 1080p HEVC at
+60 fps, with 47 control messages verified and none failed. Two packets were lost in the opening keyframe
+burst, out of 1,243, and the stream recovered without an IDR. The passcode itself is recorded nowhere.
+
+### The Mac streams: first pairing and first picture through `libripcord` (2026-09-25)
+
+The engine spike's question is answered: a Mac, through the C core and nothing else, pairs with a PS5 and
+streams from it. PS5-<redacted>, on the LAN at home, and the first time any of the new pieces met a console.
+
+**Pairing** ran `halyard_regist_run` from `ripcord-lab pair` on the first attempt. That is the core's PIN
+flow, driven by a host other than a console port for the first time. The record is in the core's own file
+format, owner-only, under Application Support.
+
+**The first session**, `ripcord-lab connect`, went through `halyard_client`, the connect sequence
+committed a day earlier and never yet run:
+
+    0.01s  control open        4.46s  takion up         4.73s  streaming
+    2.28s  signed in           4.50s  stream keys
+    4.35s  senkusha up         4.57s  stream ready
+
+It then held a steady 60 video frames and 100 audio packets a second for 16 s, with **0 packets lost of
+2,404**. 91 control messages were verified and none failed, and the goodbye was clean. `ffprobe` read all
+976 frames of the capture. The frame at 600 is the console's own Remote Play settings screen, where it had
+been left after pairing.
+
+**The console grants resolution by bitrate, not by request** `[X]`, from the two runs below. Asked for
+1920x1080 at the core's 10 Mb/s default, it streamed 1280x720. Asked again at 25 Mb/s, it streamed 1920x1080
+HEVC, and all 471 frames decode. The Mac now defaults to 25 Mb/s. The dotnet client also defaults to 10,000
+kb/s, so a user who picks 1080p there may be getting 720p. That is recorded in the roadmap to check rather
+than asserted.
+
+**Getting there needed three fixes along the way**, each in its own commit:
+
+- **Unicast discovery.** This network filters broadcast, so the console only answers probes addressed to
+  it directly.
+- **Repeated probes.** A resting console answers its first probe in about 2 s, so a single short probe
+  missed it.
+- **The session's handlers.** The lab's first draft of `connect` set them after the session had copied
+  them.
+
+The account id came from the lab notebook, read locally and never printed.
+
+### The Mac client's foundation, and STUN in the core (2026-09-24)
+
+Step 2 of [`macos-plan.md`](macos-plan.md) started on two tracks at once.
+
+**STUN is in `libripcord`**: `net/rc_stun.{h,c}` (messages) and `net/rc_stun_client.c` (the socket), ported
+from `src/Ripcord.Core.Net/Stun/`. It is two translation units for a reason the fuzz build forced. An
+object links whole, and a parser sharing a file with a CSPRNG caller would pull in entropy the host
+deliberately does not provide. The host tests reuse the .NET side's own vectors byte for byte, RFC 5769's
+among them, so both implementations answer to one set. Where C differs from .NET, the header says so and
+why: receive errors run out the window instead of ending the attempt, a send failure is a status rather
+than an exception, and there is no DNS. That makes 3,868 host assertions in all, clean under ASan and
+UBSan, plus a fifth fuzz harness.
+
+**The Mac tree builds the core from where it lives.** `src/Ripcord.Mac/Ripcord.xcodeproj` compiles
+`libripcord/` through Xcode's synchronized folders. The choice of an Xcode project over a Swift package was
+measured, not assumed:
+
+- SwiftPM refuses a target outside the package root.
+- A symlink gets past that, but trips the sweep and breaks on Windows.
+- SwiftPM will not compile a plugin-generated C file ("C source file generation not enabled"), and the
+  interop constants must be generated from the one committed bundle, never copied.
+
+**The first attempt at generating the constants built cleanly and did not work.** Xcode ran the Run Script
+phase and left the output uncompiled, and every `halyard_v1_*` symbol was undefined in the archive. Only
+`nm` showed it. A file reference rooted at `DERIVED_FILE_DIR` in the Sources phase fixed it.
+
+**Key agreement is CryptoKit's.** Rather than build Mbed TLS for the Mac, the core gained
+`RC_ECDH_EXTERNAL_BACKEND`. It compiles only the backend-neutral half of `rc_ecdh.c`, plus two hooks so an
+external backend reports into the same diagnostics. `CryptoKitECDH.swift` supplies the five entry points
+under their C names. The proof is the core's own `ecdh_test.c`, unmodified, linked against CryptoKit: **44
+passed, 0 failed** against the .NET vectors, the same count as Mbed TLS. Rebuilding a pair from a known
+private scalar, which those vectors need, is possible in CryptoKit and not in Security.framework's C API.
+That is why the backend is Swift. Writing it also showed that the no-backend stub had never defined
+`rc_ecdh_check_peer_point` at all.
+
+**The sweep learned two file types.** It refused 20 unclassified Mac files, as designed. Once they were
+classified, it flagged the project file's 24-digit hex object IDs as possible unredacted values. Those IDs
+are now tolerated only by syntax, following the XAML-identifier precedent: exactly 24 uppercase hex digits,
+only in `.pbxproj` and `.xcscheme` files, and only for the long-hex rule. Four contract rows pin both
+halves.
+
+**`ripcord-lab discover` has only heard silence.** The .NET ProtocolLab's discovery, which is
+hardware-verified, heard nothing either, on both the limited and the subnet broadcast. So no console was
+reachable from the Mac's network at the time. That is not a result about the code, and the spike's
+hardware steps wait on it.
+
+### The C core leaves `ports/`, and CI runs it for the first time (2026-09-24)
+
+The macOS client chose `libripcord` as its protocol core, so the core moved from `ports/common` to the top
+level. The reasoning, including why the .NET stack was first favoured and then set aside, is in
+[`macos-plan.md`](macos-plan.md). A first-class client depending on a folder called "ports" misdescribes
+both of them. Nothing about the core's contents or rules changed in the move.
+
+**The move nearly weakened a guard, again.** `PublishedTreeSweepTests.IsProductCode` decides which files get
+the strict hex and base64 rules, by path prefix. `ports/` was a prefix and a new top-level directory was
+not, so the move would have reclassified the core as test code. That is the same silent demotion the test's
+own comment records from the first extraction. `libripcord/` is now named explicitly, and the comment says a
+new top-level code directory must be added with it.
+
+**Moving the core showed that nothing in CI had ever run the core's own suite.** The PS3 job cross-compiles
+it and runs some suites on a console. But the host suite, `make compile` and the ECDH cases ran only when
+someone typed `make`. Running them found three problems that were not caused by the move:
+
+- `tools/build-mbedtls.sh` is committed without its execute bit, and the host Makefile executed it
+  directly. The default `ECDH_BACKEND=local` therefore failed on every fresh clone, which contradicts the
+  README's "any machine with a C compiler and nothing else installed". The Makefile now runs it through
+  `sh`, as the PS3 Makefile and CI already did.
+- `make compile` had rotted in two ways. `rc_ecdh.c` defined a static helper that only the Mbed TLS branch
+  calls, which is an unused function under `-Werror` when compiling with no backend. And three files
+  included `rc_tcp.h`, `rc_log.h`, `rc_base64.h` and `rc_hex.h` bare, which resolved only where a port's
+  Makefile added `-I` for those directories. They now use the core's relative-include convention.
+
+**Now guarded.** A `libripcord` CI job runs on Linux and macOS. It generates the vectors, runs the host
+suite, compiles every file, runs the suite again under AddressSanitizer and UndefinedBehaviorSanitizer, and
+runs four new fuzz harnesses (discovery, Takion, control, stream). Locally, on macOS: 3,766 assertions pass
+plain and sanitized, `make compile` is clean, and every harness is clean for 20,000 deterministic inputs
+under the sanitizers. **The coverage-guided run has not happened yet.** Apple's clang ships no libFuzzer,
+so the first real fuzzing will be CI's Linux leg, and it may find something.
+
+Verified otherwise: both .NET suites green (790 and 452), the PS3 port's host tests green, and every
+`$(CORE)/…` path in the 3DS and PS3 Makefiles resolves (41 and 67). The console cross-builds were not run
+locally, because neither toolchain is installed on this machine. CI's PS3 package job covers the PS3
+build. **Nothing covers the 3DS build.**
+
 ### The wordmark, and a tile that is layers rather than a drawing (2026-09-24)
 
 The last one-way door in the design direction. It was chosen from an options page comparing the three

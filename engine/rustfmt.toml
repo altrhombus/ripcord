@@ -1,0 +1,3 @@
+# The rest of the repository wraps at about 110 columns; rustfmt's default of 100 would fight it.
+max_width = 110
+use_small_heuristics = "Max"

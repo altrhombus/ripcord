@@ -1,0 +1,6 @@
+#!/bin/sh
+# The leak guard (tools/leak-guard/check.py) on every outgoing commit. Turned on with: git config core.hooksPath .githooks
+# Without the captures folder there is nothing to check against, so a clone pays nothing.
+root=$(git rev-parse --show-toplevel) || exit 0
+[ -d "$root/docs/protocol/captures" ] || exit 0
+exec python3 "$root/tools/leak-guard/check.py" --push "$1"

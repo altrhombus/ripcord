@@ -727,7 +727,7 @@ static int run_senkusha(const char *host)
      * (31 << 3) | 2 = 250, which is >= 0x80 and therefore a TWO-byte varint tag, 0xFA 0x01 - not the
      * single 0xFA that writing it out by hand produces. That is exactly the sort of thing
      * takion_control_proto.c's varint writer exists to get right, and this literal is checked against it
-     * rather than being taken on faith - by ports/common/tests/control_proto_test.c, which carries these
+     * rather than being taken on faith - by libripcord/tests/control_proto_test.c, which carries these
      * exact seven bytes twice and the same tag arithmetic beside them.
      *
      * Until 2026-09-18 this named a connect_test file under this port's own tests/ directory. No such

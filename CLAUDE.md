@@ -53,6 +53,18 @@ dotnet test tests/Ripcord.Protocol.Halyard.Tests/Ripcord.Protocol.Halyard.Tests.
 dotnet run --project tools/Ripcord.ProtocolLab -- <command>
 ```
 
+The macOS client (`src/Ripcord.Mac`) is an Xcode project, not part of `Ripcord.slnx`, and needs macOS 26, Xcode
+and a stable Rust toolchain; its build phase runs cargo for the engine. `src/Ripcord.Mac/README.md` has the
+full build, signing and release notes.
+
+```
+cd src/Ripcord.Mac
+xcodebuild -project Ripcord.xcodeproj -scheme Ripcord -derivedDataPath build build        # the app
+xcodebuild -project Ripcord.xcodeproj -scheme RipcordLab -derivedDataPath build build     # ripcord-lab
+xcodebuild -project Ripcord.xcodeproj -scheme RipcordKit -destination 'platform=macOS,arch=arm64' \
+  -derivedDataPath build test   # RipcordKitTests and RipcordAppTests; neither launches the app
+```
+
 `Directory.Build.props` at the repo root owns the cross-architecture wiring, and is the place to look when
 a build resolves the wrong native DLLs. It defines `$(RipcordRepoRoot)` (a `$(SolutionDir)` that is also
 defined outside solution builds) and `$(RipcordNativePlatform)`, which answers "whose native interop output
@@ -115,6 +127,36 @@ accepts a nonce length `System.Security.Cryptography.AesGcm` refuses. A comment 
 - **`tools/Ripcord.ProtocolLab`** — the console harness: drives the connect flow against a real PS5 and
   replays captures through the parsers. The iteration/verification tool for every protocol stage.
 - **`tools/Ripcord.HidCapture`** — standalone HID capture utility for controller RE work.
+- **`src/Ripcord.Mac`** — the Apple clients, on the Rust engine: the macOS app, and since 2026-09-27 the
+  scaffolding for iPhone, iPad and Apple TV (`RipcordMobile/`, one target for all three; `docs/ios-plan.md`).
+  The project keeps its name from when it held only the Mac. `RipcordKit` is the Swift layer over the
+  engine's C ABI (it imports the engine's C module internally, so no C type reaches its callers), plus the
+  cloud tier and pairing stores. `RipcordApp/` is the app and `RipcordWidgets/` its widget extension.
+  `RipcordAppLogic/` holds the app's window-free logic, compiled into both the app and the host-less
+  `RipcordAppTests`, and `RipcordLab/` is `ripcord-lab`, the Mac counterpart of `ProtocolLab`. `DESIGN.md` beside it settles its
+  surfaces, as `docs/design.md` settles the dotnet client's.
+- **`libripcord/`** — the protocol in portable C99 (it was `ports/common` until 2026-09-24). Today it is the
+  protocol core of the console ports under `ports/`. **It is being succeeded for the first-class clients
+  by a Rust engine** (`docs/engine-plan.md`, settled 2026-09-25): the macOS client (`src/Ripcord.Mac`)
+  moved to that engine on 2026-09-26, Windows follows after its 1.0, and `libripcord` stays as the ports'
+  core, taking fixes and port-driven work only. It is a same-project
+  port of `src/`, not linked against it. The .NET side stays the reference implementation for
+  *derivations* (key schedules, KDFs, field ciphers, codecs), and `ProtocolLab vectors` generates the
+  known-answer vectors the C core, and later the Rust engine, are tested against. Not part of
+  `Ripcord.slnx`: `make -C libripcord/tests` runs its host suite.
+- **`engine/`** — the Rust engine that succeeds it for the first-class clients, as a Cargo workspace:
+  `ripcord-proto` (sans-IO, `#![forbid(unsafe_code)]`), `ripcord-net` (the `std::net` driver that runs
+  its connect sequence on the caller's thread), `ripcord-ffi` (the C ABI, the only crate that
+  uses `unsafe`; its `build.rs` generates `ripcord.h` and `NativeMethods.g.cs`, never committed and never
+  edited), `ripcord-kat` (the `.kat` runner), `ripcord-diff` (differential tests against the C core) and
+  `hosts/dotnet/` (the .NET harness). As of 2026-09-26 it holds the stream plane, the Halyard
+  derivations, Takion, discovery and wake, the /sess control plane, STUN, the 9303 association,
+  input, and the connect sequence on both routes, with scripted consoles for each; `ripcord-ffi`
+  exports it as the client ABI (`ripcord_client_*`, `halyard_client.h`'s contract). When porting a layer, read both the .NET reference and the
+  C port; the C core is itself a port of .NET, and where they differ .NET wins unless C is strictly safer
+  or .NET is wrong, recorded in `engine/README.md`. Not part of `Ripcord.slnx`: `cargo test --workspace
+  --all-features` in `engine/`.
+  [`engine/README.md`](engine/README.md) has the build and the measured gate.
 
 ### The crypto seam pattern
 
@@ -204,8 +246,9 @@ When working in `Ripcord.Protocol.Halyard*`, `Ripcord.Cloud.Halyard`, or anythin
   boundary is *what gets obtained*, not whether a model was involved: AI assistance is normal here, and the
   method is the one this project has used throughout — **derive independently first, then confirm.**
 - **"Another implementation" means another project's, not Ripcord's own.** A same-project port —
-  `ports/ripcord-3ds` today, any future one — may read, port, and directly adapt code from `src/` at will;
-  it is this project's own reference implementation, not the external source this rule exists to keep out.
+  `ports/ripcord-3ds`, `libripcord`, the Rust engine planned in `docs/engine-plan.md`, any future one — may
+  read, port, and directly adapt code from `src/` or from each other at will; all of it is this project's
+  own work, not the external source this rule exists to keep out.
   There is no independent-derivation ritual to perform between Ripcord's own front ends. Citing what a
   file was ported from is still good practice (it tells the next reader where to look when the two
   diverge), but it is a courtesy, not a requirement the way it is for `docs/protocol/` itself.
@@ -235,6 +278,9 @@ When working in `Ripcord.Protocol.Halyard*`, `Ripcord.Cloud.Halyard`, or anythin
   `docs/protocol/captures/lab-notebook.md` in particular is the live RE session journal (the
   unredacted working copy of `docs/protocol-research-log.md`) — useful context if it's present locally,
   but never assume it exists or commit to it.
+  The leak guard (`tools/leak-guard`, `docs/README.md`) checks each commit and push against the real
+  values the captures folder holds. Keep it on (`git config core.hooksPath .githooks`) and rebuild its
+  denylist after adding a capture.
 - **Bounded exception 1: the v1 interoperability constants** in
   `src/Ripcord.Protocol.Halyard/Data/halyard-v1-constants.json` are committed deliberately (~4 KB of constant
   data — 8.7 KB on disk, since the JSON stores it hex-encoded: four
@@ -247,6 +293,12 @@ When working in `Ripcord.Protocol.Halyard*`, `Ripcord.Cloud.Halyard`, or anythin
   or account — registration keys, pairing records, session keys, device or account ids — stays in the
   captures folder, and `BundledInteropConstantsTests.Bundle_CarriesNoLiveVectorMaterial` enforces that line.
   Do not widen this exception without amending `NOTICE` and this file together.
+  - **How each client carries the one file:** the dotnet client embeds it and reads it at run time;
+    `libripcord/tools/gen_constants.py` and `engine/ripcord-proto/build.rs` generate compiled-in tables from it
+    at build time, never committed. The inert builds are `-p:BundleInteropConstants=false`, the engine's
+    `interop-constants` feature (off with `--no-default-features`; `RIPCORD_BUNDLE_INTEROP_CONSTANTS = NO` for
+    the Apple clients, and `ripcord_interop_constants_bundled()` reports it), and none yet for the C ports.
+    `NOTICE` states the same; change them together.
   - **One further constant travels with these, and is listed here so the inventory is complete:** the
     32-byte `Client-Type` value the console parses by content. Observed on our own wire, generic to the
     application, identical for every client, and tied to no account or console, so it passes the same
@@ -255,13 +307,18 @@ When working in `Ripcord.Protocol.Halyard*`, `Ripcord.Cloud.Halyard`, or anythin
     redacts *all* observed field values by default.
     - **It has two homes, and both are the inventory:**
       `HalyardRegistrationMessage.ClientTypeHex` and `HALYARD_REGIST_CLIENT_TYPE_HEX` in
-      `ports/common/session/halyard_regist_message.h`. The C ports build a registration request without
+      `libripcord/session/halyard_regist_message.h`. The C ports build a registration request without
       linking against the .NET side, so the value is written twice on purpose. This is **not** a
       widening of the exception — no new value is exposed, the same one appears in two places — but a
       sentence claiming to be a complete inventory has to name both, and for a while it named one.
-      `BundledInteropConstantsTests.ClientType_PortsCopyMatchesTheReferenceImplementation` asserts the
+      `BundledInteropConstantsTests.ClientType_CCoreCopyMatchesTheReferenceImplementation` asserts the
       two agree, so a third copy or a drifted one fails with that sentence rather than as an
       unexplained hex literal. If you add a home, add it here and to that test together.
+    - **The Rust engine reads it rather than holding a third home.** `engine/ripcord-proto/build.rs`
+      extracts `ClientTypeHex` from `HalyardRegistrationMessage.cs` at build time into `OUT_DIR`, the way it
+      generates the bundle constants, so no committed file in `engine/` carries the value.
+      `BundledInteropConstantsTests.ClientType_RustEngineDerivesItFromTheReference` asserts both halves:
+      the build script points at the reference, and no file under `engine/` contains the literal.
 - **Bounded exception 2: the application OAuth credential** in
   `src/Ripcord.Cloud.Halyard/Data/halyard-oauth-client.json` (added 2026-08-07, deliberately, by the project
   owner's decision — this one had sat unresolved as "the OAuth decision" for months). It is the vendor desktop
@@ -270,8 +327,8 @@ When working in `Ripcord.Protocol.Halyard*`, `Ripcord.Cloud.Halyard`, or anythin
   no credential of ours to obtain: without it the account tier is unreachable by anyone but Sony.
   - **It passes the generic-vs-personal test** — identical for every user, tied to no account or console,
     authenticating an *application* rather than a person — which is why it qualifies at all. No user
-    credential is ever bundled; the signed-in account's refresh token lives encrypted in the user's own
-    `account.json`.
+    credential is ever bundled; the signed-in account's refresh token lives encrypted on the user's own
+    machine: a DPAPI-encrypted `account.json` in the dotnet client, one Keychain item on the Mac.
   - **But it is NOT an interface fact.** The v1 constants are values
     the console computes against; a client cannot speak the protocol without them. This is an *access
     credential*, and a client demonstrably speaks the protocol without it — a LAN session works against a
@@ -281,7 +338,8 @@ When working in `Ripcord.Protocol.Halyard*`, `Ripcord.Cloud.Halyard`, or anythin
     provenance is our own capture; the comparison against other projects came *afterwards* and is a
     permitted audit (see the auditing bullet above), not the source. Adopting a value *because* another
     implementation has it is exactly the contaminated route this section exists to close.
-  - Omittable with `-p:BundleOAuthClient=false`, and overridden at runtime by `RIPCORD_CLIENT_ID`/
+  - Omittable with `-p:BundleOAuthClient=false`, or `RIPCORD_BUNDLE_OAUTH_CLIENT = NO` for the Apple clients
+    (the reduced edition `docs/macos-plan.md` describes), and overridden at runtime by `RIPCORD_CLIENT_ID`/
     `RIPCORD_CLIENT_SECRET` or a `client.json`. Repopulate from a capture with
     `tools/extract-oauth-client.py`. **The committed file ships populated**: every checkout has the
     credential, so the extractor regenerates the value rather than supplying one a clone lacks.
@@ -297,6 +355,8 @@ See `docs/protocol/README.md` for the full provenance writeup.
 - `ROADMAP.md` — the open backlog (start here for "what's next").
 - `docs/README.md` — the documentation index: which document answers which question.
 - `docs/architecture.md` — the canonical architecture writeup (this file's Architecture section in full).
+- `docs/engine-plan.md` — one protocol engine for the first-class clients, in Rust: what runs where, and in
+  what order.
 - `docs/journal.md` — the dated engineering record; completed backlog items land here.
 - `docs/history/phase1-lan-build-plan.md` — the historical build plan and seam architecture rationale.
 - `docs/protocol/IMPLEMENTATION.md` — the crypto/protocol build order and "definition of done" checklist.

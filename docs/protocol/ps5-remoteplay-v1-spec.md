@@ -541,6 +541,11 @@ Each side **verifies the peer's `ecdhSignature`** (`FUN_100cb620`, pubkey-verifi
 > SESSION_REQUEST: `sessionKey = "InvalidSessionId"` (a literal), `encryptedKey` **empty** (unused),
 > `clientVersion = 17`.
 >
+> **`encryptedKey` is present and zero-length, not absent `[W]` (2026-09-26).** Read off our own PS4
+> captures: `22 00` in the stream SESSION_REQUEST (cap53 frame 10086) and in every keyless senkusha
+> SESSION_REQUEST (cap53 frames 10030, 14662, 42854; cap54 frame 3808). Ripcord's stream request sends four
+> zero bytes instead, which the console accepts on hardware; its senkusha request sends the vendor's form.
+>
 > **Reduction resolved [V] (live-validated 2026-07-22):** there is **no reduction** — the **full 66-byte X**
 > is used directly as the SP800-108 HMAC key (§5.3). HMAC-SHA256 internally hashes any key longer than its
 > 64-byte block, so the 66-byte X is absorbed without truncation. The earlier "reduced to 32 bytes" note came

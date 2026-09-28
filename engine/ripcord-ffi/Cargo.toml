@@ -1,0 +1,30 @@
+[package]
+name = "ripcord-ffi"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "The Rust engine's C ABI: every export, and the generated ripcord.h"
+
+[lib]
+# The library is `ripcord`, so the outputs are libripcord.a / libripcord.dylib / ripcord.dll. The C core
+# is not a library target anywhere, so the names never meet.
+name = "ripcord"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[dependencies]
+ripcord-proto = { path = "../ripcord-proto", default-features = false }
+ripcord-net = { path = "../ripcord-net", default-features = false }
+ripcord-kat = { path = "../ripcord-kat", optional = true }
+
+[features]
+default = ["interop-constants"]
+# The v1 interoperability constants (ripcord-proto's feature of the same name). Build with
+# --no-default-features for an engine without them; ripcord_interop_constants_bundled() then says so.
+interop-constants = ["ripcord-proto/interop-constants", "ripcord-net/interop-constants"]
+# Exports for host test suites (ripcord_kat_run). Never in a shipping engine.
+test-support = ["dep:ripcord-kat", "ripcord-proto/scripted-console", "ripcord-net/loopback-console"]
+
+[build-dependencies]
+cbindgen = { version = "0.29.4", default-features = false }
+csbindgen = "1.9.8"
