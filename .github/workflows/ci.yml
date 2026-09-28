@@ -103,9 +103,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # Linux alone: it proves the portable set builds and runs off Windows, which is the whole claim. A
+        # macOS leg ran here until 2026-09-28 and proved nothing Linux did not; no shipping client runs
+        # .NET on macOS.
         include:
           - { host: ubuntu-latest, rid: linux-x64 }
-          - { host: macos-latest,  rid: osx-arm64 }
     steps:
       # fetch-depth: 0, deliberately. PublishedTreeSweepTests sweeps every commit message, and
       # actions/checkout defaults to a depth-1 clone in which `git log` returns one commit and
@@ -154,17 +156,16 @@ jobs:
   # port's -I flags), and the default mbedTLS build could not start on a fresh clone because the script
   # is committed without its execute bit. Nothing had noticed.
   #
-  # Both hosts: the console ports are built on Linux, and the macOS leg runs the suite under Apple's clang.
-  # (The macOS client linked this core until 2026-09-26 and runs on the Rust engine now.) The
-  # coverage-guided fuzz run is Linux-only because Apple's clang ships no libFuzzer; the macOS leg still
-  # runs every harness under the sanitizers through fuzz/replay_main.c.
+  # Linux, where the console ports are built. A macOS leg ran here while the macOS client linked this core;
+  # it moved to the Rust engine on 2026-09-26, and the engine job's ripcord-diff still builds the core under
+  # Apple's clang on macOS, so the leg was dropped on 2026-09-28.
   libripcord:
     name: libripcord (${{ matrix.host }})
     runs-on: ${{ matrix.host }}
     strategy:
       fail-fast: false
       matrix:
-        host: [ubuntu-latest, macos-latest]
+        host: [ubuntu-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
