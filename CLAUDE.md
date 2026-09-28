@@ -289,6 +289,12 @@ When working in `Ripcord.Protocol.Halyard*`, `Ripcord.Cloud.Halyard`, or anythin
   The leak guard (`tools/leak-guard`, `docs/README.md`) checks each commit and push against the real
   values the dirty room holds. Keep it on (`git config core.hooksPath .githooks`) and rebuild its
   denylist after adding a capture.
+- **Hardware records carry placeholders from the moment they are written.** A journal entry, a test, a
+  comment or a commit message describing a run never holds the console's name, an address from a real
+  network, an account or device id, or a MAC: use the placeholders in `docs/README.md` ("Redaction
+  placeholders") and, where a test needs a value, a synthetic one. `ripcord-lab` and `ProtocolLab` print
+  redacted by default, so their output can be copied as it stands; output from `--show-identifiers` is
+  for your own terminal and never goes into a record. Redacting later is the step that gets missed.
 - **Bounded exception 1: the v1 interoperability constants** in
   `src/Ripcord.Protocol.Halyard/Data/halyard-v1-constants.json` are committed deliberately (~4 KB of constant
   data — 8.7 KB on disk, since the JSON stores it hex-encoded: four
