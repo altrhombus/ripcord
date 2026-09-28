@@ -127,8 +127,9 @@ public class LiveRegistrationVectorTests
         var cipher = new HalyardRegistrationCipher(kdf, Hex.Bytes(fx.ContextKey!));
 
         const string passcode = "48169600";
+        // Read from its home rather than written again: CLAUDE.md keeps Client-Type to an inventory of two.
         byte[] fieldPlain = Encoding.ASCII.GetBytes(
-            "Client-Type: dabfa2ec873de5839bee8d3f4c0239c4282c07c25c6077a2931afcf0adc0d34f\r\nNp-AccountId: AAAAAAAAAAA=\r\n");
+            $"Client-Type: {Common.Crypto.HalyardRegistrationMessage.ClientTypeHex}\r\nNp-AccountId: AAAAAAAAAAA=\r\n");
 
         var exchange = cipher.BuildRequest(passcode, fieldPlain);
 

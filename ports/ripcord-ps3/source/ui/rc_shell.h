@@ -9,7 +9,7 @@
  *
  * WHAT THIS OWNS AND WHAT IT DOES NOT. It owns the home screen, the settings screen, and the loop that
  * turns a d-pad into a cursor. It owns none of the drawing primitives (rc_overlay), none of the list
- * arithmetic (ports/common/ui/rc_menu.c, which is tested on a host with no console attached), and none
+ * arithmetic (libripcord/ui/rc_menu.c, which is tested on a host with no console attached), and none
  * of the protocol. It decides what is on the screen and what happens when Cross is pressed, which is
  * the part that is genuinely about this platform.
  *

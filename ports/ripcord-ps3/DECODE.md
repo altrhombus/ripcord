@@ -1,6 +1,6 @@
 # The decode path
 
-Everything else in a PS3 port is affordable — `ports/common` (on `feat/vita-port`) already carries the
+Everything else in a PS3 port is affordable — `ports/common` (on `feat/vita-port`; now `libripcord/`) already carries the
 protocol, transport and crypto, and `rc_platform.h` asks for four functions. This document is about the
 part that is not.
 
@@ -150,7 +150,7 @@ answered. Toolchain and memory behaviour on the real console remain to be establ
 ### It links, too — `tools/build-openh264.sh`
 
 Compiling is not linking, and the decoder turned out to want more than the files that compile. The
-build is now a script, in the shape `ports/common/tools/build-mbedtls.sh` established: **fetched from a
+build is now a script, in the shape `libripcord/tools/build-mbedtls.sh` established: **fetched from a
 pinned, hash-verified release (2.6.0) at build time into a gitignored directory, never vendored.** A
 checked-in 23,000-line third-party codec would be a maintenance and provenance liability nobody asked for.
 
@@ -628,7 +628,7 @@ more than 64 unit slots — silently, which at 15 Mbps is most of them.
 
 ### CONNECTION_QUALITY — implemented, and **not shown to do anything**
 
-The encoding is in `ports/common` (a protocol fact, matching `HalyardTakionStream` field for field) and
+The encoding is in `libripcord` (a protocol fact, matching `HalyardTakionStream` field for field) and
 the policy that decides when to send is in this port (slice count is a cellVdec property, not a Halyard
 one). It is **off by default** — `connquality=1` in the pairing record.
 
@@ -1055,7 +1055,7 @@ The hand-drawn fonts remain as the fallback and are still what runs if the TTF c
 
 ### Controller input — **working, 228 Hz**
 
-A DualShock 3 goes up the stream channel. `ports/common` has carried the input writer since the 3DS
+A DualShock 3 goes up the stream channel. `libripcord` has carried the input writer since the 3DS
 port and this port compiled it for its self-test and never called it; it does now.
 
 ```
@@ -1077,7 +1077,7 @@ tidiness: the outgoing key position is ONE advancing sequence shared by control,
 input, and a path with a counter of its own would repeat a position, which is a repeated GMAC nonce
 under one key.
 
-**`ports/common` gained L3 and R3**, which were missing because the first front end to use it was a 3DS
+**`ports/common` (now `libripcord/`) gained L3 and R3**, which were missing because the first front end to use it was a 3DS
 and a 3DS has no stick to click. `HalyardInputPacketWriter.cs` has carried both codes all along. A gap
 that exists for one front end's hardware is a gap for every front end after it.
 
@@ -1242,7 +1242,7 @@ address on the interface that actually reaches it, and is the right answer on a 
 #### Defaults are per-port now
 
 The first machine this ever paired streamed at 29 fps, because a record written from scratch inherited
-`ports/common`'s defaults - 960x540 at 30 fps with software scaling, which are correct for the port
+`libripcord`'s defaults - 960x540 at 30 fps with software scaling, which are correct for the port
 that set them and wrong here. The PS3 applies its own measured configuration when there is no record
 to load: 720p60, 20,000 kbps, RGB from the decoder, RSX scaling, bilinear, the system font. Only when
 there is no record - one that exists says what its owner chose.
@@ -1265,12 +1265,12 @@ times slower than writes, so anything with antialiased text has to be drawn on a
 nothing was actually redrawn. `rc_overlay_end` had always been gated that way; this one had not, and the
 shell is the first caller that runs at the flip rate.
 
-**The list arithmetic is in `ports/common/ui/rc_menu.c` and is tested on a host.** Every bug a menu model
+**The list arithmetic is in `libripcord/ui/rc_menu.c` and is tested on a host.** Every bug a menu model
 can have is a cursor that ends up somewhere the person did not put it, and every one of them is invisible
 in a screenshot and obvious in front of a television: a disabled row that takes the highlight reads as a
 broken X button; a wrap that skips the last row hides an option; a list where nothing can be chosen must
 not loop forever looking for something that can, because on a console that is a hang at the menu with no
-terminal to find out why. `menu_test` is thirteenth suite in `ports/common/tests` and covers exactly
+terminal to find out why. `menu_test` is thirteenth suite in `libripcord/tests` and covers exactly
 those, including the all-disabled case.
 
 **Two things this port learned the hard way are now compile-time checks rather than comments.** The
@@ -1346,7 +1346,7 @@ errand with no PC involved.
 base64 of its eight bytes, and `halyard_regist_message` encodes an all-decimal one as a number and
 anything else as its own UTF-8 characters - so hex typed into that box goes out as the text `1a2b...`
 and comes back as a refusal the console does not explain, in front of someone re-checking a number that
-was right all along. `ports/common/session/halyard_account_id.c` normalises decimal and hex to decimal,
+was right all along. `libripcord/session/halyard_account_id.c` normalises decimal and hex to decimal,
 *names* the base64 form rather than guessing at a byte order this project has not confirmed, and refuses
 anything else with a reason. Sixteen decimal digits is the ambiguous case and is read as decimal; there
 is a test that says so, because the other reading is a silently different number.
@@ -1382,7 +1382,7 @@ solved here. The account id was the part that paid, and it is now free.
 
 The file held exactly one, so pairing a second silently destroyed the first one's keys — and getting
 them back means standing in front of that console reading a PIN off its screen again. `Ripcord.Core`'s
-`IPairedConsoleStore` has been a list with `Upsert` and `Remove` throughout, so this is `ports/common`
+`IPairedConsoleStore` has been a list with `Upsert` and `Remove` throughout, so this is `libripcord`
 catching up to the source of truth rather than inventing a format.
 
 **The split is the one .NET makes.** Per console: address, name, family, and the keys that identify this

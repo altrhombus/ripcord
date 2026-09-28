@@ -195,7 +195,7 @@ public class BundledInteropConstantsTests
     /// <para><c>CLAUDE.md</c> lists this constant beside the bundled interop constants as the one value
     /// that travels with them while living in source rather than in the JSON, because a message builder
     /// needs it inline. It has two homes: <see cref="HalyardRegistrationMessage.ClientTypeHex"/> and
-    /// <c>ports/common/session/halyard_regist_message.h</c>, the C ports building a registration request
+    /// <c>libripcord/session/halyard_regist_message.h</c>, the C core building a registration request
     /// without linking against any of this.</para>
     ///
     /// <para><b>Nothing made those equal except somebody typing the same thing twice.</b> The published
@@ -204,7 +204,7 @@ public class BundledInteropConstantsTests
     /// reporting an unexplained hex literal in product code. That is the wrong sentence to be reading at
     /// the time. This value is the first thing inside the encrypted registration field, so a wrong one
     /// corrupts exactly its first 16 bytes and the console answers 403 / 80108b09 without saying why;
-    /// <c>ports/common/halyard/halyard_registration.c</c> carries the same warning about the field IV for
+    /// <c>libripcord/halyard/halyard_registration.c</c> carries the same warning about the field IV for
     /// the same reason. This test exists to put the right sentence in front of whoever edits one of the
     /// two.</para>
     ///
@@ -212,20 +212,20 @@ public class BundledInteropConstantsTests
     /// file's rule — shape, never values — intact.</para>
     /// </summary>
     [SkippableFact]
-    public void ClientType_PortsCopyMatchesTheReferenceImplementation()
+    public void ClientType_CCoreCopyMatchesTheReferenceImplementation()
     {
-        string portsDir = Path.Combine(RepoRoot(), "ports");
+        string coreDir = Path.Combine(RepoRoot(), "libripcord");
 
-        // A source archive may legitimately carry no ports tree. A ports tree missing THIS file may not:
-        // that means the definition moved and this check silently stopped covering it.
-        Skip.IfNot(Directory.Exists(portsDir), "No ports/ tree in this checkout.");
+        // A source archive may legitimately carry no C core. A C core missing THIS file may not: that
+        // means the definition moved and this check silently stopped covering it.
+        Skip.IfNot(Directory.Exists(coreDir), "No libripcord/ tree in this checkout.");
 
-        string header = Path.Combine(portsDir, "common", "session", "halyard_regist_message.h");
+        string header = Path.Combine(coreDir, "session", "halyard_regist_message.h");
         Assert.True(
             File.Exists(header),
-            "ports/ is present but its registration header is not, at " + header + ". The ports' "
-            + "Client-Type definition has moved; point this test at the new location rather than "
-            + "deleting it.");
+            "libripcord/ is present but its registration header is not, at " + header + ". The C "
+            + "core's Client-Type definition has moved; point this test at the new location rather "
+            + "than deleting it.");
 
         Match found = Regex.Match(
             File.ReadAllText(header),
@@ -239,12 +239,57 @@ public class BundledInteropConstantsTests
         Assert.True(
             string.Equals(found.Groups[1].Value, HalyardRegistrationMessage.ClientTypeHex,
                           StringComparison.OrdinalIgnoreCase),
-            "The C ports and the reference implementation disagree about Client-Type, so one of them "
+            "The C core and the reference implementation disagree about Client-Type, so one of them "
             + "cannot register. The failure on hardware is a 403 that explains nothing, because this "
             + "value sits at the front of the encrypted field and a wrong one corrupts its first 16 "
             + "bytes. Reconcile these two, and CLAUDE.md's inventory if a third appears:"
             + "\n  " + header
             + "\n  src/Ripcord.Protocol.Halyard.Common/Crypto/HalyardRegistrationMessage.cs");
+    }
+
+    /// <summary>
+    /// The Rust engine's <c>Client-Type</c> is the reference's, read at build time, and never a third literal.
+    ///
+    /// <para><c>engine/ripcord-proto/build.rs</c> extracts <see cref="HalyardRegistrationMessage.ClientTypeHex"/>
+    /// from this repository's source into the build directory, as it generates the bundle constants, so the
+    /// engine cannot drift from the reference and <c>CLAUDE.md</c>'s inventory stays at two homes. This checks
+    /// both halves of that claim: the build script names the reference file and the constant, and no committed
+    /// file under <c>engine/</c> contains the value. Shape and location, never the value itself.</para>
+    /// </summary>
+    [SkippableFact]
+    public void ClientType_RustEngineDerivesItFromTheReference()
+    {
+        string engineDir = Path.Combine(RepoRoot(), "engine");
+        Skip.IfNot(Directory.Exists(engineDir), "No engine/ tree in this checkout.");
+
+        string buildScript = Path.Combine(engineDir, "ripcord-proto", "build.rs");
+        Assert.True(File.Exists(buildScript),
+            "engine/ is present but ripcord-proto/build.rs is not. The engine's Client-Type derivation has moved; "
+            + "point this test at it rather than deleting it.");
+        string script = File.ReadAllText(buildScript);
+        Assert.True(
+            script.Contains("HalyardRegistrationMessage.cs", StringComparison.Ordinal)
+                && script.Contains("ClientTypeHex", StringComparison.Ordinal),
+            "ripcord-proto/build.rs no longer reads ClientTypeHex from HalyardRegistrationMessage.cs. If the engine "
+            + "now holds its own copy, that is a third home: CLAUDE.md's inventory and this test change with it.");
+
+        string[] extensions = [".rs", ".toml", ".swift", ".cs", ".c", ".h", ".md", ".json"];
+        foreach (string file in Directory.EnumerateFiles(engineDir, "*", SearchOption.AllDirectories))
+        {
+            string rel = Path.GetRelativePath(engineDir, file);
+            // Any cargo target directory, not only the workspace's: engine/fuzz is a workspace of its own, and its
+            // gitignored build output holds the generated constants, which is where they are meant to be.
+            if (rel.Split(Path.DirectorySeparatorChar).Contains("target") || rel.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}")
+                || rel.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}")
+                || !extensions.Contains(Path.GetExtension(file)))
+            {
+                continue;
+            }
+            Assert.False(
+                File.ReadAllText(file).Contains(HalyardRegistrationMessage.ClientTypeHex, StringComparison.OrdinalIgnoreCase),
+                "engine/" + rel + " carries a literal copy of Client-Type. The engine reads it from the reference at "
+                + "build time; a copy here is an undeclared third home (CLAUDE.md, Bounded exception 1).");
+        }
     }
 
     /// <summary>Locates the repository root by walking up to the solution file, as the other

@@ -48,6 +48,8 @@ public sealed class SessionController : IAsyncDisposable
     private IDisposable? _statsSub;
 
     private long _lastFrameTicks;      // UtcTicks of the newest video frame; 0 = none this session
+    private int _keyFrameSeen;         // 1 once this session has delivered a keyframe
+    private long _lastBlindKeyFrameAskTicks;   // UtcTicks of the last ask while no keyframe had arrived
     private long _connectedAtTicks;    // UtcTicks of the last successful handshake
     private SessionStatistics? _lastStats;
 
@@ -127,6 +129,14 @@ public sealed class SessionController : IAsyncDisposable
     }
 
     private bool _restConsoleOnDisconnect;
+
+    /// <summary>
+    /// Set by <see cref="StopAsync"/>, the one disconnect a person asks for. Only that teardown may rest the
+    /// console: the others replace a stalled or dropped session, and until 2026-09-26 they rested it too, so a
+    /// flapping connection with the setting on could put the console to sleep between reconnect attempts
+    /// (engine comparisons). The C core and the Rust engine rest only on a disconnect a person asked for.
+    /// </summary>
+    private volatile bool _stopRequested;
 
     /// <summary>
     /// While true, controller frames are dropped instead of forwarded to the console. Used when an in-app
@@ -280,6 +290,8 @@ public sealed class SessionController : IAsyncDisposable
             loop = _runLoop;
         }
 
+        // Before the cancel: the loop's own teardown runs as soon as it sees it, and must know this is a stop.
+        _stopRequested = true;
         if (cts is not null)
         {
             await cts.CancelAsync().ConfigureAwait(false);
@@ -334,8 +346,10 @@ public sealed class SessionController : IAsyncDisposable
                     Transition(SessionLifecycle.Streaming, "Connected.");
                     DateTimeOffset streamingSince = _clock();
 
-                    // Returns when the session ends or stalls past the reconnect threshold.
+                    // Returns when the session ends or stalls past the reconnect threshold. Read why before the
+                    // teardown drops the session: a session that closed itself can say (IStreamingSession.EndReason).
                     await WatchSessionAsync(cancellationToken).ConfigureAwait(false);
+                    string? endReason = CurrentEndReason();
                     await TeardownSessionAsync().ConfigureAwait(false);
 
                     if (cancellationToken.IsCancellationRequested)
@@ -353,6 +367,7 @@ public sealed class SessionController : IAsyncDisposable
                     if (_clock() - streamingSince >= _options.MinimumHealthySession)
                     {
                         attempt = 1;
+                        lastReason = endReason;
                         continue;
                     }
 
@@ -368,7 +383,7 @@ public sealed class SessionController : IAsyncDisposable
 
                     // Backoff on a flap too. Reconnecting instantly into a console that is shutting down is
                     // what turned this into a tight loop rather than a slow one.
-                    lastReason = "The stream dropped as soon as it started.";
+                    lastReason = endReason ?? "The stream dropped as soon as it started.";
 
                     TimeSpan flapBackoff = BackoffFor(attempt);
                     Transition(
@@ -533,6 +548,14 @@ public sealed class SessionController : IAsyncDisposable
 
     private readonly record struct ConnectOutcome(bool Connected, bool Retryable, string Detail);
 
+    private string? CurrentEndReason()
+    {
+        lock (_gate)
+        {
+            return _session?.State == SessionState.Closed ? _session.EndReason : null;
+        }
+    }
+
     /// <summary>Build a session, run the handshake, and wire up media/input/stats on success.</summary>
     private async Task<ConnectOutcome> TryConnectAsync(CancellationToken cancellationToken)
     {
@@ -581,6 +604,8 @@ public sealed class SessionController : IAsyncDisposable
 
         Volatile.Write(ref _connectedAtTicks, _clock().UtcTicks);
         Volatile.Write(ref _lastFrameTicks, 0);
+        Volatile.Write(ref _keyFrameSeen, 0);
+        Volatile.Write(ref _lastBlindKeyFrameAskTicks, 0);
         Subscribe(session);
         return new ConnectOutcome(true, Retryable: true, "Connected.");
     }
@@ -618,6 +643,11 @@ public sealed class SessionController : IAsyncDisposable
         _videoSub = session.VideoFrames.Subscribe(new Sink<EncodedVideoFrame>(frame =>
         {
             Volatile.Write(ref _lastFrameTicks, _clock().UtcTicks);
+            if (frame.IsKeyFrame)
+            {
+                Volatile.Write(ref _keyFrameSeen, 1);
+            }
+
             _pipeline.SubmitEncodedVideo(frame);
         }));
 
@@ -689,6 +719,38 @@ public sealed class SessionController : IAsyncDisposable
 
     private BitrateDecision? _lastTracedQuality;
 
+    /// <summary>
+    /// The first-keyframe latch (<see cref="SessionControllerOptions.FirstKeyFrameGrace"/>): until this session has
+    /// delivered a keyframe, ask for one once the grace has passed and again every retry interval.
+    /// </summary>
+    private void AskForAFirstKeyFrameIfDue(IStreamingSession session)
+    {
+        if (Volatile.Read(ref _keyFrameSeen) != 0)
+        {
+            return;
+        }
+
+        long now = _clock().UtcTicks;
+        long connectedAt = Volatile.Read(ref _connectedAtTicks);
+        long lastAsk = Volatile.Read(ref _lastBlindKeyFrameAskTicks);
+        if (connectedAt == 0 || now - connectedAt < _options.FirstKeyFrameGrace.Ticks
+            || (lastAsk != 0 && now - lastAsk < _options.FirstKeyFrameRetryInterval.Ticks))
+        {
+            return;
+        }
+
+        Volatile.Write(ref _lastBlindKeyFrameAskTicks, now);
+        RipcordEventSource.Log.KeyFrameRequested("no keyframe since the stream started");
+        try
+        {
+            session.RequestKeyFrame();
+        }
+        catch (Exception)
+        {
+            // Best-effort: the next tick asks again.
+        }
+    }
+
     private void OnKeyFrameRequested()
     {
         IStreamingSession? session;
@@ -754,6 +816,8 @@ public sealed class SessionController : IAsyncDisposable
             {
                 return; // the session gave up on its own; the loop decides whether to reconnect
             }
+
+            AskForAFirstKeyFrameIfDue(session);
 
             double sinceFrame = SinceLastFrameOrConnectMs();
 
@@ -836,6 +900,11 @@ public sealed class SessionController : IAsyncDisposable
 
         if (session is not null)
         {
+            // Rest only on a person's stop, and then as they last chose: a replacement session is seeded from the
+            // connect-time config, so the choice is applied here rather than trusted to have reached it. Any
+            // other teardown is on the way to a reconnect.
+            session.RestConsoleOnDisconnect = _stopRequested && _restConsoleOnDisconnect;
+
             try { await session.DisposeAsync().ConfigureAwait(false); }
             catch (Exception) { /* teardown races are not worth failing a reconnect over */ }
         }

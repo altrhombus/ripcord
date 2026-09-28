@@ -67,7 +67,39 @@ public class HalyardTakionStreamTests
         try { await serverTask; } catch (OperationCanceledException) { }
     }
 
-    private static async Task RunMockConsoleAsync(UdpChannel server, CancellationToken ct)
+    /// <summary>
+    /// A console that hangs up says so with a Takion DISCONNECT, often with the only account of why (a rejected
+    /// launchSpec sends one). The stream used to ignore it; now it raises ConsoleDisconnected with the reason,
+    /// and the session ends on it.
+    /// </summary>
+    [Fact]
+    public async Task AConsoleDisconnect_IsRaisedWithItsReason()
+    {
+        using var serverSocket = new UdpChannel();
+        using var clientSocket = new UdpChannel();
+        var serverEndpoint = new IPEndPoint(IPAddress.Loopback, serverSocket.LocalEndPoint.Port);
+
+        using var crypto = new HalyardV1SessionCrypto(TestSecrets.SyntheticControlSecrets());
+        var demuxer = new HalyardStreamDemuxer(crypto);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        var serverTask = RunMockConsoleAsync(serverSocket, cts.Token, disconnectWith: "launch spec rejected");
+
+        await using var stream = new HalyardTakionStream(clientSocket, serverEndpoint, crypto, demuxer);
+        var disconnected = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        stream.ConsoleDisconnected += reason => disconnected.TrySetResult(reason);
+
+        TakionSessionResult result = await stream.StartAsync(
+            new TakionSessionRequest(9, "skey", "launchspec", HandshakeKey),
+            handshakeTimeout: TimeSpan.FromSeconds(1), handshakeAttempts: 5, cts.Token);
+        Assert.True(result.Success, result.FailureReason);
+
+        Assert.Equal("launch spec rejected", await disconnected.Task.WaitAsync(cts.Token));
+
+        await cts.CancelAsync();
+        try { await serverTask; } catch (OperationCanceledException) { }
+    }
+
+    private static async Task RunMockConsoleAsync(UdpChannel server, CancellationToken ct, string? disconnectWith = null)
     {
         // P-521: the curve version 17 selects, i.e. the one a real console brings to this exchange.
         var (serverKp, serverPub) = HalyardStreamKeySchedule.GenerateKeyPair(HalyardStreamCurve.NistP521);
@@ -163,6 +195,17 @@ public class HalyardTakionStreamTests
                 await Task.Delay(200, ct).ConfigureAwait(false);
                 await server.SendAsync(BuildSealedVideo(packetCrypto, packetIndex: 1, frameIndex: 0, keyPos: 0x00013060, FramePlaintext), client, ct).ConfigureAwait(false);
                 await server.SendAsync(BuildSealedVideo(packetCrypto, packetIndex: 2, frameIndex: 1, keyPos: 0x00013460, RandomNumberGenerator.GetBytes(64)), client, ct).ConfigureAwait(false);
+
+                if (disconnectWith is not null)
+                {
+                    await Task.Delay(100, ct).ConfigureAwait(false);
+                    var disconnect = new ControlMessage
+                    {
+                        Type = ControlMessage.Types.MessageType.Disconnect,
+                        DisconnectPayload = new DisconnectPayload { Reason = disconnectWith },
+                    };
+                    await server.SendAsync(TakionDataChunk.Build(clientTag, outboundSeq++, 0, disconnect.ToByteArray()), client, ct).ConfigureAwait(false);
+                }
             }
         }
     }

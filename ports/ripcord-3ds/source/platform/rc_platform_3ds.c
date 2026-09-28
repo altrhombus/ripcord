@@ -1,8 +1,8 @@
 /*
  * ripcord-3ds - the platform seam, libctru side.
  *
- * Everything the portable core (ports/common) needs from an OS, for the 3DS. See
- * ports/common/platform/rc_platform.h for what each function promises; this file only says how libctru
+ * Everything the portable core (libripcord) needs from an OS, for the 3DS. See
+ * libripcord/platform/rc_platform.h for what each function promises; this file only says how libctru
  * delivers it.
  *
  * rc_random_bytes() is NOT here - it lives in source/util/rc_random.c, which predates this seam and

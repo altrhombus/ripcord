@@ -31,11 +31,11 @@ Vita ports are built on.
 > hindsight.
 >
 > The same paragraph also described this work as a branch sitting on `feat/ports-common`, with `ports/common`
-> not yet on `main`. It merged on 2026-09-18; `ports/common` is on `main`, and so is this port.
+> not yet on `main`. It merged on 2026-09-18; `ports/common` is on `main`, and so is this port. (On 2026-09-24 it moved again, to `libripcord/`, when the macOS client made it more than the ports' core.)
 
 ## Why this port is only the decoder
 
-`ports/common/platform/rc_platform.h` is the entire list of things the portable core
+`libripcord/platform/rc_platform.h` is the entire list of things the portable core
 asks of an operating system, and it is **four functions**: `rc_time_ms`, `rc_sleep_ms`,
 `rc_tick`/`rc_tick_hz`, and `rc_random_bytes`. Sockets turned out to need no seam at all, because both
 consoles expose the BSD names.
@@ -94,11 +94,11 @@ PS3's `sockaddr_in` does carry the original BSD length byte that Linux and the 3
 sets it because PSL1GHT's own sample does — but a comment in `rc_netlog.c` went on to call it *"not
 optional"*, which was copied reasoning rather than a result.
 
-That mattered beyond this port. `ports/common` builds `sockaddr_in` in three places —
+That mattered beyond this port. `libripcord` builds `sockaddr_in` in three places —
 `halyard_control_session.c` and `rc_tcp.c` — and never sets the field, so "required" would have meant the
 shared core could not open a control session on a PS3. Rather than change code every port depends on from
 a comment, the question went to the hardware: `rc_discover.c` broadcasts the same SRCH probe twice, once
-with the field zeroed, and **the console accepted both and replied to both.** Not required. `ports/common`
+with the field zeroed, and **the console accepted both and replied to both.** Not required. `libripcord`
 needs no change, and the field stays set here only because matching the SDK costs nothing.
 
 ### Discovery works, from the console
@@ -111,7 +111,7 @@ disc:  broadcasting SRCH for 3000 ms
 ```
 
 The first thing in this port that has talked to a PS5 rather than to a file. The division of labour is
-the one `rc_platform.h` describes, exercised end to end for the first time: `ports/common` builds the
+the one `rc_platform.h` describes, exercised end to end for the first time: `libripcord` builds the
 SRCH datagram and parses the reply, and `source/discovery/rc_discover.c` contributes sockets, a
 broadcast address and a deadline. Note the console answered from **standby** — discovery replies in rest
 mode with a different status line, which is what makes LAN wake possible later.
@@ -193,7 +193,7 @@ three failures that look identical from outside and have nothing in common as bu
 
 ### The shared core is byte-order clean — **measured, not argued**
 
-`ports/common` is the code every port shares — Takion, the FEC, stream framing and demux, the control
+`libripcord` is the code every port shares — Takion, the FEC, stream framing and demux, the control
 session, discovery, input encoding — and until 2026-09-12 every assertion in it had only ever run on
 little-endian x86. The PPE is big-endian.
 
@@ -201,7 +201,7 @@ little-endian x86. The PPE is big-endian.
 exactly — runner for runner, not just in total:
 
 ```
-core:  running ports/common's suites on this hardware
+core:  running libripcord's suites on this hardware
        discovery pass  session pass  takion pass  stream_header pass
        stream_demux pass  input pass  fec pass
        control_crypto pass  stream_crypto pass  ecdh pass  control_proto pass
@@ -214,7 +214,7 @@ crypto, which is where a byte-order bug would have been most expensive. A wrong 
 crash; it produces a session that negotiates and then silently fails to decrypt.
 
 `ecdh` runs against **mbedtls cross-built for the PPE**, and that needed no new code at all:
-`ports/common/tools/build-mbedtls.sh` already takes `CROSS=`, so `CROSS=powerpc64-ps3-elf-` produced a
+`libripcord/tools/build-mbedtls.sh` already takes `CROSS=`, so `CROSS=powerpc64-ps3-elf-` produced a
 102 KB `libmbedcrypto.a` from the same pinned, hash-verified 2.28.8 release the host suite and the Vita
 port use. A script written for one console worked unchanged for a third target.
 
@@ -301,7 +301,7 @@ same run.
 
 **Two bugs it cost, and both are worth knowing.**
 
-The first was in `ports/common` and every port had it. `takion_reassembler_first` returned two different
+The first was in `ports/common` (now `libripcord/`) and every port had it. `takion_reassembler_first` returned two different
 lifetimes: a message needing reassembly was copied into the reassembler and lived as long as the channel,
 while a message arriving complete in ONE CHUNK had the caller's pointer handed straight back — and in
 `takion_channel_poll` that buffer is a local. The short lifetime belonged to the common case, because
@@ -554,7 +554,7 @@ declaring figures nobody measured is a defect whether or not it is the binding o
 answer to the question that motivated them, and the honest measurement of throughput needs **moving
 content on the console**.
 
-**Where congestion feedback lives, and why.** In `ports/common`, on the sealer — because the reference is
+**Where congestion feedback lives, and why.** In `libripcord`, on the sealer — because the reference is
 explicit that the outgoing key position is one sequence shared by control DATA, SACKs and congestion
 packets alike. A congestion path with its own counter would repeat a position control had already spent,
 and a repeated position is a repeated GMAC nonce under one key. Three offset pairs that look alike and
@@ -577,7 +577,7 @@ build reads it without checking who wrote it. That is the receive half of the se
 gap rather than an oversight. Senkusha's echo and MTU measurement legs are not run, so
 the launch spec declares `rtt 0` and a default MTU `[X]`; the 3DS port's note on that is worth heeding,
 since it omitted the echo leg for five phases on the reasoning that it only tunes bitrate, and the
-declared RTT turned out to be an input the console uses. Log rotation is implemented in `ports/common`
+declared RTT turned out to be an input the console uses. Log rotation is implemented in `libripcord`
 but **has not yet fired on hardware `[X]`** — the log has not reached the threshold.
 
 ## Order of work

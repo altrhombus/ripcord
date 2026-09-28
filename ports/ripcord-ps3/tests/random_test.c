@@ -23,7 +23,7 @@
  * fake was handed and asserting it was odd. That tests that rc_random_init still ASKS the awkward
  * question, which is the property that would quietly rot if someone tidied the buffer arithmetic.
  */
-#include "../../common/util/rc_random.h"
+#include "../../../libripcord/util/rc_random.h"
 
 #include <lv2/system.h>
 

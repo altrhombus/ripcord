@@ -64,6 +64,93 @@ public class TakionSessionNegotiatorTests
         try { await serverTask; } catch (OperationCanceledException) { }
     }
 
+    private static SessionReplyPayload GoodReply() => new()
+    {
+        ServerVersion = 17,
+        Token = 1,
+        EncryptedKeyAccepted = true,
+        VersionAccepted = true,
+        SessionKey = "skey",
+        EcdhPublicKey = ByteString.CopyFrom(new byte[133]),
+        EcdhSignature = ByteString.CopyFrom(new byte[32]),
+    };
+
+    /// <summary>
+    /// The keyless senkusha SESSION_REQUEST carries encryptedKey present and empty, the vendor's `22 00` in every
+    /// instance in cap53 and cap54. An engine comparison once took this for a bug beside the C core's four zero
+    /// bytes; the captures showed it was the one that matched the wire, and the C core and the Rust engine
+    /// changed instead (2026-09-26).
+    /// </summary>
+    [Fact]
+    public void TheKeylessSenkushaRequest_CarriesEncryptedKeyPresentAndEmpty()
+    {
+        byte[] payload = HalyardSenkusha.KeylessSessionRequest().SessionRequestPayload.ToByteArray();
+        Assert.True(HalyardSenkusha.KeylessSessionRequest().SessionRequestPayload.HasEncryptedKey);
+        // clientVersion 9, then sessionKey, launchSpecJson and encryptedKey, each present and zero-length.
+        Assert.Equal("080912001A002200", Convert.ToHexString(payload));
+    }
+
+    [Fact]
+    public void ReplyProblem_AcceptsAWellFormedReply() => Assert.Null(TakionSessionNegotiator.ReplyProblem(GoodReply()));
+
+    /// <summary>
+    /// A refused version is reported as a refusal. Before 2026-09-26 it went on to signature verification and
+    /// failed there, reading like a crypto bug.
+    /// </summary>
+    [Fact]
+    public void ReplyProblem_ARefusedVersion_IsReportedAsARefusal()
+    {
+        SessionReplyPayload reply = GoodReply();
+        reply.VersionAccepted = false;
+        Assert.Contains("refused the protocol version", TakionSessionNegotiator.ReplyProblem(reply));
+    }
+
+    [Theory]
+    [InlineData("serverVersion")]
+    [InlineData("token")]
+    [InlineData("encryptedKeyAccepted")]
+    [InlineData("versionAccepted")]
+    [InlineData("sessionKey")]
+    public void ReplyProblem_AMissingRequiredField_IsRejected(string field)
+    {
+        SessionReplyPayload reply = GoodReply();
+        switch (field)
+        {
+            case "serverVersion": reply.ClearServerVersion(); break;
+            case "token": reply.ClearToken(); break;
+            case "encryptedKeyAccepted": reply.ClearEncryptedKeyAccepted(); break;
+            case "versionAccepted": reply.ClearVersionAccepted(); break;
+            case "sessionKey": reply.ClearSessionKey(); break;
+        }
+        Assert.Contains("required field", TakionSessionNegotiator.ReplyProblem(reply));
+    }
+
+    /// <summary>
+    /// Unset proto2 bytes read as empty, not null, so the old null checks let a reply with no ECDH material
+    /// through to verification.
+    /// </summary>
+    [Fact]
+    public void ReplyProblem_MissingEcdhMaterial_IsRejected()
+    {
+        SessionReplyPayload noKey = GoodReply();
+        noKey.ClearEcdhPublicKey();
+        SessionReplyPayload noSignature = GoodReply();
+        noSignature.ClearEcdhSignature();
+        Assert.Contains("ECDH material", TakionSessionNegotiator.ReplyProblem(noKey));
+        Assert.Contains("ECDH material", TakionSessionNegotiator.ReplyProblem(noSignature));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(31)]
+    [InlineData(33)]
+    public void ReplyProblem_ASignatureThatIsNot32Bytes_IsRejected(int length)
+    {
+        SessionReplyPayload reply = GoodReply();
+        reply.EcdhSignature = ByteString.CopyFrom(new byte[length]);
+        Assert.NotNull(TakionSessionNegotiator.ReplyProblem(reply));
+    }
+
     /// <summary>
     /// The version the mock console picks: 17 (0x11), the one our own capture negotiated.
     ///

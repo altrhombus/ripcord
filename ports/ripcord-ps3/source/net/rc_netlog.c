@@ -68,7 +68,7 @@ int rc_netlog_open(const char *ip, uint16_t port)
      * from there.
      *
      * AN EARLIER VERSION OF THIS COMMENT CALLED IT "NOT OPTIONAL" AND WAS WRONG. It was copied, not
-     * tested, and the difference mattered to more than this file: ports/common builds sockaddr_in in
+     * tested, and the difference mattered to more than this file: libripcord builds sockaddr_in in
      * three places without the field, so "required" would have meant the shared core could not open a
      * control session on this platform. Rather than change code every port shares on the strength of a
      * comment, the question was put to the hardware - source/discovery/rc_discover.c broadcasts the same

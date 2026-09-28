@@ -12,7 +12,7 @@
  * is up, the output arrives - and it arrives LIVE, on the development machine, which is what was wanted
  * from ps3load in the first place and is worth more than the file channels during decoder work.
  *
- * IT ALSO CLOSES AN OPEN [X]. ports/common/platform/rc_platform.h argues at length that the core needs no
+ * IT ALSO CLOSES AN OPEN [X]. libripcord/platform/rc_platform.h argues at length that the core needs no
  * socket seam because both consoles expose the BSD names, and records that this was checked by compiling
  * and linking rather than by reading documentation - with the standing caveat that "it compiles" is not
  * "it works" and that socket idioms are exactly where a second platform bites. This is the first PS3 code

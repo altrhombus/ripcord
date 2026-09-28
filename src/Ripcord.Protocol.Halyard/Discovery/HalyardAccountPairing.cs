@@ -285,7 +285,9 @@ public sealed class HalyardAccountPairing(
                         return null;
                     }
 
-                    HalyardSignalingCandidate? path = PreferredCandidate(mediaOffer, request.ConsoleHost);
+                    // No fallback for the media leg: which port the console would serve A/V on at its known host is
+                    // not something to guess, so an offer with no usable candidate is reported as no media path.
+                    HalyardSignalingCandidate? path = HalyardConsoleCandidates.Choose(mediaOffer.Candidates);
                     if (path is null || request.LocalEndpoint is not { } local)
                     {
                         return null;
@@ -736,7 +738,9 @@ public sealed class HalyardAccountPairing(
                     Log($"could not open the control association: {ex.Message}");
                 }
 
-                HalyardSignalingCandidate? path = PreferredCandidate(consoleOffer, request.ConsoleHost);
+                // The same decision the transport made (HalyardConsoleCandidates.Resolve), fallback included.
+                HalyardSignalingCandidate? path = HalyardConsoleCandidates.Resolve(
+                    consoleOffer.Candidates, request.ConsoleHost, HalyardDatagramRegistrationTransport.Port)?.Named;
                 if (path is not null && request.LocalEndpoint is { } local)
                 {
                     await _signaling.SendAcceptAsync(
@@ -912,37 +916,6 @@ public sealed class HalyardAccountPairing(
         }
 
         return candidates;
-    }
-
-    private static HalyardSignalingCandidate? PreferredCandidate(
-        HalyardSignalingMessage offer, string consoleHost)
-    {
-        // The one we can actually reach, and it must be the same one the transport picks: this is the
-        // candidate we name back to the console in our ACCEPT, so choosing it by a different rule than
-        // ConsoleEndpoint would have us talking to one address while telling the console we chose another.
-        HalyardSignalingCandidate? reflexive = null;
-
-        foreach (HalyardSignalingCandidate candidate in offer.Candidates)
-        {
-            if (!IPAddress.TryParse(candidate.Address, out IPAddress? address))
-            {
-                continue;
-            }
-
-            if (HalyardDatagramRegistrationTransport.SharesSubnetWithLocalInterface(address))
-            {
-                return candidate;
-            }
-
-            reflexive ??= candidate;
-        }
-
-        // The host the caller named, if it happens to be offered, then anything at all -- an offer we cannot
-        // parse is still better answered than ignored.
-        return reflexive
-               ?? offer.Candidates.FirstOrDefault(
-                   c => string.Equals(c.Address, consoleHost, StringComparison.Ordinal))
-               ?? (offer.Candidates.Count > 0 ? offer.Candidates[0] : null);
     }
 
     private void Log(string message) => _options.Log?.Invoke(message);

@@ -93,7 +93,9 @@ public sealed class TakionSessionNegotiator
                 SessionKey = request.SessionKey,
                 LaunchSpecJson = request.LaunchSpecJson,
                 // encryptedKey is a required proto field; the console drops the whole SESSION_REQUEST without it.
-                // The vendor client sends 4 zero bytes (the key rides in the launchSpec, not here).
+                // Four zero bytes, which the console accepts on hardware (the key rides in the launchSpec, not
+                // here). The vendor sends it present and EMPTY (`22 00`, cap53 frame 10086), so the four bytes
+                // are ours, not the wire's; whether to match the vendor is open in ROADMAP.
                 EncryptedKey = ByteString.CopyFrom(new byte[4]),
                 EcdhPublicKey = ByteString.CopyFrom(publicKey),
                 EcdhSignature = ByteString.CopyFrom(signature),
@@ -109,9 +111,9 @@ public sealed class TakionSessionNegotiator
         }
 
         SessionReplyPayload payload = reply.SessionReplyPayload;
-        if (payload is null || payload.EcdhPublicKey is null || payload.EcdhSignature is null)
+        if (ReplyProblem(payload) is { } problem)
         {
-            return TakionSessionResult.Fail("SESSION_REPLY missing ECDH material");
+            return TakionSessionResult.Fail(problem);
         }
 
         byte[] serverPublicKey = payload.EcdhPublicKey.ToByteArray();
@@ -128,6 +130,47 @@ public sealed class TakionSessionNegotiator
         }
 
         return TakionSessionResult.Ok(reply);
+    }
+
+    /// <summary>
+    /// What is wrong with a SESSION_REPLY before its signature is worth checking, or null when nothing is.
+    ///
+    /// <para>Checked in the order that gives the truest reason (engine comparisons, 2026-09-26). A console
+    /// that refuses the version says so in <c>versionAccepted</c>; unchecked, that surfaced as a signature or
+    /// derivation failure and read like a crypto bug. The five fields the schema marks required must be
+    /// present. The ECDH material must be present, which the old null checks never established: an unset
+    /// proto2 bytes field reads as empty, not null. And the signature must be the 32 bytes an HMAC-SHA256
+    /// is. The C core and the Rust engine check the same.</para>
+    /// </summary>
+    internal static string? ReplyProblem(SessionReplyPayload? payload)
+    {
+        if (payload is null)
+        {
+            return "SESSION_REPLY carried no payload";
+        }
+
+        if (!(payload.HasServerVersion && payload.HasToken && payload.HasEncryptedKeyAccepted
+              && payload.HasVersionAccepted && payload.HasSessionKey))
+        {
+            return "SESSION_REPLY is missing a required field";
+        }
+
+        if (!payload.VersionAccepted)
+        {
+            return $"the console refused the protocol version (it speaks {payload.ServerVersion})";
+        }
+
+        if (!payload.HasEcdhPublicKey || payload.EcdhPublicKey.IsEmpty || !payload.HasEcdhSignature)
+        {
+            return "SESSION_REPLY missing ECDH material";
+        }
+
+        if (payload.EcdhSignature.Length != 32)
+        {
+            return $"SESSION_REPLY's ecdhSignature is {payload.EcdhSignature.Length} bytes, not 32";
+        }
+
+        return null;
     }
 
     private async Task<ControlMessage?> ReceiveUntilAsync(ControlMessage.Types.MessageType type, CancellationToken cancellationToken)

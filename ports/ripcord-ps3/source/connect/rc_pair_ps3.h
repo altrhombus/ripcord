@@ -27,7 +27,7 @@
 const char *rc_pair_record_dir(void);
 
 /*
- * THIS PORT'S MEASURED DEFAULTS, for a record that was never loaded. ports/common defaults to a 3DS's
+ * THIS PORT'S MEASURED DEFAULTS, for a record that was never loaded. libripcord defaults to a 3DS's
  * settings, which is right for the port that set them and produced a 29 fps first session here - see
  * the .c for every number and what it was measured against.
  */

@@ -158,21 +158,16 @@ public sealed class HalyardAccountConsolePairing : IAccountConsolePairing
         return ((IPEndPoint)probe.LocalEndPoint!).Port;
     }
 
+    /// <summary>
+    /// Where the pairing association is aimed: the same decision the ACCEPT names (HalyardConsoleCandidates).
+    /// This used to take a LOCAL candidate only when it equalled the known host, a third rule beside the
+    /// session's and the ACCEPT's, so the association and the ACCEPT could name different candidates.
+    /// </summary>
     private static IPEndPoint ConsoleEndpoint(HalyardAccountTransportContext context)
-    {
-        foreach (HalyardSignalingCandidate candidate in context.ConsoleOffer.Candidates)
-        {
-            if (candidate.Type == "LOCAL"
-                && IPAddress.TryParse(candidate.Address, out IPAddress? local)
-                && string.Equals(candidate.Address, context.ConsoleHost, StringComparison.Ordinal))
-            {
-                return new IPEndPoint(local, candidate.Port);
-            }
-        }
-
-        return new IPEndPoint(
-            IPAddress.Parse(context.ConsoleHost), HalyardDatagramRegistrationTransport.Port);
-    }
+        => HalyardConsoleCandidates.Resolve(
+               context.ConsoleOffer.Candidates, context.ConsoleHost, HalyardDatagramRegistrationTransport.Port)?.Endpoint
+           ?? throw new InvalidOperationException(
+               "The console offered no candidate address we can use, and there is no known address to fall back to.");
 
     public AccountPairingAvailability CheckAvailability(ConsoleFamily family)
     {

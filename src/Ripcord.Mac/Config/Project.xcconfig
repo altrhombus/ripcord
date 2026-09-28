@@ -1,0 +1,60 @@
+// Settings every target shares. Target files include nothing; Xcode layers them over this one.
+
+RIPCORD_REPO_ROOT = $(SRCROOT)/../..
+
+SDKROOT = macosx
+MACOSX_DEPLOYMENT_TARGET = 26.0
+// iPhone, iPad and Apple TV, for RipcordKit and the mobile app (docs/ios-plan.md). Mac-only targets ignore them.
+IPHONEOS_DEPLOYMENT_TARGET = 26.0
+TVOS_DEPLOYMENT_TARGET = 26.0
+// Apple Silicon only: see docs/macos-plan.md, "Decisions".
+ARCHS = arm64
+SWIFT_VERSION = 6.0
+CLANG_ENABLE_MODULES = YES
+
+// The protocol engine is the Rust one (docs/engine-plan.md, Phase 3), reached through its generated header.
+SWIFT_INCLUDE_PATHS = $(inherited) $(SRCROOT)/RipcordEngine/include
+
+// RipcordKit's "Build the Rust engine" phase runs cargo; every executable that links RipcordKit links the
+// static archive by full path, because cargo writes a dylib of the same name beside it and -l would
+// prefer that. Static-library targets link with libtool, which does not read OTHER_LDFLAGS.
+RIPCORD_ENGINE = $(RIPCORD_REPO_ROOT)/engine
+// The v1 interop constants (CLAUDE.md, "Bounded exception 1") are compiled into the engine by default. NO builds
+// the shipping library without them, so pairing and connecting stop before the console: the engine's
+// counterpart of the dotnet client's -p:BundleInteropConstants=false.
+RIPCORD_BUNDLE_INTEROP_CONSTANTS = YES
+// The shipping library: no test-support exports. RipcordKitTests.xcconfig points at the test build instead.
+RIPCORD_ENGINE_LIB = $(RIPCORD_ENGINE)/target/shipping/release/libripcord.a
+// The same library built for each other SDK, by the same phase, into the target's own directory.
+RIPCORD_ENGINE_LIB[sdk=iphoneos*] = $(RIPCORD_ENGINE)/target/shipping/aarch64-apple-ios/release/libripcord.a
+RIPCORD_ENGINE_LIB[sdk=iphonesimulator*] = $(RIPCORD_ENGINE)/target/shipping/aarch64-apple-ios-sim/release/libripcord.a
+RIPCORD_ENGINE_LIB[sdk=appletvos*] = $(RIPCORD_ENGINE)/target/shipping/aarch64-apple-tvos/release/libripcord.a
+RIPCORD_ENGINE_LIB[sdk=appletvsimulator*] = $(RIPCORD_ENGINE)/target/shipping/aarch64-apple-tvos-sim/release/libripcord.a
+OTHER_LDFLAGS = $(inherited) $(RIPCORD_ENGINE_LIB)
+
+// Ad hoc signing until distribution is set up (docs/macos-plan.md, step 9).
+CODE_SIGN_IDENTITY = -
+CODE_SIGN_STYLE = Manual
+// iPhone, iPad and Apple TV devices refuse an ad hoc signature, so without a team a device build is unsigned:
+// it compiles and links, which is what CI checks, and installing on a device needs DEVELOPMENT_TEAM and a
+// profile (docs/ios-plan.md). The simulators take the ad hoc one.
+CODE_SIGNING_ALLOWED[sdk=iphoneos*] = NO
+CODE_SIGNING_ALLOWED[sdk=appletvos*] = NO
+
+// The app group the widgets read the paired consoles through (Shared/ConsoleSnapshot.swift). Claiming a group
+// needs a provisioning profile, which an ad hoc build cannot have, so it is off here and a signed build turns
+// it on: RIPCORD_APP_GROUP = YES with a team and a profile that carries the group. With it off the widget
+// builds sandboxed and shows the way into the app, and the app writes no snapshot.
+RIPCORD_APP_GROUP = NO
+
+// Every user-facing string goes through the one String Catalog, Shared/Localizable.xcstrings, which the app
+// and the widget extension both compile. The compiler extracts the keys; README.md says how the catalog is
+// brought up to date from a command-line build.
+SWIFT_EMIT_LOC_STRINGS = YES
+LOCALIZATION_PREFERS_STRING_CATALOGS = YES
+
+// Drop what nothing references. Off by default for a project whose settings all live here, and it was: every
+// object the linker pulled from the engine's static archive stayed whole, much of std and core included, which
+// is most of why ripcord-lab measured 2.86 MB stripped against the engine's own 0.65 MB. With it, 1.72 MB
+// (engine/README.md, "What the engine costs in size").
+DEAD_CODE_STRIPPING = YES

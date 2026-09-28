@@ -13,7 +13,7 @@
  * would actually receive.
  */
 #include "../source/input/rc_chord.h"
-#include "../../common/input/halyard_input.h"
+#include "../../../libripcord/input/halyard_input.h"
 
 #include <stdio.h>
 #include <string.h>

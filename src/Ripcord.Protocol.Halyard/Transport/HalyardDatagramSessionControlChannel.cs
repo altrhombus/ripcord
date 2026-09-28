@@ -126,7 +126,9 @@ public sealed class HalyardDatagramSessionControlChannel : IHalyardControlChanne
                 return message;
             }
 
-            if (!await FillAsync(cancellationToken).ConfigureAwait(false))
+            // No deadline: the running control channel may be quiet for a while, and that is not a failure
+            // (HalyardDatagramControlChannel.ReceiveBytesAsync says why).
+            if (!await FillAsync(cancellationToken, Timeout.InfiniteTimeSpan).ConfigureAwait(false))
             {
                 return null;   // the peer closed the connection
             }
@@ -134,9 +136,9 @@ public sealed class HalyardDatagramSessionControlChannel : IHalyardControlChanne
     }
 
     /// <summary>Returns false when the peer closed the connection instead of sending anything.</summary>
-    private async Task<bool> FillAsync(CancellationToken cancellationToken)
+    private async Task<bool> FillAsync(CancellationToken cancellationToken, TimeSpan? timeout = null)
     {
-        byte[]? delta = await _channel.ReceiveBytesAsync(cancellationToken).ConfigureAwait(false);
+        byte[]? delta = await _channel.ReceiveBytesAsync(cancellationToken, timeout).ConfigureAwait(false);
         if (delta is null)
         {
             return false;

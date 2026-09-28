@@ -1,0 +1,19 @@
+// The widget extension: the Consoles widget and the Connect control (DESIGN.md, "Present across the Mac").
+// Embedded in the app's PlugIns. Widget extensions must be sandboxed; the one other entitlement, the app group
+// the app shares its snapshot through (Shared/ConsoleSnapshot.swift), is claimed only by a build that can
+// (RIPCORD_APP_GROUP, Project.xcconfig). That a signed build then shares it is [X].
+
+PRODUCT_NAME = RipcordWidgets
+PRODUCT_BUNDLE_IDENTIFIER = io.github.altrhombus.Ripcord.Widgets
+MARKETING_VERSION = 0.1
+CURRENT_PROJECT_VERSION = 1
+GENERATE_INFOPLIST_FILE = YES
+INFOPLIST_FILE = RipcordWidgets/Info.plist
+INFOPLIST_KEY_CFBundleDisplayName = Ripcord
+RIPCORD_WIDGET_ENTITLEMENTS_YES = RipcordWidgets/RipcordWidgets.entitlements
+RIPCORD_WIDGET_ENTITLEMENTS_NO = RipcordWidgets/RipcordWidgets-sandbox.entitlements
+CODE_SIGN_ENTITLEMENTS = $(RIPCORD_WIDGET_ENTITLEMENTS_$(RIPCORD_APP_GROUP))
+ENABLE_HARDENED_RUNTIME = YES
+SKIP_INSTALL = YES
+LD_RUNPATH_SEARCH_PATHS = $(inherited) @executable_path/../Frameworks @executable_path/../../../../Frameworks
+APPLICATION_EXTENSION_API_ONLY = YES
