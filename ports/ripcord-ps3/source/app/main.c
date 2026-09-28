@@ -676,7 +676,7 @@ static int check_spu(void)
 #endif
 
 /*
- * ports/common's own suites, on the console. See source/coretest/rc_core_tests.h for why this matters:
+ * libripcord's own suites, on the console. See source/coretest/rc_core_tests.h for why this matters:
  * every assertion in the shared core has only ever run on little-endian x86, and the PPE is big-endian.
  *
  * THE RUNNERS PRINT WITH printf, which here goes to a TTY nobody is reading, so stdout is redirected to
@@ -711,7 +711,7 @@ static int check_core(void)
     int failed;
     int i;
 
-    ps3_log("core:  running ports/common's suites on this hardware\n");
+    ps3_log("core:  running libripcord's suites on this hardware\n");
 
     /* Redirected, not duplicated: there is no dup2 to restore through here, and rc_log still reaches
      * its own file and the network, so nothing is actually lost by giving stdout away. */
@@ -729,7 +729,7 @@ static int check_core(void)
 
     for (i = 0; i < RC_CORE_TEST_COUNT; i++)
         if (results[i].skipped) {
-            ps3_log("       (copy ports/common/tests/vectors/*.kat to %s to run those)\n",
+            ps3_log("       (copy libripcord/tests/vectors/*.kat to %s to run those)\n",
                     RC_CORE_TEST_VECTOR_DIR);
             break;
         }
@@ -786,7 +786,7 @@ static int check_discovery(void)
         ps3_log("       (errno %d)\n", d.bind_errno);
 
     /*
-     * Whether sin_len is required, which decides whether ports/common needs a change. It builds
+     * Whether sin_len is required, which decides whether libripcord needs a change. It builds
      * sockaddr_in in three places and never sets the field, so this is a question about the shared core
      * rather than about this port.
      */
@@ -794,9 +794,9 @@ static int check_discovery(void)
             d.sinlen_zero_send_ok ? "accepted" : "REFUSED",
             d.sinlen_set_send_ok ? "accepted" : "REFUSED");
     if (!d.sinlen_zero_send_ok && d.sinlen_set_send_ok)
-        ps3_log("       -> sin_len IS required. ports/common must set it before it can connect here.\n");
+        ps3_log("       -> sin_len IS required. libripcord must set it before it can connect here.\n");
     else if (d.sinlen_zero_send_ok)
-        ps3_log("       -> sin_len is not required for sendto. ports/common needs no change for this.\n");
+        ps3_log("       -> sin_len is not required for sendto. libripcord needs no change for this.\n");
 
     if (!d.socket_ok) {
         ps3_log("FAIL  could not create or configure the broadcast socket\n");

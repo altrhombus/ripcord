@@ -3,6 +3,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization.Metadata;
 
 namespace Ripcord.Cloud.Halyard;
 
@@ -20,51 +21,40 @@ public sealed class HalyardCloudClient(HttpClient http, HalyardTokenProvider tok
     private readonly HalyardTokenProvider _tokens = tokens;
 
     public async Task<HalyardAccountInfo> GetAccountInfoAsync(CancellationToken cancellationToken)
-        => await GetJsonAsync<HalyardAccountInfo>(HalyardEndpoints.AccountInfo, cancellationToken).ConfigureAwait(false);
+        => await GetJsonAsync(HalyardEndpoints.AccountInfo, HalyardCloudJsonContext.Default.HalyardAccountInfo, cancellationToken).ConfigureAwait(false);
 
     /// <summary>Look up the push front-end host and its keepalive timing (the serveraddr call).</summary>
     public async Task<HalyardPushServerInfo> GetPushServerAsync(CancellationToken cancellationToken)
-        => await GetJsonAsync<HalyardPushServerInfo>(HalyardEndpoints.PushServerAddress, cancellationToken).ConfigureAwait(false);
+        => await GetJsonAsync(HalyardEndpoints.PushServerAddress, HalyardCloudJsonContext.Default.HalyardPushServerInfo, cancellationToken).ConfigureAwait(false);
 
     public async Task<IReadOnlyList<HalyardConsoleClient>> ListConsolesAsync(CancellationToken cancellationToken)
     {
         string url = $"{HalyardEndpoints.ConsoleList}?platform={HalyardEndpoints.CurrentGenPlatformTag}&includeFields=device&limit=10&offset=0";
-        var response = await GetJsonAsync<HalyardConsoleListResponse>(url, cancellationToken).ConfigureAwait(false);
+        var response = await GetJsonAsync(url, HalyardCloudJsonContext.Default.HalyardConsoleListResponse, cancellationToken).ConfigureAwait(false);
         return response.Clients ?? [];
     }
 
     /// <summary>Create/join an account-scoped session; the response carries the session id.</summary>
     public async Task<HalyardCloudSession> CreateSessionAsync(string pushContextId, CancellationToken cancellationToken)
     {
-        var body = new
-        {
-            remotePlaySessions = new[]
-            {
-                new
-                {
-                    members = new[]
-                    {
-                        new
-                        {
-                            accountId = "me",
-                            deviceUniqueId = "me",
-                            platform = "me",
-                            pushContexts = new[] { new { pushContextId } },
-                        },
-                    },
-                },
-            },
-        };
+        var body = new CreateSessionBody(
+        [
+            new CreateSessionEntry(
+            [
+                new CreateSessionMember(AccountId: "me", DeviceUniqueId: "me", Platform: "me", PushContexts: [new PushContextRef(pushContextId)]),
+            ]),
+        ]);
 
-        var response = await SendJsonAsync<HalyardSessionsResponse>(
-            HttpMethod.Post, HalyardEndpoints.Sessions, body, cancellationToken).ConfigureAwait(false)
+        var response = await SendJsonAsync(
+            HttpMethod.Post, HalyardEndpoints.Sessions, body, HalyardCloudJsonContext.Default.CreateSessionBody, HalyardCloudJsonContext.Default.HalyardSessionsResponse,
+            cancellationToken).ConfigureAwait(false)
             ?? throw new HalyardCloudException("Session create returned no session.");
         return response.RemotePlaySessions[0];
     }
 
     public async Task<IReadOnlyList<HalyardCloudSession>> GetSessionsAsync(CancellationToken cancellationToken)
     {
-        var response = await GetJsonAsync<HalyardSessionsResponse>(HalyardEndpoints.Sessions, cancellationToken).ConfigureAwait(false);
+        var response = await GetJsonAsync(HalyardEndpoints.Sessions, HalyardCloudJsonContext.Default.HalyardSessionsResponse, cancellationToken).ConfigureAwait(false);
         return response.RemotePlaySessions ?? [];
     }
 
@@ -79,7 +69,7 @@ public sealed class HalyardCloudClient(HttpClient http, HalyardTokenProvider tok
 
         using HttpResponseMessage response = await SendAsync(request, cancellationToken).ConfigureAwait(false);
         string body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-        var parsed = JsonSerializer.Deserialize<HalyardSessionsResponse>(body);
+        var parsed = JsonSerializer.Deserialize(body, HalyardCloudJsonContext.Default.HalyardSessionsResponse);
         return parsed?.RemotePlaySessions ?? [];
     }
 
@@ -120,30 +110,26 @@ public sealed class HalyardCloudClient(HttpClient http, HalyardTokenProvider tok
         // because a malformed number would be worse than the string we sent before.
         string accountIdJson = ulong.TryParse(accountId, out ulong numericAccountId)
             ? numericAccountId.ToString(CultureInfo.InvariantCulture)
-            : JsonSerializer.Serialize(accountId);
+            : JsonSerializer.Serialize(accountId, HalyardCloudJsonContext.Default.String);
 
         string initialParams =
             $"{{\"accountId\":{accountIdJson}, "
             + "\"roomId\":0, "
-            + $"\"sessionId\":{JsonSerializer.Serialize(sessionId)}, "
-            + $"\"clientType\":{JsonSerializer.Serialize(clientType)}, "
-            + $"\"data1\":{JsonSerializer.Serialize(seeds.Data1)}, "
-            + $"\"data2\":{JsonSerializer.Serialize(seeds.Data2)}}}";
+            + $"\"sessionId\":{JsonSerializer.Serialize(sessionId, HalyardCloudJsonContext.Default.String)}, "
+            + $"\"clientType\":{JsonSerializer.Serialize(clientType, HalyardCloudJsonContext.Default.String)}, "
+            + $"\"data1\":{JsonSerializer.Serialize(seeds.Data1, HalyardCloudJsonContext.Default.String)}, "
+            + $"\"data2\":{JsonSerializer.Serialize(seeds.Data2, HalyardCloudJsonContext.Default.String)}}}";
 
-        var body = new
-        {
-            commandDetail = new
-            {
-                platform = HalyardEndpoints.CurrentGenPlatformTag,
-                duid = consoleDuid,
-                commandType = HalyardEndpoints.StreamingCommandType,
-                parameters = new { initialParams },
-                messageDestination = "SQS",
-            },
-        };
+        var body = new CommandBody(new CommandDetail(
+            Platform: HalyardEndpoints.CurrentGenPlatformTag,
+            Duid: consoleDuid,
+            CommandType: HalyardEndpoints.StreamingCommandType,
+            Parameters: new CommandParameters(initialParams),
+            MessageDestination: "SQS"));
 
-        var response = await SendJsonAsync<HalyardCommandResponse>(
-            HttpMethod.Post, HalyardEndpoints.Commands, body, cancellationToken).ConfigureAwait(false)
+        var response = await SendJsonAsync(
+            HttpMethod.Post, HalyardEndpoints.Commands, body, HalyardCloudJsonContext.Default.CommandBody, HalyardCloudJsonContext.Default.HalyardCommandResponse,
+            cancellationToken).ConfigureAwait(false)
             ?? throw new HalyardCloudException("Connect command returned no commandId.");
         return response.CommandId;
     }
@@ -173,50 +159,35 @@ public sealed class HalyardCloudClient(HttpClient http, HalyardTokenProvider tok
         // `skey` really is 16 zero bytes at this stage and `mappedAddr` really is the literal "0.0.0.0" — both
         // were verified rather than assumed, because both look like placeholders a reimplementation would be
         // tempted to "fix".
-        string offerBody = JsonSerializer.Serialize(new
-        {
-            action = "OFFER",
-            reqId,
-            error = 0,
-            connRequest = new
-            {
-                sid,
-                peerSid = 0,
-                skey = Convert.ToBase64String(new byte[16]),
-                natType = 2,
-                candidate = candidates.Select(c => new
-                {
-                    type = c.Type,
-                    addr = c.Address,
-                    mappedAddr = "0.0.0.0",
-                    port = c.Port,
-                    mappedPort = 0,
-                }).ToArray(),
+        var offer = new OfferBody(
+            Action: "OFFER",
+            ReqId: reqId,
+            Error: 0,
+            ConnRequest: new OfferConnRequest(
+                Sid: sid,
+                PeerSid: 0,
+                Skey: Convert.ToBase64String(new byte[16]),
+                NatType: 2,
+                Candidate: [.. candidates.Select(c => new OfferCandidate(
+                    Type: c.Type, Addr: c.Address, MappedAddr: "0.0.0.0", Port: c.Port, MappedPort: 0))],
 
                 // Empty in the capture too — the vendor sends the key with no value rather than omitting it.
-                defaultRouteMacAddr = string.Empty,
-                localPeerAddr = new { accountId, platform = "REMOTE_PLAY" },
+                DefaultRouteMacAddr: string.Empty,
+                LocalPeerAddr: new PeerAddress(accountId, "REMOTE_PLAY"),
 
                 // Sent when the caller supplies one, empty otherwise — which is how this shipped while the
                 // field had no job. It has one now: the 9303 control prelude names both peers by the ids they
                 // published here, so a client that omits it announces a transport peer the console never heard
                 // of. The vendor's own derivation is still [X] (see HalyardLocalHashedId); what matters on the
                 // wire is that this value and the prelude's agree.
-                localHashedId = localHashedId.IsEmpty
-                    ? string.Empty
-                    : Convert.ToBase64String(localHashedId.Span),
-            },
-        });
+                LocalHashedId: localHashedId.IsEmpty ? string.Empty : Convert.ToBase64String(localHashedId.Span)));
+        string offerBody = JsonSerializer.Serialize(offer, HalyardCloudJsonContext.Default.OfferBody);
 
-        var body = new
-        {
-            channel = HalyardEndpoints.SignalingChannel,
-            payload = $"ver=1.0, type=text, body={offerBody}",
-            to = new[] { new { accountId, deviceUniqueId = consoleDuid, platform = HalyardEndpoints.CurrentGenPlatformTag } },
-        };
+        var body = Envelope($"ver=1.0, type=text, body={offerBody}", accountId, consoleDuid);
 
         string url = $"{HalyardEndpoints.Sessions}/{sessionId}/sessionMessage";
-        await SendJsonAsync<object?>(HttpMethod.Post, url, body, cancellationToken, allowEmpty: true).ConfigureAwait(false);
+        await PostWithoutReplyAsync(url, body, HalyardCloudJsonContext.Default.SignalingEnvelope, cancellationToken)
+            .ConfigureAwait(false);
     }
 
 
@@ -282,43 +253,55 @@ public sealed class HalyardCloudClient(HttpClient http, HalyardTokenProvider tok
     private Task SendSignalingAsync(
         string sessionId, string accountId, string consoleDuid, string body, CancellationToken cancellationToken)
     {
-        var envelope = new
-        {
-            channel = HalyardEndpoints.SignalingChannel,
-            payload = $"ver=1.0, type=text, body={body}",
-            to = new[] { new { accountId, deviceUniqueId = consoleDuid, platform = HalyardEndpoints.CurrentGenPlatformTag } },
-        };
-
+        var envelope = Envelope($"ver=1.0, type=text, body={body}", accountId, consoleDuid);
         string url = $"{HalyardEndpoints.Sessions}/{sessionId}/sessionMessage";
-        return SendJsonAsync<object?>(HttpMethod.Post, url, envelope, cancellationToken, allowEmpty: true);
+        return PostWithoutReplyAsync(url, envelope, HalyardCloudJsonContext.Default.SignalingEnvelope, cancellationToken);
     }
+
+    /// <summary>The session-message wrapper every signaling body travels in, addressed to the console.</summary>
+    private static SignalingEnvelope Envelope(string payload, string accountId, string consoleDuid) => new(
+        Channel: HalyardEndpoints.SignalingChannel,
+        Payload: payload,
+        To: [new SignalingRecipient(accountId, consoleDuid, HalyardEndpoints.CurrentGenPlatformTag)]);
 
     // ---- transport helpers ----
 
-    private async Task<T> GetJsonAsync<T>(string url, CancellationToken cancellationToken)
+    private async Task<T> GetJsonAsync<T>(string url, JsonTypeInfo<T> info, CancellationToken cancellationToken)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
         using HttpResponseMessage response = await SendAsync(request, cancellationToken).ConfigureAwait(false);
         string body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-        return JsonSerializer.Deserialize<T>(body) ?? throw new HalyardCloudException($"Empty/invalid response from {url}.", body);
+        return JsonSerializer.Deserialize(body, info) ?? throw new HalyardCloudException($"Empty/invalid response from {url}.", body);
     }
 
-    private async Task<T?> SendJsonAsync<T>(
-        HttpMethod method, string url, object body, CancellationToken cancellationToken, bool allowEmpty = false)
+    /// <summary>Send a body and read the reply. A null <paramref name="responseInfo"/> expects no reply worth reading.</summary>
+    private async Task<TResponse?> SendJsonAsync<TRequest, TResponse>(
+        HttpMethod method, string url, TRequest body, JsonTypeInfo<TRequest> requestInfo, JsonTypeInfo<TResponse>? responseInfo,
+        CancellationToken cancellationToken)
+        where TResponse : class
     {
         using var request = new HttpRequestMessage(method, url)
         {
-            Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json"),
+            Content = new StringContent(JsonSerializer.Serialize(body, requestInfo), Encoding.UTF8, "application/json"),
         };
         using HttpResponseMessage response = await SendAsync(request, cancellationToken).ConfigureAwait(false);
-        string responseBody = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-        if (allowEmpty && string.IsNullOrWhiteSpace(responseBody))
+        if (responseInfo is null)
         {
-            return default;
+            return null;
         }
 
-        return JsonSerializer.Deserialize<T>(responseBody);
+        string responseBody = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        return JsonSerializer.Deserialize(responseBody, responseInfo);
     }
+
+    /// <summary>
+    /// A post whose reply is not read: the session-message posts, which answer with nothing or with nothing we use.
+    /// It used to parse whatever came back as JSON when the body was not empty, so an unexpected non-JSON reply
+    /// failed the send; the reply is now left unread, as it is not needed.
+    /// </summary>
+    private Task PostWithoutReplyAsync<TRequest>(
+        string url, TRequest body, JsonTypeInfo<TRequest> requestInfo, CancellationToken cancellationToken)
+        => SendJsonAsync<TRequest, HalyardCommandResponse>(HttpMethod.Post, url, body, requestInfo, null, cancellationToken);
 
     private async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {

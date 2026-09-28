@@ -21,7 +21,7 @@ The 3DS could plausibly be built from devkitPro's MSYS2 shell on Windows. This p
   binary, and a job model. Strictly more toolchain surface than either port before it. The prebuilt
   archive ships both, so this is an argument about what you will be *using*, not about a build cost —
   see the correction below.
-- **Everything here already assumes a POSIX shell and GNU make.** `ports/common/tools/build-mbedtls.sh`
+- **Everything here already assumes a POSIX shell and GNU make.** `libripcord/tools/build-mbedtls.sh`
   is `#!/bin/sh`, and every Makefile in `ports/` is GNU make with a gcc flag set (`-Wconversion`,
   `-Wframe-larger-than`, `-ffunction-sections`). On a Windows box without them you end up hand-rolling
   equivalent MSVC command lines, which does produce answers but is not a workflow.
@@ -59,7 +59,7 @@ somewhere else entirely.
 If you are copying a tree that predates that fix, or you are unsure:
 
 ```sh
-file ports/common/tools/build-mbedtls.sh ports/*/Makefile
+file libripcord/tools/build-mbedtls.sh ports/*/Makefile
 #    expect: ... ASCII text executable     (NOT "with CRLF line terminators")
 ```
 
@@ -127,7 +127,7 @@ and it is the second argument for the prebuilt archive after the two minutes.
 Identical to the 3DS doc's section 2 — the same SDK, the same `build-essential python3`, and the same
 choice of ECDH backend. Nothing in this port changes any of it, and the PS3 has no equivalent of
 devkitPro's `3ds-mbedtls` package, so the local build (`ECDH_BACKEND=local`, the default in
-`ports/common/tests/Makefile`) is the path of least resistance here. It is what ran below, and
+`libripcord/tests/Makefile`) is the path of least resistance here. It is what ran below, and
 `ecdh_test` reported no skips.
 
 None of it is needed for section 3 step 1.
@@ -151,8 +151,8 @@ make -C ports/ripcord-ps3/tests
 # 2. The shared core's known-answer suite, which is what actually verifies the crypto and transport.
 #    Emit the vectors first - the C runners read .kat files, they do not generate them.
 dotnet run --project tools/Ripcord.ProtocolLab -- vectors
-#    expect: wrote ports/common/tests/vectors/control-crypto.kat  (and three more beside it)
-make -C ports/common/tests
+#    expect: wrote libripcord/tests/vectors/control-crypto.kat  (and three more beside it)
+make -C libripcord/tests
 #    expect: 3,287 assertions across eleven runners, 0 failed, 0 skipped
 #    if ecdh_test reports a skip, the ECDH backend is missing; that is a configuration, not a failure
 
@@ -205,7 +205,7 @@ thousand. So a failure at step 4 is evidence about `rc_platform_ps3.c`, not abou
 
 ```sh
 make -C ports/ripcord-ps3/tests      # after any change under source/media/ or the CSPRNG seam — fast
-make -C ports/common/tests           # after any change to the shared core
+make -C libripcord/tests           # after any change to the shared core
 make -C ports/ripcord-ps3            # when you want a .self to try on hardware
 ```
 

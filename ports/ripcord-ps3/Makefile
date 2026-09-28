@@ -5,7 +5,7 @@
 #
 #     make            build the bring-up program
 #     make clean
-#     make test       run the HOST-side tests (no PS3 involved) - tests/Makefile, and ports/common/tests
+#     make test       run the HOST-side tests (no PS3 involved) - tests/Makefile, and libripcord/tests
 #
 # STATUS: this builds AND the result runs on a real PS3. Built against ps3dev nightly-2026-07-26
 # (GCC 7.2.0, PSL1GHT f649a08) on Ubuntu 26.04; the bring-up program ran on hardware on 2026-09-11 with
@@ -28,7 +28,7 @@ $(error PSL1GHT is not set. Install PSL1GHT and export PSL1GHT - see the URL abo
 endif
 
 # make takes the FIRST EXPLICIT TARGET as its default goal, and the rules below are no longer in an
-# order where that is $(APP).self - the generated-constants rule comes earlier. ports/common/tests
+# order where that is $(APP).self - the generated-constants rule comes earlier. libripcord/tests
 # pinned its own goal for exactly this reason and said so; the trap is that nothing fails, `make`
 # simply builds one file and stops, and it looks like the tree is up to date.
 .DEFAULT_GOAL := all
@@ -161,9 +161,9 @@ endif
 APPID     := RIPC00003
 CONTENTID := UP0001-$(APPID)_00-0000000000000000
 
-# The portable protocol core, shared with every other Ripcord port. See ports/common/platform/
+# The portable protocol core, shared with every other Ripcord port. See libripcord/platform/
 # rc_platform.h for the seam this build implements in source/platform/rc_platform_ps3.c.
-CORE  := ../common
+CORE  := ../../libripcord
 BUILD := build
 APP   := ripcord-ps3
 NOTICES := $(BUILD)/THIRD-PARTY-NOTICES.txt
@@ -220,7 +220,7 @@ RC_NETLOG_PORT ?= 9000
 # -Wframe-larger-than is inherited from both prior ports, where it was not a style preference but a crash
 # the hardware had already found. The deepest live path either port measured was the audio loss-
 # concealment chain at ~12.4 KB across five frames, every individual frame under the limit - cumulative
-# call depth rather than one oversized local. That chain is ports/common code and Opus, so it will exist
+# call depth rather than one oversized local. That chain is libripcord code and Opus, so it will exist
 # here too. See "the main thread's stack" in README.md for the part of this that is still an open
 # question on PS3.
 
@@ -361,7 +361,7 @@ OPENH264_INC := -I$(OPENH264_SRC)/codec/api/wels -I$(OPENH264_SRC)/codec/api
 CXXSOURCES := source/media/rc_decode_probe.cpp
 
 # ---------------------------------------------------------------------------------------------------
-# ports/common's OWN TEST SUITES, cross-compiled and run on the console. See source/coretest/ for why.
+# libripcord's OWN TEST SUITES, cross-compiled and run on the console. See source/coretest/ for why.
 #
 # Seven of the eleven runners - the ones needing no external .kat file - plus the core sources they
 # exercise. Each runner keeps its own main(), renamed at compile time so seven of them can share one
@@ -373,7 +373,7 @@ CORE_TEST_RUNNERS := discovery session takion fec stream_header stream_demux inp
                      stream_crypto ecdh control_proto
 CORE_TEST_EXTRA_OBJS := $(BUILD)/ct_vector_runner.o
 
-# Taken from ports/common/tests' own variables rather than assembled by hand - an earlier revision
+# Taken from libripcord/tests' own variables rather than assembled by hand - an earlier revision
 # guessed from a grep, missed halyard_sess_request.c and stream_demux.c, and got a page of undefined
 # references for its trouble.
 # NOTE what is NOT here: halyard_discovery.c and rc_text.c. The application links those itself now that
@@ -402,7 +402,7 @@ CORE_TEST_SUPPORT := \
 # constant-time bigint is the last thing this project should write twice. The same script the Vita port
 # and the host suite use cross-builds it here, unmodified, with CROSS set:
 #
-#     PREFIX=third-party/mbedtls CROSS=powerpc64-ps3-elf- sh ../common/tools/build-mbedtls.sh
+#     PREFIX=third-party/mbedtls CROSS=powerpc64-ps3-elf- sh ../../libripcord/tools/build-mbedtls.sh
 MBEDTLS_PREFIX := third-party/mbedtls
 MBEDTLS_LIB    := $(MBEDTLS_PREFIX)/lib/libmbedcrypto.a
 ECDH_CFLAGS    := -DRC_CRYPTO_MBEDTLS -isystem $(MBEDTLS_PREFIX)/include \
@@ -423,10 +423,10 @@ CORE_TEST_OBJS := $(BUILD)/ct_halyard_v1_constants.g.o \
                   $(BUILD)/rc_core_tests.o
 
 # The runners are -Wno-conversion because they are the CORE's tests built for a target they were not
-# written for, and this port's flag set is stricter than the one ports/common/tests uses. Relaxing it
+# written for, and this port's flag set is stricter than the one libripcord/tests uses. Relaxing it
 # for the test sources only is honest: what is under examination is whether the CORE is byte-order
 # clean on this hardware, not whether its test harness satisfies a warning set from another Makefile.
-# The per-directory includes mirror ports/common/tests' own INCLUDES: the core's sources include each
+# The per-directory includes mirror libripcord/tests' own INCLUDES: the core's sources include each
 # other by bare filename rather than by path, so the directories have to be on the search path.
 CORE_TEST_CFLAGS := $(ARCH) -std=gnu99 -O2 -g -Wall -I$(CORE) -I$(CORE_TEST_DIR) \
                     -I$(CORE)/crypto -I$(CORE)/halyard -I$(CORE)/platform \
@@ -533,7 +533,7 @@ $(BUILD)/rc_build_id.h: $(SOURCES) $(SPU_SOURCES) $(SPU2_SOURCES) $(CXXSOURCES)
 # DEFINED ABOVE THE RULE THAT USES THEM, and that is not a stylistic preference. Make expands a
 # prerequisite list when it reads the file, so a variable defined further down yields an EMPTY
 # prerequisite - the rule then runs with $< unset and gcc reports "no input files", naming neither the
-# variable nor the rule. ports/common/tests/Makefile documents the same trap for its own MBEDTLS_PREFIX.
+# variable nor the rule. libripcord/tests/Makefile documents the same trap for its own MBEDTLS_PREFIX.
 #
 # It bit here because an earlier edit deleted these two lines while rewriting the block below them, and
 # nothing failed: build/halyard_v1_constants.g.c already existed, so every incremental build stayed
@@ -627,7 +627,7 @@ COBJS := $(addprefix $(BUILD)/,$(notdir $(SOURCES:.c=.o)))
 # syscall wrappers convert int to u64 all over - exactly what source/app/main.c has to pragma away for
 # its own includes.
 #
-# The pragma trick is not available here: these are ports/common files, shared by every port, and a
+# The pragma trick is not available here: these are libripcord files, shared by every port, and a
 # PSL1GHT-specific pragma has no business in a platform-neutral layer. So the relaxation lives in the
 # Makefile of the port whose SDK causes it, scoped to the two files that need it, and nothing about the
 # core's own code is excused - only the SDK headers it is compiled against.

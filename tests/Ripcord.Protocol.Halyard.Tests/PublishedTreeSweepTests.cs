@@ -70,6 +70,7 @@ public class PublishedTreeSweepTests
         ["0000000700410080"] = "the duid's 8-byte constant prefix - identical for every client",
         ["1a2b3c4d5e6f0011"] = "this project's synthetic registration key",
         ["00112233445566778899aabbccddeeff"] = "synthetic filler used in the 3DS probe examples",
+        ["32767"] = "Int16.MaxValue, the wire's full stick deflection; written as a range with an ellipsis in PadSnapshot.swift",
         ["00:11:22:33:44:55"] = "synthetic MAC fixture",
         ["77c3673f"] = "a code pointer into the vendor binary, cited by RVA as the naming rules require",
         ["00b18cd0"] = "a Takion TSN sequence number - protocol structure",
@@ -262,6 +263,34 @@ public class PublishedTreeSweepTests
 
     private static readonly Regex PureHex = new("^[0-9a-fA-F]+$", RegexOptions.Compiled);
 
+    /// <summary>
+    /// An Xcode object identifier, as it appears throughout a <c>.pbxproj</c> and as a scheme's
+    /// <c>BlueprintIdentifier</c>: exactly 24 uppercase hex digits, which is twelve bytes and so inside
+    /// <see cref="LongHex"/>'s reach. Xcode assigns one to every file, target and build phase, and assigns
+    /// new ones whenever the IDE edits the project, so a value allowlist would break on the first edit.
+    /// Like <see cref="XamlIdentifierAttribute"/>, this is a property of the syntax rather than an exemption
+    /// for a place: it applies only in those two file types, only to that exact shape, and only to the
+    /// long-hex rule. A 16-byte value, a lowercase run, or the same token anywhere else is still reported.
+    /// </summary>
+    private static readonly Regex XcodeObjectIdentifier = new("^[0-9A-F]{24}$", RegexOptions.Compiled);
+
+    private static bool IsXcodeProjectFile(string relative) =>
+        relative.EndsWith(".pbxproj", StringComparison.OrdinalIgnoreCase)
+        || relative.EndsWith(".xcscheme", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// A package checksum in a Cargo lock file: the SHA-256 of a published crates.io archive, one per
+    /// dependency, which cargo writes and rewrites whenever a dependency changes. It identifies a public
+    /// package and nobody else, so a value allowlist would be dozens of entries that break on the next
+    /// update. The same shape as <see cref="XcodeObjectIdentifier"/>: a property of the syntax, applied only
+    /// in a file named <c>Cargo.lock</c>, only to a whole line of exactly this form (lowercase, as cargo
+    /// writes it), and only to the long-hex rule. Hex anywhere else in the lock file is still reported.
+    /// </summary>
+    private static readonly Regex CargoLockChecksum = new(@"^checksum = ""[0-9a-f]{64}""$", RegexOptions.Compiled);
+
+    private static bool IsCargoLockFile(string relative) =>
+        Path.GetFileName(relative).Equals("Cargo.lock", StringComparison.Ordinal);
+
     /// <summary>Matches when the text immediately before a literal is a XAML identifier attribute.</summary>
     private static readonly Regex XamlIdentifierAttribute =
         new(@"x:(Uid|Name|Key)=$", RegexOptions.Compiled);
@@ -280,6 +309,38 @@ public class PublishedTreeSweepTests
 
     private static readonly Regex Ipv4 =
         new(@"(?<![0-9.])((?:\d{1,3}\.){3}\d{1,3})(?![0-9.])", RegexOptions.Compiled);
+
+    /// <summary>
+    /// The <c>%3d.%3d.%3d.%3d</c> form the console's Host header uses, octets right-aligned in three
+    /// columns. <see cref="Ipv4"/> cannot see it, because the spaces break the quad, and a captured request
+    /// quoted in prose carries exactly this form.
+    /// </summary>
+    private static readonly Regex PaddedIpv4 =
+        new(@"(?<![0-9.])\d{1,3}\. {0,2}\d{1,3}\. {0,2}\d{1,3}\. {0,2}\d{1,3}(?![0-9.])", RegexOptions.Compiled);
+
+    /// <summary>
+    /// An address written as its four bytes, in brackets or braces and nothing else between them:
+    /// <c>[172, 31, 0, 1]</c>, <c>{ 10, 0, 0, 1 }</c>, <c>{ 0xac, 0x1f, 0x00, 0x01 }</c>. Only a private
+    /// address is reported in this form. Four small numbers in brackets are ordinary data far more often
+    /// than a public address, and a private one is what a test fixture copies from a real LAN.
+    /// </summary>
+    private static readonly Regex ByteArrayIpv4 = new(
+        @"[\[{]\s*((?:0x[0-9a-fA-F]{1,2}|\d{1,3}))\s*,\s*((?:0x[0-9a-fA-F]{1,2}|\d{1,3}))\s*,"
+        + @"\s*((?:0x[0-9a-fA-F]{1,2}|\d{1,3}))\s*,\s*((?:0x[0-9a-fA-F]{1,2}|\d{1,3}))\s*[\]}]",
+        RegexOptions.Compiled);
+
+    private static bool IsPrivateAddress(string ip)
+    {
+        string[] parts = ip.Split('.');
+        if (parts.Length != 4 || !parts.All(p => byte.TryParse(p, out _))) return false;
+        byte[] o = parts.Select(byte.Parse).ToArray();
+        return o[0] == 10 || (o[0] == 172 && o[1] >= 16 && o[1] <= 31) || (o[0] == 192 && o[1] == 168);
+    }
+
+    private static string ByteArrayAddress(Match m) => string.Join('.', m.Groups.Cast<Group>().Skip(1).Select(g =>
+        g.Value.StartsWith("0x", StringComparison.OrdinalIgnoreCase)
+            ? Convert.ToInt32(g.Value[2..], 16).ToString(System.Globalization.CultureInfo.InvariantCulture)
+            : g.Value));
 
     /// <summary>
     /// Compressed form included. Every address that would actually identify a network — a residential global
@@ -331,9 +392,11 @@ public class PublishedTreeSweepTests
         [".md", ".cs", ".c", ".h", ".cpp", ".hpp", ".idl", ".def", ".json", ".yml", ".yaml", ".xaml",
          ".py", ".props", ".targets", ".csproj", ".vcxproj", ".slnx", ".proto", ".sh", ".ps1",
          ".editorconfig", ".gitattributes", ".appxmanifest", ".manifest", ".svg", ".resx", ".resw",
-         ".html"];
+         ".html", ".swift", ".xcconfig", ".modulemap", ".pbxproj", ".xcscheme", ".rs", ".toml",
+         ".entitlements", ".plist", ".xcstrings"];
 
-    private static readonly string[] NamedFiles = ["NOTICE", "LICENSE", ".gitignore", "Makefile"];
+    private static readonly string[] NamedFiles =
+        ["NOTICE", "LICENSE", ".gitignore", "Makefile", "Cargo.lock", "pre-commit", "commit-msg", "pre-push"];
 
     /// <summary>
     /// Extensions that are genuinely not text, so their absence from the corpus is not a gap.
@@ -465,6 +528,17 @@ public class PublishedTreeSweepTests
         /// is a row rather than something a reader has to infer from the absence of a finding.
         /// </summary>
         XamlIdentifier,
+
+        /// <summary>
+        /// A line of an Xcode project file, where every object is named by a 24-digit hex identifier. See
+        /// <see cref="XcodeObjectIdentifier"/>.
+        /// </summary>
+        XcodeProject,
+
+        /// <summary>
+        /// A package checksum line of a <c>Cargo.lock</c>. See <see cref="CargoLockChecksum"/>.
+        /// </summary>
+        CargoLock,
     }
 
     /// <summary>
@@ -644,10 +718,38 @@ public class PublishedTreeSweepTests
         { "SettingsPage_CredentialsAreProtectedWithDpapi", LineContext.ProductCode, true,
           "the same text as a bare literal is not an identifier attribute and is reported" },
 
+        // --- Xcode object identifiers: twelve bytes of hex on every line of a project file ----------------
+        { "0A1B2C3D4E5F60718293A4B5", LineContext.XcodeProject, false,
+          "Xcode names every object with 24 uppercase hex digits; they are assigned, not derived from anything" },
+        { "0a1b2c3d4e5f60718293a4b5", LineContext.XcodeProject, true,
+          "lowercase is not the form Xcode writes, so it is not assumed to be an identifier" },
+        { "0A1B2C3D4E5F60718293A4B5C6D7E8F9", LineContext.XcodeProject, true,
+          "sixteen bytes in a project file is a value, not an identifier, and is reported" },
+        { "0A1B2C3D4E5F60718293A4B5", LineContext.Prose, true,
+          "the same token outside a project file has no such excuse and is reported" },
+
+        // --- Cargo lock checksums: the SHA-256 of a public crate archive, one per dependency -------------
+        { "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff", LineContext.CargoLock, false,
+          "a lock file's checksum line names a published package, and cargo rewrites it on every update" },
+        { "00112233445566778899AABBCCDDEEFF00112233445566778899AABBCCDDEEFF", LineContext.CargoLock, true,
+          "uppercase is not the form cargo writes, so it is not assumed to be a checksum" },
+        { "00112233445566778899aabbccddeeff", LineContext.CargoLock, true,
+          "sixteen bytes on a checksum line is not a SHA-256 and is reported" },
+        { "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff", LineContext.Prose, true,
+          "the same digest outside a lock file's checksum line has no such excuse and is reported" },
+
         // --- must tolerate: things that are not disclosures --------------------------------------------
         { "and so on, continued…", LineContext.Prose, false, "an ordinary prose ellipsis" },
         { "192.0.2.1", LineContext.Prose, false, "RFC 5737 documentation address" },
-        { "10.0.0.7", LineContext.Prose, false, "RFC 1918, published as captured by stated policy" },
+        { "10.0.0.7", LineContext.Prose, false, "a private address in the synthetic 10.0.0.0/24 LAN" },
+        { "172.20.0.5", LineContext.Prose, true, "a private address outside the synthetic LANs" },
+        { "172.20.0.5", LineContext.Code, true, "and in code" },
+        { "Host: 172.217. 16. 14:9295", LineContext.Prose, true, "a public address in the padded %3d Host form" },
+        { "Host: 192.  0.  2.104:9295", LineContext.Prose, false, "the padded form of a documentation address" },
+        { "byte[] peer = [172, 20, 0, 5];", LineContext.Code, true, "a private address outside the LANs, as bytes" },
+        { "uint8_t a[4] = { 0xac, 0x14, 0x00, 0x05 };", LineContext.Code, true, "the same, as hex bytes" },
+        { "{ { 192, 168, 1, 20 }, { 255, 255, 255, 0 } }", LineContext.Code, false, "a synthetic LAN address and its mask" },
+        { "video_packet(10, 0, 2, 0, 0, &slice)", LineContext.Code, false, "small numbers in an argument list, not an address" },
         { "224.0.0.251", LineContext.Prose, false, "the mDNS multicast group" },
         { "Version=\"1.0.0.0\"", LineContext.Prose, false, "a version quad, not an address - decided rather than discovered" },
         { "ITU-T H.264 sec 7.4.1.1", LineContext.Prose, false,
@@ -809,11 +911,18 @@ public class PublishedTreeSweepTests
     /// product code until a <c>tests</c> segment says otherwise, so the next port to invent a directory
     /// layout is over-covered rather than under-covered. For a guard, that is the direction to be wrong in.
     /// <see cref="ProductCodeClassification"/> pins both halves.</para>
+    ///
+    /// <para><b>The negative marker only fails closed inside a prefix this rule names.</b> On 2026-09-24
+    /// the core moved again, from <c>ports/common/</c> to <c>libripcord/</c>, when the macOS client made it
+    /// more than the ports' core, and a top-level directory is outside every prefix above. Left alone,
+    /// the move would have demoted the same ninety files a second time. So <c>libripcord/</c> is named
+    /// here explicitly, and a new top-level code directory has to be added here with it.</para>
     /// </summary>
     private static bool IsProductCode(string relative) =>
         relative.StartsWith("src/", StringComparison.Ordinal)
         || relative.StartsWith("tools/", StringComparison.Ordinal)
-        || (relative.StartsWith("ports/", StringComparison.Ordinal)
+        || ((relative.StartsWith("ports/", StringComparison.Ordinal)
+                || relative.StartsWith("libripcord/", StringComparison.Ordinal))
             && !relative.Split('/').Contains("tests", StringComparer.Ordinal));
 
     /// <summary>
@@ -926,6 +1035,14 @@ public class PublishedTreeSweepTests
         return whole.Contains(hex, StringComparer.OrdinalIgnoreCase);
     }
 
+    /// <summary>
+    /// Whether an IPv4 address may be committed without an allowlist entry: the RFC 5737 documentation
+    /// ranges, loopback, the unspecified and broadcast addresses, multicast, two public examples the code
+    /// names, and the three synthetic LANs this project draws private addresses from - <c>10.0.0.0/24</c>,
+    /// <c>172.31.0.0/24</c> and <c>192.168.1.0/24</c>. The rest of RFC 1918 is held to the same rule as a
+    /// public address. An address seen on a real network is a fact about that network whether it routes
+    /// or not, and a test that needs a private address can take one from a synthetic LAN or state why not.
+    /// </summary>
     private static bool IsDocumentationAddress(string ip)
     {
         // A quad that does not parse is not an address, so it is tolerated rather than reported. Stated
@@ -937,9 +1054,10 @@ public class PublishedTreeSweepTests
 
         return o[0] switch
         {
-            10 or 127 or 0 or 255 => true,
-            172 when o[1] >= 16 && o[1] <= 31 => true,
-            192 when o[1] == 168 => true,
+            127 or 0 or 255 => true,
+            10 when o[1] == 0 && o[2] == 0 => true,
+            172 when o[1] == 31 && o[2] == 0 => true,
+            192 when o[1] == 168 && o[2] == 1 => true,
             192 when o[1] == 0 && o[2] == 2 => true,
             198 when o[1] == 51 && o[2] == 100 => true,
             203 when o[1] == 0 && o[2] == 113 => true,
@@ -999,7 +1117,7 @@ public class PublishedTreeSweepTests
     /// </summary>
     private static List<string> ScanLine(
         string line, bool isProse, bool applyAllowlist, string at, bool isProductCode = false,
-        bool isMessage = false)
+        bool isMessage = false, bool isXcodeProject = false, bool isCargoLock = false)
     {
         bool Allow(string v) => applyAllowlist && IsAllowed(v, isMessage);
 
@@ -1034,6 +1152,8 @@ public class PublishedTreeSweepTests
             {
                 string hex = m.Groups[1].Value;
                 if (IsSyntheticFiller(hex)) continue;
+                if (isXcodeProject && XcodeObjectIdentifier.IsMatch(hex)) continue;
+                if (isCargoLock && CargoLockChecksum.IsMatch(line)) continue;
                 if (Allow(hex)) continue;
                 found.Add($"{at}|hex|{hex}");
             }
@@ -1092,6 +1212,24 @@ public class PublishedTreeSweepTests
             found.Add($"{at}|ipv4|{m.Value}");
         }
 
+        foreach (Match m in PaddedIpv4.Matches(line))
+        {
+            if (!m.Value.Contains(' ')) continue;   // the plain form is Ipv4's
+            string ip = m.Value.Replace(" ", "", StringComparison.Ordinal);
+            if (IsDocumentationAddress(ip)) continue;
+            if (NotAnAddressContext.IsMatch(line)) continue;
+            if (Allow(ip)) continue;
+            found.Add($"{at}|ipv4-padded|{ip}");
+        }
+
+        foreach (Match m in ByteArrayIpv4.Matches(line))
+        {
+            string ip = ByteArrayAddress(m);
+            if (!IsPrivateAddress(ip) || IsDocumentationAddress(ip)) continue;
+            if (Allow(ip)) continue;
+            found.Add($"{at}|ipv4-bytes|{ip}");
+        }
+
         foreach (Match m in Ipv6.Matches(line))
         {
             if (SeparatedMac.IsMatch(m.Value)) continue;   // a MAC, not an address
@@ -1134,7 +1272,8 @@ public class PublishedTreeSweepTests
                 if (exempt[i]) continue;
 
                 found.AddRange(
-                    ScanLine(lines[i], isProse, applyAllowlist, Where(root, path, i + 1), isProductCode));
+                    ScanLine(lines[i], isProse, applyAllowlist, Where(root, path, i + 1), isProductCode,
+                             isXcodeProject: IsXcodeProjectFile(relative), isCargoLock: IsCargoLockFile(relative)));
             }
         }
 
@@ -1392,7 +1531,8 @@ public class PublishedTreeSweepTests
             {
                 found.AddRange(ScanLine(
                     lines[i].TrimEnd((char)0x0d), isProse, applyAllowlist,
-                    $"{sha[..8]} {rel}:{i + 1}", isProductCode));
+                    $"{sha[..8]} {rel}:{i + 1}", isProductCode, isXcodeProject: IsXcodeProjectFile(rel),
+                    isCargoLock: IsCargoLockFile(rel)));
             }
         }
 
@@ -1643,6 +1783,9 @@ public class PublishedTreeSweepTests
             LineContext.DeclaredConstant or LineContext.ProductCode =>
                 $"    private const string Fixture = \"{input}\";",
             LineContext.XamlIdentifier => $"                    x:Uid=\"{input}\" />",
+            LineContext.XcodeProject =>
+                $"\t\t{input} /* RipcordKit.framework in Frameworks */ = {{isa = PBXBuildFile; fileRef = {input}; }};",
+            LineContext.CargoLock => $"checksum = \"{input}\"",
             LineContext.Comment => $"        StartSession();   // as captured: {input}",
             LineContext.Code => $"        var fixture = Decode(\"{input}\");",
             _ => throw new ArgumentOutOfRangeException(nameof(context)),
@@ -1650,10 +1793,13 @@ public class PublishedTreeSweepTests
 
         List<string> hits = ScanLine(
             line,
-            isProse: context == LineContext.Prose,
+            // A lock file is on NamedFiles, so the file sweep reads it as prose; the contract has to as well.
+            isProse: context is LineContext.Prose or LineContext.CargoLock,
             applyAllowlist: false,
             at: "contract",
-            isProductCode: context == LineContext.ProductCode);
+            isProductCode: context == LineContext.ProductCode,
+            isXcodeProject: context == LineContext.XcodeProject,
+            isCargoLock: context == LineContext.CargoLock);
 
         Assert.True(
             hits.Count > 0 == shouldMatch,
@@ -1716,9 +1862,9 @@ public class PublishedTreeSweepTests
     [InlineData("ports/ripcord-3ds/source/util/rc_random.c", true)]
     [InlineData("ports/ripcord-ps3/source/media/rc_h264_bits.c", true)]
     [InlineData("ports/ripcord-ps3/tests/h264_test.c", false)]
-    [InlineData("ports/common/crypto/rc_aes.c", true)]
-    [InlineData("ports/common/util/rc_base64.c", true)]
-    [InlineData("ports/common/tests/fec_test.c", false)]
+    [InlineData("libripcord/crypto/rc_aes.c", true)]
+    [InlineData("libripcord/util/rc_base64.c", true)]
+    [InlineData("libripcord/tests/fec_test.c", false)]
     [InlineData("ports/a-port-that-does-not-exist-yet/media/decoder.c", true)]
     [InlineData("ports/a-port-that-does-not-exist-yet/tests/decoder_test.c", false)]
     public void ProductCodeClassification(string relative, bool expected)

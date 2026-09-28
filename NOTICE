@@ -39,8 +39,13 @@ two material-transform tables likewise, and a byte offset) that the console itse
 computes against. A client cannot speak this protocol without them, and they
 cannot be altered without breaking interoperability, so they are interface facts
 rather than authored expression.
-They are included as data, read at runtime through the same configuration seam
-that accepts a local override, and are not compiled into program logic.
+They are data, kept in one committed file, and every client reads that file
+rather than keeping a copy. The dotnet client includes it as a resource, read at
+run time through the same configuration seam that accepts a local override. The
+Rust engine, which the Apple clients use, and the portable C core, which the
+console ports use, generate lookup tables from the same file at build time and
+compile those in; the generated source is never committed. Either way the values
+are the same tables the derivations look up, not program logic.
 
 One further constant of the same kind is compiled in rather than bundled: the
 32-byte Client-Type value the console parses by content, which a message builder
@@ -54,8 +59,11 @@ record, no session key, no device or account identifier. Those are generated or
 captured per user and stay on the user's own machine.
 
 A build that omits the constants entirely can be produced with
--p:BundleInteropConstants=false; the result is inert and reports the constants as
-unavailable rather than failing at run time.
+-p:BundleInteropConstants=false for the dotnet client, or by building the Rust
+engine without its interop-constants feature (RIPCORD_BUNDLE_INTEROP_CONSTANTS =
+NO for the Apple clients). The result is inert and reports the constants as
+unavailable rather than failing at run time. The C core's console ports have no
+such switch.
 
 Application OAuth credential
 ----------------------------
@@ -86,14 +94,16 @@ The credential is generic. It is identical for every user and every console, and
 authenticates an application rather than a person. Ripcord includes NO user
 credential of any kind: the signed-in account's access and refresh tokens are
 obtained per user at sign-in and stored encrypted on that user's own machine
-(DPAPI on Windows), never in this repository or any build produced from it.
+(DPAPI on Windows, the Keychain on Apple platforms), never in this repository or
+any build produced from it.
 
-A build that omits the credential can be produced with -p:BundleOAuthClient=false;
-the result reports account sign-in as unavailable and local-network play is
-unaffected. At run time the bundled value is the last resort, and is overridden by
-the RIPCORD_CLIENT_ID / RIPCORD_CLIENT_SECRET environment variables or by a
-client.json in the user's configuration directory, so an operator with their own
-registered client can substitute it without rebuilding.
+A build that omits the credential can be produced with -p:BundleOAuthClient=false,
+or RIPCORD_BUNDLE_OAUTH_CLIENT = NO for the Apple clients; the result reports
+account sign-in as unavailable and local-network play is unaffected. At run time
+the bundled value is the last resort, and is overridden by the RIPCORD_CLIENT_ID /
+RIPCORD_CLIENT_SECRET environment variables or by a client.json in the user's
+configuration directory, so an operator with their own registered client can
+substitute it without rebuilding.
 
 Sony Interactive Entertainment may rotate this credential at any time, which would
 disable Ripcord's account features until it is updated. No warranty of continued
@@ -122,7 +132,7 @@ Console ports, fetched and built from source
 
   openh264 2.6.0    BSD-2-Clause   ports/ripcord-ps3/tools/build-openh264.sh
   Opus 1.5.2        BSD-3-Clause   ports/ripcord-ps3/tools/build-opus.sh
-  Mbed TLS 2.28.8   Apache-2.0     ports/common/tools/build-mbedtls.sh
+  Mbed TLS 2.28.8   Apache-2.0     libripcord/tools/build-mbedtls.sh
                     (elected - see below)
 
   Each script pins a version and a digest and refuses a mismatch. ripcord-ps3

@@ -34,6 +34,8 @@ public class SessionControllerTests
 
         public SessionState State { get; set; } = SessionState.Connecting;
 
+        public string? EndReason { get; set; }
+
         /// <summary>
         /// Null by default = "the console has said nothing", so existing stall tests keep exercising the stall
         /// path. Tests for the idle-but-healthy case set this to a small value.
@@ -52,6 +54,7 @@ public class SessionControllerTests
         public Task<SessionHandshakeResult> ConnectAsync(SessionConfig config, CancellationToken cancellationToken)
         {
             ConnectCalls++;
+            RestConsoleOnDisconnect = config.RestConsoleOnDisconnect;   // as the real session seeds it
             if (!Succeeds)
             {
                 return Task.FromResult(new SessionHandshakeResult(false, FailureReason));
@@ -63,12 +66,19 @@ public class SessionControllerTests
 
         public void EmitFrame() => _video.OnNext(new EncodedVideoFrame(new byte[] { 1, 2, 3 }, 0, false));
 
+        public void EmitKeyFrame() => _video.OnNext(new EncodedVideoFrame(new byte[] { 1, 2, 3 }, 0, true));
+
         public int KeyFrameRequests { get; private set; }
 
         public void RequestKeyFrame() => KeyFrameRequests++;
 
+        /// <summary>What <see cref="RestConsoleOnDisconnect"/> was when the session was disposed: what a real
+        /// session would have acted on.</summary>
+        public bool? RestedAtDispose { get; private set; }
+
         public ValueTask DisposeAsync()
         {
+            RestedAtDispose ??= RestConsoleOnDisconnect;
             Disposed = true;
             State = SessionState.Closed;
             return ValueTask.CompletedTask;
@@ -521,6 +531,88 @@ public class SessionControllerTests
         Assert.Equal(1, session.ConnectCalls);
     }
 
+    /// <summary>
+    /// Rest applies to the disconnect a person asks for, never to replacing a session. It used to apply to
+    /// every teardown, so a stalled session replaced by a reconnect put the console to sleep under the new one.
+    /// </summary>
+    [Fact]
+    public async Task RestConsoleOnDisconnect_OnlyRestsOnAStopNotOnAReplacement()
+    {
+        var time = new VirtualTime();
+        var sessions = new List<FakeSession>();
+        var options = new SessionControllerOptions
+        {
+            StallTimeout = TimeSpan.FromSeconds(2),
+            ReconnectAfterStall = TimeSpan.FromSeconds(6),
+            WatchdogInterval = TimeSpan.FromMilliseconds(1),
+            MaxReconnectAttempts = 3,
+        };
+
+        await using var controller = new SessionController(
+            _ =>
+            {
+                var s = new FakeSession();
+                sessions.Add(s);
+                return Task.FromResult<IStreamingSession>(s);
+            },
+            new FakePipeline(),
+            options: options,
+            clock: time.Now,
+            delay: time.Delay);
+
+        await controller.StartAsync(Config with { RestConsoleOnDisconnect = true });
+        await WaitFor(() => sessions.Count >= 1 && controller.Lifecycle == SessionLifecycle.Streaming, "should connect");
+
+        time.Advance(TimeSpan.FromSeconds(7));   // stalls past the reconnect threshold
+        await WaitFor(() => sessions.Count >= 2 && sessions[0].Disposed, "the stalled session is replaced");
+        Assert.False(sessions[0].RestedAtDispose, "a replaced session must not rest the console");
+
+        await WaitFor(() => controller.Lifecycle == SessionLifecycle.Streaming, "the replacement connects");
+        await controller.StopAsync();
+        Assert.True(sessions[^1].RestedAtDispose, "the person's stop rests the console, as the setting says");
+    }
+
+    /// <summary>
+    /// A choice made after connecting reaches the session a stop disposes, even when that session is a
+    /// replacement seeded from the connect-time config.
+    /// </summary>
+    [Fact]
+    public async Task RestConsoleOnDisconnect_AChoiceMadeLater_SurvivesAReconnect()
+    {
+        var time = new VirtualTime();
+        var sessions = new List<FakeSession>();
+        var options = new SessionControllerOptions
+        {
+            StallTimeout = TimeSpan.FromSeconds(2),
+            ReconnectAfterStall = TimeSpan.FromSeconds(6),
+            WatchdogInterval = TimeSpan.FromMilliseconds(1),
+            MaxReconnectAttempts = 3,
+        };
+
+        await using var controller = new SessionController(
+            _ =>
+            {
+                var s = new FakeSession();
+                sessions.Add(s);
+                return Task.FromResult<IStreamingSession>(s);
+            },
+            new FakePipeline(),
+            options: options,
+            clock: time.Now,
+            delay: time.Delay);
+
+        await controller.StartAsync(Config);   // off at connect
+        await WaitFor(() => sessions.Count >= 1 && controller.Lifecycle == SessionLifecycle.Streaming, "should connect");
+        controller.RestConsoleOnDisconnect = true;
+
+        time.Advance(TimeSpan.FromSeconds(7));
+        await WaitFor(() => sessions.Count >= 2 && controller.Lifecycle == SessionLifecycle.Streaming, "the replacement connects");
+        Assert.False(sessions[0].RestedAtDispose);
+
+        await controller.StopAsync();
+        Assert.True(sessions[^1].RestedAtDispose);
+    }
+
     [Fact]
     public async Task StallPastTheReconnectThreshold_ReplacesTheSession()
     {
@@ -602,6 +694,114 @@ public class SessionControllerTests
 
         Assert.True(sessions.Count >= 5, $"expected repeated reconnects, got {sessions.Count}");
         Assert.NotEqual(SessionLifecycle.Failed, controller.Lifecycle);
+    }
+
+    /// <summary>
+    /// A session that closes itself says why, and the reconnect repeats it. Before 2026-09-26 a console that
+    /// hung up left no account of it: the .NET session ran on until the watchdog saw silence, and the reconnect
+    /// that followed said nothing about what it was reconnecting from.
+    /// </summary>
+    [Fact]
+    public async Task ASessionThatEndsItself_HasItsReasonInTheReconnect()
+    {
+        var time = new VirtualTime();
+        var sessions = new List<FakeSession>();
+        var options = new SessionControllerOptions
+        {
+            WatchdogInterval = TimeSpan.FromMilliseconds(1),
+            MaxReconnectAttempts = 3,
+            MinimumHealthySession = TimeSpan.FromSeconds(5),
+        };
+
+        await using var controller = new SessionController(
+            async ct =>
+            {
+                if (sessions.Count == 0)
+                {
+                    var s = new FakeSession { MillisecondsSinceConsoleActivity = 0 };
+                    sessions.Add(s);
+                    return s;
+                }
+
+                // Hold the second attempt open, so its status line can be read.
+                await Task.Delay(Timeout.Infinite, ct);
+                throw new OperationCanceledException();
+            },
+            new FakePipeline(),
+            options: options,
+            clock: time.Now,
+            delay: time.Delay);
+
+        await controller.StartAsync(Config);
+        await WaitFor(() => controller.Lifecycle == SessionLifecycle.Streaming, "the first session to stream");
+
+        time.Advance(TimeSpan.FromSeconds(10));   // a session that lasted
+        sessions[0].EndReason = "The console ended the session: launch spec rejected";
+        sessions[0].State = SessionState.Closed;
+
+        await WaitFor(() => controller.CurrentStatus.Detail.Contains("launch spec rejected", StringComparison.Ordinal),
+            "the reconnect to name why the session ended");
+        Assert.Equal(SessionLifecycle.Reconnecting, controller.Lifecycle);
+    }
+
+    private static SessionControllerOptions LatchOptions => new()
+    {
+        WatchdogInterval = TimeSpan.FromMilliseconds(1),
+        StallTimeout = TimeSpan.FromSeconds(30),
+        ReconnectAfterStall = TimeSpan.FromSeconds(60),
+        FirstKeyFrameGrace = TimeSpan.FromSeconds(1),
+        FirstKeyFrameRetryInterval = TimeSpan.FromSeconds(1),
+    };
+
+    /// <summary>
+    /// A lost first keyframe used to leave the picture black for good: every later frame is predicted, nothing
+    /// decodes, the decoder's backlog trigger never fires, and the console is still talking, so the stall
+    /// watchdog does not either. The latch asks after the grace, and again each interval, until one arrives.
+    /// </summary>
+    [Fact]
+    public async Task NoKeyFrame_AfterTheGrace_AsksForOne_AndKeepsAsking()
+    {
+        var time = new VirtualTime();
+        var session = new FakeSession { MillisecondsSinceConsoleActivity = 0 };
+        await using var controller = new SessionController(
+            _ => Task.FromResult<IStreamingSession>(session), new FakePipeline(), options: LatchOptions,
+            clock: time.Now, delay: time.Delay);
+        await controller.StartAsync(Config);
+        await WaitFor(() => controller.Lifecycle == SessionLifecycle.Streaming, "should connect");
+
+        session.EmitFrame();                               // frames arrive, none of them a keyframe
+        await Task.Delay(30);
+        Assert.Equal(0, session.KeyFrameRequests);          // inside the grace: the console's own keyframe may come
+
+        time.Advance(TimeSpan.FromMilliseconds(1_100));
+        await WaitFor(() => session.KeyFrameRequests == 1, "the first ask after the grace");
+        await Task.Delay(30);
+        Assert.Equal(1, session.KeyFrameRequests);          // not every tick: once per interval
+
+        time.Advance(TimeSpan.FromMilliseconds(1_100));
+        await WaitFor(() => session.KeyFrameRequests == 2, "the ask repeats while none has come");
+
+        session.EmitKeyFrame();
+        time.Advance(TimeSpan.FromSeconds(5));
+        await Task.Delay(30);
+        Assert.Equal(2, session.KeyFrameRequests);          // the latch clears on the first keyframe
+    }
+
+    [Fact]
+    public async Task AKeyFrameInsideTheGrace_MeansNoAskAtAll()
+    {
+        var time = new VirtualTime();
+        var session = new FakeSession { MillisecondsSinceConsoleActivity = 0 };
+        await using var controller = new SessionController(
+            _ => Task.FromResult<IStreamingSession>(session), new FakePipeline(), options: LatchOptions,
+            clock: time.Now, delay: time.Delay);
+        await controller.StartAsync(Config);
+        await WaitFor(() => controller.Lifecycle == SessionLifecycle.Streaming, "should connect");
+
+        session.EmitKeyFrame();
+        time.Advance(TimeSpan.FromSeconds(10));
+        await Task.Delay(30);
+        Assert.Equal(0, session.KeyFrameRequests);
     }
 
     [Fact]

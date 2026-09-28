@@ -53,16 +53,30 @@ public sealed record HalyardPairingRecord(
     /// <para>Derived from the registration key, wire-confirmed against <c>cap49</c>: the RegistKey is 8 ASCII
     /// hex characters (e.g. <c>"1a2b3c4d"</c>), and the credential is that string read as a base-16 integer and
     /// rendered in decimal (<c>439041101</c>). We already hold the raw ASCII bytes in
-    /// <see cref="RegistrationKey"/>, so no extra pairing state is needed to wake a console. Parsed as unsigned
-    /// because the full 32-bit range is valid and <c>0x80000000</c>+ would overflow a signed int.</para>
+    /// <see cref="RegistrationKey"/>, so no extra pairing state is needed to wake a console.</para>
+    ///
+    /// <para><b>Rendered as a signed 32-bit decimal.</b> <c>docs/protocol/ps5-local-discovery.md</c> pins it
+    /// from the PS4 captures (cap53–cap57), whose credential is negative; every PS5 sample is below 2^31,
+    /// where signed and unsigned read the same, which is why this was unsigned here until the engine
+    /// comparisons of 2026-09-26. A key at <c>0x80000000</c> or above, about half of them, got a credential the
+    /// console would not recognise. The C core and the Rust engine render it signed.</para>
+    ///
+    /// <para>False for a key that is not hex or does not fit 32 bits: a corrupt record, not something to paper
+    /// over with a guess.</para>
     /// </summary>
-    public string WakeCredential()
+    public bool TryGetWakeCredential([System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out string? credential)
     {
-        // The registration key IS the ASCII hex string on the wire; interpret those bytes as text, not as a
-        // number already. Any non-hex content is a corrupt record, not something to paper over with a guess.
-        string hex = System.Text.Encoding.ASCII.GetString(RegistrationKey);
-        uint value = uint.Parse(hex, System.Globalization.NumberStyles.HexNumber, System.Globalization.CultureInfo.InvariantCulture);
-        return value.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        credential = null;
+        string hex = System.Text.Encoding.ASCII.GetString(RegistrationKey).Trim();
+        if (hex.Length == 0 || !hex.All(char.IsAsciiHexDigit)
+            || !uint.TryParse(hex, System.Globalization.NumberStyles.AllowHexSpecifier,
+                System.Globalization.CultureInfo.InvariantCulture, out uint value))
+        {
+            return false;
+        }
+
+        credential = unchecked((int)value).ToString(System.Globalization.CultureInfo.InvariantCulture);
+        return true;
     }
 
     /// <summary>Deserialize a blob produced by <see cref="Serialize"/>. Returns false on a malformed blob.</summary>

@@ -198,31 +198,36 @@ public sealed class TakionReliableChannel : IAsyncDisposable
         {
             long now = Stopwatch.GetTimestamp();
 
-            // Remove everything acknowledged up to and including the cumulative TSN.
-            while (_unacked.Count > 0)
+            // Remove everything acknowledged up to and including the cumulative TSN. Every outstanding chunk is
+            // compared by serial number: the dictionary is ordered numerically, so across a TSN wrap the lowest
+            // key is not the oldest chunk, and stopping at the first key above the ack left 0xFFFFFFFF
+            // outstanding behind 0x00000000 and resent every retransmit interval for the rest of the session.
+            // The C core and the Rust engine compare the same way.
+            List<uint>? acked = null;
+            foreach (uint tsn in _unacked.Keys)
             {
-                uint lowest = _unacked.Keys.First();
-                if (TsnLessOrEqual(lowest, cumulativeTsnAck))
+                if (TsnLessOrEqual(tsn, cumulativeTsnAck))
                 {
-                    _unacked.Remove(lowest);
-
-                    // Fold this chunk's round trip into the estimate, unless it was retransmitted (Karn).
-                    if (_sendTimestamps.Remove(lowest, out long sentAt) && !_retransmitted.Remove(lowest))
-                    {
-                        double sampleMs = (now - sentAt) * 1000.0 / Stopwatch.Frequency;
-
-                        // Seed from the first sample, then smooth. Note the seed test is on the sample count,
-                        // not on the value: a genuine sub-millisecond first sample would otherwise look like
-                        // "no estimate yet" forever and the EWMA would keep re-seeding.
-                        _smoothedRttMs = _rttSampleCount == 0
-                            ? sampleMs
-                            : ((1 - RttSmoothingAlpha) * _smoothedRttMs) + (RttSmoothingAlpha * sampleMs);
-                        _rttSampleCount++;
-                    }
+                    (acked ??= []).Add(tsn);
                 }
-                else
+            }
+
+            foreach (uint tsn in acked ?? [])
+            {
+                _unacked.Remove(tsn);
+
+                // Fold this chunk's round trip into the estimate, unless it was retransmitted (Karn).
+                if (_sendTimestamps.Remove(tsn, out long sentAt) && !_retransmitted.Remove(tsn))
                 {
-                    break;
+                    double sampleMs = (now - sentAt) * 1000.0 / Stopwatch.Frequency;
+
+                    // Seed from the first sample, then smooth. Note the seed test is on the sample count,
+                    // not on the value: a genuine sub-millisecond first sample would otherwise look like
+                    // "no estimate yet" forever and the EWMA would keep re-seeding.
+                    _smoothedRttMs = _rttSampleCount == 0
+                        ? sampleMs
+                        : ((1 - RttSmoothingAlpha) * _smoothedRttMs) + (RttSmoothingAlpha * sampleMs);
+                    _rttSampleCount++;
                 }
             }
         }

@@ -3,11 +3,12 @@ name: CI
 on:
   push:
     branches: [main]
-    # The PS3 port versions independently of the Windows client, so it has its own tag namespace and
+    # The PS3 port versions independently of the dotnet client, so it has its own tag namespace and
     # ps3-v1.0 is a claim about the port alone. A tag push runs this whole file, not a reduced release
     # pipeline: a release that has not passed the same checks as a pull request is a weaker artifact than
     # the pull request was.
-    tags: ['ps3-v*']
+    # The macOS client does the same on macos-v* (docs/macos-plan.md, step 9).
+    tags: ['ps3-v*', 'macos-v*']
   pull_request:
   workflow_dispatch:
 
@@ -102,9 +103,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # Linux alone: it proves the portable set builds and runs off Windows, which is the whole claim. A
+        # macOS leg ran here until 2026-09-28 and proved nothing Linux did not; no shipping client runs
+        # .NET on macOS.
         include:
           - { host: ubuntu-latest, rid: linux-x64 }
-          - { host: macos-latest,  rid: osx-arm64 }
     steps:
       # fetch-depth: 0, deliberately. PublishedTreeSweepTests sweeps every commit message, and
       # actions/checkout defaults to a depth-1 clone in which `git log` returns one commit and
@@ -140,6 +143,225 @@ jobs:
         run: |
           dotnet test tests/Ripcord.Protocol.Halyard.Tests/Ripcord.Protocol.Halyard.Tests.csproj -c Release
           dotnet test tests/Ripcord.Presentation.Tests/Ripcord.Presentation.Tests.csproj -c Release
+      # The leak guard's checker, against a synthetic dirty room. CI has no real one, so the hooks do nothing
+      # here, and without this a broken checker would pass every commit on the owner's machine in silence.
+      - name: The leak guard's checker
+        if: runner.os == 'Linux'
+        run: python3 tools/leak-guard/test_check.py
+
+  # The portable C core's own gates. Until this job existed, nothing in CI ran libripcord/tests at all:
+  # the PS3 job cross-compiles the core and runs some of its suites on a console, but the host suite,
+  # `make compile` and the ECDH cases went unexercised. When this job was written, `make compile` had
+  # rotted in three places (an unused static under -Werror, and bare includes that only resolved with a
+  # port's -I flags), and the default mbedTLS build could not start on a fresh clone because the script
+  # is committed without its execute bit. Nothing had noticed.
+  #
+  # Linux, where the console ports are built. A macOS leg ran here while the macOS client linked this core;
+  # it moved to the Rust engine on 2026-09-26, and the engine job's ripcord-diff still builds the core under
+  # Apple's clang on macOS, so the leg was dropped on 2026-09-28.
+  libripcord:
+    name: libripcord (${{ matrix.host }})
+    runs-on: ${{ matrix.host }}
+    strategy:
+      fail-fast: false
+      matrix:
+        host: [ubuntu-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      # The known-answer vectors are generated from the .NET reference, never committed.
+      - name: Generate the known-answer vectors
+        run: dotnet run --project tools/Ripcord.ProtocolLab -c Release -- vectors
+      - name: Host suite
+        run: make -C libripcord/tests
+      - name: Every portable file compiles
+        run: make -C libripcord/tests compile
+      - name: Host suite under AddressSanitizer and UndefinedBehaviorSanitizer
+        run: >-
+          make -C libripcord/tests BUILD=build/sanitize
+          CFLAGS="-std=c99 -O1 -g -Wall -Wextra -Werror -Wshadow -Wconversion -Wsign-conversion
+          -fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer"
+      - name: Fuzz harnesses, sanitized replay
+        run: make -C libripcord/tests fuzz-replay
+      - name: Fuzz, coverage-guided
+        if: runner.os == 'Linux'
+        run: make -C libripcord/tests fuzz-run FUZZ_CC=clang FUZZ_SECONDS=60
+      - name: Keep what the fuzzer found
+        if: failure() && runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: libripcord-fuzz-findings
+          path: |
+            libripcord/tests/build/fuzz/crash-*
+            libripcord/tests/build/fuzz/leak-*
+            libripcord/tests/build/fuzz/timeout-*
+          if-no-files-found: ignore
+
+  # The Rust engine (engine/, docs/engine-plan.md): the whole protocol, which the Apple clients ship on.
+  # Four hosts, because each one links the engine differently and Windows is where the plan's gate still
+  # wants a figure: the .NET harness runs its checks everywhere and prints the per-packet cost on each,
+  # which is informational only on a shared runner. Miri and cargo-fuzz run in engine-nightly.yml.
+  engine:
+    name: Rust engine (${{ matrix.host }})
+    runs-on: ${{ matrix.host }}
+    strategy:
+      fail-fast: false
+      matrix:
+        host: [ubuntu-latest, macos-latest, windows-latest, windows-11-arm]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Toolchain
+        run: rustup toolchain install stable --profile minimal --component clippy,rustfmt && rustup default stable && cargo --version
+      # The known-answer vectors are generated from the .NET reference, never committed.
+      - name: Generate the known-answer vectors
+        run: dotnet run --project tools/Ripcord.ProtocolLab -c Release -- vectors
+      # ripcord-diff builds the C core with its own Python constants generator and runs it beside the Rust
+      # engine. The C core has never been built with MSVC, so the Windows legs leave that crate out.
+      - name: Tests, the vector runner and the differential runs against the C core
+        if: runner.os != 'Windows'
+        working-directory: engine
+        run: cargo test --workspace --release --all-features
+      - name: Tests and the vector runner
+        if: runner.os == 'Windows'
+        working-directory: engine
+        run: cargo test --workspace --release --all-features --exclude ripcord-diff
+      - name: Clippy and formatting
+        working-directory: engine
+        shell: bash
+        run: |
+          exclude=""; [ "$RUNNER_OS" = Windows ] && exclude="--exclude ripcord-diff"
+          # Twice: the shipping build, and with the test-support exports on.
+          cargo clippy --workspace $exclude --all-targets -- -D warnings
+          cargo clippy --workspace $exclude --all-targets --all-features -- -D warnings
+          cargo fmt --check
+      # cargo-deny itself, from crates.io at a pinned version, rather than a third-party action: the same
+      # registry every engine dependency already comes from, and no second publisher to trust.
+      - name: Dependency policy
+        if: runner.os == 'Linux'
+        working-directory: engine
+        run: cargo install cargo-deny --version 0.20.2 --locked && cargo deny --all-features check
+      - name: The engine from .NET, through its generated bindings
+        run: dotnet run -c Release --project engine/hosts/dotnet/Ripcord.Engine.Harness
+
+  # The macOS client's Xcode project (src/Ripcord.Mac), on the Rust engine since Phase 3: its build phase
+  # runs cargo, so this job needs a Rust toolchain. RipcordKitTests checks CryptoKit as the engine's key
+  # agreement against the .NET vectors (EngineKeyAgreementTests) and runs whole sessions against the
+  # engine's loopback consoles.
+  #
+  # macos-26 because the deployment target is macOS 26 (docs/macos-plan.md), which needs that SDK.
+  mac:
+    name: macOS client
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Toolchain
+        run: >-
+          rustup toolchain install stable --profile minimal && rustup default stable
+          && rustup target add aarch64-apple-ios aarch64-apple-ios-sim aarch64-apple-tvos aarch64-apple-tvos-sim
+          && xcodebuild -version && swift --version && cargo --version
+      - name: Generate the known-answer vectors
+        run: dotnet run --project tools/Ripcord.ProtocolLab -c Release -- vectors
+      - name: Build the lab and the app
+        working-directory: src/Ripcord.Mac
+        run: |
+          for scheme in RipcordLab Ripcord; do
+            xcodebuild -project Ripcord.xcodeproj -scheme "$scheme" -configuration Release -derivedDataPath build build
+          done
+      # The iPhone, iPad and Apple TV app (docs/ios-plan.md): RipcordKit and the engine for each platform, and the
+      # app over them. Device builds are unsigned, since those platforms refuse an ad hoc signature; this checks
+      # they compile and link, not that they install.
+      - name: Build the mobile app for iPhone, iPad and Apple TV
+        working-directory: src/Ripcord.Mac
+        run: |
+          for destination in 'generic/platform=iOS' 'generic/platform=iOS Simulator' 'generic/platform=tvOS'; do
+            xcodebuild -project Ripcord.xcodeproj -scheme RipcordMobile -configuration Release \
+              -destination "$destination" -derivedDataPath build-mobile build
+          done
+      - name: RipcordKit tests
+        working-directory: src/Ripcord.Mac
+        run: >-
+          xcodebuild -project Ripcord.xcodeproj -scheme RipcordKit -destination 'platform=macOS,arch=arm64'
+          -derivedDataPath build test
+      - name: Lab self-check
+        run: src/Ripcord.Mac/build/Build/Products/Release/ripcord-lab check
+      # The shipping build must carry none of the test-support exports; the dylib is read because Xcode's nm
+      # cannot read the static archive's Rust bitcode.
+      - name: The shipping engine carries no test exports
+        run: >-
+          ! nm -gU engine/target/shipping/release/libripcord.dylib
+          | grep -E '_ripcord_(kat_run|loopback|scripted|account_seed_seal)'
+
+      # ON A macos-v* TAG, the same app again, signed with the Developer ID, notarized and stapled. The steps
+      # above have already built and tested this commit, so this is packaging, not a second opinion. Six
+      # secrets, none of which this repository had when this was written, so the first tag is the first run:
+      #   MACOS_DEVELOPER_ID_P12 (base64) and MACOS_DEVELOPER_ID_P12_PASSWORD: the Developer ID Application
+      #     certificate and its key;
+      #   MACOS_TEAM_ID;
+      #   MACOS_NOTARY_KEY (base64 .p8), MACOS_NOTARY_KEY_ID, MACOS_NOTARY_ISSUER: an App Store Connect API
+      #     key for notarytool.
+      # The app group stays off (RIPCORD_APP_GROUP = NO): claiming one under a Developer ID needs a
+      # provisioning profile as well, which is a separate decision. The widget then shows the way into the app.
+      - name: Sign, notarize and staple (macos-v* tags)
+        if: startsWith(github.ref, 'refs/tags/macos-v')
+        working-directory: src/Ripcord.Mac
+        env:
+          P12: ${{ secrets.MACOS_DEVELOPER_ID_P12 }}
+          P12_PASSWORD: ${{ secrets.MACOS_DEVELOPER_ID_P12_PASSWORD }}
+          TEAM_ID: ${{ secrets.MACOS_TEAM_ID }}
+          NOTARY_KEY: ${{ secrets.MACOS_NOTARY_KEY }}
+          NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
+          NOTARY_ISSUER: ${{ secrets.MACOS_NOTARY_ISSUER }}
+        run: |
+          set -eu
+          for v in P12 P12_PASSWORD TEAM_ID NOTARY_KEY NOTARY_KEY_ID NOTARY_ISSUER; do
+            eval "[ -n \"\${$v}\" ]" || { echo "::error::the $v secret is not set; see the comment above this step"; exit 1; }
+          done
+          version="${GITHUB_REF_NAME#macos-v}"
+
+          # A keychain of this job's own, holding only the certificate, deleted when the runner is.
+          kc="$RUNNER_TEMP/signing.keychain-db"
+          kcpass="$(uuidgen)"
+          security create-keychain -p "$kcpass" "$kc"
+          security set-keychain-settings -lut 21600 "$kc"
+          security unlock-keychain -p "$kcpass" "$kc"
+          echo "$P12" | base64 --decode > "$RUNNER_TEMP/id.p12"
+          security import "$RUNNER_TEMP/id.p12" -k "$kc" -P "$P12_PASSWORD" -T /usr/bin/codesign
+          rm "$RUNNER_TEMP/id.p12"
+          security set-key-partition-list -S apple-tool:,apple: -k "$kcpass" "$kc" > /dev/null
+          security list-keychains -d user -s "$kc" $(security list-keychains -d user | tr -d '"')
+
+          xcodebuild -project Ripcord.xcodeproj -scheme Ripcord -configuration Release -derivedDataPath build-release \
+            MARKETING_VERSION="$version" CURRENT_PROJECT_VERSION="${{ github.run_number }}" \
+            CODE_SIGN_IDENTITY="Developer ID Application" DEVELOPMENT_TEAM="$TEAM_ID" CODE_SIGN_STYLE=Manual \
+            OTHER_CODE_SIGN_FLAGS="--timestamp --keychain $kc" build
+          app=build-release/Build/Products/Release/Ripcord.app
+          codesign --verify --deep --strict --verbose=2 "$app"
+
+          echo "$NOTARY_KEY" | base64 --decode > "$RUNNER_TEMP/notary.p8"
+          ditto -c -k --keepParent "$app" "$RUNNER_TEMP/submit.zip"
+          xcrun notarytool submit "$RUNNER_TEMP/submit.zip" --key "$RUNNER_TEMP/notary.p8" \
+            --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER" --wait
+          rm "$RUNNER_TEMP/notary.p8"
+          xcrun stapler staple "$app"
+          spctl --assess --type execute --verbose "$app"
+
+          mkdir -p dist
+          ditto -c -k --keepParent "$app" "dist/Ripcord-macos-v$version.zip"
+
+      - uses: actions/upload-artifact@v4
+        if: startsWith(github.ref, 'refs/tags/macos-v')
+        with:
+          name: ripcord-macos-${{ github.ref_name }}
+          path: src/Ripcord.Mac/dist/*.zip
+          if-no-files-found: error
 
   # The PS3 port's installable package. Not in Ripcord.slnx and buildable by neither dotnet nor
   # MSBuild - it is a Makefile driving a PowerPC cross-compiler plus a second one for the SPEs - so it
@@ -154,7 +376,7 @@ jobs:
   #
   # NOT PATH-FILTERED, deliberately. A per-job `paths:` needs either its own workflow file or a
   # third-party filter action, and the second is not something this repository takes - but the
-  # honest reason is that the filter would be wrong anyway. This build consumes ports/common/** and
+  # honest reason is that the filter would be wrong anyway. This build consumes libripcord/** and
   # src/Ripcord.Protocol.Halyard/Data/halyard-v1-constants.json, so a change under src/ really can
   # break it, and "the PS3 job only runs when PS3 files change" is how that stays unnoticed.
   ps3-package:
@@ -167,6 +389,10 @@ jobs:
       # schedule, and a green build going red for a reason nobody in this repository chose is the
       # fastest way to teach people to ignore a red build.
       PS3DEV_RELEASE: nightly-2026-07-26
+      # The archive's SHA-256, as GitHub records it for that release asset. The toolchain compiles every
+      # byte of the package, so it gets the same verification the third-party libraries below already have.
+      # Bump it with PS3DEV_RELEASE: gh api repos/ps3dev/ps3dev/releases/tags/<tag> reports the digest.
+      PS3DEV_SHA256: dcbed747e094c6a382dae5b0aacc322a1d4390d9f2849a7d750a96ea398ee8ab
     steps:
       - uses: actions/checkout@v4
 
@@ -186,6 +412,7 @@ jobs:
         run: |
           curl -sSL --retry 3 -o "$RUNNER_TEMP/ps3dev.tar.gz" \
             "https://github.com/ps3dev/ps3dev/releases/download/$PS3DEV_RELEASE/ps3dev-linux-X64.tar.gz"
+          echo "$PS3DEV_SHA256  $RUNNER_TEMP/ps3dev.tar.gz" | sha256sum -c -
           tar xzf "$RUNNER_TEMP/ps3dev.tar.gz" -C "$HOME"    # the archive's top level is ps3dev/
 
       # PSL1GHT IS PS3DEV, not $PS3DEV/psl1ght. The archive puts ppu_rules, base_rules and data_rules
@@ -211,7 +438,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ports/ripcord-ps3/third-party
-          key: ps3-thirdparty-${{ env.PS3DEV_RELEASE }}-${{ hashFiles('ports/ripcord-ps3/tools/build-openh264.sh', 'ports/ripcord-ps3/tools/build-opus.sh', 'ports/common/tools/build-mbedtls.sh', 'ports/common/tools/ripcord-mbedtls-config.h') }}
+          key: ps3-thirdparty-${{ env.PS3DEV_RELEASE }}-${{ hashFiles('ports/ripcord-ps3/tools/build-openh264.sh', 'ports/ripcord-ps3/tools/build-opus.sh', 'libripcord/tools/build-mbedtls.sh', 'libripcord/tools/ripcord-mbedtls-config.h') }}
 
       # SKIPPED ON A CACHE HIT rather than left to short-circuit itself. build-mbedtls.sh does check
       # whether its output is up to date; build-openh264.sh does not - it clears obj/ and recompiles
@@ -224,7 +451,7 @@ jobs:
         run: |
           sh tools/build-openh264.sh
           sh tools/build-opus.sh
-          PREFIX="$PWD/third-party/mbedtls" CROSS=powerpc64-ps3-elf- sh ../common/tools/build-mbedtls.sh
+          PREFIX="$PWD/third-party/mbedtls" CROSS=powerpc64-ps3-elf- sh ../../libripcord/tools/build-mbedtls.sh
 
       # THE BUILD NUMBER IS THE RUN NUMBER, and this is not decoration. The Makefile explains at
       # length why every build gets an id: for five hardware runs the only evidence of WHICH binary
@@ -372,7 +599,7 @@ jobs:
         run: |
           # ${GITHUB_REF_NAME#ps3-} drops the namespace prefix, so ps3-v0.9 gives ripcord-ps3-v0.9.pkg
           # rather than ripcord-ps3-ps3-v0.9.pkg. The prefix exists to keep the tag namespace separate
-          # from the Windows client's; it has no business appearing twice in a filename.
+          # from the dotnet client's; it has no business appearing twice in a filename.
           asset="ripcord-ps3-${GITHUB_REF_NAME#ps3-}.pkg"
           mv dist/ripcord-ps3.gnpdrm.pkg "$asset"
           ls -l "$asset"
@@ -400,6 +627,41 @@ jobs:
 
           echo "Draft release $GITHUB_REF_NAME created with $asset attached."
           echo "It is NOT public until somebody publishes it."
+
+  # THE MAC RELEASE, on the PS3 release's terms (above): only for a macos-v* tag, only after the rest of this
+  # file has passed, publishing the notarized zip the mac job built rather than building anything, and as a
+  # draft for a person to write the notes on and publish.
+  mac-release:
+    name: macOS release
+    if: startsWith(github.ref, 'refs/tags/macos-v')
+    needs: [tests, app, portable-core, mac]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: ripcord-macos-${{ github.ref_name }}
+          path: dist
+
+      - name: Publish a draft release with the app
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ls -l dist
+          cat > notes.md <<'NOTES'
+          **Draft — release notes go here before publishing.** What this build streams, pairs with and runs
+          on, and what it does not do yet.
+
+          Signed with a Developer ID and notarized. Unzip and move Ripcord to Applications.
+          NOTES
+          sed -i 's/^          //' notes.md
+          gh release create "$GITHUB_REF_NAME" dist/*.zip \
+            -R "$GITHUB_REPOSITORY" \
+            --draft \
+            --title "Ripcord for Mac ${GITHUB_REF_NAME#macos-}" \
+            --notes-file notes.md
+          echo "Draft release $GITHUB_REF_NAME created. It is NOT public until somebody publishes it."
 
   # CONTRIBUTING.md section 1 requires every commit to carry a Signed-off-by line matching its
   # author. Until now the only thing enforcing that was a checkbox in the pull-request template,

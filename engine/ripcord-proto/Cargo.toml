@@ -1,0 +1,30 @@
+[package]
+name = "ripcord-proto"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "The Halyard protocol as sans-IO state machines"
+
+[dependencies]
+aes = "0.9.3"
+aes-gcm = { version = "0.11.1", default-features = false, features = ["aes"] }
+ctr = "0.10.1"
+elliptic-curve = { version = "0.14.1", default-features = false, features = ["arithmetic", "sec1", "ecdh"] }
+hmac = "0.13.0"
+p256 = { version = "0.14.0", default-features = false, features = ["ecdh", "arithmetic"] }
+p521 = { version = "0.14.0", default-features = false, features = ["ecdh", "arithmetic"] }
+sha2 = "0.11.0"
+
+[build-dependencies]
+serde_json = "1.0.151"
+
+[features]
+default = ["interop-constants"]
+# The v1 interoperability constants, compiled in from the one committed bundle (build.rs; NOTICE,
+# "Interoperability constants"). Without it the engine is inert: every derivation reports its tables as
+# absent, and a connect or a registration stops before reaching the console. The engine's counterpart of
+# .NET's -p:BundleInteropConstants=false.
+interop-constants = []
+# The scripted console (src/testing), for other crates' tests. Never enabled in a shipping engine.
+scripted-console = []

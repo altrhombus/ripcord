@@ -11,12 +11,20 @@ subject from different angles, which is why picking by topic alone leads you to 
 | What is this, does it work, can I run it? | [`README.md`](../README.md) |
 | How is the code arranged, and what rules keep it that way? | [`architecture.md`](architecture.md) |
 | What does the app look like, and what decides that? | [`design.md`](design.md) |
+| What is the macOS client, what is it built on, and in what order? | [`macos-plan.md`](macos-plan.md) |
+| What about iPhone, iPad, Apple TV and Apple Watch? | [`ios-plan.md`](ios-plan.md) |
+| What do the iPhone, iPad and Apple TV apps look like? | [`src/Ripcord.Mac/RipcordMobile/DESIGN.md`](../src/Ripcord.Mac/RipcordMobile/DESIGN.md) |
+| What does the Mac app look like, and what decides that? | [`src/Ripcord.Mac/DESIGN.md`](../src/Ripcord.Mac/DESIGN.md) |
+| How do I build, test and release the Mac app? | [`src/Ripcord.Mac/README.md`](../src/Ripcord.Mac/README.md) |
+| Which protocol engine does each client run, and how does the project get to one? | [`engine-plan.md`](engine-plan.md) |
+| How do I build and test the Rust engine, and where does it stand? | [`engine/README.md`](../engine/README.md) |
 | **What is left to do?** | [`ROADMAP.md`](../ROADMAP.md) |
 | **What happened, and when?** | [`journal.md`](journal.md) |
 | **What outside material was consulted, and what did each item inform?** | [`protocol-research-log.md`](protocol-research-log.md) |
 | How does the PS5 Remote Play protocol actually work? | [`protocol/`](protocol/) |
 | In what order would I build a client from the spec? | [`protocol/IMPLEMENTATION.md`](protocol/IMPLEMENTATION.md) |
-| What is the portable C core the console ports share? | [`ports/common/README.md`](../ports/common/README.md) |
+| How would a console port pair through a desktop? (design, for review) | [`port-pairing.md`](port-pairing.md) |
+| What is the portable C core the console ports share? | [`libripcord/README.md`](../libripcord/README.md) |
 | How do I build or run a console port? | [The console ports](#the-console-ports), below |
 | How do I contribute, and what must I attest to? | [`CONTRIBUTING.md`](../CONTRIBUTING.md) |
 | How was it built, historically? | [`history/`](history/) |
@@ -45,7 +53,7 @@ these answer "what is it, and how do I build it".
 
 | Document | Answers |
 |---|---|
-| [`ports/common/README.md`](../ports/common/README.md) | What the portable C99 core holds, and what the platform seam does and does not ask of an OS |
+| [`libripcord/README.md`](../libripcord/README.md) | What the portable C99 core holds, and what the platform seam does and does not ask of an OS |
 | [`ports/ripcord-3ds/README.md`](../ports/ripcord-3ds/README.md) | The 3DS port: status, design, what runs on hardware |
 | [`ports/ripcord-3ds/SETUP.md`](../ports/ripcord-3ds/SETUP.md) | Building it and getting it onto a console |
 | [`ports/ripcord-3ds/HARDWARE-PROBES.md`](../ports/ripcord-3ds/HARDWARE-PROBES.md) | What each on-device probe measured |
@@ -106,10 +114,13 @@ dotnet test tests/Ripcord.Presentation.Tests/Ripcord.Presentation.Tests.csproj
 The published documents are written to stand alone without it. Values tied to a particular console,
 account or session are redacted to stable placeholders; public IPv4 addresses are replaced with
 [RFC 5737](https://www.rfc-editor.org/rfc/rfc5737) documentation addresses. Two conventions sit alongside
-that and are easy to miss: **private RFC 1918 addresses are published as captured**, deliberately, because
-they identify nothing outside the LAN they were on; and the one IPv6 endpoint value is replaced with a
-synthetic ULA rather than an RFC 3849 documentation address, because what the socket hands you is a ULA and
-the form is the interoperability fact. If you find a value in the published tree that identifies real
+that and are easy to miss. **Private addresses are never taken from a real network either:** where a test or
+an example needs one, it comes from a synthetic LAN (`10.0.0.0/24`, `172.31.0.0/24` or `192.168.1.0/24`),
+or from an allowlist entry that says why not. And the one IPv6 endpoint value is replaced with a synthetic
+ULA rather than an RFC 3849 documentation address, because what the socket hands you is a ULA and the form
+is the interoperability fact. `PublishedTreeSweepTests` enforces the address rule in every spelling the
+protocol uses (dotted, the Host header's padded columns, and byte arrays), and the leak guard below checks
+each commit against the real values themselves. If you find a value in the published tree that identifies real
 hardware or a real account, that is a bug — please report it as one,
 privately, per [`SECURITY.md`](../SECURITY.md).
 
@@ -131,6 +142,30 @@ of these that fits, so a reader can tell what was removed without seeing it:
 | `<base64>` | a base64 value whose content is per-account or per-session |
 
 `PublishedTreeSweepTests` enforces the absence of the values; this table is what to replace them with.
+
+## The leak guard
+
+`PublishedTreeSweepTests` recognises a value by its shape, so it runs anywhere, CI included, but it cannot
+know which values are real: the list of real ones is itself personal. The leak guard is the half that does
+know. It runs only where the dirty room exists, which is the owner's machine.
+
+- **`tools/leak-guard/build-denylist.py`** reads the dirty room's own files and writes
+  `docs/protocol/captures/leak-denylist.tsv`: the addresses, console names, account and online ids, SSIDs,
+  MACs, emails and long hex values the captures hold, less anything the committed tree already carries.
+  The list stays in the dirty room. Run it again after adding a capture; the guard warns when it is stale.
+- **`tools/leak-guard/check.py`**, from the hooks in `.githooks`, refuses a commit whose added lines or
+  message carry one of those values, and a push whose outgoing commits do. Addresses are matched in every
+  spelling the protocol uses and hex through any separators. A refusal names the file, line and kind of
+  value, never the value.
+- **Turning it on** is one command in a clone that has the dirty room: `git config core.hooksPath .githooks`.
+  `git commit --no-verify` skips the commit-time checks, and the push check still runs.
+  `check.py --history` checks every local branch and tag by hand. `tools/leak-guard/test_check.py` tests the
+  checker against a synthetic dirty room, and CI runs it, since CI has no real one.
+- **When a refusal is wrong**, for a synthetic fixture that happens to match or a server address you mean
+  to cite, record an exception: `python3 tools/leak-guard/check.py --allow CATEGORY VALUE "reason"`. It goes in
+  `docs/protocol/captures/leak-allow.tsv`, beside the denylist and just as uncommitted, and takes effect at
+  once. `LEAK_GUARD_SHOW=1` makes a refusal name the value on your own terminal, for a line long enough
+  that the kind alone does not say which.
 
 ## Layout
 

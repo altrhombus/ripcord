@@ -114,7 +114,7 @@ int rc_discover_open(rc_discover_result *out)
 
     /*
      * THE sin_len EXPERIMENT. See rc_discover.h: whether this field is required decides whether
-     * ports/common needs changing, and it was copied from a sample rather than established. The zeroed
+     * libripcord needs changing, and it was copied from a sample rather than established. The zeroed
      * attempt goes first so that if it works, the console has already seen a probe by the time the
      * second one goes out - either way the reply handling below is unchanged.
      */

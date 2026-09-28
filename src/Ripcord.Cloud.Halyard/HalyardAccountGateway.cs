@@ -276,6 +276,7 @@ public sealed class HalyardAccountGateway
     public void SignOut()
     {
         _store.Clear();
+        _tokens.Clear();   // or the next cloud call still goes out as the signed-out account
         _account = null;
     }
 

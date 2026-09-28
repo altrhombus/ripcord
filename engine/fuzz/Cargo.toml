@@ -1,0 +1,91 @@
+[package]
+name = "ripcord-fuzz"
+version = "0.0.0"
+edition = "2024"
+license = "Apache-2.0"
+publish = false
+description = "cargo-fuzz targets for the engine, one per surface, mirroring libripcord/tests/fuzz"
+
+# Its own workspace: cargo-fuzz builds it with nightly and sanitizer flags the engine's workspace never sees.
+[workspace]
+members = ["."]
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+ripcord-proto = { path = "../ripcord-proto", features = ["scripted-console"] }
+
+[profile.release]
+debug = 1
+
+[[bin]]
+name = "stream"
+path = "fuzz_targets/stream.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "control"
+path = "fuzz_targets/control.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "takion"
+path = "fuzz_targets/takion.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "dgram"
+path = "fuzz_targets/dgram.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "discovery"
+path = "fuzz_targets/discovery.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "stun"
+path = "fuzz_targets/stun.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "sess"
+path = "fuzz_targets/sess.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "account"
+path = "fuzz_targets/account.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "connect"
+path = "fuzz_targets/connect.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "derive"
+path = "fuzz_targets/derive.rs"
+test = false
+doc = false
+bench = false
