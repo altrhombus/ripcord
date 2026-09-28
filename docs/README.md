@@ -90,10 +90,13 @@ dotnet test tests/Ripcord.Presentation.Tests/Ripcord.Presentation.Tests.csproj
 The published documents are written to stand alone without it. Values tied to a particular console,
 account or session are redacted to stable placeholders; public IPv4 addresses are replaced with
 [RFC 5737](https://www.rfc-editor.org/rfc/rfc5737) documentation addresses. Two conventions sit alongside
-that and are easy to miss: **private RFC 1918 addresses are published as captured**, deliberately, because
-they identify nothing outside the LAN they were on; and the one IPv6 endpoint value is replaced with a
-synthetic ULA rather than an RFC 3849 documentation address, because what the socket hands you is a ULA and
-the form is the interoperability fact. If you find a value in the published tree that identifies real
+that and are easy to miss. **Private addresses are never taken from a real network either:** where a test or
+an example needs one, it comes from a synthetic LAN (`10.0.0.0/24`, `172.31.0.0/24` or `192.168.1.0/24`),
+or from an allowlist entry that says why not. And the one IPv6 endpoint value is replaced with a synthetic
+ULA rather than an RFC 3849 documentation address, because what the socket hands you is a ULA and the form
+is the interoperability fact. `PublishedTreeSweepTests` enforces the address rule in every spelling the
+protocol uses (dotted, the Host header's padded columns, and byte arrays), and the leak guard below checks
+each commit against the real values themselves. If you find a value in the published tree that identifies real
 hardware or a real account, that is a bug — please report it as one,
 privately, per [`SECURITY.md`](../SECURITY.md).
 
@@ -115,6 +118,24 @@ of these that fits, so a reader can tell what was removed without seeing it:
 | `<base64>` | a base64 value whose content is per-account or per-session |
 
 `PublishedTreeSweepTests` enforces the absence of the values; this table is what to replace them with.
+
+## The leak guard
+
+`PublishedTreeSweepTests` recognises a value by its shape, so it runs anywhere, CI included, but it cannot
+know which values are real: the list of real ones is itself personal. The leak guard is the half that does
+know. It runs only where the dirty room exists, which is the owner's machine.
+
+- **`tools/leak-guard/build-denylist.py`** reads the dirty room's own files and writes
+  `docs/protocol/captures/leak-denylist.tsv`: the addresses, console names, account and online ids, SSIDs,
+  MACs, emails and long hex values the captures hold, less anything the committed tree already carries.
+  The list stays in the dirty room. Run it again after adding a capture; the guard warns when it is stale.
+- **`tools/leak-guard/check.py`**, from the hooks in `.githooks`, refuses a commit whose added lines or
+  message carry one of those values, and a push whose outgoing commits do. Addresses are matched in every
+  spelling the protocol uses and hex through any separators. A refusal names the file, line and kind of
+  value, never the value.
+- **Turning it on** is one command in a clone that has the dirty room: `git config core.hooksPath .githooks`.
+  `git commit --no-verify` skips the commit-time checks, and the push check still runs.
+  `check.py --history` checks every local branch and tag by hand.
 
 ## Layout
 
