@@ -3,7 +3,7 @@ name: CI
 on:
   push:
     branches: [main]
-    # The PS3 port versions independently of the Windows client, so it has its own tag namespace and
+    # The PS3 port versions independently of the dotnet client, so it has its own tag namespace and
     # ps3-v1.0 is a claim about the port alone. A tag push runs this whole file, not a reduced release
     # pipeline: a release that has not passed the same checks as a pull request is a weaker artifact than
     # the pull request was.
@@ -141,6 +141,11 @@ jobs:
         run: |
           dotnet test tests/Ripcord.Protocol.Halyard.Tests/Ripcord.Protocol.Halyard.Tests.csproj -c Release
           dotnet test tests/Ripcord.Presentation.Tests/Ripcord.Presentation.Tests.csproj -c Release
+      # The leak guard's checker, against a synthetic dirty room. CI has no real one, so the hooks do nothing
+      # here, and without this a broken checker would pass every commit on the owner's machine in silence.
+      - name: The leak guard's checker
+        if: runner.os == 'Linux'
+        run: python3 tools/leak-guard/test_check.py
 
   # The portable C core's own gates. Until this job existed, nothing in CI ran libripcord/tests at all:
   # the PS3 job cross-compiles the core and runs some of its suites on a console, but the host suite,
@@ -149,7 +154,8 @@ jobs:
   # port's -I flags), and the default mbedTLS build could not start on a fresh clone because the script
   # is committed without its execute bit. Nothing had noticed.
   #
-  # Both hosts, because the macOS client links this core and the ports are built on Linux. The
+  # Both hosts: the console ports are built on Linux, and the macOS leg runs the suite under Apple's clang.
+  # (The macOS client linked this core until 2026-09-26 and runs on the Rust engine now.) The
   # coverage-guided fuzz run is Linux-only because Apple's clang ships no libFuzzer; the macOS leg still
   # runs every harness under the sanitizers through fuzz/replay_main.c.
   libripcord:
@@ -192,11 +198,10 @@ jobs:
             libripcord/tests/build/fuzz/timeout-*
           if-no-files-found: ignore
 
-  # The Rust engine (engine/, docs/engine-plan.md). Phase 1 is the stream plane only; this job grows
-  # with it. Four hosts, because each one links the engine differently and Windows is where the plan's
-  # gate still wants a figure: the .NET harness runs its checks everywhere and prints the per-packet
-  # cost on each, which is informational only on a shared runner. windows-11-arm is the one label here
-  # not verified before this was committed. Miri and cargo-fuzz run in engine-nightly.yml.
+  # The Rust engine (engine/, docs/engine-plan.md): the whole protocol, which the Apple clients ship on.
+  # Four hosts, because each one links the engine differently and Windows is where the plan's gate still
+  # wants a figure: the .NET harness runs its checks everywhere and prints the per-packet cost on each,
+  # which is informational only on a shared runner. Miri and cargo-fuzz run in engine-nightly.yml.
   engine:
     name: Rust engine (${{ matrix.host }})
     runs-on: ${{ matrix.host }}
@@ -233,11 +238,12 @@ jobs:
           cargo clippy --workspace $exclude --all-targets -- -D warnings
           cargo clippy --workspace $exclude --all-targets --all-features -- -D warnings
           cargo fmt --check
+      # cargo-deny itself, from crates.io at a pinned version, rather than a third-party action: the same
+      # registry every engine dependency already comes from, and no second publisher to trust.
       - name: Dependency policy
         if: runner.os == 'Linux'
-        uses: EmbarkStudios/cargo-deny-action@v2
-        with:
-          manifest-path: engine/Cargo.toml
+        working-directory: engine
+        run: cargo install cargo-deny --version 0.20.2 --locked && cargo deny --all-features check
       - name: The engine from .NET, through its generated bindings
         run: dotnet run -c Release --project engine/hosts/dotnet/Ripcord.Engine.Harness
 
@@ -246,8 +252,7 @@ jobs:
   # agreement against the .NET vectors (EngineKeyAgreementTests) and runs whole sessions against the
   # engine's loopback consoles.
   #
-  # macos-26 because the deployment target is macOS 26 (docs/macos-plan.md), which needs that SDK. The
-  # runner label and its Xcode are the one part of this job not verified before it was committed.
+  # macos-26 because the deployment target is macOS 26 (docs/macos-plan.md), which needs that SDK.
   mac:
     name: macOS client
     runs-on: macos-26
@@ -383,6 +388,10 @@ jobs:
       # schedule, and a green build going red for a reason nobody in this repository chose is the
       # fastest way to teach people to ignore a red build.
       PS3DEV_RELEASE: nightly-2026-07-26
+      # The archive's SHA-256, as GitHub records it for that release asset. The toolchain compiles every
+      # byte of the package, so it gets the same verification the third-party libraries below already have.
+      # Bump it with PS3DEV_RELEASE: gh api repos/ps3dev/ps3dev/releases/tags/<tag> reports the digest.
+      PS3DEV_SHA256: dcbed747e094c6a382dae5b0aacc322a1d4390d9f2849a7d750a96ea398ee8ab
     steps:
       - uses: actions/checkout@v4
 
@@ -402,6 +411,7 @@ jobs:
         run: |
           curl -sSL --retry 3 -o "$RUNNER_TEMP/ps3dev.tar.gz" \
             "https://github.com/ps3dev/ps3dev/releases/download/$PS3DEV_RELEASE/ps3dev-linux-X64.tar.gz"
+          echo "$PS3DEV_SHA256  $RUNNER_TEMP/ps3dev.tar.gz" | sha256sum -c -
           tar xzf "$RUNNER_TEMP/ps3dev.tar.gz" -C "$HOME"    # the archive's top level is ps3dev/
 
       # PSL1GHT IS PS3DEV, not $PS3DEV/psl1ght. The archive puts ppu_rules, base_rules and data_rules
@@ -588,7 +598,7 @@ jobs:
         run: |
           # ${GITHUB_REF_NAME#ps3-} drops the namespace prefix, so ps3-v0.9 gives ripcord-ps3-v0.9.pkg
           # rather than ripcord-ps3-ps3-v0.9.pkg. The prefix exists to keep the tag namespace separate
-          # from the Windows client's; it has no business appearing twice in a filename.
+          # from the dotnet client's; it has no business appearing twice in a filename.
           asset="ripcord-ps3-${GITHUB_REF_NAME#ps3-}.pkg"
           mv dist/ripcord-ps3.gnpdrm.pkg "$asset"
           ls -l "$asset"

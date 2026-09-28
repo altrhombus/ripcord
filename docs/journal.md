@@ -35,6 +35,23 @@ different purpose.
 > anything. The list above is short, it is checkable in one `git log --format=%B | grep`, and it stops
 > growing the moment someone notices — which is the property that actually matters.
 
+### A CI review: stale comments, two unverified downloads, and a test for the leak guard (2026-09-28)
+
+Both workflows read end to end, for what each job still proves.
+
+- **Stale.** The engine job still called itself Phase 1's stream plane. Two runner labels were "not
+  verified", though both had run green. libripcord's macOS leg was justified by the Mac linking the C core,
+  which ended on 2026-09-26. All four comments say what is true now.
+- **Two unverified downloads.** cargo-deny came through a third-party action pinned only by its tag, in a
+  file that says it takes first-party actions only. It now installs from crates.io at a pinned version,
+  like every engine dependency, and passes (advisories, bans, licences, sources). The PS3 job's 180 MB
+  toolchain was fetched with no checksum while its libraries were hash-verified. It now checks the SHA-256
+  GitHub records for that release asset.
+- **The leak guard in CI.** CI has no dirty room, so the hooks do nothing there, and a broken checker would
+  have gone unnoticed. `tools/leak-guard/test_check.py` runs the real checker against a synthetic dirty room:
+  every spelling, messages, a push, exceptions, and the no-dirty-room case. Three deliberately broken
+  checkers (one finding nothing, one losing the padded form, one printing the value) each fail it.
+
 ### A leak guard at commit and push time, and private addresses held to the public rule (2026-09-28)
 
 `PublishedTreeSweepTests` recognises secrets by shape, which is why it can run in CI, and so it can never know
