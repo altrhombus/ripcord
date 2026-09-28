@@ -311,6 +311,38 @@ public class PublishedTreeSweepTests
         new(@"(?<![0-9.])((?:\d{1,3}\.){3}\d{1,3})(?![0-9.])", RegexOptions.Compiled);
 
     /// <summary>
+    /// The <c>%3d.%3d.%3d.%3d</c> form the console's Host header uses, octets right-aligned in three
+    /// columns. <see cref="Ipv4"/> cannot see it, because the spaces break the quad, and a captured request
+    /// quoted in prose carries exactly this form.
+    /// </summary>
+    private static readonly Regex PaddedIpv4 =
+        new(@"(?<![0-9.])\d{1,3}\. {0,2}\d{1,3}\. {0,2}\d{1,3}\. {0,2}\d{1,3}(?![0-9.])", RegexOptions.Compiled);
+
+    /// <summary>
+    /// An address written as its four bytes, in brackets or braces and nothing else between them:
+    /// <c>[172, 31, 0, 1]</c>, <c>{ 10, 0, 0, 1 }</c>, <c>{ 0xac, 0x1f, 0x00, 0x01 }</c>. Only a private
+    /// address is reported in this form. Four small numbers in brackets are ordinary data far more often
+    /// than a public address, and a private one is what a test fixture copies from a real LAN.
+    /// </summary>
+    private static readonly Regex ByteArrayIpv4 = new(
+        @"[\[{]\s*((?:0x[0-9a-fA-F]{1,2}|\d{1,3}))\s*,\s*((?:0x[0-9a-fA-F]{1,2}|\d{1,3}))\s*,"
+        + @"\s*((?:0x[0-9a-fA-F]{1,2}|\d{1,3}))\s*,\s*((?:0x[0-9a-fA-F]{1,2}|\d{1,3}))\s*[\]}]",
+        RegexOptions.Compiled);
+
+    private static bool IsPrivateAddress(string ip)
+    {
+        string[] parts = ip.Split('.');
+        if (parts.Length != 4 || !parts.All(p => byte.TryParse(p, out _))) return false;
+        byte[] o = parts.Select(byte.Parse).ToArray();
+        return o[0] == 10 || (o[0] == 172 && o[1] >= 16 && o[1] <= 31) || (o[0] == 192 && o[1] == 168);
+    }
+
+    private static string ByteArrayAddress(Match m) => string.Join('.', m.Groups.Cast<Group>().Skip(1).Select(g =>
+        g.Value.StartsWith("0x", StringComparison.OrdinalIgnoreCase)
+            ? Convert.ToInt32(g.Value[2..], 16).ToString(System.Globalization.CultureInfo.InvariantCulture)
+            : g.Value));
+
+    /// <summary>
     /// Compressed form included. Every address that would actually identify a network — a residential global
     /// prefix, a link-local, a ULA — is written with <c>::</c> in practice, because that is what every tool
     /// prints. The uncompressed-only version of this pattern was the sixth instance of the same miss.
@@ -363,7 +395,8 @@ public class PublishedTreeSweepTests
          ".html", ".swift", ".xcconfig", ".modulemap", ".pbxproj", ".xcscheme", ".rs", ".toml",
          ".entitlements", ".plist", ".xcstrings"];
 
-    private static readonly string[] NamedFiles = ["NOTICE", "LICENSE", ".gitignore", "Makefile", "Cargo.lock"];
+    private static readonly string[] NamedFiles =
+        ["NOTICE", "LICENSE", ".gitignore", "Makefile", "Cargo.lock", "pre-commit", "commit-msg", "pre-push"];
 
     /// <summary>
     /// Extensions that are genuinely not text, so their absence from the corpus is not a gap.
@@ -708,7 +741,15 @@ public class PublishedTreeSweepTests
         // --- must tolerate: things that are not disclosures --------------------------------------------
         { "and so on, continued…", LineContext.Prose, false, "an ordinary prose ellipsis" },
         { "192.0.2.1", LineContext.Prose, false, "RFC 5737 documentation address" },
-        { "10.0.0.7", LineContext.Prose, false, "RFC 1918, published as captured by stated policy" },
+        { "10.0.0.7", LineContext.Prose, false, "a private address in the synthetic 10.0.0.0/24 LAN" },
+        { "172.20.0.5", LineContext.Prose, true, "a private address outside the synthetic LANs" },
+        { "172.20.0.5", LineContext.Code, true, "and in code" },
+        { "Host: 172.217. 16. 14:9295", LineContext.Prose, true, "a public address in the padded %3d Host form" },
+        { "Host: 192.  0.  2.104:9295", LineContext.Prose, false, "the padded form of a documentation address" },
+        { "byte[] peer = [172, 20, 0, 5];", LineContext.Code, true, "a private address outside the LANs, as bytes" },
+        { "uint8_t a[4] = { 0xac, 0x14, 0x00, 0x05 };", LineContext.Code, true, "the same, as hex bytes" },
+        { "{ { 192, 168, 1, 20 }, { 255, 255, 255, 0 } }", LineContext.Code, false, "a synthetic LAN address and its mask" },
+        { "video_packet(10, 0, 2, 0, 0, &slice)", LineContext.Code, false, "small numbers in an argument list, not an address" },
         { "224.0.0.251", LineContext.Prose, false, "the mDNS multicast group" },
         { "Version=\"1.0.0.0\"", LineContext.Prose, false, "a version quad, not an address - decided rather than discovered" },
         { "ITU-T H.264 sec 7.4.1.1", LineContext.Prose, false,
@@ -994,6 +1035,14 @@ public class PublishedTreeSweepTests
         return whole.Contains(hex, StringComparer.OrdinalIgnoreCase);
     }
 
+    /// <summary>
+    /// Whether an IPv4 address may be committed without an allowlist entry: the RFC 5737 documentation
+    /// ranges, loopback, the unspecified and broadcast addresses, multicast, two public examples the code
+    /// names, and the three synthetic LANs this project draws private addresses from - <c>10.0.0.0/24</c>,
+    /// <c>172.31.0.0/24</c> and <c>192.168.1.0/24</c>. The rest of RFC 1918 is held to the same rule as a
+    /// public address. An address seen on a real network is a fact about that network whether it routes
+    /// or not, and a test that needs a private address can take one from a synthetic LAN or state why not.
+    /// </summary>
     private static bool IsDocumentationAddress(string ip)
     {
         // A quad that does not parse is not an address, so it is tolerated rather than reported. Stated
@@ -1005,9 +1054,10 @@ public class PublishedTreeSweepTests
 
         return o[0] switch
         {
-            10 or 127 or 0 or 255 => true,
-            172 when o[1] >= 16 && o[1] <= 31 => true,
-            192 when o[1] == 168 => true,
+            127 or 0 or 255 => true,
+            10 when o[1] == 0 && o[2] == 0 => true,
+            172 when o[1] == 31 && o[2] == 0 => true,
+            192 when o[1] == 168 && o[2] == 1 => true,
             192 when o[1] == 0 && o[2] == 2 => true,
             198 when o[1] == 51 && o[2] == 100 => true,
             203 when o[1] == 0 && o[2] == 113 => true,
@@ -1160,6 +1210,24 @@ public class PublishedTreeSweepTests
             // rather than only by narrowing the pattern - the scope-too-narrow defect this file warns of.
             if (Allow(m.Value)) continue;
             found.Add($"{at}|ipv4|{m.Value}");
+        }
+
+        foreach (Match m in PaddedIpv4.Matches(line))
+        {
+            if (!m.Value.Contains(' ')) continue;   // the plain form is Ipv4's
+            string ip = m.Value.Replace(" ", "", StringComparison.Ordinal);
+            if (IsDocumentationAddress(ip)) continue;
+            if (NotAnAddressContext.IsMatch(line)) continue;
+            if (Allow(ip)) continue;
+            found.Add($"{at}|ipv4-padded|{ip}");
+        }
+
+        foreach (Match m in ByteArrayIpv4.Matches(line))
+        {
+            string ip = ByteArrayAddress(m);
+            if (!IsPrivateAddress(ip) || IsDocumentationAddress(ip)) continue;
+            if (Allow(ip)) continue;
+            found.Add($"{at}|ipv4-bytes|{ip}");
         }
 
         foreach (Match m in Ipv6.Matches(line))

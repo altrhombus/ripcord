@@ -286,6 +286,9 @@ When working in `Ripcord.Protocol.Halyard*`, `Ripcord.Cloud.Halyard`, or anythin
   `docs/protocol/captures/lab-notebook.md` in particular is the live RE session journal (the
   unredacted working copy of `docs/protocol-research-log.md`) — useful context if it's present locally,
   but never assume it exists or commit to it.
+  The leak guard (`tools/leak-guard`, `docs/README.md`) checks each commit and push against the real
+  values the dirty room holds. Keep it on (`git config core.hooksPath .githooks`) and rebuild its
+  denylist after adding a capture.
 - **Bounded exception 1: the v1 interoperability constants** in
   `src/Ripcord.Protocol.Halyard/Data/halyard-v1-constants.json` are committed deliberately (~4 KB of constant
   data — 8.7 KB on disk, since the JSON stores it hex-encoded: four
