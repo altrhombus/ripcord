@@ -94,14 +94,16 @@ The credential is generic. It is identical for every user and every console, and
 authenticates an application rather than a person. Ripcord includes NO user
 credential of any kind: the signed-in account's access and refresh tokens are
 obtained per user at sign-in and stored encrypted on that user's own machine
-(DPAPI on Windows), never in this repository or any build produced from it.
+(DPAPI on Windows, the Keychain on Apple platforms), never in this repository or
+any build produced from it.
 
-A build that omits the credential can be produced with -p:BundleOAuthClient=false;
-the result reports account sign-in as unavailable and local-network play is
-unaffected. At run time the bundled value is the last resort, and is overridden by
-the RIPCORD_CLIENT_ID / RIPCORD_CLIENT_SECRET environment variables or by a
-client.json in the user's configuration directory, so an operator with their own
-registered client can substitute it without rebuilding.
+A build that omits the credential can be produced with -p:BundleOAuthClient=false,
+or RIPCORD_BUNDLE_OAUTH_CLIENT = NO for the Apple clients; the result reports
+account sign-in as unavailable and local-network play is unaffected. At run time
+the bundled value is the last resort, and is overridden by the RIPCORD_CLIENT_ID /
+RIPCORD_CLIENT_SECRET environment variables or by a client.json in the user's
+configuration directory, so an operator with their own registered client can
+substitute it without rebuilding.
 
 Sony Interactive Entertainment may rotate this credential at any time, which would
 disable Ripcord's account features until it is updated. No warranty of continued
