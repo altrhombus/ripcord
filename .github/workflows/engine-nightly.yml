@@ -1,0 +1,65 @@
+name: Engine (nightly toolchain)
+
+# What the Rust engine needs a nightly toolchain for, kept out of ci.yml so a nightly regression never
+# blocks a pull request: Miri over the C ABI's own tests, and a coverage-guided cargo-fuzz run of every
+# target in engine/fuzz with a corpus kept between runs (docs/engine-plan.md, "Builds"; engine/README.md).
+# Daily, on demand, and on any push to main that touches the engine.
+
+on:
+  schedule:
+    - cron: '17 6 * * *'
+  push:
+    branches: [main]
+    paths: ['engine/**', '.github/workflows/engine-nightly.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: engine-nightly-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  miri:
+    name: Miri over ripcord-ffi
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain
+        run: rustup toolchain install nightly --profile minimal --component miri,rust-src && cargo +nightly miri setup
+      # The portable backends: Miri's aliasing model rejects the SHA and AES hardware intrinsics' pointer
+      # use inside the RustCrypto crates, which is theirs, not the engine's. What Miri is here for is the
+      # engine's own unsafe, which is all in ripcord-ffi.
+      - name: The C ABI's unit tests under Miri
+        working-directory: engine
+        env:
+          RUSTFLAGS: --cfg sha2_backend="soft" --cfg aes_backend="soft"
+        run: cargo +nightly miri test -p ripcord-ffi --lib
+
+  fuzz:
+    name: Fuzz (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [stream, control, takion, dgram, discovery, stun, sess, account, connect, derive]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain
+        run: rustup toolchain install nightly --profile minimal && cargo install cargo-fuzz --locked
+      - name: The corpus from earlier runs
+        uses: actions/cache@v4
+        with:
+          path: engine/fuzz/corpus/${{ matrix.target }}
+          key: fuzz-corpus-${{ matrix.target }}-${{ github.run_id }}
+          restore-keys: fuzz-corpus-${{ matrix.target }}-
+      - name: Run for five minutes
+        working-directory: engine/fuzz
+        run: cargo +nightly fuzz run ${{ matrix.target }} -- -max_total_time=300 -rss_limit_mb=4096
+      - name: Keep what the fuzzer found
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: engine-fuzz-${{ matrix.target }}
+          path: engine/fuzz/artifacts/${{ matrix.target }}

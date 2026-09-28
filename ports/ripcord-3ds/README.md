@@ -5,7 +5,7 @@ specification rather than from its implementation.
 
 > **That sentence used to end "but none of its code", and that is no longer true.** This port was
 > written standalone, and it was then audited for a second target: 71 of its 88 source files referenced
-> no operating system at all, so they were lifted into [`ports/common`](../common) and this port became
+> no operating system at all, so they were lifted into what is now [`libripcord`](../../libripcord) and this port became
 > the first of three consumers of a core extracted from it. It also compiles files ported from the .NET
 > side - `senkusha_echo.h` says so in its own header - because `CLAUDE.md`'s clean-room rule does not
 > apply between Ripcord's own front ends: a same-project port may adapt `src/` at will, that being this
@@ -92,9 +92,9 @@ them.
 ## Layout
 
 **The protocol core no longer lives here.** As of 2026-08-17 it is in
-[`ports/common`](../common) — crypto, the Halyard control KDF, session, discovery, Takion, stream
+[`libripcord`](../../libripcord) — crypto, the Halyard control KDF, session, discovery, Takion, stream
 framing/FEC, input, and the portable half of `util/` — shared with every other Ripcord port and reached
-through the seam in [`ports/common/platform/rc_platform.h`](../common/platform/rc_platform.h). 71 of
+through the seam in [`libripcord/platform/rc_platform.h`](../../libripcord/platform/rc_platform.h). 71 of
 this port's 88 files turned out to reference no OS at all; what remains below is the 3DS.
 
 ```
@@ -121,7 +121,7 @@ source/mvdreplay/   decoder replay harness (ripcord-3ds-mvdreplay.3dsx)
 
 This is the part that verifies the crypto, and it should be the part you run.
 
-The tests moved with the code they test — they are [`ports/common/tests`](../common/tests) now, and
+The tests moved with the code they test — they are [`libripcord/tests`](../../libripcord/tests) now, and
 cover every port rather than this one.
 
 ```sh
@@ -129,10 +129,10 @@ cover every port rather than this one.
 dotnet run --project tools/Ripcord.ProtocolLab -- vectors
 
 # 2. Build and run the C against them (3,243 assertions)
-make -C ports/common/tests
+make -C libripcord/tests
 
 # 3. Compile every portable file, including the ones no runner links
-make -C ports/common/tests compile
+make -C libripcord/tests compile
 ```
 
 `make -C ports/ripcord-3ds test` still works and forwards to the same place.

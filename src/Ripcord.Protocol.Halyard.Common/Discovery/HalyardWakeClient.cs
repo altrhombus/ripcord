@@ -14,7 +14,7 @@ namespace Ripcord.Protocol.Halyard.Common.Discovery;
 /// A <c>WAKEUP * HTTP/1.1</c> datagram is sent to the same UDP port as discovery (<see cref="DiscoveryPort"/>,
 /// 9302), NOT the <c>host-request-port</c> the standby reply advertises — the advertised port is not where the
 /// wake goes at protocol version <c>00030010</c>. The only per-console value is the credential, which is the
-/// registration key we already store (<see cref="HalyardPairingRecord.WakeCredential"/>).
+/// registration key we already store (<see cref="HalyardPairingRecord.TryGetWakeCredential"/>).
 /// </para>
 ///
 /// <para>
@@ -73,7 +73,14 @@ public sealed class HalyardWakeClient
     /// </summary>
     public async Task WakeAsync(IPAddress consoleAddress, HalyardPairingRecord record, CancellationToken cancellationToken)
     {
-        byte[] payload = BuildWakePayload(record.WakeCredential(), _profile.ProtocolVersion);
+        if (!record.TryGetWakeCredential(out string? credential))
+        {
+            throw new InvalidOperationException(
+                "The pairing record's registration key is not a 32-bit hex value, so there is no wake credential. "
+                + "Pair the console again.");
+        }
+
+        byte[] payload = BuildWakePayload(credential, _profile.ProtocolVersion);
         var endpoint = new IPEndPoint(consoleAddress, _profile.DiscoveryPort);
 
         // Bind the vendor's source port when we can; fall back to ephemeral if it is taken, since a wake from

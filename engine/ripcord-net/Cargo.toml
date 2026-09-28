@@ -1,0 +1,22 @@
+[package]
+name = "ripcord-net"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "The I/O driver: runs ripcord-proto's connect sequence on std::net sockets, on the caller's thread"
+
+[dependencies]
+ripcord-proto = { path = "../ripcord-proto", default-features = false }
+# SO_RCVBUF, which std::net does not expose: the stream socket asks for 4 MB and reports what it got.
+socket2 = "0.6"
+
+[dev-dependencies]
+ripcord-net = { path = ".", features = ["loopback-console"] }
+
+[features]
+default = ["interop-constants"]
+# Forwarded to ripcord-proto, so a host can build the whole engine without the constants.
+interop-constants = ["ripcord-proto/interop-constants"]
+# The scripted LAN console on loopback sockets (src/testing.rs), for tests. Never in a shipping engine.
+loopback-console = ["ripcord-proto/scripted-console"]

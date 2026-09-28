@@ -4,7 +4,7 @@
  *
  * This runs on an SPE, not on the PPE. Different compiler (spu-gcc), different instruction set, no
  * access to main memory except by DMA, and 256 KB of local store for code, data and stack together.
- * Nothing in ports/common can be included here and nothing here may call into the PPU side.
+ * Nothing in libripcord can be included here and nothing here may call into the PPU side.
  *
  * WHAT IT DOES, AND WHY IT IS DELIBERATELY NOT A DECODER. It copies `size` bytes from one main-memory
  * address to another, 16 KB at a time, then writes a flag the PPE is watching. That is all. The point of

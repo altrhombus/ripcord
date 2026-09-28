@@ -140,17 +140,10 @@ public sealed class HalyardSenkusha : IAsyncDisposable
         var samples = new List<double> { Stopwatch.GetElapsedTime(versionSentAt).TotalMilliseconds };
 
         // Keyless SESSION_REQUEST (empty session key / launch spec / encrypted key) -> SESSION_REPLY (channel 0x01).
-        var big = new ControlMessage
-        {
-            Type = ControlMessage.Types.MessageType.SessionRequest,
-            SessionRequestPayload = new SessionRequestPayload
-            {
-                ClientVersion = SenkushaVersion,
-                SessionKey = string.Empty,
-                LaunchSpecJson = string.Empty,
-                EncryptedKey = ByteString.Empty,
-            },
-        };
+        // encryptedKey is present and empty, exactly as the vendor sends it: `22 00` in every keyless senkusha
+        // request in cap53 (frames 10030, 14662, 42854) and cap54 (3808) [W]. Assigning ByteString.Empty sets the
+        // proto2 presence bit, so the field is written; leaving it unset would omit it.
+        ControlMessage big = KeylessSessionRequest();
         long requestSentAt = Stopwatch.GetTimestamp();
         await _reliable.SendMessageAsync(TakionDataChunk.ChannelSession, big, cancellationToken).ConfigureAwait(false);
         if (await ReceiveUntilAsync(ControlMessage.Types.MessageType.SessionReply, cancellationToken).ConfigureAwait(false) is null)
@@ -547,4 +540,17 @@ public sealed class HalyardSenkusha : IAsyncDisposable
 
         _loopCts?.Dispose();
     }
+
+    /// <summary>The keyless SESSION_REQUEST the bring-up sends: empty session key, launch spec and encrypted key.</summary>
+    internal static ControlMessage KeylessSessionRequest() => new()
+    {
+        Type = ControlMessage.Types.MessageType.SessionRequest,
+        SessionRequestPayload = new SessionRequestPayload
+        {
+            ClientVersion = SenkushaVersion,
+            SessionKey = string.Empty,
+            LaunchSpecJson = string.Empty,
+            EncryptedKey = ByteString.Empty,
+        },
+    };
 }

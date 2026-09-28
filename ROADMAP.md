@@ -218,6 +218,172 @@ pass has to exercise.
 
 ## Backlog
 
+### One engine for the first-class clients — planned 2026-09-25, Phase 1 all but Windows
+
+One protocol engine, in Rust, under every first-class client (Windows, macOS and Linux; iOS, iPadOS and
+Android later). `libripcord` stays as the console ports' core. The decisions, the reasoning and the phases
+are in [`docs/engine-plan.md`](docs/engine-plan.md); this entry lists only what is open. Phase 0, bringing
+the documents into line, is done and in the journal. The engine lives in [`engine/`](engine/).
+
+- [ ] **Phase 1 — the spike, and the gate.** Every criterion that could be checked on the M4 Max is met
+      (journal, 2026-09-25; figures in [`engine/README.md`](engine/README.md)): `stream-crypto.kat`
+      passes 65 of 65, and the per-packet cost is 0.53–0.57 µs against the C core's 7.71–8.11 µs from one
+      Swift harness. It links into the Mac lab and a .NET harness through generated bindings, and its
+      binary size is recorded. Open:
+  - [ ] **Measured on Windows x64 and ARM64.** Run the .NET harness on each; `engine/README.md` has the
+        three commands. The C core was never measured on Windows, so the comparison there is against the
+        managed engine the client ships, which runs at 16–17 µs per packet on the M4 Max. The CI job prints
+        both figures on a shared runner. That shows the engine builds and runs there, but it is not the
+        measurement.
+- [ ] **Phase 2 — the engine at parity.** Bottom-up in the C core's layer order, each layer done when its
+      vectors pass, its fuzz target runs and differential fuzzing against the C core is clean. Includes the
+      `Ecdh` backends (CryptoKit carried over, CNG new, RustCrypto), each checked on its own platform in
+      CI, and the scripted console ported to Rust. Parity is a measured matrix, not a list. The first layer,
+      crypto and the Halyard derivations, has its vectors passing, its differential runs clean and its fuzz
+      target (`derive`) running clean (journal, 2026-09-26), so it is done. Next in order:
+  - [ ] **The CNG `Ecdh` backend on Windows.** Written as `PlatformEcdh` in the .NET harness (journal,
+        2026-09-26): .NET's `ECDiffieHellman`, which is CNG on Windows, behind the engine's backend table. It
+        passes `session-crypto.kat` through the engine on macOS, on Apple's implementation. The Windows legs
+        of CI's engine job run the same check on CNG itself, and have not run yet. The one call whose
+        behaviour could differ there is importing a private scalar with no public point, which .NET derives
+        on the platforms tried so far.
+  - [ ] **The probes and rate control on hardware.** Senkusha's echo and MTU probes, CORRUPT_FRAME, the
+        adaptive ladder and CONNECTION_QUALITY are ported (journal, 2026-09-26) and tested against scripted
+        consoles only. On a console: whether it answers the probes as the captures show, and, with
+        `report_connection_quality` on, whether a target in kbps moves its encoder sensibly, which settles
+        the unit.
+  - [ ] **The rendezvous route against a console.** The LAN half ran on 2026-09-26 (journal, "The Rust
+        engine's first session on hardware"). The rendezvous sequence is shared with the C core, mistakes
+        included, and has met only scripted consoles on the engine, so hardware is what checks it.
+  - [ ] **The nightly CI leg's first run.** `engine-nightly.yml` runs Miri over `ripcord-ffi` and every
+        fuzz target for five minutes with a kept corpus (journal, 2026-09-26); it has not run on GitHub yet.
+  - [ ] **Differential runs for each new layer.** `ripcord-diff` exists and covers every layer ported so
+        far. Each later layer adds its surface to `shim/diff_shim.c` in the change that
+        ports it. For sequencing, the C core is the only other implementation.
+- [ ] **Phase 3 — the Mac switches engines.** The relink is done (journal, 2026-09-26): RipcordKit reaches
+      the protocol only through `ripcord.h`, and the Mac project no longer compiles `libripcord/`. What is
+      open is the exit criterion:
+  - [ ] **The Mac on hardware, on the Rust engine.** The LAN route has streamed (journal, 2026-09-26).
+        Open: the account route (`connect --route account`), `pair` and `account-pair` against a console,
+        and a comparison run against a lab built from the commit before the relink.
+  - [ ] **The arm probe is never answered, and every LAN connect waits out its window.** PS5-<redacted> did
+        not answer SRC3 sent unicast to 9295, whether probed by hand while awake or during a connect
+        (2026-09-26), yet TCP 9295 accepted straight after. The engine, the C core and .NET all wait up to
+        2 s for the reply, then settle 200 ms, so about 2.2 s of every LAN connect is this wait. Find out
+        whether a reply exists at all (a capture of the vendor client), and if not, what the probe's
+        minimum lead time before the TCP connect is. [X] until a capture settles it.
+- [ ] **Phase 4 — Windows onto the engine,** after 1.0, one seam at a time behind `RIPCORD_ENGINE`.
+  - [ ] Before step 3: `Ripcord.App.csproj` still references `Ripcord.Protocol.Halyard` and
+        `Ripcord.Protocol.Halyard.Common` directly, though no source file in the app names either since
+        2026-09-26 (`SessionPage`'s three imports were stale, and are gone). Remove the references once a
+        Windows build can confirm nothing needs them beyond what `Ripcord.Presentation.Halyard` brings.
+
+- [ ] **Protocol questions the engine carries from the C core, each `[X]` until a console settles it:**
+  - The opener's request word, 0x40 in both references and the engine, appears in no capture; the spec
+    calls it a counter. Change .NET, the C core and the engine together.
+  - A login prompt arriving after the rendezvous route's 1 s sign-in window is answered where it lands, in
+    the media wait, after a connect from rest reached that wait with no prompt. .NET handles none.
+  - After a rendezvous session, the console briefly refuses TCP 9295; decide whether the sequence waits.
+  - Whether the 9303 association needs servicing between `begin` and the first exchange. .NET services it
+    in the background; the C core and the engine do not.
+  - Whether a connect needs registration every time (`--no-register` tests it).
+  - PS4's account route, and the search probe on the rendezvous route.
+
+### The .NET reference: findings from the engine comparisons (2026-09-26)
+
+Side-by-side reads of the .NET code and its C port, done for the Rust engine, found ten suspected faults in what
+the dotnet client ships. Nine were real and are fixed and tested; the tenth, the senkusha `encryptedKey`, was
+reversed on capture evidence, and the C core and the engine changed instead (journal, 2026-09-26). What they
+left open:
+
+- [ ] **The stream SESSION_REQUEST's `encryptedKey`.** All three implementations send four zero bytes, which
+      the console accepts on hardware. The vendor sends the field present and empty (`22 00`, cap53 frame
+      10086, `[W]`). Matching the vendor is a one-line change in each, and wants a hardware run to confirm
+      nothing depended on the four bytes.
+- [ ] **Check the dotnet client's resolution against its bitrate.** The console grants resolution by
+      bitrate (journal, 2026-09-25): 1080p asked at 10 Mb/s streamed 720p, and the dotnet client's default is
+      10,000 kb/s. Measure what a default dotnet session actually receives.
+- [ ] **The dotnet client: internet connect to a console woken from rest.**
+      `HalyardStreamingSession.EnsureSignedInAsync` fails the session when SESSION_ID does not follow a passcode; on the Mac, a woken console sent it only
+      after the A/V leg, in the one run from rest that streamed (journal, 2026-09-25) `[X]`. Confirm on the
+      dotnet client, then give .NET the same continuation.
+
+### macOS client — on the Rust engine since 2026-09-26
+
+A native Mac app with at least parity with the Windows client, internet play and sign-in included. The
+decisions, the App Store analysis and the order of work are in [`docs/macos-plan.md`](docs/macos-plan.md).
+Since Phase 3's relink (journal, 2026-09-26) it builds on the Rust engine, and its protocol work lands
+there: the engine's own items, including the hardware runs Phase 3 still owes, are under "One engine"
+above. The spike, the C-core connect sequence, the Swift cloud tier and the internet-play runs are done
+and in the journal. Open:
+
+- [ ] **The app's first run, against a console.** Steps 4–9 are written and build clean (journal,
+      2026-09-26) but have not been launched for review or streamed. The batched hardware pass should
+      look at, in order:
+      - the library's states against a console that is awake, resting and off, and a tile following a DHCP
+        move;
+      - pairing through the sheet, both routes (the account route has registered on hardware only from
+        `ripcord-lab`, on the C core, 2026-09-25);
+      - the launch zoom and the three dashes against the real stage timing;
+      - capture, meaning the keyboard plays only while captured and ⌘ shortcuts never reach the console;
+      - the inspector's figures against the lab's;
+      - the engine-to-display latency beside the dotnet client's 18 ms, which measure different things (see
+        `LatencyMeter`).
+- [ ] **Recording and Picture in Picture on a live stream** `[X]`: that passthrough accepts the stream's
+      samples and the file plays back, what a mid-recording resolution change does, and that PiP floats
+      the layer.
+- [ ] **HDR end to end** `[X]`: whether the console's HDR metadata reaches the display layer intact.
+- [ ] **The widget, the Control and the intents under a signed build** `[X]`. Claiming the app group needs
+      a provisioning profile (`RIPCORD_APP_GROUP`), and whether a widget button and a Control run the
+      intents in the app, as `openAppWhenRun` asks, has not been seen.
+- [ ] **The custom SF Symbol** for the mark, so the menu bar label and widgets can show connect progress.
+      Read the symbol-template format from the SF Symbols app, rather than recalling it `[X]`.
+- [ ] **The first `macos-v*` release.** Six secrets (listed in `ci.yml`) and a Developer ID. The signing,
+      notarization and draft-release steps have never run.
+- [ ] **Internet play in the app.** The app streams on the LAN only. The account route streamed from
+      `ripcord-lab` on the C core (journal, 2026-09-25), and the engine has it too, tested against scripted
+      consoles only; the app offers it once the engine's route has run on hardware. (`--route internet`
+      still ends at the console's candidates.)
+- [ ] **Controller input, live.** The sequence sends it, but no pad has been attached to the lab or the
+      app, so it has not been seen to steer the console.
+- [ ] **Live-verify** sign-in in the web view with a passkey (it may need an entitlement), and the Keychain
+      under the app's signature rather than the lab's ad hoc one `[X]`.
+- [ ] **The `mac` CI job's first run.** `runs-on: macos-26`, its Xcode, and now its Rust toolchain have not
+      been checked. The job may need its runner label or Xcode selection adjusted before it goes green.
+
+### iPhone, iPad, Apple TV and Apple Watch — scaffolding in 2026-09-27
+
+The plan is [`docs/ios-plan.md`](docs/ios-plan.md). RipcordKit and the engine build for iOS and tvOS, and one
+app target for all three builds in Debug and Release, device and simulator, in CI too. Open:
+
+- [ ] **The first run on hardware:** an iPhone and an Apple TV, pairing by code, a stream. It settles the
+      Local Network prompt, whether broadcast discovery needs the multicast entitlement `[X]`, and throughput.
+- [ ] **Signing:** a team and profiles, since iOS and tvOS refuse ad hoc signatures and device builds are
+      unsigned.
+- [ ] **Distribution:** the App Store is effectively the only route, so `macos-plan.md`'s guideline analysis
+      decides whether these apps ship; counsel before any submission.
+- [ ] The rest of the plan's order of work: the design pass, touch controls, sign-in and Apple TV's pairing
+      route, Picture in Picture, and the watch remote.
+
+### Provenance audit follow-ups (2026-09-27)
+
+The rule-text gaps the branch's provenance audit found are closed (journal, 2026-09-27). One remains:
+
+- [ ] **An inert build for the C ports.** The dotnet client and the engine can be built without the
+      interop constants; the C core's ports cannot (`NOTICE` says so). Add a `gen_constants.py` switch
+      if a port ever needs one.
+
+### libripcord — the console ports' core
+
+What is open in the C core, which the console ports under `ports/` build on. The first-class clients have
+moved to the Rust engine, so these are port-driven: each matters when a port builds it.
+
+- [ ] **The first coverage-guided fuzz run.** It happens in CI's `libripcord` job on Linux. It has never
+      run, because the author's Mac has no libFuzzer-capable clang, so the first run may find real bugs.
+- [ ] **Build the new socket code for the console SDKs** `[X]`: `select()` and `suseconds_t` in the
+      `rc_tcp` connect deadline, and `rc_udp_open_bound` (bind, getsockname), have not been built for the
+      3DS, Vita or PS3 SDKs.
+
 ### Account pairing — resolved, and one thing owed (2026-09-23 to 09-24)
 
 **The console was signed out of PlayStation Network.** The account's PSN security options had been changed,
@@ -405,46 +571,23 @@ looking.
       determines whether the rule is "no MF on the UI thread" or something broader.
 
 
-### Open — nothing requests a keyframe when no frame has *ever* decoded (carried over 2026-08-06)
-- [ ] `KeyFrameRequested` is raised in exactly **one** place: catastrophic decode backlog,
-      `jobs.Count >= MaxQueuedFrames` (`D3D12VideoDecodePipeline.cs:240-251`). **Nothing triggers a keyframe
-      request for "submitted many access units and never decoded a single frame."** That is a loop with no
-      exit: if the first IDR (carrying SPS/PPS) is lost or arrives before the decoder is ready, the MFT accepts
-      every later access unit and returns `MF_E_TRANSFORM_NEED_MORE_INPUT` forever — the failure
-      `VideoRenderer.cpp` already documents — so no frame decodes, so the queue never backs up, so the one
-      trigger never fires. The stall watchdog does not fire either: it distinguishes a static scene from a dead
-      session by console activity, and the console is still talking.
-  - Kept open after the codec-detection fix above, which explained the observed instance without needing this.
-    It remains a genuine hole in the recovery path, reachable whenever a first IDR is genuinely lost.
-  - **Fix shape:** request a keyframe when no frame has decoded within N ms of the stream coming up, bounded
-    and rate-limited. The plumbing already exists — `HalyardStreamingSession.RequestKeyFrame` is a no-op before
-    the stream is up and is rate-limited internally, and `SessionController.OnKeyFrameRequested` already knows
-    about both sides. Only the trigger is missing, and its event-source reason string would need to stop saying
-    "decoder backlog resynchronisation".
+### Open — a keyframe that arrives before the decoder can use it (narrowed 2026-09-27)
+- [ ] The lost-first-keyframe case is closed: `SessionController` now asks for a keyframe from a second after
+      the connect, and every second, until one arrives, as the C core's and the engine's latch do (journal,
+      2026-09-27). What it cannot see is a keyframe that *arrived* but that the decoder could not start from,
+      for example one it received before it was ready. The controller sees encoded frames, not decoded ones.
+      Closing that needs a decoded-frame count from `D3D12VideoDecodePipeline`, which is Windows code, and a
+      Windows build to check it.
   - Still unvaried, and still not implicated by anything: the launchSpec pins
     `"videoEncoderProfile":"hw4.1"` unconditionally (`HalyardStreamingSession.BuildLaunchSpecJson`), an
     H.264-shaped profile token reproduced verbatim from a vendor capture.
 
-
-### Open question — `AsyncObservable` can end a sequence without signalling it (2026-08-05)
-- [ ] **`AsyncObservable.Create` swallows `OperationCanceledException` and then raises neither `OnCompleted` nor
-      `OnError`** (`src/Ripcord.Core/Reactive/AsyncObservable.cs`). Any consumer that waits for a terminal signal
-      therefore waits forever if the producer ends that way. `AddConsolePage` knew this — its comment said "a
-      disposed subscription raises neither OnCompleted nor OnError" — and guarded it with a per-family
-      cancellation registration, which only helps when *our* token is cancelled, not when the producer throws
-      OCE on its own.
-  - **Symptom seen live (2026-08-05):** the add-console progress bar never disappeared while the user watched the
-    results list, i.e. with nothing cancelled. Worked around in `AddConsoleFlow` by making the search *window*
-    the authority on when a scan ends and treating the scanner's terminal signal as a fast path, so the spinner
-    is now self-limiting no matter what the transport does. Pinned by
-    `Scan_ThatNeverSignalsCompletion_StillEndsAfterTheWindow`.
-  - **Not established:** *why* a discovery family went quiet in that run. The workaround makes the UI symptom
-    impossible, but the cause is unproven, and the same primitive is used by the session/streaming path — where a
-    silently-ended sequence would not have a convenient window to fall back on. Worth understanding before
-    trusting `AsyncObservable` in a new place.
-  - Deliberately **not** changed here: making `Create` signal on cancellation is a one-line change to a Core
-    primitive the streaming path depends on, and it does not belong in an app-layer refactor.
-
+### Open question — why a discovery family went quiet (2026-08-05, narrowed 2026-09-27)
+- [ ] **`AsyncObservable.Create` now signals every end but a dispose** (journal, 2026-09-27): a producer's own
+      cancellation is an `OnError` where it used to be silence, and nothing is signalled after a dispose. What
+      stays open is the 2026-08-05 run's cause. The LAN search catches its own window's cancellation and
+      returns normally, so that was not the missing signal, and the spinner fix in `AddConsoleFlow` (the
+      search window is the authority on when a scan ends) stays for that reason.
 
 ### Stage B — progress, and what is owed (2026-08-06)
 **Landed.**
@@ -635,16 +778,16 @@ The stack connects and streams; these are the bits that still lean on dev-machin
 *(Already done, previously listed here: session factory (`HalyardSessionFactory`), DPAPI-backed credential
 store (`PairedConsoleStore`, `dpapi:` prefix), pairing UX (`PairConsoleDialog` → live registration), first
 live end-to-end connect.)*
-- [ ] **Trimming is off. The JSON blocker is gone; three smaller ones are not.** `PublishTrimmed=False` in
+- [ ] **Trimming is off. The app code is clean now; CsWinRT is what is left.** `PublishTrimmed=False` in
       every config. It was breaking Release because trimming disables `System.Text.Json` reflection and the app
       died on first deserialization. **Task #33 landed 2026-08-02** and trim analysis now reports **zero JSON
       warnings** for `Ripcord.Core`, `Ripcord.Protocol.Halyard` and `Ripcord.App`. What still stands between
       here and flipping the flag:
-  - **`Ripcord.Cloud.Halyard` still uses reflection** (6 × IL2026). Not an attribute away: it serialises
-    *anonymous types* and deserialises through a *generic helper*, neither of which source generation can see,
-    so the DTOs need to become real types first. Off the LAN path. **No longer parked behind the OAuth
-    decision** — that closed 2026-08-07 and the account tier shipped, so these six warnings are now the
-    largest app-code blocker to `PublishTrimmed=true` and are workable on their own merits.
+  - ~~**`Ripcord.Cloud.Halyard` still uses reflection.**~~ **GONE 2026-09-27** (journal). Its anonymous
+    request types became named records, in a source-generated `HalyardCloudJsonContext`, and the helpers take
+    a `JsonTypeInfo<T>`. Trim analysis reports zero warnings for the project, where it reported eleven
+    sites (the ROADMAP had counted six). `HalyardCloudClientWireTests` pins every request body byte for
+    byte against what the anonymous types produced, so nothing changed on the wire.
   - ~~**One non-JSON reflection site**: `IDeviceIdentity.cs:69` calls `Type.GetMethod` (IL2075).~~ **GONE
     2026-08-07.** Replaced with a direct `RegGetValueW` P/Invoke. It was not only a trim warning: the
     reflection resolved `Microsoft.Win32.Registry` inside `Ripcord.App` (`net10.0-windows`) and silently
@@ -688,7 +831,7 @@ live end-to-end connect.)*
     signs in and streams, and (b) unlocked still streams now that RP-StreamingType is dropped.
   - **If it turns out to be needed:** it is a 16-byte binary control frame — `u32 0, u32-BE mtu, 8 bytes 0` —
     at the counter after the passcode (5 with one, 4 without), not a `/sess/ctrl` header. The fix is a
-    post-`EnsureSignedIn` send, family-gated, in both `HalyardStreamingSession` and `ports/common`.
+    post-`EnsureSignedIn` send, family-gated, in both `HalyardStreamingSession` and `libripcord`.
 - [ ] **Does the console honour a mid-session target bitrate?** Unresolved, and the answer changes the design
       of everything downstream. Evidence leans *no* (16.1 Mbps measured against a 13.5 Mbps target), but later
       readings were confounded by VBR noise (20 → 34 → 20 Mbps at a fixed 40 Mbps cap).
@@ -916,7 +1059,7 @@ Both need a console or a capture to settle, hence here rather than in Track D.
       together, a visible change to every card in dark theme. That is a look decision to make on a real
       screen, not here. Until then `Ripcord.Card.xaml` and `docs/design.md` say they have diverged, and why.
       **Price: ~30 minutes to try, most of it looking.**
-- [ ] **Pair a console port from the desktop app — proposed 2026-09-16, not started.** A port asks the
+- [ ] **Pair a console port from the desktop app — proposed 2026-09-16; design note [`docs/port-pairing.md`](docs/port-pairing.md) 2026-09-27, for review.** A port asks the
       desktop to sign in on its behalf: the port enters a pairing mode and announces itself on the LAN, a
       running Ripcord on a PC or Mac sees it offered in its own UI, does the PSN sign-in and the console
       registration with a real browser and a real keyboard, and hands the finished pairing record back.
@@ -930,7 +1073,7 @@ Both need a console or a capture to settle, hence here rather than in Track D.
       than making them easier, and it removes them for **every** port rather than for the one that happened
       to have a readable cache.
 
-      **Where it belongs.** In `ports/common` and behind a `Ripcord.Presentation` seam, not in any one port.
+      **Where it belongs.** In `libripcord` and behind a `Ripcord.Presentation` seam, not in any one port.
       The console half is a UDP announce and a small transfer; the desktop half is a discovery source, a
       confirmation, and a reuse of the registration it already performs. Neither half is PS3-specific and
       writing it as though it were would mean writing it twice.

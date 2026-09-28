@@ -37,17 +37,17 @@ H264_SOURCES := \
 # could produce can be asked for on demand. What this does NOT test is lv2, and the file says so at
 # length - the two [X] facts about the real call are settled by the bring-up program on hardware.
 #
-# -I$(CORE) reaches ports/common for util/rc_random.h, the contract both this and the 3DS implement.
+# -I$(CORE) reaches libripcord for util/rc_random.h, the contract both this and the 3DS implement.
 RANDOM_TARGET := $(BUILD)/random_test
 RANDOM_SOURCES := \
 	$(PORT_ROOT)/source/platform/rc_random_ps3.c \
 	random_test.c
 
-CORE := $(PORT_ROOT)/../common
+CORE := $(PORT_ROOT)/../../libripcord
 
 # THE BACKGROUND'S TWELVE COLOURS. rc_wave.c is plain arithmetic over a pixel buffer - no PSL1GHT, no
 # display - so the one piece of this shell nobody can review by looking at it on any given day can be
-# asserted here instead. It needs the host platform seam ports/common/tests already has, for the clock
+# asserted here instead. It needs the host platform seam libripcord/tests already has, for the clock
 # rc_wave times itself with, and a stub for rc_log because nothing here wants the output.
 WAVE_TARGET := $(BUILD)/wave_test
 WAVE_SOURCES := \

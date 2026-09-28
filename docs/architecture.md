@@ -23,7 +23,7 @@ would be, and `PresentationPortabilityTests` is what stops one appearing.
                       (WinUI 3, Windows)         ports/ripcord-ps3   (C, ps3dev)
                              │                            │
                              ▼                            ▼
-                   Ripcord.Presentation.Halyard           ports/common     the portable C99 core
+                   Ripcord.Presentation.Halyard           libripcord       the portable C99 core
                              │                            ╷                every port compiles
                              ▼                            ╷ ported from,
   PORTABLE APP       Ripcord.Presentation                 ╷ not linked
@@ -48,7 +48,7 @@ against it — they exist as completeness tests for the specification, on the pr
 as good as its ability to produce a working implementation by someone who was not in the room when it was
 written.
 
-The dotted line starts at `ports/common` rather than at each port because that is where the porting
+The dotted line starts at `libripcord` rather than at each port because that is where the porting
 actually happened: the protocol is written once in portable C99 and every port consumes it. What a port
 contains is its platform — video, audio, input, storage, a shell — and nothing else.
 
@@ -100,18 +100,29 @@ Each project, and what it is responsible for:
   replays captures through the parsers. The iteration/verification tool for every protocol stage.
 - **`tools/Ripcord.HidCapture`** — standalone HID capture utility for controller RE work.
 
-## The ports
+## The C core and the ports
 
 `ports/` holds from-scratch C clients for consoles the .NET stack cannot run on. They share a protocol
-core with each other, and nothing at all with `src/` at link time.
+core, `libripcord/`, with each other, and nothing at all with `src/` at link time.
 
-- **`ports/common`** — the protocol in portable C99: `crypto/`, `halyard/` (the control KDF and the field
+The core sat at `ports/common` until 2026-09-24. It moved to the top level because the planned macOS
+client (`docs/macos-plan.md`) links it too, and a first-class client depending on a folder called "ports"
+misdescribes both. Nothing about its contents or its rules changed in the move.
+
+**Where this is heading.** [`engine-plan.md`](engine-plan.md), settled 2026-09-25, gives the first-class
+clients a single protocol engine written in Rust, which presents the same C contract as the C core
+(`halyard_client.h`). The macOS client moves to it by relinking once it reaches parity, and Windows moves
+after its 1.0, one seam at a time behind the interfaces `Ripcord.Presentation` already defines.
+`libripcord` then stays as the console ports' core. Until those moves happen, this section describes the
+tree as it is.
+
+- **`libripcord`** — the protocol in portable C99: `crypto/`, `halyard/` (the control KDF and the field
   ciphers), `session/`, `discovery/`, `takion/`, `stream/` (A/V framing and Cauchy Reed-Solomon FEC over
   GF(2^8)), `input/`, `net/`, `util/`, plus `tests/` — a host-side known-answer suite that needs no
   console, no GPU and no hardware. It is not a library anyone designed: it is what was left over when the
   3DS port was audited for a second target and **71 of its 88 source files turned out to reference no
   operating system at all**.
-- **`ports/common/platform/rc_platform.h`** — the seam, and the only header in the core that names an OS:
+- **`libripcord/platform/rc_platform.h`** — the seam, and the only header in the core that names an OS:
   a monotonic millisecond clock, a sleep, a high-resolution tick, a CSPRNG. Sockets are deliberately not
   in it; they are called as plain BSD names, which was expected to need a seam on Vita and did not.
   **Nothing goes in that header that only one platform needs** — a seam earns its place by having at
