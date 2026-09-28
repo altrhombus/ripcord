@@ -118,6 +118,9 @@ of these that fits, so a reader can tell what was removed without seeing it:
 | `<base64>` | a base64 value whose content is per-account or per-session |
 
 `PublishedTreeSweepTests` enforces the absence of the values; this table is what to replace them with.
+`ripcord-lab` and `ProtocolLab` print these placeholders in place of the real values by default
+(`IdentifierRedactor`), so a run's output can be copied into a record as it stands. `--show-identifiers` prints
+the raw values, for your own terminal only.
 
 ## The leak guard
 
