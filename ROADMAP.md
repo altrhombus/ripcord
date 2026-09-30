@@ -159,9 +159,9 @@ English-only. The README is already unusually honest; 1.0 needs it to also be *c
   where it does not, and nobody is blocked on it today.
 - **Trimming.** `PublishTrimmed=False` costs download size, not correctness. Six reflection sites in the
   cloud layer stand between here and flipping it.
-- **ARM64 binaries.** The code is architecture-clean and ARM64 is a first-class *build* platform, but no
-  ARM64 build has been verified recently and the author's machine is x64. Ship x64; let ARM64 build from
-  source until someone can test one.
+- **ARM64 binaries.** The code is architecture-clean and ARM64 is a first-class *build* platform. The whole
+  solution cross-builds for ARM64 from an x64 machine, with ARM64 native DLLs in the ARM64 app (2026-09-30),
+  but no ARM64 build has been run recently. Ship x64; let ARM64 build from source until someone can test one.
 - **Translations.** The catalogues exist and a speaker can contribute one; shipping an unreviewed machine
   translation would be worse than English.
 - **A purchased code-signing certificate.** The zip is unsigned and SmartScreen will say so on first run;
@@ -273,10 +273,9 @@ the documents into line, is done and in the journal. The engine lives in [`engin
         whether a reply exists at all (a capture of the vendor client), and if not, what the probe's
         minimum lead time before the TCP connect is. [X] until a capture settles it.
 - [ ] **Phase 4 — Windows onto the engine,** after 1.0, one seam at a time behind `RIPCORD_ENGINE`.
-  - [ ] Before step 3: `Ripcord.App.csproj` still references `Ripcord.Protocol.Halyard` and
-        `Ripcord.Protocol.Halyard.Common` directly, though no source file in the app names either since
-        2026-09-26 (`SessionPage`'s three imports were stale, and are gone). Remove the references once a
-        Windows build can confirm nothing needs them beyond what `Ripcord.Presentation.Halyard` brings.
+  - [x] Before step 3: `Ripcord.App.csproj`'s direct references to `Ripcord.Protocol.Halyard` and
+        `Ripcord.Protocol.Halyard.Common` are gone (journal, 2026-09-30). Both still arrive through
+        `Ripcord.Presentation.Halyard`.
 
 - [ ] **Protocol questions the engine carries from the C core, each `[X]` until a console settles it:**
   - The opener's request word, 0x40 in both references and the engine, appears in no capture; the spec
