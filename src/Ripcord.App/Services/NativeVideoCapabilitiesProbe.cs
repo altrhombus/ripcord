@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Ripcord.Media.Interop;
 using Ripcord.Presentation.Settings;
@@ -38,6 +39,15 @@ namespace Ripcord_App.Services;
 /// </summary>
 public sealed class NativeVideoCapabilitiesProbe : IVideoCapabilitiesProbe
 {
+    // The main window's HWND, for the HDR check: the question is whether the display the window is on is in
+    // HDR, not whether any display is. The probe is built before the window exists (App.OnLaunched builds the
+    // graph first), so the handle arrives through AttachWindow. Read off the UI thread, hence Volatile. Zero
+    // until then, which the native side answers for the primary monitor.
+    private long _windowHandle;
+
+    /// <summary>Called once from the UI thread, when the main window has been created.</summary>
+    public void AttachWindow(nint windowHandle) => Volatile.Write(ref _windowHandle, windowHandle);
+
     public Task<bool> IsHevcDecodeAvailableAsync()
         => Task.Run(() => VideoCapabilities.IsCodecDecodeAvailable(VideoCodecKind.Hevc));
 
@@ -45,7 +55,10 @@ public sealed class NativeVideoCapabilitiesProbe : IVideoCapabilitiesProbe
         => Task.Run(VideoCapabilities.IsD3D12VideoDecodeSupported);
 
     public Task<bool> IsHdrDisplayAvailableAsync()
-        => Task.Run(VideoCapabilities.IsHdrDisplayAvailable);
+    {
+        ulong window = (ulong)Volatile.Read(ref _windowHandle);
+        return Task.Run(() => VideoCapabilities.IsHdrDisplayAvailable(window));
+    }
 
     public Task<IReadOnlyList<VideoAdapterOption>> EnumerateAdaptersAsync()
         => Task.Run<IReadOnlyList<VideoAdapterOption>>(() =>

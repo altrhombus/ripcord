@@ -2,6 +2,7 @@
 #include "VideoRenderer.h"
 #include "VideoCapabilities.h" // shared adapter selection + real decode-capability queries
 #include "CodecSubtypes.h"  // one place for the codec -> MF subtype mapping
+#include "PresentingDisplay.h" // one place for "which display is this window on"
 #include "Ripcord.Media.Interop.VideoRenderer.g.cpp"
 
 #include <d3dcompiler.h>
@@ -217,8 +218,10 @@ namespace winrt::Ripcord::Media::Interop::implementation
         uint32_t width,
         uint32_t height,
         Ripcord::Media::Interop::GpuSelection gpuSelection,
-        uint64_t specificLuid)
+        uint64_t specificLuid,
+        uint64_t windowHandle)
     {
+        m_window = reinterpret_cast<HWND>(static_cast<uintptr_t>(windowHandle));
         m_width = width == 0 ? 1 : width;
         m_height = height == 0 ? 1 : height;
 
@@ -279,7 +282,7 @@ namespace winrt::Ripcord::Media::Interop::implementation
             }
         }
 
-        ProbeDisplayHdr(factory.Get(), adapter.Get());
+        ProbeDisplayHdr(factory.Get());
 
         // Choose the back-buffer format before anything that has to agree with it. Committing to 10-bit
         // whenever the panel is HDR-capable - rather than waiting to discover the stream is PQ - is what lets
@@ -427,58 +430,31 @@ namespace winrt::Ripcord::Media::Interop::implementation
     // DXGI reports G2084 only when Windows' "Use HDR" is actually ON for that display, so this doubles as a
     // check of the OS setting - a panel with HDR hardware but the toggle off correctly reports SDR, which is
     // what we want, since presenting HDR10 to a display in SDR mode looks worse than tone-mapping.
-    void VideoRenderer::ProbeDisplayHdr(IDXGIFactory1* factory, IDXGIAdapter1* renderAdapter)
+    void VideoRenderer::ProbeDisplayHdr(IDXGIFactory1* factory)
     {
-        m_displayHdrCapable = false;
-        m_displayMaxNits = 0.0f;
+        // The display the window is on, not the render adapter's first output and not any HDR display at all.
+        // The adapter the device lives on is beside the point: on a hybrid laptop the discrete GPU often
+        // drives no display, and on a desk with two monitors the question is which one shows the video.
+        const RipcordDisplay::PresentingDisplay display = RipcordDisplay::DescribeDisplayForWindow(factory, m_window);
+        m_displayHdrCapable = display.Hdr;
+        m_displayMaxNits = display.MaxNits;
+    }
 
-        auto scan = [this](IDXGIAdapter1* candidate) -> bool
-        {
-            if (!candidate)
-            {
-                return false;
-            }
+    void VideoRenderer::RefreshPresentingDisplay(uint64_t windowHandle)
+    {
+        m_window = reinterpret_cast<HWND>(static_cast<uintptr_t>(windowHandle));
 
-            ComPtr<IDXGIOutput> output;
-            for (UINT i = 0; SUCCEEDED(candidate->EnumOutputs(i, &output)); i++)
-            {
-                ComPtr<IDXGIOutput6> output6;
-                if (SUCCEEDED(output.As(&output6)) && output6)
-                {
-                    DXGI_OUTPUT_DESC1 desc{};
-                    if (SUCCEEDED(output6->GetDesc1(&desc))
-                        && desc.ColorSpace == DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020)
-                    {
-                        m_displayHdrCapable = true;
-                        m_displayMaxNits = desc.MaxLuminance;
-                        return true;
-                    }
-                }
-                output.Reset();
-            }
-            return false;
-        };
-
-        if (scan(renderAdapter))
+        ComPtr<IDXGIFactory1> factory;
+        if (FAILED(CreateDXGIFactory1(IID_PPV_ARGS(&factory))))
         {
             return;
         }
 
-        // The render adapter having no HDR output is not the same as there being none. On a hybrid laptop the
-        // discrete GPU we chose to decode on frequently drives no display at all - the panel hangs off the
-        // integrated one - so EnumOutputs returns nothing and a single-adapter probe would conclude "SDR" on a
-        // machine with an HDR screen. Widen to every adapter before believing that.
-        if (factory)
+        const bool wasHdr = m_displayHdrCapable;
+        ProbeDisplayHdr(factory.Get());
+        if (m_displayHdrCapable != wasHdr)
         {
-            ComPtr<IDXGIAdapter1> other;
-            for (UINT i = 0; SUCCEEDED(factory->EnumAdapters1(i, &other)); i++)
-            {
-                if (scan(other.Get()))
-                {
-                    return;
-                }
-                other.Reset();
-            }
+            m_displayChanged = true;
         }
     }
 
@@ -1982,10 +1958,15 @@ namespace winrt::Ripcord::Media::Interop::implementation
         const uint32_t targetWidth = m_displayWidth > 0 ? m_displayWidth : desc.Width;
         const uint32_t targetHeight = m_displayHeight > 0 ? m_displayHeight : desc.Height;
 
-        if (m_sharedDecodeTex && targetWidth == m_sharedTexWidth && targetHeight == m_sharedTexHeight)
+        if (m_sharedDecodeTex && targetWidth == m_sharedTexWidth && targetHeight == m_sharedTexHeight
+            && !m_displayChanged)
         {
             return true;
         }
+
+        // Rebuilt for a display change as for a size change: the output colour space is chosen below, once
+        // per video processor, so a new answer about the display only takes effect through a new one.
+        m_displayChanged = false;
 
         WaitForGpu();
         m_sharedDecodeTex.Reset();

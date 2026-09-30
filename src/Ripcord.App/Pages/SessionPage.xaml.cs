@@ -314,6 +314,11 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer
         if (App.MainWindow is { } window)
         {
             window.Activated += OnWindowActivated;
+
+            // Which display the window is on decides whether the renderer presents HDR10 or tone-mapped SDR,
+            // so a drag to another monitor has to reach it. See OnAppWindowChanged.
+            _displayId = CurrentDisplayId(window.AppWindow);
+            window.AppWindow.Changed += OnAppWindowChanged;
         }
 
         SizeChanged += Page_SizeChanged;
@@ -477,6 +482,38 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer
     Task IVideoPipelinePreparer.PrepareAsync(SessionConfig config, CancellationToken cancellationToken)
         => InitVideoPipelineAsync(config);
 
+    /// <summary>The display the window was last seen on, so a move within one monitor is not a change.</summary>
+    private ulong _displayId;
+
+    private static ulong CurrentDisplayId(Microsoft.UI.Windowing.AppWindow appWindow)
+        => Microsoft.UI.Windowing.DisplayArea
+            .GetFromWindowId(appWindow.Id, Microsoft.UI.Windowing.DisplayAreaFallback.Nearest)
+            .DisplayId.Value;
+
+    /// <summary>
+    /// Tell the pipeline when the window lands on a different monitor, so the renderer re-reads whether the
+    /// display now showing the video is in HDR. Checked on every move and resize, since either can carry the
+    /// window across, but only a change of display reaches the pipeline, and that call only raises a flag the
+    /// decode worker picks up between frames.
+    /// </summary>
+    private void OnAppWindowChanged(
+        Microsoft.UI.Windowing.AppWindow sender, Microsoft.UI.Windowing.AppWindowChangedEventArgs args)
+    {
+        if (!args.DidPositionChange && !args.DidSizeChange)
+        {
+            return;
+        }
+
+        ulong displayId = CurrentDisplayId(sender);
+        if (displayId == _displayId)
+        {
+            return;
+        }
+
+        _displayId = displayId;
+        _pipeline?.DisplayChanged();
+    }
+
     /// <summary>Stand up the D3D12 decode pipeline and bind its swap chain to the panel.</summary>
     private async Task InitVideoPipelineAsync(SessionConfig config)
     {
@@ -486,6 +523,9 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer
         {
             GpuSelection = ToNativeGpuSelection(_settings.GpuPreference),
             SpecificAdapterLuid = _settings.GpuLuid,
+            WindowHandle = App.MainWindow is { } window
+                ? (ulong)WinRT.Interop.WindowNative.GetWindowHandle(window)
+                : 0,
         };
 
         _pipeline.DeviceLost += OnDeviceLost;
@@ -2049,6 +2089,7 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer
         if (App.MainWindow is { } window)
         {
             window.Activated -= OnWindowActivated;
+            window.AppWindow.Changed -= OnAppWindowChanged;
         }
 
         App.Input.FrameReceived -= OnPadFrame;

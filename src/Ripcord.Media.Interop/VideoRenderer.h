@@ -20,7 +20,9 @@ namespace winrt::Ripcord::Media::Interop::implementation
             uint32_t width,
             uint32_t height,
             Ripcord::Media::Interop::GpuSelection gpuSelection,
-            uint64_t specificLuid);
+            uint64_t specificLuid,
+            uint64_t windowHandle);
+        void RefreshPresentingDisplay(uint64_t windowHandle);
         winrt::hstring ActiveAdapterDescription();
         bool IsDeviceLost();
         int32_t DeviceRemovedReason();
@@ -76,9 +78,10 @@ namespace winrt::Ripcord::Media::Interop::implementation
         void CreateRenderTargets();
         void CreatePipeline();
 
-        // Whether the display we are presenting to can accept HDR10. Probed once at device creation; a user
-        // toggling "Use HDR" or dragging the window to another monitor mid-session will not be noticed yet.
-        void ProbeDisplayHdr(IDXGIFactory1* factory, IDXGIAdapter1* renderAdapter);
+        // Whether the display the window is on can accept HDR10. Probed at device creation and again by
+        // RefreshPresentingDisplay when the window changes monitor. A user toggling "Use HDR" without moving
+        // the window is still not noticed mid-session.
+        void ProbeDisplayHdr(IDXGIFactory1* factory);
         void EnsureFrameTexture(uint32_t width, uint32_t height);
         void UploadFrameTexture(const uint8_t* bgra, uint32_t width, uint32_t height);
         void PresentBgraInternal(const uint8_t* bgra, uint32_t width, uint32_t height);
@@ -245,6 +248,12 @@ namespace winrt::Ripcord::Media::Interop::implementation
         // will need a source other than this one.
         bool m_displayHdrCapable = false;
         float m_displayMaxNits = 0.0f;
+
+        // The window the video is shown in, as an HWND, and whether its display's HDR state changed since the
+        // video processor last applied a colour space. The flag sends the next frame through
+        // EnsureSharedDecodeTexture's rebuild, which is where the output colour space is chosen.
+        HWND m_window = nullptr;
+        bool m_displayChanged = false;
 
         // HDR static metadata carried by the stream (SMPTE ST 2086 mastering display + CTA-861.3 MaxCLL /
         // MaxFALL). Its presence is the discriminator between genuinely HDR-graded content and SDR content
