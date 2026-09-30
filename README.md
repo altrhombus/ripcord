@@ -1,208 +1,186 @@
 # Ripcord
 
-An independent, clean-room **PlayStation Remote Play client for Windows**. Ripcord connects directly to a
-PS5 or PS4 over your LAN, decodes the H.264/HEVC video stream on the GPU, plays audio through WASAPI, and
-sends controller input back over the reverse-engineered wire protocol.
+**Your PlayStation, on more screens than you'd think.**
 
-The same protocol core, ported to C, runs on hardware that never had a Remote Play client: **a
-PlayStation 3 streams 720p60 from a PS5 or a PS4**, decoding on the console's own hardware decoder and
-spending 0.68% of a frame budget doing it. There is a package you can install —
-[`ps3-v1.0`](https://github.com/altrhombus/ripcord/releases/tag/ps3-v1.0).
+Ripcord is an independent, clean-room PlayStation Remote Play client. It talks straight to your PS5 or PS4,
+over your home network or across the internet, and puts the game on whatever you're holding: a Windows PC, a
+Mac, and, because it seemed like a good idea at the time, a **PlayStation 3**.
 
-It is a from-scratch implementation. There is no vendor code in this repository, and the protocol
-specification in [`docs/protocol/`](docs/protocol/) was derived independently — see
-[Provenance](#provenance-and-legal-position) below, which is not boilerplate for this project.
+All of it was built from scratch. There is no vendor code here, and the protocol specification in
+[`docs/protocol/`](docs/protocol/) was worked out independently. [Provenance](#provenance-and-legal-position),
+below, explains how, and it's worth reading rather than skipping.
 
 > **Not affiliated with Sony Interactive Entertainment.** "PlayStation", "PS5", "PS4" and "Remote Play" are
 > their trademarks, used here only to describe compatibility. See [`NOTICE`](NOTICE).
 
 ---
 
-## Status
+## The good stuff
 
-Phase 1 — LAN remote play — works end to end against real hardware, and as of 2026-09-05 so does play
-**over the internet**: client and console on different networks, both behind NAT, no port forwarding,
-direct peer to peer. A clone can pair with a console and stream from it; the protocol's interoperability
-constants are included (see [Interoperability constants](#interoperability-constants) below). What is
-missing is breadth, not basic function: no HDR output, no DualSense haptics or gyro.
+### A PlayStation 3 streams a PS5
 
-Every push and pull request runs the full suite on Windows, Linux and macOS, builds the app for x64 and
-ARM64, and cross-builds the PlayStation 3 package — seven jobs, and a tagged `ps3-v*` attaches that package
-to a release. The Windows client has no installer yet; the PS3 port does.
+Yes, really. The PS3 port streams **720p at 60 frames a second from a PS5 or a PS4**. The console's own
+hardware decoder handles the video and the RSX scales it, so the whole video path costs **113 µs of a
+16,667 µs frame**, which is 0.68%. It pairs itself with the PS3's on-screen keyboard. If the PS3 is signed in
+to your PlayStation Network account, it finds your account id on its own, so you never type 19 digits with
+a controller. It even has a home screen that looks at home on the XMB. Download it:
+[`ps3-v1.0`](https://github.com/altrhombus/ripcord/releases/tag/ps3-v1.0).
 
-### What works
+On the way, it measured the clock every timeout in the protocol depends on: **79,800,986 Hz against the
+79,800,000 we expected**, 12 parts per million out.
 
-Verified end-to-end against real hardware on a LAN, on **PS5 and PS4** alike:
+### The dotnet client, on Windows
 
-- **Pairing from scratch** — PIN registration against the console, no cloud round-trip. Both families;
-  PS4 registration uses the same table mechanism as PS5 with four differing constants.
-- **Discovery** — LAN broadcast SRCH (UDP 9302 for PS5, 987 for PS4) and mDNS (`224.0.0.251:5353`).
-- **Connect, video, audio, and controller input**, live. The recorded figures are 1080p60 at 0.4% packet
-  loss and 23.2 Mbps, with a 2.1 ms handshake, 6.5 ms RTT and 18 ms from demux to present.
-- **Waking a sleeping console** over the LAN, and signing in to a locked console with its 4-digit user
-  passcode — both derived from the project's own captures and confirmed against real hardware.
-- **GPU video decode** via Media Foundation / DXVA with `MF_LOW_LATENCY`, decoder chosen by codec, HEVC and
-  10-bit P010 supported; D3D12 present path.
-- **Audio** through WASAPI with bounded latency.
-- **Input** from Xbox-style pads (GameInput), DualSense over raw HID (USB and Bluetooth report formats,
-  including PS button and touchpad click), and the keyboard, with configurable bindings. Multiple engines run
-  simultaneously and merge, so swapping pads mid-session works.
-- **PSN account sign-in** — reads the account's own console list, and can ask PSN to wake a console that the
-  local broadcast cannot reach. Entirely optional: LAN play against an already-paired console needs none of it.
-- **Play over the internet**, verified 2026-09-05 — client on a phone hotspot, console on a different
-  network, both behind NAT, no port forwarding, direct peer to peer. Reaching a distant console needs
-  classic STUN (RFC 3489 Binding Requests) to learn each leg's reflexive address; the control association
-  and the A/V connection are separate mappings and need it separately. Throughput was indistinguishable from
-  the same-LAN figures. Driven from the harness, not yet through the app's own UI.
-- **1,074 unit tests** across two suites, pure managed and cross-platform — they need no console, no GPU and
-  no Windows-only hardware, and CI runs them on Windows, Linux and macOS. A clean checkout without the
-  authors' captures skips **37** of them by design: those validate against real captured ground truth that is
-  not, and will not be, published. A few more skip for the host rather than the captures — the
-  hardware-accelerated GF paths skip whichever of x64 and ARM64 the machine is not, and two seam tests want
-  Windows. Sixty-eight of them — nine checks and a detector-contract table — sweep all three corpora a clone
-  carries: the tree, every commit message, and every revision of every file. One of the nine asks git which
-  committed files the others do not open, because a corpus list cannot audit itself.
+The flagship, and the one heading for 1.0. Verified against real consoles, **PS5 and PS4** alike:
 
-  That sweep is not decoration. It has caught a licence digest quoted in a commit message, an allowlist entry
-  guarding a value no clone contains, and an H.264 clause number that four dotted integers make
-  indistinguishable from an address — each on the commit that introduced it.
+- **1080p60 at 23 Mbps**, with 0.4% packet loss, a 2.1 ms handshake, 6.5 ms round trips, and 18 ms from
+  unpacking the stream to the frame on screen. Video is decoded on the GPU (H.264 and HEVC, 10-bit included) and
+  presented through D3D12.
+- **Play from anywhere.** Across the internet, both ends behind NAT, no port forwarding: it finds a direct
+  peer-to-peer path, and a stream from a phone hotspot looks just like one on the LAN. Pair and connect from
+  the app itself.
+- **Pairing every way.** Type the console's code, or sign in to PlayStation Network and pick your console. It
+  wakes a console from rest, locally or over the internet, and handles a locked profile's passcode.
+- **The controller you already have.** An Xbox pad, a DualSense over USB or Bluetooth (PS button and
+  touchpad click included), or the keyboard, with your own bindings, and you can swap between them mid-game.
+- **A Windows 11 app that looks like one,** designed as a Fluent showcase rather than a sample.
 
-### The console ports
+### One engine to run them all
 
-The protocol core was factored into portable C (`libripcord`) and carried onto hardware Sony never shipped
-a client for. Each port is a **completeness test for the specification** — a spec is only as good as its
-ability to produce a working implementation by someone who wasn't in the room when it was written, and every
-place a port had to guess is a defect in the document. Three of them have now read it.
+The protocol now also lives in a **Rust engine** (`engine/`), which will be the one engine under every
+first-class client. It is about **fourteen times faster per packet** than the C core it grew from (0.53 µs
+against 7.7 µs). It's fuzzed nightly across ten targets, with Miri watching over its C interface. Its first
+session on real hardware streamed 1080p60 HEVC for twenty seconds without losing a packet.
 
-- **[`ports/ripcord-ps3`](ports/ripcord-ps3) — PlayStation 3.** The furthest along, and the one with a
-  release. It streams **720p60 from a PS5 or a PS4** at 20,000 kbps: `cellVdec` decodes, the RSX scales, and
-  the decoder hands over RGB by DMA so nothing copies a pixel on the PPE. The whole video path costs **113 µs
-  of a 16,667 µs frame**, 110 of which are the decode call. Discovery, wake, pairing and the passcode prompt
-  all happen on the console, with the system keyboard — no PC in the loop.
-- **[`ports/ripcord-3ds`](ports/ripcord-3ds) — New 3DS.** The first port, and the one that proved the
-  specification could be read by somebody else. Streams real video from a real PS5.
-- **`ports/ripcord-vita` — PS Vita.** On its own branch, not in this tree.
+### A Mac app, and an iPhone and Apple TV on the way
 
-The PS3 port also measured the thing every timeout in the core depends on: the PPE time base is
-**79,800,986 Hz against the 79,800,000 it expected**, 12 parts per million out.
+The **Mac app** runs on that engine: a library of your consoles, pairing by sign-in or code, a stream window
+with an inspector, Picture in Picture, recording, a menu bar extra, widgets, and Siri and Shortcuts actions.
+The Mac has streamed from a real PS5 on the LAN and over the internet through its lab tool, `ripcord-lab`.
+The app itself hasn't met a console yet; that's the next hardware session. **iPhone, iPad and Apple TV** share
+the same code, and their app builds but hasn't run on a device yet ([the plan](docs/ios-plan.md)).
 
-**Internet play works through the app's own UI**, as of 2026-09-24 — previously the route was solved but had
-only ever been driven from `tools/Ripcord.ProtocolLab`. Demonstrated on hardware: pairing a console over the
-account (no-PIN) route from the app, then connecting to it from a different network entirely (a phone
-hotspot), including waking it from rest over the internet, and disconnecting cleanly — the console showed its
-own "remote play disconnected" notice, which is the difference between ending a session and vanishing from
-one. One machine, one console, one pair of networks; a carrier NAT that maps per destination would still
-defeat the reflexive path, and the console has to be signed in to PlayStation Network for anything on this
-route to reach it.
+### And the rest
 
-### What does not work yet
+- **A New 3DS** streams a PS5. It was the first port, and the proof that someone other than the spec's
+  author could build a client from it.
+- **A PS Vita** port is on its own branch.
+- **Built with care.**
+  - Every pull request runs twelve CI jobs across Windows, Linux and macOS. Nightly runs fuzz the engine
+    and check it with Miri.
+  - The C core is fuzzed on every PR, and its first CI run found a real bug.
+  - A published-tree sweep and a commit-time leak guard keep anyone's personal details out of the history.
+  - The labs print placeholders instead of real addresses and ids, so a test run can be written up safely.
 
-- **IPv6-only networks.** The stack is IPv4 throughout — discovery, STUN and the session transport all bind
-  and filter `InterNetwork`. The STUN reflexive path that makes internet play work therefore cannot function
-  without IPv4. Nothing claims otherwise, but it is worth stating against a headline feature.
-- **Following a console paired by typed address.** A console added by hand-typed IP carries no `HostId`, so
-  it cannot be relocated after a DHCP lease change. Every other pairing route can.
-- **True HDR output.** HDR is negotiated correctly and the console sends it, but the swap chain is still SDR.
-  The capability probe also answers "is any connected display HDR" rather than "is the display this window is
-  on HDR", so it can offer HDR on a monitor that cannot present it.
-- **DualSense output** — haptics, adaptive triggers, lightbar — and **gyro/motion input**.
-- **Xbox.** Named in the UI so the shape of the app is legible, with nothing behind it. There is no protocol
-  work, and none is claimed.
-- **Trimmed publishing** is off (`PublishTrimmed=False`). The remaining blockers are six `IL2026` warnings in
-  the cloud client; WinUI's own CsWinRT layer produces a further 37 that no app code can fix.
+---
 
-The open backlog is tracked in [`ROADMAP.md`](ROADMAP.md), which is the source of truth — this section
-summarises it. [`docs/README.md`](docs/README.md) indexes the rest of the documentation.
+## Where things stand
+
+| Client | State |
+|---|---|
+| **Windows** (the dotnet client) | Streams on the LAN and over the internet, PS5 and PS4. Working toward **1.0**: no installer yet, and three known bugs to fix |
+| **PlayStation 3** | **Released:** [`ps3-v1.0`](https://github.com/altrhombus/ripcord/releases/tag/ps3-v1.0), 720p60 from a PS5 or PS4 |
+| **New 3DS** | Streams a PS5 |
+| **macOS** | Built on the Rust engine. Streams from its lab tool; the app is waiting for its first hardware session |
+| **iPhone, iPad, Apple TV** | Scaffolding that builds for all three; not yet run on a device |
+| **PS Vita** | On its own branch |
+| **Linux** | Planned, on the Rust engine |
+
+### What doesn't work yet
+
+- **IPv6-only networks.** Everything is IPv4, including the STUN path internet play depends on.
+- **True HDR output.** HDR is negotiated and the console sends it, but the picture is still presented in SDR.
+  The HDR check also asks whether *any* display is HDR rather than the one the window is on.
+- **DualSense output and motion:** haptics, adaptive triggers, lightbar and gyro.
+- **Following a console paired by typed address** after its DHCP lease changes. Every other pairing route can.
+- **An Xbox pad alongside a DualSense.** With both connected, the Xbox pad goes quiet. It's one of the three
+  bugs 1.0 fixes.
+- **Xbox consoles.** They're named in the app so the design has room for them, and there's nothing behind
+  that yet.
+- **A Windows installer.** Build from source for now; the release zip and MSIX are part of 1.0.
+
+### What's next
+
+1. **The dotnet client's 1.0:** a download a stranger can install, pair and play with. The definition and
+   the checklist are in [`ROADMAP.md`](ROADMAP.md#10--scope).
+2. **The Mac app's first hardware session**, then its first release.
+3. **iPhone, iPad and Apple TV** on real devices ([`docs/ios-plan.md`](docs/ios-plan.md)).
+4. **A Linux client,** on the same Rust engine as the Mac ([`docs/engine-plan.md`](docs/engine-plan.md)).
+5. **Pairing a console port from your desktop,** so a PS3 never needs its own keyboard dance
+   ([`docs/port-pairing.md`](docs/port-pairing.md)).
+6. **Windows on the Rust engine,** after its 1.0 ([`docs/engine-plan.md`](docs/engine-plan.md)).
+
+[`ROADMAP.md`](ROADMAP.md) is the whole backlog, and [`docs/journal.md`](docs/journal.md) is the dated story
+of how everything above came to work. [`docs/README.md`](docs/README.md) maps the rest of the documentation.
 
 ---
 
 ## Building
 
-**Windows is required.** The solution mixes `net10.0` managed projects with two native C++/WinRT projects
-(`Ripcord.Media.Interop`, `Ripcord.Input.Interop`), and the app itself targets
-`net10.0-windows10.0.26100.0` with WinUI 3.
+### Windows (the dotnet client)
 
-Prerequisites:
-
-- Windows 11 (or Windows 10 build 26100+ SDK)
-- .NET 10 SDK
-- Windows App SDK
-- A C++ toolchain — MSBuild or Visual Studio with the Desktop C++ workload
-
-Both **x64** and **ARM64** are supported build platforms — a Snapdragon/ARM64 Windows machine builds and
-runs the whole stack natively, with no emulation. The carry-less GHASH path is written for each
-(`PCLMULQDQ` on x64, `PolynomialMultiplyWidening` on ARM64), so session-crypto throughput does not depend on
-which host you are running.
-
-The native `.vcxproj` projects are **not** buildable with plain `dotnet build`. Build everything through
-MSBuild, from a Developer Command Prompt or Visual Studio:
+Windows 11 with the .NET 10 SDK, the Windows App SDK and a C++ toolchain (Visual Studio's Desktop C++
+workload, or MSBuild). **x64 and ARM64** are both first-class: an ARM64 machine builds and runs everything
+natively. The two native C++/WinRT projects need MSBuild, not `dotnet build`:
 
 ```
-msbuild Ripcord.slnx -p:Platform=ARM64      # or -p:Platform=x64
+msbuild Ripcord.slnx -p:Platform=x64        # or -p:Platform=ARM64
+dotnet run --project src/Ripcord.App/Ripcord.App.csproj
 ```
 
-`Platform` defaults to the solution's first platform (x64), so pass it explicitly on an ARM64 host.
+Build Release for handhelds: Debug builds of the native DLLs link the Visual C++ debug runtime, which a
+machine without Visual Studio doesn't have. From WSL, pass `--artifacts-path` to keep build output off the
+mounted tree.
 
-Once the native interop DLLs exist under `<ARM64|x64>/<Config>/`, the managed app alone can be built and
-run — the architecture is inferred from the host:
+### macOS, iPhone, iPad and Apple TV
 
-```
-dotnet build src/Ripcord.App/Ripcord.App.csproj
-dotnet run   --project src/Ripcord.App/Ripcord.App.csproj
-```
-
-The two test suites need none of the above and run anywhere, including WSL and Linux CI:
+macOS 26, Xcode and a stable Rust toolchain. The Xcode project builds the engine itself.
+[`src/Ripcord.Mac/README.md`](src/Ripcord.Mac/README.md) has signing and release notes.
 
 ```
+cd src/Ripcord.Mac
+xcodebuild -project Ripcord.xcodeproj -scheme Ripcord -derivedDataPath build build        # the app
+xcodebuild -project Ripcord.xcodeproj -scheme RipcordLab -derivedDataPath build build     # ripcord-lab
+```
+
+### The engine, the C core, and the tests
+
+```
+cd engine && cargo test --workspace --all-features                  # the Rust engine
+make -C libripcord/tests                                            # the C core
 dotnet test tests/Ripcord.Protocol.Halyard.Tests/Ripcord.Protocol.Halyard.Tests.csproj
 dotnet test tests/Ripcord.Presentation.Tests/Ripcord.Presentation.Tests.csproj
 ```
 
-A handful of tests validate against real captured ground truth held outside the repository. They self-skip
-when those fixtures are absent, so a full green run does not require them.
-
-**Building from WSL against a Windows checkout:** pass `--artifacts-path` to keep build output off the
-9p-mounted tree, or builds will be slow and may fail on file locking.
-
-**Ship Release for handhelds.** Debug builds of the native DLLs link the non-redistributable Visual C++ debug
-runtime and will not start on a machine without the Visual Studio redistributable installed.
+The .NET suites need no console, GPU or Windows, and run anywhere, Linux and WSL included. A few tests check
+against real captures that aren't published. They skip themselves in a clean clone, so a green run doesn't
+need them. The console ports build with their own toolchains; each port's README explains how.
 
 ---
 
 ## Layout
 
-Dependency direction is strictly platform-specific → shared → core; `Ripcord.Core` knows nothing about
+Dependencies run one way: platform-specific, then shared, then core. `Ripcord.Core` knows nothing about
 PlayStation.
 
-| Project | Role |
+| Where | What |
 |---|---|
-| `Ripcord.Core` | Platform-neutral session, input, and settings contracts |
-| `Ripcord.Core.Net` | Transport primitives: TCP/UDP, mDNS, STUN, WebSockets, crypto wrappers |
-| `Ripcord.Cloud.Halyard` | PSN cloud client — OAuth2, console list, wake, and the WAN rendezvous |
-| `Ripcord.Protocol.Halyard.Common` | Transport-neutral protocol types, message codec, and the crypto seam |
-| `Ripcord.Protocol.Halyard.Takion` | The SCTP-over-UDP streaming transport |
-| `Ripcord.Protocol.Halyard` | Session composition: discovery + transport + crypto + demux |
-| `Ripcord.Media`, `.Media.Audio`, `.Media.Interop` | D3D12/MFT video pipeline and WASAPI audio |
-| `Ripcord.Input`, `.Input.Common`, `.Input.Interop` | Controller sources, merged into one stream |
-| `Ripcord.Client` | Headless session lifecycle owner (connect, reconnect, stats) |
-| `Ripcord.Presentation` | The portable app layer — view-models and flow state machines, no UI framework types |
-| `Ripcord.Presentation.Halyard` | The PlayStation backend for that layer, and the composition root |
-| `Ripcord.App` | The WinUI 3 shell |
-| `Ripcord.Diagnostics` | Tracing/metrics behind the diagnostics overlay |
-| `tools/Ripcord.ProtocolLab` | Console harness — drives the connect flow and replays captures |
-| `tools/Ripcord.HidCapture` | Standalone HID capture utility for controller work |
-| `libripcord` | The protocol core in portable C, shared by every console port |
-| `ports/ripcord-ps3` | PlayStation 3 client — streams 720p60, ships a `.pkg`; not part of the solution |
-| `ports/ripcord-3ds` | New 3DS client, in C — not part of the solution |
+| `src/Ripcord.Core`, `Ripcord.Core.Net` | Platform-neutral contracts, and transport and crypto primitives |
+| `src/Ripcord.Cloud.Halyard` | The PSN cloud client: OAuth2, the console list, wake and the internet rendezvous |
+| `src/Ripcord.Protocol.Halyard*` | The protocol: message codec, crypto, the Takion transport, and the session |
+| `src/Ripcord.Media*`, `Ripcord.Input*` | D3D12 video and WASAPI audio; controllers, merged into one stream |
+| `src/Ripcord.Client`, `Ripcord.Presentation*` | The headless session owner, and the portable app layer with its PlayStation backend |
+| `src/Ripcord.App` | The WinUI 3 app |
+| `src/Ripcord.Diagnostics` | Metrics, and the redactor behind the labs' output |
+| `src/Ripcord.Mac` | The Apple clients: the Mac app, `ripcord-lab`, and iPhone, iPad and Apple TV |
+| `engine/` | The Rust engine, its C interface, and its fuzzers |
+| `libripcord/` | The protocol in portable C, the console ports' core |
+| `ports/ripcord-ps3`, `ports/ripcord-3ds` | The console ports |
+| `tools/` | `ProtocolLab` (the harness), `HidCapture`, and the leak guard |
 
-`Ripcord.Presentation` is plain `net10.0` and no UI-framework type may cross into it — no brush, no
-visibility, no dispatcher. Presentation concerns are portable enums that each front end maps to its own
-types, and a test enforces the rule by reflecting over referenced assemblies, because prose alone has not
-held elsewhere in this repository.
-
-`Halyard`, `Takion` and `Senkusha` are codenames used throughout the code. Only `Halyard` is our invention;
-the other two are the vendor's own internal names, retained as protocol terminology. See
-[`CLAUDE.md`](CLAUDE.md) for the naming table and the reasoning.
+`Halyard`, `Takion` and `Senkusha` are the codenames used throughout. Only `Halyard` is ours; the other two
+are the vendor's own names, kept as protocol terminology. [`CLAUDE.md`](CLAUDE.md) has the naming table and
+the reasoning.
 
 ---
 
@@ -309,10 +287,23 @@ implementation, tests, and documentation. This is disclosed deliberately: the pr
 consistent, attributable identity in a legally sensitive area, and a consistent record of candour is worth
 more than the ambiguity of silence.
 
-It carries a specific obligation, which [`CONTRIBUTING.md`](CONTRIBUTING.md) spells out. A language model may
-have another Remote Play implementation in its training data and can reproduce that implementation's
-structure or constants without being asked to. Guarding against that is part of the clean-room discipline
-here, not an afterthought.
+**The assistant works under the same provenance rules as everyone else, and they are why this disclosure
+matters.** Everything in the protocol comes from this project's own work:
+- the authors' own captures of their own console and account;
+- static analysis of the authors' own lawfully obtained, installed copy of the vendor client;
+- public references: RFCs, NIST test vectors and platform documentation.
+
+The assistant is never used to obtain implementation detail from another Remote Play implementation: not
+its source, its constants, its byte layouts or its naming. That is the same line
+[Provenance](#provenance-and-legal-position) draws for people, and routing around it through a model would be
+the same breach.
+
+It also carries a specific obligation, which [`CONTRIBUTING.md`](CONTRIBUTING.md) spells out. A language
+model may have another implementation in its training data and can reproduce that implementation's
+structure or constants without being asked to, fluently enough to pass for derivation. So the method here
+is to **derive first, then confirm against our own evidence**. A value that can't be traced to a capture,
+our own analysis or a public reference is not kept: it is marked `[X]` and derived properly. Guarding against
+this is part of the clean-room discipline, not an afterthought.
 
 ---
 
