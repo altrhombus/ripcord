@@ -124,6 +124,7 @@ Windows client ships today, so on Windows that pair is the comparison that matte
 | Differential against `HalyardPacketCrypto` | 80 key positions × 4 checks (CTR, both seal directions, the control AAD rule, tamper), across rotation windows and the 32-bit edge |
 | Per packet, one Swift harness for both engines (`ripcord-lab bench`) | C core **7.71–8.11 µs**, Rust **0.53–0.57 µs** |
 | Per packet, from .NET | Rust through P/Invoke **0.67–0.71 µs**, managed `HalyardPacketCrypto` 16.1–17.3 µs |
+| Per packet, from .NET on Windows x64 (2026-09-30, an x64 desktop) | Rust through P/Invoke **0.92 µs**, managed `HalyardPacketCrypto` 14.29 µs, one run |
 | Mac lab | Links through the generated header; the RipcordKit tests still build and pass (Phase 1; the Mac has since moved onto the engine entirely) |
 | .NET | Links through the generated bindings: `[UnmanagedCallersOnly]` callbacks, a `GCHandle` user pointer |
 | Size | `libripcord.dylib` 386 KB stripped. `ripcord-lab` grows from 1.10 MB to 2.35 MB stripped, which is more than the engine's own size and still to be explained |
@@ -418,5 +419,5 @@ session.
 The Windows host is .NET, so its backend is .NET's `ECDiffieHellman` (CNG, BCrypt, on Windows) behind the
 engine's backend table: `hosts/dotnet/Ripcord.Engine.Harness/PlatformEcdh.cs`, which Phase 4 moves into
 `Ripcord.Protocol.Halyard.Native` unchanged. The harness runs `session-crypto.kat` through the engine with it
-and compares the result with RustCrypto's. It passes on macOS on Apple's implementation (34 checks); CI's
-Windows legs are where it runs on CNG.
+and compares the result with RustCrypto's. It passes on macOS on Apple's implementation (34 checks), and on
+CNG itself on Windows x64 (34 checks, 2026-09-30).
