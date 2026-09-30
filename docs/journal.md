@@ -35,6 +35,33 @@ different purpose.
 > anything. The list above is short, it is checkable in one `git log --format=%B | grep`, and it stops
 > growing the moment someone notices — which is the property that actually matters.
 
+### The console card's two-line name, at 100% and 150% text (2026-09-30)
+
+One of 1.0's three known defects, found on 2026-08-05. The card was rebuilt on 2026-09-20 and the defect was
+never checked against the new one, so the first step was to look. Checked in the running app on an x64
+desktop at 100% display scale, with synthetic consoles (documentation-range addresses, empty credentials)
+written to a fresh `consoles.json` and removed afterwards, and a nickname long enough to need three lines.
+
+- **At 100% text it was already fixed.** Grid and hero both show two lines, an ellipsis and the status line.
+- **At 150% the hero still failed.** The status line was cut in half. The grid survived by about two pixels.
+- **WinUI does apply Windows' text size.** The design review asked this on 2026-09-21. Cards stay the same
+  height while their text grows, and large text grows less than small text, so the grid name grew well
+  under 50%.
+
+**The fix** is in `ConsolesPage.xaml`. The name and its vendor trail now share the card's one `*` row,
+top-aligned, so the last-played and status rows are measured first and the name trims to the lines that are
+left. The caption row also collapses on a console never played. It had held an empty line, and at 150% that
+line was the difference between a one-line name and a two-line one. After the fix:
+
+| | 100% text | 150% text |
+|---|---|---|
+| Grid | unchanged: two lines and the status line | two lines and the status line |
+| Hero | unchanged: two lines and the status line | one line, ellipsis, status line intact |
+
+The full name is still in the tooltip and the Details menu. Not checked: the roomy density, which needs a
+viewport of 1920 or more, and a 200% display. Display scale enlarges the card with its text, so 200% should
+look like 100%, but that is reasoning, not observation.
+
 ### The labs print placeholders, and a rule for records (2026-09-28)
 
 The leak guard stops a real value at commit time. This removes the usual way one gets there: a hardware run
