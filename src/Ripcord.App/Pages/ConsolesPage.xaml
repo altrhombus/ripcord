@@ -94,59 +94,76 @@
 
                     <!--
                         Content sits in the leading two-thirds. The right margin clears the wedge, and the
-                        rows are Auto with one * spacer so a short card closes up whitespace rather than
-                        clipping its last line - the failure that ate a third of "Played 31 min ago" when the
-                        slack lived on a row that held text.
+                        slack lives in the name's row, the one line that can trim whole lines away rather than
+                        be cut through. "Played 31 min ago" lost its bottom third when the slack sat on a row
+                        that could only be clipped.
                     -->
                     <Grid Margin="{x:Bind State.Density, Mode=OneWay, Converter={StaticResource Density}, ConverterParameter=Margin}">
                         <!--
-                            Five rows, and last-played gets its own. It shared the status row for one build
-                            and "Played 11 Sep 2026" came out as "Played 11 Sep 2" - the text column here is
-                            about 164px once the wedge and the padding are taken out, which is not enough for
-                            a status word and a date side by side. The hero has room for both; this does not.
+                            Last-played gets its own row. It shared the status row for one build and "Played 11
+                            Sep 2026" came out as "Played 11 Sep 2" - the text column here is about 164px once
+                            the wedge and the padding are taken out, which is not enough for a status word and a
+                            date side by side. The hero has room for both; this does not.
+
+                            The name and its vendor trail share the one * row, and that is what decides who loses
+                            when the card is short. The card's height is fixed and Windows' text size is not, so
+                            at 150% text a two-line name on the hero needs more than the card has. Auto rows are
+                            measured first, so the status line is sized before the name is offered anything, and
+                            the name trims to the lines that are left. While the name sat in an Auto row, the
+                            status line was the one clipped, and it is the line that says whether pressing the
+                            card will work.
                         -->
                         <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" />
                             <RowDefinition Height="*" />
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
 
                         <!--
-                            The name leads. Two lines at most, and the right margin holds the overflow button
-                            off its first line. The tooltip REPEATS the name rather than being the only copy:
-                            touch never hovers, so anything reachable by hover alone is unreachable on a
-                            handheld. Details in the overflow menu is the copy reachable by finger, pad and
-                            mouse.
+                            Top-aligned so the trail stays under the name rather than being pushed down to meet
+                            the status line; the slack falls below it, as it did when it had a spacer row.
                         -->
-                        <TextBlock
-                            Margin="0,0,36,0"
-                            MaxLines="2"
-                            Style="{x:Bind State.Density, Mode=OneWay, Converter={StaticResource Density}, ConverterParameter=NameStyle}"
-                            Text="{x:Bind State.DisplayName, Mode=OneWay}"
-                            TextTrimming="CharacterEllipsis"
-                            TextWrapping="Wrap"
-                            ToolTipService.ToolTip="{x:Bind State.DisplayName, Mode=OneWay}" />
+                        <Grid VerticalAlignment="Top">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="*" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
 
-                        <!--  The vendor trail sits with the family it names, not off on its own.  -->
-                        <StackPanel
-                            Grid.Row="1"
-                            Margin="0,6,0,0"
-                            Orientation="Horizontal"
-                            Spacing="8">
-                            <controls:FamilyMark
-                                Width="9"
-                                Height="16"
-                                VerticalAlignment="Center"
-                                Accent="{x:Bind State.Accent, Mode=OneWay, Converter={StaticResource AccentBrush}}" />
+                            <!--
+                                The name leads. Two lines at most, and the right margin holds the overflow button
+                                off its first line. The tooltip REPEATS the name rather than being the only copy:
+                                touch never hovers, so anything reachable by hover alone is unreachable on a
+                                handheld. Details in the overflow menu is the copy reachable by finger, pad and
+                                mouse.
+                            -->
                             <TextBlock
-                                VerticalAlignment="Center"
-                                Foreground="{ThemeResource TextFillColorTertiaryBrush}"
-                                Style="{StaticResource CaptionTextBlockStyle}"
-                                Text="{x:Bind State.Details, Mode=OneWay}"
-                                TextTrimming="CharacterEllipsis" />
-                        </StackPanel>
+                                Margin="0,0,36,0"
+                                MaxLines="2"
+                                Style="{x:Bind State.Density, Mode=OneWay, Converter={StaticResource Density}, ConverterParameter=NameStyle}"
+                                Text="{x:Bind State.DisplayName, Mode=OneWay}"
+                                TextTrimming="CharacterEllipsis"
+                                TextWrapping="Wrap"
+                                ToolTipService.ToolTip="{x:Bind State.DisplayName, Mode=OneWay}" />
+
+                            <!--  The vendor trail sits with the family it names, not off on its own.  -->
+                            <StackPanel
+                                Grid.Row="1"
+                                Margin="0,6,0,0"
+                                Orientation="Horizontal"
+                                Spacing="8">
+                                <controls:FamilyMark
+                                    Width="9"
+                                    Height="16"
+                                    VerticalAlignment="Center"
+                                    Accent="{x:Bind State.Accent, Mode=OneWay, Converter={StaticResource AccentBrush}}" />
+                                <TextBlock
+                                    VerticalAlignment="Center"
+                                    Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                                    Style="{StaticResource CaptionTextBlockStyle}"
+                                    Text="{x:Bind State.Details, Mode=OneWay}"
+                                    TextTrimming="CharacterEllipsis" />
+                            </StackPanel>
+                        </Grid>
 
                         <!--
                             Status, last. A coloured dot AND the word, never colour alone. While the probe is
@@ -159,18 +176,26 @@
                             TextBlocks rather than one moved between rows, because a Grid.Row is not bindable
                             and a template that re-parents a child on a state change is a worse thing to own
                             than a duplicated four-line binding.
+
+                            A console never played has no caption, and the row collapses with it rather than
+                            holding an empty line: that line is height the name can use, and at 150% text it is
+                            the difference between a one-line name and a two-line one. Two conditions, so two
+                            elements, since a Visibility takes one converter.
                         -->
-                        <TextBlock
-                            Grid.Row="3"
-                            Margin="0,0,0,4"
-                            Foreground="{ThemeResource TextFillColorTertiaryBrush}"
-                            Style="{StaticResource CaptionTextBlockStyle}"
-                            Text="{x:Bind State.LastConnectedLabel, Mode=OneWay}"
-                            TextTrimming="CharacterEllipsis"
-                            Visibility="{x:Bind State.Density, Mode=OneWay, Converter={StaticResource Density}, ConverterParameter=Stacked}" />
+                        <Border
+                            Grid.Row="1"
+                            Visibility="{x:Bind State.Density, Mode=OneWay, Converter={StaticResource Density}, ConverterParameter=Stacked}">
+                            <TextBlock
+                                Margin="0,0,0,4"
+                                Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                                Style="{StaticResource CaptionTextBlockStyle}"
+                                Text="{x:Bind State.LastConnectedLabel, Mode=OneWay}"
+                                TextTrimming="CharacterEllipsis"
+                                Visibility="{x:Bind State.HasLastConnected, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
+                        </Border>
 
                         <StackPanel
-                            Grid.Row="4"
+                            Grid.Row="2"
                             Orientation="Horizontal"
                             Spacing="6">
                             <!--
