@@ -561,10 +561,13 @@ treatment, since enumerating adapters builds a D3D12 device per adapter.
 exception is not catchable — so it read as safety while the failure it was written for took the process down
 regardless. A guard that cannot catch what it names is worse than no guard, because it stops the next person
 looking.
-- [ ] **Sweep the remaining native call sites for the same hazard.** `VideoCapabilities` and the media/input
-      interop are reachable from several places; only `AboutPage` demonstrably had the pattern right. Worth a
-      structural guard rather than a convention, on the `BundledInteropConstantsTests` precedent — this is
-      exactly the class of rule that prose has already failed to hold in this repo.
+- [x] **Sweep the remaining native call sites for the same hazard.** Done 2026-09-30. There are four native
+      classes, and each was already reached from one owner on a thread that owner decides: `VideoCapabilities`
+      through `Task.Run`, `VideoRenderer`'s Media Foundation work on the decode worker, `AudioRenderer` on the
+      audio thread, `GamepadReader` on a timer thread. The sweep found one unguarded route,
+      `Ripcord.Media.VideoCapabilityProbe`, a static wrapper with no callers, and deleted it.
+      `NativeCapabilityAccessTests` now reads the class names from the IDL files and fails if any is named
+      outside its owner, or if a new class has none. Checked non-vacuous by restoring the wrapper.
 - [ ] **`MFStartup` from an STA is the suspected specific mechanism** but is `[X]`: the fix was verified by
       behaviour (Settings opens and renders), not by establishing which of the two calls in that function is
       the one that cannot tolerate the apartment. Worth knowing before writing the structural guard, since it
