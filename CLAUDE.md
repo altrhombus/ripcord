@@ -364,6 +364,14 @@ When working in `Ripcord.Protocol.Halyard*`, `Ripcord.Cloud.Halyard`, or anythin
 
 See `docs/protocol/README.md` for the full provenance/legal-posture writeup.
 
+## Working across machines
+
+The owner moves between machines and Claude accounts, and Claude's own memory does not travel with them. So
+the owner keeps a private working handoff at `docs/protocol/captures/HANDOFF.md`, in the dirty room and never
+committed: standing preferences, what is pending, and what each machine needs. **If it is present, read it at
+the start of a session and update it before the session ends.** The repo stays the source of truth; the
+handoff carries only what the repo cannot.
+
 ## Where to look next
 
 - `ROADMAP.md` — the open backlog (start here for "what's next").
