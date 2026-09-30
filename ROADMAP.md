@@ -42,7 +42,7 @@ not research.
 | 0 — ProtocolLab harness + replay | Done |
 | 1 — Cloud sign-in (OAuth2) | **Done and live (2026-08-17).** The credential decision closed 2026-08-07 and the credential is bundled under its own `NOTICE` section; sign-in, the account's console list and cloud wake all work from the app. Still not on the critical path for LAN play against an already-paired console, and a build made with `-p:BundleOAuthClient=false` does without it entirely. |
 | 2 — Discovery (cloud list + LAN SRCH/mDNS) | Done — verified against a real PS5 on the LAN |
-| 3 — Session orchestration (create/wake/OFFER) | Done for the LAN path (live). **Wake is wired** as of the account work — local broadcast first, the account service as a fallback for a console off this network, reported as `AskedRemotely` rather than `Woken` because acceptance is not confirmation. **OFFER** (cloud signaling) is now built and live-exercised end to end, but the exchange never completes: the console will not join a session this client creates. See the top block. |
+| 3 — Session orchestration (create/wake/OFFER) | Done for the LAN path (live). **Wake is wired** as of the account work — local broadcast first, the account service as a fallback for a console off this network, reported as `AskedRemotely` rather than `Woken` because acceptance is not confirmation. **OFFER** (cloud signaling) is built, and the account route has streamed over the internet since 2026-09-05: client on a phone hotspot, console on another network, both behind NAT, peer to peer (journal). Open: a console woken from rest over the internet, under "The .NET reference" below. |
 | 4 — Direct transport + `/sess` framing + stream demux | Done, live |
 | 5 — Crypto seam (registration + control + stream) | **Done and live.** Control-plane field crypto verified byte-for-byte; stream (A/V) crypto verified against real console video; registration/pairing reversed, implemented, and verified live from scratch. Then made fast: batched CTR keystream + PCLMULQDQ GHASH took per-packet cost 216 µs → 7.7 µs (~28x), which is what unlocked 1080p60. |
 | 6 — Media + input wiring | Done, live. D3D12 present, **GPU decode via MFT/DXVA** (`MF_LOW_LATENCY`, decoder picked by codec, HEVC + 10-bit P010 supported), WASAPI audio with bounded latency, controller input (GameInput + DualSense raw HID). |
@@ -67,7 +67,7 @@ not research.
 recorded under "Decisions" below, along with one constraint those answers collide with. Scope changes from
 here are changes, not refinements.
 
-The backlog below has 44 open items and no line through it, which means it cannot answer "are we done yet".
+The backlog below is long and has no line through it, which means it cannot answer "are we done yet".
 This section draws that line. It is deliberately a *definition* first, because every argument about whether
 something belongs in 1.0 turns out to be an argument about what 1.0 is for.
 
