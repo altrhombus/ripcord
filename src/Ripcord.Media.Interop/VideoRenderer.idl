@@ -15,7 +15,17 @@ namespace Ripcord.Media.Interop
 
         // Create the D3D12 device, command queue, and composition swap chain at the given size, on the adapter
         // implied by gpuSelection. specificLuid is used only when gpuSelection is Specific (0 otherwise).
-        void Initialize(UInt32 width, UInt32 height, GpuSelection gpuSelection, UInt64 specificLuid);
+        // windowHandle is the HWND the video will be shown in, which decides whose HDR state counts; 0 means
+        // the primary monitor. See PresentingDisplay.h.
+        void Initialize(UInt32 width, UInt32 height, GpuSelection gpuSelection, UInt64 specificLuid,
+            UInt64 windowHandle);
+
+        // Re-read the HDR state of the display the window is on, after the window moved to another monitor.
+        // If the answer changed, the next decoded frame rebuilds the video processor and applies the new
+        // output colour space. The back-buffer format chosen at Initialize stays: a session started on an SDR
+        // display keeps an 8-bit swap chain, which then refuses the PQ colour space and presents tone-mapped
+        // SDR, a safe answer rather than a wrong picture.
+        void RefreshPresentingDisplay(UInt64 windowHandle);
 
         // Description of the adapter actually chosen, for the diagnostics overlay and settings UI. Empty until
         // Initialize succeeds.
