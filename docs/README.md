@@ -75,12 +75,10 @@ verifiable evidence and were not, which is worse than no citation at all in a pr
 that its derivation is checkable. Cite a **date and a document section** instead: a squash cannot break
 either. Where a specific change matters, name what it did and when, and let `git log` find it.
 
-**`README.md`'s test figures are exact, so re-derive them when the count changes.** The total, the
-clean-checkout figure and the sweep's own case count are all stated precisely, in a document whose value is
-that a reader can check it — and they have gone stale twice, both times because a commit added tests without
-touching prose. There is no automated check because a test asserting a number in a README is worse than the
-staleness it prevents. The command is two lines, and the skip count is unaffected unless the new tests are
-`Skippable`:
+**`README.md` states no test counts, and should not start.** It used to state the total, the clean-checkout
+figure and the sweep's own case count exactly, and they went stale twice, both times because a commit added
+tests without touching prose. The 2026-09-29 rewrite dropped them. A figure that needs re-deriving on every
+test is better left to the test run, which is two lines:
 
 ```
 dotnet test tests/Ripcord.Protocol.Halyard.Tests/Ripcord.Protocol.Halyard.Tests.csproj
