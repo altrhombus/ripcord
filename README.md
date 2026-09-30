@@ -98,6 +98,25 @@ the same code, and their app builds but hasn't run on a device yet ([the plan](d
 - **Xbox consoles.** They're named in the app so the design has room for them, and there's nothing behind
   that yet.
 - **A Windows installer.** Build from source for now; the release zip and MSIX are part of 1.0.
+- **Internet play to a console in rest mode** probably fails in the dotnet client. Wake it first, or play on
+  the same network. The Mac showed why on 2026-09-25, and the fix is in [`ROADMAP.md`](ROADMAP.md).
+
+### Your first ten minutes with the dotnet client
+
+What a first run meets, so none of it is a surprise:
+
+- **Windows 11.** The package declares Windows 10 1809 as its minimum, but only Windows 11 has been run.
+- **English only.** The strings are ready for translation; no other language ships yet.
+- **Turn on Remote Play on the console first.** Ripcord finds a console with it off and says so, but cannot
+  turn it on. The app tells you where the setting is.
+- **Pairing by code** needs the console awake and on the same network, with its 8-digit code on screen. The
+  app says where to find it. **Pairing by sign-in** works from anywhere, and needs a PlayStation Network
+  sign-in, which opens inside the app.
+- **Waking from rest** needs the console's rest-mode network options turned on. A wake sent through your
+  account is reported as *asked*, not *woken*, because PlayStation Network accepting it says nothing about
+  whether the console heard.
+- **An Xbox pad has no PS button,** and Windows keeps its Guide button for itself. The on-screen controls
+  have a PS button for that.
 
 ### What's next
 
