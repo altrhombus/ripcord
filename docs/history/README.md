@@ -13,6 +13,8 @@ provenance. **None of them is current.** For where things actually stand:
 | [`phase1-lan-build-plan.md`](phase1-lan-build-plan.md) | 2026-07-13 | Turning the protocol specs into an ordered, buildable sequence for LAN remote play, structured around the crypto seam | Delivered. Phase 1 works end to end against real hardware. |
 | [`app-reimagining-plan.md`](app-reimagining-plan.md) | 2026-08-05 | Stages A (portable extraction), B (design system + IA) and C (input independence) | Delivered, with hardware-verification items still open — see the roadmap. |
 | [`app-reimagining-test-plan.md`](app-reimagining-test-plan.md) | 2026-08 | Round-2 manual test plan for the above | Executed; findings folded into the roadmap and journal. |
+| [`design-review-2026-09-21.md`](design-review-2026-09-21.md) | 2026-09-21 | The second design review of the app's design branch | Its accepted findings are in `docs/design.md`; the rest were priced and left open in the roadmap. |
+| [`roadmap-to-2026-09-30.md`](roadmap-to-2026-09-30.md) | 2026-07 to 2026-09-30 | The roadmap as it stood before it was cut to one screen of 1.0 path plus a tagged backlog | Superseded by [`ROADMAP.md`](../../ROADMAP.md), whose items point back here for detail. |
 
 The build plan is still the best explanation of *why* the crypto seam exists, and
 [`../protocol/IMPLEMENTATION.md`](../protocol/IMPLEMENTATION.md) — which is current — carries the build

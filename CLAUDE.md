@@ -1,377 +1,203 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Guidance for Claude Code working in this repository. The reasoning behind these rules lives elsewhere and is
+linked; this file is the rules.
 
 ## What this is
 
-Ripcord is a from-scratch, independent PS5 Remote Play client for Windows (WinUI 3). It connects directly to a
-PS5 over LAN, decodes the H.264/HEVC video stream via D3D12, plays audio via WASAPI, and sends controller
-input back over the reverse-engineered wire protocol. The protocol was derived independently from the
-project's own captures and from static analysis of **our own installed copy** of the vendor
-client — the possession point is load-bearing, so keep that framing wherever this is restated. No vendor code
-is reproduced here — but a ~4 KB set of interoperability *constants* **is** bundled, deliberately; see "Bounded exception 1" below and `NOTICE`. Read "Independent-implementation rules" before touching
-anything protocol- or crypto-related.
+Ripcord is a from-scratch, independent PlayStation Remote Play client. The protocol was derived independently
+from the project's own captures and from static and dynamic analysis of **our own
+installed copy** of the vendor client. Keep that possession framing wherever this is restated; `NOTICE` lists
+the methods in full. No vendor code is reproduced. About 4 KB of interoperability constants **is** bundled,
+deliberately: see "Bounded exception 1" below. Read "Independent-implementation rules" before touching anything protocol- or
+crypto-related.
 
-For the active backlog see [`ROADMAP.md`](ROADMAP.md), which is forward-looking only and is the source of
-truth for what is left. When work lands, move the item into [`docs/journal.md`](docs/journal.md) rather than
-deleting it. [`docs/README.md`](docs/README.md) maps which document answers which question.
+- **What's left:** [`ROADMAP.md`](ROADMAP.md). When work lands, record it in [`docs/journal.md`](docs/journal.md)
+  and take it off the roadmap.
+- **Which document answers what:** [`docs/README.md`](docs/README.md).
+- **How the code is arranged, and why:** [`docs/architecture.md`](docs/architecture.md).
+- **The cross-machine handoff:** if `docs/protocol/captures/HANDOFF.md` exists, read it at the start of a
+  session and update it before the end. It is private and never committed; the repo stays the source of truth.
 
 ## Commands
 
-The solution (`Ripcord.slnx`) mixes .NET (`net10.0`) and native C++/WinRT projects, and the app itself
-(`Ripcord.App`) is `net10.0-windows10.0.26100.0` + WinUI 3 — **build/run requires Windows** with the
-Windows App SDK and a C++ toolchain (the native `Ripcord.Media.Interop` / `Ripcord.Input.Interop` vcxproj
-projects are only buildable via MSBuild/Visual Studio, not plain `dotnet build`).
-
-Both **x64** and **ARM64** are first-class build platforms — an ARM64 machine builds and runs the whole
-stack natively, and either host can cross-build the other. Native interop output is per-architecture, in
-`<ARM64|x64>/<Config>/<Project>/`. Building the native half for ARM64 needs the **C++ ARM64/ARM64EC build
-tools** component in the Visual Studio Installer; without it the SDK cannot be resolved for that platform
-and the build fails claiming a Windows SDK is missing when it is not. The vcxproj projects check for it
-and say so directly.
+The solution (`Ripcord.slnx`) mixes .NET 10 and native C++/WinRT. The WinUI 3 app needs Windows, the Windows
+App SDK and a C++ toolchain; the two native interop `.vcxproj` projects build only with MSBuild. x64 and
+ARM64 are both first-class, and either host can cross-build the other (ARM64 needs the VS "C++ ARM64/ARM64EC
+build tools" component).
 
 ```
-# Build everything (Visual Studio / MSBuild, from a Developer Command Prompt or VS itself).
-# Platform defaults to the solution's first (x64), so pass it explicitly on an ARM64 box.
-msbuild Ripcord.slnx -p:Platform=ARM64
-
-# Build/run just the managed app. Needs the native interop DLLs to exist already (the dotnet CLI cannot
-# build vcxproj at all), so run the msbuild line above once first; the architecture is inferred from the
-# host unless -p:Platform / -r says otherwise.
-dotnet build src/Ripcord.App/Ripcord.App.csproj
+msbuild Ripcord.slnx -p:Platform=x64          # or ARM64; run once before dotnet build/run
 dotnet run --project src/Ripcord.App/Ripcord.App.csproj
+dotnet publish src/Ripcord.App/Ripcord.App.csproj -c Release -p:Platform=x64   # the self-contained release
 
-# The test suites (both pure managed, cross-platform, no console/hardware/GPU needed)
 dotnet test tests/Ripcord.Protocol.Halyard.Tests/Ripcord.Protocol.Halyard.Tests.csproj
 dotnet test tests/Ripcord.Presentation.Tests/Ripcord.Presentation.Tests.csproj
+dotnet test <suite> --filter "FullyQualifiedName~<Class>.<Method>"
 
-# Run a single test
-dotnet test tests/Ripcord.Protocol.Halyard.Tests/Ripcord.Protocol.Halyard.Tests.csproj --filter "FullyQualifiedName~BundledInteropConstantsTests.Control_BundlePs4KdfReproducesKnownVector"
-
-# The console harness — the primary iteration/verification tool for protocol work (replay captures,
-# talk to a real console: discover/login/wake/connect). See docs/history/phase1-lan-build-plan.md for its role.
-dotnet run --project tools/Ripcord.ProtocolLab -- <command>
+dotnet run --project tools/Ripcord.ProtocolLab -- <command>   # the console harness for protocol work
+cd engine && cargo test --workspace --all-features            # the Rust engine (skip ripcord-diff on Windows)
+make -C libripcord/tests                                      # the C core
 ```
 
-The macOS client (`src/Ripcord.Mac`) is an Xcode project, not part of `Ripcord.slnx`, and needs macOS 26, Xcode
-and a stable Rust toolchain; its build phase runs cargo for the engine. `src/Ripcord.Mac/README.md` has the
-full build, signing and release notes.
-
-```
-cd src/Ripcord.Mac
-xcodebuild -project Ripcord.xcodeproj -scheme Ripcord -derivedDataPath build build        # the app
-xcodebuild -project Ripcord.xcodeproj -scheme RipcordLab -derivedDataPath build build     # ripcord-lab
-xcodebuild -project Ripcord.xcodeproj -scheme RipcordKit -destination 'platform=macOS,arch=arm64' \
-  -derivedDataPath build test   # RipcordKitTests and RipcordAppTests; neither launches the app
-```
-
-`Directory.Build.props` at the repo root owns the cross-architecture wiring, and is the place to look when
-a build resolves the wrong native DLLs. It defines `$(RipcordRepoRoot)` (a `$(SolutionDir)` that is also
-defined outside solution builds) and `$(RipcordNativePlatform)`, which answers "whose native interop output
-does this build consume?" for the AnyCPU managed projects that cannot read `$(Platform)` themselves. It
-resolves `$(Platform)` → RID → host architecture, and `-p:RipcordNativePlatform=<arch>` overrides the lot.
-**Never hard-code an architecture into a path**; use those properties.
-
-Some tests (`LiveControlVectorTests` and similar) validate against real captured ground truth loaded from
-gitignored fixtures under `docs/protocol/captures/`; they self-skip (`Xunit.SkippableFact`) when the
-fixture isn't present, so a full green run is possible without the captures-folder materials.
+- `Directory.Build.props` owns the cross-architecture wiring: `$(RipcordRepoRoot)` and
+  `$(RipcordNativePlatform)` (override with `-p:RipcordNativePlatform=<arch>`). Never hard-code an
+  architecture into a path.
+- After switching branches, a stale incremental XAML build can crash the app at start-up. Rebuild with
+  `-t:Rebuild` before blaming the code.
+- Tests that need captured ground truth read gitignored fixtures under `docs/protocol/captures/` and skip
+  themselves (`SkippableFact`) when it's absent.
+- The Apple clients (`src/Ripcord.Mac`) are an Xcode project outside the solution; see its `README.md`.
 
 ## Architecture
 
-**Dependency direction is strictly platform-specific → shared → `Ripcord.Core`.** `Ripcord.Core` and
-`Ripcord.Core.Net` carry no PlayStation *types and no references upward* — both declare zero project
-references, and protocol/platform code lives above them and depends down, never the reverse. To be precise
-about what that does and does not claim: their `ConsolePlatform` enum uses this project's own codenames
-(`Halyard`, `Lanyard`) specifically so the neutral layer never names a console, and some comments there do
-cross-reference the layers above to explain why a primitive is shaped as it is — e.g. why the AES-GCM core
-accepts a nonce length `System.Security.Cryptography.AesGcm` refuses. A comment is not a dependency; a
-`using` or a type would be.
+Dependencies run one way: platform-specific → shared → `Ripcord.Core`. `Ripcord.Core` and `Ripcord.Core.Net`
+have zero project references and no PlayStation types; their `ConsolePlatform` enum uses our codenames so the
+neutral layer never names a console. A comment explaining a layer above is fine; a `using` or a type is not.
 
-- **`Ripcord.Core`** — platform-neutral session/input/settings contracts (`IStreamingSession`,
-  `IControllerSource`, credential store abstractions), plus local persistence for settings and the paired-
-  console list (`Consoles/`, `Settings/`). No PS knowledge — `PairedConsole` is a plain credential holder, and
-  turning one into a Halyard pairing record is an extension method on the Halyard side.
-- **`Ripcord.Core.Net`** — transport primitives: TCP/UDP channels, mDNS, and thin wrappers over
-  `System.Security.Cryptography` (AES-GCM, ECDH, HKDF). No PS knowledge, no key *schedule* — just
-  primitives.
-- **`Ripcord.Cloud.Halyard`** — the PSN cloud REST client (OAuth2, console list, session
-  create/wake/signaling). Pure HTTPS/JSON.
-- **`Ripcord.Protocol.Halyard.Common`** — transport-neutral PS5 types: the `/sess/rgst|init|ctrl` message
-  codec, stream framing, controller-state → input-packet mapping, and **the crypto seam**
-  (`IHalyardSessionCrypto` + `PassthroughHalyardSessionCrypto` stub + the real `HalyardV1SessionCrypto`
-  implementation under `Crypto/V1/`). Shared by PS5 now, PS4 later.
-- **`Ripcord.Protocol.Halyard.Takion`** — the SCTP-over-UDP ("Takion") transport: handshake
-  (INIT/INIT_ACK/COOKIE_ECHO/COOKIE_ACK), reliable-delivery layer (DATA/SACK, reassembly), and
-  `HalyardTakionStream`, the orchestrator that demuxes control vs. A/V and drives the crypto seam.
-- **`Ripcord.Protocol.Halyard`** — the PS5 `IStreamingSession` composition point: wires cloud
-  coordination + LAN discovery + transport + handshake + crypto + stream demux into one session
-  lifecycle (`HalyardStreamingSession`), plus pairing/registration.
-- **`Ripcord.Media` / `Ripcord.Media.Audio` / `Ripcord.Media.Interop`** — D3D12 video decode/present
-  pipeline and WASAPI audio; `.Interop` is the native C++/WinRT half.
-- **`Ripcord.Input` / `Ripcord.Input.Common` / `Ripcord.Input.Interop`** — controller sources
-  (DualSense HID, GameInput via native interop, keyboard), merged into one composite input stream.
-- **`Ripcord.Client`** — headless `SessionController`, the app-facing session lifecycle owner (connect,
-  reconnect/watchdog, stats) independent of any UI.
-- **`Ripcord.Presentation`** — the portable app layer: view-models, flow state machines, and everything that
-  decides *what a surface says*. Plain `net10.0`, and **no UI framework type may cross into it** — no `Brush`,
-  no `Visibility`, no `DispatcherQueue`. Presentation concerns are portable enums and bools that each front end
-  maps to its own types (`AccentRole`, `StatusTone`, `ActionGlyph`). `PresentationPortabilityTests` enforces
-  the rule by reflecting over referenced assemblies, because prose alone has not held elsewhere in this repo.
-- **`Ripcord.Presentation.Halyard`** — the PlayStation backend for that layer, and the one place a front end
-  names Halyard at all: implementations of the discovery, registration, reachability and wake seams, plus
-  `HalyardAppServices.Create`, which builds the whole graph. Same seam-and-stub shape as the crypto seam.
-- **`Ripcord.App`** — the WinUI 3 shell (pages, settings, the streaming session page/HUD). Increasingly thin:
-  pages render an immutable state record and turn input back into view-model calls.
-- **`Ripcord.Diagnostics`** — tracing/metrics (`RipcordEventSource`, `MetricHistory`) used directly by
-  the app for the diagnostics overlay.
-- **`tools/Ripcord.ProtocolLab`** — the console harness: drives the connect flow against a real PS5 and
-  replays captures through the parsers. The iteration/verification tool for every protocol stage.
-- **`tools/Ripcord.HidCapture`** — standalone HID capture utility for controller RE work.
-- **`src/Ripcord.Mac`** — the Apple clients, on the Rust engine: the macOS app, and since 2026-09-27 the
-  scaffolding for iPhone, iPad and Apple TV (`RipcordMobile/`, one target for all three; `docs/ios-plan.md`).
-  The project keeps its name from when it held only the Mac. `RipcordKit` is the Swift layer over the
-  engine's C ABI (it imports the engine's C module internally, so no C type reaches its callers), plus the
-  cloud tier and pairing stores. `RipcordApp/` is the app and `RipcordWidgets/` its widget extension.
-  `RipcordAppLogic/` holds the app's window-free logic, compiled into both the app and the host-less
-  `RipcordAppTests`, and `RipcordLab/` is `ripcord-lab`, the Mac counterpart of `ProtocolLab`. `DESIGN.md` beside it settles its
-  surfaces, as `docs/design.md` settles the dotnet client's.
-- **`libripcord/`** — the protocol in portable C99 (it was `ports/common` until 2026-09-24). Today it is the
-  protocol core of the console ports under `ports/`. **It is being succeeded for the first-class clients
-  by a Rust engine** (`docs/engine-plan.md`, settled 2026-09-25): the macOS client (`src/Ripcord.Mac`)
-  moved to that engine on 2026-09-26, Windows follows after its 1.0, and `libripcord` stays as the ports'
-  core, taking fixes and port-driven work only. It is a same-project
-  port of `src/`, not linked against it. The .NET side stays the reference implementation for
-  *derivations* (key schedules, KDFs, field ciphers, codecs), and `ProtocolLab vectors` generates the
-  known-answer vectors the C core, and later the Rust engine, are tested against. Not part of
-  `Ripcord.slnx`: `make -C libripcord/tests` runs its host suite.
-- **`engine/`** — the Rust engine that succeeds it for the first-class clients, as a Cargo workspace:
-  `ripcord-proto` (sans-IO, `#![forbid(unsafe_code)]`), `ripcord-net` (the `std::net` driver that runs
-  its connect sequence on the caller's thread), `ripcord-ffi` (the C ABI, the only crate that
-  uses `unsafe`; its `build.rs` generates `ripcord.h` and `NativeMethods.g.cs`, never committed and never
-  edited), `ripcord-kat` (the `.kat` runner), `ripcord-diff` (differential tests against the C core) and
-  `hosts/dotnet/` (the .NET harness). As of 2026-09-26 it holds the stream plane, the Halyard
-  derivations, Takion, discovery and wake, the /sess control plane, STUN, the 9303 association,
-  input, and the connect sequence on both routes, with scripted consoles for each; `ripcord-ffi`
-  exports it as the client ABI (`ripcord_client_*`, `halyard_client.h`'s contract). When porting a layer, read both the .NET reference and the
-  C port; the C core is itself a port of .NET, and where they differ .NET wins unless C is strictly safer
-  or .NET is wrong, recorded in `engine/README.md`. Not part of `Ripcord.slnx`: `cargo test --workspace
-  --all-features` in `engine/`.
-  [`engine/README.md`](engine/README.md) has the build and the measured gate.
+| Project | Holds |
+|---|---|
+| `Ripcord.Core` | Platform-neutral contracts, settings and paired-console persistence |
+| `Ripcord.Core.Net` | TCP/UDP, mDNS, and thin crypto primitives (no key schedule) |
+| `Ripcord.Cloud.Halyard` | The PSN REST client: OAuth2, console list, wake, rendezvous |
+| `Ripcord.Protocol.Halyard.Common` | The `/sess` codec, stream framing, input mapping, and the crypto seam |
+| `Ripcord.Protocol.Halyard.Takion` | The SCTP-over-UDP transport |
+| `Ripcord.Protocol.Halyard` | The PS5 session composition point, pairing and registration |
+| `Ripcord.Media*`, `Ripcord.Input*` | D3D12 video, WASAPI audio, controllers; `.Interop` is native C++/WinRT |
+| `Ripcord.Client` | `SessionController`: the headless session lifecycle |
+| `Ripcord.Presentation` | View-models and flows, plain `net10.0`; **no UI framework type may cross into it** (`PresentationPortabilityTests`) |
+| `Ripcord.Presentation.Halyard` | The PlayStation backend for it, and `HalyardAppServices.Create` |
+| `Ripcord.App` | The WinUI 3 shell, increasingly thin |
+| `tools/Ripcord.ProtocolLab` | The harness: drives a real console and replays captures |
+| `src/Ripcord.Mac` | The Apple clients on the Rust engine (Mac app, `ripcord-lab`, iPhone, iPad, Apple TV) |
+| `libripcord/` | The protocol in portable C99, the console ports' core |
+| `engine/` | The Rust engine succeeding it for the first-class clients ([`docs/engine-plan.md`](docs/engine-plan.md)) |
 
-### The crypto seam pattern
-
-The one genuinely unsolved-at-design-time piece (session crypto) is isolated behind an interface
-(`IHalyardSessionCrypto` in `Ripcord.Protocol.Halyard.Common`) with two implementations:
-`PassthroughHalyardSessionCrypto` (a no-op stub) lets the rest of the pipeline — transport, framing,
-demux, decode, input — be built and tested independently of the crypto research. `HalyardV1SessionCrypto`
-is the real implementation. Swapping stub → real is a DI change. If you're extending the protocol stack,
-prefer this seam-and-stub pattern over coupling new work to not-yet-solved crypto.
+- **The crypto seam.** `IHalyardSessionCrypto` has a no-op stub and the real `HalyardV1SessionCrypto`; swapping
+  is a DI change. Prefer this seam-and-stub shape for new unsolved work.
+- **.NET is the reference for derivations** (key schedules, KDFs, field ciphers, codecs), and
+  `ProtocolLab vectors` generates the known-answer vectors the C core and the engine test against. When porting,
+  read both the .NET code and the C port; .NET wins unless C is strictly safer or .NET is wrong
+  (`engine/README.md` records which).
 
 ### The app layer: four rules
 
-If you are touching a page, a view-model or anything in `Ripcord.Presentation`, these are the standing rules.
-The rationale for each lives in the file that implements it; what follows is what you have to obey.
+1. **One immutable state record per view-model, recomposed whole.** Derive from `ObservableState<TState>`,
+   override `Compose()`, change state only through `Mutate(...)`. No per-property notification, no MVVM
+   framework. `ObservableCollection<T>` is the one exception (it keeps gamepad focus alive).
+2. **One threading seam.** `IUiDispatcher` is the only marshalling point, and nothing in the layer takes a lock.
+   `Mutate` posts when off the UI thread, so decide freshness synchronously and capture the answer; a guard
+   evaluated inside a posted closure is a bug. The exception is `ScanSink` in `RipcordAppServices`, at the
+   boundary. Where the UI thread meets a device thread outside this layer, use `SpinGate`, never `lock`: a
+   contended `lock` on the UI thread pumps messages and XAML fails fast.
+3. **A device gets a seam; data does not.** GPU, driver, presenter and native-handle access goes through an
+   interface implemented in the front end (`IVideoCapabilitiesProbe`, `IConsoleScanner`, `IShellNavigator`,
+   ...); plain values are parameters. Implementations may throw; the portable side degrades per answer.
+   Each native class is reached from one owner file (`NativeCapabilityAccessTests`).
+4. **The composition root owns construction.** `HalyardAppServices.Create(...)` builds `RipcordAppServices`
+   once at start-up. Nothing else `new`s a store, scanner or probe. No container, no `Resolve<T>()`.
 
-1. **One immutable state record per view-model, recomposed whole.** Derive from `ObservableState<TState>` and
-   override `Compose()`; mutate through `Mutate(...)`, which is the only place a change is applied and notified.
-   There is exactly one notifying property (`State`) plus an `IObservable<TState>`, so a half-updated view-model
-   is unrepresentable and record value equality answers "did anything change?" once, centrally. Do **not**
-   reintroduce per-property notification, and do not reach for an MVVM framework to generate the cascade this
-   pattern exists to delete. Collections are the one exception: `ObservableCollection<T>` stays, because
-   in-place list updates are what keep gamepad focus from being destroyed on every refresh.
-2. **One threading seam, and nothing in the layer takes a lock.** `IUiDispatcher` is the only marshalling
-   point; view-models never marshal at their call sites. Every field is therefore read and written on the
-   dispatcher thread alone. `Mutate` runs inline when already on that thread and **posts otherwise** — so
-   anything a posted closure reads is read *later*. Decide freshness questions synchronously and capture the
-   answer; a guard evaluated inside a posted closure is a bug, and has been twice.
-   *The one lock in the layer is at its boundary, not inside it:* `ScanSink` in `RipcordAppServices`
-   accumulates `IObserver` callbacks that genuinely arrive off the dispatcher thread, so the "one thread
-   only" premise does not hold for it and a lock is the correct answer. That is the exception and it is
-   named here so the rule stays literally true — if you want a lock on a *view-model* field, the answer is
-   the dispatcher, not the lock.
-3. **A device gets a seam; data does not.** Anything touching a GPU, a driver, a presenter or a native handle
-   is reached through an interface implemented in the front end (`IVideoPipelineStats`,
-   `IVideoCapabilitiesProbe`, `IConsoleReachabilityProbe`, `IConsoleScanner`, `IConsoleRegistrar`,
-   `IConsoleWakeCoordinator`, `IShellNavigator`). Plain values are passed as parameters instead — see
-   `SessionTelemetry`. Implementations may throw; the portable side guards each answer independently and
-   degrades, because these surfaces are where a user goes to fix a bad configuration.
-4. **The composition root owns construction.** `RipcordAppServices` (portable) is built once by
-   `HalyardAppServices.Create(...)` at startup. Nothing else `new`s a store, a scanner or a probe; surfaces
-   take what they need and hold that. There is deliberately no container and no `Resolve<T>()`.
+## Naming
 
-### Naming
-
-| Code name | Origin | Real-world referent |
+| Name | Origin | Refers to |
 |---|---|---|
-| Halyard | **Ours** — invented | The Sony console backend (`Ripcord.Cloud.Halyard`, `Ripcord.Protocol.Halyard*`) |
-| HalyardLegacy | **Ours** — invented | The same backend's older console generation (`ConsolePlatform`) |
-| Lanyard | **Ours** — invented, provisional | The Xbox streaming backend — reserved in `ConsolePlatform`, not implemented |
-| Takion | **Vendor's own codename**, retained | The SCTP-over-UDP transport layer inside Halyard |
-| Senkusha | **Vendor's own codename**, retained | The echo/MTU/bandwidth probe sub-protocol |
+| Halyard | Ours | The Sony console backend |
+| HalyardLegacy | Ours | Its older console generation |
+| Lanyard | Ours, provisional | The Xbox backend, reserved, not implemented |
+| Takion | The vendor's own codename, recovered from our binary | The SCTP-over-UDP transport |
+| Senkusha | The vendor's own codename, recovered from our binary | The echo/MTU/bandwidth probe |
 
-`Halyard` replaces Sony's product name and is our invention. `Takion` and `Senkusha` are **Sony's own
-internal codenames**, recovered from our binary (`takion.proto`, `tak-c::parseMessage`,
-`TakionNetConnection`) — not names we coined, and not borrowed from any third-party implementation, which
-uses them for the same reason. They are retained deliberately as protocol terminology: they are load-bearing
-in namespaces, ~10 class names, and assembly names, and renaming them buys little once their provenance is
-stated. **This is a stated exception to the "never the vendor's own symbol/string names" rule below** — the
-rule still governs everything else. Do not extend the exception without recording it here.
+- Takion and Senkusha are the **one stated exception** to "never use the vendor's own names". Don't extend it
+  without recording it here.
+- Protobuf message and enum names: rename the vendor's coined ones, keep the plain-English descriptive ones,
+  never change field numbers or enum values. `docs/protocol/README.md` has the rule in full.
+- Never use vendor symbol names (classes, functions, log strings). Name things for what they do; cite the
+  vendor by RVA (`FUN_<rva>`).
+- Required on-wire values (hostnames, the `"PS5"` tag, `RP-*` headers, JSON keys) stay verbatim.
 
-For protobuf **message and enum** names the rule is two-tier, and `docs/protocol/README.md` states it in
-full: the vendor's *coined or arbitrary* names are renamed (`BIG`/`BANG` → `SESSION_REQUEST`/
-`SESSION_REPLY`, `SENKUSHA` → `BANDWIDTH_PROBE`, `XMBCOMMAND` → `SYSTEM_MENU_COMMAND`, `GKTRACE` →
-`TRACE`), while names that are *purely the plain-English description* of the field (`CursorPayload`,
-`PacketLossPayload`, `VIDEO_DECODE`) are retained as interface labels — about two-thirds of the schema.
-Field numbers and enum values are never changed. Vendor **symbol** names (C++ classes, functions, log
-strings — e.g. `RpCryptAes`) are never used: name the thing for what it does and cite the vendor by RVA.
+## Independent-implementation rules
 
-Required on-wire values (hostnames, the `"PS5"` platform tag, `RP-*` HTTP headers, JSON config keys like
-`handshakeKey`) stay verbatim in code as protocol constants — those are interoperability facts, not
-naming choices.
+These are the working discipline. Nothing here is legal advice, and Ripcord makes no claim about how any law applies to it.
 
-## Independent-implementation rules (hard constraint for any protocol/crypto work)
+When working in `Ripcord.Protocol.Halyard*`, `Ripcord.Cloud.Halyard`, `engine/`, `libripcord/`, `ports/` or
+anything crypto-related:
 
-This project's provenance depends on the protocol spec (`docs/protocol/`) being derived independently.
+- **Derive only from our own work:** the dated specs in `docs/protocol/`, our own captures, our own binary
+  analysis, and public references (RFCs, NIST vectors, platform docs). **Never open, quote or reproduce another
+  implementation of these protocols** for implementation detail, constants, byte layouts or naming, and never
+  use an AI model as an indirect route to the same. The method is **derive first, then confirm**.
+- **"Another implementation" means another project's.** Ripcord's own front ends and ports may port and adapt
+  each other freely; citing what a file came from is a courtesy.
+- **Laundered provenance is the AI risk.** A model can reproduce another implementation's structure or constants
+  unasked. A value you can't trace to a capture, our own analysis or a public reference is not kept: mark it
+  `[X]` and derive it. Fluent, confident specificity about wire formats is what recall looks like.
+- **Mark uncertainty in place.** `[X]` means assumed, never confirmed against a console; never describe an `[X]`
+  value as confirmed. There is no central list: tag the value where it sits. Open research questions go in
+  `ROADMAP.md`.
+- **Audits are allowed, and separate.** Reading another implementation to compare against ours produces a
+  findings report only, kept in the captures folder. It must never supply a fact we lack; a gap it reveals becomes
+  an `[X]` to derive.
+- **Secrets never get committed.** Raw captures, the lab notebook, our analysis scripts and anything with real
+  constants live in the gitignored captures folder, `docs/protocol/captures/`. Keep the leak guard on
+  (`git config core.hooksPath .githooks`) and rebuild its denylist (`tools/leak-guard/build-denylist.py`) after
+  adding a capture or editing anything in the captures folder.
+- **Records carry placeholders from the start.** A journal entry, test, comment or commit message about a
+  hardware run never holds a console name, a real address, an account or device id, or a MAC. Use the
+  placeholders in `docs/README.md` ("Redaction placeholders"). The labs print redacted by default;
+  `--show-identifiers` output is for your terminal only.
+- **Name vendor internals by RVA** (`FUN_<rva>`), never by symbol or string name.
+- **Keep `docs/protocol-research-log.md` current** as derivation work progresses.
 
-**What follows is the working discipline.** Nothing here is legal advice, and Ripcord makes no claim about how any law applies to it.
+### Bounded exception 1: the v1 interoperability constants
 
-When working in `Ripcord.Protocol.Halyard*`, `Ripcord.Cloud.Halyard`, or anything crypto-related:
+`src/Ripcord.Protocol.Halyard/Data/halyard-v1-constants.json` is committed on purpose: about 4 KB of constant
+data (8.7 KB as hex-encoded JSON) in four control KDF tables (a PS5 pair and a PS4 pair), four field context
+keys (the registration context key is one of them, stored twice), two registration key tables, two
+material-wrap tables, and a byte offset.
 
-- Derive behavior **only** from this project's own dated spec docs (`docs/protocol/`) and its own captures,
-  plus public references (RFCs, NIST test vectors, .NET crypto docs). **Never open, quote, or reproduce
-  another implementation of these protocols to obtain implementation detail** — no source, no constants, no
-  byte-level layouts, no naming — and don't use an AI agent as an indirect route to the same thing. There is
-  exactly one bounded exception, a provenance audit, and it never supplies a fact we lack: see "Auditing is
-  a distinct, permitted activity" below, and treat the two bullets as one rule. The
-  boundary is *what gets obtained*, not whether a model was involved: AI assistance is normal here, and the
-  method is the one this project has used throughout — **derive independently first, then confirm.**
-- **"Another implementation" means another project's, not Ripcord's own.** A same-project port —
-  `ports/ripcord-3ds`, `libripcord`, the Rust engine planned in `docs/engine-plan.md`, any future one — may
-  read, port, and directly adapt code from `src/` or from each other at will; all of it is this project's
-  own work, not the external source this rule exists to keep out.
-  There is no independent-derivation ritual to perform between Ripcord's own front ends. Citing what a
-  file was ported from is still good practice (it tells the next reader where to look when the two
-  diverge), but it is a courtesy, not a requirement the way it is for `docs/protocol/` itself.
-- **The AI-specific risk is laundered provenance, not the tool.** A model may hold another implementation in
-  training data and can reproduce its structure, constants, or invented vocabulary *without being asked and
-  without saying so*, so you can end up with contaminated detail believing you derived it. If a value appears
-  that you cannot trace to a capture, our own binary analysis, or a public reference, **do not keep it** —
-  mark it `[X]` and derive it. Be wary of fluent, confident specificity about wire formats; that is what
-  recall looks like, and it reads like competence.
-- **Marking uncertainty is mandatory, not optional.** `[X]` means *assumed, never confirmed against the
-  console*. An `[X]` value with no accompanying `[C]`/`[V]`/`[W]` tag is provisional and must never be
-  described in code or docs as confirmed — an over-confident comment stops the next person checking. There is
-  deliberately **no central list** of them: a second copy goes stale, which is the same reason this project
-  does not cite commit hashes. Tag the value in place and grep the specs for `[X]` —
-  `docs/protocol/README.md` states the rule. A *research* question you cannot settle belongs in `ROADMAP.md`;
-  an unconfirmed *value* belongs next to the value.
-- **Auditing is a distinct, permitted activity.** Reading another implementation *to compare it against ours*
-  — a provenance/similarity audit — is allowed and occasionally worth doing, since an independence claim is
-  only as good as its last check. Two conditions: the output is a **findings report, never code or spec
-  text**, and it must not become a back door for a fact we hadn't already derived (if the comparison reveals
-  an answer we lack, that's an open question to mark `[X]` and derive — not a value to adopt). Keep such
-  reports in the gitignored captures folder, never in the committed tree.
-- Captured secrets never get committed. They live in the gitignored `docs/protocol/captures/` "dirty
-  room" (raw captures, the RE session log, and this project's own Python analysis and reference-
-  reimplementation scripts, which have real constants embedded)
-  and are supplied to the implementation as out-of-band config.
-  `docs/protocol/captures/lab-notebook.md` in particular is the live RE session journal (the
-  unredacted working copy of `docs/protocol-research-log.md`) — useful context if it's present locally,
-  but never assume it exists or commit to it.
-  The leak guard (`tools/leak-guard`, `docs/README.md`) checks each commit and push against the real
-  values the captures folder holds. Keep it on (`git config core.hooksPath .githooks`) and rebuild its
-  denylist after adding a capture.
-- **Hardware records carry placeholders from the moment they are written.** A journal entry, a test, a
-  comment or a commit message describing a run never holds the console's name, an address from a real
-  network, an account or device id, or a MAC: use the placeholders in `docs/README.md` ("Redaction
-  placeholders") and, where a test needs a value, a synthetic one. `ripcord-lab` and `ProtocolLab` print
-  redacted by default, so their output can be copied as it stands; output from `--show-identifiers` is
-  for your own terminal and never goes into a record. Redacting later is the step that gets missed.
-- **Bounded exception 1: the v1 interoperability constants** in
-  `src/Ripcord.Protocol.Halyard/Data/halyard-v1-constants.json` are committed deliberately (~4 KB of constant
-  data — 8.7 KB on disk, since the JSON stores it hex-encoded: four
-  control KDF tables — a PS5 pair and a PS4 pair — four field context keys (the registration context key
-  is one of the four, stored twice under different names), two registration key tables
-  (PS5 and PS4), two material-wrap tables (PS5 and PS4), a byte offset). The
-  test for whether something qualifies is **generic vs. personal**, not extracted vs. derived: these are
-  identical for every console and every account, and a client cannot speak the protocol without them,
-  which `NOTICE` describes in full. Anything tied to a specific console, user,
-  or account — registration keys, pairing records, session keys, device or account ids — stays in the
-  captures folder, and `BundledInteropConstantsTests.Bundle_CarriesNoLiveVectorMaterial` enforces that line.
-  Do not widen this exception without amending `NOTICE` and this file together.
-  - **How each client carries the one file:** the dotnet client embeds it and reads it at run time;
-    `libripcord/tools/gen_constants.py` and `engine/ripcord-proto/build.rs` generate compiled-in tables from it
-    at build time, never committed. The inert builds are `-p:BundleInteropConstants=false`, the engine's
-    `interop-constants` feature (off with `--no-default-features`; `RIPCORD_BUNDLE_INTEROP_CONSTANTS = NO` for
-    the Apple clients, and `ripcord_interop_constants_bundled()` reports it), and none yet for the C ports.
-    `NOTICE` states the same; change them together.
-  - **One further constant travels with these, and is listed here so the inventory is complete:** the
-    32-byte `Client-Type` value the console parses by content. Observed on our own wire, generic to the
-    application, identical for every client, and tied to no account or console, so it passes the same
-    generic-versus-personal test. It lives in source rather than the bundle because it is a protocol
-    constant a message builder needs inline. The spec redacts it as `<hex>` only because the spec
-    redacts *all* observed field values by default.
-    - **It has two homes, and both are the inventory:**
-      `HalyardRegistrationMessage.ClientTypeHex` and `HALYARD_REGIST_CLIENT_TYPE_HEX` in
-      `libripcord/session/halyard_regist_message.h`. The C ports build a registration request without
-      linking against the .NET side, so the value is written twice on purpose. This is **not** a
-      widening of the exception — no new value is exposed, the same one appears in two places — but a
-      sentence claiming to be a complete inventory has to name both, and for a while it named one.
-      `BundledInteropConstantsTests.ClientType_CCoreCopyMatchesTheReferenceImplementation` asserts the
-      two agree, so a third copy or a drifted one fails with that sentence rather than as an
-      unexplained hex literal. If you add a home, add it here and to that test together.
-    - **The Rust engine reads it rather than holding a third home.** `engine/ripcord-proto/build.rs`
-      extracts `ClientTypeHex` from `HalyardRegistrationMessage.cs` at build time into `OUT_DIR`, the way it
-      generates the bundle constants, so no committed file in `engine/` carries the value.
-      `BundledInteropConstantsTests.ClientType_RustEngineDerivesItFromTheReference` asserts both halves:
-      the build script points at the reference, and no file under `engine/` contains the literal.
-- **Bounded exception 2: the application OAuth credential** in
-  `src/Ripcord.Cloud.Halyard/Data/halyard-oauth-client.json` (added 2026-08-07, deliberately, by the project
-  owner's decision — this one had sat unresolved as "the OAuth decision" for months). It is the vendor desktop
-  client's own `client_id`/`client_secret`, recovered from **our own capture of our own traffic** and
-  independently confirmed to be already published. PSN offers no third-party client registration, so there is
-  no credential of ours to obtain: without it the account tier is unreachable by anyone but Sony.
-  - **It passes the generic-vs-personal test** — identical for every user, tied to no account or console,
-    authenticating an *application* rather than a person — which is why it qualifies at all. No user
-    credential is ever bundled; the signed-in account's refresh token lives encrypted on the user's own
-    machine: a DPAPI-encrypted `account.json` in the dotnet client, one Keychain item on the Mac.
-  - **But it is NOT an interface fact.** The v1 constants are values
-    the console computes against; a client cannot speak the protocol without them. This is an *access
-    credential*, and a client demonstrably speaks the protocol without it — a LAN session works against a
-    console with no internet at all. `NOTICE` therefore describes it in a separate section.
-    If you are ever tempted to justify a third bundle by pointing at this one, that is the moment to stop.
-  - **"Other implementations ship it too" is not the rationale and must never be recorded as one.** Our
-    provenance is our own capture; the comparison against other projects came *afterwards* and is a
-    permitted audit (see the auditing bullet above), not the source. Adopting a value *because* another
-    implementation has it is exactly the contaminated route this section exists to close.
-  - Omittable with `-p:BundleOAuthClient=false`, or `RIPCORD_BUNDLE_OAUTH_CLIENT = NO` for the Apple clients
-    (the reduced edition `docs/macos-plan.md` describes), and overridden at runtime by `RIPCORD_CLIENT_ID`/
-    `RIPCORD_CLIENT_SECRET` or a `client.json`. Repopulate from a capture with
-    `tools/extract-oauth-client.py`. **The committed file ships populated**: every checkout has the
-    credential, so the extractor regenerates the value rather than supplying one a clone lacks.
-  - Same rule as above: do not widen **this** exception without amending `NOTICE` and this file together.
-- Code names vendor internals by relative virtual address (`FUN_<rva>`) only, never by the vendor's own
-  symbol/string names.
-- Keep `docs/protocol-research-log.md` current when derivation work progresses.
+- **The test is generic versus personal.** These are identical for every console and account, and the console
+  computes against them; `NOTICE` describes them. Anything tied to one console, user or
+  account stays in the captures folder, and `BundledInteropConstantsTests.Bundle_CarriesNoLiveVectorMaterial`
+  enforces that.
+- **How each client carries it:** the dotnet client embeds and reads it at run time;
+  `libripcord/tools/gen_constants.py` and `engine/ripcord-proto/build.rs` generate tables from it at build
+  time, never committed. Inert builds: `-p:BundleInteropConstants=false`, the engine's `interop-constants`
+  feature (off with `--no-default-features`), `RIPCORD_BUNDLE_INTEROP_CONSTANTS = NO` on the Apple clients
+  (`ripcord_interop_constants_bundled()` reports it), and none yet for the C ports.
+- **The inventory includes one more constant:** the 32-byte `Client-Type` value, generic to the application
+  and tied to no account or console. It has exactly **two homes**, `HalyardRegistrationMessage.ClientTypeHex`
+  and `HALYARD_REGIST_CLIENT_TYPE_HEX` in `libripcord/session/halyard_regist_message.h`.
+  `BundledInteropConstantsTests.ClientType_CCoreCopyMatchesTheReferenceImplementation` asserts they agree.
+  The Rust engine reads it from the C# source at build time rather than holding a third, and
+  `ClientType_RustEngineDerivesItFromTheReference` checks that. A new home goes here and into that test
+  together.
+- **Don't widen this exception** without amending `NOTICE` and this file together.
 
-See `docs/protocol/README.md` for the full provenance writeup.
+### Bounded exception 2: the application OAuth credential
 
-## Working across machines
+`src/Ripcord.Cloud.Halyard/Data/halyard-oauth-client.json` holds the vendor desktop client's own
+`client_id`/`client_secret`, committed by the owner's decision on 2026-08-07. It came from **our own capture of
+our own traffic**; PSN offers no third-party registration, so there is no credential of ours to use.
 
-The owner moves between machines and Claude accounts, and Claude's own memory does not travel with them. So
-the owner keeps a private working handoff at `docs/protocol/captures/HANDOFF.md`, in the captures folder and never
-committed: standing preferences, what is pending, and what each machine needs. **If it is present, read it at
-the start of a session and update it before the session ends.** The repo stays the source of truth; the
-handoff carries only what the repo cannot.
+- It passes the generic-versus-personal test: identical for every user, it authenticates an application, not a
+  person. No user credential is ever bundled; the signed-in account's refresh token is encrypted on the user's
+  own machine (DPAPI on Windows, the Keychain on the Mac).
+- **It is not an interface fact.** A client speaks the protocol without it (a LAN session needs no internet), so
+  `NOTICE` describes it separately. Never justify a third bundle by pointing at this one.
+- **"Other implementations ship it" is not the rationale** and must never be recorded as one. Our provenance is
+  our own capture; any comparison came afterwards, as an audit.
+- Omit it with `-p:BundleOAuthClient=false` (or `RIPCORD_BUNDLE_OAUTH_CLIENT = NO` on the Apple clients);
+  override it at run time with `RIPCORD_CLIENT_ID`/`RIPCORD_CLIENT_SECRET` or a `client.json`. The committed
+  file ships populated; `tools/extract-oauth-client.py` regenerates it from a capture.
+- **Don't widen this exception** without amending `NOTICE` and this file together.
 
-## Where to look next
+## Working style
 
-- `ROADMAP.md` — the open backlog (start here for "what's next").
-- `docs/README.md` — the documentation index: which document answers which question.
-- `docs/architecture.md` — the canonical architecture writeup (this file's Architecture section in full).
-- `docs/engine-plan.md` — one protocol engine for the first-class clients, in Rust: what runs where, and in
-  what order.
-- `docs/journal.md` — the dated engineering record; completed backlog items land here.
-- `docs/history/phase1-lan-build-plan.md` — the historical build plan and seam architecture rationale.
-- `docs/protocol/IMPLEMENTATION.md` — the crypto/protocol build order and "definition of done" checklist.
-- `docs/protocol/ps5-remoteplay-v1-spec.md` — the authoritative wire-protocol spec.
+- Ask before anything outward-facing: pushes, merges, publishing, repo settings. Launching the app is fine;
+  driving its UI, touching the console, and changing system-wide settings are the owner's to do or approve.
+- Hardware work is batched: prepare the checklist rather than running it.
+- History rewrites and destructive git clean-ups are the owner's to run. Prepare and dry-run them.
+- Say "the dotnet client", never "the Windows client".
+- Commit on a branch, signed off (`git commit -s`), with a `Co-Authored-By` trailer; commit with `TZ=UTC`.
+- Say plainly what was run and what wasn't, especially what hasn't met hardware.
+- Ripcord sends nothing anywhere but the console and PSN. Ask before adding any other network call.

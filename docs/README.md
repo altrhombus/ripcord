@@ -1,14 +1,14 @@
 # Ripcord documentation
 
-Start here if you are not sure which file you want. Ripcord keeps several long-lived documents, and the
-distinction between them is *the question each one answers* — not the topic. Several cover the same
-subject from different angles, which is why picking by topic alone leads you to the wrong file.
+Not sure which file you want? Start here. Ripcord's documents are split by *the question each one answers*,
+not by topic, so several cover the same subject from different angles. Pick by the question.
 
 ## Which document answers which question
 
 | Your question | Read |
 |---|---|
 | What is this, does it work, can I run it? | [`README.md`](../README.md) |
+| What does it collect, and what does it keep? | [`PRIVACY.md`](../PRIVACY.md) |
 | How is the code arranged, and what rules keep it that way? | [`architecture.md`](architecture.md) |
 | What does the app look like, and what decides that? | [`design.md`](design.md) |
 | What is the macOS client, what is it built on, and in what order? | [`macos-plan.md`](macos-plan.md) |
@@ -34,9 +34,9 @@ subject from different angles, which is why picking by topic alone leads you to 
 `ROADMAP.md`, `journal.md` and `protocol-research-log.md` all look like running logs. They are not
 interchangeable:
 
-- **`ROADMAP.md` is the open backlog**, plus a status preamble and whatever context an open item needs to be
-  understood — and no historical record beyond that. When an item is finished, its story moves to the journal
-  and a pointer stays behind, so the roadmap stays short enough to be read in full.
+- **`ROADMAP.md` is what's left to do:** the 1.0 path on one screen, then the backlog. Finished work leaves it
+  for the journal, which is how it stays short enough to read in one sitting. Its longer past self is in
+  [`history/`](history/).
 - **`journal.md` is the dated engineering record.** What was tried, what broke, what the fix turned out to
   be. It is a *record*, not a reference: where it states a protocol fact, [`protocol/`](protocol/) is
   authoritative and the journal may be out of date.
@@ -69,18 +69,11 @@ captures, the working lab notebook with unredacted values, vendor↔ours name ma
 provenance-audit findings. Documents in the published tree cite it by filename so the trail is followable
 by anyone who has their own captures, but its contents do not ship.
 
-**Do not cite commit hashes in these documents.** The history was rewritten before publication, so any
-pre-publication hash the docs might carry resolves to nothing. Such citations look like
-verifiable evidence and were not, which is worse than no citation at all in a project whose central claim is
-that its derivation is checkable. Cite a **date and a document section** instead: a squash cannot break
-either. Where a specific change matters, name what it did and when, and let `git log` find it.
+**Don't cite commit hashes in these documents.** The history was rewritten before publication, so a hash from
+before then points at nothing, and a citation that looks checkable and isn't is worse than none. Cite a date
+and a document section instead, and let `git log` find the change.
 
-**`README.md`'s test figures are exact, so re-derive them when the count changes.** The total, the
-clean-checkout figure and the sweep's own case count are all stated precisely, in a document whose value is
-that a reader can check it — and they have gone stale twice, both times because a commit added tests without
-touching prose. There is no automated check because a test asserting a number in a README is worse than the
-staleness it prevents. The command is two lines, and the skip count is unaffected unless the new tests are
-`Skippable`:
+**`README.md` states no test counts.** They went stale twice, so the test run is the source:
 
 ```
 dotnet test tests/Ripcord.Protocol.Halyard.Tests/Ripcord.Protocol.Halyard.Tests.csproj

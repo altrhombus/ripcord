@@ -22,4 +22,11 @@ Please give a reasonable window to fix an issue before disclosing it publicly. T
 
 ## Supported versions
 
-Ripcord has not had a tagged release yet. Until it does, only the current `main` branch is supported.
+| Version | Supported |
+|---|---|
+| `main` | Yes |
+| [`ps3-v1.0`](https://github.com/altrhombus/ripcord/releases/tag/ps3-v1.0), the PS3 port | Yes, fixes land in a later `ps3-v*` release |
+
+The dotnet client has not had a release yet. When `v1.0` ships, the latest `v*` release is supported, and a
+fix lands in the next one. The console ports version separately, under their own tag names, as `ps3-v1.0`
+does.

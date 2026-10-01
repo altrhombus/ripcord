@@ -35,6 +35,66 @@ different purpose.
 > anything. The list above is short, it is checkable in one `git log --format=%B | grep`, and it stops
 > growing the moment someone notices — which is the property that actually matters.
 
+### The hardware pass: two pads, two GPUs, and one white line (2026-10-01)
+
+Two pads, an HDR display beside an SDR one, and a laptop with two GPUs: an Intel iGPU that drives every
+display (the dock's included) and an NVIDIA dGPU that drives none. Here's what that turned up. Everything
+below was checked on hardware unless it says otherwise.
+
+**Controllers**
+
+- **The app crashed at start-up with both pads on.** A lock taken on the UI thread waited in a way that pumps
+  messages, and XAML failed fast with `E_UNEXPECTED`. The shared observables now use `SpinGate`, which
+  never pumps.
+- **Pads didn't reach the stream at all,** and hadn't since the 2026-08-06 refactor: `SessionPage` handed
+  `MergedInputSource` no pad source. It does now.
+- **The Xbox pad went silent beside a DualSense.** GameInput now reads each pad on its own (`GamepadSet`), and
+  both drive one stream.
+- **A button stayed held after a battery pull.** A pad GameInput no longer calls connected is skipped, and the
+  last pad leaving sends a neutral frame.
+- **Pad navigation couldn't reach "Add another console"** once focus had come from the title bar. WinUI's own
+  search came back empty with the link enabled and right underneath; why is `[X]`. `FocusPilot` now falls
+  back to the nearest control in a straight line.
+
+**Closing the window**
+
+- **Two crashes on close,** both caught by WER dumps. The focus watchdog read a released window (an access
+  violation), and work queued before the close threw once the window was gone, which the dispatcher turns
+  into a fail-fast. The watchdog stops first now, and everything the window queues goes through `Post`,
+  which drops work after the close.
+
+**In the stream**
+
+- **Escape didn't leave full screen** while a tooltip was up: the reserved-key check counted it as a popup.
+  Tooltips don't count any more.
+- **A white line along the top in full screen,** light theme only. The window's content host sat one pixel
+  down, and the strip above it was the window's own white background. The DWM border colour and the title-bar
+  setting both looked likely, and neither moved it. `ContentBridge` pins the host to the top edge in full
+  screen.
+- **The touch panel overlapped the hint bar.** The bottom band lifts by the bar's height now. Not yet seen on
+  hardware.
+
+**HDR across two GPUs**
+
+- **The fix from 2026-09-30 holds on the two-monitor desk:** Settings and the renderer answer for the
+  window's own display, and a drag between displays switches the back buffer between 8-bit and 10-bit.
+- **NVIDIA chosen: an all-white HDR stream.** Decode ran on one GPU and rendering on the other, so frames came
+  back through a CPU readback that can't carry 10-bit. Decode runs on the render GPU now.
+- **NVIDIA chosen: HDR presented black,** on a display only the Intel GPU scans out. SDR made it through the
+  copy between GPUs; why HDR doesn't is `[X]`. A display on another GPU is treated as SDR.
+- **The driver's tone-mapping depends on the vendor.** Paused-frame A:B captures of an HDR stream tone-mapped
+  to SDR: washed out on Intel, crushed on NVIDIA, and neither matched the console's own SDR. So the connect
+  asks the console for HDR only when the window's display can show it from the rendering GPU, and for SDR
+  otherwise. Start on the SDR display with HDR on, and it now looks exactly like an SDR session. Tone-mapping
+  only happens after a mid-session drag.
+- **Auto picks the GPU that drives the window's display,** not just any display. That's the one that matters
+  on a laptop with a monitor on the dGPU's port. Not checked: every port on this laptop goes through the iGPU.
+
+One test needed a nudge, too. `ShellNeverSeedsFocusBehindAModal` failed after the close fix, because its
+regex didn't allow a closed-window check in the guard. The rule still held, and the test allows it now.
+
+What's left of the pass is in ROADMAP: the roomy card, a 200% display, and a look at the touch panel.
+
 ### The console card's two-line name, at 100% and 150% text (2026-09-30)
 
 One of 1.0's three known defects, found on 2026-08-05. The card was rebuilt on 2026-09-20 and the defect was
@@ -1110,7 +1170,7 @@ env-gated trace in the tree is one unused class.
 ### The second design review, built (2026-09-20 to 09-22)
 
 A second review of `feat/app-design-direction` landed as a written handoff, and most of it is now in the
-tree. The reasoning lives in `docs/design-review-2026-09-21.md`; what follows is what changed and the three
+tree. The reasoning lives in `docs/history/design-review-2026-09-21.md`; what follows is what changed and the three
 things the work found that nobody was looking for.
 
 **The console card stopped being two cards.** The one-console hero had its own markup and its own

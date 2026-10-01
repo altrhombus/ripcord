@@ -24,7 +24,8 @@ public sealed class DualSenseHidControllerSource : IControllerSource, IDisposabl
 
     private const ushort SonyVendorId = 0x054C;
 
-    // DualSense (0x0CE6) and DualSense Edge (0x0DF2). Both use report id 0x01 over USB and 0x31 over Bluetooth.
+    // DualSense (0x0CE6, from our own captures) and DualSense Edge (0x0DF2, [X]: no Edge has been captured or
+    // connected). Report id 0x01 over USB is ours; 0x31 over Bluetooth is [X], see dualsense-hid-report.md.
     private static readonly ushort[] DualSensePids = [0x0CE6, 0x0DF2];
 
     private const string ControllerId = "dualsense-hid-0";
