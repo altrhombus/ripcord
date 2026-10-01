@@ -126,7 +126,9 @@ fault in one is a fault in all three, which is the point.
       press must land immediately even though the connect does not.
 - [ ] **One console is still one press.** Open the window, press A. Focus must already be on the card at hero
       density; if it is not, the focus call is landing before the container is prepared.
-- [ ] **A two-line console name** no longer overflows. Set a long nickname and check all three densities.
+- [x] **A two-line console name** no longer overflows. Set a long nickname and check all three densities.
+      Grid and hero checked at 100% and 150% text on an x64 desktop at 100% display scale (2026-09-30; see the
+      journal). Roomy needs a viewport of 1920 or more, which that screen could not give, and is unchecked.
 - [ ] **Last played** reads on its own row and is not truncated at grid density.
 
 ### 8. Pairing — discovery leads, and sign-in is the lazy path

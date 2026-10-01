@@ -124,7 +124,8 @@ has to mean something, which is a habit rather than a file.
 - an Xbox pad is dead while a DualSense is attached — the single most likely first-run configuration for
   someone with a console and a spare controller;
 - HDR is reported from the wrong display, so the readiness panel lies on a multi-monitor desk;
-- a two-line console name overflows its card, which is the first screen anyone sees.
+- ~~a two-line console name overflows its card, which is the first screen anyone sees.~~ Fixed 2026-09-30,
+  and checked in the running app at 100% and 150% text (journal).
 
 **4. The hardware-verification debt.** Six input commits, Stage A steps 8–10 and two Stage B checks landed
 without ever being driven by a person. This is not code — it is an afternoon with a pad, a console and a
@@ -731,9 +732,10 @@ The clipped "Played 31 min ago" line is fixed (the container's 12px gutter margi
 `ItemsWrapGrid.ItemHeight`, so the card was 164 tall while its rows were sized for 176), and the slack now
 lives in an empty row so a shortfall closes up whitespace instead of chopping text. Two limits remain, both
 for Stage B's card redesign rather than a patch:
-- [ ] **A two-line display name still overflows.** `MaxLines="2"` on the name plus a fixed cell height cannot
-      both be honoured — a long nickname needs ~28px the cell does not have. Either the name goes single-line
-      with an ellipsis (the tooltip already carries the full name) or the card stops being fixed-height.
+- [x] **A two-line display name overflowed.** Fixed 2026-09-30 (journal): at 100% text the 2026-09-20 card
+      rebuild had already fixed it, and at 150% the hero still clipped its status line. The name now takes
+      what the card has left and trims, and a never-played card no longer holds an empty caption line. The
+      roomy density and a 200% display are unchecked.
 - [ ] ~~**Fixed `ItemHeight` is incompatible with the planned text scaling.**~~ **No longer a constraint as
       of 2026-09-19**, because Ripcord no longer scales its own text. Kept here only because the reasoning
       still applies if the platform grows the card's text on its own: the OS
