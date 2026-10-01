@@ -5,8 +5,7 @@
   xmlns:mp="http://schemas.microsoft.com/appx/2014/phone/manifest"
   xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
   xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
-  xmlns:systemai="http://schemas.microsoft.com/appx/manifest/systemai/windows10"
-  IgnorableNamespaces="uap rescap systemai">
+  IgnorableNamespaces="uap rescap">
 
   <Identity
     Name="6C998AC5-30E5-413B-9BA8-E3000FB5562D"
@@ -22,8 +21,11 @@
   </Properties>
 
   <Dependencies>
-    <TargetDeviceFamily Name="Windows.Universal" MinVersion="10.0.17763.0" MaxVersionTested="10.0.26226.0" />
-    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.17763.0" MaxVersionTested="10.0.26226.0" />
+    <!-- Windows 11 25H2 (build 26200) and later, decided 2026-09-30: 24H2 leaves support for Home and Pro soon,
+         and only Windows 11 has been run. Enforced when the package installs; the zip states it in the README.
+         The compile-time minimum in the csproj cannot go above the SDK it builds against (26100). -->
+    <TargetDeviceFamily Name="Windows.Universal" MinVersion="10.0.26200.0" MaxVersionTested="10.0.26300.0" />
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.26200.0" MaxVersionTested="10.0.26300.0" />
   </Dependencies>
 
   <Resources>
@@ -48,6 +50,5 @@
 
   <Capabilities>
     <rescap:Capability Name="runFullTrust" />
-    <systemai:Capability Name="systemAIModels"/>
   </Capabilities>
 </Package>

@@ -104,6 +104,12 @@ public partial class App : Application
             new DispatcherQueueUiDispatcher(uiThread),
             new NativeVideoCapabilitiesProbe());
 
+        // The sign-in web view's profile, Sony's sign-in cookies included, lives with the rest of the app's data.
+        // Left to its default it is a folder beside the exe, which a zip unpacked under Program Files cannot
+        // create, and which leaves personal data wherever the app happens to sit. Set before any web view exists.
+        Environment.SetEnvironmentVariable(
+            "WEBVIEW2_USER_DATA_FOLDER", Path.Combine(_services.Paths.DataDirectory, "WebView2"));
+
         _input = new InputRouter(_services.Settings);
 
         var window = new MainWindow();
