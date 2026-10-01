@@ -1010,9 +1010,24 @@ namespace winrt::Ripcord::Media::Interop::implementation
         const UINT creationFlags = D3D11_CREATE_DEVICE_VIDEO_SUPPORT | D3D11_CREATE_DEVICE_BGRA_SUPPORT;
         const D3D_FEATURE_LEVEL levels[] = { D3D_FEATURE_LEVEL_11_1, D3D_FEATURE_LEVEL_11_0 };
 
+        // On the render device's own adapter. With no adapter, D3D11 takes the system default, so on a machine
+        // with two GPUs and the other one chosen in Settings, decode ran on one GPU and render on the other:
+        // textures cannot be shared across adapters, zero-copy failed, and the CPU readback path, which cannot
+        // carry 10-bit frames, turned every HDR stream white. Found on hardware with an NVIDIA GPU chosen on an
+        // Intel-default laptop (2026-10-01). The GPU setting had only ever moved rendering, never decoding.
+        ComPtr<IDXGIAdapter1> renderAdapter;
+        {
+            ComPtr<IDXGIFactory4> factory;
+            if (m_device && SUCCEEDED(CreateDXGIFactory1(IID_PPV_ARGS(&factory))))
+            {
+                factory->EnumAdapterByLuid(m_device->GetAdapterLuid(), IID_PPV_ARGS(&renderAdapter));
+            }
+        }
+
+        // An explicit adapter requires D3D_DRIVER_TYPE_UNKNOWN; without one, the default as before.
         HRESULT hr = D3D11CreateDevice(
-            nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, creationFlags,
-            levels, ARRAYSIZE(levels), D3D11_SDK_VERSION,
+            renderAdapter.Get(), renderAdapter ? D3D_DRIVER_TYPE_UNKNOWN : D3D_DRIVER_TYPE_HARDWARE, nullptr,
+            creationFlags, levels, ARRAYSIZE(levels), D3D11_SDK_VERSION,
             &m_decodeD3d11Device, nullptr, &m_decodeD3d11Context);
         if (FAILED(hr))
         {
