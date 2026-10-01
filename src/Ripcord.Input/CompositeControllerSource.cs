@@ -1,5 +1,6 @@
 using Ripcord.Core.Input;
 using Ripcord.Core.Reactive;
+using Ripcord.Core.Threading;
 
 namespace Ripcord.Input;
 
@@ -51,7 +52,9 @@ public sealed class CompositeControllerSource : IControllerSource, IDisposable
     // the LAST event would be wrong here, because several pads can be attached and a late subscriber would learn
     // about exactly one of them.
     private readonly Dictionary<string, ControllerConnectionEvent> _connected = [];
-    private readonly Lock _gate = new();
+    // A SpinGate, not a lock: the UI thread enters it, and a contended lock there lets XAML re-enter and fail
+    // fast. See SpinGate.
+    private readonly SpinGate _gate = new();
 
     public CompositeControllerSource(params IControllerSource[] sources)
     {
@@ -108,7 +111,7 @@ public sealed class CompositeControllerSource : IControllerSource, IDisposable
         ControllerConnectionEvent tagged = evt with { Source = sourceName };
         string key = $"{sourceName}|{tagged.ControllerId}";
 
-        lock (_gate)
+        using (_gate.Enter())
         {
             if (tagged.Connected)
             {
@@ -132,7 +135,7 @@ public sealed class CompositeControllerSource : IControllerSource, IDisposable
             IDisposable subscription = owner._connections.Subscribe(observer);
 
             ControllerConnectionEvent[] snapshot;
-            lock (owner._gate)
+            using (owner._gate.Enter())
             {
                 snapshot = [.. owner._connected.Values];
             }
@@ -149,7 +152,7 @@ public sealed class CompositeControllerSource : IControllerSource, IDisposable
     private void OnFrame(string sourceName, ControllerStateFrame frame)
     {
         ControllerStateFrame merged;
-        lock (_gate)
+        using (_gate.Enter())
         {
             _latest[sourceName] = frame;
 
