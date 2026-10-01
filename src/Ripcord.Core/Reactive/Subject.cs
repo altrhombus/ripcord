@@ -1,3 +1,5 @@
+using Ripcord.Core.Threading;
+
 namespace Ripcord.Core.Reactive;
 
 /// <summary>
@@ -6,13 +8,15 @@ namespace Ripcord.Core.Reactive;
 /// </summary>
 public sealed class Subject<T> : IObservable<T>
 {
-    private readonly Lock _gate = new();
+    // A SpinGate, not a lock: the UI thread enters it, and a contended lock there lets XAML re-enter and fail
+    // fast. See SpinGate.
+    private readonly SpinGate _gate = new();
     private readonly List<IObserver<T>> _observers = [];
     private bool _completed;
 
     public IDisposable Subscribe(IObserver<T> observer)
     {
-        lock (_gate)
+        using (_gate.Enter())
         {
             if (!_completed)
             {
@@ -33,7 +37,7 @@ public sealed class Subject<T> : IObservable<T>
 
     public void OnCompleted()
     {
-        lock (_gate)
+        using (_gate.Enter())
         {
             _completed = true;
         }
@@ -46,7 +50,7 @@ public sealed class Subject<T> : IObservable<T>
 
     private IObserver<T>[] Snapshot()
     {
-        lock (_gate)
+        using (_gate.Enter())
         {
             return [.. _observers];
         }
@@ -54,7 +58,7 @@ public sealed class Subject<T> : IObservable<T>
 
     private void Remove(IObserver<T> observer)
     {
-        lock (_gate)
+        using (_gate.Enter())
         {
             _observers.Remove(observer);
         }

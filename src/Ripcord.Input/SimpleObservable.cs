@@ -1,3 +1,5 @@
+using Ripcord.Core.Threading;
+
 namespace Ripcord.Input;
 
 /// <summary>
@@ -17,7 +19,9 @@ namespace Ripcord.Input;
 internal sealed class SimpleObservable<T>(bool replayLast = false) : IObservable<T>
 {
     private readonly List<IObserver<T>> _observers = [];
-    private readonly Lock _lock = new();
+    // A SpinGate, not a lock: the UI thread enters it, and a contended lock there lets XAML re-enter and fail
+    // fast. See SpinGate.
+    private readonly SpinGate _lock = new();
 
     private bool _hasLast;
     private T? _last;
@@ -26,7 +30,7 @@ internal sealed class SimpleObservable<T>(bool replayLast = false) : IObservable
     {
         bool replay;
         T? last;
-        lock (_lock)
+        using (_lock.Enter())
         {
             _observers.Add(observer);
             replay = replayLast && _hasLast;
@@ -45,7 +49,7 @@ internal sealed class SimpleObservable<T>(bool replayLast = false) : IObservable
     public void Publish(T value)
     {
         IObserver<T>[] snapshot;
-        lock (_lock)
+        using (_lock.Enter())
         {
             _last = value;
             _hasLast = true;
@@ -62,7 +66,7 @@ internal sealed class SimpleObservable<T>(bool replayLast = false) : IObservable
     {
         public void Dispose()
         {
-            lock (owner._lock)
+            using (owner._lock.Enter())
             {
                 owner._observers.Remove(observer);
             }
