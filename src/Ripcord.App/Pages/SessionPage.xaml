@@ -228,8 +228,11 @@
             the HUD every time - worse than the 90px it costs on a desktop that never summons it.
 
             Rung 1 and rung 2 are mutually exclusive in the portable layer, so row 0 never holds both.
+
+            The whole band lifts clear of the window's button prompts when they show, which they do over the
+            stream on a pad (SetBottomInset). The touch bar sat across them otherwise, seen on hardware.
         -->
-        <Grid VerticalAlignment="Bottom">
+        <Grid x:Name="BottomBand" VerticalAlignment="Bottom">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
                 <!--

@@ -1530,6 +1530,12 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer
     /// </summary>
     private void Page_SizeChanged(object sender, SizeChangedEventArgs e) => ApplyDiagnosticsHeightLimit();
 
+    /// <summary>
+    /// Keep the bottom band above the window's button prompts, which cover <paramref name="inset"/> pixels of the
+    /// bottom edge. See BottomBand in the markup; the window calls this whenever the prompts change.
+    /// </summary>
+    public void SetBottomInset(double inset) => BottomBand.Margin = new Thickness(0, 0, 0, inset);
+
     private void ApplyDiagnosticsHeightLimit()
     {
         // The panel's own 16px margins top and bottom, plus a little room so it never touches the edge.
