@@ -1986,7 +1986,14 @@ namespace winrt::Ripcord::Media::Interop::implementation
         td.Height = targetHeight;
         td.DepthOrArraySize = 1;
         td.MipLevels = 1;
-        td.Format = m_swapChainFormat;
+        // The video processor's output format follows the display the window is on NOW, not the swap chain,
+        // whose format was fixed at connect. A session started on an HDR display has a 10-bit swap chain, and
+        // after a drag to an SDR display the processor was still asked to tone-map PQ into a 10-bit target.
+        // On hardware (2026-09-30) that came out washed out, while a session started on the SDR display, whose
+        // target is 8-bit, looked right - consistent with the driver skipping the tone-map for a 10-bit
+        // output [X]. So an SDR display always gets the 8-bit target a session started there would have. The
+        // present pass samples this texture into the swap chain, so the two formats need not match.
+        td.Format = m_displayHdrCapable ? m_swapChainFormat : DXGI_FORMAT_B8G8R8A8_UNORM;
         td.SampleDesc.Count = 1;
         td.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
         td.Flags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
