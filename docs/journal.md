@@ -35,6 +35,22 @@ different purpose.
 > anything. The list above is short, it is checkable in one `git log --format=%B | grep`, and it stops
 > growing the moment someone notices — which is the property that actually matters.
 
+### Windows App SDK 2.5.1, and a WinUI licence we can ship under (2026-10-01)
+
+The packaging review turned up a surprise: `Microsoft.WindowsAppSDK.WinUI` 2.2.1, the WinUI that Windows App SDK
+2.2.0 pulls in, carried "Engineering Preview" licence terms, which don't allow distributing it at all. Every other
+Windows App SDK package had the ordinary terms.
+
+- **The fix was an upgrade.** Windows App SDK 2.5.1 pulls in WinUI 2.3.9, and its licence is the ordinary one,
+  with a distributable-code section that covers files placed beside the app, self-contained deployments
+  included. That's exactly how the release zip ships.
+- **`THIRD-PARTY-NOTICES.txt` is regenerated** from the new packages. The preview terms are gone from it, and
+  one package is new: `Microsoft.WindowsAppSDK.Search`.
+- **Nothing in the 2.3–2.5 release notes** touches what the hardware pass worked around (the full-screen
+  pixel row, directional focus after the title bar), so `ContentBridge` and `FocusPilot`'s fallback stay.
+- **Checked:** the whole solution builds for x64 with no new warnings, and both test suites pass. The app on
+  2.5.1 still needs its run on hardware.
+
 ### The hardware pass: two pads, two GPUs, and one white line (2026-10-01)
 
 Two pads, an HDR display beside an SDR one, and a laptop with two GPUs: an Intel iGPU that drives every
