@@ -21,7 +21,8 @@
 ## Independence attestation
 
 **Required for anything touching `Ripcord.Protocol.Halyard*`, `Ripcord.Cloud.Halyard`, `docs/protocol/`,
-or cryptography. Delete this whole section if your PR touches none of them.**
+`engine/`, `libripcord/`, `ports/`, or cryptography. Delete this whole section if your PR touches none of
+them.**
 
 Read [CONTRIBUTING §2](../CONTRIBUTING.md#2-independent-attestation--read-this-properly) before ticking
 these. AI assistance is allowed and is how most of this project was built — point 2 restricts exactly one

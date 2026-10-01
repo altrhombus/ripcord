@@ -42,8 +42,8 @@ public static class HalyardEndpoints
 
     /// <summary>
     /// The <c>User-Agent</c> the vendor client sends on every cloud REST call (captured, cap107 and every
-    /// other rendezvous capture). A required on-wire value, not a naming choice — see the naming rules in
-    /// CLAUDE.md, which keep interoperability facts verbatim.
+    /// other rendezvous capture), sent here to match it. Whether the service requires it is <c>[X]</c>: no run
+    /// has tried another value. Kept verbatim because it is an observed on-wire value, not a naming choice.
     /// </summary>
     public const string CloudUserAgent = "RpNetHttpUtilImpl";
 }
