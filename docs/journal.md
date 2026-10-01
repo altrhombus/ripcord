@@ -1061,7 +1061,7 @@ env-gated trace in the tree is one unused class.
 ### The second design review, built (2026-09-20 to 09-22)
 
 A second review of `feat/app-design-direction` landed as a written handoff, and most of it is now in the
-tree. The reasoning lives in `docs/design-review-2026-09-21.md`; what follows is what changed and the three
+tree. The reasoning lives in `docs/history/design-review-2026-09-21.md`; what follows is what changed and the three
 things the work found that nobody was looking for.
 
 **The console card stopped being two cards.** The one-console hero had its own markup and its own

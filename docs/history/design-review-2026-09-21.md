@@ -1,16 +1,19 @@
+> **Kept for the record (moved here 2026-09-30).** A dated review of the design branch; its decisions live in
+> [`docs/design.md`](../design.md).
+
 # Second design review — `feat/app-design-direction`
 
 **The question this answers: the direction is settled and half-built. Is it right, and what is missing?**
 
-Written 2026-09-21, against `cf6ac0a`. This is a **review, not a settlement.** Nothing here amends
-[`design.md`](design.md) until you decide it does; where I disagree with that file I say so and price the
+Written 2026-09-21, against `feat/app-design-direction` as it stood that day. This is a **review, not a settlement.** Nothing here amends
+[`design.md`](../design.md) until you decide it does; where I disagree with that file I say so and price the
 disagreement, because the project's own rule is that reopening a settled decision is a change rather than a
 refinement and the cost should be visible before it is paid.
 
-Read [`design.md`](design.md) first — it is the thing being reviewed, and this file assumes it.
+Read [`design.md`](../design.md) first — it is the thing being reviewed, and this file assumes it.
 
-Mock-ups of the card's states, first run, the celebration and the density steps:
-<https://claude.ai/artifact/VxrhXEgMJizpbnhXGAqh3L>
+Mock-ups of the card's states, first run, the celebration and the density steps were shared privately at the
+time and are not part of this record.
 
 ---
 
@@ -19,8 +22,8 @@ Mock-ups of the card's states, first run, the celebration and the density steps:
 Three findings were re-decided once the owner had read this file, and the work has since been built. It was
 carried out from a written instruction set, `design-review-handoff.md`, which said to delete itself once the
 work had landed and its remaining findings had homes — so it is gone. Its hardware checks are §7 and §8 of
-[`design-branch-test-pass.md`](design-branch-test-pass.md) and the narrative is in
-[`journal.md`](journal.md). **Where the amendments below disagree with the body of this file, the amendments
+[`design-branch-test-pass.md`](../design-branch-test-pass.md) and the narrative is in
+[`journal.md`](../journal.md). **Where the amendments below disagree with the body of this file, the amendments
 win.**
 
 - **B3 is superseded.** One shared `ConsoleCard` control was the recommendation here. The hero instead

@@ -1,6 +1,5 @@
 > **Superseded on 2026-09-30.** This is the roadmap as it stood before it was rewritten. The current one is
-> [`ROADMAP.md`](../../ROADMAP.md); items there point here for the detail they no longer carry. Links below are
-> relative to the repository root, as they were when this file lived there.
+> [`ROADMAP.md`](../../ROADMAP.md); items there point here for the detail they no longer carry.
 
 # Ripcord roadmap
 
@@ -20,11 +19,11 @@ Three companions carry the rest, and each answers a different question:
 
 | Question | Where |
 |---|---|
-| What is this, and does it work? | [`README.md`](README.md) |
-| What happened, and when? | [`docs/journal.md`](docs/journal.md) |
-| What was consulted, and what did it inform? | [`docs/protocol-research-log.md`](docs/protocol-research-log.md) |
-| How does the protocol work? | [`docs/protocol/`](docs/protocol/) |
-| How is the code arranged? | [`docs/architecture.md`](docs/architecture.md) |
+| What is this, and does it work? | [`README.md`](../../README.md) |
+| What happened, and when? | [`docs/journal.md`](../../docs/journal.md) |
+| What was consulted, and what did it inform? | [`docs/protocol-research-log.md`](../../docs/protocol-research-log.md) |
+| How does the protocol work? | [`docs/protocol/`](../../docs/protocol/) |
+| How is the code arranged? | [`docs/architecture.md`](../../docs/architecture.md) |
 
 Completed work is not deleted — it moves to the journal, which keeps the dated record intact.
 
@@ -35,9 +34,9 @@ Completed work is not deleted — it moves to the journal, which keeps the dated
 **Phase 1 — PS5 LAN remote play. Working end-to-end against real hardware.** Pairing from scratch, connect,
 video, audio, and controller input are all live-verified. The recorded live figures are **1080p60 at 0.4%
 loss, 23.2 Mbps, handshake 2.1 ms, RTT 6.5 ms, 18 ms demux→present** — recorded in the Track D entry
-below and in [`docs/journal.md`](docs/journal.md). (A previous revision said the latency/bitrate figures were
+below and in [`docs/journal.md`](../../docs/journal.md). (A previous revision said the latency/bitrate figures were
 unlogged and cited a commit that no longer existed; the figures *are* recorded. Corrected 2026-08-02. The
-hashes went too, in 2026-09-09's sweep — see [`docs/README.md`](docs/README.md) on why pre-publication
+hashes went too, in 2026-09-09's sweep — see [`docs/README.md`](../../docs/README.md) on why pre-publication
 hashes do not resolve.) What's left in Phase 1 is polish and a couple of production-path gaps,
 not research.
 
@@ -54,7 +53,7 @@ not research.
 **Phase status vs. the original deferral plan:**
 - **Phase 2 — PS4 support. CLOSED 2026-08-05.** Nothing open. The full record of how it got there —
   including the falsified leads and the four differing constants — is in
-  [`docs/journal.md`](docs/journal.md) under "Phase 2 — PS4 support, closed 2026-08-05".
+  [`docs/journal.md`](../../docs/journal.md) under "Phase 2 — PS4 support, closed 2026-08-05".
 - **Phase 3 — DualSense advanced features.** *Partially done* — raw-HID **input** shipped (PS button,
   touchpad click, USB full / BT compact / BT full report formats). Output (haptics, adaptive triggers,
   lightbar) and gyro are still not started.
@@ -108,7 +107,7 @@ owner asked for a UX review with the app judged as a Windows 11 Fluent showcase,
 work 1.0-blocking rather than a 1.1 track. The definition above still holds as the floor; what changed is
 that "without hitting a defect the project already knows about" now includes *the app reading as a generic
 WinUI sample*, which the design review found to be a structural property rather than an absence of polish.
-See [`docs/design.md`](docs/design.md) for what was settled and the four priced items below for what is
+See [`docs/design.md`](../../docs/design.md) for what was settled and the four priced items below for what is
 still open. One consequence: the wordmark moves out of "explicitly out" and into scope, because the design
 depends on it and asset generation is a one-way door.
 
@@ -226,11 +225,11 @@ pass has to exercise.
 
 One protocol engine, in Rust, under every first-class client (Windows, macOS and Linux; iOS, iPadOS and
 Android later). `libripcord` stays as the console ports' core. The decisions, the reasoning and the phases
-are in [`docs/engine-plan.md`](docs/engine-plan.md); this entry lists only what is open. Phase 0, bringing
-the documents into line, is done and in the journal. The engine lives in [`engine/`](engine/).
+are in [`docs/engine-plan.md`](../../docs/engine-plan.md); this entry lists only what is open. Phase 0, bringing
+the documents into line, is done and in the journal. The engine lives in [`engine/`](../../engine/).
 
 - [ ] **Phase 1 — the spike, and the gate.** Every criterion that could be checked on the M4 Max is met
-      (journal, 2026-09-25; figures in [`engine/README.md`](engine/README.md)): `stream-crypto.kat`
+      (journal, 2026-09-25; figures in [`engine/README.md`](../../engine/README.md)): `stream-crypto.kat`
       passes 65 of 65, and the per-packet cost is 0.53–0.57 µs against the C core's 7.71–8.11 µs from one
       Swift harness. It links into the Mac lab and a .NET harness through generated bindings, and its
       binary size is recorded. Open:
@@ -315,7 +314,7 @@ left open:
 ### macOS client — on the Rust engine since 2026-09-26
 
 A native Mac app with at least parity with the Windows client, internet play and sign-in included. The
-decisions, the App Store analysis and the order of work are in [`docs/macos-plan.md`](docs/macos-plan.md).
+decisions, the App Store analysis and the order of work are in [`docs/macos-plan.md`](../../docs/macos-plan.md).
 Since Phase 3's relink (journal, 2026-09-26) it builds on the Rust engine, and its protocol work lands
 there: the engine's own items, including the hardware runs Phase 3 still owes, are under "One engine"
 above. The spike, the C-core connect sequence, the Swift cloud tier and the internet-play runs are done
@@ -357,7 +356,7 @@ and in the journal. Open:
 
 ### iPhone, iPad, Apple TV and Apple Watch — scaffolding in 2026-09-27
 
-The plan is [`docs/ios-plan.md`](docs/ios-plan.md). RipcordKit and the engine build for iOS and tvOS, and one
+The plan is [`docs/ios-plan.md`](../../docs/ios-plan.md). RipcordKit and the engine build for iOS and tvOS, and one
 app target for all three builds in Debug and Release, device and simulator, in CI too. Open:
 
 - [ ] **The first run on hardware:** an iPhone and an Apple TV, pairing by code, a stream. It settles the
@@ -472,7 +471,7 @@ exists for.
 
 ### Design direction — settled 2026-09-13, one item still open
 
-The UX review is done and its decisions are recorded in [`docs/design.md`](docs/design.md), which is now
+The UX review is done and its decisions are recorded in [`docs/design.md`](../../docs/design.md), which is now
 the standing answer to "what does the app look like". Four questions were left open rather than guessed,
 and each was priced here so the cost of the design work was visible before it was committed to.
 
@@ -522,7 +521,7 @@ What has been exercised is what got hit while chasing something else — which i
 recorded in the journal for 2026-09-24 were found, none of them a crash and not one catchable by either test
 suite. That list is the argument for this item; the suites cannot replace it.
 
-- [ ] **Run the manual script.** [`docs/design-branch-test-pass.md`](docs/design-branch-test-pass.md), §1–§8,
+- [ ] **Run the manual script.** [`docs/design-branch-test-pass.md`](../../docs/design-branch-test-pass.md), §1–§8,
       plus the per-input matrix it defines: pad-only with mouse and keyboard physically denied, touch on a
       handheld, high contrast, transparency off, reduce motion, Narrator over the card grid, and a TV at 2–3 m
       for the focus-ring legibility judgement the one-adaptive-UI decision rests on.
@@ -688,7 +687,7 @@ crashed on launch the first time and was caught the same way.
 - [ ] Steps 5–10 (focus invariants, ModalHost, soft keyboard, KeyBindingsPage, hint bar, touch and keyboard
       passes).
 - [ ] **Steps 3–4 need a pad to confirm.** Both landed 2026-08-06; the full record of what they changed is
-      in [`docs/journal.md`](docs/journal.md) under this stage.
+      in [`docs/journal.md`](../../docs/journal.md) under this stage.
   - **Step 3 (`InputRouter`/`InputScope`)** — the two things it claims to fix are exactly the two needing
     hardware: a DualSense working *in the menus* (it previously worked only in a stream, because the chrome
     read GameInput only), and the mid-session dialog — open the disconnect prompt with a controller, check
@@ -1063,7 +1062,7 @@ Both need a console or a capture to settle, hence here rather than in Track D.
       together, a visible change to every card in dark theme. That is a look decision to make on a real
       screen, not here. Until then `Ripcord.Card.xaml` and `docs/design.md` say they have diverged, and why.
       **Price: ~30 minutes to try, most of it looking.**
-- [ ] **Pair a console port from the desktop app — proposed 2026-09-16; design note [`docs/port-pairing.md`](docs/port-pairing.md) 2026-09-27, for review.** A port asks the
+- [ ] **Pair a console port from the desktop app — proposed 2026-09-16; design note [`docs/port-pairing.md`](../../docs/port-pairing.md) 2026-09-27, for review.** A port asks the
       desktop to sign in on its behalf: the port enters a pairing mode and announces itself on the LAN, a
       running Ripcord on a PC or Mac sees it offered in its own UI, does the PSN sign-in and the console
       registration with a real browser and a real keyboard, and hands the finished pairing record back.
