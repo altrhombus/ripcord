@@ -255,6 +255,12 @@ namespace winrt::Ripcord::Media::Interop::implementation
         HWND m_window = nullptr;
         bool m_displayChanged = false;
 
+        // The last back-buffer format switch's result: S_OK, or why it failed (shown in HdrOutputDescription).
+        HRESULT m_reformatFailure = S_OK;
+
+        // HdrOutputDescription without the back-buffer suffix.
+        std::wstring HdrOutputSummary() const;
+
         // HDR static metadata carried by the stream (SMPTE ST 2086 mastering display + CTA-861.3 MaxCLL /
         // MaxFALL). Its presence is the discriminator between genuinely HDR-graded content and SDR content
         // merely wrapped in a PQ container - the console will happily send the latter, and it looks flat
