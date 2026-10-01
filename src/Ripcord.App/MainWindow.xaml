@@ -36,6 +36,10 @@
         the same element by construction, because both go through the same focus engine. Two directional
         models over one layout is how a surface ends up navigable with one input and subtly wrong with the
         other, and nobody notices until someone puts a keyboard down and picks a controller up.
+
+        Since 2026-10-01 a plain arrow that reaches this grid unhandled goes through FocusPilot instead, the pad's
+        own path, because the pad needed a fallback the engine doesn't have (see OnRootKeyDown). This setting
+        still covers what doesn't bubble here.
     -->
     <Grid XYFocusKeyboardNavigation="Enabled">
         <Grid.RowDefinitions>
@@ -104,6 +108,9 @@
             with the input mode, and a row that collapses would reflow the page under the user every time they
             put a pad down. Over the stream layer too, deliberately — a Modal scope pushed mid-session is
             exactly when someone needs telling which button answers it.
+
+            What they would cover lifts clear of them instead (PushBottomInset): the stream's bottom band, and
+            the chrome pages' bottom edge. So a page's bottom does move while the prompts show, by their height.
         -->
         <controls:InputHintBar
             x:Name="HintBar"
