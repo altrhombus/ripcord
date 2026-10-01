@@ -71,6 +71,14 @@ public sealed class FocusWatchdog(DispatcherQueue dispatcher, Func<bool> needsSe
         {
             _checkQueued = false;
 
+            // Disposed while this was queued, which is how the window closing looks from here. The check reads
+            // the window's content, and on a closed window that is a native access violation rather than an
+            // exception, so the catch below cannot help: the only safe check is the one not made.
+            if (!_running)
+            {
+                return;
+            }
+
             try
             {
                 if (needsSeed())
@@ -80,8 +88,8 @@ public sealed class FocusWatchdog(DispatcherQueue dispatcher, Func<bool> needsSe
             }
             catch (Exception ex)
             {
-                // A focus check must never be able to take the process down; a window mid-teardown is the
-                // ordinary way this throws.
+                // A focus check must never be able to take the process down. This catches what throws; a closed
+                // window faults instead, which is why the check above comes first.
                 System.Diagnostics.Debug.WriteLine($"Focus watchdog error: {ex}");
             }
         });
