@@ -3,9 +3,8 @@
 How Ripcord is arranged, and the rules that keep it that way. Read this before adding a project,
 moving a type between layers, or touching anything in `Ripcord.Presentation`.
 
-The same material is stated more tersely in [`CLAUDE.md`](../CLAUDE.md), which is the brief loaded by
-AI coding agents working on this repo. **This file is the canonical version**; if the two ever disagree,
-this one is right and the other is stale.
+[`CLAUDE.md`](../CLAUDE.md) states the same rules tersely for AI coding agents. This file has the reasoning.
+If the two ever disagree, this one is right and the other is stale.
 
 ## The one rule everything else follows
 
@@ -19,38 +18,38 @@ above to explain why a primitive is shaped as it is. A comment is not a dependen
 would be, and `PresentationPortabilityTests` is what stops one appearing.
 
 ```
-  FRONT ENDS          Ripcord.App                ports/ripcord-3ds   (C, devkitARM)
-                      (WinUI 3, Windows)         ports/ripcord-ps3   (C, ps3dev)
-                             │                            │
-                             ▼                            ▼
-                   Ripcord.Presentation.Halyard           libripcord       the portable C99 core
-                             │                            ╷                every port compiles
-                             ▼                            ╷ ported from,
-  PORTABLE APP       Ripcord.Presentation                 ╷ not linked
-                             │                            ╷ against
-                             ▼                            ╷
-                       Ripcord.Client                     ╷   headless session lifecycle
-                             │                            ╷
-                             ▼                            ╷
-  PROTOCOL         Ripcord.Protocol.Halyard  ◀╶╶╶╶╶╶╶╶╶╶╶╶╯   PS5/PS4 composition point
-                        │            │
-                        ▼            ▼
-                   .Takion       .Common      Ripcord.Cloud.Halyard
-                        │            │                 │
-                        └─────┬──────┴─────────────────┘
-                              ▼
-  FOUNDATION        Ripcord.Core  ·  Ripcord.Core.Net       no PlayStation knowledge
+  FRONT ENDS      Ripcord.App            src/Ripcord.Mac          ports/ripcord-3ds  (C, devkitARM)
+                  (WinUI 3, Windows)     (Swift: Mac, iPhone,     ports/ripcord-ps3  (C, ps3dev)
+                         │                iPad, Apple TV)                 │
+                         ▼                       │                        ▼
+             Ripcord.Presentation.Halyard        ▼                    libripcord     portable C99,
+                         │                    RipcordKit                  ╷          every port's core
+                         ▼                       │                        ╷
+  PORTABLE APP   Ripcord.Presentation            ▼                        ╷ ported from,
+                         │                engine/ (Rust)                  ╷ not linked
+                         ▼                ripcord-ffi → ripcord-net       ╷ against
+                   Ripcord.Client           → ripcord-proto  ◀╶╶╶╶╶╶╶╶╶╶╶╶┤
+                         │                                                ╷
+                         ▼                                                ╷
+  PROTOCOL     Ripcord.Protocol.Halyard  ◀╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╶╯   PS5/PS4 composition point
+                    │            │
+                    ▼            ▼
+               .Takion       .Common      Ripcord.Cloud.Halyard
+                    │            │                 │
+                    └─────┬──────┴─────────────────┘
+                          ▼
+  FOUNDATION    Ripcord.Core  ·  Ripcord.Core.Net       no PlayStation knowledge
 ```
 
-Solid arrows are assembly references on the managed side and ordinary compilation on the ports side.
-The ports are **separate from-scratch C implementations** that port logic from `src/` rather than linking
-against it — they exist as completeness tests for the specification, on the principle that a spec is only
-as good as its ability to produce a working implementation by someone who was not in the room when it was
-written.
+Solid arrows are assembly references on the managed side, Swift and Cargo dependencies on the Apple side, and
+ordinary compilation on the ports side. Dotted lines are porting, not linking: the C core and the Rust engine
+are this project's own re-implementations of the .NET protocol stack, and the .NET side stays the reference
+for derivations (key schedules, KDFs, field ciphers, codecs). `ProtocolLab vectors` generates the known-answer
+vectors the other two are tested against.
 
-The dotted line starts at `libripcord` rather than at each port because that is where the porting
-actually happened: the protocol is written once in portable C99 and every port consumes it. What a port
-contains is its platform — video, audio, input, storage, a shell — and nothing else.
+The ports exist partly as completeness tests for the specification: a spec is only as good as its ability to
+produce a working implementation by someone who wasn't in the room when it was written. What a port contains
+is its platform (video, audio, input, storage, a shell) and nothing else.
 
 Media (`Ripcord.Media*`), input (`Ripcord.Input*`) and diagnostics (`Ripcord.Diagnostics`) hang off the
 front end rather than the protocol stack, and reach native code through their `.Interop` halves.
@@ -71,7 +70,7 @@ Each project, and what it is responsible for:
 - **`Ripcord.Protocol.Halyard.Common`** — transport-neutral PS5 types: the `/sess/rgst|init|ctrl` message
   codec, stream framing, controller-state → input-packet mapping, and **the crypto seam**
   (`IHalyardSessionCrypto` + `PassthroughHalyardSessionCrypto` stub + the real `HalyardV1SessionCrypto`
-  implementation under `Crypto/V1/`). Shared by PS5 now, PS4 later.
+  implementation under `Crypto/V1/`). Shared by PS5 and PS4.
 - **`Ripcord.Protocol.Halyard.Takion`** — the SCTP-over-UDP ("Takion") transport: handshake
   (INIT/INIT_ACK/COOKIE_ECHO/COOKIE_ACK), reliable-delivery layer (DATA/SACK, reassembly), and
   `HalyardTakionStream`, the orchestrator that demuxes control vs. A/V and drives the crypto seam.
@@ -95,26 +94,39 @@ Each project, and what it is responsible for:
 - **`Ripcord.App`** — the WinUI 3 shell (pages, settings, the streaming session page/HUD). Increasingly thin:
   pages render an immutable state record and turn input back into view-model calls.
 - **`Ripcord.Diagnostics`** — tracing/metrics (`RipcordEventSource`, `MetricHistory`) used directly by
-  the app for the diagnostics overlay.
+  the app for the diagnostics overlay, and `IdentifierRedactor`, which makes the labs print placeholders
+  instead of real addresses and ids.
 - **`tools/Ripcord.ProtocolLab`** — the console harness: drives the connect flow against a real PS5 and
   replays captures through the parsers. The iteration/verification tool for every protocol stage.
 - **`tools/Ripcord.HidCapture`** — standalone HID capture utility for controller RE work.
+- **`tools/leak-guard`** — the commit- and push-time check against the real values the captures folder holds, and
+  **`tools/third-party-notices`**, which generates the Windows build's notices from its packages.
+
+## The Rust engine and the Apple clients
+
+[`engine-plan.md`](engine-plan.md), settled 2026-09-25, gives the first-class clients one protocol engine in
+Rust. The Mac moved onto it on 2026-09-26; Windows follows after its 1.0, one seam at a time behind the
+interfaces `Ripcord.Presentation` already defines.
+
+- **`engine/`** is a Cargo workspace: `ripcord-proto` (sans-IO, `#![forbid(unsafe_code)]`), `ripcord-net` (the
+  `std::net` driver that runs the connect sequence on the caller's thread), `ripcord-ffi` (the C ABI and the only
+  crate that uses `unsafe`; its `build.rs` generates `ripcord.h` and `NativeMethods.g.cs`, never committed),
+  `ripcord-kat` (the known-answer runner), `ripcord-diff` (differential tests against the C core) and
+  `hosts/dotnet/` (the .NET harness). [`engine/README.md`](../engine/README.md) has the build and the measured
+  figures.
+- **`src/Ripcord.Mac`** is one Xcode project for every Apple client. `RipcordKit` is the Swift layer over the
+  engine's C ABI (no C type reaches its callers), plus the cloud tier and pairing stores. `RipcordApp/` is the
+  Mac app, `RipcordWidgets/` its widgets, `RipcordAppLogic/` its window-free logic (compiled into the app and
+  the host-less `RipcordAppTests`), `RipcordLab/` is `ripcord-lab`, and `RipcordMobile/` is the iPhone, iPad and
+  Apple TV app. Its design is in [`src/Ripcord.Mac/DESIGN.md`](../src/Ripcord.Mac/DESIGN.md).
 
 ## The C core and the ports
 
 `ports/` holds from-scratch C clients for consoles the .NET stack cannot run on. They share a protocol
 core, `libripcord/`, with each other, and nothing at all with `src/` at link time.
 
-The core sat at `ports/common` until 2026-09-24. It moved to the top level because the planned macOS
-client (`docs/macos-plan.md`) links it too, and a first-class client depending on a folder called "ports"
-misdescribes both. Nothing about its contents or its rules changed in the move.
-
-**Where this is heading.** [`engine-plan.md`](engine-plan.md), settled 2026-09-25, gives the first-class
-clients a single protocol engine written in Rust, which presents the same C contract as the C core
-(`halyard_client.h`). The macOS client moves to it by relinking once it reaches parity, and Windows moves
-after its 1.0, one seam at a time behind the interfaces `Ripcord.Presentation` already defines.
-`libripcord` then stays as the console ports' core. Until those moves happen, this section describes the
-tree as it is.
+`libripcord` was the macOS client's core too until 2026-09-26, when the Mac moved to the Rust engine. It stays
+as the console ports' core, taking fixes and port-driven work.
 
 - **`libripcord`** — the protocol in portable C99: `crypto/`, `halyard/` (the control KDF and the field
   ciphers), `session/`, `discovery/`, `takion/`, `stream/` (A/V framing and Cauchy Reed-Solomon FEC over
@@ -142,8 +154,8 @@ external source the rule exists to keep out. [`CLAUDE.md`](../CLAUDE.md) states 
 a file was ported from is good practice, because it tells the next reader where to look when the two
 diverge, but it is a courtesy rather than an obligation.
 
-A Vita port exists on an unpublished branch and is **not in this tree**; [`journal.md`](journal.md)
-records what it established. The diagram above names only what is here.
+A Vita port lives on its own branch (`feat/vita-port`), well behind `main`, and isn't in this tree;
+[`journal.md`](journal.md) records what it established.
 
 ## The crypto seam pattern
 
@@ -176,6 +188,10 @@ The rationale for each lives in the file that implements it; what follows is wha
    only" premise does not hold for it and a lock is the correct answer. That is the exception and it is
    named here so the rule stays literally true — if you want a lock on a *view-model* field, the answer is
    the dispatcher, not the lock.
+   *Outside the layer,* where the UI thread meets a device or session thread (`SimpleObservable`,
+   `CompositeControllerSource`, `MergedInputSource`, `Subject`), the guard is `SpinGate`, never `lock`. A
+   contended `lock` on the WinUI UI thread waits in `CoWaitForMultipleHandles`, which pumps messages, and XAML
+   re-entered that way fails fast with a stowed `E_UNEXPECTED`. That was the 2026-09-30 start-up crash.
 3. **A device gets a seam; data does not.** Anything touching a GPU, a driver, a presenter or a native handle
    is reached through an interface implemented in the front end (`IVideoPipelineStats`,
    `IVideoCapabilitiesProbe`, `IConsoleReachabilityProbe`, `IConsoleScanner`, `IConsoleRegistrar`,
@@ -197,12 +213,11 @@ The rationale for each lives in the file that implements it; what follows is wha
 | Senkusha | **Vendor's own codename**, retained | The echo/MTU/bandwidth probe sub-protocol |
 
 `Halyard` replaces Sony's product name and is our invention. `Takion` and `Senkusha` are **Sony's own
-internal codenames**, recovered from our binary (`takion.proto`, `tak-c::parseMessage`,
-`TakionNetConnection`) — not names we coined, and not borrowed from any third-party implementation, which
-uses them for the same reason. They are retained deliberately as protocol terminology: they are load-bearing
+internal codenames**, recovered from strings in our own copy of the vendor binary — not names we coined, and
+not borrowed from any third-party implementation, which uses them for the same reason. They are retained deliberately as protocol terminology: they are load-bearing
 in namespaces, ~10 class names, and assembly names, and renaming them buys little once their provenance is
-stated. **This is a stated exception to the "never the vendor's own symbol/string names" rule** stated in
-[`CONTRIBUTING.md`](../CONTRIBUTING.md) — the rule still governs everything else. Do not extend the exception without recording it here.
+stated. **This is a stated exception to the "never the vendor's own symbol/string names" rule** in
+[`CLAUDE.md`](../CLAUDE.md) — the rule still governs everything else. Do not extend the exception without recording it here.
 
 For protobuf **message and enum** names the rule is two-tier, and `docs/protocol/README.md` states it in
 full: the vendor's *coined or arbitrary* names are renamed (`BIG`/`BANG` → `SESSION_REQUEST`/
@@ -210,7 +225,7 @@ full: the vendor's *coined or arbitrary* names are renamed (`BIG`/`BANG` → `SE
 `TRACE`), while names that are *purely the plain-English description* of the field (`CursorPayload`,
 `PacketLossPayload`, `VIDEO_DECODE`) are retained as interface labels — about two-thirds of the schema.
 Field numbers and enum values are never changed. Vendor **symbol** names (C++ classes, functions, log
-strings — e.g. `RpCryptAes`) are never used: name the thing for what it does and cite the vendor by RVA.
+strings) are never used: name the thing for what it does and cite the vendor by RVA.
 
 Required on-wire values (hostnames, the `"PS5"` platform tag, `RP-*` HTTP headers, JSON config keys like
 `handshakeKey`) stay verbatim in code as protocol constants — those are interoperability facts, not
@@ -225,4 +240,8 @@ one of these, expect a failing build rather than a review comment:
 |---|---|
 | No UI framework type enters `Ripcord.Presentation` | `PresentationPortabilityTests` (reflects over referenced assemblies) |
 | The bundled constants carry nothing per-console or per-account | `BundledInteropConstantsTests.Bundle_CarriesNoLiveVectorMaterial` |
-| Native capability queries have exactly one call site | `NativeCapabilityAccessTests` |
+| Each native interop class is named only by its owner file | `NativeCapabilityAccessTests` (reads the class names from the IDL) |
+| The UI thread never waits in a pumping lock | `SpinGateTests` (exclusion); the four sites use `SpinGate` |
+| `Client-Type` has exactly two homes, and the engine reads rather than copies it | `BundledInteropConstantsTests.ClientType_*` |
+| No real address, account id or long hex value in the published tree | `PublishedTreeSweepTests`, plus `tools/leak-guard` at commit and push |
+| Every user-facing string is in the catalogue, with a translator comment | `LocalizationTests` |
