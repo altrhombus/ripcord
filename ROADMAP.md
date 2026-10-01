@@ -236,13 +236,31 @@ tree before it was listed.
       engine now publishes a neutral frame when its last pad goes; the composite should not depend on that.
 - [ ] **Packaging:** the unused `systemAIModels` capability, a self-contained release build, a privacy policy
       page, third-party notices for the Windows build, and the manifest's minimum raised to Windows 11 25H2
-      (build 26200).
+      (build 26200). Written 2026-09-30 on `build/packaging-1.0`; a clean machine has not run it.
+- [ ] **The GameInput redistributable has to ship.** `GameInputRedist.dll` is not in the published app; it came
+      from `System32` on the machines tried so far, which had it from an earlier install. GameInput's own
+      README says its PC redistributable (`GameInputRedist.msi`, in the package) should be shipped with
+      anything that uses it. Without it, an Xbox pad may do nothing on a clean machine. Ship the MSI beside the
+      zip and say so, and check on a clean machine.
+- [ ] **The WinUI package's licence forbids redistribution, as written.** `Microsoft.WindowsAppSDK.WinUI` 2.2.1,
+      which the stable `Microsoft.WindowsAppSDK` 2.2.0 pulls in, carries the "Windows App SDK Engineering
+      Preview" terms: no sharing, publishing or distributing (3e), ending 30 days after a commercial release.
+      Every other Windows App SDK package carries the ordinary terms, so this may be a packaging mistake on
+      Microsoft's side, but release builds include files from it. Find out before 1.0 ships: a later package,
+      a pinned WinUI version under the ordinary terms, or Microsoft's word.
+- [ ] **The Windows App SDK metapackage brings AI and ML components** the app never uses: about 45 MB of the
+      270 MB self-contained publish (`onnxruntime.dll`, `DirectML.dll` and friends). Referencing the
+      component packages the app needs, instead of the metapackage, would drop them.
 
 **Decisions and checks, not blocking**
 - [ ] **Verify the review's store and market claims** before acting on any of them: the rival clients it
       names, store listing ids, policy versions and the signing service's price.
 - [ ] **An honest User-Agent.** The cloud calls send the vendor client's own `User-Agent`, and whether the
       service requires it is `[X]`. Try a Ripcord one against PSN and record what happens.
+- [ ] **Sign in without the telemetry permission.** The sign-in request asks for `sbahn:pc.telemetry.publish`,
+      copied with the rest of the official client's scopes, though Ripcord never publishes anything to Sony.
+      Drop it, and check that sign-in, the console list, wake and the internet route still work. `[X]` until
+      run. `PRIVACY.md` says this in the meantime.
 - [ ] **A build where the user supplies the OAuth credential.** The runtime override (`client.json`) already
       exists; the question is whether a published build should ship without the bundled one.
 - [ ] **Signing the MSIX.** Kept open (2026-09-30): a self-signed package asks each user to trust a
