@@ -128,6 +128,10 @@ public sealed partial class MainWindow : Window, IShellNavigator
 
         ChromeFrame.Navigate(typeof(ConsolesPage));
 
+        // Both, because a bar going away collapses without reliably reporting a size change.
+        HintBar.SizeChanged += (_, _) => PushBottomInset();
+        HintBar.RegisterPropertyChangedCallback(UIElement.VisibilityProperty, (_, _) => PushBottomInset());
+
         // Deferred to Loaded rather than run in the constructor: creating a GameInput-backed WinRT component
         // before the window content is realized was implicated in an early native crash (combase.dll,
         // E_UNEXPECTED) on the first D-pad press.
@@ -231,6 +235,21 @@ public sealed partial class MainWindow : Window, IShellNavigator
     /// <summary>True while the stream layer is showing.</summary>
     public bool IsStreaming => StreamFrame.Visibility == Visibility.Visible;
 
+    /// <summary>
+    /// Tell the session page how much of the bottom of the window the button prompts cover, 0 while they are
+    /// hidden. The prompts sit over the stream layer rather than in a row of their own (see MainWindow.xaml), and
+    /// the page lifts its bottom band clear of them. Pushed from here, as OnReturnedFromStream is, because the
+    /// prompts belong to the window. Both of the bar's edges call it, since a bar going away collapses without
+    /// reliably reporting a size change.
+    /// </summary>
+    private void PushBottomInset()
+    {
+        if (StreamFrame.Content is SessionPage page)
+        {
+            page.SetBottomInset(HintBar.Visibility == Visibility.Visible ? HintBar.ActualHeight : 0);
+        }
+    }
+
     /// <summary>True while the window is in the fullscreen presenter.</summary>
     public bool IsFullScreen => AppWindow.Presenter.Kind == AppWindowPresenterKind.FullScreen;
 
@@ -242,6 +261,7 @@ public sealed partial class MainWindow : Window, IShellNavigator
     {
         StreamFrame.Navigate(typeof(SessionPage), console);
         StreamFrame.Visibility = Visibility.Visible;
+        PushBottomInset();
 
         // Drop the backdrop for the duration. The window is about to be covered by opaque video, so Mica would
         // be blurring the wallpaper behind it every frame for something nobody can see — invisible on screen,
