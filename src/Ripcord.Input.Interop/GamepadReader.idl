@@ -1,11 +1,18 @@
 namespace Ripcord.Input.Interop
 {
-    // Phase 0: polls the first connected GameInput gamepad (Xbox-class controllers, including
-    // the ROG Xbox Ally X's embedded pad). DualSense/DualShock advanced features are a separate,
-    // later raw-HID engine per the plan - GameInput does not expose them.
+    // Every connected GameInput gamepad (Xbox-class controllers, including the ROG Xbox Ally X's embedded pad,
+    // and a DualSense's basics). DualSense/DualShock advanced features are the separate raw-HID engine -
+    // GameInput does not expose them.
     struct GamepadState
     {
-        Boolean IsConnected;
+        // Stable while the device stays connected and never reused: a pad unplugged and plugged back in comes
+        // back under a new id. Assigned by this reader, not by GameInput.
+        UInt64 DeviceId;
+
+        // The USB vendor and product ids GameInput reports for the device, so diagnostics can say which pad
+        // this is: an Xbox pad and a DualSense both appear here, and "gamepad 1" does not tell them apart.
+        UInt16 VendorId;
+        UInt16 ProductId;
         UInt64 Buttons;
         Single LeftTrigger;
         Single RightTrigger;
@@ -21,6 +28,10 @@ namespace Ripcord.Input.Interop
     {
         GamepadReader();
 
-        GamepadState GetLatestState();
+        // One reading per connected gamepad, each read from its own device. This replaced GetLatestState, which
+        // asked GameInput for "the latest reading from ANY gamepad": with a DualSense attached, which reports
+        // continuously, an Xbox pad never produced a single press (measured 2026-08-06). Empty when no pad is
+        // connected or the GameInput runtime is unavailable.
+        Windows.Foundation.Collections.IVectorView<GamepadState> GetConnectedStates();
     }
 }

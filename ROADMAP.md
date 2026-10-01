@@ -631,10 +631,19 @@ looking.
     pad could not be used at all … it was the act of choosing that broke it". Running both engines fixed the
     choosing and the hot-swap case, not this one. Comment corrected in both classes rather than left to
     mislead the next reader; the merging itself is correct and is simply never handed the second pad's frames.
-  - **Fix:** enumerate GameInput devices and read each explicitly instead of passing `nullptr`, publishing one
-    frame per device so the composite can merge them. That is native work in `Ripcord.Input.Interop`
-    (`GamepadReader`) plus the managed source above it, and it is the real "several controllers act as one
-    pad" the composite already advertises.
+  - **Fix written 2026-09-30, not yet driven with both pads.** `GamepadReader` tracks pads through
+    GameInput's device callback and reads each one by name (`GetConnectedStates`). The GameInput engine
+    merges them itself with `GamepadSet` before the composite sees them. Publishing a frame per device, as
+    first planned here, would not have worked: the composite keeps one frame per engine, so two pads on one
+    engine would overwrite each other. When the last pad goes, the engine publishes a neutral frame, so a
+    button held at the moment of unplugging is released. Eight `GamepadSetTests`, two checked non-vacuous
+    against a last-reading-wins merge. It builds for x64 and ARM64, and the app starts and polls with no
+    pad attached. To check with both pads:
+    1. DualSense on Bluetooth and an Xbox pad both connected: the Xbox pad drives the menus.
+    2. Both pads in a stream: each one's buttons reach the console, and holding a button on one while the
+       other is moved does not drop it.
+    3. Turn the DualSense off: the Xbox pad keeps working, without being re-plugged.
+    4. Hold a button on the Xbox pad and unplug it: the button is released in the stream.
 
 
 ### Stage C landed — steps 5–10, all UNTESTED ON HARDWARE (2026-08-06)
