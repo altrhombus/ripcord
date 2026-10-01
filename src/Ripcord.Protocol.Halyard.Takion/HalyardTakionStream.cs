@@ -111,6 +111,7 @@ public sealed class HalyardTakionStream : IAsyncDisposable
 
     // Congestion feedback: a raw sealed Takion packet (base type 5, 15 bytes) carrying received/lost unit
     // counts, sent periodically so the console's rate controller can adapt the encoder bitrate to the link.
+    // The 200 ms cadence is [X] (spec §8): assumed, not confirmed against the console.
     private static readonly TimeSpan CongestionInterval = TimeSpan.FromMilliseconds(200);
     private const byte CongestionPacketType = 0x05;
     private const int CongestionPacketSize = 15;

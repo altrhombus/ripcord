@@ -7,8 +7,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Ripcord is a from-scratch, independent PS5 Remote Play client for Windows (WinUI 3). It connects directly to a
 PS5 over LAN, decodes the H.264/HEVC video stream via D3D12, plays audio via WASAPI, and sends controller
 input back over the reverse-engineered wire protocol. The protocol was derived independently from the
-project's own captures and from static analysis of **our own installed copy** of the vendor
-client — the possession point is load-bearing, so keep that framing wherever this is restated. No vendor code
+project's own captures and from static and dynamic analysis of **our own installed copy**
+of the vendor client — the possession point is load-bearing, so keep that framing wherever this is restated.
+`NOTICE` lists the methods in full. No vendor code
 is reproduced here — but a ~4 KB set of interoperability *constants* **is** bundled, deliberately; see "Bounded exception 1" below and `NOTICE`. Read "Independent-implementation rules" before touching
 anything protocol- or crypto-related.
 
