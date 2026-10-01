@@ -220,6 +220,11 @@ public sealed partial class MainWindow : Window, IShellNavigator
 
         Closed += (_, _) =>
         {
+            // First, so no focus check queued before the close runs against the closed window. One that did read
+            // Window.Content from a released native window and faulted with an access violation, which no catch
+            // can stop: the app crashed on every close that raced a focus change (2026-09-30).
+            _focusWatchdog.Dispose();
+
             AppEffects.Changed -= OnEffectsChanged;
             _input.IntentReceived -= OnNavIntent;
             _input.Dispose();
