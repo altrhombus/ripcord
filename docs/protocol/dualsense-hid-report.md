@@ -14,6 +14,10 @@ reports).
   a trailing CRC-32. Only sent **after activation** — reading feature report `0x05` (calibration) switches the
   controller out of compatibility mode. The transport does this on open (best-effort); if it doesn't take, the
   compatibility report still parses (minus touchpad-xy/gyro).
+  **`[X]`, all of this bullet.** Our Bluetooth capture held only the compatibility report, so the `0x31`
+  layout, the CRC-32 and the activation by feature report `0x05` come from the public DualSense layout the
+  section below cross-checks against, not from our own evidence. None of it is confirmed until a capture of
+  ours shows a `0x31` report.
 
 This is the physical controller's own HID report (not the PS5 Remote Play protocol). We read it directly so we
 get inputs Windows.Gaming.Input hides — most importantly the **PS button**, plus the touchpad and (later) gyro.

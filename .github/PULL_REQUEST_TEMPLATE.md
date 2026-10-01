@@ -16,14 +16,15 @@
 ## Sign-off
 
 - [ ] Every commit carries `Signed-off-by:` matching the author (`git commit -s`) — see
-      [CONTRIBUTING §1](../CONTRIBUTING.md#1-developer-certificate-of-origin)
+      [CONTRIBUTING §1](../CONTRIBUTING.md#1-sign-off)
 
 ## Independence attestation
 
 **Required for anything touching `Ripcord.Protocol.Halyard*`, `Ripcord.Cloud.Halyard`, `docs/protocol/`,
-or cryptography. Delete this whole section if your PR touches none of them.**
+`engine/`, `libripcord/`, `ports/`, or cryptography. Delete this whole section if your PR touches none of
+them.**
 
-Read [CONTRIBUTING §2](../CONTRIBUTING.md#2-independent-attestation--read-this-properly) before ticking
+Read [CONTRIBUTING §2](../CONTRIBUTING.md#2-the-independence-rule) before ticking
 these. AI assistance is allowed and is how most of this project was built — point 2 restricts exactly one
 thing, and the boundary is *what gets obtained*, not whether a model was involved.
 

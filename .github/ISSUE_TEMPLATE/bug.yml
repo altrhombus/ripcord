@@ -31,7 +31,19 @@ body:
     id: commit
     attributes:
       label: Commit or version
-      description: Output of `git rev-parse --short HEAD`. There is no tagged release yet.
+      description: The release you downloaded (for example `ps3-v1.0`), or the output of `git rev-parse --short HEAD` if you built it yourself.
+    validations:
+      required: true
+  - type: dropdown
+    id: client
+    attributes:
+      label: Which client
+      options:
+        - Windows (the dotnet client)
+        - macOS
+        - PlayStation 3 port
+        - New 3DS port
+        - Something else
     validations:
       required: true
   - type: dropdown
