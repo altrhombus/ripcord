@@ -2,6 +2,7 @@
 #include "VideoRenderer.h"
 #include "VideoCapabilities.h" // shared adapter selection + real decode-capability queries
 #include "CodecSubtypes.h"  // one place for the codec -> MF subtype mapping
+#include "PresentingDisplay.h" // one place for "which display is this window on"
 #include "Ripcord.Media.Interop.VideoRenderer.g.cpp"
 
 #include <d3dcompiler.h>
@@ -217,8 +218,10 @@ namespace winrt::Ripcord::Media::Interop::implementation
         uint32_t width,
         uint32_t height,
         Ripcord::Media::Interop::GpuSelection gpuSelection,
-        uint64_t specificLuid)
+        uint64_t specificLuid,
+        uint64_t windowHandle)
     {
+        m_window = reinterpret_cast<HWND>(static_cast<uintptr_t>(windowHandle));
         m_width = width == 0 ? 1 : width;
         m_height = height == 0 ? 1 : height;
 
@@ -279,7 +282,7 @@ namespace winrt::Ripcord::Media::Interop::implementation
             }
         }
 
-        ProbeDisplayHdr(factory.Get(), adapter.Get());
+        ProbeDisplayHdr(factory.Get());
 
         // Choose the back-buffer format before anything that has to agree with it. Committing to 10-bit
         // whenever the panel is HDR-capable - rather than waiting to discover the stream is PQ - is what lets
@@ -414,11 +417,16 @@ namespace winrt::Ripcord::Media::Interop::implementation
         psoDesc.SampleDesc.Count = 1;
         ThrowIfFailed(m_device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&m_pipelineState)));
 
-        D3D12_DESCRIPTOR_HEAP_DESC srvHeapDesc = {};
-        srvHeapDesc.NumDescriptors = 1;
-        srvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-        srvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-        ThrowIfFailed(m_device->CreateDescriptorHeap(&srvHeapDesc, IID_PPV_ARGS(&m_srvHeap)));
+        // Once only. This runs again when the back-buffer format changes, and the heap holds the SRV of whichever
+        // texture is being presented; recreating it would orphan that view until the texture next resized.
+        if (!m_srvHeap)
+        {
+            D3D12_DESCRIPTOR_HEAP_DESC srvHeapDesc = {};
+            srvHeapDesc.NumDescriptors = 1;
+            srvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+            srvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+            ThrowIfFailed(m_device->CreateDescriptorHeap(&srvHeapDesc, IID_PPV_ARGS(&m_srvHeap)));
+        }
     }
 
     // Does the display we present to accept HDR10? Two things have to be true and they are easy to conflate:
@@ -427,59 +435,80 @@ namespace winrt::Ripcord::Media::Interop::implementation
     // DXGI reports G2084 only when Windows' "Use HDR" is actually ON for that display, so this doubles as a
     // check of the OS setting - a panel with HDR hardware but the toggle off correctly reports SDR, which is
     // what we want, since presenting HDR10 to a display in SDR mode looks worse than tone-mapping.
-    void VideoRenderer::ProbeDisplayHdr(IDXGIFactory1* factory, IDXGIAdapter1* renderAdapter)
+    void VideoRenderer::ProbeDisplayHdr(IDXGIFactory1* factory)
     {
-        m_displayHdrCapable = false;
-        m_displayMaxNits = 0.0f;
+        // The display the window is on, not the render adapter's first output and not any HDR display at all.
+        // The adapter the device lives on is beside the point: on a hybrid laptop the discrete GPU often
+        // drives no display, and on a desk with two monitors the question is which one shows the video.
+        const RipcordDisplay::PresentingDisplay display = RipcordDisplay::DescribeDisplayForWindow(factory, m_window);
 
-        auto scan = [this](IDXGIAdapter1* candidate) -> bool
-        {
-            if (!candidate)
-            {
-                return false;
-            }
+        // HDR only when this device's GPU scans the display out. Rendering on one GPU for a display driven by the
+        // other (a hybrid laptop with the discrete GPU chosen in Settings) means a cross-adapter copy inside
+        // Windows, and on hardware an HDR10 stream through it presented black while SDR came through fine
+        // (2026-10-01). Treating such a display as SDR tone-maps instead. Why HDR does not survive the copy is
+        // [X]; on a machine with one GPU this never applies.
+        m_displayOnOtherAdapter = display.Found && m_device
+            && !RipcordDisplay::SameAdapter(display.Adapter, m_device->GetAdapterLuid());
+        m_displayHdrCapable = display.Hdr && !m_displayOnOtherAdapter;
+        m_displayMaxNits = display.MaxNits;
+    }
 
-            ComPtr<IDXGIOutput> output;
-            for (UINT i = 0; SUCCEEDED(candidate->EnumOutputs(i, &output)); i++)
-            {
-                ComPtr<IDXGIOutput6> output6;
-                if (SUCCEEDED(output.As(&output6)) && output6)
-                {
-                    DXGI_OUTPUT_DESC1 desc{};
-                    if (SUCCEEDED(output6->GetDesc1(&desc))
-                        && desc.ColorSpace == DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020)
-                    {
-                        m_displayHdrCapable = true;
-                        m_displayMaxNits = desc.MaxLuminance;
-                        return true;
-                    }
-                }
-                output.Reset();
-            }
-            return false;
-        };
+    void VideoRenderer::RefreshPresentingDisplay(uint64_t windowHandle)
+    {
+        m_window = reinterpret_cast<HWND>(static_cast<uintptr_t>(windowHandle));
 
-        if (scan(renderAdapter))
+        ComPtr<IDXGIFactory1> factory;
+        if (FAILED(CreateDXGIFactory1(IID_PPV_ARGS(&factory))))
         {
             return;
         }
 
-        // The render adapter having no HDR output is not the same as there being none. On a hybrid laptop the
-        // discrete GPU we chose to decode on frequently drives no display at all - the panel hangs off the
-        // integrated one - so EnumOutputs returns nothing and a single-adapter probe would conclude "SDR" on a
-        // machine with an HDR screen. Widen to every adapter before believing that.
-        if (factory)
+        const bool wasHdr = m_displayHdrCapable;
+        ProbeDisplayHdr(factory.Get());
+        if (m_displayHdrCapable == wasHdr)
         {
-            ComPtr<IDXGIAdapter1> other;
-            for (UINT i = 0; SUCCEEDED(factory->EnumAdapters1(i, &other)); i++)
-            {
-                if (scan(other.Get()))
-                {
-                    return;
-                }
-                other.Reset();
-            }
+            return;
         }
+
+        // The back buffer follows the display too, not only the colour space. A session started on an HDR display
+        // and dragged to an SDR one kept its 10-bit swap chain, labelled G22, and on hardware (2026-10-01) its
+        // picture came out squeezed at both ends: blacks lifted, highlights cut, colour down, against the same
+        // frame from a session started on the SDR display. That one has an 8-bit swap chain, so a dragged session
+        // now gets the same. ResizeBuffers changes the format in place, so the panel keeps its swap chain; the three
+        // pipeline states bake the format in and are rebuilt. And a session dragged onto an HDR display gets the
+        // 10-bit chain it needs to present HDR at all.
+        const DXGI_FORMAT wanted = m_displayHdrCapable ? DXGI_FORMAT_R10G10B10A2_UNORM : DXGI_FORMAT_B8G8R8A8_UNORM;
+        if (m_swapChain && !m_deviceLost && wanted != m_swapChainFormat)
+        {
+            // Recorded rather than thrown: this runs on the decode worker between frames, and a failure that
+            // vanished there would leave the old format in place with nothing to say so. The diagnostics line
+            // reports it (HdrOutputDescription).
+            try
+            {
+                WaitForGpu();
+                for (uint32_t i = 0; i < FrameCount; i++)
+                {
+                    m_renderTargets[i].Reset();
+                }
+
+                ThrowIfFailed(m_swapChain->ResizeBuffers(FrameCount, m_width, m_height, wanted, m_swapChainFlags));
+                m_swapChainFormat = wanted;
+                m_reformatFailure = S_OK;
+            }
+            catch (winrt::hresult_error const& e)
+            {
+                m_reformatFailure = e.code();
+            }
+
+            // The render targets and pipeline states match whatever format the swap chain now has, switched
+            // or not.
+            CreateRenderTargets();
+            CreatePipeline();
+            CreateNv12Pipeline();
+            CreateUpscalePipeline();
+        }
+
+        m_displayChanged = true;
     }
 
     void VideoRenderer::CreateRenderTargets()
@@ -863,9 +892,23 @@ namespace winrt::Ripcord::Media::Interop::implementation
     // What the display is actually being given, which is not the same question as what the stream carries.
     hstring VideoRenderer::HdrOutputDescription()
     {
+        std::wstring buffer = m_swapChainFormat == DXGI_FORMAT_R10G10B10A2_UNORM
+            ? L" \u00B7 10-bit back buffer" : L" \u00B7 8-bit back buffer";
+        if (FAILED(m_reformatFailure))
+        {
+            wchar_t code[16];
+            swprintf_s(code, L"%08X", static_cast<uint32_t>(m_reformatFailure));
+            buffer += L" (format switch failed, 0x" + std::wstring(code) + L")";
+        }
+
+        return hstring{ HdrOutputSummary() + buffer };
+    }
+
+    std::wstring VideoRenderer::HdrOutputSummary() const
+    {
         if (!m_hdrTransfer)
         {
-            return hstring{ L"SDR" };
+            return L"SDR";
         }
 
         if (m_presentingHdr)
@@ -878,14 +921,19 @@ namespace winrt::Ripcord::Media::Interop::implementation
                 // flag, labelled because it is not a fact.
                 s += L" \u00B7 panel claims " + std::to_wstring(static_cast<int>(m_displayMaxNits)) + L" nits";
             }
-            return hstring{ s };
+            return s;
         }
 
         // Distinguish "the panel cannot take it" from "it could and we failed to send it" - the first is the
         // tone-map working as designed, the second means SetColorSpace1 was refused.
-        return hstring{ m_displayHdrCapable
+        if (m_displayOnOtherAdapter)
+        {
+            return L"tone-mapped to SDR \u2014 HDR off: the display is on another GPU";
+        }
+
+        return m_displayHdrCapable
             ? L"tone-mapped to SDR \u2014 display is HDR-capable, colour space refused"
-            : L"tone-mapped to SDR \u2014 display is SDR" };
+            : L"tone-mapped to SDR \u2014 display is SDR";
     }
 
 
@@ -1982,10 +2030,15 @@ namespace winrt::Ripcord::Media::Interop::implementation
         const uint32_t targetWidth = m_displayWidth > 0 ? m_displayWidth : desc.Width;
         const uint32_t targetHeight = m_displayHeight > 0 ? m_displayHeight : desc.Height;
 
-        if (m_sharedDecodeTex && targetWidth == m_sharedTexWidth && targetHeight == m_sharedTexHeight)
+        if (m_sharedDecodeTex && targetWidth == m_sharedTexWidth && targetHeight == m_sharedTexHeight
+            && !m_displayChanged)
         {
             return true;
         }
+
+        // Rebuilt for a display change as for a size change: the output colour space is chosen below, once
+        // per video processor, so a new answer about the display only takes effect through a new one.
+        m_displayChanged = false;
 
         WaitForGpu();
         m_sharedDecodeTex.Reset();
@@ -2005,7 +2058,14 @@ namespace winrt::Ripcord::Media::Interop::implementation
         td.Height = targetHeight;
         td.DepthOrArraySize = 1;
         td.MipLevels = 1;
-        td.Format = m_swapChainFormat;
+        // The video processor's output format follows the display the window is on NOW, not the swap chain,
+        // whose format was fixed at connect. A session started on an HDR display has a 10-bit swap chain, and
+        // after a drag to an SDR display the processor was still asked to tone-map PQ into a 10-bit target.
+        // On hardware (2026-09-30) that came out washed out, while a session started on the SDR display, whose
+        // target is 8-bit, looked right - consistent with the driver skipping the tone-map for a 10-bit
+        // output [X]. So an SDR display always gets the 8-bit target a session started there would have. The
+        // present pass samples this texture into the swap chain, so the two formats need not match.
+        td.Format = m_displayHdrCapable ? m_swapChainFormat : DXGI_FORMAT_B8G8R8A8_UNORM;
         td.SampleDesc.Count = 1;
         td.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
         td.Flags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;

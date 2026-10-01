@@ -162,6 +162,13 @@ public sealed class D3D12VideoDecodePipeline : IVideoDecodePipeline
     /// <summary>LUID of the adapter to pin when <see cref="GpuSelection"/> is <see cref="GpuSelection.Specific"/>.</summary>
     public ulong SpecificAdapterLuid { get; set; }
 
+    /// <summary>
+    /// The HWND the video is shown in, which decides whose HDR state the renderer reads. Set before
+    /// <see cref="StartAsync"/>; 0 means the primary monitor. When the window moves to another monitor, call
+    /// <see cref="DisplayChanged"/>.
+    /// </summary>
+    public ulong WindowHandle { get; set; }
+
     /// <summary>Description of the adapter actually in use, once started.</summary>
     public string ActiveAdapterDescription { get; private set; } = string.Empty;
 
@@ -185,7 +192,8 @@ public sealed class D3D12VideoDecodePipeline : IVideoDecodePipeline
                 (uint)Math.Max(1, config.Width),
                 (uint)Math.Max(1, config.Height),
                 GpuSelection,
-                SpecificAdapterLuid);
+                SpecificAdapterLuid,
+                WindowHandle);
 
             // Before any decode call: the MFT is created lazily on first use and its input type is fixed then,
             // so the codec has to be known now. This must agree with the launchSpec's videoCodec — asking the
@@ -396,6 +404,25 @@ public sealed class D3D12VideoDecodePipeline : IVideoDecodePipeline
         Volatile.Write(ref _geometryDirty, 1);
     }
 
+    // Pending display change, on the same terms as the geometry above: the UI thread raises it, the worker
+    // applies it between frames, and the UI thread never waits on a decode.
+    private int _displayDirty;
+
+    /// <summary>
+    /// The window moved to another monitor. The renderer re-reads that display's HDR state before the next
+    /// frame, and switches between HDR10 and tone-mapped SDR if the answer changed.
+    /// </summary>
+    public void DisplayChanged() => Volatile.Write(ref _displayDirty, 1);
+
+    /// <summary>Apply a pending display change on the worker thread. Called with <see cref="_lock"/> held.</summary>
+    private void ApplyPendingDisplay()
+    {
+        if (Interlocked.Exchange(ref _displayDirty, 0) != 0)
+        {
+            _renderer.RefreshPresentingDisplay(WindowHandle);
+        }
+    }
+
     /// <summary>
     /// Apply any pending resize/scale on the worker thread, where native access is already serialized. Called
     /// with <see cref="_lock"/> held, at a frame boundary rather than mid-frame.
@@ -454,8 +481,9 @@ public sealed class D3D12VideoDecodePipeline : IVideoDecodePipeline
 
                     try
                     {
-                        // Pick up any resize/DPI change published by the UI thread, at a frame boundary.
+                        // Pick up any resize/DPI or monitor change published by the UI thread, at a frame boundary.
                         ApplyPendingGeometry();
+                        ApplyPendingDisplay();
 
                         // Decode this frame plus everything else already queued in the burst (each Decode job
                         // advances the decoder without presenting), then present only the newest. This keeps

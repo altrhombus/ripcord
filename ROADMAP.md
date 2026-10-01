@@ -681,9 +681,18 @@ looking.
     `DXGI_OUTPUT_DESC1::Monitor` — answering for the output the video will actually appear on. Note the window
     can be dragged between monitors mid-session, so the answer is not a one-time startup fact and the setting
     should re-evaluate on a display change.
-  - **Not attempted here:** this is a native `Ripcord.Media.Interop` change plus an interop signature change,
-    and it needs MSBuild rather than `dotnet build`. Filed rather than half-done, because a probe that looks
-    fixed and still answers the wrong question is worse than one known to be wrong.
+  - **Fix written 2026-09-30, not yet seen on a two-monitor desk.** `PresentingDisplay.h` answers for the
+    window's monitor, and both callers use it: the settings check, and `VideoRenderer::ProbeDisplayHdr`,
+    which had the same fault and decided from it whether to present HDR10. The session page raises
+    `DisplayChanged` when the window lands on another monitor, and the renderer rebuilds its video processor
+    with the new colour space. Builds, and the app launches; this machine has one monitor. To check:
+    1. Laptop HDR on, window on the SDR monitor: Settings says HDR is not ready.
+    2. Drag the window to the laptop panel and reopen Settings: ready.
+    3. Stream on the laptop panel from an HDR game: the HDR pill lights. Drag to the SDR monitor: it goes
+       out and the picture is tone-mapped, not dark or washed out. Drag back: HDR returns only if the
+       session started on the HDR display, because the back-buffer format is chosen at connect.
+  - **Still open after it:** toggling "Use HDR" mid-session without moving the window is not noticed, and
+    Settings does not re-check while it is open.
 
 
 ### Stage C — step 2 landed, step 3 is gated (2026-08-06)
