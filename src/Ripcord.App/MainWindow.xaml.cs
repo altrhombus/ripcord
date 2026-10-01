@@ -96,7 +96,7 @@ public sealed partial class MainWindow : Window, IShellNavigator
         AppEffects.Changed += OnEffectsChanged;
 
         _settingsStore.Changed += s =>
-            _dispatcherQueue.TryEnqueue(() => _input.UseDeadzone(s.UiStickDeadzone));
+            Post(() => _input.UseDeadzone(s.UiStickDeadzone));
 
         _focus = new FocusPilot(
             contentRoot: () => Content as FrameworkElement,
@@ -105,7 +105,7 @@ public sealed partial class MainWindow : Window, IShellNavigator
 
         _chromeScope = new ShellInputScope(
             InputScopeKind.Chrome,
-            onActivated: () => _dispatcherQueue.TryEnqueue(
+            onActivated: () => Post(
                 DispatcherQueuePriority.Low, FocusFirstContentElement),
             focusRoot: () => Content?.XamlRoot);
 
@@ -124,7 +124,7 @@ public sealed partial class MainWindow : Window, IShellNavigator
         // and back left nothing focused, so a pad user had to press a direction just to get the caret back onto
         // the console list — the new page has no idea the old one's focused element went away with it.
         ChromeFrame.Navigated += (_, _) =>
-            _dispatcherQueue.TryEnqueue(DispatcherQueuePriority.Low, FocusFirstContentElement);
+            Post(DispatcherQueuePriority.Low, FocusFirstContentElement);
 
         ChromeFrame.Navigate(typeof(ConsolesPage));
 
@@ -152,17 +152,17 @@ public sealed partial class MainWindow : Window, IShellNavigator
             HintBar.Show(_input.Scopes.Top?.Prompts);
 
             _input.Scopes.TopChanged += scope =>
-                _dispatcherQueue.TryEnqueue(() => HintBar.Show(scope?.Prompts));
+                Post(() => HintBar.Show(scope?.Prompts));
 
             _input.ModeChanged += mode =>
-                _dispatcherQueue.TryEnqueue(() => HintBar.SetMode(mode));
+                Post(() => HintBar.SetMode(mode));
 
             // Connection events arrive on a polling thread, hence the marshal — the router says so.
             _input.PadFamilyChanged += family =>
-                _dispatcherQueue.TryEnqueue(() => HintBar.SetPadFamily(family));
+                Post(() => HintBar.SetPadFamily(family));
 
             _input.PadAttachedChanged += attached =>
-                _dispatcherQueue.TryEnqueue(() => HintBar.SetPadAttached(attached));
+                Post(() => HintBar.SetPadAttached(attached));
         };
 
         // What the other two input methods look like, for the mode tracker. Handled events count too: a click
@@ -202,7 +202,7 @@ public sealed partial class MainWindow : Window, IShellNavigator
         {
             if (e.WindowActivationState != WindowActivationState.Deactivated)
             {
-                _dispatcherQueue.TryEnqueue(
+                Post(
                     DispatcherQueuePriority.Low,
                     () => SeedFocusIfNothingHasIt());
             }
@@ -220,6 +220,12 @@ public sealed partial class MainWindow : Window, IShellNavigator
 
         Closed += (_, _) =>
         {
+            // First, so no focus check queued before the close runs against the closed window. One that did read
+            // Window.Content from a released native window and faulted with an access violation, which no catch
+            // can stop: the app crashed on every close that raced a focus change (2026-09-30).
+            _focusWatchdog.Dispose();
+            _closed = true;
+
             AppEffects.Changed -= OnEffectsChanged;
             _input.IntentReceived -= OnNavIntent;
             _input.Dispose();
@@ -257,6 +263,35 @@ public sealed partial class MainWindow : Window, IShellNavigator
     /// Set once the close has been allowed through, so the second <c>Close()</c> is not intercepted again.
     /// </summary>
     private bool _closeAllowed;
+
+    /// <summary>Set in <c>Closed</c>. Work posted before the close finds it set when it runs.</summary>
+    private bool _closed;
+
+    /// <summary>
+    /// Queue work for the UI thread, to be dropped if the window has closed by the time it runs.
+    ///
+    /// <para>
+    /// <b>Every callback this window queues goes through here,</b> because the dispatcher drains its queue while
+    /// the app shuts down, after the window has closed. Queued work that touched the window then threw - a focus
+    /// seed reading <c>ChromeFrame.Content</c> threw <c>E_UNEXPECTED</c> - and an exception out of a dispatcher
+    /// callback is a fail-fast. Caught in a dump on 2026-09-30, closing the app.
+    /// </para>
+    ///
+    /// <para>
+    /// The check is made when the work runs, not when it is queued, and deliberately so: whether the window has
+    /// closed in between is the whole question.
+    /// </para>
+    /// </summary>
+    private bool Post(DispatcherQueueHandler work) => Post(DispatcherQueuePriority.Normal, work);
+
+    private bool Post(DispatcherQueuePriority priority, DispatcherQueueHandler work)
+        => _dispatcherQueue.TryEnqueue(priority, () =>
+        {
+            if (!_closed)
+            {
+                work();
+            }
+        });
 
     private void OnAppWindowClosing(AppWindow sender, AppWindowClosingEventArgs args)
     {
@@ -596,7 +631,7 @@ public sealed partial class MainWindow : Window, IShellNavigator
     /// </summary>
     private void OnNavIntent(NavIntent intent)
     {
-        _dispatcherQueue.TryEnqueue(() =>
+        Post(() =>
         {
             // A background input-polling handler must never be able to take the whole process down.
             try
@@ -742,8 +777,9 @@ public sealed partial class MainWindow : Window, IShellNavigator
         // The chokepoint. Every other seeding path leads here — window activation, navigation, chrome scope
         // activation, a pad direction with nothing focused, the watchdog, region cycling — and each was
         // written for one situation somebody hit, so guarding them one at a time is how one gets missed.
-        // Focusing the page behind a modal is wrong in all of them.
-        if (ModalOwnsFocus)
+        // Focusing the page behind a modal is wrong in all of them. Nor is there a page to focus once the
+        // window has closed: ChromeFrame.Content throws then.
+        if (_closed || ModalOwnsFocus)
         {
             return;
         }
