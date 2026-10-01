@@ -231,23 +231,21 @@ the documents into line, is done and in the journal. The engine lives in [`engin
       passes 65 of 65, and the per-packet cost is 0.53–0.57 µs against the C core's 7.71–8.11 µs from one
       Swift harness. It links into the Mac lab and a .NET harness through generated bindings, and its
       binary size is recorded. Open:
-  - [ ] **Measured on Windows x64 and ARM64.** Run the .NET harness on each; `engine/README.md` has the
-        three commands. The C core was never measured on Windows, so the comparison there is against the
-        managed engine the client ships, which runs at 16–17 µs per packet on the M4 Max. The CI job prints
-        both figures on a shared runner. That shows the engine builds and runs there, but it is not the
-        measurement.
+  - [x] **Measured on Windows x64** (journal, 2026-09-30): Rust 0.92 µs per packet through P/Invoke,
+        against the managed engine's 14.29 µs.
+  - [ ] **Measured on Windows ARM64.** Run the .NET harness there; `engine/README.md` has the three
+        commands. The C core was never measured on Windows, so the comparison is against the managed engine
+        the client ships. The CI job prints both figures on a shared runner. That shows the engine builds
+        and runs there, but it is not the measurement.
 - [ ] **Phase 2 — the engine at parity.** Bottom-up in the C core's layer order, each layer done when its
       vectors pass, its fuzz target runs and differential fuzzing against the C core is clean. Includes the
       `Ecdh` backends (CryptoKit carried over, CNG new, RustCrypto), each checked on its own platform in
       CI, and the scripted console ported to Rust. Parity is a measured matrix, not a list. The first layer,
       crypto and the Halyard derivations, has its vectors passing, its differential runs clean and its fuzz
       target (`derive`) running clean (journal, 2026-09-26), so it is done. Next in order:
-  - [ ] **The CNG `Ecdh` backend on Windows.** Written as `PlatformEcdh` in the .NET harness (journal,
-        2026-09-26): .NET's `ECDiffieHellman`, which is CNG on Windows, behind the engine's backend table. It
-        passes `session-crypto.kat` through the engine on macOS, on Apple's implementation. The Windows legs
-        of CI's engine job run the same check on CNG itself, and have not run yet. The one call whose
-        behaviour could differ there is importing a private scalar with no public point, which .NET derives
-        on the platforms tried so far.
+  - [x] **The CNG `Ecdh` backend on Windows.** `PlatformEcdh` passes `session-crypto.kat` through the
+        engine on CNG itself, 34 checks, including the import of a private scalar with no public point
+        (journal, 2026-09-30).
   - [ ] **The probes and rate control on hardware.** Senkusha's echo and MTU probes, CORRUPT_FRAME, the
         adaptive ladder and CONNECTION_QUALITY are ported (journal, 2026-09-26) and tested against scripted
         consoles only. On a console: whether it answers the probes as the captures show, and, with
