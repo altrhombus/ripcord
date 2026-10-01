@@ -120,6 +120,18 @@ class LeakGuardTests(unittest.TestCase):
         code, err = self.check("--history")
         self.assertEqual(code, 1, err)
 
+    def test_a_force_push_over_a_tip_this_clone_lacks_is_still_checked(self):
+        # After a history rewrite the remote's old tip is not in the clone, so "remote..local" fails. That used
+        # to crash the hook; it must check the outgoing commits instead.
+        self.write("leak.txt", f"{dotted(ADDRESS)}\n")
+        self.git("add", "leak.txt")
+        self.git("commit", "-q", "-m", "carries it")
+        head = self.git("rev-parse", "HEAD").strip()
+        code, err = self.check("--push", "origin", stdin=f"refs/heads/x {head} refs/heads/x {'1' * 40}\n")
+        self.assertEqual(code, 1, err)
+        self.assertIn("leak.txt:1", err)
+        self.assertNotIn("Traceback", err)
+
     # --- what must pass ---
 
     def test_synthetic_and_ordinary_values_pass(self):
