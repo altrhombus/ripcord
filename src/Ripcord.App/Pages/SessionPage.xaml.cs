@@ -2089,7 +2089,12 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer
         if (App.MainWindow is { } window)
         {
             window.Activated -= OnWindowActivated;
-            window.AppWindow.Changed -= OnAppWindowChanged;
+
+            // AppWindow is already null when the page unloads because the window is closing.
+            if (window.AppWindow is { } appWindow)
+            {
+                appWindow.Changed -= OnAppWindowChanged;
+            }
         }
 
         App.Input.FrameReceived -= OnPadFrame;
