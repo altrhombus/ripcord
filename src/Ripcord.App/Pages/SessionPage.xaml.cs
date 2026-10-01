@@ -483,7 +483,7 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer
     /// the pipeline it creates is a page field with a page lifetime — an adapter would exist only to hold a
     /// reference back here.
     /// </summary>
-    Task IVideoPipelinePreparer.PrepareAsync(SessionConfig config, CancellationToken cancellationToken)
+    Task<PreparedVideo> IVideoPipelinePreparer.PrepareAsync(SessionConfig config, CancellationToken cancellationToken)
         => InitVideoPipelineAsync(config);
 
     /// <summary>The display the window was last seen on, so a move within one monitor is not a change.</summary>
@@ -519,7 +519,7 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer
     }
 
     /// <summary>Stand up the D3D12 decode pipeline and bind its swap chain to the panel.</summary>
-    private async Task InitVideoPipelineAsync(SessionConfig config)
+    private async Task<PreparedVideo> InitVideoPipelineAsync(SessionConfig config)
     {
         // Adapter selection must be set before StartAsync (it decides which device to create); the upscale mode
         // is applied after, because its setter reaches into the renderer.
@@ -550,6 +550,8 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer
         VideoPanel.SizeChanged += OnVideoPanelSizeChanged;
         VideoPanel.CompositionScaleChanged += OnVideoPanelScaleChanged;
         UpdateSwapChainSize();
+
+        return new PreparedVideo(_pipeline.CanPresentHdr);
     }
 
     private static Ripcord.Media.Interop.GpuSelection ToNativeGpuSelection(GpuPreference preference)

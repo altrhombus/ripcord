@@ -107,9 +107,10 @@ public sealed class ConnectFlow
         SessionConfig config = ConfigureFor(console, settings);
 
         Report(stages, Strings.Connect_PreparingVideoHeadline, Strings.Connect_PreparingVideoDetail, terminal: false, ConnectPhase.Preparing);
+        PreparedVideo prepared;
         try
         {
-            await _video.PrepareAsync(config, cancellationToken).ConfigureAwait(false);
+            prepared = await _video.PrepareAsync(config, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
@@ -120,6 +121,16 @@ public sealed class ConnectFlow
             // The message is the diagnosis here — see IVideoPipelinePreparer on why this one throws.
             Report(stages, Strings.Connect_VideoFailedHeadline, ex.Message, terminal: true, ConnectPhase.Preparing);
             return null;
+        }
+
+        // HDR is asked of the console only when it will reach the panel. A stream the display can't take as HDR10
+        // is tone-mapped by the GPU driver, and on hardware (2026-10-01) that came out differently on every vendor
+        // and matched the console's own SDR on none: washed out on Intel, crushed and over-contrasty on NVIDIA.
+        // Asking for SDR instead gives the picture the console makes for an SDR screen. Tone-mapping is then only
+        // ever met after a window is dragged from an HDR display to an SDR one mid-session.
+        if (config.RequestedDynamicRange == DynamicRange.Hdr && !prepared.CanPresentHdr)
+        {
+            config = config with { RequestedDynamicRange = DynamicRange.Sdr };
         }
 
         Report(stages, Strings.Connect_CheckingCredentialsHeadline, Strings.Connect_CheckingCredentialsDetail, terminal: false, ConnectPhase.Preparing);

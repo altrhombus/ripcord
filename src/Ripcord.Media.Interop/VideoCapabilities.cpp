@@ -214,11 +214,37 @@ namespace winrt::Ripcord::Media::Interop::implementation
         Ripcord::Media::Interop::GpuSelection selection,
         uint64_t specificLuid,
         uint32_t width,
-        uint32_t height)
+        uint32_t height,
+        HWND window)
     {
         if (!factory)
         {
             return nullptr;
+        }
+
+        // Auto starts with the GPU that scans out the window's display, which is the adapter the passes below
+        // were written to find: "drives a display" stood in for "drives this display", and the two differ on a
+        // laptop with an external monitor on the discrete GPU's port. The iGPU drives the internal panel, so it
+        // won, and every frame for the external monitor went through a cross-adapter copy, which can't carry HDR
+        // (VideoRenderer::ProbeDisplayHdr). A desktop with one GPU, or a laptop on its own panel, gets the
+        // adapter it got before.
+        if (selection == Ripcord::Media::Interop::GpuSelection::Auto && window)
+        {
+            const RipcordDisplay::PresentingDisplay display = RipcordDisplay::DescribeDisplayForWindow(factory, window);
+            ComPtr<IDXGIAdapter1> adapter;
+            for (UINT i = 0; display.Found && SUCCEEDED(factory->EnumAdapters1(i, &adapter)); i++)
+            {
+                DXGI_ADAPTER_DESC1 desc{};
+                if (SUCCEEDED(adapter->GetDesc1(&desc))
+                    && RipcordDisplay::SameAdapter(desc.AdapterLuid, display.Adapter)
+                    && !IsSoftwareAdapter(desc)
+                    && AdapterSupportsH264Decode(adapter.Get(), width, height))
+                {
+                    return adapter;
+                }
+
+                adapter.Reset();
+            }
         }
 
         // Pinned by LUID: honour it exactly, and fall back to the default only if it is gone (eGPU unplugged,

@@ -249,7 +249,7 @@ namespace winrt::Ripcord::Media::Interop::implementation
         if (SUCCEEDED(factory.As(&factory6)))
         {
             adapter = VideoCapabilities::ChooseAdapter(
-                factory6.Get(), gpuSelection, specificLuid, m_width, m_height);
+                factory6.Get(), gpuSelection, specificLuid, m_width, m_height, m_window);
         }
 
         HRESULT deviceHr = D3D12CreateDevice(adapter.Get(), D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&m_device));
