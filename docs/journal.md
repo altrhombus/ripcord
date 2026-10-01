@@ -35,6 +35,23 @@ different purpose.
 > anything. The list above is short, it is checkable in one `git log --format=%B | grep`, and it stops
 > growing the moment someone notices — which is the property that actually matters.
 
+### Arrow keys, a covered link, and tooltips that wouldn't leave (2026-10-01)
+
+Three small things from an evening of just using the app.
+
+- **The arrow keys got stuck where the pad used to.** They never went through `FocusPilot`: the window turns
+  on WinUI's own arrow-key navigation, which gives up on "Add another console" once focus has come from the
+  title bar, and only the pad had the straight-line fallback. A plain arrow nothing else uses now takes the
+  pad's path, so the two can't disagree. Text boxes, sliders, the console grid and Alt+Left keep their keys.
+- **"Add another console" sat under the hint bar.** The bar is drawn over the page on purpose, so the page
+  doesn't reflow, and nothing lifted the consoles page out of its way. The chrome pages now lift by the bar's
+  height while it shows, like the stream's bottom band. The page bottom moves when the bar comes and goes;
+  whether that bothers anyone is a question for a pad in hand.
+- **"Alt+Left" and "F3" tooltips everywhere.** WinUI tooltips an element's first keyboard shortcut by default,
+  and ours hang on the window's root and the stream page, so the tooltip covered every pixel. Both hide it now.
+
+Checked with the keyboard and mouse. The pad checks are in ROADMAP.
+
 ### Windows App SDK 2.5.1, and a WinUI licence we can ship under (2026-10-01)
 
 The packaging review turned up a surprise: `Microsoft.WindowsAppSDK.WinUI` 2.2.1, the WinUI that Windows App SDK
