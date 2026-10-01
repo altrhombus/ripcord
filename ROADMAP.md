@@ -218,6 +218,38 @@ pass has to exercise.
 
 ## Backlog
 
+### From the 2026-09-30 review
+
+An outside-eyes review of the whole project (kept in the captures folder). Each item here was checked against the
+tree before it was listed.
+
+**Blocking 1.0**
+- [ ] **One spoofed datagram can end a session.** `TakionDataChunk.TryParse` accepts a 12-byte chunk, but the
+      first-fragment payload is sliced from byte 9 of its 8-byte value, so the slice throws out of the one
+      receive loop that carries control and A/V. Bound the slice, catch per packet in both receive loops, drop
+      verification-tag mismatches, and add a regression test for the 12-byte chunk.
+- [ ] **Signing in does not survive a refreshed token or an outage.** A rotated refresh token is held in
+      memory only (`HalyardAccountGateway` saves at sign-in alone), and any cloud error at restore, a 503
+      included, clears the stored account. Persist on refresh; clear only on a definitive rejection.
+- [ ] **An engine's last frame outlives its pad.** `CompositeControllerSource` keeps each engine's latest frame
+      and never drops it on disconnect, so a stick held at the moment a pad goes stays held. The GameInput
+      engine now publishes a neutral frame when its last pad goes; the composite should not depend on that.
+- [ ] **Packaging:** the unused `systemAIModels` capability, a self-contained release build, a privacy policy
+      page, third-party notices for the Windows build, and the manifest's minimum raised to Windows 11 25H2
+      (build 26200).
+
+**Decisions and checks, not blocking**
+- [ ] **Verify the review's store and market claims** before acting on any of them: the rival clients it
+      names, store listing ids, policy versions and the signing service's price.
+- [ ] **An honest User-Agent.** The cloud calls send the vendor client's own `User-Agent`, and whether the
+      service requires it is `[X]`. Try a Ripcord one against PSN and record what happens.
+- [ ] **A build where the user supplies the OAuth credential.** The runtime override (`client.json`) already
+      exists; the question is whether a published build should ship without the bundled one.
+- [ ] **Signing the MSIX.** Kept open (2026-09-30): a self-signed package asks each user to trust a
+      certificate as administrator. Azure Artifact Signing is the option to try.
+- [ ] **Slim ROADMAP and CLAUDE.md.**
+
+
 ### One engine for the first-class clients — planned 2026-09-25, Phase 1 all but Windows
 
 One protocol engine, in Rust, under every first-class client (Windows, macOS and Linux; iOS, iPadOS and
