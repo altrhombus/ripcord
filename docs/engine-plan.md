@@ -122,7 +122,9 @@ does for C. No copy is checked in.
 
 The `Client-Type` value is the one constant that already has two homes (`HalyardRegistrationMessage` and
 `halyard_regist_message.h`), and `BundledInteropConstantsTests` asserts that they agree. The Rust engine
-adds a third, and `CLAUDE.md` and that test have to name it in the same change, as `CLAUDE.md` requires.
+does not add a third: `build.rs` reads the value out of `HalyardRegistrationMessage.cs` at build time, and
+`BundledInteropConstantsTests.ClientType_RustEngineDerivesItFromTheReference` checks that no file under
+`engine/` holds the literal.
 
 ### The C ABI
 
