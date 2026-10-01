@@ -32,9 +32,8 @@ docs/protocol/captures
 
 ## Ripcord: docs/ was withheld in full pending a publication review. That review happened on
 ## 2026-09-06 and docs/ is now committed and ships - EXCEPT the captures folder, which is withheld by
-## the rule above. ("Ships" means it is in the tree a clone receives. The GitHub repository itself
-## is still private pending a final review; nothing here depends on that, but do not read these
-## comments as a statement about visibility.) That rule was always kept separate for exactly this moment, and un-ignoring docs/
+## the rule above. ("Ships" means it is in the tree a clone receives; the repository has been public
+## since 2026-09-28.) That rule was always kept separate for exactly this moment, and un-ignoring docs/
 ## is precisely why it must not be collapsed into this one. The captures folder stays ignored.
 
 ## Ripcord: the OAuth client credential and the signed-in account's tokens. These are the
