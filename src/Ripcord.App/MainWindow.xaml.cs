@@ -253,10 +253,17 @@ public sealed partial class MainWindow : Window, IShellNavigator
     /// </summary>
     private void PushBottomInset()
     {
+        double inset = HintBar.Visibility == Visibility.Visible ? HintBar.ActualHeight : 0;
+
         if (StreamFrame.Content is SessionPage page)
         {
-            page.SetBottomInset(HintBar.Visibility == Visibility.Visible ? HintBar.ActualHeight : 0);
+            page.SetBottomInset(inset);
         }
+
+        // The chrome pages too, which the prompts covered the same way: "Add another console" sat under them on
+        // hardware (2026-10-01). The page's bottom moves up while the prompts show; that beats a control nobody
+        // can see.
+        ChromeFrame.Margin = new Thickness(0, 0, 0, inset);
     }
 
     /// <summary>True while the window is in the fullscreen presenter.</summary>
@@ -505,12 +512,60 @@ public sealed partial class MainWindow : Window, IShellNavigator
     /// order is wrong, the markup moves.
     /// </para>
     /// </summary>
+    /// <summary>
+    /// A plain arrow key nothing else used moves focus through <see cref="FocusPilot"/>, the pad's path, rather
+    /// than WinUI's own arrow-key navigation.
+    ///
+    /// <para>
+    /// The root grid's <c>XYFocusKeyboardNavigation</c> was meant to give the keyboard the pad's directional
+    /// model by construction, and it did until the pad needed more than the engine: WinUI's search gives up on
+    /// "Add another console" once focus has come from the title bar, and the pad's straight-line fallback lives
+    /// in FocusPilot. On hardware (2026-10-01) the arrow keys then stuck exactly where the pad had. Routing them
+    /// here makes the two one path again. A key only arrives here unhandled, so text boxes, sliders and the
+    /// GridView's own item navigation keep their arrows; a dialog's keys never reach the window's root.
+    /// </para>
+    /// </summary>
+    private void OnRootKeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        NavDirection direction = e.Key switch
+        {
+            Windows.System.VirtualKey.Up => NavDirection.Up,
+            Windows.System.VirtualKey.Down => NavDirection.Down,
+            Windows.System.VirtualKey.Left => NavDirection.Left,
+            Windows.System.VirtualKey.Right => NavDirection.Right,
+            _ => NavDirection.None,
+        };
+
+        if (direction == NavDirection.None || _closed || ModalOwnsFocus || ModifierHeld())
+        {
+            return;
+        }
+
+        _focus.MoveFocus(direction);
+        e.Handled = true;
+    }
+
+    /// <summary>Alt, Ctrl or Shift is down, so the arrow belongs to a shortcut such as Alt+Left.</summary>
+    private static bool ModifierHeld()
+        => IsDown(Windows.System.VirtualKey.Menu)
+            || IsDown(Windows.System.VirtualKey.Control)
+            || IsDown(Windows.System.VirtualKey.Shift);
+
+    private static bool IsDown(Windows.System.VirtualKey key)
+        => InputKeyboardSource.GetKeyStateForCurrentThread(key).HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down);
+
     private void AddAccelerators()
     {
         if (Content is not UIElement root)
         {
             return;
         }
+
+        // No tooltip for these. WinUI shows an element's first accelerator as a tooltip by default, and on the
+        // window's root that is every pixel of the window: "Alt+Left" came up wherever the pointer rested.
+        root.KeyboardAcceleratorPlacementMode = KeyboardAcceleratorPlacementMode.Hidden;
+
+        root.KeyDown += OnRootKeyDown;
 
         // Alt+Left/Right — the platform's back and forward, and what a browser-shaped muscle memory reaches for.
         Add(Windows.System.VirtualKey.Left, Windows.System.VirtualKeyModifiers.Menu, GoBack);
