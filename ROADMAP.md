@@ -86,8 +86,13 @@ it hasn't been run recently), translations, and a purchased signing certificate.
 
 ### From the hardware pass
 
-- [ ] **The touch panel and the hint bar.** They used to overlap; the stream's bottom band now lifts by the
-      bar's height. Pick up a pad mid-stream, move the mouse, and check the panel sits above the bar.
+- [ ] **With a pad in hand.** Fixes from 2026-10-01 that the keyboard and mouse have checked, but a pad hasn't:
+  1. Mid-stream, move the mouse: the touch panel sits above the hint bar, not across it.
+  2. On the consoles page, with the hint bar showing: "Add another console" sits clear above it, and the pad
+     reaches it from the title bar.
+  3. Pad and arrow keys land on the same control everywhere, Settings included, since both take one path now.
+  4. Switch between pad and mouse a few times: is the page's bottom moving with the bar bothersome? If it is,
+     reserve the bar's space only while a pad is attached.
 
 ### From the 2026-09-30 review
 
