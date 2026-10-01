@@ -472,15 +472,28 @@ namespace winrt::Ripcord::Media::Interop::implementation
         const DXGI_FORMAT wanted = m_displayHdrCapable ? DXGI_FORMAT_R10G10B10A2_UNORM : DXGI_FORMAT_B8G8R8A8_UNORM;
         if (m_swapChain && !m_deviceLost && wanted != m_swapChainFormat)
         {
-            WaitForGpu();
-            for (uint32_t i = 0; i < FrameCount; i++)
+            // Recorded rather than thrown: this runs on the decode worker between frames, and a failure that
+            // vanished there would leave the old format in place with nothing to say so. The diagnostics line
+            // reports it (HdrOutputDescription).
+            try
             {
-                m_renderTargets[i].Reset();
+                WaitForGpu();
+                for (uint32_t i = 0; i < FrameCount; i++)
+                {
+                    m_renderTargets[i].Reset();
+                }
+
+                ThrowIfFailed(m_swapChain->ResizeBuffers(FrameCount, m_width, m_height, wanted, m_swapChainFlags));
+                m_swapChainFormat = wanted;
+                m_reformatFailure = S_OK;
+            }
+            catch (winrt::hresult_error const& e)
+            {
+                m_reformatFailure = e.code();
             }
 
-            m_swapChainFormat = wanted;
-            ThrowIfFailed(m_swapChain->ResizeBuffers(
-                FrameCount, m_width, m_height, m_swapChainFormat, m_swapChainFlags));
+            // The render targets and pipeline states match whatever format the swap chain now has, switched
+            // or not.
             CreateRenderTargets();
             CreatePipeline();
             CreateNv12Pipeline();
@@ -871,9 +884,23 @@ namespace winrt::Ripcord::Media::Interop::implementation
     // What the display is actually being given, which is not the same question as what the stream carries.
     hstring VideoRenderer::HdrOutputDescription()
     {
+        std::wstring buffer = m_swapChainFormat == DXGI_FORMAT_R10G10B10A2_UNORM
+            ? L" \u00B7 10-bit back buffer" : L" \u00B7 8-bit back buffer";
+        if (FAILED(m_reformatFailure))
+        {
+            wchar_t code[16];
+            swprintf_s(code, L"%08X", static_cast<uint32_t>(m_reformatFailure));
+            buffer += L" (format switch failed, 0x" + std::wstring(code) + L")";
+        }
+
+        return hstring{ HdrOutputSummary() + buffer };
+    }
+
+    std::wstring VideoRenderer::HdrOutputSummary() const
+    {
         if (!m_hdrTransfer)
         {
-            return hstring{ L"SDR" };
+            return L"SDR";
         }
 
         if (m_presentingHdr)
@@ -886,14 +913,14 @@ namespace winrt::Ripcord::Media::Interop::implementation
                 // flag, labelled because it is not a fact.
                 s += L" \u00B7 panel claims " + std::to_wstring(static_cast<int>(m_displayMaxNits)) + L" nits";
             }
-            return hstring{ s };
+            return s;
         }
 
         // Distinguish "the panel cannot take it" from "it could and we failed to send it" - the first is the
         // tone-map working as designed, the second means SetColorSpace1 was refused.
-        return hstring{ m_displayHdrCapable
+        return m_displayHdrCapable
             ? L"tone-mapped to SDR \u2014 display is HDR-capable, colour space refused"
-            : L"tone-mapped to SDR \u2014 display is SDR" };
+            : L"tone-mapped to SDR \u2014 display is SDR";
     }
 
 
