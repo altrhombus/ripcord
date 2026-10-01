@@ -417,11 +417,16 @@ namespace winrt::Ripcord::Media::Interop::implementation
         psoDesc.SampleDesc.Count = 1;
         ThrowIfFailed(m_device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&m_pipelineState)));
 
-        D3D12_DESCRIPTOR_HEAP_DESC srvHeapDesc = {};
-        srvHeapDesc.NumDescriptors = 1;
-        srvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-        srvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-        ThrowIfFailed(m_device->CreateDescriptorHeap(&srvHeapDesc, IID_PPV_ARGS(&m_srvHeap)));
+        // Once only. This runs again when the back-buffer format changes, and the heap holds the SRV of whichever
+        // texture is being presented; recreating it would orphan that view until the texture next resized.
+        if (!m_srvHeap)
+        {
+            D3D12_DESCRIPTOR_HEAP_DESC srvHeapDesc = {};
+            srvHeapDesc.NumDescriptors = 1;
+            srvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+            srvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+            ThrowIfFailed(m_device->CreateDescriptorHeap(&srvHeapDesc, IID_PPV_ARGS(&m_srvHeap)));
+        }
     }
 
     // Does the display we present to accept HDR10? Two things have to be true and they are easy to conflate:
@@ -452,10 +457,37 @@ namespace winrt::Ripcord::Media::Interop::implementation
 
         const bool wasHdr = m_displayHdrCapable;
         ProbeDisplayHdr(factory.Get());
-        if (m_displayHdrCapable != wasHdr)
+        if (m_displayHdrCapable == wasHdr)
         {
-            m_displayChanged = true;
+            return;
         }
+
+        // The back buffer follows the display too, not only the colour space. A session started on an HDR display
+        // and dragged to an SDR one kept its 10-bit swap chain, labelled G22, and on hardware (2026-10-01) its
+        // picture came out squeezed at both ends: blacks lifted, highlights cut, colour down, against the same
+        // frame from a session started on the SDR display. That one has an 8-bit swap chain, so a dragged session
+        // now gets the same. ResizeBuffers changes the format in place, so the panel keeps its swap chain; the three
+        // pipeline states bake the format in and are rebuilt. And a session dragged onto an HDR display gets the
+        // 10-bit chain it needs to present HDR at all.
+        const DXGI_FORMAT wanted = m_displayHdrCapable ? DXGI_FORMAT_R10G10B10A2_UNORM : DXGI_FORMAT_B8G8R8A8_UNORM;
+        if (m_swapChain && !m_deviceLost && wanted != m_swapChainFormat)
+        {
+            WaitForGpu();
+            for (uint32_t i = 0; i < FrameCount; i++)
+            {
+                m_renderTargets[i].Reset();
+            }
+
+            m_swapChainFormat = wanted;
+            ThrowIfFailed(m_swapChain->ResizeBuffers(
+                FrameCount, m_width, m_height, m_swapChainFormat, m_swapChainFlags));
+            CreateRenderTargets();
+            CreatePipeline();
+            CreateNv12Pipeline();
+            CreateUpscalePipeline();
+        }
+
+        m_displayChanged = true;
     }
 
     void VideoRenderer::CreateRenderTargets()

@@ -21,10 +21,9 @@ namespace Ripcord.Media.Interop
             UInt64 windowHandle);
 
         // Re-read the HDR state of the display the window is on, after the window moved to another monitor.
-        // If the answer changed, the next decoded frame rebuilds the video processor and applies the new
-        // output colour space. The back-buffer format chosen at Initialize stays: a session started on an SDR
-        // display keeps an 8-bit swap chain, which then refuses the PQ colour space and presents tone-mapped
-        // SDR, a safe answer rather than a wrong picture.
+        // If the answer changed, the back buffer switches format (10-bit for an HDR display, 8-bit otherwise)
+        // and the next decoded frame rebuilds the video processor with the new output colour space, so a
+        // dragged session presents as one started on that display would.
         void RefreshPresentingDisplay(UInt64 windowHandle);
 
         // Description of the adapter actually chosen, for the diagnostics overlay and settings UI. Empty until
