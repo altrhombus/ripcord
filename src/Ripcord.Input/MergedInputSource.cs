@@ -1,5 +1,6 @@
 using Ripcord.Core.Input;
 using Ripcord.Core.Reactive;
+using Ripcord.Core.Threading;
 
 namespace Ripcord.Input;
 
@@ -24,7 +25,9 @@ public sealed class MergedInputSource : IObservable<ControllerStateFrame>, IDisp
     private readonly SimpleObservable<ControllerStateFrame> _frames = new();
     private readonly KeyboardInputTranslator _keyboard;
     private readonly IDisposable? _padSubscription;
-    private readonly Lock _gate = new();
+    // A SpinGate, not a lock: the UI thread enters it, and a contended lock there lets XAML re-enter and fail
+    // fast. See SpinGate.
+    private readonly SpinGate _gate = new();
 
     private ControllerStateFrame _lastPad;
     private bool _havePad;
@@ -46,10 +49,10 @@ public sealed class MergedInputSource : IObservable<ControllerStateFrame>, IDisp
 
     public InputBindings Bindings
     {
-        get { lock (_gate) return _bindings; }
+        get { using (_gate.Enter()) return _bindings; }
         set
         {
-            lock (_gate)
+            using (_gate.Enter())
             {
                 _bindings = value;
                 _keyboard.Bindings = value;
@@ -71,7 +74,7 @@ public sealed class MergedInputSource : IObservable<ControllerStateFrame>, IDisp
     public void SetVirtualButton(ControllerButtons button, bool pressed)
     {
         ControllerStateFrame frame;
-        lock (_gate)
+        using (_gate.Enter())
         {
             ControllerButtons updated = pressed ? _virtualButtons | button : _virtualButtons & ~button;
             if (updated == _virtualButtons)
@@ -90,7 +93,7 @@ public sealed class MergedInputSource : IObservable<ControllerStateFrame>, IDisp
     public void ReleaseVirtualButtons()
     {
         ControllerStateFrame frame;
-        lock (_gate)
+        using (_gate.Enter())
         {
             if (_virtualButtons == ControllerButtons.None)
             {
@@ -110,7 +113,7 @@ public sealed class MergedInputSource : IObservable<ControllerStateFrame>, IDisp
         bool changed;
         bool bound;
         ControllerStateFrame frame;
-        lock (_gate)
+        using (_gate.Enter())
         {
             if (!_bindings.KeyboardEnabled)
             {
@@ -137,7 +140,7 @@ public sealed class MergedInputSource : IObservable<ControllerStateFrame>, IDisp
     {
         bool changed;
         ControllerStateFrame frame;
-        lock (_gate)
+        using (_gate.Enter())
         {
             changed = _keyboard.KeyUp(virtualKey);
             frame = Compose();
@@ -159,7 +162,7 @@ public sealed class MergedInputSource : IObservable<ControllerStateFrame>, IDisp
     public void ReleaseAllKeys()
     {
         ControllerStateFrame frame;
-        lock (_gate)
+        using (_gate.Enter())
         {
             _keyboard.Clear();
             frame = Compose();
@@ -171,7 +174,7 @@ public sealed class MergedInputSource : IObservable<ControllerStateFrame>, IDisp
     private void OnPadFrame(ControllerStateFrame frame)
     {
         ControllerStateFrame composed;
-        lock (_gate)
+        using (_gate.Enter())
         {
             _lastPad = ControllerInputMerger.ApplyRemap(frame, _bindings.GamepadRemap);
             _havePad = true;
