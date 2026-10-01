@@ -210,8 +210,11 @@ This section is load-bearing, so it is stated plainly rather than gestured at.
 Ripcord is an **interoperability** implementation: it connects a user's own client to a user's own console,
 under that user's own account. The specification was derived from:
 
-- static analysis of the publicly distributed vendor client, on hardware the authors own;
-- the authors' own packet and memory captures of their own console and account;
+- analysis of the authors' own installed copy of the publicly distributed vendor client, on hardware the
+  authors own: static (disassembly and decompilation) and dynamic (a debugger and an instrumentation
+  framework reading the client's memory, live session keys included);
+- the authors' own captures of their own console and account, including TLS traffic read through a proxy on
+  their own machine, with the client's certificate pinning defeated by a hook in that client;
 - public references — RFCs, NIST test vectors, platform crypto documentation.
 
 It reproduces **interface facts** necessary for interoperability: protocol field numbers, enum values, byte
@@ -307,7 +310,7 @@ more than the ambiguity of silence.
 **The assistant works under the same provenance rules as everyone else, and they are why this disclosure
 matters.** Everything in the protocol comes from this project's own work:
 - the authors' own captures of their own console and account;
-- static analysis of the authors' own installed copy of the vendor client;
+- static and dynamic analysis of the authors' own installed copy of the vendor client;
 - public references: RFCs, NIST test vectors and platform documentation.
 
 The assistant is never used to obtain implementation detail from another Remote Play implementation: not
@@ -329,5 +332,6 @@ this is part of the independent-implementation discipline, not an afterthought.
 [Apache-2.0](LICENSE). See [`NOTICE`](NOTICE) for the interoperability and non-affiliation statement.
 
 Apache-2.0 was chosen over a permissive alternative for its express patent grant and patent-retaliation
-clause, which matter when implementing a protocol owned by a large patent holder, and over a copyleft licence
+clause, which cover what contributors license to each other (they grant nothing on anyone else's patents),
+and over a copyleft licence
 for compatibility with MSIX/Microsoft Store distribution.

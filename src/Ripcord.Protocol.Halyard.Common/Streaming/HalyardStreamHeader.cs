@@ -4,9 +4,9 @@ namespace Ripcord.Protocol.Halyard.Common.Streaming;
 
 /// <summary>
 /// The v1 A/V data-packet header, bit-exact per docs/protocol/ps5-remoteplay-v1-spec.md §6.1 (all
-/// multi-byte integers big-endian). This is the confirmed layout that supersedes the earlier tentative
-/// framing: the key position (offset 14) drives the per-packet crypto, and the 4-byte GMAC tag sits at
-/// offset 10.
+/// multi-byte integers big-endian). The byte layout is code-exact from our binary <c>[C]</c> and supersedes the
+/// earlier tentative framing: the key position (offset 14) drives the per-packet crypto, and the 4-byte GMAC
+/// tag sits at offset 10. Most field meanings are still <c>[X]</c> in the spec; the offsets are not.
 ///
 /// <code>
 /// off 0      u8   low nibble = type (2=video, 3=audio, 0x12=FEC); bit 4 = extended-header flag

@@ -109,9 +109,11 @@ Two corrections to earlier framing, recorded because they were wrong for a while
 ## What the repository holds
 
 This is an interoperability specification for connecting a user's own client to a user's own console under
-the user's own account. It reproduces interface facts, not vendor code. It does **not** ship
-extracted keys or a circumvention tool — the implementation is expected to derive any key material at
-runtime from the user's own console registration, and the extracted constants/secrets stay in the
-gitignored captures folder.
+the user's own account. It reproduces interface facts, not vendor code. Key material tied to a
+console, an account or a session is derived at runtime from the user's own registration and is never
+committed; it stays in the gitignored captures folder. **Two things recovered from the vendor client are
+committed, deliberately:** about 4 KB of protocol constants that every client computes against, and the
+application's OAuth client credential. Each is identical for every user and console, each can be left out
+of a build, and [`NOTICE`](../../NOTICE) describes each.
 
 Nothing here is legal advice, and Ripcord makes no claim about how any law applies to it.

@@ -2,7 +2,8 @@ Ripcord
 Copyright 2026 altrhombus
 
 This product includes software developed as an independent
-implementation of the PlayStation 5 Remote Play network protocols.
+implementation of the PlayStation 5 and PlayStation 4 Remote Play network
+protocols.
 
 --------------------------------------------------------------------------------
 Interoperability and non-affiliation statement
@@ -18,10 +19,17 @@ Ripcord uses these names only where necessary to describe compatibility
 truthfully. No Sony trademark, logo, or other brand asset is
 included in this repository or in any build produced from it.
 
-Ripcord's protocol specification was derived independently, by static analysis
-of the publicly distributed vendor client running on hardware the authors own,
-and by capturing the authors' own network traffic between their own client and
-their own console under their own account. It reproduces interface facts
+Ripcord's protocol specification was derived independently, from the authors'
+own installed copy of the publicly distributed vendor client, on hardware the
+authors own, and from the authors' own traffic between that client and their
+own console under their own account. The methods, each recorded per item in
+docs/protocol-research-log.md, were: static analysis (disassembly and
+decompilation); running the client under a debugger and instrumentation
+framework to read its memory, including live session keys; capturing traffic,
+including through a TLS-terminating proxy on the authors' own machine, with the
+client's certificate pinning defeated by a hook in that client; and attempted
+work against the current release's anti-debugging protection, abandoned in
+favour of an older, unprotected release of the same client. It reproduces interface facts
 required for interoperability -- protocol field numbers, byte offsets, enum
 values, JSON keys and HTTP header names -- and does not reproduce vendor source
 code. Vendor code is referenced only by relative

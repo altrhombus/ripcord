@@ -445,8 +445,9 @@
                 Bottom-centred for thumb reach on a handheld, and sized as touch targets rather than 16px icons — the
                 Ally X has no mouse and no F-row, so this is the only way to reach any of it there.
 
-                Labelled with TEXT, deliberately: the PlayStation face-button glyph set is a registered mark, unlike the
-                product name, so no Sony glyph designs or symbol fonts are reproduced here.
+                Labelled with TEXT, deliberately: the face-button glyphs are Sony's marks, and unlike the product name
+                they are not needed to describe compatibility, so no Sony glyph designs or symbol fonts are reproduced
+                here.
             -->
             <Border
                 x:Name="TouchControls"
