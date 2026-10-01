@@ -23,8 +23,7 @@ We're close! Here's what's left, in order:
 2. **Fix what the review turned up.** One bad packet can end a session, and sign-in doesn't survive a token
    refresh. Neither is a long fix.
 3. **Package it.** A zip that runs on a machine that's never seen the .NET SDK, with GameInput's
-   redistributable alongside it. (Also: sort out a licence question on one of Microsoft's packages before
-   anything gets uploaded.)
+   redistributable alongside it.
 4. **Install it on a clean machine.** Pair, stream, done.
 5. **Tag `v1.0`.** Then celebrate.
 
@@ -108,10 +107,6 @@ An outside-eyes review, kept in the captures folder. Every item here was checked
 - [ ] **Ship GameInput's redistributable.** `GameInputRedist.dll` isn't in the published app; every machine
       tried so far had it from an earlier install. GameInput's own README says to ship `GameInputRedist.msi`
       with anything that uses it, or an Xbox pad may do nothing on a clean machine.
-- [ ] **The WinUI package's licence, as written, forbids redistribution.** `Microsoft.WindowsAppSDK.WinUI`
-      2.2.1 carries "Engineering Preview" terms (no distributing, 3e), while every other Windows App SDK
-      package has the ordinary ones. Maybe a packaging slip on Microsoft's side, but it needs an answer before
-      anything ships.
 - [ ] **Clean-machine check.** Install the zip on a machine that has never had the SDK, then pair and stream.
       Sign in too: the web view's profile moved to `%LocalAppData%\Ripcord\WebView2`.
 
@@ -166,8 +161,8 @@ An outside-eyes review, kept in the captures folder. Every item here was checked
       `DateTime` ticks. Details in the captures-folder review.
 - [ ] **Trimming.** The app code trims clean; CsWinRT's ABI layer still produces 37 warnings that need
       understanding first. Buys download size only.
-- [ ] **The Windows App SDK metapackage brings ~45 MB of unused AI and ML components** into the 270 MB
-      publish. Reference the component packages instead.
+- [ ] **The Windows App SDK metapackage brings unused AI, ML and Search components** into the publish (~45 MB
+      of the 270 MB on 2.2; 2.5 added Search). Reference the component packages instead.
 
 ### Sign-in and the cloud tier
 
