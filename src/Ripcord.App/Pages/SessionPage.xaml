@@ -10,6 +10,7 @@
     Loaded="Page_Loaded"
     Unloaded="Page_Unloaded"
     IsTabStop="True"
+    KeyboardAcceleratorPlacementMode="Hidden"
     mc:Ignorable="d">
 
     <Page.Resources>
@@ -32,6 +33,9 @@
             scope, and focus leaves this page the moment the video is clicked — so all three used to die at the
             first click. The live handling is TryHandleReservedKey, called from the window-root PreviewKeyDown
             handler where focus does not matter. Change behaviour there, not here.
+
+            KeyboardAcceleratorPlacementMode="Hidden" on the page, because WinUI otherwise tooltips the first
+            accelerator over the whole page: "F3" appeared wherever the pointer rested on a stream.
         -->
         <KeyboardAccelerator Key="F3" Invoked="ToggleDiagnostics" />
         <KeyboardAccelerator Key="F11" Invoked="FullScreenAccelerator_Invoked" />
