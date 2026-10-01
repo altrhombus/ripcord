@@ -255,6 +255,9 @@ namespace winrt::Ripcord::Media::Interop::implementation
         HWND m_window = nullptr;
         bool m_displayChanged = false;
 
+        // The window's display is scanned out by a GPU other than this device's, so HDR is not presented to it.
+        bool m_displayOnOtherAdapter = false;
+
         // The last back-buffer format switch's result: S_OK, or why it failed (shown in HdrOutputDescription).
         HRESULT m_reformatFailure = S_OK;
 
