@@ -17,10 +17,9 @@ is the PS3 port's release, not Ripcord's).
 
 We're close! Here's what's left, in order:
 
-1. **Finish the hardware pass.** An Xbox pad and a DualSense drove a stream at the same time on 2026-09-30
-   (the Xbox pad used to go completely silent next to a DualSense). Still on the bench: a button that stuck
-   after I pulled a pad's battery, menu navigation with both pads on, and HDR looking a little bright after
-   dragging the window to an SDR screen.
+1. **Finish the hardware pass.** Most of it ran on 2026-10-01, and everything it turned up is fixed (the
+   journal has the whole list). Still on the bench: the roomy console card, a 200% display, and a quick look
+   at the touch panel in its new spot above the hint bar.
 2. **Fix what the review turned up.** One bad packet can end a session, and sign-in doesn't survive a token
    refresh. Neither is a long fix.
 3. **Package it.** A zip that runs on a machine that's never seen the .NET SDK, with GameInput's
@@ -57,11 +56,12 @@ measures 0.92 µs a packet on Windows x64 against the managed engine's 14.29 µs
 - [x] The GMAC window boundary and the non-P521 curve gap are resolved.
 - [ ] A tagged release with an x64 zip, and install steps checked on a machine without the SDK.
 - [ ] The three known defects are fixed and confirmed on hardware:
-  - [ ] **The Xbox pad beside a DualSense.** Fixed: GameInput reads each pad, and the stream gets pad input
-        again (it hadn't since 2026-08-06). Confirmed in a stream, both pads at once. Open: the stuck button
-        after a battery pull (fix written, not yet re-run) and menu navigation with both pads on.
-  - [ ] **HDR from the wrong display.** Fixed in Settings and in the renderer, confirmed on a two-monitor desk.
-        Open: still a little bright after a drag to an SDR display (A:B capture next).
+  - [x] **The Xbox pad beside a DualSense.** Fixed, and confirmed on 2026-10-01: both pads in one stream, a
+        battery pull mid-stream, and menu navigation with both on.
+  - [x] **HDR from the wrong display.** Fixed, and confirmed on 2026-10-01 on a two-monitor desk and across a
+        laptop's two GPUs. The "little bright after a drag" turned out to be the GPU driver's tone-mapping, so
+        a session started on an SDR display now asks the console for SDR instead. The drag itself can wait
+        (see After 1.0).
   - [ ] **A two-line console name.** Fixed and checked at 100% and 150% text. Open: the roomy card and a 200%
         display.
 - [ ] The input stack, Stage A steps 8–10 and the two Stage B checks have been driven by a person, and
@@ -87,16 +87,8 @@ it hasn't been run recently), translations, and a purchased signing certificate.
 
 ### From the hardware pass
 
-- [ ] **A button stays held after a pad loses power.** Each poll now skips a pad GameInput no longer calls
-      connected; re-run the battery pull. Separately, `CompositeControllerSource` keeps each engine's last frame
-      and never drops it on disconnect, so it shouldn't depend on the engine publishing a neutral frame.
-- [ ] **Menu navigation with both pads on** couldn't reach "Add another console". One pad alone could. Probe
-      what has focus when it stalls.
-- [ ] **HDR is a little bright after a drag to an SDR display.** A session started there looks right. Capture
-      the same paused frame both ways and compare.
-- [ ] **The on-screen controls overlap the hint bar** when both show. Lift the panel by the bar's height.
-- [ ] **Relaunch with both pads on.** The start-up crash this caused is fixed (`SpinGate`); confirm it on the
-      machine that hit it.
+- [ ] **The touch panel and the hint bar.** They used to overlap; the stream's bottom band now lifts by the
+      bar's height. Pick up a pad mid-stream, move the mouse, and check the panel sits above the bar.
 
 ### From the 2026-09-30 review
 
@@ -147,6 +139,24 @@ An outside-eyes review, kept in the captures folder. Every item here was checked
 - [ ] **A keyframe the decoder couldn't start from** is invisible today: the controller counts encoded frames,
       not decoded ones. Needs a decoded-frame count from `D3D12VideoDecodePipeline`.
 - [ ] **Does the console card rejoin the tile?** A dark-theme look decision for a real screen (~30 minutes).
+- [ ] **HDR after a mid-session drag to an SDR display** is tone-mapped by the GPU driver, and every vendor
+      does it differently: washed out on Intel, crushed on NVIDIA. Our own tone-map, built from ITU-R BT.2390,
+      would make it the same everywhere. Most apps don't handle the drag at all, so this one's polish.
+- [ ] **HDR through a second GPU.** Render on a GPU that doesn't drive the display, and HDR presents black
+      while SDR comes through fine. Why is `[X]`; my guess is the SwapChainPanel's 10-bit format through the
+      copy between GPUs, and an FP16 scRGB back buffer is the experiment. Until then it's SDR, and Auto
+      doesn't go there.
+- [ ] **HDR set-ups nobody's tried yet:** a machine with only an NVIDIA GPU, and Auto on a laptop with a
+      monitor on the dGPU's own port (every port on the test laptop, dock included, goes through the iGPU).
+- [ ] **HDR changes the app doesn't notice:** turning "Use HDR" on or off mid-session without moving the
+      window, and Settings while it's open.
+- [ ] **The copied diagnostics report leaves out where zero-copy fell back.** The F3 panel says; the text
+      doesn't.
+- [ ] **`CompositeControllerSource` keeps a disconnected engine's last frame.** The stuck button is fixed
+      where it started, but the merge shouldn't depend on an engine sending a neutral frame.
+- [ ] **Two WinUI mysteries with workarounds in place** `[X]`: why XY focus drops a candidate once focus has
+      come from the title bar (`FocusPilot`'s straight-line fallback), and why full screen leaves the content
+      host a pixel down (`ContentBridge`).
 - [ ] **Why a discovery family went quiet** on 2026-08-05 is still unexplained. The spinner fix stays.
 - [ ] **`MFStartup` from an STA** is the suspected exact cause of the 2026-08-06 Settings crash `[X]`. The
       native-class guard holds either way.
