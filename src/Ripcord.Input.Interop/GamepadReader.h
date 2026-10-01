@@ -20,6 +20,8 @@ namespace winrt::Ripcord::Input::Interop::implementation
         {
             Microsoft::WRL::ComPtr<GameInput::v3::IGameInputDevice> Device;
             uint64_t Id;
+            uint16_t VendorId;
+            uint16_t ProductId;
         };
 
         static void CALLBACK OnDeviceChanged(

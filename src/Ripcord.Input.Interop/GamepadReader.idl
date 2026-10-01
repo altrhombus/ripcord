@@ -8,6 +8,11 @@ namespace Ripcord.Input.Interop
         // Stable while the device stays connected and never reused: a pad unplugged and plugged back in comes
         // back under a new id. Assigned by this reader, not by GameInput.
         UInt64 DeviceId;
+
+        // The USB vendor and product ids GameInput reports for the device, so diagnostics can say which pad
+        // this is: an Xbox pad and a DualSense both appear here, and "gamepad 1" does not tell them apart.
+        UInt16 VendorId;
+        UInt16 ProductId;
         UInt64 Buttons;
         Single LeftTrigger;
         Single RightTrigger;
