@@ -62,6 +62,28 @@ The full name is still in the tooltip and the Details menu. Not checked: the roo
 viewport of 1920 or more, and a 200% display. Display scale enlarges the card with its text, so 200% should
 look like 100%, but that is reasoning, not observation.
 
+### The Rust engine measured on Windows x64, and key agreement on CNG (2026-09-30)
+
+The first engine run on a Windows machine, an x64 desktop on Windows 11, with stable Rust 1.98.1 and
+.NET 10.0.12. The three commands in `engine/README.md`, and the kat runner:
+
+- **The vectors.** `ProtocolLab vectors` wrote all eight files. `ripcord-kat` passes every line of each:
+  735 checks, `stream-crypto.kat` 65 of 65.
+- **The tests.** `cargo test --workspace --release`, without `ripcord-diff` as CI's Windows legs run it:
+  136 passed, none failed.
+- **The .NET harness.** Every check passed: the layout of 19 structs, the differential against
+  `HalyardPacketCrypto`, demux through native callbacks, and a LAN session through the ABI to 15 frames.
+- **Key agreement on CNG.** `PlatformEcdh` passes `session-crypto.kat` through the engine, 34 checks, as
+  RustCrypto does. The one call that could have differed, importing a private scalar with no public point,
+  behaves on CNG as it does on Apple's implementation.
+- **The per-packet cost**, on the harness's worst case (1,426-byte packets, a new rotation window every
+  packet): **Rust through P/Invoke 0.92 µs, managed `HalyardPacketCrypto` 14.29 µs.** On the M4 Max the same
+  pair was 0.67–0.71 µs and 16.1–17.3 µs. One run on one machine, so the figure is a measurement, not a
+  range.
+
+That closes Phase 1's Windows x64 measurement and the CNG backend's check on its own platform. ARM64 is still
+owed, and needs an ARM64 machine.
+
 ### The labs print placeholders, and a rule for records (2026-09-28)
 
 The leak guard stops a real value at commit time. This removes the usual way one gets there: a hardware run
