@@ -441,7 +441,15 @@ namespace winrt::Ripcord::Media::Interop::implementation
         // The adapter the device lives on is beside the point: on a hybrid laptop the discrete GPU often
         // drives no display, and on a desk with two monitors the question is which one shows the video.
         const RipcordDisplay::PresentingDisplay display = RipcordDisplay::DescribeDisplayForWindow(factory, m_window);
-        m_displayHdrCapable = display.Hdr;
+
+        // HDR only when this device's GPU scans the display out. Rendering on one GPU for a display driven by the
+        // other (a hybrid laptop with the discrete GPU chosen in Settings) means a cross-adapter copy inside
+        // Windows, and on hardware an HDR10 stream through it presented black while SDR came through fine
+        // (2026-10-01). Treating such a display as SDR tone-maps instead. Why HDR does not survive the copy is
+        // [X]; on a machine with one GPU this never applies.
+        m_displayOnOtherAdapter = display.Found && m_device
+            && !RipcordDisplay::SameAdapter(display.Adapter, m_device->GetAdapterLuid());
+        m_displayHdrCapable = display.Hdr && !m_displayOnOtherAdapter;
         m_displayMaxNits = display.MaxNits;
     }
 
@@ -918,6 +926,11 @@ namespace winrt::Ripcord::Media::Interop::implementation
 
         // Distinguish "the panel cannot take it" from "it could and we failed to send it" - the first is the
         // tone-map working as designed, the second means SetColorSpace1 was refused.
+        if (m_displayOnOtherAdapter)
+        {
+            return L"tone-mapped to SDR \u2014 HDR off: the display is on another GPU";
+        }
+
         return m_displayHdrCapable
             ? L"tone-mapped to SDR \u2014 display is HDR-capable, colour space refused"
             : L"tone-mapped to SDR \u2014 display is SDR";

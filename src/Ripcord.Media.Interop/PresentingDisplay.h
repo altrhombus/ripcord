@@ -36,7 +36,16 @@ namespace RipcordDisplay
         // DXGI's MaxLuminance for this display. Diagnostics only; see VideoRenderer.h on why nothing keys
         // off it.
         float MaxNits = 0.0f;
+
+        // The adapter whose outputs include this display, which is the GPU that scans it out. A renderer on a
+        // different adapter reaches this display only through a cross-adapter copy.
+        LUID Adapter{};
     };
+
+    inline bool SameAdapter(const LUID& a, const LUID& b)
+    {
+        return a.LowPart == b.LowPart && a.HighPart == b.HighPart;
+    }
 
     inline PresentingDisplay DescribeDisplayForWindow(IDXGIFactory1* factory, HWND window)
     {
@@ -67,6 +76,11 @@ namespace RipcordDisplay
                     result.Found = true;
                     result.Hdr = desc.ColorSpace == DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020;
                     result.MaxNits = desc.MaxLuminance;
+                    DXGI_ADAPTER_DESC1 adapterDesc{};
+                    if (SUCCEEDED(adapter->GetDesc1(&adapterDesc)))
+                    {
+                        result.Adapter = adapterDesc.AdapterLuid;
+                    }
                     return result;
                 }
                 output.Reset();
