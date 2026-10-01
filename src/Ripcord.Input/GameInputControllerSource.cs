@@ -4,24 +4,28 @@ using Ripcord.Input.Interop;
 namespace Ripcord.Input;
 
 /// <summary>
-/// Polls the native GamepadReader (Ripcord.Input.Interop) for the first connected GameInput
-/// gamepad and republishes it as neutral ControllerStateFrames. Phase 0 scope only: a single
-/// polled device, standard gamepad button layout.
+/// Polls the native GamepadReader (Ripcord.Input.Interop) for every connected GameInput gamepad and republishes
+/// them as one neutral ControllerStateFrame per poll, standard gamepad button layout.
 ///
 /// <para>
-/// <b>The single-device scope has a user-visible cost, measured 2026-08-06.</b> The native read is
-/// <c>GetCurrentReading(GameInputKindGamepad, nullptr, …)</c>, and <c>nullptr</c> asks for the most recent
-/// reading from ANY gamepad. With a DualSense attached — which GameInput also enumerates, and which reports
-/// continuously over Bluetooth — an Xbox pad is starved completely: not one of its button presses arrives.
-/// Removing the DualSense is not sufficient either, since the Xbox pad had to be re-plugged before readings
-/// resumed. Enumerating devices and reading each explicitly is the fix; it is tracked in ROADMAP.
+/// <b>Every pad is read from its own device.</b> The reader used to call
+/// <c>GetCurrentReading(GameInputKindGamepad, nullptr, …)</c>, and <c>nullptr</c> asks for the most recent reading
+/// from ANY gamepad. With a DualSense attached — which GameInput also enumerates, and which reports continuously
+/// over Bluetooth — an Xbox pad was starved completely: not one of its presses arrived (measured 2026-08-06), and
+/// it had to be re-plugged before readings resumed even after the DualSense went. The reader now tracks devices as
+/// they connect and reads each one by name, and <see cref="GamepadSet"/> merges them.
+/// </para>
+///
+/// <para>
+/// A DualSense therefore reaches the composite twice, through this engine and through raw HID. That was already
+/// true of the old read whenever the DualSense won it, and the composite's merge makes it a no-op.
 /// </para>
 /// </summary>
 public sealed class GameInputControllerSource : IControllerSource, IDisposable
 {
     public string SourceName => "GameInput";
 
-    private const string GamepadControllerId = "gameinput-gamepad-0";
+    private const string GamepadControllerIdPrefix = "gameinput-gamepad-";
     private const uint MenuBit = 0x00000001;
     private const uint ViewBit = 0x00000002;
     private const uint ABit = 0x00000004;
@@ -43,7 +47,15 @@ public sealed class GameInputControllerSource : IControllerSource, IDisposable
     private readonly SimpleObservable<ControllerConnectionEvent> _connections = new(replayLast: true);
     private readonly SimpleObservable<ControllerStateFrame> _stateChanges = new();
     private readonly Timer _pollTimer;
-    private bool _wasConnected;
+    private readonly GamepadSet _pads = new();
+
+    // A timer callback can start while the previous one is still running, and GamepadSet is single-threaded by
+    // design. An overlapping tick is skipped rather than queued: the next one reads current state anyway.
+    private int _polling;
+
+    // Each pad's id as the diagnostics show it, "gameinput-045e:0b13-2" for vendor, product and reader id.
+    // Kept per device because a disconnect is reported after the device has stopped appearing in the poll.
+    private readonly Dictionary<ulong, string> _labels = [];
 
     public GameInputControllerSource()
     {
@@ -60,32 +72,65 @@ public sealed class GameInputControllerSource : IControllerSource, IDisposable
 
     private void Poll(object? state)
     {
-        var gamepad = _reader.GetLatestState();
-
-        if (gamepad.IsConnected != _wasConnected)
-        {
-            _wasConnected = gamepad.IsConnected;
-            _connections.Publish(new ControllerConnectionEvent(GamepadControllerId, gamepad.IsConnected, ControllerTransport.Unknown));
-        }
-
-        if (!gamepad.IsConnected)
+        if (Interlocked.Exchange(ref _polling, 1) != 0)
         {
             return;
         }
 
-        _stateChanges.Publish(new ControllerStateFrame(
-            TimestampTicks: unchecked((long)gamepad.TimestampTicks),
-            Buttons: MapButtons(gamepad.Buttons),
-            LeftStickX: gamepad.LeftThumbstickX,
-            LeftStickY: gamepad.LeftThumbstickY,
-            RightStickX: gamepad.RightThumbstickX,
-            RightStickY: gamepad.RightThumbstickY,
-            LeftTrigger: gamepad.LeftTrigger,
-            RightTrigger: gamepad.RightTrigger,
-            Gyro: null,
-            Accel: null,
-            Touchpad: null));
+        try
+        {
+            var states = _reader.GetConnectedStates();
+            foreach (GamepadState pad in states)
+            {
+                _labels[pad.DeviceId] = $"{GamepadControllerIdPrefix}{pad.VendorId:x4}:{pad.ProductId:x4}-{pad.DeviceId}";
+            }
+
+            var readings = states.Select(pad => new GamepadReading(pad.DeviceId, ToFrame(pad))).ToList();
+
+            GamepadSetUpdate update = _pads.Update(readings);
+
+            foreach (ulong id in update.Disconnected)
+            {
+                _connections.Publish(new ControllerConnectionEvent(Label(id), false, ControllerTransport.Unknown));
+                _labels.Remove(id);
+            }
+
+            foreach (ulong id in update.Connected)
+            {
+                _connections.Publish(new ControllerConnectionEvent(Label(id), true, ControllerTransport.Unknown));
+            }
+
+            if (update.Merged is { } merged)
+            {
+                _stateChanges.Publish(merged);
+            }
+            else if (update.Disconnected.Count > 0)
+            {
+                // The last pad just went. The composite keeps each engine's latest frame, so without a neutral
+                // one here whatever was held at the moment of unplugging would stay held.
+                _stateChanges.Publish(default(ControllerStateFrame) with { TimestampTicks = DateTime.UtcNow.Ticks });
+            }
+        }
+        finally
+        {
+            Volatile.Write(ref _polling, 0);
+        }
     }
+
+    private string Label(ulong id) => _labels.TryGetValue(id, out string? label) ? label : GamepadControllerIdPrefix + id;
+
+    private static ControllerStateFrame ToFrame(GamepadState pad) => new(
+        TimestampTicks: unchecked((long)pad.TimestampTicks),
+        Buttons: MapButtons(pad.Buttons),
+        LeftStickX: pad.LeftThumbstickX,
+        LeftStickY: pad.LeftThumbstickY,
+        RightStickX: pad.RightThumbstickX,
+        RightStickY: pad.RightThumbstickY,
+        LeftTrigger: pad.LeftTrigger,
+        RightTrigger: pad.RightTrigger,
+        Gyro: null,
+        Accel: null,
+        Touchpad: null);
 
     private static ControllerButtons MapButtons(ulong raw)
     {
