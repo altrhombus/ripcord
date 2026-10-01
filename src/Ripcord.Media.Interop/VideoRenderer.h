@@ -274,8 +274,9 @@ namespace winrt::Ripcord::Media::Interop::implementation
         uint32_t m_maxMasteringLuminance = 0;   // nits
         uint32_t m_minMasteringLuminance = 0;   // 0.0001 nit units, per the MF attribute
 
-        // The back-buffer format, chosen once at device creation and then used everywhere a render target has
-        // to agree with it. It is a field rather than a literal because five sites have to move together -
+        // The back-buffer format, chosen at device creation and changed by RefreshPresentingDisplay when the
+        // window moves between an HDR and an SDR display, then used everywhere a render target has to agree with
+        // it. It is a field rather than a literal because five sites have to move together -
         // swap chain, three pipeline RTVs, the zero-copy intermediate and ResizeBuffers - and a mismatch
         // between any two is a device-removed or a silently wrong picture.
         //
