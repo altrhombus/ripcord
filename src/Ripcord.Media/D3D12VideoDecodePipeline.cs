@@ -179,6 +179,21 @@ public sealed class D3D12VideoDecodePipeline : IVideoDecodePipeline
     /// </summary>
     public event Action<int>? DeviceLost;
 
+    /// <summary>
+    /// The window's display takes HDR10 from this device (see <c>VideoRenderer.IsDisplayHdr</c>). False before
+    /// <see cref="StartAsync"/>.
+    /// </summary>
+    public bool CanPresentHdr
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return _initialized && _renderer.IsDisplayHdr;
+            }
+        }
+    }
+
     /// <summary>True once the graphics device has been lost. Nothing will render until recreated.</summary>
     public bool IsDeviceLost => _deviceLostSignalled;
 
