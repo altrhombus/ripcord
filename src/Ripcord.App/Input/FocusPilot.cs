@@ -73,7 +73,13 @@ public sealed class FocusPilot(
         // multiple windows, so FindNextElementOptions.SearchRoot must say which visual tree to search.
         var options = new FindNextElementOptions { SearchRoot = searchRoot };
 
-        if (FocusManager.FindNextElement(winrtDirection, options) is UIElement candidate)
+        // WinUI's own search first; ours only when it finds nothing. On hardware (2026-10-01) the engine stopped
+        // offering "Add another console" as a candidate below the console card once focus had arrived on the card
+        // from the title bar: every strategy and hint returned nothing while the link sat enabled, focusable and
+        // directly underneath. Why the engine drops it is [X]. The fallback looks only in a straight line, so
+        // pressing against the end of a row still leaves focus where it is.
+        if ((FocusManager.FindNextElement(winrtDirection, options) as UIElement
+                ?? StraightLineCandidate(searchRoot, direction)) is UIElement candidate)
         {
             // FocusState.Keyboard, never Programmatic: a Programmatic focus change does not draw the focus
             // visual, so directional navigation would move an invisible caret.
@@ -117,6 +123,113 @@ public sealed class FocusPilot(
         if (FocusManager.GetFocusedElement(searchRoot.XamlRoot) is null)
         {
             seedFocus();
+        }
+    }
+
+    /// <summary>
+    /// The nearest focusable control in a straight line from the focused element, for when the engine's own
+    /// search finds nothing: wholly beyond it in <paramref name="direction"/>, and overlapping it across that axis.
+    /// Null when there is none, which is the usual and correct answer at the edge of a page.
+    /// </summary>
+    private static UIElement? StraightLineCandidate(UIElement searchRoot, NavDirection direction)
+    {
+        if (FocusManager.GetFocusedElement(searchRoot.XamlRoot) is not UIElement focused
+            || BoundsIn(focused, searchRoot) is not { } from)
+        {
+            return null;
+        }
+
+        UIElement? best = null;
+        double bestDistance = double.MaxValue;
+
+        foreach (Control control in FocusableControls(searchRoot))
+        {
+            if (control == focused || IsWithin(control, focused) || IsWithin(focused, control)
+                || BoundsIn(control, searchRoot) is not { } to)
+            {
+                continue;
+            }
+
+            double distance = direction switch
+            {
+                NavDirection.Down when to.Top >= from.Bottom && Overlaps(from.Left, from.Right, to.Left, to.Right)
+                    => to.Top - from.Bottom,
+                NavDirection.Up when to.Bottom <= from.Top && Overlaps(from.Left, from.Right, to.Left, to.Right)
+                    => from.Top - to.Bottom,
+                NavDirection.Right when to.Left >= from.Right && Overlaps(from.Top, from.Bottom, to.Top, to.Bottom)
+                    => to.Left - from.Right,
+                NavDirection.Left when to.Right <= from.Left && Overlaps(from.Top, from.Bottom, to.Top, to.Bottom)
+                    => from.Left - to.Right,
+                _ => double.MaxValue,
+            };
+
+            if (distance < bestDistance)
+            {
+                bestDistance = distance;
+                best = control;
+            }
+        }
+
+        return best;
+    }
+
+    private static bool Overlaps(double a0, double a1, double b0, double b1) => a0 < b1 && b0 < a1;
+
+    private static Rect? BoundsIn(UIElement element, UIElement root)
+    {
+        if (element.ActualSize.X <= 0 || element.ActualSize.Y <= 0)
+        {
+            return null;
+        }
+
+        try
+        {
+            return element.TransformToVisual(root).TransformBounds(
+                new Rect(0, 0, element.ActualSize.X, element.ActualSize.Y));
+        }
+        catch (ArgumentException)
+        {
+            return null;
+        }
+    }
+
+    private static bool IsWithin(DependencyObject element, DependencyObject ancestor)
+    {
+        for (DependencyObject? node = element; node is not null; node = VisualTreeHelper.GetParent(node))
+        {
+            if (node == ancestor)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>Every enabled, visible tab stop under <paramref name="root"/>, skipping collapsed subtrees.</summary>
+    private static IEnumerable<Control> FocusableControls(DependencyObject root)
+    {
+        var pending = new Stack<DependencyObject>();
+        pending.Push(root);
+
+        while (pending.Count > 0)
+        {
+            DependencyObject node = pending.Pop();
+            if (node is UIElement { Visibility: Visibility.Collapsed })
+            {
+                continue;
+            }
+
+            if (node is Control { IsEnabled: true, IsTabStop: true } control)
+            {
+                yield return control;
+            }
+
+            int children = VisualTreeHelper.GetChildrenCount(node);
+            for (int i = 0; i < children; i++)
+            {
+                pending.Push(VisualTreeHelper.GetChild(node, i));
+            }
         }
     }
 
