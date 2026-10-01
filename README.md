@@ -4,11 +4,11 @@
 
 Ripcord is an independent PlayStation Remote Play client. It talks straight to your PS5 or PS4,
 over your home network or across the internet, and puts the game on whatever you're holding: a Windows PC, a
-Mac, and, because it seemed like a good idea at the time, a **PlayStation 3**.
+Mac, and (because it seemed like a good idea at the time) a **PlayStation 3**.
 
-All of it was built from scratch. There is no vendor code here, and the protocol specification in
-[`docs/protocol/`](docs/protocol/) was worked out independently. [Provenance](#provenance),
-below, explains how, and it's worth reading rather than skipping.
+All of it was built from scratch. There's no vendor code here, and the protocol specification in
+[`docs/protocol/`](docs/protocol/) was worked out independently. [Provenance](#provenance)
+below explains how. It's worth a read, I promise.
 
 > **Not affiliated with Sony Interactive Entertainment.** "PlayStation", "PS5", "PS4" and "Remote Play" are
 > their trademarks, used here only to describe compatibility. See [`NOTICE`](NOTICE).
@@ -19,58 +19,57 @@ below, explains how, and it's worth reading rather than skipping.
 
 ### A PlayStation 3 streams a PS5
 
-Yes, really. The PS3 port streams **720p at 60 frames a second from a PS5 or a PS4**. The console's own
+Yes, really! The PS3 port streams **720p at 60 frames a second from a PS5 or a PS4**. The console's own
 hardware decoder handles the video and the RSX scales it, so the whole video path costs **113 µs of a
-16,667 µs frame**, which is 0.68%. It pairs itself with the PS3's on-screen keyboard. If the PS3 is signed in
-to your PlayStation Network account, it finds your account id on its own, so you never type 19 digits with
-a controller. It even has a home screen that looks at home on the XMB. Download it:
-[`ps3-v1.0`](https://github.com/altrhombus/ripcord/releases/tag/ps3-v1.0).
+16,667 µs frame** (that's 0.68%). It pairs using the PS3's on-screen keyboard, and if the PS3 is signed in to
+your PlayStation Network account it finds your account id on its own, so you never have to type 19 digits
+with a controller. It even has a home screen that looks right at home on the XMB.
+Grab it here: [`ps3-v1.0`](https://github.com/altrhombus/ripcord/releases/tag/ps3-v1.0).
 
-On the way, it measured the clock every timeout in the protocol depends on: **79,800,986 Hz against the
-79,800,000 we expected**, 12 parts per million out.
+Along the way it measured the clock every timeout in the protocol depends on: **79,800,986 Hz against the
+79,800,000 we expected**. Twelve parts per million out. Not bad for a console from 2006.
 
 ### The dotnet client, on Windows
 
-The flagship, and the one heading for 1.0. Verified against real consoles, **PS5 and PS4** alike:
+This is the flagship, and the one heading for 1.0. It's been run against real consoles, **PS5 and PS4**:
 
-- **1080p60 at 23 Mbps**, with 0.4% packet loss, a 2.1 ms handshake, 6.5 ms round trips, and 18 ms from
-  unpacking the stream to the frame on screen. Video is decoded on the GPU (H.264 and HEVC, 10-bit included) and
-  presented through D3D12.
+- **1080p60 at 23 Mbps,** with 0.4% packet loss, a 2.1 ms handshake, 6.5 ms round trips, and 18 ms from
+  unpacking the stream to the frame on screen. Video is decoded on the GPU (H.264 and HEVC, 10-bit and HDR
+  included) and presented through D3D12.
 - **Play from anywhere.** Across the internet, both ends behind NAT, no port forwarding: it finds a direct
-  peer-to-peer path, and a stream from a phone hotspot looks just like one on the LAN. Pair and connect from
-  the app itself.
+  peer-to-peer path, and a stream from a phone hotspot looks just like one on the LAN.
 - **Pairing every way.** Type the console's code, or sign in to PlayStation Network and pick your console. It
   wakes a console from rest, locally or over the internet, and handles a locked profile's passcode.
-- **The controller you already have.** An Xbox pad, a DualSense over USB or Bluetooth (PS button and
-  touchpad click included), or the keyboard, with your own bindings, and you can swap between them mid-game.
+- **The controller you already have.** An Xbox pad, a DualSense over USB or Bluetooth (PS button and touchpad
+  click included), or the keyboard with your own bindings. Use two pads at once, or swap mid-game.
 - **A Windows 11 app that looks like one,** designed as a Fluent showcase rather than a sample.
+- **No telemetry.** Ripcord talks to your console and PlayStation Network, and that's it. See
+  [`PRIVACY.md`](PRIVACY.md).
 
 ### One engine to run them all
 
-The protocol now also lives in a **Rust engine** (`engine/`), which will be the one engine under every
-first-class client. It is about **fourteen times faster per packet** than the C core it grew from (0.53 µs
-against 7.7 µs). It's fuzzed nightly across ten targets, with Miri watching over its C interface. Its first
-session on real hardware streamed 1080p60 HEVC for twenty seconds without losing a packet.
+The protocol also lives in a **Rust engine** (`engine/`), which will become the one engine under every
+first-class client. It's about **fourteen times faster per packet** than the C core it grew from (0.53 µs
+against 7.7 µs), it's fuzzed every night across ten targets with Miri watching over its C interface, and its
+first session on real hardware streamed 1080p60 HEVC for twenty seconds without losing a packet.
 
-### A Mac app, and an iPhone and Apple TV on the way
+### A Mac app, with iPhone and Apple TV on the way
 
 The **Mac app** runs on that engine: a library of your consoles, pairing by sign-in or code, a stream window
 with an inspector, Picture in Picture, recording, a menu bar extra, widgets, and Siri and Shortcuts actions.
-The Mac has streamed from a real PS5 on the LAN and over the internet through its lab tool, `ripcord-lab`.
-The app itself hasn't met a console yet; that's the next hardware session. **iPhone, iPad and Apple TV** share
-the same code, and their app builds but hasn't run on a device yet ([the plan](docs/ios-plan.md)).
+The Mac has streamed from a real PS5, on the LAN and over the internet, through its lab tool `ripcord-lab`.
+The app itself hasn't met a console yet (that's the next hardware session). **iPhone, iPad and Apple TV**
+share the same code, and their app builds but hasn't run on a device yet ([the plan](docs/ios-plan.md)).
 
 ### And the rest
 
-- **A New 3DS** streams a PS5. It was the first port, and the proof that someone other than the spec's
-  author could build a client from it.
-- **A PS Vita** port is on its own branch.
-- **Built with care.**
-  - Every pull request runs twelve CI jobs across Windows, Linux and macOS. Nightly runs fuzz the engine
-    and check it with Miri.
-  - The C core is fuzzed on every PR, and its first CI run found a real bug.
-  - A published-tree sweep and a commit-time leak guard keep anyone's personal details out of the history.
-  - The labs print placeholders instead of real addresses and ids, so a test run can be written up safely.
+- **A New 3DS** streams a PS5. It was the first port, and the proof that someone other than the spec's author
+  could build a client from it.
+- **A PS Vita** port lives on its own branch.
+- **Built with care.** Every pull request runs a dozen CI jobs across Windows, Linux and macOS, and the engine
+  gets fuzzed and checked with Miri every night. The C core is fuzzed too (its very first CI run found a real
+  bug). A published-tree sweep and a commit-time leak guard keep personal details out of the history, and the
+  lab tools print placeholders instead of real addresses, so a test run can be written up safely.
 
 ---
 
@@ -78,59 +77,57 @@ the same code, and their app builds but hasn't run on a device yet ([the plan](d
 
 | Client | State |
 |---|---|
-| **Windows** (the dotnet client) | Streams on the LAN and over the internet, PS5 and PS4. Working toward **1.0**: no installer yet, and three known bugs to fix |
+| **Windows** (the dotnet client) | Streams PS5 and PS4, on the LAN and over the internet. Heading for **1.0**: no download yet |
 | **PlayStation 3** | **Released:** [`ps3-v1.0`](https://github.com/altrhombus/ripcord/releases/tag/ps3-v1.0), 720p60 from a PS5 or PS4 |
 | **New 3DS** | Streams a PS5 |
-| **macOS** | Built on the Rust engine. Streams from its lab tool; the app is waiting for its first hardware session |
-| **iPhone, iPad, Apple TV** | Scaffolding that builds for all three; not yet run on a device |
+| **macOS** | On the Rust engine. Streams from its lab tool; the app is waiting for its first hardware session |
+| **iPhone, iPad, Apple TV** | Builds for all three; not yet run on a device |
 | **PS Vita** | On its own branch |
 | **Linux** | Planned, on the Rust engine |
 
 ### What doesn't work yet
 
 - **IPv6-only networks.** Everything is IPv4, including the STUN path internet play depends on.
-- **True HDR output.** HDR is negotiated and the console sends it, but the picture is still presented in SDR.
-  The HDR check also asks whether *any* display is HDR rather than the one the window is on.
 - **DualSense output and motion:** haptics, adaptive triggers, lightbar and gyro.
 - **Following a console paired by typed address** after its DHCP lease changes. Every other pairing route can.
-- **An Xbox pad alongside a DualSense.** With both connected, the Xbox pad goes quiet. It's one of the three
-  bugs 1.0 fixes.
-- **Xbox consoles.** They're named in the app so the design has room for them, and there's nothing behind
-  that yet.
-- **A Windows installer.** Build from source for now; the release zip and MSIX are part of 1.0.
 - **Internet play to a console in rest mode** probably fails in the dotnet client. Wake it first, or play on
-  the same network. The Mac showed why on 2026-09-25, and the fix is in [`ROADMAP.md`](ROADMAP.md).
+  the same network. (The Mac showed why on 2026-09-25, and the fix is in [`ROADMAP.md`](ROADMAP.md).)
+- **HDR after dragging the window** from an HDR display to an SDR one can look a little bright. Starting the
+  stream on the display you'll watch it on avoids it.
+- **Xbox consoles.** They're named in the app so the design has room for them, and there's nothing behind that
+  yet.
+- **A Windows download.** Build from source for now; the release zip is part of 1.0.
 
 ### Your first ten minutes with the dotnet client
 
-What a first run meets, so none of it is a surprise:
+Here's what a first run meets, so none of it is a surprise:
 
-- **Windows 11.** The package declares Windows 10 1809 as its minimum, but only Windows 11 has been run.
-- **English only.** The strings are ready for translation; no other language ships yet.
-- **Turn on Remote Play on the console first.** Ripcord finds a console with it off and says so, but cannot
-  turn it on. The app tells you where the setting is.
-- **Pairing by code** needs the console awake and on the same network, with its 8-digit code on screen. The
-  app says where to find it. **Pairing by sign-in** works from anywhere, and needs a PlayStation Network
-  sign-in, which opens inside the app.
+- **Windows 11, 25H2 or later.** That's what the package asks for, and Windows 11 is all that's been run.
+- **English only.** The strings are ready for translation, but no other language ships yet.
+- **Turn on Remote Play on the console first.** Ripcord notices when it's off and tells you where the setting
+  is, but it can't flip it for you.
+- **Pairing by code** needs the console awake, on the same network, with its 8-digit code on screen (the app
+  tells you where to find it). **Pairing by sign-in** works from anywhere, using a PlayStation Network sign-in
+  that opens inside the app.
 - **Waking from rest** needs the console's rest-mode network options turned on. A wake sent through your
-  account is reported as *asked*, not *woken*, because PlayStation Network accepting it says nothing about
-  whether the console heard.
-- **An Xbox pad has no PS button,** and Windows keeps its Guide button for itself. The on-screen controls
-  have a PS button for that.
+  account shows as *asked*, not *woken*, because PlayStation Network accepting it doesn't mean the console
+  heard.
+- **An Xbox pad has no PS button,** and Windows keeps the Guide button for itself. The on-screen controls have
+  a PS button for exactly this.
 
 ### What's next
 
-1. **The dotnet client's 1.0:** a download a stranger can install, pair and play with. The definition and
+1. **The dotnet client's 1.0:** a download a stranger can install, pair and play with. The short version and
    the checklist are in [`ROADMAP.md`](ROADMAP.md#10-the-short-version).
-2. **The Mac app's first hardware session**, then its first release.
+2. **The Mac app's first hardware session,** then its first release.
 3. **iPhone, iPad and Apple TV** on real devices ([`docs/ios-plan.md`](docs/ios-plan.md)).
 4. **A Linux client,** on the same Rust engine as the Mac ([`docs/engine-plan.md`](docs/engine-plan.md)).
 5. **Pairing a console port from your desktop,** so a PS3 never needs its own keyboard dance
    ([`docs/port-pairing.md`](docs/port-pairing.md)).
-6. **Windows on the Rust engine,** after its 1.0 ([`docs/engine-plan.md`](docs/engine-plan.md)).
+6. **Windows on the Rust engine,** after its 1.0.
 
-[`ROADMAP.md`](ROADMAP.md) is the whole backlog, and [`docs/journal.md`](docs/journal.md) is the dated story
-of how everything above came to work. [`docs/README.md`](docs/README.md) maps the rest of the documentation.
+[`ROADMAP.md`](ROADMAP.md) is the whole backlog, and [`docs/journal.md`](docs/journal.md) is the dated story of
+how everything above came to work. [`docs/README.md`](docs/README.md) maps the rest of the documentation.
 
 ---
 
@@ -145,6 +142,13 @@ natively. The two native C++/WinRT projects need MSBuild, not `dotnet build`:
 ```
 msbuild Ripcord.slnx -p:Platform=x64        # or -p:Platform=ARM64
 dotnet run --project src/Ripcord.App/Ripcord.App.csproj
+```
+
+To make the self-contained release build (it carries its own .NET and Windows App SDK runtimes):
+
+```
+msbuild Ripcord.slnx -p:Platform=x64 -p:Configuration=Release
+dotnet publish src/Ripcord.App/Ripcord.App.csproj -c Release -p:Platform=x64
 ```
 
 Build Release for handhelds: Debug builds of the native DLLs link the Visual C++ debug runtime, which a

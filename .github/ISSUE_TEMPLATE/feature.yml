@@ -43,5 +43,5 @@ body:
       options:
         - label: >
             I understand that protocol and crypto contributions require the independence attestation in
-            [CONTRIBUTING §2](../../CONTRIBUTING.md#2-independent-attestation--read-this-properly), and
+            [CONTRIBUTING §2](../../CONTRIBUTING.md#2-the-independence-rule), and
             that a request describing another implementation's internals cannot be acted on.
