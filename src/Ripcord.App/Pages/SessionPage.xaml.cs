@@ -1126,7 +1126,11 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer
     /// </summary>
     private bool TryHandleReservedKey(Windows.System.VirtualKey key)
     {
-        if (XamlRoot is not null && VisualTreeHelper.GetOpenPopupsForXamlRoot(XamlRoot).Count > 0)
+        // A tooltip is a popup too, and counting it made Escape do nothing whenever the pointer rested on a HUD
+        // button long enough to show one; opening and cancelling the disconnect prompt cleared it, which is how
+        // it was found on hardware (2026-10-01). Only a popup that wants the key, a dialog or a flyout, declines.
+        if (XamlRoot is not null
+            && VisualTreeHelper.GetOpenPopupsForXamlRoot(XamlRoot).Any(popup => popup.Child is not ToolTip))
         {
             return false;
         }
