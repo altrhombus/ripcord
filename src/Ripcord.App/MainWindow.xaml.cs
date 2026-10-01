@@ -217,9 +217,12 @@ public sealed partial class MainWindow : Window, IShellNavigator
         // route, an HTTPS call leaving the cloud session, which is what tells PSN and the console we are gone.
         // Without it the console can be left holding a session nobody is in.
         AppWindow.Closing += OnAppWindowClosing;
+        AppWindow.Changed += OnAppWindowChanged;
 
         Closed += (_, _) =>
         {
+            AppWindow.Changed -= OnAppWindowChanged;
+
             // First, so no focus check queued before the close runs against the closed window. One that did read
             // Window.Content from a released native window and faulted with an access violation, which no catch
             // can stop: the app crashed on every close that raced a focus change (2026-09-30).
@@ -292,6 +295,26 @@ public sealed partial class MainWindow : Window, IShellNavigator
                 work();
             }
         });
+
+    /// <summary>
+    /// In full screen, keep the content flush with the top of the display (<see cref="ContentBridge"/>). Posted at
+    /// low priority because the presenter change sizes the window after this event, and the content host is
+    /// placed one pixel down as part of that; pinning here would be undone at once. Again on every size change
+    /// while full screen, since a display or scale change places the host afresh.
+    /// </summary>
+    private void OnAppWindowChanged(AppWindow sender, AppWindowChangedEventArgs args)
+    {
+        if ((args.DidPresenterChange || args.DidSizeChange) && IsFullScreen)
+        {
+            Post(DispatcherQueuePriority.Low, () =>
+            {
+                if (IsFullScreen)
+                {
+                    ContentBridge.PinToClientArea(WinRT.Interop.WindowNative.GetWindowHandle(this));
+                }
+            });
+        }
+    }
 
     private void OnAppWindowClosing(AppWindow sender, AppWindowClosingEventArgs args)
     {
