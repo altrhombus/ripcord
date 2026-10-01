@@ -30,13 +30,16 @@ namespace winrt::Ripcord::Media::Interop::implementation
         /// Pack a LUID into 64 bits so it can cross the WinRT boundary as a single value.
         static uint64_t PackLuid(const LUID& luid);
 
-        /// Choose an adapter for `selection`. Returns nullptr to mean "let D3D12 pick the default".
+        /// Choose an adapter for `selection`. Returns nullptr to mean "let D3D12 pick the default". For Auto,
+        /// `window` names the window the video will be presented in, and the GPU that scans out its display
+        /// comes first; null skips that step.
         static Microsoft::WRL::ComPtr<IDXGIAdapter1> ChooseAdapter(
             IDXGIFactory6* factory,
             Ripcord::Media::Interop::GpuSelection selection,
             uint64_t specificLuid,
             uint32_t width,
-            uint32_t height);
+            uint32_t height,
+            HWND window = nullptr);
     };
 }
 
