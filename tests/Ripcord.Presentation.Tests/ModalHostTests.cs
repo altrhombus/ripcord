@@ -85,9 +85,10 @@ public class ModalHostTests
 
         // [^;] rather than a newline class: it spans the leading comment block but stops at the first
         // statement, so the guard has to BE that statement. Slide it below the ChromeFrame lookup and
-        // this fails, which is the case that matters — an earlier return would skip it.
+        // this fails, which is the case that matters — an earlier return would skip it. A closed-window check
+        // may share the condition, ahead of it: once the window has closed there is no modal to ask about.
         var guarded = new Regex(
-            @"private void FocusFirstContentElement\(\)[^{]*\{[^;]*if \(ModalOwnsFocus\)",
+            @"private void FocusFirstContentElement\(\)[^{]*\{[^;]*if \((_closed \|\| )?ModalOwnsFocus\)",
             RegexOptions.Singleline);
 
         Assert.True(
