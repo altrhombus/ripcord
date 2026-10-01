@@ -102,7 +102,7 @@ the same code, and their app builds but hasn't run on a device yet ([the plan](d
 ### What's next
 
 1. **The dotnet client's 1.0:** a download a stranger can install, pair and play with. The definition and
-   the checklist are in [`ROADMAP.md`](ROADMAP.md#10--scope).
+   the checklist are in [`ROADMAP.md`](ROADMAP.md#10-the-short-version).
 2. **The Mac app's first hardware session**, then its first release.
 3. **iPhone, iPad and Apple TV** on real devices ([`docs/ios-plan.md`](docs/ios-plan.md)).
 4. **A Linux client,** on the same Rust engine as the Mac ([`docs/engine-plan.md`](docs/engine-plan.md)).

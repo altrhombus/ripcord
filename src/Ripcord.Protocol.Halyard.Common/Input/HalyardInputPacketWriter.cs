@@ -307,7 +307,7 @@ public sealed class HalyardInputPacketWriter(IHalyardSessionCrypto crypto)
     /// they are u16 LE, and where they rest — but not what physical rate/acceleration the endpoints
     /// correspond to, because deriving that needs a capture with known applied motion. Until then a non-null
     /// reading is treated as an already-normalised [-1,1] fraction of full scale. Wiring real sensor data
-    /// (ROADMAP Track E) must derive the scale first, or motion will be sent at the wrong magnitude.
+    /// (ROADMAP, "Controllers") must derive the scale first, or motion will be sent at the wrong magnitude.
     /// </para>
     /// </summary>
     private static void WriteSensor(Span<byte> dest, float? normalized)
