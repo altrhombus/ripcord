@@ -104,6 +104,15 @@ namespace winrt::Ripcord::Input::Interop::implementation
 
         for (const TrackedDevice& tracked : devices)
         {
+            // Asked every poll rather than left to the disconnect callback. A pad whose battery was pulled with a
+            // button held stayed in the list, and GetCurrentReading kept returning its last reading - the button
+            // held - while the pad, back on, was tracked a second time beside it (2026-09-30). A pad GameInput
+            // no longer calls connected is skipped, and the reading it last gave goes with it.
+            if ((tracked.Device->GetDeviceStatus() & GameInputDeviceConnected) == 0)
+            {
+                continue;
+            }
+
             // Each device named explicitly. Passing nullptr here was the bug: it means "whichever gamepad
             // reported last", which a Bluetooth DualSense wins essentially every time.
             ComPtr<IGameInputReading> reading;
