@@ -26,5 +26,15 @@ public interface IVideoPipelinePreparer
     /// Create the graphics device and decoder for <paramref name="config"/>. Throws if the pipeline cannot be
     /// brought up; the exception message is shown to the user, so implementations owe it a readable one.
     /// </summary>
-    Task PrepareAsync(SessionConfig config, CancellationToken cancellationToken);
+    Task<PreparedVideo> PrepareAsync(SessionConfig config, CancellationToken cancellationToken);
 }
+
+/// <summary>
+/// What a prepared pipeline can show, read from the device once it exists.
+/// </summary>
+/// <param name="CanPresentHdr">
+/// The window's display takes HDR10 from this device: Windows has HDR on for it, and the GPU rendering the video is
+/// the one that scans it out. Read at connect, so a window moved later can change the answer; the renderer
+/// handles that on its own.
+/// </param>
+public sealed record PreparedVideo(bool CanPresentHdr);

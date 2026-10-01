@@ -77,17 +77,19 @@ public class ConnectFlowTests
         }
     }
 
-    private sealed class StubVideo(Exception? fault = null) : IVideoPipelinePreparer
+    private sealed class StubVideo(Exception? fault = null, bool canPresentHdr = true) : IVideoPipelinePreparer
     {
         public int Calls { get; private set; }
 
         public SessionConfig? Received { get; private set; }
 
-        public Task PrepareAsync(SessionConfig config, CancellationToken cancellationToken)
+        public Task<PreparedVideo> PrepareAsync(SessionConfig config, CancellationToken cancellationToken)
         {
             Calls++;
             Received = config;
-            return fault is not null ? Task.FromException(fault) : Task.CompletedTask;
+            return fault is not null
+                ? Task.FromException<PreparedVideo>(fault)
+                : Task.FromResult(new PreparedVideo(canPresentHdr));
         }
     }
 
@@ -255,6 +257,22 @@ public class ConnectFlowTests
 
         Assert.NotNull(plan);
         Assert.Equal(VideoCodec.Hevc, plan!.Config.CodecPreference);
+        Assert.Equal(DynamicRange.Hdr, plan.Config.RequestedDynamicRange);
+    }
+
+    [Fact]
+    public async Task Hdr_IsAskedForAsSdrWhenTheDisplayCannotPresentIt()
+    {
+        var settings = new RipcordSettings { Codec = VideoCodec.Hevc, RequestHdr = true };
+
+        (ConnectPlan? plan, _) = await RunAsync(
+            new StubSessions(), new StubWake(), new StubVideo(canPresentHdr: false), Ps5(), settings);
+
+        // The console's own SDR rather than a driver's tone-map of its HDR. The codec is untouched: HEVC is still
+        // what was asked for and what the decoder was built for.
+        Assert.NotNull(plan);
+        Assert.Equal(DynamicRange.Sdr, plan!.Config.RequestedDynamicRange);
+        Assert.Equal(VideoCodec.Hevc, plan.Config.CodecPreference);
     }
 
     [Fact]

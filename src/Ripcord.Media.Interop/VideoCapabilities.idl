@@ -6,9 +6,10 @@ namespace Ripcord.Media.Interop
     // GPU then forces DWM to cross-adapter copy every frame — more latency AND more power, for no gain.
     enum GpuSelection
     {
-        // Prefer a decode-capable adapter that actually drives a display, in lowest-power-first order.
-        // On a hybrid laptop that resolves to the iGPU, which is both the presenting adapter and the
-        // efficient one; on a desktop with one GPU it resolves to that GPU.
+        // The decode-capable GPU that scans out the window's display; failing that, one that drives any
+        // display, in lowest-power-first order. On a hybrid laptop on its own panel that resolves to the iGPU,
+        // which is both the presenting adapter and the efficient one; with the window on an external monitor
+        // wired to the discrete GPU, to that GPU; on a desktop with one GPU, to that GPU.
         Auto = 0,
 
         // Explicitly lowest power (DXGI_GPU_PREFERENCE_MINIMUM_POWER).

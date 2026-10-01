@@ -195,7 +195,7 @@
     <comment>Summary under the HDR checklist when every requirement is met.</comment>
   </data>
   <data name="Settings_HdrToneMapped" xml:space="preserve">
-    <value>Tone-mapped to SDR if any of the above is missing, which still looks correct, just flatter.</value>
+    <value>If any of the above is missing when you connect, the console sends SDR instead.</value>
     <comment>Summary under the HDR checklist when a requirement is missing. HDR/SDR are standard terms.</comment>
   </data>
   <data name="Settings_HdrTurnOnInWindows" xml:space="preserve">
