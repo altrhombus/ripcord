@@ -54,8 +54,10 @@ public interface IVideoCapabilitiesProbe
     Task<bool> IsHardwareDecodeSupportedAsync();
 
     /// <summary>
-    /// Whether the display is in HDR mode. True only while Windows' "Use HDR" is actually on, so this doubles
-    /// as a check of the OS setting — the part users most often miss.
+    /// Whether the display the app's window is on is in HDR mode. That display, not any display: on a desk
+    /// with an HDR laptop panel and an SDR monitor, the answer is about the one showing the app. True only
+    /// while Windows' "Use HDR" is actually on, so this doubles as a check of the OS setting — the part users
+    /// most often miss.
     /// </summary>
     Task<bool> IsHdrDisplayAvailableAsync();
 

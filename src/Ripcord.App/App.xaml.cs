@@ -100,14 +100,16 @@ public partial class App : Application
         // thread with a message pump, so the effects gate has to be established here rather than on first use.
         AppEffects.Initialize(uiThread);
 
+        var capabilities = new NativeVideoCapabilitiesProbe();
         _services = HalyardAppServices.Create(
             new DispatcherQueueUiDispatcher(uiThread),
-            new NativeVideoCapabilitiesProbe());
+            capabilities);
 
         _input = new InputRouter(_services.Settings);
 
         var window = new MainWindow();
         _services.AttachShell(window);
+        capabilities.AttachWindow(WinRT.Interop.WindowNative.GetWindowHandle(window));
 
         _window = window;
         MainWindow = window;

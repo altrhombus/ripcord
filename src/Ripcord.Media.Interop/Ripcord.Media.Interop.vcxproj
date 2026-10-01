@@ -98,6 +98,7 @@
   <ItemGroup>
     <ClInclude Include="pch.h" />
     <ClInclude Include="CodecSubtypes.h" />
+    <ClInclude Include="PresentingDisplay.h" />
     <ClInclude Include="VideoCapabilities.h" />
     <ClInclude Include="VideoRenderer.h" />
     <ClInclude Include="AudioRenderer.h" />
