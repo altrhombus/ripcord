@@ -56,6 +56,10 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer
     // state, so the two sources have to be combined rather than interleaved — see MergedInputSource.
     private MergedInputSource? _inputSource;
 
+    // The router's pad frames, re-published for _inputSource. The router raises an event and MergedInputSource
+    // takes an observable; this is the join. See OnPadFrame for why it has to exist at all.
+    private readonly Subject<ControllerStateFrame> _padFrames = new();
+
     // The element the key handlers are attached to: the window root, so delivery does not depend on which element
     // holds focus. Held so it can be unsubscribed from exactly what was subscribed to.
     private UIElement? _keyRoot;
@@ -287,7 +291,7 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer
             // twice swaps a button and swaps it back, or chains A→B→C. If a bound button ever behaves as
             // though it were unbound, this is the line to look at.
             _inputSource = new MergedInputSource(
-                pad: null,
+                pad: _padFrames,
                 _settings.InputBindings with { GamepadRemap = new Dictionary<ControllerButtons, ControllerButtons>() });
         }
         catch (Exception ex)
@@ -1289,6 +1293,12 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer
 
     private void OnPadFrame(ControllerStateFrame frame)
     {
+        // To the console first. The 2026-08-06 router refactor moved pad reading out of this page and
+        // subscribed here only for the exit gesture, and _inputSource was built with pad: null - so from then
+        // on a stream received the keyboard and the on-screen buttons and no controller at all. It was one of
+        // the input commits landed without a pad in hand, and it was found that way on 2026-09-30.
+        _padFrames.OnNext(frame);
+
         // Runs on the input thread. The exit gesture is evaluated here rather than in MainWindow because
         // MainWindow deliberately ignores the pad while a stream is capturing it.
         bool exit = _exitDetector?.Update(frame, DateTimeOffset.UtcNow) == true;
@@ -1305,8 +1315,8 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer
             ExitProgressBar.Value = progress;
             ExitProgressPanel.Visibility = progress is > 0 and < 1 ? Visibility.Visible : Visibility.Collapsed;
 
-            // The live pad readout moved to Settings, beside the bindings it helps check. Nothing here
-            // reads the frame any more except the exit gesture above.
+            // The live pad readout moved to Settings, beside the bindings it helps check. On the UI thread,
+            // nothing here reads the frame except the exit gesture above.
         });
     }
 
