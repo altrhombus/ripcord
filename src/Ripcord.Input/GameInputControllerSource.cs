@@ -53,6 +53,10 @@ public sealed class GameInputControllerSource : IControllerSource, IDisposable
     // design. An overlapping tick is skipped rather than queued: the next one reads current state anyway.
     private int _polling;
 
+    // Each pad's id as the diagnostics show it, "gameinput-045e:0b13-2" for vendor, product and reader id.
+    // Kept per device because a disconnect is reported after the device has stopped appearing in the poll.
+    private readonly Dictionary<ulong, string> _labels = [];
+
     public GameInputControllerSource()
     {
         _pollTimer = new Timer(Poll, null, TimeSpan.Zero, TimeSpan.FromMilliseconds(8));
@@ -75,22 +79,25 @@ public sealed class GameInputControllerSource : IControllerSource, IDisposable
 
         try
         {
-            var readings = _reader.GetConnectedStates()
-                .Select(pad => new GamepadReading(pad.DeviceId, ToFrame(pad)))
-                .ToList();
+            var states = _reader.GetConnectedStates();
+            foreach (GamepadState pad in states)
+            {
+                _labels[pad.DeviceId] = $"{GamepadControllerIdPrefix}{pad.VendorId:x4}:{pad.ProductId:x4}-{pad.DeviceId}";
+            }
+
+            var readings = states.Select(pad => new GamepadReading(pad.DeviceId, ToFrame(pad))).ToList();
 
             GamepadSetUpdate update = _pads.Update(readings);
 
             foreach (ulong id in update.Disconnected)
             {
-                _connections.Publish(new ControllerConnectionEvent(
-                    GamepadControllerIdPrefix + id, false, ControllerTransport.Unknown));
+                _connections.Publish(new ControllerConnectionEvent(Label(id), false, ControllerTransport.Unknown));
+                _labels.Remove(id);
             }
 
             foreach (ulong id in update.Connected)
             {
-                _connections.Publish(new ControllerConnectionEvent(
-                    GamepadControllerIdPrefix + id, true, ControllerTransport.Unknown));
+                _connections.Publish(new ControllerConnectionEvent(Label(id), true, ControllerTransport.Unknown));
             }
 
             if (update.Merged is { } merged)
@@ -109,6 +116,8 @@ public sealed class GameInputControllerSource : IControllerSource, IDisposable
             Volatile.Write(ref _polling, 0);
         }
     }
+
+    private string Label(ulong id) => _labels.TryGetValue(id, out string? label) ? label : GamepadControllerIdPrefix + id;
 
     private static ControllerStateFrame ToFrame(GamepadState pad) => new(
         TimestampTicks: unchecked((long)pad.TimestampTicks),

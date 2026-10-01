@@ -71,7 +71,13 @@ namespace winrt::Ripcord::Input::Interop::implementation
 
         if (connected && existing == m_devices.end())
         {
-            m_devices.push_back({ ComPtr<IGameInputDevice>(device), m_nextId++ });
+            const GameInputDeviceInfo* info = nullptr;
+            const bool described = SUCCEEDED(device->GetDeviceInfo(&info)) && info;
+            m_devices.push_back({
+                ComPtr<IGameInputDevice>(device),
+                m_nextId++,
+                described ? info->vendorId : uint16_t{ 0 },
+                described ? info->productId : uint16_t{ 0 } });
         }
         else if (!connected && existing != m_devices.end())
         {
@@ -115,6 +121,8 @@ namespace winrt::Ripcord::Input::Interop::implementation
 
             Ripcord::Input::Interop::GamepadState result{};
             result.DeviceId = tracked.Id;
+            result.VendorId = tracked.VendorId;
+            result.ProductId = tracked.ProductId;
             result.Buttons = static_cast<uint64_t>(state.buttons);
             result.LeftTrigger = state.leftTrigger;
             result.RightTrigger = state.rightTrigger;
