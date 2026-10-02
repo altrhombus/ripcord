@@ -88,10 +88,25 @@ public sealed class ExitGestureDetector(ExitGesture gesture, TimeSpan? holdDurat
     };
 
     /// <summary>Short player-facing description, for the on-screen hint and the settings page.</summary>
-    public static string Describe(ExitGesture gesture) => gesture switch
+    public static string Describe(ExitGesture gesture) => Describe(gesture, PadFamily.Vendor);
+
+    /// <summary>
+    /// The same, in the names on <paramref name="family"/>'s pad. The stream's hint is read with a pad in hand, and
+    /// "Options + Create + L1 + R1" names nothing on an Xbox pad (2026-10-02).
+    /// </summary>
+    public static string Describe(ExitGesture gesture, PadFamily family)
+        => Buttons(gesture, family) is { } buttons ? $"Hold {buttons}" : "Press Esc";
+
+    /// <summary>
+    /// Just the buttons, "L3 + R3", in <paramref name="family"/>'s names; null for <see cref="ExitGesture.None"/>.
+    /// For a sentence that names both pads, as the settings page does.
+    /// </summary>
+    public static string? Buttons(ExitGesture gesture, PadFamily family) => (gesture, family) switch
     {
-        ExitGesture.StartSelectShoulders => "Hold Options + Create + L1 + R1",
-        ExitGesture.BothSticksClicked => "Hold L3 + R3",
-        _ => "Press Esc",
+        (ExitGesture.StartSelectShoulders, PadFamily.Vendor) => "Options + Create + L1 + R1",
+        (ExitGesture.StartSelectShoulders, _) => "Menu + View + LB + RB",
+        (ExitGesture.BothSticksClicked, PadFamily.Vendor) => "L3 + R3",
+        (ExitGesture.BothSticksClicked, _) => "LS + RS",
+        _ => null,
     };
 }

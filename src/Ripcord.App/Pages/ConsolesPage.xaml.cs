@@ -86,6 +86,20 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
 
         ConsoleGrid.ItemsSource = _items;
 
+        // A press ends wherever the pointer ends it, handled or not: see EndPress.
+        AddHandler(PointerReleasedEvent, new PointerEventHandler((_, _) => EndPress()), handledEventsToo: true);
+        AddHandler(PointerCaptureLostEvent, new PointerEventHandler((_, _) => EndPress()), handledEventsToo: true);
+        AddHandler(PointerCanceledEvent, new PointerEventHandler((_, _) => EndPress()), handledEventsToo: true);
+
+        // And a move with nothing held, for a release that reached none of the three.
+        AddHandler(PointerMovedEvent, new PointerEventHandler((_, e) =>
+        {
+            if (_pressedCard is not null && !e.Pointer.IsInContact)
+            {
+                EndPress();
+            }
+        }), handledEventsToo: true);
+
         Loaded += (_, _) => Refresh();
         Unloaded += (_, _) => CancelProbes();
     }
@@ -484,15 +498,39 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
             // one and must not answer focus. Cleared on exit, which also clears any press left behind by a
             // pointer that left the card mid-press.
             item.IsPointerOver = on;
+        }
 
-            if (!on)
-            {
-                item.IsPressed = false;
-            }
+        // The whole press, not just its flag: clearing IsPressed alone left the card at its pressed scale.
+        if (!on)
+        {
+            SetPressed(sender, false);
         }
     }
 
-    private void OnCardDown(object sender, PointerRoutedEventArgs e) => SetPressed(sender, true);
+    private void OnCardDown(object sender, PointerRoutedEventArgs e)
+    {
+        SetPressed(sender, true);
+        _pressedCard = sender as FrameworkElement;
+    }
+
+    /// <summary>The card a press is in progress on, so the page can end it (EndPress).</summary>
+    private FrameworkElement? _pressedCard;
+
+    /// <summary>
+    /// End the press in progress, from the page. Pressing a card lets its GridViewItem capture the pointer, and
+    /// while it holds the capture the release, the capture-lost and the exit all go to that container, not the
+    /// card's Border where the handlers sit. Pressing and dragging off the card before letting go therefore left
+    /// it drawn pressed (2026-10-02). The page sees every release and capture-lost, handled or not, so it ends
+    /// the press whichever element got the event.
+    /// </summary>
+    private void EndPress()
+    {
+        if (_pressedCard is { } card)
+        {
+            _pressedCard = null;
+            SetPressed(card, false);
+        }
+    }
 
     /// <summary>
     /// Release, cancel, and capture-lost all end a press.
@@ -503,7 +541,7 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
     /// pressed strength until the pointer happened to leave.
     /// </para>
     /// </summary>
-    private void OnCardUp(object sender, PointerRoutedEventArgs e) => SetPressed(sender, false);
+    private void OnCardUp(object sender, PointerRoutedEventArgs e) => EndPress();
 
     /// <summary>How far a pressed card settles. Small on purpose: felt rather than watched.</summary>
     private const double PressScaleFactor = 0.985;

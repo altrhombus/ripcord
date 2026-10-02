@@ -36,7 +36,8 @@ public sealed class ShellInputScope(
     Action? onActivated = null,
     Action? onDeactivated = null,
     Func<XamlRoot?>? focusRoot = null,
-    IReadOnlyList<InputPrompt>? prompts = null) : IInputScope
+    IReadOnlyList<InputPrompt>? prompts = null,
+    bool readsPad = false) : IInputScope
 {
     /// <summary>
     /// Weak on purpose. A scope can outlive the page it belongs to during a fast exit, and a strong reference
@@ -48,6 +49,9 @@ public sealed class ShellInputScope(
 
     /// <summary>What the hint bar shows while this scope is on top. The kind's default unless told otherwise.</summary>
     public IReadOnlyList<InputPrompt> Prompts { get; } = prompts ?? ButtonLabels.DefaultFor(kind);
+
+    /// <inheritdoc />
+    public bool ReadsPad { get; } = readsPad;
 
     public void OnActivated()
     {

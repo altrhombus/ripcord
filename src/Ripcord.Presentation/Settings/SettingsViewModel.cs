@@ -505,7 +505,11 @@ public sealed class SettingsViewModel : ObservableState<SettingsViewState>
 
     private string ComposeExitGestureDescription() => _draft.ExitGesture == ExitGesture.None
         ? Strings.Settings_ExitNoGesture
-        : string.Format(Strings.Settings_ExitGestureHeld, ExitGestureDetector.Describe(_draft.ExitGesture));
+        // Both pads' names: this page does not know which is in hand, and is read to choose rather than to act.
+        : string.Format(
+            Strings.Settings_ExitGestureHeld,
+            ExitGestureDetector.Buttons(_draft.ExitGesture, PadFamily.Vendor),
+            ExitGestureDetector.Buttons(_draft.ExitGesture, PadFamily.Generic));
 
     /// <summary>Say plainly why an adapter is a poor choice rather than letting someone pick one that fails.</summary>
     private static string DescribeAdapter(VideoAdapterOption adapter)

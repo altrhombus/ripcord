@@ -35,6 +35,34 @@ different purpose.
 > anything. The list above is short, it is checkable in one `git log --format=%B | grep`, and it stops
 > growing the moment someone notices — which is the property that actually matters.
 
+### The person-driven pass, first part: the passcode, the pad, and a reconnect that never asked (2026-10-02)
+
+The first part of ROADMAP's person-driven pass, run by hand on the dev machine with a DualSense and an Xbox pad.
+It passed what it set out to check and found these on the way, all fixed and confirmed by hand the same day.
+
+- **Leaving the passcode prompt open crashed the app.** The connect deadline closed the dialog from a timer
+  thread, which WinUI refuses. Once that was fixed, the same wait failed the connect and retried it silently, so
+  the deadline now stops while the prompt is up and a caller's cancellation reports as itself.
+- **Cancelling the prompt left "Connecting to your console" up.** The failure was published, and then painted
+  over twice a second by the connect gate's last stage. The gate now steps aside once the controller has the
+  screen. A cancelled or rejected passcode also no longer retries, which used to bring the prompt straight back.
+- **The pad types the passcode,** with the console's own passcode buttons, and the prompt shows the console's
+  table of which button is which digit. The mapping was read off the console itself.
+- **Button names follow the pad in use** rather than the one that connected last, in the hint bar, the
+  passcode table and the full-screen exit hint. A DualSense reaches the app through GameInput as well as raw
+  HID, so a press both report counts as the DualSense.
+- **A pad did nothing on "Couldn't connect".** Focus was being seeded into the console list under the stream
+  layer, which is hidden while a connect is up, so every press was spent and none reached Try again. Circle
+  now leaves the connect, too.
+- **A reconnect never asked whether the console was resting.** The power check ran once, before the first
+  attempt. A console going into rest as the connect began answered as awake, dropped the first attempt and
+  refused the next five. Every retry now asks first.
+- **Smaller:** a card pressed and dragged off stayed shrunk, and the touch-controls bar showed before there
+  was a stream for it to press. Settings names the exit gesture on both pads.
+
+Each fix that can be tested off a console has a test that fails against the code before it. The pad, focus
+and layout fixes were confirmed by hand.
+
 ### The second review, finished: the CRT, the last sign-in gaps, and what the docs claimed (2026-10-01)
 
 The rest of that second review, worked through.

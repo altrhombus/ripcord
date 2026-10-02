@@ -357,6 +357,15 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
     {
         ArgumentNullException.ThrowIfNull(status);
 
+        // The controller has the screen from its first real status on, so the flow's last stage leaves the gate.
+        // Left there, TickConnect handed it back twice a second over anything with a different headline: a
+        // cancelled passcode prompt read "Couldn't connect" for one tick and "Connecting to your console" after
+        // it (2026-10-02).
+        if (status.Lifecycle != SessionLifecycle.Idle)
+        {
+            _gate.Reset();
+        }
+
         switch (status.Lifecycle)
         {
             case SessionLifecycle.Streaming:
@@ -398,6 +407,9 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
                     _statusDetail = status.Detail ?? string.Empty;
                     _statusBusy = false;
                     _statusTerminal = true;
+
+                    // A failure is not a step of the connect sequence, so the trail goes (SessionViewState.Phase).
+                    _phase = null;
                 });
                 break;
 

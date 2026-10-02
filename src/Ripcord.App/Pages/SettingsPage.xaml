@@ -334,14 +334,22 @@
                             x:Uid="SettingsPage_WhichGpuUse" />
                     </tk:SettingsCard>
 
-                    <!--  Shown only for the "specific GPU" preference — see SettingsViewModel.AdapterPickerVisible.  -->
+                    <!--
+                        Shown only for the "specific GPU" preference — see SettingsViewModel.AdapterPickerVisible.
+
+                        The picker sits under its label, full width, rather than beside it. An adapter's name plus
+                        why it is a poor choice runs to eighty characters, and beside the label it squeezed
+                        "Specific adapter" to a letter a line (2026-10-02).
+                    -->
                     <tk:SettingsCard
                         x:Name="AdapterCard"
+                        ContentAlignment="Vertical"
+                        HorizontalContentAlignment="Stretch"
                         x:Uid="SettingsPage_SpecificAdapter"
                         Visibility="Collapsed">
                         <ComboBox
                             x:Name="AdapterCombo"
-                            MinWidth="280"
+                            HorizontalAlignment="Stretch"
                             x:Uid="SettingsPage_SpecificGraphicsAdapter" />
                     </tk:SettingsCard>
 

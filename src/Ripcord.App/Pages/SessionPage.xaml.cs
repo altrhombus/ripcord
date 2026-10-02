@@ -44,7 +44,7 @@ namespace Ripcord_App.Pages;
 /// lifecycle (connect, degrade, reconnect, tear down), so this page renders status, routes controller input,
 /// and handles the immersive-mode concerns a Page is actually responsible for.
 /// </summary>
-public sealed partial class SessionPage : Page, IVideoPipelinePreparer
+public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitialFocusTarget
 {
     private readonly DispatcherQueue _dispatcherQueue = DispatcherQueue.GetForCurrentThread();
     private readonly RipcordAppServices _services = App.Services;
@@ -307,8 +307,8 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer
         // moves focus out of this page's subtree entirely. Subscribing at the root makes delivery focus-independent.
         WireConsoleButtons();
 
-        // Show the controls once on entry so they are discoverable, then let them time out.
-        ShowTouchControls();
+        // The controls are not shown here: they appear once the stream is live (OnStatusChanged), since before
+        // that there is nothing for them to press.
 
         _keyRoot = App.MainWindow?.Content as UIElement ?? this;
         _keyRoot.PreviewKeyDown += OnPageKeyDown;
@@ -409,6 +409,13 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer
                 return;
             }
 
+            // Nor once the connect has failed. Progress posts, so a line reported just before the failure can
+            // arrive after it, and ShowStatus would turn the failure back into a busy screen.
+            if (_viewModel.State.StatusActionsVisible)
+            {
+                return;
+            }
+
             // **The stages are for everybody; this line is not.** What the flow reports - "Preparing video",
             // "Checking credentials", "Connecting to your console" - is written for a player. What arrives
             // here is the protocol narrating itself: PreludeEstablished, DataReceived, registered. It is the
@@ -426,9 +433,25 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer
         // The controller owns everything from here: handshake, media/input routing, stall detection, reconnect.
         // The session it is handed owns whatever its route holds open, so teardown stays the controller's
         // ordinary dispose regardless of how the console was reached.
+        // A retry asks the console to wake before it reconnects (WakeBeforeRetry). Its lines go under the
+        // reconnect's headline, guarded as the connect's own are: nothing over a live stream or a failure.
+        var wakeProgress = new Progress<string>(line =>
+        {
+            _services.DiagnosticTrace?.Invoke($"reconnect wake: {line}");
+
+            if (!_viewModel.State.IsStreamLive && !_viewModel.State.StatusActionsVisible)
+            {
+                ShowStatus(_viewModel.State.StatusHeadline, line, terminal: false);
+            }
+        });
+
         _controller = new SessionController(
-            token => _services.Sessions.OpenAsync(
-                _console!, plan.Route, RequestLoginPinAsync, connectProgress, token),
+            WakeBeforeRetry.Wrap(
+                token => _services.Sessions.OpenAsync(
+                    _console!, plan.Route, RequestLoginPinAsync, connectProgress, token),
+                _services.WakeCoordinator,
+                _console!,
+                wakeProgress),
             _pipeline!,
             _inputSource,
             _powerMonitor);
@@ -452,14 +475,43 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer
     {
         var tcs = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
 
+        // The time on the prompt is the person's, so the connect deadline stops for it (HoldConnectDeadline).
+        IDisposable? hold = _controller?.HoldConnectDeadline();
+        _ = tcs.Task.ContinueWith(answered =>
+        {
+            hold?.Dispose();
+            _services.DiagnosticTrace?.Invoke(
+                $"passcode prompt closed: {(answered.Result is null ? "no passcode" : "passcode entered")}");
+        }, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+
+        _services.DiagnosticTrace?.Invoke($"passcode prompt opened{(isRetry ? " (again)" : string.Empty)}");
+
         bool queued = _dispatcherQueue.TryEnqueue(async () =>
         {
             try
             {
                 var dialog = new LoginPinDialog(isRetry) { XamlRoot = XamlRoot };
-                using CancellationTokenRegistration reg = cancellationToken.Register(() => dialog.Hide());
-                ContentDialogResult result = await ModalHost.ShowAsync(dialog);
-                tcs.TrySetResult(result == ContentDialogResult.Primary ? dialog.Pin : null);
+
+                // Posted, never called here: the token is cancelled from wherever cancellation happens, which for
+                // the connect deadline is a thread-pool timer, and Hide() off the UI thread throws
+                // RPC_E_WRONG_THREAD. Thrown from a cancellation callback, that took the process down: leaving
+                // the passcode prompt open past the deadline crashed the app (2026-10-02).
+                using CancellationTokenRegistration reg = cancellationToken.Register(() =>
+                    _dispatcherQueue.TryEnqueue(() =>
+                    {
+                        try
+                        {
+                            dialog.Hide();
+                        }
+                        catch (Exception)
+                        {
+                            // Already closed, or the window has gone: either way there is nothing left to hide.
+                        }
+                    }));
+                ContentDialogResult result = await ModalHost.ShowAsync(
+                    dialog, readsPad: true, prompts: LoginPinDialog.PadPrompts);
+                tcs.TrySetResult(
+                    result == ContentDialogResult.Primary || dialog.SubmittedByPad ? dialog.Pin : null);
             }
             catch (Exception)
             {
@@ -572,6 +624,9 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer
     private void OnStatusChanged(SessionStatus status)
     {
         // Published from the controller's background loop, so marshal before touching XAML.
+        // Every transition, so a connect that ends somewhere unexpected says where it went.
+        _services.DiagnosticTrace?.Invoke($"status: {status.Lifecycle} (attempt {status.ReconnectAttempt}): {status.Detail}");
+
         _dispatcherQueue.TryEnqueue(() =>
         {
             _viewModel.ApplyLifecycle(status);
@@ -585,11 +640,19 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer
                 case SessionLifecycle.Streaming:
                     EnterImmersiveMode();
                     _ = ShowExitHintBriefly();
+
+                    // Once as the picture arrives, so they are discoverable, then they time out as usual.
+                    ShowTouchControls();
                     break;
 
                 case SessionLifecycle.Failed:
                     LeaveImmersiveMode();
                     break;
+            }
+
+            if (!status.IsLive)
+            {
+                HideTouchControls();
             }
         });
     }
@@ -1113,7 +1176,7 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer
         else
         {
             ExitHintText.Text =
-                $"{ExitGestureDetector.Describe(_settings.ExitGesture)} to leave · Esc for windowed";
+                $"{ExitGestureDetector.Describe(_settings.ExitGesture, App.Input.PadFamily)} to leave · Esc for windowed";
         }
 
         ExitHint.Visibility = Visibility.Visible;
@@ -1234,6 +1297,18 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer
     }
 
     private void LeaveButton_Click(object sender, RoutedEventArgs e) => LeaveSession();
+
+    /// <summary>Leave the stream layer, as "Back to consoles" does: the window's Back from a pad.</summary>
+    internal void Leave() => LeaveSession();
+
+    /// <summary>
+    /// Where a pad lands on this page: Try again once a connect has failed, the way out while one runs long, and
+    /// otherwise nothing, since a live stream takes the pad and the window does not seed focus over it.
+    /// </summary>
+    Control? IInitialFocusTarget.InitialFocus
+        => StatusActions.Visibility == Visibility.Visible ? RetryButton
+            : ConnectEscape.Visibility == Visibility.Visible ? ConnectEscape
+            : null;
 
     private void RetryButton_Click(object sender, RoutedEventArgs e)
     {
@@ -1430,6 +1505,13 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer
     /// </summary>
     private void ShowTouchControls()
     {
+        // Only over a live stream. Before one, the bar sat under "Connecting" and "Couldn't connect" offering PS
+        // and Options to a console that was not listening (2026-10-02).
+        if (!_viewModel.State.IsStreamLive)
+        {
+            return;
+        }
+
         TouchControls.Visibility = Visibility.Visible;
 
         _touchControlsTimer ??= new DispatcherTimer { Interval = TouchControlsIdleTimeout };
@@ -1451,6 +1533,27 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer
             return;
         }
 
+        TouchControls.Visibility = Visibility.Collapsed;
+    }
+
+    /// <summary>
+    /// Take the bar away because the stream went, releasing anything held on it first. Unlike the idle timeout this
+    /// does not wait for a press to end: there is no stream left for the press to reach, and a button left asserted
+    /// would be held in the next one.
+    /// </summary>
+    private void HideTouchControls()
+    {
+        _touchControlsTimer?.Stop();
+
+        foreach (ControllerButtons button in Enum.GetValues<ControllerButtons>())
+        {
+            if (button != ControllerButtons.None && _virtualButtonsHeld.HasFlag(button))
+            {
+                _inputSource?.SetVirtualButton(button, pressed: false);
+            }
+        }
+
+        _virtualButtonsHeld = ControllerButtons.None;
         TouchControls.Visibility = Visibility.Collapsed;
     }
 
