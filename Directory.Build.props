@@ -40,6 +40,15 @@
   </PropertyGroup>
 
   <!--
+    The GameInput package version, in one place: Ripcord.Input.Interop references the package, and Ripcord.App
+    ships the GameInputRedist.msi inside it, so the two must agree. GameInput's own README says the redistributable
+    "can and should always be packaged with your title".
+  -->
+  <PropertyGroup>
+    <RipcordGameInputVersion>3.4.218</RipcordGameInputVersion>
+  </PropertyGroup>
+
+  <!--
     Normally the SDK's own default, but this file is imported by Microsoft.Common.props *before* that
     default is applied, so $(Configuration) is empty here unless it arrived as a global property (which is
     to say: it is set for `msbuild -p:Configuration=...` and empty for a bare `dotnet build`). Since

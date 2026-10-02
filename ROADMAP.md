@@ -17,10 +17,9 @@ is the PS3 port's release, not Ripcord's).
 
 We're close! Here's what's left, in order:
 
-1. **Finish the hardware pass.** It ran on 2026-10-01, and everything it turned up is fixed and checked with
-   both pads (the journal has the whole list). Still on the bench: a 200% display.
-2. **Package it.** A zip that runs on a machine that's never seen the .NET SDK, with GameInput's
-   redistributable alongside it.
+1. **Tag a release candidate.** A `v1.0-rc1` tag builds the x64 and ARM64 zips into a draft release, which
+   nobody sees until it's published. Those are what the next two steps install.
+2. **Run it on ARM64.** The ARM64 zip on the Surface: start it, pair, stream, both pads.
 3. **Install it on a clean machine.** Pair, stream, done.
 4. **Tag `v1.0`.** Then celebrate.
 
@@ -50,16 +49,18 @@ measures 0.92 µs a packet on Windows x64 against the managed engine's 14.29 µs
 
 - [x] CI passes on a real runner, on a clean clone, for every job.
 - [x] The GMAC window boundary and the non-P521 curve gap are resolved.
-- [ ] A tagged release with an x64 zip, and install steps checked on a machine without the SDK.
-- [ ] The three known defects are fixed and confirmed on hardware:
+- [ ] A tagged release with x64 and ARM64 zips, and install steps checked on a machine without the SDK. (The
+      release job exists since 2026-10-01; nothing has been tagged yet.)
+- [ ] The ARM64 zip runs on an ARM64 machine: it starts, pairs and streams, with both pads.
+- [x] The three known defects are fixed and confirmed on hardware:
   - [x] **The Xbox pad beside a DualSense.** Fixed, and confirmed on 2026-10-01: both pads in one stream, a
         battery pull mid-stream, and menu navigation with both on.
   - [x] **HDR from the wrong display.** Fixed, and confirmed on 2026-10-01 on a two-monitor desk and across a
         laptop's two GPUs. The "little bright after a drag" turned out to be the GPU driver's tone-mapping, so
         a session started on an SDR display now asks the console for SDR instead. The drag itself can wait
         (see After 1.0).
-  - [ ] **A two-line console name.** Fixed and checked at 100% and 150% text, at every card density (the
-        roomy one on 2026-10-01). Open: a 200% display.
+  - [x] **A two-line console name.** Fixed, and checked at every card density, at 100% and 200% display
+        scale, and at 100% and 150% text (2026-09-30 and 2026-10-01).
 - [ ] The input stack, Stage A steps 8–10 and the two Stage B checks have been driven by a person, and
       whatever that finds is fixed or listed. The script is
       [`docs/design-branch-test-pass.md`](docs/design-branch-test-pass.md).
@@ -71,11 +72,12 @@ measures 0.92 µs a packet on Windows x64 against the managed engine's 14.29 µs
 **Decided.** The zip leads, and an MSIX is optional; signing it is still open (a self-signed package asks
 each user to trust a certificate as administrator, so I'd like to try Azure Artifact Signing). The account
 tier, meaning sign-in, the account's console list, cloud wake and account pairing, is part of what 1.0
-supports. The package requires Windows 11 25H2 (build 26200).
+supports. The package requires Windows 11 25H2 (build 26200). ARM64 is part of 1.0 too (decided
+2026-10-01), so every release ships an x64 zip and an ARM64 one.
 
 **Out of 1.0, and said so in the release notes:** DualSense output (haptics, adaptive triggers, lightbar,
-gyro, touchpad drag), the latency and quality polish below, WAN relay, trimming, ARM64 binaries (it builds,
-it hasn't been run recently), translations, and a purchased signing certificate.
+gyro, touchpad drag), the latency and quality polish below, WAN relay, trimming, translations, and a
+purchased signing certificate.
 
 ---
 
@@ -85,11 +87,13 @@ it hasn't been run recently), translations, and a purchased signing certificate.
 
 - [x] The unused `systemAIModels` capability is gone, the package requires 25H2, `dotnet publish` is
       self-contained, and `PRIVACY.md` and generated third-party notices ship in the app folder.
-- [ ] **Ship GameInput's redistributable.** `GameInputRedist.dll` isn't in the published app; every machine
-      tried so far had it from an earlier install. GameInput's own README says to ship `GameInputRedist.msi`
-      with anything that uses it, or an Xbox pad may do nothing on a clean machine.
+- [x] **GameInput's redistributable ships in the zip** (2026-10-01), and Settings > About says whether it's
+      installed. Whether the one `GameInputRedist.msi` in the package installs on ARM64 too is `[X]`: the
+      ARM64 run settles it.
 - [ ] **Clean-machine check.** Install the zip on a machine that has never had the SDK, then pair and stream.
-      Sign in too: the web view's profile moved to `%LocalAppData%\Ripcord\WebView2`.
+      Sign in too: the web view's profile moved to `%LocalAppData%\Ripcord\WebView2`. Windows Sandbox is a
+      clean Windows every launch, good for "does it start with nothing installed", though it won't pass
+      pads or the GPU through.
 
 ### Stated as a limit, not fixed for 1.0
 
@@ -108,6 +112,10 @@ it hasn't been run recently), translations, and a purchased signing certificate.
       and the session page (light, dark, high contrast); eyeballing high contrast and transparency-off; Narrator
       over the card grid; two open judgements (the connect screen's 112 px reserved gap, and whether the
       diagnostics strip should rise to a letterboxed picture's edge). Details in the history.
+- [ ] **A two-word name trims on a regular card at 150% text** ("Bedroom PS4" shows as "Bedroom…"): at that
+      size the card has room for one line of name. Nothing is lost (the status line is kept, and the full name
+      is in the tooltip), but taller cards or a smaller name at large text sizes would read better. A design
+      call.
 - [ ] **Pad focus inside dialogs.** Directional focus doesn't reach into `ContentDialog`s: the rename dialog,
       the remove confirmation and `LoginPinDialog`.
 - [ ] **The page renames** from the app plan: `ConsolesPage` → `HomePage`, `AddConsolePage` → `PairPage`,

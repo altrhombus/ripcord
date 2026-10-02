@@ -7,8 +7,8 @@ on:
     # ps3-v1.0 is a claim about the port alone. A tag push runs this whole file, not a reduced release
     # pipeline: a release that has not passed the same checks as a pull request is a weaker artifact than
     # the pull request was.
-    # The macOS client does the same on macos-v* (docs/macos-plan.md, step 9).
-    tags: ['ps3-v*', 'macos-v*']
+    # The macOS client does the same on macos-v* (docs/macos-plan.md, step 9), and the dotnet client on v*.
+    tags: ['ps3-v*', 'macos-v*', 'v*']
   pull_request:
   workflow_dispatch:
 
@@ -90,6 +90,35 @@ jobs:
           $dir = "${{ matrix.platform }}\Release"
           if (-not (Test-Path $dir)) { throw "native interop output missing: $dir" }
           Get-ChildItem $dir -Recurse -Filter *.dll | Select-Object -First 20 Name, Length
+
+      # THE RELEASE ZIP, on a v* tag only, from the build above rather than a second one. dotnet publish makes it
+      # self-contained (Ripcord.App.csproj), so it runs on a machine that has never had .NET or the Windows App
+      # SDK, and it carries the licences, the privacy page and GameInputRedist.msi. The checks below fail the job
+      # rather than ship a zip missing any of them.
+      - name: Publish the release zip
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          dotnet publish src/Ripcord.App/Ripcord.App.csproj -c Release -p:Platform=${{ matrix.platform }} -p:RipcordNativePlatform=${{ matrix.platform }} -nodeReuse:false
+          $pub = Get-ChildItem src/Ripcord.App/bin/${{ matrix.platform }}/Release -Recurse -Directory -Filter publish | Select-Object -First 1
+          if (-not $pub) { throw "no publish folder" }
+          foreach ($f in 'Ripcord.App.exe','LICENSE','NOTICE','THIRD-PARTY-NOTICES.txt','PRIVACY.md','GameInputRedist.msi','coreclr.dll','Microsoft.WindowsAppRuntime.dll') {
+            if (-not (Test-Path (Join-Path $pub.FullName $f))) { throw "the publish is missing $f" }
+          }
+          # Inside a Ripcord folder, so unzipping gives one folder rather than 568 loose files.
+          $arch = "${{ matrix.platform }}".ToLowerInvariant()
+          $stage = "stage/Ripcord"
+          New-Item -ItemType Directory -Force $stage | Out-Null
+          Copy-Item "$($pub.FullName)/*" $stage -Recurse
+          $zip = "ripcord-$env:GITHUB_REF_NAME-win-$arch.zip"
+          Compress-Archive -Path $stage -DestinationPath $zip
+          Get-Item $zip | Select-Object Name, Length
+      - uses: actions/upload-artifact@v4
+        if: startsWith(github.ref, 'refs/tags/v')
+        with:
+          name: ripcord-windows-${{ matrix.platform }}
+          path: ripcord-*-win-*.zip
+          if-no-files-found: error
 
   # NOT a support claim: the shipping UI is Windows-only and there is no macOS or Linux front end.
   # This guards one rule — that the 15 portable projects stay portable. `Ripcord.Presentation` is
@@ -627,6 +656,48 @@ jobs:
 
           echo "Draft release $GITHUB_REF_NAME created with $asset attached."
           echo "It is NOT public until somebody publishes it."
+
+  # THE WINDOWS RELEASE, on the PS3 release's terms (above): only for a v* tag, only after the rest of this file
+  # has passed, publishing the two zips the app job built rather than building anything, and as a draft for a
+  # person to write the notes on and publish.
+  windows-release:
+    name: Windows release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [tests, app, portable-core]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: ripcord-windows-*
+          merge-multiple: true
+          path: dist
+
+      - name: Publish a draft release with both zips
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ls -l dist
+          cat > notes.md <<'NOTES'
+          **Draft — release notes go here before publishing.** What this build streams, pairs with and runs
+          on, and what it does not do yet.
+
+          **Installing.** Download the zip for your PC: `win-x64` for most PCs, `win-arm64` for ARM devices such
+          as a Surface Pro X or a Copilot+ PC. Unzip it anywhere and run `Ripcord.App.exe` from the `Ripcord`
+          folder. Nothing else to install: .NET and the Windows App SDK are inside.
+
+          **Xbox controllers** need Microsoft's GameInput runtime. If one does nothing, run `GameInputRedist.msi`
+          from the same folder once, then restart Ripcord. A DualSense works without it. Settings > About says
+          which you have.
+          NOTES
+          sed -i 's/^          //' notes.md
+          gh release create "$GITHUB_REF_NAME" dist/*.zip \
+            -R "$GITHUB_REPOSITORY" \
+            --draft \
+            --title "Ripcord $GITHUB_REF_NAME" \
+            --notes-file notes.md
+          echo "Draft release $GITHUB_REF_NAME created. It is NOT public until somebody publishes it."
 
   # THE MAC RELEASE, on the PS3 release's terms (above): only for a macos-v* tag, only after the rest of this
   # file has passed, publishing the notarized zip the mac job built rather than building anything, and as a
