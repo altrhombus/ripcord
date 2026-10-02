@@ -62,6 +62,7 @@ public sealed partial class AboutPage : Page
         Record("Graphics", "checking");
         Record("Video decoding", "checking");
         Record("HEVC", "checking");
+        Record("Xbox controllers", "checking");
 
         try
         {
@@ -80,6 +81,25 @@ public sealed partial class AboutPage : Page
         // The graphics probes create and destroy a D3D12 device per adapter, which is far too much work to do on
         // the UI thread while the page is being shown. Those rows read "Checking…" until this lands.
         _ = ProbeGraphicsAsync();
+        _ = ProbeControllersAsync();
+    }
+
+    /// <summary>Fill the Xbox controllers row: is GameInput's runtime installed? Native work, so off the UI thread.</summary>
+    private async Task ProbeControllersAsync()
+    {
+        bool available = await Task.Run(Ripcord.Input.GameInputControllerSource.IsRuntimeAvailable);
+
+        if (available)
+        {
+            SetPill(ControllersPill, ControllersPillIcon, ControllersPillText, PillTone.Success, "Ready");
+            Record("Xbox controllers", "GameInput installed");
+        }
+        else
+        {
+            SetPill(ControllersPill, ControllersPillIcon, ControllersPillText, PillTone.Caution, "GameInput not installed");
+            ControllersNoteText.Visibility = Visibility.Visible;
+            Record("Xbox controllers", "GameInput not installed");
+        }
     }
 
     /// <summary>

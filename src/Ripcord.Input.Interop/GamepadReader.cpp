@@ -85,6 +85,12 @@ namespace winrt::Ripcord::Input::Interop::implementation
         }
     }
 
+    bool GamepadReader::IsRuntimeAvailable()
+    {
+        ComPtr<GameInput::v3::IGameInput> probe;
+        return SUCCEEDED(GameInputCreate(probe.GetAddressOf())) && probe;
+    }
+
     Windows::Foundation::Collections::IVectorView<Ripcord::Input::Interop::GamepadState>
         GamepadReader::GetConnectedStates()
     {

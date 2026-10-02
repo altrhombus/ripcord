@@ -368,12 +368,15 @@
 
     <!--
         Capped and centred rather than stretched. On an ultrawide an uncapped card row spreads a handful of
-        consoles across a metre of glass with the eye travelling between them; 1400 is about where a row stops
-        reading as a group. Below that it simply fills, so nothing changes on a handheld.
+        consoles across a metre of glass with the eye travelling between them, so a row stops at four cards.
+        1500 fits four roomy cells (4 x 360) inside the 24px padding with room for rounding at fractional
+        scale. It was 1400, which fitted only three, so maximising the window LOST a column: a smaller window
+        showed four regular cards, a larger one three roomy ones (seen at 200% on 2026-10-01). Below the cap it
+        simply fills, so nothing changes on a handheld.
     -->
     <Grid
         Padding="24,16,24,0"
-        MaxWidth="1400"
+        MaxWidth="1500"
         HorizontalAlignment="Center"
         RowSpacing="4">
         <Grid.RowDefinitions>
