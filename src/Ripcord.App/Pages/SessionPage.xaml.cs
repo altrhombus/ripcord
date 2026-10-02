@@ -307,8 +307,8 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
         // moves focus out of this page's subtree entirely. Subscribing at the root makes delivery focus-independent.
         WireConsoleButtons();
 
-        // Show the controls once on entry so they are discoverable, then let them time out.
-        ShowTouchControls();
+        // The controls are not shown here: they appear once the stream is live (OnStatusChanged), since before
+        // that there is nothing for them to press.
 
         _keyRoot = App.MainWindow?.Content as UIElement ?? this;
         _keyRoot.PreviewKeyDown += OnPageKeyDown;
@@ -433,9 +433,25 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
         // The controller owns everything from here: handshake, media/input routing, stall detection, reconnect.
         // The session it is handed owns whatever its route holds open, so teardown stays the controller's
         // ordinary dispose regardless of how the console was reached.
+        // A retry asks the console to wake before it reconnects (WakeBeforeRetry). Its lines go under the
+        // reconnect's headline, guarded as the connect's own are: nothing over a live stream or a failure.
+        var wakeProgress = new Progress<string>(line =>
+        {
+            _services.DiagnosticTrace?.Invoke($"reconnect wake: {line}");
+
+            if (!_viewModel.State.IsStreamLive && !_viewModel.State.StatusActionsVisible)
+            {
+                ShowStatus(_viewModel.State.StatusHeadline, line, terminal: false);
+            }
+        });
+
         _controller = new SessionController(
-            token => _services.Sessions.OpenAsync(
-                _console!, plan.Route, RequestLoginPinAsync, connectProgress, token),
+            WakeBeforeRetry.Wrap(
+                token => _services.Sessions.OpenAsync(
+                    _console!, plan.Route, RequestLoginPinAsync, connectProgress, token),
+                _services.WakeCoordinator,
+                _console!,
+                wakeProgress),
             _pipeline!,
             _inputSource,
             _powerMonitor);
@@ -624,11 +640,19 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
                 case SessionLifecycle.Streaming:
                     EnterImmersiveMode();
                     _ = ShowExitHintBriefly();
+
+                    // Once as the picture arrives, so they are discoverable, then they time out as usual.
+                    ShowTouchControls();
                     break;
 
                 case SessionLifecycle.Failed:
                     LeaveImmersiveMode();
                     break;
+            }
+
+            if (!status.IsLive)
+            {
+                HideTouchControls();
             }
         });
     }
@@ -1274,6 +1298,18 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
 
     private void LeaveButton_Click(object sender, RoutedEventArgs e) => LeaveSession();
 
+    /// <summary>Leave the stream layer, as "Back to consoles" does: the window's Back from a pad.</summary>
+    internal void Leave() => LeaveSession();
+
+    /// <summary>
+    /// Where a pad lands on this page: Try again once a connect has failed, the way out while one runs long, and
+    /// otherwise nothing, since a live stream takes the pad and the window does not seed focus over it.
+    /// </summary>
+    Control? IInitialFocusTarget.InitialFocus
+        => StatusActions.Visibility == Visibility.Visible ? RetryButton
+            : ConnectEscape.Visibility == Visibility.Visible ? ConnectEscape
+            : null;
+
     private void RetryButton_Click(object sender, RoutedEventArgs e)
     {
         // A fresh controller: the previous one reached a terminal state and will not restart.
@@ -1298,18 +1334,6 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
     /// </summary>
     private async void LeaveSession()
     {
-    /// <summary>Leave the stream layer, as "Back to consoles" does: the window's Back from a pad.</summary>
-    internal void Leave() => LeaveSession();
-
-    /// <summary>
-    /// Where a pad lands on this page: Try again once a connect has failed, the way out while one runs long, and
-    /// otherwise nothing, since a live stream takes the pad and the window does not seed focus over it.
-    /// </summary>
-    Control? IInitialFocusTarget.InitialFocus
-        => StatusActions.Visibility == Visibility.Visible ? RetryButton
-            : ConnectEscape.Visibility == Visibility.Visible ? ConnectEscape
-            : null;
-
         if (_leaving || _confirmingLeave)
         {
             return;
@@ -1481,6 +1505,13 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
     /// </summary>
     private void ShowTouchControls()
     {
+        // Only over a live stream. Before one, the bar sat under "Connecting" and "Couldn't connect" offering PS
+        // and Options to a console that was not listening (2026-10-02).
+        if (!_viewModel.State.IsStreamLive)
+        {
+            return;
+        }
+
         TouchControls.Visibility = Visibility.Visible;
 
         _touchControlsTimer ??= new DispatcherTimer { Interval = TouchControlsIdleTimeout };
@@ -1502,6 +1533,27 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
             return;
         }
 
+        TouchControls.Visibility = Visibility.Collapsed;
+    }
+
+    /// <summary>
+    /// Take the bar away because the stream went, releasing anything held on it first. Unlike the idle timeout this
+    /// does not wait for a press to end: there is no stream left for the press to reach, and a button left asserted
+    /// would be held in the next one.
+    /// </summary>
+    private void HideTouchControls()
+    {
+        _touchControlsTimer?.Stop();
+
+        foreach (ControllerButtons button in Enum.GetValues<ControllerButtons>())
+        {
+            if (button != ControllerButtons.None && _virtualButtonsHeld.HasFlag(button))
+            {
+                _inputSource?.SetVirtualButton(button, pressed: false);
+            }
+        }
+
+        _virtualButtonsHeld = ControllerButtons.None;
         TouchControls.Visibility = Visibility.Collapsed;
     }
 
