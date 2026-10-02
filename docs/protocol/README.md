@@ -60,9 +60,19 @@ Two corrections to earlier framing, recorded because they were wrong for a while
 
 ## Provenance & method
 
-- The substance here was derived **primarily from our own copy of the vendor's client binary** (static
-  analysis + the protobuf reflection metadata the binary itself embeds) and from **our own live
-  packet/memory captures** of our own console and account.
+- The substance here was derived **primarily from our own copies of the vendor's client** and **our own
+  captures** of our own console and account. The methods included:
+  - static analysis of the client: disassembly, decompilation, and the protobuf reflection metadata it embeds;
+  - running it under a debugger and an instrumentation framework to read its memory, live session keys
+    included;
+  - capturing its traffic, including through a TLS-terminating proxy on our own machine, with the client's
+    certificate pinning defeated by a hook in that client;
+  - an attempt against the current release's anti-debugging protection, abandoned in favour of an older,
+    unprotected official release of the same client, installed from archived copies of Sony's installers on
+    the Internet Archive.
+
+  Each is recorded, dated and with what it informed, in
+  [`../protocol-research-log.md`](../protocol-research-log.md).
 - **No other implementation of these protocols is used as a source.** Not for implementation detail, not for
   byte-level constructions, not for naming. Where a value here is an *assumption* rather than something our own
   evidence established, it is tagged **[X]** so it cannot be mistaken for a finding.

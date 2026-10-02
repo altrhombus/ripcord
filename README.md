@@ -225,6 +225,9 @@ under that user's own account. The specification was derived from:
   framework reading the client's memory, live session keys included);
 - the authors' own captures of their own console and account, including TLS traffic read through a proxy on
   their own machine, with the client's certificate pinning defeated by a hook in that client;
+- an attempt against the current release's anti-debugging protection, abandoned in favour of an older,
+  unprotected official release of the same client, installed from archived copies of Sony's installers on the
+  Internet Archive;
 - public references — RFCs, NIST test vectors, platform crypto documentation.
 
 It reproduces the **values a client needs to interoperate**: protocol field numbers, enum values, byte
