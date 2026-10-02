@@ -539,7 +539,9 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
                     DecodeQueueDepth: s.QueueDepth,
                     PipelineLatencyMs: s.PipelineLatencyMs,
                     DecodeMode: s.DecodeMode,
-                    HealthLevel: _diagnostics.HealthLevel);
+                    HealthLevel: _diagnostics.HealthLevel,
+                    RequestedBitrateKbps: stats.RequestedBitrateKbps,
+                    QualityReportsSent: stats.QualityReportsSent);
             }
 
             // The verdict is recomputed twice a second and is right to be twitchy - the panel wants the live
@@ -735,15 +737,14 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
             return (string.Empty, false);
         }
 
-        // Say what is actually transmitted. CONNECTION_QUALITY carries the target BITRATE only — it has no
-        // resolution field, and resolution is fixed by the launchSpec at session start — so a preferred
-        // resolution is reported as needing a reconnect rather than implied to be in effect.
-        string disposition = _settings.ReportConnectionQuality ? "sent to console" : "not sent (reporting off)";
-        string line = $"{t.BitrateKbps / 1000.0:F1} Mbps · {disposition}";
+        // A recommendation, and called one: nothing acts on it. The console ignored it sent as CONNECTION_QUALITY
+        // (2026-10-02), so it is no longer sent, and resolution is fixed at session start in any case.
+        string line = $"{t.BitrateKbps / 1000.0:F1} Mbps recommended";
 
         if (t.Width != _settings.Width || t.Height != _settings.Height || t.Fps != _settings.TargetFps)
         {
-            line += $"\nprefers {t.Width}×{t.Height}@{t.Fps} — needs a reconnect";
+            // Not "needs a reconnect": a reconnect starts at the configured settings, not these (ROADMAP).
+            line += $"\nwould suit {t.Width}×{t.Height}@{t.Fps} · resolution is set when a stream starts";
         }
 
         return (line, true);

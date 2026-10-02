@@ -171,6 +171,15 @@ public class SettingsStoreTests : IDisposable
     }
 
     [Fact]
+    public void ToSessionConfig_NeverReportsConnectionQuality_WhateverWasStored()
+    {
+        // The switch was taken out of Settings (2026-10-02). An install that had turned it on must not keep sending.
+        SessionConfig c = new RipcordSettings { ReportConnectionQuality = true }.ToSessionConfig();
+
+        Assert.False(c.ReportConnectionQuality);
+    }
+
+    [Fact]
     public void NoLeftoverTempFileAfterSave()
     {
         // Writes go temp-then-move; a stray .tmp would mean the move did not happen.

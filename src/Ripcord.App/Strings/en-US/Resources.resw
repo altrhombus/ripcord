@@ -441,7 +441,7 @@
     <comment>The label on a control on the in-stream session page. Keep it short; it sits on a control.</comment>
   </data>
   <data name="SettingsPage_AdaptQualityAutomatically.AutomationProperties.Name" xml:space="preserve">
-    <value>Adapt quality automatically</value>
+    <value>Show quality recommendations</value>
     <comment>Name on the Settings page.</comment>
   </data>
   <data name="SettingsPage_AskBeforeDisconnecting.AutomationProperties.Name" xml:space="preserve">
@@ -521,11 +521,11 @@
     <comment>Name on the Settings page.</comment>
   </data>
   <data name="SettingsPage_LowerBitratePacketLoss.Description" xml:space="preserve">
-    <value>Lower the bitrate on packet loss, and on battery or when the device gets hot.</value>
+    <value>Shows, in the diagnostics panel, the quality Ripcord thinks your connection can carry, from packet loss, battery and heat. It doesn't change the stream: the console adjusts its own bitrate.</value>
     <comment>The description under a control on the Settings page.</comment>
   </data>
   <data name="SettingsPage_LowerBitratePacketLoss.Header" xml:space="preserve">
-    <value>Adapt quality automatically</value>
+    <value>Show quality recommendations</value>
     <comment>The header above a control on the Settings page.</comment>
   </data>
   <data name="SettingsPage_MaximumBitrateMegabitsPer.AutomationProperties.Name" xml:space="preserve">
@@ -564,14 +564,6 @@
     <value>Send keyboard input to the console</value>
     <comment>Name on the Settings page.</comment>
   </data>
-  <data name="SettingsPage_SendsMeasuredDelayPacket.Description" xml:space="preserve">
-    <value>Sends the measured delay and packet loss to the console, and asks it for the bitrate Ripcord thinks your connection can carry. Off by default because it is not yet verified against real hardware — turn it on and watch the diagnostics graph to see whether it helps.</value>
-    <comment>The description under a control on the Settings page. Ripcord is a product or standard name - do not translate.</comment>
-  </data>
-  <data name="SettingsPage_SendsMeasuredDelayPacket.Header" xml:space="preserve">
-    <value>Tell the console about your connection (experimental)</value>
-    <comment>The header above a control on the Settings page.</comment>
-  </data>
   <data name="SettingsPage_ShowConnectionDiagnostics.AutomationProperties.Name" xml:space="preserve">
     <value>Show connection diagnostics</value>
     <comment>Name on the Settings page.</comment>
@@ -585,16 +577,12 @@
     <comment>Name on the Settings page.</comment>
   </data>
   <data name="SettingsPage_StartingRateRipcordLowers.Description" xml:space="preserve">
-    <value>The starting rate. Ripcord lowers it automatically if the network can't keep up.</value>
+    <value>The rate Ripcord asks the console for when a stream starts. The console lowers it by itself if the network can't keep up.</value>
     <comment>The description under a control on the Settings page. Ripcord is a product or standard name - do not translate.</comment>
   </data>
   <data name="SettingsPage_StartingRateRipcordLowers.Header" xml:space="preserve">
     <value>Maximum bitrate</value>
     <comment>The header above a control on the Settings page.</comment>
-  </data>
-  <data name="SettingsPage_TellConsoleAboutConnection.AutomationProperties.Name" xml:space="preserve">
-    <value>Tell the console about your connection</value>
-    <comment>Name on the Settings page.</comment>
   </data>
   <data name="SettingsPage_VideoCodec.AutomationProperties.Name" xml:space="preserve">
     <value>Video codec</value>
