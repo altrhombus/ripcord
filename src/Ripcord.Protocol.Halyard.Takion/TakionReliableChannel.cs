@@ -282,13 +282,17 @@ public sealed class TakionReliableChannel : IAsyncDisposable
         if (inOrder)
         {
             byte[]? complete = _reassembler.Accept(data);
-            // Cumulative-ack the highest in-order TSN received.
-            await SendSackAsync(data.Seq, cancellationToken).ConfigureAwait(false);
 
+            // Delivered before the SACK goes out, not after. The TSN has already advanced, so if the SACK send
+            // throws the console retransmits and that copy is re-acked as old, never redelivered: a message
+            // handed on after a failed SACK was simply lost (the second 2026-10-01 review).
             if (complete is not null && TryParseControlMessage(complete, out ControlMessage? message))
             {
                 _inbound.Writer.TryWrite(message!);
             }
+
+            // Cumulative-ack the highest in-order TSN received.
+            await SendSackAsync(data.Seq, cancellationToken).ConfigureAwait(false);
         }
         else
         {
