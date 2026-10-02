@@ -359,12 +359,6 @@
                         IsOpen="False"
                         Severity="Warning" />
 
-                    <tk:SettingsCard
-                        x:Uid="SettingsPage_SendsMeasuredDelayPacket">
-                        <ToggleSwitch
-                            x:Name="ConnectionQualityToggle"
-                            x:Uid="SettingsPage_TellConsoleAboutConnection" />
-                    </tk:SettingsCard>
 
                     <!--
                         Moved here from a section of its own. It is one always-open InfoBar reporting whether

@@ -31,7 +31,12 @@ public sealed record SessionStatistics(
     /// <summary>Whether the declared MTU was VERIFIED by the senkusha probe on the real path, as opposed to
     /// inferred from the local interface. Surfaced because a measurement and an assumption should not read
     /// identically.</summary>
-    bool MtuConfirmed = false);
+    bool MtuConfirmed = false,
+    /// <summary>The bitrate the client last asked the console for, in kbps; 0 when it has not asked. Beside
+    /// <see cref="BitrateKbps"/>, the rate that arrived, it is how a trace shows whether the console followed.</summary>
+    int RequestedBitrateKbps = 0,
+    /// <summary>How many link-quality reports have reached the wire this session. Proves the path is live.</summary>
+    long QualityReportsSent = 0);
 
 /// <summary>
 /// The seam every protocol backend implements. This must stay free of any platform-specific
