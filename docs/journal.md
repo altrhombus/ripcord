@@ -35,6 +35,31 @@ different purpose.
 > anything. The list above is short, it is checkable in one `git log --format=%B | grep`, and it stops
 > growing the moment someone notices — which is the property that actually matters.
 
+### The second review, finished: the CRT, the last sign-in gaps, and what the docs claimed (2026-10-01)
+
+The rest of that second review, worked through.
+
+- **The release zip would have needed the Visual C++ redistributable.** Both native DLLs linked the VC++
+  runtime dynamically, and nothing in a self-contained .NET or Windows App SDK publish supplies it, so on a
+  truly clean machine video and input would have failed to load. Release builds now use the hybrid CRT: the
+  VC++ runtime linked in, the Universal CRT taken from Windows, which has it in every 10 and 11 install.
+  `dumpbin` agrees for x64 and ARM64.
+- **Three more ways to lose a sign-in.** A sign-out during an in-flight restore was undone when the restore
+  saved afterwards. A token reply that wasn't JSON threw past every fallback. A sign-in whose account lookup
+  failed left the token provider seeded. A sign-in generation now decides what may still commit, the
+  unparseable reply is an ordinary failure, and a failed sign-in clears everything.
+- **A control message could be lost to a failed acknowledgement.** Takion acknowledged a completed message
+  before handing it on, so if the acknowledgement send threw, the message was gone, and the console's resend
+  was treated as old. It hands the message on first now.
+- **What the docs claimed.** "Interface facts" went, with nothing left to argue it stood for. The remaining
+  legal-conclusion phrases went too, along with stale pointers, two dead commit hashes and the GPU model names
+  in old entries. The README's first ten minutes now covers SmartScreen, GameInput's installer and what
+  "25H2 or later" does and doesn't mean for a zip. And ROADMAP's short version no longer reads as one check
+  away: the person-driven pass is the first item.
+
+Each code fix has a test that fails against the code before it. One full-suite run in the middle showed a
+single failure and four extra skips that the next five runs didn't repeat; it isn't explained.
+
 ### The privacy page, made true: STUN, and no plaintext fallback (2026-10-01)
 
 The review caught `PRIVACY.md` promising two things the code didn't quite back up.
@@ -2674,7 +2699,7 @@ nal_unit_type(5)`. An ordinary H.264 slice with `nal_ref_idc = 2` is `0x41` (non
 distinguished the codecs at all; it merely ran before the H.264 test. Whichever access unit arrived first
 therefore decided the session: opening on a slice rather than a parameter set "succeeded" with the wrong
 answer, latched `m_codecDetected`, rebuilt the decoder as HEVC, and fed it H.264 for the rest of the session.
-**The capture that settled it** (2026-08-06, ARM64, Adreno X2-45) — the opportunistic F8 report this entry
+**The capture that settled it** (2026-08-06, an ARM64 laptop's integrated GPU) — the opportunistic F8 report this entry
 previously asked for, and it split the hypotheses on the first try:
 ```
 codec              H264   hdr=False
@@ -3733,9 +3758,9 @@ live end-to-end connect.)*
       native DLLs need the non-redistributable VS debug CRT — ship Release for handhelds.
 
 - [x] ~~**ARM64 build support.**~~ — **DONE 2026-07-31.** The whole stack now builds and runs natively on
-      ARM64 Windows; the dev machine moved to Snapdragon. Debug and Release verified for both ARM64 and x64
+      ARM64 Windows; the dev machine moved to an ARM64 laptop. Debug and Release verified for both ARM64 and x64
       (either host cross-builds the other), managed suite green natively (411 passed / 6 skipped), and the
-      D3D12 interop was verified activating on an **Adreno X2-45**: hardware H.264 decode supported at 1080p,
+      D3D12 interop was verified activating on **an ARM64 laptop's integrated GPU**: hardware H.264 decode supported at 1080p,
       synchronous decoder MFTs present for both H.264 and HEVC. What was actually wrong:
   - Both `.vcxproj` files declared only `Debug|x64` / `Release|x64`, and the solution offered no ARM64
     platform; `Ripcord.App` was additionally pinned to x64 by the `.slnx` mapping regardless of the solution
@@ -4021,7 +4046,7 @@ spec, which means provisional, not settled. Same priority tier as the correctnes
       `GfMul` after the x86 check. Found by running the app on ARM64 for the first time: the stream collapsed
       to 74.7% reported packet loss with the A/V receive queue pegged at its 512 capacity, and the console was
       asked to step down to 540p30 @ 2 Mbps — all of it self-inflicted, on an idle 4.7 ms LAN.
-  - Measured on the Snapdragon X2 dev box, A/V per-packet crypto (verify + CTR-decrypt, 1426 B packet):
+  - Measured on the ARM64 dev box, A/V per-packet crypto (verify + CTR-decrypt, 1426 B packet):
     **~200 µs → ~12-15 µs (13-17x)**, i.e. a single-core ceiling of ~57 Mbps → 750-1000 Mbps (the spread is
     run-to-run variance; treat the order of magnitude as the result). GHASH was **87%** of
     the per-packet cost (~1.90 µs per multiply × ~91 blocks). At the observed 25.9 Mbps the headroom went
@@ -4035,7 +4060,7 @@ spec, which means provisional, not settled. Same priority tier as the correctnes
     417 passed / 5 skipped (the 5 skips are the x86 multiply cases).
   - **Verified live against the console on the same hardware**, and it clears the pre-fix baseline rather than
     merely matching it: **1920x1080p60**, 23.2 Mbps, handshake 2.1 ms, RTT 6.5 ms, **loss 0.4%**, 18 ms
-    demux→present, decode queue 0, receive queue 0-18, zero-copy HEVC on the Adreno X2-45. Per-packet crypto
+    demux→present, decode queue 0, receive queue 0-18, zero-copy HEVC on the ARM64 laptop's GPU. Per-packet crypto
     is now ~2.7% of one core at that bitrate (was ~45%), and the loss figure is finally measuring the network
     instead of measuring us. The pre-fix run could not hold 720p.
 - [x] ~~Frame pacing~~ — deprioritised. The present-fps peak of 83 that justified it was a shed-then-burst
@@ -4066,7 +4091,7 @@ spec, which means provisional, not settled. Same priority tier as the correctnes
       on stream entry for discoverability, so it is visible for the first few seconds.
 - [x] ~~Keyboard support with configurable mapping~~ — done (task #29), committed. Bindings cover both key map
       and gamepad remap; Escape/F3/F11 are reserved and can't be bound over.
-- [x] ~~Diagnostics overlay rewrite~~ — done (commit `8732901`): sparklines, capability pills (HDR/HEVC/
+- [x] ~~Diagnostics overlay rewrite~~ — done: sparklines, capability pills (HDR/HEVC/
       zero-copy), headroom bar, scrolls on small screens, F8 export to file for machines with no debugger.
 - [x] ~~About page rebuild + a real logo~~ — done. The About page now reports Windows edition/build/UBR, the
       GPU a stream would actually use, hardware-decode and HEVC as pills, and copies the lot to the clipboard
