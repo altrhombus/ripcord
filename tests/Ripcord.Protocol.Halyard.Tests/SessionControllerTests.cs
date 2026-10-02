@@ -248,6 +248,58 @@ public class SessionControllerTests
     }
 
     [Fact]
+    public async Task AHeldDeadline_WaitsForThePerson_ThenRunsOn()
+    {
+        var time = new VirtualTime();
+        var pipeline = new FakePipeline();
+        SessionController? self = null;
+        IDisposable? hold = null;
+
+        await using var controller = new SessionController(
+            async token =>
+            {
+                // What the passcode prompt does: hold the deadline while a person answers. The first attempt only;
+                // the retry that follows is a console saying nothing, with nobody at a prompt.
+                hold ??= self!.HoldConnectDeadline();
+                await Task.Delay(Timeout.Infinite, token);
+                throw new InvalidOperationException("unreachable");
+            },
+            pipeline,
+            options: new SessionControllerOptions
+            {
+                ConnectTimeout = TimeSpan.FromMilliseconds(150),
+                MaxReconnectAttempts = 1,
+                InitialBackoff = TimeSpan.Zero,
+            },
+            clock: time.Now,
+            delay: time.Delay);
+        self = controller;
+
+        await controller.StartAsync(Config);
+        await WaitFor(() => hold is not null, "the attempt should take its hold");
+
+        // Well past the deadline, with the prompt still up. Before the hold this ended the attempt and reconnected.
+        await Task.Delay(TimeSpan.FromMilliseconds(500));
+        Assert.Equal(SessionLifecycle.Connecting, controller.Lifecycle);
+
+        // Answered: the deadline runs again, so a console that then says nothing is still reported.
+        hold!.Dispose();
+        hold.Dispose();   // twice is once
+        await WaitFor(() => controller.Lifecycle == SessionLifecycle.Failed, "the released deadline should fire");
+        Assert.Contains("didn't answer within", controller.CurrentStatus.Detail);
+    }
+
+    [Fact]
+    public void AHoldWithNoAttempt_IsANoOp()
+    {
+        var controller = new SessionController(
+            _ => Task.FromResult<IStreamingSession>(new FakeSession()), new FakePipeline());
+
+        using IDisposable hold = controller.HoldConnectDeadline();
+        Assert.Equal(SessionLifecycle.Idle, controller.Lifecycle);
+    }
+
+    [Fact]
     public async Task StartsIdle_ThenReachesStreamingOnASuccessfulConnect()
     {
         var time = new VirtualTime();

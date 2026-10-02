@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Ripcord.Core.Input;
 using Ripcord.Core.Power;
 using Ripcord.Diagnostics;
@@ -499,7 +500,7 @@ public sealed class SessionController : IAsyncDisposable
     private async Task<ConnectOutcome> ConnectWithinDeadlineAsync(CancellationToken cancellationToken)
     {
         var attemptLifetime = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        attemptLifetime.CancelAfter(_options.ConnectTimeout);
+        ArmDeadline(attemptLifetime);
 
         ConnectOutcome outcome;
         try
@@ -509,14 +510,18 @@ public sealed class SessionController : IAsyncDisposable
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
             // Ours, not the caller's: the deadline fired.
+            ForgetDeadline();
             attemptLifetime.Dispose();
             return Overran();
         }
         catch
         {
+            ForgetDeadline();
             attemptLifetime.Dispose();
             throw;
         }
+
+        ForgetDeadline();
 
         if (!outcome.Connected)
         {
@@ -547,6 +552,101 @@ public sealed class SessionController : IAsyncDisposable
     }
 
     private readonly record struct ConnectOutcome(bool Connected, bool Retryable, string Detail);
+
+    // The armed deadline, so a hold can pause it. All four under _deadlineGate, which is its own lock because a
+    // hold is taken and released on the UI thread and must not contend with anything else here.
+    private readonly Lock _deadlineGate = new();
+    private CancellationTokenSource? _deadlineCts;
+    private TimeSpan _deadlineLeft;
+    private long _deadlineRunningSince;
+    private int _deadlineHolds;
+
+    /// <summary>The least a released hold leaves the attempt, so a passcode typed at the last moment can land.</summary>
+    private static readonly TimeSpan DeadlineFloorAfterHold = TimeSpan.FromSeconds(30);
+
+    /// <summary>
+    /// Stop the connect attempt's deadline while a person is answering it, the login passcode prompt being the
+    /// case. The time spent on the prompt is theirs, not the console's, and counting it ended an attempt under a
+    /// prompt left open: the deadline cancelled it and the controller reconnected (2026-10-02). Disposing the
+    /// returned hold restarts the deadline with what was left, and never less than a short floor. A no-op when
+    /// no attempt is armed. Safe from any thread.
+    /// </summary>
+    public IDisposable HoldConnectDeadline()
+    {
+        CancellationTokenSource? cts;
+        lock (_deadlineGate)
+        {
+            cts = _deadlineCts;
+            if (cts is null)
+            {
+                return new DeadlineHold(null, null);
+            }
+
+            if (_deadlineHolds++ == 0)
+            {
+                _deadlineLeft -= Stopwatch.GetElapsedTime(_deadlineRunningSince);
+                cts.CancelAfter(Timeout.InfiniteTimeSpan);
+            }
+        }
+
+        return new DeadlineHold(this, cts);
+    }
+
+    private void ReleaseDeadlineHold(CancellationTokenSource cts)
+    {
+        lock (_deadlineGate)
+        {
+            // An attempt that has ended since is not this hold's to re-arm.
+            if (!ReferenceEquals(_deadlineCts, cts) || --_deadlineHolds > 0)
+            {
+                return;
+            }
+
+            TimeSpan floor = DeadlineFloorAfterHold < _options.ConnectTimeout ? DeadlineFloorAfterHold : _options.ConnectTimeout;
+            if (_deadlineLeft < floor)
+            {
+                _deadlineLeft = floor;
+            }
+
+            _deadlineRunningSince = Stopwatch.GetTimestamp();
+            cts.CancelAfter(_deadlineLeft);
+        }
+    }
+
+    private void ArmDeadline(CancellationTokenSource cts)
+    {
+        lock (_deadlineGate)
+        {
+            _deadlineCts = cts;
+            _deadlineLeft = _options.ConnectTimeout;
+            _deadlineRunningSince = Stopwatch.GetTimestamp();
+            _deadlineHolds = 0;
+            cts.CancelAfter(_options.ConnectTimeout);
+        }
+    }
+
+    /// <summary>Forget the armed deadline, before anything disarms or disposes it, so no hold can re-arm it.</summary>
+    private void ForgetDeadline()
+    {
+        lock (_deadlineGate)
+        {
+            _deadlineCts = null;
+            _deadlineHolds = 0;
+        }
+    }
+
+    private sealed class DeadlineHold(SessionController? owner, CancellationTokenSource? cts) : IDisposable
+    {
+        private int _released;
+
+        public void Dispose()
+        {
+            if (owner is not null && Interlocked.Exchange(ref _released, 1) == 0)
+            {
+                owner.ReleaseDeadlineHold(cts!);
+            }
+        }
+    }
 
     private string? CurrentEndReason()
     {
