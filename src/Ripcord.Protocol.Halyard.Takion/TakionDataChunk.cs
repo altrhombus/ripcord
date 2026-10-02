@@ -81,8 +81,19 @@ public static class TakionDataChunk
     /// </summary>
     public readonly record struct Parsed(uint Seq, ushort Channel, bool EndOfMessage, ReadOnlyMemory<byte> Value)
     {
-        /// <summary>Payload when this is the first/only fragment of a message (offset 9).</summary>
-        public ReadOnlyMemory<byte> FirstPayload => Value[FirstFragmentOffset..];
+        /// <summary>
+        /// Whether the value is long enough to be a first fragment. <see cref="TryParse"/> accepts anything long
+        /// enough for a continuation (8 bytes), because which a fragment is depends on reassembly state it can't
+        /// see; a first fragment needs one byte more. The reassembler drops one that is short.
+        /// </summary>
+        public bool HasFirstPayload => Value.Length >= FirstFragmentOffset;
+
+        /// <summary>
+        /// Payload when this is the first/only fragment of a message (offset 9); empty when the value is too short
+        /// for one. It threw there: one 12-byte DATA chunk from anyone ended the receive loop, and the session.
+        /// </summary>
+        public ReadOnlyMemory<byte> FirstPayload
+            => HasFirstPayload ? Value[FirstFragmentOffset..] : ReadOnlyMemory<byte>.Empty;
 
         /// <summary>Payload when this is a continuation fragment (offset 8).</summary>
         public ReadOnlyMemory<byte> ContinuationPayload => Value[ContinuationOffset..];

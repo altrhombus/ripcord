@@ -22,6 +22,11 @@ public sealed class TakionMessageReassembler
         // "First" is positional: a fragment is the first of a message iff nothing is buffered for its channel.
         // The first fragment's payload sits at offset 9, continuation fragments at offset 8.
         bool first = !_partial.ContainsKey(chunk.Channel);
+        if (first && !chunk.HasFirstPayload)
+        {
+            return null; // too short to be a first fragment: malformed, so dropped rather than delivered empty
+        }
+
         ReadOnlyMemory<byte> frag = first ? chunk.FirstPayload : chunk.ContinuationPayload;
 
         // Fast path: a self-contained message (first fragment that also ends the message).

@@ -27,6 +27,7 @@ public sealed class TakionReliableChannel : IAsyncDisposable
 
     private readonly UdpChannel _channel;
     private readonly IPEndPoint _remote;
+    private readonly uint _localTag;
     private readonly uint _remoteTag;
     private readonly TimeSpan _retransmitInterval;
 
@@ -55,6 +56,7 @@ public sealed class TakionReliableChannel : IAsyncDisposable
     {
         _channel = channel ?? throw new ArgumentNullException(nameof(channel));
         _remote = remote ?? throw new ArgumentNullException(nameof(remote));
+        _localTag = localTag;
         _remoteTag = remoteTag;
         _nextSendTsn = localTag;      // the local initial TSN == the local verification tag
         _retransmitInterval = retransmitInterval ?? TimeSpan.FromMilliseconds(300);
@@ -81,22 +83,49 @@ public sealed class TakionReliableChannel : IAsyncDisposable
         _retransmitLoop = Task.Run(() => RetransmitLoopAsync(_cts.Token));
     }
 
-    /// <summary>Process one control packet (a SACK or a DATA chunk) received by the caller's loop.</summary>
-    public Task HandlePacketAsync(ReadOnlyMemory<byte> packet, CancellationToken cancellationToken)
+    /// <summary>
+    /// Process one control packet (a SACK or a DATA chunk) received by the caller's loop. Never throws for a bad
+    /// packet: three receive loops feed this, and one of them carries the whole session's control and A/V, so a
+    /// packet that threw here used to end the session (the 2026-09-30 review).
+    /// </summary>
+    public async Task HandlePacketAsync(ReadOnlyMemory<byte> packet, CancellationToken cancellationToken)
     {
-        if (TakionSackChunk.TryParse(packet.Span, out var sack))
+        try
         {
-            HandleSack(sack.CumulativeTsnAck);
-            return Task.CompletedTask;
-        }
+            // Our association only. The console echoes our tag in every packet after the handshake (spec, and our
+            // own captures), and the handshake already checks it; the C core and the engine check it here too.
+            // Inbound control DATA is not authenticated, so without this anyone who can reach the port could feed
+            // the reassembler.
+            if (!TakionMessageHeader.TryParse(packet.Span, out var header) || header.VerificationTag != _localTag)
+            {
+                Interlocked.Increment(ref _droppedPackets);
+                return;
+            }
 
-        if (TakionDataChunk.TryParse(packet, out var data))
+            if (TakionSackChunk.TryParse(packet.Span, out var sack))
+            {
+                HandleSack(sack.CumulativeTsnAck);
+                return;
+            }
+
+            if (TakionDataChunk.TryParse(packet, out var data))
+            {
+                await HandleDataAsync(data, cancellationToken).ConfigureAwait(false);
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            return HandleDataAsync(data, cancellationToken);
+            Interlocked.Increment(ref _droppedPackets);
         }
-
-        return Task.CompletedTask;
     }
+
+    private long _droppedPackets;
+
+    /// <summary>
+    /// Control packets dropped: not our association, or one that failed while being handled. Nonzero on a clean
+    /// LAN is worth a look.
+    /// </summary>
+    public long DroppedPacketCount => Interlocked.Read(ref _droppedPackets);
 
     /// <summary>Number of DATA chunks awaiting acknowledgement (diagnostics/tests).</summary>
     public int UnackedCount { get { lock (_gate) return _unacked.Count; } }

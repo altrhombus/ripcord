@@ -72,4 +72,24 @@ public class TakionDataChunkTests
         Assert.Equal(TakionDataChunk.ChannelSession, parsed.Channel);
         Assert.Equal(message, ControlMessage.Parser.ParseFrom(parsed.Payload.Span));
     }
+
+    /// <summary>
+    /// The 2026-09-30 review's finding: a 12-byte DATA chunk (an 8-byte value) parses, because a continuation
+    /// fragment can be that short, but slicing it as a first fragment threw. Reaching the reassembler as the
+    /// first fragment on its channel, it is now dropped instead.
+    /// </summary>
+    [Fact]
+    public void TwelveByteChunk_AsAFirstFragment_IsDroppedNotThrown()
+    {
+        byte[] packet = TakionDataChunk.Build(
+            0x00b18ccf, seq: 0x00004825, channel: TakionDataChunk.ChannelSession, [], firstFragment: false);
+        Assert.Equal(TakionMessageHeader.Length + 12, packet.Length);
+
+        Assert.True(TakionDataChunk.TryParse(packet, out var parsed));
+        Assert.Equal(8, parsed.Value.Length);
+        Assert.False(parsed.HasFirstPayload);
+        Assert.True(parsed.FirstPayload.IsEmpty);
+
+        Assert.Null(new TakionMessageReassembler().Accept(parsed));
+    }
 }
