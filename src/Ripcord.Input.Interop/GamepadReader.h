@@ -15,6 +15,8 @@ namespace winrt::Ripcord::Input::Interop::implementation
 
         Windows::Foundation::Collections::IVectorView<Ripcord::Input::Interop::GamepadState> GetConnectedStates();
 
+        static bool IsRuntimeAvailable();
+
     private:
         struct TrackedDevice
         {

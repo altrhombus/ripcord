@@ -249,6 +249,8 @@
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
                     </Grid.RowDefinitions>
 
                     <TextBlock x:Uid="AboutPage_Windows" Style="{StaticResource RipcordDetailLabelStyle}" />
@@ -366,9 +368,53 @@
                     <TextBlock
                         Grid.Row="10"
                         Style="{StaticResource RipcordDetailLabelStyle}"
+                        x:Uid="AboutPage_Controllers" />
+                    <StackPanel
+                        Grid.Row="10"
+                        Grid.Column="1"
+                        Margin="0,9,16,9"
+                        VerticalAlignment="Center"
+                        Spacing="4">
+                        <!--
+                            Xbox pads go through GameInput, and without its runtime they are simply never seen, which
+                            looks exactly like none being plugged in. A DualSense doesn't need it.
+                        -->
+                        <Border
+                            x:Name="ControllersPill"
+                            HorizontalAlignment="Left"
+                            CornerRadius="{StaticResource RipcordPillCornerRadius}"
+                            Padding="10,2">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <FontIcon
+                                    x:Name="ControllersPillIcon"
+                                    FontSize="{ThemeResource RipcordIconSizeCaption}"
+                                    Glyph="&#xE72C;" />
+                                <TextBlock
+                                    x:Name="ControllersPillText"
+                                    Style="{StaticResource CaptionTextBlockStyle}"
+                                    x:Uid="AboutPage_ControllersPillChecking" />
+                            </StackPanel>
+                        </Border>
+                        <TextBlock
+                            x:Name="ControllersNoteText"
+                            Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                            Style="{StaticResource CaptionTextBlockStyle}"
+                            TextWrapping="Wrap"
+                            Visibility="Collapsed"
+                            x:Uid="AboutPage_ControllersNotInstalledNote" />
+                    </StackPanel>
+
+                    <Border
+                        Grid.Row="11"
+                        Grid.ColumnSpan="2"
+                        Style="{StaticResource RipcordRowDividerStyle}" />
+
+                    <TextBlock
+                        Grid.Row="12"
+                        Style="{StaticResource RipcordDetailLabelStyle}"
                         x:Uid="AboutPage_SettingsFolder" />
                     <Grid
-                        Grid.Row="10"
+                        Grid.Row="12"
                         Grid.Column="1"
                         ColumnSpacing="8">
                         <Grid.ColumnDefinitions>

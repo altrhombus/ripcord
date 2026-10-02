@@ -133,7 +133,7 @@
       <Version>3.0.260520.1</Version>
     </PackageReference>
     <PackageReference Include="Microsoft.GameInput">
-      <Version>3.4.218</Version>
+      <Version>$(RipcordGameInputVersion)</Version>
     </PackageReference>
   </ItemGroup>
 
