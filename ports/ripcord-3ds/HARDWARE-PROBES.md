@@ -368,7 +368,7 @@ asking for a frame that did not exist.
 **What is left is reading a working implementation.** `Core-2-Extreme/Video_player_for_3DS` does MVD
 H.264 decode on New 3DS and is the obvious reference. It is **GPL-3.0**, so its code cannot be copied
 into this Apache-2.0 tree — but reading it to learn which calls happen in which order is a factual
-question about a hardware API, not copying expression, and implementing independently from that
+question about a hardware API, and implementing independently from that
 understanding is exactly the method this project already uses for the protocol. (The independence rule does
 not apply at all here: it covers other implementations of the *PS5 protocol*, not Nintendo hardware.)
 2. **MVD input cropping** (`enable_cropping` + `input_crop_*`) — render a 400x240 window of the 640x360

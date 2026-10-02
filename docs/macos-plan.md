@@ -152,8 +152,8 @@ current text on 2026-09-24, not recalled:
   cloud wake all use PSN, and the project cannot produce such an authorization.
 - **5.2.1.** Apps "should be submitted by the person or legal entity that owns or has licensed" the rights
   involved. Submitting means the owner personally warrants those rights to Apple, which covers the bundled
-  OAuth credential most of all and the interop constants too. `NOTICE`'s interoperability argument is a
-  legal defence, not a licence, and does not bind Apple's discretion. Because Store apps can only be
+  OAuth credential most of all and the interop constants too. Whatever `NOTICE` describes, Apple decides
+  what the Store accepts. Because Store apps can only be
   updated through the Store (2.4.5(vii)), a takedown after an IP complaint would strand every user.
 
 **The workable version is a second, reduced edition:** LAN only, built without the bundled OAuth

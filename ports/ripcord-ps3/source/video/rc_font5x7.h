@@ -7,7 +7,7 @@
  * cannot fail to load.
  *
  * Original to this project: the shapes were written out by hand here rather than taken from any
- * existing font. There is no copyrightable expression being borrowed and no file being redistributed.
+ * existing font. Nothing is taken from another font, and no font file is redistributed.
  *
  * EVERY CODE FROM 32 TO 95 HAS ITS OWN SHAPE, and that is worth stating because the first version did
  * not. Nine of them - " # $ & ' ; ? @ ^ - shared the question mark's glyph, because the table was

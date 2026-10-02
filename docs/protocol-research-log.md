@@ -2,8 +2,8 @@
 
 Provenance record for Ripcord's PlayStation and Xbox protocol backends. Every
 external reference consulted while researching wire formats/handshakes/HID reports is logged
-here before any spec document is written from it. See the plan's "Independent-implementation methodology"
-section for the full process this log supports.
+here before any spec document is written from it. `docs/protocol/README.md` ("Provenance & method")
+describes the process this log supports.
 
 Columns: date consulted, reference, what it informed, which spec doc section it fed.
 
@@ -27,7 +27,7 @@ Phase 1 (PS5 LAN remote play) research began 2026-07-10. Capture setup: Wireshar
 network traffic on the author's own LAN, on a machine with a route to the console's traffic. Real
 PS5 on the same LAN. This log will grow with capture-session entries as spec docs are written from
 them - each entry should say what was captured (not just "packet capture") and which spec section
-it fed, per the plan's independent-implementation methodology.
+it fed, per the method in `docs/protocol/README.md`.
 
 | Date | Reference | Informed | Spec section |
 |---|---|---|---|

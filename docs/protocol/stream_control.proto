@@ -318,7 +318,7 @@ message ServerMessagePayload {
 }
 
 message ControllerConnectionPayload {
-  // Values identify real controller hardware (factual identifiers, not vendor-coined expression).
+  // Values identify real controller hardware (factual identifiers).
   enum ControllerType {
     NOTSET = 0;
     DUALSHOCK3 = 1;

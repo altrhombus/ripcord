@@ -29,8 +29,8 @@ framework to read its memory, including live session keys; capturing traffic,
 including through a TLS-terminating proxy on the authors' own machine, with the
 client's certificate pinning defeated by a hook in that client; and attempted
 work against the current release's anti-debugging protection, abandoned in
-favour of an older, unprotected release of the same client. It reproduces interface facts
-required for interoperability -- protocol field numbers, byte offsets, enum
+favour of an older, unprotected release of the same client. It reproduces the
+values a client needs to interoperate -- protocol field numbers, byte offsets, enum
 values, JSON keys and HTTP header names -- and does not reproduce vendor source
 code. Vendor code is referenced only by relative
 virtual address.
@@ -136,7 +136,9 @@ notices.
 Managed build (Windows)
 
   NuGet packages resolved at build time, and Microsoft platform components: the
-  Windows App SDK, Media Foundation, Direct3D 12, WASAPI and GameInput.
+  Windows App SDK, Media Foundation, Direct3D 12, WASAPI and GameInput. Their
+  licences are reproduced in THIRD-PARTY-NOTICES.txt, which ships beside the app
+  and is generated from the packages that ship by tools/third-party-notices.
 
 Console ports, fetched and built from source
 
@@ -289,7 +291,9 @@ texts shipped with the exact versions linked into that build, and land in the
 package at USRDIR/THIRD-PARTY-NOTICES.txt. Generated rather than committed for
 the same reason the interop constants are: a checked-in copy of somebody else's
 licence is a second copy that drifts, and the one that matters is the licence of
-the version actually linked.
+the version actually linked. (The dotnet client's THIRD-PARTY-NOTICES.txt is
+committed, so it can ship in the release zip, but it is generated the same way,
+from the packages that ship, and regenerated whenever they change.)
 
 The generator exits non-zero if a licence that REQUIRES reproduction is missing
 - openh264, Opus and Mbed TLS all do - and the package will not build without

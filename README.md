@@ -102,7 +102,13 @@ share the same code, and their app builds but hasn't run on a device yet ([the p
 
 Here's what a first run meets, so none of it is a surprise:
 
-- **Windows 11, 25H2 or later.** That's what the package asks for, and Windows 11 is all that's been run.
+- **Windows 11, 25H2 or later.** That's what Ripcord is built and tested for. The release zip doesn't check, so
+  an older Windows 11 may start it, but that isn't supported.
+- **SmartScreen will warn you** the first time you run it, because the zip isn't signed yet. Choose **More
+  info**, then **Run anyway**.
+- **Xbox controllers need Microsoft's GameInput.** If one does nothing, run `GameInputRedist.msi` from the
+  Ripcord folder once (it asks for administrator rights), then restart Ripcord. Settings > About says whether
+  it's installed. A DualSense doesn't need it.
 - **English only.** The strings are ready for translation, but no other language ships yet.
 - **Turn on Remote Play on the console first.** Ripcord notices when it's off and tells you where the setting
   is, but it can't flip it for you.
@@ -221,7 +227,7 @@ under that user's own account. The specification was derived from:
   their own machine, with the client's certificate pinning defeated by a hook in that client;
 - public references — RFCs, NIST test vectors, platform crypto documentation.
 
-It reproduces **interface facts** necessary for interoperability: protocol field numbers, enum values, byte
+It reproduces the **values a client needs to interoperate**: protocol field numbers, enum values, byte
 offsets, JSON configuration keys, and HTTP header names. Those cannot be changed without breaking
 interoperability. It does **not** reproduce vendor source
 code, symbol names, or log strings; vendor code is cited only by relative virtual address.
@@ -240,8 +246,8 @@ hex-encoded) — four key-derivation tables (a PS5 pair and a PS4
 pair), two registration key tables, two material-wrap tables, four field context keys — the registration
 context key is one of those four, stored a second time under its own name, so the file holds four distinct
 16-byte keys rather than five — and a byte offset. The console computes against these values; a client
-cannot speak the protocol without them, and changing them breaks interoperability. They are interface facts,
-and they are **data** in one committed file that no client copies. The dotnet client
+cannot speak the protocol without them, and changing them breaks interoperability. They are **data**, in one
+committed file that no client copies. The dotnet client
 reads it at run time through the same configuration seam that accepts a local override; the Rust engine (the
 Apple clients) and the C core (the console ports) generate lookup tables from it at build time, never committed.
 
@@ -297,7 +303,7 @@ Sony may rotate this credential at any time, which would disable the account fea
 
 ## Contributing
 
-See [`CONTRIBUTING.md`](CONTRIBUTING.md). Contributions require a DCO sign-off and a independence attestation —
+See [`CONTRIBUTING.md`](CONTRIBUTING.md). Contributions require a DCO sign-off and an independence attestation —
 the latter matters more here than in most projects, and the reasons are explained there.
 
 Security reports: [`SECURITY.md`](SECURITY.md).
@@ -307,9 +313,8 @@ Security reports: [`SECURITY.md`](SECURITY.md).
 ## AI assistance disclosure
 
 Ripcord has been developed with heavy use of AI coding assistants, including its protocol research,
-implementation, tests, and documentation. This is disclosed deliberately: the project publishes under a
-consistent, attributable identity in a sensitive area, and a consistent record of candour is worth
-more than the ambiguity of silence.
+implementation, tests, and documentation. This is disclosed deliberately: this is a sensitive area, and a
+consistent record of candour is worth more than the ambiguity of silence.
 
 **The assistant works under the same provenance rules as everyone else, and they are why this disclosure
 matters.** Everything in the protocol comes from this project's own work:

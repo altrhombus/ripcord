@@ -241,7 +241,7 @@ namespace winrt::Ripcord::Media::Interop::implementation
         // What the display can accept, as opposed to what the stream carries. Presenting HDR needs both.
         //
         // m_displayMaxNits is DXGI's MaxLuminance and is reported for diagnostics ONLY - deliberately
-        // nothing keys off it. Measured on this hardware it is not trustworthy: the Adreno driver ties it to
+        // nothing keys off it. Measured on this hardware it is not trustworthy: an ARM64 laptop's GPU driver ties it to
         // the brightness slider and inverts the relationship, reporting 160 nits at full brightness and
         // 48000 (physically impossible) at minimum. A standalone DXGI probe returns the same values, so this
         // is the driver, not our read. If a future tone-mapping decision ever needs real peak luminance, it
