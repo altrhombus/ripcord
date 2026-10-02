@@ -136,6 +136,28 @@ public class TakionReliableChannelTests
         Assert.Equal(ControlMessage.Types.MessageType.Heartbeat, (await client.ReceiveMessageAsync(cts.Token)).Type);
     }
 
+    /// <summary>
+    /// A message is delivered even when its SACK can't be sent. It used to be handed on only after the SACK, so a
+    /// send that threw lost it, and the console's retransmission was re-acked as old rather than redelivered. The
+    /// remote here is an IPv6 address on an IPv4 socket, so every send throws.
+    /// </summary>
+    [Fact]
+    public async Task AFailedSack_DoesNotLoseTheMessage()
+    {
+        using var clientSocket = new UdpChannel();
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+
+        await using var client = new TakionReliableChannel(
+            clientSocket, new IPEndPoint(IPAddress.IPv6Loopback, 9), ClientTag, ServerTag,
+            retransmitInterval: TimeSpan.FromMinutes(5));
+
+        var heartbeat = new ControlMessage { Type = ControlMessage.Types.MessageType.Heartbeat };
+        await client.HandlePacketAsync(
+            TakionDataChunk.Build(ClientTag, seq: ServerTag, channel: 0, heartbeat.ToByteArray()), cts.Token);
+
+        Assert.Equal(ControlMessage.Types.MessageType.Heartbeat, (await client.ReceiveMessageAsync(cts.Token)).Type);
+    }
+
     [Fact]
     public async Task SackTiming_ProducesARoundTripEstimate()
     {
