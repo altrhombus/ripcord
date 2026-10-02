@@ -409,6 +409,13 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer
                 return;
             }
 
+            // Nor once the connect has failed. Progress posts, so a line reported just before the failure can
+            // arrive after it, and ShowStatus would turn the failure back into a busy screen.
+            if (_viewModel.State.StatusActionsVisible)
+            {
+                return;
+            }
+
             // **The stages are for everybody; this line is not.** What the flow reports - "Preparing video",
             // "Checking credentials", "Connecting to your console" - is written for a player. What arrives
             // here is the protocol narrating itself: PreludeEstablished, DataReceived, registered. It is the
@@ -451,6 +458,17 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer
     private Task<string?> RequestLoginPinAsync(bool isRetry, CancellationToken cancellationToken)
     {
         var tcs = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        // The time on the prompt is the person's, so the connect deadline stops for it (HoldConnectDeadline).
+        IDisposable? hold = _controller?.HoldConnectDeadline();
+        _ = tcs.Task.ContinueWith(answered =>
+        {
+            hold?.Dispose();
+            _services.DiagnosticTrace?.Invoke(
+                $"passcode prompt closed: {(answered.Result is null ? "no passcode" : "passcode entered")}");
+        }, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+
+        _services.DiagnosticTrace?.Invoke($"passcode prompt opened{(isRetry ? " (again)" : string.Empty)}");
 
         bool queued = _dispatcherQueue.TryEnqueue(async () =>
         {
@@ -588,6 +606,9 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer
     private void OnStatusChanged(SessionStatus status)
     {
         // Published from the controller's background loop, so marshal before touching XAML.
+        // Every transition, so a connect that ends somewhere unexpected says where it went.
+        _services.DiagnosticTrace?.Invoke($"status: {status.Lifecycle} (attempt {status.ReconnectAttempt}): {status.Detail}");
+
         _dispatcherQueue.TryEnqueue(() =>
         {
             _viewModel.ApplyLifecycle(status);

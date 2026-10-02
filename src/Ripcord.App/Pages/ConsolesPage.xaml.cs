@@ -91,6 +91,15 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
         AddHandler(PointerCaptureLostEvent, new PointerEventHandler((_, _) => EndPress()), handledEventsToo: true);
         AddHandler(PointerCanceledEvent, new PointerEventHandler((_, _) => EndPress()), handledEventsToo: true);
 
+        // And a move with nothing held, for a release that reached none of the three.
+        AddHandler(PointerMovedEvent, new PointerEventHandler((_, e) =>
+        {
+            if (_pressedCard is not null && !e.Pointer.IsInContact)
+            {
+                EndPress();
+            }
+        }), handledEventsToo: true);
+
         Loaded += (_, _) => Refresh();
         Unloaded += (_, _) => CancelProbes();
     }
@@ -489,11 +498,12 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
             // one and must not answer focus. Cleared on exit, which also clears any press left behind by a
             // pointer that left the card mid-press.
             item.IsPointerOver = on;
+        }
 
-            if (!on)
-            {
-                item.IsPressed = false;
-            }
+        // The whole press, not just its flag: clearing IsPressed alone left the card at its pressed scale.
+        if (!on)
+        {
+            SetPressed(sender, false);
         }
     }
 

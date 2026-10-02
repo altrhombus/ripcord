@@ -767,6 +767,30 @@ public class SessionViewModelTests
     }
 
     [Fact]
+    public void TheControllersFailureIsNotPaintedOverByTheLastConnectStage()
+    {
+        // The flow's last stage stays in the gate after the controller takes over, and the tick used to hand it
+        // back whenever its headline differed from the screen's. So a cancelled passcode prompt showed "Couldn't
+        // connect" for half a second and then "Connecting to your console" for good (2026-10-02).
+        (SessionViewModel vm, _, TestClock clock) = Build();
+
+        vm.ResetConnect();
+        vm.ShowConnectStage(new ConnectStage("Connecting", "on your network", Terminal: false, ConnectPhase.Connecting));
+        clock.Advance(ConnectGate.Dwell);
+        vm.TickConnect();
+
+        vm.ApplyLifecycle(new SessionStatus(SessionLifecycle.Connecting, "Connecting to your console…"));
+        vm.ApplyLifecycle(new SessionStatus(SessionLifecycle.Failed, "Sign-in cancelled: no login passcode entered."));
+        clock.Advance(TimeSpan.FromSeconds(1));
+        vm.TickConnect();
+
+        Assert.NotEqual("Connecting", vm.State.StatusHeadline);
+        Assert.Equal("Sign-in cancelled: no login passcode entered.", vm.State.StatusDetail);
+        Assert.True(vm.State.StatusActionsVisible);
+        Assert.Null(vm.State.Phase);
+    }
+
+    [Fact]
     public void AFailedConnectOffersItsOwnActionsRatherThanTheEscape()
     {
         // A terminal stage brings retry and leave with it. A third way out beside them is noise.
