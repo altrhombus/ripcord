@@ -96,6 +96,20 @@ public class SettingsViewModelTests
         Assert.Equal(0, store.SaveCount);
     }
 
+    [Theory]
+    [InlineData(ExitGesture.StartSelectShoulders, "Options + Create + L1 + R1", "Menu + View + LB + RB")]
+    [InlineData(ExitGesture.BothSticksClicked, "L3 + R3", "LS + RS")]
+    public async Task TheExitGesture_IsDescribedForBothPads(ExitGesture gesture, string vendor, string generic)
+    {
+        // This page does not know which pad is in hand, so it names the gesture on both (2026-10-02).
+        (SettingsViewModel vm, _, _) = await BuildAsync();
+
+        vm.SetExitGesture((int)gesture);
+
+        Assert.Contains(vendor, vm.State.ExitGestureDescription);
+        Assert.Contains(generic, vm.State.ExitGestureDescription);
+    }
+
     [Fact]
     public async Task Setting_ARealChange_SavesOnce()
     {

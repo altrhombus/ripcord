@@ -45,6 +45,12 @@ public interface IInputScope
     IReadOnlyList<InputPrompt> Prompts => ButtonLabels.DefaultFor(Kind);
 
     /// <summary>
+    /// True when the surface reads the pad's buttons itself, so they must not also move focus. The login
+    /// passcode prompt is the case: its digits are the d-pad and shoulders, which would otherwise navigate.
+    /// </summary>
+    bool ReadsPad => false;
+
+    /// <summary>
     /// This scope now owns the pad. Raised on push, and again when a scope above it is popped.
     /// </summary>
     void OnActivated();

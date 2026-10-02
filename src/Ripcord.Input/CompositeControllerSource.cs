@@ -37,7 +37,7 @@ public sealed class CompositeControllerSource : IControllerSource, IDisposable
     private readonly SimpleObservable<ControllerStateFrame> _frames = new();
     private readonly SimpleObservable<ControllerConnectionEvent> _connections = new();
     private readonly List<IDisposable> _subscriptions = [];
-    private readonly EngineFrames _latest = new();
+    private readonly EngineFrames _latest;
 
     // Every device currently reported connected, keyed by engine + id. Replayed to new subscribers: replaying only
     // the LAST event would be wrong here, because several pads can be attached and a late subscriber would learn
@@ -50,6 +50,10 @@ public sealed class CompositeControllerSource : IControllerSource, IDisposable
     public CompositeControllerSource(params IControllerSource[] sources)
     {
         _sources = sources ?? throw new ArgumentNullException(nameof(sources));
+
+        // In the order given, which is the precedence for a press two engines both report: the factory lists the
+        // raw-HID engine first, so a DualSense GameInput also reads is named as a DualSense (see EngineFrames).
+        _latest = new EngineFrames([.. _sources.Select(s => s.SourceName)]);
 
         foreach (IControllerSource source in _sources)
         {
@@ -155,14 +159,29 @@ public sealed class CompositeControllerSource : IControllerSource, IDisposable
         }
     }
 
+    /// <summary>
+    /// The engine in use changed: someone pressed something on a pad from a different engine than the last
+    /// (<see cref="EngineFrames.Active"/>). Raised on that engine's reader thread, outside the gate.
+    /// </summary>
+    public event Action<string>? ActiveEngineChanged;
+
     private void OnFrame(string sourceName, ControllerStateFrame frame)
     {
         ControllerStateFrame merged;
+        string? activeBefore;
+        string? activeNow;
         using (_gate.Enter())
         {
             // Rebuilt from the latest of every engine rather than accumulated, so a released button on one device
             // is actually released: OR-ing into a running total would latch every button ever pressed.
+            activeBefore = _latest.Active;
             merged = _latest.Set(sourceName, frame);
+            activeNow = _latest.Active;
+        }
+
+        if (activeNow is not null && activeNow != activeBefore)
+        {
+            ActiveEngineChanged?.Invoke(activeNow);
         }
 
         // Published outside the lock: subscribers include the session send path, which must never be able to stall

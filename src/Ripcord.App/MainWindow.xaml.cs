@@ -779,7 +779,17 @@ public sealed partial class MainWindow : Window, IShellNavigator
 
                 if (intent.Back)
                 {
-                    GoBack();
+                    // On the stream layer Back leaves it, as its own "Back to consoles" does; going back in the
+                    // collapsed chrome frame underneath did nothing visible. A pad only gets here while no stream
+                    // is live (the session scope keeps its presses), so this is a connect, or a connect that failed.
+                    if (IsStreaming && StreamFrame.Content is SessionPage page)
+                    {
+                        page.Leave();
+                    }
+                    else
+                    {
+                        GoBack();
+                    }
                 }
             }
             catch (Exception ex)
@@ -882,7 +892,10 @@ public sealed partial class MainWindow : Window, IShellNavigator
             return;
         }
 
-        if (ChromeFrame.Content is not FrameworkElement content)
+        // The layer on screen. While the stream layer is up the chrome frame is collapsed, and seeding into it
+        // focused nothing: on a connect that failed, every press was spent seeding and none reached Try again
+        // (2026-10-02).
+        if ((IsStreaming ? StreamFrame.Content : ChromeFrame.Content) is not FrameworkElement content)
         {
             return;
         }
