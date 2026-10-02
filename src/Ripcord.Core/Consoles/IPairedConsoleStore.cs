@@ -17,6 +17,12 @@ public interface IPairedConsoleStore
     /// <summary>True when the stored credentials are actually encrypted on this platform.</summary>
     bool CredentialsEncrypted { get; }
 
+    /// <summary>
+    /// False when credentials cannot be saved at all, because this platform promises encryption and cannot
+    /// provide it (Windows without DPAPI). Pairing then fails rather than storing a credential in the clear.
+    /// </summary>
+    bool CanSaveCredentials => true;
+
     /// <summary>Every paired console. Empty when nothing has been paired, or when the store is unreadable.</summary>
     List<PairedConsole> Load();
 

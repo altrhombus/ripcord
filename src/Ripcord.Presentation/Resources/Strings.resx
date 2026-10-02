@@ -122,6 +122,14 @@
     <value>Saved consoles are not encrypted</value>
     <comment>Heading for the credential-protection status.</comment>
   </data>
+  <data name="Settings_ConsolesNotSaved" xml:space="preserve">
+    <value>Consoles and sign-in can't be saved</value>
+    <comment>Heading for the credential-protection status when encryption is unavailable.</comment>
+  </data>
+  <data name="Settings_CredentialsNotSaved" xml:space="preserve">
+    <value>Windows couldn't provide DPAPI encryption, so Ripcord won't save pairing credentials or your sign-in. Pairing a console will fail, and you'll need to sign in again each time Ripcord starts.</value>
+    <comment>Shown when the platform's credential encryption is unavailable. 'DPAPI' and 'Ripcord' are names - do not translate them.</comment>
+  </data>
   <data name="Settings_CredentialsProtected" xml:space="preserve">
     <value>Pairing credentials are protected with {0} and can only be read by your Windows account on this PC.</value>
     <comment>{0} names the protection mechanism, e.g. a platform API name.</comment>

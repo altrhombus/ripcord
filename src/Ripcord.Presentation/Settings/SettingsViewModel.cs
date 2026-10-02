@@ -441,13 +441,17 @@ public sealed class SettingsViewModel : ObservableState<SettingsViewState>
             DiagnosticsOptions: DiagnosticsLabels,
             DiagnosticsIndex: Array.IndexOf(DiagnosticsRungs, _draft.DiagnosticsRungOnConnect),
 
-            CredentialTitle: _consoles.CredentialsEncrypted
-                ? Strings.Settings_ConsolesEncrypted
-                : Strings.Settings_ConsolesNotEncrypted,
-            CredentialMessage: _consoles.CredentialsEncrypted
-                ? string.Format(Strings.Settings_CredentialsProtected, _consoles.ProtectionDescription)
-                // Never imply protection that is not there.
-                : string.Format(Strings.Settings_CredentialsUnprotected, _consoles.ProtectionDescription),
+            CredentialTitle: !_consoles.CanSaveCredentials
+                ? Strings.Settings_ConsolesNotSaved
+                : _consoles.CredentialsEncrypted
+                    ? Strings.Settings_ConsolesEncrypted
+                    : Strings.Settings_ConsolesNotEncrypted,
+            CredentialMessage: !_consoles.CanSaveCredentials
+                ? Strings.Settings_CredentialsNotSaved
+                : _consoles.CredentialsEncrypted
+                    ? string.Format(Strings.Settings_CredentialsProtected, _consoles.ProtectionDescription)
+                    // Never imply protection that is not there.
+                    : string.Format(Strings.Settings_CredentialsUnprotected, _consoles.ProtectionDescription),
             CredentialTone: _consoles.CredentialsEncrypted ? StatusTone.Positive : StatusTone.Caution,
 
             LoadError: _loadError);

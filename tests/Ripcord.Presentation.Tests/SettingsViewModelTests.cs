@@ -1,4 +1,5 @@
 using Ripcord.Core.Consoles;
+using Ripcord.Core.Security;
 using Ripcord.Core.Sessions;
 using Ripcord.Core.Settings;
 using Ripcord.Presentation.Consoles;
@@ -353,5 +354,22 @@ public class SettingsViewModelTests
         Assert.False(consoles.CredentialsEncrypted);
         Assert.Equal(StatusTone.Caution, vm.State.CredentialTone);
         Assert.Contains("not encrypted", vm.State.CredentialTitle);
+    }
+
+    [Fact]
+    public async Task CredentialBanner_WhenNothingCanBeSaved_SaysSoRatherThanUnencrypted()
+    {
+        var vm = new SettingsViewModel(
+            new RecordingSettingsStore(),
+            new InMemoryPairedConsoleStore(protector: new UnavailableCredentialProtector()),
+            new FakeCapabilities(),
+            new ImmediateUiDispatcher());
+
+        await vm.LoadAsync();
+
+        Assert.Equal(StatusTone.Caution, vm.State.CredentialTone);
+        Assert.Contains("can't be saved", vm.State.CredentialTitle);
+        Assert.Contains("won't save", vm.State.CredentialMessage);
+        Assert.DoesNotContain("not encrypted", vm.State.CredentialTitle);
     }
 }

@@ -35,6 +35,21 @@ different purpose.
 > anything. The list above is short, it is checkable in one `git log --format=%B | grep`, and it stops
 > growing the moment someone notices — which is the property that actually matters.
 
+### The privacy page, made true: STUN, and no plaintext fallback (2026-10-01)
+
+The review caught `PRIVACY.md` promising two things the code didn't quite back up.
+
+- **STUN is on the list now.** Before an internet session, Ripcord asks a public STUN server (Google's or
+  Cloudflare's) what its address looks like from outside the router. I'd remembered that as Sony's server, but
+  it isn't: Sony's own STUN wants a credential we never worked out (`ps5-cloud-session-api.md` has the
+  details), so the code has always asked public ones. The request carries a random number and nothing else,
+  but it's still a connection, and the page said "That is the whole list." Now it's on the list.
+- **No more quiet plaintext.** If Windows couldn't provide DPAPI, the credential stores used to fall back to
+  saving everything unencrypted, while the page promised encryption. Now they save nothing instead: a sign-in
+  lasts until Ripcord closes, pairing stops with an error, and Settings says why. It's a rare case (I've never
+  seen DPAPI fail on a normal desktop), so it's tested with a stand-in that refuses, not on a machine where
+  DPAPI is really broken.
+
 ### A second review of the fixes, and three more bugs (2026-10-01)
 
 Somebody read this afternoon's fixes against the code and found that each had stopped one step short. All of it
