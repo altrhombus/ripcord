@@ -94,6 +94,23 @@
       <ModuleDefinitionFile>dllmain.def</ModuleDefinitionFile>
     </Link>
   </ItemDefinitionGroup>
+  <!--
+    The hybrid CRT, for Release: the VC++ runtime linked in statically, the Universal CRT taken from Windows.
+    The release zip is self-contained for .NET and the Windows App SDK, and neither supplies vcruntime140.dll
+    or msvcp140.dll; linked dynamically (the default, /MD), this DLL would fail to load on a machine that has
+    never had the Visual C++ redistributable, and video or input with it (the second 2026-10-01 review). The
+    UCRT ships with every Windows 10 and 11, so it stays dynamic: ignore the static libucrt, link its import
+    library. Debug keeps /MDd; it only runs where Visual Studio is installed.
+  -->
+  <ItemDefinitionGroup Condition="'$(Configuration)'=='Release'">
+    <ClCompile>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+    </ClCompile>
+    <Link>
+      <IgnoreSpecificDefaultLibraries>libucrt.lib;%(IgnoreSpecificDefaultLibraries)</IgnoreSpecificDefaultLibraries>
+      <AdditionalDependencies>ucrt.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
 
   <ItemGroup>
     <ClInclude Include="pch.h" />
