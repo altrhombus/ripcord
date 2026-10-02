@@ -37,7 +37,7 @@ public sealed class CompositeControllerSource : IControllerSource, IDisposable
     private readonly SimpleObservable<ControllerStateFrame> _frames = new();
     private readonly SimpleObservable<ControllerConnectionEvent> _connections = new();
     private readonly List<IDisposable> _subscriptions = [];
-    private readonly Dictionary<string, ControllerStateFrame> _latest = [];
+    private readonly EngineFrames _latest = new();
 
     // Every device currently reported connected, keyed by engine + id. Replayed to new subscribers: replaying only
     // the LAST event would be wrong here, because several pads can be attached and a late subscriber would learn
@@ -101,6 +101,8 @@ public sealed class CompositeControllerSource : IControllerSource, IDisposable
     {
         ControllerConnectionEvent tagged = evt with { Source = sourceName };
         string key = $"{sourceName}|{tagged.ControllerId}";
+        bool forgot = false;
+        ControllerStateFrame merged = default;
 
         using (_gate.Enter())
         {
@@ -111,10 +113,23 @@ public sealed class CompositeControllerSource : IControllerSource, IDisposable
             else
             {
                 _connected.Remove(key);
+
+                // The engine's last device went, so its last frame goes too: kept, it was merged into every frame
+                // after, and whatever was held when the pad was pulled stayed held (see EngineFrames).
+                string prefix = sourceName + "|";
+                if (!_connected.Keys.Any(k => k.StartsWith(prefix, StringComparison.Ordinal)))
+                {
+                    forgot = _latest.Forget(sourceName, DateTime.UtcNow.Ticks, out merged);
+                }
             }
         }
 
         _connections.Publish(tagged);
+
+        if (forgot)
+        {
+            _frames.Publish(merged);
+        }
     }
 
     /// <summary>Subscribes, then replays the connected set, so nothing is missed and nothing stale is invented.</summary>
@@ -145,11 +160,9 @@ public sealed class CompositeControllerSource : IControllerSource, IDisposable
         ControllerStateFrame merged;
         using (_gate.Enter())
         {
-            _latest[sourceName] = frame;
-
             // Rebuilt from the latest of every engine rather than accumulated, so a released button on one device
             // is actually released: OR-ing into a running total would latch every button ever pressed.
-            merged = _latest.Values.Aggregate(ControllerInputMerger.Merge);
+            merged = _latest.Set(sourceName, frame);
         }
 
         // Published outside the lock: subscribers include the session send path, which must never be able to stall
