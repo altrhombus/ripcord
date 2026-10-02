@@ -35,6 +35,32 @@ different purpose.
 > anything. The list above is short, it is checkable in one `git log --format=%B | grep`, and it stops
 > growing the moment someone notices — which is the property that actually matters.
 
+### A second review of the fixes, and three more bugs (2026-10-01)
+
+Somebody read this afternoon's fixes against the code and found that each had stopped one step short. All of it
+checked out.
+
+- **A DualSense pulled mid-press still stayed pressed.** The morning's fix taught GameInput to send a neutral
+  frame when its last pad goes, but the DualSense source never did, and the merge still kept every engine's
+  last frame forever. Now the merge forgets an engine when its last device disconnects, and the DualSense
+  sends a neutral frame too, so neither depends on the other. The merge state moved into `EngineFrames` in
+  Core, which can be tested; the composite itself sits in the Windows-only input assembly.
+- **One ICMP "port unreachable" still ended a session.** This was the more common killer. Windows reports one
+  by failing the socket's *next receive*, and every receive loop here stopped on that exception.
+  `UdpChannel` now switches the behaviour off, and skips a reset if a platform reports one anyway. The test
+  sends to a closed loopback port, which produces the real thing, and against the old code it fails with
+  exactly that exception. The Rust engine has the same gap, for when Windows moves onto it (ROADMAP).
+- **Sign-in could still be lost, three ways.**
+  - Settings restored on every visit, outside the guard against two restores at once, so two could spend one
+    token and the loser's rejection wiped the winner's sign-in. `RestoreAsync` is the one entry point now.
+  - A network drop after the token rotated threw past the fallback. The new token is stored straight after the
+    refresh now, before anything else can fail.
+  - "400 or 401 means rejected" was too broad. A 401 from a token endpoint is the *app's* credential, not the
+    user's token. Only 400 `invalid_grant` clears now, which is what OAuth says a dead token gets; that PSN
+    answers that way is `[X]`.
+
+Every new test fails against the code before it, and passes after.
+
 ### Release zips for x64 and ARM64, and the last of the display checks (2026-10-01)
 
 ARM64 is in 1.0 now, so a release ships two zips. And with that, there's finally a way to make one.
