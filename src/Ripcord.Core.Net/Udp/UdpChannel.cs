@@ -9,6 +9,9 @@ namespace Ripcord.Core.Net.Udp;
 /// </summary>
 public sealed class UdpChannel : IDisposable
 {
+    // SIO_UDP_CONNRESET: whether an ICMP "port unreachable" for something this socket sent fails its next receive.
+    private const int SioUdpConnReset = unchecked((int)0x9800000C);
+
     private readonly UdpClient _client;
 
     /// <param name="receiveBufferBytes">
@@ -24,6 +27,15 @@ public sealed class UdpChannel : IDisposable
         {
             _client.Client.ReceiveBufferSize = receiveBufferBytes;
         }
+
+        // Off, on Windows. Left on, one ICMP "port unreachable" (a probe to a port the console has closed, a
+        // datagram that outlived the far end's socket) makes the next receive throw ConnectionReset, and every
+        // receive loop here ends on an exception: the session went with it, silently (the 2026-09-30 review). A
+        // datagram socket has no connection to reset, so there is nothing this error could tell us.
+        if (OperatingSystem.IsWindows())
+        {
+            _client.Client.IOControl(SioUdpConnReset, [0, 0, 0, 0], null);
+        }
     }
 
     public IPEndPoint LocalEndPoint => (IPEndPoint)_client.Client.LocalEndPoint!;
@@ -34,8 +46,24 @@ public sealed class UdpChannel : IDisposable
     public ValueTask<int> SendBroadcastAsync(ReadOnlyMemory<byte> data, int port, CancellationToken cancellationToken)
         => _client.SendAsync(data, new IPEndPoint(IPAddress.Broadcast, port), cancellationToken);
 
-    public ValueTask<UdpReceiveResult> ReceiveAsync(CancellationToken cancellationToken)
-        => _client.ReceiveAsync(cancellationToken);
+    /// <summary>
+    /// The next datagram. A connection reset is not one, so it is skipped rather than thrown: the IOControl above
+    /// already prevents it on Windows, and this keeps every receive loop alive if a platform reports one anyway.
+    /// </summary>
+    public async ValueTask<UdpReceiveResult> ReceiveAsync(CancellationToken cancellationToken)
+    {
+        while (true)
+        {
+            try
+            {
+                return await _client.ReceiveAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (SocketException ex) when (ex.SocketErrorCode == SocketError.ConnectionReset)
+            {
+                // An ICMP report about an earlier send. Nothing arrived; wait for what does.
+            }
+        }
+    }
 
     public void Dispose() => _client.Dispose();
 }
