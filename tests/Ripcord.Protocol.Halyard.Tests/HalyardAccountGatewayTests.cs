@@ -22,17 +22,34 @@ public class HalyardAccountGatewayTests
     {
         private int _next;
 
-        public int Grants => _next;
+        public int Grants => Volatile.Read(ref _next);
+
+        /// <summary>When set, the account lookup fails like a dropped network instead of answering 500.</summary>
+        public bool LookupNetworkFails { get; init; }
+
+        /// <summary>When set, each token grant waits for this, so two restores can genuinely overlap.</summary>
+        public TaskCompletionSource? GrantGate { get; init; }
 
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             string form = request.Content is null ? "" : await request.Content.ReadAsStringAsync(cancellationToken);
             if (request.Method != HttpMethod.Post || !form.Contains("grant_type="))
             {
+                if (LookupNetworkFails)
+                {
+                    throw new HttpRequestException("network unreachable (synthetic)");
+                }
+
                 return new HttpResponseMessage(HttpStatusCode.InternalServerError);
             }
 
-            var (status, body) = grants[Math.Min(_next++, grants.Length - 1)];
+            int n = Interlocked.Increment(ref _next) - 1;
+            if (GrantGate is { } gate)
+            {
+                await gate.Task.WaitAsync(cancellationToken);
+            }
+
+            var (status, body) = grants[Math.Min(n, grants.Length - 1)];
             return new HttpResponseMessage(status) { Content = new StringContent(body, Encoding.UTF8, "application/json") };
         }
     }
@@ -64,16 +81,85 @@ public class HalyardAccountGatewayTests
         Assert.Equal("refresh-0", store.Load()?.RefreshToken);
     }
 
+    [Fact]
+    public async Task ARejectedToken_ClearsTheStore()
+    {
+        var store = SignedIn("refresh-0");
+        var gateway = Gateway(new Cloud((HttpStatusCode.BadRequest, "{\"error\":\"invalid_grant\"}")), store);
+
+        Assert.Null(await gateway.RestoreAsync(CancellationToken.None));
+        Assert.Null(store.Load());
+    }
+
+    /// <summary>
+    /// Only invalid_grant says the token is dead. A 401 from a token endpoint is the application's credential being
+    /// refused, and another 400 is a malformed request; neither may cost the user their stored sign-in.
+    /// </summary>
     [Theory]
-    [InlineData(HttpStatusCode.BadRequest, "{\"error\":\"invalid_grant\"}")]
-    [InlineData(HttpStatusCode.Unauthorized, "")]
-    public async Task ARejectedToken_ClearsTheStore(HttpStatusCode status, string body)
+    [InlineData(HttpStatusCode.Unauthorized, "{\"error\":\"invalid_client\"}")]
+    [InlineData(HttpStatusCode.BadRequest, "{\"error\":\"invalid_request\"}")]
+    [InlineData(HttpStatusCode.BadRequest, "")]
+    public async Task AnythingButInvalidGrant_KeepsTheStore(HttpStatusCode status, string body)
     {
         var store = SignedIn("refresh-0");
         var gateway = Gateway(new Cloud((status, body)), store);
 
         Assert.Null(await gateway.RestoreAsync(CancellationToken.None));
-        Assert.Null(store.Load());
+        Assert.Equal("refresh-0", store.Load()?.RefreshToken);
+    }
+
+    /// <summary>
+    /// The token rotated, then the network dropped during the account lookup. That threw past the fallback, which
+    /// only knew the cloud client's own error, and left the spent token on disk.
+    /// </summary>
+    [Fact]
+    public async Task ANetworkDropAfterTheRefresh_StillStoresTheNewToken()
+    {
+        var store = SignedIn("refresh-0");
+        var gateway = Gateway(new Cloud(Grant("refresh-1")) { LookupNetworkFails = true }, store);
+
+        HalyardAccount? account = await gateway.RestoreAsync(CancellationToken.None);
+
+        Assert.Equal("account-1", account?.AccountId);   // the cached identity
+        Assert.Equal("refresh-1", store.Load()?.RefreshToken);
+    }
+
+    /// <summary>
+    /// Settings restored on every visit, beside the connect path's own restore. Two at once spent one token twice,
+    /// and the loser's rejection cleared the winner's sign-in. Now they share one restore and one grant.
+    /// </summary>
+    [Fact]
+    public async Task OverlappingRestores_SpendTheTokenOnce()
+    {
+        var store = SignedIn("refresh-0");
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var cloud = new Cloud(Grant("refresh-1"), (HttpStatusCode.BadRequest, "{\"error\":\"invalid_grant\"}"))
+        {
+            GrantGate = gate,
+        };
+        var gateway = Gateway(cloud, store);
+
+        Task<HalyardAccount?> settings = gateway.RestoreAsync(CancellationToken.None);
+        Task<bool> connect = gateway.EnsureSignedInAsync(CancellationToken.None);
+        await Task.Delay(50);
+        gate.SetResult();
+
+        Assert.NotNull(await settings);
+        Assert.True(await connect);
+        Assert.Equal(1, cloud.Grants);
+        Assert.Equal("refresh-1", store.Load()?.RefreshToken);
+    }
+
+    [Fact]
+    public async Task ASignedInGateway_RestoresWithoutTheNetwork()
+    {
+        var store = SignedIn("refresh-0");
+        var cloud = new Cloud(Grant("refresh-1"));
+        var gateway = Gateway(cloud, store);
+
+        Assert.NotNull(await gateway.RestoreAsync(CancellationToken.None));
+        Assert.NotNull(await gateway.RestoreAsync(CancellationToken.None));
+        Assert.Equal(1, cloud.Grants);
     }
 
     [Fact]
@@ -124,5 +210,6 @@ public class HalyardAccountGatewayTests
 
         Assert.Null(store.Load());
         Assert.False(gateway.IsSignedIn);
+        Assert.Null(await gateway.RestoreAsync(CancellationToken.None));   // not the finished restore's account
     }
 }

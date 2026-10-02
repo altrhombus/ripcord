@@ -117,35 +117,15 @@ public sealed class HalyardAccountGateway
             return false;
         }
 
-        // One restore, however many callers arrive together: a connect and a console-list refresh racing each
-        // other would otherwise both spend the refresh token, and the second would find it already rotated.
-        Task<HalyardAccount?> restore;
-        lock (_restoreGate)
-        {
-            restore = _restore ??= RestoreAsync(cancellationToken);
-        }
-
         try
         {
-            return await restore.ConfigureAwait(false) is not null;
+            return await RestoreAsync(cancellationToken).ConfigureAwait(false) is not null;
         }
         catch (Exception)
         {
             // A failed restore is "not signed in", which is what the caller asked. It is not this method's
             // business to decide whether that is worth reporting.
             return false;
-        }
-        finally
-        {
-            lock (_restoreGate)
-            {
-                if (ReferenceEquals(_restore, restore) && restore.IsCompleted)
-                {
-                    // Cleared only when it failed, so a later attempt can try again; a success is already
-                    // short-circuited by the _account check above.
-                    _restore = _account is null ? null : _restore;
-                }
-            }
         }
     }
 
@@ -235,7 +215,48 @@ public sealed class HalyardAccountGateway
     /// nothing about the credential returns null and keeps the store, and the next attempt tries again.
     /// </para>
     /// </summary>
+    ///
+    /// <para>
+    /// <b>One restore at a time, from every caller.</b> A connect and a console-list refresh racing each other
+    /// would both spend the refresh token, and the second would find it rotated. That guard used to live in
+    /// <see cref="EnsureSignedInAsync"/> alone, while Settings called this directly on every visit, so the two
+    /// could overlap: the loser's rejection then cleared the winner's freshly stored sign-in (the second
+    /// 2026-10-01 review). Now the guard is here, an account already signed in is returned without touching the
+    /// network, and <see cref="EnsureSignedInAsync"/> goes through it too.
+    /// </para>
+    /// </summary>
     public async Task<HalyardAccount?> RestoreAsync(CancellationToken cancellationToken)
+    {
+        if (_account is { } signedIn)
+        {
+            return signedIn;
+        }
+
+        Task<HalyardAccount?> restore;
+        lock (_restoreGate)
+        {
+            restore = _restore ??= RestoreOnceAsync(cancellationToken);
+        }
+
+        try
+        {
+            return await restore.ConfigureAwait(false);
+        }
+        finally
+        {
+            lock (_restoreGate)
+            {
+                // Kept only while it holds a signed-in result (and SignOut clears it then); a restore that failed
+                // or found nothing can be tried again.
+                if (ReferenceEquals(_restore, restore) && restore.IsCompleted && _account is null)
+                {
+                    _restore = null;
+                }
+            }
+        }
+    }
+
+    private async Task<HalyardAccount?> RestoreOnceAsync(CancellationToken cancellationToken)
     {
         if (!CanSignIn)
         {
@@ -261,15 +282,24 @@ public sealed class HalyardAccountGateway
 
             return null;
         }
+        catch (Exception ex) when (IsNetworkFailure(ex, cancellationToken))
+        {
+            return null;   // nothing learned about the token, so the store stays as it is
+        }
 
         HalyardTokens current = _tokens.Current
             ?? throw new HalyardCloudException("The refresh succeeded but produced no tokens.");
+
+        // Stored now, before anything else can fail. The refresh spent the stored token, so from here on the store
+        // must hold the new one whatever happens next; a network drop during the account lookup used to escape the
+        // fallback below and leave the spent one on disk (the second 2026-10-01 review).
+        _store.Save(stored with { RefreshToken = current.RefreshToken, SavedAt = DateTimeOffset.UtcNow });
 
         try
         {
             return await IdentifyAndPersistAsync(current, cancellationToken).ConfigureAwait(false);
         }
-        catch (HalyardCloudException)
+        catch (Exception ex) when (ex is HalyardCloudException || IsNetworkFailure(ex, cancellationToken))
         {
             // The token refreshed but the account lookup failed — a service problem rather than a credential
             // one. Fall back to the cached identity so an install stays signed in through an outage.
@@ -297,7 +327,20 @@ public sealed class HalyardAccountGateway
         _tokens.Clear();   // or the next cloud call still goes out as the signed-out account
         _store.Clear();
         _account = null;
+
+        // And the finished restore, or the next RestoreAsync would hand back the account just signed out.
+        lock (_restoreGate)
+        {
+            _restore = null;
+        }
     }
+
+    /// <summary>
+    /// The network failed rather than the service answering: no connection, or a request timing out. A
+    /// cancellation the caller asked for is not one, and still propagates.
+    /// </summary>
+    private static bool IsNetworkFailure(Exception ex, CancellationToken cancellationToken)
+        => ex is HttpRequestException || (ex is TaskCanceledException && !cancellationToken.IsCancellationRequested);
 
     /// <summary>
     /// Store the refresh token a background refresh just received, keeping the stored identity. Without this the
