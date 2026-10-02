@@ -621,6 +621,12 @@ public sealed class SessionController : IAsyncDisposable
         [
             "not paired", "registration", "registkey", "credential", "unauthor",
             "rejected (403", "rejected (401", "control secrets",
+
+            // The login passcode: cancelled, impossible to enter here, or wrong too many times. Asking again just
+            // asks the person the same question, and a cancel retried was a prompt that came straight back
+            // (2026-10-02). "Accepted the passcode but didn't start a session" is deliberately not here: that one
+            // does clear on a reconnect.
+            "sign-in cancelled", "no passcode entry is available", "rejected the passcode",
         ];
 
         foreach (string marker in permanent)

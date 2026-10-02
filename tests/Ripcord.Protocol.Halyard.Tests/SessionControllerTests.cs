@@ -353,6 +353,44 @@ public class SessionControllerTests
         Assert.Contains("not paired", controller.CurrentStatus.Detail);
     }
 
+    /// <summary>
+    /// A cancelled, impossible or thrice-wrong login passcode stops the connect: a retry only asks the same person
+    /// the same question again. Cancelling the prompt used to bring it straight back.
+    /// </summary>
+    [Theory]
+    [InlineData("Sign-in cancelled: no login passcode entered.")]
+    [InlineData("This console requires a login passcode, but no passcode entry is available here.")]
+    [InlineData("Sign-in failed: the console rejected the passcode 3 times.")]
+    public async Task APasscodeFailure_IsNotRetried(string reason)
+    {
+        var time = new VirtualTime();
+        var session = new FakeSession(succeeds: false, failureReason: reason);
+
+        await using var controller = new SessionController(
+            _ => Task.FromResult<IStreamingSession>(session), new FakePipeline(), clock: time.Now, delay: time.Delay);
+
+        await controller.StartAsync(Config);
+        await WaitFor(() => controller.Lifecycle == SessionLifecycle.Failed, "should fail fast");
+
+        Assert.Equal(1, session.ConnectCalls);
+    }
+
+    /// <summary>The one passcode outcome a reconnect does fix: accepted, but the session didn't follow.</summary>
+    [Fact]
+    public async Task AnAcceptedPasscodeWithNoSession_IsStillRetried()
+    {
+        var time = new VirtualTime();
+        var session = new FakeSession(
+            succeeds: false,
+            failureReason: "The console accepted the passcode but didn't start a session. It's unlocked now.");
+
+        await using var controller = new SessionController(
+            _ => Task.FromResult<IStreamingSession>(session), new FakePipeline(), clock: time.Now, delay: time.Delay);
+
+        await controller.StartAsync(Config);
+        await WaitFor(() => session.ConnectCalls > 1, "should try again");
+    }
+
     [Fact]
     public async Task RetryableFailure_RetriesWithExponentialBackoff_ThenGivesUp()
     {

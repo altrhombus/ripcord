@@ -457,7 +457,23 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer
             try
             {
                 var dialog = new LoginPinDialog(isRetry) { XamlRoot = XamlRoot };
-                using CancellationTokenRegistration reg = cancellationToken.Register(() => dialog.Hide());
+
+                // Posted, never called here: the token is cancelled from wherever cancellation happens, which for
+                // the connect deadline is a thread-pool timer, and Hide() off the UI thread throws
+                // RPC_E_WRONG_THREAD. Thrown from a cancellation callback, that took the process down: leaving
+                // the passcode prompt open past the deadline crashed the app (2026-10-02).
+                using CancellationTokenRegistration reg = cancellationToken.Register(() =>
+                    _dispatcherQueue.TryEnqueue(() =>
+                    {
+                        try
+                        {
+                            dialog.Hide();
+                        }
+                        catch (Exception)
+                        {
+                            // Already closed, or the window has gone: either way there is nothing left to hide.
+                        }
+                    }));
                 ContentDialogResult result = await ModalHost.ShowAsync(dialog);
                 tcs.TrySetResult(result == ContentDialogResult.Primary ? dialog.Pin : null);
             }
