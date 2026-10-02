@@ -139,20 +139,20 @@
     <comment>{0} describes how they are stored.</comment>
   </data>
   <data name="Settings_ExitGestureHeld" xml:space="preserve">
-    <value>{0}, held briefly. The PS button is deliberately not used — it has to reach the console.</value>
-    <comment>{0} is a description of the chosen button combination. 'PS button' is the name printed on the controller.</comment>
+    <value>Hold {0} ({1} on an Xbox controller) briefly. The PS and Xbox buttons are deliberately not used — they have to reach the console.</value>
+    <comment>{0} is the button combination as a DualSense names it, {1} the same combination as an Xbox controller names it. Button names and 'PS'/'Xbox' are printed on the controllers - do not translate them.</comment>
   </data>
   <data name="Settings_ExitGestureKeyboard" xml:space="preserve">
     <value>Keyboard only (Esc)</value>
     <comment>'Esc' is the key name printed on the keyboard - do not translate it.</comment>
   </data>
   <data name="Settings_ExitGestureShoulders" xml:space="preserve">
-    <value>Options + Create + L1 + R1</value>
-    <comment>Controller button names - do NOT translate. These are the labels printed on a DualSense.</comment>
+    <value>Options + Create + L1 + R1 (Menu + View + LB + RB)</value>
+    <comment>Controller button names - do NOT translate. The DualSense's labels, then an Xbox controller's in brackets.</comment>
   </data>
   <data name="Settings_ExitGestureSticks" xml:space="preserve">
-    <value>Both sticks pressed (L3 + R3)</value>
-    <comment>L3/R3 are controller button names - do not translate those.</comment>
+    <value>Both sticks pressed (L3 + R3, or LS + RS)</value>
+    <comment>L3/R3 (DualSense) and LS/RS (Xbox) are controller button names - do not translate those.</comment>
   </data>
   <data name="Settings_ExitNoGesture" xml:space="preserve">
     <value>No controller gesture. You will need a keyboard (Esc) or the on-screen button to leave a stream.</value>

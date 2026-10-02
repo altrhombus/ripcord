@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
@@ -36,7 +37,9 @@ public static class ModalHost
 {
     /// <summary>
     /// Show <paramref name="dialog"/> as a modal. The caller sets <c>XamlRoot</c>, since only it knows which
-    /// tree the dialog belongs to.
+    /// tree the dialog belongs to. <paramref name="readsPad"/> is for a dialog that reads the pad's buttons
+    /// itself (<see cref="IInputScope.ReadsPad"/>), and <paramref name="prompts"/> for what the hint bar says
+    /// they do.
     /// </summary>
     /// <remarks>
     /// Does not catch. Callers already have their own handling for the two real failures — a torn-down
@@ -44,7 +47,8 @@ public static class ModalHost
     /// prompt must fall through and leave the session anyway, while a rename must abandon quietly. Swallowing
     /// here would take that decision away from them. The scope is popped on every path regardless.
     /// </remarks>
-    public static async Task<ContentDialogResult> ShowAsync(ContentDialog dialog)
+    public static async Task<ContentDialogResult> ShowAsync(
+        ContentDialog dialog, bool readsPad = false, IReadOnlyList<InputPrompt>? prompts = null)
     {
         ArgumentNullException.ThrowIfNull(dialog);
 
@@ -61,7 +65,8 @@ public static class ModalHost
 
         // focusRoot so a modal remembers its own focus too — for a soft keyboard opening over a dialog, which
         // is the next thing to land on top of one.
-        var scope = new ShellInputScope(InputScopeKind.Modal, focusRoot: () => dialog.XamlRoot);
+        var scope = new ShellInputScope(
+            InputScopeKind.Modal, focusRoot: () => dialog.XamlRoot, prompts: prompts, readsPad: readsPad);
         App.Input.Scopes.Push(scope);
 
         try

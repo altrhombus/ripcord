@@ -27,6 +27,82 @@ public class EngineFramesTests
     }
 
     [Fact]
+    public void TheActiveEngine_IsTheOneLastPressed()
+    {
+        var frames = new EngineFrames();
+        Assert.Null(frames.Active);
+
+        frames.Set("GameInput", Held(ControllerButtons.None));
+        Assert.Null(frames.Active);   // a pad reporting at rest is not a pad in use
+
+        frames.Set("DualSense", Held(ControllerButtons.South));
+        Assert.Equal("DualSense", frames.Active);
+
+        frames.Set("GameInput", Held(ControllerButtons.North));
+        Assert.Equal("GameInput", frames.Active);
+
+        // The DualSense goes on reporting the button it still holds; that is not a new press.
+        frames.Set("DualSense", Held(ControllerButtons.South));
+        Assert.Equal("GameInput", frames.Active);
+
+        frames.Set("DualSense", Held(ControllerButtons.None, leftX: 0.9f));
+        Assert.Equal("DualSense", frames.Active);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void OnePadSeenByTwoEngines_GoesToTheFirstInPrecedence_WhicheverReportsFirst(bool hidFirst)
+    {
+        var frames = new EngineFrames("DualSense", "GameInput");
+        frames.Set("DualSense", Held(ControllerButtons.None));
+        frames.Set("GameInput", Held(ControllerButtons.None));
+
+        string[] order = hidFirst ? ["DualSense", "GameInput"] : ["GameInput", "DualSense"];
+        foreach (string engine in order)
+        {
+            frames.Set(engine, Held(ControllerButtons.South));
+        }
+
+        Assert.Equal("DualSense", frames.Active);
+    }
+
+    [Fact]
+    public void APressOnlyTheLaterEngineSees_IsThatEngines()
+    {
+        // The Xbox pad: GameInput alone reports it, so precedence does not come into it.
+        var frames = new EngineFrames("DualSense", "GameInput");
+        frames.Set("DualSense", Held(ControllerButtons.South));
+        frames.Set("GameInput", Held(ControllerButtons.North));
+
+        Assert.Equal("GameInput", frames.Active);
+    }
+
+    [Fact]
+    public void ADriftingStick_DoesNotClaimThePad()
+    {
+        var frames = new EngineFrames();
+        frames.Set("GameInput", Held(ControllerButtons.South));
+
+        frames.Set("DualSense", Held(ControllerButtons.None, leftX: 0.12f));
+        frames.Set("DualSense", Held(ControllerButtons.None, leftX: 0.18f));
+
+        Assert.Equal("GameInput", frames.Active);
+    }
+
+    [Fact]
+    public void AForgottenEngine_StaysActive()
+    {
+        // A pad going to sleep must not relabel the screen.
+        var frames = new EngineFrames();
+        frames.Set("DualSense", Held(ControllerButtons.South));
+
+        frames.Forget("DualSense", 2, out _);
+
+        Assert.Equal("DualSense", frames.Active);
+    }
+
+    [Fact]
     public void TheOtherPad_KeepsItsInput()
     {
         var frames = new EngineFrames();

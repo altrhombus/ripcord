@@ -35,5 +35,36 @@
             InputScope="NumericPin"
             MaxLength="16"
             TextChanged="OnPinChanged" />
+
+        <!--
+            Shown only with a pad attached: its buttons type the passcode as they do on the console, and the
+            legend is the console's own table of which button is which digit. Filled from code, from the same
+            table the pad is read with (HalyardPasscodePad.Keys), named for the pad in hand.
+        -->
+        <StackPanel x:Name="PadSection" Visibility="Collapsed" Spacing="8">
+            <TextBlock
+                Style="{StaticResource CaptionTextBlockStyle}"
+                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                TextWrapping="Wrap"
+                x:Uid="LoginPinDialog_PadHint" />
+            <Grid x:Name="PadLegend" ColumnSpacing="6" RowSpacing="6">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+            </Grid>
+            <TextBlock
+                x:Name="PadActions"
+                Style="{StaticResource CaptionTextBlockStyle}"
+                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                TextWrapping="Wrap" />
+        </StackPanel>
     </StackPanel>
 </ContentDialog>

@@ -388,6 +388,15 @@ public sealed class HalyardStreamingSession : IStreamingSession
                         + "The console did not answer. Check that no other device is streaming from it, and that "
                         + "inbound UDP is allowed for this app.");
         }
+        catch (OperationCanceledException)
+        {
+            // The caller's cancellation is the caller's to see. Caught below, it became an ordinary failure
+            // reading "sign-in: The operation was canceled.", so the controller's connect deadline firing under the
+            // passcode prompt was retried as though the console had failed, and never reported as the deadline
+            // it was (2026-10-02).
+            State = SessionState.Closed;
+            throw;
+        }
         catch (Exception ex)
         {
             return Fail($"{_connectStep}: {ex.Message}");
