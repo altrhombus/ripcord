@@ -35,6 +35,27 @@ different purpose.
 > anything. The list above is short, it is checkable in one `git log --format=%B | grep`, and it stops
 > growing the moment someone notices — which is the property that actually matters.
 
+### Release zips for x64 and ARM64, and the last of the display checks (2026-10-01)
+
+ARM64 is in 1.0 now, so a release ships two zips. And with that, there's finally a way to make one.
+
+- **A `v*` tag builds the release.** The CI app job, which already built both platforms, now publishes each
+  self-contained and zips it on a tag: the app inside a `Ripcord` folder, with the licences, the privacy page
+  and `GameInputRedist.msi`. A `windows-release` job attaches both zips to a draft release, notes included,
+  once everything else has passed. Nothing has been tagged yet, so the job itself is unrun; the same publish
+  and the checks it makes ran here for both platforms, and the ARM64 binaries really are ARM64.
+- **GameInput's redistributable ships.** Its own README says to, and on a machine without it every Xbox pad was
+  invisible, with nothing saying why. Settings > About now has an "Xbox controllers" row that says so, and
+  how to fix it. One version setting in `Directory.Build.props` feeds both the package reference and the
+  installer the zip carries.
+- **A detour worth noting.** The first local publish failed in ReadyToRun, "file in use by another
+  process". The culprit was my own earlier run, cut short, whose build processes were still holding the file.
+  The publish itself was fine.
+- **200% display scale, finally.** The console card holds at 200%, with 100% and 150% text, at every
+  density. One surprise: maximising the window *lost* a column. A smaller window showed four regular cards,
+  a maximised one three roomy ones, because the 1400 px page cap fitted only three. It's 1500 now, which fits
+  four. The About and Settings pages look right at 200% too.
+
 ### The review's two worst bugs: one bad packet, and a sign-in that didn't stick (2026-10-01)
 
 Both came from the 2026-09-30 review, and both were exactly as it said.
