@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Ripcord.Core.Accounts;
 using Ripcord.Core.Platform;
 
@@ -157,6 +158,35 @@ public sealed class HalyardAccountGateway
     private readonly object _restoreGate = new();
     private Task<HalyardAccount?>? _restore;
 
+    // Bumped by SignOut, under _restoreGate. A sign-in or restore captures it when it starts and commits its
+    // result (the stored session, the account) only while it is unchanged, also under _restoreGate. So a sign-out
+    // landing mid-restore is final: the restore's later save used to put the account straight back (the second
+    // 2026-10-01 review).
+    private int _signInGeneration;
+
+    /// <summary>Run <paramref name="commit"/> only if no sign-out has happened since <paramref name="generation"/>.</summary>
+    private bool CommitIfCurrent(int generation, Action commit)
+    {
+        lock (_restoreGate)
+        {
+            if (_signInGeneration != generation)
+            {
+                return false;
+            }
+
+            commit();
+            return true;
+        }
+    }
+
+    private int CurrentGeneration()
+    {
+        lock (_restoreGate)
+        {
+            return _signInGeneration;
+        }
+    }
+
     /// <summary>The URL to open in the account web flow.</summary>
     public string BeginSignIn()
     {
@@ -190,12 +220,25 @@ public sealed class HalyardAccountGateway
         string code = _auth.TryReadAuthorizationCode(redirected)
             ?? throw new HalyardCloudException("That redirect carried no authorization code.");
 
+        int generation = CurrentGeneration();
         HalyardTokens tokens = await _auth
             .ExchangeCodeAsync(code, _clientDeviceId, cancellationToken)
             .ConfigureAwait(false);
         _tokens.Seed(tokens);
 
-        return await IdentifyAndPersistAsync(tokens, cancellationToken).ConfigureAwait(false);
+        try
+        {
+            return await IdentifyAndPersistAsync(tokens, generation, cancellationToken).ConfigureAwait(false)
+                ?? throw new HalyardCloudException("Signed out while the sign-in was finishing.");
+        }
+        catch (Exception)
+        {
+            // The sign-in failed, so it must not half-succeed: the provider stayed seeded with the new tokens, and
+            // every cloud call after a "sign-in failed" message went out as that account anyway.
+            _tokens.Clear();
+            _account = null;
+            throw;
+        }
     }
 
     /// <summary>
@@ -263,6 +306,8 @@ public sealed class HalyardAccountGateway
             return null;
         }
 
+        int generation = CurrentGeneration();
+
         StoredAccountSession? stored = _store.Load();
         if (stored is null)
         {
@@ -293,13 +338,27 @@ public sealed class HalyardAccountGateway
         // Stored now, before anything else can fail. The refresh spent the stored token, so from here on the store
         // must hold the new one whatever happens next; a network drop during the account lookup used to escape the
         // fallback below and leave the spent one on disk (the second 2026-10-01 review).
-        _store.Save(stored with { RefreshToken = current.RefreshToken, SavedAt = DateTimeOffset.UtcNow });
+        if (!CommitIfCurrent(generation, () =>
+                _store.Save(stored with { RefreshToken = current.RefreshToken, SavedAt = DateTimeOffset.UtcNow })))
+        {
+            // Signed out while the refresh was in flight, and the refresh then seeded the provider anyway. Unseed
+            // it, unless a newer sign-in has finished since, whose tokens those now are.
+            lock (_restoreGate)
+            {
+                if (_account is null)
+                {
+                    _tokens.Clear();
+                }
+            }
+
+            return null;
+        }
 
         try
         {
-            return await IdentifyAndPersistAsync(current, cancellationToken).ConfigureAwait(false);
+            return await IdentifyAndPersistAsync(current, generation, cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception ex) when (ex is HalyardCloudException || IsNetworkFailure(ex, cancellationToken))
+        catch (Exception ex) when (ex is HalyardCloudException or JsonException || IsNetworkFailure(ex, cancellationToken))
         {
             // The token refreshed but the account lookup failed — a service problem rather than a credential
             // one. Fall back to the cached identity so an install stays signed in through an outage.
@@ -307,30 +366,35 @@ public sealed class HalyardAccountGateway
             // The refresh spent the stored token either way, so the new one is stored here too. This path used
             // to keep the spent one, and the launch after an account-lookup outage was signed out.
             HalyardTokens latest = _tokens.Current ?? current;
-            _store.Save(stored with { RefreshToken = latest.RefreshToken, SavedAt = DateTimeOffset.UtcNow });
+            HalyardAccount? cached = stored.AccountId is null
+                ? null
+                : new HalyardAccount(stored.AccountId, stored.DisplayName ?? string.Empty, string.Empty);
 
-            if (stored.AccountId is null)
+            bool committed = CommitIfCurrent(generation, () =>
             {
-                return null;
-            }
+                _store.Save(stored with { RefreshToken = latest.RefreshToken, SavedAt = DateTimeOffset.UtcNow });
+                _account = cached;
+            });
 
-            _account = new HalyardAccount(stored.AccountId, stored.DisplayName ?? string.Empty, string.Empty);
-            return _account;
+            return committed ? cached : null;
         }
     }
 
     /// <summary>Destroy the stored credential and forget the session.</summary>
     public void SignOut()
     {
-        // The provider first: clearing it is what stops a refresh in flight from storing its tokens (OnRefreshed),
-        // so the store cleared after it stays cleared.
-        _tokens.Clear();   // or the next cloud call still goes out as the signed-out account
-        _store.Clear();
-        _account = null;
-
-        // And the finished restore, or the next RestoreAsync would hand back the account just signed out.
         lock (_restoreGate)
         {
+            // The generation first, so a sign-in or restore still running commits nothing after this.
+            _signInGeneration++;
+
+            // Then the provider: clearing it is what stops a refresh in flight from storing its tokens
+            // (OnRefreshed), so the store cleared after it stays cleared.
+            _tokens.Clear();   // or the next cloud call still goes out as the signed-out account
+            _store.Clear();
+            _account = null;
+
+            // And the finished restore, or the next RestoreAsync would hand back the account just signed out.
             _restore = null;
         }
     }
@@ -366,20 +430,24 @@ public sealed class HalyardAccountGateway
         }
     }
 
-    private async Task<HalyardAccount> IdentifyAndPersistAsync(
-        HalyardTokens tokens, CancellationToken cancellationToken)
+    /// <summary>Identify the account and store the session; null when a sign-out overtook it.</summary>
+    private async Task<HalyardAccount?> IdentifyAndPersistAsync(
+        HalyardTokens tokens, int generation, CancellationToken cancellationToken)
     {
         HalyardAccountInfo info = await _cloud.GetAccountInfoAsync(cancellationToken).ConfigureAwait(false);
         var account = new HalyardAccount(info.AccountId, info.OnlineId, info.Region);
-        _account = account;
 
         // Persist the refresh token the provider currently holds rather than the one we started with: a refresh
         // grant returns a NEW refresh token, and storing the spent one is how an install signs itself out
         // roughly an hour later for no visible reason.
         HalyardTokens latest = _tokens.Current ?? tokens;
-        _store.Save(new StoredAccountSession(
-            latest.RefreshToken, account.AccountId, account.OnlineId, DateTimeOffset.UtcNow));
+        bool committed = CommitIfCurrent(generation, () =>
+        {
+            _account = account;
+            _store.Save(new StoredAccountSession(
+                latest.RefreshToken, account.AccountId, account.OnlineId, DateTimeOffset.UtcNow));
+        });
 
-        return account;
+        return committed ? account : null;
     }
 }
