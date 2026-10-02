@@ -35,6 +35,26 @@ different purpose.
 > anything. The list above is short, it is checkable in one `git log --format=%B | grep`, and it stops
 > growing the moment someone notices — which is the property that actually matters.
 
+### The roomy console card, at last (2026-10-01)
+
+The roomy density only appears on a page 1920 effective pixels wide with two or more consoles, and until now no
+screen here was wide enough. The docked ultrawide is. Same method as on 2026-09-30: three synthetic consoles
+(documentation-range addresses, empty credentials) in a temporary `consoles.json`, with the real one backed up
+and put back byte for byte afterwards. One had a nickname long enough to need three lines, one had never been
+played, and one was a PS4.
+
+| | 100% text | 150% text |
+|---|---|---|
+| Long name | two lines, ellipsis, "Played" and status intact | two lines, ellipsis, both intact |
+| Never played | no empty caption line | no empty caption line |
+| PS4 | same as the others | one line, clear of the "···" button |
+
+So the two-line name holds at every density. A 200% display is the last check, on the ARM64 Surface.
+
+One thing I noticed, not a fault: the page is capped at 1400 px so a row reads as a group, which fits three
+roomy cards and not four. With three or more consoles on a wide screen, the "Add a console" tile starts a
+second row.
+
 ### Arrow keys, a covered link, and tooltips that wouldn't leave (2026-10-01)
 
 Three small things from an evening of just using the app.
