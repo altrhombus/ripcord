@@ -241,6 +241,23 @@ public class HalyardAccountAuthTests
     }
 
     [Fact]
+    public void TokenStore_WithoutEncryption_SavesNothingAndRemovesAnOlderFile()
+    {
+        // Windows without DPAPI. The sign-in lives in memory for the run; a refresh token is never written in
+        // the clear, and one saved earlier must not outlive the session that replaced it.
+        using var dir = new TempDirectory();
+        new AccountTokenStore(dir.Paths, new PlaintextCredentialProtector())
+            .Save(new StoredAccountSession("refresh-old"));
+        var store = new AccountTokenStore(dir.Paths, new UnavailableCredentialProtector());
+
+        store.Save(new StoredAccountSession("refresh-new"));
+
+        Assert.False(store.TokenEncrypted);
+        Assert.False(File.Exists(Path.Combine(dir.Paths.ConfigDirectory, "account.json")));
+        Assert.Null(store.Load());
+    }
+
+    [Fact]
     public void TokenStore_Clear_LeavesNothingBehind()
     {
         // Sign-out. A "signed out" state with a usable token still on disk is a security bug.

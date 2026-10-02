@@ -29,16 +29,45 @@ public interface ICredentialProtector
 }
 
 /// <summary>
-/// Selects the best available protector for the current platform. Windows gets DPAPI; other platforms
-/// currently fall back to <see cref="PlaintextCredentialProtector"/> until a keystore backend
-/// (libsecret / kwallet / Keychain) is wired up, and say so via <see cref="ICredentialProtector.Description"/>.
+/// Selects the protector for the current platform. Windows gets DPAPI, and when DPAPI fails its probe it gets
+/// <see cref="UnavailableCredentialProtector"/>, which stores nothing rather than plaintext: the shipped client
+/// promises encryption at rest (<c>PRIVACY.md</c>), so the only honest fallback is not saving. Other platforms
+/// fall back to <see cref="PlaintextCredentialProtector"/> until a keystore backend (libsecret / kwallet) is
+/// wired up, and say so via <see cref="ICredentialProtector.Description"/>.
 /// </summary>
 public static class CredentialProtection
 {
     public static ICredentialProtector ForCurrentPlatform()
-        => OperatingSystem.IsWindows() && DpapiCredentialProtector.IsAvailable()
-            ? new DpapiCredentialProtector()
-            : new PlaintextCredentialProtector();
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return DpapiCredentialProtector.IsAvailable()
+                ? new DpapiCredentialProtector()
+                : new UnavailableCredentialProtector();
+        }
+
+        return new PlaintextCredentialProtector();
+    }
+}
+
+/// <summary>Thrown by <see cref="UnavailableCredentialProtector.Protect"/>: there is no way to encrypt here.</summary>
+public sealed class NoCredentialProtectionException()
+    : InvalidOperationException("Windows couldn't encrypt the credential, so Ripcord won't save it.");
+
+/// <summary>
+/// The Windows fallback when DPAPI is unreachable. It encrypts nothing and stores nothing: <see cref="Protect"/>
+/// throws <see cref="NoCredentialProtectionException"/>, so a store either keeps the secret in memory or
+/// fails loudly, and <see cref="Unprotect"/> reads nothing back.
+/// </summary>
+public sealed class UnavailableCredentialProtector : ICredentialProtector
+{
+    public bool IsRealProtection => false;
+
+    public string Description => "unavailable (Windows could not provide DPAPI)";
+
+    public byte[] Protect(ReadOnlySpan<byte> plaintext) => throw new NoCredentialProtectionException();
+
+    public byte[]? Unprotect(ReadOnlySpan<byte> ciphertext) => null;
 }
 
 /// <summary>

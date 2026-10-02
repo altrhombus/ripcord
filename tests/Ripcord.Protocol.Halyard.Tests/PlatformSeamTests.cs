@@ -66,6 +66,29 @@ public class PlatformSeamTests
     }
 
     [Fact]
+    public void CredentialProtector_OnWindows_NeverFallsBackToPlaintext()
+    {
+        // PRIVACY.md promises the shipped client encrypts at rest. Without DPAPI the answer is "store nothing",
+        // so a plaintext protector on Windows means that promise quietly stopped being true.
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        Assert.IsNotType<PlaintextCredentialProtector>(CredentialProtection.ForCurrentPlatform());
+    }
+
+    [Fact]
+    public void UnavailableProtector_RefusesToProtectAndReadsNothingBack()
+    {
+        var protector = new UnavailableCredentialProtector();
+
+        Assert.False(protector.IsRealProtection);
+        Assert.Throws<NoCredentialProtectionException>(() => protector.Protect([1, 2, 3]));
+        Assert.Null(protector.Unprotect([1, 2, 3]));
+    }
+
+    [Fact]
     public void CredentialProtector_ReportsHonestlyWhetherItEncrypts()
     {
         ICredentialProtector protector = CredentialProtection.ForCurrentPlatform();
