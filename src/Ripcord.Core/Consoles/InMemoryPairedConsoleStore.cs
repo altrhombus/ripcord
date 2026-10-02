@@ -32,6 +32,8 @@ public sealed class InMemoryPairedConsoleStore : IPairedConsoleStore
 
     public bool CredentialsEncrypted => _protector.IsRealProtection;
 
+    public bool CanSaveCredentials => _protector is not UnavailableCredentialProtector;
+
     // A copy, not the backing list: callers mutate what Load() returns (Upsert and Remove both do), and handing
     // out the live list would let a caller edit stored state without a Save.
     public List<PairedConsole> Load() => [.. _consoles];

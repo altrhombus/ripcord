@@ -62,6 +62,16 @@ public class PairedConsoleStoreTests : IDisposable
     }
 
     [Fact]
+    public void WithoutEncryption_EncodeBlobRefusesRatherThanWritingTheCredentialInTheClear()
+    {
+        var store = NewStore(new UnavailableCredentialProtector());
+
+        Assert.False(store.CanSaveCredentials);
+        Assert.Throws<NoCredentialProtectionException>(() => store.EncodeBlob([1, 2, 3]));
+        Assert.False(File.Exists(ConsolesJson));
+    }
+
+    [Fact]
     public void EncodeBlob_MarksTheValueAsProtected()
     {
         // The prefix is how a post-encryption blob is told apart from a pre-encryption hex one. If it ever stops

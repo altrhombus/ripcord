@@ -83,8 +83,21 @@ public sealed partial class AccountTokenStore : IAccountTokenStore
     {
         ArgumentNullException.ThrowIfNull(session);
 
+        string protectedToken;
+        try
+        {
+            protectedToken = Wrap(session.RefreshToken);
+        }
+        catch (NoCredentialProtectionException)
+        {
+            // Nothing can be encrypted here, and a refresh token is never written in the clear. The sign-in
+            // carries on in memory for this run; removing any older file keeps a stale token from outliving it.
+            Clear();
+            return;
+        }
+
         var persisted = new PersistedAccount(
-            Wrap(session.RefreshToken),
+            protectedToken,
             session.AccountId,
             session.DisplayName,
             session.SavedAt == default ? DateTimeOffset.UtcNow : session.SavedAt);
