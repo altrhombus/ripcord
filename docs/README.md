@@ -69,8 +69,8 @@ captures, the working lab notebook with unredacted values, vendor↔ours name ma
 provenance-audit findings. Documents in the published tree cite it by filename so the trail is followable
 by anyone who has their own captures, but its contents do not ship.
 
-**Don't cite commit hashes in these documents.** The history was rewritten before publication, so a hash from
-before then points at nothing, and a citation that looks checkable and isn't is worse than none. Cite a date
+**Don't cite commit hashes in these documents.** A hash that no longer resolves looks checkable and isn't,
+which is worse than no citation at all. Cite a date
 and a document section instead, and let `git log` find the change.
 
 **`README.md` states no test counts.** They went stale twice, so the test run is the source:

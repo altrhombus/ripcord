@@ -41,7 +41,7 @@ version numbers, and they are **not** the `RP-Version` header:
   AES-128-CFB over a handful of small headers. **No public-key exchange in the HTTP handshake at all.**
   ECDH exists in this generation only later, inside the Takion *stream* handshake
   (`ecdhPublicKey`/`ecdhSignature`). Validated end-to-end against our own PS5 and PS4.
-- **`v2` — observed, never reverse-engineered.** The newer client (its engine module, packed/anti-debug)
+- **`v2` — observed; reverse-engineering it was attempted and abandoned.** The newer client (its engine module, packed/anti-debug)
   uses a *different* HTTP control plane: an ECDH exchange carried in `RP-Pubkey`/`RP-Hmac` headers plus
   the `RP-DevACha`/`RP-DevAChaTag` pair. Seen in five capture sessions on 2026-07-10 and documented in
   `ps5-session-establishment.md`; the packer made static RE uneconomic, so we pivoted to the older
@@ -89,8 +89,8 @@ Two corrections to earlier framing, recorded because they were wrong for a while
     enum constant is simply the plain-English description of its content — `CursorPayload`,
     `PacketLossPayload`, `StreamInfoPayload`, `DebugOption`, and the trace/metric constants such as
     `VIDEO_DECODE` or `AUDIO_FRAMENALUSCOMPLETE` — it is kept. About two-thirds of the schema's message
-    names fall in this class. They carry no coined expression: any independent labeller describing the same
-    field arrives at the same words, and renaming them would obscure the mapping without adding originality.
+    names fall in this class. Any independent labeller describing the same field arrives at the same words,
+    and renaming them would obscure the mapping.
   - **Two further documented exceptions, both deliberate.** (1) `Takion` and `Senkusha` are the **vendor's own
     codenames**, retained throughout the code and this spec as protocol terminology — see the naming table in
     `CLAUDE.md` for the rationale. Only `Halyard` is our invention. (2) Some protobuf **field** names
@@ -99,7 +99,7 @@ Two corrections to earlier framing, recorded because they were wrong for a while
     renamed; they simply have not been.
   - **No vendor *symbol* name is used anywhere** — no C++ class, function, or log string recovered from the
     binary appears in the code or this spec; those are cited by RVA only. (The control-plane cipher is named
-    for what it does, not after the vendor's `RpCryptAes` class.)
+    for what it does, not after the vendor's own class.)
 - **Reproduced, deliberately — on-the-wire interoperability facts only.** These are values the console
   parses by content and that therefore *cannot* be changed without breaking interoperability:
   protobuf **field numbers / enum values / wire types**; JSON config **keys** (`handshakeKey`, `sessionId`,
@@ -109,7 +109,7 @@ Two corrections to earlier framing, recorded because they were wrong for a while
 ## What the repository holds
 
 This is an interoperability specification for connecting a user's own client to a user's own console under
-the user's own account. It reproduces interface facts, not vendor code. Key material tied to a
+the user's own account. It reproduces the values a client needs to interoperate, not vendor code. Key material tied to a
 console, an account or a session is derived at runtime from the user's own registration and is never
 committed; it stays in the gitignored captures folder. **Two things recovered from the vendor client are
 committed, deliberately:** about 4 KB of protocol constants that every client computes against, and the

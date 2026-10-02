@@ -208,7 +208,7 @@ public static class AesGcmCore
     /// 16-byte block (~90 times for a full packet), and the portable bit-serial form below runs 128 iterations
     /// of byte-wise XOR and shift per call — measured at ~1.7-1.9 us each, i.e. ~150-175 us per packet, which
     /// alone capped the receive path near 60 Mbps on both architectures. The PCLMULQDQ path is ~60x faster;
-    /// PMULL took measured per-packet A/V crypto from ~200 us to ~12-15 us on a Snapdragon X2.
+    /// PMULL took measured per-packet A/V crypto from ~200 us to ~12-15 us on an ARM64 laptop.
     /// </para>
     ///
     /// <para>

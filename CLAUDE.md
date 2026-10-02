@@ -182,7 +182,7 @@ our own traffic**; PSN offers no third-party registration, so there is no creden
 - It passes the generic-versus-personal test: identical for every user, it authenticates an application, not a
   person. No user credential is ever bundled; the signed-in account's refresh token is encrypted on the user's
   own machine (DPAPI on Windows, the Keychain on the Mac).
-- **It is not an interface fact.** A client speaks the protocol without it (a LAN session needs no internet), so
+- **It is not a protocol value.** A client speaks the protocol without it (a LAN session needs no internet), so
   `NOTICE` describes it separately. Never justify a third bundle by pointing at this one.
 - **"Other implementations ship it" is not the rationale** and must never be recorded as one. Our provenance is
   our own capture; any comparison came afterwards, as an audit.

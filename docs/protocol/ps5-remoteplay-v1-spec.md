@@ -34,13 +34,13 @@ What *is* reproduced verbatim is limited to **on-the-wire interoperability facts
 by value and that therefore cannot be changed: protobuf **field numbers / enum values / wire types**, the
 JSON config **keys** (`handshakeKey`, `sessionId`, `streamResolutions`, `disableRPEncryption`, …), and the
 HTTP **header names** (`RP-Auth`, `RP-Did`, `RP-Nonce`, `RP-OSType`, …). Vendor code is cited by relative
-virtual address (`FUN_<rva>`) only. Nothing here is legal advice.
+virtual address (`FUN_<rva>`) only. Nothing here is legal advice, and Ripcord makes no claim about how any law applies to it.
 
 Confidence tags used below: **[V]** verified byte-for-byte against a live capture · **[C]** confirmed from
 our decompiled code · **[W]** observed on the wire · **[I]** inferred / not yet pinned · **[X]** assumed —
 adopted provisionally and never confirmed against the console. An `[X]` value with no accompanying
 `[C]`/`[V]`/`[W]` tag is **not settled**: it is a working assumption that happens to interoperate, and each
-one is a candidate cause if something misbehaves. The open list is in the roadmap.
+one is a candidate cause if something misbehaves. There is deliberately no central list: grep for `[X]`.
 
 ---
 
@@ -130,7 +130,7 @@ newer-client addition (plausibly the v2 ECDH handshake bleeding into shared head
 "obvious candidate" reading is withdrawn.
 
 **cap63 update (2026-08-07): the account route is confirmed present and dissected, and the "PIN route minus
-the fold" hypothesis is now FALSIFIED [X].** cap63 is a single off-network session containing a successful
+the fold" hypothesis is now falsified.** cap63 is a single off-network session containing a successful
 PS5 and a successful PS4 no-PIN pair (plus two PS4 attempts that died in the RUDP `06`-type INIT with no
 server reply — reachability, not auth). Findings, all validated in `NoPinRegistrationVectorTests` against the
 gitignored `nopin_registration_vectors.json` fixture:
@@ -371,7 +371,7 @@ class authenticates with a 4-byte GMAC but at class-specific header offsets.
 > **congestion** path (`vtable+0x44`, version-gated crypto). Our binary is unambiguous: handshake=4,
 > congestion=5.
 
-**A/V data packet header** (**[C]** from `parseMessage` + **[W]** wire-confirmed):
+**A/V data packet header** (**[C]** from the vendor's message parser + **[W]** wire-confirmed):
 ```
 off 0     : type (0x02 video / 0x03 audio / 0x12 FEC)
 off 1-2   : per-packet sequence (big-endian uint16, +1 per packet)
