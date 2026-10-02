@@ -23,7 +23,7 @@ Ripcord's protocol specification was derived independently, from the authors'
 own installed copy of the publicly distributed vendor client, on hardware the
 authors own, and from the authors' own traffic between that client and their
 own console under their own account. The methods, each recorded per item in
-docs/protocol-research-log.md, were: static analysis (disassembly and
+docs/protocol-research-log.md, included: static analysis (disassembly and
 decompilation); running the client under a debugger and instrumentation
 framework to read its memory, including live session keys; capturing traffic,
 including through a TLS-terminating proxy on the authors' own machine, with the
