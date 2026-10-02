@@ -12,6 +12,10 @@ This page covers the dotnet client on Windows.
 - **PlayStation Network**, only if you sign in. Sign-in, the console list on your account, waking a console
   remotely and connecting over the internet all go to Sony's servers, under Sony's own privacy policy. The
   sign-in page is Sony's, shown inside Ripcord.
+- **A public STUN server**, only when you play over the internet: Google's or Cloudflare's. Before an internet
+  session, Ripcord asks one of them what your public address looks like from outside your router, so the
+  console knows where to reach you. The request carries nothing but a random number; the server sees your
+  public IP address, as any server you contact does.
 
 That is the whole list. Ripcord makes no other network connections of its own.
 
@@ -33,6 +37,9 @@ Everything lives in `%LocalAppData%\Ripcord`, and nowhere else:
 | `state\crash.log` | What went wrong, if the app crashed |
 | `state\session-trace-*.csv` | Per-stream figures: frame rates, loss, round-trip time, bitrate |
 | `state\*-trace.log` | Diagnostic logs some features write while you use them |
+
+If Windows can't provide DPAPI, Ripcord doesn't fall back to saving them unencrypted: it saves neither, and
+Settings says so.
 
 None of these files leave your machine unless you send them to someone. If you attach one to a bug report,
 read it first: the logs can contain your console's name and its address on your network.

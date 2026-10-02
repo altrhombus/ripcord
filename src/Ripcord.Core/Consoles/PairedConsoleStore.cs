@@ -47,6 +47,8 @@ public sealed partial class PairedConsoleStore : IPairedConsoleStore
     /// <summary>True when the stored credentials are actually encrypted on this platform.</summary>
     public bool CredentialsEncrypted => _protector.IsRealProtection;
 
+    public bool CanSaveCredentials => _protector is not UnavailableCredentialProtector;
+
     /// <summary>Encrypt a pairing record for storage.</summary>
     public string EncodeBlob(byte[] pairingRecord) => PairedConsoleBlob.Encode(pairingRecord, _protector);
 
