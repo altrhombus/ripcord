@@ -19,12 +19,10 @@ We're close! Here's what's left, in order:
 
 1. **Finish the hardware pass.** It ran on 2026-10-01, and everything it turned up is fixed and checked with
    both pads (the journal has the whole list). Still on the bench: a 200% display.
-2. **Fix what the review turned up.** One bad packet can end a session, and sign-in doesn't survive a token
-   refresh. Neither is a long fix.
-3. **Package it.** A zip that runs on a machine that's never seen the .NET SDK, with GameInput's
+2. **Package it.** A zip that runs on a machine that's never seen the .NET SDK, with GameInput's
    redistributable alongside it.
-4. **Install it on a clean machine.** Pair, stream, done.
-5. **Tag `v1.0`.** Then celebrate.
+3. **Install it on a clean machine.** Pair, stream, done.
+4. **Tag `v1.0`.** Then celebrate.
 
 Everything else in this file is real, and it can wait. (Yes, even the Apple TV app.)
 
@@ -83,17 +81,6 @@ it hasn't been run recently), translations, and a purchased signing certificate.
 
 ## Blocking 1.0
 
-### From the 2026-09-30 review
-
-An outside-eyes review, kept in the captures folder. Every item here was checked against the code first.
-
-- [ ] **One spoofed datagram can end a session.** `TakionDataChunk.TryParse` accepts a 12-byte chunk, then
-      slices the first-fragment payload from byte 9 of an 8-byte value. Bound the slice, catch per packet in
-      both receive loops, drop verification-tag mismatches, and add a test for the 12-byte chunk.
-- [ ] **Sign-in doesn't survive a refreshed token or an outage.** A rotated refresh token lives in memory only,
-      and any cloud error at restore, a 503 included, clears the stored account. Persist on refresh; clear only
-      on a definite rejection.
-
 ### Packaging
 
 - [x] The unused `systemAIModels` capability is gone, the package requires 25H2, `dotnet publish` is
@@ -147,6 +134,9 @@ An outside-eyes review, kept in the captures folder. Every item here was checked
       come from the title bar (`FocusPilot`'s straight-line fallback), and why full screen leaves the content
       host a pixel down (`ContentBridge`).
 - [ ] **Why a discovery family went quiet** on 2026-08-05 is still unexplained. The spinner fix stays.
+- [ ] **Verify the GMAC on inbound control packets** once the stream keys exist. Our tag check now drops
+      packets from outside the association, but anyone who can see the tag can still forge control DATA; the C
+      core already checks the GMAC (review, H2).
 - [ ] **`MFStartup` from an STA** is the suspected exact cause of the 2026-08-06 Settings crash `[X]`. The
       native-class guard holds either way.
 - [ ] **Smaller hardening from the review:** the TCP control channel spinning on EOF, unbounded control-plane
@@ -215,6 +205,11 @@ An outside-eyes review, kept in the captures folder. Every item here was checked
 - [ ] **Windows onto the engine,** one seam at a time behind `RIPCORD_ENGINE`, after 1.0.
 
 ### The Mac, iPhone, iPad and Apple TV
+
+- [ ] **The Mac's sign-in has the dotnet client's three token bugs** (fixed there on 2026-10-01): `restore()`
+      clears the store on any service error, a 503 included; a background refresh is never stored; and a restore
+      whose account lookup fails keeps the spent token. Port the fix and `HalyardAccountGatewayTests` to
+      `AccountGateway.swift` and its `TokenProvider`.
 
 - [ ] **The Mac app's first hardware session:** the library's states, pairing both routes, launch timing,
       capture, the inspector, latency beside the dotnet client's. Then recording, PiP, HDR end to end, and
