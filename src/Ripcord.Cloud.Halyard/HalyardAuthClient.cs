@@ -142,7 +142,7 @@ public sealed class HalyardAuthClient(HttpClient http, HalyardClientConfig confi
         string body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
         {
-            throw new HalyardCloudException($"Token request failed ({(int)response.StatusCode}).", body);
+            throw new HalyardCloudException($"Token request failed ({(int)response.StatusCode}).", body, (int)response.StatusCode);
         }
 
         HalyardTokenResponse parsed = JsonSerializer.Deserialize(body, HalyardCloudJsonContext.Default.HalyardTokenResponse)
@@ -156,7 +156,18 @@ public sealed class HalyardAuthClient(HttpClient http, HalyardClientConfig confi
 }
 
 /// <summary>Raised when a cloud call fails; carries the response body for diagnostics (may hold PII - do not log to shared sinks).</summary>
-public sealed class HalyardCloudException(string message, string? responseBody = null) : Exception(message)
+public sealed class HalyardCloudException(string message, string? responseBody = null, int? statusCode = null) : Exception(message)
 {
     public string? ResponseBody { get; } = responseBody;
+
+    /// <summary>The HTTP status, when the failure was an HTTP answer at all.</summary>
+    public int? StatusCode { get; } = statusCode;
+
+    /// <summary>
+    /// The server refused the credential itself, rather than failing to answer: 400 or 401. OAuth answers a dead
+    /// refresh token with 400 <c>invalid_grant</c>; which of the two this token endpoint sends for one is
+    /// <c>[X]</c>, never captured, so both count. Everything else (5xx, 429, a parse failure) says nothing about
+    /// the credential, and a stored sign-in must survive it.
+    /// </summary>
+    public bool IsCredentialRejected => StatusCode is 400 or 401;
 }
