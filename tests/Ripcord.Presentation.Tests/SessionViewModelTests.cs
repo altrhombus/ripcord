@@ -294,17 +294,18 @@ public class SessionViewModelTests
     }
 
     [Fact]
-    public void Adaptive_WithReportingOff_SaysTheTargetIsNotBeingSent()
+    public void Adaptive_IsARecommendation_NotSomethingSent()
     {
-        // The distinction matters: a target the console never hears about explains why nothing changed.
-        RipcordSettings noReporting = Defaults with { ReportConnectionQuality = false };
-        (SessionViewModel vm, FakePipeline pipeline, _) = Build(noReporting);
+        // Nothing acts on it, and since 2026-10-02 nothing sends it: the panel must not say otherwise, whatever an
+        // older settings file says about reporting.
+        (SessionViewModel vm, FakePipeline pipeline, _) = Build(Defaults with { ReportConnectionQuality = true });
         pipeline.Snapshot = new VideoPipelineSnapshot(60, 60, 0, 8, 2, DecodedWidth: 1920, DecodedHeight: 1080);
 
         vm.Sample(Live(recommended: new BitrateDecision(12_000, 1920, 1080, 60)));
 
         Assert.True(vm.State.Diagnostics.AdaptiveVisible);
-        Assert.Contains("not sent (reporting off)", vm.State.Diagnostics.Adaptive);
+        Assert.Contains("12.0 Mbps recommended", vm.State.Diagnostics.Adaptive);
+        Assert.DoesNotContain("sent", vm.State.Diagnostics.Adaptive);
     }
 
     [Fact]
@@ -317,7 +318,8 @@ public class SessionViewModelTests
 
         vm.Sample(Live(recommended: new BitrateDecision(12_000, 1280, 720, 60)));
 
-        Assert.Contains("needs a reconnect", vm.State.Diagnostics.Adaptive);
+        Assert.Contains("resolution is set when a stream starts", vm.State.Diagnostics.Adaptive);
+        Assert.DoesNotContain("reconnect", vm.State.Diagnostics.Adaptive);
     }
 
     // ---- headroom and health -------------------------------------------------------------------

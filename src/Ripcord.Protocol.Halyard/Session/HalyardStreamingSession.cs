@@ -194,6 +194,7 @@ public sealed class HalyardStreamingSession : IStreamingSession
             if (report is { } toSend)
             {
                 _takionStream.ReportConnectionQuality(toSend);
+                _lastRequestedKbps = toSend.TargetBitrateKbps;
             }
         }
 
@@ -210,8 +211,15 @@ public sealed class HalyardStreamingSession : IStreamingSession
             DeclaredMtu: _confirmedMtu ?? LinkMetrics.MtuToDeclare(_measuredMtu),
             DeclaredRttMs: _measuredRttMs,
             MtuConfirmed: _confirmedMtu is not null,
-            ReceiveQueueDepth: _takionStream?.AvQueueDepth ?? 0));
+            ReceiveQueueDepth: _takionStream?.AvQueueDepth ?? 0,
+            RequestedBitrateKbps: _lastRequestedKbps,
+            QualityReportsSent: _takionStream?.ConnectionQualityReportsSent ?? 0));
     }
+
+    // The target in the last CONNECTION_QUALITY handed to the stream, for the trace. Written and read on the
+    // statistics path only.
+    private int _lastRequestedKbps;
+
     /// <summary>
     /// Ask the console for a fresh IDR. Safe to call before the stream is up (a no-op) and rate-limited inside
     /// the Takion stream, so callers can fire it on every detected corruption.
