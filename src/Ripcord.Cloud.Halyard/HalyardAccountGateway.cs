@@ -63,6 +63,7 @@ public sealed class HalyardAccountGateway
         _store = store;
         _auth = new HalyardAuthClient(http, config);
         _tokens = new HalyardTokenProvider(_auth);
+        _tokens.OnRefreshed(PersistRefreshed);
         _cloud = new HalyardCloudClient(http, _tokens);
 
         // Resolved once, eagerly, so a machine that cannot supply a device id fails at construction with a
@@ -227,6 +228,12 @@ public sealed class HalyardAccountGateway
     /// round trip re-learning that it is dead, and the user seeing a sign-in prompt while a file on disk claims
     /// otherwise.
     /// </para>
+    ///
+    /// <para>
+    /// <b>Only a rejected one.</b> Any cloud failure used to clear it, so a 503 at launch, or a token endpoint
+    /// having a bad minute, signed the install out for good (the 2026-09-30 review). Now a failure that says
+    /// nothing about the credential returns null and keeps the store, and the next attempt tries again.
+    /// </para>
     /// </summary>
     public async Task<HalyardAccount?> RestoreAsync(CancellationToken cancellationToken)
     {
@@ -245,9 +252,13 @@ public sealed class HalyardAccountGateway
         {
             await _tokens.SeedFromRefreshTokenAsync(stored.RefreshToken, cancellationToken).ConfigureAwait(false);
         }
-        catch (HalyardCloudException)
+        catch (HalyardCloudException ex)
         {
-            _store.Clear();
+            if (ex.IsCredentialRejected)
+            {
+                _store.Clear();
+            }
+
             return null;
         }
 
@@ -262,6 +273,12 @@ public sealed class HalyardAccountGateway
         {
             // The token refreshed but the account lookup failed — a service problem rather than a credential
             // one. Fall back to the cached identity so an install stays signed in through an outage.
+            //
+            // The refresh spent the stored token either way, so the new one is stored here too. This path used
+            // to keep the spent one, and the launch after an account-lookup outage was signed out.
+            HalyardTokens latest = _tokens.Current ?? current;
+            _store.Save(stored with { RefreshToken = latest.RefreshToken, SavedAt = DateTimeOffset.UtcNow });
+
             if (stored.AccountId is null)
             {
                 return null;
@@ -275,9 +292,35 @@ public sealed class HalyardAccountGateway
     /// <summary>Destroy the stored credential and forget the session.</summary>
     public void SignOut()
     {
-        _store.Clear();
+        // The provider first: clearing it is what stops a refresh in flight from storing its tokens (OnRefreshed),
+        // so the store cleared after it stays cleared.
         _tokens.Clear();   // or the next cloud call still goes out as the signed-out account
+        _store.Clear();
         _account = null;
+    }
+
+    /// <summary>
+    /// Store the refresh token a background refresh just received, keeping the stored identity. Without this the
+    /// store held the token from sign-in or restore, which the first refresh spent.
+    /// </summary>
+    private void PersistRefreshed(HalyardTokens fresh)
+    {
+        try
+        {
+            StoredAccountSession? stored = _store.Load();
+            _store.Save(new StoredAccountSession(
+                fresh.RefreshToken,
+                _account?.AccountId ?? stored?.AccountId,
+                _account?.OnlineId ?? stored?.DisplayName,
+                DateTimeOffset.UtcNow));
+        }
+        catch (Exception)
+        {
+            // The refresh itself worked, and every caller sharing it is waiting on the token, not on the disk.
+            // A store that can't be written (a locked file, a profile without DPAPI) costs the next launch its
+            // sign-in, which is what happened every time before this existed; failing the refresh would cost
+            // this session too.
+        }
     }
 
     private async Task<HalyardAccount> IdentifyAndPersistAsync(

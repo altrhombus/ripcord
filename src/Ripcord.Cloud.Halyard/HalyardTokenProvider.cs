@@ -20,6 +20,7 @@ public sealed class HalyardTokenProvider(HalyardAuthClient auth)
     private readonly Lock _gate = new();
     private HalyardTokens? _tokens;
     private Task<HalyardTokens>? _refreshing;
+    private Action<HalyardTokens>? _refreshed;
 
     // Bumped by every seed and clear, so a refresh started under one sign-in never lands on another.
     private int _generation;
@@ -42,6 +43,20 @@ public sealed class HalyardTokenProvider(HalyardAuthClient auth)
             _tokens = tokens;
             _refreshing = null;
             _generation++;
+        }
+    }
+
+    /// <summary>
+    /// Called with the new tokens after each refresh the provider makes on its own, so the new refresh token can
+    /// be stored. A refresh grant spends the old one, so a refresh that lived only in memory signed the install
+    /// out at its next launch (the 2026-09-30 review). Runs under the provider's lock and only for the sign-in
+    /// that started it, so a sign-out that has cleared the provider can never be undone by a late refresh.
+    /// </summary>
+    public void OnRefreshed(Action<HalyardTokens> persist)
+    {
+        lock (_gate)
+        {
+            _refreshed = persist;
         }
     }
 
@@ -102,6 +117,7 @@ public sealed class HalyardTokenProvider(HalyardAuthClient auth)
                 }
 
                 _tokens = fresh;
+                _refreshed?.Invoke(fresh);
                 return fresh;
             }
         }
