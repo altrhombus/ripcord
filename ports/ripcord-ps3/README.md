@@ -2,6 +2,8 @@
 
 A PS5 Remote Play client for PlayStation 3 homebrew, in C.
 
+Installing its `.pkg` needs a PS3 that runs homebrew; a console on Sony's stock firmware won't install it.
+
 **Status: it streams.** A PS5's picture, decoded on the console's own hardware decoder, scaled on the
 SPEs, presented through the RSX, with Opus audio, controller input, and pairing performed from the PS3
 itself using the system keyboard. The sections below are the record of getting there, in the order it

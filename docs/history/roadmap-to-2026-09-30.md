@@ -653,7 +653,7 @@ looking.
     reach the login-pin dialog? Is shift-as-one-shot right? Backspace removes the last character and there is
     no caret movement — a deliberate call, and one you may disagree with after typing an IP address.
   - **Key bindings page**: rebinding should no longer throw focus to the top of the page.
-  - **Hint bar** (`afcdccc`): does it read at couch distance, and does the mode hysteresis feel right when a
+  - **Hint bar**: does it read at couch distance, and does the mode hysteresis feel right when a
     mouse is nudged mid-session?
   - **Touch**: the 48px targets, and the one thing deliberately NOT wired — whether press-and-hold
     on a console card raises `ContextRequested`. The container has a `ContextFlyout` so it should, but that is

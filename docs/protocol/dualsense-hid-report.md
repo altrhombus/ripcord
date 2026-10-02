@@ -1,7 +1,7 @@
 # DualSense HID input report
 
 Status: **USB and Bluetooth both confirmed** from live captures (`054C:0CE6` — 37,437 USB reports, 47,804 BT
-reports).
+reports). The parts tagged `[X]` below are not: Bluetooth's full report `0x31`, and the Edge's id.
 
 ## Three report formats
 
