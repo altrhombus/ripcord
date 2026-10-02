@@ -136,8 +136,6 @@ purchased signing certificate.
       window, and Settings while it's open.
 - [ ] **The copied diagnostics report leaves out where zero-copy fell back.** The F3 panel says; the text
       doesn't.
-- [ ] **`CompositeControllerSource` keeps a disconnected engine's last frame.** The stuck button is fixed
-      where it started, but the merge shouldn't depend on an engine sending a neutral frame.
 - [ ] **Two WinUI mysteries with workarounds in place** `[X]`: why XY focus drops a candidate once focus has
       come from the title bar (`FocusPilot`'s straight-line fallback), and why full screen leaves the content
       host a pixel down (`ContentBridge`).
@@ -148,7 +146,7 @@ purchased signing certificate.
 - [ ] **`MFStartup` from an STA** is the suspected exact cause of the 2026-08-06 Settings crash `[X]`. The
       native-class guard holds either way.
 - [ ] **Smaller hardening from the review:** the TCP control channel spinning on EOF, unbounded control-plane
-      reassembly, the Takion loops dying on one ICMP error, an audio device change keeping the old format,
+      reassembly, an audio device change keeping the old format,
       pointer-only on-screen buttons, and GameInput's microsecond timestamps where the input writer expects
       `DateTime` ticks. Details in the captures-folder review.
 - [ ] **Trimming.** The app code trims clean; CsWinRT's ABI layer still produces 37 warnings that need
@@ -211,13 +209,18 @@ purchased signing certificate.
 - [ ] **Re-entrant ABI calls** from a host callback alias `&mut` (review). Return `Busy` before the .NET host
       arrives.
 - [ ] **Windows onto the engine,** one seam at a time behind `RIPCORD_ENGINE`, after 1.0.
+- [ ] **The engine's UDP sockets on Windows,** before Windows moves onto it. `ripcord-net` doesn't switch off
+      `SIO_UDP_CONNRESET`, so one ICMP port-unreachable would fail the next receive, which ended dotnet-client
+      sessions until 2026-10-01 (`UdpChannelResetTests` is the model). The Mac and the console ports aren't
+      affected: it's Windows behaviour.
 
 ### The Mac, iPhone, iPad and Apple TV
 
-- [ ] **The Mac's sign-in has the dotnet client's three token bugs** (fixed there on 2026-10-01): `restore()`
-      clears the store on any service error, a 503 included; a background refresh is never stored; and a restore
-      whose account lookup fails keeps the spent token. Port the fix and `HalyardAccountGatewayTests` to
-      `AccountGateway.swift` and its `TokenProvider`.
+- [ ] **The Mac's sign-in has the dotnet client's token bugs** (fixed there on 2026-10-01): `restore()`
+      clears the store on any service error, a 503 included; a background refresh is never stored; a restore
+      whose account lookup fails, the network included, keeps the spent token; and nothing stops two restores
+      at once spending one token. Port the fix and `HalyardAccountGatewayTests` to `AccountGateway.swift` and
+      its `TokenProvider`, and clear only on 400 `invalid_grant`.
 
 - [ ] **The Mac app's first hardware session:** the library's states, pairing both routes, launch timing,
       capture, the inspector, latency beside the dotnet client's. Then recording, PiP, HDR end to end, and
