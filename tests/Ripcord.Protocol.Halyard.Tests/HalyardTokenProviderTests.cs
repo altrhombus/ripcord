@@ -80,4 +80,38 @@ public class HalyardTokenProviderTests
         Assert.Null(provider.Current);
         await Assert.ThrowsAsync<InvalidOperationException>(() => provider.GetAccessTokenAsync(CancellationToken.None));
     }
+
+    [Fact]
+    public async Task ARefresh_IsHandedToOnRefreshed()
+    {
+        var endpoint = new TokenEndpoint();
+        var provider = new HalyardTokenProvider(new HalyardAuthClient(new HttpClient(endpoint), Config));
+        var stored = new List<string>();
+        provider.OnRefreshed(t => stored.Add(t.RefreshToken));
+        provider.Seed(Expired);
+
+        endpoint.Release.SetResult();
+        await provider.GetAccessTokenAsync(CancellationToken.None);
+
+        Assert.Equal(["refresh-1"], stored);
+    }
+
+    /// <summary>A sign-out during a refresh must not be undone by the refresh storing its tokens afterwards.</summary>
+    [Fact]
+    public async Task ARefreshThatLandsAfterClear_IsNotHandedOn()
+    {
+        var endpoint = new TokenEndpoint();
+        var provider = new HalyardTokenProvider(new HalyardAuthClient(new HttpClient(endpoint), Config));
+        var stored = new List<string>();
+        provider.OnRefreshed(t => stored.Add(t.RefreshToken));
+        provider.Seed(Expired);
+
+        Task<string> inFlight = provider.GetAccessTokenAsync(CancellationToken.None);
+        await Task.Delay(50);
+        provider.Clear();
+        endpoint.Release.SetResult();
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => inFlight);
+        Assert.Empty(stored);
+    }
 }
