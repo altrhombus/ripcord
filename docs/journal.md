@@ -50,7 +50,9 @@ Three small things from an evening of just using the app.
 - **"Alt+Left" and "F3" tooltips everywhere.** WinUI tooltips an element's first keyboard shortcut by default,
   and ours hang on the window's root and the stream page, so the tooltip covered every pixel. Both hide it now.
 
-Checked with the keyboard and mouse. The pad checks are in ROADMAP.
+Checked with the keyboard and mouse, then with both pads on Windows App SDK 2.5.1: the pad and the arrow keys
+reach the same controls on the consoles page and in Settings, the link sits clear of the bar, and the touch
+panel no longer lands on it. The page moving with the bar turned out not to bother anyone, so it stays.
 
 ### Windows App SDK 2.5.1, and a WinUI licence we can ship under (2026-10-01)
 

@@ -17,9 +17,8 @@ is the PS3 port's release, not Ripcord's).
 
 We're close! Here's what's left, in order:
 
-1. **Finish the hardware pass.** Most of it ran on 2026-10-01, and everything it turned up is fixed (the
-   journal has the whole list). Still on the bench: the roomy console card, a 200% display, and a quick look
-   at the touch panel in its new spot above the hint bar.
+1. **Finish the hardware pass.** It ran on 2026-10-01, and everything it turned up is fixed and checked with
+   both pads (the journal has the whole list). Still on the bench: the roomy console card and a 200% display.
 2. **Fix what the review turned up.** One bad packet can end a session, and sign-in doesn't survive a token
    refresh. Neither is a long fix.
 3. **Package it.** A zip that runs on a machine that's never seen the .NET SDK, with GameInput's
@@ -83,16 +82,6 @@ it hasn't been run recently), translations, and a purchased signing certificate.
 ---
 
 ## Blocking 1.0
-
-### From the hardware pass
-
-- [ ] **With a pad in hand.** Fixes from 2026-10-01 that the keyboard and mouse have checked, but a pad hasn't:
-  1. Mid-stream, move the mouse: the touch panel sits above the hint bar, not across it.
-  2. On the consoles page, with the hint bar showing: "Add another console" sits clear above it, and the pad
-     reaches it from the title bar.
-  3. Pad and arrow keys land on the same control everywhere, Settings included, since both take one path now.
-  4. Switch between pad and mouse a few times: is the page's bottom moving with the bar bothersome? If it is,
-     reserve the bar's space only while a pad is attached.
 
 ### From the 2026-09-30 review
 
