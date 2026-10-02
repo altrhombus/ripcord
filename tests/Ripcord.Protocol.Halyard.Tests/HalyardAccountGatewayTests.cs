@@ -150,6 +150,54 @@ public class HalyardAccountGatewayTests
         Assert.Equal("refresh-1", store.Load()?.RefreshToken);
     }
 
+    /// <summary>A sign-out while a restore is in flight is final: the restore's later save put the account back.</summary>
+    [Fact]
+    public async Task SigningOutDuringARestore_StaysSignedOut()
+    {
+        var store = SignedIn("refresh-0");
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var gateway = Gateway(new Cloud(Grant("refresh-1")) { GrantGate = gate }, store);
+
+        Task<HalyardAccount?> restore = gateway.RestoreAsync(CancellationToken.None);
+        await Task.Delay(50);
+        gateway.SignOut();
+        gate.SetResult();
+
+        Assert.Null(await restore);
+        Assert.Null(store.Load());
+        Assert.False(gateway.IsSignedIn);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => gateway.AccessTokenAsync(CancellationToken.None));
+    }
+
+    /// <summary>A token reply that isn't JSON (a proxy's error page) is a failed refresh, not an escaped JsonException.</summary>
+    [Fact]
+    public async Task ATokenReplyThatIsNotJson_KeepsTheStore()
+    {
+        var store = SignedIn("refresh-0");
+        var gateway = Gateway(new Cloud((HttpStatusCode.OK, "<html>gateway error</html>")), store);
+
+        Assert.Null(await gateway.RestoreAsync(CancellationToken.None));
+        Assert.Equal("refresh-0", store.Load()?.RefreshToken);
+    }
+
+    /// <summary>
+    /// A sign-in whose account lookup fails must not half-succeed: the provider stayed seeded, so every cloud call
+    /// after the "sign-in failed" message went out as that account anyway.
+    /// </summary>
+    [Fact]
+    public async Task AFailedSignIn_LeavesNothingSignedIn()
+    {
+        var store = new InMemoryAccountTokenStore();
+        var gateway = Gateway(new Cloud(Grant("refresh-1")), store);
+
+        await Assert.ThrowsAsync<HalyardCloudException>(() => gateway.CompleteSignInAsync(
+            new Uri(HalyardClientConfig.DefaultRedirectUri + "?code=synthetic"), CancellationToken.None));
+
+        Assert.False(gateway.IsSignedIn);
+        Assert.Null(store.Load());
+        await Assert.ThrowsAsync<InvalidOperationException>(() => gateway.AccessTokenAsync(CancellationToken.None));
+    }
+
     [Fact]
     public async Task ASignedInGateway_RestoresWithoutTheNetwork()
     {
