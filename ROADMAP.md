@@ -194,8 +194,14 @@ purchased signing certificate.
       minutes; the echo half needs a new signal, since the RTT always has a fallback behind it.
 - [ ] **Capture `BANDWIDTH_COMMAND`**, the one senkusha piece never seen (absent from two LAN captures). Try
       automatic quality, a bad Wi‑Fi link, or an internet session.
-- [ ] **Does the console honour a mid-session target bitrate?** Build the forced-bitrate hook (F4 cycling
-      20/10/5 Mbps) and test on a perfect link with a low target. Don't build reconnect-on-collapse first.
+- [ ] **Is there any way to steer the console's bitrate mid-session?** `CONNECTION_QUALITY`'s target is not
+      it: on 2026-10-02 the console ignored a fixed target on a clean link, sent as kbps and as bps, so the
+      Settings switch came out (journal). What's left to try: whether it reads the target only alongside the
+      upstream fields, or only for some streaming types, from a capture of the vendor client changing quality.
+- [ ] **Make a reconnect start from the recommendation.** The adaptive controller works out a lower quality
+      under loss, and nothing acts on it: a reconnect starts at the configured settings. Start the next session's
+      launchSpec from the recommendation, and the setting can go back to being "Adapt quality automatically"
+      (it reads "Show quality recommendations" since 2026-10-02, because that is all it did).
 - [ ] **The PS4's 16-byte MTU frame after the passcode.** We never send it and both families stream anyway.
       Drive a locked PS4 to a stream to be sure.
 - [ ] **Which congestion packet size do we get?** We send the 15-byte form; an older capture used 23 bytes.

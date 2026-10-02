@@ -35,6 +35,26 @@ different purpose.
 > anything. The list above is short, it is checkable in one `git log --format=%B | grep`, and it stops
 > growing the moment someone notices — which is the property that actually matters.
 
+### Two quality settings that did nothing, found out and said so (2026-10-02)
+
+Checking whether "Tell the console about your connection" could lose its "(experimental)" label turned up two
+settings whose descriptions promised more than the code did.
+
+- **The console doesn't act on `CONNECTION_QUALITY`'s target bitrate.** The session trace now records the bitrate
+  Ripcord asks for beside the bitrate that arrives, and how many reports went out, which is what made this
+  answerable. Under 5% added loss, asking for 2 Mbps changed nothing against a run with reports off. Then on a
+  clean link, with one fixed target for the whole session, asking for 5 Mbps as kbps and as bps each brought the
+  17–25 Mbps the console sends with no report at all. The switch is out of Settings, and a stored "on" is
+  ignored, so an install that had turned it on stops sending. The research log has the runs.
+- **"Adapt quality automatically" only ever changed the diagnostics panel.** The controller's recommendation was
+  shown, and sent if the switch above was on, but nothing else used it, and the panel said a reconnect would
+  apply it when a reconnect starts from the configured settings. It's "Show quality recommendations" now, the
+  panel calls the figure a recommendation, and the bitrate setting says it's the console that lowers the rate.
+  Making a reconnect start from the recommendation is on the roadmap.
+
+Also seen: for about 30 seconds after a session ends, the console refuses a new one with HTTP 403 and
+`80108b10`, and the retries get through once it lets go.
+
 ### The person-driven pass, first part: the passcode, the pad, and a reconnect that never asked (2026-10-02)
 
 The first part of ROADMAP's person-driven pass, run by hand on the dev machine with a DualSense and an Xbox pad.

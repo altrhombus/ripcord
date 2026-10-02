@@ -82,13 +82,17 @@ public sealed record RipcordSettings
 
     public UpscaleMode UpscaleMode { get; set; } = UpscaleMode.None;
 
-    /// <summary>Let the bandwidth controller reduce quality on loss/thermals. Off pins the requested rate.</summary>
+    /// <summary>
+    /// Show the bandwidth controller's recommendation in the diagnostics panel. Named for what it once meant to do:
+    /// nothing acts on the recommendation yet, so it changes no stream (2026-10-02; ROADMAP has making a reconnect
+    /// start from it). The console adjusts its own bitrate regardless.
+    /// </summary>
     public bool AdaptiveQuality { get; set; } = true;
 
     /// <summary>
-    /// Send our measured link quality and desired bitrate to the console (CONNECTION_QUALITY). Experimental and
-    /// off by default: the message's bitrate units are not wire-confirmed, so it is opt-in until validated
-    /// against real hardware.
+    /// Send our measured link quality and desired bitrate to the console (CONNECTION_QUALITY). Kept so a stored
+    /// value still reads, but no longer acted on and no longer offered: on 2026-10-02 the console did not follow the
+    /// target in kbps or in bps (research log). <see cref="ToSessionConfig"/> always sends false.
     /// </summary>
     public bool ReportConnectionQuality { get; set; }
 
@@ -188,7 +192,10 @@ public sealed record RipcordSettings
             BitrateKbps,
             Codec,
             LatencyMode,
-            ReportConnectionQuality,
+            // Never from the stored value: the console ignored the report's target in kbps and in bps (2026-10-02,
+            // research log), so the Settings switch was taken out, and an install that had turned it on must not go
+            // on sending with nothing left to turn it off.
+            ReportConnectionQuality: false,
             // HDR is gated on HEVC rather than trusted from settings: an 8-bit AVC stream cannot carry it, and
             // asking for a combination the console cannot serve risks it declining the whole launchSpec.
             RequestHdr && Codec == VideoCodec.Hevc ? DynamicRange.Hdr : DynamicRange.Sdr,
