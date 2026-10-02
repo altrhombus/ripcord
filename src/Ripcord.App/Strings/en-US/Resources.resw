@@ -40,6 +40,18 @@
     <value>Checking…</value>
     <comment>Static text on the About page.</comment>
   </data>
+  <data name="AboutPage_Controllers.Text" xml:space="preserve">
+    <value>Xbox controllers</value>
+    <comment>Static text on the About page: the row saying whether Xbox controllers can work on this PC.</comment>
+  </data>
+  <data name="AboutPage_ControllersPillChecking.Text" xml:space="preserve">
+    <value>Checking…</value>
+    <comment>Static text on the About page.</comment>
+  </data>
+  <data name="AboutPage_ControllersNotInstalledNote.Text" xml:space="preserve">
+    <value>Run GameInputRedist.msi from the Ripcord folder once, then restart Ripcord. A DualSense works without it.</value>
+    <comment>Shown on the About page when Microsoft's GameInput runtime is missing. GameInputRedist.msi is a file name - do not translate.</comment>
+  </data>
   <data name="AboutPage_HevcPillChecking.Text" xml:space="preserve">
     <value>Checking…</value>
     <comment>Static text on the About page.</comment>

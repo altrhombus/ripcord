@@ -33,5 +33,9 @@ namespace Ripcord.Input.Interop
         // continuously, an Xbox pad never produced a single press (measured 2026-08-06). Empty when no pad is
         // connected or the GameInput runtime is unavailable.
         Windows.Foundation.Collections.IVectorView<GamepadState> GetConnectedStates();
+
+        // Whether the GameInput runtime is installed and usable: creates it once and lets it go. False on a machine
+        // that has never installed GameInputRedist.msi, where every Xbox pad is invisible.
+        static Boolean IsRuntimeAvailable();
     }
 }

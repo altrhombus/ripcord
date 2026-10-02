@@ -25,6 +25,22 @@ public sealed class GameInputControllerSource : IControllerSource, IDisposable
 {
     public string SourceName => "GameInput";
 
+    /// <summary>
+    /// Whether the GameInput runtime is installed. Without it this source reports no pads at all, which looks the
+    /// same as none being plugged in, so the About page asks. Native work: call it off the UI thread.
+    /// </summary>
+    public static bool IsRuntimeAvailable()
+    {
+        try
+        {
+            return GamepadReader.IsRuntimeAvailable();
+        }
+        catch (Exception)
+        {
+            return false;   // the interop DLL itself missing or refusing to load reads the same to a user
+        }
+    }
+
     private const string GamepadControllerIdPrefix = "gameinput-gamepad-";
     private const uint MenuBit = 0x00000001;
     private const uint ViewBit = 0x00000002;

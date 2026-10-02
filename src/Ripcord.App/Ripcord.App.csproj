@@ -68,6 +68,24 @@
           CopyToPublishDirectory="PreserveNewest" CopyToOutputDirectory="Never" Visible="false" />
   </ItemGroup>
 
+  <!--
+    GameInput's redistributable, beside the app. Xbox pads go through GameInput, and a machine that has never had
+    its runtime reports no pads at all (the About page says so). Installing it needs an administrator, so the app
+    never runs it; the release notes tell people to. Taken from the restored package, whose version
+    Directory.Build.props owns.
+  -->
+  <PropertyGroup>
+    <RipcordGameInputRedist>$(NuGetPackageRoot)microsoft.gameinput\$(RipcordGameInputVersion)\redist\GameInputRedist.msi</RipcordGameInputRedist>
+  </PropertyGroup>
+  <ItemGroup>
+    <None Include="$(RipcordGameInputRedist)" Condition="Exists('$(RipcordGameInputRedist)')"
+          CopyToPublishDirectory="PreserveNewest" CopyToOutputDirectory="Never" Visible="false" />
+  </ItemGroup>
+  <Target Name="RequireGameInputRedist" BeforeTargets="ComputeResolvedFilesToPublishList">
+    <Error Condition="!Exists('$(RipcordGameInputRedist)')"
+           Text="GameInputRedist.msi is missing at $(RipcordGameInputRedist). Restore the solution (msbuild Ripcord.slnx -restore) so the GameInput package is in the NuGet cache; a release without it leaves Xbox pads dead on a clean machine." />
+  </Target>
+
   <ItemGroup>
     <Content Include="Assets\SplashScreen.scale-200.png" />
     <Content Include="Assets\LockScreenLogo.scale-200.png" />
