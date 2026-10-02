@@ -35,6 +35,40 @@ different purpose.
 > anything. The list above is short, it is checkable in one `git log --format=%B | grep`, and it stops
 > growing the moment someone notices — which is the property that actually matters.
 
+### The review's two worst bugs: one bad packet, and a sign-in that didn't stick (2026-10-01)
+
+Both came from the 2026-09-30 review, and both were exactly as it said.
+
+**One bad packet could end a session.** `TakionDataChunk.TryParse` accepts a DATA chunk with an 8-byte value,
+which is enough for a continuation fragment. The reassembler then sliced it as a *first* fragment, from byte 9,
+and threw. Nothing caught it, so it ended the receive loop, and that one loop carries the whole session's
+control and video.
+
+- A first fragment too short for a payload is dropped, and `FirstPayload` can't throw any more.
+- `HandlePacketAsync` drops anything that doesn't carry our verification tag. The console echoes our tag in
+  every packet after the handshake: the spec says so, our own capture in `TakionDataChunkTests` shows it, and
+  the C core and the engine already check it.
+- `HandlePacketAsync` never throws for a bad packet, so all three loops that feed it survive one.
+  `DroppedPacketCount` counts what it drops.
+
+The C core and the engine parse first and continuation fragments separately, each with its own bound, so they
+never had the slice bug. Verifying the GMAC on inbound control is still to do (ROADMAP).
+
+**A sign-in didn't survive a token refresh, or an outage.** The refresh token rotates: every refresh spends the
+old one. Three paths left a spent one in the store, so the next launch was signed out:
+
+- A refresh the token provider made on its own, when the access token expired, lived only in memory. It now
+  goes to the store through `OnRefreshed`.
+- A restore whose account lookup failed kept the cached identity, which is right, but also kept the spent
+  token. It stores the new one now.
+- Any cloud error at restore, a 503 included, cleared the stored account. Now only a 400 or 401 from the token
+  endpoint does. Which of the two a spent token actually gets is `[X]`.
+
+Writing the tests found the second one: the review named the other two. The outage and refresh tests fail
+against the old code, and so does the regression test for the 12-byte chunk, with the review's exact
+`ArgumentOutOfRangeException`. The Mac's Swift cloud tier has the same three sign-in bugs and is in ROADMAP;
+I can't build Swift on this machine.
+
 ### The roomy console card, at last (2026-10-01)
 
 The roomy density only appears on a page 1920 effective pixels wide with two or more consoles, and until now no
