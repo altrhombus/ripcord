@@ -164,10 +164,12 @@ public sealed class HalyardCloudException(string message, string? responseBody =
     public int? StatusCode { get; } = statusCode;
 
     /// <summary>
-    /// The server refused the credential itself, rather than failing to answer: 400 or 401. OAuth answers a dead
-    /// refresh token with 400 <c>invalid_grant</c>; which of the two this token endpoint sends for one is
-    /// <c>[X]</c>, never captured, so both count. Everything else (5xx, 429, a parse failure) says nothing about
-    /// the credential, and a stored sign-in must survive it.
+    /// The server refused the refresh token itself: 400 with <c>invalid_grant</c>, which is how OAuth (RFC 6749,
+    /// 5.2) answers a token that is expired, revoked or already spent. Nothing broader: a 401 from a token endpoint
+    /// is the application's credential being refused, not the user's token, and another 400 is a malformed request.
+    /// Neither says the stored sign-in is dead, and a stored sign-in must survive anything that doesn't. That PSN
+    /// answers a spent token exactly this way is <c>[X]</c>, never captured.
     /// </summary>
-    public bool IsCredentialRejected => StatusCode is 400 or 401;
+    public bool IsCredentialRejected
+        => StatusCode == 400 && ResponseBody is { } body && body.Contains("invalid_grant", StringComparison.Ordinal);
 }
