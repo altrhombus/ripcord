@@ -61,7 +61,7 @@ public class CaptureProvenanceTests
         // that label is accurate. These are structural handshake and DATA packets: chunk headers, an
         // ephemeral per-session association tag that dies with the connection, and protobuf bodies carrying
         // a protocol version and a bandwidth probe. No key material, nothing account- or console-derived,
-        // and the layout is an interface fact docs/protocol/ documents deliberately. Publishing them is the
+        // and the layout is part of the wire format docs/protocol/ documents deliberately. Publishing them is the
         // same act as publishing a sample TCP handshake.
         ["000000000000000000000000000100001400004823000190000064006400004823"] =
             "Takion INIT, client -> console; carries an ephemeral association tag and nothing else",

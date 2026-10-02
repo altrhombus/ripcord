@@ -42,7 +42,7 @@ Two problems, and the second is the real one:
   so satisfying it means shipping object files and a link script with every release. Possible; ugly; and
   it turns a clean posture into one that needs a paragraph of explanation.
 
-Not legal advice. But the existing line is clean, and this would be the first dependency to complicate it.
+The existing line is clean, and this would be the first dependency to complicate it.
 
 ### openh264 — the realistic base
 
@@ -54,10 +54,8 @@ dependency the other ports already take.
 - It is C++ with x86 and ARM SIMD back-ends. Neither helps on SPU, so the inner loops get rewritten for
   the SPU's 128-bit SIMD regardless. What transfers is the structure, the syntax parsing, and algorithms
   conformance-tested against real streams — which is most of the value.
-- **Patents are a separate question from licence.** Cisco's royalty coverage attaches to *their* published
-  binary module, not to source-derived builds. Against that: the core AVC patents were filed around
-  2002–2004 and the pool has largely run out on a twenty-year term `[X — not verified, not legal
-  advice]`. For a homebrew client this is the usual grey area rather than a novel risk.
+- **Patents are a separate question from licence,** and not one this project assesses. Cisco's royalty
+  coverage applies to its own published binary module; this port builds openh264 from source.
 
 ### From scratch — possible, and §2 decides the cost
 
