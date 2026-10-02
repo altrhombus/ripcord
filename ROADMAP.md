@@ -15,13 +15,18 @@ Here's the bar: someone who isn't me downloads Ripcord, pairs their own PS5 or P
 a bug I already know about. 1.0 is the dotnet client's. The console ports version on their own (`ps3-v1.0`
 is the PS3 port's release, not Ripcord's).
 
-We're close! Here's what's left, in order:
+We're close, but not one check away. Here's what's left, in order:
 
-1. **Tag a release candidate.** A `v1.0-rc1` tag builds the x64 and ARM64 zips into a draft release, which
+1. **The person-driven pass.** Stage A steps 8–10, the two Stage B checks and the input matrix in
+   [`docs/design-branch-test-pass.md`](docs/design-branch-test-pass.md), and a sweep for any control that does
+   nothing. 2026-10-01 found pads hadn't reached a stream since 2026-08-06, which is the argument for not
+   skipping this.
+2. **Tag a release candidate.** A `v1.0-rc1` tag builds the x64 and ARM64 zips into a draft release, which
    nobody sees until it's published. Those are what the next two steps install.
-2. **Run it on ARM64.** The ARM64 zip on the Surface: start it, pair, stream, both pads.
-3. **Install it on a clean machine.** Pair, stream, done.
-4. **Tag `v1.0`.** Then celebrate.
+3. **Run it on ARM64.** The ARM64 zip on the Surface: start it, pair, stream, both pads.
+4. **Install it on a clean machine.** Pair, stream, sign in, and a pad with and without GameInput, from the zip
+   CI built.
+5. **Tag `v1.0`,** with `SECURITY.md`'s version row and the release notes. Then celebrate.
 
 Everything else in this file is real, and it can wait. (Yes, even the Apple TV app.)
 
@@ -145,16 +150,33 @@ purchased signing certificate.
       core already checks the GMAC (review, H2).
 - [ ] **`MFStartup` from an STA** is the suspected exact cause of the 2026-08-06 Settings crash `[X]`. The
       native-class guard holds either way.
-- [ ] **Smaller hardening from the review:** the TCP control channel spinning on EOF, unbounded control-plane
-      reassembly, an audio device change keeping the old format,
-      pointer-only on-screen buttons, and GameInput's microsecond timestamps where the input writer expects
-      `DateTime` ticks. Details in the captures-folder review.
+- [ ] **Smaller hardening from the reviews:** the TCP control channel spinning on EOF, unbounded control-plane
+      reassembly (and `HalyardCtrlMessage.TryParse`'s length sum overflowing near `int.MaxValue`), Takion's
+      retransmit with no backoff or cap and its unbounded inbound queue, an audio device change keeping the old
+      format, pointer-only on-screen buttons, and GameInput's microsecond timestamps where the input writer
+      expects `DateTime` ticks (now mixed, since its neutral frame uses `DateTime` ticks). Details in the
+      captures-folder reviews.
+- [ ] **Threading, from the second review:** `InputRouter`'s lock and `SessionController`'s gate are both
+      taken on the UI thread, and the decode pipeline's lock is held across decode bursts. The rule that held
+      for the observables ("no lock the UI thread can contend") needs applying, not `SpinGate` everywhere.
+      Also: only `MainWindow` guards work queued after close (the dispatcher itself should), the composite
+      can publish merged frames out of order, GameInput replays one connection event where it now has several
+      pads, and its poll timer isn't waited for on dispose.
+- [ ] **A race in adding a console:** `AddConsoleFlow`'s scan cancellation (`_scanCts`) is read and replaced
+      across threads.
+- [ ] **Surface `DroppedPacketCount`** in the diagnostics overlay, so a burst of rejected control packets is
+      visible.
+- [ ] **A test for the session page's input wiring,** or move it into Presentation. The pads went unwired
+      for two months with nothing noticing.
 - [ ] **Trimming.** The app code trims clean; CsWinRT's ABI layer still produces 37 warnings that need
       understanding first. Buys download size only.
 - [ ] **The Windows App SDK metapackage brings unused AI, ML and Search components** into the publish (~45 MB
       of the 270 MB on 2.2; 2.5 added Search). Reference the component packages instead.
 
 ### Sign-in and the cloud tier
+
+- [ ] **`PersistRefreshed` does DPAPI and disk I/O under the token provider's lock,** and `_account` is read
+      from other threads without a fence. Neither has bitten; both are worth tidying.
 
 - [ ] **Sign in without the telemetry permission.** The sign-in asks for `sbahn:pc.telemetry.publish`, copied
       with the official client's other scopes, though Ripcord never publishes anything. Drop it and check that
@@ -241,6 +263,18 @@ purchased signing certificate.
 - [ ] **An inert build for the C ports**, without the interop constants, if a port ever needs one.
 
 ### Decisions and checks
+
+- [ ] **Repository security:** branch protection on `main`, secret scanning and push protection, Dependabot,
+      actions pinned by SHA, and a CI check that every commit's identity is the project's.
+- [ ] **The release, beyond the zip:** sign the exe (Artifact Signing can sign one inside a zip, not only an
+      MSIX), check the notices are fresh in CI rather than only present, and note that only `dotnet publish`
+      makes the self-contained build (`msbuild -t:Publish` doesn't set `_IsPublishing`).
+- [ ] **ProtocolLab's `register` and `pair`** still print the registration key and `RP-Key`; route them through
+      the redactor. And the leak guard should warn, not stay silent, when it can't read its denylist.
+- [ ] **The engine and ports items the second review found untracked:** its M1, M2, L4, and the `free` case of
+      the engine's re-entrancy finding (`ripcord_client_free` returns `void`, so "return Busy" can't cover a
+      free from inside a callback). Those gate the first `RIPCORD_ENGINE` seam. Also `halyard_client.c`, which
+      has no production consumer.
 
 - [ ] **Verify the review's store and market claims** before acting on any of them.
 - [ ] **Signing the MSIX:** try Azure Artifact Signing.
