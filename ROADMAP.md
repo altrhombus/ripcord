@@ -20,7 +20,8 @@ We're close, but not one check away. Here's what's left, in order:
 1. **The person-driven pass.** Stage A steps 8–10, the two Stage B checks and the input matrix in
    [`docs/design-branch-test-pass.md`](docs/design-branch-test-pass.md), and a sweep for any control that does
    nothing. 2026-10-01 found pads hadn't reached a stream since 2026-08-06, which is the argument for not
-   skipping this.
+   skipping this. The first part ran on 2026-10-02 and found the bugs the journal lists; the
+   connect, HUD, pairing and input checks are still to do.
 2. **Tag a release candidate.** A `v1.0-rc1` tag builds the x64 and ARM64 zips into a draft release, which
    nobody sees until it's published. Those are what the next two steps install.
 3. **Run it on ARM64.** The ARM64 zip on the Surface: start it, pair, stream, both pads.
