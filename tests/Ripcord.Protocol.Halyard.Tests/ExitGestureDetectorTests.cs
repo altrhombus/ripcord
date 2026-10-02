@@ -163,4 +163,13 @@ public class ExitGestureDetectorTests
             Assert.False(string.IsNullOrWhiteSpace(ExitGestureDetector.Describe(g)));
         }
     }
+
+    [Theory]
+    [InlineData(ExitGesture.StartSelectShoulders, PadFamily.Vendor, "Hold Options + Create + L1 + R1")]
+    [InlineData(ExitGesture.StartSelectShoulders, PadFamily.Generic, "Hold Menu + View + LB + RB")]
+    [InlineData(ExitGesture.BothSticksClicked, PadFamily.Vendor, "Hold L3 + R3")]
+    [InlineData(ExitGesture.BothSticksClicked, PadFamily.Generic, "Hold LS + RS")]
+    [InlineData(ExitGesture.None, PadFamily.Generic, "Press Esc")]
+    public void TheDescription_NamesThePadInHand(ExitGesture gesture, PadFamily family, string expected)
+        => Assert.Equal(expected, ExitGestureDetector.Describe(gesture, family));
 }

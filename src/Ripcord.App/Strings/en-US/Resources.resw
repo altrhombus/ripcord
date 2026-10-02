@@ -300,6 +300,10 @@
     <value>Reset to defaults</value>
     <comment>The label on a control on the key-bindings page. Keep it short; it sits on a control.</comment>
   </data>
+  <data name="LoginPinDialog_PadHint.Text" xml:space="preserve">
+    <value>On a controller, enter it with the same buttons as on your console.</value>
+    <comment>Hint on the login passcode dialog, shown when a controller is attached. The controller's buttons type the passcode digits exactly as the console's own passcode screen reads them.</comment>
+  </data>
   <data name="LoginPinDialog_ConsoleSignedOutNeeds.Text" xml:space="preserve">
     <value>Your console is signed out and needs its login passcode — the one set under Settings → Users and Accounts → Login Settings. This is not the pairing code.</value>
     <comment>Static text on the pairing-code dialog.</comment>

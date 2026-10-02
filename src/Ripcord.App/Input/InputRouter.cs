@@ -1,4 +1,5 @@
 using System;
+using System.Threading;
 using Ripcord.Core.Input;
 using Ripcord.Core.Reactive;
 using Ripcord.Core.Settings;
@@ -73,6 +74,12 @@ public sealed class InputRouter : IDisposable
     /// <summary>The engines running, for the diagnostics readout.</summary>
     public string SourceName => _source?.SourceName ?? "none";
 
+    // Boxed so it can be swapped whole from the polling thread and read from the UI thread without a lock.
+    private object? _lastFrame;
+
+    /// <summary>The last frame read, after the remap, or null before the first. Safe from any thread.</summary>
+    public ControllerStateFrame? LastFrame => Volatile.Read(ref _lastFrame) as ControllerStateFrame?;
+
     /// <summary>Raw frames, after the remap, for whoever the top scope is.</summary>
     public event Action<ControllerStateFrame>? FrameReceived;
 
@@ -101,10 +108,20 @@ public sealed class InputRouter : IDisposable
 
         _connectionSubscription = _source.Connections
             .Subscribe(new AnonymousObserver<ControllerConnectionEvent>(OnConnection));
+
+        if (_source is CompositeControllerSource composite)
+        {
+            composite.ActiveEngineChanged += OnActiveEngine;
+        }
     }
 
     public void Stop()
     {
+        if (_source is CompositeControllerSource composite)
+        {
+            composite.ActiveEngineChanged -= OnActiveEngine;
+        }
+
         _stateSubscription?.Dispose();
         _stateSubscription = null;
         _connectionSubscription?.Dispose();
@@ -213,7 +230,19 @@ public sealed class InputRouter : IDisposable
             return;
         }
 
-        PadFamily family = evt.Source.Contains("HID", StringComparison.OrdinalIgnoreCase)
+        UseFamilyOf(evt.Source);
+    }
+
+    /// <summary>
+    /// Someone picked up a pad from the other engine. With both attached, the prompts follow the one in use rather
+    /// than the one that connected last (2026-10-02). A connection still sets the family too, so a pad that has
+    /// only just been plugged in is named before anyone presses it.
+    /// </summary>
+    private void OnActiveEngine(string engine) => UseFamilyOf(engine);
+
+    private void UseFamilyOf(string engine)
+    {
+        PadFamily family = engine.Contains("HID", StringComparison.OrdinalIgnoreCase)
             ? PadFamily.Vendor
             : PadFamily.Generic;
 
@@ -232,12 +261,14 @@ public sealed class InputRouter : IDisposable
         ControllerStateFrame frame =
             ControllerInputMerger.ApplyRemap(raw, _settings.Current.InputBindings.GamepadRemap);
 
+        Volatile.Write(ref _lastFrame, frame);
         FrameReceived?.Invoke(frame);
 
         // A stream owns the pad outright: its frames go to the console, and menu navigation must not also
-        // consume them or B would leave the stream instead of reaching the game. Reset rather than ignore, so
+        // consume them or B would leave the stream instead of reaching the game. So does a surface that reads
+        // the pad itself (IInputScope.ReadsPad), for the same reason. Reset rather than ignore, so
         // the buttons held at the moment the stream took over do not read as a fresh press on the way back.
-        if (Scopes.IsActive(InputScopeKind.Session))
+        if (Scopes.IsActive(InputScopeKind.Session) || Scopes.Top?.ReadsPad == true)
         {
             _navIntents.Reset(frame);
             return;

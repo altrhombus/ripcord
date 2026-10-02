@@ -44,7 +44,7 @@ namespace Ripcord_App.Pages;
 /// lifecycle (connect, degrade, reconnect, tear down), so this page renders status, routes controller input,
 /// and handles the immersive-mode concerns a Page is actually responsible for.
 /// </summary>
-public sealed partial class SessionPage : Page, IVideoPipelinePreparer
+public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitialFocusTarget
 {
     private readonly DispatcherQueue _dispatcherQueue = DispatcherQueue.GetForCurrentThread();
     private readonly RipcordAppServices _services = App.Services;
@@ -492,8 +492,10 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer
                             // Already closed, or the window has gone: either way there is nothing left to hide.
                         }
                     }));
-                ContentDialogResult result = await ModalHost.ShowAsync(dialog);
-                tcs.TrySetResult(result == ContentDialogResult.Primary ? dialog.Pin : null);
+                ContentDialogResult result = await ModalHost.ShowAsync(
+                    dialog, readsPad: true, prompts: LoginPinDialog.PadPrompts);
+                tcs.TrySetResult(
+                    result == ContentDialogResult.Primary || dialog.SubmittedByPad ? dialog.Pin : null);
             }
             catch (Exception)
             {
@@ -1150,7 +1152,7 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer
         else
         {
             ExitHintText.Text =
-                $"{ExitGestureDetector.Describe(_settings.ExitGesture)} to leave · Esc for windowed";
+                $"{ExitGestureDetector.Describe(_settings.ExitGesture, App.Input.PadFamily)} to leave · Esc for windowed";
         }
 
         ExitHint.Visibility = Visibility.Visible;
@@ -1296,6 +1298,18 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer
     /// </summary>
     private async void LeaveSession()
     {
+    /// <summary>Leave the stream layer, as "Back to consoles" does: the window's Back from a pad.</summary>
+    internal void Leave() => LeaveSession();
+
+    /// <summary>
+    /// Where a pad lands on this page: Try again once a connect has failed, the way out while one runs long, and
+    /// otherwise nothing, since a live stream takes the pad and the window does not seed focus over it.
+    /// </summary>
+    Control? IInitialFocusTarget.InitialFocus
+        => StatusActions.Visibility == Visibility.Visible ? RetryButton
+            : ConnectEscape.Visibility == Visibility.Visible ? ConnectEscape
+            : null;
+
         if (_leaving || _confirmingLeave)
         {
             return;
