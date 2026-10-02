@@ -119,6 +119,13 @@ public sealed class DualSenseHidControllerSource : IControllerSource, IDisposabl
     {
         if (current != value)
         {
+            // A neutral frame before saying it's gone, as GameInput's source does, so a button held at the moment
+            // the pad was pulled is released whatever the consumer does with the disconnect.
+            if (!value)
+            {
+                _stateChanges.Publish(default(ControllerStateFrame) with { TimestampTicks = DateTime.UtcNow.Ticks });
+            }
+
             _connections.Publish(new ControllerConnectionEvent(ControllerId, value, transport));
         }
 
