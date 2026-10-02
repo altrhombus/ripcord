@@ -145,8 +145,22 @@ public sealed class HalyardAuthClient(HttpClient http, HalyardClientConfig confi
             throw new HalyardCloudException($"Token request failed ({(int)response.StatusCode}).", body, (int)response.StatusCode);
         }
 
-        HalyardTokenResponse parsed = JsonSerializer.Deserialize(body, HalyardCloudJsonContext.Default.HalyardTokenResponse)
-            ?? throw new HalyardCloudException("Token response could not be parsed.", body);
+        // A body that isn't JSON at all (a proxy's error page, a truncated reply) is the same failure as an empty
+        // one, and reports as one: a raw JsonException used to escape every caller's fallback.
+        HalyardTokenResponse? parsed;
+        try
+        {
+            parsed = JsonSerializer.Deserialize(body, HalyardCloudJsonContext.Default.HalyardTokenResponse);
+        }
+        catch (JsonException)
+        {
+            parsed = null;
+        }
+
+        if (parsed is null)
+        {
+            throw new HalyardCloudException("Token response could not be parsed.", body, (int)response.StatusCode);
+        }
 
         return new HalyardTokens(
             parsed.AccessToken,
