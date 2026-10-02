@@ -77,6 +77,65 @@ public class TakionReliableChannelTests
         Assert.Equal(0, client.UnackedCount);
     }
 
+    /// <summary>
+    /// One bad packet must cost one packet, not the session. A 12-byte DATA chunk used to throw out of the
+    /// reassembler and end whichever receive loop fed it; now it is dropped, and the next message still arrives.
+    /// </summary>
+    [Fact]
+    public async Task ShortDataChunk_DoesNotEndTheChannel()
+    {
+        using var clientSocket = new UdpChannel();
+        using var sink = new UdpChannel();
+        var remote = new IPEndPoint(IPAddress.Loopback, sink.LocalEndPoint.Port);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+
+        await using var client = new TakionReliableChannel(
+            clientSocket, remote, ClientTag, ServerTag, retransmitInterval: TimeSpan.FromMinutes(5));
+
+        byte[] shortChunk = TakionDataChunk.Build(ClientTag, seq: ServerTag, channel: 0, [], firstFragment: false);
+        await client.HandlePacketAsync(shortChunk, cts.Token);
+
+        var heartbeat = new ControlMessage { Type = ControlMessage.Types.MessageType.Heartbeat };
+        await client.HandlePacketAsync(
+            TakionDataChunk.Build(ClientTag, seq: ServerTag + 1, channel: 0, heartbeat.ToByteArray()), cts.Token);
+
+        ControlMessage delivered = await client.ReceiveMessageAsync(cts.Token);
+        Assert.Equal(ControlMessage.Types.MessageType.Heartbeat, delivered.Type);
+    }
+
+    /// <summary>
+    /// A packet carrying any tag but ours is not this association's, and is dropped before anything reads it.
+    /// The console echoes our tag in everything after the handshake; the C core and the engine check this too.
+    /// </summary>
+    [Fact]
+    public async Task ForeignVerificationTag_IsDroppedAndCounted()
+    {
+        using var clientSocket = new UdpChannel();
+        using var sink = new UdpChannel();
+        var remote = new IPEndPoint(IPAddress.Loopback, sink.LocalEndPoint.Port);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+
+        await using var client = new TakionReliableChannel(
+            clientSocket, remote, ClientTag, ServerTag, retransmitInterval: TimeSpan.FromMinutes(5));
+
+        var spoofed = new ControlMessage { Type = ControlMessage.Types.MessageType.Disconnect };
+        await client.HandlePacketAsync(
+            TakionDataChunk.Build(ClientTag ^ 0x5a5a5a5a, seq: ServerTag, channel: 0, spoofed.ToByteArray()), cts.Token);
+        Assert.Equal(1, client.DroppedPacketCount);
+
+        // A foreign SACK cannot clear our retransmit queue either.
+        await client.SendMessageAsync(TakionDataChunk.ChannelSession, spoofed, cts.Token);
+        await client.HandlePacketAsync(TakionSackChunk.Build(ClientTag ^ 0x5a5a5a5a, ClientTag), cts.Token);
+        Assert.Equal(1, client.UnackedCount);
+        Assert.Equal(2, client.DroppedPacketCount);
+
+        // The genuine one, same TSN the spoof claimed, is delivered.
+        var heartbeat = new ControlMessage { Type = ControlMessage.Types.MessageType.Heartbeat };
+        await client.HandlePacketAsync(
+            TakionDataChunk.Build(ClientTag, seq: ServerTag, channel: 0, heartbeat.ToByteArray()), cts.Token);
+        Assert.Equal(ControlMessage.Types.MessageType.Heartbeat, (await client.ReceiveMessageAsync(cts.Token)).Type);
+    }
+
     [Fact]
     public async Task SackTiming_ProducesARoundTripEstimate()
     {
