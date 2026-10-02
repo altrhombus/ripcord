@@ -18,7 +18,7 @@ is the PS3 port's release, not Ripcord's).
 We're close! Here's what's left, in order:
 
 1. **Finish the hardware pass.** It ran on 2026-10-01, and everything it turned up is fixed and checked with
-   both pads (the journal has the whole list). Still on the bench: the roomy console card and a 200% display.
+   both pads (the journal has the whole list). Still on the bench: a 200% display.
 2. **Fix what the review turned up.** One bad packet can end a session, and sign-in doesn't survive a token
    refresh. Neither is a long fix.
 3. **Package it.** A zip that runs on a machine that's never seen the .NET SDK, with GameInput's
@@ -60,8 +60,8 @@ measures 0.92 µs a packet on Windows x64 against the managed engine's 14.29 µs
         laptop's two GPUs. The "little bright after a drag" turned out to be the GPU driver's tone-mapping, so
         a session started on an SDR display now asks the console for SDR instead. The drag itself can wait
         (see After 1.0).
-  - [ ] **A two-line console name.** Fixed and checked at 100% and 150% text. Open: the roomy card and a 200%
-        display.
+  - [ ] **A two-line console name.** Fixed and checked at 100% and 150% text, at every card density (the
+        roomy one on 2026-10-01). Open: a 200% display.
 - [ ] The input stack, Stage A steps 8–10 and the two Stage B checks have been driven by a person, and
       whatever that finds is fixed or listed. The script is
       [`docs/design-branch-test-pass.md`](docs/design-branch-test-pass.md).
