@@ -751,7 +751,7 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
 
         if (s.Rung == DiagnosticsRung.Summary)
         {
-            RenderSummary(s.Diagnostics);
+            RenderSummary(s.Diagnostics, s.StatusVisible);
         }
 
         // The state is kept current twice a second regardless; assigning two dozen text properties on a
@@ -766,10 +766,16 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
     /// Rung 2. Four numbers, and colour only where a reading has crossed its own threshold — the same grammar
     /// the sparklines use, for the same reason: a row of four coloured numbers would say nothing.
     /// </summary>
-    private void RenderSummary(SessionDiagnosticsState d)
+    private void RenderSummary(SessionDiagnosticsState d, bool statusVisible)
     {
+        // The verdict goes while the status screen is up: "Reconnecting…" above "The stream has stopped" was two
+        // messages about one problem (2026-10-02). The numbers and Details stay, since they are what help then.
+        SummaryHealth.Visibility = Vis(!statusVisible);
+        SummaryHealthDivider.Visibility = Vis(!statusVisible);
+
         SummaryHealthText.Text = d.Health;
         SummaryTipText.Text = d.HealthTip;
+        ToolTipService.SetToolTip(SummaryTipText, string.IsNullOrEmpty(d.HealthTip) ? null : d.HealthTip);
         RenderHealthDot(SummaryDot, d.HealthLevel);
 
         SummaryResolutionText.Text = d.HeroResolution;
