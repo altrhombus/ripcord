@@ -582,8 +582,12 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
                 ? $"{s.Decoder}\n{s.DecoderDiagnostic}"
                 : s.Decoder;
 
-        (string adaptive, bool adaptiveVisible) = ComposeAdaptive(telemetry);
-        string reason = ComposeReason(s, telemetry, adaptiveVisible);
+        // The controller's recommendation is not shown for 1.0: nothing acts on it, and the console's own target
+        // beside the cap answers the same question for real. It returns with ROADMAP's "make a reconnect start
+        // from the recommendation", when it would describe something Ripcord does.
+        const string adaptive = "";
+        const bool adaptiveVisible = false;
+        string reason = ComposeReason(s);
 
         // "probed" vs "assumed" is the whole point of the senkusha work: one is a measurement of the real path
         // in both directions, the other is the local interface's MTU minus an allowance.
@@ -728,36 +732,11 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
     }
 
     /// <summary>
-    /// The adaptive-quality row, which appears only when the controller wants something other than what was
-    /// asked for. Saying "adaptive: exactly what you configured" every half second is noise.
+    /// Why the picture is not what was asked for: the console choosing a lower rung to fit the bitrate budget, or
+    /// the decoder failing to report a frame size at all. (The controller's own reason went with its
+    /// recommendation, 2026-10-02.)
     /// </summary>
-    private (string Text, bool Visible) ComposeAdaptive(SessionTelemetry telemetry)
-    {
-        if (!_settings.AdaptiveQuality
-            || telemetry.RecommendedQuality is not { } t
-            || t.BitrateKbps == _settings.BitrateKbps)
-        {
-            return (string.Empty, false);
-        }
-
-        // A recommendation, and called one: nothing acts on it. The console ignored it sent as CONNECTION_QUALITY
-        // (2026-10-02), so it is no longer sent, and resolution is fixed at session start in any case.
-        string line = $"{t.BitrateKbps / 1000.0:F1} Mbps recommended";
-
-        if (t.Width != _settings.Width || t.Height != _settings.Height || t.Fps != _settings.TargetFps)
-        {
-            // Not "needs a reconnect": a reconnect starts at the configured settings, not these (ROADMAP).
-            line += $"\nwould suit {t.Width}×{t.Height}@{t.Fps} · resolution is set when a stream starts";
-        }
-
-        return (line, true);
-    }
-
-    /// <summary>
-    /// Why the picture is not what was asked for. Covers the controller's own reason, the console choosing a
-    /// lower rung to fit the bitrate budget, and the decoder failing to report a frame size at all.
-    /// </summary>
-    private string ComposeReason(VideoPipelineSnapshot s, SessionTelemetry telemetry, bool adaptiveVisible)
+    private string ComposeReason(VideoPipelineSnapshot s)
     {
         // A decoder that reports frames but no geometry outranks everything else here: it is the one case where
         // the screen is black while every other number looks healthy.
@@ -766,7 +745,7 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
             return "decoder reported no frame size — see the video row below";
         }
 
-        string why = adaptiveVisible ? telemetry.QualityReason ?? string.Empty : string.Empty;
+        string why = string.Empty;
 
         if (s.DecodedHeight > 0 && s.DecodedHeight < _settings.Height)
         {
