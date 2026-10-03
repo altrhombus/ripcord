@@ -96,10 +96,12 @@ purchased signing certificate.
 - [x] **GameInput's redistributable ships in the zip** (2026-10-01), and Settings > About says whether it's
       installed. Whether the one `GameInputRedist.msi` in the package installs on ARM64 too is `[X]`: the
       ARM64 run settles it.
-- [ ] **Ripcord's HDR-to-SDR tone-map, on every GPU** (built 2026-10-03, checked on the Intel GPU only): the
-      NVIDIA GPU, the Surface at 200%, and a mid-session drag between an HDR and an SDR display, each compared
-      with the console's own screenshot as on the Intel. Then decide whether **Request HDR** should default to
-      on, since an HDR-on console's SDR stream is the clipped one most people would otherwise see.
+- [ ] **Ripcord's HDR-to-SDR tone-map, on every GPU** (built 2026-10-03; the Intel and NVIDIA GPUs match each
+      other and the console's own screenshot): the Surface at 200%, and a mid-session drag between an HDR and an
+      SDR display. Then the defaults: HDR applies only with HEVC, and the codec defaults to H.264, so turning
+      HDR on by default means HEVC by default too, falling back to H.264 where there's no HEVC decoder.
+- [ ] **The console's HDR "On When Supported".** Everything so far ran with "Always On". Does the stream
+      change when the console's setting depends on what the TV reports, and does it switch mid-session?
 - [ ] **Clean-machine check.** Install the zip on a machine that has never had the SDK, then pair and stream.
       Sign in too: the web view's profile moved to `%LocalAppData%\Ripcord\WebView2`. Windows Sandbox is a
       clean Windows every launch, good for "does it start with nothing installed", though it won't pass
@@ -135,8 +137,8 @@ purchased signing certificate.
 - [ ] **Does the console card rejoin the tile?** A dark-theme look decision for a real screen (~30 minutes).
 - [ ] **HDR through a second GPU.** Render on a GPU that doesn't drive the display, and HDR presents black
       while SDR comes through fine. Why is `[X]`; my guess is the SwapChainPanel's 10-bit format through the
-      copy between GPUs, and an FP16 scRGB back buffer is the experiment. Until then it's SDR, and Auto
-      doesn't go there.
+      copy between GPUs, and an FP16 scRGB back buffer is the experiment. Until then that case is tone-mapped
+      to SDR by Ripcord (since 2026-10-03), so nobody sees black, and Auto doesn't go there.
 - [ ] **HDR set-ups nobody's tried yet:** a machine with only an NVIDIA GPU, and Auto on a laptop with a
       monitor on the dGPU's own port (every port on the test laptop, dock included, goes through the iGPU).
 - [ ] **HDR changes the app doesn't notice:** turning "Use HDR" on or off mid-session without moving the

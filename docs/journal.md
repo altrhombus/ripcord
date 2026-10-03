@@ -56,7 +56,10 @@ picture at white rather than 4–18%, and the same median brightness.
   (at most 1.5% pinned, against 10–12% with HDR on). Deep Colour and RGB Range are HDMI settings and showed no
   sign of reaching the stream.
 
-The NVIDIA GPU, the Surface and a mid-session drag are still to check; ROADMAP has them.
+The same day on the NVIDIA GPU, which drives none of this laptop's displays: the same picture as the Intel
+(median 106 against 105, the same bloom colour), tracking the console's own screenshot of a scene within a few
+levels from shadows to highlights, and a tone-mapped picture with Windows HDR on, where HDR through that GPU
+used to present black. The Surface and a mid-session drag are still to check; ROADMAP has them.
 
 ### Bright scenes clip in SDR, and it's the console (2026-10-02)
 
