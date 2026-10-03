@@ -60,7 +60,9 @@ runs the other way: the console sends `CONNECTION_QUALITY` about once a second, 
 and the client sends none. Ripcord now reads the console's reports and shows its target beside the cap in the
 diagnostics panel ("console aims for 14.6 Mbps"), and the trace records it. The vendor client's one regular
 message back is `CORRUPT_FRAME`, about once a second; that capture ran in a VM that corrupted frames by itself,
-so what it does under real loss is still open.
+so what it does under real loss is still open. With the console's own target on screen, the
+recommendation was a guess shown beside the answer, so the setting and the panel's adaptive line are hidden
+for 1.0, to return when a reconnect starts from the recommendation.
 
 ### The person-driven pass, first part: the passcode, the pad, and a reconnect that never asked (2026-10-02)
 

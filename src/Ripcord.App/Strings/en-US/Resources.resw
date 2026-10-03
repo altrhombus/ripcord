@@ -440,10 +440,6 @@
     <value>Try again</value>
     <comment>The label on a control on the in-stream session page. Keep it short; it sits on a control.</comment>
   </data>
-  <data name="SettingsPage_AdaptQualityAutomatically.AutomationProperties.Name" xml:space="preserve">
-    <value>Show quality recommendations</value>
-    <comment>Name on the Settings page.</comment>
-  </data>
   <data name="SettingsPage_AskBeforeDisconnecting.AutomationProperties.Name" xml:space="preserve">
     <value>Ask before disconnecting</value>
     <comment>Name on the Settings page.</comment>
@@ -519,14 +515,6 @@
   <data name="SettingsPage_LeaveStreamController.AutomationProperties.Name" xml:space="preserve">
     <value>Leave a stream with the controller</value>
     <comment>Name on the Settings page.</comment>
-  </data>
-  <data name="SettingsPage_LowerBitratePacketLoss.Description" xml:space="preserve">
-    <value>Shows, in the diagnostics panel, the quality Ripcord thinks your connection can carry, from packet loss, battery and heat. It doesn't change the stream: the console adjusts its own bitrate.</value>
-    <comment>The description under a control on the Settings page.</comment>
-  </data>
-  <data name="SettingsPage_LowerBitratePacketLoss.Header" xml:space="preserve">
-    <value>Show quality recommendations</value>
-    <comment>The header above a control on the Settings page.</comment>
   </data>
   <data name="SettingsPage_MaximumBitrateMegabitsPer.AutomationProperties.Name" xml:space="preserve">
     <value>Maximum bitrate in megabits per second</value>
