@@ -123,12 +123,11 @@ public sealed class ConnectFlow
             return null;
         }
 
-        // HDR is asked of the console only when it will reach the panel. A stream the display can't take as HDR10
-        // is tone-mapped by the GPU driver, and on hardware (2026-10-01) that came out differently on every vendor
-        // and matched the console's own SDR on none: washed out on Intel, crushed and over-contrasty on NVIDIA.
-        // Asking for SDR instead gives the picture the console makes for an SDR screen. Tone-mapping is then only
-        // ever met after a window is dragged from an HDR display to an SDR one mid-session.
-        if (config.RequestedDynamicRange == DynamicRange.Hdr && !prepared.CanPresentHdr)
+        // HDR is asked of the console when it will reach the panel, or when Ripcord can tone-map it for an SDR one.
+        // Asking for SDR instead was the answer while only the GPU driver could tone-map (every vendor's differed,
+        // 2026-10-01), but the console's own SDR stream clips its highlights when its HDR is on (2026-10-02), so the
+        // HDR stream, tone-mapped by Ripcord, is the better picture. SDR only where neither is possible.
+        if (config.RequestedDynamicRange == DynamicRange.Hdr && !prepared.CanPresentHdr && !prepared.CanToneMapHdr)
         {
             config = config with { RequestedDynamicRange = DynamicRange.Sdr };
         }

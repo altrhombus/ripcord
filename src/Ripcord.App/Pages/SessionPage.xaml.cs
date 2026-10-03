@@ -379,6 +379,12 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
             return;
         }
 
+        // An HDR stream already failed to draw on this page (OnTenBitUnrenderable): ask for SDR from here on.
+        if (_forceSdr)
+        {
+            plan = plan with { Config = plan.Config with { RequestedDynamicRange = DynamicRange.Sdr } };
+        }
+
         // A real power monitor, so the adaptive controller's battery / energy-saver / critical-battery caps can
         // actually engage. Without one injected, SessionController falls back to UnknownPowerThermalMonitor,
         // which always claims external power — meaning a handheld on battery streamed at full desktop quality.
@@ -585,6 +591,7 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
         };
 
         _pipeline.DeviceLost += OnDeviceLost;
+        _pipeline.TenBitUnrenderable += OnTenBitUnrenderable;
         await _pipeline.StartAsync(config, default);
         _pipeline.UpscaleMode = _settings.UpscaleMode;
 
@@ -603,7 +610,7 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
         VideoPanel.CompositionScaleChanged += OnVideoPanelScaleChanged;
         UpdateSwapChainSize();
 
-        return new PreparedVideo(_pipeline.CanPresentHdr);
+        return new PreparedVideo(_pipeline.CanPresentHdr, _pipeline.CanToneMapHdr);
     }
 
     private static Ripcord.Media.Interop.GpuSelection ToNativeGpuSelection(GpuPreference preference)
@@ -1103,6 +1110,37 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
         {
             _controller.SuspendInputForwarding = !on;
         }
+    }
+
+    /// <summary>
+    /// Set once an HDR stream could not be drawn here, and kept for the rest of the page: every later connect asks
+    /// for SDR, so a GPU without the zero-copy path the HDR picture needs gets a picture rather than a blank one.
+    /// </summary>
+    private bool _forceSdr;
+
+    /// <summary>
+    /// The HDR stream cannot be drawn on this GPU (no zero-copy path, or it failed). Reconnect asking for SDR,
+    /// once; if that was already the answer, say so and stop, rather than reconnecting forever.
+    /// </summary>
+    private void OnTenBitUnrenderable()
+    {
+        _dispatcherQueue.TryEnqueue(() =>
+        {
+            _services.DiagnosticTrace?.Invoke("video: HDR stream cannot be drawn here; reconnecting in SDR");
+
+            if (_forceSdr)
+            {
+                ShowStatus(
+                    "Couldn't show the stream",
+                    "This GPU couldn't draw the video. Try another GPU in Settings, or the H.264 codec.",
+                    terminal: true);
+                return;
+            }
+
+            _forceSdr = true;
+            ShowStatus("Reconnecting in SDR…", "This GPU couldn't show the HDR picture.", terminal: false);
+            _ = RestartSessionAsync();
+        });
     }
 
     private void OnDeviceLost(int reason)
@@ -2258,6 +2296,7 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
         if (pipeline is not null)
         {
             pipeline.DeviceLost -= OnDeviceLost;
+            pipeline.TenBitUnrenderable -= OnTenBitUnrenderable;
             try { await pipeline.DisposeAsync(); } catch (Exception) { /* teardown races */ }
         }
     }

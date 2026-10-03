@@ -35,6 +35,29 @@ different purpose.
 > anything. The list above is short, it is checkable in one `git log --format=%B | grep`, and it stops
 > growing the moment someone notices — which is the property that actually matters.
 
+### Ripcord's own HDR tone-map, and a colour bug it uncovered (2026-10-03)
+
+The answer to the clipped SDR stream: ask for HDR even on an SDR display, and convert it here. The present
+shader now applies ITU-R BT.2390's roll-off to an HDR10 stream for an SDR display, after PQ to linear and
+BT.2020 to BT.709, scaling the colour by its brightest channel so a highlight compresses without changing hue.
+A C# copy of the maths (`Ripcord.Core.Video.HdrToneMap`) is what the tests check; a test holds the shader's
+constants to it. On the Intel GPU, against the console's own SDR picture of the same scene: 0.1% of the
+picture at white rather than 4–18%, and the same median brightness.
+
+- **It found a colour bug that was already there.** The first run turned orange marigolds red. An FFmpeg decode
+  of a dump of the same stream, run through the same maths offline, showed orange, and applying the gamut step
+  twice offline reproduced the red exactly. The renderer set the video processor's output colour space twice,
+  the modern call and then an older one that reset the primaries to BT.709; the older call now runs only where
+  the modern one isn't available. HDR displays were most likely getting the same mislabelled colours.
+- **A guard for GPUs that can't draw it.** A 10-bit stream needs the zero-copy path. If it's missing or fails,
+  the pipeline says so once and the session reconnects asking for SDR, saying why; if SDR fails too, it stops
+  and names the GPU and codec settings rather than looping.
+- **Also learned:** with the console's HDR off, the game renders SDR itself and the stream keeps its highlights
+  (at most 1.5% pinned, against 10–12% with HDR on). Deep Colour and RGB Range are HDMI settings and showed no
+  sign of reaching the stream.
+
+The NVIDIA GPU, the Surface and a mid-session drag are still to check; ROADMAP has them.
+
 ### Bright scenes clip in SDR, and it's the console (2026-10-02)
 
 Bright skies and sand looked blown out in SDR next to the same scene on the TV. Ripcord was the obvious suspect,

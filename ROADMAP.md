@@ -96,6 +96,10 @@ purchased signing certificate.
 - [x] **GameInput's redistributable ships in the zip** (2026-10-01), and Settings > About says whether it's
       installed. Whether the one `GameInputRedist.msi` in the package installs on ARM64 too is `[X]`: the
       ARM64 run settles it.
+- [ ] **Ripcord's HDR-to-SDR tone-map, on every GPU** (built 2026-10-03, checked on the Intel GPU only): the
+      NVIDIA GPU, the Surface at 200%, and a mid-session drag between an HDR and an SDR display, each compared
+      with the console's own screenshot as on the Intel. Then decide whether **Request HDR** should default to
+      on, since an HDR-on console's SDR stream is the clipped one most people would otherwise see.
 - [ ] **Clean-machine check.** Install the zip on a machine that has never had the SDK, then pair and stream.
       Sign in too: the web view's profile moved to `%LocalAppData%\Ripcord\WebView2`. Windows Sandbox is a
       clean Windows every launch, good for "does it start with nothing installed", though it won't pass
@@ -129,9 +133,6 @@ purchased signing certificate.
 - [ ] **A keyframe the decoder couldn't start from** is invisible today: the controller counts encoded frames,
       not decoded ones. Needs a decoded-frame count from `D3D12VideoDecodePipeline`.
 - [ ] **Does the console card rejoin the tile?** A dark-theme look decision for a real screen (~30 minutes).
-- [ ] **HDR after a mid-session drag to an SDR display** is tone-mapped by the GPU driver, and every vendor
-      does it differently: washed out on Intel, crushed on NVIDIA. Our own tone-map, built from ITU-R BT.2390,
-      would make it the same everywhere. Most apps don't handle the drag at all, so this one's polish.
 - [ ] **HDR through a second GPU.** Render on a GPU that doesn't drive the display, and HDR presents black
       while SDR comes through fine. Why is `[X]`; my guess is the SwapChainPanel's 10-bit format through the
       copy between GPUs, and an FP16 scRGB back buffer is the experiment. Until then it's SDR, and Auto

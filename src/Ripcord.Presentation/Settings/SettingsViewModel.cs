@@ -414,12 +414,12 @@ public sealed class SettingsViewModel : ObservableState<SettingsViewState>
             RequestHdr: _draft.RequestHdr && HdrSelectable,
             HdrToggleEnabled: HdrSelectable,
             HdrChecks: ComposeHdrChecks(hevcSelected),
-            HdrHelp: _hevcAvailable && hevcSelected && _displayHdr
+            HdrHelp: !(_hevcAvailable && hevcSelected)
+                ? Strings.Settings_HdrToneMapped
                 // Say so when the machine is ready. Three ticks plus a sentence about what happens if something
                 // is missing leaves the reader to work out that nothing is; an affirmative line is shorter and
-                // is the answer they came for.
-                ? Strings.Settings_HdrReady
-                : Strings.Settings_HdrToneMapped,
+                // is the answer they came for. An SDR display is ready too since 2026-10-02: Ripcord tone-maps.
+                : _displayHdr ? Strings.Settings_HdrReady : Strings.Settings_HdrReadySdrDisplay,
 
             GpuPreferenceIndex: (int)_draft.GpuPreference,
             AdapterPickerVisible: specific,

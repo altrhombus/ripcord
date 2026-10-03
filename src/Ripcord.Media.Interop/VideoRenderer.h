@@ -56,6 +56,7 @@ namespace winrt::Ripcord::Media::Interop::implementation
         // "you are looking at HDR" — the others describe the stream and the display separately.
         bool IsHdrTransfer() const noexcept { return m_hdrTransfer; }
         bool IsDisplayHdr() const noexcept { return m_displayHdrCapable; }
+        bool CannotRenderTenBit() const noexcept { return m_tenBitUnrenderable; }
         bool IsHdrOutput() const noexcept { return m_presentingHdr; }
         bool IsTenBit() const noexcept { return m_tenBitOutput; }
         void SetCodec(VideoCodecKind codec);
@@ -218,6 +219,10 @@ namespace winrt::Ripcord::Media::Interop::implementation
         // so it must refuse rather than render garbage.
         bool m_tenBitOutput = false;
         bool m_toneMappedByDriver = false;
+
+        // An HDR10 stream on an SDR display, tone-mapped by the present shader (HdrToneMap) instead of the driver:
+        // the shared texture then holds PQ BT.2020 at 10 bits, and the swap chain stays SDR.
+        bool m_toneMapInShader = false;
         bool m_tenBitUnrenderable = false;
 
         int32_t m_yuvMatrix = 0;
