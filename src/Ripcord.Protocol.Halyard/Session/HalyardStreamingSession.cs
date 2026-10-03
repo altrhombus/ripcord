@@ -182,9 +182,9 @@ public sealed class HalyardStreamingSession : IStreamingSession
         // total is passed so the controller can tell a real loss rate from one lost unit in a tiny startup window.
         _bandwidth?.ReportNetworkSample(new NetworkSample(rttMs, lossRatio, JitterMs: 0, ObservedUnits: total));
 
-        // …and now act on its decision. Deciding without telling the console was the remaining gap: the ladder
-        // moved but nothing on the wire changed. CONNECTION_QUALITY also carries our measured RTT and loss, so
-        // the console's own rate controller works from what we actually see rather than inferring it.
+        // Sending the decision as CONNECTION_QUALITY was meant to steer the console's encoder. It does not: the
+        // message runs console to client, the vendor client never sends it, and the console ignored ours (2026-10-02,
+        // research log). Nothing turns this on any more (RipcordSettings.ToSessionConfig); it is left for removal.
         if (_config?.ReportConnectionQuality == true && _bandwidth is not null && _takionStream is not null)
         {
             BitrateDecision decision = _bandwidth.RecommendBitrate();
@@ -194,7 +194,6 @@ public sealed class HalyardStreamingSession : IStreamingSession
             if (report is { } toSend)
             {
                 _takionStream.ReportConnectionQuality(toSend);
-                _lastRequestedKbps = toSend.TargetBitrateKbps;
             }
         }
 
@@ -212,13 +211,9 @@ public sealed class HalyardStreamingSession : IStreamingSession
             DeclaredRttMs: _measuredRttMs,
             MtuConfirmed: _confirmedMtu is not null,
             ReceiveQueueDepth: _takionStream?.AvQueueDepth ?? 0,
-            RequestedBitrateKbps: _lastRequestedKbps,
-            QualityReportsSent: _takionStream?.ConnectionQualityReportsSent ?? 0));
+            ConsoleTargetBitrateKbps: _takionStream?.ConsoleTargetBitrateKbps ?? 0));
     }
 
-    // The target in the last CONNECTION_QUALITY handed to the stream, for the trace. Written and read on the
-    // statistics path only.
-    private int _lastRequestedKbps;
 
     /// <summary>
     /// Ask the console for a fresh IDR. Safe to call before the stream is up (a no-op) and rate-limited inside
