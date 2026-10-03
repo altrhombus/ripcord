@@ -292,6 +292,7 @@ public sealed class D3D12VideoDecodePipeline : IVideoDecodePipeline
         int length = frame.Payload.Length;
         byte[] buffer = ArrayPool<byte>.Shared.Rent(length);
         frame.Payload.Span.CopyTo(buffer);
+        VideoDump.Append(frame.Payload.Span);
 
         if (!jobs.TryAdd(RenderJob.Decode(buffer, length, frame.TimestampTicks, frame.IsKeyFrame)))
         {

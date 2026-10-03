@@ -35,6 +35,16 @@ different purpose.
 > anything. The list above is short, it is checkable in one `git log --format=%B | grep`, and it stops
 > growing the moment someone notices — which is the property that actually matters.
 
+### Bright scenes clip in SDR, and it's the console (2026-10-02)
+
+Bright skies and sand looked blown out in SDR next to the same scene on the TV. Ripcord was the obvious suspect,
+since it assumes limited range and BT.709 without reading what the stream declares. Measured, it wasn't: against
+the console's own screenshot, 18% of Ripcord's picture sat at white against 0.16%. Then a dump of the stream
+(`RIPCORD_DUMP_VIDEO=1`, a new developer switch) showed it declares exactly what Ripcord assumes, and that the
+console's encoder had already pinned 10–12% of bright frames at the top of the range. The vendor client shows the
+same flat sky. The console makes the SDR stream from an HDR game and clips doing it; an HDR stream keeps the detail.
+Nothing to fix in the renderer. The research log has the numbers.
+
 ### Two quality settings that did nothing, found out and said so (2026-10-02)
 
 Checking whether "Tell the console about your connection" could lose its "(experimental)" label turned up two
