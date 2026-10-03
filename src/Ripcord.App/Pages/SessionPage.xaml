@@ -343,30 +343,44 @@
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
 
-                    <!--  The verdict, same words the panel and the rung-1 notice use.  -->
-                    <StackPanel
+                    <!--
+                        The verdict, same words the panel and the rung-1 notice use.
+
+                        A Grid, not a horizontal StackPanel: a StackPanel offers its children unlimited width, so
+                        nothing wrapped and MaxWidth clipped the tip mid-word ("…from the console. Ch", 2026-10-02).
+                        The tip wraps to three lines, ends in an ellipsis past that, and the tooltip holds all of it.
+                    -->
+                    <Grid
+                        x:Name="SummaryHealth"
                         Grid.Column="0"
-                        MaxWidth="260"
-                        Orientation="Horizontal"
-                        Spacing="{StaticResource RipcordSpacingM}"
+                        MaxWidth="300"
+                        ColumnSpacing="{StaticResource RipcordSpacingM}"
                         VerticalAlignment="Center">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
                         <Ellipse
                             x:Name="SummaryDot"
                             Width="8"
                             Height="8"
                             VerticalAlignment="Center" />
-                        <StackPanel>
+                        <StackPanel Grid.Column="1">
                             <TextBlock
                                 x:Name="SummaryHealthText"
                                 Style="{StaticResource BodyStrongTextBlockStyle}"
                                 TextWrapping="Wrap" />
                             <TextBlock
                                 x:Name="SummaryTipText"
-                                Style="{StaticResource RipcordSubtleCaptionStyle}" />
+                                MaxLines="3"
+                                Style="{StaticResource RipcordSubtleCaptionStyle}"
+                                TextTrimming="CharacterEllipsis"
+                                TextWrapping="Wrap" />
                         </StackPanel>
-                    </StackPanel>
+                    </Grid>
 
                     <Border
+                        x:Name="SummaryHealthDivider"
                         Grid.Column="1"
                         Width="1"
                         Height="40"
