@@ -99,7 +99,7 @@ namespace
     // mode 1 = Catmull-Rom bicubic (16 point-sampled taps) for a sharper result. uSrcSize is the source
     // (decode) texture size in texels, needed to place the bicubic taps.
     constexpr char kUpscaleShaderSource[] = R"(
-        cbuffer Params : register(b0) { uint uMode; float2 uSrcSize; float uPad; };
+        cbuffer Params : register(b0) { uint uMode; float2 uSrcSize; uint uToneMap; };
         Texture2D gTex : register(t0);
         SamplerState gLinear : register(s0);
         SamplerState gPoint  : register(s1);
@@ -123,13 +123,66 @@ namespace
                 0.5 * (f3 - f2));
         }
 
-        float4 PSMain(VSOut i) : SV_Target
-        {
-            if (uMode == 0u)
-            {
-                return float4(gTex.Sample(gLinear, i.uv).rgb, 1.0);
-            }
+        // HDR10 to SDR, for an HDR stream on an SDR display (uToneMap). The texture then holds PQ-encoded BT.2020
+        // from the video processor, untouched by the driver. Mirrors Ripcord.Core.Video.HdrToneMap step for step;
+        // HdrToneMapTests holds the constants together, so change both.
+        static const float kSourcePeakNits = 1000.0;
+        static const float kSdrPeakNits = 250.0;
+        static const float kDisplayGamma = 2.2;
 
+        static const float kM1 = 2610.0 / 16384.0;
+        static const float kM2 = 2523.0 / 4096.0 * 128.0;
+        static const float kC1 = 3424.0 / 4096.0;
+        static const float kC2 = 2413.0 / 4096.0 * 32.0;
+        static const float kC3 = 2392.0 / 4096.0 * 32.0;
+
+        float3 PqToNits(float3 e)
+        {
+            float3 p = pow(max(e, 0.0), 1.0 / kM2);
+            return 10000.0 * pow(max(max(p - kC1, 0.0) / (kC2 - kC3 * p), 0.0), 1.0 / kM1);
+        }
+
+        float NitsToPq(float nits)
+        {
+            float y = pow(max(nits, 0.0) / 10000.0, kM1);
+            return pow((kC1 + kC2 * y) / (1.0 + kC3 * y), kM2);
+        }
+
+        // ITU-R BT.2390 EETF, source peak to SDR peak, black at zero for both.
+        float Eetf(float nits)
+        {
+            float sourcePq = NitsToPq(kSourcePeakNits);
+            float e1 = min(NitsToPq(nits) / sourcePq, 1.0);
+            float maxLum = NitsToPq(kSdrPeakNits) / sourcePq;
+            float ks = 1.5 * maxLum - 0.5;
+            float e2 = e1;
+            if (e1 > ks)
+            {
+                float t = (e1 - ks) / (1.0 - ks);
+                float t2 = t * t, t3 = t2 * t;
+                e2 = (2.0 * t3 - 3.0 * t2 + 1.0) * ks + (t3 - 2.0 * t2 + t) * (1.0 - ks) + (-2.0 * t3 + 3.0 * t2) * maxLum;
+            }
+            return PqToNits(e2 * sourcePq).x;
+        }
+
+        float3 ToneMapToSdr(float3 pq)
+        {
+            float3 c2020 = PqToNits(pq);
+
+            // ITU-R BT.2087, linear BT.2020 to linear BT.709; out-of-gamut goes negative and is clipped.
+            float3 c = max(float3(
+                 1.6605 * c2020.r - 0.5876 * c2020.g - 0.0728 * c2020.b,
+                -0.1246 * c2020.r + 1.1329 * c2020.g - 0.0083 * c2020.b,
+                -0.0182 * c2020.r - 0.1006 * c2020.g + 1.1187 * c2020.b), 0.0);
+
+            // Roll off the brightest channel and scale the colour with it, so hue holds.
+            float peak = max(c.r, max(c.g, c.b));
+            float scale = peak > 0.0 ? Eetf(peak) / peak / kSdrPeakNits : 0.0;
+            return pow(saturate(c * scale), 1.0 / kDisplayGamma);
+        }
+
+        float3 SampleBicubic(VSOut i)
+        {
             float2 invTex = 1.0 / uSrcSize;
             float2 coord = i.uv * uSrcSize - 0.5;
             float2 basec = floor(coord);
@@ -146,7 +199,13 @@ namespace
                     acc += gTex.SampleLevel(gPoint, tc, 0.0).rgb * wx[x] * wy[y];
                 }
             }
-            return float4(saturate(acc), 1.0);
+            return saturate(acc);
+        }
+
+        float4 PSMain(VSOut i) : SV_Target
+        {
+            float3 rgb = uMode == 0u ? gTex.Sample(gLinear, i.uv).rgb : SampleBicubic(i);
+            return float4(uToneMap != 0u ? ToneMapToSdr(rgb) : rgb, 1.0);
         }
     )";
 
@@ -922,6 +981,13 @@ namespace winrt::Ripcord::Media::Interop::implementation
                 s += L" \u00B7 panel claims " + std::to_wstring(static_cast<int>(m_displayMaxNits)) + L" nits";
             }
             return s;
+        }
+
+        // Ours rather than the driver's, so say so: the two look different, and which one ran is the first
+        // question about a picture that looks wrong.
+        if (m_toneMapInShader)
+        {
+            return L"tone-mapped to SDR by Ripcord (BT.2390) \u2014 display is SDR";
         }
 
         // Distinguish "the panel cannot take it" from "it could and we failed to send it" - the first is the
@@ -2080,7 +2146,14 @@ namespace winrt::Ripcord::Media::Interop::implementation
         // target is 8-bit, looked right - consistent with the driver skipping the tone-map for a 10-bit
         // output [X]. So an SDR display always gets the 8-bit target a session started there would have. The
         // present pass samples this texture into the swap chain, so the two formats need not match.
-        td.Format = m_displayHdrCapable ? m_swapChainFormat : DXGI_FORMAT_B8G8R8A8_UNORM;
+        //
+        // An HDR10 stream on an SDR display is the exception: the processor writes it as PQ into a 10-bit texture,
+        // untouched, and the present shader tone-maps it (HdrToneMap). The swap chain stays 8-bit SDR.
+        m_toneMapInShader = !m_displayHdrCapable && m_tenBitOutput
+            && (!m_transferFunctionSignalled || m_transferFunction == MFVideoTransFunc_2084);
+        td.Format = m_displayHdrCapable ? m_swapChainFormat
+                    : m_toneMapInShader ? DXGI_FORMAT_R10G10B10A2_UNORM
+                                        : DXGI_FORMAT_B8G8R8A8_UNORM;
         td.SampleDesc.Count = 1;
         td.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
         td.Flags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
@@ -2177,8 +2250,14 @@ namespace winrt::Ripcord::Media::Interop::implementation
                     m_presentingHdr ? DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020
                                     : DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709;
 
+                // Tone-mapped by our shader: the processor only converts YCbCr to RGB, keeping PQ and BT.2020, and
+                // the swap chain is told SDR, which is what the shader writes.
+                const bool shaderToneMaps = m_toneMapInShader && m_hdrTransfer && !m_presentingHdr;
+                const DXGI_COLOR_SPACE_TYPE processorOutputSpace =
+                    shaderToneMaps ? DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020 : outputSpace;
+
                 videoContext1->VideoProcessorSetStreamColorSpace1(m_videoProcessor.Get(), 0, inputSpace);
-                videoContext1->VideoProcessorSetOutputColorSpace1(m_videoProcessor.Get(), outputSpace);
+                videoContext1->VideoProcessorSetOutputColorSpace1(m_videoProcessor.Get(), processorOutputSpace);
                 colorSpaceSet = true;
 
                 // Tell the swap chain what it is now carrying. Both sides must agree: the video processor is
@@ -2208,8 +2287,9 @@ namespace winrt::Ripcord::Media::Interop::implementation
                 }
 
                 // Only a source being squeezed into SDR is "tone-mapped"; presenting PQ to a PQ panel is not,
-                // and neither is a 10-bit SDR source passing straight through.
-                m_toneMappedByDriver = m_hdrTransfer && !m_presentingHdr;
+                // and neither is a 10-bit SDR source passing straight through. Ours, when the shader does it.
+                m_toneMapInShader = shaderToneMaps;
+                m_toneMappedByDriver = m_hdrTransfer && !m_presentingHdr && !shaderToneMaps;
             }
         }
 
@@ -2220,12 +2300,21 @@ namespace winrt::Ripcord::Media::Interop::implementation
             inCs.Nominal_Range = D3D11_VIDEO_PROCESSOR_NOMINAL_RANGE_16_235;
             m_videoContext->VideoProcessorSetStreamColorSpace(m_videoProcessor.Get(), 0, &inCs);
             m_toneMappedByDriver = false;
+            m_toneMapInShader = false;   // no PQ output was set up, so there is nothing for the shader to undo
         }
 
-        D3D11_VIDEO_PROCESSOR_COLOR_SPACE outCs{};
-        outCs.RGB_Range = 0;     // 0 = full range (0-255)
-        outCs.Nominal_Range = D3D11_VIDEO_PROCESSOR_NOMINAL_RANGE_0_255;
-        m_videoContext->VideoProcessorSetOutputColorSpace(m_videoProcessor.Get(), &outCs);
+        // The legacy output description only where the DXGI one was not set. Called after it unconditionally, as
+        // this was, it overrode the output primaries: a BT.2020 output came back as BT.709, and the shader's
+        // BT.2020-to-BT.709 step then converted it a second time, turning orange marigolds red. Measured against an
+        // FFmpeg decode of the same HDR stream (2026-10-03): green-to-red in the blooms 0.33 here, 0.60 offline,
+        // 0.29 offline with the conversion applied twice.
+        if (!colorSpaceSet)
+        {
+            D3D11_VIDEO_PROCESSOR_COLOR_SPACE outCs{};
+            outCs.RGB_Range = 0;     // 0 = full range (0-255)
+            outCs.Nominal_Range = D3D11_VIDEO_PROCESSOR_NOMINAL_RANGE_0_255;
+            m_videoContext->VideoProcessorSetOutputColorSpace(m_videoProcessor.Get(), &outCs);
+        }
 
         // Single BGRA SRV into the BGRA-pipeline's heap; the shared present reuses that pipeline's shader.
         m_device->CreateShaderResourceView(
@@ -2371,8 +2460,9 @@ namespace winrt::Ripcord::Media::Interop::implementation
             ID3D12DescriptorHeap* heaps[] = { m_srvHeap.Get() };
             m_commandList->SetDescriptorHeaps(1, heaps);
             m_commandList->SetGraphicsRootDescriptorTable(0, m_srvHeap->GetGPUDescriptorHandleForHeapStart());
-            struct { int32_t mode; float srcW; float srcH; float pad; } upscaleParams{
-                m_upscaleMode, static_cast<float>(m_sharedTexWidth), static_cast<float>(m_sharedTexHeight), 0.0f };
+            struct { int32_t mode; float srcW; float srcH; uint32_t toneMap; } upscaleParams{
+                m_upscaleMode, static_cast<float>(m_sharedTexWidth), static_cast<float>(m_sharedTexHeight),
+                m_toneMapInShader ? 1u : 0u };
             m_commandList->SetGraphicsRoot32BitConstants(1, 4, &upscaleParams, 0);
             m_commandList->SetPipelineState(m_upscalePipeline.Get());
 

@@ -37,4 +37,8 @@ public interface IVideoPipelinePreparer
 /// the one that scans it out. Read at connect, so a window moved later can change the answer; the renderer
 /// handles that on its own.
 /// </param>
-public sealed record PreparedVideo(bool CanPresentHdr);
+/// <param name="CanToneMapHdr">
+/// An HDR stream can be shown on this display even if it is SDR, tone-mapped by Ripcord. True wherever the video
+/// device came up; a stream that then turns out unrenderable falls back to SDR on its own.
+/// </param>
+public sealed record PreparedVideo(bool CanPresentHdr, bool CanToneMapHdr = false);
