@@ -241,7 +241,6 @@ public sealed partial class SettingsPage : Page, IInitialFocusTarget
         DeadzoneSlider.ValueChanged += (_, _) => Edit(() => _viewModel.SetDeadzone(DeadzoneSlider.Value));
 
         HdrToggle.Toggled += (_, _) => Edit(() => _viewModel.SetRequestHdr(HdrToggle.IsOn));
-        AdaptiveToggle.Toggled += (_, _) => Edit(() => _viewModel.SetAdaptiveQuality(AdaptiveToggle.IsOn));
         KeyboardToggle.Toggled += (_, _) => Edit(() => _viewModel.SetKeyboardEnabled(KeyboardToggle.IsOn));
         FullScreenToggle.Toggled += (_, _) => Edit(() => _viewModel.SetFullScreenOnConnect(FullScreenToggle.IsOn));
         ConfirmOnDisconnectToggle.Toggled += (_, _) => Edit(() => _viewModel.SetConfirmOnDisconnect(ConfirmOnDisconnectToggle.IsOn));
@@ -363,7 +362,6 @@ public sealed partial class SettingsPage : Page, IInitialFocusTarget
             AdapterWarning.Message = s.AdapterWarning;
             AdapterWarning.IsOpen = s.AdapterWarningVisible;
 
-            AdaptiveToggle.IsOn = s.AdaptiveQuality;
             KeyboardToggle.IsOn = s.KeyboardEnabled;
             KeyBindingsCard.Description = s.KeyboardSummary;
             ExitGestureCard.Description = s.ExitGestureDescription;
