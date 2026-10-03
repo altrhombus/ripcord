@@ -308,32 +308,16 @@ public class SessionViewModelTests
     }
 
     [Fact]
-    public void Adaptive_IsARecommendation_NotSomethingSent()
+    public void Adaptive_IsNotShown_EvenWhenTheControllerWantsLess()
     {
-        // Nothing acts on it, and since 2026-10-02 nothing sends it: the panel must not say otherwise, whatever an
-        // older settings file says about reporting.
-        (SessionViewModel vm, FakePipeline pipeline, _) = Build(Defaults with { ReportConnectionQuality = true });
-        pipeline.Snapshot = new VideoPipelineSnapshot(60, 60, 0, 8, 2, DecodedWidth: 1920, DecodedHeight: 1080);
-
-        vm.Sample(Live(recommended: new BitrateDecision(12_000, 1920, 1080, 60)));
-
-        Assert.True(vm.State.Diagnostics.AdaptiveVisible);
-        Assert.Contains("12.0 Mbps recommended", vm.State.Diagnostics.Adaptive);
-        Assert.DoesNotContain("sent", vm.State.Diagnostics.Adaptive);
-    }
-
-    [Fact]
-    public void Adaptive_PreferringADifferentResolution_SaysItNeedsAReconnect()
-    {
-        // CONNECTION_QUALITY carries a bitrate only — resolution is fixed by the launchSpec at session start —
-        // so a preferred resolution must never be implied to be in effect.
+        // Hidden for 1.0 (2026-10-02): nothing acts on the recommendation, so neither it nor its reason is shown.
         (SessionViewModel vm, FakePipeline pipeline, _) = Build();
         pipeline.Snapshot = new VideoPipelineSnapshot(60, 60, 0, 8, 2, DecodedWidth: 1920, DecodedHeight: 1080);
 
-        vm.Sample(Live(recommended: new BitrateDecision(12_000, 1280, 720, 60)));
+        vm.Sample(Live(recommended: new BitrateDecision(2_000, 960, 540, 30), reason: "stepped down after 7.7% loss"));
 
-        Assert.Contains("resolution is set when a stream starts", vm.State.Diagnostics.Adaptive);
-        Assert.DoesNotContain("reconnect", vm.State.Diagnostics.Adaptive);
+        Assert.False(vm.State.Diagnostics.AdaptiveVisible);
+        Assert.DoesNotContain("stepped down", vm.State.Diagnostics.Reason);
     }
 
     // ---- headroom and health -------------------------------------------------------------------

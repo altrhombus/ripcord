@@ -93,12 +93,6 @@
                     </StackPanel>
                 </tk:SettingsCard>
 
-                <tk:SettingsCard
-                    x:Uid="SettingsPage_LowerBitratePacketLoss">
-                    <ToggleSwitch
-                        x:Name="AdaptiveToggle"
-                        x:Uid="SettingsPage_AdaptQualityAutomatically" />
-                </tk:SettingsCard>
 
                 <tk:SettingsCard x:Uid="SettingsPage_HowStreamScaledUp">
                     <ComboBox
