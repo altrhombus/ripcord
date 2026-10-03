@@ -540,8 +540,7 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
                     PipelineLatencyMs: s.PipelineLatencyMs,
                     DecodeMode: s.DecodeMode,
                     HealthLevel: _diagnostics.HealthLevel,
-                    RequestedBitrateKbps: stats.RequestedBitrateKbps,
-                    QualityReportsSent: stats.QualityReportsSent);
+                    ConsoleTargetKbps: stats.ConsoleTargetBitrateKbps);
             }
 
             // The verdict is recomputed twice a second and is right to be twitchy - the panel wants the live
@@ -621,7 +620,11 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
 
             Link: link,
             HeadroomUsedFraction: usedFraction,
-            Headroom: $"{usedFraction * 100:F0}% of {capMbps:F0} Mbps",
+            // And what the console is aiming for, when it has said: the cap is ours, the target is its choice.
+            Headroom: $"{usedFraction * 100:F0}% of {capMbps:F0} Mbps"
+                      + (stats.ConsoleTargetBitrateKbps > 0
+                          ? $" · console aims for {stats.ConsoleTargetBitrateKbps / 1000.0:F1} Mbps"
+                          : string.Empty),
             Power: ComposePower(telemetry.Power),
 
             // The frame rate is the useful part: 480 samples at 48 kHz means ~100/s, so a figure well below that

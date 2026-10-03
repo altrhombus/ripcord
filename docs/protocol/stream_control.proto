@@ -298,8 +298,9 @@ message SystemMenuCommandPayload {
   optional uint32 playerId = 2;
 }
 
-// targetBitrate's unit is [X], and the console did not act on it as sent: a fixed target on a clean link, as kbps
-// and as bps, left its bitrate where it was with no report at all (2026-10-02, research log).
+// Console -> client, about once a second (2026-10-02, our capture of our own vendor client: the client sent none,
+// and the console ignored one sent to it). targetBitrate is in bits per second [W]. The console also sent a field
+// 8, a varint near 1,400, which this schema does not name [X].
 message ConnectionQualityPayload {
   optional uint32 targetBitrate = 1;
   optional uint32 upstreamBitrate = 2;

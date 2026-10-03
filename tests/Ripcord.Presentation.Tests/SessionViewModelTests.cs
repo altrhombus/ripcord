@@ -294,6 +294,20 @@ public class SessionViewModelTests
     }
 
     [Fact]
+    public void TheConsolesTarget_ShowsBesideTheCap_OnceItHasSaid()
+    {
+        (SessionViewModel vm, FakePipeline pipeline, TestClock clock) = Build();
+        pipeline.Snapshot = new VideoPipelineSnapshot(60, 60, 0, 8, 2, DecodedWidth: 1920, DecodedHeight: 1080);
+
+        vm.Sample(Live());
+        Assert.DoesNotContain("console aims", vm.State.Diagnostics.Headroom);
+
+        clock.Advance(TimeSpan.FromSeconds(1));
+        vm.Sample(Live() with { Statistics = Live().Statistics with { ConsoleTargetBitrateKbps = 14_563 } });
+        Assert.EndsWith("console aims for 14.6 Mbps", vm.State.Diagnostics.Headroom);
+    }
+
+    [Fact]
     public void Adaptive_IsARecommendation_NotSomethingSent()
     {
         // Nothing acts on it, and since 2026-10-02 nothing sends it: the panel must not say otherwise, whatever an

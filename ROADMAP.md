@@ -194,10 +194,11 @@ purchased signing certificate.
       minutes; the echo half needs a new signal, since the RTT always has a fallback behind it.
 - [ ] **Capture `BANDWIDTH_COMMAND`**, the one senkusha piece never seen (absent from two LAN captures). Try
       automatic quality, a bad Wi‑Fi link, or an internet session.
-- [ ] **Is there any way to steer the console's bitrate mid-session?** `CONNECTION_QUALITY`'s target is not
-      it: on 2026-10-02 the console ignored a fixed target on a clean link, sent as kbps and as bps, so the
-      Settings switch came out (journal). What's left to try: whether it reads the target only alongside the
-      upstream fields, or only for some streaming types, from a capture of the vendor client changing quality.
+- [ ] **Is there any way to steer the console's bitrate mid-session?** Not `CONNECTION_QUALITY`: it runs
+      console to client, and the vendor client never sends one (2026-10-02, research log). What the vendor client
+      does send is `CORRUPT_FRAME` about once a second. A capture of it on real hardware (not a VM, which corrupted
+      frames on its own) under added loss would show whether that, or anything else, moves the console's rate.
+      Then remove Ripcord's unused send path (`ConnectionQualityReporter` and the stream's send).
 - [ ] **Make a reconnect start from the recommendation.** The adaptive controller works out a lower quality
       under loss, and nothing acts on it: a reconnect starts at the configured settings. Start the next session's
       launchSpec from the recommendation, and the setting can go back to being "Adapt quality automatically"

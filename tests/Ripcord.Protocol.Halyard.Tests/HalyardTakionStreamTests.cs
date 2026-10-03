@@ -99,7 +99,43 @@ public class HalyardTakionStreamTests
         try { await serverTask; } catch (OperationCanceledException) { }
     }
 
-    private static async Task RunMockConsoleAsync(UdpChannel server, CancellationToken ct, string? disconnectWith = null)
+    /// <summary>
+    /// The console reports its own connection quality, about once a second, with its target in bits per second
+    /// (2026-10-02, our capture of the vendor client). The stream keeps the latest target, in kbps.
+    /// </summary>
+    [Fact]
+    public async Task TheConsolesConnectionQuality_GivesItsTargetInKbps()
+    {
+        using var serverSocket = new UdpChannel();
+        using var clientSocket = new UdpChannel();
+        var serverEndpoint = new IPEndPoint(IPAddress.Loopback, serverSocket.LocalEndPoint.Port);
+
+        using var crypto = new HalyardV1SessionCrypto(TestSecrets.SyntheticControlSecrets());
+        var demuxer = new HalyardStreamDemuxer(crypto);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        var serverTask = RunMockConsoleAsync(serverSocket, cts.Token, qualityTargetBps: 14_563_000);
+
+        await using var stream = new HalyardTakionStream(clientSocket, serverEndpoint, crypto, demuxer);
+        Assert.Equal(0, stream.ConsoleTargetBitrateKbps);
+
+        TakionSessionResult result = await stream.StartAsync(
+            new TakionSessionRequest(9, "skey", "launchspec", HandshakeKey),
+            handshakeTimeout: TimeSpan.FromSeconds(1), handshakeAttempts: 5, cts.Token);
+        Assert.True(result.Success, result.FailureReason);
+
+        while (stream.ConsoleTargetBitrateKbps == 0)
+        {
+            await Task.Delay(20, cts.Token);
+        }
+
+        Assert.Equal(14_563, stream.ConsoleTargetBitrateKbps);
+
+        await cts.CancelAsync();
+        try { await serverTask; } catch (OperationCanceledException) { }
+    }
+
+    private static async Task RunMockConsoleAsync(
+        UdpChannel server, CancellationToken ct, string? disconnectWith = null, uint? qualityTargetBps = null)
     {
         // P-521: the curve version 17 selects, i.e. the one a real console brings to this exchange.
         var (serverKp, serverPub) = HalyardStreamKeySchedule.GenerateKeyPair(HalyardStreamCurve.NistP521);
@@ -195,6 +231,16 @@ public class HalyardTakionStreamTests
                 await Task.Delay(200, ct).ConfigureAwait(false);
                 await server.SendAsync(BuildSealedVideo(packetCrypto, packetIndex: 1, frameIndex: 0, keyPos: 0x00013060, FramePlaintext), client, ct).ConfigureAwait(false);
                 await server.SendAsync(BuildSealedVideo(packetCrypto, packetIndex: 2, frameIndex: 1, keyPos: 0x00013460, RandomNumberGenerator.GetBytes(64)), client, ct).ConfigureAwait(false);
+
+                if (qualityTargetBps is { } target)
+                {
+                    var quality = new ControlMessage
+                    {
+                        Type = ControlMessage.Types.MessageType.ConnectionQuality,
+                        ConnectionQualityPayload = new ConnectionQualityPayload { TargetBitrate = target, Rtt = 0.7 },
+                    };
+                    await server.SendAsync(TakionDataChunk.Build(clientTag, outboundSeq++, 0, quality.ToByteArray()), client, ct).ConfigureAwait(false);
+                }
 
                 if (disconnectWith is not null)
                 {

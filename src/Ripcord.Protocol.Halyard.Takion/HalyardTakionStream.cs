@@ -107,6 +107,15 @@ public sealed class HalyardTakionStream : IAsyncDisposable
     /// </summary>
     public int MeasuredBitrateKbps => Volatile.Read(ref _measuredBitrateKbps);
 
+    private int _consoleTargetKbps;
+
+    /// <summary>
+    /// The bitrate the console says it is aiming for, from its CONNECTION_QUALITY reports, in kbps; 0 before the
+    /// first. The message runs console to client: the vendor client sends none, and the console ignores one sent
+    /// to it (2026-10-02, research log). The target arrives in bits per second.
+    /// </summary>
+    public int ConsoleTargetBitrateKbps => Volatile.Read(ref _consoleTargetKbps);
+
     private static readonly TimeSpan HeartbeatInterval = TimeSpan.FromSeconds(1);
 
     // Congestion feedback: a raw sealed Takion packet (base type 5, 15 bytes) carrying received/lost unit
@@ -279,6 +288,11 @@ public sealed class HalyardTakionStream : IAsyncDisposable
                     case ControlMessage.Types.MessageType.Disconnect:
                         ConsoleDisconnected?.Invoke(message.DisconnectPayload?.Reason ?? "");
                         return;
+                    case ControlMessage.Types.MessageType.ConnectionQuality
+                        when message.ConnectionQualityPayload is { HasTargetBitrate: true } quality:
+                        // The console's own report, about once a second. Its target is in bits per second.
+                        Volatile.Write(ref _consoleTargetKbps, (int)Math.Min(quality.TargetBitrate / 1000, int.MaxValue));
+                        break;
                     default:
                         break; // heartbeats, bandwidth, cursor, etc. — nothing required yet
                 }
