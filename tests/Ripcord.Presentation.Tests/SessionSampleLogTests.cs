@@ -98,19 +98,12 @@ public class SessionSampleLogTests
     }
 
     [Fact]
-    public void ARowCarriesWhatWasRequestedBesideWhatArrived()
+    public void ARowCarriesTheConsolesTargetBesideWhatArrived()
     {
-        // The connection report's unit is unconfirmed; a trace with both is what settles it.
-        string row = SessionSampleLog.Row(Sample() with { RequestedBitrateKbps = 15_000, QualityReportsSent = 42 });
+        string row = SessionSampleLog.Row(Sample() with { ConsoleTargetKbps = 14_563 });
 
-        Assert.Contains(",14.25,15000,42,", row, StringComparison.Ordinal);
+        Assert.Contains(",14.25,14563,", row, StringComparison.Ordinal);
     }
-
-    [Theory]
-    [InlineData(true, "# connection reports: on")]
-    [InlineData(false, "# connection reports: off")]
-    public void ThePreambleSaysWhetherReportsWereOn(bool on, string line)
-        => Assert.Contains(line, SessionSampleLog.Preamble("1.0", "Test GPU", "HEVC", 1920, 1080, 60, 40_000, on));
 
     [Fact]
     public void ARowCarriesNothingThatIdentifiesAnyone()

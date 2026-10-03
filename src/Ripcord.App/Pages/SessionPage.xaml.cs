@@ -1814,8 +1814,7 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
         foreach (string line in SessionSampleLog.Preamble(
             typeof(SessionPage).Assembly.GetName().Version?.ToString() ?? "unknown",
             adapter, config.CodecPreference.ToString(),
-            _settings.Width, _settings.Height, _settings.TargetFps, _settings.BitrateKbps,
-            config.ReportConnectionQuality))
+            _settings.Width, _settings.Height, _settings.TargetFps, _settings.BitrateKbps))
         {
             _trace.WriteLine(line);
         }

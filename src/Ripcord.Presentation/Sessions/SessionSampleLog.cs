@@ -20,11 +20,10 @@ using Ripcord.Core.Sessions;
 /// <param name="PipelineLatencyMs">Demux to present, end to end.</param>
 /// <param name="DecodeMode">2 zero-copy, 1 readback, 0 software.</param>
 /// <param name="HealthLevel">What the assessor made of this sample.</param>
-/// <param name="RequestedBitrateKbps">
-/// What we last asked the console for, 0 if we never did. Next to <paramref name="BitrateMbps"/> it answers
-/// whether the console follows the request, which is the open question about the connection report's unit.
+/// <param name="ConsoleTargetKbps">
+/// What the console says it is aiming for, from its own connection reports; 0 until it says. Next to
+/// <paramref name="BitrateMbps"/> it shows whether a low rate is the console's choice or the network's doing.
 /// </param>
-/// <param name="QualityReportsSent">Connection reports sent so far: zero means the option was off or never fired.</param>
 public sealed record SessionSample(
     double ElapsedSeconds,
     double PresentFps,
@@ -37,8 +36,7 @@ public sealed record SessionSample(
     double PipelineLatencyMs,
     int DecodeMode,
     StreamHealthLevel HealthLevel,
-    int RequestedBitrateKbps = 0,
-    long QualityReportsSent = 0);
+    int ConsoleTargetKbps = 0);
 
 /// <summary>
 /// The session trace: every stats tick, as CSV.
@@ -66,7 +64,7 @@ public static class SessionSampleLog
 {
     /// <summary>The CSV header, matching <see cref="Row"/> field for field.</summary>
     public const string Header =
-        "elapsed_s,present_fps,decode_fps,loss_pct,rtt_ms,bitrate_mbps,requested_kbps,quality_reports," +
+        "elapsed_s,present_fps,decode_fps,loss_pct,rtt_ms,bitrate_mbps,console_target_kbps," +
         "receive_queue,decode_queue,pipeline_ms,decode_mode,health";
 
     /// <summary>
@@ -75,15 +73,13 @@ public static class SessionSampleLog
     /// can otherwise only be reconstructed from the numbers.
     /// </summary>
     public static IReadOnlyList<string> Preamble(
-        string appVersion, string adapter, string codec, int width, int height, int targetFps, int bitrateCapKbps,
-        bool reportsConnectionQuality = false)
+        string appVersion, string adapter, string codec, int width, int height, int targetFps, int bitrateCapKbps)
         =>
         [
             "# Ripcord session trace",
             FormattableString.Invariant($"# app: {appVersion}"),
             FormattableString.Invariant($"# adapter: {adapter}"),
             FormattableString.Invariant($"# requested: {width}x{height}@{targetFps} {codec}, cap {bitrateCapKbps / 1000.0:F0} Mbps"),
-            $"# connection reports: {(reportsConnectionQuality ? "on" : "off")}",
             string.Create(
                 CultureInfo.InvariantCulture,
                 $"# thresholds: loss_warn={StreamHealthAssessor.LossWarnRatio * 100:F0}% loss_bad={StreamHealthAssessor.LossBadRatio * 100:F0}% receive_queue_busy={StreamHealthAssessor.ReceiveQueueBusyDepth} rtt_warn={StreamHealthAssessor.RttWarnMs:F0}ms"),
@@ -99,7 +95,7 @@ public static class SessionSampleLog
         return string.Create(
             CultureInfo.InvariantCulture,
             $"{sample.ElapsedSeconds:F1},{sample.PresentFps:F1},{sample.DecodeFps:F1},{sample.LossPercent:F2}," +
-            $"{sample.RttMs:F1},{sample.BitrateMbps:F2},{sample.RequestedBitrateKbps},{sample.QualityReportsSent}," +
+            $"{sample.RttMs:F1},{sample.BitrateMbps:F2},{sample.ConsoleTargetKbps}," +
             $"{sample.ReceiveQueueDepth},{sample.DecodeQueueDepth}," +
             $"{sample.PipelineLatencyMs:F1},{sample.DecodeMode},{sample.HealthLevel}");
     }
