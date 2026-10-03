@@ -116,6 +116,10 @@ namespace Ripcord.Media.Interop
         // 10-bit decode (P010). Independent of HDR: a stream can be 10-bit and SDR.
         Boolean IsTenBit{ get; };
 
+        // A 10-bit stream arrived with no zero-copy path to draw it, or the zero-copy path failed under it: the
+        // readback path is 8-bit only, so nothing will show. The caller's cue to reconnect in SDR.
+        Boolean CannotRenderTenBit{ get; };
+
         // Human-readable reason zero-copy fell back (failing stage + HRESULT), or "none".
         String ZeroCopyDiagnostic();
 

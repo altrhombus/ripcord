@@ -77,7 +77,8 @@ public class ConnectFlowTests
         }
     }
 
-    private sealed class StubVideo(Exception? fault = null, bool canPresentHdr = true) : IVideoPipelinePreparer
+    private sealed class StubVideo(Exception? fault = null, bool canPresentHdr = true, bool canToneMapHdr = false)
+        : IVideoPipelinePreparer
     {
         public int Calls { get; private set; }
 
@@ -89,7 +90,7 @@ public class ConnectFlowTests
             Received = config;
             return fault is not null
                 ? Task.FromException<PreparedVideo>(fault)
-                : Task.FromResult(new PreparedVideo(canPresentHdr));
+                : Task.FromResult(new PreparedVideo(canPresentHdr, canToneMapHdr));
         }
     }
 
@@ -261,18 +262,32 @@ public class ConnectFlowTests
     }
 
     [Fact]
-    public async Task Hdr_IsAskedForAsSdrWhenTheDisplayCannotPresentIt()
+    public async Task Hdr_IsAskedForAsSdrWhenTheDisplayCannotPresentIt_AndRipcordCannotToneMap()
     {
         var settings = new RipcordSettings { Codec = VideoCodec.Hevc, RequestHdr = true };
 
         (ConnectPlan? plan, _) = await RunAsync(
-            new StubSessions(), new StubWake(), new StubVideo(canPresentHdr: false), Ps5(), settings);
+            new StubSessions(), new StubWake(), new StubVideo(canPresentHdr: false, canToneMapHdr: false), Ps5(), settings);
 
         // The console's own SDR rather than a driver's tone-map of its HDR. The codec is untouched: HEVC is still
         // what was asked for and what the decoder was built for.
         Assert.NotNull(plan);
         Assert.Equal(DynamicRange.Sdr, plan!.Config.RequestedDynamicRange);
         Assert.Equal(VideoCodec.Hevc, plan.Config.CodecPreference);
+    }
+
+    [Fact]
+    public async Task Hdr_IsStillAskedFor_OnAnSdrDisplay_WhenRipcordCanToneMapIt()
+    {
+        // The console's SDR stream clips its highlights when its HDR is on (2026-10-02); Ripcord's tone-map of the
+        // HDR stream keeps them, so an SDR display is no longer a reason to ask for SDR.
+        var settings = new RipcordSettings { Codec = VideoCodec.Hevc, RequestHdr = true };
+
+        (ConnectPlan? plan, _) = await RunAsync(
+            new StubSessions(), new StubWake(), new StubVideo(canPresentHdr: false, canToneMapHdr: true), Ps5(), settings);
+
+        Assert.NotNull(plan);
+        Assert.Equal(DynamicRange.Hdr, plan!.Config.RequestedDynamicRange);
     }
 
     [Fact]
