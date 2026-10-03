@@ -55,6 +55,13 @@ settings whose descriptions promised more than the code did.
 Also seen: for about 30 seconds after a session ends, the console refuses a new one with HTTP 403 and
 `80108b10`, and the retries get through once it lets go.
 
+**Later the same day, the reason.** A capture of the vendor client, with its stream keys, showed the message
+runs the other way: the console sends `CONNECTION_QUALITY` about once a second, its target in bits per second,
+and the client sends none. Ripcord now reads the console's reports and shows its target beside the cap in the
+diagnostics panel ("console aims for 14.6 Mbps"), and the trace records it. The vendor client's one regular
+message back is `CORRUPT_FRAME`, about once a second; that capture ran in a VM that corrupted frames by itself,
+so what it does under real loss is still open.
+
 ### The person-driven pass, first part: the passcode, the pad, and a reconnect that never asked (2026-10-02)
 
 The first part of ROADMAP's person-driven pass, run by hand on the dev machine with a DualSense and an Xbox pad.
