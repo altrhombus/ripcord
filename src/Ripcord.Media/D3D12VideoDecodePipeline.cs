@@ -180,6 +180,22 @@ public sealed class D3D12VideoDecodePipeline : IVideoDecodePipeline
     public event Action<int>? DeviceLost;
 
     /// <summary>
+    /// An HDR10 stream can be shown here even if the display is SDR: the renderer tone-maps it in its present
+    /// shader (Ripcord.Core.Video.HdrToneMap). Needs only a started device; if the zero-copy path the shader
+    /// relies on turns out to be missing, <see cref="TenBitUnrenderable"/> says so and the session falls back.
+    /// </summary>
+    public bool CanToneMapHdr
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return _initialized;
+            }
+        }
+    }
+
+    /// <summary>
     /// The window's display takes HDR10 from this device (see <c>VideoRenderer.IsDisplayHdr</c>). False before
     /// <see cref="StartAsync"/>.
     /// </summary>
@@ -193,6 +209,15 @@ public sealed class D3D12VideoDecodePipeline : IVideoDecodePipeline
             }
         }
     }
+
+    /// <summary>
+    /// Raised once when a 10-bit (HDR) stream cannot be drawn: no zero-copy path, or it failed mid-stream, and the
+    /// readback path is 8-bit only. Raised on the decode worker, so a UI consumer must marshal. Reconnecting in
+    /// SDR is the answer; the picture would otherwise stay blank.
+    /// </summary>
+    public event Action? TenBitUnrenderable;
+
+    private bool _tenBitUnrenderableSignalled;
 
     /// <summary>True once the graphics device has been lost. Nothing will render until recreated.</summary>
     public bool IsDeviceLost => _deviceLostSignalled;
@@ -516,6 +541,13 @@ public sealed class D3D12VideoDecodePipeline : IVideoDecodePipeline
                         {
                             SignalDeviceLost();
                             continue;
+                        }
+
+                        if (!_tenBitUnrenderableSignalled && _renderer.CannotRenderTenBit)
+                        {
+                            _tenBitUnrenderableSignalled = true;
+                            Debug.WriteLine("[Ripcord] 10-bit stream cannot be drawn on this path; asking for SDR.");
+                            TenBitUnrenderable?.Invoke();
                         }
 
                         if (decoded && _initialized)

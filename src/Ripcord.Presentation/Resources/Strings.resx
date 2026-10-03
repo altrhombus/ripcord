@@ -202,6 +202,10 @@
     <value>This PC is ready for HDR. Whether a given game streams in HDR is up to the console.</value>
     <comment>Summary under the HDR checklist when every requirement is met.</comment>
   </data>
+  <data name="Settings_HdrReadySdrDisplay" xml:space="preserve">
+    <value>Ready. This display is SDR, so Ripcord converts the HDR picture for it, keeping the detail in bright skies and highlights. Turn on Use HDR in Windows to see it in HDR.</value>
+    <comment>Settings, HDR section: shown when HDR can be requested but the display is SDR. HDR, SDR and Windows are product or standard names - do not translate.</comment>
+  </data>
   <data name="Settings_HdrToneMapped" xml:space="preserve">
     <value>If any of the above is missing when you connect, the console sends SDR instead.</value>
     <comment>Summary under the HDR checklist when a requirement is missing. HDR/SDR are standard terms.</comment>
