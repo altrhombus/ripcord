@@ -90,10 +90,54 @@ public class HdrToneMapTests
     {
         string source = File.ReadAllText(Path.Combine(RepositoryRoot(), "src", "Ripcord.Media.Interop", "VideoRenderer.cpp"));
 
-        Assert.Matches(new Regex($@"kSourcePeakNits\s*=\s*{HdrToneMap.SourcePeakNits:0.0}"), source);
+        // The shader's own constants.
         Assert.Matches(new Regex($@"kSdrPeakNits\s*=\s*{HdrToneMap.SdrPeakNits:0.0}"), source);
         Assert.Matches(new Regex($@"kDisplayGamma\s*=\s*{HdrToneMap.DisplayGamma:0.0}"), source);
         Assert.Contains("1.6605", source);   // BT.2087's first coefficient: the gamut step is present
+
+        // The C++ that chooses the source peak and smooths the measurement.
+        Assert.Matches(new Regex($@"kHdrSourcePeakNits\s*=\s*{HdrToneMap.SourcePeakNits:0.0}"), source);
+        Assert.Matches(new Regex($@"kToneMapSdrPeakNits\s*=\s*{HdrToneMap.SdrPeakNits:0.0}"), source);
+        Assert.Matches(new Regex($@"kSdrContentBelowNits\s*=\s*{HdrToneMap.SdrContentBelowNits:0.0}"), source);
+        Assert.Matches(new Regex($@"kHdrContentAboveNits\s*=\s*{HdrToneMap.HdrContentAboveNits:0.0}"), source);
+        Assert.Matches(new Regex($@"kPeakRiseRate\s*=\s*{HdrToneMap.PeakTracker.RiseRate}"), source);
+        Assert.Matches(new Regex($@"kPeakFallRate\s*=\s*{HdrToneMap.PeakTracker.FallRate}"), source);
+    }
+
+    [Theory]
+    [InlineData(100.0, 250.0)]     // never below SDR white
+    [InlineData(300.0, 300.0)]     // an SDR game in HDR10: its own peak
+    [InlineData(400.0, 400.0)]
+    [InlineData(500.0, 700.0)]     // between: a blend
+    [InlineData(600.0, 1000.0)]    // HDR content: the fixed curve that matched the console
+    [InlineData(4000.0, 1000.0)]
+    public void SourcePeak_FollowsTheContent(double measured, double expected)
+        => Assert.Equal(expected, HdrToneMap.SourcePeakFor(measured), 6);
+
+    [Fact]
+    public void AnSdrGameInHdr10_ReachesFullWhite()
+    {
+        // 2026-10-05: an SDR game's white arrived near 258 nits, small elements to about 300. Tone-mapped from a
+        // fixed 1,000-nit peak its white landed at 91%; from the measured peak it is at full white, or within a hair.
+        double white = HdrToneMap.NitsToPq(258);
+        double fixedWhite = HdrToneMap.ToSdr(white, white, white).R;
+        double adaptedWhite = HdrToneMap.ToSdr(white, white, white, HdrToneMap.SourcePeakFor(300)).R;
+
+        Assert.InRange(fixedWhite, 0.90, 0.93);
+        Assert.True(adaptedWhite > 0.97, $"{adaptedWhite}");
+    }
+
+    [Fact]
+    public void Tracker_RisesQuickly_AndFallsSlowly()
+    {
+        var tracker = new HdrToneMap.PeakTracker();
+        Assert.Equal(300.0, tracker.Update(300), 6);   // the first measurement is taken as it is
+
+        for (int i = 0; i < 30; i++) tracker.Update(900);   // half a second of a bright scene
+        Assert.True(tracker.Smoothed > 700, $"{tracker.Smoothed}");
+
+        for (int i = 0; i < 30; i++) tracker.Update(300);   // half a second dark again
+        Assert.True(tracker.Smoothed > 700, $"fell too fast: {tracker.Smoothed}");   // about 75 nits, where the rise took nearly 500
     }
 
     private static string RepositoryRoot()
