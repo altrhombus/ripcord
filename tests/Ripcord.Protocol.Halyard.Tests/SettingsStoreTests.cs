@@ -67,8 +67,9 @@ public class SettingsStoreTests : IDisposable
     {
         RipcordSettings s = new SettingsStore(_paths).Current;
 
-        Assert.Equal(1280, s.Width);
-        Assert.Equal(720, s.Height);
+        Assert.Equal(1920, s.Width);
+        Assert.Equal(1080, s.Height);
+        Assert.Equal(20_000, s.BitrateKbps);
         Assert.Equal(60, s.TargetFps);
         Assert.True(s.AdaptiveQuality);
         Assert.Equal(GpuPreference.Auto, s.GpuPreference);
@@ -82,10 +83,10 @@ public class SettingsStoreTests : IDisposable
         // Unvalidated protocol writes must be opt-in, never on by default.
         Assert.False(s.ReportConnectionQuality);
 
-        // HEVC and HDR (2026-10-05): the console's SDR stream clips HDR games' highlights; its HDR stream does not.
-        Assert.Equal(VideoCodec.Hevc, s.Codec);
-        Assert.True(s.RequestHdr);
-        Assert.Equal(DynamicRange.Hdr, s.ToSessionConfig().RequestedDynamicRange);
+        // H.264 and SDR (the owner's decision, 2026-10-05): every PC decodes it. HEVC and HDR are a choice.
+        Assert.Equal(VideoCodec.H264, s.Codec);
+        Assert.False(s.RequestHdr);
+        Assert.Equal(DynamicRange.Sdr, s.ToSessionConfig().RequestedDynamicRange);
     }
 
     [Fact]
