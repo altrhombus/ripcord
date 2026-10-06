@@ -59,6 +59,8 @@ namespace winrt::Ripcord::Media::Interop::implementation
         bool CannotRenderTenBit() const noexcept { return m_tenBitUnrenderable; }
         bool IsHdrOutput() const noexcept { return m_presentingHdr; }
         bool IsTenBit() const noexcept { return m_tenBitOutput; }
+        double ToneMapPeakNits() const noexcept { return m_toneMapInShader ? m_toneMapSourcePeakNits.load() : 0.0; }
+        double FramePeakNits() const noexcept { return m_toneMapInShader ? m_peakMeasuredNits.load() : 0.0; }
         void SetCodec(VideoCodecKind codec);
         hstring DecoderDescription();
         hstring DecoderDiagnostic();
@@ -381,6 +383,7 @@ namespace winrt::Ripcord::Media::Interop::implementation
 
         // Atomic because the diagnostics string reads it from the UI thread while the decode worker writes it.
         std::atomic<double> m_toneMapSourcePeakNits{ 1000.0 };
+        std::atomic<double> m_peakMeasuredNits{ 0.0 };   // the latest raw measurement, for the diagnostics panel
         int32_t m_upscaleMode = 0; // 0 = bilinear, 1 = bicubic
         Microsoft::WRL::ComPtr<ID3D12Resource> m_texY;
         Microsoft::WRL::ComPtr<ID3D12Resource> m_texUV;

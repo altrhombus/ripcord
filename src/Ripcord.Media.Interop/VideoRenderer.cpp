@@ -1061,9 +1061,8 @@ namespace winrt::Ripcord::Media::Interop::implementation
         // question about a picture that looks wrong.
         if (m_toneMapInShader)
         {
-            // The source peak the curve is using: near the picture's own for SDR content, 1000 for HDR content.
-            return L"tone-mapped to SDR by Ripcord (BT.2390, from "
-                + std::to_wstring(static_cast<int>(m_toneMapSourcePeakNits + 0.5)) + L" nits) \u2014 display is SDR";
+            // The peaks it is working from have their own row: ToneMapPeakNits and FramePeakNits.
+            return L"tone-mapped to SDR by Ripcord (BT.2390) \u2014 display is SDR";
         }
 
         // Distinguish "the panel cannot take it" from "it could and we failed to send it" - the first is the
@@ -2899,6 +2898,7 @@ namespace winrt::Ripcord::Media::Interop::implementation
         const uint32_t skip = static_cast<uint32_t>(tileCount * kPeakTileFraction);
         std::nth_element(tiles, tiles + (tileCount - 1 - skip), tiles + tileCount);
         const double measured = PqToNits(tiles[tileCount - 1 - skip]);
+        m_peakMeasuredNits = measured;
 
         // HdrToneMap.PeakTracker: smoothed over time, not frames. The first measurement is taken as it is (see there).
         const auto now = std::chrono::steady_clock::now();
