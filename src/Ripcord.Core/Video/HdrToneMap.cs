@@ -24,8 +24,8 @@ namespace Ripcord.Core.Video;
 /// <b>The source peak is measured, within limits.</b> The stream carries no metadata saying how bright it is
 /// (2026-10-05). An SDR game arrives inside HDR10 with its white near 255 nits, and a curve that assumes 1,000 left
 /// that white at 91%; an HDR game peaks far higher, and the fixed 1,000-nit curve is the one that tracked the
-/// console's own screenshot. So the renderer measures the picture's peak (the brightest luma of 32×18 tiles; not the
-/// brightest channel, which reads saturated colours far too high), smooths it
+/// console's own screenshot. So the renderer measures the picture's peak (the brightest luma of 32×18 tiles,
+/// <see cref="PeakOfTiles"/>; not the brightest channel, which reads saturated colours far too high), smooths it
 /// with <see cref="PeakTracker"/>, and <see cref="SourcePeakFor"/> turns that into the curve's source peak: the
 /// measurement itself for SDR-like content, 1,000 nits for HDR content, a blend between.
 /// </para>
@@ -44,11 +44,43 @@ public static class HdrToneMap
     /// <summary>The SDR swap chain's transfer: gamma 2.2.</summary>
     public const double DisplayGamma = 2.2;
 
-    /// <summary>A measured peak at or below this is SDR-like content in an HDR wrapper, tone-mapped from the peak itself.</summary>
+    /// <summary>
+    /// A measured peak at or below this is SDR-like content in an HDR wrapper, tone-mapped from the peak itself. [X]:
+    /// tuned on three scenes (2026-10-05), an SDR game measuring 282–291 nits.
+    /// </summary>
     public const double SdrContentBelowNits = 400.0;
 
-    /// <summary>A measured peak at or above this is HDR content, tone-mapped from <see cref="SourcePeakNits"/>.</summary>
-    public const double HdrContentAboveNits = 600.0;
+    /// <summary>
+    /// A measured peak at or above this is HDR content, tone-mapped from <see cref="SourcePeakNits"/>. [X]: tuned on
+    /// three scenes (2026-10-05), Forza's brightest tile measuring 535–849 nits and an SDR game's 294–389.
+    /// </summary>
+    public const double HdrContentAboveNits = 500.0;
+
+    /// <summary>
+    /// The share of tiles allowed above the measured peak: none. Tried at one in a hundred on 2026-10-05, so that one
+    /// small highlight would not decide the curve, and that was backwards. Forza then measured near 318 nits, was
+    /// taken for SDR content, and its sun and headlights clipped to white again. One bright tile deciding is right:
+    /// in HDR content it selects the 1,000-nit curve, which cannot clip, and SDR content inside HDR10 has no such tile,
+    /// its cursor and menus included, because the console renders all of it as SDR.
+    /// </summary>
+    public const double PeakTileFraction = 0.0;
+
+    /// <summary>
+    /// The picture's peak from its tiles' peaks: the brightest, as <see cref="PeakTileFraction"/> explains. Empty
+    /// input is zero.
+    /// </summary>
+    public static double PeakOfTiles(IReadOnlyList<double> tilePeaks)
+    {
+        if (tilePeaks.Count == 0)
+        {
+            return 0;
+        }
+
+        double[] sorted = [.. tilePeaks];
+        Array.Sort(sorted);
+        int skip = (int)(sorted.Length * PeakTileFraction);
+        return sorted[sorted.Length - 1 - skip];
+    }
 
     // SMPTE ST 2084.
     private const double M1 = 2610.0 / 16384.0;
@@ -144,26 +176,45 @@ public static class HdrToneMap
     }
 
     /// <summary>
-    /// The measured peak, smoothed: it rises within a few hundred milliseconds, so a brightening scene is not clipped
-    /// for long, and falls over seconds, so a dark moment does not pump the brightness. Fed once a frame.
+    /// The measured peak, smoothed over time rather than frames, so it behaves the same at 30 fps as at 60: it rises
+    /// within a few hundred milliseconds, so a brightening scene is not clipped for long, and falls over seconds, so a
+    /// dark moment does not pump the brightness.
+    ///
+    /// <para>
+    /// The first measurement is taken as it is, unsmoothed, on purpose. It arrives in the stream's first few frames,
+    /// before the picture has settled; smoothing it from the 1,000-nit assumption instead would fade an SDR game up to
+    /// full white over seconds at the start of every stream.
+    /// </para>
     /// </summary>
     public sealed class PeakTracker
     {
-        /// <summary>Per-frame weight of a rising measurement: about 0.3 s to follow at 60 fps.</summary>
-        public const double RiseRate = 0.054;
+        /// <summary>Time constant of a rising measurement. [X]: chosen, not measured.</summary>
+        public const double RiseSeconds = 0.3;
 
-        /// <summary>Per-frame weight of a falling measurement: about 3 s at 60 fps.</summary>
-        public const double FallRate = 0.0055;
+        /// <summary>Time constant of a falling measurement. [X]: chosen, not measured.</summary>
+        public const double FallSeconds = 3.0;
+
+        /// <summary>Longest step one update may take, so a stall or a debugger pause does not jump the peak.</summary>
+        public const double MaxStepSeconds = 0.5;
 
         /// <summary>The smoothed peak in nits, or null before the first measurement.</summary>
         public double? Smoothed { get; private set; }
 
-        /// <summary>Take one frame's measured peak; returns the curve's source peak (<see cref="SourcePeakFor"/>).</summary>
-        public double Update(double measuredPeakNits)
+        /// <summary>
+        /// Take a measured peak, <paramref name="elapsedSeconds"/> after the last; returns the curve's source peak
+        /// (<see cref="SourcePeakFor"/>).
+        /// </summary>
+        public double Update(double measuredPeakNits, double elapsedSeconds)
         {
-            double previous = Smoothed ?? measuredPeakNits;
-            double rate = measuredPeakNits > previous ? RiseRate : FallRate;
-            Smoothed = Smoothed is null ? measuredPeakNits : previous + (measuredPeakNits - previous) * rate;
+            if (Smoothed is not { } previous)
+            {
+                Smoothed = measuredPeakNits;
+                return SourcePeakFor(measuredPeakNits);
+            }
+
+            double dt = Math.Clamp(elapsedSeconds, 0, MaxStepSeconds);
+            double tau = measuredPeakNits > previous ? RiseSeconds : FallSeconds;
+            Smoothed = previous + (measuredPeakNits - previous) * (1 - Math.Exp(-dt / tau));
             return SourcePeakFor(Smoothed.Value);
         }
     }
