@@ -28,6 +28,7 @@ using Ripcord.Media;
 using Ripcord.Presentation;
 using Ripcord.Presentation.Consoles;
 using Ripcord.Presentation.Sessions;
+using Ripcord.Presentation.Settings;
 using Ripcord.Core.Security;
 using Ripcord_App.Accents;
 using Ripcord_App.Dialogs;
@@ -360,7 +361,10 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
 
         // The sequence itself is portable and tested off-device; this page supplies the one part that needs a
         // GPU (IVideoPipelinePreparer, implemented below) and renders each stage as it is announced.
-        var flow = new ConnectFlow(_services.Sessions, _services.WakeCoordinator, this);
+        // Through the probe, which runs the native query off the UI thread (NativeCapabilityAccessTests).
+        IVideoCapabilitiesProbe capabilities = _services.VideoCapabilities;
+        var flow = new ConnectFlow(
+            _services.Sessions, _services.WakeCoordinator, this, capabilities.IsHevcDecodeAvailableAsync);
         var stages = new Progress<ConnectStage>(stage =>
         {
             _viewModel.ShowConnectStage(stage);

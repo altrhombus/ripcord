@@ -110,10 +110,11 @@ public class ConnectFlowTests
         IVideoPipelinePreparer video,
         PairedConsole? console,
         RipcordSettings? settings = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        Func<Task<bool>>? hevcDecodeAvailable = null)
     {
         var stages = new Stages();
-        var flow = new ConnectFlow(sessions, wake, video);
+        var flow = new ConnectFlow(sessions, wake, video, hevcDecodeAvailable);
         ConnectPlan? plan = await flow.RunAsync(console, settings ?? new RipcordSettings(), stages, cancellationToken);
         return (plan, stages);
     }
@@ -288,6 +289,34 @@ public class ConnectFlowTests
 
         Assert.NotNull(plan);
         Assert.Equal(DynamicRange.Hdr, plan!.Config.RequestedDynamicRange);
+    }
+
+    [Fact]
+    public async Task TheDefaults_AskForHevcAndHdr()
+    {
+        (ConnectPlan? plan, _) = await RunAsync(
+            new StubSessions(), new StubWake(), new StubVideo(), Ps5(), new RipcordSettings(),
+            hevcDecodeAvailable: () => Task.FromResult(true));
+
+        Assert.Equal(VideoCodec.Hevc, plan!.Config.CodecPreference);
+        Assert.Equal(DynamicRange.Hdr, plan.Config.RequestedDynamicRange);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(null)]   // the check itself failed
+    public async Task APcThatCannotDecodeHevc_ConnectsWithH264AndSdr(bool? available)
+    {
+        // HEVC is the default, and Settings corrects a stored HEVC only when it is opened. The connect must not
+        // build an HEVC decoder that does not exist: the stream would arrive and never display.
+        var video = new StubVideo();
+        (ConnectPlan? plan, _) = await RunAsync(
+            new StubSessions(), new StubWake(), video, Ps5(), new RipcordSettings(),
+            hevcDecodeAvailable: () => available is { } a ? Task.FromResult(a) : Task.FromException<bool>(new InvalidOperationException()));
+
+        Assert.Equal(VideoCodec.H264, plan!.Config.CodecPreference);
+        Assert.Equal(DynamicRange.Sdr, plan.Config.RequestedDynamicRange);
+        Assert.Equal(VideoCodec.H264, video.Received!.CodecPreference);   // and the decoder was built for H.264
     }
 
     [Fact]

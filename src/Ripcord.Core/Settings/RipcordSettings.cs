@@ -69,14 +69,24 @@ public sealed record RipcordSettings
     /// <summary>Requested bitrate. The adaptive controller may reduce this at runtime.</summary>
     public int BitrateKbps { get; set; } = 10_000;
 
-    public VideoCodec Codec { get; set; } = VideoCodec.H264;
+    /// <summary>
+    /// HEVC by default (2026-10-05), because HDR rides on it; see <see cref="RequestHdr"/>. A PC that cannot decode
+    /// HEVC connects with H.264 regardless (ConnectFlow), and Settings corrects the stored value when it is opened.
+    /// </summary>
+    public VideoCodec Codec { get; set; } = VideoCodec.Hevc;
 
     /// <summary>
     /// Request HDR. Only meaningful with <see cref="VideoCodec.Hevc"/>, since HDR needs a 10-bit stream and the
-    /// AVC path the console offers is 8-bit. Off by default: unproven on the wire, and an SDR display would need
-    /// tone mapping to show it correctly.
+    /// AVC path the console offers is 8-bit.
+    ///
+    /// <para>
+    /// On by default (2026-10-05). With the console's HDR on, under either "Always On" or "On When Supported", the
+    /// SDR stream it sends for an HDR game has its highlights clipped by the console; the HDR stream does not, and
+    /// Ripcord shows it natively on an HDR display and tone-maps it on an SDR one, from the picture's own peak, so an
+    /// SDR game inside HDR10 still reaches full white. Research log, 2026-10-02 to 2026-10-05.
+    /// </para>
     /// </summary>
-    public bool RequestHdr { get; set; }
+    public bool RequestHdr { get; set; } = true;
 
     public LatencyMode LatencyMode { get; set; } = LatencyMode.Balanced;
 

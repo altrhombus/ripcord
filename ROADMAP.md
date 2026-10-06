@@ -98,8 +98,8 @@ purchased signing certificate.
       ARM64 run settles it.
 - [ ] **Ripcord's HDR-to-SDR tone-map, on every GPU** (built 2026-10-03; the Intel and NVIDIA GPUs match each
       other and the console's own screenshot): the Surface at 200%, and a mid-session drag between an HDR and an
-      SDR display. Then the defaults: HDR applies only with HEVC, and the codec defaults to H.264, so turning
-      HDR on by default means HEVC by default too, falling back to H.264 where there's no HEVC decoder.
+      SDR display. The defaults are HEVC and HDR since 2026-10-05, falling back to H.264 and SDR at connect
+      where there's no HEVC decoder; the clean-machine check is their first run on a fresh install.
 - [x] **The console's HDR "On When Supported"** (2026-10-05): asked for HDR it sends HDR10 for everything, an SDR
       game inside it with white near 255 nits; asked for SDR, an HDR game's stream clips as under "Always On".
 - [x] **SDR games inside HDR10 looked slightly dull** after the tone-map (white at 91%). The renderer now
