@@ -296,10 +296,11 @@ public class ConnectFlowTests
     }
 
     [Fact]
-    public async Task TheDefaults_AskForHevcAndHdr()
+    public async Task HevcAndHdr_WhenChosen_AreAskedFor()
     {
         (ConnectPlan? plan, _) = await RunAsync(
-            new StubSessions(), new StubWake(), new StubVideo(), Ps5(), new RipcordSettings(),
+            new StubSessions(), new StubWake(), new StubVideo(), Ps5(),
+            new RipcordSettings { Codec = VideoCodec.Hevc, RequestHdr = true },
             hevcDecodeAvailable: () => Task.FromResult(true));
 
         Assert.Equal(VideoCodec.Hevc, plan!.Config.CodecPreference);
@@ -315,7 +316,7 @@ public class ConnectFlowTests
         // build an HEVC decoder that does not exist: the stream would arrive and never display.
         var video = new StubVideo();
         (ConnectPlan? plan, _) = await RunAsync(
-            new StubSessions(), new StubWake(), video, Ps5(), new RipcordSettings(),
+            new StubSessions(), new StubWake(), video, Ps5(), new RipcordSettings { Codec = VideoCodec.Hevc, RequestHdr = true },
             hevcDecodeAvailable: () => available is { } a ? Task.FromResult(a) : Task.FromException<bool>(new InvalidOperationException()));
 
         Assert.Equal(VideoCodec.H264, plan!.Config.CodecPreference);
@@ -346,7 +347,7 @@ public class ConnectFlowTests
         try
         {
             await RunAsync(
-                new StubSessions(), new StubWake(), video, Ps5(), new RipcordSettings(),
+                new StubSessions(), new StubWake(), video, Ps5(), new RipcordSettings { Codec = VideoCodec.Hevc },
                 hevcDecodeAvailable: () => Task.Run(() => true));
         }
         finally
