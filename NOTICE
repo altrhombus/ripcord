@@ -20,7 +20,7 @@ truthfully. No Sony trademark, logo, or other brand asset is
 included in this repository or in any build produced from it.
 
 Ripcord's protocol specification was derived independently, from the authors'
-own installed copy of the publicly distributed vendor client, on hardware the
+own installed copies of the publicly distributed vendor client, on hardware the
 authors own, and from the authors' own traffic between that client and their
 own console under their own account. The methods, each recorded per item in
 docs/protocol-research-log.md, included: static analysis (disassembly and
@@ -29,7 +29,9 @@ framework to read its memory, including live session keys; capturing traffic,
 including through a TLS-terminating proxy on the authors' own machine, with the
 client's certificate pinning defeated by a hook in that client; and attempted
 work against the current release's anti-debugging protection, abandoned in
-favour of an older, unprotected release of the same client. It reproduces the
+favour of an older, unprotected official release of the same client, installed
+from archived copies of the vendor's installers on the Internet Archive. It
+reproduces the
 values a client needs to interoperate -- protocol field numbers, byte offsets, enum
 values, JSON keys and HTTP header names -- and does not reproduce vendor source
 code. Vendor code is referenced only by relative
