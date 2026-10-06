@@ -183,4 +183,47 @@ public class InputScopeStackTests
 
         public void OnDeactivated() => log.Add($"{name}:deactivated");
     }
+
+    /// <summary>
+    /// Top is read from input threads while the UI thread pushes and pops. Reading the list there could throw (count
+    /// checked, then a pop, then an index), which on a thread-pool timer ends the process (2026-10-05).
+    /// </summary>
+    [Fact]
+    public void Top_CanBeReadFromAnotherThread_WhileScopesComeAndGo()
+    {
+        var stack = new InputScopeStack();
+        var chrome = new Scope(InputScopeKind.Chrome, "chrome");
+        stack.Push(chrome);
+        Exception? failure = null;
+        using var stop = new CancellationTokenSource();
+
+        var reader = new Thread(() =>
+        {
+            try
+            {
+                while (!stop.IsCancellationRequested)
+                {
+                    _ = stack.Top?.Kind;
+                    _ = stack.IsActive(InputScopeKind.Modal);
+                }
+            }
+            catch (Exception ex)
+            {
+                failure = ex;
+            }
+        });
+        reader.Start();
+
+        for (int i = 0; i < 200_000; i++)
+        {
+            var modal = new Scope(InputScopeKind.Modal, "modal");
+            stack.Push(modal);
+            stack.Pop(modal);
+        }
+
+        stop.Cancel();
+        reader.Join();
+        Assert.Null(failure);
+        Assert.Same(chrome, stack.Top);
+    }
 }

@@ -106,6 +106,9 @@ Here's what a first run meets, so none of it is a surprise:
   an older Windows 11 may start it, but that isn't supported.
 - **SmartScreen will warn you** the first time you run it, because the zip isn't signed yet. Choose **More
   info**, then **Run anyway**.
+- **Smart App Control blocks it outright.** If it's on, which it can be on a new PC or a fresh Windows 11
+  install, Windows refuses unsigned apps with no way to run them anyway. Ripcord won't start on that PC until
+  it's signed, which is planned.
 - **Xbox controllers need Microsoft's GameInput.** If one does nothing, run `GameInputRedist.msi` from the
   Ripcord folder once (it asks for administrator rights), then restart Ripcord. Settings > About says whether
   it's installed. A DualSense doesn't need it.

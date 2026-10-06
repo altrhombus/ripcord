@@ -88,7 +88,12 @@ public sealed class InputScopeStack
     private readonly List<IInputScope> _scopes = [];
 
     /// <summary>Whoever owns the pad right now, or null when nothing has claimed it.</summary>
-    public IInputScope? Top => _scopes.Count > 0 ? _scopes[^1] : null;
+    public IInputScope? Top => Volatile.Read(ref _top);
+
+    // The top, published whole after every change. Push and Pop run on the UI thread, but Top is read from the
+    // pad's input threads too (InputRouter, the passcode prompt), and reading the list there checked its count and
+    // then indexed it: a pop in between threw on a thread-pool timer, which ends the process (2026-10-05).
+    private IInputScope? _top;
 
     /// <summary>How many claims are outstanding. Exposed for assertions and diagnostics.</summary>
     public int Count => _scopes.Count;
@@ -113,6 +118,7 @@ public sealed class InputScopeStack
 
         IInputScope? previous = Top;
         _scopes.Add(scope);
+        Volatile.Write(ref _top, scope);
 
         previous?.OnDeactivated();
         scope.OnActivated();
@@ -141,6 +147,7 @@ public sealed class InputScopeStack
 
         bool wasTop = index == _scopes.Count - 1;
         _scopes.RemoveAt(index);
+        Volatile.Write(ref _top, _scopes.Count > 0 ? _scopes[^1] : null);
 
         if (!wasTop)
         {

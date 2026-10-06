@@ -507,6 +507,10 @@ name.</comment>
     <value>Connecting…</value>
     <comment>Status overlay headline.</comment>
   </data>
+  <data name="Session_ConsoleEnded" xml:space="preserve">
+    <value>The console ended the stream</value>
+    <comment>Status overlay headline when the console itself ended the stream, for example by going into rest mode. The detail line beneath carries the console's reason.</comment>
+  </data>
   <data name="Session_CouldNotConnect" xml:space="preserve">
     <value>Couldn't connect</value>
     <comment>Status overlay headline after a failed connection. The detail line beneath carries the reason.</comment>

@@ -413,6 +413,20 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
                 });
                 break;
 
+            case SessionLifecycle.Ended:
+                // As a failure, with its actions (Try again, Back), but not called one: the console chose this.
+                Mutate(() =>
+                {
+                    _isStreamLive = false;
+                    _statusVisible = true;
+                    _statusHeadline = Strings.Session_ConsoleEnded;
+                    _statusDetail = status.Detail ?? string.Empty;
+                    _statusBusy = false;
+                    _statusTerminal = true;
+                    _phase = null;
+                });
+                break;
+
             case SessionLifecycle.Closed:
                 Mutate(() =>
                 {
