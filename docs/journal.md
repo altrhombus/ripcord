@@ -35,6 +35,23 @@ different purpose.
 > anything. The list above is short, it is checkable in one `git log --format=%B | grep`, and it stops
 > growing the moment someone notices — which is the property that actually matters.
 
+### What the console sends under each HDR setting (2026-10-05)
+
+Measured from dumps of the stream with the console on "On When Supported", to decide what Ripcord should ask for.
+Asked for HDR, the console sends HDR10 for everything: HDR games as HDR, and an SDR game wrapped inside, its white
+at about 255 nits, the format holding as the content changes mid-session. Asked for SDR, an HDR game's stream
+clips as it did under "Always On" (6–23% pinned at white). So asking for HDR is right for HDR games under either
+console setting. The one cost is in SDR games on an SDR display: the tone-map assumes a 1,000-nit source, so their
+white lands at 91%. The stream carries no metadata saying how bright it is, so the fix is to measure the picture.
+
+So the renderer now does. A compute pass finds the brightest luma in each of 32×18 tiles, read back a few
+frames later without waiting, smoothed to rise in about 0.3 s and fall over about 3 s. Content peaking below
+400 nits is tone-mapped from its own peak; content above 600 keeps the 1,000-nit curve that matched the console;
+between, a blend. The panel's output row says which peak it's using. The first try measured each pixel's
+brightest channel, which read an SDR game's reds at 742–931 nits and missed it entirely; luma reads 294–389.
+On hardware: the SDR game at 312 nits with its white text at 250 of 255, the PS5 home screen at 378, and a
+Forza night street held at 1,000 by its headlights. Shadows and mid-tones are the same under either curve.
+
 ### Ripcord's own HDR tone-map, and a colour bug it uncovered (2026-10-03)
 
 The answer to the clipped SDR stream: ask for HDR even on an SDR display, and convert it here. The present

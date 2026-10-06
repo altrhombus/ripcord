@@ -6,6 +6,8 @@
 #include "Ripcord.Media.Interop.VideoRenderer.g.cpp"
 
 #include <d3dcompiler.h>
+#include <algorithm>
+#include <cmath>
 #include <cstdio>
 
 using Microsoft::WRL::ComPtr;
@@ -37,6 +39,75 @@ namespace
         viewport = { x, y, w, h, 0.0f, 1.0f };
         scissor = { static_cast<LONG>(x), static_cast<LONG>(y),
                     static_cast<LONG>(x + w), static_cast<LONG>(y + h) };
+    }
+
+    // The picture's peak, for the tone-map's source peak: the brightest luma (BT.2020 weights over the PQ-encoded
+    // channels, the Y' the stream itself carries) in each of 32x18 tiles of the shared texture, which holds PQ BT.2020
+    // when the shader tone-maps. Luma, not the brightest channel: a saturated colour's strongest channel reads far
+    // above its brightness, and an SDR game's reds put it at 742-931 nits where its luma peak is 294-389 (2026-10-05).
+    // The CPU decodes the PQ code. Written as float bits, one per tile; no atomics needed.
+    constexpr uint32_t kPeakTilesX = 32;
+    constexpr uint32_t kPeakTilesY = 18;
+    constexpr char kPeakShaderSource[] = R"(
+        Texture2D<float4> gTex : register(t0);
+        RWStructuredBuffer<uint> gPeaks : register(u0);
+        cbuffer Params : register(b0) { uint2 uSize; uint2 uPad; };
+        groupshared float sMax[64];
+
+        [numthreads(8, 8, 1)]
+        void CSMain(uint3 gid : SV_GroupID, uint3 tid : SV_GroupThreadID, uint gi : SV_GroupIndex)
+        {
+            uint2 tile = (uSize + uint2(31, 17)) / uint2(32, 18);
+            uint2 origin = gid.xy * tile;
+            float m = 0.0;
+            for (uint y = tid.y; y < tile.y; y += 8)
+            {
+                for (uint x = tid.x; x < tile.x; x += 8)
+                {
+                    uint2 p = origin + uint2(x, y);
+                    if (p.x < uSize.x && p.y < uSize.y)
+                    {
+                        float3 c = gTex.Load(int3(p, 0)).rgb;
+                        m = max(m, dot(c, float3(0.2627, 0.6780, 0.0593)));
+                    }
+                }
+            }
+            sMax[gi] = m;
+            GroupMemoryBarrierWithGroupSync();
+            for (uint s = 32; s > 0; s >>= 1)
+            {
+                if (gi < s) { sMax[gi] = max(sMax[gi], sMax[gi + s]); }
+                GroupMemoryBarrierWithGroupSync();
+            }
+            if (gi == 0) { gPeaks[gid.y * 32 + gid.x] = asuint(sMax[0]); }
+        }
+    )";
+
+    // The CPU half of Ripcord.Core.Video.HdrToneMap: choosing the curve's source peak from the measured one, and
+    // smoothing the measurement. HdrToneMapTests holds these constants to the C# reference.
+    constexpr double kHdrSourcePeakNits = 1000.0;
+    constexpr double kToneMapSdrPeakNits = 250.0;
+    constexpr double kSdrContentBelowNits = 400.0;
+    constexpr double kHdrContentAboveNits = 600.0;
+    constexpr double kPeakRiseRate = 0.054;
+    constexpr double kPeakFallRate = 0.0055;
+
+    double PqToNits(double e)
+    {
+        const double m1 = 2610.0 / 16384.0, m2 = 2523.0 / 4096.0 * 128.0;
+        const double c1 = 3424.0 / 4096.0, c2 = 2413.0 / 4096.0 * 32.0, c3 = 2392.0 / 4096.0 * 32.0;
+        const double p = std::pow((std::max)(e, 0.0), 1.0 / m2);
+        return 10000.0 * std::pow((std::max)((std::max)(p - c1, 0.0) / (c2 - c3 * p), 0.0), 1.0 / m1);
+    }
+
+    // HdrToneMap.SourcePeakFor: the measurement for SDR-like content, the fixed HDR peak for HDR content.
+    double ChooseSourcePeak(double measuredNits)
+    {
+        const double m = (std::max)(measuredNits, kToneMapSdrPeakNits);
+        if (m <= kSdrContentBelowNits) return m;
+        if (m >= kHdrContentAboveNits) return kHdrSourcePeakNits;
+        const double t = (m - kSdrContentBelowNits) / (kHdrContentAboveNits - kSdrContentBelowNits);
+        return kSdrContentBelowNits + (kHdrSourcePeakNits - kSdrContentBelowNits) * t;
     }
 
     // Fullscreen-triangle vertex shader (generates positions/UVs from SV_VertexID, no vertex buffer)
@@ -99,7 +170,7 @@ namespace
     // mode 1 = Catmull-Rom bicubic (16 point-sampled taps) for a sharper result. uSrcSize is the source
     // (decode) texture size in texels, needed to place the bicubic taps.
     constexpr char kUpscaleShaderSource[] = R"(
-        cbuffer Params : register(b0) { uint uMode; float2 uSrcSize; uint uToneMap; };
+        cbuffer Params : register(b0) { uint uMode; float2 uSrcSize; uint uToneMap; float uSourcePeak; };
         Texture2D gTex : register(t0);
         SamplerState gLinear : register(s0);
         SamplerState gPoint  : register(s1);
@@ -125,8 +196,8 @@ namespace
 
         // HDR10 to SDR, for an HDR stream on an SDR display (uToneMap). The texture then holds PQ-encoded BT.2020
         // from the video processor, untouched by the driver. Mirrors Ripcord.Core.Video.HdrToneMap step for step;
-        // HdrToneMapTests holds the constants together, so change both.
-        static const float kSourcePeakNits = 1000.0;
+        // HdrToneMapTests holds the constants together, so change both. The source peak (uSourcePeak) is chosen on
+        // the CPU from the measured picture peak: see kPeakShaderSource and ChooseSourcePeak.
         static const float kSdrPeakNits = 250.0;
         static const float kDisplayGamma = 2.2;
 
@@ -151,9 +222,9 @@ namespace
         // ITU-R BT.2390 EETF, source peak to SDR peak, black at zero for both.
         float Eetf(float nits)
         {
-            float sourcePq = NitsToPq(kSourcePeakNits);
+            float sourcePq = NitsToPq(uSourcePeak);
             float e1 = min(NitsToPq(nits) / sourcePq, 1.0);
-            float maxLum = NitsToPq(kSdrPeakNits) / sourcePq;
+            float maxLum = min(NitsToPq(kSdrPeakNits) / sourcePq, 1.0);
             float ks = 1.5 * maxLum - 0.5;
             float e2 = e1;
             if (e1 > ks)
@@ -987,7 +1058,9 @@ namespace winrt::Ripcord::Media::Interop::implementation
         // question about a picture that looks wrong.
         if (m_toneMapInShader)
         {
-            return L"tone-mapped to SDR by Ripcord (BT.2390) \u2014 display is SDR";
+            // The source peak the curve is using: near the picture's own for SDR content, 1000 for HDR content.
+            return L"tone-mapped to SDR by Ripcord (BT.2390, from "
+                + std::to_wstring(static_cast<int>(m_toneMapSourcePeakNits + 0.5)) + L" nits) \u2014 display is SDR";
         }
 
         // Distinguish "the panel cannot take it" from "it could and we failed to send it" - the first is the
@@ -2320,6 +2393,16 @@ namespace winrt::Ripcord::Media::Interop::implementation
         m_device->CreateShaderResourceView(
             m_sharedDecodeTex.Get(), nullptr, m_srvHeap->GetCPUDescriptorHandleForHeapStart());
 
+        // And into the peak measurement's heap, which reads the same texture. A new texture is a new stream as far
+        // as the peak goes: start from the HDR assumption until it has been measured.
+        if (m_peakPipeline)
+        {
+            m_device->CreateShaderResourceView(
+                m_sharedDecodeTex.Get(), nullptr, m_peakHeap->GetCPUDescriptorHandleForHeapStart());
+        }
+        m_peakSmoothedNits = -1.0;
+        m_toneMapSourcePeakNits = kHdrSourcePeakNits;
+
         // Crop on the GPU: take only the display aperture from the coded frame and write it to the whole
         // (visible-sized) destination. Without this the padding rows would be blitted through and then
         // aspect-fitted as if they were picture.
@@ -2442,8 +2525,19 @@ namespace winrt::Ripcord::Media::Interop::implementation
                 m_commandList->ResourceBarrier(1, &barrier);
             };
 
-            // A cross-API shared resource sits in COMMON between uses; read it as a pixel-shader resource.
-            transition(m_sharedDecodeTex.Get(), D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+            // The peak this slot measured last time round, for this frame's tone-map.
+            const bool measurePeak = m_toneMapInShader && m_peakPipeline;
+            if (measurePeak)
+            {
+                ReadMeasuredPeak(frameIndex);
+            }
+
+            // A cross-API shared resource sits in COMMON between uses; read it as a shader resource, by the pixel
+            // shader and, when tone-mapping, by the peak measurement too.
+            const D3D12_RESOURCE_STATES readState = measurePeak
+                ? D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE
+                : D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+            transition(m_sharedDecodeTex.Get(), D3D12_RESOURCE_STATE_COMMON, readState);
 
             transition(m_renderTargets[frameIndex].Get(), D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
 
@@ -2460,10 +2554,10 @@ namespace winrt::Ripcord::Media::Interop::implementation
             ID3D12DescriptorHeap* heaps[] = { m_srvHeap.Get() };
             m_commandList->SetDescriptorHeaps(1, heaps);
             m_commandList->SetGraphicsRootDescriptorTable(0, m_srvHeap->GetGPUDescriptorHandleForHeapStart());
-            struct { int32_t mode; float srcW; float srcH; uint32_t toneMap; } upscaleParams{
+            struct { int32_t mode; float srcW; float srcH; uint32_t toneMap; float sourcePeak; } upscaleParams{
                 m_upscaleMode, static_cast<float>(m_sharedTexWidth), static_cast<float>(m_sharedTexHeight),
-                m_toneMapInShader ? 1u : 0u };
-            m_commandList->SetGraphicsRoot32BitConstants(1, 4, &upscaleParams, 0);
+                m_toneMapInShader ? 1u : 0u, static_cast<float>(m_toneMapSourcePeakNits) };
+            m_commandList->SetGraphicsRoot32BitConstants(1, 5, &upscaleParams, 0);
             m_commandList->SetPipelineState(m_upscalePipeline.Get());
 
             // Fit the frame to the panel preserving aspect ratio (black bars fill the rest via the clear above).
@@ -2475,7 +2569,12 @@ namespace winrt::Ripcord::Media::Interop::implementation
             m_commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
             m_commandList->DrawInstanced(3, 1, 0, 0);
 
-            transition(m_sharedDecodeTex.Get(), D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_COMMON);
+            if (measurePeak)
+            {
+                RecordPeakMeasurement(frameIndex);
+            }
+
+            transition(m_sharedDecodeTex.Get(), readState, D3D12_RESOURCE_STATE_COMMON);
             transition(m_renderTargets[frameIndex].Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
 
             // GPU-side wait for the D3D11 VideoProcessor conversion to land before the draw reads it. Queued
@@ -2606,8 +2705,9 @@ namespace winrt::Ripcord::Media::Interop::implementation
 
     void VideoRenderer::CreateUpscalePipeline()
     {
-        // Root param 0: one SRV (the source colour texture, t0). Root param 1: 4 32-bit constants (mode +
-        // source size). Two static samplers: s0 linear (bilinear mode), s1 point (bicubic taps).
+        // Root param 0: one SRV (the source colour texture, t0). Root param 1: 5 32-bit constants (mode, source
+        // size, tone-map flag, tone-map source peak). Two static samplers: s0 linear (bilinear mode), s1 point
+        // (bicubic taps).
         D3D12_DESCRIPTOR_RANGE srvRange = {};
         srvRange.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
         srvRange.NumDescriptors = 1;
@@ -2621,7 +2721,7 @@ namespace winrt::Ripcord::Media::Interop::implementation
         params[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
         params[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
         params[1].Constants.ShaderRegister = 0;
-        params[1].Constants.Num32BitValues = 4;
+        params[1].Constants.Num32BitValues = 5;
         params[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
 
         D3D12_STATIC_SAMPLER_DESC samplers[2] = {};
@@ -2674,6 +2774,166 @@ namespace winrt::Ripcord::Media::Interop::implementation
         psoDesc.RTVFormats[0] = m_swapChainFormat;
         psoDesc.SampleDesc.Count = 1;
         ThrowIfFailed(m_device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&m_upscalePipeline)));
+
+        CreatePeakPipeline();
+    }
+
+    void VideoRenderer::CreatePeakPipeline()
+    {
+        // Best-effort: without it the tone-map keeps the fixed HDR source peak, which is what it used before.
+        try
+        {
+            D3D12_DESCRIPTOR_RANGE ranges[2] = {};
+            ranges[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
+            ranges[0].NumDescriptors = 1;
+            ranges[0].BaseShaderRegister = 0;
+            ranges[0].OffsetInDescriptorsFromTableStart = 0;
+            ranges[1].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_UAV;
+            ranges[1].NumDescriptors = 1;
+            ranges[1].BaseShaderRegister = 0;
+            ranges[1].OffsetInDescriptorsFromTableStart = 1;
+
+            D3D12_ROOT_PARAMETER params[2] = {};
+            params[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+            params[0].DescriptorTable.NumDescriptorRanges = 2;
+            params[0].DescriptorTable.pDescriptorRanges = ranges;
+            params[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+            params[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
+            params[1].Constants.ShaderRegister = 0;
+            params[1].Constants.Num32BitValues = 4;
+            params[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
+
+            D3D12_ROOT_SIGNATURE_DESC rsDesc = {};
+            rsDesc.NumParameters = 2;
+            rsDesc.pParameters = params;
+
+            ComPtr<ID3DBlob> signature;
+            ComPtr<ID3DBlob> error;
+            ThrowIfFailed(D3D12SerializeRootSignature(&rsDesc, D3D_ROOT_SIGNATURE_VERSION_1, &signature, &error));
+            ThrowIfFailed(m_device->CreateRootSignature(
+                0, signature->GetBufferPointer(), signature->GetBufferSize(), IID_PPV_ARGS(&m_peakRootSignature)));
+
+            ComPtr<ID3DBlob> cs = CompileSource(kPeakShaderSource, sizeof(kPeakShaderSource) - 1, "CSMain", "cs_5_1");
+            D3D12_COMPUTE_PIPELINE_STATE_DESC psoDesc = {};
+            psoDesc.pRootSignature = m_peakRootSignature.Get();
+            psoDesc.CS = { cs->GetBufferPointer(), cs->GetBufferSize() };
+            ThrowIfFailed(m_device->CreateComputePipelineState(&psoDesc, IID_PPV_ARGS(&m_peakPipeline)));
+
+            D3D12_DESCRIPTOR_HEAP_DESC heapDesc = {};
+            heapDesc.NumDescriptors = 2;
+            heapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+            heapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+            ThrowIfFailed(m_device->CreateDescriptorHeap(&heapDesc, IID_PPV_ARGS(&m_peakHeap)));
+            m_peakDescriptorSize = m_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+
+            const UINT64 bytes = kPeakTilesX * kPeakTilesY * sizeof(uint32_t);
+            D3D12_RESOURCE_DESC bd = {};
+            bd.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+            bd.Width = bytes;
+            bd.Height = 1;
+            bd.DepthOrArraySize = 1;
+            bd.MipLevels = 1;
+            bd.SampleDesc.Count = 1;
+            bd.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+            bd.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
+
+            D3D12_HEAP_PROPERTIES defaultHeap = {};
+            defaultHeap.Type = D3D12_HEAP_TYPE_DEFAULT;
+            ThrowIfFailed(m_device->CreateCommittedResource(
+                &defaultHeap, D3D12_HEAP_FLAG_NONE, &bd, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, nullptr,
+                IID_PPV_ARGS(&m_peakBuffer)));
+
+            bd.Flags = D3D12_RESOURCE_FLAG_NONE;
+            D3D12_HEAP_PROPERTIES readbackHeap = {};
+            readbackHeap.Type = D3D12_HEAP_TYPE_READBACK;
+            for (uint32_t i = 0; i < FrameCount; ++i)
+            {
+                ThrowIfFailed(m_device->CreateCommittedResource(
+                    &readbackHeap, D3D12_HEAP_FLAG_NONE, &bd, D3D12_RESOURCE_STATE_COPY_DEST, nullptr,
+                    IID_PPV_ARGS(&m_peakReadback[i])));
+                m_peakReadbackPending[i] = false;
+            }
+
+            D3D12_UNORDERED_ACCESS_VIEW_DESC uav = {};
+            uav.Format = DXGI_FORMAT_UNKNOWN;
+            uav.ViewDimension = D3D12_UAV_DIMENSION_BUFFER;
+            uav.Buffer.NumElements = kPeakTilesX * kPeakTilesY;
+            uav.Buffer.StructureByteStride = sizeof(uint32_t);
+            D3D12_CPU_DESCRIPTOR_HANDLE uavHandle = m_peakHeap->GetCPUDescriptorHandleForHeapStart();
+            uavHandle.ptr += m_peakDescriptorSize;
+            m_device->CreateUnorderedAccessView(m_peakBuffer.Get(), nullptr, &uav, uavHandle);
+        }
+        catch (...)
+        {
+            m_peakPipeline.Reset();
+            OutputDebugStringW(L"[Ripcord] peak measurement unavailable; the tone-map keeps its fixed source peak\n");
+        }
+    }
+
+    // Read the tiles this slot measured last time round (its fence has retired, so no wait), feed the smoothed peak,
+    // and choose the tone-map's source peak from it.
+    void VideoRenderer::ReadMeasuredPeak(uint32_t frameIndex)
+    {
+        if (!m_peakReadbackPending[frameIndex])
+        {
+            return;
+        }
+
+        m_peakReadbackPending[frameIndex] = false;
+        const D3D12_RANGE readRange{ 0, kPeakTilesX * kPeakTilesY * sizeof(uint32_t) };
+        void* mapped = nullptr;
+        if (FAILED(m_peakReadback[frameIndex]->Map(0, &readRange, &mapped)) || !mapped)
+        {
+            return;
+        }
+
+        float peakPq = 0.0f;
+        const float* tiles = static_cast<const float*>(mapped);
+        for (uint32_t i = 0; i < kPeakTilesX * kPeakTilesY; ++i)
+        {
+            peakPq = (std::max)(peakPq, tiles[i]);
+        }
+        const D3D12_RANGE noWrite{ 0, 0 };
+        m_peakReadback[frameIndex]->Unmap(0, &noWrite);
+
+        // HdrToneMap.PeakTracker.
+        const double measured = PqToNits(peakPq);
+        if (m_peakSmoothedNits < 0.0)
+        {
+            m_peakSmoothedNits = measured;
+        }
+        else
+        {
+            const double rate = measured > m_peakSmoothedNits ? kPeakRiseRate : kPeakFallRate;
+            m_peakSmoothedNits += (measured - m_peakSmoothedNits) * rate;
+        }
+        m_toneMapSourcePeakNits = ChooseSourcePeak(m_peakSmoothedNits);
+    }
+
+    // Measure this frame's peak into the slot's readback buffer, for ReadMeasuredPeak the next time round.
+    void VideoRenderer::RecordPeakMeasurement(uint32_t frameIndex)
+    {
+        m_commandList->SetComputeRootSignature(m_peakRootSignature.Get());
+        ID3D12DescriptorHeap* heaps[] = { m_peakHeap.Get() };
+        m_commandList->SetDescriptorHeaps(1, heaps);
+        m_commandList->SetComputeRootDescriptorTable(0, m_peakHeap->GetGPUDescriptorHandleForHeapStart());
+        const uint32_t size[4] = { m_sharedTexWidth, m_sharedTexHeight, 0, 0 };
+        m_commandList->SetComputeRoot32BitConstants(1, 4, size, 0);
+        m_commandList->SetPipelineState(m_peakPipeline.Get());
+        m_commandList->Dispatch(kPeakTilesX, kPeakTilesY, 1);
+
+        D3D12_RESOURCE_BARRIER barrier = {};
+        barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+        barrier.Transition.pResource = m_peakBuffer.Get();
+        barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+        barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+        barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_COPY_SOURCE;
+        m_commandList->ResourceBarrier(1, &barrier);
+        m_commandList->CopyResource(m_peakReadback[frameIndex].Get(), m_peakBuffer.Get());
+        std::swap(barrier.Transition.StateBefore, barrier.Transition.StateAfter);
+        m_commandList->ResourceBarrier(1, &barrier);
+
+        m_peakReadbackPending[frameIndex] = true;
     }
 
     void VideoRenderer::EnsureNv12Textures(uint32_t width, uint32_t height)
