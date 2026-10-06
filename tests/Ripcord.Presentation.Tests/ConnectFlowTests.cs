@@ -82,12 +82,16 @@ public class ConnectFlowTests
     {
         public int Calls { get; private set; }
 
+        /// <summary>The context PrepareAsync was called on: the real one builds XAML, so it must be the caller's.</summary>
+        public SynchronizationContext? CalledOn { get; private set; }
+
         public SessionConfig? Received { get; private set; }
 
         public Task<PreparedVideo> PrepareAsync(SessionConfig config, CancellationToken cancellationToken)
         {
             Calls++;
             Received = config;
+            CalledOn = SynchronizationContext.Current;
             return fault is not null
                 ? Task.FromException<PreparedVideo>(fault)
                 : Task.FromResult(new PreparedVideo(canPresentHdr, canToneMapHdr));
@@ -317,6 +321,40 @@ public class ConnectFlowTests
         Assert.Equal(VideoCodec.H264, plan!.Config.CodecPreference);
         Assert.Equal(DynamicRange.Sdr, plan.Config.RequestedDynamicRange);
         Assert.Equal(VideoCodec.H264, video.Received!.CodecPreference);   // and the decoder was built for H.264
+    }
+
+    /// <summary>Runs posted continuations at once, but inside itself, so a test can see whether one came back.</summary>
+    private sealed class MarkingContext : SynchronizationContext
+    {
+        public override void Post(SendOrPostCallback d, object? state)
+        {
+            SynchronizationContext? previous = Current;
+            SetSynchronizationContext(this);
+            try { d(state); } finally { SetSynchronizationContext(previous); }
+        }
+    }
+
+    [Fact]
+    public async Task TheVideoPipeline_IsPreparedOnTheCallersContext_AfterTheHevcCheck()
+    {
+        // The real preparer builds XAML, which only the UI thread may touch. The HEVC check answers on a worker; the
+        // flow resumed there and the connect failed with RPC_E_WRONG_THREAD (2026-10-05).
+        var context = new MarkingContext();
+        var video = new StubVideo();
+        SynchronizationContext? previous = SynchronizationContext.Current;
+        SynchronizationContext.SetSynchronizationContext(context);
+        try
+        {
+            await RunAsync(
+                new StubSessions(), new StubWake(), video, Ps5(), new RipcordSettings(),
+                hevcDecodeAvailable: () => Task.Run(() => true));
+        }
+        finally
+        {
+            SynchronizationContext.SetSynchronizationContext(previous);
+        }
+
+        Assert.Same(context, video.CalledOn);
     }
 
     [Fact]

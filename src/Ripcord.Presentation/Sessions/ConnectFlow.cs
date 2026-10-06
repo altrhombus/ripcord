@@ -116,7 +116,11 @@ public sealed class ConnectFlow
         SessionConfig config = ConfigureFor(console, settings);
 
         // Before the decoder is built for it: HEVC is the default, and not every PC can decode it.
-        if (config.CodecPreference == VideoCodec.Hevc && !await HevcDecodeAvailableAsync().ConfigureAwait(false))
+        //
+        // Awaited on the caller's context, unlike the awaits below. The video pipeline is prepared next, and that
+        // builds XAML, which only the UI thread may touch; the check answers on a worker, and resuming there failed
+        // every connect with RPC_E_WRONG_THREAD (2026-10-05).
+        if (config.CodecPreference == VideoCodec.Hevc && !await HevcDecodeAvailableAsync())
         {
             config = config with { CodecPreference = VideoCodec.H264, RequestedDynamicRange = DynamicRange.Sdr };
         }
