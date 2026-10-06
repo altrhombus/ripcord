@@ -7,6 +7,7 @@
 
 #include <d3dcompiler.h>
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 
@@ -88,9 +89,11 @@ namespace
     constexpr double kHdrSourcePeakNits = 1000.0;
     constexpr double kToneMapSdrPeakNits = 250.0;
     constexpr double kSdrContentBelowNits = 400.0;
-    constexpr double kHdrContentAboveNits = 600.0;
-    constexpr double kPeakRiseRate = 0.054;
-    constexpr double kPeakFallRate = 0.0055;
+    constexpr double kHdrContentAboveNits = 500.0;   // [X], as HdrToneMap's thresholds
+    constexpr double kPeakTileFraction = 0.0;   // the brightest tile: see HdrToneMap.PeakTileFraction for why
+    constexpr double kPeakRiseSeconds = 0.3;          // [X], chosen
+    constexpr double kPeakFallSeconds = 3.0;          // [X], chosen
+    constexpr double kPeakMaxStepSeconds = 0.5;
 
     double PqToNits(double e)
     {
@@ -2887,26 +2890,30 @@ namespace winrt::Ripcord::Media::Interop::implementation
             return;
         }
 
-        float peakPq = 0.0f;
-        const float* tiles = static_cast<const float*>(mapped);
-        for (uint32_t i = 0; i < kPeakTilesX * kPeakTilesY; ++i)
-        {
-            peakPq = (std::max)(peakPq, tiles[i]);
-        }
+        // HdrToneMap.PeakOfTiles: the brightest tile (kPeakTileFraction is 0; see HdrToneMap for why).
+        constexpr uint32_t tileCount = kPeakTilesX * kPeakTilesY;
+        float tiles[tileCount];
+        memcpy(tiles, mapped, sizeof(tiles));
         const D3D12_RANGE noWrite{ 0, 0 };
         m_peakReadback[frameIndex]->Unmap(0, &noWrite);
+        const uint32_t skip = static_cast<uint32_t>(tileCount * kPeakTileFraction);
+        std::nth_element(tiles, tiles + (tileCount - 1 - skip), tiles + tileCount);
+        const double measured = PqToNits(tiles[tileCount - 1 - skip]);
 
-        // HdrToneMap.PeakTracker.
-        const double measured = PqToNits(peakPq);
+        // HdrToneMap.PeakTracker: smoothed over time, not frames. The first measurement is taken as it is (see there).
+        const auto now = std::chrono::steady_clock::now();
         if (m_peakSmoothedNits < 0.0)
         {
             m_peakSmoothedNits = measured;
         }
         else
         {
-            const double rate = measured > m_peakSmoothedNits ? kPeakRiseRate : kPeakFallRate;
-            m_peakSmoothedNits += (measured - m_peakSmoothedNits) * rate;
+            const double dt = (std::min)(
+                (std::max)(std::chrono::duration<double>(now - m_peakLastUpdate).count(), 0.0), kPeakMaxStepSeconds);
+            const double tau = measured > m_peakSmoothedNits ? kPeakRiseSeconds : kPeakFallSeconds;
+            m_peakSmoothedNits += (measured - m_peakSmoothedNits) * (1.0 - std::exp(-dt / tau));
         }
+        m_peakLastUpdate = now;
         m_toneMapSourcePeakNits = ChooseSourcePeak(m_peakSmoothedNits);
     }
 

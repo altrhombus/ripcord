@@ -15,5 +15,7 @@
 #include <wmcodecdsp.h>
 #include <d3d11_4.h>
 #include <vector>
+#include <atomic>
+#include <chrono>
 #include <string>
 #include <cstdio>   // swprintf_s for the decoder diagnostic string

@@ -58,7 +58,7 @@ From another review of the week's changes, each checked against the code first.
 ### The first ARM64 run of the release build (2026-10-05)
 
 The self-contained ARM64 zip, built from `main` as the release job builds it, on the Surface at 200%: it started,
-paired and streamed, zero-copy on the Adreno GPU throughout, about 59 fps and 17–19 ms from decode to screen, with
+paired and streamed, zero-copy on the ARM64 laptop's integrated GPU throughout, about 59 fps and 17–19 ms from decode to screen, with
 the HDR scenes tone-mapped as on the desktop (orange marigolds, the SDR game's white fully white). Settings laid
 out cleanly at 200%. Two dips in frame rate came with no loss, which reads as the console sending fewer frames
 for a moment. Both pads worked, and the one `GameInputRedist.msi` installed on ARM64 and was detected by the app,

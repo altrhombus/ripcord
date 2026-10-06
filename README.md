@@ -114,6 +114,10 @@ Here's what a first run meets, so none of it is a surprise:
 - **Smart App Control blocks it outright.** If it's on, which it can be on a new PC or a fresh Windows 11
   install, Windows refuses unsigned apps with no way to run them anyway. Ripcord won't start on that PC until
   it's signed, which is planned.
+- **If your PS5 has HDR on,** turn on **HEVC** and **Request HDR** in Settings. With HDR on, the console's
+  ordinary (SDR) stream loses the detail in bright skies and highlights; asking for HDR keeps it, and Ripcord
+  converts it for an SDR screen. HEVC needs Microsoft's HEVC Video Extensions: many PCs have them already, and
+  they're in the Microsoft Store otherwise. Without them, Ripcord connects with H.264 and says so.
 - **Xbox controllers need Microsoft's GameInput.** If one does nothing, run `GameInputRedist.msi` from the
   Ripcord folder once (it asks for administrator rights), then restart Ripcord. Settings > About says whether
   it's installed. A DualSense doesn't need it.
