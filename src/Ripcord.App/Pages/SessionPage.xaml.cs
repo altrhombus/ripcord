@@ -657,6 +657,7 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
                     break;
 
                 case SessionLifecycle.Failed:
+                case SessionLifecycle.Ended:
                     LeaveImmersiveMode();
                     break;
             }

@@ -82,7 +82,7 @@ public sealed partial class LoginPinDialog : ContentDialog
     }
 
     /// <summary>The entered passcode, valid only when the dialog returned <c>Primary</c> or the pad submitted it.</summary>
-    public string Pin => PinBox.Text;
+    public string Pin => PinBox.Password;
 
     /// <summary>
     /// True when cross signed in. A dialog closed from code reports <c>None</c> whatever closed it, so the caller
@@ -90,16 +90,14 @@ public sealed partial class LoginPinDialog : ContentDialog
     /// </summary>
     public bool SubmittedByPad { get; private set; }
 
-    private void OnPinChanged(object sender, TextChangedEventArgs e)
+    private void OnPinChanged(object sender, RoutedEventArgs e)
     {
         // Keep the box to digits, so a paste or a stray key cannot produce a passcode the console will reject
-        // and cannot be submitted as something non-numeric.
-        string digits = new(System.Linq.Enumerable.Where(PinBox.Text, char.IsDigit).ToArray());
-        if (digits != PinBox.Text)
+        // and cannot be submitted as something non-numeric. A PasswordBox has no caret to restore.
+        string digits = new(System.Linq.Enumerable.Where(PinBox.Password, char.IsDigit).ToArray());
+        if (digits != PinBox.Password)
         {
-            int caret = PinBox.SelectionStart;
-            PinBox.Text = digits;
-            PinBox.SelectionStart = System.Math.Min(caret, digits.Length);
+            PinBox.Password = digits;
         }
 
         IsPrimaryButtonEnabled = digits.Length >= MinPasscodeLength;
@@ -175,18 +173,16 @@ public sealed partial class LoginPinDialog : ContentDialog
     private void Apply(PasscodePadInput input)
     {
         App.Input.ReportControllerActivity();
-        string text = PinBox.Text;
+        string text = PinBox.Password;
 
         switch (input.Action)
         {
             case PasscodePadAction.Digit when text.Length < PinBox.MaxLength:
-                PinBox.Text = text + input.Digit;
-                PinBox.SelectionStart = PinBox.Text.Length;
+                PinBox.Password = text + input.Digit;
                 break;
 
             case PasscodePadAction.Back when text.Length > 0:
-                PinBox.Text = text[..^1];
-                PinBox.SelectionStart = PinBox.Text.Length;
+                PinBox.Password = text[..^1];
                 break;
 
             case PasscodePadAction.Back:
