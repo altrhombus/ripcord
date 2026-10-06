@@ -59,6 +59,8 @@ namespace winrt::Ripcord::Media::Interop::implementation
         bool CannotRenderTenBit() const noexcept { return m_tenBitUnrenderable; }
         bool IsHdrOutput() const noexcept { return m_presentingHdr; }
         bool IsTenBit() const noexcept { return m_tenBitOutput; }
+        double ToneMapPeakNits() const noexcept { return m_toneMapInShader ? m_toneMapSourcePeakNits.load() : 0.0; }
+        double FramePeakNits() const noexcept { return m_toneMapInShader ? m_peakMeasuredNits.load() : 0.0; }
         void SetCodec(VideoCodecKind codec);
         hstring DecoderDescription();
         hstring DecoderDiagnostic();
@@ -225,7 +227,7 @@ namespace winrt::Ripcord::Media::Interop::implementation
 
         // An HDR10 stream on an SDR display, tone-mapped by the present shader (HdrToneMap) instead of the driver:
         // the shared texture then holds PQ BT.2020 at 10 bits, and the swap chain stays SDR.
-        bool m_toneMapInShader = false;
+        std::atomic<bool> m_toneMapInShader{ false };   // read by the diagnostics string on the UI thread
         bool m_tenBitUnrenderable = false;
 
         int32_t m_yuvMatrix = 0;
@@ -377,7 +379,11 @@ namespace winrt::Ripcord::Media::Interop::implementation
         Microsoft::WRL::ComPtr<ID3D12Resource> m_peakReadback[FrameCount];
         bool m_peakReadbackPending[FrameCount] = {};
         double m_peakSmoothedNits = -1.0;
-        double m_toneMapSourcePeakNits = 1000.0;
+        std::chrono::steady_clock::time_point m_peakLastUpdate{};
+
+        // Atomic because the diagnostics string reads it from the UI thread while the decode worker writes it.
+        std::atomic<double> m_toneMapSourcePeakNits{ 1000.0 };
+        std::atomic<double> m_peakMeasuredNits{ 0.0 };   // the latest raw measurement, for the diagnostics panel
         int32_t m_upscaleMode = 0; // 0 = bilinear, 1 = bicubic
         Microsoft::WRL::ComPtr<ID3D12Resource> m_texY;
         Microsoft::WRL::ComPtr<ID3D12Resource> m_texUV;

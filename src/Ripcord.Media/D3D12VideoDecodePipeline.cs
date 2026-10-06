@@ -53,6 +53,10 @@ public readonly record struct PipelineStats(
     /// <summary>What the display is actually being given — "HDR10", "SDR", or which of the two reasons we are
     /// tone-mapping. Distinct from the stream's transfer function, which belongs on the colour row.</summary>
     string HdrOutput = "",
+    /// <summary>While Ripcord tone-maps HDR to SDR: the source peak its curve is using, in nits. Zero otherwise.</summary>
+    double ToneMapPeakNits = 0,
+    /// <summary>While Ripcord tone-maps HDR to SDR: the latest frame's measured peak, in nits. Zero otherwise.</summary>
+    double FramePeakNits = 0,
     /// <summary>Audio frames successfully decoded and submitted, cumulative. At 480 samples per frame and 48 kHz
     /// this should advance at ~100/s, which makes it a far better liveness signal than "can I hear it".</summary>
     long AudioFramesDecoded = 0,
@@ -124,6 +128,8 @@ public sealed class D3D12VideoDecodePipeline : IVideoDecodePipeline
         IsTenBit: _initialized && _renderer.IsTenBit,
         VideoFormat: _initialized ? _renderer.VideoFormatDescription : string.Empty,
         HdrOutput: _initialized ? _renderer.HdrOutputDescription : string.Empty,
+        ToneMapPeakNits: _initialized ? _renderer.ToneMapPeakNits : 0,
+        FramePeakNits: _initialized ? _renderer.FramePeakNits : 0,
         AudioFramesDecoded: Interlocked.Read(ref _audioFramesDecoded),
         AudioFramesSkipped: Interlocked.Read(ref _audioFramesSkipped),
         AudioFormat: AudioFormatDescription);

@@ -258,6 +258,35 @@ public class SessionViewModelTests
         Assert.Contains(vm.State.Diagnostics.CapabilityPills, p => p.Label == "10-bit");
     }
 
+    // ---- the tone-map's peak row -----------------------------------------------------------------
+
+    [Fact]
+    public void ToneMapPeak_ShowsTheCurveAndTheFrame_WhileRipcordToneMaps()
+    {
+        (SessionViewModel vm, FakePipeline pipeline, _) = Build();
+        pipeline.Snapshot = new VideoPipelineSnapshot(
+            DecodedFrames: 60, PresentedFrames: 60, QueueDepth: 0, PipelineLatencyMs: 8, DecodeMode: 2,
+            ToneMapPeakNits: 326.6, FramePeakNits: 1012.4);
+
+        vm.Sample(Live());
+
+        Assert.Equal("327 nits · this frame 1012", vm.State.Diagnostics.ToneMapPeak);
+    }
+
+    [Fact]
+    public void ToneMapPeak_IsEmpty_WhenRipcordIsNotToneMapping()
+    {
+        // Empty hides the row: HDR10 to an HDR display, SDR, or the driver's tone-map have no peak of ours to show.
+        (SessionViewModel vm, FakePipeline pipeline, _) = Build();
+        pipeline.Snapshot = new VideoPipelineSnapshot(
+            DecodedFrames: 60, PresentedFrames: 60, QueueDepth: 0, PipelineLatencyMs: 8, DecodeMode: 2,
+            IsHdrOutput: true);
+
+        vm.Sample(Live());
+
+        Assert.Equal(string.Empty, vm.State.Diagnostics.ToneMapPeak);
+    }
+
     [Fact]
     public void Pills_AreTheSameInstanceWhileTheSetIsUnchanged()
     {

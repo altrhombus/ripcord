@@ -21,13 +21,14 @@ We're close, but not one check away. Here's what's left, in order:
    [`docs/design-branch-test-pass.md`](docs/design-branch-test-pass.md), and a sweep for any control that does
    nothing. 2026-10-01 found pads hadn't reached a stream since 2026-08-06, which is the argument for not
    skipping this. The first part ran on 2026-10-02 and found the bugs the journal lists; the
-   connect, HUD, pairing and input checks are still to do.
+   connect, HUD, pairing and input checks are still to do, and so is the tone-map's one open check, a
+   mid-session drag between an HDR and an SDR display.
 2. **Tag a release candidate.** A `v1.0-rc1` tag builds the x64 and ARM64 zips into a draft release, which
    nobody sees until it's published. Those are what the next two steps install.
 3. **Smoke-check it on ARM64.** The full run passed on 2026-10-05 from a local build; the CI-built ARM64 zip
    only needs to start and stream on the Surface.
 4. **Install it on a clean machine.** Pair, stream, sign in, and a pad with and without GameInput, from the zip
-   CI built.
+   CI built. It's also the first fresh install of the new defaults: 1080p60 at 20 Mbps, H.264.
 5. **Tag `v1.0`,** with `SECURITY.md`'s version row and the release notes. Then celebrate.
 
 Everything else in this file is real, and it can wait. (Yes, even the Apple TV app.)
@@ -64,11 +65,16 @@ measures 0.92 µs a packet on Windows x64 against the managed engine's 14.29 µs
   - [x] **The Xbox pad beside a DualSense.** Fixed, and confirmed on 2026-10-01: both pads in one stream, a
         battery pull mid-stream, and menu navigation with both on.
   - [x] **HDR from the wrong display.** Fixed, and confirmed on 2026-10-01 on a two-monitor desk and across a
-        laptop's two GPUs. The "little bright after a drag" turned out to be the GPU driver's tone-mapping, so
-        a session started on an SDR display now asks the console for SDR instead. The drag itself can wait
-        (see After 1.0).
+        laptop's two GPUs. The "little bright after a drag" turned out to be the GPU driver's tone-mapping. An
+        SDR display asked the console for SDR for a while after that; since 2026-10-03 it asks for HDR and
+        Ripcord tone-maps it itself, which also covers the drag (see below).
   - [x] **A two-line console name.** Fixed, and checked at every card density, at 100% and 200% display
         scale, and at 100% and 150% text (2026-09-30 and 2026-10-01).
+- [ ] Ripcord's own HDR-to-SDR tone-map is right on every GPU and display path. (The Intel and NVIDIA GPUs and
+      the Surface are done; a mid-session drag between displays is left. See Blocking 1.0.)
+- [x] The defaults are 1080p60 at 20 Mbps, H.264 and no HDR (the owner's decision, 2026-10-05). HEVC and HDR
+      are a choice in Settings, which keeps HDR games' highlights; a stored HEVC on a PC that can't decode it
+      falls back to H.264 at connect.
 - [ ] The input stack, Stage A steps 8–10 and the two Stage B checks have been driven by a person, and
       whatever that finds is fixed or listed. The script is
       [`docs/design-branch-test-pass.md`](docs/design-branch-test-pass.md).
@@ -100,9 +106,7 @@ purchased signing certificate.
       2026-10-05).
 - [ ] **Ripcord's HDR-to-SDR tone-map, on every GPU** (built 2026-10-03; the Intel and NVIDIA GPUs match each
       other and the console's own screenshot, and look right on the Surface at 200%, 2026-10-05): a mid-session
-      drag between an HDR and an
-      SDR display. The defaults are HEVC and HDR since 2026-10-05, falling back to H.264 and SDR at connect
-      where there's no HEVC decoder; the clean-machine check is their first run on a fresh install.
+      drag between an HDR and an SDR display is left.
 - [x] **The console's HDR "On When Supported"** (2026-10-05): asked for HDR it sends HDR10 for everything, an SDR
       game inside it with white near 255 nits; asked for SDR, an HDR game's stream clips as under "Always On".
 - [x] **SDR games inside HDR10 looked slightly dull** after the tone-map (white at 91%). The renderer now

@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.RegularExpressions;
 using Ripcord.Core.Video;
 using Xunit;
@@ -91,24 +92,28 @@ public class HdrToneMapTests
         string source = File.ReadAllText(Path.Combine(RepositoryRoot(), "src", "Ripcord.Media.Interop", "VideoRenderer.cpp"));
 
         // The shader's own constants.
-        Assert.Matches(new Regex($@"kSdrPeakNits\s*=\s*{HdrToneMap.SdrPeakNits:0.0}"), source);
-        Assert.Matches(new Regex($@"kDisplayGamma\s*=\s*{HdrToneMap.DisplayGamma:0.0}"), source);
+        // Formatted invariantly: under a comma-decimal culture "1000.0" became "1000,0" and the test failed.
+        static string F(double value) => value.ToString("0.0###", CultureInfo.InvariantCulture);
+        Assert.Matches(new Regex($@"kSdrPeakNits\s*=\s*{F(HdrToneMap.SdrPeakNits)}"), source);
+        Assert.Matches(new Regex($@"kDisplayGamma\s*=\s*{F(HdrToneMap.DisplayGamma)}"), source);
         Assert.Contains("1.6605", source);   // BT.2087's first coefficient: the gamut step is present
 
         // The C++ that chooses the source peak and smooths the measurement.
-        Assert.Matches(new Regex($@"kHdrSourcePeakNits\s*=\s*{HdrToneMap.SourcePeakNits:0.0}"), source);
-        Assert.Matches(new Regex($@"kToneMapSdrPeakNits\s*=\s*{HdrToneMap.SdrPeakNits:0.0}"), source);
-        Assert.Matches(new Regex($@"kSdrContentBelowNits\s*=\s*{HdrToneMap.SdrContentBelowNits:0.0}"), source);
-        Assert.Matches(new Regex($@"kHdrContentAboveNits\s*=\s*{HdrToneMap.HdrContentAboveNits:0.0}"), source);
-        Assert.Matches(new Regex($@"kPeakRiseRate\s*=\s*{HdrToneMap.PeakTracker.RiseRate}"), source);
-        Assert.Matches(new Regex($@"kPeakFallRate\s*=\s*{HdrToneMap.PeakTracker.FallRate}"), source);
+        Assert.Matches(new Regex($@"kHdrSourcePeakNits\s*=\s*{F(HdrToneMap.SourcePeakNits)}"), source);
+        Assert.Matches(new Regex($@"kToneMapSdrPeakNits\s*=\s*{F(HdrToneMap.SdrPeakNits)}"), source);
+        Assert.Matches(new Regex($@"kSdrContentBelowNits\s*=\s*{F(HdrToneMap.SdrContentBelowNits)}"), source);
+        Assert.Matches(new Regex($@"kHdrContentAboveNits\s*=\s*{F(HdrToneMap.HdrContentAboveNits)}"), source);
+        Assert.Matches(new Regex($@"kPeakTileFraction\s*=\s*{F(HdrToneMap.PeakTileFraction)}"), source);
+        Assert.Matches(new Regex($@"kPeakRiseSeconds\s*=\s*{F(HdrToneMap.PeakTracker.RiseSeconds)}"), source);
+        Assert.Matches(new Regex($@"kPeakFallSeconds\s*=\s*{F(HdrToneMap.PeakTracker.FallSeconds)}"), source);
+        Assert.Matches(new Regex($@"kPeakMaxStepSeconds\s*=\s*{F(HdrToneMap.PeakTracker.MaxStepSeconds)}"), source);
     }
 
     [Theory]
     [InlineData(100.0, 250.0)]     // never below SDR white
     [InlineData(300.0, 300.0)]     // an SDR game in HDR10: its own peak
     [InlineData(400.0, 400.0)]
-    [InlineData(500.0, 700.0)]     // between: a blend
+    [InlineData(450.0, 700.0)]     // between: a blend
     [InlineData(600.0, 1000.0)]    // HDR content: the fixed curve that matched the console
     [InlineData(4000.0, 1000.0)]
     public void SourcePeak_FollowsTheContent(double measured, double expected)
@@ -131,13 +136,50 @@ public class HdrToneMapTests
     public void Tracker_RisesQuickly_AndFallsSlowly()
     {
         var tracker = new HdrToneMap.PeakTracker();
-        Assert.Equal(300.0, tracker.Update(300), 6);   // the first measurement is taken as it is
+        Assert.Equal(300.0, tracker.Update(300, 0), 6);   // the first measurement is taken as it is
 
-        for (int i = 0; i < 30; i++) tracker.Update(900);   // half a second of a bright scene
+        for (int i = 0; i < 30; i++) tracker.Update(900, 1 / 60.0);   // half a second of a bright scene
         Assert.True(tracker.Smoothed > 700, $"{tracker.Smoothed}");
 
-        for (int i = 0; i < 30; i++) tracker.Update(300);   // half a second dark again
-        Assert.True(tracker.Smoothed > 700, $"fell too fast: {tracker.Smoothed}");   // about 75 nits, where the rise took nearly 500
+        for (int i = 0; i < 30; i++) tracker.Update(300, 1 / 60.0);   // half a second dark again
+        Assert.True(tracker.Smoothed > 700, $"fell too fast: {tracker.Smoothed}");
+    }
+
+    [Theory]
+    [InlineData(30)]
+    [InlineData(60)]
+    [InlineData(120)]
+    public void Tracker_FollowsTime_NotFrames(int fps)
+    {
+        // It counted frames, so at 30 fps it was twice as slow as at 60 (2026-10-05).
+        var tracker = new HdrToneMap.PeakTracker();
+        tracker.Update(300, 0);
+        for (int i = 0; i < fps; i++) tracker.Update(900, 1.0 / fps);   // one second, at any frame rate
+
+        Assert.InRange(tracker.Smoothed!.Value, 900 - 600 * Math.Exp(-1 / 0.3) - 1, 900 - 600 * Math.Exp(-1 / 0.3) + 1);
+    }
+
+    [Fact]
+    public void Tracker_TakesAStallAsOneShortStep()
+    {
+        var tracker = new HdrToneMap.PeakTracker();
+        tracker.Update(1000, 0);
+        tracker.Update(300, 60);   // a minute paused in a debugger
+
+        Assert.True(tracker.Smoothed > 850, $"{tracker.Smoothed}");
+    }
+
+    [Fact]
+    public void OneBrightTile_DecidesThePeak_SoHighlightsCannotClip()
+    {
+        // A percentile tried on 2026-10-05 discarded the brightest tiles, Forza measured near 318 nits, and its
+        // highlights clipped. One highlight in one tile of 576 must count: it is what makes the curve reach it.
+        double[] tiles = Enumerable.Repeat(290.0, 576).ToArray();
+        tiles[100] = 900;
+
+        Assert.Equal(900.0, HdrToneMap.PeakOfTiles(tiles));
+        Assert.Equal(HdrToneMap.SourcePeakNits, HdrToneMap.SourcePeakFor(HdrToneMap.PeakOfTiles(tiles)));
+        Assert.Equal(0.0, HdrToneMap.PeakOfTiles([]));
     }
 
     private static string RepositoryRoot()

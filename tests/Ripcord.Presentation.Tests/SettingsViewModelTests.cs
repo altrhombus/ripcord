@@ -142,7 +142,7 @@ public class SettingsViewModelTests
         // A settings file edited by hand, or written by an older build, must not leave the picker blank.
         (SettingsViewModel vm, _, _) = await BuildAsync(new RipcordSettings { Width = 3840, Height = 2160, TargetFps = 120 });
 
-        Assert.Equal(2, vm.State.ResolutionIndex); // 720p60, the documented fallback
+        Assert.Equal(0, vm.State.ResolutionIndex); // 1080p60, the default
     }
 
     // ---- codec and HDR -------------------------------------------------------------------------

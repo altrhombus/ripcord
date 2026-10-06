@@ -98,6 +98,11 @@ namespace Ripcord.Media.Interop
         /// tone-mapping. Distinct from the stream's transfer function, which is a colour fact.
         String HdrOutputDescription{ get; };
 
+        /// While Ripcord tone-maps HDR to SDR itself: the source peak its curve is using, and the latest frame's
+        /// measured peak, in nits. Zero otherwise. Numbers, not prose, so the panel decides how to show them.
+        Double ToneMapPeakNits{ get; };
+        Double FramePeakNits{ get; };
+
         // The HDR state as three separate facts, because they are independent and the UI needs to tell them
         // apart. These exist because the app used to infer them by substring-matching DecoderDescription,
         // which was wrong in a way that mattered: the description says "PQ" whenever the *stream* is PQ, so

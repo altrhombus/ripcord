@@ -820,6 +820,8 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
         ColourText.Text = d.Colour;
         VideoFormatText.Text = d.VideoFormat;
         HdrOutputText.Text = d.HdrOutput;
+        ToneMapPeakText.Text = d.ToneMapPeak;
+        ToneMapPeakLabel.Visibility = ToneMapPeakText.Visibility = Vis(d.ToneMapPeak.Length > 0);
 
         HeroResolutionText.Text = d.HeroResolution;
         HeroFpsText.Text = d.HeroFps;
