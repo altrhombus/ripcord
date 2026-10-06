@@ -299,7 +299,9 @@ message SystemMenuCommandPayload {
 }
 
 // Console -> client, about once a second (2026-10-02, our capture of our own vendor client: the client sent none,
-// and the console ignored one sent to it). targetBitrate is in bits per second [W]. The console also sent a field
+// and the console ignored one sent to it). targetBitrate is in bits per second [W]: in two sessions it came to
+// about 97% of the client's starting bitrate in bps (research log; the earlier [X] rows predate the capture).
+// The console also sent a field
 // 8, a varint near 1,400, which this schema does not name [X].
 message ConnectionQualityPayload {
   optional uint32 targetBitrate = 1;

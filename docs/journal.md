@@ -44,7 +44,8 @@ From another review of the week's changes, each checked against the code first.
   it has gone off the network. When the console ends the stream itself (its goodbye, or its control connection
   closing cleanly), the stream now ends with "The console ended the stream" and the reason, and nothing retries.
   A failed control connection is a network fault and still reconnects.
-- **The login passcode showed as it was typed.** It's a password box now, masked, with the usual reveal button.
+- **The login passcode showed as it was typed.** It's a password box now, masked, with the usual reveal button,
+  confirmed on hardware along with resting the console from its power menu, which left it asleep.
 - **`InputScopeStack.Top` could throw on an input thread.** It checked the list's length and then indexed it,
   so a pop on the UI thread in between threw on a thread-pool timer, which ends the process. The top is now
   published as one field after every push and pop.
@@ -57,7 +58,7 @@ From another review of the week's changes, each checked against the code first.
 ### The first ARM64 run of the release build (2026-10-05)
 
 The self-contained ARM64 zip, built from `main` as the release job builds it, on the Surface at 200%: it started,
-paired and streamed, zero-copy on the Adreno GPU throughout, about 59 fps and 17–19 ms from decode to screen, with
+paired and streamed, zero-copy on the ARM64 laptop's integrated GPU throughout, about 59 fps and 17–19 ms from decode to screen, with
 the HDR scenes tone-mapped as on the desktop (orange marigolds, the SDR game's white fully white). Settings laid
 out cleanly at 200%. Two dips in frame rate came with no loss, which reads as the console sending fewer frames
 for a moment. Both pads worked, and the one `GameInputRedist.msi` installed on ARM64 and was detected by the app,

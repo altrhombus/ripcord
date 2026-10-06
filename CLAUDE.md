@@ -7,8 +7,8 @@ linked; this file is the rules.
 
 Ripcord is a from-scratch, independent PlayStation Remote Play client. The protocol was derived independently
 from the project's own captures and from static and dynamic analysis of **our own
-installed copy** of the vendor client. Keep that possession framing wherever this is restated; `NOTICE` lists
-the methods in full. No vendor code is reproduced. About 4 KB of interoperability constants **is** bundled,
+installed copies** of the vendor client. Keep that possession framing wherever this is restated; `NOTICE` lists
+the methods. No vendor code is reproduced. About 4 KB of interoperability constants **is** bundled,
 deliberately: see "Bounded exception 1" below. Read "Independent-implementation rules" before touching anything protocol- or
 crypto-related.
 

@@ -54,6 +54,8 @@ public sealed class D3D12VideoPipelineStats : IVideoPipelineStats
             IsTenBit: s.IsTenBit,
             VideoFormat: s.VideoFormat,
             HdrOutput: s.HdrOutput,
+            ToneMapPeakNits: s.ToneMapPeakNits,
+            FramePeakNits: s.FramePeakNits,
             AudioFramesDecoded: s.AudioFramesDecoded,
             AudioFramesSkipped: s.AudioFramesSkipped,
             AudioFormat: s.AudioFormat);

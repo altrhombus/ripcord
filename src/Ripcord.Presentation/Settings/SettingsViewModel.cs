@@ -82,8 +82,8 @@ public sealed class SettingsViewModel : ObservableState<SettingsViewState>
         Strings.Settings_Resolution540p60,
     ];
 
-    /// <summary>Index of the 720p60 entry, used when the stored geometry matches no offered row.</summary>
-    private const int DefaultResolutionIndex = 2;
+    /// <summary>Index of the 1080p60 entry, the default, used when the stored geometry matches no offered row.</summary>
+    private const int DefaultResolutionIndex = 0;
 
     private static string H264Label => Strings.Settings_CodecH264;
 

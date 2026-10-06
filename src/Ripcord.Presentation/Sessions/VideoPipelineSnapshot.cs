@@ -43,6 +43,10 @@ public readonly record struct VideoPipelineSnapshot(
     string VideoFormat = "",
     /// <summary>What the display is being given — "HDR10", "SDR", or which reason we are tone-mapping.</summary>
     string HdrOutput = "",
+    /// <summary>While Ripcord tone-maps HDR to SDR: the source peak its curve is using, in nits. Zero otherwise.</summary>
+    double ToneMapPeakNits = 0,
+    /// <summary>While Ripcord tone-maps HDR to SDR: the latest frame's measured peak, in nits. Zero otherwise.</summary>
+    double FramePeakNits = 0,
     long AudioFramesDecoded = 0,
     long AudioFramesSkipped = 0,
     /// <summary>Stream format and the device format it is converted to, or why audio is silent.</summary>

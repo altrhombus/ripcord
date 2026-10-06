@@ -705,6 +705,9 @@ jobs:
           **Xbox controllers** need Microsoft's GameInput runtime. If one does nothing, run `GameInputRedist.msi`
           from the same folder once, then restart Ripcord. A DualSense works without it. Settings > About says
           which you have.
+
+          **Upgrading.** Your saved settings, paired consoles and sign-in are kept: a new default applies only to
+          a fresh install, and what you chose before stays until you change it.
           NOTES
           sed -i 's/^          //' notes.md
           # A tag with a suffix (v1.0-rc1) is a pre-release, so publishing it never makes it "Latest" over a real

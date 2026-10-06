@@ -979,6 +979,7 @@
                                     <RowDefinition Height="Auto" />
                                     <RowDefinition Height="Auto" />
                                     <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
                                 </Grid.RowDefinitions>
 
                                 <TextBlock Grid.Row="0" Style="{StaticResource RipcordInstrumentLabelStyle}" Text="decoder" />
@@ -992,6 +993,10 @@
 
                                 <TextBlock Grid.Row="3" Style="{StaticResource RipcordInstrumentLabelStyle}" Text="output" />
                                 <TextBlock x:Name="HdrOutputText" Grid.Row="3" Grid.Column="1" Style="{StaticResource RipcordInstrumentValueStyle}" />
+
+                                <!--  Only while Ripcord tone-maps: the curve's source peak, and this frame's.  -->
+                                <TextBlock x:Name="ToneMapPeakLabel" Grid.Row="4" Style="{StaticResource RipcordInstrumentLabelStyle}" Text="peak" Visibility="Collapsed" />
+                                <TextBlock x:Name="ToneMapPeakText" Grid.Row="4" Grid.Column="1" Style="{StaticResource RipcordInstrumentValueStyle}" Visibility="Collapsed" />
                             </Grid>
                         </StackPanel>
                 </StackPanel>
