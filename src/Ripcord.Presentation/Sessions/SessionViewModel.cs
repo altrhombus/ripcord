@@ -1,3 +1,4 @@
+using System.Globalization;
 using Ripcord.Client;
 using Ripcord.Core.Input;
 using Ripcord.Core.Sessions;
@@ -623,6 +624,7 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
             Colour: Dash(s.ColorMatrix),
             VideoFormat: Dash(s.VideoFormat),
             HdrOutput: Dash(s.HdrOutput),
+            ToneMapPeak: ToneMapPeak(s),
             HeroResolution: resolution.StartsWith("resolution", StringComparison.Ordinal) ? "—" : resolution,
             HeroFps: $"{presentFps:F0}",
             HeroBitrate: stats.BitrateKbps > 0 ? $"{stats.BitrateKbps / 1000.0:F1}" : "—",
@@ -824,6 +826,14 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
     };
 
     private static string Dash(string? value) => string.IsNullOrEmpty(value) ? "—" : value;
+
+    /// <summary>
+    /// The peak row: what the tone-map's curve starts from, and what this frame measured. The two differ while the
+    /// curve is catching up, and a curve that disagrees with the frame for long is the thing to notice.
+    /// </summary>
+    internal static string ToneMapPeak(VideoPipelineSnapshot s) => s.ToneMapPeakNits > 0
+        ? string.Create(CultureInfo.InvariantCulture, $"{s.ToneMapPeakNits:F0} nits · this frame {s.FramePeakNits:F0}")
+        : string.Empty;
 
     protected override SessionViewState Compose() => new(
         StatusVisible: _statusVisible,

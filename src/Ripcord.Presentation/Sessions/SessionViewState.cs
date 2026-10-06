@@ -150,6 +150,9 @@ public sealed record SessionDiagnosticsState(
     string Colour,
     string VideoFormat,
     string HdrOutput,
+    /// <summary>The tone-map's source peak and the frame's measured one; empty, and the row hidden, unless Ripcord is
+    /// tone-mapping.</summary>
+    string ToneMapPeak,
     string HeroResolution,
     string HeroFps,
     string HeroBitrate,
@@ -223,6 +226,7 @@ public sealed record SessionDiagnosticsState(
         Colour: "—",
         VideoFormat: "—",
         HdrOutput: "—",
+        ToneMapPeak: string.Empty,
         HeroResolution: "—",
         HeroFps: "0",
         HeroBitrate: "—",
