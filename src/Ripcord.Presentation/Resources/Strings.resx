@@ -511,6 +511,10 @@ name.</comment>
     <value>This PC can't decode HEVC, so this stream uses H.264, without HDR.</value>
     <comment>Connect sequence: appended to the connecting line when the HEVC codec chosen in Settings isn't available on this PC. HEVC, H.264 and HDR are standard names - do not translate.</comment>
   </data>
+  <data name="Connect_HevcCheckFailed" xml:space="preserve">
+    <value>Ripcord couldn't check for HEVC in time, so this stream uses H.264, without HDR.</value>
+    <comment>Connect sequence: appended to the connecting line when checking for the HEVC codec chosen in Settings failed or took too long. HEVC, H.264 and HDR are standard names - do not translate.</comment>
+  </data>
   <data name="Session_ConsoleEnded" xml:space="preserve">
     <value>The console ended the stream</value>
     <comment>Status overlay headline when the console itself ended the stream, for example by going into rest mode. The detail line beneath carries the console's reason.</comment>

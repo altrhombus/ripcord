@@ -533,7 +533,7 @@
     <comment>The header above a control on the Settings page.</comment>
   </data>
   <data name="SettingsPage_PVerifiedGoodDefault.Description" xml:space="preserve">
-    <value>720p60 is the verified-good default. Higher settings need a strong network.</value>
+    <value>1080p60 at 20 Mbps is the default. Higher settings need a strong network.</value>
     <comment>The description under a control on the Settings page.</comment>
   </data>
   <data name="SettingsPage_PVerifiedGoodDefault.Header" xml:space="preserve">

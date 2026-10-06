@@ -76,8 +76,10 @@ body:
     attributes:
       label: Diagnostics overlay / logs
       description: >
-        The in-app diagnostics overlay reports which resolution path each loader took and the live
-        stream figures — both are usually the fastest way to the cause. Redact addresses before pasting.
+        For the dotnet client: if Ripcord crashed, attach `%LocalAppData%\Ripcord\state\crash.log`. For a stream
+        that misbehaved, press F8 during it and attach the diagnostics file it saves in the same folder, or the
+        newest `session-trace-*.csv`. PRIVACY.md says what each file can contain; read it before attaching, and
+        redact addresses.
       render: text
   - type: checkboxes
     id: known
@@ -85,6 +87,6 @@ body:
       label: Before filing
       options:
         - label: I checked [ROADMAP.md](../../ROADMAP.md) and this is not an already-known open item.
-        - label: I checked README's "What does not work yet" and this is not one of them.
+        - label: I checked README's "What doesn't work yet" and this is not one of them.
         - label: I have not pasted any key material, capture, or account identifier above.
           required: true

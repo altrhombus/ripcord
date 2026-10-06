@@ -77,6 +77,10 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
     private bool _statusTerminal;
     private bool _isStreamLive;
 
+    // ConnectPlan.Notice, shown under each "Connecting" and "Reconnecting" of this stream. Set on the UI thread
+    // before the session starts, so the status callbacks that read it come after the write.
+    private string? _connectNotice;
+
     // ---- diagnostics ----
     private SessionDiagnosticsState _diagnostics = SessionDiagnosticsState.Empty;
 
@@ -253,6 +257,12 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
     /// Say what is happening. <paramref name="terminal"/> means the session will not leave this state on its
     /// own, so the busy indicator goes away and the user is offered something to do.
     /// </summary>
+    /// <summary>
+    /// Something this connect changed from what the user chose (<see cref="ConnectPlan.Notice"/>), or null. Call it
+    /// before the session starts: the session's first status replaces the flow's last stage, which carried it.
+    /// </summary>
+    public void SetConnectNotice(string? notice) => _connectNotice = notice;
+
     public void ShowStatus(string headline, string detail, bool terminal) => Mutate(() =>
     {
         _statusVisible = true;
@@ -395,7 +405,7 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
                     status.Lifecycle == SessionLifecycle.Connecting
                         ? Strings.Session_Connecting
                         : Strings.Session_Reconnecting,
-                    status.Detail,
+                    _connectNotice is null ? status.Detail : $"{status.Detail} {_connectNotice}".Trim(),
                     terminal: false);
                 break;
 

@@ -42,7 +42,11 @@ public sealed record ConnectStage(string Headline, string Detail, bool Terminal,
 /// </summary>
 /// <param name="Config">The session config, already corrected for the console's generation.</param>
 /// <param name="Route">Local or through the account, with the reason already reported as a stage.</param>
-public sealed record ConnectPlan(SessionConfig Config, StreamingRoute Route);
+/// <param name="Notice">
+/// Something the connect changed from what the user chose, such as H.264 in place of HEVC; null if nothing.
+/// Carried here because the session's own "Connecting" status replaces the flow's last stage, and the note with it.
+/// </param>
+public sealed record ConnectPlan(SessionConfig Config, StreamingRoute Route, string? Notice = null);
 
 /// <summary>
 /// The connect sequence: guard, configure, bring up video, check the client can speak the protocol at all,
@@ -123,17 +127,20 @@ public sealed class ConnectFlow
         string? codecNote = null;
         if (config.CodecPreference == VideoCodec.Hevc)
         {
-            bool? hevc = await HevcDecodeAvailableAsync(cancellationToken);
-            if (hevc is null)
+            HevcCheck hevc = await CheckHevcDecodeAsync(cancellationToken);
+            if (hevc == HevcCheck.Cancelled)
             {
                 return null;   // the user left while the check ran
             }
 
-            if (hevc is false)
+            if (hevc != HevcCheck.Available)
             {
-                // Said, not silent: Settings still shows HEVC, and nothing else would explain the picture.
+                // Said, not silent: Settings still shows HEVC, and nothing else would explain the picture. And said
+                // accurately: a check that failed or ran out of time has not shown that the PC can't decode it.
                 config = config with { CodecPreference = VideoCodec.H264, RequestedDynamicRange = DynamicRange.Sdr };
-                codecNote = Strings.Connect_HevcUnavailable;
+                codecNote = hevc == HevcCheck.Unavailable
+                    ? Strings.Connect_HevcUnavailable
+                    : Strings.Connect_HevcCheckFailed;
             }
         }
 
@@ -199,35 +206,39 @@ public sealed class ConnectFlow
             codecNote is null ? choice.Reason : $"{choice.Reason} {codecNote}",
             terminal: false,
             ConnectPhase.Connecting);
-        return new ConnectPlan(config, choice.Route);
+        return new ConnectPlan(config, choice.Route, codecNote);
     }
 
     /// <summary>How long the HEVC check may take before the connect goes ahead with H.264.</summary>
     public static readonly TimeSpan HevcCheckTimeout = TimeSpan.FromSeconds(5);
 
+    private enum HevcCheck { Available, Unavailable, CouldNotCheck, Cancelled }
+
     /// <summary>
-    /// Whether HEVC can be decoded here: null if the caller cancelled. No check given means assume so; a check that
-    /// fails or takes longer than <see cref="HevcCheckTimeout"/> means assume not, since H.264 always works and an
-    /// undecodable stream never does.
+    /// Whether HEVC can be decoded here. No check given means assume so. A check that fails or takes longer than
+    /// <see cref="HevcCheckTimeout"/> could not tell, and the connect goes ahead with H.264 as for a PC without
+    /// HEVC, since H.264 always works and an undecodable stream never does.
     /// </summary>
-    private async Task<bool?> HevcDecodeAvailableAsync(CancellationToken cancellationToken)
+    private async Task<HevcCheck> CheckHevcDecodeAsync(CancellationToken cancellationToken)
     {
         if (_hevcDecodeAvailable is null)
         {
-            return true;
+            return HevcCheck.Available;
         }
 
         try
         {
-            return await _hevcDecodeAvailable().WaitAsync(HevcCheckTimeout, cancellationToken).ConfigureAwait(false);
+            return await _hevcDecodeAvailable().WaitAsync(HevcCheckTimeout, cancellationToken).ConfigureAwait(false)
+                ? HevcCheck.Available
+                : HevcCheck.Unavailable;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            return null;
+            return HevcCheck.Cancelled;
         }
         catch (Exception)
         {
-            return false;
+            return HevcCheck.CouldNotCheck;
         }
     }
 
