@@ -97,7 +97,8 @@ purchased signing certificate.
       installed. Whether the one `GameInputRedist.msi` in the package installs on ARM64 too is `[X]`: the
       ARM64 run settles it.
 - [ ] **Ripcord's HDR-to-SDR tone-map, on every GPU** (built 2026-10-03; the Intel and NVIDIA GPUs match each
-      other and the console's own screenshot): the Surface at 200%, and a mid-session drag between an HDR and an
+      other and the console's own screenshot, and look right on the Surface at 200%, 2026-10-05): a mid-session
+      drag between an HDR and an
       SDR display. The defaults are HEVC and HDR since 2026-10-05, falling back to H.264 and SDR at connect
       where there's no HEVC decoder; the clean-machine check is their first run on a fresh install.
 - [x] **The console's HDR "On When Supported"** (2026-10-05): asked for HDR it sends HDR10 for everything, an SDR
@@ -187,6 +188,10 @@ purchased signing certificate.
 - [ ] **Sign in without the telemetry permission.** The sign-in asks for `sbahn:pc.telemetry.publish`, copied
       with the official client's other scopes, though Ripcord never publishes anything. Drop it and check that
       sign-in, the console list, wake and the internet route still work. `PRIVACY.md` says this meanwhile.
+- [ ] **Add a console from the account's list, away from home.** The Add Console screen lists only what the
+      network scan finds, because a saved console needs its local address, and the account's console list
+      doesn't give one. Signed in, it could also list the account's consoles the scan didn't find, pair them
+      through the account (which needs no address), and use the internet route until a local address is seen.
 - [ ] **An honest User-Agent.** Cloud calls send the vendor client's own, and whether PSN requires it is `[X]`.
 - [ ] **A build where you supply the OAuth credential.** The `client.json` override exists; should a published
       build ship without the bundled one?
