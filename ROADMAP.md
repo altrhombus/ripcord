@@ -290,7 +290,7 @@ purchased signing certificate.
 ### Decisions and checks
 
 - [ ] **Repository security:** branch protection on `main`, secret scanning and push protection, Dependabot,
-      actions pinned by SHA, and a CI check that every commit's identity is the project's.
+      and actions pinned by SHA.
 - [ ] **The release, beyond the zip:** sign the exe. Smart App Control, on by default on some new PCs and fresh
       Windows 11 installs, blocks an unsigned app with no way to run it anyway, which makes this the biggest
       obstacle to a stranger downloading and playing (Artifact Signing can sign one inside a zip, not only an
