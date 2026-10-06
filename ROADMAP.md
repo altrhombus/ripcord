@@ -287,7 +287,9 @@ purchased signing certificate.
 
 - [ ] **Repository security:** branch protection on `main`, secret scanning and push protection, Dependabot,
       actions pinned by SHA, and a CI check that every commit's identity is the project's.
-- [ ] **The release, beyond the zip:** sign the exe (Artifact Signing can sign one inside a zip, not only an
+- [ ] **The release, beyond the zip:** sign the exe. Smart App Control, on by default on some new PCs and fresh
+      Windows 11 installs, blocks an unsigned app with no way to run it anyway, which makes this the biggest
+      obstacle to a stranger downloading and playing (Artifact Signing can sign one inside a zip, not only an
       MSIX), check the notices are fresh in CI rather than only present, and note that only `dotnet publish`
       makes the self-contained build (`msbuild -t:Publish` doesn't set `_IsPublishing`).
 - [ ] **ProtocolLab's `register` and `pair`** still print the registration key and `RP-Key`; route them through

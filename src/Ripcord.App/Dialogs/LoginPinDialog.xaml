@@ -26,15 +26,16 @@
             TextWrapping="Wrap"
             x:Uid="LoginPinDialog_PasscodeWasnTAccepted" />
 
-        <!--  Digits only, submits on the last one. MaxLength is not fixed to 4 because the passcode length is
-              user-configured on the console (4 is the common case); the Sign in button enables at >= 4.  -->
-        <TextBox
+        <!--  Digits only. MaxLength is not fixed to 4 because the passcode length is user-configured on the console
+              (4 is the common case); the Sign in button enables at >= 4. A PasswordBox, so the passcode is masked
+              as it is typed, with the usual reveal button; a TextBox showed it in clear (2026-10-05).  -->
+        <PasswordBox
             x:Name="PinBox"
             x:Uid="LoginPinDialog_LoginPasscode"
             PlaceholderText="••••"
             InputScope="NumericPin"
             MaxLength="16"
-            TextChanged="OnPinChanged" />
+            PasswordChanged="OnPinChanged" />
 
         <!--
             Shown only with a pad attached: its buttons type the passcode as they do on the console, and the

@@ -826,12 +826,57 @@ public class SessionControllerTests
         await WaitFor(() => controller.Lifecycle == SessionLifecycle.Streaming, "the first session to stream");
 
         time.Advance(TimeSpan.FromSeconds(10));   // a session that lasted
-        sessions[0].EndReason = "The console ended the session: launch spec rejected";
+        sessions[0].EndReason = "The control connection failed: connection reset";   // a network fault
         sessions[0].State = SessionState.Closed;
 
-        await WaitFor(() => controller.CurrentStatus.Detail.Contains("launch spec rejected", StringComparison.Ordinal),
+        await WaitFor(() => controller.CurrentStatus.Detail.Contains("connection reset", StringComparison.Ordinal),
             "the reconnect to name why the session ended");
         Assert.Equal(SessionLifecycle.Reconnecting, controller.Lifecycle);
+    }
+
+    /// <summary>
+    /// A console that ends the stream itself, by going into rest from its own power menu or by its own timer,
+    /// stays ended. The reconnect wakes the console first, so reconnecting woke it straight back up (2026-10-05).
+    /// </summary>
+    [Theory]
+    [InlineData("The console ended the session: Server shutting down")]
+    [InlineData("The console ended the session.")]
+    [InlineData("The console closed the control connection.")]
+    public async Task ASessionTheConsoleEnds_IsNotReconnected(string reason)
+    {
+        var time = new VirtualTime();
+        var sessions = new List<FakeSession>();
+
+        await using var controller = new SessionController(
+            _ =>
+            {
+                var s = new FakeSession { MillisecondsSinceConsoleActivity = 0 };
+                sessions.Add(s);
+                return Task.FromResult<IStreamingSession>(s);
+            },
+            new FakePipeline(),
+            options: new SessionControllerOptions
+            {
+                WatchdogInterval = TimeSpan.FromMilliseconds(1),
+                MaxReconnectAttempts = 3,
+                MinimumHealthySession = TimeSpan.FromSeconds(5),
+            },
+            clock: time.Now,
+            delay: time.Delay);
+
+        await controller.StartAsync(Config);
+        await WaitFor(() => controller.Lifecycle == SessionLifecycle.Streaming, "the first session to stream");
+
+        time.Advance(TimeSpan.FromSeconds(10));
+        sessions[0].EndReason = reason;
+        sessions[0].State = SessionState.Closed;
+
+        await WaitFor(() => controller.Lifecycle == SessionLifecycle.Ended, "the stream to end, not reconnect");
+        Assert.Equal(reason, controller.CurrentStatus.Detail);
+        Assert.True(controller.CurrentStatus.IsTerminal);
+
+        await Task.Delay(100);
+        Assert.Single(sessions);   // no second session, so no wake
     }
 
     private static SessionControllerOptions LatchOptions => new()

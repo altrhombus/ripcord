@@ -29,6 +29,13 @@ public enum SessionLifecycle
 
     /// <summary>Stopped deliberately. Terminal.</summary>
     Closed,
+
+    /// <summary>
+    /// The console ended the stream itself: it said goodbye, or closed its control connection. Terminal, and never
+    /// retried, because a reconnect wakes the console first, and a console rested from its own power menu or by its
+    /// auto-rest timer was woken straight back up (2026-10-05). A network fault is not this; it reconnects.
+    /// </summary>
+    Ended,
 }
 
 /// <summary>
@@ -50,7 +57,7 @@ public sealed record SessionStatus(
     public bool IsLive => Lifecycle is SessionLifecycle.Streaming or SessionLifecycle.Degraded;
 
     /// <summary>True once the controller has stopped trying, so the UI can offer a retry affordance.</summary>
-    public bool IsTerminal => Lifecycle is SessionLifecycle.Failed or SessionLifecycle.Closed;
+    public bool IsTerminal => Lifecycle is SessionLifecycle.Failed or SessionLifecycle.Closed or SessionLifecycle.Ended;
 }
 
 /// <summary>

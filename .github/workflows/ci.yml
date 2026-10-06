@@ -99,7 +99,14 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
         run: |
-          dotnet publish src/Ripcord.App/Ripcord.App.csproj -c Release -p:Platform=${{ matrix.platform }} -p:RipcordNativePlatform=${{ matrix.platform }} -nodeReuse:false
+          # The version from the tag, so the app says what it is: v1.0-rc1 is assembly version 1.0.0 (the
+          # numbers only, padded) and informational version 1.0-rc1, which Settings > About shows. Without it every
+          # zip reported the project's default version, whatever its tag.
+          $tag = "$env:GITHUB_REF_NAME".TrimStart('v')
+          $numbers = ($tag -split '-')[0].Split('.')
+          while ($numbers.Count -lt 3) { $numbers += '0' }
+          $version = ($numbers[0..2] -join '.')
+          dotnet publish src/Ripcord.App/Ripcord.App.csproj -c Release -p:Platform=${{ matrix.platform }} -p:RipcordNativePlatform=${{ matrix.platform }} -p:Version=$version -p:InformationalVersion=$tag -nodeReuse:false
           $pub = Get-ChildItem src/Ripcord.App/bin/${{ matrix.platform }}/Release -Recurse -Directory -Filter publish | Select-Object -First 1
           if (-not $pub) { throw "no publish folder" }
           foreach ($f in 'Ripcord.App.exe','LICENSE','NOTICE','THIRD-PARTY-NOTICES.txt','PRIVACY.md','GameInputRedist.msi','coreclr.dll','Microsoft.WindowsAppRuntime.dll') {
@@ -679,22 +686,34 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           ls -l dist
+          # Checksums for both zips, attached beside them, so a download can be checked against what CI built.
+          (cd dist && sha256sum *.zip > SHA256SUMS.txt && cat SHA256SUMS.txt)
           cat > notes.md <<'NOTES'
           **Draft — release notes go here before publishing.** What this build streams, pairs with and runs
           on, and what it does not do yet.
 
           **Installing.** Download the zip for your PC: `win-x64` for most PCs, `win-arm64` for ARM devices such
           as a Surface Pro X or a Copilot+ PC. Unzip it anywhere and run `Ripcord.App.exe` from the `Ripcord`
-          folder. Nothing else to install: .NET and the Windows App SDK are inside.
+          folder. Nothing else to install: .NET and the Windows App SDK are inside. `SHA256SUMS.txt` has each
+          zip's checksum.
+
+          **Windows will warn you.** Ripcord isn't code-signed yet. SmartScreen shows a warning the first time:
+          choose **More info**, then **Run anyway**. If **Smart App Control** is on, which it can be on a new PC
+          or a fresh Windows 11 install, Windows blocks unsigned apps outright, with no way to run them anyway;
+          Ripcord won't start there until it is signed. Signing is planned.
 
           **Xbox controllers** need Microsoft's GameInput runtime. If one does nothing, run `GameInputRedist.msi`
           from the same folder once, then restart Ripcord. A DualSense works without it. Settings > About says
           which you have.
           NOTES
           sed -i 's/^          //' notes.md
-          gh release create "$GITHUB_REF_NAME" dist/*.zip \
+          # A tag with a suffix (v1.0-rc1) is a pre-release, so publishing it never makes it "Latest" over a real
+          # release, the PS3 port's ps3-v1.0 among them.
+          prerelease=()
+          case "$GITHUB_REF_NAME" in *-*) prerelease=(--prerelease) ;; esac
+          gh release create "$GITHUB_REF_NAME" dist/*.zip dist/SHA256SUMS.txt \
             -R "$GITHUB_REPOSITORY" \
-            --draft \
+            --draft "${prerelease[@]}" \
             --title "Ripcord $GITHUB_REF_NAME" \
             --notes-file notes.md
           echo "Draft release $GITHUB_REF_NAME created. It is NOT public until somebody publishes it."
