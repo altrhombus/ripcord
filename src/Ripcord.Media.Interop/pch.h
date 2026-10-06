@@ -17,5 +17,6 @@
 #include <vector>
 #include <atomic>
 #include <chrono>
+#include <memory>
 #include <string>
 #include <cstdio>   // swprintf_s for the decoder diagnostic string

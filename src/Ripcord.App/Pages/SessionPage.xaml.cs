@@ -383,6 +383,8 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
             return;
         }
 
+        _viewModel.SetConnectNotice(plan.Notice);
+
         // An HDR stream already failed to draw on this page (OnTenBitUnrenderable): ask for SDR from here on.
         if (_forceSdr)
         {

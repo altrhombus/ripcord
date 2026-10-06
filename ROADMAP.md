@@ -66,8 +66,8 @@ measures 0.92 µs a packet on Windows x64 against the managed engine's 14.29 µs
         battery pull mid-stream, and menu navigation with both on.
   - [x] **HDR from the wrong display.** Fixed, and confirmed on 2026-10-01 on a two-monitor desk and across a
         laptop's two GPUs. The "little bright after a drag" turned out to be the GPU driver's tone-mapping. An
-        SDR display asked the console for SDR for a while after that; since 2026-10-03 it asks for HDR and
-        Ripcord tone-maps it itself, which also covers the drag (see below).
+        SDR display asked the console for SDR for a while after that; since 2026-10-03 it asks for HDR, when Request HDR is
+        on, and Ripcord tone-maps it itself, which also covers the drag (see below).
   - [x] **A two-line console name.** Fixed, and checked at every card density, at 100% and 200% display
         scale, and at 100% and 150% text (2026-09-30 and 2026-10-01).
 - [ ] Ripcord's own HDR-to-SDR tone-map is right on every GPU and display path. (The Intel and NVIDIA GPUs and
@@ -227,7 +227,7 @@ purchased signing certificate.
 - [ ] **The stream SESSION_REQUEST's `encryptedKey`:** we send four zero bytes, the vendor sends it empty
       (`22 00`). A one-line change in each implementation, wanting one hardware run.
 - [ ] **Check resolution against bitrate.** The console grants resolution by bitrate, and the default is
-      10,000 kb/s. Measure what a default session actually gets.
+      20,000 kb/s. Measure what a default session actually gets.
 - [ ] **Latency polish, only if measurement says so:** D3D12-native decode, PTS-based A/V sync, an early demuxer
       flush, `CODECAPI_AVLowLatencyMode`, the unused `LatencyMode`, GHASH aggregation, caching the GMAC key per
       rotation window, and the A/V loop's allocation churn. Details in the history.

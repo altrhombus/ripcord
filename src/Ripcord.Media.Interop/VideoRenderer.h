@@ -202,7 +202,11 @@ namespace winrt::Ripcord::Media::Interop::implementation
         // since the Annex B and elementary-stream variants are distinct GUIDs and only one will bind.
         VideoCodecKind m_codec = VideoCodecKind::H264;
         GUID m_inputSubtype = GUID_NULL;
-        std::wstring m_decoderName;
+        // Swapped whole, never edited in place: the decode worker replaces it on a mid-stream codec rebuild while
+        // the UI thread reads it for the diagnostics panel, and a std::wstring copied mid-assignment is undefined.
+        // Read and written only through std::atomic_load / std::atomic_store (this project builds as C++17, which
+        // has no std::atomic<std::shared_ptr>).
+        std::shared_ptr<const std::wstring> m_decoderName;
 
         // Decode-loop observability: how many samples ProcessOutput actually yielded, its last result, and how
         // far geometry recovery got (see DecoderDiagnostic).

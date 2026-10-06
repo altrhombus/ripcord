@@ -891,7 +891,8 @@ namespace winrt::Ripcord::Media::Interop::implementation
             {
                 m_decoder = transform;
                 m_inputSubtype = subtype;
-                m_decoderName = name.empty() ? L"unnamed decoder MFT" : name;
+                std::atomic_store(&m_decoderName,
+                    std::make_shared<const std::wstring>(name.empty() ? L"unnamed decoder MFT" : name));
                 return true;
             }
         }
@@ -904,7 +905,8 @@ namespace winrt::Ripcord::Media::Interop::implementation
                 CLSID_CMSH264DecoderMFT, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&m_decoder))))
         {
             m_inputSubtype = MFVideoFormat_H264;
-            m_decoderName = L"Microsoft H264 Video Decoder MFT (by CLSID)";
+            std::atomic_store(&m_decoderName,
+                std::make_shared<const std::wstring>(L"Microsoft H264 Video Decoder MFT (by CLSID)"));
             return true;
         }
 
@@ -987,12 +989,13 @@ namespace winrt::Ripcord::Media::Interop::implementation
         // Non-ASCII in these literals MUST use universal character names (·, —), not raw UTF-8 bytes:
         // MSVC decodes narrow and wide literals with the system codepage unless /utf-8 is on the command line, so
         // a literal middle dot rendered on screen as "Ã‚Â·". Escapes are codepage-independent.
-        if (m_decoderName.empty())
+        const std::shared_ptr<const std::wstring> name = std::atomic_load(&m_decoderName);
+        if (!name)
         {
             return hstring{ L"no decoder created yet" };
         }
 
-        std::wstring desc = m_decoderName;
+        std::wstring desc = *name;
         desc += m_hardwareDecode ? L" (DXVA)" : L" (software)";
 
         if (m_tenBitUnrenderable)
@@ -1015,7 +1018,7 @@ namespace winrt::Ripcord::Media::Interop::implementation
     // distinguish a working stream from a format probe that had not run.
     hstring VideoRenderer::VideoFormatDescription()
     {
-        if (m_decoderName.empty())
+        if (!std::atomic_load(&m_decoderName))
         {
             return hstring{ L"\u2014" };
         }
@@ -1784,7 +1787,7 @@ namespace winrt::Ripcord::Media::Interop::implementation
                     m_codecMismatch = true;
                     m_codec = detected;
                     m_decoder.Reset();
-                    m_decoderName.clear();
+                    std::atomic_store(&m_decoderName, std::shared_ptr<const std::wstring>{});
                     m_decodeWidth = 0;
                     m_decodeHeight = 0;
                 }

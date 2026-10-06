@@ -35,6 +35,33 @@ different purpose.
 > anything. The list above is short, it is checkable in one `git log --format=%B | grep`, and it stops
 > growing the moment someone notices — which is the property that actually matters.
 
+### The defaults go back to H.264, and the tone-map's measurement checked (2026-10-05)
+
+- **The defaults are 1080p60 at 20 Mbps, H.264 and no HDR,** reversing the HEVC and HDR defaults recorded below:
+  every PC can decode H.264, and HEVC with HDR is a choice in Settings. A first-run setup that offers it is planned
+  for 1.0, so nobody has to find the setting to get the better picture.
+- **The tone-map's peak is smoothed over time, not frames,** so it behaves the same at 30 fps as at 60: it rises in
+  about 0.3 s and falls over about 3 s. Content above 500 nits now gets the 1,000-nit curve (it was 600), with
+  the blend from 400. Taking the 99th-percentile tile instead of the brightest was tried and reverted: it read a
+  Forza scene's sky at about 318 nits, low enough to clip its highlights.
+- **A sunny Forza scene read about 330 nits, and that's right.** It looked wrong next to the 1,000 its night
+  streets reach, so a dump of the same scene was measured offline, independently of the renderer: its brightest
+  tile is 330–450 nits by luma, as the panel said. The curve then runs from the scene's own peak, and well under
+  0.1% of its pixels have any colour past it. The panel's VIDEO section gained a **peak** row while Ripcord
+  tone-maps, with the curve's peak and the frame's measured one.
+- **Specks in white text on red** (the Forza logo, at 40 Mbps) are in the console's video: the decoded brightness
+  is clean, and the same specks appear in an offline decode, at either source peak. It's the colour, which the
+  stream carries at half resolution.
+- **The HEVC fallback's note was never seen.** It rode on the connect's last stage, which the session's own first
+  "Connecting" replaced. It's carried into the session's status now, and a check that failed or ran out of time
+  says it couldn't check, rather than that the PC can't decode HEVC.
+- **The decoder's name was read and rewritten across threads.** A mid-stream codec rebuild replaced it on the decode
+  worker while the panel copied it on the UI thread. It's now swapped whole as an immutable string.
+- **Smaller:** Settings' resolution note named 720p60 as the default; the privacy page now lists the desktop
+  shortcut and the jump list, the two things Ripcord leaves outside its folder; the bug template says where the
+  crash log and F8's file are; and a few provenance tags were made honest (the report's bitrate unit is inferred,
+  not seen; the SDR peak is chosen, not measured).
+
 ### A console that rests itself stays resting, and four smaller fixes (2026-10-05)
 
 From another review of the week's changes, each checked against the code first.
