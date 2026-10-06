@@ -81,6 +81,11 @@ public class SettingsStoreTests : IDisposable
 
         // Unvalidated protocol writes must be opt-in, never on by default.
         Assert.False(s.ReportConnectionQuality);
+
+        // HEVC and HDR (2026-10-05): the console's SDR stream clips HDR games' highlights; its HDR stream does not.
+        Assert.Equal(VideoCodec.Hevc, s.Codec);
+        Assert.True(s.RequestHdr);
+        Assert.Equal(DynamicRange.Hdr, s.ToSessionConfig().RequestedDynamicRange);
     }
 
     [Fact]
