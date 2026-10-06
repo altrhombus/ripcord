@@ -52,6 +52,10 @@ brightest channel, which read an SDR game's reds at 742–931 nits and missed it
 On hardware: the SDR game at 312 nits with its white text at 250 of 255, the PS5 home screen at 378, and a
 Forza night street held at 1,000 by its headlights. Shadows and mid-tones are the same under either curve.
 
+With that, HEVC and Request HDR became the defaults for new installs, so the clipped SDR stream is no longer what
+anyone gets by default. A PC with no HEVC decoder falls back to H.264 and SDR at connect, before the decoder is
+built, rather than only when Settings is opened.
+
 ### Ripcord's own HDR tone-map, and a colour bug it uncovered (2026-10-03)
 
 The answer to the clipped SDR stream: ask for HDR even on an SDR display, and convert it here. The present
