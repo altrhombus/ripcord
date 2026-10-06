@@ -358,6 +358,15 @@ public sealed class SessionController : IAsyncDisposable
                         break;
                     }
 
+                    // The console ended it on purpose: no reconnect, and above all no wake. Every reconnect wakes the
+                    // console first (WakeBeforeRetry), so a console rested from its own menu, or by its own timer,
+                    // was woken straight back up (2026-10-05).
+                    if (IsEndedByConsole(endReason))
+                    {
+                        Transition(SessionLifecycle.Ended, endReason!);
+                        return;
+                    }
+
                     // Only a session that LASTED resets the budget.
                     //
                     // This used to reset on connect, which made MaxReconnectAttempts unreachable in the one
@@ -709,6 +718,16 @@ public sealed class SessionController : IAsyncDisposable
         Subscribe(session);
         return new ConnectOutcome(true, Retryable: true, "Connected.");
     }
+
+    /// <summary>
+    /// Whether a session ended because the console ended it: its goodbye ("The console ended the session…") or its
+    /// control connection closing cleanly. Not "The control connection failed…", which is a network fault and
+    /// reconnects. Matched on the session's own words, as <see cref="IsRetryable"/> is.
+    /// </summary>
+    internal static bool IsEndedByConsole(string? endReason)
+        => endReason is not null
+           && (endReason.StartsWith("The console ended the session", StringComparison.Ordinal)
+               || endReason.StartsWith("The console closed the control connection", StringComparison.Ordinal));
 
     /// <summary>
     /// Whether a handshake failure is worth retrying. Conservative: retry unless the reason clearly indicates a
