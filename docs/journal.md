@@ -41,7 +41,8 @@ The self-contained ARM64 zip, built from `main` as the release job builds it, on
 paired and streamed, zero-copy on the Adreno GPU throughout, about 59 fps and 17–19 ms from decode to screen, with
 the HDR scenes tone-mapped as on the desktop (orange marigolds, the SDR game's white fully white). Settings laid
 out cleanly at 200%. Two dips in frame rate came with no loss, which reads as the console sending fewer frames
-for a moment. The pads and GameInput's installer on ARM64 are still to report.
+for a moment. Both pads worked, and the one `GameInputRedist.msi` installed on ARM64 and was detected by the app,
+which settles the last open question about the zip on ARM64.
 
 ### What the console sends under each HDR setting (2026-10-05)
 
