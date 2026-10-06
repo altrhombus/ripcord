@@ -205,7 +205,9 @@ namespace winrt::Ripcord::Media::Interop::implementation
         // Swapped whole, never edited in place: the decode worker replaces it on a mid-stream codec rebuild while
         // the UI thread reads it for the diagnostics panel, and a std::wstring copied mid-assignment is undefined.
         // Read and written only through std::atomic_load / std::atomic_store (this project builds as C++17, which
-        // has no std::atomic<std::shared_ptr>).
+        // has no std::atomic<std::shared_ptr>). The project's stdcpp20 setting sits where MSBuild ignores it; a
+        // change that makes it take effect must switch this to std::atomic<std::shared_ptr> in the same commit,
+        // because C++20 deprecates these free functions and the build's SDL checks may make that an error.
         std::shared_ptr<const std::wstring> m_decoderName;
 
         // Decode-loop observability: how many samples ProcessOutput actually yielded, its last result, and how
