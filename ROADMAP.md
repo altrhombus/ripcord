@@ -24,7 +24,8 @@ We're close, but not one check away. Here's what's left, in order:
    connect, HUD, pairing and input checks are still to do.
 2. **Tag a release candidate.** A `v1.0-rc1` tag builds the x64 and ARM64 zips into a draft release, which
    nobody sees until it's published. Those are what the next two steps install.
-3. **Run it on ARM64.** The ARM64 zip on the Surface: start it, pair, stream, both pads.
+3. **Smoke-check it on ARM64.** The full run passed on 2026-10-05 from a local build; the CI-built ARM64 zip
+   only needs to start and stream on the Surface.
 4. **Install it on a clean machine.** Pair, stream, sign in, and a pad with and without GameInput, from the zip
    CI built.
 5. **Tag `v1.0`,** with `SECURITY.md`'s version row and the release notes. Then celebrate.
@@ -57,7 +58,8 @@ measures 0.92 µs a packet on Windows x64 against the managed engine's 14.29 µs
 - [x] The GMAC window boundary and the non-P521 curve gap are resolved.
 - [ ] A tagged release with x64 and ARM64 zips, and install steps checked on a machine without the SDK. (The
       release job exists since 2026-10-01; nothing has been tagged yet.)
-- [ ] The ARM64 zip runs on an ARM64 machine: it starts, pairs and streams, with both pads.
+- [x] The ARM64 zip runs on an ARM64 machine: it starts, pairs and streams, with both pads (2026-10-05, the
+      Surface, from a local build by the release job's own steps; the CI-built zip gets a smoke check at rc1).
 - [x] The three known defects are fixed and confirmed on hardware:
   - [x] **The Xbox pad beside a DualSense.** Fixed, and confirmed on 2026-10-01: both pads in one stream, a
         battery pull mid-stream, and menu navigation with both on.
@@ -94,8 +96,8 @@ purchased signing certificate.
 - [x] The unused `systemAIModels` capability is gone, the package requires 25H2, `dotnet publish` is
       self-contained, and `PRIVACY.md` and generated third-party notices ship in the app folder.
 - [x] **GameInput's redistributable ships in the zip** (2026-10-01), and Settings > About says whether it's
-      installed. Whether the one `GameInputRedist.msi` in the package installs on ARM64 too is `[X]`: the
-      ARM64 run settles it.
+      installed. The one `GameInputRedist.msi` installs on ARM64 too, and the app detects it (the Surface,
+      2026-10-05).
 - [ ] **Ripcord's HDR-to-SDR tone-map, on every GPU** (built 2026-10-03; the Intel and NVIDIA GPUs match each
       other and the console's own screenshot, and look right on the Surface at 200%, 2026-10-05): a mid-session
       drag between an HDR and an
