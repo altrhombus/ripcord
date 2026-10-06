@@ -102,8 +102,8 @@ purchased signing certificate.
       HDR on by default means HEVC by default too, falling back to H.264 where there's no HEVC decoder.
 - [x] **The console's HDR "On When Supported"** (2026-10-05): asked for HDR it sends HDR10 for everything, an SDR
       game inside it with white near 255 nits; asked for SDR, an HDR game's stream clips as under "Always On".
-- [ ] **SDR games inside HDR10 look slightly dull** after the tone-map (white at 91%), because the curve assumes a
-      1,000-nit source. Measuring the picture's actual peak and tone-mapping from that fixes it; under way.
+- [x] **SDR games inside HDR10 looked slightly dull** after the tone-map (white at 91%). The renderer now
+      measures the picture's peak and tone-maps SDR-like content from it (2026-10-05).
 - [ ] **Clean-machine check.** Install the zip on a machine that has never had the SDK, then pair and stream.
       Sign in too: the web view's profile moved to `%LocalAppData%\Ripcord\WebView2`. Windows Sandbox is a
       clean Windows every launch, good for "does it start with nothing installed", though it won't pass

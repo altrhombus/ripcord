@@ -111,6 +111,9 @@ namespace winrt::Ripcord::Media::Interop::implementation
         // sampled and colour-converted in the pixel shader, so no CPU conversion per frame.
         void CreateNv12Pipeline();
         void CreateUpscalePipeline();           // final-present pipeline with a selectable spatial filter
+        void CreatePeakPipeline();              // the picture-peak measurement for the tone-map's source peak
+        void ReadMeasuredPeak(uint32_t frameIndex);
+        void RecordPeakMeasurement(uint32_t frameIndex);
         void EnsureNv12Textures(uint32_t width, uint32_t height);
         // Writes into the upload buffers belonging to `frameIndex`. The buffers are ringed per in-flight frame:
         // with frames overlapping, a single shared upload buffer could be rewritten by the CPU while a previous
@@ -363,6 +366,18 @@ namespace winrt::Ripcord::Media::Interop::implementation
         // Final-present spatial upscale (samples the decode-res BGRA into the panel-res swap chain).
         Microsoft::WRL::ComPtr<ID3D12RootSignature> m_upscaleRootSignature;
         Microsoft::WRL::ComPtr<ID3D12PipelineState> m_upscalePipeline;
+
+        // The picture-peak measurement (kPeakShaderSource): per-tile peaks into m_peakBuffer, copied to the slot's
+        // readback buffer and read when that slot comes round again. Smoothed into the tone-map's source peak.
+        Microsoft::WRL::ComPtr<ID3D12RootSignature> m_peakRootSignature;
+        Microsoft::WRL::ComPtr<ID3D12PipelineState> m_peakPipeline;
+        Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> m_peakHeap;
+        UINT m_peakDescriptorSize = 0;
+        Microsoft::WRL::ComPtr<ID3D12Resource> m_peakBuffer;
+        Microsoft::WRL::ComPtr<ID3D12Resource> m_peakReadback[FrameCount];
+        bool m_peakReadbackPending[FrameCount] = {};
+        double m_peakSmoothedNits = -1.0;
+        double m_toneMapSourcePeakNits = 1000.0;
         int32_t m_upscaleMode = 0; // 0 = bilinear, 1 = bicubic
         Microsoft::WRL::ComPtr<ID3D12Resource> m_texY;
         Microsoft::WRL::ComPtr<ID3D12Resource> m_texUV;
