@@ -74,15 +74,24 @@ public sealed class ConnectFlow
     private readonly IStreamingSessionSource _sessions;
     private readonly IConsoleWakeCoordinator _wake;
     private readonly IVideoPipelinePreparer _video;
+    private readonly Func<Task<bool>>? _hevcDecodeAvailable;
 
+    /// <param name="hevcDecodeAvailable">
+    /// Whether this PC can decode HEVC (<see cref="Settings.IVideoCapabilitiesProbe.IsHevcDecodeAvailableAsync"/>).
+    /// HEVC is the default codec, and Settings only corrects a stored HEVC when it is opened, so the connect checks
+    /// too: without a decoder it asks for H.264 and SDR rather than a stream that arrives and never displays. Null
+    /// skips the check.
+    /// </param>
     public ConnectFlow(
         IStreamingSessionSource sessions,
         IConsoleWakeCoordinator wake,
-        IVideoPipelinePreparer video)
+        IVideoPipelinePreparer video,
+        Func<Task<bool>>? hevcDecodeAvailable = null)
     {
         _sessions = sessions ?? throw new ArgumentNullException(nameof(sessions));
         _wake = wake ?? throw new ArgumentNullException(nameof(wake));
         _video = video ?? throw new ArgumentNullException(nameof(video));
+        _hevcDecodeAvailable = hevcDecodeAvailable;
     }
 
     /// <summary>
@@ -105,6 +114,16 @@ public sealed class ConnectFlow
         }
 
         SessionConfig config = ConfigureFor(console, settings);
+
+        // Before the decoder is built for it: HEVC is the default, and not every PC can decode it.
+        //
+        // Awaited on the caller's context, unlike the awaits below. The video pipeline is prepared next, and that
+        // builds XAML, which only the UI thread may touch; the check answers on a worker, and resuming there failed
+        // every connect with RPC_E_WRONG_THREAD (2026-10-05).
+        if (config.CodecPreference == VideoCodec.Hevc && !await HevcDecodeAvailableAsync())
+        {
+            config = config with { CodecPreference = VideoCodec.H264, RequestedDynamicRange = DynamicRange.Sdr };
+        }
 
         Report(stages, Strings.Connect_PreparingVideoHeadline, Strings.Connect_PreparingVideoDetail, terminal: false, ConnectPhase.Preparing);
         PreparedVideo prepared;
@@ -164,6 +183,27 @@ public sealed class ConnectFlow
 
         Report(stages, Strings.Connect_ConnectingHeadline, choice.Reason, terminal: false, ConnectPhase.Connecting);
         return new ConnectPlan(config, choice.Route);
+    }
+
+    /// <summary>
+    /// Whether HEVC can be decoded here. No check given means assume so; a check that fails means assume not, since
+    /// H.264 always works and an undecodable stream never does.
+    /// </summary>
+    private async Task<bool> HevcDecodeAvailableAsync()
+    {
+        if (_hevcDecodeAvailable is null)
+        {
+            return true;
+        }
+
+        try
+        {
+            return await _hevcDecodeAvailable().ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+            return false;
+        }
     }
 
     /// <summary>
