@@ -35,14 +35,17 @@ Everything lives in `%LocalAppData%\Ripcord`, and nowhere else:
 | `settings.json` | Your settings and controller bindings |
 | `WebView2\` | The sign-in page's browser profile, including Sony's sign-in cookies |
 | `state\crash.log` | What went wrong, if the app crashed |
-| `state\session-trace-*.csv` | Per-stream figures: frame rates, loss, round-trip time, bitrate |
+| `state\session-trace-*.csv` | Per-stream figures: frame rates, loss, round-trip time, bitrate, and at the top the app version, your graphics adapter's name and the settings asked for |
+| `state\diagnostics-*.txt` | What **F8** saves during a stream: the panel's readings, your settings, the app version and Windows version |
 | `state\*-trace.log` | Diagnostic logs some features write while you use them |
+| `state\video-dump-*.bin` | Only with the `RIPCORD_DUMP_VIDEO` developer switch set: the first seconds of the stream's video, which can show your PSN online ID in the console's own notifications |
 
 If Windows can't provide DPAPI, Ripcord doesn't fall back to saving them unencrypted: it saves neither, and
 Settings says so.
 
 None of these files leave your machine unless you send them to someone. If you attach one to a bug report,
-read it first: the logs can contain your console's name and its address on your network.
+read it first: the logs can contain your console's name and its address on your network, and, if you played
+over the internet, your public address and the console's.
 
 To remove everything, delete `%LocalAppData%\Ripcord`. Signing out in Ripcord deletes `account.json`.
 

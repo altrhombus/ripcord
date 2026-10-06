@@ -87,13 +87,18 @@ share the same code, and their app builds but hasn't run on a device yet ([the p
 
 ### What doesn't work yet
 
+- **Your PlayStation Network account.** Signing in uses your account from software Sony didn't make and
+  doesn't support. Sony decides what it allows on its network, and Ripcord can't promise how it treats an
+  unofficial client. If that's a concern, play on your own network without signing in: pairing by code and
+  local streaming need no account.
 - **IPv6-only networks.** Everything is IPv4, including the STUN path internet play depends on.
 - **DualSense output and motion:** haptics, adaptive triggers, lightbar and gyro.
 - **Following a console paired by typed address** after its DHCP lease changes. Every other pairing route can.
 - **Internet play to a console in rest mode** probably fails in the dotnet client. Wake it first, or play on
   the same network. (The Mac showed why on 2026-09-25, and the fix is in [`ROADMAP.md`](ROADMAP.md).)
-- **HDR after dragging the window** from an HDR display to an SDR one can look a little bright. Starting the
-  stream on the display you'll watch it on avoids it.
+- **HDR after dragging the window** between an HDR display and an SDR one mid-stream hasn't been checked since
+  Ripcord started tone-mapping HDR itself. Starting the stream on the display you'll watch it on is the tested
+  path.
 - **Xbox consoles.** They're named in the app so the design has room for them, and there's nothing behind that
   yet.
 - **A Windows download.** Build from source for now; the release zip is part of 1.0.
@@ -223,7 +228,7 @@ This section is load-bearing, so it is stated plainly rather than gestured at.
 Ripcord is an **interoperability** implementation: it connects a user's own client to a user's own console,
 under that user's own account. The specification was derived from:
 
-- analysis of the authors' own installed copy of the publicly distributed vendor client, on hardware the
+- analysis of the authors' own installed copies of the publicly distributed vendor client, on hardware the
   authors own: static (disassembly and decompilation) and dynamic (a debugger and an instrumentation
   framework reading the client's memory, live session keys included);
 - the authors' own captures of their own console and account, including TLS traffic read through a proxy on
@@ -307,6 +312,14 @@ Sony may rotate this credential at any time, which would disable the account fea
 
 ---
 
+## Reporting a problem
+
+Open an issue saying what you did and what happened. If Ripcord crashed, attach
+`%LocalAppData%\Ripcord\state\crash.log`; for a stream that misbehaved, the newest `session-trace-*.csv` from the
+same folder, or the diagnostics file **F8** saves there. Read a file before you attach it:
+[`PRIVACY.md`](PRIVACY.md) says what each one can contain. Security problems go to [`SECURITY.md`](SECURITY.md)
+instead.
+
 ## Contributing
 
 See [`CONTRIBUTING.md`](CONTRIBUTING.md). Contributions require a DCO sign-off and an independence attestation —
@@ -325,7 +338,7 @@ consistent record of candour is worth more than the ambiguity of silence.
 **The assistant works under the same provenance rules as everyone else, and they are why this disclosure
 matters.** Everything in the protocol comes from this project's own work:
 - the authors' own captures of their own console and account;
-- static and dynamic analysis of the authors' own installed copy of the vendor client;
+- static and dynamic analysis of the authors' own installed copies of the vendor client;
 - public references: RFCs, NIST test vectors and platform documentation.
 
 The assistant is never used to obtain implementation detail from another Remote Play implementation: not
