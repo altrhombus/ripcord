@@ -44,7 +44,8 @@ From another review of the week's changes, each checked against the code first.
   it has gone off the network. When the console ends the stream itself (its goodbye, or its control connection
   closing cleanly), the stream now ends with "The console ended the stream" and the reason, and nothing retries.
   A failed control connection is a network fault and still reconnects.
-- **The login passcode showed as it was typed.** It's a password box now, masked, with the usual reveal button.
+- **The login passcode showed as it was typed.** It's a password box now, masked, with the usual reveal button,
+  confirmed on hardware along with resting the console from its power menu, which left it asleep.
 - **`InputScopeStack.Top` could throw on an input thread.** It checked the list's length and then indexed it,
   so a pop on the UI thread in between threw on a thread-pool timer, which ends the process. The top is now
   published as one field after every push and pop.
