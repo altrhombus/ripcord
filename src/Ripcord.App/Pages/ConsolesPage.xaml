@@ -400,7 +400,7 @@
         -->
         <TextBlock
             VerticalAlignment="Center"
-            Style="{StaticResource TitleTextBlockStyle}"
+            Style="{StaticResource RipcordPageTitleStyle}"
             x:Uid="ConsolesPage_Consoles" />
 
         <StackPanel Grid.Row="1" Margin="0,0,0,12" Spacing="12">
@@ -487,7 +487,7 @@
                 WedgeFill="{ThemeResource TextFillColorPrimaryBrush}" />
             <TextBlock
                 HorizontalAlignment="Center"
-                Style="{StaticResource TitleTextBlockStyle}"
+                Style="{StaticResource RipcordPageTitleStyle}"
                 x:Uid="ConsolesPage_FirstRunTitle"
                 TextAlignment="Center" />
             <TextBlock

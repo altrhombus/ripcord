@@ -107,7 +107,7 @@
 
         <!--  ============ Header ============  -->
         <StackPanel MaxWidth="720" HorizontalAlignment="Left" Spacing="12">
-            <TextBlock x:Uid="AddConsolePage_AddConsole" Style="{StaticResource TitleTextBlockStyle}" />
+            <TextBlock x:Uid="AddConsolePage_AddConsole" Style="{StaticResource RipcordPageTitleStyle}" />
             <Grid ColumnSpacing="6" Width="220" HorizontalAlignment="Left">
                 <!--
                     Three, uneven, in the mark's own proportions - 9 : 16 : 12, from brand/ripcord-mark.svg.
@@ -487,7 +487,7 @@
                         WedgeFill="{ThemeResource TextFillColorPrimaryBrush}" />
 
                     <TextBlock
-                        Style="{StaticResource TitleTextBlockStyle}"
+                        Style="{StaticResource RipcordPageTitleStyle}"
                         x:Uid="AddConsolePage_Paired" />
 
                     <TextBlock

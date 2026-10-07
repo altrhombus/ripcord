@@ -4,6 +4,7 @@ using Microsoft.UI.Xaml.Navigation;
 using Ripcord.Core.Input;
 using Ripcord.Presentation;
 using Ripcord.Presentation.Setup;
+using Ripcord_App.Services;
 
 namespace Ripcord_App.Pages;
 
@@ -129,10 +130,20 @@ public sealed partial class SetupPage : Page, IInitialFocusTarget, IStepBack
         ConsoleIntroText.Text = s.ConsoleIntro;
         ConsolePreflightText.Text = s.ConsolePreflight;
         ConsoleStatusRow.Visibility = Vis(s.ConsoleAdded);
+        if (s.ConsoleAdded && ConsoleStatusText.Text != s.ConsoleStatus)
+        {
+            Announcer.Announce(ConsoleStatusText, s.ConsoleStatus);
+        }
+
         ConsoleStatusText.Text = s.ConsoleStatus;
 
         ControllerIntroText.Text = s.ControllerIntro;
         ControllerIcon.Glyph = s.ControllerSeen ? "" : "";
+        if (s.Step == SetupStep.Controller && ControllerStatusText.Text != s.ControllerStatus)
+        {
+            Announcer.Announce(ControllerStatusText, s.ControllerStatus);
+        }
+
         ControllerStatusText.Text = s.ControllerStatus;
         ControllerDetailText.Text = s.ControllerDetail;
         ControllerDetailText.Visibility = Vis(s.ControllerDetail.Length > 0);

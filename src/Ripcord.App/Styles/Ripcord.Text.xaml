@@ -35,6 +35,16 @@
         BasedOn="{StaticResource BodyStrongTextBlockStyle}"
         TargetType="TextBlock">
         <Setter Property="VerticalAlignment" Value="Center" />
+        <!--  A heading to a screen reader too, so Narrator can jump between sections (review, 2026-10-05).  -->
+        <Setter Property="AutomationProperties.HeadingLevel" Value="Level2" />
+    </Style>
+
+    <!--  A page's title: WinUI's title style, marked as the page's top heading for screen readers.  -->
+    <Style
+        x:Key="RipcordPageTitleStyle"
+        BasedOn="{StaticResource TitleTextBlockStyle}"
+        TargetType="TextBlock">
+        <Setter Property="AutomationProperties.HeadingLevel" Value="Level1" />
     </Style>
 
     <!--  Explanatory line under a heading — the "why this page exists" sentence.  -->

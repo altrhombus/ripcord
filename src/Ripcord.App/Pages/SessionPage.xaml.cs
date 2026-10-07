@@ -746,6 +746,12 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
             StatusOverlay.Opacity = 1;
             StatusOverlay.Visibility = Vis(s.StatusVisible);
         }
+        // Said out loud when the headline changes: a new phase, a failure. Detail lines alone are progress chatter.
+        if (s.StatusVisible && StatusHeadline.Text != s.StatusHeadline)
+        {
+            Announcer.Announce(StatusHeadline, $"{s.StatusHeadline} {s.StatusDetail}", important: s.StatusActionsVisible);
+        }
+
         StatusHeadline.Text = s.StatusHeadline;
         StatusDetail.Text = s.StatusDetail;
         RenderTrail(s);
@@ -762,6 +768,11 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
             // The NOTICE, not the bare verdict: a verdict plus one clause saying what to do about it. Rung 1
             // is the only rung most players will ever see, and "Losing packets on the network" on its own
             // names a problem and offers nothing.
+            if (AlertText.Text != s.Diagnostics.HealthNotice)
+            {
+                Announcer.Announce(AlertText, s.Diagnostics.HealthNotice, important: true);
+            }
+
             AlertText.Text = s.Diagnostics.HealthNotice;
             RenderHealthDot(AlertDot, s.Diagnostics.HealthLevel);
 
