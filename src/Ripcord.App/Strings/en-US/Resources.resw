@@ -25,8 +25,8 @@
     <comment>Static text on the About page.</comment>
   </data>
   <data name="AboutPage_AffiliatedEndorsedBySponsored.Text" xml:space="preserve">
-    <value>Not affiliated with, endorsed by, or sponsored by Sony Interactive Entertainment or Microsoft. “PlayStation”, “PS5” and “Remote Play” are trademarks of Sony Interactive Entertainment, used here only to describe what Ripcord is compatible with. All other product names and trademarks belong to their respective owners.</value>
-    <comment>Static text on the About page. PlayStation, PS5, Ripcord, Sony are product or standard names - do not translate.</comment>
+    <value>Not affiliated with, endorsed by, or sponsored by Sony Interactive Entertainment or Microsoft. “PlayStation”, “PS5”, “PS4”, “DualSense”, “DualShock” and “Remote Play” are trademarks of Sony Interactive Entertainment, used here only to describe what Ripcord is compatible with. All other product names and trademarks belong to their respective owners.</value>
+    <comment>Static text on the About page. PlayStation, PS5, PS4, DualSense, DualShock, Remote Play, Ripcord, Sony and Microsoft are product or company names - do not translate.</comment>
   </data>
   <data name="AboutPage_Apache.Text" xml:space="preserve">
     <value>Apache-2.0</value>
@@ -101,7 +101,7 @@
     <comment>Name on the About page.</comment>
   </data>
   <data name="AboutPage_RemotePlayWindowsDirect.Text" xml:space="preserve">
-    <value>Remote play for Windows 11 — direct to your console over the LAN, decoded on the GPU.</value>
+    <value>Play your PlayStation on Windows 11, at home or over the internet, decoded on the GPU.</value>
     <comment>Static text on the About page. Windows is a product or standard name - do not translate.</comment>
   </data>
   <data name="AboutPage_ReportIssueGithub.AutomationProperties.Name" xml:space="preserve">
@@ -181,7 +181,7 @@
     <comment>Static text on the add-a-console flow.</comment>
   </data>
   <data name="AddConsolePage_NumericIdBehindPsn.Text" xml:space="preserve">
-    <value>The numeric id behind your PSN account — not your online ID or email address. An account-id lookup tool will find it.</value>
+    <value>The numeric id behind your PSN account — not your online ID or email address. Signing in fills it in for you.</value>
     <comment>Static text on the add-a-console flow.</comment>
   </data>
   <data name="AddConsolePage_Paired.Text" xml:space="preserve">
@@ -501,11 +501,11 @@
     <comment>The header above a control on the Settings page.</comment>
   </data>
   <data name="SettingsPage_HowFarMustPush.Description" xml:space="preserve">
-    <value>How far you must push the stick to move between items in Ripcord's own menus.</value>
+    <value>Further means fewer accidental moves between items in Ripcord's own menus.</value>
     <comment>The description under a control on the Settings page. Ripcord is a product or standard name - do not translate.</comment>
   </data>
   <data name="SettingsPage_HowFarMustPush.Header" xml:space="preserve">
-    <value>Menu stick sensitivity</value>
+    <value>How far to push the stick in menus</value>
     <comment>The header above a control on the Settings page.</comment>
   </data>
   <data name="SettingsPage_ImageScaling.AutomationProperties.Name" xml:space="preserve">
@@ -521,7 +521,7 @@
     <comment>Name on the Settings page.</comment>
   </data>
   <data name="SettingsPage_MenuStickSensitivity.AutomationProperties.Name" xml:space="preserve">
-    <value>Menu stick sensitivity</value>
+    <value>How far to push the stick in menus</value>
     <comment>Name on the Settings page.</comment>
   </data>
   <data name="SettingsPage_OffByDefaultPad.Description" xml:space="preserve">
@@ -681,7 +681,7 @@
     <comment>Description under the live controller readout in Settings.</comment>
   </data>
   <data name="SettingsPage_KeysGamepadMapping.Header" xml:space="preserve">
-    <value>Keys and gamepad mapping</value>
+    <value>Keyboard keys</value>
     <comment>The header above a control on the Settings page.</comment>
   </data>
   <data name="SettingsPage_LeaveStreamController.Header" xml:space="preserve">

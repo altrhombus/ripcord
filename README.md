@@ -130,8 +130,8 @@ Here's what a first run meets, so none of it is a surprise:
 - **Turn on Remote Play on the console first.** Ripcord notices when it's off and tells you where the setting
   is, but it can't flip it for you.
 - **Pairing by code** needs the console awake, on the same network, with its 8-digit code on screen (the app
-  tells you where to find it). **Pairing by sign-in** works from anywhere, using a PlayStation Network sign-in
-  that opens inside the app.
+  tells you where to find it). **Pairing by sign-in** needs no code, using a PlayStation Network sign-in that
+  opens inside the app; Ripcord still finds the console on your network first.
 - **Waking from rest** needs the console's rest-mode network options turned on. A wake sent through your
   account shows as *asked*, not *woken*, because PlayStation Network accepting it doesn't mean the console
   heard.
