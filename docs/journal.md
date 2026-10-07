@@ -35,6 +35,31 @@ different purpose.
 > anything. The list above is short, it is checkable in one `git log --format=%B | grep`, and it stops
 > growing the moment someone notices — which is the property that actually matters.
 
+### Failures in plain words, and the review's UX day (2026-10-06)
+
+A fresh review of the whole project (eight reviewers, 2026-10-05) ranked the user experience first. What came
+of it, all checked against the code first, none of it yet seen on a screen:
+
+- **Failures say what happened.** A wrong pairing code read "Registration was rejected by the console (HTTP
+  403, RP-Application-Reason …)". Pairing and connect failures now lead with a plain sentence and one thing to
+  do; the raw text stays beneath, small and selectable, for a bug report.
+- **A first connect stays a connect.** One that failed showed "Reconnecting… attempt n of 6" and could run for
+  minutes, with a wake before each try. It now says "Connecting", tries twice more, and ends on its own cause.
+  Two bugs sat under it: the markers meant to stop retrying a refusal never matched the session's own words
+  ("rejected (HTTP 403"), and a console that ended the session mid-handshake was retried, woken first.
+- **The program is `Ripcord.exe`,** not `Ripcord.App.exe` among a few hundred files.
+- **Light theme** no longer puts the stream layer's text dark on black.
+- **Screen readers** hear connect progress, failures, pairing results and health alerts, and pages have
+  headings. The on-screen PS, Create, Options and touchpad buttons answer Enter, Space and Narrator's Invoke.
+- **Xbox pads without GameInput** are named on the consoles page, closable for good.
+- **What Ripcord talks to** is stated the same everywhere: the console, PlayStation Network if you sign in, and
+  two public STUN servers for internet play. PRIVACY.md now says sign-in sends Sony an ID made from Windows'
+  MachineGuid.
+- **Copy:** "Getting ready…" for "Checking credentials…", a PS5's rest-mode path when a wake fails, no "DPAPI",
+  the stick setting named for what it does, the firewall named where a search finds nothing.
+
+Checked and not changed: closing the window mid-stream already rests the console when that setting is on.
+
 ### A first-run setup, and the keyboard when there's no controller (2026-10-06)
 
 The defaults stay H.264 without HDR, because every PC decodes H.264, but a setting nobody knows about is one
