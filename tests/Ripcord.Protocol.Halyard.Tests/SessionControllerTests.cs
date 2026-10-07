@@ -21,11 +21,17 @@ public class SessionControllerTests
         private readonly Subject<EncodedAudioFrame> _audio = new();
         private readonly Subject<SessionStatistics> _stats = new();
 
-        public FakeSession(bool succeeds = true, string? failureReason = null)
+        public FakeSession(
+            bool succeeds = true, string? failureReason = null, SessionFailureKind failureKind = SessionFailureKind.Unknown)
         {
             Succeeds = succeeds;
             FailureReason = failureReason;
+            FailureKind = failureKind;
         }
+
+        public SessionFailureKind FailureKind { get; }
+
+        public SessionEndKind EndKind { get; set; }
 
         public bool Succeeds { get; }
         public string? FailureReason { get; }
@@ -57,7 +63,7 @@ public class SessionControllerTests
             RestConsoleOnDisconnect = config.RestConsoleOnDisconnect;   // as the real session seeds it
             if (!Succeeds)
             {
-                return Task.FromResult(new SessionHandshakeResult(false, FailureReason));
+                return Task.FromResult(new SessionHandshakeResult(false, FailureReason, FailureKind));
             }
 
             State = SessionState.Streaming;
@@ -930,6 +936,66 @@ public class SessionControllerTests
 
         await Task.Delay(100);
         Assert.Single(sessions);   // no second session, so no wake
+    }
+
+    /// <summary>
+    /// A session's typed kind wins over its words: matching English text decided retries, and rewording a message
+    /// changed what happened (review, 2026-10-05). Each reason here reads the opposite way to its kind.
+    /// </summary>
+    [Fact]
+    public async Task AFailureKind_DecidesOverTheReasonsText()
+    {
+        var time = new VirtualTime();
+
+        var permanent = new FakeSession(succeeds: false, failureReason: "timed out", SessionFailureKind.Permanent);
+        await using (var controller = new SessionController(
+            _ => Task.FromResult<IStreamingSession>(permanent), new FakePipeline(), clock: time.Now, delay: time.Delay))
+        {
+            await controller.StartAsync(Config);
+            await WaitFor(() => controller.Lifecycle == SessionLifecycle.Failed, "a permanent failure should not retry");
+            Assert.Equal(1, permanent.ConnectCalls);
+        }
+
+        var retryable = new FakeSession(succeeds: false, failureReason: "rejected (http 403)", SessionFailureKind.Retryable);
+        await using (var controller = new SessionController(
+            _ => Task.FromResult<IStreamingSession>(retryable), new FakePipeline(), clock: time.Now, delay: time.Delay))
+        {
+            await controller.StartAsync(Config);
+            await WaitFor(() => retryable.ConnectCalls > 1, "a retryable failure should retry");
+        }
+    }
+
+    [Fact]
+    public async Task AConnectionThatFailed_Reconnects_WhateverItsReasonSays()
+    {
+        var time = new VirtualTime();
+        var sessions = new List<FakeSession>();
+
+        await using var controller = new SessionController(
+            _ =>
+            {
+                var s = new FakeSession { MillisecondsSinceConsoleActivity = 0 };
+                sessions.Add(s);
+                return Task.FromResult<IStreamingSession>(s);
+            },
+            new FakePipeline(),
+            options: new SessionControllerOptions
+            {
+                WatchdogInterval = TimeSpan.FromMilliseconds(1),
+                MinimumHealthySession = TimeSpan.FromSeconds(5),
+            },
+            clock: time.Now,
+            delay: time.Delay);
+
+        await controller.StartAsync(Config);
+        await WaitFor(() => controller.Lifecycle == SessionLifecycle.Streaming, "the first session to stream");
+
+        time.Advance(TimeSpan.FromSeconds(10));
+        sessions[0].EndReason = "The console ended the session.";   // the words say ended; the kind says failed
+        sessions[0].EndKind = SessionEndKind.ConnectionFailed;
+        sessions[0].State = SessionState.Closed;
+
+        await WaitFor(() => sessions.Count > 1, "a failed connection to reconnect");
     }
 
     private static SessionControllerOptions LatchOptions => new()

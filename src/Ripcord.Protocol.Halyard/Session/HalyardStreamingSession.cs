@@ -154,6 +154,8 @@ public sealed class HalyardStreamingSession : IStreamingSession
 
     /// <inheritdoc/>
     public string? EndReason { get; private set; }
+
+    public SessionEndKind EndKind { get; private set; }
     public IObservable<EncodedVideoFrame> VideoFrames => _video;
     public IObservable<EncodedAudioFrame> AudioFrames => _audio;
     public IObservable<SessionStatistics> Statistics => _stats;
@@ -301,7 +303,7 @@ public sealed class HalyardStreamingSession : IStreamingSession
             SessResponse initResponse = await SendInitAsync(registrationKey, token).ConfigureAwait(false);
             if (!initResponse.IsSuccess)
             {
-                return Fail($"/sess/init rejected ({Describe(initResponse)}).");
+                return Fail($"/sess/init rejected ({Describe(initResponse)}).", RefusalKind(initResponse));
             }
 
             // v1 control-plane key establishment: KDF over (RP-Nonce || companion). Without either there is no
@@ -310,7 +312,10 @@ public sealed class HalyardStreamingSession : IStreamingSession
                 initResponse.Header(SessProtocol.HeaderNonce), _pairing?.Companion, platform, out string? keyProblem);
             if (keyMaterial is null)
             {
-                return Fail(keyProblem!);
+                // A pairing with no companion key never derives one, however often it is tried; a bad nonce might.
+                return Fail(
+                    keyProblem!,
+                    _pairing?.Companion is { Length: 16 } ? SessionFailureKind.Unknown : SessionFailureKind.Permanent);
             }
 
             _crypto.EstablishControl(keyMaterial.Value);
@@ -325,7 +330,7 @@ public sealed class HalyardStreamingSession : IStreamingSession
             SessResponse ctrlResponse = await SendControlAsync(token).ConfigureAwait(false);
             if (!ctrlResponse.IsSuccess)
             {
-                return Fail($"/sess/ctrl rejected ({Describe(ctrlResponse)}).");
+                return Fail($"/sess/ctrl rejected ({Describe(ctrlResponse)}).", RefusalKind(ctrlResponse));
             }
 
             // The /sess/ctrl HTTP response is immediately followed, on the SAME TCP connection, by a
@@ -376,7 +381,8 @@ public sealed class HalyardStreamingSession : IStreamingSession
             // stream, and marking it Streaming would hide the reason.
             if (State == SessionState.Closed)
             {
-                return new SessionHandshakeResult(false, EndReason ?? "The console ended the session while it was starting.");
+                return new SessionHandshakeResult(
+                    false, EndReason ?? "The console ended the session while it was starting.", SessionFailureKind.EndedByConsole);
             }
 
             State = SessionState.Streaming;
@@ -620,7 +626,7 @@ public sealed class HalyardStreamingSession : IStreamingSession
 
         if (_loginPinProvider is null)
         {
-            return Fail("This console requires a login passcode, but no passcode entry is available here.");
+            return Fail("This console requires a login passcode, but no passcode entry is available here.", SessionFailureKind.Permanent);
         }
         if (!_crypto.IsControlEstablished)
         {
@@ -636,7 +642,7 @@ public sealed class HalyardStreamingSession : IStreamingSession
             string? pin = await _loginPinProvider(attempt > 1, cancellationToken).ConfigureAwait(false);
             if (string.IsNullOrEmpty(pin))
             {
-                return Fail("Sign-in cancelled: no login passcode entered.");
+                return Fail("Sign-in cancelled: no login passcode entered.", SessionFailureKind.Permanent);
             }
 
             // Armed before the submit, not after: the console answers in milliseconds on the LAN, and a
@@ -689,12 +695,13 @@ public sealed class HalyardStreamingSession : IStreamingSession
 
             return Fail(
                 "The console accepted the passcode but didn't start a session. It's unlocked now — "
-                + "connecting again usually works.");
+                + "connecting again usually works.",
+                SessionFailureKind.Retryable);
         }
 
         // Reaching here means the console said "wrong" MaxSignInAttempts times, or said nothing at all that
         // many times. Both are now distinguishable above; this is the end of the road for either.
-        return Fail($"Sign-in failed: the console rejected the passcode {MaxSignInAttempts} times.");
+        return Fail($"Sign-in failed: the console rejected the passcode {MaxSignInAttempts} times.", SessionFailureKind.Permanent);
     }
 
     /// <summary>True if <paramref name="task"/> completes within <paramref name="timeout"/>; false on timeout.
@@ -770,7 +777,7 @@ public sealed class HalyardStreamingSession : IStreamingSession
         catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
         {
             // The control channel faulted under a live session: that is the session ending, not a detail.
-            EndedByConsole($"The control connection failed: {ex.Message}");
+            EndedByConsole($"The control connection failed: {ex.Message}", SessionEndKind.ConnectionFailed);
         }
         catch (Exception)
         {
@@ -783,7 +790,7 @@ public sealed class HalyardStreamingSession : IStreamingSession
     /// SessionController's watchdog sees <see cref="SessionState.Closed"/> within its interval and reads
     /// <see cref="EndReason"/>. A session already closed keeps the reason it closed with.
     /// </summary>
-    private void EndedByConsole(string reason)
+    private void EndedByConsole(string reason, SessionEndKind kind = SessionEndKind.EndedByConsole)
     {
         if (State == SessionState.Closed)
         {
@@ -791,6 +798,7 @@ public sealed class HalyardStreamingSession : IStreamingSession
         }
 
         EndReason = reason;
+        EndKind = kind;
         State = SessionState.Closed;
     }
 
@@ -1421,11 +1429,16 @@ public sealed class HalyardStreamingSession : IStreamingSession
         return sb.ToString();
     }
 
-    private SessionHandshakeResult Fail(string reason)
+    private SessionHandshakeResult Fail(string reason, SessionFailureKind kind = SessionFailureKind.Unknown)
     {
         State = SessionState.Closed;
-        return new SessionHandshakeResult(false, reason);
+        return new SessionHandshakeResult(false, reason, kind);
     }
+
+    // 401 and 403 are the console's answer, not a fault (review, 2026-10-05). [X]: whether a console that is still
+    // waking can answer 403 is unchecked; the 1.0 pass covers it.
+    private static SessionFailureKind RefusalKind(SessResponse response)
+        => response.StatusCode is 401 or 403 ? SessionFailureKind.Permanent : SessionFailureKind.Unknown;
 
     /// <summary>
     /// The control key's inputs from /sess/init's RP-Nonce and the pairing's companion, or null with the reason
