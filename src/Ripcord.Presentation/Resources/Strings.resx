@@ -127,8 +127,8 @@
     <comment>Heading for the credential-protection status when encryption is unavailable.</comment>
   </data>
   <data name="Settings_CredentialsNotSaved" xml:space="preserve">
-    <value>Windows couldn't provide DPAPI encryption, so Ripcord won't save pairing credentials or your sign-in. Pairing a console will fail, and you'll need to sign in again each time Ripcord starts.</value>
-    <comment>Shown when the platform's credential encryption is unavailable. 'DPAPI' and 'Ripcord' are names - do not translate them.</comment>
+    <value>Windows couldn't encrypt Ripcord's saved data for your account, so Ripcord won't save pairing credentials or your sign-in. Pairing a console will fail, and you'll need to sign in again each time Ripcord starts.</value>
+    <comment>Shown when the platform's credential encryption (DPAPI) is unavailable. 'Ripcord' is a name - do not translate it.</comment>
   </data>
   <data name="Settings_CredentialsProtected" xml:space="preserve">
     <value>Pairing credentials are protected with {0} and can only be read by your Windows account on this PC.</value>
@@ -572,11 +572,11 @@ name.</comment>
     <comment>Connect sequence: the graphics device or decoder could not be created. The detail is the error message.</comment>
   </data>
   <data name="Connect_CheckingCredentialsHeadline" xml:space="preserve">
-    <value>Checking credentials…</value>
-    <comment>Connect sequence: second phase, loading control secrets and the pairing record.</comment>
+    <value>Getting ready…</value>
+    <comment>Connect sequence: second phase, loading the pairing record. Shown briefly on every connect.</comment>
   </data>
   <data name="Connect_CheckingCredentialsDetail" xml:space="preserve">
-    <value>Loading control secrets and pairing.</value>
+    <value>Checking this console's pairing.</value>
     <comment>Connect sequence: detail line under the credentials headline.</comment>
   </data>
   <data name="Connect_NoConstantsHeadline" xml:space="preserve">
@@ -592,7 +592,7 @@ name.</comment>
     <comment>Connect sequence: a wake was sent and the console never came up. Fatal.</comment>
   </data>
   <data name="Connect_DidNotWakeDetail" xml:space="preserve">
-    <value>The console reported standby and did not wake within 30 seconds. Turn it on manually, or check it is set to allow being woken from rest mode, then reconnect.</value>
+    <value>The console was in rest mode and didn't wake within 30 seconds. Turn it on by hand, then connect again. To let Ripcord wake it next time, on a PS5 go to Settings > System > Power Saving > Features Available in Rest Mode, and turn on Stay Connected to the Internet and Enable Turning On PS5 from Network.</value>
     <comment>Connect sequence: what to do when the console did not wake.</comment>
   </data>
   <data name="Connect_ConnectingHeadline" xml:space="preserve">
@@ -620,7 +620,7 @@ name.</comment>
     <comment>Card overflow menu: show what is known about this console.</comment>
   </data>
   <data name="Pairing_SignInSaves" xml:space="preserve">
-    <value>Sign in and Ripcord pairs this console for you — no code to fetch, no account ID to look up, and you'll be able to play away from home.</value>
+    <value>Sign in and Ripcord pairs this console for you — no code to fetch, no account ID to look up, and your consoles can be reached away from home, where your network allows it.</value>
     <comment>Invitation under the account-id field when nobody is signed in. Says only what is true and unconditional: signing in fills that field. It must NOT promise that the code is unnecessary — that holds only when the account already knows the console, and it would sit above a box asking for one.</comment>
   </data>
   <data name="Pairing_UseCodeAnyway" xml:space="preserve">
