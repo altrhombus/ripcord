@@ -1476,7 +1476,7 @@ public class AddConsoleFlowTests
         await h.Flow.PairWithAccountAsync();
 
         Assert.Equal(AddConsoleStep.Link, h.Flow.State.Step);
-        Assert.Contains("push upgrade rejected", h.Flow.State.LinkError);
+        Assert.Contains("push upgrade rejected", h.Flow.State.LinkErrorDetail);   // plain words lead (FailureCopy)
     }
 
     [Fact]
@@ -1578,7 +1578,7 @@ public class AddConsoleFlowTests
         await h.Flow.PairAsync();
 
         Assert.Equal(AddConsoleStep.Link, h.Flow.State.Step);
-        Assert.Contains("connection reset", h.Flow.State.LinkError);
+        Assert.Contains("connection reset", h.Flow.State.LinkErrorDetail);   // plain words lead (FailureCopy)
     }
 
     [Fact]

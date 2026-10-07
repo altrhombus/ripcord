@@ -934,4 +934,72 @@ think the claim above it is conditional.</comment>
     <value>Xbox controllers need Microsoft's GameInput, which isn't installed. Run GameInputRedist.msi from Ripcord's folder, then start Ripcord again. PlayStation controllers work without it.</value>
     <comment>First-run setup: the controller step, when GameInput is not installed. Xbox, Microsoft, GameInput, GameInputRedist.msi, Ripcord and PlayStation are product or file names - do not translate.</comment>
   </data>
+  <data name="Failure_PairingCodeRejected" xml:space="preserve">
+    <value>The console didn't accept that code. Codes last only a few minutes: show a new one on the console and try again.</value>
+    <comment>Pairing failure, in plain words; the raw reason is shown smaller beneath it. The console refused the code (wrong or expired).</comment>
+  </data>
+  <data name="Failure_PairingRefused" xml:space="preserve">
+    <value>The console refused to pair. Check Remote Play is turned on, then try again with a new code.</value>
+    <comment>Pairing failure, in plain words; the raw reason is shown smaller beneath it. The console refused for another reason.</comment>
+  </data>
+  <data name="Failure_PairingUnreachable" xml:space="preserve">
+    <value>Ripcord couldn't reach the console. Check it's on and on the same network as this PC, then try again.</value>
+    <comment>Pairing failure, in plain words; the raw reason is shown smaller beneath it. The console did not answer the pairing request. Ripcord is the product name - do not translate.</comment>
+  </data>
+  <data name="Failure_PairingBadAnswer" xml:space="preserve">
+    <value>The console's answer couldn't be read. Try again with a new code.</value>
+    <comment>Pairing failure, in plain words; the raw reason is shown smaller beneath it. The console answered with something unusable.</comment>
+  </data>
+  <data name="Failure_PairingNoConstants" xml:space="preserve">
+    <value>This build of Ripcord can't pair consoles: it was built without the data pairing needs.</value>
+    <comment>Pairing failure, in plain words; the raw reason is shown smaller beneath it. A build without the bundled interoperability constants. Ripcord is the product name - do not translate.</comment>
+  </data>
+  <data name="Failure_PsnRefused" xml:space="preserve">
+    <value>PlayStation Network didn't accept the request. Try again, or pair with a code instead.</value>
+    <comment>Pairing failure, in plain words; the raw reason is shown smaller beneath it. Account pairing: PSN refused. PlayStation Network is a product name - do not translate.</comment>
+  </data>
+  <data name="Failure_PsnUnreachable" xml:space="preserve">
+    <value>Ripcord couldn't reach PlayStation Network. Check your internet connection, or pair with a code instead.</value>
+    <comment>Pairing failure, in plain words; the raw reason is shown smaller beneath it. Account pairing: PSN unreachable. Ripcord and PlayStation Network are product names - do not translate.</comment>
+  </data>
+  <data name="Failure_ConnectGeneral" xml:space="preserve">
+    <value>Ripcord couldn't connect to the console. Check it's on and on the same network, then try again. If it keeps happening, the detail below helps a bug report.</value>
+    <comment>The 'Couldn't connect' screen, in plain words; the raw reason is shown smaller beneath it. Any failure without a more specific sentence. Ripcord is the product name - do not translate.</comment>
+  </data>
+  <data name="Failure_ConnectRefused" xml:space="preserve">
+    <value>The console refused the connection. If another device is streaming from it, stop that first. If not, remove this console in Ripcord and pair it again.</value>
+    <comment>The 'Couldn't connect' screen, in plain words; the raw reason is shown smaller beneath it. The console answered HTTP 403 or 401. Ripcord is the product name - do not translate.</comment>
+  </data>
+  <data name="Failure_ConnectRepair" xml:space="preserve">
+    <value>This console's pairing is incomplete. Remove it in Ripcord and pair it again.</value>
+    <comment>The 'Couldn't connect' screen, in plain words; the raw reason is shown smaller beneath it. A stored pairing missing a key. Ripcord is the product name - do not translate.</comment>
+  </data>
+  <data name="Failure_ConnectEndedWhileStarting" xml:space="preserve">
+    <value>The console ended the session as it was starting. It may be busy, updating, or going into rest mode. Try again in a moment.</value>
+    <comment>The 'Couldn't connect' screen, in plain words; the raw reason is shown smaller beneath it. The console said goodbye during the handshake.</comment>
+  </data>
+  <data name="Failure_ConnectNoAnswer" xml:space="preserve">
+    <value>The console didn't answer. Check no other device is streaming from it, and that Windows Firewall allows Ripcord, then try again.</value>
+    <comment>The 'Couldn't connect' screen, in plain words; the raw reason is shown smaller beneath it. A control-plane timeout. Windows Firewall and Ripcord are product names - do not translate.</comment>
+  </data>
+  <data name="Failure_ConnectStreamDidNotStart" xml:space="preserve">
+    <value>The console didn't start the stream. Make sure someone is signed in on the console, then try again.</value>
+    <comment>The 'Couldn't connect' screen, in plain words; the raw reason is shown smaller beneath it. The stream transport never came up; most often nobody is signed in on the console.</comment>
+  </data>
+  <data name="Failure_ConnectOverInternet" xml:space="preserve">
+    <value>Ripcord couldn't reach the console over the internet. It needs to be signed in to PlayStation Network and allowed to be woken from rest mode over the internet, and some networks block the connection.</value>
+    <comment>The 'Couldn't connect' screen, in plain words; the raw reason is shown smaller beneath it. The account route failed to meet the console. Ripcord and PlayStation Network are product names - do not translate.</comment>
+  </data>
+  <data name="Failure_ConnectPsnUnreachable" xml:space="preserve">
+    <value>Ripcord couldn't reach PlayStation Network. Check your internet connection, then try again.</value>
+    <comment>The 'Couldn't connect' screen, in plain words; the raw reason is shown smaller beneath it. Ripcord and PlayStation Network are product names - do not translate.</comment>
+  </data>
+  <data name="Failure_ConnectPsnRefused" xml:space="preserve">
+    <value>PlayStation Network didn't accept the request. Sign out and in again in Settings, then try again.</value>
+    <comment>The 'Couldn't connect' screen, in plain words; the raw reason is shown smaller beneath it. PlayStation Network is a product name - do not translate.</comment>
+  </data>
+  <data name="Failure_ConnectSignIn" xml:space="preserve">
+    <value>Your PlayStation Network sign-in has ended. Sign in again in Settings, then try again.</value>
+    <comment>The 'Couldn't connect' screen, in plain words; the raw reason is shown smaller beneath it. PlayStation Network is a product name - do not translate.</comment>
+  </data>
 </root>

@@ -754,6 +754,8 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
 
         StatusHeadline.Text = s.StatusHeadline;
         StatusDetail.Text = s.StatusDetail;
+        StatusTechnical.Text = s.StatusTechnical;
+        StatusTechnical.Visibility = Vis(s.StatusTechnical.Length > 0);
         RenderTrail(s);
         StatusActions.Visibility = Vis(s.StatusActionsVisible);
         ConnectEscape.Visibility = Vis(s.ConnectEscapeVisible);

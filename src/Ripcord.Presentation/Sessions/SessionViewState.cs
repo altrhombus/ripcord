@@ -60,6 +60,8 @@ public sealed record SessionViewState(
     bool StatusVisible,
     string StatusHeadline,
     string StatusDetail,
+    /// <summary>The raw reason behind a failure, shown small under it for a bug report; empty otherwise.</summary>
+    string StatusTechnical,
 
     /// <summary>Whether to show a busy indicator: something is still in progress, so waiting is the right thing.</summary>
     bool StatusBusy,
@@ -121,6 +123,7 @@ public sealed record SessionViewState(
         StatusVisible: true,
         StatusHeadline: Strings.Session_Starting,
         StatusDetail: string.Empty,
+        StatusTechnical: string.Empty,
         StatusBusy: true,
         StatusActionsVisible: false,
         ConnectEscapeVisible: false,

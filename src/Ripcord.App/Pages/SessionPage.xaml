@@ -125,6 +125,14 @@
                     Style="{StaticResource BodyTextBlockStyle}"
                     TextWrapping="Wrap" />
 
+                <!--  A failure's raw reason, small and selectable, for a bug report. Plain words lead, above.  -->
+                <TextBlock
+                    x:Name="StatusTechnical"
+                    IsTextSelectionEnabled="True"
+                    Style="{StaticResource RipcordSubtleCaptionStyle}"
+                    TextWrapping="Wrap"
+                    Visibility="Collapsed" />
+
                 <!--
                     **Fixed height, because everything inside it comes and goes.** The trail is drawn only
                     once there is a phase to draw, the bar only when there is not, and the way out appears

@@ -198,6 +198,15 @@ public sealed partial class AddConsolePage : Page
         }
 
         LinkStatus.Message = s.LinkError ?? string.Empty;
+
+        // The raw reason, small, under the plain one: for a bug report, not for reading first.
+        LinkStatus.Content = s.LinkErrorDetail.Length == 0 ? null : new TextBlock
+        {
+            Text = s.LinkErrorDetail,
+            TextWrapping = TextWrapping.Wrap,
+            IsTextSelectionEnabled = true,
+            Style = (Style)Application.Current.Resources["RipcordSubtleCaptionStyle"],
+        };
         LinkStatus.IsOpen = s.LinkError is not null;
 
         if (s.Step == AddConsoleStep.Pairing && PairingStatusText.Text != s.PairingStatus)

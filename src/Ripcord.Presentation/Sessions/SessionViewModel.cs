@@ -73,6 +73,7 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
     private bool _statusVisible = true;
     private string _statusHeadline = Strings.Session_Starting;
     private string _statusDetail = string.Empty;
+    private string _statusTechnical = string.Empty;
     private bool _statusBusy = true;
     private bool _statusTerminal;
     private bool _isStreamLive;
@@ -268,6 +269,7 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
         _statusVisible = true;
         _statusHeadline = headline ?? string.Empty;
         _statusDetail = detail ?? string.Empty;
+        _statusTechnical = string.Empty;
         _statusBusy = !terminal;
         _statusTerminal = terminal;
 
@@ -344,6 +346,7 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
         _statusVisible = true;
         _statusHeadline = stage.Headline;
         _statusDetail = stage.Detail;
+        _statusTechnical = stage.Technical;
         _statusBusy = !stage.Terminal;
         _statusTerminal = stage.Terminal;
         _phase = stage.Phase;
@@ -415,7 +418,11 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
                     _isStreamLive = false;
                     _statusVisible = true;
                     _statusHeadline = Strings.Session_CouldNotConnect;
-                    _statusDetail = status.Detail ?? string.Empty;
+
+                    // Plain words first; the controller's raw reason kept, small, for a bug report (FailureCopy).
+                    PlainFailure failure = FailureCopy.ForConnect(status.Detail);
+                    _statusDetail = failure.Message;
+                    _statusTechnical = failure.Technical;
                     _statusBusy = false;
                     _statusTerminal = true;
 
@@ -432,6 +439,7 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
                     _statusVisible = true;
                     _statusHeadline = Strings.Session_ConsoleEnded;
                     _statusDetail = status.Detail ?? string.Empty;
+                    _statusTechnical = string.Empty;
                     _statusBusy = false;
                     _statusTerminal = true;
                     _phase = null;
@@ -849,6 +857,7 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
         StatusVisible: _statusVisible,
         StatusHeadline: _statusHeadline,
         StatusDetail: _statusDetail,
+        StatusTechnical: _statusTechnical,
         StatusBusy: _statusBusy,
         StatusActionsVisible: _statusTerminal,
         ConnectEscapeVisible: _connectEscapeVisible,

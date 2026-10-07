@@ -450,7 +450,7 @@ public class SessionControllerTests
         int created = 0;
         var options = new SessionControllerOptions
         {
-            MaxReconnectAttempts = 3,
+            MaxFirstConnectAttempts = 3,
             InitialBackoff = TimeSpan.FromSeconds(1),
             MaxBackoff = TimeSpan.FromSeconds(15),
         };
@@ -476,7 +476,60 @@ public class SessionControllerTests
         // Backoff doubles: 1s, 2s, 4s.
         var backoffs = time.RecordedDelays().Where(d => d >= TimeSpan.FromSeconds(1)).ToList();
         Assert.Equal([TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(4)], backoffs);
-        Assert.Contains("3 attempts", controller.CurrentStatus.Detail);
+
+        // A first connect never had a stream to reconnect: the failure is its own cause.
+        Assert.Equal("network unreachable", controller.CurrentStatus.Detail);
+    }
+
+    [Fact]
+    public async Task AFirstConnectThatFails_SaysConnectingNotReconnecting_AndHasTheSmallerBudget()
+    {
+        // Six tries, with backoff and a wake before each, under "Reconnecting…", for a stream that never was
+        // (review, 2026-10-05).
+        var time = new VirtualTime();
+        int created = 0;
+        var gate = new Lock();
+        var seen = new List<SessionLifecycle>();
+
+        await using var controller = new SessionController(
+            _ =>
+            {
+                created++;
+                return Task.FromResult<IStreamingSession>(new FakeSession(succeeds: false, failureReason: "timed out"));
+            },
+            new FakePipeline(),
+            clock: time.Now,
+            delay: time.Delay);
+        controller.Status.Subscribe(new Recorder(s => { lock (gate) seen.Add(s.Lifecycle); }));
+
+        await controller.StartAsync(Config);
+        await WaitFor(() => controller.Lifecycle == SessionLifecycle.Failed, "should give up");
+
+        Assert.Equal(1 + new SessionControllerOptions().MaxFirstConnectAttempts, created);
+        lock (gate)
+        {
+            Assert.DoesNotContain(SessionLifecycle.Reconnecting, seen);
+        }
+    }
+
+    [Theory]
+    [InlineData("/sess/init rejected (HTTP 403, RP-Application-Reason 80108b10).")]
+    [InlineData("/sess/ctrl rejected (HTTP 401).")]
+    [InlineData("The pairing record has no 16-byte companion key, so the control key cannot be derived. Pair the console again.")]
+    [InlineData("The console ended the session while it was starting.")]
+    public async Task ARefusal_IsNotRetried(string reason)
+    {
+        // Each is an answer, not a fault: retrying asks the same question again, after waking the console for it.
+        var time = new VirtualTime();
+        var session = new FakeSession(succeeds: false, failureReason: reason);
+
+        await using var controller = new SessionController(
+            _ => Task.FromResult<IStreamingSession>(session), new FakePipeline(), clock: time.Now, delay: time.Delay);
+
+        await controller.StartAsync(Config);
+        await WaitFor(() => controller.Lifecycle == SessionLifecycle.Failed, "should fail fast");
+
+        Assert.Equal(1, session.ConnectCalls);
     }
 
     [Fact]
