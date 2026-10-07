@@ -17,12 +17,11 @@ is the PS3 port's release, not Ripcord's).
 
 We're close, but not one check away. Here's what's left, in order:
 
-1. **The person-driven pass.** Stage A steps 8–10, the two Stage B checks and the input matrix in
-   [`docs/design-branch-test-pass.md`](docs/design-branch-test-pass.md), and a sweep for any control that does
-   nothing. 2026-10-01 found pads hadn't reached a stream since 2026-08-06, which is the argument for not
-   skipping this. The first part ran on 2026-10-02 and found the bugs the journal lists; the
-   connect, HUD, pairing and input checks are still to do, and so is the tone-map's one open check, a
-   mid-session drag between an HDR and an SDR display.
+1. **The person-driven pass:** "The 1.0 pass" in
+   [`docs/design-branch-test-pass.md`](docs/design-branch-test-pass.md), one checklist covering connect, the
+   HUD, pairing, the first-run setup, input, the HDR display drag, Light theme, high contrast, scale and text
+   size, and Narrator. 2026-10-01 found pads hadn't reached a stream since 2026-08-06, which is the argument for
+   not skipping this. The first part ran on 2026-10-02 and found the bugs the journal lists.
 2. **Tag a release candidate.** A `v1.0-rc1` tag builds the x64 and ARM64 zips into a draft release, which
    nobody sees until it's published. Those are what the next two steps install.
 3. **Smoke-check it on ARM64.** The full run passed on 2026-10-05 from a local build; the CI-built ARM64 zip
@@ -76,9 +75,8 @@ measures 0.92 µs a packet on Windows x64 against the managed engine's 14.29 µs
 - [x] The defaults are 1080p60 at 20 Mbps, H.264 and no HDR (the owner's decision, 2026-10-05). HEVC and HDR
       are a choice in Settings, which keeps HDR games' highlights; a stored HEVC on a PC that can't decode it
       falls back to H.264 at connect.
-- [ ] The input stack, Stage A steps 8–10 and the two Stage B checks have been driven by a person, and
-      whatever that finds is fixed or listed. The script is
-      [`docs/design-branch-test-pass.md`](docs/design-branch-test-pass.md).
+- [ ] "The 1.0 pass" in [`docs/design-branch-test-pass.md`](docs/design-branch-test-pass.md) has been driven by
+      a person, and whatever it finds is fixed or listed.
 - [ ] No user-visible control is inert.
 - [ ] `SECURITY.md` names a supported version, and private vulnerability reporting is on. (Reporting went on
       2026-09-30; the version table is written.)
