@@ -136,6 +136,9 @@ public sealed record RipcordSettings
     /// </summary>
     public int SetupVersion { get; set; }
 
+    /// <summary>The consoles page's "Xbox controllers need GameInput" notice was closed, so it stays closed.</summary>
+    public bool GameInputNoticeClosed { get; set; }
+
     /// <summary>
     /// Keyboard bindings and gamepad button remap. Persisted so a remap for exotic hardware survives a restart,
     /// which is the entire point of having one — the alternative was a code change per device.

@@ -101,7 +101,39 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
         }), handledEventsToo: true);
 
         Loaded += (_, _) => Refresh();
+        Loaded += (_, _) => _ = ShowGameInputNoticeAsync();
         Unloaded += (_, _) => CancelProbes();
+    }
+
+    /// <summary>Open the GameInput notice when it is missing and the notice hasn't been closed before.</summary>
+    private async Task ShowGameInputNoticeAsync()
+    {
+        if (_services.Settings.Current.GameInputNoticeClosed)
+        {
+            return;
+        }
+
+        bool installed;
+        try
+        {
+            // Native, so off the UI thread, as the About page asks it.
+            installed = await Task.Run(Ripcord.Input.GameInputControllerSource.IsRuntimeAvailable);
+        }
+        catch (Exception)
+        {
+            return;   // unknown says nothing
+        }
+
+        GameInputBar.IsOpen = !installed;
+    }
+
+    private void OnGameInputBarClosed(InfoBar sender, InfoBarClosedEventArgs args)
+    {
+        // Closed by the person, not by the page: remembered, so it doesn't come back on every start.
+        if (args.Reason == InfoBarCloseReason.CloseButton)
+        {
+            _services.Settings.Save(_services.Settings.Current with { GameInputNoticeClosed = true });
+        }
     }
 
     /// <summary>
