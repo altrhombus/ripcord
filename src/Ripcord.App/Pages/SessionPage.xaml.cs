@@ -56,6 +56,13 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
     // Whether this stream reads the keyboard: InputBindings.KeyboardActiveFor, decided once at load.
     private bool _keyboardActive;
 
+    // On-screen console buttons a pointer pressed, so the Click their release raises isn't sent as a second tap.
+    private ControllerButtons _pointerDrivenButtons;
+
+    // How long a keyboard or screen-reader press of an on-screen console button is held. [X]: chosen, long enough
+    // for several input reports at the console's polling rate.
+    private static readonly TimeSpan ConsoleButtonTap = TimeSpan.FromMilliseconds(100);
+
     // Pad frames and keyboard frames merged into the single stream the session consumes. Frames are absolute
     // state, so the two sources have to be combined rather than interleaved — see MergedInputSource.
     private MergedInputSource? _inputSource;
@@ -1652,6 +1659,10 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
             button.AddHandler(
                 PointerCaptureLostEvent, new PointerEventHandler(ConsoleButton_PointerReleased), handledEventsToo: true);
 
+            // And Click, for everything that isn't a pointer: Enter or Space, Narrator's Invoke, a pad's Accept.
+            // Pointer-only, these did nothing from a keyboard or a screen reader (review, 2026-10-05).
+            button.Click += ConsoleButton_Click;
+
             // Nothing can be sent without an input source, so say so rather than offering a dead control.
             button.IsEnabled = _inputSource is not null;
         }
@@ -1665,8 +1676,31 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
         }
 
         _virtualButtonsHeld |= button;
+        _pointerDrivenButtons |= button;
         _inputSource?.SetVirtualButton(button, pressed: true);
         ShowTouchControls();
+    }
+
+    /// <summary>
+    /// A press from anything but a pointer: a tap, held long enough for the console to see it. A pointer press
+    /// raises Click too, on release, after it has already pressed and released the button; that one is skipped.
+    /// </summary>
+    private async void ConsoleButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { Tag: string name } || !Enum.TryParse(name, out ControllerButtons button))
+        {
+            return;
+        }
+
+        if ((_pointerDrivenButtons & button) != 0)
+        {
+            _pointerDrivenButtons &= ~button;
+            return;
+        }
+
+        _inputSource?.SetVirtualButton(button, pressed: true);
+        await Task.Delay(ConsoleButtonTap);
+        _inputSource?.SetVirtualButton(button, pressed: false);
     }
 
     private void ConsoleButton_PointerReleased(object sender, PointerRoutedEventArgs e)

@@ -774,4 +774,12 @@ lasts the rest of the session, because F3 restores the rung it was left on.</com
     <value>Run setup again</value>
     <comment>A button on the Settings page that opens the first-run setup.</comment>
   </data>
+  <data name="ConsolesPage_GameInputBar.Title" xml:space="preserve">
+    <value>Xbox controllers need GameInput</value>
+    <comment>The title of a notice on the consoles page. Xbox and GameInput are product names - do not translate.</comment>
+  </data>
+  <data name="ConsolesPage_GameInputBar.Message" xml:space="preserve">
+    <value>Microsoft's GameInput isn't installed, so an Xbox controller won't work. Run GameInputRedist.msi from Ripcord's folder, then start Ripcord again. PlayStation controllers work without it.</value>
+    <comment>A notice on the consoles page. Microsoft, GameInput, GameInputRedist.msi, Xbox, Ripcord and PlayStation are product or file names - do not translate.</comment>
+  </data>
 </root>

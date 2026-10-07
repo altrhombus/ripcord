@@ -403,12 +403,25 @@
             Style="{StaticResource TitleTextBlockStyle}"
             x:Uid="ConsolesPage_Consoles" />
 
-        <TextBlock
-            x:Name="SubtitleText"
-            Grid.Row="1"
-            Margin="0,0,0,12"
-            Style="{StaticResource RipcordSubtleCaptionStyle}"
-            x:Uid="ConsolesPage_PickOneStartStreaming" />
+        <StackPanel Grid.Row="1" Margin="0,0,0,12" Spacing="12">
+            <TextBlock
+                x:Name="SubtitleText"
+                Style="{StaticResource RipcordSubtleCaptionStyle}"
+                x:Uid="ConsolesPage_PickOneStartStreaming" />
+
+            <!--
+                An Xbox pad without GameInput does nothing at all, and nothing else on this page would say why
+                (review, 2026-10-05). Shown only when GameInput is missing, and closed for good when closed: a
+                DualSense player has no use for it.
+            -->
+            <InfoBar
+                x:Name="GameInputBar"
+                x:Uid="ConsolesPage_GameInputBar"
+                Closed="OnGameInputBarClosed"
+                IsClosable="True"
+                IsOpen="False"
+                Severity="Informational" />
+        </StackPanel>
 
         <!--
             The one-console layout is no longer a layout. It was its own StackPanel with its own card and
