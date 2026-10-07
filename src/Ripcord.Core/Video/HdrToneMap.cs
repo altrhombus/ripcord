@@ -38,7 +38,10 @@ public static class HdrToneMap
     /// </summary>
     public const double SourcePeakNits = 1000.0;
 
-    /// <summary>The luminance that becomes SDR full white. Highlights above it are compressed into the top of the range.</summary>
+    /// <summary>
+    /// The luminance that becomes SDR full white. Highlights above it are compressed into the top of the range. [X]:
+    /// chosen, not measured.
+    /// </summary>
     public const double SdrPeakNits = 250.0;
 
     /// <summary>The SDR swap chain's transfer: gamma 2.2.</summary>

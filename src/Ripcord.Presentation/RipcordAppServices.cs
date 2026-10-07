@@ -7,6 +7,7 @@ using Ripcord.Presentation.Consoles;
 using Ripcord.Presentation.Pairing;
 using Ripcord.Presentation.Sessions;
 using Ripcord.Presentation.Settings;
+using Ripcord.Presentation.Setup;
 using Ripcord.Presentation.Threading;
 
 namespace Ripcord.Presentation;
@@ -137,8 +138,15 @@ public sealed class RipcordAppServices
     // Everything below is per-surface rather than shared, which is the whole distinction this type draws: a
     // store is one object the app over, a view-model belongs to the surface showing it and dies with it.
 
-    public AddConsoleFlow CreateAddConsoleFlow()
-        => new(Scanner, Registrar, Consoles, Dispatcher, account: Account, accountPairing: AccountPairing);
+    public AddConsoleFlow CreateAddConsoleFlow(bool partOfSetup = false)
+        => new(
+            Scanner, Registrar, Consoles, Dispatcher,
+            options: new AddConsoleFlowOptions { PartOfSetup = partOfSetup },
+            account: Account, accountPairing: AccountPairing);
+
+    /// <summary>The first-run setup, at <paramref name="scope"/>. See <see cref="SetupFlow.ScopeFor"/> for which one.</summary>
+    public SetupFlow CreateSetupFlow(SetupScope scope)
+        => new(scope, Settings, Consoles, VideoCapabilities, Dispatcher);
 
     /// <summary>
     /// The account surface's view-model. Per-surface like the others, but note that the session it wraps is the

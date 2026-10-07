@@ -34,6 +34,12 @@ public sealed partial class PairedConsoleStore : IPairedConsoleStore
     private readonly string _path;
     private readonly ICredentialProtector _protector;
 
+    // One read-modify-write at a time. The reachability monitor upserts several consoles at once
+    // (Task.WhenAll), account repair and pairing write too, and unserialised they lost each other's changes and
+    // shared one temp file (review, 2026-10-05). Static, because the file is one per process whatever the
+    // number of store instances.
+    private static readonly Lock WriteGate = new();
+
     public PairedConsoleStore(IPlatformPaths? paths = null, ICredentialProtector? protector = null)
     {
         IPlatformPaths resolved = paths ?? new DefaultPlatformPaths();
@@ -57,59 +63,123 @@ public sealed partial class PairedConsoleStore : IPairedConsoleStore
 
     public List<PairedConsole> Load()
     {
-        if (!File.Exists(_path))
-            return [];
         try
         {
-            return JsonSerializer.Deserialize(File.ReadAllText(_path), PairedConsoleContext.Default.ListPairedConsole) ?? [];
+            return LoadForUpdate();
         }
         catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)
         {
-            // A corrupt or unreadable store must not brick the app; the next save rewrites it.
+            // A corrupt or unreadable store must not brick the app. Only for reading: an update reads with
+            // LoadForUpdate, so a passing failure can't turn into a save of an empty list.
             return [];
         }
     }
 
     public void Save(List<PairedConsole> consoles)
     {
-        // Temp file + move, so an interrupted write cannot destroy the existing pairings.
-        string tmp = _path + ".tmp";
-        File.WriteAllText(tmp, JsonSerializer.Serialize(consoles, PairedConsoleContext.Default.ListPairedConsole));
-        File.Move(tmp, _path, overwrite: true);
+        lock (WriteGate)
+        {
+            SaveUnlocked(consoles);
+        }
     }
 
     /// <summary>Add or replace a console and persist.</summary>
     public List<PairedConsole> Upsert(PairedConsole console)
     {
-        var list = Load();
-        list.RemoveAll(c => IsSameConsole(c, console));
-        list.Add(console);
-        Save(list);
-        return list;
+        lock (WriteGate)
+        {
+            List<PairedConsole> list = LoadForUpdate();
+            list.RemoveAll(c => IsSameConsole(c, console));
+            list.Add(console);
+            SaveUnlocked(list);
+            return list;
+        }
     }
 
     /// <summary>Forget a console by its <see cref="PairedConsole.Id"/>.</summary>
     public List<PairedConsole> Remove(string id)
     {
-        var list = Load();
-        list.RemoveAll(c => string.Equals(c.Id, id, StringComparison.OrdinalIgnoreCase));
-        Save(list);
-        return list;
+        lock (WriteGate)
+        {
+            List<PairedConsole> list = LoadForUpdate();
+            list.RemoveAll(c => string.Equals(c.Id, id, StringComparison.OrdinalIgnoreCase));
+            SaveUnlocked(list);
+            return list;
+        }
     }
 
     /// <summary>
-    /// Whether two records are the same physical console. Matching on either identifier is deliberate and
-    /// covers the two ways a re-pair arrives: same box at the same address (<see cref="PairedConsole.Host"/>
-    /// matches), or same box that has since been handed a different DHCP lease (<see cref="PairedConsole.Id"/>
-    /// matches, because it is the console's own host-id once discovery has supplied one).
+    /// The stored list for a read-modify-write. A file that can't be read right now (another process holding it,
+    /// say) throws rather than reading as empty: that read as "no consoles", and the write after it saved a
+    /// one-console list over every pairing (review, 2026-10-05). A corrupt file still reads as empty, as Load's
+    /// does, since there is nothing in it to keep.
+    /// </summary>
+    private List<PairedConsole> LoadForUpdate()
+    {
+        if (!File.Exists(_path))
+        {
+            return [];
+        }
+
+        string json = ReadWithRetry(_path);
+        try
+        {
+            return JsonSerializer.Deserialize(json, PairedConsoleContext.Default.ListPairedConsole) ?? [];
+        }
+        catch (JsonException)
+        {
+            return [];
+        }
+    }
+
+    // A sharing violation is usually a moment long (an antivirus scan, a backup), so it is tried a few times.
+    private static string ReadWithRetry(string path)
+    {
+        for (int attempt = 1; ; attempt++)
+        {
+            try
+            {
+                return File.ReadAllText(path);
+            }
+            catch (IOException) when (attempt < 4)
+            {
+                Thread.Sleep(50 * attempt);
+            }
+        }
+    }
+
+    private void SaveUnlocked(List<PairedConsole> consoles)
+    {
+        // Temp file + move, so an interrupted write cannot destroy the existing pairings. A temp name of its
+        // own per write, so two writers can never interleave in one file.
+        string tmp = $"{_path}.{Guid.NewGuid():N}.tmp";
+        try
+        {
+            File.WriteAllText(tmp, JsonSerializer.Serialize(consoles, PairedConsoleContext.Default.ListPairedConsole));
+            File.Move(tmp, _path, overwrite: true);
+        }
+        finally
+        {
+            try { File.Delete(tmp); } catch (IOException) { }
+        }
+    }
+
+    /// <summary>
+    /// Whether two records are the same physical console: the same <see cref="PairedConsole.Id"/>, which is the
+    /// console's own host-id once discovery has supplied one, so it follows the console to a new DHCP lease.
     ///
     /// <para>
-    /// Matching on host alone — which is what this did before ids were stable — silently duplicated a console
-    /// every time its address moved. Matching on id alone would have stopped recognising every record written
-    /// before host-ids were stored, since for those <c>Id == Host ==</c> the address.
+    /// The address counts only for a record written before host-ids were stored, whose id IS its address. It
+    /// used to count for every record, so with two consoles at home, moving one onto an address the other had
+    /// held deleted the other's record and its credential (review, 2026-10-05). Matching on host alone, before
+    /// that, duplicated a console every time its address moved.
     /// </para>
     /// </summary>
     internal static bool IsSameConsole(PairedConsole a, PairedConsole b) =>
         string.Equals(a.Id, b.Id, StringComparison.OrdinalIgnoreCase)
-        || string.Equals(a.Host, b.Host, StringComparison.OrdinalIgnoreCase);
+        || ((IsAddressKeyed(a) || IsAddressKeyed(b))
+            && string.Equals(a.Host, b.Host, StringComparison.OrdinalIgnoreCase));
+
+    // A record from before host-ids were stored: its id is its address.
+    private static bool IsAddressKeyed(PairedConsole c) => string.Equals(c.Id, c.Host, StringComparison.OrdinalIgnoreCase);
 }

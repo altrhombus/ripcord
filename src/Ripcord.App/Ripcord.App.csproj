@@ -5,6 +5,9 @@
     <!-- As high as the 26100 SDK allows. The package manifest requires 25H2 (26200) itself. -->
     <TargetPlatformMinVersion>10.0.26100.0</TargetPlatformMinVersion>
     <RootNamespace>Ripcord_App</RootNamespace>
+    <!-- The program people look for among the release folder's few hundred files: Ripcord.exe, not the project's
+         name (2026-10-06). The project, its folder and its namespace keep theirs. -->
+    <AssemblyName>Ripcord</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <!-- Stamps the icon into the exe's Win32 resources. Running unpackaged, this is where the taskbar and
          Explorer get the app icon from — the MSIX assets below are not consulted. Generated, like every

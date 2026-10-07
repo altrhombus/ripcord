@@ -30,10 +30,18 @@ public sealed record InputBindings
         = FrozenDictionary<ControllerButtons, ControllerButtons>.Empty;
 
     /// <summary>
-    /// Whether keyboard input is routed to the console at all. Off by default: a user with a pad has no reason
-    /// for stray typing to reach their game, and the keys below overlap ordinary window shortcuts.
+    /// Whether keyboard input is routed to the console with a pad attached. Off by default: a user with a pad has no
+    /// reason for stray typing to reach their game, and the keys below overlap ordinary window shortcuts. Without a
+    /// pad the keyboard is on regardless; see <see cref="KeyboardActiveFor"/>.
     /// </summary>
     public bool KeyboardEnabled { get; init; }
+
+    /// <summary>
+    /// Whether a stream reads the keyboard: when the setting is on, or when no pad is attached as it starts. Without
+    /// a pad, nothing else can drive the console, and a stream that ignored every key read as broken (2026-10-05).
+    /// Decided once per stream, so a pad connected mid-stream doesn't take the keys away.
+    /// </summary>
+    public bool KeyboardActiveFor(bool padAttached) => KeyboardEnabled || !padAttached;
 
     /// <summary>
     /// Keys the session UI reserves for itself, which therefore must never be bound to a game action. Escape is

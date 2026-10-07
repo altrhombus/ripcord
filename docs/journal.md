@@ -35,6 +35,106 @@ different purpose.
 > anything. The list above is short, it is checkable in one `git log --format=%B | grep`, and it stops
 > growing the moment someone notices — which is the property that actually matters.
 
+### The review's lifecycle fixes, and the pull-request audit (2026-10-06)
+
+From the same review, the things that go wrong over a session's life rather than on a screen. None has met a
+console or a GPU fault yet; the Wi-Fi blip and the two-console move are on the 1.0 pass.
+
+- **A retry starts clean.** Try again and the SDR fallback built a whole new video pipeline over the old one,
+  device, decoder, swap chain, audio stream and worker, and a second stats timer beside the first. Everything
+  one attempt makes is released before the next.
+- **Shutdown after a driver reset can't take the app down.** It waited on a removed device and threw, out of the
+  pipeline's dispose and then out of a destructor. It runs once now, and never throws.
+- **The diagnostics panel no longer reaches into the decoder** from the UI thread while the decode worker might
+  be resetting it; the worker publishes what the panel shows.
+- **The console store keeps every pairing.** Its writes were unserialised (the reachability monitor writes
+  several at once), an unreadable file read as empty and was saved over, and two consoles matched if they had
+  ever shared an address, so a DHCP swap deleted one. Writes are serialised, an update refuses an unreadable
+  file, and consoles match by their own id.
+- **The account route hears only the console.** Its public port took a datagram from anyone, so an injected
+  close ended the session.
+- **A failed send skips a heartbeat** instead of ending the heartbeat, congestion and retransmit loops for the
+  session, which after a Wi-Fi roam left the console to hang up.
+- **How a session ended is a value,** not English text matched by the controller.
+
+**The pull-request audit.** GitHub keeps every pull request's commits reachable whatever the branches' history
+says, about 1,600 more than the local history. Fetched into a scratch clone and scanned with the leak guard
+against the full denylist, all 2,537 commits came back clean. A planted value was caught, so a clean result
+meant something.
+
+### Failures in plain words, and the review's UX day (2026-10-06)
+
+A fresh review of the whole project (eight reviewers, 2026-10-05) ranked the user experience first. What came
+of it, all checked against the code first, none of it yet seen on a screen:
+
+- **Failures say what happened.** A wrong pairing code read "Registration was rejected by the console (HTTP
+  403, RP-Application-Reason …)". Pairing and connect failures now lead with a plain sentence and one thing to
+  do; the raw text stays beneath, small and selectable, for a bug report.
+- **A first connect stays a connect.** One that failed showed "Reconnecting… attempt n of 6" and could run for
+  minutes, with a wake before each try. It now says "Connecting", tries twice more, and ends on its own cause.
+  Two bugs sat under it: the markers meant to stop retrying a refusal never matched the session's own words
+  ("rejected (HTTP 403"), and a console that ended the session mid-handshake was retried, woken first.
+- **The program is `Ripcord.exe`,** not `Ripcord.App.exe` among a few hundred files.
+- **Light theme** no longer puts the stream layer's text dark on black.
+- **Screen readers** hear connect progress, failures, pairing results and health alerts, and pages have
+  headings. The on-screen PS, Create, Options and touchpad buttons answer Enter, Space and Narrator's Invoke.
+- **Xbox pads without GameInput** are named on the consoles page, closable for good.
+- **What Ripcord talks to** is stated the same everywhere: the console, PlayStation Network if you sign in, and
+  two public STUN servers for internet play. PRIVACY.md now says sign-in sends Sony an ID made from Windows'
+  MachineGuid.
+- **Copy:** "Getting ready…" for "Checking credentials…", a PS5's rest-mode path when a wake fails, no "DPAPI",
+  the stick setting named for what it does, the firewall named where a search finds nothing.
+
+Checked and not changed: closing the window mid-stream already rests the console when that setting is on.
+
+### A first-run setup, and the keyboard when there's no controller (2026-10-06)
+
+The defaults stay H.264 without HDR, because every PC decodes H.264, but a setting nobody knows about is one
+nobody turns on. So a first start now asks, once:
+
+- **The picture.** HEVC with HDR, recommended and preselected wherever the PC can decode HEVC, or H.264. Each
+  says what it means on this display, and the choice is saved as soon as it's made. A PC without HEVC is told
+  why and where to get it.
+- **A console**, through the add-console page as before, whose last button reads "Continue setup" and starts no
+  stream. Above it, what to switch on at the console first.
+- **A controller**: press a button and it names the pad, says how to leave a stream in that pad's buttons, and
+  says when Xbox pads need GameInput.
+
+Every step can be skipped. An install that already had a console sees only the picture question, once. Starting
+from a shortcut or the jump list skips it for that run. Settings > Advanced > Run setup again brings it back.
+Back on a pad, Escape or the title bar walks the steps before it leaves the page.
+
+**The keyboard reads keys whenever no controller is attached at connect.** It was off by default, so a player
+without a pad pressed keys at a stream and nothing happened, with the reason only on the diagnostics panel. The
+setting now means "with a controller too"; without one, nothing else could drive the console.
+
+### The defaults go back to H.264, and the tone-map's measurement checked (2026-10-05)
+
+- **The defaults are 1080p60 at 20 Mbps, H.264 and no HDR,** reversing the HEVC and HDR defaults recorded below:
+  every PC can decode H.264, and HEVC with HDR is a choice in Settings. A first-run setup that offers it is planned
+  for 1.0, so nobody has to find the setting to get the better picture.
+- **The tone-map's peak is smoothed over time, not frames,** so it behaves the same at 30 fps as at 60: it rises in
+  about 0.3 s and falls over about 3 s. Content above 500 nits now gets the 1,000-nit curve (it was 600), with
+  the blend from 400. Taking the 99th-percentile tile instead of the brightest was tried and reverted: it read a
+  Forza scene's sky at about 318 nits, low enough to clip its highlights.
+- **A sunny Forza scene read about 330 nits, and that's right.** It looked wrong next to the 1,000 its night
+  streets reach, so a dump of the same scene was measured offline, independently of the renderer: its brightest
+  tile is 330–450 nits by luma, as the panel said. The curve then runs from the scene's own peak, and well under
+  0.1% of its pixels have any colour past it. The panel's VIDEO section gained a **peak** row while Ripcord
+  tone-maps, with the curve's peak and the frame's measured one.
+- **Specks in white text on red** (the Forza logo, at 40 Mbps) are in the console's video: the decoded brightness
+  is clean, and the same specks appear in an offline decode, at either source peak. It's the colour, which the
+  stream carries at half resolution.
+- **The HEVC fallback's note was never seen.** It rode on the connect's last stage, which the session's own first
+  "Connecting" replaced. It's carried into the session's status now, and a check that failed or ran out of time
+  says it couldn't check, rather than that the PC can't decode HEVC.
+- **The decoder's name was read and rewritten across threads.** A mid-stream codec rebuild replaced it on the decode
+  worker while the panel copied it on the UI thread. It's now swapped whole as an immutable string.
+- **Smaller:** Settings' resolution note named 720p60 as the default; the privacy page now lists the desktop
+  shortcut and the jump list, the two things Ripcord leaves outside its folder; the bug template says where the
+  crash log and F8's file are; and a few provenance tags were made honest (the report's bitrate unit is inferred,
+  not seen; the SDR peak is chosen, not measured).
+
 ### A console that rests itself stays resting, and four smaller fixes (2026-10-05)
 
 From another review of the week's changes, each checked against the code first.

@@ -1025,6 +1025,21 @@ public class AddConsoleFlowTests
     }
 
     [Fact]
+    public async Task PartOfTheSetup_TheLastStepContinuesTheSetup_AndNeverConnects()
+    {
+        // The setup comes next, not a stream: a stream started from it would leave the setup half-done under it.
+        var h = new Harness(new AddConsoleFlowOptions { PartOfSetup = true }, account: SignedInKnowing());
+        await h.ToLinkViaScanAsync(Console("10.0.0.7", name: "PS5-8A2F"));
+        h.Flow.SetLinkInput("12345678", string.Empty);
+        await h.Flow.PairAsync();
+
+        Assert.Equal("Continue setup", h.Flow.State.PairActionLabel);
+        h.Flow.Finish(string.Empty, connect: true);
+
+        Assert.False(h.Completions.Single().ConnectNow);
+    }
+
+    [Fact]
     public async Task PairingWithAnAmbiguousCloudName_StoresNoCloudIdRatherThanGuessing()
     {
         // Two consoles genuinely called the same thing is exactly why nicknames exist. A wrong id here would
@@ -1461,7 +1476,7 @@ public class AddConsoleFlowTests
         await h.Flow.PairWithAccountAsync();
 
         Assert.Equal(AddConsoleStep.Link, h.Flow.State.Step);
-        Assert.Contains("push upgrade rejected", h.Flow.State.LinkError);
+        Assert.Contains("push upgrade rejected", h.Flow.State.LinkErrorDetail);   // plain words lead (FailureCopy)
     }
 
     [Fact]
@@ -1563,7 +1578,7 @@ public class AddConsoleFlowTests
         await h.Flow.PairAsync();
 
         Assert.Equal(AddConsoleStep.Link, h.Flow.State.Step);
-        Assert.Contains("connection reset", h.Flow.State.LinkError);
+        Assert.Contains("connection reset", h.Flow.State.LinkErrorDetail);   // plain words lead (FailureCopy)
     }
 
     [Fact]

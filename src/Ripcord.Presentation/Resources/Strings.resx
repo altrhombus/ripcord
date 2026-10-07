@@ -127,8 +127,8 @@
     <comment>Heading for the credential-protection status when encryption is unavailable.</comment>
   </data>
   <data name="Settings_CredentialsNotSaved" xml:space="preserve">
-    <value>Windows couldn't provide DPAPI encryption, so Ripcord won't save pairing credentials or your sign-in. Pairing a console will fail, and you'll need to sign in again each time Ripcord starts.</value>
-    <comment>Shown when the platform's credential encryption is unavailable. 'DPAPI' and 'Ripcord' are names - do not translate them.</comment>
+    <value>Windows couldn't encrypt Ripcord's saved data for your account, so Ripcord won't save pairing credentials or your sign-in. Pairing a console will fail, and you'll need to sign in again each time Ripcord starts.</value>
+    <comment>Shown when the platform's credential encryption (DPAPI) is unavailable. 'Ripcord' is a name - do not translate it.</comment>
   </data>
   <data name="Settings_CredentialsProtected" xml:space="preserve">
     <value>Pairing credentials are protected with {0} and can only be read by your Windows account on this PC.</value>
@@ -360,7 +360,7 @@ name.</comment>
     <comment>Shown when the signed-in account does not know this console. The fix is on the console, not in the app.</comment>
   </data>
   <data name="Pairing_NothingAnswered" xml:space="preserve">
-    <value>Nothing answered. The console needs to be switched on, on the same network, and reachable — some networks block the broadcast this uses. You can enter its address instead.</value>
+    <value>Nothing answered. The console needs to be switched on, on the same network, and reachable — some networks block the broadcast this uses. Windows Firewall can block the answer too: if Windows asked about Ripcord and it wasn't allowed, or this network is set to Public, allow Ripcord under Windows Security &gt; Firewall &amp; network protection &gt; Allow an app through firewall. You can also enter the console's address instead.</value>
     <comment>Shown when a network scan finds no console.</comment>
   </data>
   <data name="Pairing_PickConsole" xml:space="preserve">
@@ -511,6 +511,10 @@ name.</comment>
     <value>This PC can't decode HEVC, so this stream uses H.264, without HDR.</value>
     <comment>Connect sequence: appended to the connecting line when the HEVC codec chosen in Settings isn't available on this PC. HEVC, H.264 and HDR are standard names - do not translate.</comment>
   </data>
+  <data name="Connect_HevcCheckFailed" xml:space="preserve">
+    <value>Ripcord couldn't check for HEVC in time, so this stream uses H.264, without HDR.</value>
+    <comment>Connect sequence: appended to the connecting line when checking for the HEVC codec chosen in Settings failed or took too long. HEVC, H.264 and HDR are standard names - do not translate.</comment>
+  </data>
   <data name="Session_ConsoleEnded" xml:space="preserve">
     <value>The console ended the stream</value>
     <comment>Status overlay headline when the console itself ended the stream, for example by going into rest mode. The detail line beneath carries the console's reason.</comment>
@@ -568,11 +572,11 @@ name.</comment>
     <comment>Connect sequence: the graphics device or decoder could not be created. The detail is the error message.</comment>
   </data>
   <data name="Connect_CheckingCredentialsHeadline" xml:space="preserve">
-    <value>Checking credentials…</value>
-    <comment>Connect sequence: second phase, loading control secrets and the pairing record.</comment>
+    <value>Getting ready…</value>
+    <comment>Connect sequence: second phase, loading the pairing record. Shown briefly on every connect.</comment>
   </data>
   <data name="Connect_CheckingCredentialsDetail" xml:space="preserve">
-    <value>Loading control secrets and pairing.</value>
+    <value>Checking this console's pairing.</value>
     <comment>Connect sequence: detail line under the credentials headline.</comment>
   </data>
   <data name="Connect_NoConstantsHeadline" xml:space="preserve">
@@ -588,7 +592,7 @@ name.</comment>
     <comment>Connect sequence: a wake was sent and the console never came up. Fatal.</comment>
   </data>
   <data name="Connect_DidNotWakeDetail" xml:space="preserve">
-    <value>The console reported standby and did not wake within 30 seconds. Turn it on manually, or check it is set to allow being woken from rest mode, then reconnect.</value>
+    <value>The console was in rest mode and didn't wake within 30 seconds. Turn it on by hand, then connect again. To let Ripcord wake it next time, on a PS5 go to Settings > System > Power Saving > Features Available in Rest Mode, and turn on Stay Connected to the Internet and Enable Turning On PS5 from Network.</value>
     <comment>Connect sequence: what to do when the console did not wake.</comment>
   </data>
   <data name="Connect_ConnectingHeadline" xml:space="preserve">
@@ -616,7 +620,7 @@ name.</comment>
     <comment>Card overflow menu: show what is known about this console.</comment>
   </data>
   <data name="Pairing_SignInSaves" xml:space="preserve">
-    <value>Sign in and Ripcord pairs this console for you — no code to fetch, no account ID to look up, and you'll be able to play away from home.</value>
+    <value>Sign in and Ripcord pairs this console for you — no code to fetch, no account ID to look up, and your consoles can be reached away from home, where your network allows it.</value>
     <comment>Invitation under the account-id field when nobody is signed in. Says only what is true and unconditional: signing in fills that field. It must NOT promise that the code is unnecessary — that holds only when the account already knows the console, and it would sit above a box asking for one.</comment>
   </data>
   <data name="Pairing_UseCodeAnyway" xml:space="preserve">
@@ -745,5 +749,257 @@ think the claim above it is conditional.</comment>
   <data name="Console_Ok" xml:space="preserve">
     <value>OK</value>
     <comment>Dismisses an error dialog. Acknowledgement only - nothing is undone by it.</comment>
+  </data>
+  <data name="Setup_GetStarted" xml:space="preserve">
+    <value>Get started</value>
+    <comment>First-run setup: a button. Starts the setup.</comment>
+  </data>
+  <data name="Setup_SkipSetup" xml:space="preserve">
+    <value>Skip setup</value>
+    <comment>First-run setup: a button. Skips the whole setup and keeps the default settings.</comment>
+  </data>
+  <data name="Setup_Continue" xml:space="preserve">
+    <value>Continue</value>
+    <comment>First-run setup: a button. Goes to the next step.</comment>
+  </data>
+  <data name="Setup_Done" xml:space="preserve">
+    <value>Done</value>
+    <comment>First-run setup: a button. Saves the picture choice and closes the setup.</comment>
+  </data>
+  <data name="Setup_KeepMySettings" xml:space="preserve">
+    <value>Keep my settings</value>
+    <comment>First-run setup: a button. Closes the picture question without changing the stored settings.</comment>
+  </data>
+  <data name="Setup_AddConsole" xml:space="preserve">
+    <value>Add a console</value>
+    <comment>First-run setup: a button. Opens the page that finds and pairs a console.</comment>
+  </data>
+  <data name="Setup_Later" xml:space="preserve">
+    <value>Do this later</value>
+    <comment>First-run setup: a button. Skips adding a console for now.</comment>
+  </data>
+  <data name="Setup_GoToConsoles" xml:space="preserve">
+    <value>Go to your consoles</value>
+    <comment>First-run setup: a button. Closes the setup and shows the consoles page.</comment>
+  </data>
+  <data name="Setup_Back" xml:space="preserve">
+    <value>Back</value>
+    <comment>First-run setup: a button. Goes to the previous step.</comment>
+  </data>
+  <data name="Setup_WelcomeTitle" xml:space="preserve">
+    <value>Welcome to Ripcord.</value>
+    <comment>First-run setup: the first page's title. Ripcord is the product name - do not translate.</comment>
+  </data>
+  <data name="Setup_WelcomeBody" xml:space="preserve">
+    <value>Play your PlayStation on this PC. Three quick things first: how the picture should look, which console to play, and the controller in your hands. You can skip any of them.</value>
+    <comment>First-run setup: the first page's text. PlayStation is a product name - do not translate.</comment>
+  </data>
+  <data name="Setup_PictureTitle" xml:space="preserve">
+    <value>How should Ripcord stream?</value>
+    <comment>First-run setup: the picture step's title. Ripcord is the product name - do not translate.</comment>
+  </data>
+  <data name="Setup_PictureIntro" xml:space="preserve">
+    <value>Pick one. You can change it in Settings later.</value>
+    <comment>First-run setup: the picture step's introduction, for a new install.</comment>
+  </data>
+  <data name="Setup_PictureOnlyIntro" xml:space="preserve">
+    <value>Ripcord can now stream HEVC with HDR, which keeps the detail in bright skies and highlights. Pick how you'd like to stream. You can change it in Settings later.</value>
+    <comment>First-run setup: the picture step's introduction, shown once to an install from before the setup existed. Ripcord, HEVC and HDR are product or standard names - do not translate.</comment>
+  </data>
+  <data name="Setup_BestPicture" xml:space="preserve">
+    <value>Best picture: HEVC with HDR</value>
+    <comment>First-run setup: the label of the recommended picture choice. HEVC and HDR are standard names - do not translate.</comment>
+  </data>
+  <data name="Setup_BestPictureHdrDisplay" xml:space="preserve">
+    <value>Sharper for the same bandwidth, and HDR's full range on this HDR display.</value>
+    <comment>First-run setup: under the best-picture choice, when the display is in HDR mode. HDR is a standard name - do not translate.</comment>
+  </data>
+  <data name="Setup_BestPictureSdrDisplay" xml:space="preserve">
+    <value>Keeps the detail in bright skies and highlights. This display is SDR, so Ripcord converts the HDR picture for it.</value>
+    <comment>First-run setup: under the best-picture choice, when the display is SDR. Ripcord, HDR and SDR are product or standard names - do not translate.</comment>
+  </data>
+  <data name="Setup_MostCompatible" xml:space="preserve">
+    <value>Most compatible: H.264</value>
+    <comment>First-run setup: the label of the compatible picture choice. H.264 is a standard name - do not translate.</comment>
+  </data>
+  <data name="Setup_MostCompatibleDetail" xml:space="preserve">
+    <value>Every PC can decode it. In HDR games, the brightest highlights can lose their detail.</value>
+    <comment>First-run setup: under the compatible picture choice. HDR is a standard name - do not translate.</comment>
+  </data>
+  <data name="Setup_Recommended" xml:space="preserve">
+    <value>Recommended</value>
+    <comment>First-run setup: a small tag beside the recommended picture choice.</comment>
+  </data>
+  <data name="Setup_Checking" xml:space="preserve">
+    <value>Checking what this PC can decode…</value>
+    <comment>First-run setup: shown while the PC is checked for HEVC support.</comment>
+  </data>
+  <data name="Setup_NoHevc" xml:space="preserve">
+    <value>This PC can't decode HEVC, so Ripcord streams H.264. Installing HEVC Video Extensions from the Microsoft Store adds it; then choose HEVC in Settings.</value>
+    <comment>First-run setup: shown when the PC has no HEVC decoder. HEVC, H.264, Ripcord, HEVC Video Extensions and Microsoft Store are product or standard names - do not translate.</comment>
+  </data>
+  <data name="Setup_PictureDefaults" xml:space="preserve">
+    <value>Either way: {0}p at {1} fps, starting at {2} Mbps. You can change any of this in Settings.</value>
+    <comment>First-run setup: under the picture choices. {0} is the stream's height in pixels (1080), {1} its frame rate, {2} its starting bitrate in megabits per second.</comment>
+  </data>
+  <data name="Setup_ConsoleTitle" xml:space="preserve">
+    <value>Your console</value>
+    <comment>First-run setup: the console step's title.</comment>
+  </data>
+  <data name="Setup_ConsoleIntro" xml:space="preserve">
+    <value>Pair your PlayStation once and it stays here. Ripcord looks for it on your network first.</value>
+    <comment>First-run setup: the console step's text. PlayStation and Ripcord are product names - do not translate.</comment>
+  </data>
+  <data name="Setup_ConsolePaired" xml:space="preserve">
+    <value>Paired: {0}.</value>
+    <comment>First-run setup: after a console is paired. {0} is the console's name.</comment>
+  </data>
+  <data name="Setup_ControllerTitle" xml:space="preserve">
+    <value>Your controller</value>
+    <comment>First-run setup: the controller step's title.</comment>
+  </data>
+  <data name="Setup_ControllerIntro" xml:space="preserve">
+    <value>Press a button on the controller you'll play with.</value>
+    <comment>First-run setup: the controller step's text.</comment>
+  </data>
+  <data name="Setup_PressAnyButton" xml:space="preserve">
+    <value>A controller is connected. Press any button on it.</value>
+    <comment>First-run setup: the controller step, when a controller is connected but no button has been pressed yet.</comment>
+  </data>
+  <data name="Setup_NoController" xml:space="preserve">
+    <value>No controller is connected.</value>
+    <comment>First-run setup: the controller step, when no controller is connected.</comment>
+  </data>
+  <data name="Setup_NoControllerDetail" xml:space="preserve">
+    <value>Connect one by USB or Bluetooth, or carry on: without a controller, a stream reads the keyboard.</value>
+    <comment>First-run setup: the controller step, under 'No controller is connected'. USB and Bluetooth are standard names - do not translate.</comment>
+  </data>
+  <data name="Setup_PadPlayStation" xml:space="preserve">
+    <value>PlayStation controller</value>
+    <comment>First-run setup: the kind of controller found. PlayStation is a product name - do not translate.</comment>
+  </data>
+  <data name="Setup_PadOther" xml:space="preserve">
+    <value>Xbox or other controller</value>
+    <comment>First-run setup: the kind of controller found. Xbox is a product name - do not translate.</comment>
+  </data>
+  <data name="Setup_ButtonNamesFollow" xml:space="preserve">
+    <value>Button names on screen follow the controller you last pressed.</value>
+    <comment>First-run setup: under the controller found.</comment>
+  </data>
+  <data name="Setup_ExitGesture" xml:space="preserve">
+    <value>To leave a stream, hold {0}. You can change this in Settings.</value>
+    <comment>First-run setup: how to leave a stream with a controller. {0} is the buttons to hold, such as 'Options + Create + L1 + R1'.</comment>
+  </data>
+  <data name="Setup_ExitWithEsc" xml:space="preserve">
+    <value>To leave a stream, press Esc.</value>
+    <comment>First-run setup: how to leave a stream when no controller gesture is set. Esc is the keyboard key.</comment>
+  </data>
+  <data name="Setup_DoneTitle" xml:space="preserve">
+    <value>All set.</value>
+    <comment>First-run setup: the last page's title.</comment>
+  </data>
+  <data name="Setup_DonePictureBest" xml:space="preserve">
+    <value>Picture: HEVC with HDR</value>
+    <comment>First-run setup: a summary line on the last page. HEVC and HDR are standard names - do not translate.</comment>
+  </data>
+  <data name="Setup_DonePictureCompatible" xml:space="preserve">
+    <value>Picture: H.264</value>
+    <comment>First-run setup: a summary line on the last page. H.264 is a standard name - do not translate.</comment>
+  </data>
+  <data name="Setup_DoneConsole" xml:space="preserve">
+    <value>Console: {0}</value>
+    <comment>First-run setup: a summary line on the last page. {0} is the console's name.</comment>
+  </data>
+  <data name="Setup_DoneNoConsole" xml:space="preserve">
+    <value>Console: none yet. Add one from the consoles page.</value>
+    <comment>First-run setup: a summary line on the last page, when no console was paired.</comment>
+  </data>
+  <data name="Setup_DoneController" xml:space="preserve">
+    <value>Controller: {0}</value>
+    <comment>First-run setup: a summary line on the last page. {0} is the kind of controller, such as 'PlayStation controller'.</comment>
+  </data>
+  <data name="Setup_DoneNoController" xml:space="preserve">
+    <value>Controller: none yet. Without one, a stream reads the keyboard.</value>
+    <comment>First-run setup: a summary line on the last page, when no controller button was pressed.</comment>
+  </data>
+  <data name="Pairing_ContinueSetup" xml:space="preserve">
+    <value>Continue setup</value>
+    <comment>Add a console, during the first-run setup: the button after pairing, which returns to the setup.</comment>
+  </data>
+  <data name="Setup_ConsolePreflight" xml:space="preserve">
+    <value>First, on the console: Settings &gt; System &gt; Remote Play, and turn on Enable Remote Play. To wake it from rest mode as well, turn on Stay Connected to the Internet and Enable Turning On PS5 from Network, under Settings &gt; System &gt; Power Saving &gt; Features Available in Rest Mode.</value>
+    <comment>First-run setup: the console step, what to switch on at the console before pairing. The menu names are the console's own; translate them as the console's own language does. PS5 is a product name - do not translate.</comment>
+  </data>
+  <data name="Setup_GameInputMissing" xml:space="preserve">
+    <value>Xbox controllers need Microsoft's GameInput, which isn't installed. Run GameInputRedist.msi from Ripcord's folder, then start Ripcord again. PlayStation controllers work without it.</value>
+    <comment>First-run setup: the controller step, when GameInput is not installed. Xbox, Microsoft, GameInput, GameInputRedist.msi, Ripcord and PlayStation are product or file names - do not translate.</comment>
+  </data>
+  <data name="Failure_PairingCodeRejected" xml:space="preserve">
+    <value>The console didn't accept that code. Codes last only a few minutes: show a new one on the console and try again.</value>
+    <comment>Pairing failure, in plain words; the raw reason is shown smaller beneath it. The console refused the code (wrong or expired).</comment>
+  </data>
+  <data name="Failure_PairingRefused" xml:space="preserve">
+    <value>The console refused to pair. Check Remote Play is turned on, then try again with a new code.</value>
+    <comment>Pairing failure, in plain words; the raw reason is shown smaller beneath it. The console refused for another reason.</comment>
+  </data>
+  <data name="Failure_PairingUnreachable" xml:space="preserve">
+    <value>Ripcord couldn't reach the console. Check it's on and on the same network as this PC, then try again.</value>
+    <comment>Pairing failure, in plain words; the raw reason is shown smaller beneath it. The console did not answer the pairing request. Ripcord is the product name - do not translate.</comment>
+  </data>
+  <data name="Failure_PairingBadAnswer" xml:space="preserve">
+    <value>The console's answer couldn't be read. Try again with a new code.</value>
+    <comment>Pairing failure, in plain words; the raw reason is shown smaller beneath it. The console answered with something unusable.</comment>
+  </data>
+  <data name="Failure_PairingNoConstants" xml:space="preserve">
+    <value>This build of Ripcord can't pair consoles: it was built without the data pairing needs.</value>
+    <comment>Pairing failure, in plain words; the raw reason is shown smaller beneath it. A build without the bundled interoperability constants. Ripcord is the product name - do not translate.</comment>
+  </data>
+  <data name="Failure_PsnRefused" xml:space="preserve">
+    <value>PlayStation Network didn't accept the request. Try again, or pair with a code instead.</value>
+    <comment>Pairing failure, in plain words; the raw reason is shown smaller beneath it. Account pairing: PSN refused. PlayStation Network is a product name - do not translate.</comment>
+  </data>
+  <data name="Failure_PsnUnreachable" xml:space="preserve">
+    <value>Ripcord couldn't reach PlayStation Network. Check your internet connection, or pair with a code instead.</value>
+    <comment>Pairing failure, in plain words; the raw reason is shown smaller beneath it. Account pairing: PSN unreachable. Ripcord and PlayStation Network are product names - do not translate.</comment>
+  </data>
+  <data name="Failure_ConnectGeneral" xml:space="preserve">
+    <value>Ripcord couldn't connect to the console. Check it's on and on the same network, then try again. If it keeps happening, the detail below helps a bug report.</value>
+    <comment>The 'Couldn't connect' screen, in plain words; the raw reason is shown smaller beneath it. Any failure without a more specific sentence. Ripcord is the product name - do not translate.</comment>
+  </data>
+  <data name="Failure_ConnectRefused" xml:space="preserve">
+    <value>The console refused the connection. If another device is streaming from it, stop that first. If not, remove this console in Ripcord and pair it again.</value>
+    <comment>The 'Couldn't connect' screen, in plain words; the raw reason is shown smaller beneath it. The console answered HTTP 403 or 401. Ripcord is the product name - do not translate.</comment>
+  </data>
+  <data name="Failure_ConnectRepair" xml:space="preserve">
+    <value>This console's pairing is incomplete. Remove it in Ripcord and pair it again.</value>
+    <comment>The 'Couldn't connect' screen, in plain words; the raw reason is shown smaller beneath it. A stored pairing missing a key. Ripcord is the product name - do not translate.</comment>
+  </data>
+  <data name="Failure_ConnectEndedWhileStarting" xml:space="preserve">
+    <value>The console ended the session as it was starting. It may be busy, updating, or going into rest mode. Try again in a moment.</value>
+    <comment>The 'Couldn't connect' screen, in plain words; the raw reason is shown smaller beneath it. The console said goodbye during the handshake.</comment>
+  </data>
+  <data name="Failure_ConnectNoAnswer" xml:space="preserve">
+    <value>The console didn't answer. Check no other device is streaming from it, and that Windows Firewall allows Ripcord, then try again.</value>
+    <comment>The 'Couldn't connect' screen, in plain words; the raw reason is shown smaller beneath it. A control-plane timeout. Windows Firewall and Ripcord are product names - do not translate.</comment>
+  </data>
+  <data name="Failure_ConnectStreamDidNotStart" xml:space="preserve">
+    <value>The console didn't start the stream. Make sure someone is signed in on the console, then try again.</value>
+    <comment>The 'Couldn't connect' screen, in plain words; the raw reason is shown smaller beneath it. The stream transport never came up; most often nobody is signed in on the console.</comment>
+  </data>
+  <data name="Failure_ConnectOverInternet" xml:space="preserve">
+    <value>Ripcord couldn't reach the console over the internet. It needs to be signed in to PlayStation Network and allowed to be woken from rest mode over the internet, and some networks block the connection.</value>
+    <comment>The 'Couldn't connect' screen, in plain words; the raw reason is shown smaller beneath it. The account route failed to meet the console. Ripcord and PlayStation Network are product names - do not translate.</comment>
+  </data>
+  <data name="Failure_ConnectPsnUnreachable" xml:space="preserve">
+    <value>Ripcord couldn't reach PlayStation Network. Check your internet connection, then try again.</value>
+    <comment>The 'Couldn't connect' screen, in plain words; the raw reason is shown smaller beneath it. Ripcord and PlayStation Network are product names - do not translate.</comment>
+  </data>
+  <data name="Failure_ConnectPsnRefused" xml:space="preserve">
+    <value>PlayStation Network didn't accept the request. Sign out and in again in Settings, then try again.</value>
+    <comment>The 'Couldn't connect' screen, in plain words; the raw reason is shown smaller beneath it. PlayStation Network is a product name - do not translate.</comment>
+  </data>
+  <data name="Failure_ConnectSignIn" xml:space="preserve">
+    <value>Your PlayStation Network sign-in has ended. Sign in again in Settings, then try again.</value>
+    <comment>The 'Couldn't connect' screen, in plain words; the raw reason is shown smaller beneath it. PlayStation Network is a product name - do not translate.</comment>
   </data>
 </root>

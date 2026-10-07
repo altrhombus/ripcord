@@ -23,8 +23,14 @@ namespace Ripcord_App.Pages;
 /// </summary>
 public sealed partial class AddConsolePage : Page
 {
+    /// <summary>The navigation parameter that opens the page as the first-run setup's console step.</summary>
+    public static readonly object FromSetup = new();
+
     private readonly RipcordAppServices _services;
-    private readonly AddConsoleFlow _flow;
+
+    // Built in OnNavigatedTo, not the constructor: whether the page is the setup's console step is its navigation
+    // parameter, which only arrives there. OnNavigatedTo runs before Loaded, which starts the flow.
+    private AddConsoleFlow _flow = null!;
 
     /// <summary>
     /// A view-model of this page's own over the shared account session, used only to run a sign-in from here.
@@ -47,20 +53,9 @@ public sealed partial class AddConsolePage : Page
         // registrar and the store directly, which is why pairing could not be pointed at anything but the real
         // network.
         _services = App.Services;
-        _flow = _services.CreateAddConsoleFlow();
         _account = _services.CreateAccountViewModel();
 
         InitializeComponent();
-
-        _flow.PropertyChanged += (_, _) => Render(_flow.State);
-        _flow.Completed += OnFlowCompleted;
-
-        DiscoveredList.ItemsSource = _flow.Discovered;
-
-        // The discovery list inserts sorted, so a console answering late can land ABOVE the focused row and
-        // slide the caret onto a neighbour. See FocusAnchor — this is the page that motivated it.
-        _discoveryAnchor = new FocusAnchor(DiscoveredList, DispatcherQueue);
-        _discoveryAnchor.Watch(_flow.Discovered);
 
         // Look first, ask second. The flow opens on the scan now, so this is what gets it going - from
         // Loaded rather than here, because the scan is asynchronous and results arriving before the page has
@@ -77,6 +72,22 @@ public sealed partial class AddConsolePage : Page
         XboxColumn.Width = ConsoleFamily.Xbox.IsSelectable
             ? new GridLength(1, GridUnitType.Star)
             : new GridLength(0);
+    }
+
+    protected override void OnNavigatedTo(NavigationEventArgs e)
+    {
+        base.OnNavigatedTo(e);
+
+        _flow = _services.CreateAddConsoleFlow(partOfSetup: ReferenceEquals(e.Parameter, FromSetup));
+        _flow.PropertyChanged += (_, _) => Render(_flow.State);
+        _flow.Completed += OnFlowCompleted;
+
+        DiscoveredList.ItemsSource = _flow.Discovered;
+
+        // The discovery list inserts sorted, so a console answering late can land ABOVE the focused row and
+        // slide the caret onto a neighbour. See FocusAnchor — this is the page that motivated it.
+        _discoveryAnchor = new FocusAnchor(DiscoveredList, DispatcherQueue);
+        _discoveryAnchor.Watch(_flow.Discovered);
 
         Render(_flow.State);
     }
@@ -181,8 +192,32 @@ public sealed partial class AddConsolePage : Page
         AccountPairingNote.IsOpen = s.AccountPairingOffered;
 
         LinkStatus.Severity = InfoBarSeverity.Error;
+        if (s.LinkError is not null && LinkStatus.Message != s.LinkError)
+        {
+            Announcer.Announce(LinkStatus, s.LinkError, important: true);
+        }
+
         LinkStatus.Message = s.LinkError ?? string.Empty;
+
+        // The raw reason, small, under the plain one: for a bug report, not for reading first.
+        LinkStatus.Content = s.LinkErrorDetail.Length == 0 ? null : new TextBlock
+        {
+            Text = s.LinkErrorDetail,
+            TextWrapping = TextWrapping.Wrap,
+            IsTextSelectionEnabled = true,
+            Style = (Style)Application.Current.Resources["RipcordSubtleCaptionStyle"],
+        };
         LinkStatus.IsOpen = s.LinkError is not null;
+
+        if (s.Step == AddConsoleStep.Pairing && PairingStatusText.Text != s.PairingStatus)
+        {
+            Announcer.Announce(PairingStatusText, s.PairingStatus);
+        }
+
+        if (s.Step == AddConsoleStep.Done && DoneSubtext.Text != s.DoneSubtext)
+        {
+            Announcer.Announce(DoneSubtext, s.DoneSubtext, important: true);
+        }
 
         PairingStatusText.Text = s.PairingStatus;
         PairingHint.Text = s.PairingHint;
@@ -208,7 +243,8 @@ public sealed partial class AddConsolePage : Page
         // One commit action, naming the route the step is set up for. There used to be two -- "Pair" and "Pair
         // with my account" -- above a body that described both routes at once, so nothing said which button
         // went with which half of what you had just read. The choice moved into the step; the button follows it.
-        SecondaryButton.Visibility = Vis(s.Step == AddConsoleStep.Done);
+        // From the setup, the one way on is back to it: the primary button says so, and there is no second.
+        SecondaryButton.Visibility = Vis(s.Step == AddConsoleStep.Done && !_flow.IsPartOfSetup);
         SecondaryButton.Content = s.DoneActionLabel;
         SecondaryButton.IsEnabled = true;
 
@@ -441,6 +477,7 @@ public sealed partial class AddConsolePage : Page
                 await _flow.PairBySelectedRouteAsync();
                 break;
             case AddConsoleStep.Done:
+                // The flow ignores connect when it is the setup's step; the setup comes next.
                 _flow.Finish(NameBox.Text, connect: true);
                 break;
         }

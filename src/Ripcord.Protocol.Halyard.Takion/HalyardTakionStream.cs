@@ -491,18 +491,23 @@ public sealed class HalyardTakionStream : IAsyncDisposable
                 // negotiate the version cap47 used; if a future firmware rejects these, that variant is why.
                 BinaryPrimitives.WriteUInt16BigEndian(packet.AsSpan(3), (ushort)Math.Min(received, ushort.MaxValue));
                 BinaryPrimitives.WriteUInt16BigEndian(packet.AsSpan(5), (ushort)Math.Min(lost, ushort.MaxValue));
-                _crypto.SealCongestionPacket(packet);
 
-                await _socket.SendAsync(packet, _console, cancellationToken).ConfigureAwait(false);
+                // Per report, not per loop: one failed send (a Wi-Fi roam, a moment with no route) skipped every
+                // report for the rest of the session (review, 2026-10-05). The next interval tries again.
+                try
+                {
+                    _crypto.SealCongestionPacket(packet);
+                    await _socket.SendAsync(packet, _console, cancellationToken).ConfigureAwait(false);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    // best-effort feedback
+                }
             }
         }
         catch (OperationCanceledException)
         {
             // shutting down
-        }
-        catch (Exception)
-        {
-            // best-effort feedback
         }
     }
 
@@ -513,10 +518,19 @@ public sealed class HalyardTakionStream : IAsyncDisposable
             while (!cancellationToken.IsCancellationRequested)
             {
                 await Task.Delay(HeartbeatInterval, cancellationToken).ConfigureAwait(false);
-                await _reliable!.SendMessageAsync(
-                    TakionDataChunk.ChannelSession,
-                    new ControlMessage { Type = ControlMessage.Types.MessageType.Heartbeat },
-                    cancellationToken).ConfigureAwait(false);
+
+                // Per beat: one failed send ended the loop, so after a Wi-Fi roam the video came back and the
+                // console heard no more heartbeats, then hung up (review, 2026-10-05). The next beat tries again.
+                try
+                {
+                    await _reliable!.SendMessageAsync(
+                        TakionDataChunk.ChannelSession,
+                        new ControlMessage { Type = ControlMessage.Types.MessageType.Heartbeat },
+                        cancellationToken).ConfigureAwait(false);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                }
             }
         }
         catch (OperationCanceledException)

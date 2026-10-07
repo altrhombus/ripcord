@@ -26,7 +26,7 @@
     <ScrollViewer Padding="24,16,24,24">
         <StackPanel MaxWidth="820" Spacing="16">
             <StackPanel Spacing="4">
-                <TextBlock x:Uid="KeyBindingsPage_KeyboardControls" Style="{StaticResource TitleTextBlockStyle}" />
+                <TextBlock x:Uid="KeyBindingsPage_KeyboardControls" Style="{StaticResource RipcordPageTitleStyle}" />
                 <TextBlock
                     Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                     x:Uid="KeyBindingsPage_PressChangeThenPress"

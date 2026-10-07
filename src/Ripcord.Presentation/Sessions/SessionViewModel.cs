@@ -73,9 +73,14 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
     private bool _statusVisible = true;
     private string _statusHeadline = Strings.Session_Starting;
     private string _statusDetail = string.Empty;
+    private string _statusTechnical = string.Empty;
     private bool _statusBusy = true;
     private bool _statusTerminal;
     private bool _isStreamLive;
+
+    // ConnectPlan.Notice, shown under each "Connecting" and "Reconnecting" of this stream. Set on the UI thread
+    // before the session starts, so the status callbacks that read it come after the write.
+    private string? _connectNotice;
 
     // ---- diagnostics ----
     private SessionDiagnosticsState _diagnostics = SessionDiagnosticsState.Empty;
@@ -253,11 +258,18 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
     /// Say what is happening. <paramref name="terminal"/> means the session will not leave this state on its
     /// own, so the busy indicator goes away and the user is offered something to do.
     /// </summary>
+    /// <summary>
+    /// Something this connect changed from what the user chose (<see cref="ConnectPlan.Notice"/>), or null. Call it
+    /// before the session starts: the session's first status replaces the flow's last stage, which carried it.
+    /// </summary>
+    public void SetConnectNotice(string? notice) => _connectNotice = notice;
+
     public void ShowStatus(string headline, string detail, bool terminal) => Mutate(() =>
     {
         _statusVisible = true;
         _statusHeadline = headline ?? string.Empty;
         _statusDetail = detail ?? string.Empty;
+        _statusTechnical = string.Empty;
         _statusBusy = !terminal;
         _statusTerminal = terminal;
 
@@ -334,6 +346,7 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
         _statusVisible = true;
         _statusHeadline = stage.Headline;
         _statusDetail = stage.Detail;
+        _statusTechnical = stage.Technical;
         _statusBusy = !stage.Terminal;
         _statusTerminal = stage.Terminal;
         _phase = stage.Phase;
@@ -395,7 +408,7 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
                     status.Lifecycle == SessionLifecycle.Connecting
                         ? Strings.Session_Connecting
                         : Strings.Session_Reconnecting,
-                    status.Detail,
+                    _connectNotice is null ? status.Detail : $"{status.Detail} {_connectNotice}".Trim(),
                     terminal: false);
                 break;
 
@@ -405,7 +418,11 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
                     _isStreamLive = false;
                     _statusVisible = true;
                     _statusHeadline = Strings.Session_CouldNotConnect;
-                    _statusDetail = status.Detail ?? string.Empty;
+
+                    // Plain words first; the controller's raw reason kept, small, for a bug report (FailureCopy).
+                    PlainFailure failure = FailureCopy.ForConnect(status.Detail);
+                    _statusDetail = failure.Message;
+                    _statusTechnical = failure.Technical;
                     _statusBusy = false;
                     _statusTerminal = true;
 
@@ -422,6 +439,7 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
                     _statusVisible = true;
                     _statusHeadline = Strings.Session_ConsoleEnded;
                     _statusDetail = status.Detail ?? string.Empty;
+                    _statusTechnical = string.Empty;
                     _statusBusy = false;
                     _statusTerminal = true;
                     _phase = null;
@@ -839,6 +857,7 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
         StatusVisible: _statusVisible,
         StatusHeadline: _statusHeadline,
         StatusDetail: _statusDetail,
+        StatusTechnical: _statusTechnical,
         StatusBusy: _statusBusy,
         StatusActionsVisible: _statusTerminal,
         ConnectEscapeVisible: _connectEscapeVisible,

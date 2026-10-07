@@ -43,8 +43,8 @@ This is the flagship, and the one heading for 1.0. It's been run against real co
 - **The controller you already have.** An Xbox pad, a DualSense over USB or Bluetooth (PS button and touchpad
   click included), or the keyboard with your own bindings. Use two pads at once, or swap mid-game.
 - **A Windows 11 app that looks like one,** designed as a Fluent showcase rather than a sample.
-- **No telemetry.** Ripcord talks to your console and PlayStation Network, and that's it. See
-  [`PRIVACY.md`](PRIVACY.md).
+- **No telemetry.** Ripcord talks to your console, to PlayStation Network if you sign in, and to two public STUN
+  servers when you play over the internet. That's it. See [`PRIVACY.md`](PRIVACY.md).
 
 ### One engine to run them all
 
@@ -107,6 +107,8 @@ share the same code, and their app builds but hasn't run on a device yet ([the p
 
 Here's what a first run meets, so none of it is a surprise:
 
+- **Unzip it somewhere it can stay,** not Downloads, and run `Ripcord.exe` from the `Ripcord` folder. Desktop
+  shortcuts and the taskbar's jump list remember where it is.
 - **Windows 11, 25H2 or later.** That's what Ripcord is built and tested for. The release zip doesn't check, so
   an older Windows 11 may start it, but that isn't supported.
 - **SmartScreen will warn you** the first time you run it, because the zip isn't signed yet. Choose **More
@@ -114,19 +116,22 @@ Here's what a first run meets, so none of it is a surprise:
 - **Smart App Control blocks it outright.** If it's on, which it can be on a new PC or a fresh Windows 11
   install, Windows refuses unsigned apps with no way to run them anyway. Ripcord won't start on that PC until
   it's signed, which is planned.
-- **If your PS5 has HDR on,** turn on **HEVC** and **Request HDR** in Settings. With HDR on, the console's
-  ordinary (SDR) stream loses the detail in bright skies and highlights; asking for HDR keeps it, and Ripcord
-  converts it for an SDR screen. HEVC needs Microsoft's HEVC Video Extensions: many PCs have them already, and
+- **If your PS5 has HDR on,** choose **Best picture** when Ripcord first asks, or turn on **HEVC** and
+  **Request HDR** in Settings. With HDR on, the console's ordinary (SDR) stream loses the detail in bright skies
+  and highlights; asking for HDR keeps it, and Ripcord converts it for an SDR screen. HEVC needs Microsoft's HEVC Video Extensions: many PCs have them already, and
   they're in the Microsoft Store otherwise. Without them, Ripcord connects with H.264 and says so.
 - **Xbox controllers need Microsoft's GameInput.** If one does nothing, run `GameInputRedist.msi` from the
-  Ripcord folder once (it asks for administrator rights), then restart Ripcord. Settings > About says whether
-  it's installed. A DualSense doesn't need it.
+  Ripcord folder once (it asks for administrator rights), then restart Ripcord. **About**, beside Settings, says
+  whether it's installed, and so does the first-run setup. A DualSense doesn't need it.
 - **English only.** The strings are ready for translation, but no other language ships yet.
+- **Windows Firewall may ask about Ripcord** the first time it looks for your console. Allow it, at least on
+  private networks. If the search finds nothing, check Windows Security > Firewall & network protection > Allow
+  an app through firewall, and whether your network is set to Public.
 - **Turn on Remote Play on the console first.** Ripcord notices when it's off and tells you where the setting
   is, but it can't flip it for you.
 - **Pairing by code** needs the console awake, on the same network, with its 8-digit code on screen (the app
-  tells you where to find it). **Pairing by sign-in** works from anywhere, using a PlayStation Network sign-in
-  that opens inside the app.
+  tells you where to find it). **Pairing by sign-in** needs no code, using a PlayStation Network sign-in that
+  opens inside the app; Ripcord still finds the console on your network first.
 - **Waking from rest** needs the console's rest-mode network options turned on. A wake sent through your
   account shows as *asked*, not *woken*, because PlayStation Network accepting it doesn't mean the console
   heard.
