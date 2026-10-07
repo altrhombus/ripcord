@@ -12,12 +12,18 @@ This page covers the dotnet client on Windows.
 - **PlayStation Network**, only if you sign in. Sign-in, the console list on your account, waking a console
   remotely and connecting over the internet all go to Sony's servers, under Sony's own privacy policy. The
   sign-in page is Sony's, shown inside Ripcord.
-- **A public STUN server**, only when you play over the internet: Google's or Cloudflare's. Before an internet
-  session, Ripcord asks one of them what your public address looks like from outside your router, so the
-  console knows where to reach you. The request carries nothing but a random number; the server sees your
-  public IP address, as any server you contact does.
+- **Public STUN servers**, only when you play over the internet: Google's and Cloudflare's. Before an internet
+  session, Ripcord asks two of them what your public address looks like from outside your router, comparing
+  the answers to learn how your router maps ports, so the console knows where to reach you. Each request
+  carries nothing but a random number; the servers see your public IP address, as any server you contact does.
 
 That is the whole list. Ripcord makes no other network connections of its own.
+
+**An identifier for this PC.** Signing in sends Sony an ID made from this PC's Windows machine ID (the
+`MachineGuid` in the registry, which any app on the PC can read), so Sony can tell your devices apart.
+Pairing through your account and playing over the internet send a value hashed from that ID, to Sony's servers
+and to your console. Pairing by code uses random bytes instead. Nothing else about
+your PC is sent.
 
 **One thing to know about signing in.** Ripcord asks PlayStation Network for the same set of permissions the
 official client asks for, and one of them, `sbahn:pc.telemetry.publish`, would allow sending usage data to

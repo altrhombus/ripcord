@@ -43,8 +43,8 @@ This is the flagship, and the one heading for 1.0. It's been run against real co
 - **The controller you already have.** An Xbox pad, a DualSense over USB or Bluetooth (PS button and touchpad
   click included), or the keyboard with your own bindings. Use two pads at once, or swap mid-game.
 - **A Windows 11 app that looks like one,** designed as a Fluent showcase rather than a sample.
-- **No telemetry.** Ripcord talks to your console and PlayStation Network, and that's it. See
-  [`PRIVACY.md`](PRIVACY.md).
+- **No telemetry.** Ripcord talks to your console, to PlayStation Network if you sign in, and to two public STUN
+  servers when you play over the internet. That's it. See [`PRIVACY.md`](PRIVACY.md).
 
 ### One engine to run them all
 
@@ -124,6 +124,9 @@ Here's what a first run meets, so none of it is a surprise:
   Ripcord folder once (it asks for administrator rights), then restart Ripcord. **About**, beside Settings, says
   whether it's installed, and so does the first-run setup. A DualSense doesn't need it.
 - **English only.** The strings are ready for translation, but no other language ships yet.
+- **Windows Firewall may ask about Ripcord** the first time it looks for your console. Allow it, at least on
+  private networks. If the search finds nothing, check Windows Security > Firewall & network protection > Allow
+  an app through firewall, and whether your network is set to Public.
 - **Turn on Remote Play on the console first.** Ripcord notices when it's off and tells you where the setting
   is, but it can't flip it for you.
 - **Pairing by code** needs the console awake, on the same network, with its 8-digit code on screen (the app

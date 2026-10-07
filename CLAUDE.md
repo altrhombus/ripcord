@@ -200,4 +200,5 @@ our own traffic**; PSN offers no third-party registration, so there is no creden
 - Say "the dotnet client", never "the Windows client".
 - Commit on a branch, signed off (`git commit -s`), with a `Co-Authored-By` trailer; commit with `TZ=UTC`.
 - Say plainly what was run and what wasn't, especially what hasn't met hardware.
-- Ripcord sends nothing anywhere but the console and PSN. Ask before adding any other network call.
+- Ripcord sends nothing anywhere but the console, PSN, and the STUN servers `PRIVACY.md` lists. Ask before
+  adding any other network call.
