@@ -35,7 +35,8 @@ public enum ConnectPhase
 /// How far along, for the trail. A terminal stage keeps the phase it failed in rather than reporting a
 /// fourth "failed" state: where it stopped is the useful half of what went wrong.
 /// </param>
-public sealed record ConnectStage(string Headline, string Detail, bool Terminal, ConnectPhase Phase);
+/// <param name="Technical">A failure's raw reason, shown small beneath it for a bug report; empty otherwise.</param>
+public sealed record ConnectStage(string Headline, string Detail, bool Terminal, ConnectPhase Phase, string Technical = "");
 
 /// <summary>
 /// Everything a caller needs to open the session, once the flow has decided it can be opened.
@@ -199,6 +200,13 @@ public sealed class ConnectFlow
         {
             return null;
         }
+        catch (Exception ex)
+        {
+            // Said, not thrown: this runs fire-and-forget from the page, so an escape left "Connecting" on screen
+            // with nothing to say why (review, 2026-10-05).
+            ReportFailure(stages, Strings.Session_CouldNotConnect, ex, ConnectPhase.Connecting);
+            return null;
+        }
 
         Report(
             stages,
@@ -287,6 +295,12 @@ public sealed class ConnectFlow
         {
             return false; // the user left mid-wake
         }
+        catch (Exception ex)
+        {
+            // As for the route: a wake that throws must end on a screen that says so, not on "Waking".
+            ReportFailure(stages, Strings.Connect_DidNotWakeHeadline, ex, ConnectPhase.Waking);
+            return false;
+        }
 
         if (outcome == ConsoleWakeOutcome.TimedOut)
         {
@@ -300,6 +314,13 @@ public sealed class ConnectFlow
     private static void Report(
         IProgress<ConnectStage> stages, string headline, string detail, bool terminal, ConnectPhase phase)
         => stages.Report(new ConnectStage(headline, detail, terminal, phase));
+
+    /// <summary>A final stage from an exception: plain words (FailureCopy), with the raw message beneath.</summary>
+    private static void ReportFailure(IProgress<ConnectStage> stages, string headline, Exception ex, ConnectPhase phase)
+    {
+        PlainFailure failure = FailureCopy.ForConnect(ex.Message);
+        stages.Report(new ConnectStage(headline, failure.Message, Terminal: true, phase, failure.Technical));
+    }
 
     /// <summary>
     /// An <see cref="IProgress{T}"/> that calls its handler rather than posting it.

@@ -148,7 +148,9 @@ public class SessionViewModelTests
 
         Assert.False(vm.State.IsStreamLive);
         Assert.True(vm.State.StatusActionsVisible);
-        Assert.Equal("Console refused the session", vm.State.StatusDetail);
+        // Plain words lead; the controller's raw reason is kept beneath them for a bug report (FailureCopy).
+        Assert.Contains("couldn't connect", vm.State.StatusDetail, StringComparison.Ordinal);
+        Assert.Equal("Console refused the session", vm.State.StatusTechnical);
     }
 
     // ---- sampling ------------------------------------------------------------------------------

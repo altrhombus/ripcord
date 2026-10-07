@@ -92,6 +92,14 @@ public sealed record SessionControllerOptions
     public int MaxReconnectAttempts { get; init; } = 6;
 
     /// <summary>
+    /// Retries of a connect that has never streamed, before giving up. Smaller than
+    /// <see cref="MaxReconnectAttempts"/>: a first connect that fails twice more is very likely to keep failing,
+    /// and six tries with backoff and a wake before each kept a person watching "Reconnecting…" for minutes for
+    /// a stream they had never had (review, 2026-10-05). [X]: chosen.
+    /// </summary>
+    public int MaxFirstConnectAttempts { get; init; } = 2;
+
+    /// <summary>
     /// The longest a single connect attempt may take before it counts as failed.
     ///
     /// <para>

@@ -381,6 +381,32 @@ public class ConnectFlowTests
     }
 
     [Fact]
+    public async Task AWakeThatThrows_EndsOnAStageThatSaysSo()
+    {
+        // The flow runs fire-and-forget from the page: an exception that escaped it left "Waking" on screen with
+        // nothing to say why (review, 2026-10-05).
+        (ConnectPlan? plan, Stages stages) = await RunAsync(
+            new StubSessions(), new StubWake(fault: new InvalidOperationException("probe socket closed")), new StubVideo(), Ps5());
+
+        Assert.Null(plan);
+        ConnectStage last = stages.Reported[^1];
+        Assert.True(last.Terminal);
+        Assert.Equal("probe socket closed", last.Technical);
+    }
+
+    [Fact]
+    public async Task ARouteChoiceThatThrows_EndsOnAStageThatSaysSo()
+    {
+        (ConnectPlan? plan, Stages stages) = await RunAsync(
+            new StubSessions(routeFault: new InvalidOperationException("gateway gone")), new StubWake(), new StubVideo(), Ps5());
+
+        Assert.Null(plan);
+        ConnectStage last = stages.Reported[^1];
+        Assert.True(last.Terminal);
+        Assert.Equal("gateway gone", last.Technical);
+    }
+
+    [Fact]
     public async Task CancellationDuringWake_StopsQuietlyWithoutATerminalStage()
     {
         var sessions = new StubSessions();

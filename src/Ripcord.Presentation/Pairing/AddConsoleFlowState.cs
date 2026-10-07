@@ -148,6 +148,7 @@ public sealed record AddConsoleFlowState(
     bool AccountIdIsAutomatic,
     string AccountIdNote,
     string? LinkError,
+    string LinkErrorDetail,
     string PairingStatus,
     string PairingHint,
     bool CanGoBack,
