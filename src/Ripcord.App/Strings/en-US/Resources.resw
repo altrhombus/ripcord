@@ -525,7 +525,7 @@
     <comment>Name on the Settings page.</comment>
   </data>
   <data name="SettingsPage_OffByDefaultPad.Description" xml:space="preserve">
-    <value>Off by default — with a pad connected, stray typing has no reason to reach the game.</value>
+    <value>With a controller connected. Without one, a stream always reads the keyboard.</value>
     <comment>The description under a control on the Settings page.</comment>
   </data>
   <data name="SettingsPage_OffByDefaultPad.Header" xml:space="preserve">
@@ -761,5 +761,17 @@ lasts the rest of the session, because F3 restores the rung it was left on.</com
   <data name="SettingsPage_AdvancedExpander.Header" xml:space="preserve">
     <value>Advanced</value>
     <comment>Collapsed section at the end of Settings, holding the options a casual player should not have to scroll past.</comment>
+  </data>
+  <data name="SettingsPage_FirstRunSetup.Header" xml:space="preserve">
+    <value>First-run setup</value>
+    <comment>The header above a control on the Settings page.</comment>
+  </data>
+  <data name="SettingsPage_FirstRunSetup.Description" xml:space="preserve">
+    <value>Choose the picture, add a console and check your controller, as on the first start.</value>
+    <comment>The description under a control on the Settings page.</comment>
+  </data>
+  <data name="SettingsPage_RunSetupAgain.Content" xml:space="preserve">
+    <value>Run setup again</value>
+    <comment>A button on the Settings page that opens the first-run setup.</comment>
   </data>
 </root>

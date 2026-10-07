@@ -320,6 +320,11 @@
                 x:Uid="SettingsPage_AdvancedExpander">
                 <StackPanel Spacing="4">
 
+                    <!--  The first-run setup, for anyone who skipped it or wants the picture question again.  -->
+                    <tk:SettingsCard x:Uid="SettingsPage_FirstRunSetup">
+                        <Button x:Uid="SettingsPage_RunSetupAgain" Click="OnRunSetupClick" />
+                    </tk:SettingsCard>
+
                     <tk:SettingsCard
                         x:Uid="SettingsPage_AutomaticPicksGpuDriving">
                         <ComboBox

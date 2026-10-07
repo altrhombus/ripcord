@@ -519,4 +519,7 @@ public sealed partial class SettingsPage : Page, IInitialFocusTarget
         }
     }
 
+    /// <summary>The whole setup again. It ends on the consoles page, as a first run does.</summary>
+    private void OnRunSetupClick(object sender, RoutedEventArgs e)
+        => Frame.Navigate(typeof(SetupPage), Ripcord.Presentation.Setup.SetupScope.Full);
 }

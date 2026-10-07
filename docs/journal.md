@@ -35,6 +35,27 @@ different purpose.
 > anything. The list above is short, it is checkable in one `git log --format=%B | grep`, and it stops
 > growing the moment someone notices — which is the property that actually matters.
 
+### A first-run setup, and the keyboard when there's no controller (2026-10-06)
+
+The defaults stay H.264 without HDR, because every PC decodes H.264, but a setting nobody knows about is one
+nobody turns on. So a first start now asks, once:
+
+- **The picture.** HEVC with HDR, recommended and preselected wherever the PC can decode HEVC, or H.264. Each
+  says what it means on this display, and the choice is saved as soon as it's made. A PC without HEVC is told
+  why and where to get it.
+- **A console**, through the add-console page as before, whose last button reads "Continue setup" and starts no
+  stream. Above it, what to switch on at the console first.
+- **A controller**: press a button and it names the pad, says how to leave a stream in that pad's buttons, and
+  says when Xbox pads need GameInput.
+
+Every step can be skipped. An install that already had a console sees only the picture question, once. Starting
+from a shortcut or the jump list skips it for that run. Settings > Advanced > Run setup again brings it back.
+Back on a pad, Escape or the title bar walks the steps before it leaves the page.
+
+**The keyboard reads keys whenever no controller is attached at connect.** It was off by default, so a player
+without a pad pressed keys at a stream and nothing happened, with the reason only on the diagnostics panel. The
+setting now means "with a controller too"; without one, nothing else could drive the console.
+
 ### The defaults go back to H.264, and the tone-map's measurement checked (2026-10-05)
 
 - **The defaults are 1080p60 at 20 Mbps, H.264 and no HDR,** reversing the HEVC and HDR defaults recorded below:

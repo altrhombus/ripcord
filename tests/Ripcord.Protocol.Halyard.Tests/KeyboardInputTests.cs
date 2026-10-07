@@ -425,6 +425,14 @@ public class KeyboardInputTests
                 .TimestampTicks);
     }
 
+    [Theory]
+    [InlineData(false, true, false)]   // the default, with a pad: keys stay out of the game
+    [InlineData(false, false, true)]   // no pad: the keyboard is the only way to play (2026-10-05)
+    [InlineData(true, true, true)]     // turned on: always
+    [InlineData(true, false, true)]
+    public void KeyboardActiveFor_IsTheSettingOrNoPad(bool enabled, bool padAttached, bool expected)
+        => Assert.Equal(expected, new InputBindings { KeyboardEnabled = enabled }.KeyboardActiveFor(padAttached));
+
     private static ControllerStateFrame Frame(ControllerButtons buttons = ControllerButtons.None)
         => new(0, buttons, 0, 0, 0, 0, 0, 0, null, null, null);
 }

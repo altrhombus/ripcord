@@ -17,6 +17,8 @@ using Ripcord.Core.Input;
 using Ripcord.Core.Settings;
 using Ripcord.Input;
 using Ripcord.Presentation;
+using Ripcord.Presentation.Setup;
+using Ripcord.Core.Launch;
 using Ripcord_App.Controls;
 using Ripcord_App.Input;
 using Ripcord_App.Pages;
@@ -126,7 +128,7 @@ public sealed partial class MainWindow : Window, IShellNavigator
         ChromeFrame.Navigated += (_, _) =>
             Post(DispatcherQueuePriority.Low, FocusFirstContentElement);
 
-        ChromeFrame.Navigate(typeof(ConsolesPage));
+        NavigateToFirstPage();
 
         // Both, because a bar going away collapses without reliably reporting a size change.
         HintBar.SizeChanged += (_, _) => PushBottomInset();
@@ -673,11 +675,50 @@ public sealed partial class MainWindow : Window, IShellNavigator
         return false;
     }
 
+    /// <summary>
+    /// The consoles, or the first-run setup when this install hasn't finished one (SetupFlow.ScopeFor). Not when
+    /// the app was started to play a console (a shortcut or the jump list): that asked to play, and the setup can
+    /// wait for the next ordinary start.
+    /// </summary>
+    private void NavigateToFirstPage()
+    {
+        SetupScope? setup = null;
+        if (App.Launch.Action == LaunchAction.Shell)
+        {
+            int paired;
+            try
+            {
+                paired = App.Services.Consoles.Load().Count;
+            }
+            catch (Exception)
+            {
+                paired = 0;   // the consoles page says why the store can't be read
+            }
+
+            setup = SetupFlow.ScopeFor(App.Services.Settings.Current, paired);
+        }
+
+        if (setup is { } scope)
+        {
+            ChromeFrame.Navigate(typeof(SetupPage), scope);
+        }
+        else
+        {
+            ChromeFrame.Navigate(typeof(ConsolesPage));
+        }
+    }
+
     private void GoBack()
     {
         // Closing what is on top comes first. Otherwise Back with a context menu open navigates the page
         // underneath it, which is both surprising and leaves the menu on screen.
         if (_focus.TryDismissPopup())
+        {
+            return;
+        }
+
+        // Then a page's own steps, so Back on the setup's third step goes to its second rather than out.
+        if (ChromeFrame.Content is IStepBack steps && steps.TryStepBack())
         {
             return;
         }
