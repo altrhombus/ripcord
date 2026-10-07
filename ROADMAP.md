@@ -28,7 +28,8 @@ We're close, but not one check away. Here's what's left, in order:
 3. **Smoke-check it on ARM64.** The full run passed on 2026-10-05 from a local build; the CI-built ARM64 zip
    only needs to start and stream on the Surface.
 4. **Install it on a clean machine.** Pair, stream, sign in, and a pad with and without GameInput, from the zip
-   CI built. It's also the first fresh install of the new defaults: 1080p60 at 20 Mbps, H.264.
+   CI built. It's also the first fresh install of the first-run setup: on a PC that can decode HEVC it
+   preselects HEVC with HDR, and Skip setup leaves the defaults (1080p60 at 20 Mbps, H.264). Try both.
 5. **Tag `v1.0`,** with `SECURITY.md`'s version row and the release notes. Then celebrate.
 
 Everything else in this file is real, and it can wait. (Yes, even the Apple TV app.)
@@ -111,6 +112,9 @@ purchased signing certificate.
       game inside it with white near 255 nits; asked for SDR, an HDR game's stream clips as under "Always On".
 - [x] **SDR games inside HDR10 looked slightly dull** after the tone-map (white at 91%). The renderer now
       measures the picture's peak and tone-maps SDR-like content from it (2026-10-05).
+- [ ] **The first-run setup, driven by a person** (built 2026-10-06): the whole setup from Settings > Advanced >
+      Run setup again, with a pad and without, pairing from it, Back on every step, and the picture question
+      alone on an install that already has a console.
 - [ ] **Clean-machine check.** Install the zip on a machine that has never had the SDK, then pair and stream.
       Sign in too: the web view's profile moved to `%LocalAppData%\Ripcord\WebView2`. Windows Sandbox is a
       clean Windows every launch, good for "does it start with nothing installed", though it won't pass

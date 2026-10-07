@@ -750,4 +750,188 @@ think the claim above it is conditional.</comment>
     <value>OK</value>
     <comment>Dismisses an error dialog. Acknowledgement only - nothing is undone by it.</comment>
   </data>
+  <data name="Setup_GetStarted" xml:space="preserve">
+    <value>Get started</value>
+    <comment>First-run setup: a button. Starts the setup.</comment>
+  </data>
+  <data name="Setup_SkipSetup" xml:space="preserve">
+    <value>Skip setup</value>
+    <comment>First-run setup: a button. Skips the whole setup and keeps the default settings.</comment>
+  </data>
+  <data name="Setup_Continue" xml:space="preserve">
+    <value>Continue</value>
+    <comment>First-run setup: a button. Goes to the next step.</comment>
+  </data>
+  <data name="Setup_Done" xml:space="preserve">
+    <value>Done</value>
+    <comment>First-run setup: a button. Saves the picture choice and closes the setup.</comment>
+  </data>
+  <data name="Setup_KeepMySettings" xml:space="preserve">
+    <value>Keep my settings</value>
+    <comment>First-run setup: a button. Closes the picture question without changing the stored settings.</comment>
+  </data>
+  <data name="Setup_AddConsole" xml:space="preserve">
+    <value>Add a console</value>
+    <comment>First-run setup: a button. Opens the page that finds and pairs a console.</comment>
+  </data>
+  <data name="Setup_Later" xml:space="preserve">
+    <value>Do this later</value>
+    <comment>First-run setup: a button. Skips adding a console for now.</comment>
+  </data>
+  <data name="Setup_GoToConsoles" xml:space="preserve">
+    <value>Go to your consoles</value>
+    <comment>First-run setup: a button. Closes the setup and shows the consoles page.</comment>
+  </data>
+  <data name="Setup_Back" xml:space="preserve">
+    <value>Back</value>
+    <comment>First-run setup: a button. Goes to the previous step.</comment>
+  </data>
+  <data name="Setup_WelcomeTitle" xml:space="preserve">
+    <value>Welcome to Ripcord.</value>
+    <comment>First-run setup: the first page's title. Ripcord is the product name - do not translate.</comment>
+  </data>
+  <data name="Setup_WelcomeBody" xml:space="preserve">
+    <value>Play your PlayStation on this PC. Three quick things first: how the picture should look, which console to play, and the controller in your hands. You can skip any of them.</value>
+    <comment>First-run setup: the first page's text. PlayStation is a product name - do not translate.</comment>
+  </data>
+  <data name="Setup_PictureTitle" xml:space="preserve">
+    <value>How should Ripcord stream?</value>
+    <comment>First-run setup: the picture step's title. Ripcord is the product name - do not translate.</comment>
+  </data>
+  <data name="Setup_PictureIntro" xml:space="preserve">
+    <value>Pick one. You can change it in Settings later.</value>
+    <comment>First-run setup: the picture step's introduction, for a new install.</comment>
+  </data>
+  <data name="Setup_PictureOnlyIntro" xml:space="preserve">
+    <value>Ripcord can now stream HEVC with HDR, which keeps the detail in bright skies and highlights. Pick how you'd like to stream. You can change it in Settings later.</value>
+    <comment>First-run setup: the picture step's introduction, shown once to an install from before the setup existed. Ripcord, HEVC and HDR are product or standard names - do not translate.</comment>
+  </data>
+  <data name="Setup_BestPicture" xml:space="preserve">
+    <value>Best picture: HEVC with HDR</value>
+    <comment>First-run setup: the label of the recommended picture choice. HEVC and HDR are standard names - do not translate.</comment>
+  </data>
+  <data name="Setup_BestPictureHdrDisplay" xml:space="preserve">
+    <value>Sharper for the same bandwidth, and HDR's full range on this HDR display.</value>
+    <comment>First-run setup: under the best-picture choice, when the display is in HDR mode. HDR is a standard name - do not translate.</comment>
+  </data>
+  <data name="Setup_BestPictureSdrDisplay" xml:space="preserve">
+    <value>Keeps the detail in bright skies and highlights. This display is SDR, so Ripcord converts the HDR picture for it.</value>
+    <comment>First-run setup: under the best-picture choice, when the display is SDR. Ripcord, HDR and SDR are product or standard names - do not translate.</comment>
+  </data>
+  <data name="Setup_MostCompatible" xml:space="preserve">
+    <value>Most compatible: H.264</value>
+    <comment>First-run setup: the label of the compatible picture choice. H.264 is a standard name - do not translate.</comment>
+  </data>
+  <data name="Setup_MostCompatibleDetail" xml:space="preserve">
+    <value>Every PC can decode it. In HDR games, the brightest highlights can lose their detail.</value>
+    <comment>First-run setup: under the compatible picture choice. HDR is a standard name - do not translate.</comment>
+  </data>
+  <data name="Setup_Recommended" xml:space="preserve">
+    <value>Recommended</value>
+    <comment>First-run setup: a small tag beside the recommended picture choice.</comment>
+  </data>
+  <data name="Setup_Checking" xml:space="preserve">
+    <value>Checking what this PC can decode…</value>
+    <comment>First-run setup: shown while the PC is checked for HEVC support.</comment>
+  </data>
+  <data name="Setup_NoHevc" xml:space="preserve">
+    <value>This PC can't decode HEVC, so Ripcord streams H.264. Installing HEVC Video Extensions from the Microsoft Store adds it; then choose HEVC in Settings.</value>
+    <comment>First-run setup: shown when the PC has no HEVC decoder. HEVC, H.264, Ripcord, HEVC Video Extensions and Microsoft Store are product or standard names - do not translate.</comment>
+  </data>
+  <data name="Setup_PictureDefaults" xml:space="preserve">
+    <value>Either way: {0}p at {1} fps, starting at {2} Mbps. You can change any of this in Settings.</value>
+    <comment>First-run setup: under the picture choices. {0} is the stream's height in pixels (1080), {1} its frame rate, {2} its starting bitrate in megabits per second.</comment>
+  </data>
+  <data name="Setup_ConsoleTitle" xml:space="preserve">
+    <value>Your console</value>
+    <comment>First-run setup: the console step's title.</comment>
+  </data>
+  <data name="Setup_ConsoleIntro" xml:space="preserve">
+    <value>Pair your PlayStation once and it stays here. Ripcord looks for it on your network first.</value>
+    <comment>First-run setup: the console step's text. PlayStation and Ripcord are product names - do not translate.</comment>
+  </data>
+  <data name="Setup_ConsolePaired" xml:space="preserve">
+    <value>Paired: {0}.</value>
+    <comment>First-run setup: after a console is paired. {0} is the console's name.</comment>
+  </data>
+  <data name="Setup_ControllerTitle" xml:space="preserve">
+    <value>Your controller</value>
+    <comment>First-run setup: the controller step's title.</comment>
+  </data>
+  <data name="Setup_ControllerIntro" xml:space="preserve">
+    <value>Press a button on the controller you'll play with.</value>
+    <comment>First-run setup: the controller step's text.</comment>
+  </data>
+  <data name="Setup_PressAnyButton" xml:space="preserve">
+    <value>A controller is connected. Press any button on it.</value>
+    <comment>First-run setup: the controller step, when a controller is connected but no button has been pressed yet.</comment>
+  </data>
+  <data name="Setup_NoController" xml:space="preserve">
+    <value>No controller is connected.</value>
+    <comment>First-run setup: the controller step, when no controller is connected.</comment>
+  </data>
+  <data name="Setup_NoControllerDetail" xml:space="preserve">
+    <value>Connect one by USB or Bluetooth, or carry on: without a controller, a stream reads the keyboard.</value>
+    <comment>First-run setup: the controller step, under 'No controller is connected'. USB and Bluetooth are standard names - do not translate.</comment>
+  </data>
+  <data name="Setup_PadPlayStation" xml:space="preserve">
+    <value>PlayStation controller</value>
+    <comment>First-run setup: the kind of controller found. PlayStation is a product name - do not translate.</comment>
+  </data>
+  <data name="Setup_PadOther" xml:space="preserve">
+    <value>Xbox or other controller</value>
+    <comment>First-run setup: the kind of controller found. Xbox is a product name - do not translate.</comment>
+  </data>
+  <data name="Setup_ButtonNamesFollow" xml:space="preserve">
+    <value>Button names on screen follow the controller you last pressed.</value>
+    <comment>First-run setup: under the controller found.</comment>
+  </data>
+  <data name="Setup_ExitGesture" xml:space="preserve">
+    <value>To leave a stream, hold {0}. You can change this in Settings.</value>
+    <comment>First-run setup: how to leave a stream with a controller. {0} is the buttons to hold, such as 'Options + Create + L1 + R1'.</comment>
+  </data>
+  <data name="Setup_ExitWithEsc" xml:space="preserve">
+    <value>To leave a stream, press Esc.</value>
+    <comment>First-run setup: how to leave a stream when no controller gesture is set. Esc is the keyboard key.</comment>
+  </data>
+  <data name="Setup_DoneTitle" xml:space="preserve">
+    <value>All set.</value>
+    <comment>First-run setup: the last page's title.</comment>
+  </data>
+  <data name="Setup_DonePictureBest" xml:space="preserve">
+    <value>Picture: HEVC with HDR</value>
+    <comment>First-run setup: a summary line on the last page. HEVC and HDR are standard names - do not translate.</comment>
+  </data>
+  <data name="Setup_DonePictureCompatible" xml:space="preserve">
+    <value>Picture: H.264</value>
+    <comment>First-run setup: a summary line on the last page. H.264 is a standard name - do not translate.</comment>
+  </data>
+  <data name="Setup_DoneConsole" xml:space="preserve">
+    <value>Console: {0}</value>
+    <comment>First-run setup: a summary line on the last page. {0} is the console's name.</comment>
+  </data>
+  <data name="Setup_DoneNoConsole" xml:space="preserve">
+    <value>Console: none yet. Add one from the consoles page.</value>
+    <comment>First-run setup: a summary line on the last page, when no console was paired.</comment>
+  </data>
+  <data name="Setup_DoneController" xml:space="preserve">
+    <value>Controller: {0}</value>
+    <comment>First-run setup: a summary line on the last page. {0} is the kind of controller, such as 'PlayStation controller'.</comment>
+  </data>
+  <data name="Setup_DoneNoController" xml:space="preserve">
+    <value>Controller: none yet. Without one, a stream reads the keyboard.</value>
+    <comment>First-run setup: a summary line on the last page, when no controller button was pressed.</comment>
+  </data>
+  <data name="Pairing_ContinueSetup" xml:space="preserve">
+    <value>Continue setup</value>
+    <comment>Add a console, during the first-run setup: the button after pairing, which returns to the setup.</comment>
+  </data>
+  <data name="Setup_ConsolePreflight" xml:space="preserve">
+    <value>First, on the console: Settings &gt; System &gt; Remote Play, and turn on Enable Remote Play. To wake it from rest mode as well, turn on Stay Connected to the Internet and Enable Turning On PS5 from Network, under Settings &gt; System &gt; Power Saving &gt; Features Available in Rest Mode.</value>
+    <comment>First-run setup: the console step, what to switch on at the console before pairing. The menu names are the console's own; translate them as the console's own language does. PS5 is a product name - do not translate.</comment>
+  </data>
+  <data name="Setup_GameInputMissing" xml:space="preserve">
+    <value>Xbox controllers need Microsoft's GameInput, which isn't installed. Run GameInputRedist.msi from Ripcord's folder, then start Ripcord again. PlayStation controllers work without it.</value>
+    <comment>First-run setup: the controller step, when GameInput is not installed. Xbox, Microsoft, GameInput, GameInputRedist.msi, Ripcord and PlayStation are product or file names - do not translate.</comment>
+  </data>
 </root>

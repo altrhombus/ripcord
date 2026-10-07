@@ -183,4 +183,10 @@ public sealed class AddConsoleFlowOptions
 
     /// <summary>The shortest link code that is worth sending. Consoles show eight digits.</summary>
     public int MinimumPasscodeLength { get; init; } = 8;
+
+    /// <summary>
+    /// Opened from the first-run setup, which the user goes back to once a console is paired: the last step then
+    /// offers "Continue setup" in place of "Play now" and "Done", and nothing connects.
+    /// </summary>
+    public bool PartOfSetup { get; init; }
 }

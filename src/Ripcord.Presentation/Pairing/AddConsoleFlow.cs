@@ -45,6 +45,9 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
     private readonly IPairedConsoleStore _store;
     private readonly AddConsoleFlowOptions _options;
 
+    /// <summary>Opened from the first-run setup (<see cref="AddConsoleFlowOptions.PartOfSetup"/>).</summary>
+    public bool IsPartOfSetup => _options.PartOfSetup;
+
     /// <summary>
     /// The signed-in account, when there is one. Optional: pairing by hand is still a first-class path — a build
     /// with no OAuth credential has no other one — so this seam being absent must change nothing except who
@@ -631,7 +634,8 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
             _store.Upsert(toSave);
         }
 
-        Completed?.Invoke(new AddConsoleCompletion(toSave, connect));
+        // From the setup, the setup comes next, not a stream.
+        Completed?.Invoke(new AddConsoleCompletion(toSave, connect && !_options.PartOfSetup));
     }
 
     /// <summary>
@@ -1181,7 +1185,7 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
             // player came for, named as such. It was the literal string "Save & connect" in the page's
             // code-behind, past the catalogue entirely.
             PairActionLabel: _step == AddConsoleStep.Done
-                ? Strings.Pairing_PlayNow
+                ? _options.PartOfSetup ? Strings.Pairing_ContinueSetup : Strings.Pairing_PlayNow
                 : Route == PairingRoute.Account
                     ? Strings.Pairing_ActionWithAccount
                     : Strings.Pairing_ActionWithCode,

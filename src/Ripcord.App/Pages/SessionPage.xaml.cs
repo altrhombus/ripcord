@@ -53,6 +53,9 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
 
     private RipcordSettings _settings = new();
 
+    // Whether this stream reads the keyboard: InputBindings.KeyboardActiveFor, decided once at load.
+    private bool _keyboardActive;
+
     // Pad frames and keyboard frames merged into the single stream the session consumes. Frames are absolute
     // state, so the two sources have to be combined rather than interleaved — see MergedInputSource.
     private MergedInputSource? _inputSource;
@@ -272,12 +275,14 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
         // static "Starting…" on screen with nothing reported anywhere.
         try
         {
-            // Say when the keyboard is off. It is off by default and deliberately so, but a user pressing keys
-            // at a stream and getting nothing has no way to tell that from a fault -- and this row is the one
-            // place already telling them what input is running.
-            InputEnginesText.Text = _settings.InputBindings.KeyboardEnabled
-                ? $"engines: {App.Input.SourceName} + keyboard"
-                : $"engines: {App.Input.SourceName} (keyboard off — enable it in Settings)";
+            // The keyboard is on when the setting says so, or when there is no pad to play with (KeyboardActiveFor).
+            // Said in the engines row either way, since a key that does nothing can't tell you why.
+            _keyboardActive = _settings.InputBindings.KeyboardActiveFor(App.Input.PadAttached);
+            InputEnginesText.Text = _keyboardActive
+                ? _settings.InputBindings.KeyboardEnabled
+                    ? $"engines: {App.Input.SourceName} + keyboard"
+                    : $"engines: {App.Input.SourceName} + keyboard (on: no controller at connect)"
+                : $"engines: {App.Input.SourceName} (keyboard off with a controller — enable it in Settings)";
 
             if (App.Input.Connections is { } connections)
             {
@@ -293,7 +298,11 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
             // though it were unbound, this is the line to look at.
             _inputSource = new MergedInputSource(
                 pad: _padFrames,
-                _settings.InputBindings with { GamepadRemap = new Dictionary<ControllerButtons, ControllerButtons>() });
+                _settings.InputBindings with
+                {
+                    GamepadRemap = new Dictionary<ControllerButtons, ControllerButtons>(),
+                    KeyboardEnabled = _keyboardActive,
+                });
         }
         catch (Exception ex)
         {
@@ -1530,7 +1539,7 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
     /// </summary>
     private void FocusStreamSurface()
     {
-        if (_settings.InputBindings.KeyboardEnabled)
+        if (_keyboardActive)
         {
             // The one place Programmatic is right, and the exception to the rule everywhere else that focus
             // must be visible: this takes focus so keystrokes reach the console, not so the user can see where
