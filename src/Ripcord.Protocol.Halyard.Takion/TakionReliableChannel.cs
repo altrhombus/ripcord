@@ -337,9 +337,17 @@ public sealed class TakionReliableChannel : IAsyncDisposable
                     }
                 }
 
+                // Per packet: one failed send ended retransmission for the session, so anything lost after a
+                // moment with no route was never resent (review, 2026-10-05). Still unacked, it goes again next time.
                 foreach (byte[] packet in toResend)
                 {
-                    await _channel.SendAsync(packet, _remote, cancellationToken).ConfigureAwait(false);
+                    try
+                    {
+                        await _channel.SendAsync(packet, _remote, cancellationToken).ConfigureAwait(false);
+                    }
+                    catch (Exception ex) when (ex is not OperationCanceledException)
+                    {
+                    }
                 }
             }
         }

@@ -59,8 +59,24 @@ public sealed class HalyardUdpDatagramTransport : IHalyardDatagramTransport
     public async ValueTask SendAsync(ReadOnlyMemory<byte> datagram, CancellationToken cancellationToken)
         => await _channel.SendAsync(datagram, _remote, cancellationToken).ConfigureAwait(false);
 
+    /// <summary>
+    /// The next datagram from the console. Anything from another address is dropped: on the account route this
+    /// socket sits on a hole-punched public port, and a datagram from anyone was taken as the console's, so an
+    /// injected close ended the session as the console ending it (review, 2026-10-05). The address only, not
+    /// the port: whether the console's NAT can answer from a remapped port is unchecked [X].
+    /// </summary>
     public async ValueTask<ReadOnlyMemory<byte>> ReceiveAsync(CancellationToken cancellationToken)
-        => (await _channel.ReceiveAsync(cancellationToken).ConfigureAwait(false)).Buffer;
+    {
+        IPAddress expected = _remote.Address.MapToIPv6();
+        while (true)
+        {
+            var result = await _channel.ReceiveAsync(cancellationToken).ConfigureAwait(false);
+            if (result.RemoteEndPoint.Address.MapToIPv6().Equals(expected))
+            {
+                return result.Buffer;
+            }
+        }
+    }
 
     public void Dispose()
     {
