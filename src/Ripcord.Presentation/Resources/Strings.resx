@@ -360,7 +360,7 @@ name.</comment>
     <comment>Shown when the signed-in account does not know this console. The fix is on the console, not in the app.</comment>
   </data>
   <data name="Pairing_NothingAnswered" xml:space="preserve">
-    <value>Nothing answered. The console needs to be switched on, on the same network, and reachable — some networks block the broadcast this uses. You can enter its address instead.</value>
+    <value>Nothing answered. The console needs to be switched on, on the same network, and reachable — some networks block the broadcast this uses. Windows Firewall can block the answer too: if Windows asked about Ripcord and it wasn't allowed, or this network is set to Public, allow Ripcord under Windows Security &gt; Firewall &amp; network protection &gt; Allow an app through firewall. You can also enter the console's address instead.</value>
     <comment>Shown when a network scan finds no console.</comment>
   </data>
   <data name="Pairing_PickConsole" xml:space="preserve">

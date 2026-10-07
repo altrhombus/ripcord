@@ -11,7 +11,13 @@
     Unloaded="Page_Unloaded"
     IsTabStop="True"
     KeyboardAcceleratorPlacementMode="Hidden"
+    RequestedTheme="Dark"
     mc:Ignorable="d">
+
+    <!--
+        Dark whatever the Windows theme: the stream layer is black behind video, and in Light theme its status and
+        failure text took the light theme's dark brushes, dark on black (review, 2026-10-05).
+    -->
 
     <Page.Resources>
         <!--
