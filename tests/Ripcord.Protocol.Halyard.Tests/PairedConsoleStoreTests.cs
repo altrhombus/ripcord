@@ -188,6 +188,63 @@ public class PairedConsoleStoreTests : IDisposable
     }
 
     [Fact]
+    public void Upsert_AConsoleMovingOntoAnotherConsolesOldAddress_KeepsTheOther()
+    {
+        // Two consoles at home, and a DHCP lease handed from one to the other: matching on the address deleted
+        // the second console's record and its credential (review, 2026-10-05).
+        var store = NewStore();
+        store.Upsert(Console("host-id-abc", "10.0.0.7", "dpapi:AAA"));
+        store.Upsert(Console("host-id-def", "10.0.0.8", "dpapi:DEF"));
+
+        store.Upsert(Console("host-id-abc", "10.0.0.8", "dpapi:AAA"));
+
+        List<PairedConsole> all = store.Load();
+        Assert.Equal(2, all.Count);
+        Assert.Equal("dpapi:DEF", all.Single(c => c.Id == "host-id-def").CredentialBlob);
+    }
+
+    [Fact]
+    public void Upsert_ARecordFromBeforeHostIds_IsStillReplacedByItsAddress()
+    {
+        // Its id is its address. Discovery then supplies the host-id, and the new record replaces the old.
+        var store = NewStore();
+        store.Upsert(Console("10.0.0.7", "10.0.0.7"));
+
+        store.Upsert(Console("host-id-abc", "10.0.0.7"));
+
+        Assert.Equal("host-id-abc", Assert.Single(store.Load()).Id);
+    }
+
+    [Fact]
+    public void Upsert_WhileTheFileCantBeRead_ThrowsRatherThanSavingOverEveryPairing()
+    {
+        // Load reads an unreadable file as empty, which is right for showing a list and wrong for updating one:
+        // the save after it wrote a one-console list over the rest (review, 2026-10-05).
+        var store = NewStore();
+        store.Upsert(Console("host-id-abc", "10.0.0.7"));
+        store.Upsert(Console("host-id-def", "10.0.0.8"));
+
+        using (new FileStream(ConsolesJson, FileMode.Open, FileAccess.Read, FileShare.None))
+        {
+            Assert.Throws<IOException>(() => store.Upsert(Console("host-id-ghi", "10.0.0.9")));
+        }
+
+        Assert.Equal(2, store.Load().Count);
+    }
+
+    [Fact]
+    public async Task Upsert_FromManyThreadsAtOnce_KeepsEveryConsole()
+    {
+        // The reachability monitor upserts its consoles in parallel; unserialised, writers lost each other's work.
+        var store = NewStore();
+
+        await Task.WhenAll(Enumerable.Range(0, 12).Select(i =>
+            Task.Run(() => store.Upsert(Console($"host-id-{i}", $"10.0.0.{i + 10}")))));
+
+        Assert.Equal(12, store.Load().Count);
+    }
+
+    [Fact]
     public void Remove_DropsOnlyTheNamedConsole()
     {
         var store = NewStore();

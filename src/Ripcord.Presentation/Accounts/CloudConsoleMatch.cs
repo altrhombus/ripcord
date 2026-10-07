@@ -116,8 +116,16 @@ public static class CloudConsoleMatch
                 continue;
             }
 
-            store.Upsert(console with { CloudDeviceId = id });
-            repaired++;
+            // As the reachability monitor does: a store that can't be read right now refuses the write, and the
+            // next repair pass tries again.
+            try
+            {
+                store.Upsert(console with { CloudDeviceId = id });
+                repaired++;
+            }
+            catch (IOException)
+            {
+            }
         }
 
         return repaired;
