@@ -53,6 +53,16 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
 
     private RipcordSettings _settings = new();
 
+    // Whether this stream reads the keyboard: InputBindings.KeyboardActiveFor, decided once at load.
+    private bool _keyboardActive;
+
+    // On-screen console buttons a pointer pressed, so the Click their release raises isn't sent as a second tap.
+    private ControllerButtons _pointerDrivenButtons;
+
+    // How long a keyboard or screen-reader press of an on-screen console button is held. [X]: chosen, long enough
+    // for several input reports at the console's polling rate.
+    private static readonly TimeSpan ConsoleButtonTap = TimeSpan.FromMilliseconds(100);
+
     // Pad frames and keyboard frames merged into the single stream the session consumes. Frames are absolute
     // state, so the two sources have to be combined rather than interleaved — see MergedInputSource.
     private MergedInputSource? _inputSource;
@@ -272,12 +282,14 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
         // static "Starting…" on screen with nothing reported anywhere.
         try
         {
-            // Say when the keyboard is off. It is off by default and deliberately so, but a user pressing keys
-            // at a stream and getting nothing has no way to tell that from a fault -- and this row is the one
-            // place already telling them what input is running.
-            InputEnginesText.Text = _settings.InputBindings.KeyboardEnabled
-                ? $"engines: {App.Input.SourceName} + keyboard"
-                : $"engines: {App.Input.SourceName} (keyboard off — enable it in Settings)";
+            // The keyboard is on when the setting says so, or when there is no pad to play with (KeyboardActiveFor).
+            // Said in the engines row either way, since a key that does nothing can't tell you why.
+            _keyboardActive = _settings.InputBindings.KeyboardActiveFor(App.Input.PadAttached);
+            InputEnginesText.Text = _keyboardActive
+                ? _settings.InputBindings.KeyboardEnabled
+                    ? $"engines: {App.Input.SourceName} + keyboard"
+                    : $"engines: {App.Input.SourceName} + keyboard (on: no controller at connect)"
+                : $"engines: {App.Input.SourceName} (keyboard off with a controller — enable it in Settings)";
 
             if (App.Input.Connections is { } connections)
             {
@@ -293,7 +305,11 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
             // though it were unbound, this is the line to look at.
             _inputSource = new MergedInputSource(
                 pad: _padFrames,
-                _settings.InputBindings with { GamepadRemap = new Dictionary<ControllerButtons, ControllerButtons>() });
+                _settings.InputBindings with
+                {
+                    GamepadRemap = new Dictionary<ControllerButtons, ControllerButtons>(),
+                    KeyboardEnabled = _keyboardActive,
+                });
         }
         catch (Exception ex)
         {
@@ -382,6 +398,8 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
             // The flow reported a terminal stage saying why, or the page was left mid-connect.
             return;
         }
+
+        _viewModel.SetConnectNotice(plan.Notice);
 
         // An HDR stream already failed to draw on this page (OnTenBitUnrenderable): ask for SDR from here on.
         if (_forceSdr)
@@ -728,8 +746,16 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
             StatusOverlay.Opacity = 1;
             StatusOverlay.Visibility = Vis(s.StatusVisible);
         }
+        // Said out loud when the headline changes: a new phase, a failure. Detail lines alone are progress chatter.
+        if (s.StatusVisible && StatusHeadline.Text != s.StatusHeadline)
+        {
+            Announcer.Announce(StatusHeadline, $"{s.StatusHeadline} {s.StatusDetail}", important: s.StatusActionsVisible);
+        }
+
         StatusHeadline.Text = s.StatusHeadline;
         StatusDetail.Text = s.StatusDetail;
+        StatusTechnical.Text = s.StatusTechnical;
+        StatusTechnical.Visibility = Vis(s.StatusTechnical.Length > 0);
         RenderTrail(s);
         StatusActions.Visibility = Vis(s.StatusActionsVisible);
         ConnectEscape.Visibility = Vis(s.ConnectEscapeVisible);
@@ -744,6 +770,11 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
             // The NOTICE, not the bare verdict: a verdict plus one clause saying what to do about it. Rung 1
             // is the only rung most players will ever see, and "Losing packets on the network" on its own
             // names a problem and offers nothing.
+            if (AlertText.Text != s.Diagnostics.HealthNotice)
+            {
+                Announcer.Announce(AlertText, s.Diagnostics.HealthNotice, important: true);
+            }
+
             AlertText.Text = s.Diagnostics.HealthNotice;
             RenderHealthDot(AlertDot, s.Diagnostics.HealthLevel);
 
@@ -1370,7 +1401,11 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
     private async Task RestartSessionAsync()
     {
         ShowStatus("Connecting…", "Starting a new session.", terminal: false);
-        await TeardownControllerAsync();
+
+        // The whole attempt, not just the controller: StartSessionAsync builds a new video pipeline, stats timer,
+        // trace and cancellation source, and overwrote the old ones while they still held a D3D12 device, a
+        // decoder, a swap chain, an audio stream and a worker thread (review, 2026-10-05).
+        await TeardownAttemptAsync();
         await StartSessionAsync();
     }
 
@@ -1528,7 +1563,7 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
     /// </summary>
     private void FocusStreamSurface()
     {
-        if (_settings.InputBindings.KeyboardEnabled)
+        if (_keyboardActive)
         {
             // The one place Programmatic is right, and the exception to the rule everywhere else that focus
             // must be visible: this takes focus so keystrokes reach the console, not so the user can see where
@@ -1641,6 +1676,10 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
             button.AddHandler(
                 PointerCaptureLostEvent, new PointerEventHandler(ConsoleButton_PointerReleased), handledEventsToo: true);
 
+            // And Click, for everything that isn't a pointer: Enter or Space, Narrator's Invoke, a pad's Accept.
+            // Pointer-only, these did nothing from a keyboard or a screen reader (review, 2026-10-05).
+            button.Click += ConsoleButton_Click;
+
             // Nothing can be sent without an input source, so say so rather than offering a dead control.
             button.IsEnabled = _inputSource is not null;
         }
@@ -1654,8 +1693,31 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
         }
 
         _virtualButtonsHeld |= button;
+        _pointerDrivenButtons |= button;
         _inputSource?.SetVirtualButton(button, pressed: true);
         ShowTouchControls();
+    }
+
+    /// <summary>
+    /// A press from anything but a pointer: a tap, held long enough for the console to see it. A pointer press
+    /// raises Click too, on release, after it has already pressed and released the button; that one is skipped.
+    /// </summary>
+    private async void ConsoleButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { Tag: string name } || !Enum.TryParse(name, out ControllerButtons button))
+        {
+            return;
+        }
+
+        if ((_pointerDrivenButtons & button) != 0)
+        {
+            _pointerDrivenButtons &= ~button;
+            return;
+        }
+
+        _inputSource?.SetVirtualButton(button, pressed: true);
+        await Task.Delay(ConsoleButtonTap);
+        _inputSource?.SetVirtualButton(button, pressed: false);
     }
 
     private void ConsoleButton_PointerReleased(object sender, PointerRoutedEventArgs e)
@@ -2288,8 +2350,27 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
         Teardown = TeardownAsync();
     }
 
-    private async Task TeardownAsync()
+    private Task TeardownAsync() => TeardownAttemptAsync();
+
+    /// <summary>
+    /// Release everything one connect attempt made: the stats timer, the cancellation source, the trace, the
+    /// controller and the video pipeline. Used on the way out and before a restart (Try again, or the SDR
+    /// fallback), which builds all of them again.
+    /// </summary>
+    private async Task TeardownAttemptAsync()
     {
+        if (_statsTimer is { } timer)
+        {
+            timer.Stop();
+            timer.Tick -= StatsTick;
+            _statsTimer = null;
+        }
+
+        // Cancelled and dropped, not disposed: the attempt's flow may still be unwinding and registering on its
+        // token, and a cancelled source with no timer holds nothing worth releasing early.
+        _connectCts?.Cancel();
+        _connectCts = null;
+
         StopTrace();
 
         await TeardownControllerAsync();

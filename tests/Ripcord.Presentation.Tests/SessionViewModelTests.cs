@@ -112,6 +112,18 @@ public class SessionViewModelTests
     }
 
     [Fact]
+    public void ApplyLifecycle_Connecting_KeepsTheConnectNotice()
+    {
+        // The flow's last stage carried the note, and the session's own first status replaced it unseen (2026-10-05).
+        (SessionViewModel vm, _, _) = Build();
+        vm.SetConnectNotice("This stream uses H.264.");
+
+        vm.ApplyLifecycle(new SessionStatus(SessionLifecycle.Connecting, "Opening the session."));
+
+        Assert.Equal("Opening the session. This stream uses H.264.", vm.State.StatusDetail);
+    }
+
+    [Fact]
     public void ApplyLifecycle_Degraded_ReportsQuietlyAndKeepsTheStreamLive()
     {
         // Most stalls recover in under a second. Flashing a frightening overlay over a picture that is about to
@@ -136,7 +148,9 @@ public class SessionViewModelTests
 
         Assert.False(vm.State.IsStreamLive);
         Assert.True(vm.State.StatusActionsVisible);
-        Assert.Equal("Console refused the session", vm.State.StatusDetail);
+        // Plain words lead; the controller's raw reason is kept beneath them for a bug report (FailureCopy).
+        Assert.Contains("couldn't connect", vm.State.StatusDetail, StringComparison.Ordinal);
+        Assert.Equal("Console refused the session", vm.State.StatusTechnical);
     }
 
     // ---- sampling ------------------------------------------------------------------------------

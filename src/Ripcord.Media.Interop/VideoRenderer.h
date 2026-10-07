@@ -171,6 +171,7 @@ namespace winrt::Ripcord::Media::Interop::implementation
 
         winrt::hstring m_adapterDescription;
         bool m_deviceLost = false;
+        bool m_shutDown = false;   // Shutdown has run; it runs once (see there)
         HRESULT m_deviceRemovedReason = S_OK;
 
         // Layer 2 graphics pipeline: fullscreen-triangle draw sampling a BGRA frame texture.
@@ -202,17 +203,28 @@ namespace winrt::Ripcord::Media::Interop::implementation
         // since the Annex B and elementary-stream variants are distinct GUIDs and only one will bind.
         VideoCodecKind m_codec = VideoCodecKind::H264;
         GUID m_inputSubtype = GUID_NULL;
-        std::wstring m_decoderName;
+        // Swapped whole, never edited in place: the decode worker replaces it on a mid-stream codec rebuild while
+        // the UI thread reads it for the diagnostics panel, and a std::wstring copied mid-assignment is undefined.
+        // Read and written only through std::atomic_load / std::atomic_store (this project builds as C++17, which
+        // has no std::atomic<std::shared_ptr>). The project's stdcpp20 setting sits where MSBuild ignores it; a
+        // change that makes it take effect must switch this to std::atomic<std::shared_ptr> in the same commit,
+        // because C++20 deprecates these free functions and the build's SDL checks may make that an error.
+        std::shared_ptr<const std::wstring> m_decoderName;
 
         // Decode-loop observability: how many samples ProcessOutput actually yielded, its last result, and how
         // far geometry recovery got (see DecoderDiagnostic).
-        uint64_t m_producedSamples = 0;
-        HRESULT m_lastOutputHr = S_OK;
-        int32_t m_geomStage = 0;
+        std::atomic<uint64_t> m_producedSamples{ 0 };
+        std::atomic<HRESULT> m_lastOutputHr{ S_OK };
+        std::atomic<int32_t> m_geomStage{ 0 };
+
+        // The decoder's output subtype as the worker last set it (its FOURCC, the GUID's first field), for
+        // DecoderDiagnostic. That used to ask the decoder itself from the UI thread, while the worker could be
+        // resetting it on a codec mismatch: a use-after-free (review, 2026-10-05). 0 before one is set.
+        std::atomic<uint32_t> m_outputSubtypeFourcc{ 0 };
 
         // Codec actually detected in the bitstream, versus what was requested.
         bool m_codecDetected = false;
-        bool m_codecMismatch = false;
+        std::atomic<bool> m_codecMismatch{ false };   // read by the UI thread (diagnostics)
         uint8_t m_firstNal0 = 0;
         uint8_t m_firstNal1 = 0;
         bool m_sawFirstPayload = false;
@@ -222,13 +234,13 @@ namespace winrt::Ripcord::Media::Interop::implementation
         // True when the decoder is producing P010 (10-bit). The zero-copy path handles it — the D3D11
         // VideoProcessor converts P010 to BGRA natively — but the CPU readback path's shader is 8-bit NV12 only,
         // so it must refuse rather than render garbage.
-        bool m_tenBitOutput = false;
+        std::atomic<bool> m_tenBitOutput{ false };   // read by the UI thread (diagnostics)
         bool m_toneMappedByDriver = false;
 
         // An HDR10 stream on an SDR display, tone-mapped by the present shader (HdrToneMap) instead of the driver:
         // the shared texture then holds PQ BT.2020 at 10 bits, and the swap chain stays SDR.
         std::atomic<bool> m_toneMapInShader{ false };   // read by the diagnostics string on the UI thread
-        bool m_tenBitUnrenderable = false;
+        std::atomic<bool> m_tenBitUnrenderable{ false };   // read by the UI thread (diagnostics)
 
         int32_t m_yuvMatrix = 0;
         bool m_yuvMatrixSignalled = false;
@@ -246,7 +258,7 @@ namespace winrt::Ripcord::Media::Interop::implementation
 
         // True when the stream's transfer function is genuinely an HDR one (PQ or HLG) rather than merely
         // 10-bit. This, not m_tenBitOutput, is what an HDR swap chain should be gated on.
-        bool m_hdrTransfer = false;
+        std::atomic<bool> m_hdrTransfer{ false };   // read by the UI thread (diagnostics)
 
         // What the display can accept, as opposed to what the stream carries. Presenting HDR needs both.
         //
@@ -256,7 +268,7 @@ namespace winrt::Ripcord::Media::Interop::implementation
         // 48000 (physically impossible) at minimum. A standalone DXGI probe returns the same values, so this
         // is the driver, not our read. If a future tone-mapping decision ever needs real peak luminance, it
         // will need a source other than this one.
-        bool m_displayHdrCapable = false;
+        std::atomic<bool> m_displayHdrCapable{ false };   // read by the UI thread (diagnostics)
         float m_displayMaxNits = 0.0f;
 
         // The window the video is shown in, as an HWND, and whether its display's HDR state changed since the
@@ -266,7 +278,7 @@ namespace winrt::Ripcord::Media::Interop::implementation
         bool m_displayChanged = false;
 
         // The window's display is scanned out by a GPU other than this device's, so HDR is not presented to it.
-        bool m_displayOnOtherAdapter = false;
+        std::atomic<bool> m_displayOnOtherAdapter{ false };   // read by the UI thread (diagnostics)
 
         // The last back-buffer format switch's result: S_OK, or why it failed (shown in HdrOutputDescription).
         HRESULT m_reformatFailure = S_OK;
@@ -307,7 +319,7 @@ namespace winrt::Ripcord::Media::Interop::implementation
 
         // Both halves true: the stream carries HDR and the display accepts it. Drives the swap chain colour
         // space and whether the video processor tone-maps.
-        bool m_presentingHdr = false;
+        std::atomic<bool> m_presentingHdr{ false };   // read by the UI thread (diagnostics)
 
         uint32_t m_displayWidth = 0;
         uint32_t m_displayHeight = 0;
@@ -325,7 +337,7 @@ namespace winrt::Ripcord::Media::Interop::implementation
         Microsoft::WRL::ComPtr<ID3D11DeviceContext> m_decodeD3d11Context;
         Microsoft::WRL::ComPtr<IMFDXGIDeviceManager> m_dxgiDeviceManager;
         UINT m_dxgiResetToken = 0;
-        bool m_hardwareDecode = false;
+        std::atomic<bool> m_hardwareDecode{ false };   // read by the UI thread (diagnostics)
 
         // Zero-copy (GPU-resident) decode state. m_zeroCopyDecode flips on once a frame is delivered this way;
         // m_zeroCopyDisabled sticks on after any failure so we stay on the CPU readback path.

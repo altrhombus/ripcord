@@ -310,7 +310,15 @@ namespace winrt::Ripcord::Media::Interop::implementation
 {
     VideoRenderer::~VideoRenderer()
     {
-        Shutdown();
+        // A destructor must not throw (it would std::terminate). Shutdown doesn't, but it is the device's last
+        // word, so it is guarded here too.
+        try
+        {
+            Shutdown();
+        }
+        catch (...)
+        {
+        }
     }
 
     winrt::hstring VideoRenderer::ActiveAdapterDescription()
@@ -891,7 +899,8 @@ namespace winrt::Ripcord::Media::Interop::implementation
             {
                 m_decoder = transform;
                 m_inputSubtype = subtype;
-                m_decoderName = name.empty() ? L"unnamed decoder MFT" : name;
+                std::atomic_store(&m_decoderName,
+                    std::make_shared<const std::wstring>(name.empty() ? L"unnamed decoder MFT" : name));
                 return true;
             }
         }
@@ -904,7 +913,8 @@ namespace winrt::Ripcord::Media::Interop::implementation
                 CLSID_CMSH264DecoderMFT, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&m_decoder))))
         {
             m_inputSubtype = MFVideoFormat_H264;
-            m_decoderName = L"Microsoft H264 Video Decoder MFT (by CLSID)";
+            std::atomic_store(&m_decoderName,
+                std::make_shared<const std::wstring>(L"Microsoft H264 Video Decoder MFT (by CLSID)"));
             return true;
         }
 
@@ -945,26 +955,24 @@ namespace winrt::Ripcord::Media::Interop::implementation
         // present counters has several distinct causes — no sample ever produced, a sample in a pixel format the
         // present path does not handle, or a sample whose dimensions were never reported — and guessing between
         // them from the outside costs a test cycle each time.
+        // From what the worker published, never from the decoder, which only the worker may touch.
         GUID currentSubtype = GUID_NULL;
-        if (m_decoder)
+        if (const uint32_t fourcc = m_outputSubtypeFourcc.load(); fourcc != 0)
         {
-            ComPtr<IMFMediaType> current;
-            if (SUCCEEDED(m_decoder->GetOutputCurrentType(0, &current)) && current)
-            {
-                current->GetGUID(MF_MT_SUBTYPE, &currentSubtype);
-            }
+            currentSubtype = MFVideoFormat_Base;
+            currentSubtype.Data1 = fourcc;
         }
 
         wchar_t buffer[256]{};
         swprintf_s(
             buffer,
             L"samples=%llu hr=0x%08X out=%s coded=%ux%u geom=%d nal=%02X,%02X head=%02X%02X%02X%02X tries=%d",
-            static_cast<unsigned long long>(m_producedSamples),
-            static_cast<unsigned int>(m_lastOutputHr),
+            static_cast<unsigned long long>(m_producedSamples.load()),
+            static_cast<unsigned int>(m_lastOutputHr.load()),
             SubtypeName(currentSubtype).c_str(),
             m_decodeWidth,
             m_decodeHeight,
-            m_geomStage,
+            m_geomStage.load(),
             m_firstNal0,
             m_firstNal1,
             m_payloadHead[0],
@@ -987,12 +995,13 @@ namespace winrt::Ripcord::Media::Interop::implementation
         // Non-ASCII in these literals MUST use universal character names (·, —), not raw UTF-8 bytes:
         // MSVC decodes narrow and wide literals with the system codepage unless /utf-8 is on the command line, so
         // a literal middle dot rendered on screen as "Ã‚Â·". Escapes are codepage-independent.
-        if (m_decoderName.empty())
+        const std::shared_ptr<const std::wstring> name = std::atomic_load(&m_decoderName);
+        if (!name)
         {
             return hstring{ L"no decoder created yet" };
         }
 
-        std::wstring desc = m_decoderName;
+        std::wstring desc = *name;
         desc += m_hardwareDecode ? L" (DXVA)" : L" (software)";
 
         if (m_tenBitUnrenderable)
@@ -1015,7 +1024,7 @@ namespace winrt::Ripcord::Media::Interop::implementation
     // distinguish a working stream from a format probe that had not run.
     hstring VideoRenderer::VideoFormatDescription()
     {
-        if (m_decoderName.empty())
+        if (!std::atomic_load(&m_decoderName))
         {
             return hstring{ L"\u2014" };
         }
@@ -1260,6 +1269,12 @@ namespace winrt::Ripcord::Media::Interop::implementation
         }
 
         ThrowIfFailed(m_decoder->SetOutputType(0, outputType.Get(), 0));
+
+        GUID setSubtype = GUID_NULL;
+        if (SUCCEEDED(outputType->GetGUID(MF_MT_SUBTYPE, &setSubtype)))
+        {
+            m_outputSubtypeFourcc = setSubtype.Data1;
+        }
 
         AdoptOutputGeometry(outputType.Get());
         return true;
@@ -1784,7 +1799,8 @@ namespace winrt::Ripcord::Media::Interop::implementation
                     m_codecMismatch = true;
                     m_codec = detected;
                     m_decoder.Reset();
-                    m_decoderName.clear();
+                    std::atomic_store(&m_decoderName, std::shared_ptr<const std::wstring>{});
+                    m_outputSubtypeFourcc = 0;
                     m_decodeWidth = 0;
                     m_decodeHeight = 0;
                 }
@@ -3302,9 +3318,31 @@ namespace winrt::Ripcord::Media::Interop::implementation
         CreateRenderTargets();
     }
 
+    // Once only, and never throwing. It ran twice (the pipeline's dispose, then the destructor), and after the
+    // display driver reset (device removed) WaitForGpu's Signal failed and threw: out of the pipeline's dispose,
+    // skipping the audio's release behind it, and then out of the destructor (review, 2026-10-05). On a removed
+    // device there is no GPU work left to wait for, so the wait is skipped.
     void VideoRenderer::Shutdown()
     {
-        WaitForGpu();
+        if (m_shutDown)
+        {
+            return;
+        }
+        m_shutDown = true;
+
+        const bool deviceUsable = !m_deviceLost && m_device && SUCCEEDED(m_device->GetDeviceRemovedReason());
+        if (deviceUsable)
+        {
+            try
+            {
+                WaitForGpu();
+            }
+            catch (...)
+            {
+                // The device went while we waited; nothing in flight to drain, and the releases below are safe.
+            }
+        }
+
         if (m_fenceEvent != nullptr)
         {
             CloseHandle(m_fenceEvent);

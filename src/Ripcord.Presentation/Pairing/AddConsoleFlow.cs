@@ -45,6 +45,9 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
     private readonly IPairedConsoleStore _store;
     private readonly AddConsoleFlowOptions _options;
 
+    /// <summary>Opened from the first-run setup (<see cref="AddConsoleFlowOptions.PartOfSetup"/>).</summary>
+    public bool IsPartOfSetup => _options.PartOfSetup;
+
     /// <summary>
     /// The signed-in account, when there is one. Optional: pairing by hand is still a first-class path — a build
     /// with no OAuth credential has no other one — so this seam being absent must change nothing except who
@@ -126,6 +129,8 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
     private string _passcode = string.Empty;
     private string _typedAccountId = string.Empty;
     private string? _linkError;
+    // The raw text behind _linkError, for a bug report (FailureCopy); empty when it was already plain.
+    private string _linkErrorDetail = string.Empty;
     private PairedConsole? _paired;
 
     /// <summary>
@@ -553,7 +558,7 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
 
             if (!result.Succeeded || result.CredentialRecord is null)
             {
-                FailBackToLink(result.FailureReason ?? Strings.Pairing_Failed);
+                FailBackToLink(FailureCopy.ForPairing(result.FailureReason));
                 return;
             }
 
@@ -583,14 +588,14 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
             // one, so leaving the flow does not push an error onto a state nobody is looking at.
             if (ReferenceEquals(_pairCts, cts))
             {
-                FailBackToLink(timeoutMessage);
+                FailBackToLink(new PlainFailure(timeoutMessage, string.Empty));
             }
         }
         catch (Exception ex)
         {
             if (ReferenceEquals(_pairCts, cts))
             {
-                FailBackToLink(string.Format(Strings.Pairing_Error, ex.Message));
+                FailBackToLink(new PlainFailure(Strings.Pairing_Failed, string.Format(Strings.Pairing_Error, ex.Message)));
             }
         }
         finally
@@ -631,7 +636,8 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
             _store.Upsert(toSave);
         }
 
-        Completed?.Invoke(new AddConsoleCompletion(toSave, connect));
+        // From the setup, the setup comes next, not a stream.
+        Completed?.Invoke(new AddConsoleCompletion(toSave, connect && !_options.PartOfSetup));
     }
 
     /// <summary>
@@ -735,10 +741,11 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
         }
     }
 
-    private void FailBackToLink(string message) => Mutate(() =>
+    private void FailBackToLink(PlainFailure failure) => Mutate(() =>
     {
         _step = AddConsoleStep.Link;
-        _linkError = message;
+        _linkError = failure.Message;
+        _linkErrorDetail = failure.Technical;
     });
 
     private async Task StartScanAsync()
@@ -1181,7 +1188,7 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
             // player came for, named as such. It was the literal string "Save & connect" in the page's
             // code-behind, past the catalogue entirely.
             PairActionLabel: _step == AddConsoleStep.Done
-                ? Strings.Pairing_PlayNow
+                ? _options.PartOfSetup ? Strings.Pairing_ContinueSetup : Strings.Pairing_PlayNow
                 : Route == PairingRoute.Account
                     ? Strings.Pairing_ActionWithAccount
                     : Strings.Pairing_ActionWithCode,
@@ -1229,6 +1236,7 @@ public sealed class AddConsoleFlow : ObservableState<AddConsoleFlowState>, IAsyn
                 ? string.Format(Strings.Pairing_UsingSignedInAccount, FormatAccountName())
                 : Strings.Pairing_SignInToAutofill,
             LinkError: _linkError,
+            LinkErrorDetail: _linkError is null ? string.Empty : _linkErrorDetail,
             PairingStatus: _accountRoute
                 ? string.Format(Strings.Pairing_WaitingForAccountConfirm, name)
                 : string.Format(Strings.Pairing_Registering, name),

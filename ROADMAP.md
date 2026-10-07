@@ -17,18 +17,18 @@ is the PS3 port's release, not Ripcord's).
 
 We're close, but not one check away. Here's what's left, in order:
 
-1. **The person-driven pass.** Stage A steps 8–10, the two Stage B checks and the input matrix in
-   [`docs/design-branch-test-pass.md`](docs/design-branch-test-pass.md), and a sweep for any control that does
-   nothing. 2026-10-01 found pads hadn't reached a stream since 2026-08-06, which is the argument for not
-   skipping this. The first part ran on 2026-10-02 and found the bugs the journal lists; the
-   connect, HUD, pairing and input checks are still to do, and so is the tone-map's one open check, a
-   mid-session drag between an HDR and an SDR display.
+1. **The person-driven pass:** "The 1.0 pass" in
+   [`docs/design-branch-test-pass.md`](docs/design-branch-test-pass.md), one checklist covering connect, the
+   HUD, pairing, the first-run setup, input, the HDR display drag, Light theme, high contrast, scale and text
+   size, and Narrator. 2026-10-01 found pads hadn't reached a stream since 2026-08-06, which is the argument for
+   not skipping this. The first part ran on 2026-10-02 and found the bugs the journal lists.
 2. **Tag a release candidate.** A `v1.0-rc1` tag builds the x64 and ARM64 zips into a draft release, which
    nobody sees until it's published. Those are what the next two steps install.
 3. **Smoke-check it on ARM64.** The full run passed on 2026-10-05 from a local build; the CI-built ARM64 zip
    only needs to start and stream on the Surface.
 4. **Install it on a clean machine.** Pair, stream, sign in, and a pad with and without GameInput, from the zip
-   CI built. It's also the first fresh install of the new defaults: 1080p60 at 20 Mbps, H.264.
+   CI built. It's also the first fresh install of the first-run setup: on a PC that can decode HEVC it
+   preselects HEVC with HDR, and Skip setup leaves the defaults (1080p60 at 20 Mbps, H.264). Try both.
 5. **Tag `v1.0`,** with `SECURITY.md`'s version row and the release notes. Then celebrate.
 
 Everything else in this file is real, and it can wait. (Yes, even the Apple TV app.)
@@ -66,8 +66,8 @@ measures 0.92 µs a packet on Windows x64 against the managed engine's 14.29 µs
         battery pull mid-stream, and menu navigation with both on.
   - [x] **HDR from the wrong display.** Fixed, and confirmed on 2026-10-01 on a two-monitor desk and across a
         laptop's two GPUs. The "little bright after a drag" turned out to be the GPU driver's tone-mapping. An
-        SDR display asked the console for SDR for a while after that; since 2026-10-03 it asks for HDR and
-        Ripcord tone-maps it itself, which also covers the drag (see below).
+        SDR display asked the console for SDR for a while after that; since 2026-10-03 it asks for HDR, when Request HDR is
+        on, and Ripcord tone-maps it itself, which also covers the drag (see below).
   - [x] **A two-line console name.** Fixed, and checked at every card density, at 100% and 200% display
         scale, and at 100% and 150% text (2026-09-30 and 2026-10-01).
 - [ ] Ripcord's own HDR-to-SDR tone-map is right on every GPU and display path. (The Intel and NVIDIA GPUs and
@@ -75,9 +75,8 @@ measures 0.92 µs a packet on Windows x64 against the managed engine's 14.29 µs
 - [x] The defaults are 1080p60 at 20 Mbps, H.264 and no HDR (the owner's decision, 2026-10-05). HEVC and HDR
       are a choice in Settings, which keeps HDR games' highlights; a stored HEVC on a PC that can't decode it
       falls back to H.264 at connect.
-- [ ] The input stack, Stage A steps 8–10 and the two Stage B checks have been driven by a person, and
-      whatever that finds is fixed or listed. The script is
-      [`docs/design-branch-test-pass.md`](docs/design-branch-test-pass.md).
+- [ ] "The 1.0 pass" in [`docs/design-branch-test-pass.md`](docs/design-branch-test-pass.md) has been driven by
+      a person, and whatever it finds is fixed or listed.
 - [ ] No user-visible control is inert.
 - [ ] `SECURITY.md` names a supported version, and private vulnerability reporting is on. (Reporting went on
       2026-09-30; the version table is written.)
@@ -111,6 +110,9 @@ purchased signing certificate.
       game inside it with white near 255 nits; asked for SDR, an HDR game's stream clips as under "Always On".
 - [x] **SDR games inside HDR10 looked slightly dull** after the tone-map (white at 91%). The renderer now
       measures the picture's peak and tone-maps SDR-like content from it (2026-10-05).
+- [ ] **The first-run setup, driven by a person** (built 2026-10-06): the whole setup from Settings > Advanced >
+      Run setup again, with a pad and without, pairing from it, Back on every step, and the picture question
+      alone on an install that already has a console.
 - [ ] **Clean-machine check.** Install the zip on a machine that has never had the SDK, then pair and stream.
       Sign in too: the web view's profile moved to `%LocalAppData%\Ripcord\WebView2`. Windows Sandbox is a
       clean Windows every launch, good for "does it start with nothing installed", though it won't pass
@@ -227,7 +229,7 @@ purchased signing certificate.
 - [ ] **The stream SESSION_REQUEST's `encryptedKey`:** we send four zero bytes, the vendor sends it empty
       (`22 00`). A one-line change in each implementation, wanting one hardware run.
 - [ ] **Check resolution against bitrate.** The console grants resolution by bitrate, and the default is
-      10,000 kb/s. Measure what a default session actually gets.
+      20,000 kb/s. Measure what a default session actually gets.
 - [ ] **Latency polish, only if measurement says so:** D3D12-native decode, PTS-based A/V sync, an early demuxer
       flush, `CODECAPI_AVLowLatencyMode`, the unused `LatencyMode`, GHASH aggregation, caching the GMAC key per
       rotation window, and the A/V loop's allocation churn. Details in the history.

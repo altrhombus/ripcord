@@ -87,6 +87,9 @@ public class SettingsStoreTests : IDisposable
         Assert.Equal(VideoCodec.H264, s.Codec);
         Assert.False(s.RequestHdr);
         Assert.Equal(DynamicRange.Sdr, s.ToSessionConfig().RequestedDynamicRange);
+
+        // A fresh install hasn't run the first-run setup.
+        Assert.Equal(0, s.SetupVersion);
     }
 
     [Fact]
@@ -110,6 +113,7 @@ public class SettingsStoreTests : IDisposable
             UiStickDeadzone = 0.35,
             FullScreenOnConnect = false,
             ShowDiagnosticsOverlay = true,
+            SetupVersion = 1,
         };
 
         store.Save(updated);

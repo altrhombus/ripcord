@@ -12,12 +12,18 @@ This page covers the dotnet client on Windows.
 - **PlayStation Network**, only if you sign in. Sign-in, the console list on your account, waking a console
   remotely and connecting over the internet all go to Sony's servers, under Sony's own privacy policy. The
   sign-in page is Sony's, shown inside Ripcord.
-- **A public STUN server**, only when you play over the internet: Google's or Cloudflare's. Before an internet
-  session, Ripcord asks one of them what your public address looks like from outside your router, so the
-  console knows where to reach you. The request carries nothing but a random number; the server sees your
-  public IP address, as any server you contact does.
+- **Public STUN servers**, only when you play over the internet: Google's and Cloudflare's. Before an internet
+  session, Ripcord asks two of them what your public address looks like from outside your router, comparing
+  the answers to learn how your router maps ports, so the console knows where to reach you. Each request
+  carries nothing but a random number; the servers see your public IP address, as any server you contact does.
 
 That is the whole list. Ripcord makes no other network connections of its own.
+
+**An identifier for this PC.** Signing in sends Sony an ID made from this PC's Windows machine ID (the
+`MachineGuid` in the registry, which any app on the PC can read), so Sony can tell your devices apart.
+Pairing through your account and playing over the internet send a value hashed from that ID, to Sony's servers
+and to your console. Pairing by code uses random bytes instead. Nothing else about
+your PC is sent.
 
 **One thing to know about signing in.** Ripcord asks PlayStation Network for the same set of permissions the
 official client asks for, and one of them, `sbahn:pc.telemetry.publish`, would allow sending usage data to
@@ -26,7 +32,7 @@ asking for it has not been tested yet, and dropping it is on the roadmap.
 
 ## What it keeps on your machine
 
-Everything lives in `%LocalAppData%\Ripcord`, and nowhere else:
+Everything lives in `%LocalAppData%\Ripcord`, apart from two things listed after the table:
 
 | File | What it holds |
 |---|---|
@@ -39,6 +45,11 @@ Everything lives in `%LocalAppData%\Ripcord`, and nowhere else:
 | `state\diagnostics-*.txt` | What **F8** saves during a stream: the panel's readings, your settings, the app version and Windows version |
 | `state\*-trace.log` | Diagnostic logs some features write while you use them |
 | `state\video-dump-*.bin` | Only with the `RIPCORD_DUMP_VIDEO` developer switch set: the first seconds of the stream's video, which can show your PSN online ID in the console's own notifications |
+
+Outside that folder: a desktop shortcut, if you make one from a console's menu, is a file on your desktop named for
+the console, and stays until you delete it. And the entries in Ripcord's taskbar jump list, which name your paired
+consoles, are kept by Windows; Ripcord rebuilds the list from the consoles you have paired, so removing a console
+removes its entry.
 
 If Windows can't provide DPAPI, Ripcord doesn't fall back to saving them unencrypted: it saves neither, and
 Settings says so.

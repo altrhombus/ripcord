@@ -326,31 +326,48 @@ public sealed class SessionController : IAsyncDisposable
         // flickers.
         string? lastReason = null;
 
+        // Whether this controller has streamed at all. Until it has, a retry is still the first connect: it says
+        // "Connecting", not "Reconnecting", and it has the smaller budget (MaxFirstConnectAttempts).
+        bool everStreamed = false;
+
         try
         {
             while (!cancellationToken.IsCancellationRequested)
             {
                 bool isRetry = attempt > 0;
-                Transition(
-                    isRetry ? SessionLifecycle.Reconnecting : SessionLifecycle.Connecting,
-                    isRetry
-                        ? $"Attempt {attempt} of {_options.MaxReconnectAttempts}."
-                          + (lastReason is null ? string.Empty : $" {lastReason}")
-                        : "Connecting to your console…",
-                    isRetry ? attempt : 0);
+                if (!everStreamed)
+                {
+                    Transition(
+                        SessionLifecycle.Connecting,
+                        isRetry
+                            ? $"Trying again ({attempt} of {_options.MaxFirstConnectAttempts})…"
+                            : "Connecting to your console…",
+                        attempt);
+                }
+                else
+                {
+                    Transition(
+                        isRetry ? SessionLifecycle.Reconnecting : SessionLifecycle.Connecting,
+                        isRetry
+                            ? $"Attempt {attempt} of {_options.MaxReconnectAttempts}."
+                              + (lastReason is null ? string.Empty : $" {lastReason}")
+                            : "Connecting to your console…",
+                        isRetry ? attempt : 0);
+                }
 
                 ConnectOutcome outcome = await ConnectWithinDeadlineAsync(cancellationToken)
                     .ConfigureAwait(false);
 
                 if (outcome.Connected)
                 {
+                    everStreamed = true;
                     Transition(SessionLifecycle.Streaming, "Connected.");
                     DateTimeOffset streamingSince = _clock();
 
                     // Returns when the session ends or stalls past the reconnect threshold. Read why before the
                     // teardown drops the session: a session that closed itself can say (IStreamingSession.EndReason).
                     await WatchSessionAsync(cancellationToken).ConfigureAwait(false);
-                    string? endReason = CurrentEndReason();
+                    (string? endReason, SessionEndKind endKind) = CurrentEnd();
                     await TeardownSessionAsync().ConfigureAwait(false);
 
                     if (cancellationToken.IsCancellationRequested)
@@ -361,7 +378,8 @@ public sealed class SessionController : IAsyncDisposable
                     // The console ended it on purpose: no reconnect, and above all no wake. Every reconnect wakes the
                     // console first (WakeBeforeRetry), so a console rested from its own menu, or by its own timer,
                     // was woken straight back up (2026-10-05).
-                    if (IsEndedByConsole(endReason))
+                    if (endKind == SessionEndKind.EndedByConsole
+                        || (endKind == SessionEndKind.Unknown && IsEndedByConsole(endReason)))
                     {
                         Transition(SessionLifecycle.Ended, endReason!);
                         return;
@@ -416,30 +434,46 @@ public sealed class SessionController : IAsyncDisposable
 
                 await TeardownSessionAsync().ConfigureAwait(false);
 
-                if (!outcome.Retryable)
+                // Retrying an unretryable failure just burns time and hides the real problem. A console that ended
+                // the session while it was starting has answered, too: retrying would wake it to ask again.
+                if (!outcome.Retryable || outcome.EndedByConsole)
                 {
-                    // Retrying an unretryable failure just burns time and hides the real problem.
                     Transition(SessionLifecycle.Failed, outcome.Detail);
                     return;
                 }
 
                 attempt++;
-                if (attempt > _options.MaxReconnectAttempts)
+                int budget = everStreamed ? _options.MaxReconnectAttempts : _options.MaxFirstConnectAttempts;
+                if (attempt > budget)
                 {
+                    // A first connect's failure is its own cause; "couldn't reconnect" was never true of it.
                     Transition(
                         SessionLifecycle.Failed,
-                        $"Couldn't reconnect after {_options.MaxReconnectAttempts} attempts. {outcome.Detail}");
+                        everStreamed
+                            ? $"Couldn't reconnect after {budget} attempts. {outcome.Detail}"
+                            : outcome.Detail);
                     return;
                 }
 
                 lastReason = outcome.Detail;
 
                 TimeSpan backoff = BackoffFor(attempt);
-                Transition(
-                    SessionLifecycle.Reconnecting,
-                    $"Connection failed. Retrying in {Math.Ceiling(backoff.TotalSeconds)}s… ({outcome.Detail})",
-                    attempt,
-                    backoff);
+                if (everStreamed)
+                {
+                    Transition(
+                        SessionLifecycle.Reconnecting,
+                        $"Connection failed. Retrying in {Math.Ceiling(backoff.TotalSeconds)}s… ({outcome.Detail})",
+                        attempt,
+                        backoff);
+                }
+                else
+                {
+                    Transition(
+                        SessionLifecycle.Connecting,
+                        $"That didn't work. Trying again in {Math.Ceiling(backoff.TotalSeconds)}s…",
+                        attempt,
+                        backoff);
+                }
 
                 try
                 {
@@ -560,7 +594,7 @@ public sealed class SessionController : IAsyncDisposable
             $"The console didn't answer within {Math.Round(_options.ConnectTimeout.TotalSeconds)}s.");
     }
 
-    private readonly record struct ConnectOutcome(bool Connected, bool Retryable, string Detail);
+    private readonly record struct ConnectOutcome(bool Connected, bool Retryable, string Detail, bool EndedByConsole = false);
 
     // The armed deadline, so a hold can pause it. All four under _deadlineGate, which is its own lock because a
     // hold is taken and released on the UI thread and must not contend with anything else here.
@@ -657,11 +691,13 @@ public sealed class SessionController : IAsyncDisposable
         }
     }
 
-    private string? CurrentEndReason()
+    private (string? Reason, SessionEndKind Kind) CurrentEnd()
     {
         lock (_gate)
         {
-            return _session?.State == SessionState.Closed ? _session.EndReason : null;
+            return _session?.State == SessionState.Closed
+                ? (_session.EndReason, _session.EndKind)
+                : (null, SessionEndKind.Unknown);
         }
     }
 
@@ -699,7 +735,15 @@ public sealed class SessionController : IAsyncDisposable
             if (!result.Succeeded)
             {
                 string reason = result.FailureReason ?? "unknown reason";
-                return new ConnectOutcome(false, IsRetryable(reason), reason);
+
+                // The session's own word on it when it gives one; the reason's text only when it doesn't.
+                return result.Kind switch
+                {
+                    SessionFailureKind.Retryable => new ConnectOutcome(false, Retryable: true, reason),
+                    SessionFailureKind.Permanent => new ConnectOutcome(false, Retryable: false, reason),
+                    SessionFailureKind.EndedByConsole => new ConnectOutcome(false, Retryable: false, reason, EndedByConsole: true),
+                    _ => new ConnectOutcome(false, IsRetryable(reason), reason, IsEndedByConsole(reason)),
+                };
             }
         }
         catch (OperationCanceledException)
@@ -740,6 +784,14 @@ public sealed class SessionController : IAsyncDisposable
         [
             "not paired", "registration", "registkey", "credential", "unauthor",
             "rejected (403", "rejected (401", "control secrets",
+
+            // The session's own wording is "/sess/init rejected (HTTP 403, …)", which the two above never matched,
+            // so a console refusing the session was retried six times with a wake before each (review,
+            // 2026-10-05). [X]: whether a console still waking can answer 403 is unchecked; the 1.0 pass covers it.
+            "rejected (http 403", "rejected (http 401",
+
+            // A pairing with no companion key can't derive the control key however often it is tried.
+            "pair the console again",
 
             // The login passcode: cancelled, impossible to enter here, or wrong too many times. Asking again just
             // asks the person the same question, and a cancel retried was a prompt that came straight back

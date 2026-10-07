@@ -109,7 +109,7 @@ jobs:
           dotnet publish src/Ripcord.App/Ripcord.App.csproj -c Release -p:Platform=${{ matrix.platform }} -p:RipcordNativePlatform=${{ matrix.platform }} -p:Version=$version -p:InformationalVersion=$tag -nodeReuse:false
           $pub = Get-ChildItem src/Ripcord.App/bin/${{ matrix.platform }}/Release -Recurse -Directory -Filter publish | Select-Object -First 1
           if (-not $pub) { throw "no publish folder" }
-          foreach ($f in 'Ripcord.App.exe','LICENSE','NOTICE','THIRD-PARTY-NOTICES.txt','PRIVACY.md','GameInputRedist.msi','coreclr.dll','Microsoft.WindowsAppRuntime.dll') {
+          foreach ($f in 'Ripcord.exe','LICENSE','NOTICE','THIRD-PARTY-NOTICES.txt','PRIVACY.md','GameInputRedist.msi','coreclr.dll','Microsoft.WindowsAppRuntime.dll') {
             if (-not (Test-Path (Join-Path $pub.FullName $f))) { throw "the publish is missing $f" }
           }
           # Inside a Ripcord folder, so unzipping gives one folder rather than 568 loose files.
@@ -693,8 +693,9 @@ jobs:
           on, and what it does not do yet.
 
           **Installing.** Download the zip for your PC: `win-x64` for most PCs, `win-arm64` for ARM devices such
-          as a Surface Pro X or a Copilot+ PC. Unzip it anywhere and run `Ripcord.App.exe` from the `Ripcord`
-          folder. Nothing else to install: .NET and the Windows App SDK are inside. `SHA256SUMS.txt` has each
+          as a Surface Pro X or a Copilot+ PC. Unzip it somewhere it can stay, not Downloads (desktop shortcuts
+          and the taskbar's jump list remember where it is), and run `Ripcord.exe` from the `Ripcord` folder.
+          Nothing else to install: .NET and the Windows App SDK are inside. `SHA256SUMS.txt` has each
           zip's checksum.
 
           **Windows will warn you.** Ripcord isn't code-signed yet. SmartScreen shows a warning the first time:

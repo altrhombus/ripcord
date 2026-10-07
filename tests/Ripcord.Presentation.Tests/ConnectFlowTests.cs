@@ -312,8 +312,8 @@ public class ConnectFlowTests
     [InlineData(null)]   // the check itself failed
     public async Task APcThatCannotDecodeHevc_ConnectsWithH264AndSdr(bool? available)
     {
-        // HEVC is the default, and Settings corrects a stored HEVC only when it is opened. The connect must not
-        // build an HEVC decoder that does not exist: the stream would arrive and never display.
+        // Settings corrects a stored HEVC only when it is opened. The connect must not build an HEVC decoder that
+        // does not exist: the stream would arrive and never display.
         var video = new StubVideo();
         (ConnectPlan? plan, _) = await RunAsync(
             new StubSessions(), new StubWake(), video, Ps5(), new RipcordSettings { Codec = VideoCodec.Hevc, RequestHdr = true },
@@ -322,6 +322,28 @@ public class ConnectFlowTests
         Assert.Equal(VideoCodec.H264, plan!.Config.CodecPreference);
         Assert.Equal(DynamicRange.Sdr, plan.Config.RequestedDynamicRange);
         Assert.Equal(VideoCodec.H264, video.Received!.CodecPreference);   // and the decoder was built for H.264
+    }
+
+    [Theory]
+    [InlineData(false, "can't decode HEVC")]
+    [InlineData(null, "couldn't check for HEVC")]   // failed or timed out: not shown to be missing
+    public async Task TheFallback_IsCarriedInThePlan_AndSaysWhy(bool? available, string expected)
+    {
+        (ConnectPlan? plan, _) = await RunAsync(
+            new StubSessions(), new StubWake(), new StubVideo(), Ps5(), new RipcordSettings { Codec = VideoCodec.Hevc },
+            hevcDecodeAvailable: () => available is { } a ? Task.FromResult(a) : Task.FromException<bool>(new TimeoutException()));
+
+        Assert.Contains(expected, plan!.Notice, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task NoFallback_NoNotice()
+    {
+        (ConnectPlan? plan, _) = await RunAsync(
+            new StubSessions(), new StubWake(), new StubVideo(), Ps5(), new RipcordSettings { Codec = VideoCodec.Hevc },
+            hevcDecodeAvailable: () => Task.FromResult(true));
+
+        Assert.Null(plan!.Notice);
     }
 
     /// <summary>Runs posted continuations at once, but inside itself, so a test can see whether one came back.</summary>
@@ -356,6 +378,32 @@ public class ConnectFlowTests
         }
 
         Assert.Same(context, video.CalledOn);
+    }
+
+    [Fact]
+    public async Task AWakeThatThrows_EndsOnAStageThatSaysSo()
+    {
+        // The flow runs fire-and-forget from the page: an exception that escaped it left "Waking" on screen with
+        // nothing to say why (review, 2026-10-05).
+        (ConnectPlan? plan, Stages stages) = await RunAsync(
+            new StubSessions(), new StubWake(fault: new InvalidOperationException("probe socket closed")), new StubVideo(), Ps5());
+
+        Assert.Null(plan);
+        ConnectStage last = stages.Reported[^1];
+        Assert.True(last.Terminal);
+        Assert.Equal("probe socket closed", last.Technical);
+    }
+
+    [Fact]
+    public async Task ARouteChoiceThatThrows_EndsOnAStageThatSaysSo()
+    {
+        (ConnectPlan? plan, Stages stages) = await RunAsync(
+            new StubSessions(routeFault: new InvalidOperationException("gateway gone")), new StubWake(), new StubVideo(), Ps5());
+
+        Assert.Null(plan);
+        ConnectStage last = stages.Reported[^1];
+        Assert.True(last.Terminal);
+        Assert.Equal("gateway gone", last.Technical);
     }
 
     [Fact]
