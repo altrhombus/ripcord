@@ -41,7 +41,11 @@ can be done by an agent. Tick as you go; a failure goes in the journal and, if i
 
 **Connect and the stream**
 - [ ] §1 Connect, all five lines: awake, rest mode, the identity landing, a failed connect, a reconnect.
-- [ ] A first connect that fails reads "Couldn't connect" in plain words, with the raw cause only under F8.
+- [ ] A first connect that fails stays "Connecting", tries twice more, and reads "Couldn't connect" in plain
+      words with the raw cause small beneath. A wrong pairing code says the code wasn't accepted.
+- [ ] **Connect to a console in rest mode, several times.** It must wake and stream, never fail at once on
+      "refused the connection": since 2026-10-06 an HTTP 403 is no longer retried, and whether a console that
+      is still waking can answer 403 is unchecked `[X]`.
 - [ ] §2 and §3 the HUD: the three rungs, F3, the placement.
 - [ ] Leave a stream with "Rest console when I disconnect" on, by the exit gesture and by closing the window:
       the console rests both ways.
