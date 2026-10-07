@@ -1401,7 +1401,11 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
     private async Task RestartSessionAsync()
     {
         ShowStatus("Connecting…", "Starting a new session.", terminal: false);
-        await TeardownControllerAsync();
+
+        // The whole attempt, not just the controller: StartSessionAsync builds a new video pipeline, stats timer,
+        // trace and cancellation source, and overwrote the old ones while they still held a D3D12 device, a
+        // decoder, a swap chain, an audio stream and a worker thread (review, 2026-10-05).
+        await TeardownAttemptAsync();
         await StartSessionAsync();
     }
 
@@ -2346,8 +2350,27 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
         Teardown = TeardownAsync();
     }
 
-    private async Task TeardownAsync()
+    private Task TeardownAsync() => TeardownAttemptAsync();
+
+    /// <summary>
+    /// Release everything one connect attempt made: the stats timer, the cancellation source, the trace, the
+    /// controller and the video pipeline. Used on the way out and before a restart (Try again, or the SDR
+    /// fallback), which builds all of them again.
+    /// </summary>
+    private async Task TeardownAttemptAsync()
     {
+        if (_statsTimer is { } timer)
+        {
+            timer.Stop();
+            timer.Tick -= StatsTick;
+            _statsTimer = null;
+        }
+
+        // Cancelled and dropped, not disposed: the attempt's flow may still be unwinding and registering on its
+        // token, and a cancelled source with no timer holds nothing worth releasing early.
+        _connectCts?.Cancel();
+        _connectCts = null;
+
         StopTrace();
 
         await TeardownControllerAsync();

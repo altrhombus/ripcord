@@ -317,7 +317,15 @@ public sealed class ConsoleReachabilityMonitor
         {
             PairedConsole moved = card.Console with { Host = address };
             card.Update(moved);
-            _addressChanged?.Invoke(moved);
+            // Saved best-effort: the store refuses to write while its file can't be read (rather than writing
+            // over every pairing), and the next probe finds the move again.
+            try
+            {
+                _addressChanged?.Invoke(moved);
+            }
+            catch (IOException)
+            {
+            }
         }
 
         return match.IsAwake ? ConsoleReachability.Online : ConsoleReachability.Resting;

@@ -671,8 +671,18 @@ public sealed class D3D12VideoDecodePipeline : IVideoDecodePipeline
         {
             if (_initialized)
             {
-                _renderer.Shutdown();
                 _initialized = false;
+
+                // The rest of this method still runs if the renderer's shutdown throws: the audio stream and the
+                // queued payloads behind it were skipped when it did (after a device loss, review 2026-10-05).
+                try
+                {
+                    _renderer.Shutdown();
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[Ripcord] renderer shutdown failed: {ex.Message}");
+                }
             }
         }
 
