@@ -48,6 +48,8 @@ internal sealed class AccountRouteSession : IStreamingSession
 
     public string? EndReason => _inner.EndReason;
 
+    public SessionEndKind EndKind => _inner.EndKind;
+
     public double? MillisecondsSinceConsoleActivity => _inner.MillisecondsSinceConsoleActivity;
 
     public bool RestConsoleOnDisconnect

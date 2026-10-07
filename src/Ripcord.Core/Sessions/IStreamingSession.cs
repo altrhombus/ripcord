@@ -9,7 +9,39 @@ public enum SessionState
     Closed,
 }
 
-public sealed record SessionHandshakeResult(bool Succeeded, string? FailureReason);
+/// <summary>
+/// What a failed handshake means for trying again, said as a value rather than in the reason's words. A backend
+/// that says nothing leaves it <see cref="Unknown"/>, and the controller judges the reason's text as it always
+/// has; the text was matched in English and a reworded message changed the behaviour (review, 2026-10-05).
+/// </summary>
+public enum SessionFailureKind
+{
+    Unknown,
+
+    /// <summary>Worth another attempt: a timeout, a moment with no route.</summary>
+    Retryable,
+
+    /// <summary>An answer, not a fault: trying again asks the same question (a refusal, a cancelled passcode).</summary>
+    Permanent,
+
+    /// <summary>The console ended the session while it was starting. Final, and the console is not woken again.</summary>
+    EndedByConsole,
+}
+
+public sealed record SessionHandshakeResult(
+    bool Succeeded, string? FailureReason, SessionFailureKind Kind = SessionFailureKind.Unknown);
+
+/// <summary>How a running session ended, as a value; see <see cref="SessionFailureKind"/> for why.</summary>
+public enum SessionEndKind
+{
+    Unknown,
+
+    /// <summary>The console ended it: its goodbye, or its control connection closing cleanly. No reconnect.</summary>
+    EndedByConsole,
+
+    /// <summary>The connection to the console failed. Worth reconnecting.</summary>
+    ConnectionFailed,
+}
 
 /// <param name="BitrateKbps">
 /// The <em>measured</em> incoming bitrate over the last sampling window, not the requested rate. 0 before the
@@ -61,6 +93,9 @@ public interface IStreamingSession : IAsyncDisposable
     /// <see cref="SessionState.Closed"/>, so a reconnect can say what it is reconnecting from.
     /// </summary>
     string? EndReason => null;
+
+    /// <summary>What kind of ending <see cref="EndReason"/> describes, or <see cref="SessionEndKind.Unknown"/>.</summary>
+    SessionEndKind EndKind => SessionEndKind.Unknown;
 
     /// <summary>
     /// Milliseconds since ANYTHING arrived from the console, or null if nothing has yet.

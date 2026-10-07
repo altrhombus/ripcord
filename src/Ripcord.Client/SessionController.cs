@@ -367,7 +367,7 @@ public sealed class SessionController : IAsyncDisposable
                     // Returns when the session ends or stalls past the reconnect threshold. Read why before the
                     // teardown drops the session: a session that closed itself can say (IStreamingSession.EndReason).
                     await WatchSessionAsync(cancellationToken).ConfigureAwait(false);
-                    string? endReason = CurrentEndReason();
+                    (string? endReason, SessionEndKind endKind) = CurrentEnd();
                     await TeardownSessionAsync().ConfigureAwait(false);
 
                     if (cancellationToken.IsCancellationRequested)
@@ -378,7 +378,8 @@ public sealed class SessionController : IAsyncDisposable
                     // The console ended it on purpose: no reconnect, and above all no wake. Every reconnect wakes the
                     // console first (WakeBeforeRetry), so a console rested from its own menu, or by its own timer,
                     // was woken straight back up (2026-10-05).
-                    if (IsEndedByConsole(endReason))
+                    if (endKind == SessionEndKind.EndedByConsole
+                        || (endKind == SessionEndKind.Unknown && IsEndedByConsole(endReason)))
                     {
                         Transition(SessionLifecycle.Ended, endReason!);
                         return;
@@ -435,7 +436,7 @@ public sealed class SessionController : IAsyncDisposable
 
                 // Retrying an unretryable failure just burns time and hides the real problem. A console that ended
                 // the session while it was starting has answered, too: retrying would wake it to ask again.
-                if (!outcome.Retryable || IsEndedByConsole(outcome.Detail))
+                if (!outcome.Retryable || outcome.EndedByConsole)
                 {
                     Transition(SessionLifecycle.Failed, outcome.Detail);
                     return;
@@ -593,7 +594,7 @@ public sealed class SessionController : IAsyncDisposable
             $"The console didn't answer within {Math.Round(_options.ConnectTimeout.TotalSeconds)}s.");
     }
 
-    private readonly record struct ConnectOutcome(bool Connected, bool Retryable, string Detail);
+    private readonly record struct ConnectOutcome(bool Connected, bool Retryable, string Detail, bool EndedByConsole = false);
 
     // The armed deadline, so a hold can pause it. All four under _deadlineGate, which is its own lock because a
     // hold is taken and released on the UI thread and must not contend with anything else here.
@@ -690,11 +691,13 @@ public sealed class SessionController : IAsyncDisposable
         }
     }
 
-    private string? CurrentEndReason()
+    private (string? Reason, SessionEndKind Kind) CurrentEnd()
     {
         lock (_gate)
         {
-            return _session?.State == SessionState.Closed ? _session.EndReason : null;
+            return _session?.State == SessionState.Closed
+                ? (_session.EndReason, _session.EndKind)
+                : (null, SessionEndKind.Unknown);
         }
     }
 
@@ -732,7 +735,15 @@ public sealed class SessionController : IAsyncDisposable
             if (!result.Succeeded)
             {
                 string reason = result.FailureReason ?? "unknown reason";
-                return new ConnectOutcome(false, IsRetryable(reason), reason);
+
+                // The session's own word on it when it gives one; the reason's text only when it doesn't.
+                return result.Kind switch
+                {
+                    SessionFailureKind.Retryable => new ConnectOutcome(false, Retryable: true, reason),
+                    SessionFailureKind.Permanent => new ConnectOutcome(false, Retryable: false, reason),
+                    SessionFailureKind.EndedByConsole => new ConnectOutcome(false, Retryable: false, reason, EndedByConsole: true),
+                    _ => new ConnectOutcome(false, IsRetryable(reason), reason, IsEndedByConsole(reason)),
+                };
             }
         }
         catch (OperationCanceledException)
