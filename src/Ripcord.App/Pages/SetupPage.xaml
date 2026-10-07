@@ -34,7 +34,7 @@
 
         <!--  ============ Header ============  -->
         <StackPanel MaxWidth="720" HorizontalAlignment="Left" Spacing="12">
-            <TextBlock x:Name="TitleText" Style="{StaticResource TitleTextBlockStyle}" TextWrapping="Wrap" />
+            <TextBlock x:Name="TitleText" Style="{StaticResource RipcordPageTitleStyle}" TextWrapping="Wrap" />
             <!--  The mark's proportions, 9 : 16 : 12, as on the add-console page.  -->
             <Grid
                 x:Name="StepDashes"

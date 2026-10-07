@@ -192,8 +192,23 @@ public sealed partial class AddConsolePage : Page
         AccountPairingNote.IsOpen = s.AccountPairingOffered;
 
         LinkStatus.Severity = InfoBarSeverity.Error;
+        if (s.LinkError is not null && LinkStatus.Message != s.LinkError)
+        {
+            Announcer.Announce(LinkStatus, s.LinkError, important: true);
+        }
+
         LinkStatus.Message = s.LinkError ?? string.Empty;
         LinkStatus.IsOpen = s.LinkError is not null;
+
+        if (s.Step == AddConsoleStep.Pairing && PairingStatusText.Text != s.PairingStatus)
+        {
+            Announcer.Announce(PairingStatusText, s.PairingStatus);
+        }
+
+        if (s.Step == AddConsoleStep.Done && DoneSubtext.Text != s.DoneSubtext)
+        {
+            Announcer.Announce(DoneSubtext, s.DoneSubtext, important: true);
+        }
 
         PairingStatusText.Text = s.PairingStatus;
         PairingHint.Text = s.PairingHint;

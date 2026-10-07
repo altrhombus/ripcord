@@ -52,7 +52,7 @@
             Spacing="24"
             XYFocusDownNavigationStrategy="RectilinearDistance"
             XYFocusUpNavigationStrategy="RectilinearDistance">
-            <TextBlock x:Uid="SettingsPage_Settings" Style="{StaticResource TitleTextBlockStyle}" />
+            <TextBlock x:Uid="SettingsPage_Settings" Style="{StaticResource RipcordPageTitleStyle}" />
 
 
             <!--  ============ Picture ============  -->

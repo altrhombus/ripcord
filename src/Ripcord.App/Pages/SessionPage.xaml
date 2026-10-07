@@ -110,7 +110,7 @@
                 -->
                 <TextBlock
                     x:Name="StatusHeadline"
-                    Style="{StaticResource TitleTextBlockStyle}"
+                    Style="{StaticResource RipcordPageTitleStyle}"
                     x:Uid="SessionPage_Starting"
                     TextWrapping="Wrap" />
                 <!--
