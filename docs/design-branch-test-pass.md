@@ -58,6 +58,10 @@ can be done by an agent. Tick as you go; a failure goes in the journal and, if i
 - [ ] The first-run setup from Settings > Advanced > Run setup again: every step, Back on each, with a pad and
       without, pairing from it (the last button is Continue setup and no stream starts), Skip setup.
 - [ ] The picture question alone, once, on an install that already has a console.
+- [ ] **Every PS5 menu path Ripcord names, word for word on a console:** Settings > System > Remote Play >
+      Enable Remote Play, and Settings > System > Power Saving > Features Available in Rest Mode, with Stay
+      Connected to the Internet and Enable Turning On PS5 from Network. They're in the setup's console step and
+      on the "Console didn't wake" screen, written from memory `[X]`.
 - [ ] Two consoles, if there are two: change one's address (a DHCP reservation swap) and check both still
       connect and neither pairing is lost.
 

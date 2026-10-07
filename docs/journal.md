@@ -35,6 +35,33 @@ different purpose.
 > anything. The list above is short, it is checkable in one `git log --format=%B | grep`, and it stops
 > growing the moment someone notices — which is the property that actually matters.
 
+### The review's lifecycle fixes, and the pull-request audit (2026-10-06)
+
+From the same review, the things that go wrong over a session's life rather than on a screen. None has met a
+console or a GPU fault yet; the Wi-Fi blip and the two-console move are on the 1.0 pass.
+
+- **A retry starts clean.** Try again and the SDR fallback built a whole new video pipeline over the old one,
+  device, decoder, swap chain, audio stream and worker, and a second stats timer beside the first. Everything
+  one attempt makes is released before the next.
+- **Shutdown after a driver reset can't take the app down.** It waited on a removed device and threw, out of the
+  pipeline's dispose and then out of a destructor. It runs once now, and never throws.
+- **The diagnostics panel no longer reaches into the decoder** from the UI thread while the decode worker might
+  be resetting it; the worker publishes what the panel shows.
+- **The console store keeps every pairing.** Its writes were unserialised (the reachability monitor writes
+  several at once), an unreadable file read as empty and was saved over, and two consoles matched if they had
+  ever shared an address, so a DHCP swap deleted one. Writes are serialised, an update refuses an unreadable
+  file, and consoles match by their own id.
+- **The account route hears only the console.** Its public port took a datagram from anyone, so an injected
+  close ended the session.
+- **A failed send skips a heartbeat** instead of ending the heartbeat, congestion and retransmit loops for the
+  session, which after a Wi-Fi roam left the console to hang up.
+- **How a session ended is a value,** not English text matched by the controller.
+
+**The pull-request audit.** GitHub keeps every pull request's commits reachable whatever the branches' history
+says, about 1,600 more than the local history. Fetched into a scratch clone and scanned with the leak guard
+against the full denylist, all 2,537 commits came back clean. A planted value was caught, so a clean result
+meant something.
+
 ### Failures in plain words, and the review's UX day (2026-10-06)
 
 A fresh review of the whole project (eight reviewers, 2026-10-05) ranked the user experience first. What came
