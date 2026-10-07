@@ -2,7 +2,8 @@
 
 **The question this answers: what a person has to look at, on the surfaces the design work rebuilt.**
 
-Written 2026-09-13 for `feat/app-design-direction`; last revised 2026-09-24, when that branch merged. The
+Written 2026-09-13 for `feat/app-design-direction`; revised 2026-09-24, when that branch merged, and
+2026-10-06, when "The 1.0 pass" below became the roadmap's step 1. The
 branch name is gone from the title because the work is on `main` and the script outlives it. Delete this file
 once the pass is done and its findings are in [`ROADMAP.md`](../ROADMAP.md).
 
@@ -27,6 +28,48 @@ not re-reported: the session trace recorded an empty GPU name; the trace's healt
 behind its own numbers; and a console that was powered on the whole time was shown as unreachable because a
 single probe datagram went missing. That last one is worth a deliberate re-check on the same VLAN, since it
 is the only one whose fix cannot be proven off-device.
+
+---
+
+## The 1.0 pass
+
+**This is step 1 of the road to 1.0 in [`ROADMAP.md`](../ROADMAP.md), as one list** (written 2026-10-06; it
+replaces the roadmap's pointer to "Stage A steps 8–10 and the two Stage B checks"). Stage A's steps 8–10 were
+driven on real hardware on 2026-08-06 and are done; the journal's later "never driven" note predates that
+entry's correction. Everything else below is owed. Each line names a console, a pad or a screen, so none of it
+can be done by an agent. Tick as you go; a failure goes in the journal and, if it blocks, in the roadmap.
+
+**Connect and the stream**
+- [ ] §1 Connect, all five lines: awake, rest mode, the identity landing, a failed connect, a reconnect.
+- [ ] A first connect that fails reads "Couldn't connect" in plain words, with the raw cause only under F8.
+- [ ] §2 and §3 the HUD: the three rungs, F3, the placement.
+- [ ] Leave a stream with "Rest console when I disconnect" on, by the exit gesture and by closing the window:
+      the console rests both ways.
+- [ ] A short Wi-Fi blip mid-stream (switch the access point or toggle Wi-Fi for two seconds): the stream comes
+      back, and the console does not end it a minute later.
+- [ ] HDR: drag the window between an HDR and an SDR display mid-stream; the picture is right on both.
+
+**Pairing and the first run**
+- [ ] §8 Pairing, all six lines.
+- [ ] The first-run setup from Settings > Advanced > Run setup again: every step, Back on each, with a pad and
+      without, pairing from it (the last button is Continue setup and no stream starts), Skip setup.
+- [ ] The picture question alone, once, on an install that already has a console.
+- [ ] Two consoles, if there are two: change one's address (a DHCP reservation swap) and check both still
+      connect and neither pairing is lost.
+
+**Input**
+- [ ] The input matrix below ("Per surface, per input"): pad, keyboard, mouse, touch, on every surface.
+- [ ] No pad attached: connect, and the keyboard plays without touching Settings.
+- [ ] An Xbox pad with GameInput, and without it: the setup and About both say what's missing.
+- [ ] Two pads in one stream, and the button names following the pad last pressed.
+- [ ] A sweep for any control that does nothing.
+
+**Seeing and hearing it**
+- [ ] Windows in **Light** theme: the connect, failure and stream screens are readable.
+- [ ] **High contrast** (a Stage B check): every surface, focus visible.
+- [ ] **200% display scale** and **Text size 150%** (the other Stage B check) and **225%**: nothing clipped,
+      the sign-in dialog fits.
+- [ ] **Narrator**, through pair → connect → a failure → stream → leave: progress and failures are announced.
 
 ---
 
