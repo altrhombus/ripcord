@@ -498,6 +498,7 @@
                 TextWrapping="Wrap" />
             <Button
                 x:Name="EmptyStateAddButton"
+                x:Uid="ConsolesPage_EmptyStateAdd"
                 Margin="0,4,0,0"
                 HorizontalAlignment="Center"
                 Click="OnAddConsoleClick"

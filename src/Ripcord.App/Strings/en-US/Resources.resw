@@ -798,4 +798,16 @@ lasts the rest of the session, because F3 restores the rung it was left on.</com
     <value>Setup again, graphics adapter, and how saved consoles are protected</value>
     <comment>Settings: the line under the collapsed Advanced section, listing what is inside it so nobody has to open it to find out.</comment>
   </data>
+  <data name="ConsolesPage_EmptyStateAdd.AutomationProperties.Name" xml:space="preserve">
+    <value>Add a console</value>
+    <comment>Screen-reader name of the one button on the empty console list. Its visible label is inside a panel with an icon, which a button does not read as its name, so Narrator said only "button" (visual audit, 2026-10-08).</comment>
+  </data>
+  <data name="SettingsPage_KeysGamepadMapping.AutomationProperties.Name" xml:space="preserve">
+    <value>Keyboard keys</value>
+    <comment>Screen-reader name of the Settings row for keyboard bindings, the same as its visible title. Without it the row took its button's label and read as "Configure…" (visual audit, 2026-10-08).</comment>
+  </data>
+  <data name="AboutPage_Wordmark.AutomationProperties.Name" xml:space="preserve">
+    <value>Ripcord</value>
+    <comment>Screen-reader name of the drawn wordmark at the top of About, which is the page's level-1 heading. The app's name - do not translate.</comment>
+  </data>
 </root>

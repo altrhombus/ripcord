@@ -442,6 +442,13 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
     {
         var flyout = new MenuFlyout { Placement = FlyoutPlacementMode.BottomEdgeAlignedRight };
 
+        // A flyout is not an element, so its accessible name goes on the presenter it opens as.
+        var presenterStyle = new Style(typeof(MenuFlyoutPresenter));
+        presenterStyle.Setters.Add(new Setter(
+            Microsoft.UI.Xaml.Automation.AutomationProperties.NameProperty,
+            ConsoleCardCopy.MenuName(item.State.DisplayName)));
+        flyout.MenuFlyoutPresenterStyle = presenterStyle;
+
         // Glyphs escaped rather than pasted: a private-use codepoint sitting raw in a C# string is invisible
         // in a diff and quietly mangled by anything that re-encodes the file.
         var rename = new MenuFlyoutItem { Text = ConsoleCardCopy.MenuRename, Icon = new FontIcon { Glyph = "\uE8AC" } };

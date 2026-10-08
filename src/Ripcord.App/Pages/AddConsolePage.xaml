@@ -145,7 +145,7 @@
                     </StackPanel.Transitions>
 
                     <TextBlock
-                        Style="{StaticResource SubtitleTextBlockStyle}"
+                        Style="{StaticResource RipcordStepHeadingStyle}"
                         x:Uid="AddConsolePage_WhichConsoleConnecting"
                         TextWrapping="Wrap" />
 
@@ -217,7 +217,7 @@
 
                     <TextBlock
                         x:Name="FindHeading"
-                        Style="{StaticResource SubtitleTextBlockStyle}"
+                        Style="{StaticResource RipcordStepHeadingStyle}"
                         x:Uid="AddConsolePage_LookingConsole"
                         TextWrapping="Wrap" />
                     <TextBlock
@@ -288,7 +288,7 @@
 
                     <TextBlock
                         x:Name="LinkHeading"
-                        Style="{StaticResource SubtitleTextBlockStyle}"
+                        Style="{StaticResource RipcordStepHeadingStyle}"
                         x:Uid="AddConsolePage_LinkPcConsole"
                         TextWrapping="Wrap" />
 
@@ -447,7 +447,7 @@
                     </StackPanel.Transitions>
 
                     <TextBlock
-                        Style="{StaticResource SubtitleTextBlockStyle}"
+                        Style="{StaticResource RipcordStepHeadingStyle}"
                         x:Uid="AddConsolePage_Pairing"
                         TextWrapping="Wrap" />
                     <ProgressBar IsIndeterminate="True" />

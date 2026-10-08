@@ -1,4 +1,5 @@
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Navigation;
 using Ripcord.Core.Input;
@@ -122,6 +123,15 @@ public sealed partial class SetupPage : Page, IInitialFocusTarget, IStepBack
         RecommendedPill.Visibility = Vis(s.BestPictureAvailable);
         CompatibleLabelText.Text = s.CompatibleLabel;
         CompatibleDetailText.Text = s.CompatibleDetail;
+
+        // Named for a screen reader. Their content is a panel of text, which a RadioButton does not read as its
+        // name, so Narrator said "radio button, 1 of 2" and nothing else (visual audit, 2026-10-08). The label is
+        // the name, the pill joins it when shown, and the detail line is the help text.
+        AutomationProperties.SetName(
+            BestRadio, s.BestPictureAvailable ? $"{s.BestPictureLabel}, {s.RecommendedLabel}" : s.BestPictureLabel);
+        AutomationProperties.SetHelpText(BestRadio, s.BestPictureDetail);
+        AutomationProperties.SetName(CompatibleRadio, s.CompatibleLabel);
+        AutomationProperties.SetHelpText(CompatibleRadio, s.CompatibleDetail);
         BestRadio.IsEnabled = !s.Checking && s.BestPictureAvailable;
         CompatibleRadio.IsEnabled = !s.Checking;
         _rendering = true;

@@ -290,6 +290,9 @@ public sealed partial class SettingsPage : Page, IInitialFocusTarget
         AccountCard.Header = s.Heading;
         AccountCard.Description = s.Detail;
 
+        // Its header is set here rather than from a uid, so its accessible name has to be too; the row had none.
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(AccountCard, s.Heading);
+
         AccountBusy.IsActive = s.IsBusy;
         SignInButton.Visibility = Vis(s.CanSignIn);
         SignOutButton.Visibility = Vis(s.CanSignOut);
