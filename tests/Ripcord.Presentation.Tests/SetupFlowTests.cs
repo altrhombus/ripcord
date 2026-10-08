@@ -304,6 +304,17 @@ public class SetupFlowTests
     }
 
     [Fact]
+    public async Task Controller_NoneConnected_NamesTheExitButtonsForBothPads()
+    {
+        // It named the Xbox buttons alone, taught to someone who might be holding a DualSense or nothing at all
+        // (visual audit, 2026-10-08).
+        (SetupFlow flow, _, _) = await StartAsync();
+
+        Assert.Contains("Options + Create + L1 + R1", flow.State.ExitGestureLine, StringComparison.Ordinal);
+        Assert.Contains("Xbox", flow.State.ExitGestureLine, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Controller_NoExitGesture_SaysEsc()
     {
         var settings = new InMemorySettingsStore();
@@ -345,5 +356,33 @@ public class SetupFlowTests
         Assert.Contains("HEVC with HDR", flow.State.DonePicture, StringComparison.Ordinal);
         Assert.Contains("Study", flow.State.DoneConsole, StringComparison.Ordinal);
         Assert.Contains("Xbox or other controller", flow.State.DoneController, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Done_WithNoConsole_DoesNotSayAllSet()
+    {
+        // "All set." over "Console: none yet" (visual audit, 2026-10-08).
+        (SetupFlow flow, _, _) = await StartAsync();
+        flow.Next();        // welcome
+        flow.Next();        // picture
+        flow.Secondary();   // console: later
+        flow.Next();        // controller
+
+        Assert.Equal(SetupStep.Done, flow.State.Step);
+        Assert.DoesNotContain("All set", flow.State.Title, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Done_WithAConsole_IsAllSet()
+    {
+        (SetupFlow flow, _, InMemoryPairedConsoleStore consoles) = await StartAsync();
+        flow.Next();
+        flow.Next();
+        consoles.Upsert(Console("new", "Study"));
+        flow.ReturnedFromAddConsole();
+        flow.Next();
+        flow.Next();
+
+        Assert.Equal("All set.", flow.State.Title);
     }
 }

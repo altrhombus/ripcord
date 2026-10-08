@@ -239,6 +239,10 @@ public sealed class SetupFlow : ObservableState<SetupFlowState>
                 SetupStep.Picture => Strings.Setup_PictureTitle,
                 SetupStep.Console => Strings.Setup_ConsoleTitle,
                 SetupStep.Controller => Strings.Setup_ControllerTitle,
+
+                // "All set." over "Console: none yet" said the opposite of the line beneath it (visual audit,
+                // 2026-10-08). With nothing paired, the headline says what is left rather than that nothing is.
+                _ when _added is null && _consolesAtStart.Count == 0 => Strings.Setup_DoneTitleNoConsole,
                 _ => Strings.Setup_DoneTitle,
             },
             ReachedDash: _step switch
@@ -282,7 +286,7 @@ public sealed class SetupFlow : ObservableState<SetupFlowState>
                 : _padAttached ? string.Empty
                 : Strings.Setup_NoControllerDetail,
             GameInputNote: _gameInputInstalled == false ? Strings.Setup_GameInputMissing : string.Empty,
-            ExitGestureLine: ExitGestureDetector.Buttons(stored.ExitGesture, _padFamily) is { } buttons
+            ExitGestureLine: ExitButtons(stored.ExitGesture) is { } buttons
                 ? string.Format(CultureInfo.CurrentCulture, Strings.Setup_ExitGesture, buttons)
                 : Strings.Setup_ExitWithEsc,
 
@@ -307,6 +311,24 @@ public sealed class SetupFlow : ObservableState<SetupFlowState>
                 _ => true,
             },
             BackLabel: Strings.Setup_Back);
+    }
+
+    /// <summary>
+    /// The exit gesture's buttons as this step should name them: the pad in hand once there is one, both
+    /// families before then. With nothing attached the family defaulted to the generic pad, so setup taught Xbox
+    /// button names to someone who might be holding a DualSense, or nothing (visual audit, 2026-10-08).
+    /// </summary>
+    private string? ExitButtons(ExitGesture gesture)
+    {
+        if (_padAttached)
+        {
+            return ExitGestureDetector.Buttons(gesture, _padFamily);
+        }
+
+        return ExitGestureDetector.Buttons(gesture, PadFamily.Vendor) is { } vendor
+            && ExitGestureDetector.Buttons(gesture, PadFamily.Generic) is { } generic
+            ? string.Format(CultureInfo.CurrentCulture, Strings.Setup_ExitBothFamilies, vendor, generic)
+            : null;
     }
 
     private static string PadName(PadFamily family)

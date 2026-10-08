@@ -76,6 +76,9 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
     private string _statusTechnical = string.Empty;
     private bool _statusBusy = true;
     private bool _statusTerminal;
+
+    // The terminal status is the console ending the stream rather than a failure; see SessionViewState.StatusLeadsBack.
+    private bool _statusEndedByConsole;
     private bool _isStreamLive;
 
     // ConnectPlan.Notice, shown under each "Connecting" and "Reconnecting" of this stream. Set on the UI thread
@@ -272,6 +275,7 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
         _statusTechnical = string.Empty;
         _statusBusy = !terminal;
         _statusTerminal = terminal;
+        _statusEndedByConsole = false;
 
         // Cleared, not kept. This overload is what a reconnect, a stall and a close all go through, and a
         // trail still sitting at "waking" during a reconnect is claiming progress that belongs to a
@@ -349,6 +353,7 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
         _statusTechnical = stage.Technical;
         _statusBusy = !stage.Terminal;
         _statusTerminal = stage.Terminal;
+        _statusEndedByConsole = false;
         _phase = stage.Phase;
     });
 
@@ -404,12 +409,21 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
                     _alertGate.Reset();
                     _alertRaised = false;
                 });
+                // The controller's sentence leads; its raw reason, when it gives one, is kept small for a bug
+                // report. And when the reason is that this PC has no network, say that instead of the socket's
+                // words: "A socket operation was attempted to an unreachable host" was what a dropped Wi-Fi read
+                // as (visual audit, 2026-10-08).
+                string detail = IsOffline(status.Reason)
+                    ? Strings.Session_Offline
+                    : status.Detail;
+
                 ShowStatus(
                     status.Lifecycle == SessionLifecycle.Connecting
                         ? Strings.Session_Connecting
                         : Strings.Session_Reconnecting,
-                    _connectNotice is null ? status.Detail : $"{status.Detail} {_connectNotice}".Trim(),
+                    _connectNotice is null ? detail : $"{detail} {_connectNotice}".Trim(),
                     terminal: false);
+                Mutate(() => _statusTechnical = status.Reason ?? string.Empty);
                 break;
 
             case SessionLifecycle.Failed:
@@ -425,6 +439,7 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
                     _statusTechnical = failure.Technical;
                     _statusBusy = false;
                     _statusTerminal = true;
+                    _statusEndedByConsole = false;
 
                     // A failure is not a step of the connect sequence, so the trail goes (SessionViewState.Phase).
                     _phase = null;
@@ -432,16 +447,21 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
                 break;
 
             case SessionLifecycle.Ended:
-                // As a failure, with its actions (Try again, Back), but not called one: the console chose this.
+                // As a failure, with its actions, but not called one: the console chose this, and most often
+                // because the player just put it into rest mode. So the screen says so in plain words, keeps the
+                // console's own reason ("Server shutting down") small for a bug report, and leads with going back
+                // rather than with a retry that would wake the console they had just put to sleep (visual audit,
+                // 2026-10-08).
                 Mutate(() =>
                 {
                     _isStreamLive = false;
                     _statusVisible = true;
                     _statusHeadline = Strings.Session_ConsoleEnded;
-                    _statusDetail = status.Detail ?? string.Empty;
-                    _statusTechnical = string.Empty;
+                    _statusDetail = Strings.Session_ConsoleEndedDetail;
+                    _statusTechnical = status.Detail ?? string.Empty;
                     _statusBusy = false;
                     _statusTerminal = true;
+                    _statusEndedByConsole = true;
                     _phase = null;
                 });
                 break;
@@ -849,6 +869,19 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
     /// The peak row: what the tone-map's curve starts from, and what this frame measured. The two differ while the
     /// curve is catching up, and a curve that disagrees with the frame for long is the thing to notice.
     /// </summary>
+    /// <summary>
+    /// Whether a retry's reason is the network itself being unreachable: Windows' socket wording for no route to
+    /// the host or the network, or a network that is down. That is the case worth naming plainly, because it is
+    /// the one the player can do something about.
+    /// </summary>
+    internal static bool IsOffline(string? reason)
+        => reason is not null
+           && (reason.Contains("unreachable host", StringComparison.OrdinalIgnoreCase)
+               || reason.Contains("unreachable network", StringComparison.OrdinalIgnoreCase)
+               || reason.Contains("network is unreachable", StringComparison.OrdinalIgnoreCase)
+               || reason.Contains("dead network", StringComparison.OrdinalIgnoreCase)
+               || reason.Contains("No route to host", StringComparison.OrdinalIgnoreCase));
+
     internal static string ToneMapPeak(VideoPipelineSnapshot s) => s.ToneMapPeakNits > 0
         ? string.Create(CultureInfo.InvariantCulture, $"{s.ToneMapPeakNits:F0} nits · this frame {s.FramePeakNits:F0}")
         : string.Empty;
@@ -860,6 +893,8 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
         StatusTechnical: _statusTechnical,
         StatusBusy: _statusBusy,
         StatusActionsVisible: _statusTerminal,
+        StatusLeadsBack: _statusTerminal && _statusEndedByConsole,
+        StatusRetryLabel: _statusEndedByConsole ? Strings.Console_WakeAndPlay : Strings.Session_TryAgain,
         ConnectEscapeVisible: _connectEscapeVisible,
         IsStreamLive: _isStreamLive,
 

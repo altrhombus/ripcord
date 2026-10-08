@@ -47,11 +47,18 @@ public enum SessionLifecycle
 /// <param name="Detail">Plain-language description of what is happening and, on failure, what to do.</param>
 /// <param name="ReconnectAttempt">1-based attempt number while reconnecting; 0 otherwise.</param>
 /// <param name="NextRetryIn">How long until the next attempt, when reconnecting and waiting.</param>
+/// <param name="Reason">
+/// The raw reason behind a retry, kept apart from <paramref name="Detail"/> so a screen can lead with the sentence and
+/// show the reason small, for a bug report. It used to be appended to the detail, so a dropped Wi-Fi read "Connection
+/// failed. Retrying in 2s… (opening the control connection: A socket operation was attempted to an unreachable
+/// host.)" (visual audit, 2026-10-08). Null when there is none.
+/// </param>
 public sealed record SessionStatus(
     SessionLifecycle Lifecycle,
     string Detail,
     int ReconnectAttempt = 0,
-    TimeSpan? NextRetryIn = null)
+    TimeSpan? NextRetryIn = null,
+    string? Reason = null)
 {
     /// <summary>True while a stream is (or should be) on screen — i.e. chrome should stay out of the way.</summary>
     public bool IsLive => Lifecycle is SessionLifecycle.Streaming or SessionLifecycle.Degraded;
