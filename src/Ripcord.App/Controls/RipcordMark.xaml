@@ -47,12 +47,16 @@
                 ThemeResource and track the theme: brand/README.md gives #FFFFFF on dark grounds and #17191D
                 on light, which is what the ordinary foreground brush already resolves to.
             -->
+            <!--
+                Filled, not filled-and-stroked. The rounded corners used to come from a 6px round-joined
+                stroke in the same brush as the fill. In light theme that brush is translucent, so the band
+                where stroke and fill overlap was drawn twice and the mark wore a dark outline (visual audit,
+                2026-10-08). This outline is the same shape - the triangle grown by the stroke's radius,
+                corners rounded at 3 - drawn once.
+            -->
             <Path
-                Data="M 29,17 L 53,32 L 29,47 Z"
-                Fill="{x:Bind WedgeFill, Mode=OneWay}"
-                Stroke="{x:Bind WedgeFill, Mode=OneWay}"
-                StrokeLineJoin="Round"
-                StrokeThickness="6" />
+                Data="M 26,17 A 3,3 0 0 1 30.59,14.456 L 54.59,29.456 A 3,3 0 0 1 54.59,34.544 L 30.59,49.544 A 3,3 0 0 1 26,47 Z"
+                Fill="{x:Bind WedgeFill, Mode=OneWay}" />
 
             <!--  The trail. Three dashes, three families, in brand order.  -->
             <Rectangle
