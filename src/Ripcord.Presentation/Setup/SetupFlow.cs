@@ -272,6 +272,11 @@ public sealed class SetupFlow : ObservableState<SetupFlowState>
 
             ConsoleIntro: Strings.Setup_ConsoleIntro,
             ConsolePreflight: Strings.Setup_ConsolePreflight,
+            ConsolePreflightSteps:
+            [
+                new PreflightStep(Strings.Setup_PreflightRemotePlay, Strings.Setup_PreflightRemotePlayWhere),
+                new PreflightStep(Strings.Setup_PreflightWake, Strings.Setup_PreflightWakeWhere),
+            ],
             ConsoleAdded: _added is not null,
             ConsoleStatus: _added is null
                 ? string.Empty

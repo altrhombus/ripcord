@@ -950,9 +950,25 @@ think the claim above it is conditional.</comment>
     <value>Continue setup</value>
     <comment>Add a console, during the first-run setup: the button after pairing, which returns to the setup.</comment>
   </data>
+  <data name="Setup_PreflightRemotePlay" xml:space="preserve">
+    <value>Turn on Enable Remote Play.</value>
+    <comment>First-run setup, console step, item 1: the console setting to turn on. 'Enable Remote Play' is the console's own label; translate it as the console's own language does.</comment>
+  </data>
+  <data name="Setup_PreflightRemotePlayWhere" xml:space="preserve">
+    <value>Settings &gt; System &gt; Remote Play</value>
+    <comment>First-run setup, console step, item 1: where that setting is, as the console's menus name it.</comment>
+  </data>
+  <data name="Setup_PreflightWake" xml:space="preserve">
+    <value>To wake it from rest mode as well, turn on Stay Connected to the Internet and Enable Turning On PS5 from Network.</value>
+    <comment>First-run setup, console step, item 2. The setting names are the console's own labels; translate them as the console's own language does. PS5 is a product name - do not translate.</comment>
+  </data>
+  <data name="Setup_PreflightWakeWhere" xml:space="preserve">
+    <value>Settings &gt; System &gt; Power Saving &gt; Features Available in Rest Mode</value>
+    <comment>First-run setup, console step, item 2: where those settings are, as the console's menus name them.</comment>
+  </data>
   <data name="Setup_ConsolePreflight" xml:space="preserve">
-    <value>First, on the console: Settings &gt; System &gt; Remote Play, and turn on Enable Remote Play. To wake it from rest mode as well, turn on Stay Connected to the Internet and Enable Turning On PS5 from Network, under Settings &gt; System &gt; Power Saving &gt; Features Available in Rest Mode.</value>
-    <comment>First-run setup: the console step, what to switch on at the console before pairing. The menu names are the console's own; translate them as the console's own language does. PS5 is a product name - do not translate.</comment>
+    <value>First, on the console:</value>
+    <comment>First-run setup, console step: introduces the numbered list of settings to switch on at the console before pairing.</comment>
   </data>
   <data name="Setup_GameInputMissing" xml:space="preserve">
     <value>Xbox controllers need Microsoft's GameInput, which isn't installed. Run GameInputRedist.msi from Ripcord's folder, then start Ripcord again. PlayStation controllers work without it.</value>

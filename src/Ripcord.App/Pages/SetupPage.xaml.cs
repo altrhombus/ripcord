@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+using System.Linq;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
@@ -142,6 +144,7 @@ public sealed partial class SetupPage : Page, IInitialFocusTarget, IStepBack
 
         ConsoleIntroText.Text = s.ConsoleIntro;
         ConsolePreflightText.Text = s.ConsolePreflight;
+        BuildPreflight(s.ConsolePreflightSteps);
         ConsoleStatusRow.Visibility = Vis(s.ConsoleAdded);
         if (s.ConsoleAdded && ConsoleStatusText.Text != s.ConsoleStatus)
         {
@@ -279,6 +282,57 @@ public sealed partial class SetupPage : Page, IInitialFocusTarget, IStepBack
     private void PaintDashes() => StepDashPainter.Paint(_reachedDash, StepDash1, StepDash2, StepDash3);
 
     private void OnEffectsChanged() => PaintDashes();
+
+    /// <summary>
+    /// The console-side settings as a numbered list: what to turn on, then where the console keeps it. Rebuilt only
+    /// when the steps change, since the flow re-renders on every state change.
+    /// </summary>
+    private void BuildPreflight(IReadOnlyList<PreflightStep> steps)
+    {
+        if (ReferenceEquals(steps, _preflightBuilt) || (_preflightBuilt is not null && steps.SequenceEqual(_preflightBuilt)))
+        {
+            return;
+        }
+
+        _preflightBuilt = steps;
+        ConsolePreflightList.Children.Clear();
+
+        for (int i = 0; i < steps.Count; i++)
+        {
+            var row = new Grid { ColumnSpacing = 12 };
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+            var number = new TextBlock
+            {
+                Text = (i + 1).ToString(System.Globalization.CultureInfo.CurrentCulture) + ".",
+                Style = (Style)Application.Current.Resources["BodyStrongTextBlockStyle"],
+            };
+            AutomationProperties.SetAccessibilityView(number, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
+            row.Children.Add(number);
+
+            var text = new StackPanel { Spacing = 2 };
+            text.Children.Add(new TextBlock
+            {
+                Text = steps[i].TurnOn,
+                Style = (Style)Application.Current.Resources["BodyStrongTextBlockStyle"],
+                TextWrapping = TextWrapping.Wrap,
+            });
+            text.Children.Add(new TextBlock
+            {
+                Text = steps[i].Where,
+                Style = (Style)Application.Current.Resources["RipcordSubtleCaptionStyle"],
+                TextWrapping = TextWrapping.Wrap,
+                IsTextSelectionEnabled = true,
+            });
+            Grid.SetColumn(text, 1);
+            row.Children.Add(text);
+
+            ConsolePreflightList.Children.Add(row);
+        }
+    }
+
+    private IReadOnlyList<PreflightStep>? _preflightBuilt;
 
     private static Visibility Vis(bool on) => on ? Visibility.Visible : Visibility.Collapsed;
 }
