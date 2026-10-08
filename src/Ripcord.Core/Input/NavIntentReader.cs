@@ -119,7 +119,11 @@ public sealed class NavIntentReader
             ReadDirection(frame, now),
             Accept: IsRisingEdge(frame.Buttons, ControllerButtons.South),
             Back: IsRisingEdge(frame.Buttons, ControllerButtons.East),
-            Context: IsRisingEdge(frame.Buttons, ControllerButtons.North),
+            // North (Y, triangle) or Start (Menu, Options). Start is the Windows and Xbox convention for "the
+            // menu for this", and it is the button somebody reached for first on the console card (owner, with a
+            // pad, 2026-10-08). Inside a stream neither reaches here; the session scope keeps the pad.
+            Context: IsRisingEdge(frame.Buttons, ControllerButtons.North)
+                || IsRisingEdge(frame.Buttons, ControllerButtons.Start),
             Scroll: ScrollOf(frame));
 
         _previousButtons = frame.Buttons;
