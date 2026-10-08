@@ -32,7 +32,8 @@ asking for it has not been tested yet, and dropping it is on the roadmap.
 
 ## What it keeps on your machine
 
-Everything lives in `%LocalAppData%\Ripcord`, apart from two things listed after the table:
+Everything lives in `%LocalAppData%\Ripcord` (or, if you set the `RIPCORD_DATA_DIR` environment variable to a
+folder, in that folder instead), apart from two things listed after the table:
 
 | File | What it holds |
 |---|---|

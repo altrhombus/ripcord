@@ -25,6 +25,37 @@ public class PlatformSeamTests
     }
 
     [Fact]
+    public void PlatformPaths_FollowTheDataDirectoryVariable()
+    {
+        // A clean profile beside a real one: before this, a first-run audit had to rename the user's own folder
+        // aside (2026-10-08). Set and cleared within this class only, which is the one place that builds paths.
+        string root = Path.Combine(Path.GetTempPath(), "ripcord-data-dir-" + Guid.NewGuid().ToString("N"));
+        string? original = Environment.GetEnvironmentVariable(DefaultPlatformPaths.DataDirectoryVariable);
+        try
+        {
+            Environment.SetEnvironmentVariable(DefaultPlatformPaths.DataDirectoryVariable, root);
+            var paths = new DefaultPlatformPaths("RipcordTests");
+
+            Assert.Equal(root, paths.ConfigDirectory);
+            Assert.Equal(root, paths.DataDirectory);
+            Assert.Equal(Path.Combine(root, "state"), paths.StateDirectory);
+            Assert.True(Directory.Exists(paths.StateDirectory));
+
+            // A relative value is ignored, as the XDG ones are.
+            Environment.SetEnvironmentVariable(DefaultPlatformPaths.DataDirectoryVariable, "relative/nope");
+            Assert.DoesNotContain("relative", new DefaultPlatformPaths("RipcordTests").ConfigDirectory);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(DefaultPlatformPaths.DataDirectoryVariable, original);
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
     public void PlatformPaths_IgnoreARelativeXdgOverride()
     {
         // The XDG spec says a relative value must be ignored. Resolving it against the working directory would

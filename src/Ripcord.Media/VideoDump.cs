@@ -39,9 +39,8 @@ internal static class VideoDump
         {
             if (_file is null)
             {
-                string dir = Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Ripcord", "state");
-                Directory.CreateDirectory(dir);
+                // The app's own state folder, so a RIPCORD_DATA_DIR profile keeps its dumps with the rest of it.
+                string dir = new Ripcord.Core.Platform.DefaultPlatformPaths().StateDirectory;
                 _file = new FileStream(
                     Path.Combine(dir, $"video-dump-{DateTime.Now:yyyyMMdd-HHmmss}.bin"), FileMode.CreateNew);
             }
