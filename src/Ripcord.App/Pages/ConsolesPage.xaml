@@ -194,10 +194,20 @@
                                 Visibility="{x:Bind State.HasLastConnected, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
                         </Border>
 
-                        <StackPanel
+                        <!--
+                            A Grid, not a horizontal StackPanel: a StackPanel offers its children unlimited width, so
+                            nothing in it could trim, and at large text "Played 2 days ago" ran on under the wedge and
+                            was cut there mid-word (visual audit, 2026-10-08). The caption takes what is left and
+                            trims; the dot and the status word keep their size.
+                        -->
+                        <Grid
                             Grid.Row="2"
-                            Orientation="Horizontal"
-                            Spacing="6">
+                            ColumnSpacing="6">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
                             <!--
                                 The ring is 16, not 10, and that is the whole of the fix.
 
@@ -229,6 +239,7 @@
                                     Visibility="{x:Bind State.IsChecking, Mode=OneWay, Converter={StaticResource BoolToVisibility}}" />
                             </Grid>
                             <TextBlock
+                                Grid.Column="1"
                                 VerticalAlignment="Center"
                                 Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                 Style="{StaticResource CaptionTextBlockStyle}"
@@ -237,13 +248,14 @@
 
                             <!--  The hero's copy of the caption: same fact, one line up.  -->
                             <TextBlock
+                                Grid.Column="2"
                                 VerticalAlignment="Center"
                                 Foreground="{ThemeResource TextFillColorTertiaryBrush}"
                                 Style="{StaticResource CaptionTextBlockStyle}"
                                 Text="{x:Bind State.LastConnectedLabel, Mode=OneWay}"
                                 TextTrimming="CharacterEllipsis"
                                 Visibility="{x:Bind State.Density, Mode=OneWay, Converter={StaticResource Density}, ConverterParameter=OneLine}" />
-                        </StackPanel>
+                        </Grid>
                     </Grid>
 
                     <!--
@@ -252,13 +264,20 @@
                         hero is the one card with room to say which. On a dense card the status line already
                         carries the state and the wedge already says the card launches.
                     -->
+                    <!--
+                        Held inside the wedge: at large text the label grew left across the diagonal (visual audit,
+                        2026-10-08). The hero's wedge is 184 wide; this keeps clear of its slant and wraps instead.
+                    -->
                     <TextBlock
+                        MaxWidth="120"
                         Margin="0,0,20,18"
                         HorizontalAlignment="Right"
                         VerticalAlignment="Bottom"
                         Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                         Style="{StaticResource CaptionTextBlockStyle}"
                         Text="{x:Bind State.PrimaryActionLabel, Mode=OneWay}"
+                        TextAlignment="Right"
+                        TextWrapping="Wrap"
                         Visibility="{x:Bind State.Density, Mode=OneWay, Converter={StaticResource Density}, ConverterParameter=ActionLabel}" />
 
                     <!--

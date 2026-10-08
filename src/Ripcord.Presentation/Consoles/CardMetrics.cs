@@ -111,6 +111,13 @@ public static class CardMetrics
     public const double HeroCellHeight = 188;
 
     /// <summary>
+    /// How much of a card's height is text at 100% text size: the name, the family line and the status line with
+    /// their line heights. The rest is padding and the wedge's frame, which text size does not touch. Measured
+    /// from the hero's rows; a card under-provisioned by a few pixels still trims cleanly, so it need not be exact.
+    /// </summary>
+    public const double TextHeight = 100;
+
+    /// <summary>
     /// Where the card steps up a size.
     ///
     /// <para>
@@ -135,25 +142,33 @@ public static class CardMetrics
     /// Lay out the grid.
     /// </summary>
     /// <param name="viewportWidth">Width available to the page, in effective pixels.</param>
+    /// <param name="textScale">
+    /// Windows' text size, 1.0 to 2.25. The card's text grows with it and its frame does not, so the cell grows by
+    /// the share of its height that is text: at 225% a fixed cell cut "Played 2 days ago" off at the wedge and
+    /// pushed the status line out of the card (visual audit, 2026-10-08).
+    /// </param>
     /// <param name="consoleCount">
     /// Paired consoles, NOT counting the ghost add tile. One means the hero; zero means the first-run surface
     /// is showing instead and the grid is not rendered at all — the layout returned for it is the hero's, so a
     /// caller that renders anyway gets something sane rather than a division by zero.
     /// </param>
-    public static CardLayout For(double viewportWidth, int consoleCount)
+    public static CardLayout For(double viewportWidth, int consoleCount, double textScale = 1.0)
     {
+        double extra = TextHeight * (Math.Clamp(textScale, 1.0, 3.0) - 1.0);
+
         // One console is the hero, whatever the viewport. A grid of one is a list pretending to be a choice,
         // and the viewport does not change that — a hero on a narrow window is still the fastest path to the
         // only thing the page can do.
         if (consoleCount <= 1)
         {
-            return new CardLayout(CardDensity.Hero, HeroCellWidth, HeroCellHeight, MaxColumns: 1, ShowAddTile: false);
+            return new CardLayout(
+                CardDensity.Hero, HeroCellWidth, HeroCellHeight + extra, MaxColumns: 1, ShowAddTile: false);
         }
 
         bool roomy = viewportWidth >= WideViewportWidth;
 
         double cellWidth = roomy ? RoomyCellWidth : GridCellWidth;
-        double cellHeight = roomy ? RoomyCellHeight : GridCellHeight;
+        double cellHeight = (roomy ? RoomyCellHeight : GridCellHeight) + extra;
 
         // The column cap is about readability, not about what fits: ItemsWrapGrid would otherwise take two
         // columns at 639 px because the arithmetic allows it.
