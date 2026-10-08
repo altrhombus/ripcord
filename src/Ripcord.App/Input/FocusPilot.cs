@@ -78,8 +78,19 @@ public sealed class FocusPilot(
         // from the title bar: every strategy and hint returned nothing while the link sat enabled, focusable and
         // directly underneath. Why the engine drops it is [X]. The fallback looks only in a straight line, so
         // pressing against the end of a row still leaves focus where it is.
-        if ((FocusManager.FindNextElement(winrtDirection, options) as UIElement
-                ?? StraightLineCandidate(searchRoot, direction)) is UIElement candidate)
+        //
+        // A container is not an answer either. Under RectilinearDistance (Add a console, Settings) the
+        // ScrollViewer that encloses the page is at distance zero from everything in it, and the engine returned
+        // it: focus went into the scroller, which draws no focus visual, so Up from "Search again" put the caret
+        // nowhere visible and the discovered console above it could never be reached with a pad (2026-10-08).
+        UIElement? engine = FocusManager.FindNextElement(winrtDirection, options) as UIElement;
+
+        if (engine is not null && !IsStop(engine, FocusManager.GetFocusedElement(searchRoot.XamlRoot)))
+        {
+            engine = null;
+        }
+
+        if ((engine ?? StraightLineCandidate(searchRoot, direction)) is UIElement candidate)
         {
             // FocusState.Keyboard, never Programmatic: a Programmatic focus change does not draw the focus
             // visual, so directional navigation would move an invisible caret.
@@ -175,6 +186,27 @@ public sealed class FocusPilot(
 
     private static bool Overlaps(double a0, double a1, double b0, double b1) => a0 < b1 && b0 < a1;
 
+    /// <summary>
+    /// Whether <paramref name="candidate"/> is somewhere a person can see they are: a tab-stop control that is
+    /// not a container and does not enclose the element focus is leaving. The same reading as
+    /// <see cref="NeedsFocusSeed"/>, from the other side.
+    /// </summary>
+    private static bool IsStop(UIElement candidate, object? focused)
+        => candidate is Control control && IsVisibleStop(control)
+            && !(focused is DependencyObject from && IsWithin(from, candidate));
+
+    /// <summary>
+    /// A control that draws focus when it has it. A ScrollViewer takes focus whenever it can scroll, and a plain
+    /// <see cref="ItemsControl"/> is a tab stop by default; neither draws a focus visual, and both sit exactly
+    /// where their contents are, so a distance-ranked search prefers them to the items inside. The trace that
+    /// found it (2026-10-08): Up from "Search again" went to <c>ItemsControl#DiscoveredList</c>, not to the
+    /// console in it. A <see cref="Selector"/> (ListView, ComboBox) is a real stop and stays one.
+    /// </summary>
+    private static bool IsVisibleStop(Control control)
+        => control is { IsEnabled: true, IsTabStop: true }
+            and not ScrollViewer
+            && control is not ItemsControl or Selector;
+
     private static Rect? BoundsIn(UIElement element, UIElement root)
     {
         if (element.ActualSize.X <= 0 || element.ActualSize.Y <= 0)
@@ -220,7 +252,7 @@ public sealed class FocusPilot(
                 continue;
             }
 
-            if (node is Control { IsEnabled: true, IsTabStop: true } control)
+            if (node is Control control && IsVisibleStop(control))
             {
                 yield return control;
             }
@@ -524,8 +556,50 @@ public sealed class FocusPilot(
             return false;
         }
 
-        popups[^1].IsOpen = false;
+        Popup top = popups[^1];
+
+        // A dialog is closed through the dialog, never by shutting the popup it lives in. Shutting the popup
+        // removed the prompt but not the dialog: ShowAsync never completed, the smoke layer stayed over the
+        // window, and the Modal scope ModalHost pushed was never popped - so the shell, which keeps its hands
+        // off while a modal owns focus, ignored every press after it. Found with a pad on 2026-10-08 as "B on
+        // the Details dialog leaves the app dark and unresponsive"; Esc never did it, because Esc goes through
+        // the dialog. Hide() is what Esc does: ShowAsync returns None, the same answer as the close button.
+        if (FindDialog(top.Child) is { } dialog)
+        {
+            dialog.Hide();
+            return true;
+        }
+
+        top.IsOpen = false;
         return true;
+    }
+
+    /// <summary>
+    /// The <see cref="ContentDialog"/> a popup hosts, if it hosts one. The dialog is normally the popup's own
+    /// child; the short descent covers a wrapper in between without searching a whole page's tree.
+    /// </summary>
+    private static ContentDialog? FindDialog(DependencyObject? root, int depth = 3)
+    {
+        if (root is ContentDialog dialog)
+        {
+            return dialog;
+        }
+
+        if (root is null || depth == 0)
+        {
+            return null;
+        }
+
+        int count = VisualTreeHelper.GetChildrenCount(root);
+        for (int i = 0; i < count; i++)
+        {
+            if (FindDialog(VisualTreeHelper.GetChild(root, i), depth - 1) is { } found)
+            {
+                return found;
+            }
+        }
+
+        return null;
     }
 
     /// <summary>

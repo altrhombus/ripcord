@@ -234,6 +234,7 @@ public sealed partial class MainWindow : Window, IShellNavigator
             // can stop: the app crashed on every close that raced a focus change (2026-09-30).
             _focusWatchdog.Dispose();
             _closed = true;
+            _focusTrace?.Dispose();
 
             AppEffects.Changed -= OnEffectsChanged;
             _input.IntentReceived -= OnNavIntent;
@@ -298,6 +299,13 @@ public sealed partial class MainWindow : Window, IShellNavigator
 
     /// <summary>Set in <c>Closed</c>. Work posted before the close finds it set when it runs.</summary>
     private bool _closed;
+
+    /// <summary>
+    /// The whole window's focus moves, when <c>RIPCORD_TRACE_FOCUS</c> asks for them. It covered only the sign-in
+    /// dialog, and the pad bugs found on 2026-10-08 (focus landing on something with no focus visual) were on
+    /// ordinary pages, where there was nothing to read.
+    /// </summary>
+    private readonly FocusTrace? _focusTrace = FocusTrace.StartIfEnabled("shell");
 
     /// <summary>
     /// Queue work for the UI thread, to be dropped if the window has closed by the time it runs.

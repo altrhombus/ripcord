@@ -46,7 +46,8 @@
                 x:Uid="KeyBindingsPage_EscapeFFStay"
                 TextWrapping="Wrap" />
 
-            <ItemsControl x:Name="BindingList">
+            <!--  Not a tab stop itself, so focus moves between the Change buttons and never onto the list.  -->
+            <ItemsControl x:Name="BindingList" IsTabStop="False">
                 <ItemsControl.ItemTemplate>
                     <DataTemplate x:DataType="local:KeyBindingRow">
                         <Grid Padding="0,4" ColumnSpacing="12">

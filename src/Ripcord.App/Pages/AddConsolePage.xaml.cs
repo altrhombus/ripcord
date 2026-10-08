@@ -1,5 +1,6 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Navigation;
 using Ripcord.Presentation;
 using Ripcord.Presentation.Accounts;
@@ -269,59 +270,52 @@ public sealed partial class AddConsolePage : Page
             return;
         }
 
-        _focusedStep = step;
-
-        // The one case where the step alone does not decide: a signed-in user whose console the account already
-        // knows never types a code, so seeding the code box would put the caret in a field they will not use.
-        if (step == AddConsoleStep.Link && s.CanPairWithAccount)
+        Control? target = step switch
         {
-            SecondaryButton.Focus(FocusState.Keyboard);
-            return;
-        }
+            // The one case where the step alone does not decide: a signed-in user whose console the account
+            // already knows never types a code, so seeding the code box would put the caret in a field they
+            // will not use.
+            AddConsoleStep.Link when s.CanPairWithAccount => SecondaryButton,
+            AddConsoleStep.Family => Ps5Button,
+            AddConsoleStep.Link => PasscodeBox,
 
-        switch (step)
+            // Play now, NOT the name box.
+            //
+            // Focusing a TextBox opens the soft keyboard on a handheld, so the celebration would arrive with
+            // half the screen covered by a keyboard for a field nobody has to fill in - the console is already
+            // paired and already named. Renaming is a flourish somebody can reach for; the thing they came for
+            // holds focus.
+            AddConsoleStep.Done => PrimaryButton,
+
+            // The list if it already has something in it, otherwise Rescan — which is always present, so there
+            // is always somewhere to land. Deliberately NOT re-run when results arrive later: a console
+            // answering the broadcast while the user is reading must not pull the caret across the page, and
+            // one landing under their thumb must not eat the next press. Arriving at an empty list and arrowing
+            // up into it once it fills is the predictable behaviour.
+            //
+            // The container of an ItemsControl item is a ContentPresenter, which is not a Control; the button
+            // the template draws is inside it. Testing the container itself never matched, so this always fell
+            // through to Rescan even with a console on screen (2026-10-08).
+            AddConsoleStep.Find => (DiscoveredList.Items.Count > 0
+                    && DiscoveredList.ContainerFromIndex(0) is DependencyObject first
+                    ? FocusManager.FindFirstFocusableElement(first) as Control
+                    : null) ?? RescanButton,
+
+            // Nothing to seed, and that is correct rather than an omission: the panel is a progress readout
+            // with no control on it, so there is genuinely nowhere for focus to go. Focus is left on the Link
+            // step's controls, which have just been collapsed — WinUI drops focus off a collapsed element, and
+            // the watchdog is what puts it somewhere sane. Named here so the next reader does not add a focus
+            // call to a step that has nothing to focus.
+            _ => null,
+        };
+
+        // Recorded only once focus has actually landed. The first render runs from OnNavigatedTo, before the
+        // page is in the tree, where Focus() returns false; marking the step seeded then meant it was never
+        // seeded at all, and a pad arrived on the Find step with focus nowhere (2026-10-08). The flow starts
+        // on Loaded, so the next render comes promptly and tries again.
+        if (target is null || target.Focus(FocusState.Keyboard))
         {
-            case AddConsoleStep.Family:
-                Ps5Button.Focus(FocusState.Keyboard);
-                break;
-            case AddConsoleStep.Link:
-                PasscodeBox.Focus(FocusState.Keyboard);
-                break;
-            case AddConsoleStep.Done:
-                // Play now, NOT the name box.
-                //
-                // Focusing a TextBox opens the soft keyboard on a handheld, so the celebration would arrive
-                // with half the screen covered by a keyboard for a field nobody has to fill in - the console
-                // is already paired and already named. Renaming is a flourish somebody can reach for; the
-                // thing they came for holds focus.
-                PrimaryButton.Focus(FocusState.Keyboard);
-                break;
-
-            case AddConsoleStep.Find:
-                // The list if it already has something in it, otherwise Rescan — which is always present, so
-                // there is always somewhere to land. Deliberately NOT re-run when results arrive later: a
-                // console answering the broadcast while the user is reading must not pull the caret across the
-                // page, and one landing under their thumb must not eat the next press. Arriving at an empty
-                // list and arrowing up into it once it fills is the predictable behaviour.
-                if (DiscoveredList.Items.Count > 0
-                    && DiscoveredList.ContainerFromIndex(0) is Control firstResult)
-                {
-                    firstResult.Focus(FocusState.Keyboard);
-                }
-                else
-                {
-                    RescanButton.Focus(FocusState.Keyboard);
-                }
-
-                break;
-
-            case AddConsoleStep.Pairing:
-                // Nothing to seed, and that is correct rather than an omission: the panel is a progress
-                // readout with no control on it, so there is genuinely nowhere for focus to go. Focus is left
-                // on the Link step's controls, which have just been collapsed — WinUI drops focus off a
-                // collapsed element, and the watchdog is what puts it somewhere sane. Named here so the next
-                // reader does not add a focus call to a step that has nothing to focus.
-                break;
+            _focusedStep = step;
         }
     }
 
