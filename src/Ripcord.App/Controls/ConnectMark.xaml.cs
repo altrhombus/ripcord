@@ -71,7 +71,6 @@ public sealed partial class ConnectMark : UserControl
     private void Paint()
     {
         Wedge.Fill = WedgeFill;
-        Wedge.Stroke = WedgeFill;
 
         DashOne.Fill = Accent;
         DashTwo.Fill = Accent;

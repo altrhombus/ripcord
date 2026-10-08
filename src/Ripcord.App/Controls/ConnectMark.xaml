@@ -47,11 +47,16 @@
             </Canvas.RenderTransform>
 
             <!--  Lit from the first moment: something has launched, and the trail is what follows.  -->
+            <!--
+                Filled, not filled-and-stroked. The rounded corners used to come from a 6px round-joined
+                stroke in the same brush as the fill. In light theme that brush is translucent, so the band
+                where stroke and fill overlap was drawn twice and the mark wore a dark outline (visual audit,
+                2026-10-08). This outline is the same shape - the triangle grown by the stroke's radius,
+                corners rounded at 3 - drawn once.
+            -->
             <Path
                 x:Name="Wedge"
-                Data="M 29,17 L 53,32 L 29,47 Z"
-                StrokeLineJoin="Round"
-                StrokeThickness="6" />
+                Data="M 26,17 A 3,3 0 0 1 30.59,14.456 L 54.59,29.456 A 3,3 0 0 1 54.59,34.544 L 30.59,49.544 A 3,3 0 0 1 26,47 Z" />
 
             <Rectangle
                 x:Name="DashOne"
