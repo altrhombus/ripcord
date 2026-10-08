@@ -98,6 +98,7 @@ public sealed class FocusPilot(
 
             // A candidate below the fold is useless if the list does not scroll to it.
             candidate.StartBringIntoView(new BringIntoViewOptions { AnimationDesired = AppMotion.Enabled });
+            RevealPageEdge(candidate);
             return;
         }
 
@@ -514,6 +515,36 @@ public sealed class FocusPilot(
     private const double MaxScrollPixelsPerFrame = 26;
 
     /// <summary>The closest ancestor that can actually scroll, so nested lists behave the way the eye expects.</summary>
+    /// <summary>
+    /// When focus reaches the first or last control a page can focus, scroll the page all the way to that end.
+    ///
+    /// <para>
+    /// Bringing a control into view scrolls only as far as the control. Whatever sits above the first one or
+    /// below the last one — a page title, a hero, a table of facts with nothing to press — was then out of reach
+    /// with a pad: on About, once you had gone down, there was no way back to the top of the page (owner, with a
+    /// pad, 2026-10-08). Arriving at the end of the focusable things is the moment someone wants the end of the
+    /// page, so that is when it is shown.
+    /// </para>
+    /// </summary>
+    private static void RevealPageEdge(UIElement focused)
+    {
+        if (NearestScrollViewer(focused) is not { Content: DependencyObject content } scroller)
+        {
+            return;
+        }
+
+        bool animate = AppMotion.Enabled;
+
+        if (ReferenceEquals(FocusManager.FindFirstFocusableElement(content), focused))
+        {
+            scroller.ChangeView(null, 0, null, disableAnimation: !animate);
+        }
+        else if (ReferenceEquals(FocusManager.FindLastFocusableElement(content), focused))
+        {
+            scroller.ChangeView(null, scroller.ScrollableHeight, null, disableAnimation: !animate);
+        }
+    }
+
     private static ScrollViewer? NearestScrollViewer(DependencyObject from)
     {
         for (DependencyObject? node = from; node is not null; node = VisualTreeHelper.GetParent(node))

@@ -1036,6 +1036,7 @@ public sealed partial class MainWindow : Window, IShellNavigator
             if (first is not ScrollViewer scroller)
             {
                 first.Focus(FocusState.Keyboard);
+                _seedRetries = 0;
                 return;
             }
 
@@ -1047,9 +1048,48 @@ public sealed partial class MainWindow : Window, IShellNavigator
             scope = inner;
         }
 
-        // Nothing focusable on the page yet (it may still be populating). The title-bar commands are always
-        // there, so focus is at least somewhere a pad can move from.
+        // Nothing focusable on the page yet: it may still be populating. Ask again shortly, for up to half a
+        // second, before settling for the chrome. Without the wait a page that fills itself in after navigating -
+        // Keyboard controls builds its rows that way - opened every time with focus on the title-bar gear, so a
+        // pad user started in the window's furniture instead of the first row (visual audit, 2026-10-08).
+        if (_seedRetries < SeedRetryLimit)
+        {
+            _seedRetries++;
+            _seedRetry ??= CreateSeedRetry();
+            _seedRetry.Start();
+            return;
+        }
+
+        // The title-bar commands are always there, so focus is at least somewhere a pad can move from.
+        _seedRetries = 0;
         SettingsButton.Focus(FocusState.Keyboard);
+    }
+
+    private const int SeedRetryLimit = 10;
+    private int _seedRetries;
+    private DispatcherQueueTimer? _seedRetry;
+
+    private DispatcherQueueTimer CreateSeedRetry()
+    {
+        DispatcherQueueTimer timer = DispatcherQueue.CreateTimer();
+        timer.Interval = TimeSpan.FromMilliseconds(50);
+        timer.IsRepeating = false;
+
+        // Only if nothing has claimed focus in the meantime (the user may already have moved), and never behind a
+        // modal: ShellShouldSeedFocus is the guarded question every seeding path asks.
+        timer.Tick += (_, _) =>
+        {
+            if (ShellShouldSeedFocus())
+            {
+                FocusFirstContentElement();
+            }
+            else
+            {
+                _seedRetries = 0;
+            }
+        };
+
+        return timer;
     }
 
 }
