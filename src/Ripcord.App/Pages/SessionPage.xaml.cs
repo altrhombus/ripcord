@@ -654,7 +654,8 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
     {
         // Published from the controller's background loop, so marshal before touching XAML.
         // Every transition, so a connect that ends somewhere unexpected says where it went.
-        _services.DiagnosticTrace?.Invoke($"status: {status.Lifecycle} (attempt {status.ReconnectAttempt}): {status.Detail}");
+        _services.DiagnosticTrace?.Invoke($"status: {status.Lifecycle} (attempt {status.ReconnectAttempt}): {status.Detail}"
+            + (status.Reason is null ? string.Empty : $" ({status.Reason})"));
 
         _dispatcherQueue.TryEnqueue(() =>
         {
@@ -759,6 +760,14 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
         StatusTechnical.Visibility = Vis(s.StatusTechnical.Length > 0);
         RenderTrail(s);
         StatusActions.Visibility = Vis(s.StatusActionsVisible);
+
+        // Which action leads: Try again after a failure, Back once the console ended the stream itself (most
+        // often a rest the player just chose). The accent marks the leader; InitialFocus follows it.
+        RetryButton.Content = s.StatusRetryLabel;
+        Style accent = (Style)Application.Current.Resources["AccentButtonStyle"];
+        Style plain = (Style)Application.Current.Resources["DefaultButtonStyle"];
+        RetryButton.Style = s.StatusLeadsBack ? plain : accent;
+        LeaveButton.Style = s.StatusLeadsBack ? accent : plain;
         ConnectEscape.Visibility = Vis(s.ConnectEscapeVisible);
 
         ControllerConnectedText.Text = s.ConnectedControllers;
@@ -1262,7 +1271,9 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
 
     private Task ShowExitHintBriefly()
     {
-        if (_settings.ExitGesture == ExitGesture.None)
+        // With no controller attached, the controller's gesture is no way out at all, and naming one pad's buttons
+        // for it taught Xbox names to someone holding nothing (visual audit, 2026-10-08).
+        if (_settings.ExitGesture == ExitGesture.None || !App.Input.PadAttached)
         {
             ExitHintText.Text = "Press Esc to leave the stream";
         }
@@ -1399,7 +1410,8 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
     /// otherwise nothing, since a live stream takes the pad and the window does not seed focus over it.
     /// </summary>
     Control? IInitialFocusTarget.InitialFocus
-        => StatusActions.Visibility == Visibility.Visible ? RetryButton
+        => StatusActions.Visibility == Visibility.Visible
+                ? (_viewModel.State.StatusLeadsBack ? LeaveButton : RetryButton)
             : ConnectEscape.Visibility == Visibility.Visible ? ConnectEscape
             : null;
 

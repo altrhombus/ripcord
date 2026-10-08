@@ -112,6 +112,61 @@ public class SessionViewModelTests
     }
 
     [Fact]
+    public void ApplyLifecycle_EndedByTheConsole_SaysSoPlainly_AndLeadsBack()
+    {
+        // Seen on a power-menu rest: the screen printed the console's own reason as its sentence, and led with a
+        // retry that would wake the console the player had just put to sleep (visual audit, 2026-10-08).
+        (SessionViewModel vm, _, _) = Build();
+        vm.ApplyLifecycle(new SessionStatus(SessionLifecycle.Streaming, "Streaming"));
+
+        vm.ApplyLifecycle(new SessionStatus(SessionLifecycle.Ended, "The console ended the session: Server shutting down"));
+
+        Assert.True(vm.State.StatusActionsVisible);
+        Assert.True(vm.State.StatusLeadsBack);
+        Assert.DoesNotContain("Server shutting down", vm.State.StatusDetail);
+        Assert.Contains("Server shutting down", vm.State.StatusTechnical);
+    }
+
+    [Fact]
+    public void ApplyLifecycle_ReconnectingWithTheNetworkGone_SaysSo_AndKeepsTheSocketWordsSmall()
+    {
+        // A dropped Wi-Fi read "Connection failed. Retrying in 2s… (opening the control connection: A socket
+        // operation was attempted to an unreachable host.)" (visual audit, 2026-10-08).
+        (SessionViewModel vm, _, _) = Build();
+        const string raw = "opening the control connection: A socket operation was attempted to an unreachable host.";
+
+        vm.ApplyLifecycle(new SessionStatus(
+            SessionLifecycle.Reconnecting, "Connection failed. Retrying in 2s…", 1, TimeSpan.FromSeconds(2), raw));
+
+        Assert.DoesNotContain("socket", vm.State.StatusDetail);
+        Assert.Contains("network", vm.State.StatusDetail);
+        Assert.Equal(raw, vm.State.StatusTechnical);
+    }
+
+    [Fact]
+    public void ApplyLifecycle_ReconnectingForAnotherReason_LeadsWithTheControllersSentence()
+    {
+        (SessionViewModel vm, _, _) = Build();
+
+        vm.ApplyLifecycle(new SessionStatus(
+            SessionLifecycle.Reconnecting, "Attempt 2 of 6.", 2, null, "Control setup timed out after 20s."));
+
+        Assert.Equal("Attempt 2 of 6.", vm.State.StatusDetail);
+        Assert.Equal("Control setup timed out after 20s.", vm.State.StatusTechnical);
+    }
+
+    [Fact]
+    public void ApplyLifecycle_AFailure_StillLeadsWithTryingAgain()
+    {
+        (SessionViewModel vm, _, _) = Build();
+
+        vm.ApplyLifecycle(new SessionStatus(SessionLifecycle.Failed, "Control setup timed out after 20s at: /sess/init."));
+
+        Assert.True(vm.State.StatusActionsVisible);
+        Assert.False(vm.State.StatusLeadsBack);
+    }
+
+    [Fact]
     public void ApplyLifecycle_Connecting_KeepsTheConnectNotice()
     {
         // The flow's last stage carried the note, and the session's own first status replaced it unseen (2026-10-05).

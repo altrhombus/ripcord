@@ -73,6 +73,16 @@ public sealed record SessionViewState(
     bool StatusActionsVisible,
 
     /// <summary>
+    /// Whether "Back to consoles" is the action that leads, rather than trying again. True when the console
+    /// ended the stream itself — most often because the player just put it into rest mode — where trying again
+    /// would wake the console they had just put to sleep (visual audit, 2026-10-08).
+    /// </summary>
+    bool StatusLeadsBack,
+
+    /// <summary>What the try-again action says: "Try again" after a failure, "Wake &amp; play" once the console ended it.</summary>
+    string StatusRetryLabel,
+
+    /// <summary>
     /// A quiet way out of a connect that has run long enough to feel stuck.
     ///
     /// <para>
@@ -126,6 +136,8 @@ public sealed record SessionViewState(
         StatusTechnical: string.Empty,
         StatusBusy: true,
         StatusActionsVisible: false,
+        StatusLeadsBack: false,
+        StatusRetryLabel: Strings.Session_TryAgain,
         ConnectEscapeVisible: false,
         IsStreamLive: false,
         AlertVisible: false,
