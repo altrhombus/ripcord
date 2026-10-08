@@ -97,6 +97,12 @@ public sealed partial class MainWindow : Window, IShellNavigator
         RestoreBackdrop();
         AppEffects.Changed += OnEffectsChanged;
 
+        PaintCaptionButtons();
+        if (Content is FrameworkElement themedRoot)
+        {
+            themedRoot.ActualThemeChanged += (_, _) => PaintCaptionButtons();
+        }
+
         _settingsStore.Changed += s =>
             Post(() => _input.UseDeadzone(s.UiStickDeadzone));
 
@@ -450,8 +456,58 @@ public sealed partial class MainWindow : Window, IShellNavigator
     /// wash and the family marks resolve through <c>AccentResources</c> on each binding pass, so they follow on
     /// the next render without anything being told.
     /// </summary>
+    /// <summary>
+    /// Colour the minimise, maximise and close buttons for the theme the window is actually in.
+    ///
+    /// <para>
+    /// Left to the platform, they came back from High Contrast on a white block: turning High Contrast off
+    /// restored the page but not the caption buttons, which kept a light background in a dark window until
+    /// relaunch (visual audit, 2026-10-08). So they are painted here on every theme or contrast change. In
+    /// High Contrast every colour is cleared, which hands the buttons back to the system's contrast theme,
+    /// the only correct answer there.
+    /// </para>
+    ///
+    /// <para>
+    /// The values are Windows 11's own caption-button fills: transparent at rest, the subtle fill on hover,
+    /// a fainter one pressed, the primary text colour for the glyphs and the disabled text colour when the
+    /// window is inactive.
+    /// </para>
+    /// </summary>
+    private void PaintCaptionButtons()
+    {
+        AppWindowTitleBar bar = AppWindow.TitleBar;
+
+        if (AppEffects.HighContrast)
+        {
+            bar.ButtonBackgroundColor = null;
+            bar.ButtonInactiveBackgroundColor = null;
+            bar.ButtonForegroundColor = null;
+            bar.ButtonInactiveForegroundColor = null;
+            bar.ButtonHoverBackgroundColor = null;
+            bar.ButtonHoverForegroundColor = null;
+            bar.ButtonPressedBackgroundColor = null;
+            bar.ButtonPressedForegroundColor = null;
+            return;
+        }
+
+        bool dark = (Content as FrameworkElement)?.ActualTheme == ElementTheme.Dark;
+        Windows.UI.Color glyph = dark ? Windows.UI.Color.FromArgb(0xFF, 0xFF, 0xFF, 0xFF) : Windows.UI.Color.FromArgb(0xE4, 0x00, 0x00, 0x00);
+        Windows.UI.Color inactive = dark ? Windows.UI.Color.FromArgb(0x5D, 0xFF, 0xFF, 0xFF) : Windows.UI.Color.FromArgb(0x5C, 0x00, 0x00, 0x00);
+
+        bar.ButtonBackgroundColor = Microsoft.UI.Colors.Transparent;
+        bar.ButtonInactiveBackgroundColor = Microsoft.UI.Colors.Transparent;
+        bar.ButtonForegroundColor = glyph;
+        bar.ButtonInactiveForegroundColor = inactive;
+        bar.ButtonHoverBackgroundColor = dark ? Windows.UI.Color.FromArgb(0x0F, 0xFF, 0xFF, 0xFF) : Windows.UI.Color.FromArgb(0x09, 0x00, 0x00, 0x00);
+        bar.ButtonHoverForegroundColor = glyph;
+        bar.ButtonPressedBackgroundColor = dark ? Windows.UI.Color.FromArgb(0x0A, 0xFF, 0xFF, 0xFF) : Windows.UI.Color.FromArgb(0x06, 0x00, 0x00, 0x00);
+        bar.ButtonPressedForegroundColor = glyph;
+    }
+
     private void OnEffectsChanged()
     {
+        PaintCaptionButtons();
+
         // Not while streaming: the backdrop is deliberately off for the duration, and putting one back under
         // opaque video would undo the reason it was dropped.
         if (!IsStreaming)
