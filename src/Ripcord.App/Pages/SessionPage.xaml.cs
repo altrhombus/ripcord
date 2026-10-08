@@ -677,6 +677,7 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
                 case SessionLifecycle.Failed:
                 case SessionLifecycle.Ended:
                     LeaveImmersiveMode();
+                    _startModeApplied = false;
                     break;
             }
 
@@ -1204,12 +1205,22 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
     {
         KeepDisplayAwake(true);
 
-        if (_settings.FullScreenOnConnect && !_enteredFullScreen)
+        // "Full screen when a stream starts" is a start preference, applied once per connection. Streaming
+        // resumes after every reconnect too, and applying it then overrode the player's own choice: someone who
+        // had pressed Esc for a window was put back in full screen when the Wi-Fi came back (visual audit,
+        // 2026-10-08). After the first time, the window stays in whatever mode the player has it.
+        if (_settings.FullScreenOnConnect && !_enteredFullScreen && !_startModeApplied)
         {
             Shell.SetFullScreen(true);
             _enteredFullScreen = true;
         }
+
+        _startModeApplied = true;
     }
+
+    // Set once the start preference has been applied for this connection; cleared when it fails or ends, so a
+    // fresh start (Try again) applies it again.
+    private bool _startModeApplied;
 
     private void LeaveImmersiveMode()
     {
@@ -1694,9 +1705,13 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
 
         _virtualButtonsHeld |= button;
         _pointerDrivenButtons |= button;
+        _pointerPressedAt[button] = System.Diagnostics.Stopwatch.GetTimestamp();
         _inputSource?.SetVirtualButton(button, pressed: true);
         ShowTouchControls();
     }
+
+    // When each pointer-held console button went down, so its release can be held back to a minimum press.
+    private readonly Dictionary<ControllerButtons, long> _pointerPressedAt = [];
 
     /// <summary>
     /// A press from anything but a pointer: a tap, held long enough for the console to see it. A pointer press
@@ -1720,7 +1735,19 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
         _inputSource?.SetVirtualButton(button, pressed: false);
     }
 
-    private void ConsoleButton_PointerReleased(object sender, PointerRoutedEventArgs e)
+    /// <summary>
+    /// Release a pointer-held console button, but never sooner than <see cref="ConsoleButtonTap"/> after it went
+    /// down.
+    ///
+    /// <para>
+    /// A mouse click is press and release a few tens of milliseconds apart, and the release went out the moment
+    /// it arrived, so a quick click could fall between two input reports and never reach the console: the PS
+    /// button needed clicking twice (owner, 2026-10-08). The keyboard and screen-reader path already held a
+    /// press for the tap length; a pointer now gets the same floor. A real hold, for the power menu, is longer
+    /// than the floor and is released exactly when the pointer lets go.
+    /// </para>
+    /// </summary>
+    private async void ConsoleButton_PointerReleased(object sender, PointerRoutedEventArgs e)
     {
         if (sender is not FrameworkElement { Tag: string name } || !Enum.TryParse(name, out ControllerButtons button))
         {
@@ -1729,9 +1756,35 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
 
         // PointerCaptureLost is wired to this too: a drag off the button must release it, or it stays held forever.
         _virtualButtonsHeld &= ~button;
-        _inputSource?.SetVirtualButton(button, pressed: false);
         ShowTouchControls();
+
+        if (_pointerPressedAt.Remove(button, out long pressedAt))
+        {
+            TimeSpan held = System.Diagnostics.Stopwatch.GetElapsedTime(pressedAt);
+            if (held < ConsoleButtonTap)
+            {
+                _releasesWaiting |= button;
+                await Task.Delay(ConsoleButtonTap - held);
+                _releasesWaiting &= ~button;
+
+                // Pressed again while the release was waiting: that press owns the button now.
+                if (_virtualButtonsHeld.HasFlag(button))
+                {
+                    return;
+                }
+            }
+        }
+        else if (_releasesWaiting.HasFlag(button))
+        {
+            // The second of a release and a capture-lost for one press; the first is already seeing it out.
+            return;
+        }
+
+        _inputSource?.SetVirtualButton(button, pressed: false);
     }
+
+    // Console buttons whose release is waiting out the minimum press.
+    private ControllerButtons _releasesWaiting;
 
 
 
