@@ -423,9 +423,10 @@ public sealed partial class SettingsPage : Page, IInitialFocusTarget
             return;
         }
 
+        // The good state is Informational, not Success. A permanent green bar for "nothing to do" was the loudest
+        // thing on the page (visual audit, 2026-10-08); colour is for the states that ask something of the reader.
         CredentialProtectionBar.Severity = s.CredentialTone switch
         {
-            StatusTone.Positive => InfoBarSeverity.Success,
             StatusTone.Caution => InfoBarSeverity.Warning,
             _ => InfoBarSeverity.Informational,
         };

@@ -433,7 +433,9 @@ public sealed class SettingsViewModel : ObservableState<SettingsViewState>
             ExitGestureIndex: (int)_draft.ExitGesture,
             ExitGestureDescription: ComposeExitGestureDescription(),
             UiStickDeadzone: _draft.UiStickDeadzone,
-            DeadzoneLabel: $"{_draft.UiStickDeadzone:F2}",
+            // As a share of the stick's travel ("50%"), which is what the row's question is about. It printed the
+            // raw fraction, "0.50", which reads as a measurement nobody can picture (visual audit, 2026-10-08).
+            DeadzoneLabel: _draft.UiStickDeadzone.ToString("P0", System.Globalization.CultureInfo.CurrentCulture),
 
             FullScreenOnConnect: _draft.FullScreenOnConnect,
             ConfirmOnDisconnect: _draft.ConfirmOnDisconnect,

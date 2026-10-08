@@ -1,3 +1,4 @@
+using System.Globalization;
 using Ripcord.Core.Consoles;
 using Ripcord.Presentation.Consoles;
 using Ripcord.Presentation.Threading;
@@ -304,8 +305,8 @@ public sealed class AccountViewModel : ObservableState<AccountViewState>
 
             AccountStep.SignedIn => (
                 _identity!.DisplayName.Length > 0 ? _identity.DisplayName : Strings.Account_SignedIn,
-                _identity.Region.Length > 0
-                    ? string.Format(Strings.Account_SignedInWithRegion, _identity.Region)
+                RegionName(_identity.Region) is { } region
+                    ? string.Format(CultureInfo.CurrentCulture, Strings.Account_SignedInWithRegion, region)
                     : Strings.Account_SignedInNoRegion,
                 StatusTone.Positive),
 
@@ -328,5 +329,27 @@ public sealed class AccountViewModel : ObservableState<AccountViewState>
             AccountId: _identity?.AccountId ?? string.Empty,
             Consoles: _cloudConsoles,
             ConsolesLoaded: _consolesLoaded);
+    }
+
+    /// <summary>
+    /// The account's region as a person would say it, or null when there is nothing to say. The service reports
+    /// a lowercase country code, and printing it verbatim gave "Signed in — us." (visual audit, 2026-10-08).
+    /// Anything that is not a recognisable country code says nothing rather than something cryptic.
+    /// </summary>
+    internal static string? RegionName(string code)
+    {
+        if (code.Length != 2 || !code.All(char.IsAsciiLetter))
+        {
+            return null;
+        }
+
+        try
+        {
+            return new RegionInfo(code.ToUpperInvariant()).DisplayName;
+        }
+        catch (ArgumentException)
+        {
+            return null;
+        }
     }
 }
