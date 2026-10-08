@@ -782,4 +782,20 @@ lasts the rest of the session, because F3 restores the rung it was left on.</com
     <value>Microsoft's GameInput isn't installed, so an Xbox controller won't work. Run GameInputRedist.msi from Ripcord's folder, then start Ripcord again. PlayStation controllers work without it.</value>
     <comment>A notice on the consoles page. Microsoft, GameInput, GameInputRedist.msi, Xbox, Ripcord and PlayStation are product or file names - do not translate.</comment>
   </data>
+  <data name="SettingsPage_VideoCodecChoice.AutomationProperties.Name" xml:space="preserve">
+    <value>Video codec</value>
+    <comment>Screen-reader name of the codec drop-down on the Settings page. The row's visible title says the same; the drop-down carries no header of its own.</comment>
+  </data>
+  <data name="SettingsPage_LeaveStreamChoice.AutomationProperties.Name" xml:space="preserve">
+    <value>Leave a stream with the controller</value>
+    <comment>Screen-reader name of the exit-gesture drop-down on the Settings page. The row's visible title says the same; the drop-down carries no header of its own.</comment>
+  </data>
+  <data name="SettingsPage_PadReadoutWaiting.Text" xml:space="preserve">
+    <value>No controller connected</value>
+    <comment>Settings, Controller test row: shown until a controller reports anything. Replaced by the live readout as soon as one does.</comment>
+  </data>
+  <data name="SettingsPage_AdvancedExpander.Description" xml:space="preserve">
+    <value>Setup again, graphics adapter, and how saved consoles are protected</value>
+    <comment>Settings: the line under the collapsed Advanced section, listing what is inside it so nobody has to open it to find out.</comment>
+  </data>
 </root>

@@ -147,12 +147,12 @@
     <comment>'Esc' is the key name printed on the keyboard - do not translate it.</comment>
   </data>
   <data name="Settings_ExitGestureShoulders" xml:space="preserve">
-    <value>Options + Create + L1 + R1 (Menu + View + LB + RB)</value>
-    <comment>Controller button names - do NOT translate. The DualSense's labels, then an Xbox controller's in brackets.</comment>
+    <value>Hold the menu and shoulder buttons</value>
+    <comment>Exit-gesture choice in Settings: holding Options, Create, L1 and R1 together (Menu, View, LB and RB on an Xbox controller). Kept short because it sits in a drop-down; the row's description beneath names the exact buttons for both controllers.</comment>
   </data>
   <data name="Settings_ExitGestureSticks" xml:space="preserve">
-    <value>Both sticks pressed (L3 + R3, or LS + RS)</value>
-    <comment>L3/R3 (DualSense) and LS/RS (Xbox) are controller button names - do not translate those.</comment>
+    <value>Press both sticks in</value>
+    <comment>Exit-gesture choice in Settings: clicking both thumbsticks (L3 + R3, or LS + RS on an Xbox controller). Kept short because it sits in a drop-down; the row's description beneath names the exact buttons.</comment>
   </data>
   <data name="Settings_ExitNoGesture" xml:space="preserve">
     <value>No controller gesture. You will need a keyboard (Esc) or the on-screen button to leave a stream.</value>
@@ -437,7 +437,7 @@ name.</comment>
   </data>
   <data name="Account_SignedInWithRegion" xml:space="preserve">
     <value>Signed in — {0}. Your consoles are listed below, wherever they are.</value>
-    <comment>Body of the account panel once signed in. {0} is a region code.</comment>
+    <comment>Body of the account panel once signed in. {0} is the account's country, already in the reader's language (for example "United States").</comment>
   </data>
   <data name="Account_SigningIn" xml:space="preserve">
     <value>Signing in…</value>

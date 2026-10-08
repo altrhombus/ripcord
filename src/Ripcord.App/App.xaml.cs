@@ -100,6 +100,8 @@ public partial class App : Application
         // thread with a message pump, so the effects gate has to be established here rather than on first use.
         AppEffects.Initialize(uiThread);
 
+        ScaleSettingsWrapToTextSize();
+
         var capabilities = new NativeVideoCapabilitiesProbe();
         _services = HalyardAppServices.Create(
             new DispatcherQueueUiDispatcher(uiThread),
@@ -120,6 +122,26 @@ public partial class App : Application
         _window = window;
         MainWindow = window;
         _window.Activate();
+    }
+
+    /// <summary>
+    /// A settings row puts its control beside its text until the row is narrower than a threshold, then stacks
+    /// it underneath. The threshold is a width, and Windows' text size is not part of it: at 225% text the row is
+    /// as wide as ever, so it never stacked, and the long drop-downs crushed their row's text into a column one
+    /// word wide ("Optio / ns", visual audit 2026-10-08). Scaling the threshold with the text makes a row stack
+    /// once its words stop fitting, whatever made them stop.
+    ///
+    /// <para>
+    /// The base widths are ours, set where a row at 100% text stops fitting. Read once at start-up, so a text-size
+    /// change applies from the next launch.
+    /// </para>
+    /// </summary>
+    private void ScaleSettingsWrapToTextSize()
+    {
+        double textScale = new Windows.UI.ViewManagement.UISettings().TextScaleFactor;
+
+        Resources["SettingsCardWrapThreshold"] = 476 * textScale;
+        Resources["SettingsCardWrapNoIconThreshold"] = 286 * textScale;
     }
 
     private void OnUnhandledException(object sender, Microsoft.UI.Xaml.UnhandledExceptionEventArgs e)
