@@ -35,6 +35,51 @@ different purpose.
 > anything. The list above is short, it is checkable in one `git log --format=%B | grep`, and it stops
 > growing the moment someone notices — which is the property that actually matters.
 
+### Looking at it: the visual audit, and what it fixed (2026-10-08)
+
+Every review so far read the code. This time we ran the app and looked at it: Dark, Light, High Contrast, 200%
+scale, 225% text, a live theme switch, a true first run, a connect with the overlay up, a Wi-Fi drop, a rest from
+the console's own power menu, the firewall prompt, a few tries over the internet from a phone hotspot, and a whole
+pass with nothing but an Xbox controller in hand. That last one found the two worst bugs, which tells you
+something about what code review can't see.
+
+The fixes, on one branch:
+
+- **B on a dialog froze the app.** Back closed the dialog's popup directly, so the dialog never finished, its dim
+  layer stayed up, and nothing answered again until a restart. Back closes a dialog the way Esc does now.
+- **A controller couldn't pick the console it found.** The results list was itself a focus stop with no focus
+  ring, sitting right where its one result was, so Up landed on the list instead of the console. Focus skips
+  containers like that now, and the first console to answer takes focus if you haven't moved yet.
+- **A controller starts in the page and can reach the whole of it.** Keyboard controls opened with focus in the
+  title bar; About's top was unreachable once you'd gone down. Menu opens a card's menu as well as Y, and the
+  disconnect prompt lands on Disconnect, not on the rest-mode checkbox.
+- **Settings at large text.** Two rows printed their title twice, and one collapsed into a column one word wide.
+  The rows stack now when the words stop fitting. Advanced looks like the rest of Settings, and the empty
+  Controller test row says "No controller connected".
+- **Light and High Contrast.** Focus was lighting the hover tint, which turned the focused card grey in Light
+  (hover is a wash, focus is a ring, as design.md has said all along). Every mark was drawn twice in Light and
+  wore an outline. The title-bar buttons, the hint bar, About's banner and the step trail now follow the theme,
+  including a switch while the app is open.
+- **The end and failure screens.** A rest from the power menu read "Server shutting down" and offered to wake
+  the console you'd just put to sleep. It says what probably happened now, and leads with going back. Reconnect
+  lines lost their raw socket errors, an internet failure no longer suggests checking you're on the same
+  network, and a console's outright refusal isn't retried twice first.
+- **Smaller things.** A reconnect keeps your window mode; a quick click on the on-screen PS button reaches the
+  console; the overlay doesn't print your Windows user name; old session traces are pruned to the newest 20;
+  setup lists the console-side settings as steps; the console card grows with Windows' text size.
+- **Screen readers.** The audit's sweep found less missing than the earlier review said (headings and spoken
+  status were already in), and named the rest.
+- **`RIPCORD_DATA_DIR`.** Point it at a folder and Ripcord keeps everything there. The first-run check before it
+  meant renaming my own data folder out of the way and back. Never again!
+
+Not fixed here, and on purpose: the screens with personality (Welcome, the wake wait, the reconnect over a
+frozen frame), a hero card that scales with the window, and one layout for every page. That's design work, and
+it gets its own branch. Internet play from the hotspot also failed three times for reasons we haven't pinned
+down yet (and not the firewall, which we ruled out). That gets its own session too.
+
+Plenty of this hasn't been seen on a screen since it was written, because it needs the theme switched, a
+controller, or a console. The checks are listed for the next pass.
+
 ### The review's lifecycle fixes, and the pull-request audit (2026-10-06)
 
 From the same review, the things that go wrong over a session's life rather than on a screen. None has met a
