@@ -277,9 +277,13 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
     /// from the same two inputs and eventually disagreeing with itself.
     /// </para>
     /// </summary>
+    // Windows' text size, read once: the page is built fresh on each visit, and the rest of the app reads it at
+    // start-up too (see App.ScaleSettingsWrapToTextSize).
+    private static readonly double TextScale = new Windows.UI.ViewManagement.UISettings().TextScaleFactor;
+
     private CardLayout ApplyCardLayout(int consoleCount)
     {
-        CardLayout layout = CardMetrics.For(ActualWidth, consoleCount);
+        CardLayout layout = CardMetrics.For(ActualWidth, consoleCount, TextScale);
         _layout = layout;
 
         foreach (ConsoleCardViewModel card in _items.OfType<ConsoleCardViewModel>())
