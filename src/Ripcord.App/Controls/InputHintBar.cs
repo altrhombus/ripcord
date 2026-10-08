@@ -177,18 +177,15 @@ public sealed class InputHintBar : ContentControl
             ? key
             : ButtonLabels.BadgeText(prompt.Button, _family);
 
+        // Styles, not brushes looked up here: a brush found in code belongs to the theme it was found in and never
+        // changes, so the bar stayed dark-themed after a switch to light. The styles' ThemeResource setters follow.
         var badge = new Border
         {
-            Background = Brush("ControlFillColorSecondaryBrush"),
-            BorderBrush = Brush("ControlStrokeColorDefaultBrush"),
-            BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(4),
-            Padding = new Thickness(8, 2, 8, 2),
-            VerticalAlignment = VerticalAlignment.Center,
+            Style = Resource<Style>("RipcordHintBadgeStyle"),
             Child = new TextBlock
             {
                 Text = badgeText,
-                Style = Application.Current.Resources["CaptionTextBlockStyle"] as Style,
+                Style = Resource<Style>("RipcordHintKeyTextStyle"),
             },
         };
 
@@ -203,15 +200,13 @@ public sealed class InputHintBar : ContentControl
         row.Children.Add(new TextBlock
         {
             Text = prompt.Verb,
-            VerticalAlignment = VerticalAlignment.Center,
-            Foreground = Brush("TextFillColorSecondaryBrush"),
-            Style = Application.Current.Resources["CaptionTextBlockStyle"] as Style,
+            Style = Resource<Style>("RipcordHintVerbStyle"),
         });
 
         AutomationProperties.SetName(row, $"{badgeText}: {prompt.Verb}");
         return row;
     }
 
-    private static Brush? Brush(string key)
-        => Application.Current.Resources.TryGetValue(key, out object? found) ? found as Brush : null;
+    private static T? Resource<T>(string key) where T : class
+        => Application.Current.Resources.TryGetValue(key, out object? found) ? found as T : null;
 }

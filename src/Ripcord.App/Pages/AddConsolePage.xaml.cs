@@ -69,6 +69,10 @@ public sealed partial class AddConsolePage : Page
         // finished building would have nowhere to land.
         Loaded += (_, _) => _ = StartFlowAsync();
 
+        // A contrast theme switched on or off while the page is up repaints the step trail; see StepDashPainter.
+        Loaded += (_, _) => AppEffects.Changed += OnEffectsChanged;
+        Unloaded += (_, _) => AppEffects.Changed -= OnEffectsChanged;
+
         BuildFamilyCard(Ps5Button, ConsoleFamily.Ps5);
         BuildFamilyCard(Ps4Button, ConsoleFamily.Ps4);
         BuildFamilyCard(XboxButton, ConsoleFamily.Xbox);
@@ -220,9 +224,8 @@ public sealed partial class AddConsolePage : Page
         PairingPanel.Visibility = Vis(s.Step == AddConsoleStep.Pairing);
         DonePanel.Visibility = Vis(s.Step == AddConsoleStep.Done);
 
-        StepDash1.Opacity = DashOpacity(1, s.ReachedDash);
-        StepDash2.Opacity = DashOpacity(2, s.ReachedDash);
-        StepDash3.Opacity = DashOpacity(3, s.ReachedDash);
+        _reachedDash = s.ReachedDash;
+        PaintDashes();
 
         FamilyNote.Message = s.FamilyNote ?? string.Empty;
         FamilyNote.Severity = InfoBarSeverity.Informational;
@@ -354,7 +357,12 @@ public sealed partial class AddConsolePage : Page
 
     private static Visibility Vis(bool on) => on ? Visibility.Visible : Visibility.Collapsed;
 
-    private static double DashOpacity(int index, int reached) => index <= reached ? 1.0 : 0.2;
+    // The last step reached, kept so the trail can be repainted when the contrast theme changes under the page.
+    private int _reachedDash;
+
+    private void PaintDashes() => StepDashPainter.Paint(_reachedDash, StepDash1, StepDash2, StepDash3);
+
+    private void OnEffectsChanged() => PaintDashes();
 
     /// <summary>
     /// Seed focus for a step that has just become visible, so a controller or keyboard always has somewhere to

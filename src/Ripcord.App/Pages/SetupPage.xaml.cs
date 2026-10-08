@@ -36,6 +36,10 @@ public sealed partial class SetupPage : Page, IInitialFocusTarget, IStepBack
         // the add-console page, which this page is cached across.
         Loaded += (_, _) => AttachPad();
         Unloaded += (_, _) => DetachPad();
+
+        // A contrast theme switched on or off while the page is up repaints the step trail; see StepDashPainter.
+        Loaded += (_, _) => AppEffects.Changed += OnEffectsChanged;
+        Unloaded += (_, _) => AppEffects.Changed -= OnEffectsChanged;
     }
 
     /// <summary>The primary button: the thing each step is for.</summary>
@@ -96,9 +100,8 @@ public sealed partial class SetupPage : Page, IInitialFocusTarget, IStepBack
     {
         TitleText.Text = s.Title;
         StepDashes.Visibility = Vis(s.ShowsDashes);
-        StepDash1.Opacity = DashOpacity(1, s.ReachedDash);
-        StepDash2.Opacity = DashOpacity(2, s.ReachedDash);
-        StepDash3.Opacity = DashOpacity(3, s.ReachedDash);
+        _reachedDash = s.ReachedDash;
+        PaintDashes();
 
         WelcomePanel.Visibility = Vis(s.Step == SetupStep.Welcome);
         PicturePanel.Visibility = Vis(s.Step == SetupStep.Picture);
@@ -260,7 +263,12 @@ public sealed partial class SetupPage : Page, IInitialFocusTarget, IStepBack
 
     private void OnPadFamilyChanged(PadFamily family) => _flow?.SetPadAttached(App.Input.PadAttached, family);
 
-    private static double DashOpacity(int index, int reached) => index <= reached ? 1.0 : 0.2;
+    // The last step reached, kept so the trail can be repainted when the contrast theme changes under the page.
+    private int _reachedDash;
+
+    private void PaintDashes() => StepDashPainter.Paint(_reachedDash, StepDash1, StepDash2, StepDash3);
+
+    private void OnEffectsChanged() => PaintDashes();
 
     private static Visibility Vis(bool on) => on ? Visibility.Visible : Visibility.Collapsed;
 }

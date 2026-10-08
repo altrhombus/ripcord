@@ -45,6 +45,20 @@
         <Setter Property="VerticalAlignment" Value="Center" />
     </Style>
 
+    <!--
+        A controller button's badge in the hint bar. A style rather than brushes the bar looked up in code: a
+        looked-up brush is fixed to the theme it was found in, so after a switch to light the bar kept dark
+        badges and white verbs on a light page (visual audit, 2026-10-08). ThemeResource setters follow the theme.
+    -->
+    <Style x:Key="RipcordHintBadgeStyle" TargetType="Border">
+        <Setter Property="Background" Value="{ThemeResource ControlFillColorSecondaryBrush}" />
+        <Setter Property="BorderBrush" Value="{ThemeResource ControlStrokeColorDefaultBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="{StaticResource RipcordTagCornerRadius}" />
+        <Setter Property="Padding" Value="8,2" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+
     <!--  A state pill. From SessionPage.CapabilityPillStyle — tighter padding and a dimmer fill than a chip.  -->
     <Style x:Key="RipcordPillStyle" TargetType="Border">
         <Setter Property="Background" Value="{ThemeResource ControlFillColorSecondaryBrush}" />

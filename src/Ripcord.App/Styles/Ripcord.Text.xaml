@@ -69,6 +69,25 @@
         <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
     </Style>
 
+    <!--
+        The hint bar's two texts: the label inside a button badge, and the verb beside it. Styles so their colour
+        follows a theme switch; see RipcordHintBadgeStyle.
+    -->
+    <Style
+        x:Key="RipcordHintKeyTextStyle"
+        BasedOn="{StaticResource CaptionTextBlockStyle}"
+        TargetType="TextBlock">
+        <Setter Property="Foreground" Value="{ThemeResource TextFillColorPrimaryBrush}" />
+    </Style>
+
+    <Style
+        x:Key="RipcordHintVerbStyle"
+        BasedOn="{StaticResource CaptionTextBlockStyle}"
+        TargetType="TextBlock">
+        <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+
     <!--  The same label on an accent fill, where the foreground has to come from the accent pair.  -->
     <Style
         x:Key="RipcordAccentPillTextStyle"
