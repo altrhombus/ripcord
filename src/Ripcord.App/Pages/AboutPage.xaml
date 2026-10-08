@@ -160,9 +160,17 @@
                                 that announced itself twice was the thing RipcordMark's own comment warns
                                 about.
                             -->
+                            <!--
+                                The page's top heading, for a screen reader. About had none: its first heading was
+                                "This device", a level 2 (visual audit, 2026-10-08). The wordmark is the page's title
+                                in all but markup, so it says so.
+                            -->
                             <controls:RipcordWordmark
+                                x:Uid="AboutPage_Wordmark"
                                 Height="30"
                                 HorizontalAlignment="Left"
+                                AutomationProperties.AccessibilityView="Content"
+                                AutomationProperties.HeadingLevel="Level1"
                                 Ink="{ThemeResource TextFillColorPrimaryBrush}" />
                             <TextBlock
                                 Foreground="{ThemeResource TextFillColorSecondaryBrush}"

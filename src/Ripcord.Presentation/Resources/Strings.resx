@@ -742,6 +742,10 @@ think the claim above it is conditional.</comment>
     <value>Couldn't rename that console</value>
     <comment>Error dialog title when saving a new name failed.</comment>
   </data>
+  <data name="Console_MenuName" xml:space="preserve">
+    <value>Options for {0}</value>
+    <comment>Screen-reader name of a console card's menu (Rename, Details, Create a shortcut, Remove). {0} is the console's name.</comment>
+  </data>
   <data name="Console_RemoveTitle" xml:space="preserve">
     <value>Remove this console?</value>
     <comment>Title of the destructive remove confirmation.</comment>
