@@ -1,3 +1,5 @@
+using System.Collections.Specialized;
+using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
@@ -48,6 +50,10 @@ public sealed partial class AddConsolePage : Page
     // Keeps the caret on the same discovered console when the list reorders around it.
     private FocusAnchor? _discoveryAnchor;
 
+    // True while focus is still where the Find step put it (Rescan, before anything was found) and the user has
+    // not moved it. Only then does the first console to answer take focus; see OnDiscoveredChanged.
+    private bool _awaitingFirstResult;
+
     public AddConsolePage()
     {
         // Resolved BEFORE InitializeComponent — see ConsolesPage. This page previously named the scanner, the
@@ -90,8 +96,93 @@ public sealed partial class AddConsolePage : Page
         _discoveryAnchor = new FocusAnchor(DiscoveredList, DispatcherQueue);
         _discoveryAnchor.Watch(_flow.Discovered);
 
+        _flow.Discovered.CollectionChanged += OnDiscoveredChanged;
+        RescanButton.LostFocus += OnRescanLostFocus;
+
         Render(_flow.State);
     }
+
+    /// <summary>
+    /// The first console to answer takes focus, if the user is still where the page put them.
+    ///
+    /// <para>
+    /// This page had decided the opposite: an arrival never moves focus, because a console landing under a
+    /// thumb must not eat the next press. That rule is right for somebody navigating and wrong for somebody
+    /// waiting. Arriving on an empty list, a pad user sat on "Search again" with their console appearing above
+    /// it, and the obvious next press acted on the wrong thing (2026-10-08). So the rule now has the condition
+    /// it always implied: focus moves to the first result only while it is still on the seed and has never left
+    /// it. Anyone who has moved, even away and back, keeps their place; the FocusAnchor still protects them.
+    /// </para>
+    /// </summary>
+    private void OnDiscoveredChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        if (_awaitingFirstResult && e.Action == NotifyCollectionChangedAction.Add)
+        {
+            QueueHandOffToFirstResult();
+        }
+    }
+
+    /// <summary>
+    /// Hand focus to the first result once it can take it. Also started by the seed itself: a console can answer
+    /// before the seed runs, in which case the seed found an item but nothing to focus, fell back to Rescan, and
+    /// the Add that would have started this had already passed.
+    ///
+    /// <para>
+    /// Polled briefly rather than checked once. The container exists as soon as the item does, but the button
+    /// inside it is still loading and arriving under the list's add transition, and until it has loaded nothing
+    /// in the container is focusable. A single look found the container and nothing to focus, every time.
+    /// </para>
+    /// </summary>
+    private void QueueHandOffToFirstResult()
+    {
+        if (_handOffTimer is null)
+        {
+            _handOffTimer = DispatcherQueue.CreateTimer();
+            _handOffTimer.Interval = TimeSpan.FromMilliseconds(50);
+            _handOffTimer.IsRepeating = true;
+            _handOffTimer.Tick += OnHandOffTick;
+        }
+
+        _handOffAttempts = 0;
+        _handOffTimer.Start();
+    }
+
+    private void OnHandOffTick(DispatcherQueueTimer timer, object args)
+    {
+        // A second of waiting is far longer than a button takes to load; past it, something else is wrong and
+        // focus stays where it is.
+        if (TryHandOffToFirstResult() || ++_handOffAttempts >= 20)
+        {
+            timer.Stop();
+        }
+    }
+
+    // Repeats while a hand-off waits for its button to load. One per page, stopped when the page is left.
+    private DispatcherQueueTimer? _handOffTimer;
+    private int _handOffAttempts;
+
+    /// <summary>True when there is nothing more to wait for: focus was handed over, or the moment has passed.</summary>
+    private bool TryHandOffToFirstResult()
+    {
+        if (!_awaitingFirstResult
+            || XamlRoot is null
+            || !ReferenceEquals(FocusManager.GetFocusedElement(XamlRoot), RescanButton))
+        {
+            return true;
+        }
+
+        if (DiscoveredList.ContainerFromIndex(0) is not DependencyObject first
+            || FocusManager.FindFirstFocusableElement(first) is not Control result)
+        {
+            return false;
+        }
+
+        _awaitingFirstResult = false;
+        result.Focus(FocusState.Keyboard);
+        return true;
+    }
+
+    private void OnRescanLostFocus(object sender, RoutedEventArgs e) => _awaitingFirstResult = false;
 
     protected override void OnNavigatedFrom(NavigationEventArgs e)
     {
@@ -104,6 +195,11 @@ public sealed partial class AddConsolePage : Page
         // however long its disposal takes, so leaving it subscribed would keep answering for a dead page.
         _discoveryAnchor?.Dispose();
         _discoveryAnchor = null;
+
+        _flow.Discovered.CollectionChanged -= OnDiscoveredChanged;
+        RescanButton.LostFocus -= OnRescanLostFocus;
+        _awaitingFirstResult = false;
+        _handOffTimer?.Stop();
 
         base.OnNavigatedFrom(e);
     }
@@ -135,7 +231,11 @@ public sealed partial class AddConsolePage : Page
         FindHeading.Text = s.FindHeading;
         FindSubheading.Text = s.FindSubheading;
         ScanProgress.Visibility = Vis(s.IsScanning);
-        RescanButton.IsEnabled = !s.IsScanning;
+        // Enabled while scanning, too. It was disabled then, so a page opened mid-scan had nowhere safe to seed
+        // focus and the shell's fallback put it on "Enter an address instead": a pad user pressing A to get
+        // going was sent to type an IP address. Pressing it mid-scan restarts the scan, which is harmless; the
+        // progress bar is what says a scan is running.
+        RescanButton.IsEnabled = true;
         ManualEntryPanel.Visibility = Vis(s.ManualEntryOpen);
         ManualEntryButton.Visibility = Vis(!s.ManualEntryOpen);
 
@@ -316,6 +416,14 @@ public sealed partial class AddConsolePage : Page
         if (target is null || target.Focus(FocusState.Keyboard))
         {
             _focusedStep = step;
+
+            // Seeded on Rescan because nothing has answered yet: the first console that does may take focus.
+            _awaitingFirstResult = step == AddConsoleStep.Find && ReferenceEquals(target, RescanButton);
+
+            if (_awaitingFirstResult && DiscoveredList.Items.Count > 0)
+            {
+                QueueHandOffToFirstResult();
+            }
         }
     }
 
