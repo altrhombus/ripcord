@@ -1912,6 +1912,8 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
     {
         try
         {
+            PruneOldTraces();
+
             string path = System.IO.Path.Combine(
                 _services.Paths.StateDirectory,
                 $"session-trace-{DateTime.Now:yyyyMMdd-HHmmss}.csv");
@@ -1921,9 +1923,10 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
             _tracePreambleWaits = 0;
 
             // Say WHERE, for the same reason the F8 report does: on a handheld there is no other way to
-            // find it, and a trace nobody can locate is a trace nobody sends.
+            // find it, and a trace nobody can locate is a trace nobody sends. Written from %LOCALAPPDATA%, so a
+            // screenshot of the HUD does not carry the Windows user name; see DiagnosticFiles.ForScreen.
             _tracePath = path;
-            DiagnosticsSavedText.Text = $"tracing to: {path}";
+            DiagnosticsSavedText.Text = $"tracing to: {ForScreen(path)}";
 
             // The preamble is deliberately NOT written here - see WriteTracePreamble.
         }
@@ -2042,6 +2045,41 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
         }
     }
 
+    private static string ForScreen(string path)
+        => DiagnosticFiles.ForScreen(path, Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData));
+
+    /// <summary>
+    /// Keep the newest <see cref="DiagnosticFiles.SessionTracesKept"/> traces and delete the rest, before a new one
+    /// is started. Every stream writes one and nothing ever removed them. Only this app's own trace files, by
+    /// their own name pattern, in its own state folder.
+    /// </summary>
+    private void PruneOldTraces()
+    {
+        try
+        {
+            var directory = new DirectoryInfo(_services.Paths.StateDirectory);
+            if (!directory.Exists)
+            {
+                return;
+            }
+
+            IEnumerable<(string, DateTime)> traces = directory
+                .EnumerateFiles("session-trace-*.csv")
+                .Select(f => (f.FullName, f.LastWriteTimeUtc));
+
+            // One fewer than the limit, because the trace about to be started is the newest.
+            foreach (string old in DiagnosticFiles.ToPrune(traces, DiagnosticFiles.SessionTracesKept - 1))
+            {
+                File.Delete(old);
+            }
+        }
+        catch (Exception ex)
+        {
+            // Housekeeping. A trace that could not be pruned is no reason to lose the session or its new trace.
+            Debug.WriteLine($"[Ripcord] old session traces could not be pruned: {ex.Message}");
+        }
+    }
+
     private void SaveDiagnostics()
     {
         try
@@ -2058,8 +2096,8 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
 
             // Show WHERE it went. On a handheld there is no other way to find out.
             DiagnosticsSavedText.Text = _tracePath is null
-                ? $"saved: {path}"
-                : $"saved: {path}  ·  trace: {_tracePath}";
+                ? $"saved: {ForScreen(path)}"
+                : $"saved: {ForScreen(path)}  ·  trace: {ForScreen(_tracePath)}";
         }
         catch (Exception ex)
         {
