@@ -509,7 +509,7 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
         args.Handled = true;
     }
 
-    // The card's hover/focus cue. Held as a flag on the item rather than by reaching into the template, so it
+    // The card's hover cue. Held as a flag on the item rather than by reaching into the template, so it
     // survives the markup being rearranged \u2014 see ConsoleCardViewModel.IsHighlighted.
     private void OnCardHighlight(object sender, PointerRoutedEventArgs e) => SetHighlight(sender, true);
 
@@ -526,9 +526,8 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
         {
             item.IsHighlighted = on;
 
-            // Hover is reported separately from the wash's hover-or-focus, because the wedge answers this
-            // one and must not answer focus. Cleared on exit, which also clears any press left behind by a
-            // pointer that left the card mid-press.
+            // Reported twice, once for the card's wash and once for the wedge, so the two can be tuned apart.
+            // Cleared on exit, which also clears any press left behind by a pointer that left the card mid-press.
             item.IsPointerOver = on;
         }
 
@@ -627,10 +626,6 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
         // The first moment the wrapping panel is guaranteed to exist. See SizePanel.
         SizePanel();
 
-        // Detach first: recycling means this container may still carry the last item's subscriptions.
-        container.GotFocus -= OnContainerFocus;
-        container.LostFocus -= OnContainerBlur;
-
         if (args.Item is not ConsoleCardViewModel item)
         {
             // The add tile has no per-console actions.
@@ -638,9 +633,10 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
             return;
         }
 
+        // No focus handlers. Focus used to light the hover wash too, against "hover is a wash, focus is a ring";
+        // in light theme that turned the focused hero grey. The ring is the container's focus visual, and it is
+        // the only mark focus makes. See ConsoleCardViewModel.IsHighlighted.
         container.ContextFlyout = BuildConsoleFlyout(item);
-        container.GotFocus += OnContainerFocus;
-        container.LostFocus += OnContainerBlur;
 
         // Open the window, press A, playing - the promise the one-console layout exists to keep.
         //
@@ -656,18 +652,6 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
         {
             _heroFocusTaken = true;
             _ = container.Focus(FocusState.Programmatic);
-        }
-    }
-
-    private static void OnContainerFocus(object sender, RoutedEventArgs e) => SetContainerHighlight(sender, true);
-
-    private static void OnContainerBlur(object sender, RoutedEventArgs e) => SetContainerHighlight(sender, false);
-
-    private static void SetContainerHighlight(object sender, bool on)
-    {
-        if (sender is GridViewItem { Content: ConsoleCardViewModel item })
-        {
-            item.IsHighlighted = on;
         }
     }
 
