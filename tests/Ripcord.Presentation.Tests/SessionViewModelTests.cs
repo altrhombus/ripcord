@@ -936,20 +936,56 @@ public class SessionViewModelTests
     }
 
     [Fact]
-    public void AnythingThatIsNotTheConnectSequenceClearsThePhase()
+    public void AReconnect_IsTheHandshakeAgain_NotWhereverTheTrailLastStopped()
     {
-        // The trail must not keep its last position through a reconnect. It would be claiming progress that
-        // belongs to a sequence which already finished, on a screen that is about to start a new one.
+        // One composition for connect and reconnect (showcase plan, part 3): a reconnect keeps the trail, at the
+        // handshake's dash, rather than dropping to a bar. It must not keep its old position, which would claim
+        // progress that belongs to a sequence that already finished.
         (SessionViewModel vm, _, TestClock clock) = Build();
         vm.ShowConnectStage(new ConnectStage("Waking", "standby", Terminal: false, ConnectPhase.Waking));
         clock.Advance(ConnectGate.Dwell);
         vm.TickConnect();
-        Assert.NotNull(vm.State.Phase);
+        Assert.Equal(ConnectPhase.Waking, vm.State.Phase);
 
         vm.ApplyLifecycle(new SessionStatus(SessionLifecycle.Reconnecting, "Lost the console"));
 
+        Assert.Equal(ConnectPhase.Connecting, vm.State.Phase);
+        Assert.Equal("Stop trying", vm.State.ConnectEscapeLabel);
+    }
+
+    [Fact]
+    public void AStall_IsNotTheConnectSequence_AndClearsThePhase()
+    {
+        // A picture that stalls is not a step of connecting, so it gets the plain busy bar, not the trail.
+        (SessionViewModel vm, _, _) = Build();
+        vm.ApplyLifecycle(new SessionStatus(SessionLifecycle.Connecting, "Connecting"));
+        Assert.Equal("Back to consoles", vm.State.ConnectEscapeLabel);
+
+        vm.ApplyLifecycle(new SessionStatus(SessionLifecycle.Degraded, "No video"));
+
         Assert.Null(vm.State.Phase);
     }
+
+    [Fact]
+    public void ALongWake_KeepsItsHeadline_AndSaysOnceThatItIsNormal()
+    {
+        (SessionViewModel vm, _, TestClock clock) = Build();
+        vm.ShowConnectStage(new ConnectStage("Waking your console…", "If it's in rest mode, Ripcord wakes it first.", Terminal: false, ConnectPhase.Waking));
+        clock.Advance(ConnectGate.Dwell);
+        vm.TickConnect();
+        string before = vm.State.StatusDetail;
+
+        clock.Advance(SessionViewModel.WakeNoteAfter);
+        vm.TickConnect();
+        vm.TickConnect();
+
+        Assert.Equal("Waking your console…", vm.State.StatusHeadline);
+        Assert.StartsWith(before, vm.State.StatusDetail);
+        Assert.Equal(1, CountOf(vm.State.StatusDetail, "half a minute"));
+    }
+
+    private static int CountOf(string text, string part)
+        => (text.Length - text.Replace(part, string.Empty, StringComparison.Ordinal).Length) / part.Length;
 
     [Fact]
     public void AFailedConnectKeepsItsPhaseSoTheTrailStopsWhereItGotTo()

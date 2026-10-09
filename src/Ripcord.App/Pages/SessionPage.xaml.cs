@@ -776,6 +776,7 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
         RetryButton.Style = s.StatusLeadsBack ? plain : accent;
         LeaveButton.Style = s.StatusLeadsBack ? accent : plain;
         ConnectEscape.Visibility = Vis(s.ConnectEscapeVisible);
+        ConnectEscape.Content = s.ConnectEscapeLabel;
 
         ControllerConnectedText.Text = s.ConnectedControllers;
 
@@ -1051,6 +1052,12 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
         ConsoleFamily family = ConsoleFamily.ForPlatformName(_console?.Platform);
         StatusTrail.Accent = AccentResources.Brush(family.Accent);
         StatusTrail.Reached = reached;
+
+        // Breathes while it waits; still once the screen is asking the player for something. And dimmed then,
+        // not reddened: design.md's failure is the mark dimming, because a console that went to rest mode is
+        // behaving normally.
+        StatusTrail.Breathing = s.StatusBusy && !s.StatusActionsVisible;
+        StatusTrail.Opacity = s.StatusActionsVisible ? 0.5 : 1.0;
     }
 
     /// <summary>Groups of the instrument panel, in the order they read. Column order in a sheet, row order otherwise.</summary>
