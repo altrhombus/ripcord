@@ -35,6 +35,13 @@ public sealed partial class SetupPage : Page, IInitialFocusTarget, IStepBack
         _services = App.Services;
         InitializeComponent();
 
+        // Choosing a picture is the step's whole question, so a choice pressed goes on: a click, Space, or a pad's
+        // A, the last through FocusPilot. Continue stays for anyone who would rather look first (owner,
+        // 2026-10-09). The Checked handlers have recorded the choice by the time the command runs.
+        var chooseAndGoOn = new ContinueCommand(() => _flow?.Next());
+        BestRadio.Command = chooseAndGoOn;
+        CompatibleRadio.Command = chooseAndGoOn;
+
         // The router outlives every page: attached while the page is on screen, and again when it comes back from
         // the add-console page, which this page is cached across.
         Loaded += (_, _) => AttachPad();
@@ -390,4 +397,13 @@ public sealed partial class SetupPage : Page, IInitialFocusTarget, IStepBack
     private IReadOnlyList<PreflightStep>? _preflightBuilt;
 
     private static Visibility Vis(bool on) => on ? Visibility.Visible : Visibility.Collapsed;
+
+    private sealed class ContinueCommand(System.Action run) : System.Windows.Input.ICommand
+    {
+        public event System.EventHandler? CanExecuteChanged { add { } remove { } }
+
+        public bool CanExecute(object? parameter) => true;
+
+        public void Execute(object? parameter) => run();
+    }
 }

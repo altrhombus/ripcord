@@ -109,7 +109,16 @@ public sealed class FocusPilot(
             engine = row.Control;
         }
 
-        if ((engine ?? StraightLineCandidate(searchRoot, direction)) is UIElement candidate)
+        // Left and Right stay in the row while the row has something that way. On Welcome, Right from "Skip setup"
+        // went to the gear, up in the title bar, past "Get started" beside it (owner, with a pad, 2026-10-09).
+        if (direction is NavDirection.Left or NavDirection.Right
+            && StraightLineCandidate(searchRoot, direction) is { } inRow
+            && (engine is null || !SharesRow(searchRoot, engine)))
+        {
+            engine = inRow;
+        }
+
+        if ((engine ??StraightLineCandidate(searchRoot, direction)) is UIElement candidate)
         {
             // FocusState.Keyboard, never Programmatic: a Programmatic focus change does not draw the focus
             // visual, so directional navigation would move an invisible caret.
@@ -209,6 +218,13 @@ public sealed class FocusPilot(
     }
 
     private static bool Overlaps(double a0, double a1, double b0, double b1) => a0 < b1 && b0 < a1;
+
+    /// <summary>Whether <paramref name="candidate"/> overlaps the focused element vertically: beside it, not above or below.</summary>
+    private static bool SharesRow(UIElement searchRoot, UIElement candidate)
+        => FocusManager.GetFocusedElement(searchRoot.XamlRoot) is UIElement focused
+            && BoundsIn(focused, searchRoot) is { } from
+            && BoundsIn(candidate, searchRoot) is { } to
+            && Overlaps(from.Top, from.Bottom, to.Top, to.Bottom);
 
     /// <summary>
     /// How far apart two controls can sit vertically and still be one row: a button beside a text field is a few
@@ -522,6 +538,13 @@ public sealed class FocusPilot(
         else if (peer?.GetPattern(PatternInterface.SelectionItem) is ISelectionItemProvider selectionProvider)
         {
             selectionProvider.Select();
+
+            // A choice that carries a command runs it, as a click on it would: setup's picture choices are "choose
+            // and go on", and selecting through the peer raises no Click (owner, 2026-10-09).
+            if (focused is ButtonBase { Command: { } command } button && command.CanExecute(button.CommandParameter))
+            {
+                command.Execute(button.CommandParameter);
+            }
         }
         else if (peer?.GetPattern(PatternInterface.Toggle) is IToggleProvider toggleProvider)
         {
