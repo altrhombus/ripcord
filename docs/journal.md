@@ -72,13 +72,26 @@ The fixes, on one branch:
 - **`RIPCORD_DATA_DIR`.** Point it at a folder and Ripcord keeps everything there. The first-run check before it
   meant renaming my own data folder out of the way and back. Never again!
 
-Not fixed here, and on purpose: the screens with personality (Welcome, the wake wait, the reconnect over a
-frozen frame), a hero card that scales with the window, and one layout for every page. That's design work, and
-it gets its own branch. Internet play from the hotspot also failed three times for reasons we haven't pinned
-down yet (and not the firewall, which we ruled out). That gets its own session too.
+The next day I went through all of it with a pad, in Light, and over a stream, and that round turned up four
+more:
 
-Plenty of this hasn't been seen on a screen since it was written, because it needs the theme switched, a
-controller, or a console. The checks are listed for the next pass.
+- **Up and Down skipped rows.** WinUI picks the best-aligned control, not the nearest, so on About Down from
+  "Protocol spec" jumped past "Copy details", and in Settings Up from Configure went straight to the gear. Up and
+  Down go one row at a time now, and stay in the page while it has a row to go to.
+- **B on the disconnect prompt did nothing.** During a stream, B meant "leave", and the stream was already asking.
+  A dialog closes first now.
+- **The connect screen was white in Light.** The video surface starts out transparent, so until the first frame
+  you saw the window behind it, which is white in Light and black in Dark (that's why nobody noticed). It starts
+  black now. While I was in there, the connect animation stopped stretching the whole card across the window.
+- **Reconnect text over a frozen game.** It sits on a translucent panel now, the Fluent material for text over
+  video, at one fixed width. A first connect, over black, doesn't get one.
+
+All of it passed on the second look.
+
+Not fixed here, and on purpose: the screens with personality (Welcome, the wake wait), a hero card that scales
+with the window, and one layout for every page. That's design work, and it gets its own branch. Internet play
+from the hotspot also failed three times for reasons we haven't pinned down yet (and not the firewall, which we
+ruled out). That gets its own session too.
 
 ### The review's lifecycle fixes, and the pull-request audit (2026-10-06)
 
