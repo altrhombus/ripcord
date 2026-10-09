@@ -238,7 +238,12 @@
                             ContentTemplate="{TemplateBinding ContentTemplate}"
                             Foreground="{TemplateBinding Foreground}" />
 
-                        <!--  The facet, at the console card's angle, and its edge drawn as a line.  -->
+                        <!--
+                            The facet, at the console card's angle, and its edge drawn as a line. The line's Width
+                            is the slant's run (0.16 of the 56 px column): Stretch fills a path's own bounds, and
+                            a lone diagonal stretched across the whole column ran corner to corner, off the facet's
+                            edge (owner, 2026-10-09).
+                        -->
                         <Path
                             Grid.Column="1"
                             Data="M 0.16,0 L 1,0 L 1,1 L 0,1 Z"
@@ -246,7 +251,9 @@
                             Stretch="Fill" />
                         <Path
                             Grid.Column="1"
-                            Data="M 0.16,0 L 0,1"
+                            Width="9"
+                            HorizontalAlignment="Left"
+                            Data="M 1,0 L 0,1"
                             Opacity="{ThemeResource RipcordWedgeButtonEdgeOpacity}"
                             Stretch="Fill"
                             Stroke="{TemplateBinding Foreground}"
