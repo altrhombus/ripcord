@@ -603,8 +603,8 @@ name.</comment>
     <comment>Connect sequence: this build cannot speak the protocol, so a stream is impossible. Fatal.</comment>
   </data>
   <data name="Connect_WakeTakesAWhile" xml:space="preserve">
-    <value>Waking from rest mode can take up to half a minute.</value>
-    <comment>Added once under a wake that has run past ten seconds, so a long wait reads as expected rather than stuck. Half a minute is the wake's own budget before it gives up.</comment>
+    <value>A console in rest mode can take a little longer to wake.</value>
+    <comment>Added once under a wake that has run past ten seconds, so a long wait reads as expected rather than stuck. No figure on purpose: over the internet a wake has taken more than forty seconds, and a number the wait then overruns reads as a broken promise (owner, 2026-10-09).</comment>
   </data>  <data name="Connect_WakeDetail" xml:space="preserve">
     <value>If it's in rest mode, Ripcord wakes it first.</value>
     <comment>Detail under every wake progress line ("Waking your console…", "Asking PlayStation Network to wake your console…"). True whether or not the console turns out to be resting: over the internet its state cannot be seen, and the old wording, "The console was in standby.", was shown for a console that was awake (visual audit, 2026-10-08).</comment>
