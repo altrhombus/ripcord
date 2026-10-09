@@ -11,6 +11,7 @@ not by topic, so several cover the same subject from different angles. Pick by t
 | What does it collect, and what does it keep? | [`PRIVACY.md`](../PRIVACY.md) |
 | How is the code arranged, and what rules keep it that way? | [`architecture.md`](architecture.md) |
 | What does the app look like, and what decides that? | [`design.md`](design.md) |
+| What does each of Ripcord's own screens look like when it's finished, and how will we know? | [`showcase-plan.md`](showcase-plan.md) |
 | What is the macOS client, what is it built on, and in what order? | [`macos-plan.md`](macos-plan.md) |
 | What about iPhone, iPad, Apple TV and Apple Watch? | [`ios-plan.md`](ios-plan.md) |
 | What do the iPhone, iPad and Apple TV apps look like? | [`src/Ripcord.Mac/RipcordMobile/DESIGN.md`](../src/Ripcord.Mac/RipcordMobile/DESIGN.md) |
