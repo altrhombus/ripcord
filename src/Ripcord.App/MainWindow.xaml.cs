@@ -90,7 +90,7 @@ public sealed partial class MainWindow : Window, IShellNavigator
         // unreachable by pad. Its children stay focusable; only the container stops volunteering.
         AppTitleBar.IsTabStop = false;
         AppWindow.TitleBar.PreferredHeightOption = TitleBarHeightOption.Tall;
-        AppWindow.SetIcon("Assets/AppIcon.ico");
+        ApplyAppIcon();
 
         // The backdrop is declared in markup, which cannot ask whether the user permits transparency — so the
         // first thing done with it is to re-decide it. Without this, someone who has turned transparency off
@@ -385,6 +385,28 @@ public sealed partial class MainWindow : Window, IShellNavigator
     }
 
     /// <summary>
+    /// The window's icon, which is also the taskbar's for the zip build: the tile normally, and the one-colour
+    /// mark under a contrast theme, white on the dark ones and black on the light one, the way Windows' inbox apps
+    /// change theirs (owner, 2026-10-08). The packaged build's Start and taskbar tiles switch by themselves through
+    /// their contrast-qualified assets; the zip build has no resource system, so it is done here, and again when
+    /// contrast is turned on or off while the app is open.
+    /// </summary>
+    private void ApplyAppIcon()
+    {
+        string icon = "Assets/AppIcon.ico";
+
+        if (AppEffects.HighContrast)
+        {
+            Windows.UI.Color window = new Windows.UI.ViewManagement.UISettings()
+                .UIElementColor(Windows.UI.ViewManagement.UIElementType.Window);
+            double luminance = (0.299 * window.R) + (0.587 * window.G) + (0.114 * window.B);
+            icon = luminance < 128 ? "Assets/AppIcon.contrast-black.ico" : "Assets/AppIcon.contrast-white.ico";
+        }
+
+        AppWindow.SetIcon(icon);
+    }
+
+    /// <summary>
     /// What the accept button does on <paramref name="focused"/>, for the hint bar, or null for the scope's own
     /// "Select". Only where "Select" undersells it (showcase plan, part 6): a console card says its own action,
     /// which is the difference between expecting a stream and expecting a wait.
@@ -583,6 +605,7 @@ public sealed partial class MainWindow : Window, IShellNavigator
     private void OnEffectsChanged()
     {
         PaintCaptionButtons();
+        ApplyAppIcon();
 
         // Not while streaming: the backdrop is deliberately off for the duration, and putting one back under
         // opaque video would undo the reason it was dropped.
