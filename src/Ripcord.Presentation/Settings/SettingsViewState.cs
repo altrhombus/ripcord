@@ -55,6 +55,12 @@ public sealed record SettingsViewState(
     IReadOnlyList<HdrCheck> HdrChecks,
     string HdrHelp,
 
+    /// <summary>
+    /// The HDR row's own description: what it does, or, when the toggle is greyed out, why. A setting that can't
+    /// be changed says so on its row; the reason was only inside the collapsed expander (showcase review, R2).
+    /// </summary>
+    string HdrDescription,
+
     // ---- gpu ----
     int GpuPreferenceIndex,
     bool AdapterPickerVisible,

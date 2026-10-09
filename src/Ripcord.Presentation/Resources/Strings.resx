@@ -202,6 +202,18 @@
     <value>This PC is ready for HDR. Whether a given game streams in HDR is up to the console.</value>
     <comment>Summary under the HDR checklist when every requirement is met.</comment>
   </data>
+  <data name="Settings_HdrDescription" xml:space="preserve">
+    <value>Keeps the detail in bright skies and highlights, on an HDR display or converted for an SDR one.</value>
+    <comment>Settings: the description on the Request HDR row when it can be turned on. HDR and SDR are standard names - do not translate.</comment>
+  </data>
+  <data name="Settings_HdrNeedsHevc" xml:space="preserve">
+    <value>Needs HEVC. Choose it under Video codec first.</value>
+    <comment>Settings: the description on the Request HDR row, greyed out because the codec is H.264. HEVC is a standard name - do not translate; "Video codec" is the name of the row above.</comment>
+  </data>
+  <data name="Settings_HdrNeedsHevcDecoder" xml:space="preserve">
+    <value>Needs HEVC, which this PC can't decode yet. HEVC Video Extensions from the Microsoft Store adds it.</value>
+    <comment>Settings: the description on the Request HDR row, greyed out because the PC has no HEVC decoder. HEVC, HEVC Video Extensions and Microsoft Store are product or standard names - do not translate.</comment>
+  </data>
   <data name="Settings_HdrReadySdrDisplay" xml:space="preserve">
     <value>Ready. This display is SDR, so Ripcord converts the HDR picture for it, keeping the detail in bright skies and highlights. Turn on Use HDR in Windows to see it in HDR.</value>
     <comment>Settings, HDR section: shown when HDR can be requested but the display is SDR. HDR, SDR and Windows are product or standard names - do not translate.</comment>
@@ -933,27 +945,27 @@ think the claim above it is conditional.</comment>
     <comment>First-run setup: the last page's title.</comment>
   </data>
   <data name="Setup_DonePictureBest" xml:space="preserve">
-    <value>Picture: HEVC with HDR</value>
+    <value>HEVC with HDR</value>
     <comment>First-run setup: a summary line on the last page. HEVC and HDR are standard names - do not translate.</comment>
   </data>
   <data name="Setup_DonePictureCompatible" xml:space="preserve">
-    <value>Picture: H.264</value>
+    <value>H.264</value>
     <comment>First-run setup: a summary line on the last page. H.264 is a standard name - do not translate.</comment>
   </data>
   <data name="Setup_DoneConsole" xml:space="preserve">
-    <value>Console: {0}</value>
+    <value>{0}</value>
     <comment>First-run setup: a summary line on the last page. {0} is the console's name.</comment>
   </data>
   <data name="Setup_DoneNoConsole" xml:space="preserve">
-    <value>Console: none yet. Add one from the consoles page.</value>
+    <value>None yet. Add one from the consoles page.</value>
     <comment>First-run setup: a summary line on the last page, when no console was paired.</comment>
   </data>
   <data name="Setup_DoneController" xml:space="preserve">
-    <value>Controller: {0}</value>
+    <value>{0}</value>
     <comment>First-run setup: a summary line on the last page. {0} is the kind of controller, such as 'PlayStation controller'.</comment>
   </data>
   <data name="Setup_DoneNoController" xml:space="preserve">
-    <value>Controller: none yet. Without one, a stream reads the keyboard.</value>
+    <value>None yet. Without one, a stream reads the keyboard.</value>
     <comment>First-run setup: a summary line on the last page, when no controller button was pressed.</comment>
   </data>
   <data name="Pairing_ContinueSetup" xml:space="preserve">
@@ -1051,5 +1063,193 @@ think the claim above it is conditional.</comment>
   <data name="Failure_ConnectSignIn" xml:space="preserve">
     <value>Your PlayStation Network sign-in has ended. Sign in again in Settings, then try again.</value>
     <comment>The 'Couldn't connect' screen, in plain words; the raw reason is shown smaller beneath it. PlayStation Network is a product name - do not translate.</comment>
+  </data>
+  <data name="KeyBindings_ChangeButtonName" xml:space="preserve">
+    <value>Change the key for {0}. Currently {1}.</value>
+    <comment>Keyboard controls: screen-reader name of a row's Change button. {0} is the action, {1} the keys bound to it.</comment>
+  </data>
+  <data name="KeyBindings_PressKeyFor" xml:space="preserve">
+    <value>Press a key for {0}</value>
+    <comment>Keyboard controls: shown while waiting for a key. {0} is the action.</comment>
+  </data>
+  <data name="KeyBindings_CaptureHint" xml:space="preserve">
+    <value>Backspace clears it. Escape, F3 and F11 are reserved by the app.</value>
+    <comment>Keyboard controls: under the prompt while waiting for a key. Key names are the keyboard's own.</comment>
+  </data>
+  <data name="KeyBindings_ResetDone" xml:space="preserve">
+    <value>Reset to the default keys.</value>
+    <comment>Keyboard controls: after Reset to defaults.</comment>
+  </data>
+  <data name="KeyBindings_Cleared" xml:space="preserve">
+    <value>Cleared.</value>
+    <comment>Keyboard controls: after Backspace removed a binding.</comment>
+  </data>
+  <data name="KeyBindings_Reserved" xml:space="preserve">
+    <value>{0} is reserved by the app. Press a different key.</value>
+    <comment>Keyboard controls: the key pressed can't be bound. {0} is the key's name.</comment>
+  </data>
+  <data name="KeyBindings_Moved" xml:space="preserve">
+    <value>{0} was {1}; it is now {2}.</value>
+    <comment>Keyboard controls: a key moved from one action to another. {0} the key, {1} its old action, {2} its new one.</comment>
+  </data>
+  <data name="KeyBindings_KeySpace" xml:space="preserve">
+    <value>Space</value>
+    <comment>Keyboard controls: a key's name.</comment>
+  </data>
+  <data name="KeyBindings_KeyEnter" xml:space="preserve">
+    <value>Enter</value>
+    <comment>Keyboard controls: a key's name.</comment>
+  </data>
+  <data name="KeyBindings_KeyTab" xml:space="preserve">
+    <value>Tab</value>
+    <comment>Keyboard controls: a key's name.</comment>
+  </data>
+  <data name="KeyBindings_KeyBackspace" xml:space="preserve">
+    <value>Backspace</value>
+    <comment>Keyboard controls: a key's name.</comment>
+  </data>
+  <data name="KeyBindings_KeyEscape" xml:space="preserve">
+    <value>Escape</value>
+    <comment>Keyboard controls: a key's name.</comment>
+  </data>
+  <data name="KeyBindings_KeyLeft" xml:space="preserve">
+    <value>Left arrow</value>
+    <comment>Keyboard controls: a key's name.</comment>
+  </data>
+  <data name="KeyBindings_KeyRight" xml:space="preserve">
+    <value>Right arrow</value>
+    <comment>Keyboard controls: a key's name.</comment>
+  </data>
+  <data name="KeyBindings_KeyUp" xml:space="preserve">
+    <value>Up arrow</value>
+    <comment>Keyboard controls: a key's name.</comment>
+  </data>
+  <data name="KeyBindings_KeyDown" xml:space="preserve">
+    <value>Down arrow</value>
+    <comment>Keyboard controls: a key's name.</comment>
+  </data>
+  <data name="Session_CantShowStream" xml:space="preserve">
+    <value>Couldn't show the stream</value>
+    <comment>Status overlay headline: the GPU couldn't draw the video even in SDR.</comment>
+  </data>
+  <data name="Session_CantShowStreamDetail" xml:space="preserve">
+    <value>This GPU couldn't draw the video. Try another GPU in Settings, or the H.264 codec.</value>
+    <comment>Status overlay detail under Session_CantShowStream. H.264 is a standard name - do not translate.</comment>
+  </data>
+  <data name="Session_ReconnectingSdr" xml:space="preserve">
+    <value>Reconnecting in SDR…</value>
+    <comment>Status overlay headline: retrying without HDR. SDR is a standard name - do not translate.</comment>
+  </data>
+  <data name="Session_ReconnectingSdrDetail" xml:space="preserve">
+    <value>This GPU couldn't show the HDR picture.</value>
+    <comment>Status overlay detail under Session_ReconnectingSdr. HDR is a standard name - do not translate.</comment>
+  </data>
+  <data name="Session_DeviceReset" xml:space="preserve">
+    <value>Graphics device was reset</value>
+    <comment>Status overlay headline: the display driver restarted mid-stream.</comment>
+  </data>
+  <data name="Session_DeviceResetDetail" xml:space="preserve">
+    <value>The display driver restarted (this can happen after a driver update or if an external GPU was unplugged). Go back and reconnect to resume. [0x{0:X8}]</value>
+    <comment>Status overlay detail under Session_DeviceReset. {0:X8} is an error code; keep it as is.</comment>
+  </data>
+  <data name="Session_StartingNewSession" xml:space="preserve">
+    <value>Starting a new session.</value>
+    <comment>Status overlay detail under Connecting…, when a stream restarts.</comment>
+  </data>
+  <data name="Session_PressEscToLeave" xml:space="preserve">
+    <value>Press Esc to leave the stream</value>
+    <comment>Hint shown briefly over a stream with no controller. Esc is the key's name.</comment>
+  </data>
+  <data name="Session_GestureToLeave" xml:space="preserve">
+    <value>{0} to leave · Esc for windowed</value>
+    <comment>Hint shown briefly over a stream. {0} names the controller buttons, e.g. "Hold Options + Create + L1 + R1". Esc is the key's name.</comment>
+  </data>
+  <data name="Session_WindowedHint" xml:space="preserve">
+    <value>Windowed — press F11 for full screen, or Esc again to disconnect</value>
+    <comment>Hint shown after Esc leaves full screen. F11 and Esc are key names.</comment>
+  </data>
+  <data name="About_Version" xml:space="preserve">
+    <value>Version {0}</value>
+    <comment>About: the version pill. {0} is the version number.</comment>
+  </data>
+  <data name="About_Unavailable" xml:space="preserve">
+    <value>unavailable</value>
+    <comment>About: in place of the settings folder's path when it can't be read.</comment>
+  </data>
+  <data name="About_Ready" xml:space="preserve">
+    <value>Ready</value>
+    <comment>About: status pill, Xbox controllers row, when GameInput is installed.</comment>
+  </data>
+  <data name="About_GameInputMissing" xml:space="preserve">
+    <value>GameInput not installed</value>
+    <comment>About: status pill, Xbox controllers row. GameInput is a product name - do not translate.</comment>
+  </data>
+  <data name="About_CouldntCheck" xml:space="preserve">
+    <value>Couldn't check</value>
+    <comment>About: status pill when a graphics check failed.</comment>
+  </data>
+  <data name="About_HardwareAccelerated" xml:space="preserve">
+    <value>Hardware accelerated</value>
+    <comment>About: status pill, Video decoding row.</comment>
+  </data>
+  <data name="About_SoftwareFallback" xml:space="preserve">
+    <value>Software fallback</value>
+    <comment>About: status pill, Video decoding row, when the GPU reports no H.264 decode.</comment>
+  </data>
+  <data name="About_SoftwareFallbackNote" xml:space="preserve">
+    <value>This GPU doesn't report H.264 decode support, so streaming may fall back to the CPU and cost more power.</value>
+    <comment>About: note under Software fallback. H.264 is a standard name - do not translate.</comment>
+  </data>
+  <data name="About_Available" xml:space="preserve">
+    <value>Available</value>
+    <comment>About: status pill, HEVC row.</comment>
+  </data>
+  <data name="About_NotInstalled" xml:space="preserve">
+    <value>Not installed</value>
+    <comment>About: status pill, HEVC row, when no decoder is installed.</comment>
+  </data>
+  <data name="About_CopyDetails" xml:space="preserve">
+    <value>Copy details</value>
+    <comment>About: the button that copies the device facts for a bug report.</comment>
+  </data>
+  <data name="About_Copied" xml:space="preserve">
+    <value>Copied</value>
+    <comment>About: the same button's label for two seconds after copying.</comment>
+  </data>
+  <data name="Settings_ConsoleRemotePlayOff" xml:space="preserve">
+    <value>Remote play is turned off on this console.</value>
+    <comment>Settings, Account: a console listed from the account.</comment>
+  </data>
+  <data name="Settings_ConsoleReady" xml:space="preserve">
+    <value>Ready, and can be woken from rest mode.</value>
+    <comment>Settings, Account: a console listed from the account.</comment>
+  </data>
+  <data name="Settings_ConsoleReadyNoWake" xml:space="preserve">
+    <value>Ready, but it can't be woken remotely — turn on Remote Play rest-mode wake on the console.</value>
+    <comment>Settings, Account: a console listed from the account. Remote Play is a product name - do not translate.</comment>
+  </data>
+  <data name="Settings_SomeNotLoaded" xml:space="preserve">
+    <value>Some settings couldn't be loaded</value>
+    <comment>Settings: the title of the bar shown when the settings file couldn't be read.</comment>
+  </data>
+  <data name="KeyBindings_GroupSticks" xml:space="preserve">
+    <value>Sticks</value>
+    <comment>Keyboard controls: section heading.</comment>
+  </data>
+  <data name="KeyBindings_GroupButtons" xml:space="preserve">
+    <value>Buttons</value>
+    <comment>Keyboard controls: section heading, the four face buttons.</comment>
+  </data>
+  <data name="KeyBindings_GroupDpad" xml:space="preserve">
+    <value>D-pad</value>
+    <comment>Keyboard controls: section heading, the directional pad.</comment>
+  </data>
+  <data name="KeyBindings_GroupShoulders" xml:space="preserve">
+    <value>Shoulders and triggers</value>
+    <comment>Keyboard controls: section heading.</comment>
+  </data>
+  <data name="KeyBindings_GroupSystem" xml:space="preserve">
+    <value>Menu buttons</value>
+    <comment>Keyboard controls: section heading, for Options, Create, the PS button and the touchpad.</comment>
   </data>
 </root>

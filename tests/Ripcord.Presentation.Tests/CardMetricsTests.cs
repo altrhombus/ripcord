@@ -143,6 +143,24 @@ public class CardMetricsTests
         Assert.Equal(card + CardMetrics.Gutter, layout.CellWidth);
     }
 
+    /// <summary>
+    /// The hero keeps growing with the window until it meets the page column, so Home's title can sit where every
+    /// other page's does (showcase review, decision E).
+    /// </summary>
+    [Theory]
+    [InlineData(1280, 640)]
+    [InlineData(1920, 808)]
+    [InlineData(3440, 808)]
+    public void TheHero_StopsAtThePageColumn(double viewport, double card)
+    {
+        CardLayout layout = CardMetrics.For(viewport, consoleCount: 1, columnWidth: 820);
+
+        Assert.Equal(card, layout.Geometry.CardWidth);
+        Assert.True(layout.CellWidth <= 820);
+        Assert.Equal(card >= CardMetrics.HeroLargeTypeWidth ? CardNameStep.TitleLarge : CardNameStep.Title,
+            layout.Geometry.NameStep);
+    }
+
     /// <summary>The smallest window the app allows still holds the whole card, padding and gutter included.</summary>
     [Fact]
     public void TheHero_FitsTheMinimumWindow()

@@ -210,7 +210,13 @@ public static class CardMetrics
     /// is showing instead and the grid is not rendered at all — the layout returned for it is the hero's, so a
     /// caller that renders anyway gets something sane rather than a division by zero.
     /// </param>
-    public static CardLayout For(double viewportWidth, int consoleCount, double textScale = 1.0)
+    /// <param name="columnWidth">
+    /// The page column's width, inside its padding: the hero grows with the window but never past it. Home sits in
+    /// the same column as every other page, so its title stays put when you move between them (showcase review,
+    /// decision E, 2026-10-09). Unbounded by default.
+    /// </param>
+    public static CardLayout For(
+        double viewportWidth, int consoleCount, double textScale = 1.0, double columnWidth = double.PositiveInfinity)
     {
         double extra = TextHeight * (Math.Clamp(textScale, 1.0, 3.0) - 1.0);
 
@@ -219,7 +225,7 @@ public static class CardMetrics
         // only thing the page can do.
         if (consoleCount <= 1)
         {
-            return Hero(viewportWidth, extra);
+            return Hero(viewportWidth, columnWidth, extra);
         }
 
         bool roomy = viewportWidth >= WideViewportWidth;
@@ -253,10 +259,10 @@ public static class CardMetrics
     /// The one-console card, sized from the page. Its proportion, its wedge's share and the wedge's angle hold at
     /// every size; its text steps up the ramp once at <see cref="HeroLargeTypeWidth"/>.
     /// </summary>
-    private static CardLayout Hero(double viewportWidth, double extraTextHeight)
+    private static CardLayout Hero(double viewportWidth, double columnWidth, double extraTextHeight)
     {
-        // Inside the page's padding, and inside the cell's own gutter.
-        double room = Math.Max(0, viewportWidth - (2 * PagePadding) - Gutter);
+        // Inside the page's padding and its column, and inside the cell's own gutter.
+        double room = Math.Max(0, Math.Min(viewportWidth - (2 * PagePadding), columnWidth) - Gutter);
         double card = Math.Clamp(viewportWidth * HeroShare, HeroMinCardWidth, HeroMaxCardWidth);
 
         // Never wider than the page has room for. A window under the app's minimum (or a first measure at zero)

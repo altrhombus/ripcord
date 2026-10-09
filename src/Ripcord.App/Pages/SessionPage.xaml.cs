@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Net;
@@ -27,6 +28,7 @@ using Ripcord.Input;
 using Ripcord.Media;
 using Ripcord.Presentation;
 using Ripcord.Presentation.Consoles;
+using Ripcord.Presentation.Resources;
 using Ripcord.Presentation.Sessions;
 using Ripcord.Presentation.Settings;
 using Ripcord.Core.Security;
@@ -1228,14 +1230,14 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
             if (_forceSdr)
             {
                 ShowStatus(
-                    "Couldn't show the stream",
-                    "This GPU couldn't draw the video. Try another GPU in Settings, or the H.264 codec.",
+                    Strings.Session_CantShowStream,
+                    Strings.Session_CantShowStreamDetail,
                     terminal: true);
                 return;
             }
 
             _forceSdr = true;
-            ShowStatus("Reconnecting in SDR…", "This GPU couldn't show the HDR picture.", terminal: false);
+            ShowStatus(Strings.Session_ReconnectingSdr, Strings.Session_ReconnectingSdrDetail, terminal: false);
             _ = RestartSessionAsync();
         });
     }
@@ -1243,9 +1245,8 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
     private void OnDeviceLost(int reason)
     {
         _dispatcherQueue.TryEnqueue(() => ShowStatus(
-            "Graphics device was reset",
-            "The display driver restarted (this can happen after a driver update or if an external GPU was "
-            + $"unplugged). Go back and reconnect to resume. [0x{reason:X8}]",
+            Strings.Session_DeviceReset,
+            string.Format(CultureInfo.CurrentCulture, Strings.Session_DeviceResetDetail, reason),
             terminal: true));
     }
 
@@ -1324,12 +1325,15 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
         // for it taught Xbox names to someone holding nothing (visual audit, 2026-10-08).
         if (_settings.ExitGesture == ExitGesture.None || !App.Input.PadAttached)
         {
-            ExitHintText.Text = "Press Esc to leave the stream";
+            ExitHintText.Text = Strings.Session_PressEscToLeave;
         }
         else
         {
             ExitHintText.Text =
-                $"{ExitGestureDetector.Describe(_settings.ExitGesture, App.Input.PadFamily)} to leave · Esc for windowed";
+                string.Format(
+                    CultureInfo.CurrentCulture,
+                    Strings.Session_GestureToLeave,
+                    ExitGestureDetector.Describe(_settings.ExitGesture, App.Input.PadFamily));
         }
 
         ExitHint.Visibility = Visibility.Visible;
@@ -1444,7 +1448,7 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
     /// <summary>Tell the user Escape again will disconnect, so the two-step behaviour is discoverable.</summary>
     private void ShowWindowedHintBriefly()
     {
-        ExitHintText.Text = "Windowed — press F11 for full screen, or Esc again to disconnect";
+        ExitHintText.Text = Strings.Session_WindowedHint;
         ExitHint.Visibility = Visibility.Visible;
         _ = HideExitHintAfterDelay();
     }
@@ -1472,7 +1476,7 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
 
     private async Task RestartSessionAsync()
     {
-        ShowStatus("Connecting…", "Starting a new session.", terminal: false);
+        ShowStatus(Strings.Session_Connecting, Strings.Session_StartingNewSession, terminal: false);
 
         // The whole attempt, not just the controller: StartSessionAsync builds a new video pipeline, stats timer,
         // trace and cancellation source, and overwrote the old ones while they still held a D3D12 device, a

@@ -21,7 +21,28 @@
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:local="using:Ripcord_App.Pages"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:tk="using:CommunityToolkit.WinUI.Controls"
     mc:Ignorable="d">
+    <Page.Resources>
+        <!--  One binding: the action as the card's header, its keys and the Change button as its content.  -->
+        <DataTemplate x:Key="BindingRowTemplate" x:DataType="local:KeyBindingRow">
+            <tk:SettingsCard Header="{x:Bind ActionName}">
+                <StackPanel Orientation="Horizontal" Spacing="12">
+                    <TextBlock
+                        MinWidth="120"
+                        VerticalAlignment="Center"
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                        Text="{x:Bind KeyNames, Mode=OneWay}"
+                        TextAlignment="Right" />
+                    <Button
+                        AutomationProperties.Name="{x:Bind ChangeButtonName, Mode=OneWay}"
+                        Click="Rebind_Click"
+                        x:Uid="KeyBindingsPage_Change"
+                        Tag="{x:Bind Action}" />
+                </StackPanel>
+            </tk:SettingsCard>
+        </DataTemplate>
+    </Page.Resources>
 
     <ScrollViewer Padding="24,16,24,24">
         <!--  A full-width child, with the column centred inside it. Handed the column directly, the scroller lays it out at its natural width and centres THAT, so a page whose rows are narrower than the column shifted right of the others (Keyboard controls sat 40 px off Settings).  -->
@@ -48,37 +69,12 @@
                     x:Uid="KeyBindingsPage_EscapeFFStay"
                     TextWrapping="Wrap" />
 
-                <!--  Not a tab stop itself, so focus moves between the Change buttons and never onto the list.  -->
-                <ItemsControl x:Name="BindingList" IsTabStop="False">
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate x:DataType="local:KeyBindingRow">
-                            <Grid Padding="0,4" ColumnSpacing="12">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-                                <TextBlock
-                                    VerticalAlignment="Center"
-                                    Text="{x:Bind ActionName}"
-                                    TextWrapping="Wrap" />
-                                <TextBlock
-                                    Grid.Column="1"
-                                    MinWidth="120"
-                                    VerticalAlignment="Center"
-                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                    Text="{x:Bind KeyNames, Mode=OneWay}"
-                                    TextAlignment="Right" />
-                                <Button
-                                    Grid.Column="2"
-                                    AutomationProperties.Name="{x:Bind ChangeButtonName, Mode=OneWay}"
-                                    Click="Rebind_Click"
-                                    x:Uid="KeyBindingsPage_Change"
-                                    Tag="{x:Bind Action}" />
-                            </Grid>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
+                <!--
+                    Grouped, in the row cards Settings uses: it was one flat list of 26 rows in a different style
+                    from the page it opens from (showcase review, R3). The groups are built in code from one list of
+                    rows, so a rebind still updates a row in place and focus stays on its Change button.
+                -->
+                <StackPanel x:Name="BindingGroups" Spacing="24" />
 
                 <!--
                     Last, and not a default anything. Reset is the one destructive action here, so it sits at the

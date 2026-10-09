@@ -52,6 +52,9 @@
     -->
     <x:Double x:Key="RipcordPageColumnWidth">820</x:Double>
 
+    <!--  The same column for a page that carries its 24 padding on itself rather than on a scroller (Home): 820 + 2 × 24.  -->
+    <x:Double x:Key="RipcordPageColumnWidthWithPadding">868</x:Double>
+
     <Thickness x:Key="RipcordInsetXXS">2</Thickness>
     <Thickness x:Key="RipcordInsetXS">4</Thickness>
     <Thickness x:Key="RipcordInsetS">8</Thickness>

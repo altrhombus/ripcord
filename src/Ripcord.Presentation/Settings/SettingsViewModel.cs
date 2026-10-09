@@ -420,6 +420,9 @@ public sealed class SettingsViewModel : ObservableState<SettingsViewState>
                 // is missing leaves the reader to work out that nothing is; an affirmative line is shorter and
                 // is the answer they came for. An SDR display is ready too since 2026-10-02: Ripcord tone-maps.
                 : _displayHdr ? Strings.Settings_HdrReady : Strings.Settings_HdrReadySdrDisplay,
+            HdrDescription: HdrSelectable ? Strings.Settings_HdrDescription
+                : _hevcAvailable ? Strings.Settings_HdrNeedsHevc
+                : Strings.Settings_HdrNeedsHevcDecoder,
 
             GpuPreferenceIndex: (int)_draft.GpuPreference,
             AdapterPickerVisible: specific,
