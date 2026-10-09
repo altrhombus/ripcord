@@ -1,0 +1,20 @@
+# Sourced by the hooks, not a hook itself: sets $python to a command that runs Python 3.
+#
+# python3 first, then the Windows launcher, then python. Each is run rather than just looked up, because on Windows
+# python3 can be an App execution alias that only offers to open the Store: it is on the PATH, it runs, and it
+# exits with an error, which blocked every commit on a machine with Python 3.14 installed (2026-10-09).
+#
+# Finding none fails the hook. A leak guard that skips itself when Python is missing is no guard.
+python=
+for candidate in python3 "py -3" python; do
+    # Unquoted on purpose, so "py -3" is a command and its argument.
+    if $candidate -c 'import sys; sys.exit(sys.version_info[0] != 3)' >/dev/null 2>&1; then
+        python=$candidate
+        break
+    fi
+done
+
+if [ -z "$python" ]; then
+    echo "leak guard: no Python 3 found (tried python3, py -3, python). Install Python 3 to commit here." >&2
+    exit 1
+fi
