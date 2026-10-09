@@ -473,56 +473,67 @@
             IsOpen="False" />
 
 
-        <!--  Empty state — shown when no consoles are paired.  -->
-        <StackPanel
+        <!--
+            Empty state — shown when no consoles are paired. In a scroller: at 225% text in the smallest window the
+            composition is taller than the room, and it was clipped at both ends, the mark gone and "Add a console"
+            focused but off the window (showcase review, T1).
+        -->
+        <ScrollViewer
             x:Name="EmptyState"
             Grid.Row="2"
-            Margin="0,0,0,48"
-            HorizontalAlignment="Center"
-            VerticalAlignment="Center"
-            MaxWidth="520"
-            Spacing="18">
-            <!--
-                The FULL mark, not FamilyMark. This surface is about Ripcord rather than about a console, and
-                FamilyMark is the console badge - its own XAML says the wedge is left out because the wedge is
-                the app's identity.
+            HorizontalScrollMode="Disabled"
+            VerticalScrollBarVisibility="Auto">
+            <!--  As tall as the scroller shows, so the composition still centres when it fits and only scrolls when it does not.  -->
+            <Grid MinHeight="{x:Bind EmptyState.ViewportHeight, Mode=OneWay}">
+                <StackPanel
+                    Margin="0,0,0,48"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    MaxWidth="520"
+                    Spacing="18">
+                    <!--
+                        The FULL mark, not FamilyMark. This surface is about Ripcord rather than about a console, and
+                        FamilyMark is the console badge - its own XAML says the wedge is left out because the wedge is
+                        the app's identity.
 
-                **Still no wordmark, asked again and answered the same way (2026-09-24).** The first time,
-                there was no wordmark to add; there is one now, and RipcordWordmark beside this mark would
-                be a legitimate lockup rather than the bare word brand/README.md forbids. It is left out
-                anyway. The title bar already carries the name, so a lockup here is the third time it is on
-                screen - and this screen is a task, not an introduction, which is the same reason the
-                connect sequence stopped being a ceremony. About is the surface that gets the lockup,
-                because it is the one that is about Ripcord rather than about getting you to a console.
-            -->
-            <controls:RipcordMark
-                Width="88"
-                Height="88"
-                WedgeFill="{ThemeResource TextFillColorPrimaryBrush}" />
-            <TextBlock
-                HorizontalAlignment="Center"
-                Style="{StaticResource RipcordPageTitleStyle}"
-                x:Uid="ConsolesPage_FirstRunTitle"
-                TextAlignment="Center" />
-            <TextBlock
-                HorizontalAlignment="Center"
-                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                x:Uid="ConsolesPage_AddConsoleOnceStays"
-                TextAlignment="Center"
-                TextWrapping="Wrap" />
-            <Button
-                x:Name="EmptyStateAddButton"
-                x:Uid="ConsolesPage_EmptyStateAdd"
-                Margin="0,4,0,0"
-                HorizontalAlignment="Center"
-                Click="OnAddConsoleClick"
-                Style="{StaticResource AccentButtonStyle}">
-                <StackPanel Orientation="Horizontal" Spacing="8">
-                    <FontIcon FontSize="{ThemeResource RipcordIconSizeAction}" Glyph="&#xE710;" />
-                    <TextBlock x:Uid="ConsolesPage_AddConsoleButton" />
+                        **Still no wordmark, asked again and answered the same way (2026-09-24).** The first time,
+                        there was no wordmark to add; there is one now, and RipcordWordmark beside this mark would
+                        be a legitimate lockup rather than the bare word brand/README.md forbids. It is left out
+                        anyway. The title bar already carries the name, so a lockup here is the third time it is on
+                        screen - and this screen is a task, not an introduction, which is the same reason the
+                        connect sequence stopped being a ceremony. About is the surface that gets the lockup,
+                        because it is the one that is about Ripcord rather than about getting you to a console.
+                    -->
+                    <controls:RipcordMark
+                        Width="88"
+                        Height="88"
+                        WedgeFill="{ThemeResource TextFillColorPrimaryBrush}" />
+                    <TextBlock
+                        HorizontalAlignment="Center"
+                        Style="{StaticResource RipcordPageTitleStyle}"
+                        x:Uid="ConsolesPage_FirstRunTitle"
+                        TextAlignment="Center" />
+                    <TextBlock
+                        HorizontalAlignment="Center"
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                        x:Uid="ConsolesPage_AddConsoleOnceStays"
+                        TextAlignment="Center"
+                        TextWrapping="Wrap" />
+                    <Button
+                        x:Name="EmptyStateAddButton"
+                        x:Uid="ConsolesPage_EmptyStateAdd"
+                        Margin="0,4,0,0"
+                        HorizontalAlignment="Center"
+                        Click="OnAddConsoleClick"
+                        Style="{StaticResource AccentButtonStyle}">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <FontIcon FontSize="{ThemeResource RipcordIconSizeAction}" Glyph="&#xE710;" />
+                            <TextBlock x:Uid="ConsolesPage_AddConsoleButton" />
+                        </StackPanel>
+                    </Button>
                 </StackPanel>
-            </Button>
-        </StackPanel>
+            </Grid>
+        </ScrollViewer>
 
         <!--
             GridView rather than ItemsRepeater on purpose: it is the items control with real directional-focus
