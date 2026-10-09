@@ -91,6 +91,13 @@ public sealed record SessionViewState(
     bool StatusOverPicture,
 
     /// <summary>
+    /// What the quiet way out says: "Stop trying" while reconnecting, "Back to consoles" while connecting. During
+    /// a reconnect the countdown is what is being abandoned, and a plain "Back" read as leaving something that
+    /// was still working (design.md; owner, 2026-10-09).
+    /// </summary>
+    string ConnectEscapeLabel,
+
+    /// <summary>
     /// A quiet way out of a connect that has run long enough to feel stuck.
     ///
     /// <para>
@@ -147,6 +154,7 @@ public sealed record SessionViewState(
         StatusLeadsBack: false,
         StatusRetryLabel: Strings.Session_TryAgain,
         StatusOverPicture: false,
+        ConnectEscapeLabel: Strings.Session_BackToConsoles,
         ConnectEscapeVisible: false,
         IsStreamLive: false,
         AlertVisible: false,

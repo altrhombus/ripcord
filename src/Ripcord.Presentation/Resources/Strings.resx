@@ -519,7 +519,14 @@ name.</comment>
     <value>It may have gone into rest mode or been turned off, or another device may have started playing on it.</value>
     <comment>Status overlay detail under 'The console ended the stream'. Lists the likely reasons without claiming which: the console's own reason is shown small beneath, for a bug report.</comment>
   </data>
-  <data name="Session_Offline" xml:space="preserve">
+  <data name="Session_StopTrying" xml:space="preserve">
+    <value>Stop trying</value>
+    <comment>The way out while a stream is reconnecting. Not "Cancel", which during a countdown is ambiguous about whether it abandons the session or just this attempt (design.md).</comment>
+  </data>
+  <data name="Session_BackToConsoles" xml:space="preserve">
+    <value>Back to consoles</value>
+    <comment>The way out of a connect that has run long enough to feel stuck.</comment>
+  </data>  <data name="Session_Offline" xml:space="preserve">
     <value>This PC can't reach the console's network right now. Ripcord keeps trying, and reconnects as soon as the network is back.</value>
     <comment>Status overlay detail while reconnecting, when the reason is that the network itself is unreachable (Wi-Fi off, cable out, or the console has dropped off the network). Deliberately does not say which end is at fault.</comment>
   </data>
@@ -595,7 +602,10 @@ name.</comment>
     <value>Missing control constants</value>
     <comment>Connect sequence: this build cannot speak the protocol, so a stream is impossible. Fatal.</comment>
   </data>
-  <data name="Connect_WakeDetail" xml:space="preserve">
+  <data name="Connect_WakeTakesAWhile" xml:space="preserve">
+    <value>Waking from rest mode can take up to half a minute.</value>
+    <comment>Added once under a wake that has run past ten seconds, so a long wait reads as expected rather than stuck. Half a minute is the wake's own budget before it gives up.</comment>
+  </data>  <data name="Connect_WakeDetail" xml:space="preserve">
     <value>If it's in rest mode, Ripcord wakes it first.</value>
     <comment>Detail under every wake progress line ("Waking your console…", "Asking PlayStation Network to wake your console…"). True whether or not the console turns out to be resting: over the internet its state cannot be seen, and the old wording, "The console was in standby.", was shown for a console that was awake (visual audit, 2026-10-08).</comment>
   </data>
