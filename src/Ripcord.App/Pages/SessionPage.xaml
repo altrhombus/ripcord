@@ -102,11 +102,18 @@
                 2026-10-09). In-app acrylic, the material Fluent puts over media. The plate and the words share
                 a grid so it is always their size, and the words keep their place whether it shows or not. Over
                 the black of a first connect there is nothing to read against, so nothing is drawn.
+
+                One width whatever it says: sized to the words, the plate grew and shrank as the status changed
+                under it, which drew the eye to the box rather than the message (owner, 2026-10-09). The column is
+                the text's full measure, or the window's when that is narrower.
             -->
             <Grid
                 Margin="12,0,12,52"
-                HorizontalAlignment="Left"
                 VerticalAlignment="Bottom">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" MaxWidth="662" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
                 <Border
                     x:Name="StatusPlate"
                     Background="{ThemeResource AcrylicInAppFillColorDefaultBrush}"
