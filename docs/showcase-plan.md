@@ -195,6 +195,11 @@ The acceptance pass, after part 7, and recorded in the captures folder like the 
 - **The stopwatch:** presses and seconds from launch to playing, with one console and with three.
 - **Fresh eyes:** a first run on a clean data folder (`RIPCORD_DATA_DIR`), pad only.
 
+**Status (2026-10-09):** Light and Dark done at 640 × 480, 1280 × 800 and 1920 × 1080 with mouse and keyboard,
+the stopwatch, and the comparison with the Xbox app and Media Player. Ten findings; all but the discovery row
+(audit 6) fixed. Still to run: High Contrast, 200% scale, 225% text, animation effects off, the pad, a stream,
+the Paired screen, 3440 × 1440, and timing on a Release build.
+
 ## Decisions
 
 Asked of the owner and answered on 2026-10-09:
@@ -202,8 +207,17 @@ Asked of the owner and answered on 2026-10-09:
 - **A. The hero's text steps up with the card** (Title to Title Large): **yes.** The alternative was a bigger
   card with the same text, which is what `design.md`'s "Windows owns text size" reads as literally. Stepping
   the platform's own ramp at breakpoints is responsive layout, not a second text-size setting.
-- **B. Welcome gets the wordmark: yes, on Welcome only.** The 2026-09-24 decision keeps it off the empty home,
-  a task screen; Welcome is the one introduction.
+- **B. Welcome gets the wordmark: yes, on Welcome and About.** The 2026-09-24 decision keeps it off the empty
+  home, a task screen; Welcome is the one introduction, and About, which already carried it, is the page about
+  Ripcord itself (amended after the showcase review).
 - **C. While reconnecting, the way out reads "Stop trying".** "Back to consoles" everywhere else. The app
   changes to match `design.md`.
-- **D. Navigation sounds with a pad: try it**, on while a pad is in use, and decide by ear.
+- **D. Navigation sounds with a pad: try it**, on while a pad is in use, and decide by ear. Kept: the owner
+  liked them on the first pad test.
+
+Asked during the showcase review and answered the same day:
+
+- **E. Home sits in the page column.** Its title was at a different place for one, three and no consoles, and
+  never where the other pages put theirs. Now the hero grows with the window up to the column's width, the grid
+  fills the column from its left edge (two cards a row), and the empty state is centred in it. The other options
+  were a wider gallery for the grid alone, or leaving Home as the one page that isn't a column.
