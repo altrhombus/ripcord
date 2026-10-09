@@ -395,7 +395,7 @@ public class PublishedTreeSweepTests
          ".entitlements", ".plist", ".xcstrings", ".txt"];
 
     private static readonly string[] NamedFiles =
-        ["NOTICE", "LICENSE", ".gitignore", "Makefile", "Cargo.lock", "pre-commit", "commit-msg", "pre-push"];
+        ["NOTICE", "LICENSE", ".gitignore", "Makefile", "Cargo.lock", "pre-commit", "commit-msg", "pre-push", "find-python"];
 
     /// <summary>
     /// Extensions that are genuinely not text, so their absence from the corpus is not a gap.
