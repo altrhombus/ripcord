@@ -156,6 +156,26 @@ public class SessionViewModelTests
     }
 
     [Fact]
+    public void StatusOverPicture_OnlyOnceAStreamHasShownOne()
+    {
+        // The first connect is over black and needs no plate; a reconnect is over the game's last frame and does
+        // (owner, 2026-10-09: the reconnect text was hard to read over the frozen stream).
+        (SessionViewModel vm, _, _) = Build();
+
+        vm.ApplyLifecycle(new SessionStatus(SessionLifecycle.Connecting, "Connecting"));
+        Assert.False(vm.State.StatusOverPicture);
+
+        vm.ApplyLifecycle(new SessionStatus(SessionLifecycle.Streaming, "Streaming"));
+        Assert.False(vm.State.StatusOverPicture);
+
+        vm.ApplyLifecycle(new SessionStatus(SessionLifecycle.Reconnecting, "Reconnecting"));
+        Assert.True(vm.State.StatusOverPicture);
+
+        vm.ApplyLifecycle(new SessionStatus(SessionLifecycle.Streaming, "Streaming"));
+        Assert.False(vm.State.StatusOverPicture);
+    }
+
+    [Fact]
     public void ApplyLifecycle_AFailure_StillLeadsWithTryingAgain()
     {
         (SessionViewModel vm, _, _) = Build();
