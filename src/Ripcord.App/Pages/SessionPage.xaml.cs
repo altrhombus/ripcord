@@ -255,7 +255,12 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
         {
             ConnectedAnimation? animation = ConnectedAnimationService.GetForCurrentView()
                 .GetAnimation(AppMotion.ConnectAnimationKey);
-            animation?.TryStart(StatusOverlay);
+            // Onto the mark, which is what this always meant to carry. It used to land on StatusOverlay, which
+            // covers the window, so the card's snapshot was stretched over the whole screen until the animation
+            // ended - and that waits for the page, which is busy bringing the video device up. In Dark the card
+            // is near black and nobody saw it. In Light it is white, and the connect screen's white text sat on
+            // it unreadable (owner, 2026-10-09).
+            animation?.TryStart(ConnectMark);
         }
         catch (Exception)
         {
@@ -748,6 +753,8 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
             StatusOverlay.Opacity = 1;
             StatusOverlay.Visibility = Vis(s.StatusVisible);
         }
+
+        StatusPlate.Visibility = Vis(s.StatusOverPicture);
         // Said out loud when the headline changes: a new phase, a failure. Detail lines alone are progress chatter.
         if (s.StatusVisible && StatusHeadline.Text != s.StatusHeadline)
         {
@@ -1038,10 +1045,11 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
 
         // The console's own accent for the trail, resolved through AccentResources so high contrast drops it
         // to a system brush rather than painting decorative colour where the palette forbids it. The wedge
-        // takes the ordinary foreground: it is the app's mark, not the console's.
+        // takes the ordinary foreground, set in the markup: it is the app's mark, not the console's. It was looked
+        // up here, from the app's resources, and so took the Windows theme rather than this page's Dark: a black
+        // wedge on the connect screen in Light (owner, 2026-10-09).
         ConsoleFamily family = ConsoleFamily.ForPlatformName(_console?.Platform);
         StatusTrail.Accent = AccentResources.Brush(family.Accent);
-        StatusTrail.WedgeFill = ThemeBrush.Lookup("TextFillColorPrimaryBrush");
         StatusTrail.Reached = reached;
     }
 

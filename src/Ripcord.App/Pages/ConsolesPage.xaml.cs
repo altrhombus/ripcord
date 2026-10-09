@@ -17,6 +17,7 @@ using Ripcord.Presentation;
 using Ripcord.Presentation.Consoles;
 using Ripcord_App.Input;
 using Ripcord_App.Accents;
+using Ripcord_App.Controls;
 using Ripcord_App.Converters;
 using Ripcord_App.Services;
 
@@ -404,7 +405,12 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
             // Always the container now. This used to branch on which layout was showing, because the hero
             // card sat outside any items control and had no container to ask for - so the one-console path
             // was the only one that cut to black when the branch was wrong. Every card is a GridViewItem.
-            UIElement? source = ConsoleGrid.ContainerFromItem(item) as GridViewItem;
+            //
+            // The card's mark, not the card: the stream page lands it on its own mark, top left. A whole card
+            // stretched over the window is what it used to be, and in Light that is a white screen.
+            UIElement? source = ConsoleGrid.ContainerFromItem(item) is GridViewItem container
+                ? FindMark(container)
+                : null;
 
             if (source is not null)
             {
@@ -416,6 +422,25 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
         {
             // Purely decorative — never let it stand between the user and their game.
         }
+    }
+
+    private static FamilyMark? FindMark(DependencyObject root)
+    {
+        if (root is FamilyMark mark)
+        {
+            return mark;
+        }
+
+        int count = VisualTreeHelper.GetChildrenCount(root);
+        for (int i = 0; i < count; i++)
+        {
+            if (FindMark(VisualTreeHelper.GetChild(root, i)) is { } found)
+            {
+                return found;
+            }
+        }
+
+        return null;
     }
 
     /// <summary>

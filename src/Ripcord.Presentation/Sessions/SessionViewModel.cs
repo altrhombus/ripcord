@@ -81,6 +81,9 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
     private bool _statusEndedByConsole;
     private bool _isStreamLive;
 
+    // A picture has been shown, so a frozen frame is what any later status sits on; see StatusOverPicture.
+    private bool _hasShownPicture;
+
     // ConnectPlan.Notice, shown under each "Connecting" and "Reconnecting" of this stream. Set on the UI thread
     // before the session starts, so the status callbacks that read it come after the write.
     private string? _connectNotice;
@@ -391,6 +394,7 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
                 Mutate(() =>
                 {
                     _isStreamLive = true;
+                    _hasShownPicture = true;
                     _statusVisible = false;
                     _statusBusy = false;
                 });
@@ -895,6 +899,7 @@ public sealed class SessionViewModel : ObservableState<SessionViewState>
         StatusActionsVisible: _statusTerminal,
         StatusLeadsBack: _statusTerminal && _statusEndedByConsole,
         StatusRetryLabel: _statusEndedByConsole ? Strings.Console_WakeAndPlay : Strings.Session_TryAgain,
+        StatusOverPicture: _statusVisible && _hasShownPicture,
         ConnectEscapeVisible: _connectEscapeVisible,
         IsStreamLive: _isStreamLive,
 
