@@ -33,7 +33,7 @@
         </Grid.RowDefinitions>
 
         <!--  ============ Header ============  -->
-        <StackPanel MaxWidth="{StaticResource RipcordPageColumnWidth}" Spacing="12">
+        <StackPanel x:Name="HeaderPanel" MaxWidth="{StaticResource RipcordPageColumnWidth}" Spacing="12">
             <TextBlock x:Name="TitleText" Style="{StaticResource RipcordPageTitleStyle}" TextWrapping="Wrap" />
             <!--  The mark's proportions, 9 : 16 : 12, as on the add-console page.  -->
             <Grid
@@ -61,6 +61,7 @@
         <!--  ============ Steps ============  -->
         <!--  The scroller gets a full-width child and the column centres inside it. Handed the 820 column directly, it drew it against the right edge (its own placement for content narrower than itself), and the steps sat off to the right of the title.  -->
         <ScrollViewer
+            x:Name="StepsScroller"
             Grid.Row="1"
             HorizontalScrollBarVisibility="Disabled"
             HorizontalScrollMode="Disabled"
@@ -68,18 +69,6 @@
             <Grid>
                 <Grid MaxWidth="{StaticResource RipcordPageColumnWidth}">
 
-                    <!--  ======== Welcome ========  -->
-                    <StackPanel x:Name="WelcomePanel" Spacing="18">
-                        <controls:RipcordMark
-                            Width="88"
-                            Height="88"
-                            HorizontalAlignment="Left"
-                            WedgeFill="{ThemeResource TextFillColorPrimaryBrush}" />
-                        <TextBlock
-                            x:Name="WelcomeBodyText"
-                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                            TextWrapping="Wrap" />
-                    </StackPanel>
 
                     <!--  ======== Picture ========  -->
                     <StackPanel
@@ -258,6 +247,7 @@
             is a step behind, the way on at the trailing end with the primary last, declared in that order.
         -->
         <Grid
+            x:Name="FooterBar"
             Grid.Row="2"
             MaxWidth="{StaticResource RipcordPageColumnWidth}"
             ColumnSpacing="8">
@@ -278,5 +268,75 @@
                 Click="OnPrimaryClick"
                 Style="{StaticResource AccentButtonStyle}" />
         </Grid>
-    </Grid>
+
+        <!--
+            ============ Welcome ============
+
+            The identity room (design.md: personality has three rooms, and first run is one). It was the barest
+            screen in the app: a title, an 88 px mark at the top-left, a paragraph, and stock buttons at the
+            window's corner, with most of the window empty (visual audit, 2026-10-08).
+
+            So it is a composition of its own, over the whole page, centred: the lockup, which assembles when the
+            step appears; one sentence; and one way on, the wedge button, because starting Ripcord is a launch.
+            Skipping is beside it and quiet. The page's header, steps and footer are hidden while it shows, and the
+            step dashes only begin once you are past it: Welcome is the door, not step zero.
+
+            The wordmark is here and nowhere else in a task screen (showcase plan, decision B, 2026-10-09).
+        -->
+        <StackPanel
+            x:Name="WelcomeView"
+            Grid.RowSpan="3"
+            MaxWidth="560"
+            Margin="0,0,0,48"
+            HorizontalAlignment="Center"
+            VerticalAlignment="Center"
+            Spacing="28"
+            Visibility="Collapsed">
+            <!--
+                The lockup by brand/README.md's rule: the mark's ink from the baseline to the cap height, one
+                x-height from the wedge's tip to the r. At 96 the mark's ink is 38 tall and sits 29 inside its box,
+                so the negative margins make the box the ink, and a 48 wordmark puts its ascender and baseline on
+                the ink's top and bottom.
+            -->
+            <StackPanel
+                HorizontalAlignment="Center"
+                Orientation="Horizontal"
+                Spacing="4">
+                <controls:RipcordMark
+                    x:Name="WelcomeMark"
+                    Width="96"
+                    Height="96"
+                    Margin="-17,-29,0,-29"
+                    VerticalAlignment="Top"
+                    WedgeFill="{ThemeResource TextFillColorPrimaryBrush}" />
+                <controls:RipcordWordmark
+                    x:Name="WelcomeWordmark"
+                    Height="48"
+                    VerticalAlignment="Top"
+                    Ink="{ThemeResource TextFillColorPrimaryBrush}" />
+            </StackPanel>
+
+            <TextBlock
+                x:Name="WelcomeBodyText"
+                HorizontalAlignment="Center"
+                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                Style="{StaticResource BodyTextBlockStyle}"
+                TextAlignment="Center"
+                TextWrapping="Wrap" />
+
+            <StackPanel
+                HorizontalAlignment="Center"
+                Orientation="Horizontal"
+                Spacing="12">
+                <Button
+                    x:Name="WelcomeSkipButton"
+                    VerticalAlignment="Center"
+                    Click="OnSecondaryClick"
+                    Style="{StaticResource SubtleButtonStyle}" />
+                <Button
+                    x:Name="WelcomeStartButton"
+                    Click="OnPrimaryClick"
+                    Style="{StaticResource RipcordWedgeButtonStyle}" />
+            </StackPanel>
+        </StackPanel>    </Grid>
 </Page>

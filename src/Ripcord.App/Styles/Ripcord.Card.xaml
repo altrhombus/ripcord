@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8" ?>
+<?xml version="1.0" encoding="utf-8" ?>
 <!--
     The card's material: the gradient, the stroke, the top highlight, and the focus ring.
 
@@ -48,6 +48,8 @@
 
             <!--  The pointer wash. Lifts the card a little; deliberately quieter than focus. See below.  -->
             <SolidColorBrush x:Key="RipcordCardHoverOverlayBrush" Color="#16FFFFFF" />
+            <SolidColorBrush x:Key="RipcordWedgeButtonFacetBrush" Color="#24FFFFFF" />
+            <x:Double x:Key="RipcordWedgeButtonEdgeOpacity">0.45</x:Double>
 
             <!--  The wedge's plane: the card's own gradient, lifted. See the facet note below.  -->
             <LinearGradientBrush x:Key="RipcordWedgeFacetBrush" StartPoint="0,1" EndPoint="1,0">
@@ -70,6 +72,8 @@
 
             <SolidColorBrush x:Key="RipcordCardStrokeBrush" Color="#1A000000" />
             <SolidColorBrush x:Key="RipcordCardHoverOverlayBrush" Color="#12000000" />
+            <SolidColorBrush x:Key="RipcordWedgeButtonFacetBrush" Color="#24FFFFFF" />
+            <x:Double x:Key="RipcordWedgeButtonEdgeOpacity">0.45</x:Double>
 
             <!--
                 Deeper, not lighter, and that is not an inconsistency with the card's own rule. The card runs
@@ -104,6 +108,8 @@
                 TEXT colour - a third of the card became a solid slab of it, with the play mark lost inside.
             -->
             <SolidColorBrush x:Key="RipcordWedgeFacetBrush" Color="Transparent" />
+            <SolidColorBrush x:Key="RipcordWedgeButtonFacetBrush" Color="Transparent" />
+            <x:Double x:Key="RipcordWedgeButtonEdgeOpacity">1</x:Double>
         </ResourceDictionary>
 
     </ResourceDictionary.ThemeDictionaries>
@@ -175,5 +181,119 @@
     <Thickness x:Key="RipcordFocusPrimaryThickness">3</Thickness>
     <Thickness x:Key="RipcordFocusSecondaryThickness">2</Thickness>
     <Thickness x:Key="RipcordFocusMargin">-6</Thickness>
+
+    <!--
+        THE WEDGE BUTTON: the primary action where something launches, outside the console card. design.md
+        allows a wedge in three places - the card's play action, first run's primary action and the pairing
+        celebration's - and this is the form of the other two (showcase plan, part 4).
+
+        An accent button with a wedge cut into its trailing end. The body is Windows' own accent button, by its
+        own resources, so it reads as the primary action to anyone who knows Windows, follows the user's accent
+        colour, and is right in high contrast without a line written for it. What Ripcord adds is form, not
+        colour: a slanted facet at the trailing end, at the card's angle, carrying the play mark. In high
+        contrast the facet has no fill and its edge is a full-strength line, so the diagonal survives as shape.
+
+        Not BasedOn AccentButtonStyle: a StaticResource to a system resource at this dictionary's root is the
+        lookup the note above records blanking the window. Every system value here is a ThemeResource at the
+        point of use instead.
+    -->
+    <Style x:Key="RipcordWedgeButtonStyle" TargetType="Button">
+        <Setter Property="Background" Value="{ThemeResource AccentButtonBackground}" />
+        <Setter Property="Foreground" Value="{ThemeResource AccentButtonForeground}" />
+        <Setter Property="BorderBrush" Value="{ThemeResource AccentButtonBorderBrush}" />
+        <Setter Property="BorderThickness" Value="{ThemeResource ButtonBorderThemeThickness}" />
+        <Setter Property="CornerRadius" Value="{ThemeResource ControlCornerRadius}" />
+        <Setter Property="Padding" Value="20,0,0,0" />
+        <Setter Property="MinHeight" Value="48" />
+        <Setter Property="MinWidth" Value="200" />
+        <Setter Property="FontFamily" Value="{ThemeResource ContentControlThemeFontFamily}" />
+        <Setter Property="FontSize" Value="{ThemeResource ControlContentThemeFontSize}" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="HorizontalContentAlignment" Value="Left" />
+        <Setter Property="UseSystemFocusVisuals" Value="True" />
+        <Setter Property="FocusVisualPrimaryThickness" Value="{StaticResource RipcordFocusPrimaryThickness}" />
+        <Setter Property="FocusVisualSecondaryThickness" Value="{StaticResource RipcordFocusSecondaryThickness}" />
+        <Setter Property="FocusVisualMargin" Value="-3" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Grid
+                        x:Name="Root"
+                        Background="{TemplateBinding Background}"
+                        BorderBrush="{TemplateBinding BorderBrush}"
+                        BorderThickness="{TemplateBinding BorderThickness}"
+                        CornerRadius="{TemplateBinding CornerRadius}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="56" />
+                        </Grid.ColumnDefinitions>
+
+                        <ContentPresenter
+                            x:Name="ContentPresenter"
+                            Margin="{TemplateBinding Padding}"
+                            HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                            VerticalAlignment="Center"
+                            AutomationProperties.AccessibilityView="Raw"
+                            Content="{TemplateBinding Content}"
+                            ContentTemplate="{TemplateBinding ContentTemplate}"
+                            Foreground="{TemplateBinding Foreground}" />
+
+                        <!--  The facet, at the console card's angle, and its edge drawn as a line.  -->
+                        <Path
+                            Grid.Column="1"
+                            Data="M 0.16,0 L 1,0 L 1,1 L 0,1 Z"
+                            Fill="{ThemeResource RipcordWedgeButtonFacetBrush}"
+                            Stretch="Fill" />
+                        <Path
+                            Grid.Column="1"
+                            Data="M 0.16,0 L 0,1"
+                            Opacity="{ThemeResource RipcordWedgeButtonEdgeOpacity}"
+                            Stretch="Fill"
+                            Stroke="{TemplateBinding Foreground}"
+                            StrokeThickness="1.5" />
+
+                        <!--  The play mark: PlayWedge's own outline, small.  -->
+                        <Path
+                            Grid.Column="1"
+                            Width="12"
+                            Height="14"
+                            Margin="6,0,0,0"
+                            HorizontalAlignment="Center"
+                            VerticalAlignment="Center"
+                            Data="M 2,3 A 3,3 0 0 1 6.69,0.521 L 28.69,15.521 A 3,3 0 0 1 28.69,20.479 L 6.69,35.479 A 3,3 0 0 1 2,33 Z"
+                            Fill="{TemplateBinding Foreground}"
+                            Stretch="Uniform" />
+
+                        <VisualStateManager.VisualStateGroups>
+                            <VisualStateGroup x:Name="CommonStates">
+                                <VisualState x:Name="Normal" />
+                                <VisualState x:Name="PointerOver">
+                                    <VisualState.Setters>
+                                        <Setter Target="Root.Background" Value="{ThemeResource AccentButtonBackgroundPointerOver}" />
+                                        <Setter Target="Root.BorderBrush" Value="{ThemeResource AccentButtonBorderBrushPointerOver}" />
+                                        <Setter Target="ContentPresenter.Foreground" Value="{ThemeResource AccentButtonForegroundPointerOver}" />
+                                    </VisualState.Setters>
+                                </VisualState>
+                                <VisualState x:Name="Pressed">
+                                    <VisualState.Setters>
+                                        <Setter Target="Root.Background" Value="{ThemeResource AccentButtonBackgroundPressed}" />
+                                        <Setter Target="Root.BorderBrush" Value="{ThemeResource AccentButtonBorderBrushPressed}" />
+                                        <Setter Target="ContentPresenter.Foreground" Value="{ThemeResource AccentButtonForegroundPressed}" />
+                                    </VisualState.Setters>
+                                </VisualState>
+                                <VisualState x:Name="Disabled">
+                                    <VisualState.Setters>
+                                        <Setter Target="Root.Background" Value="{ThemeResource AccentButtonBackgroundDisabled}" />
+                                        <Setter Target="Root.BorderBrush" Value="{ThemeResource AccentButtonBorderBrushDisabled}" />
+                                        <Setter Target="ContentPresenter.Foreground" Value="{ThemeResource AccentButtonForegroundDisabled}" />
+                                    </VisualState.Setters>
+                                </VisualState>
+                            </VisualStateGroup>
+                        </VisualStateManager.VisualStateGroups>
+                    </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
 
 </ResourceDictionary>

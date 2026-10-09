@@ -497,9 +497,12 @@
                             "Paired." with a period, never "Success!" - the app is stating a fact, not
                             congratulating anybody.
                         -->
+                        <!--  Assembles when the step appears (RipcordMark.Assemble): the wedge, then the trail.  -->
                         <controls:RipcordMark
-                            Width="96"
-                            Height="96"
+                            x:Name="DoneMark"
+                            Width="128"
+                            Height="128"
+                            Margin="-24,-20,0,-20"
                             HorizontalAlignment="Left"
                             WedgeFill="{ThemeResource TextFillColorPrimaryBrush}" />
 
