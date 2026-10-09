@@ -139,7 +139,7 @@ or all of them, without redrawing anything.
 | `ripcord-mark.svg` | Mark alone, graphite wedge, for light grounds |
 | `ripcord-mark-ondark.svg` | Mark alone, white wedge, for dark grounds. The tile's mark |
 | `ripcord-mark-small.svg` | The tile's mark redrawn for ≤32 px, in tile coordinates — **not** a scaled copy |
-| `ripcord-mono.svg` | One-colour cut (`currentColor`) for tray, menu bar, stencil contexts |
+| `ripcord-mono.svg` | One-colour cut (`currentColor`) for tray, menu bar, stencil contexts, and the Windows high-contrast icons (`*_contrast-black/white` tiles and `AppIcon.contrast-*.ico`; `generate-assets.ps1 -ContrastOnly` renders just those) |
 | `ripcord-lockup.svg` | Mark + wordmark, graphite, for light grounds. **Generated** by `outline-wordmark.py` |
 | `ripcord-lockup-ondark.svg` | Mark + wordmark, white, for dark grounds. **Generated**. The wide tile and splash |
 | `ripcord-wordmark.svg` | The word alone, `currentColor`. **Generated** |

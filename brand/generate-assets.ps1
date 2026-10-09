@@ -22,10 +22,16 @@
 
 .PARAMETER Edge
     Path to msedge.exe, if it is somewhere unusual.
+
+.PARAMETER ContrastOnly
+    Render only the high-contrast set, leaving every other asset as it is. A re-render of an unchanged SVG can
+    still differ by a few bytes between Edge versions, and a run that rewrote every asset for one new set would
+    bury the change that mattered in binary noise.
 #>
 [CmdletBinding()]
 param(
-    [string]$Edge
+    [string]$Edge,
+    [switch]$ContrastOnly
 )
 
 $ErrorActionPreference = 'Stop'
@@ -216,6 +222,54 @@ $tiles = @{
     Master = New-TileSvg -Radius 15 -Mark 'ripcord-mark-ondark.svg' `
         -MarkTransform 'translate(32,32) scale(0.72) translate(-30.5,-32)' -Finish
     Small = New-TileSvg -Radius 12 -Mark 'ripcord-mark-small.svg'
+}
+
+<#
+    ---- High contrast. ----
+
+    Windows' inbox apps change their icon under a contrast theme and most other apps do nothing; Ripcord now
+    does what the inbox apps do (owner, 2026-10-08). The art is the one-colour cut, ripcord-mono.svg: no tile,
+    no ground, no colour, because a contrast theme permits none, and the cut's opened gaps keep the dashes
+    apart without colour to separate them. White for the dark contrast themes, black for the light one.
+
+    The packaged build gets contrast-qualified tiles, which Windows picks for itself. The zip build has no
+    resource system, so it gets two .ico files that MainWindow swaps in at run time.
+#>
+$contrast = @(
+    @{ Qualifier = 'contrast-black'; Color = '#FFFFFF' }
+    @{ Qualifier = 'contrast-white'; Color = '#000000' }
+)
+
+$contrastTiles = @(
+    @{ Stem = 'Square44x44Logo'; Suffix = 'scale-200'; Size = 88; Art = 0.8 }
+    @{ Stem = 'Square44x44Logo'; Suffix = 'targetsize-24_altform-unplated'; Size = 24; Art = 1.0 }
+    @{ Stem = 'Square44x44Logo'; Suffix = 'targetsize-48_altform-unplated'; Size = 48; Art = 1.0 }
+    @{ Stem = 'Square150x150Logo'; Suffix = 'scale-200'; Size = 300; Art = 0.5 }
+)
+
+foreach ($scheme in $contrast) {
+    foreach ($asset in $contrastTiles) {
+        $name = "$($asset.Stem).$($asset.Suffix)_$($scheme.Qualifier).png"
+        Convert-SvgToPng -Svg 'ripcord-mono.svg' -CanvasWidth $asset.Size -CanvasHeight $asset.Size `
+            -ArtSize ([int]($asset.Size * $asset.Art)) -Color $scheme.Color -Out (Join-Path $assetsDir $name)
+        Write-Host "  $name  $($asset.Size)x$($asset.Size) (mono)"
+    }
+
+    $contrastFrames = foreach ($size in 16, 20, 24, 32, 40, 48, 64, 128, 256) {
+        $frame = Join-Path $work "ico-$($scheme.Qualifier)-$size.png"
+        Convert-SvgToPng -Svg 'ripcord-mono.svg' -CanvasWidth $size -CanvasHeight $size -ArtSize $size `
+            -Color $scheme.Color -Out $frame
+        $frame
+    }
+
+    New-IcoFile -Frames $contrastFrames -Out (Join-Path $assetsDir "AppIcon.$($scheme.Qualifier).ico")
+    Write-Host "  AppIcon.$($scheme.Qualifier).ico  (mono)"
+}
+
+if ($ContrastOnly) {
+    Remove-Item -Recurse -Force $work
+    Write-Host "Done (contrast only). Assets written to $assetsDir"
+    return
 }
 
 # ---- MSIX / packaging assets. Square art is full-bleed tile; the wide and splash canvases centre it. ----
