@@ -3,4 +3,6 @@
 # Without the captures folder there is nothing to check against, so a clone pays nothing.
 root=$(git rev-parse --show-toplevel) || exit 0
 [ -d "$root/docs/protocol/captures" ] || exit 0
-exec python3 "$root/tools/leak-guard/check.py" --staged
+. "$root/.githooks/find-python"
+# $python unquoted: it can be "py -3", a command and its argument.
+exec $python "$root/tools/leak-guard/check.py" --staged
