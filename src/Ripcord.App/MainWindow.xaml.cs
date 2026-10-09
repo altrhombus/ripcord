@@ -887,7 +887,15 @@ public sealed partial class MainWindow : Window, IShellNavigator
                     // On the stream layer Back leaves it, as its own "Back to consoles" does; going back in the
                     // collapsed chrome frame underneath did nothing visible. A pad only gets here while no stream
                     // is live (the session scope keeps its presses), so this is a connect, or a connect that failed.
-                    if (IsStreaming && StreamFrame.Content is SessionPage page)
+                    //
+                    // Or a prompt over a live stream, which is why a dialog closes first: the disconnect prompt
+                    // is the stream asking to leave, and B on it asked to leave again, which the page ignores while
+                    // it waits for the answer. So B did nothing there (owner, with a pad, 2026-10-09).
+                    if (_focus.TryDismissPopup())
+                    {
+                        // Closed what was on top.
+                    }
+                    else if (IsStreaming && StreamFrame.Content is SessionPage page)
                     {
                         page.Leave();
                     }

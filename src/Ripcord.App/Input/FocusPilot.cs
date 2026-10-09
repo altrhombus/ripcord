@@ -90,6 +90,18 @@ public sealed class FocusPilot(
             engine = null;
         }
 
+        // Up and Down go one row at a time. The engine ranks by alignment, so from a control at one end of a row
+        // it passed over a nearer row whose controls sat at the other end: on About, Down from "Protocol spec"
+        // skipped "Copy details" and "Open"; on Settings, Up from Configure skipped every row above the
+        // controller test (which has nothing to press) and left the page for the gear (owner, with a pad,
+        // 2026-10-09). The engine's answer stands when it is in the nearest row.
+        if (direction is NavDirection.Up or NavDirection.Down
+            && NearestRowCandidate(searchRoot, direction) is { } row
+            && (engine is null || RowGap(searchRoot, engine, direction) > row.Gap + RowTolerance))
+        {
+            engine = row.Control;
+        }
+
         if ((engine ?? StraightLineCandidate(searchRoot, direction)) is UIElement candidate)
         {
             // FocusState.Keyboard, never Programmatic: a Programmatic focus change does not draw the focus
@@ -186,6 +198,77 @@ public sealed class FocusPilot(
     }
 
     private static bool Overlaps(double a0, double a1, double b0, double b1) => a0 < b1 && b0 < a1;
+
+    /// <summary>
+    /// How far apart two controls can sit vertically and still be one row: a button beside a text field is a few
+    /// pixels lower than it, and a link row's icons sit a little off its text.
+    /// </summary>
+    private const double RowTolerance = 12;
+
+    /// <summary>
+    /// The closest control wholly above or below the focused one, by vertical gap; within a row, the one nearest
+    /// across. Unlike <see cref="StraightLineCandidate"/> it does not need the two to overlap, because a page's
+    /// rows do not line up: a link at the left and a button at the right are still one press apart.
+    /// </summary>
+    private static (Control Control, double Gap)? NearestRowCandidate(UIElement searchRoot, NavDirection direction)
+    {
+        if (FocusManager.GetFocusedElement(searchRoot.XamlRoot) is not UIElement focused
+            || BoundsIn(focused, searchRoot) is not { } from)
+        {
+            return null;
+        }
+
+        List<(Control Control, double Gap, double Across)> beyond = [];
+        double nearest = double.MaxValue;
+
+        foreach (Control control in FocusableControls(searchRoot))
+        {
+            if (control == focused || IsWithin(control, focused) || IsWithin(focused, control)
+                || BoundsIn(control, searchRoot) is not { } to
+                || Gap(from, to, direction) is not { } gap)
+            {
+                continue;
+            }
+
+            double across = Math.Abs((to.Left + to.Right) / 2 - (from.Left + from.Right) / 2);
+            beyond.Add((control, gap, across));
+            nearest = Math.Min(nearest, gap);
+        }
+
+        (Control Control, double Gap)? best = null;
+        double bestAcross = double.MaxValue;
+
+        foreach ((Control control, double gap, double across) in beyond)
+        {
+            if (gap <= nearest + RowTolerance && across < bestAcross)
+            {
+                bestAcross = across;
+                best = (control, gap);
+            }
+        }
+
+        return best;
+    }
+
+    /// <summary>The vertical gap from the focused element to <paramref name="candidate"/>, for comparing rows.</summary>
+    private static double RowGap(UIElement searchRoot, UIElement candidate, NavDirection direction)
+        => FocusManager.GetFocusedElement(searchRoot.XamlRoot) is UIElement focused
+            && BoundsIn(focused, searchRoot) is { } from
+            && BoundsIn(candidate, searchRoot) is { } to
+            && Gap(from, to, direction) is { } gap
+                ? gap
+                : double.MaxValue;
+
+    /// <summary>
+    /// How far <paramref name="to"/> lies beyond <paramref name="from"/> going up or down, or null when it is not
+    /// beyond it. A few pixels of overlap still count, since stacked controls' bounds often touch.
+    /// </summary>
+    private static double? Gap(Rect from, Rect to, NavDirection direction) => direction switch
+    {
+        NavDirection.Down when to.Top >= from.Bottom - 2 => Math.Max(0, to.Top - from.Bottom),
+        NavDirection.Up when to.Bottom <= from.Top + 2 => Math.Max(0, from.Top - to.Bottom),
+        _ => null,
+    };
 
     /// <summary>
     /// Whether <paramref name="candidate"/> is somewhere a person can see they are: a tab-stop control that is
@@ -535,15 +618,23 @@ public sealed class FocusPilot(
 
         bool animate = AppMotion.Enabled;
 
-        if (ReferenceEquals(FocusManager.FindFirstFocusableElement(content), focused))
+        // The first or last ROW, not only the first or last control: About's top row is three links, and arriving
+        // on the rightmost one from below is still arriving at the top.
+        if (InSameRow(focused, FocusManager.FindFirstFocusableElement(content) as UIElement, scroller))
         {
             scroller.ChangeView(null, 0, null, disableAnimation: !animate);
         }
-        else if (ReferenceEquals(FocusManager.FindLastFocusableElement(content), focused))
+        else if (InSameRow(focused, FocusManager.FindLastFocusableElement(content) as UIElement, scroller))
         {
             scroller.ChangeView(null, scroller.ScrollableHeight, null, disableAnimation: !animate);
         }
     }
+
+    private static bool InSameRow(UIElement focused, UIElement? edge, UIElement root)
+        => edge is not null
+            && (ReferenceEquals(focused, edge)
+                || (BoundsIn(focused, root) is { } a && BoundsIn(edge, root) is { } b
+                    && Math.Abs(a.Top - b.Top) <= RowTolerance));
 
     private static ScrollViewer? NearestScrollViewer(DependencyObject from)
     {
