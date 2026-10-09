@@ -95,9 +95,16 @@ public sealed class FocusPilot(
         // skipped "Copy details" and "Open"; on Settings, Up from Configure skipped every row above the
         // controller test (which has nothing to press) and left the page for the gear (owner, with a pad,
         // 2026-10-09). The engine's answer stands when it is in the nearest row.
+        //
+        // And the page before the title bar. A row scrolled out of sight above is farther away than the gear,
+        // so Up from Configure, with the rows above it scrolled under the title bar, still went to the gear
+        // (owner, 2026-10-09). While the page has a row in that direction, focus stays in the page and the page
+        // scrolls to it; the title bar is for when there is none.
         if (direction is NavDirection.Up or NavDirection.Down
             && NearestRowCandidate(searchRoot, direction) is { } row
-            && (engine is null || RowGap(searchRoot, engine, direction) > row.Gap + RowTolerance))
+            && (engine is null
+                || RowGap(searchRoot, engine, direction) > row.Gap + RowTolerance
+                || (row.InPage && !InFocusedPage(searchRoot, engine))))
         {
             engine = row.Control;
         }
@@ -210,7 +217,8 @@ public sealed class FocusPilot(
     /// across. Unlike <see cref="StraightLineCandidate"/> it does not need the two to overlap, because a page's
     /// rows do not line up: a link at the left and a button at the right are still one press apart.
     /// </summary>
-    private static (Control Control, double Gap)? NearestRowCandidate(UIElement searchRoot, NavDirection direction)
+    private static (Control Control, double Gap, bool InPage)? NearestRowCandidate(
+        UIElement searchRoot, NavDirection direction)
     {
         if (FocusManager.GetFocusedElement(searchRoot.XamlRoot) is not UIElement focused
             || BoundsIn(focused, searchRoot) is not { } from)
@@ -218,10 +226,31 @@ public sealed class FocusPilot(
             return null;
         }
 
+        // The page the focus is in first, and the rest of the window only when the page has nothing that way.
+        if (NearestScrollViewer(focused) is { } page
+            && NearestRow(searchRoot, page, focused, from, direction) is { } inPage)
+        {
+            return (inPage.Control, inPage.Gap, true);
+        }
+
+        return NearestRow(searchRoot, searchRoot, focused, from, direction) is { } anywhere
+            ? (anywhere.Control, anywhere.Gap, false)
+            : null;
+    }
+
+    /// <summary>Whether <paramref name="candidate"/> is in the same scrolling page as the focused element.</summary>
+    private static bool InFocusedPage(UIElement searchRoot, UIElement candidate)
+        => FocusManager.GetFocusedElement(searchRoot.XamlRoot) is UIElement focused
+            && NearestScrollViewer(focused) is { } page
+            && IsWithin(candidate, page);
+
+    private static (Control Control, double Gap)? NearestRow(
+        UIElement searchRoot, DependencyObject scope, UIElement focused, Rect from, NavDirection direction)
+    {
         List<(Control Control, double Gap, double Across)> beyond = [];
         double nearest = double.MaxValue;
 
-        foreach (Control control in FocusableControls(searchRoot))
+        foreach (Control control in FocusableControls(scope))
         {
             if (control == focused || IsWithin(control, focused) || IsWithin(focused, control)
                 || BoundsIn(control, searchRoot) is not { } to
