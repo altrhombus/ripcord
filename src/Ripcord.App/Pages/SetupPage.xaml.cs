@@ -167,11 +167,19 @@ public sealed partial class SetupPage : Page, IInitialFocusTarget, IStepBack
         AutomationProperties.SetHelpText(BestRadio, s.BestPictureDetail);
         AutomationProperties.SetName(CompatibleRadio, s.CompatibleLabel);
         AutomationProperties.SetHelpText(CompatibleRadio, s.CompatibleDetail);
-        BestRadio.IsEnabled = !s.Checking && s.BestPictureAvailable;
-        CompatibleRadio.IsEnabled = !s.Checking;
+        // Live during the check, so focus has somewhere to land and a quick mover is not held up; see SetupFlowState.Checking.
+        // When the check finds no HEVC under a focused "Best picture", focus goes to the other choice rather than
+        // falling out of the page with the control that held it.
+        bool bestHadFocus = BestRadio.FocusState != FocusState.Unfocused;
+        BestRadio.IsEnabled = s.Checking || s.BestPictureAvailable;
+        CompatibleRadio.IsEnabled = true;
+        if (bestHadFocus && !BestRadio.IsEnabled)
+        {
+            CompatibleRadio.Focus(FocusState.Keyboard);
+        }
         _rendering = true;
-        BestRadio.IsChecked = !s.Checking && s.Choice == PictureChoice.BestPicture;
-        CompatibleRadio.IsChecked = !s.Checking && s.Choice == PictureChoice.MostCompatible;
+        BestRadio.IsChecked = s.Choice == PictureChoice.BestPicture;
+        CompatibleRadio.IsChecked = s.Choice == PictureChoice.MostCompatible;
         _rendering = false;
         PictureDefaultsText.Text = s.PictureDefaults;
 
@@ -240,14 +248,14 @@ public sealed partial class SetupPage : Page, IInitialFocusTarget, IStepBack
 
         Control target = s.Step switch
         {
-            SetupStep.Picture => s.Choice == PictureChoice.BestPicture && s.BestPictureAvailable ? BestRadio : CompatibleRadio,
+            SetupStep.Picture => s.Choice == PictureChoice.BestPicture ? BestRadio : CompatibleRadio,
             SetupStep.Welcome => WelcomeStartButton,
             _ => PrimaryButton,
         };
 
-        // The picture choices are disabled while the decoder check runs, and focusing a disabled control fails, so
-        // focus fell to the gear (owner, 2026-10-09, now and then: the check is usually done first). Wait for the
-        // render that enables them; this step is not seeded until then.
+        // Focusing a disabled control fails and focus falls to the gear: that was the picture choices, disabled
+        // during the decoder check (owner, 2026-10-09). They are live now; should a target ever be disabled, the
+        // step is seeded by the render that enables it.
         if (!target.IsEnabled)
         {
             return;
