@@ -101,6 +101,16 @@ public sealed partial class MainWindow : Window, IShellNavigator
         if (Content is FrameworkElement themedRoot)
         {
             themedRoot.ActualThemeChanged += (_, _) => PaintCaptionButtons();
+
+            // The minimum is in physical pixels, so it needs the scale, which exists once the content is loaded.
+            themedRoot.Loaded += (_, _) =>
+            {
+                ApplyMinimumSize();
+                if (themedRoot.XamlRoot is { } xamlRoot)
+                {
+                    xamlRoot.Changed += (_, _) => ApplyMinimumSize();
+                }
+            };
         }
 
         _settingsStore.Changed += s =>
@@ -347,6 +357,12 @@ public sealed partial class MainWindow : Window, IShellNavigator
     /// </summary>
     private void OnAppWindowChanged(AppWindow sender, AppWindowChangedEventArgs args)
     {
+        // Leaving full screen hands the window a fresh overlapped presenter, which knows nothing of the minimum.
+        if (args.DidPresenterChange)
+        {
+            ApplyMinimumSize();
+        }
+
         if ((args.DidPresenterChange || args.DidSizeChange) && IsFullScreen)
         {
             Post(DispatcherQueuePriority.Low, () =>
@@ -357,6 +373,33 @@ public sealed partial class MainWindow : Window, IShellNavigator
                 }
             });
         }
+    }
+
+    /// <summary>
+    /// The smallest the window may be made, in effective pixels. Below it the console card's play mark was cut
+    /// off, the one thing the home page exists for (visual audit, 2026-10-08). 640 is also where the console grid
+    /// drops to one column (<c>CardMetrics.SingleColumnWidth</c>), so the two rules meet.
+    /// </summary>
+    private const double MinimumWidth = 640;
+
+    /// <inheritdoc cref="MinimumWidth"/>
+    private const double MinimumHeight = 480;
+
+    /// <summary>
+    /// Hold the window to <see cref="MinimumWidth"/> × <see cref="MinimumHeight"/>. The presenter takes physical
+    /// pixels, so this runs again whenever the scale changes, and whenever the presenter is replaced.
+    /// </summary>
+    private void ApplyMinimumSize()
+    {
+        if (AppWindow.Presenter is not OverlappedPresenter presenter
+            || (Content as FrameworkElement)?.XamlRoot is not { } root)
+        {
+            return;
+        }
+
+        double scale = root.RasterizationScale;
+        presenter.PreferredMinimumWidth = (int)Math.Ceiling(MinimumWidth * scale);
+        presenter.PreferredMinimumHeight = (int)Math.Ceiling(MinimumHeight * scale);
     }
 
     private void OnAppWindowClosing(AppWindow sender, AppWindowClosingEventArgs args)

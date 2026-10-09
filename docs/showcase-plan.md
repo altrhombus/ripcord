@@ -68,7 +68,7 @@ window and clipped in a small one.
 - **Text steps up the platform's type ramp, not by scaling.** The name is Title below 720 px of card and Title
   Large above it; the status line is Body rather than Caption on the big card. A card twice as wide with the
   same small text reads as empty, and stepping the ramp at breakpoints is how Fluent pages respond to space.
-  (Open decision A.)
+  (Decision A.)
 - **Placement:** centred, sitting a little above the middle of the space under the title, with "Add another
   console" 16 px beneath the card rather than at the window's bottom edge.
 - **What the card says:** the name, the family ("PS5" with its mark, drawn large enough to read on the hero),
@@ -106,7 +106,7 @@ disabled, a still mark, and a headline that changes to say nothing new; then a d
 - **Reconnect** is the same screen over the frozen frame, on the acrylic plate (done 2026-10-09).
 - **Failure:** the mark dims, verdict first, then what to do, then the buttons. No red.
 - **The way out:** B, Esc, or the link. It reads "Back to consoles" while connecting. While reconnecting,
-  `design.md` says "Stop trying" and the app says "Back to consoles". (Open decision C.)
+  `design.md` says "Stop trying" and the app says "Back to consoles". (Decision C: "Stop trying".)
 
 **Done when:** a wake from rest, a connect, a Wi-Fi drop and a failure are screenshots of one layout; the wait
 visibly moves; reduced motion leaves it still and readable.
@@ -121,7 +121,7 @@ ring, like the card; pressed is the card's press. In High Contrast it's a system
 a paragraph, and stock buttons at the window's corner. It becomes the identity room:
 
 - Centred. **The mark assembles** (the wedge, then the three dashes in turn, about 600 ms all told), then the
-  wordmark beside it, then one sentence. (Open decision B, the wordmark.)
+  wordmark beside it, then one sentence. (Decision B.)
 - One primary, `WedgeButton` "Get started", focused on arrival. "Skip setup" beside it as a quiet text button.
 - The step dashes appear once you're past Welcome, not on it: Welcome is the door, not step zero.
 
@@ -170,7 +170,7 @@ every screen works and nothing moves.
   case is a pad press right after the window regains focus.
 - **Sounds, maybe.** WinUI can play the system's navigation sounds (`ElementSoundPlayer`), which is what makes
   the Xbox shell feel like a console. On while a pad is in use and off for the mouse is the console
-  convention. (Open decision D.)
+  convention. (Decision D: try it.)
 - **Keyboard:** Ctrl+, opens Settings, F11 toggles full screen, Esc steps back a level, and Tab order follows
   the reading order on every page. Nothing new, but it gets checked.
 
@@ -196,15 +196,15 @@ The acceptance pass, after part 7, and recorded in the captures folder like the 
 - **The stopwatch:** presses and seconds from launch to playing, with one console and with three.
 - **Fresh eyes:** a first run on a clean data folder (`RIPCORD_DATA_DIR`), pad only.
 
-## Open decisions
+## Decisions
 
-For the owner, before the part that needs each one:
+Asked of the owner and answered on 2026-10-09:
 
-- **A. The hero's text steps up with the card** (Title to Title Large). Recommended: yes. The alternative is a
-  bigger card with the same text, which is what `design.md`'s "Windows owns text size" reads as literally.
-- **B. Welcome gets the wordmark.** Recommended: yes on Welcome only. The 2026-09-24 decision kept it off the
-  empty home because that's a task screen; Welcome is the one introduction.
-- **C. "Stop trying" or "Back to consoles" while reconnecting.** `design.md` argues for "Stop trying" because
-  "Cancel" is ambiguous during a countdown. Recommended: "Stop trying" while reconnecting only, and fix the app
-  to match.
-- **D. Navigation sounds with a pad.** Recommended: try it, on while a pad is in use, and decide by ear.
+- **A. The hero's text steps up with the card** (Title to Title Large): **yes.** The alternative was a bigger
+  card with the same text, which is what `design.md`'s "Windows owns text size" reads as literally. Stepping
+  the platform's own ramp at breakpoints is responsive layout, not a second text-size setting.
+- **B. Welcome gets the wordmark: yes, on Welcome only.** The 2026-09-24 decision keeps it off the empty home,
+  a task screen; Welcome is the one introduction.
+- **C. While reconnecting, the way out reads "Stop trying".** "Back to consoles" everywhere else. The app
+  changes to match `design.md`.
+- **D. Navigation sounds with a pad: try it**, on while a pad is in use, and decide by ear.

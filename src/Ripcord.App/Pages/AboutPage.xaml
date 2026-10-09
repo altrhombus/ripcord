@@ -41,505 +41,508 @@
     </Page.Resources>
 
     <ScrollViewer Padding="24,16,24,32">
-        <StackPanel MaxWidth="820" Spacing="8">
+        <!--  A full-width child, with the column centred inside it. Handed the column directly, the scroller lays it out at its natural width and centres THAT, so a page whose rows are narrower than the column shifted right of the others (Keyboard controls sat 40 px off Settings).  -->
+        <Grid>
+            <StackPanel MaxWidth="{StaticResource RipcordPageColumnWidth}" Spacing="8">
 
-            <!--  ============ Identity ============  -->
-            <Border Style="{StaticResource RipcordCardStyle}" CornerRadius="{StaticResource RipcordPanelCornerRadius}">
+                <!--  ============ Identity ============  -->
+                <Border Style="{StaticResource RipcordCardStyle}" CornerRadius="{StaticResource RipcordPanelCornerRadius}">
+                    <Grid>
+                        <!--
+                            A wash of the user's accent colour, kept at low opacity so it reads as a tint over Mica
+                            rather than a coloured panel. Rounded on the rectangle itself instead of relying on the
+                            parent Border to clip.
+                        -->
+                        <Rectangle
+                            Fill="{ThemeResource AboutHeroWashBrush}"
+                            Opacity="0.12"
+                            RadiusX="12"
+                            RadiusY="12" />
+
+                        <Grid Padding="24" ColumnSpacing="20">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+
+                            <!--
+                                The app tile, drawn rather than loaded, so it stays sharp at any scale factor and needs
+                                no separate asset. It is the Windows tile brand/generate-assets.ps1 composes: the ground
+                                (brand/ripcord-ground.svg), the edge, and the mark (brand/ripcord-mark-ondark.svg).
+                                Keep the three in step with those sources - they are the truth, and every shipped icon
+                                is generated from them.
+                            -->
+                            <Viewbox
+                                Width="72"
+                                Height="72"
+                                VerticalAlignment="Top"
+                                x:Uid="AboutPage_RipcordLogo">
+                                <Canvas Width="64" Height="64">
+                                    <Rectangle
+                                        Width="64"
+                                        Height="64"
+                                        RadiusX="15"
+                                        RadiusY="15">
+                                        <Rectangle.Fill>
+                                            <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                                <GradientStop Offset="0" Color="#303743" />
+                                                <GradientStop Offset="1" Color="#1B1F26" />
+                                            </LinearGradientBrush>
+                                        </Rectangle.Fill>
+                                    </Rectangle>
+                                    <!--  The edge: a top highlight and a hairline. A XAML stroke is drawn inside the bounds, as the SVG's inset rect is.  -->
+                                    <Rectangle
+                                        Width="64"
+                                        Height="64"
+                                        RadiusX="15"
+                                        RadiusY="15"
+                                        Stroke="#24FFFFFF"
+                                        StrokeThickness="0.75">
+                                        <Rectangle.Fill>
+                                            <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                                <GradientStop Offset="0" Color="#29FFFFFF" />
+                                                <GradientStop Offset="0.5" Color="#00FFFFFF" />
+                                            </LinearGradientBrush>
+                                        </Rectangle.Fill>
+                                    </Rectangle>
+                                    <!--  The mark sits at 72% of the tile, centred: the padding Android's adaptive crop needs.  -->
+                                    <Canvas>
+                                        <Canvas.RenderTransform>
+                                            <TransformGroup>
+                                                <ScaleTransform ScaleX="0.72" ScaleY="0.72" />
+                                                <TranslateTransform X="10.04" Y="9.04" />
+                                            </TransformGroup>
+                                        </Canvas.RenderTransform>
+                                        <Path
+                                            Data="M29,17 L53,32 L29,47 Z"
+                                            Fill="White"
+                                            Stroke="White"
+                                            StrokeLineJoin="Round"
+                                            StrokeThickness="6" />
+                                        <Rectangle
+                                            Canvas.Left="12"
+                                            Canvas.Top="18"
+                                            Width="9"
+                                            Height="7"
+                                            Fill="#2FBF5B"
+                                            RadiusX="3.5"
+                                            RadiusY="3.5" />
+                                        <Rectangle
+                                            Canvas.Left="5"
+                                            Canvas.Top="28.5"
+                                            Width="16"
+                                            Height="7"
+                                            Fill="#2D7DF6"
+                                            RadiusX="3.5"
+                                            RadiusY="3.5" />
+                                        <Rectangle
+                                            Canvas.Left="9"
+                                            Canvas.Top="39"
+                                            Width="12"
+                                            Height="7"
+                                            Fill="#F0433A"
+                                            RadiusX="3.5"
+                                            RadiusY="3.5" />
+                                    </Canvas>
+                                </Canvas>
+                            </Viewbox>
+
+                            <StackPanel Grid.Column="1" Spacing="6">
+                                <!--
+                                    The wordmark, not the name set in the UI font. With the tile beside it this is
+                                    the lockup brand/README.md defines - mark plus word - and the About page is the
+                                    one surface in the app that is about Ripcord rather than about a console, which
+                                    is where a lockup belongs.
+
+                                    Height only. The width follows the word, and constraining both would either
+                                    stretch the type or letterbox it.
+
+                                    It replaces a TitleLarge TextBlock reading "Ripcord". The accessible name did
+                                    not move with it: the tile above already carries "Ripcord logo", and a hero
+                                    that announced itself twice was the thing RipcordMark's own comment warns
+                                    about.
+                                -->
+                                <!--
+                                    The page's top heading, for a screen reader. About had none: its first heading was
+                                    "This device", a level 2 (visual audit, 2026-10-08). The wordmark is the page's title
+                                    in all but markup, so it says so.
+                                -->
+                                <controls:RipcordWordmark
+                                    x:Uid="AboutPage_Wordmark"
+                                    Height="30"
+                                    HorizontalAlignment="Left"
+                                    AutomationProperties.AccessibilityView="Content"
+                                    AutomationProperties.HeadingLevel="Level1"
+                                    Ink="{ThemeResource TextFillColorPrimaryBrush}" />
+                                <TextBlock
+                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                    x:Uid="AboutPage_RemotePlayWindowsDirect"
+                                    TextWrapping="Wrap" />
+
+                                <StackPanel
+                                    Margin="0,6,0,0"
+                                    Orientation="Horizontal"
+                                    Spacing="8">
+                                    <Border Style="{StaticResource RipcordChipStyle}">
+                                        <TextBlock
+                                            x:Name="VersionText"
+                                            Style="{StaticResource CaptionTextBlockStyle}"
+                                            x:Uid="AboutPage_Version" />
+                                    </Border>
+                                    <Border Style="{StaticResource RipcordChipStyle}">
+                                        <TextBlock
+                                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                            Style="{StaticResource CaptionTextBlockStyle}"
+                                            x:Uid="AboutPage_Apache" />
+                                    </Border>
+                                </StackPanel>
+
+                                <StackPanel
+                                    Margin="-12,6,0,-4"
+                                    Orientation="Horizontal">
+                                    <!--
+                                        Each of these carries an explicit AutomationProperties.Name: a button whose
+                                        content is a panel rather than a string has no accessible name of its own, so
+                                        without it a screen reader announces three unlabelled links.
+                                    -->
+                                    <HyperlinkButton
+                                        x:Uid="AboutPage_SourceCodeGithub"
+                                        NavigateUri="https://github.com/altrhombus/Ripcord">
+                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                            <FontIcon FontSize="{ThemeResource RipcordIconSizeBody}" Glyph="&#xE8A7;" />
+                                            <TextBlock x:Uid="AboutPage_Source" />
+                                        </StackPanel>
+                                    </HyperlinkButton>
+                                    <HyperlinkButton
+                                        x:Uid="AboutPage_ReportIssueGithub"
+                                        NavigateUri="https://github.com/altrhombus/Ripcord/issues/new">
+                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                            <FontIcon FontSize="{ThemeResource RipcordIconSizeBody}" Glyph="&#xEBE8;" />
+                                            <TextBlock x:Uid="AboutPage_ReportIssue" />
+                                        </StackPanel>
+                                    </HyperlinkButton>
+                                    <HyperlinkButton
+                                        x:Uid="AboutPage_ProtocolSpecification"
+                                        NavigateUri="https://github.com/altrhombus/Ripcord/tree/main/docs/protocol">
+                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                            <FontIcon FontSize="{ThemeResource RipcordIconSizeBody}" Glyph="&#xE8A5;" />
+                                            <TextBlock x:Uid="AboutPage_ProtocolSpec" />
+                                        </StackPanel>
+                                    </HyperlinkButton>
+                                </StackPanel>
+                            </StackPanel>
+                        </Grid>
+                    </Grid>
+                </Border>
+
+                <!--  ============ This device ============  -->
                 <Grid>
-                    <!--
-                        A wash of the user's accent colour, kept at low opacity so it reads as a tint over Mica
-                        rather than a coloured panel. Rounded on the rectangle itself instead of relying on the
-                        parent Border to clip.
-                    -->
-                    <Rectangle
-                        Fill="{ThemeResource AboutHeroWashBrush}"
-                        Opacity="0.12"
-                        RadiusX="12"
-                        RadiusY="12" />
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel VerticalAlignment="Bottom">
+                        <!--  The 16px lead-in is a section break, stated where it applies rather than hidden in a style.  -->
+                        <TextBlock
+                            Margin="0,16,0,0"
+                            Style="{StaticResource RipcordSectionHeaderStyle}"
+                            x:Uid="AboutPage_Device" />
+                        <TextBlock
+                            Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                            Style="{StaticResource CaptionTextBlockStyle}"
+                            x:Uid="AboutPage_FactsBugReportNeeds" />
+                    </StackPanel>
+                    <Button
+                        x:Name="CopyButton"
+                        Grid.Column="1"
+                        VerticalAlignment="Bottom"
+                        x:Uid="AboutPage_CopyTheseDetailsClipboard"
+                        Click="OnCopyDetailsClick">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <FontIcon FontSize="{ThemeResource RipcordIconSizeBody}" Glyph="&#xE8C8;" />
+                            <TextBlock x:Uid="AboutPage_CopyDetails" x:Name="CopyButtonText" />
+                        </StackPanel>
+                    </Button>
+                </Grid>
 
-                    <Grid Padding="24" ColumnSpacing="20">
+                <Border Margin="0,6,0,0" Style="{StaticResource RipcordCardStyle}">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" MinWidth="150" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+
+                        <TextBlock x:Uid="AboutPage_Windows" Style="{StaticResource RipcordDetailLabelStyle}" />
+                        <TextBlock
+                            x:Name="WindowsText"
+                            Grid.Column="1"
+                            Style="{StaticResource RipcordDetailValueStyle}" />
+
+                        <Border
+                            Grid.Row="1"
+                            Grid.ColumnSpan="2"
+                            Style="{StaticResource RipcordRowDividerStyle}" />
+
+                        <TextBlock
+                            Grid.Row="2"
+                            Style="{StaticResource RipcordDetailLabelStyle}"
+                            x:Uid="AboutPage_Runtime" />
+                        <TextBlock
+                            x:Name="RuntimeText"
+                            Grid.Row="2"
+                            Grid.Column="1"
+                            Style="{StaticResource RipcordDetailValueStyle}" />
+
+                        <Border
+                            Grid.Row="3"
+                            Grid.ColumnSpan="2"
+                            Style="{StaticResource RipcordRowDividerStyle}" />
+
+                        <TextBlock
+                            Grid.Row="4"
+                            Style="{StaticResource RipcordDetailLabelStyle}"
+                            x:Uid="AboutPage_Graphics" />
+                        <TextBlock
+                            x:Name="GraphicsText"
+                            Grid.Row="4"
+                            Grid.Column="1"
+                            Style="{StaticResource RipcordDetailValueStyle}"
+                            x:Uid="AboutPage_Checking" />
+
+                        <Border
+                            Grid.Row="5"
+                            Grid.ColumnSpan="2"
+                            Style="{StaticResource RipcordRowDividerStyle}" />
+
+                        <TextBlock
+                            Grid.Row="6"
+                            Style="{StaticResource RipcordDetailLabelStyle}"
+                            x:Uid="AboutPage_VideoDecoding" />
+                        <StackPanel
+                            Grid.Row="6"
+                            Grid.Column="1"
+                            Margin="0,9,16,9"
+                            VerticalAlignment="Center"
+                            Spacing="4">
+                            <!--  Pills, not sentences: this is a pass/fail fact and should be readable at a glance.  -->
+                            <Border
+                                x:Name="DecodePill"
+                                HorizontalAlignment="Left"
+                                CornerRadius="{StaticResource RipcordPillCornerRadius}"
+                                Padding="10,2">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <FontIcon
+                                        x:Name="DecodePillIcon"
+                                        FontSize="{ThemeResource RipcordIconSizeCaption}"
+                                        Glyph="&#xE72C;" />
+                                    <TextBlock
+                                        x:Name="DecodePillText"
+                                        Style="{StaticResource CaptionTextBlockStyle}"
+                                        x:Uid="AboutPage_DecodePillChecking" />
+                                </StackPanel>
+                            </Border>
+                            <TextBlock
+                                x:Name="DecodeNoteText"
+                                Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                                Style="{StaticResource CaptionTextBlockStyle}"
+                                TextWrapping="Wrap"
+                                Visibility="Collapsed" />
+                        </StackPanel>
+
+                        <Border
+                            Grid.Row="7"
+                            Grid.ColumnSpan="2"
+                            Style="{StaticResource RipcordRowDividerStyle}" />
+
+                        <TextBlock
+                            Grid.Row="8"
+                            Style="{StaticResource RipcordDetailLabelStyle}"
+                            x:Uid="AboutPage_Hevc" />
+                        <Border
+                            x:Name="HevcPill"
+                            Grid.Row="8"
+                            Grid.Column="1"
+                            Margin="0,9,16,9"
+                            HorizontalAlignment="Left"
+                            VerticalAlignment="Center"
+                            CornerRadius="{StaticResource RipcordPillCornerRadius}"
+                            Padding="10,2">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <FontIcon
+                                    x:Name="HevcPillIcon"
+                                    FontSize="{ThemeResource RipcordIconSizeCaption}"
+                                    Glyph="&#xE72C;" />
+                                <TextBlock
+                                    x:Name="HevcPillText"
+                                    Style="{StaticResource CaptionTextBlockStyle}"
+                                    x:Uid="AboutPage_HevcPillChecking" />
+                            </StackPanel>
+                        </Border>
+
+                        <Border
+                            Grid.Row="9"
+                            Grid.ColumnSpan="2"
+                            Style="{StaticResource RipcordRowDividerStyle}" />
+
+                        <TextBlock
+                            Grid.Row="10"
+                            Style="{StaticResource RipcordDetailLabelStyle}"
+                            x:Uid="AboutPage_Controllers" />
+                        <StackPanel
+                            Grid.Row="10"
+                            Grid.Column="1"
+                            Margin="0,9,16,9"
+                            VerticalAlignment="Center"
+                            Spacing="4">
+                            <!--
+                                Xbox pads go through GameInput, and without its runtime they are simply never seen, which
+                                looks exactly like none being plugged in. A DualSense doesn't need it.
+                            -->
+                            <Border
+                                x:Name="ControllersPill"
+                                HorizontalAlignment="Left"
+                                CornerRadius="{StaticResource RipcordPillCornerRadius}"
+                                Padding="10,2">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <FontIcon
+                                        x:Name="ControllersPillIcon"
+                                        FontSize="{ThemeResource RipcordIconSizeCaption}"
+                                        Glyph="&#xE72C;" />
+                                    <TextBlock
+                                        x:Name="ControllersPillText"
+                                        Style="{StaticResource CaptionTextBlockStyle}"
+                                        x:Uid="AboutPage_ControllersPillChecking" />
+                                </StackPanel>
+                            </Border>
+                            <TextBlock
+                                x:Name="ControllersNoteText"
+                                Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                                Style="{StaticResource CaptionTextBlockStyle}"
+                                TextWrapping="Wrap"
+                                Visibility="Collapsed"
+                                x:Uid="AboutPage_ControllersNotInstalledNote" />
+                        </StackPanel>
+
+                        <Border
+                            Grid.Row="11"
+                            Grid.ColumnSpan="2"
+                            Style="{StaticResource RipcordRowDividerStyle}" />
+
+                        <TextBlock
+                            Grid.Row="12"
+                            Style="{StaticResource RipcordDetailLabelStyle}"
+                            x:Uid="AboutPage_SettingsFolder" />
+                        <Grid
+                            Grid.Row="12"
+                            Grid.Column="1"
+                            ColumnSpacing="8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock
+                                x:Name="ConfigPathText"
+                                Style="{StaticResource RipcordDetailValueStyle}"
+                                Margin="0,11,0,11" />
+                            <Button
+                                x:Name="OpenConfigButton"
+                                Grid.Column="1"
+                                Margin="0,8,12,8"
+                                VerticalAlignment="Center"
+                                x:Uid="AboutPage_OpenSettingsFolder"
+                                Click="OnOpenConfigFolderClick" />
+                        </Grid>
+                    </Grid>
+                </Border>
+
+                <!--  ============ Provenance ============  -->
+                <TextBlock
+                    Margin="0,16,0,0"
+                    Style="{StaticResource RipcordSectionHeaderStyle}"
+                    x:Uid="AboutPage_AboutProject" />
+
+                <Border Margin="0,6,0,0" Padding="16,14" Style="{StaticResource RipcordCardStyle}">
+                    <Grid ColumnSpacing="14">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
-
-                        <!--
-                            The app tile, drawn rather than loaded, so it stays sharp at any scale factor and needs
-                            no separate asset. It is the Windows tile brand/generate-assets.ps1 composes: the ground
-                            (brand/ripcord-ground.svg), the edge, and the mark (brand/ripcord-mark-ondark.svg).
-                            Keep the three in step with those sources - they are the truth, and every shipped icon
-                            is generated from them.
-                        -->
-                        <Viewbox
-                            Width="72"
-                            Height="72"
+                        <FontIcon
                             VerticalAlignment="Top"
-                            x:Uid="AboutPage_RipcordLogo">
-                            <Canvas Width="64" Height="64">
-                                <Rectangle
-                                    Width="64"
-                                    Height="64"
-                                    RadiusX="15"
-                                    RadiusY="15">
-                                    <Rectangle.Fill>
-                                        <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
-                                            <GradientStop Offset="0" Color="#303743" />
-                                            <GradientStop Offset="1" Color="#1B1F26" />
-                                        </LinearGradientBrush>
-                                    </Rectangle.Fill>
-                                </Rectangle>
-                                <!--  The edge: a top highlight and a hairline. A XAML stroke is drawn inside the bounds, as the SVG's inset rect is.  -->
-                                <Rectangle
-                                    Width="64"
-                                    Height="64"
-                                    RadiusX="15"
-                                    RadiusY="15"
-                                    Stroke="#24FFFFFF"
-                                    StrokeThickness="0.75">
-                                    <Rectangle.Fill>
-                                        <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
-                                            <GradientStop Offset="0" Color="#29FFFFFF" />
-                                            <GradientStop Offset="0.5" Color="#00FFFFFF" />
-                                        </LinearGradientBrush>
-                                    </Rectangle.Fill>
-                                </Rectangle>
-                                <!--  The mark sits at 72% of the tile, centred: the padding Android's adaptive crop needs.  -->
-                                <Canvas>
-                                    <Canvas.RenderTransform>
-                                        <TransformGroup>
-                                            <ScaleTransform ScaleX="0.72" ScaleY="0.72" />
-                                            <TranslateTransform X="10.04" Y="9.04" />
-                                        </TransformGroup>
-                                    </Canvas.RenderTransform>
-                                    <Path
-                                        Data="M29,17 L53,32 L29,47 Z"
-                                        Fill="White"
-                                        Stroke="White"
-                                        StrokeLineJoin="Round"
-                                        StrokeThickness="6" />
-                                    <Rectangle
-                                        Canvas.Left="12"
-                                        Canvas.Top="18"
-                                        Width="9"
-                                        Height="7"
-                                        Fill="#2FBF5B"
-                                        RadiusX="3.5"
-                                        RadiusY="3.5" />
-                                    <Rectangle
-                                        Canvas.Left="5"
-                                        Canvas.Top="28.5"
-                                        Width="16"
-                                        Height="7"
-                                        Fill="#2D7DF6"
-                                        RadiusX="3.5"
-                                        RadiusY="3.5" />
-                                    <Rectangle
-                                        Canvas.Left="9"
-                                        Canvas.Top="39"
-                                        Width="12"
-                                        Height="7"
-                                        Fill="#F0433A"
-                                        RadiusX="3.5"
-                                        RadiusY="3.5" />
-                                </Canvas>
-                            </Canvas>
-                        </Viewbox>
-
+                            FontSize="{ThemeResource RipcordIconSizeStanding}"
+                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                            Glyph="&#xE946;" />
                         <StackPanel Grid.Column="1" Spacing="6">
-                            <!--
-                                The wordmark, not the name set in the UI font. With the tile beside it this is
-                                the lockup brand/README.md defines - mark plus word - and the About page is the
-                                one surface in the app that is about Ripcord rather than about a console, which
-                                is where a lockup belongs.
-
-                                Height only. The width follows the word, and constraining both would either
-                                stretch the type or letterbox it.
-
-                                It replaces a TitleLarge TextBlock reading "Ripcord". The accessible name did
-                                not move with it: the tile above already carries "Ripcord logo", and a hero
-                                that announced itself twice was the thing RipcordMark's own comment warns
-                                about.
-                            -->
-                            <!--
-                                The page's top heading, for a screen reader. About had none: its first heading was
-                                "This device", a level 2 (visual audit, 2026-10-08). The wordmark is the page's title
-                                in all but markup, so it says so.
-                            -->
-                            <controls:RipcordWordmark
-                                x:Uid="AboutPage_Wordmark"
-                                Height="30"
-                                HorizontalAlignment="Left"
-                                AutomationProperties.AccessibilityView="Content"
-                                AutomationProperties.HeadingLevel="Level1"
-                                Ink="{ThemeResource TextFillColorPrimaryBrush}" />
+                            <TextBlock x:Uid="AboutPage_IndependentImplementation" Style="{StaticResource BodyStrongTextBlockStyle}" />
                             <TextBlock
                                 Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                x:Uid="AboutPage_RemotePlayWindowsDirect"
-                                TextWrapping="Wrap" />
-
-                            <StackPanel
-                                Margin="0,6,0,0"
-                                Orientation="Horizontal"
-                                Spacing="8">
-                                <Border Style="{StaticResource RipcordChipStyle}">
-                                    <TextBlock
-                                        x:Name="VersionText"
-                                        Style="{StaticResource CaptionTextBlockStyle}"
-                                        x:Uid="AboutPage_Version" />
-                                </Border>
-                                <Border Style="{StaticResource RipcordChipStyle}">
-                                    <TextBlock
-                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                        Style="{StaticResource CaptionTextBlockStyle}"
-                                        x:Uid="AboutPage_Apache" />
-                                </Border>
-                            </StackPanel>
-
-                            <StackPanel
-                                Margin="-12,6,0,-4"
-                                Orientation="Horizontal">
-                                <!--
-                                    Each of these carries an explicit AutomationProperties.Name: a button whose
-                                    content is a panel rather than a string has no accessible name of its own, so
-                                    without it a screen reader announces three unlabelled links.
-                                -->
-                                <HyperlinkButton
-                                    x:Uid="AboutPage_SourceCodeGithub"
-                                    NavigateUri="https://github.com/altrhombus/Ripcord">
-                                    <StackPanel Orientation="Horizontal" Spacing="8">
-                                        <FontIcon FontSize="{ThemeResource RipcordIconSizeBody}" Glyph="&#xE8A7;" />
-                                        <TextBlock x:Uid="AboutPage_Source" />
-                                    </StackPanel>
-                                </HyperlinkButton>
-                                <HyperlinkButton
-                                    x:Uid="AboutPage_ReportIssueGithub"
-                                    NavigateUri="https://github.com/altrhombus/Ripcord/issues/new">
-                                    <StackPanel Orientation="Horizontal" Spacing="8">
-                                        <FontIcon FontSize="{ThemeResource RipcordIconSizeBody}" Glyph="&#xEBE8;" />
-                                        <TextBlock x:Uid="AboutPage_ReportIssue" />
-                                    </StackPanel>
-                                </HyperlinkButton>
-                                <HyperlinkButton
-                                    x:Uid="AboutPage_ProtocolSpecification"
-                                    NavigateUri="https://github.com/altrhombus/Ripcord/tree/main/docs/protocol">
-                                    <StackPanel Orientation="Horizontal" Spacing="8">
-                                        <FontIcon FontSize="{ThemeResource RipcordIconSizeBody}" Glyph="&#xE8A5;" />
-                                        <TextBlock x:Uid="AboutPage_ProtocolSpec" />
-                                    </StackPanel>
-                                </HyperlinkButton>
-                            </StackPanel>
-                        </StackPanel>
-                    </Grid>
-                </Grid>
-            </Border>
-
-            <!--  ============ This device ============  -->
-            <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
-                <StackPanel VerticalAlignment="Bottom">
-                    <!--  The 16px lead-in is a section break, stated where it applies rather than hidden in a style.  -->
-                    <TextBlock
-                        Margin="0,16,0,0"
-                        Style="{StaticResource RipcordSectionHeaderStyle}"
-                        x:Uid="AboutPage_Device" />
-                    <TextBlock
-                        Foreground="{ThemeResource TextFillColorTertiaryBrush}"
-                        Style="{StaticResource CaptionTextBlockStyle}"
-                        x:Uid="AboutPage_FactsBugReportNeeds" />
-                </StackPanel>
-                <Button
-                    x:Name="CopyButton"
-                    Grid.Column="1"
-                    VerticalAlignment="Bottom"
-                    x:Uid="AboutPage_CopyTheseDetailsClipboard"
-                    Click="OnCopyDetailsClick">
-                    <StackPanel Orientation="Horizontal" Spacing="8">
-                        <FontIcon FontSize="{ThemeResource RipcordIconSizeBody}" Glyph="&#xE8C8;" />
-                        <TextBlock x:Uid="AboutPage_CopyDetails" x:Name="CopyButtonText" />
-                    </StackPanel>
-                </Button>
-            </Grid>
-
-            <Border Margin="0,6,0,0" Style="{StaticResource RipcordCardStyle}">
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto" MinWidth="150" />
-                        <ColumnDefinition Width="*" />
-                    </Grid.ColumnDefinitions>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                    </Grid.RowDefinitions>
-
-                    <TextBlock x:Uid="AboutPage_Windows" Style="{StaticResource RipcordDetailLabelStyle}" />
-                    <TextBlock
-                        x:Name="WindowsText"
-                        Grid.Column="1"
-                        Style="{StaticResource RipcordDetailValueStyle}" />
-
-                    <Border
-                        Grid.Row="1"
-                        Grid.ColumnSpan="2"
-                        Style="{StaticResource RipcordRowDividerStyle}" />
-
-                    <TextBlock
-                        Grid.Row="2"
-                        Style="{StaticResource RipcordDetailLabelStyle}"
-                        x:Uid="AboutPage_Runtime" />
-                    <TextBlock
-                        x:Name="RuntimeText"
-                        Grid.Row="2"
-                        Grid.Column="1"
-                        Style="{StaticResource RipcordDetailValueStyle}" />
-
-                    <Border
-                        Grid.Row="3"
-                        Grid.ColumnSpan="2"
-                        Style="{StaticResource RipcordRowDividerStyle}" />
-
-                    <TextBlock
-                        Grid.Row="4"
-                        Style="{StaticResource RipcordDetailLabelStyle}"
-                        x:Uid="AboutPage_Graphics" />
-                    <TextBlock
-                        x:Name="GraphicsText"
-                        Grid.Row="4"
-                        Grid.Column="1"
-                        Style="{StaticResource RipcordDetailValueStyle}"
-                        x:Uid="AboutPage_Checking" />
-
-                    <Border
-                        Grid.Row="5"
-                        Grid.ColumnSpan="2"
-                        Style="{StaticResource RipcordRowDividerStyle}" />
-
-                    <TextBlock
-                        Grid.Row="6"
-                        Style="{StaticResource RipcordDetailLabelStyle}"
-                        x:Uid="AboutPage_VideoDecoding" />
-                    <StackPanel
-                        Grid.Row="6"
-                        Grid.Column="1"
-                        Margin="0,9,16,9"
-                        VerticalAlignment="Center"
-                        Spacing="4">
-                        <!--  Pills, not sentences: this is a pass/fail fact and should be readable at a glance.  -->
-                        <Border
-                            x:Name="DecodePill"
-                            HorizontalAlignment="Left"
-                            CornerRadius="{StaticResource RipcordPillCornerRadius}"
-                            Padding="10,2">
-                            <StackPanel Orientation="Horizontal" Spacing="6">
-                                <FontIcon
-                                    x:Name="DecodePillIcon"
-                                    FontSize="{ThemeResource RipcordIconSizeCaption}"
-                                    Glyph="&#xE72C;" />
-                                <TextBlock
-                                    x:Name="DecodePillText"
-                                    Style="{StaticResource CaptionTextBlockStyle}"
-                                    x:Uid="AboutPage_DecodePillChecking" />
-                            </StackPanel>
-                        </Border>
-                        <TextBlock
-                            x:Name="DecodeNoteText"
-                            Foreground="{ThemeResource TextFillColorTertiaryBrush}"
-                            Style="{StaticResource CaptionTextBlockStyle}"
-                            TextWrapping="Wrap"
-                            Visibility="Collapsed" />
-                    </StackPanel>
-
-                    <Border
-                        Grid.Row="7"
-                        Grid.ColumnSpan="2"
-                        Style="{StaticResource RipcordRowDividerStyle}" />
-
-                    <TextBlock
-                        Grid.Row="8"
-                        Style="{StaticResource RipcordDetailLabelStyle}"
-                        x:Uid="AboutPage_Hevc" />
-                    <Border
-                        x:Name="HevcPill"
-                        Grid.Row="8"
-                        Grid.Column="1"
-                        Margin="0,9,16,9"
-                        HorizontalAlignment="Left"
-                        VerticalAlignment="Center"
-                        CornerRadius="{StaticResource RipcordPillCornerRadius}"
-                        Padding="10,2">
-                        <StackPanel Orientation="Horizontal" Spacing="6">
-                            <FontIcon
-                                x:Name="HevcPillIcon"
-                                FontSize="{ThemeResource RipcordIconSizeCaption}"
-                                Glyph="&#xE72C;" />
-                            <TextBlock
-                                x:Name="HevcPillText"
                                 Style="{StaticResource CaptionTextBlockStyle}"
-                                x:Uid="AboutPage_HevcPillChecking" />
+                                x:Uid="AboutPage_RipcordFromScratchClient"
+                                TextWrapping="Wrap" />
+                            <TextBlock
+                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                Style="{StaticResource CaptionTextBlockStyle}"
+                                x:Uid="AboutPage_AffiliatedEndorsedBySponsored"
+                                TextWrapping="Wrap" />
                         </StackPanel>
-                    </Border>
+                    </Grid>
+                </Border>
 
-                    <Border
-                        Grid.Row="9"
-                        Grid.ColumnSpan="2"
-                        Style="{StaticResource RipcordRowDividerStyle}" />
-
-                    <TextBlock
-                        Grid.Row="10"
-                        Style="{StaticResource RipcordDetailLabelStyle}"
-                        x:Uid="AboutPage_Controllers" />
-                    <StackPanel
-                        Grid.Row="10"
-                        Grid.Column="1"
-                        Margin="0,9,16,9"
-                        VerticalAlignment="Center"
-                        Spacing="4">
-                        <!--
-                            Xbox pads go through GameInput, and without its runtime they are simply never seen, which
-                            looks exactly like none being plugged in. A DualSense doesn't need it.
-                        -->
-                        <Border
-                            x:Name="ControllersPill"
-                            HorizontalAlignment="Left"
-                            CornerRadius="{StaticResource RipcordPillCornerRadius}"
-                            Padding="10,2">
-                            <StackPanel Orientation="Horizontal" Spacing="6">
-                                <FontIcon
-                                    x:Name="ControllersPillIcon"
-                                    FontSize="{ThemeResource RipcordIconSizeCaption}"
-                                    Glyph="&#xE72C;" />
-                                <TextBlock
-                                    x:Name="ControllersPillText"
-                                    Style="{StaticResource CaptionTextBlockStyle}"
-                                    x:Uid="AboutPage_ControllersPillChecking" />
-                            </StackPanel>
-                        </Border>
+                <Expander
+                    Margin="0,6,0,0"
+                    HorizontalAlignment="Stretch"
+                   >
+                    <Expander.Header>
+                        <TextBlock x:Uid="AboutPage_OpenSourceComponents" />
+                    </Expander.Header>
+                    <StackPanel Spacing="10">
+                        <StackPanel>
+                            <TextBlock x:Uid="AboutPage_Concentus" />
+                            <TextBlock
+                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                Style="{StaticResource CaptionTextBlockStyle}"
+                                x:Uid="AboutPage_OpusAudioDecoding"
+                                TextWrapping="Wrap" />
+                        </StackPanel>
+                        <StackPanel>
+                            <TextBlock x:Uid="AboutPage_GoogleProtobuf" />
+                            <TextBlock
+                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                Style="{StaticResource CaptionTextBlockStyle}"
+                                x:Uid="AboutPage_ControlPlaneMessageEncoding"
+                                TextWrapping="Wrap" />
+                        </StackPanel>
+                        <StackPanel>
+                            <TextBlock x:Uid="AboutPage_WindowsAppSdk" />
+                            <TextBlock
+                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                Style="{StaticResource CaptionTextBlockStyle}"
+                                x:Uid="AboutPage_WinuiPlatformApisBehind"
+                                TextWrapping="Wrap" />
+                        </StackPanel>
                         <TextBlock
-                            x:Name="ControllersNoteText"
                             Foreground="{ThemeResource TextFillColorTertiaryBrush}"
                             Style="{StaticResource CaptionTextBlockStyle}"
-                            TextWrapping="Wrap"
-                            Visibility="Collapsed"
-                            x:Uid="AboutPage_ControllersNotInstalledNote" />
-                    </StackPanel>
-
-                    <Border
-                        Grid.Row="11"
-                        Grid.ColumnSpan="2"
-                        Style="{StaticResource RipcordRowDividerStyle}" />
-
-                    <TextBlock
-                        Grid.Row="12"
-                        Style="{StaticResource RipcordDetailLabelStyle}"
-                        x:Uid="AboutPage_SettingsFolder" />
-                    <Grid
-                        Grid.Row="12"
-                        Grid.Column="1"
-                        ColumnSpacing="8">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-                        <TextBlock
-                            x:Name="ConfigPathText"
-                            Style="{StaticResource RipcordDetailValueStyle}"
-                            Margin="0,11,0,11" />
-                        <Button
-                            x:Name="OpenConfigButton"
-                            Grid.Column="1"
-                            Margin="0,8,12,8"
-                            VerticalAlignment="Center"
-                            x:Uid="AboutPage_OpenSettingsFolder"
-                            Click="OnOpenConfigFolderClick" />
-                    </Grid>
-                </Grid>
-            </Border>
-
-            <!--  ============ Provenance ============  -->
-            <TextBlock
-                Margin="0,16,0,0"
-                Style="{StaticResource RipcordSectionHeaderStyle}"
-                x:Uid="AboutPage_AboutProject" />
-
-            <Border Margin="0,6,0,0" Padding="16,14" Style="{StaticResource RipcordCardStyle}">
-                <Grid ColumnSpacing="14">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="*" />
-                    </Grid.ColumnDefinitions>
-                    <FontIcon
-                        VerticalAlignment="Top"
-                        FontSize="{ThemeResource RipcordIconSizeStanding}"
-                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                        Glyph="&#xE946;" />
-                    <StackPanel Grid.Column="1" Spacing="6">
-                        <TextBlock x:Uid="AboutPage_IndependentImplementation" Style="{StaticResource BodyStrongTextBlockStyle}" />
-                        <TextBlock
-                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                            Style="{StaticResource CaptionTextBlockStyle}"
-                            x:Uid="AboutPage_RipcordFromScratchClient"
-                            TextWrapping="Wrap" />
-                        <TextBlock
-                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                            Style="{StaticResource CaptionTextBlockStyle}"
-                            x:Uid="AboutPage_AffiliatedEndorsedBySponsored"
+                            x:Uid="AboutPage_VideoAudioInputRun"
                             TextWrapping="Wrap" />
                     </StackPanel>
-                </Grid>
-            </Border>
-
-            <Expander
-                Margin="0,6,0,0"
-                HorizontalAlignment="Stretch"
-                HorizontalContentAlignment="Stretch">
-                <Expander.Header>
-                    <TextBlock x:Uid="AboutPage_OpenSourceComponents" />
-                </Expander.Header>
-                <StackPanel Spacing="10">
-                    <StackPanel>
-                        <TextBlock x:Uid="AboutPage_Concentus" />
-                        <TextBlock
-                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                            Style="{StaticResource CaptionTextBlockStyle}"
-                            x:Uid="AboutPage_OpusAudioDecoding"
-                            TextWrapping="Wrap" />
-                    </StackPanel>
-                    <StackPanel>
-                        <TextBlock x:Uid="AboutPage_GoogleProtobuf" />
-                        <TextBlock
-                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                            Style="{StaticResource CaptionTextBlockStyle}"
-                            x:Uid="AboutPage_ControlPlaneMessageEncoding"
-                            TextWrapping="Wrap" />
-                    </StackPanel>
-                    <StackPanel>
-                        <TextBlock x:Uid="AboutPage_WindowsAppSdk" />
-                        <TextBlock
-                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                            Style="{StaticResource CaptionTextBlockStyle}"
-                            x:Uid="AboutPage_WinuiPlatformApisBehind"
-                            TextWrapping="Wrap" />
-                    </StackPanel>
-                    <TextBlock
-                        Foreground="{ThemeResource TextFillColorTertiaryBrush}"
-                        Style="{StaticResource CaptionTextBlockStyle}"
-                        x:Uid="AboutPage_VideoAudioInputRun"
-                        TextWrapping="Wrap" />
-                </StackPanel>
-            </Expander>
-        </StackPanel>
+                </Expander>
+            </StackPanel>
+        </Grid>
     </ScrollViewer>
 </Page>

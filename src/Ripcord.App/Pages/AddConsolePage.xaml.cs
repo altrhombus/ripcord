@@ -24,7 +24,7 @@ namespace Ripcord_App.Pages;
 /// <see cref="AddConsoleFlowState"/> into control properties, and turns clicks back into flow calls.
 /// </para>
 /// </summary>
-public sealed partial class AddConsolePage : Page
+public sealed partial class AddConsolePage : Page, IStepBack
 {
     /// <summary>The navigation parameter that opens the page as the first-run setup's console step.</summary>
     public static readonly object FromSetup = new();
@@ -334,6 +334,7 @@ public sealed partial class AddConsolePage : Page
             NameBox.Text = s.SuggestedName;
         }
 
+        BackButton.Visibility = Vis(s.HasPreviousStep);
         BackButton.IsEnabled = s.CanGoBack;
 
         // Nothing to pair while the form is still an offer: Pair would sit there permanently disabled under
@@ -601,6 +602,28 @@ public sealed partial class AddConsolePage : Page
                 _flow.Finish(NameBox.Text, connect: false);
                 break;
         }
+    }
+
+    /// <summary>
+    /// The shell's Back (the title bar, Esc, the pad's B) walks the flow's steps before it leaves the page, as it
+    /// does in setup. It used to leave from any step, so B on the code form threw away the search the player had
+    /// just waited for. During the pairing exchange it is held, as the footer's Back is.
+    /// </summary>
+    bool IStepBack.TryStepBack()
+    {
+        AddConsoleFlowState state = _flow.State;
+        if (state.IsPairing)
+        {
+            return true;
+        }
+
+        if (!state.HasPreviousStep)
+        {
+            return false;
+        }
+
+        _ = _flow.BackAsync();
+        return true;
     }
 
     private async void OnBackClick(object sender, RoutedEventArgs e)
