@@ -99,12 +99,16 @@
             VerticalAlignment="Center"
             Stretch="Uniform">
             <Canvas Width="30" Height="36">
+                <!--
+                    Filled, not filled-and-stroked. The rounded corners used to come from a 6px round-joined
+                    stroke in the same brush as the fill. In light theme that brush is translucent, so the band
+                    where stroke and fill overlap was drawn twice and the mark wore a dark outline (visual audit,
+                    2026-10-08). This outline is the same shape - the triangle grown by the stroke's radius,
+                    corners rounded at 3 - drawn once.
+                -->
                 <Path
-                    Data="M 5,3 L 27,18 L 5,33 Z"
-                    Fill="{x:Bind MarkFill, Mode=OneWay}"
-                    Stroke="{x:Bind MarkFill, Mode=OneWay}"
-                    StrokeLineJoin="Round"
-                    StrokeThickness="6" />
+                    Data="M 2,3 A 3,3 0 0 1 6.69,0.521 L 28.69,15.521 A 3,3 0 0 1 28.69,20.479 L 6.69,35.479 A 3,3 0 0 1 2,33 Z"
+                    Fill="{x:Bind MarkFill, Mode=OneWay}" />
             </Canvas>
         </Viewbox>
     </Grid>

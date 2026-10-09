@@ -32,7 +32,8 @@ asking for it has not been tested yet, and dropping it is on the roadmap.
 
 ## What it keeps on your machine
 
-Everything lives in `%LocalAppData%\Ripcord`, apart from two things listed after the table:
+Everything lives in `%LocalAppData%\Ripcord` (or, if you set the `RIPCORD_DATA_DIR` environment variable to a
+folder, in that folder instead), apart from two things listed after the table:
 
 | File | What it holds |
 |---|---|
@@ -41,7 +42,7 @@ Everything lives in `%LocalAppData%\Ripcord`, apart from two things listed after
 | `settings.json` | Your settings and controller bindings |
 | `WebView2\` | The sign-in page's browser profile, including Sony's sign-in cookies |
 | `state\crash.log` | What went wrong, if the app crashed |
-| `state\session-trace-*.csv` | Per-stream figures: frame rates, loss, round-trip time, bitrate, and at the top the app version, your graphics adapter's name and the settings asked for |
+| `state\session-trace-*.csv` | Per-stream figures: frame rates, loss, round-trip time, bitrate, and at the top the app version, your graphics adapter's name and the settings asked for. One per stream; the newest 20 are kept and older ones deleted |
 | `state\diagnostics-*.txt` | What **F8** saves during a stream: the panel's readings, your settings, the app version and Windows version |
 | `state\*-trace.log` | Diagnostic logs some features write while you use them |
 | `state\video-dump-*.bin` | Only with the `RIPCORD_DUMP_VIDEO` developer switch set: the first seconds of the stream's video, which can show your PSN online ID in the console's own notifications |

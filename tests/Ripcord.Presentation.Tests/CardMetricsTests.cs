@@ -126,4 +126,22 @@ public class CardMetricsTests
             }
         }
     }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(4)]
+    public void LargerText_MakesTheCardTallerAndNothingElse(int consoles)
+    {
+        // At 225% text a fixed cell clipped the status line and cut the caption at the wedge (2026-10-08).
+        CardLayout normal = CardMetrics.For(1280, consoles);
+        CardLayout large = CardMetrics.For(1280, consoles, textScale: 2.25);
+
+        Assert.Equal(normal.CellHeight + (CardMetrics.TextHeight * 1.25), large.CellHeight);
+        Assert.Equal(normal.CellWidth, large.CellWidth);
+        Assert.Equal(normal.Density, large.Density);
+    }
+
+    [Fact]
+    public void TextScale_BelowOne_IsTreatedAsOne()
+        => Assert.Equal(CardMetrics.For(1280, 1).CellHeight, CardMetrics.For(1280, 1, textScale: 0.5).CellHeight);
 }

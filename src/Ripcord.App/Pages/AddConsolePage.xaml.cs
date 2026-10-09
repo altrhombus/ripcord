@@ -1,5 +1,8 @@
+using System.Collections.Specialized;
+using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Navigation;
 using Ripcord.Presentation;
 using Ripcord.Presentation.Accounts;
@@ -47,6 +50,10 @@ public sealed partial class AddConsolePage : Page
     // Keeps the caret on the same discovered console when the list reorders around it.
     private FocusAnchor? _discoveryAnchor;
 
+    // True while focus is still where the Find step put it (Rescan, before anything was found) and the user has
+    // not moved it. Only then does the first console to answer take focus; see OnDiscoveredChanged.
+    private bool _awaitingFirstResult;
+
     public AddConsolePage()
     {
         // Resolved BEFORE InitializeComponent — see ConsolesPage. This page previously named the scanner, the
@@ -61,6 +68,10 @@ public sealed partial class AddConsolePage : Page
         // Loaded rather than here, because the scan is asynchronous and results arriving before the page has
         // finished building would have nowhere to land.
         Loaded += (_, _) => _ = StartFlowAsync();
+
+        // A contrast theme switched on or off while the page is up repaints the step trail; see StepDashPainter.
+        Loaded += (_, _) => AppEffects.Changed += OnEffectsChanged;
+        Unloaded += (_, _) => AppEffects.Changed -= OnEffectsChanged;
 
         BuildFamilyCard(Ps5Button, ConsoleFamily.Ps5);
         BuildFamilyCard(Ps4Button, ConsoleFamily.Ps4);
@@ -89,8 +100,93 @@ public sealed partial class AddConsolePage : Page
         _discoveryAnchor = new FocusAnchor(DiscoveredList, DispatcherQueue);
         _discoveryAnchor.Watch(_flow.Discovered);
 
+        _flow.Discovered.CollectionChanged += OnDiscoveredChanged;
+        RescanButton.LostFocus += OnRescanLostFocus;
+
         Render(_flow.State);
     }
+
+    /// <summary>
+    /// The first console to answer takes focus, if the user is still where the page put them.
+    ///
+    /// <para>
+    /// This page had decided the opposite: an arrival never moves focus, because a console landing under a
+    /// thumb must not eat the next press. That rule is right for somebody navigating and wrong for somebody
+    /// waiting. Arriving on an empty list, a pad user sat on "Search again" with their console appearing above
+    /// it, and the obvious next press acted on the wrong thing (2026-10-08). So the rule now has the condition
+    /// it always implied: focus moves to the first result only while it is still on the seed and has never left
+    /// it. Anyone who has moved, even away and back, keeps their place; the FocusAnchor still protects them.
+    /// </para>
+    /// </summary>
+    private void OnDiscoveredChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        if (_awaitingFirstResult && e.Action == NotifyCollectionChangedAction.Add)
+        {
+            QueueHandOffToFirstResult();
+        }
+    }
+
+    /// <summary>
+    /// Hand focus to the first result once it can take it. Also started by the seed itself: a console can answer
+    /// before the seed runs, in which case the seed found an item but nothing to focus, fell back to Rescan, and
+    /// the Add that would have started this had already passed.
+    ///
+    /// <para>
+    /// Polled briefly rather than checked once. The container exists as soon as the item does, but the button
+    /// inside it is still loading and arriving under the list's add transition, and until it has loaded nothing
+    /// in the container is focusable. A single look found the container and nothing to focus, every time.
+    /// </para>
+    /// </summary>
+    private void QueueHandOffToFirstResult()
+    {
+        if (_handOffTimer is null)
+        {
+            _handOffTimer = DispatcherQueue.CreateTimer();
+            _handOffTimer.Interval = TimeSpan.FromMilliseconds(50);
+            _handOffTimer.IsRepeating = true;
+            _handOffTimer.Tick += OnHandOffTick;
+        }
+
+        _handOffAttempts = 0;
+        _handOffTimer.Start();
+    }
+
+    private void OnHandOffTick(DispatcherQueueTimer timer, object args)
+    {
+        // A second of waiting is far longer than a button takes to load; past it, something else is wrong and
+        // focus stays where it is.
+        if (TryHandOffToFirstResult() || ++_handOffAttempts >= 20)
+        {
+            timer.Stop();
+        }
+    }
+
+    // Repeats while a hand-off waits for its button to load. One per page, stopped when the page is left.
+    private DispatcherQueueTimer? _handOffTimer;
+    private int _handOffAttempts;
+
+    /// <summary>True when there is nothing more to wait for: focus was handed over, or the moment has passed.</summary>
+    private bool TryHandOffToFirstResult()
+    {
+        if (!_awaitingFirstResult
+            || XamlRoot is null
+            || !ReferenceEquals(FocusManager.GetFocusedElement(XamlRoot), RescanButton))
+        {
+            return true;
+        }
+
+        if (DiscoveredList.ContainerFromIndex(0) is not DependencyObject first
+            || FocusManager.FindFirstFocusableElement(first) is not Control result)
+        {
+            return false;
+        }
+
+        _awaitingFirstResult = false;
+        result.Focus(FocusState.Keyboard);
+        return true;
+    }
+
+    private void OnRescanLostFocus(object sender, RoutedEventArgs e) => _awaitingFirstResult = false;
 
     protected override void OnNavigatedFrom(NavigationEventArgs e)
     {
@@ -103,6 +199,11 @@ public sealed partial class AddConsolePage : Page
         // however long its disposal takes, so leaving it subscribed would keep answering for a dead page.
         _discoveryAnchor?.Dispose();
         _discoveryAnchor = null;
+
+        _flow.Discovered.CollectionChanged -= OnDiscoveredChanged;
+        RescanButton.LostFocus -= OnRescanLostFocus;
+        _awaitingFirstResult = false;
+        _handOffTimer?.Stop();
 
         base.OnNavigatedFrom(e);
     }
@@ -123,9 +224,8 @@ public sealed partial class AddConsolePage : Page
         PairingPanel.Visibility = Vis(s.Step == AddConsoleStep.Pairing);
         DonePanel.Visibility = Vis(s.Step == AddConsoleStep.Done);
 
-        StepDash1.Opacity = DashOpacity(1, s.ReachedDash);
-        StepDash2.Opacity = DashOpacity(2, s.ReachedDash);
-        StepDash3.Opacity = DashOpacity(3, s.ReachedDash);
+        _reachedDash = s.ReachedDash;
+        PaintDashes();
 
         FamilyNote.Message = s.FamilyNote ?? string.Empty;
         FamilyNote.Severity = InfoBarSeverity.Informational;
@@ -134,7 +234,11 @@ public sealed partial class AddConsolePage : Page
         FindHeading.Text = s.FindHeading;
         FindSubheading.Text = s.FindSubheading;
         ScanProgress.Visibility = Vis(s.IsScanning);
-        RescanButton.IsEnabled = !s.IsScanning;
+        // Enabled while scanning, too. It was disabled then, so a page opened mid-scan had nowhere safe to seed
+        // focus and the shell's fallback put it on "Enter an address instead": a pad user pressing A to get
+        // going was sent to type an IP address. Pressing it mid-scan restarts the scan, which is harmless; the
+        // progress bar is what says a scan is running.
+        RescanButton.IsEnabled = true;
         ManualEntryPanel.Visibility = Vis(s.ManualEntryOpen);
         ManualEntryButton.Visibility = Vis(!s.ManualEntryOpen);
 
@@ -253,7 +357,12 @@ public sealed partial class AddConsolePage : Page
 
     private static Visibility Vis(bool on) => on ? Visibility.Visible : Visibility.Collapsed;
 
-    private static double DashOpacity(int index, int reached) => index <= reached ? 1.0 : 0.2;
+    // The last step reached, kept so the trail can be repainted when the contrast theme changes under the page.
+    private int _reachedDash;
+
+    private void PaintDashes() => StepDashPainter.Paint(_reachedDash, StepDash1, StepDash2, StepDash3);
+
+    private void OnEffectsChanged() => PaintDashes();
 
     /// <summary>
     /// Seed focus for a step that has just become visible, so a controller or keyboard always has somewhere to
@@ -269,59 +378,60 @@ public sealed partial class AddConsolePage : Page
             return;
         }
 
-        _focusedStep = step;
-
-        // The one case where the step alone does not decide: a signed-in user whose console the account already
-        // knows never types a code, so seeding the code box would put the caret in a field they will not use.
-        if (step == AddConsoleStep.Link && s.CanPairWithAccount)
+        Control? target = step switch
         {
-            SecondaryButton.Focus(FocusState.Keyboard);
-            return;
-        }
+            // The one case where the step alone does not decide: a signed-in user whose console the account
+            // already knows never types a code, so seeding the code box would put the caret in a field they
+            // will not use.
+            AddConsoleStep.Link when s.CanPairWithAccount => SecondaryButton,
+            AddConsoleStep.Family => Ps5Button,
+            AddConsoleStep.Link => PasscodeBox,
 
-        switch (step)
+            // Play now, NOT the name box.
+            //
+            // Focusing a TextBox opens the soft keyboard on a handheld, so the celebration would arrive with
+            // half the screen covered by a keyboard for a field nobody has to fill in - the console is already
+            // paired and already named. Renaming is a flourish somebody can reach for; the thing they came for
+            // holds focus.
+            AddConsoleStep.Done => PrimaryButton,
+
+            // The list if it already has something in it, otherwise Rescan — which is always present, so there
+            // is always somewhere to land. Deliberately NOT re-run when results arrive later: a console
+            // answering the broadcast while the user is reading must not pull the caret across the page, and
+            // one landing under their thumb must not eat the next press. Arriving at an empty list and arrowing
+            // up into it once it fills is the predictable behaviour.
+            //
+            // The container of an ItemsControl item is a ContentPresenter, which is not a Control; the button
+            // the template draws is inside it. Testing the container itself never matched, so this always fell
+            // through to Rescan even with a console on screen (2026-10-08).
+            AddConsoleStep.Find => (DiscoveredList.Items.Count > 0
+                    && DiscoveredList.ContainerFromIndex(0) is DependencyObject first
+                    ? FocusManager.FindFirstFocusableElement(first) as Control
+                    : null) ?? RescanButton,
+
+            // Nothing to seed, and that is correct rather than an omission: the panel is a progress readout
+            // with no control on it, so there is genuinely nowhere for focus to go. Focus is left on the Link
+            // step's controls, which have just been collapsed — WinUI drops focus off a collapsed element, and
+            // the watchdog is what puts it somewhere sane. Named here so the next reader does not add a focus
+            // call to a step that has nothing to focus.
+            _ => null,
+        };
+
+        // Recorded only once focus has actually landed. The first render runs from OnNavigatedTo, before the
+        // page is in the tree, where Focus() returns false; marking the step seeded then meant it was never
+        // seeded at all, and a pad arrived on the Find step with focus nowhere (2026-10-08). The flow starts
+        // on Loaded, so the next render comes promptly and tries again.
+        if (target is null || target.Focus(FocusState.Keyboard))
         {
-            case AddConsoleStep.Family:
-                Ps5Button.Focus(FocusState.Keyboard);
-                break;
-            case AddConsoleStep.Link:
-                PasscodeBox.Focus(FocusState.Keyboard);
-                break;
-            case AddConsoleStep.Done:
-                // Play now, NOT the name box.
-                //
-                // Focusing a TextBox opens the soft keyboard on a handheld, so the celebration would arrive
-                // with half the screen covered by a keyboard for a field nobody has to fill in - the console
-                // is already paired and already named. Renaming is a flourish somebody can reach for; the
-                // thing they came for holds focus.
-                PrimaryButton.Focus(FocusState.Keyboard);
-                break;
+            _focusedStep = step;
 
-            case AddConsoleStep.Find:
-                // The list if it already has something in it, otherwise Rescan — which is always present, so
-                // there is always somewhere to land. Deliberately NOT re-run when results arrive later: a
-                // console answering the broadcast while the user is reading must not pull the caret across the
-                // page, and one landing under their thumb must not eat the next press. Arriving at an empty
-                // list and arrowing up into it once it fills is the predictable behaviour.
-                if (DiscoveredList.Items.Count > 0
-                    && DiscoveredList.ContainerFromIndex(0) is Control firstResult)
-                {
-                    firstResult.Focus(FocusState.Keyboard);
-                }
-                else
-                {
-                    RescanButton.Focus(FocusState.Keyboard);
-                }
+            // Seeded on Rescan because nothing has answered yet: the first console that does may take focus.
+            _awaitingFirstResult = step == AddConsoleStep.Find && ReferenceEquals(target, RescanButton);
 
-                break;
-
-            case AddConsoleStep.Pairing:
-                // Nothing to seed, and that is correct rather than an omission: the panel is a progress
-                // readout with no control on it, so there is genuinely nowhere for focus to go. Focus is left
-                // on the Link step's controls, which have just been collapsed — WinUI drops focus off a
-                // collapsed element, and the watchdog is what puts it somewhere sane. Named here so the next
-                // reader does not add a focus call to a step that has nothing to focus.
-                break;
+            if (_awaitingFirstResult && DiscoveredList.Items.Count > 0)
+            {
+                QueueHandOffToFirstResult();
+            }
         }
     }
 

@@ -35,8 +35,30 @@ public sealed class DefaultPlatformPaths : IPlatformPaths
     /// <summary>Directory name on Windows/macOS; lowercased for the Linux XDG convention.</summary>
     private const string AppName = "Ripcord";
 
+    /// <summary>
+    /// The variable that puts all of it somewhere else: set to an absolute directory, configuration and data live
+    /// there and state in its <c>state</c> folder, on every platform.
+    ///
+    /// <para>
+    /// For a clean profile beside a real one. Windows resolves LocalApplicationData through the registered known
+    /// folder and ignores <c>LOCALAPPDATA</c>, so before this a first-run audit had to rename the user's own folder
+    /// aside and restore it afterwards (visual audit, 2026-10-08). Tests, screenshot passes and a second profile for
+    /// debugging all want the same thing. A relative or empty value is ignored, as the XDG variables are.
+    /// </para>
+    /// </summary>
+    public const string DataDirectoryVariable = "RIPCORD_DATA_DIR";
+
     public DefaultPlatformPaths(string appName = AppName)
     {
+        string? overridden = Environment.GetEnvironmentVariable(DataDirectoryVariable);
+        if (!string.IsNullOrWhiteSpace(overridden) && Path.IsPathRooted(overridden))
+        {
+            ConfigDirectory = Ensure(overridden);
+            DataDirectory = ConfigDirectory;
+            StateDirectory = Ensure(Path.Combine(overridden, "state"));
+            return;
+        }
+
         if (OperatingSystem.IsWindows())
         {
             string root = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);

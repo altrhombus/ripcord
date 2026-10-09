@@ -160,6 +160,19 @@ public class NavIntentReaderTests
         Assert.True(intent.Back);
     }
 
+    [Theory]
+    [InlineData(ControllerButtons.North)]
+    [InlineData(ControllerButtons.Start)]
+    public void YAndMenuBothOpenTheContextMenu(ControllerButtons button)
+    {
+        // Menu is the Windows and Xbox convention for "the menu for this", and it is what somebody reached for
+        // first on the console card; only Y worked (2026-10-08).
+        var reader = new NavIntentReader();
+
+        Assert.True(reader.Read(Frame(button), T0).Context);
+        Assert.False(reader.Read(Frame(button), T0.AddMilliseconds(500)).Context);
+    }
+
     // ---- reset ---------------------------------------------------------------------------------
 
     [Fact]

@@ -165,9 +165,15 @@
         The negative margin lifts the ring off the card's own stroke. Without it the two lines sit adjacent
         and read as one thick edge, which is the failure mode that makes a focus ring easy to miss on a
         surface that already has a border.
+
+        It has to clear BOTH lines of the ring, and -4 did not: 3px primary outside 2px secondary put the
+        secondary from 1px outside the card's edge to 1px inside it, on top of the card's own 1px stroke. On
+        the straight runs it painted the stroke out; at the rounded corners it missed, so in high contrast a
+        focused card showed four stray corner arcs inside the ring (visual audit, 2026-10-08). At -6 the
+        secondary ends a pixel short of the card, and the card's whole border shows inside the ring.
     -->
     <Thickness x:Key="RipcordFocusPrimaryThickness">3</Thickness>
     <Thickness x:Key="RipcordFocusSecondaryThickness">2</Thickness>
-    <Thickness x:Key="RipcordFocusMargin">-4</Thickness>
+    <Thickness x:Key="RipcordFocusMargin">-6</Thickness>
 
 </ResourceDictionary>

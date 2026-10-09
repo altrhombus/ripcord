@@ -157,10 +157,16 @@
                         x:Name="ConsoleIntroText"
                         Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                         TextWrapping="Wrap" />
-                    <TextBlock
-                        x:Name="ConsolePreflightText"
-                        Style="{StaticResource RipcordSubtleCaptionStyle}"
-                        TextWrapping="Wrap" />
+                    <!--
+                        What to switch on at the console, as numbered steps at body size with each menu path set
+                        under it. It was one run-on paragraph in small grey caption text, and it is the thing most
+                        likely to stop a first pairing (visual audit, 2026-10-08). The steps are built in code from
+                        the flow's state; see BuildPreflight.
+                    -->
+                    <StackPanel Spacing="8">
+                        <TextBlock x:Name="ConsolePreflightText" TextWrapping="Wrap" />
+                        <StackPanel x:Name="ConsolePreflightList" Spacing="12" />
+                    </StackPanel>
                     <StackPanel
                         x:Name="ConsoleStatusRow"
                         AutomationProperties.LiveSetting="Polite"

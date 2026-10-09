@@ -147,12 +147,12 @@
     <comment>'Esc' is the key name printed on the keyboard - do not translate it.</comment>
   </data>
   <data name="Settings_ExitGestureShoulders" xml:space="preserve">
-    <value>Options + Create + L1 + R1 (Menu + View + LB + RB)</value>
-    <comment>Controller button names - do NOT translate. The DualSense's labels, then an Xbox controller's in brackets.</comment>
+    <value>Hold the menu and shoulder buttons</value>
+    <comment>Exit-gesture choice in Settings: holding Options, Create, L1 and R1 together (Menu, View, LB and RB on an Xbox controller). Kept short because it sits in a drop-down; the row's description beneath names the exact buttons for both controllers.</comment>
   </data>
   <data name="Settings_ExitGestureSticks" xml:space="preserve">
-    <value>Both sticks pressed (L3 + R3, or LS + RS)</value>
-    <comment>L3/R3 (DualSense) and LS/RS (Xbox) are controller button names - do not translate those.</comment>
+    <value>Press both sticks in</value>
+    <comment>Exit-gesture choice in Settings: clicking both thumbsticks (L3 + R3, or LS + RS on an Xbox controller). Kept short because it sits in a drop-down; the row's description beneath names the exact buttons.</comment>
   </data>
   <data name="Settings_ExitNoGesture" xml:space="preserve">
     <value>No controller gesture. You will need a keyboard (Esc) or the on-screen button to leave a stream.</value>
@@ -437,7 +437,7 @@ name.</comment>
   </data>
   <data name="Account_SignedInWithRegion" xml:space="preserve">
     <value>Signed in — {0}. Your consoles are listed below, wherever they are.</value>
-    <comment>Body of the account panel once signed in. {0} is a region code.</comment>
+    <comment>Body of the account panel once signed in. {0} is the account's country, already in the reader's language (for example "United States").</comment>
   </data>
   <data name="Account_SigningIn" xml:space="preserve">
     <value>Signing in…</value>
@@ -515,6 +515,18 @@ name.</comment>
     <value>Ripcord couldn't check for HEVC in time, so this stream uses H.264, without HDR.</value>
     <comment>Connect sequence: appended to the connecting line when checking for the HEVC codec chosen in Settings failed or took too long. HEVC, H.264 and HDR are standard names - do not translate.</comment>
   </data>
+  <data name="Session_ConsoleEndedDetail" xml:space="preserve">
+    <value>It may have gone into rest mode or been turned off, or another device may have started playing on it.</value>
+    <comment>Status overlay detail under 'The console ended the stream'. Lists the likely reasons without claiming which: the console's own reason is shown small beneath, for a bug report.</comment>
+  </data>
+  <data name="Session_Offline" xml:space="preserve">
+    <value>This PC can't reach the console's network right now. Ripcord keeps trying, and reconnects as soon as the network is back.</value>
+    <comment>Status overlay detail while reconnecting, when the reason is that the network itself is unreachable (Wi-Fi off, cable out, or the console has dropped off the network). Deliberately does not say which end is at fault.</comment>
+  </data>
+  <data name="Session_TryAgain" xml:space="preserve">
+    <value>Try again</value>
+    <comment>Button on the stream's status overlay after a connect failed: start the connect again.</comment>
+  </data>
   <data name="Session_ConsoleEnded" xml:space="preserve">
     <value>The console ended the stream</value>
     <comment>Status overlay headline when the console itself ended the stream, for example by going into rest mode. The detail line beneath carries the console's reason.</comment>
@@ -584,8 +596,8 @@ name.</comment>
     <comment>Connect sequence: this build cannot speak the protocol, so a stream is impossible. Fatal.</comment>
   </data>
   <data name="Connect_WakeDetail" xml:space="preserve">
-    <value>The console was in standby.</value>
-    <comment>Connect sequence: detail line shown under the wake progress headline.</comment>
+    <value>If it's in rest mode, Ripcord wakes it first.</value>
+    <comment>Detail under every wake progress line ("Waking your console…", "Asking PlayStation Network to wake your console…"). True whether or not the console turns out to be resting: over the internet its state cannot be seen, and the old wording, "The console was in standby.", was shown for a console that was awake (visual audit, 2026-10-08).</comment>
   </data>
   <data name="Connect_DidNotWakeHeadline" xml:space="preserve">
     <value>Console didn't wake</value>
@@ -729,6 +741,10 @@ think the claim above it is conditional.</comment>
   <data name="Console_RenameFailed" xml:space="preserve">
     <value>Couldn't rename that console</value>
     <comment>Error dialog title when saving a new name failed.</comment>
+  </data>
+  <data name="Console_MenuName" xml:space="preserve">
+    <value>Options for {0}</value>
+    <comment>Screen-reader name of a console card's menu (Rename, Details, Create a shortcut, Remove). {0} is the console's name.</comment>
   </data>
   <data name="Console_RemoveTitle" xml:space="preserve">
     <value>Remove this console?</value>
@@ -886,6 +902,10 @@ think the claim above it is conditional.</comment>
     <value>Button names on screen follow the controller you last pressed.</value>
     <comment>First-run setup: under the controller found.</comment>
   </data>
+  <data name="Setup_ExitBothFamilies" xml:space="preserve">
+    <value>{0} ({1} on an Xbox controller)</value>
+    <comment>First-run setup, before a controller is connected: the exit gesture's buttons as both controllers name them. {0} is the DualSense's labels, {1} the Xbox controller's. 'Xbox' is a product name - do not translate it.</comment>
+  </data>
   <data name="Setup_ExitGesture" xml:space="preserve">
     <value>To leave a stream, hold {0}. You can change this in Settings.</value>
     <comment>First-run setup: how to leave a stream with a controller. {0} is the buttons to hold, such as 'Options + Create + L1 + R1'.</comment>
@@ -893,6 +913,10 @@ think the claim above it is conditional.</comment>
   <data name="Setup_ExitWithEsc" xml:space="preserve">
     <value>To leave a stream, press Esc.</value>
     <comment>First-run setup: how to leave a stream when no controller gesture is set. Esc is the keyboard key.</comment>
+  </data>
+  <data name="Setup_DoneTitleNoConsole" xml:space="preserve">
+    <value>One thing left: your console.</value>
+    <comment>First-run setup: the last page's title when no console has been paired yet. The lines beneath list what was set up and say the console can be added from the consoles page.</comment>
   </data>
   <data name="Setup_DoneTitle" xml:space="preserve">
     <value>All set.</value>
@@ -926,9 +950,25 @@ think the claim above it is conditional.</comment>
     <value>Continue setup</value>
     <comment>Add a console, during the first-run setup: the button after pairing, which returns to the setup.</comment>
   </data>
+  <data name="Setup_PreflightRemotePlay" xml:space="preserve">
+    <value>Turn on Enable Remote Play.</value>
+    <comment>First-run setup, console step, item 1: the console setting to turn on. 'Enable Remote Play' is the console's own label; translate it as the console's own language does.</comment>
+  </data>
+  <data name="Setup_PreflightRemotePlayWhere" xml:space="preserve">
+    <value>Settings &gt; System &gt; Remote Play</value>
+    <comment>First-run setup, console step, item 1: where that setting is, as the console's menus name it.</comment>
+  </data>
+  <data name="Setup_PreflightWake" xml:space="preserve">
+    <value>To wake it from rest mode as well, turn on Stay Connected to the Internet and Enable Turning On PS5 from Network.</value>
+    <comment>First-run setup, console step, item 2. The setting names are the console's own labels; translate them as the console's own language does. PS5 is a product name - do not translate.</comment>
+  </data>
+  <data name="Setup_PreflightWakeWhere" xml:space="preserve">
+    <value>Settings &gt; System &gt; Power Saving &gt; Features Available in Rest Mode</value>
+    <comment>First-run setup, console step, item 2: where those settings are, as the console's menus name them.</comment>
+  </data>
   <data name="Setup_ConsolePreflight" xml:space="preserve">
-    <value>First, on the console: Settings &gt; System &gt; Remote Play, and turn on Enable Remote Play. To wake it from rest mode as well, turn on Stay Connected to the Internet and Enable Turning On PS5 from Network, under Settings &gt; System &gt; Power Saving &gt; Features Available in Rest Mode.</value>
-    <comment>First-run setup: the console step, what to switch on at the console before pairing. The menu names are the console's own; translate them as the console's own language does. PS5 is a product name - do not translate.</comment>
+    <value>First, on the console:</value>
+    <comment>First-run setup, console step: introduces the numbered list of settings to switch on at the console before pairing.</comment>
   </data>
   <data name="Setup_GameInputMissing" xml:space="preserve">
     <value>Xbox controllers need Microsoft's GameInput, which isn't installed. Run GameInputRedist.msi from Ripcord's folder, then start Ripcord again. PlayStation controllers work without it.</value>

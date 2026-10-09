@@ -41,6 +41,7 @@ public class FailureCopyTests
     [InlineData("Stream key agreement did not complete (Takion/SESSION): Takion handshake: no INIT_ACK from the console", "signed in on the console")]
     [InlineData("Couldn't start a session: The console never joined the session, so it never got as far as publishing a registration seed.", "over the internet")]
     [InlineData("The console ended the session while it was starting.", "as it was starting")]
+    [InlineData("Couldn't start a session: Registration was rejected by the console (HTTP 403, RP-Application-Reason 80108b09).", "refused the connection")]
     public void Connect_KnownFailures_LeadWithPlainWords(string raw, string expected)
     {
         PlainFailure f = FailureCopy.ForConnect(raw);

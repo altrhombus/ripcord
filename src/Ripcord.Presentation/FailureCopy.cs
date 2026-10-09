@@ -47,6 +47,11 @@ public static class FailureCopy
     [
         ("rejected (HTTP 403", () => Strings.Failure_ConnectRefused),
         ("rejected (HTTP 401", () => Strings.Failure_ConnectRefused),
+
+        // The account route's session registration, refused. Worded differently from /sess/init's, so it fell
+        // through to the general sentence, which told someone connecting over the internet to check they were
+        // on the same network (visual audit, 2026-10-08).
+        ("rejected by the console (HTTP 403", () => Strings.Failure_ConnectRefused),
         ("Pair the console again", () => Strings.Failure_ConnectRepair),
         ("did not wake", () => Strings.Connect_DidNotWakeDetail),
         ("didn't wake", () => Strings.Connect_DidNotWakeDetail),

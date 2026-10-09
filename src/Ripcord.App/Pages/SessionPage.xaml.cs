@@ -255,7 +255,12 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
         {
             ConnectedAnimation? animation = ConnectedAnimationService.GetForCurrentView()
                 .GetAnimation(AppMotion.ConnectAnimationKey);
-            animation?.TryStart(StatusOverlay);
+            // Onto the mark, which is what this always meant to carry. It used to land on StatusOverlay, which
+            // covers the window, so the card's snapshot was stretched over the whole screen until the animation
+            // ended - and that waits for the page, which is busy bringing the video device up. In Dark the card
+            // is near black and nobody saw it. In Light it is white, and the connect screen's white text sat on
+            // it unreadable (owner, 2026-10-09).
+            animation?.TryStart(ConnectMark);
         }
         catch (Exception)
         {
@@ -654,7 +659,8 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
     {
         // Published from the controller's background loop, so marshal before touching XAML.
         // Every transition, so a connect that ends somewhere unexpected says where it went.
-        _services.DiagnosticTrace?.Invoke($"status: {status.Lifecycle} (attempt {status.ReconnectAttempt}): {status.Detail}");
+        _services.DiagnosticTrace?.Invoke($"status: {status.Lifecycle} (attempt {status.ReconnectAttempt}): {status.Detail}"
+            + (status.Reason is null ? string.Empty : $" ({status.Reason})"));
 
         _dispatcherQueue.TryEnqueue(() =>
         {
@@ -677,6 +683,7 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
                 case SessionLifecycle.Failed:
                 case SessionLifecycle.Ended:
                     LeaveImmersiveMode();
+                    _startModeApplied = false;
                     break;
             }
 
@@ -746,6 +753,8 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
             StatusOverlay.Opacity = 1;
             StatusOverlay.Visibility = Vis(s.StatusVisible);
         }
+
+        StatusPlate.Visibility = Vis(s.StatusOverPicture);
         // Said out loud when the headline changes: a new phase, a failure. Detail lines alone are progress chatter.
         if (s.StatusVisible && StatusHeadline.Text != s.StatusHeadline)
         {
@@ -758,6 +767,14 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
         StatusTechnical.Visibility = Vis(s.StatusTechnical.Length > 0);
         RenderTrail(s);
         StatusActions.Visibility = Vis(s.StatusActionsVisible);
+
+        // Which action leads: Try again after a failure, Back once the console ended the stream itself (most
+        // often a rest the player just chose). The accent marks the leader; InitialFocus follows it.
+        RetryButton.Content = s.StatusRetryLabel;
+        Style accent = (Style)Application.Current.Resources["AccentButtonStyle"];
+        Style plain = (Style)Application.Current.Resources["DefaultButtonStyle"];
+        RetryButton.Style = s.StatusLeadsBack ? plain : accent;
+        LeaveButton.Style = s.StatusLeadsBack ? accent : plain;
         ConnectEscape.Visibility = Vis(s.ConnectEscapeVisible);
 
         ControllerConnectedText.Text = s.ConnectedControllers;
@@ -1028,10 +1045,11 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
 
         // The console's own accent for the trail, resolved through AccentResources so high contrast drops it
         // to a system brush rather than painting decorative colour where the palette forbids it. The wedge
-        // takes the ordinary foreground: it is the app's mark, not the console's.
+        // takes the ordinary foreground, set in the markup: it is the app's mark, not the console's. It was looked
+        // up here, from the app's resources, and so took the Windows theme rather than this page's Dark: a black
+        // wedge on the connect screen in Light (owner, 2026-10-09).
         ConsoleFamily family = ConsoleFamily.ForPlatformName(_console?.Platform);
         StatusTrail.Accent = AccentResources.Brush(family.Accent);
-        StatusTrail.WedgeFill = ThemeBrush.Lookup("TextFillColorPrimaryBrush");
         StatusTrail.Reached = reached;
     }
 
@@ -1204,12 +1222,22 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
     {
         KeepDisplayAwake(true);
 
-        if (_settings.FullScreenOnConnect && !_enteredFullScreen)
+        // "Full screen when a stream starts" is a start preference, applied once per connection. Streaming
+        // resumes after every reconnect too, and applying it then overrode the player's own choice: someone who
+        // had pressed Esc for a window was put back in full screen when the Wi-Fi came back (visual audit,
+        // 2026-10-08). After the first time, the window stays in whatever mode the player has it.
+        if (_settings.FullScreenOnConnect && !_enteredFullScreen && !_startModeApplied)
         {
             Shell.SetFullScreen(true);
             _enteredFullScreen = true;
         }
+
+        _startModeApplied = true;
     }
+
+    // Set once the start preference has been applied for this connection; cleared when it fails or ends, so a
+    // fresh start (Try again) applies it again.
+    private bool _startModeApplied;
 
     private void LeaveImmersiveMode()
     {
@@ -1251,7 +1279,9 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
 
     private Task ShowExitHintBriefly()
     {
-        if (_settings.ExitGesture == ExitGesture.None)
+        // With no controller attached, the controller's gesture is no way out at all, and naming one pad's buttons
+        // for it taught Xbox names to someone holding nothing (visual audit, 2026-10-08).
+        if (_settings.ExitGesture == ExitGesture.None || !App.Input.PadAttached)
         {
             ExitHintText.Text = "Press Esc to leave the stream";
         }
@@ -1388,7 +1418,8 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
     /// otherwise nothing, since a live stream takes the pad and the window does not seed focus over it.
     /// </summary>
     Control? IInitialFocusTarget.InitialFocus
-        => StatusActions.Visibility == Visibility.Visible ? RetryButton
+        => StatusActions.Visibility == Visibility.Visible
+                ? (_viewModel.State.StatusLeadsBack ? LeaveButton : RetryButton)
             : ConnectEscape.Visibility == Visibility.Visible ? ConnectEscape
             : null;
 
@@ -1547,6 +1578,16 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
 
         _pipeline.Resize(width, height);
         _pipeline.SetCompositionScale(scaleX, scaleY);
+
+        // Black until the first frame. The swap chain is premultiplied and its buffers start transparent, and
+        // a transparent panel shows the window under it, which Windows paints white in Light: the connect screen
+        // went black for a second, then white, the moment this attached (owner, 2026-10-09). Queued after the
+        // resize, so the buffers it clears are the ones that will be shown. Once a picture has arrived each frame
+        // clears its own.
+        if (!_viewModel.State.IsStreamLive)
+        {
+            _pipeline.RenderClear(0, 0, 0);
+        }
     }
 
     // ---- diagnostics ----
@@ -1694,9 +1735,13 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
 
         _virtualButtonsHeld |= button;
         _pointerDrivenButtons |= button;
+        _pointerPressedAt[button] = System.Diagnostics.Stopwatch.GetTimestamp();
         _inputSource?.SetVirtualButton(button, pressed: true);
         ShowTouchControls();
     }
+
+    // When each pointer-held console button went down, so its release can be held back to a minimum press.
+    private readonly Dictionary<ControllerButtons, long> _pointerPressedAt = [];
 
     /// <summary>
     /// A press from anything but a pointer: a tap, held long enough for the console to see it. A pointer press
@@ -1720,7 +1765,19 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
         _inputSource?.SetVirtualButton(button, pressed: false);
     }
 
-    private void ConsoleButton_PointerReleased(object sender, PointerRoutedEventArgs e)
+    /// <summary>
+    /// Release a pointer-held console button, but never sooner than <see cref="ConsoleButtonTap"/> after it went
+    /// down.
+    ///
+    /// <para>
+    /// A mouse click is press and release a few tens of milliseconds apart, and the release went out the moment
+    /// it arrived, so a quick click could fall between two input reports and never reach the console: the PS
+    /// button needed clicking twice (owner, 2026-10-08). The keyboard and screen-reader path already held a
+    /// press for the tap length; a pointer now gets the same floor. A real hold, for the power menu, is longer
+    /// than the floor and is released exactly when the pointer lets go.
+    /// </para>
+    /// </summary>
+    private async void ConsoleButton_PointerReleased(object sender, PointerRoutedEventArgs e)
     {
         if (sender is not FrameworkElement { Tag: string name } || !Enum.TryParse(name, out ControllerButtons button))
         {
@@ -1729,9 +1786,35 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
 
         // PointerCaptureLost is wired to this too: a drag off the button must release it, or it stays held forever.
         _virtualButtonsHeld &= ~button;
-        _inputSource?.SetVirtualButton(button, pressed: false);
         ShowTouchControls();
+
+        if (_pointerPressedAt.Remove(button, out long pressedAt))
+        {
+            TimeSpan held = System.Diagnostics.Stopwatch.GetElapsedTime(pressedAt);
+            if (held < ConsoleButtonTap)
+            {
+                _releasesWaiting |= button;
+                await Task.Delay(ConsoleButtonTap - held);
+                _releasesWaiting &= ~button;
+
+                // Pressed again while the release was waiting: that press owns the button now.
+                if (_virtualButtonsHeld.HasFlag(button))
+                {
+                    return;
+                }
+            }
+        }
+        else if (_releasesWaiting.HasFlag(button))
+        {
+            // The second of a release and a capture-lost for one press; the first is already seeing it out.
+            return;
+        }
+
+        _inputSource?.SetVirtualButton(button, pressed: false);
     }
+
+    // Console buttons whose release is waiting out the minimum press.
+    private ControllerButtons _releasesWaiting;
 
 
 
@@ -1859,6 +1942,8 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
     {
         try
         {
+            PruneOldTraces();
+
             string path = System.IO.Path.Combine(
                 _services.Paths.StateDirectory,
                 $"session-trace-{DateTime.Now:yyyyMMdd-HHmmss}.csv");
@@ -1868,9 +1953,10 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
             _tracePreambleWaits = 0;
 
             // Say WHERE, for the same reason the F8 report does: on a handheld there is no other way to
-            // find it, and a trace nobody can locate is a trace nobody sends.
+            // find it, and a trace nobody can locate is a trace nobody sends. Written from %LOCALAPPDATA%, so a
+            // screenshot of the HUD does not carry the Windows user name; see DiagnosticFiles.ForScreen.
             _tracePath = path;
-            DiagnosticsSavedText.Text = $"tracing to: {path}";
+            DiagnosticsSavedText.Text = $"tracing to: {ForScreen(path)}";
 
             // The preamble is deliberately NOT written here - see WriteTracePreamble.
         }
@@ -1989,6 +2075,41 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
         }
     }
 
+    private static string ForScreen(string path)
+        => DiagnosticFiles.ForScreen(path, Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData));
+
+    /// <summary>
+    /// Keep the newest <see cref="DiagnosticFiles.SessionTracesKept"/> traces and delete the rest, before a new one
+    /// is started. Every stream writes one and nothing ever removed them. Only this app's own trace files, by
+    /// their own name pattern, in its own state folder.
+    /// </summary>
+    private void PruneOldTraces()
+    {
+        try
+        {
+            var directory = new DirectoryInfo(_services.Paths.StateDirectory);
+            if (!directory.Exists)
+            {
+                return;
+            }
+
+            IEnumerable<(string, DateTime)> traces = directory
+                .EnumerateFiles("session-trace-*.csv")
+                .Select(f => (f.FullName, f.LastWriteTimeUtc));
+
+            // One fewer than the limit, because the trace about to be started is the newest.
+            foreach (string old in DiagnosticFiles.ToPrune(traces, DiagnosticFiles.SessionTracesKept - 1))
+            {
+                File.Delete(old);
+            }
+        }
+        catch (Exception ex)
+        {
+            // Housekeeping. A trace that could not be pruned is no reason to lose the session or its new trace.
+            Debug.WriteLine($"[Ripcord] old session traces could not be pruned: {ex.Message}");
+        }
+    }
+
     private void SaveDiagnostics()
     {
         try
@@ -2005,8 +2126,8 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
 
             // Show WHERE it went. On a handheld there is no other way to find out.
             DiagnosticsSavedText.Text = _tracePath is null
-                ? $"saved: {path}"
-                : $"saved: {path}  ·  trace: {_tracePath}";
+                ? $"saved: {ForScreen(path)}"
+                : $"saved: {ForScreen(path)}  ·  trace: {ForScreen(_tracePath)}";
         }
         catch (Exception ex)
         {

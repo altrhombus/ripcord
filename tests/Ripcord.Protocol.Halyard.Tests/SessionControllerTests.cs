@@ -254,6 +254,58 @@ public class SessionControllerTests
     }
 
     [Fact]
+    public async Task ASessionTheConsoleRefuses_IsNotTriedAgain()
+    {
+        // The account route registers its session while the session is being built, so a console's 403 arrives as
+        // the factory throwing. It was retried twice, with a wake before each, before the same refusal was shown
+        // (visual audit, 2026-10-08).
+        var time = new VirtualTime();
+        int attempts = 0;
+
+        await using var controller = new SessionController(
+            _ =>
+            {
+                attempts++;
+                throw new InvalidOperationException(
+                    "Registration was rejected by the console (HTTP 403, RP-Application-Reason 00000000).");
+            },
+            new FakePipeline(),
+            options: new SessionControllerOptions { MaxFirstConnectAttempts = 3, InitialBackoff = TimeSpan.Zero },
+            clock: time.Now,
+            delay: time.Delay);
+
+        await controller.StartAsync(Config);
+
+        await WaitFor(() => controller.Lifecycle == SessionLifecycle.Failed, "a refusal should fail the connect");
+        Assert.Equal(1, attempts);
+    }
+
+    [Fact]
+    public async Task ASessionThatCouldNotBeStartedForAnotherReason_IsStillTriedAgain()
+    {
+        var time = new VirtualTime();
+        int attempts = 0;
+
+        await using var controller = new SessionController(
+            _ =>
+            {
+                attempts++;
+                throw new InvalidOperationException("The rendezvous timed out.");
+            },
+            new FakePipeline(),
+            options: new SessionControllerOptions { MaxFirstConnectAttempts = 3, InitialBackoff = TimeSpan.Zero },
+            clock: time.Now,
+            delay: time.Delay);
+
+        await controller.StartAsync(Config);
+
+        await WaitFor(() => controller.Lifecycle == SessionLifecycle.Failed, "the attempts should run out");
+
+        // The first attempt plus the retry budget.
+        Assert.Equal(1 + 3, attempts);
+    }
+
+    [Fact]
     public async Task AHeldDeadline_WaitsForThePerson_ThenRunsOn()
     {
         var time = new VirtualTime();
@@ -888,7 +940,8 @@ public class SessionControllerTests
         sessions[0].EndReason = "The control connection failed: connection reset";   // a network fault
         sessions[0].State = SessionState.Closed;
 
-        await WaitFor(() => controller.CurrentStatus.Detail.Contains("connection reset", StringComparison.Ordinal),
+        // In the status's Reason, apart from its sentence, so a screen can show it small (2026-10-08).
+        await WaitFor(() => controller.CurrentStatus.Reason?.Contains("connection reset", StringComparison.Ordinal) == true,
             "the reconnect to name why the session ended");
         Assert.Equal(SessionLifecycle.Reconnecting, controller.Lifecycle);
     }
