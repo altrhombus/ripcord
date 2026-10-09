@@ -52,6 +52,24 @@ public sealed partial class RipcordMark : UserControl
     /// is simply there.
     /// </para>
     /// </summary>
+    /// <summary>
+    /// Hides the parts ahead of an <see cref="Assemble"/> that cannot start yet, because the page is not loaded.
+    /// Otherwise the finished mark paints first, vanishes when the assembly starts, and comes back: a flicker
+    /// (owner, 2026-10-09).
+    /// </summary>
+    public void HideUntilAssembled()
+    {
+        if (!AppMotion.Enabled)
+        {
+            return;
+        }
+
+        WedgePart.Opacity = 0;
+        TrailOne.Opacity = 0;
+        TrailTwo.Opacity = 0;
+        TrailThree.Opacity = 0;
+    }
+
     public void Assemble()
     {
         if (!AppMotion.Enabled)

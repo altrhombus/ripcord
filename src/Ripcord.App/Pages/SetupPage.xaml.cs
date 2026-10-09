@@ -38,7 +38,15 @@ public sealed partial class SetupPage : Page, IInitialFocusTarget, IStepBack
         // Choosing a picture is the step's whole question, so a choice pressed goes on: a click, Space, or a pad's
         // A, the last through FocusPilot. Continue stays for anyone who would rather look first (owner,
         // 2026-10-09). The Checked handlers have recorded the choice by the time the command runs.
-        var chooseAndGoOn = new ContinueCommand(() => _flow?.Next());
+        // Only from the picture step: a pad's A can arrive here twice for one press (the peer's select can click as
+        // well as FocusPilot running the command), and a second Next went past the console step (owner, 2026-10-09).
+        var chooseAndGoOn = new ContinueCommand(() =>
+        {
+            if (_flow?.State.Step == SetupStep.Picture)
+            {
+                _flow.Next();
+            }
+        });
         BestRadio.Command = chooseAndGoOn;
         CompatibleRadio.Command = chooseAndGoOn;
 
@@ -212,18 +220,40 @@ public sealed partial class SetupPage : Page, IInitialFocusTarget, IStepBack
     /// </summary>
     private void FocusForStep(SetupFlowState s)
     {
-        if (_focusedStep == s.Step || !IsLoaded)
+        if (_focusedStep == s.Step)
         {
             return;
         }
 
-        _focusedStep = s.Step;
+        // Welcome can render before the page loads, when the assembly cannot start yet; keep the lockup hidden
+        // until it does rather than paint it finished and take it away again.
+        if (!IsLoaded)
+        {
+            if (s.Step == SetupStep.Welcome && AppMotion.Enabled)
+            {
+                WelcomeMark.HideUntilAssembled();
+                WelcomeWordmark.Opacity = 0;
+            }
+
+            return;
+        }
+
         Control target = s.Step switch
         {
             SetupStep.Picture => s.Choice == PictureChoice.BestPicture && s.BestPictureAvailable ? BestRadio : CompatibleRadio,
             SetupStep.Welcome => WelcomeStartButton,
             _ => PrimaryButton,
         };
+
+        // The picture choices are disabled while the decoder check runs, and focusing a disabled control fails, so
+        // focus fell to the gear (owner, 2026-10-09, now and then: the check is usually done first). Wait for the
+        // render that enables them; this step is not seeded until then.
+        if (!target.IsEnabled)
+        {
+            return;
+        }
+
+        _focusedStep = s.Step;
 
         if (s.Step == SetupStep.Welcome)
         {
