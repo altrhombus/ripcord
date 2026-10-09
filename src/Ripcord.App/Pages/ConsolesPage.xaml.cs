@@ -284,7 +284,8 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
 
     private CardLayout ApplyCardLayout(int consoleCount)
     {
-        CardLayout layout = CardMetrics.For(ActualWidth, consoleCount, TextScale);
+        CardLayout layout = CardMetrics.For(
+            ActualWidth, consoleCount, TextScale, (double)Application.Current.Resources["RipcordPageColumnWidth"]);
         _layout = layout;
 
         foreach (ConsoleCardViewModel card in _items.OfType<ConsoleCardViewModel>())
@@ -295,7 +296,8 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
 
         SizePanel();
 
-        // A single hero-sized card is the page; anything denser is a list and reads from the top-left.
+        // A single hero-sized card is the page, centred in the column; anything denser is a list and reads from the
+        // column's top-left, under the title.
         bool hero = layout.Density == CardDensity.Hero;
         ConsoleGrid.HorizontalAlignment = hero ? HorizontalAlignment.Center : HorizontalAlignment.Stretch;
         ConsoleGrid.VerticalAlignment = hero ? VerticalAlignment.Center : VerticalAlignment.Stretch;

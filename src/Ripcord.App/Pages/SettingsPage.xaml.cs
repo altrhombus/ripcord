@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
@@ -12,6 +13,7 @@ using CommunityToolkit.WinUI.Controls;
 using Ripcord.Presentation;
 using Ripcord.Presentation.Accounts;
 using Ripcord.Presentation.Consoles;
+using Ripcord.Presentation.Resources;
 using Ripcord.Presentation.Settings;
 using Ripcord.Core.Input;
 using Ripcord_App.Services;
@@ -322,9 +324,9 @@ public sealed partial class SettingsPage : Page, IInitialFocusTarget
             // never enabled — which is exactly the case that otherwise presents as "it just won't connect".
             string detail = (console.RemotePlayEnabled, console.CanWakeRemotely) switch
             {
-                (false, _) => "Remote play is turned off on this console.",
-                (true, true) => "Ready, and can be woken from rest mode.",
-                (true, false) => "Ready, but it can't be woken remotely — turn on Remote Play rest-mode wake on the console.",
+                (false, _) => Strings.Settings_ConsoleRemotePlayOff,
+                (true, true) => Strings.Settings_ConsoleReady,
+                (true, false) => Strings.Settings_ConsoleReadyNoWake,
             };
 
             CloudConsolesExpander.Items.Add(new SettingsCard
@@ -359,6 +361,7 @@ public sealed partial class SettingsPage : Page, IInitialFocusTarget
             HdrToggle.IsOn = s.RequestHdr;
             HdrToggle.IsEnabled = s.HdrToggleEnabled;
             HdrHelpText.Text = s.HdrHelp;
+            HdrExpander.Description = s.HdrDescription;
             RenderHdrChecklist(s.HdrChecks);
 
             AdapterCard.Visibility = Vis(s.AdapterPickerVisible);
@@ -420,7 +423,7 @@ public sealed partial class SettingsPage : Page, IInitialFocusTarget
         if (s.LoadError is { } error)
         {
             CredentialProtectionBar.Severity = InfoBarSeverity.Error;
-            CredentialProtectionBar.Title = "Some settings couldn't be loaded";
+            CredentialProtectionBar.Title = Strings.Settings_SomeNotLoaded;
             CredentialProtectionBar.Message = error;
             CredentialProtectionBar.IsOpen = true;
             return;

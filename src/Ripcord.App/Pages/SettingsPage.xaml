@@ -91,6 +91,7 @@
                                 x:Name="BitrateValueText"
                                 MinWidth="72"
                                 VerticalAlignment="Center"
+                                TextAlignment="Right"
                                 Style="{StaticResource BodyStrongTextBlockStyle}" />
                         </StackPanel>
                     </tk:SettingsCard>
@@ -125,7 +126,7 @@
                         HDR cannot be known until a session runs, and a cross for "unknown" reads as a fault the
                         user should go and fix.
                     -->
-                    <tk:SettingsExpander x:Uid="SettingsPage_RequestHdr">
+                    <tk:SettingsExpander x:Name="HdrExpander" x:Uid="SettingsPage_RequestHdr">
                         <ToggleSwitch x:Uid="SettingsPage_RequestHdr2" x:Name="HdrToggle" />
 
                         <tk:SettingsExpander.Items>
@@ -221,6 +222,7 @@
                                 x:Name="DeadzoneValueText"
                                 MinWidth="72"
                                 VerticalAlignment="Center"
+                                TextAlignment="Right"
                                 Style="{StaticResource BodyStrongTextBlockStyle}" />
                         </StackPanel>
                     </tk:SettingsCard>

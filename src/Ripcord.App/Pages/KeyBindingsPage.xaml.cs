@@ -2,11 +2,13 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Globalization;
 using System.Linq;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Ripcord.Core.Input;
+using Ripcord.Presentation.Resources;
 using Ripcord.Presentation.Settings;
 using Windows.System;
 
@@ -53,7 +55,7 @@ public sealed class KeyBindingRow(InputAction action, string actionName, string 
     /// What a screen reader says for the row's button. Twenty-six identical "Change" buttons are useless
     /// without it, and the visible label cannot carry the action name without making every row shout.
     /// </summary>
-    public string ChangeButtonName => $"Change the key for {ActionName}. Currently {KeyNames}.";
+    public string ChangeButtonName => string.Format(CultureInfo.CurrentCulture, Strings.KeyBindings_ChangeButtonName, ActionName, KeyNames);
 }
 
 /// <summary>
@@ -84,16 +86,19 @@ public sealed partial class KeyBindingsPage : Page
     /// Actions offered for rebinding, in the order a person would look for them. Axis directions are included
     /// because on a keyboard they ARE the sticks.
     /// </summary>
-    private static readonly InputAction[] Rebindable =
+    private static readonly (string Heading, InputAction[] Actions)[] Rebindable =
     [
-        InputAction.LeftStickUp, InputAction.LeftStickDown, InputAction.LeftStickLeft, InputAction.LeftStickRight,
-        InputAction.RightStickUp, InputAction.RightStickDown, InputAction.RightStickLeft, InputAction.RightStickRight,
-        InputAction.South, InputAction.East, InputAction.West, InputAction.North,
-        InputAction.DPadUp, InputAction.DPadDown, InputAction.DPadLeft, InputAction.DPadRight,
-        InputAction.LeftShoulder, InputAction.RightShoulder,
-        InputAction.LeftTrigger, InputAction.RightTrigger,
-        InputAction.LeftStickClick, InputAction.RightStickClick,
-        InputAction.Start, InputAction.Select, InputAction.Guide, InputAction.TouchpadClick,
+        (Strings.KeyBindings_GroupSticks,
+        [
+            InputAction.LeftStickUp, InputAction.LeftStickDown, InputAction.LeftStickLeft, InputAction.LeftStickRight,
+            InputAction.RightStickUp, InputAction.RightStickDown, InputAction.RightStickLeft, InputAction.RightStickRight,
+            InputAction.LeftStickClick, InputAction.RightStickClick,
+        ]),
+        (Strings.KeyBindings_GroupButtons, [InputAction.South, InputAction.East, InputAction.West, InputAction.North]),
+        (Strings.KeyBindings_GroupDpad, [InputAction.DPadUp, InputAction.DPadDown, InputAction.DPadLeft, InputAction.DPadRight]),
+        (Strings.KeyBindings_GroupShoulders,
+            [InputAction.LeftShoulder, InputAction.RightShoulder, InputAction.LeftTrigger, InputAction.RightTrigger]),
+        (Strings.KeyBindings_GroupSystem, [InputAction.Start, InputAction.Select, InputAction.Guide, InputAction.TouchpadClick]),
     ];
 
     private readonly ObservableCollection<KeyBindingRow> _rows = [];
@@ -109,8 +114,8 @@ public sealed partial class KeyBindingsPage : Page
         _viewModel = App.Services.CreateSettingsViewModel();
         _bindings = App.Services.Settings.Current.InputBindings;
 
-        BindingList.ItemsSource = _rows;
         Refresh();
+        BuildGroups();
 
         // Capture must see the key before anything else does. On a page nothing else wants these keys, but
         // arming still has to beat the list's own arrow-key navigation, so the preview stage is still right.
@@ -125,8 +130,8 @@ public sealed partial class KeyBindingsPage : Page
         }
 
         _capturing = action;
-        CaptureBar.Title = $"Press a key for {action.DisplayName()}";
-        CaptureBar.Message = "Backspace clears it. Escape, F3 and F11 are reserved by the app.";
+        CaptureBar.Title = string.Format(CultureInfo.CurrentCulture, Strings.KeyBindings_PressKeyFor, action.DisplayName());
+        CaptureBar.Message = Strings.KeyBindings_CaptureHint;
         CaptureBar.Severity = InfoBarSeverity.Informational;
         CaptureBar.IsOpen = true;
     }
@@ -136,7 +141,7 @@ public sealed partial class KeyBindingsPage : Page
         _bindings = _bindings with { Keyboard = InputBindings.DefaultKeyboard };
         Commit();
         Refresh();
-        Announce("Reset to the default keys.");
+        Announce(Strings.KeyBindings_ResetDone);
     }
 
     private void OnPreviewKeyDown(object sender, KeyRoutedEventArgs e)
@@ -154,14 +159,14 @@ public sealed partial class KeyBindingsPage : Page
         if (e.Key == VirtualKey.Back)
         {
             _bindings = _bindings.WithoutAction(_capturing);
-            Done("Cleared.");
+            Done(Strings.KeyBindings_Cleared);
             return;
         }
 
         if (!InputBindings.IsBindable(key))
         {
             // Reserved or unrecognised: say so and stay armed, rather than silently doing nothing.
-            CaptureBar.Message = $"{KeyName(key)} is reserved by the app. Press a different key.";
+            CaptureBar.Message = string.Format(CultureInfo.CurrentCulture, Strings.KeyBindings_Reserved, KeyName(key));
             CaptureBar.Severity = InfoBarSeverity.Warning;
             return;
         }
@@ -173,7 +178,7 @@ public sealed partial class KeyBindingsPage : Page
             : null;
 
         _bindings = _bindings.WithoutAction(_capturing).WithKey(key, _capturing);
-        Done(stolenFrom is null ? null : $"{KeyName(key)} was {stolenFrom}; it is now {_capturing.DisplayName()}.");
+        Done(stolenFrom is null ? null : string.Format(CultureInfo.CurrentCulture, Strings.KeyBindings_Moved, KeyName(key), stolenFrom, _capturing.DisplayName()));
     }
 
     private void Done(string? message)
@@ -220,7 +225,7 @@ public sealed partial class KeyBindingsPage : Page
     {
         if (_rows.Count == 0)
         {
-            foreach (InputAction action in Rebindable)
+            foreach (InputAction action in Rebindable.SelectMany(group => group.Actions))
             {
                 _rows.Add(new KeyBindingRow(action, action.DisplayName(), NamesFor(action)));
             }
@@ -231,6 +236,35 @@ public sealed partial class KeyBindingsPage : Page
         foreach (KeyBindingRow row in _rows)
         {
             row.KeyNames = NamesFor(row.Action);
+        }
+    }
+
+    /// <summary>
+    /// A section heading and its cards per group, as Settings lays out its own. Built once, from the rows
+    /// <see cref="Refresh"/> made, so a rebind updates a card in place.
+    /// </summary>
+    private void BuildGroups()
+    {
+        var template = (DataTemplate)Resources["BindingRowTemplate"];
+
+        foreach ((string heading, InputAction[] actions) in Rebindable)
+        {
+            var section = new StackPanel { Spacing = 4 };
+            section.Children.Add(new TextBlock
+            {
+                Text = heading,
+                Style = (Style)Application.Current.Resources["RipcordSectionHeaderStyle"],
+            });
+
+            // Not a tab stop itself, so focus moves between the Change buttons and never onto the list.
+            section.Children.Add(new ItemsControl
+            {
+                IsTabStop = false,
+                ItemTemplate = template,
+                ItemsSource = _rows.Where(row => actions.Contains(row.Action)).ToList(),
+            });
+
+            BindingGroups.Children.Add(section);
         }
     }
 
@@ -246,15 +280,15 @@ public sealed partial class KeyBindingsPage : Page
     /// </summary>
     private static string KeyName(int key) => (VirtualKey)key switch
     {
-        VirtualKey.Space => "Space",
-        VirtualKey.Enter => "Enter",
-        VirtualKey.Tab => "Tab",
-        VirtualKey.Back => "Backspace",
-        VirtualKey.Escape => "Escape",
-        VirtualKey.Left => "Left arrow",
-        VirtualKey.Right => "Right arrow",
-        VirtualKey.Up => "Up arrow",
-        VirtualKey.Down => "Down arrow",
+        VirtualKey.Space => Strings.KeyBindings_KeySpace,
+        VirtualKey.Enter => Strings.KeyBindings_KeyEnter,
+        VirtualKey.Tab => Strings.KeyBindings_KeyTab,
+        VirtualKey.Back => Strings.KeyBindings_KeyBackspace,
+        VirtualKey.Escape => Strings.KeyBindings_KeyEscape,
+        VirtualKey.Left => Strings.KeyBindings_KeyLeft,
+        VirtualKey.Right => Strings.KeyBindings_KeyRight,
+        VirtualKey.Up => Strings.KeyBindings_KeyUp,
+        VirtualKey.Down => Strings.KeyBindings_KeyDown,
         >= VirtualKey.Number0 and <= VirtualKey.Number9 => ((char)('0' + (key - (int)VirtualKey.Number0))).ToString(),
         >= VirtualKey.A and <= VirtualKey.Z => ((char)key).ToString(),
         var other => other.ToString(),

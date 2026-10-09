@@ -143,7 +143,10 @@ public sealed partial class MainWindow : Window, IShellNavigator
         // and back left nothing focused, so a pad user had to press a direction just to get the caret back onto
         // the console list — the new page has no idea the old one's focused element went away with it.
         ChromeFrame.Navigated += (_, _) =>
+        {
+            _arrivalSeedPending = true;
             Post(DispatcherQueuePriority.Low, FocusFirstContentElement);
+        };
 
         NavigateToFirstPage();
 
@@ -1125,6 +1128,7 @@ public sealed partial class MainWindow : Window, IShellNavigator
             && target.InitialFocus is { } preferred
             && preferred.Focus(FocusState.Keyboard))
         {
+            RecheckArrival(content);
             return;
         }
 
@@ -1145,6 +1149,7 @@ public sealed partial class MainWindow : Window, IShellNavigator
             {
                 first.Focus(FocusState.Keyboard);
                 _seedRetries = 0;
+                RecheckArrival(content);
                 return;
             }
 
@@ -1170,7 +1175,72 @@ public sealed partial class MainWindow : Window, IShellNavigator
 
         // The title-bar commands are always there, so focus is at least somewhere a pad can move from.
         _seedRetries = 0;
+        _arrivalSeedPending = false;
         SettingsButton.Focus(FocusState.Keyboard);
+    }
+
+    /// <summary>
+    /// A page change is under way and focus should end up in the new page. Cleared once it has, after the one
+    /// layout pass that can still move it.
+    /// </summary>
+    private bool _arrivalSeedPending;
+
+    /// <summary>
+    /// Whether focus, just after a page change, has ended up outside the new page: on the title bar, where Windows
+    /// puts it when the control that held it leaves with the old page.
+    ///
+    /// <para>
+    /// That fallback can come after the seed, and the seeding paths took any focused control as placed, so Keyboard
+    /// controls opened now and then on the title bar's Back and About on the About button: one press of A from a
+    /// pad and the player went back, or nowhere (showcase review, R10, 2026-10-09).
+    /// </para>
+    /// </summary>
+    private bool ArrivalFocusStrayed()
+    {
+        if (!_arrivalSeedPending || ModalOwnsFocus || _closed || IsStreaming || ChromeFrame.Content is not DependencyObject page
+            || Content?.XamlRoot is not { } root)
+        {
+            return false;
+        }
+
+        for (var node = FocusManager.GetFocusedElement(root) as DependencyObject; node is not null;
+             node = VisualTreeHelper.GetParent(node))
+        {
+            if (ReferenceEquals(node, page))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// After an arrival seed lands, look once more when the next layout has run, and seed again if focus has
+    /// strayed out of the page. One layout pass is too short for a person to have moved it themselves.
+    /// </summary>
+    private void RecheckArrival(FrameworkElement content)
+    {
+        if (!_arrivalSeedPending)
+        {
+            return;
+        }
+
+        void OnLayout(object? sender, object e)
+        {
+            content.LayoutUpdated -= OnLayout;
+            Post(DispatcherQueuePriority.Low, () =>
+            {
+                bool strayed = ArrivalFocusStrayed();
+                _arrivalSeedPending = false;
+                if (strayed)
+                {
+                    FocusFirstContentElement();
+                }
+            });
+        }
+
+        content.LayoutUpdated += OnLayout;
     }
 
     private const int SeedRetryLimit = 10;
@@ -1187,7 +1257,7 @@ public sealed partial class MainWindow : Window, IShellNavigator
         // modal: ShellShouldSeedFocus is the guarded question every seeding path asks.
         timer.Tick += (_, _) =>
         {
-            if (ShellShouldSeedFocus())
+            if (ShellShouldSeedFocus() || ArrivalFocusStrayed())
             {
                 FocusFirstContentElement();
             }

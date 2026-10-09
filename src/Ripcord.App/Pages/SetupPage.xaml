@@ -12,6 +12,7 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:controls="using:Ripcord_App.Controls"
+    xmlns:tk="using:CommunityToolkit.WinUI.Controls"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     NavigationCacheMode="Required"
@@ -232,10 +233,11 @@
                             Height="96"
                             HorizontalAlignment="Left"
                             WedgeFill="{ThemeResource TextFillColorPrimaryBrush}" />
-                        <StackPanel Spacing="6">
-                            <TextBlock x:Name="DonePictureText" TextWrapping="Wrap" />
-                            <TextBlock x:Name="DoneConsoleText" TextWrapping="Wrap" />
-                            <TextBlock x:Name="DoneControllerText" TextWrapping="Wrap" />
+                        <!--  The summary in the row cards Settings uses: it was three plain lines, the least composed screen in setup (showcase review, R8).  -->
+                        <StackPanel Spacing="4">
+                            <tk:SettingsCard x:Name="DonePictureCard" x:Uid="SetupPage_DonePictureCard" />
+                            <tk:SettingsCard x:Name="DoneConsoleCard" x:Uid="SetupPage_DoneConsoleCard" />
+                            <tk:SettingsCard x:Name="DoneControllerCard" x:Uid="SetupPage_DoneControllerCard" />
                         </StackPanel>
                     </StackPanel>
                 </Grid>

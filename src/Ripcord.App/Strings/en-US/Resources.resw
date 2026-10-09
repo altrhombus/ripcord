@@ -810,4 +810,16 @@ lasts the rest of the session, because F3 restores the rung it was left on.</com
     <value>Ripcord</value>
     <comment>Screen-reader name of the drawn wordmark at the top of About, which is the page's level-1 heading. The app's name - do not translate.</comment>
   </data>
+  <data name="SetupPage_DonePictureCard.Header" xml:space="preserve">
+    <value>Picture</value>
+    <comment>First-run setup, last step: the heading of the row summarising the picture choice.</comment>
+  </data>
+  <data name="SetupPage_DoneConsoleCard.Header" xml:space="preserve">
+    <value>Console</value>
+    <comment>First-run setup, last step: the heading of the row summarising the console choice.</comment>
+  </data>
+  <data name="SetupPage_DoneControllerCard.Header" xml:space="preserve">
+    <value>Controller</value>
+    <comment>First-run setup, last step: the heading of the row summarising the controller choice.</comment>
+  </data>
 </root>

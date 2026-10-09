@@ -208,9 +208,9 @@ public sealed partial class SetupPage : Page, IInitialFocusTarget, IStepBack
         GameInputBar.IsOpen = s.GameInputNote.Length > 0;
         ExitGestureText.Text = s.ExitGestureLine;
 
-        DonePictureText.Text = s.DonePicture;
-        DoneConsoleText.Text = s.DoneConsole;
-        DoneControllerText.Text = s.DoneController;
+        DonePictureCard.Description = s.DonePicture;
+        DoneConsoleCard.Description = s.DoneConsole;
+        DoneControllerCard.Description = s.DoneController;
 
         BackButton.Content = s.BackLabel;
         BackButton.Visibility = Vis(s.CanGoBack);
