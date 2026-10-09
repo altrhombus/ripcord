@@ -43,6 +43,10 @@
 Makefile    text eol=lf
 *.mk        text eol=lf
 
+# The git hooks are shell scripts with no extension, so *.sh misses them. They ran checked out with CRLF only
+# because Git for Windows' sh forgives it; another shell or a copy onto Linux would not.
+.githooks/* text eol=lf
+
 # Binary: never touch, never diff.
 *.png       binary
 *.ico       binary
