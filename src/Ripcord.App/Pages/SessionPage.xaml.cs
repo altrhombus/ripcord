@@ -1578,6 +1578,16 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
 
         _pipeline.Resize(width, height);
         _pipeline.SetCompositionScale(scaleX, scaleY);
+
+        // Black until the first frame. The swap chain is premultiplied and its buffers start transparent, and
+        // a transparent panel shows the window under it, which Windows paints white in Light: the connect screen
+        // went black for a second, then white, the moment this attached (owner, 2026-10-09). Queued after the
+        // resize, so the buffers it clears are the ones that will be shown. Once a picture has arrived each frame
+        // clears its own.
+        if (!_viewModel.State.IsStreamLive)
+        {
+            _pipeline.RenderClear(0, 0, 0);
+        }
     }
 
     // ---- diagnostics ----
