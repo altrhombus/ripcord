@@ -27,6 +27,7 @@
             <conv:ActionGlyphIsConverter x:Key="ActionGlyphIs" />
             <conv:NotConverter x:Key="Not" />
             <conv:CardDensityConverter x:Key="Density" />
+            <conv:CardGeometryConverter x:Key="Geometry" />
             <conv:ReachableOpacityConverter x:Key="ActionOpacity" />
         </ResourceDictionary>
     </Application.Resources>

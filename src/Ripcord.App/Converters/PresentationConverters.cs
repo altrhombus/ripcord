@@ -185,42 +185,58 @@ public sealed partial class ReachableOpacityConverter : IValueConverter
 /// <c>DataTemplate</c>s chosen by a selector would be the old problem with a new spelling.
 /// </para>
 /// </summary>
+/// <summary>
+/// A card's <see cref="CardGeometry"/> as the values its template needs. The arithmetic is CardMetrics'; this only
+/// turns its numbers into thicknesses and its type steps into the platform's own styles.
+/// </summary>
+public sealed partial class CardGeometryConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, string language)
+    {
+        CardGeometry g = value is CardGeometry geometry ? geometry : CardMetrics.For(0, consoleCount: 2).Geometry;
+
+        return (parameter as string) switch
+        {
+            "Wedge" => g.WedgeWidth,
+            "Margin" => new Thickness(g.InsetLeft, g.InsetVertical, g.InsetRight, g.InsetVertical),
+            "NameStyle" => Application.Current.Resources[g.NameStep switch
+            {
+                CardNameStep.TitleLarge => "TitleLargeTextBlockStyle",
+                CardNameStep.Title => "TitleTextBlockStyle",
+                _ => "SubtitleTextBlockStyle",
+            }],
+            "StatusStyle" => Application.Current.Resources[g.StatusIsBody ? "BodyTextBlockStyle" : "CaptionTextBlockStyle"],
+            "MarkHeight" => g.MarkHeight,
+            "MarkWidth" => Math.Round(g.MarkHeight * 9 / 16),
+
+            // The action's name sits inside the wedge, clear of its slant, and wraps rather than crossing it.
+            "ActionLabelWidth" => Math.Round(g.WedgeWidth * 0.65),
+
+            _ => throw new ArgumentException(
+                $"CardGeometryConverter has no answer named '{parameter}'.", nameof(parameter)),
+        };
+    }
+
+    public object ConvertBack(object value, Type targetType, object parameter, string language)
+        => throw new NotSupportedException();
+}
+
 public sealed partial class CardDensityConverter : IValueConverter
 {
     public object Convert(object value, Type targetType, object parameter, string language)
     {
         CardDensity density = value is CardDensity d ? d : CardDensity.Grid;
 
+        // Sizes, insets and type steps moved to CardGeometryConverter when the hero began following the window:
+        // a density alone no longer says how big a card is. What is left here is what the density decides.
         return (parameter as string) switch
         {
-            "Wedge" => CardMetrics.WedgeWidth(density),
-
-            // The right inset clears the wedge and then some: the wedge's own width, plus the slant it eats
-            // out of the leading edge, plus a little air. Computed from the same number the wedge is drawn at
-            // so the two cannot disagree.
-            "Margin" => density switch
-            {
-                CardDensity.Hero => new Thickness(28, 24, 200, 24),
-                CardDensity.Roomy => new Thickness(20, 18, 124, 18),
-                _ => new Thickness(16, 14, 84, 14),
-            },
-
-            // The hero is the only one with room for a display role. The other two keep Subtitle, because a
-            // bigger card is not an instruction to set bigger text - Windows owns text size.
-            "NameStyle" => Application.Current.Resources[
-                density == CardDensity.Hero ? "TitleTextBlockStyle" : "SubtitleTextBlockStyle"],
-
             // "Wake & play" versus "Play" is worth saying where there is room for it. On a dense card the
             // status line already carries the state and the wedge already says it launches.
             "ActionLabel" => density == CardDensity.Hero ? Visibility.Visible : Visibility.Collapsed,
 
             // At hero density the status and the last-played caption share a line; below it they stack, because
             // the dense card's text column cannot hold both and clipped one for a release.
-            // The overflow sits clear of the wedge's leading edge, so it has to move when the wedge does.
-            // Derived from the same WedgeWidth the wedge is drawn at rather than three more literals: the
-            // last time these were separate numbers, one of them was left behind.
-            "Overflow" => new Thickness(0, 6, CardMetrics.WedgeWidth(density) + 12, 0),
-
             "OneLine" => density == CardDensity.Hero ? Visibility.Visible : Visibility.Collapsed,
             "Stacked" => density == CardDensity.Hero ? Visibility.Collapsed : Visibility.Visible,
 

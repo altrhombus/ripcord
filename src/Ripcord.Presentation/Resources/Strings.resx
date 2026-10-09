@@ -464,7 +464,7 @@ name.</comment>
     <comment>Button label on a console card that is in rest mode.</comment>
   </data>
   <data name="Discovered_InRestMode" xml:space="preserve">
-    <value>In rest mode</value>
+    <value>Rest mode</value>
     <comment>Status label on a newly discovered console that is asleep.</comment>
   </data>
   <data name="Discovered_Ready" xml:space="preserve">
@@ -855,7 +855,7 @@ think the claim above it is conditional.</comment>
     <comment>First-run setup: shown when the PC has no HEVC decoder. HEVC, H.264, Ripcord, HEVC Video Extensions and Microsoft Store are product or standard names - do not translate.</comment>
   </data>
   <data name="Setup_PictureDefaults" xml:space="preserve">
-    <value>Either way: {0}p at {1} fps, starting at {2} Mbps. You can change any of this in Settings.</value>
+    <value>Either way: {0}p {1} fps, starting at {2} Mbps. You can change any of this in Settings.</value>
     <comment>First-run setup: under the picture choices. {0} is the stream's height in pixels (1080), {1} its frame rate, {2} its starting bitrate in megabits per second.</comment>
   </data>
   <data name="Setup_ConsoleTitle" xml:space="preserve">

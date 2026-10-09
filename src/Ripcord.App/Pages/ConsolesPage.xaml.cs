@@ -290,6 +290,7 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
         foreach (ConsoleCardViewModel card in _items.OfType<ConsoleCardViewModel>())
         {
             card.Density = layout.Density;
+            card.Geometry = layout.Geometry;
         }
 
         SizePanel();
@@ -298,6 +299,11 @@ public sealed partial class ConsolesPage : Page, IInitialFocusTarget
         bool hero = layout.Density == CardDensity.Hero;
         ConsoleGrid.HorizontalAlignment = hero ? HorizontalAlignment.Center : HorizontalAlignment.Stretch;
         ConsoleGrid.VerticalAlignment = hero ? VerticalAlignment.Center : VerticalAlignment.Stretch;
+
+        // The hero sits a little above the middle of the space it is centred in: the eye's centre of a page is
+        // above its geometric one, and dead centre read as sinking. A tenth of the page's height, given back at
+        // the bottom so the block rises by half that.
+        ConsoleGrid.Margin = hero ? new Thickness(0, 0, 0, Math.Round(ActualHeight * 0.1)) : new Thickness(0);
 
         return layout;
     }
