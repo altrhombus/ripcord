@@ -38,6 +38,16 @@ public sealed partial class SetupPage : Page, IInitialFocusTarget, IStepBack
         // The router outlives every page: attached while the page is on screen, and again when it comes back from
         // the add-console page, which this page is cached across.
         Loaded += (_, _) => AttachPad();
+
+        // The first render runs before the page is loaded, when FocusForStep has to wait; this is its turn, so a
+        // first run opens with "Get started" focused and the mark assembling.
+        Loaded += (_, _) =>
+        {
+            if (_flow is not null)
+            {
+                FocusForStep(_flow.State);
+            }
+        };
         Unloaded += (_, _) => DetachPad();
 
         // A contrast theme switched on or off while the page is up repaints the step trail; see StepDashPainter.
@@ -45,8 +55,8 @@ public sealed partial class SetupPage : Page, IInitialFocusTarget, IStepBack
         Unloaded += (_, _) => AppEffects.Changed -= OnEffectsChanged;
     }
 
-    /// <summary>The primary button: the thing each step is for.</summary>
-    Control? IInitialFocusTarget.InitialFocus => PrimaryButton;
+    /// <summary>The primary button: the thing each step is for. On Welcome, its own "Get started".</summary>
+    Control? IInitialFocusTarget.InitialFocus => _flow?.State.Step == SetupStep.Welcome ? WelcomeStartButton : PrimaryButton;
 
     protected override void OnNavigatedTo(NavigationEventArgs e)
     {
@@ -106,7 +116,15 @@ public sealed partial class SetupPage : Page, IInitialFocusTarget, IStepBack
         _reachedDash = s.ReachedDash;
         PaintDashes();
 
-        WelcomePanel.Visibility = Vis(s.Step == SetupStep.Welcome);
+        // Welcome is its own composition over the whole page; the frame steps aside for it.
+        bool welcome = s.Step == SetupStep.Welcome;
+        WelcomeView.Visibility = Vis(welcome);
+        HeaderPanel.Visibility = Vis(!welcome);
+        StepsScroller.Visibility = Vis(!welcome);
+        FooterBar.Visibility = Vis(!welcome);
+        WelcomeStartButton.Content = s.PrimaryLabel;
+        WelcomeSkipButton.Content = s.SecondaryLabel;
+        WelcomeSkipButton.Visibility = Vis(s.SecondaryLabel.Length > 0);
         PicturePanel.Visibility = Vis(s.Step == SetupStep.Picture);
         ConsolePanel.Visibility = Vis(s.Step == SetupStep.Console);
         ControllerPanel.Visibility = Vis(s.Step == SetupStep.Controller);
@@ -193,10 +211,46 @@ public sealed partial class SetupPage : Page, IInitialFocusTarget, IStepBack
         }
 
         _focusedStep = s.Step;
-        Control target = s.Step == SetupStep.Picture
-            ? (s.Choice == PictureChoice.BestPicture && s.BestPictureAvailable ? BestRadio : CompatibleRadio)
-            : PrimaryButton;
+        Control target = s.Step switch
+        {
+            SetupStep.Picture => s.Choice == PictureChoice.BestPicture && s.BestPictureAvailable ? BestRadio : CompatibleRadio,
+            SetupStep.Welcome => WelcomeStartButton,
+            _ => PrimaryButton,
+        };
+
+        if (s.Step == SetupStep.Welcome)
+        {
+            AssembleWelcome();
+        }
         DispatcherQueue.TryEnqueue(() => target.Focus(FocusState.Programmatic));
+    }
+
+    /// <summary>
+    /// The mark builds itself, then the word arrives beside it. Nothing moves with Windows' animation effects off.
+    /// </summary>
+    private void AssembleWelcome()
+    {
+        WelcomeMark.Assemble();
+
+        if (!AppMotion.Enabled)
+        {
+            return;
+        }
+
+        var fade = new Microsoft.UI.Xaml.Media.Animation.DoubleAnimation
+        {
+            From = 0,
+            To = 1,
+            BeginTime = TimeSpan.FromMilliseconds(300),
+            Duration = new Duration(TimeSpan.FromMilliseconds(250)),
+        };
+        Microsoft.UI.Xaml.Media.Animation.Storyboard.SetTarget(fade, WelcomeWordmark);
+        Microsoft.UI.Xaml.Media.Animation.Storyboard.SetTargetProperty(fade, "Opacity");
+
+        WelcomeWordmark.Opacity = 0;
+        var board = new Microsoft.UI.Xaml.Media.Animation.Storyboard();
+        board.Children.Add(fade);
+        board.Begin();
     }
 
     private void OnBestChecked(object sender, RoutedEventArgs e)

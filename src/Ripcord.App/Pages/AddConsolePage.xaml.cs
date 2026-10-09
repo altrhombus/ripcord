@@ -35,6 +35,9 @@ public sealed partial class AddConsolePage : Page, IStepBack
     // parameter, which only arrives there. OnNavigatedTo runs before Loaded, which starts the flow.
     private AddConsoleFlow _flow = null!;
 
+    // The step last drawn, so the celebration assembles once, on arrival, not on every state change after it.
+    private AddConsoleStep? _renderedStep;
+
     /// <summary>
     /// A view-model of this page's own over the shared account session, used only to run a sign-in from here.
     /// The flow reads the session itself; this is the surface half.
@@ -343,6 +346,18 @@ public sealed partial class AddConsolePage : Page, IStepBack
         // Composed portably, including at Done - the label there used to be a literal in this file, which
         // put the one string the celebration turns on outside the catalogue.
         PrimaryButton.Content = s.PairActionLabel;
+
+        // "Play now" is a launch, so at the celebration it is the wedge (design.md; showcase plan, part 4). From
+        // setup the same button goes back to setup, which launches nothing, and stays an accent button.
+        bool launches = s.Step == AddConsoleStep.Done && !_flow.IsPartOfSetup;
+        PrimaryButton.Style = (Style)Application.Current.Resources[launches ? "RipcordWedgeButtonStyle" : "AccentButtonStyle"];
+
+        if (s.Step == AddConsoleStep.Done && _renderedStep != AddConsoleStep.Done)
+        {
+            DoneMark.Assemble();
+        }
+
+        _renderedStep = s.Step;
         PrimaryButton.IsEnabled = s.Step == AddConsoleStep.Done || s.CanPair;
 
         // One commit action, naming the route the step is set up for. There used to be two -- "Pair" and "Pair
