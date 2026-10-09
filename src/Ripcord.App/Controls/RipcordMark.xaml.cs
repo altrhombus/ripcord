@@ -59,12 +59,8 @@ public sealed partial class RipcordMark : UserControl
             return;
         }
 
-        TimeSpan step = Token<Duration>("RipcordDurationStateChange", TimeSpan.FromMilliseconds(150)).TimeSpan;
-        KeySpline ease = Token<KeySpline>("RipcordEaseEnter", null!) ?? new KeySpline
-        {
-            ControlPoint1 = new Windows.Foundation.Point(0.1, 0.9),
-            ControlPoint2 = new Windows.Foundation.Point(0.2, 1),
-        };
+        TimeSpan step = AppMotion.Duration("RipcordDurationStateChange");
+        KeySpline ease = AppMotion.Ease("RipcordEaseEnter");
 
         var board = new Storyboard();
 
@@ -106,6 +102,4 @@ public sealed partial class RipcordMark : UserControl
         return animation;
     }
 
-    private static T Token<T>(string key, T fallback)
-        => Application.Current.Resources.TryGetValue(key, out object? value) && value is T token ? token : fallback;
 }

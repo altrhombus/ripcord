@@ -29,6 +29,7 @@
             <conv:CardDensityConverter x:Key="Density" />
             <conv:CardGeometryConverter x:Key="Geometry" />
             <conv:ReachableOpacityConverter x:Key="ActionOpacity" />
+            <conv:ShownOpacityConverter x:Key="ShownOpacity" />
         </ResourceDictionary>
     </Application.Resources>
 </Application>

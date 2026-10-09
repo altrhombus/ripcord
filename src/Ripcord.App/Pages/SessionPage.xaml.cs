@@ -268,9 +268,43 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
         }
     }
 
+    /// <summary>
+    /// The HUD's rungs fade in and out rather than cutting (showcase plan, part 5). Opacity only, over the video, as
+    /// Ripcord.Motion.xaml requires, and done by the compositor on the visibility change, so nothing in Render has
+    /// to know. Not set at all with Windows' animation effects off.
+    /// </summary>
+    private void FadeHudRungs()
+    {
+        if (!AppMotion.Enabled)
+        {
+            return;
+        }
+
+        Microsoft.UI.Composition.Compositor compositor =
+            Microsoft.UI.Xaml.Hosting.ElementCompositionPreview.GetElementVisual(this).Compositor;
+        TimeSpan length = AppMotion.Duration("RipcordDurationStateChange");
+
+        Microsoft.UI.Composition.ScalarKeyFrameAnimation Fade(float from, float to)
+        {
+            Microsoft.UI.Composition.ScalarKeyFrameAnimation fade = compositor.CreateScalarKeyFrameAnimation();
+            fade.Target = "Opacity";
+            fade.InsertKeyFrame(0f, from);
+            fade.InsertKeyFrame(1f, to);
+            fade.Duration = length;
+            return fade;
+        }
+
+        foreach (UIElement rung in new UIElement[] { HealthAlert, DiagnosticsSummary, DiagnosticsPanel })
+        {
+            Microsoft.UI.Xaml.Hosting.ElementCompositionPreview.SetImplicitShowAnimation(rung, Fade(0f, 1f));
+            Microsoft.UI.Xaml.Hosting.ElementCompositionPreview.SetImplicitHideAnimation(rung, Fade(1f, 0f));
+        }
+    }
+
     private void Page_Loaded(object sender, RoutedEventArgs e)
     {
         TryStartConnectAnimation();
+        FadeHudRungs();
 
         _settings = _settingsStore.Current;
 
@@ -715,7 +749,7 @@ public sealed partial class SessionPage : Page, IVideoPipelinePreparer, IInitial
         var opacity = new DoubleAnimation
         {
             To = 0,
-            Duration = new Duration(TimeSpan.FromMilliseconds(150)),
+            Duration = new Duration(AppMotion.Duration("RipcordDurationStateChange")),
             EnableDependentAnimation = true,
         };
 
