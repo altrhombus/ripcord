@@ -8,7 +8,10 @@ public enum DiagnosticsPlacement
     /// </summary>
     Rail,
 
-    /// <summary>In the letterbox bar beneath the picture. Also free.</summary>
+    /// <summary>
+    /// In the letterbox bar beneath the picture. Free when the bar is tall enough; when it is thin, the sheet
+    /// still starts in it and rises into the picture only as far as it must (see <see cref="HudLayout.SheetRise"/>).
+    /// </summary>
     Sheet,
 
     /// <summary>Over the picture, because there is no dead space to claim.</summary>
@@ -21,7 +24,16 @@ public enum DiagnosticsPlacement
 /// <param name="Placement">Where it goes.</param>
 /// <param name="PillarWidth">Width of ONE pillarbox bar, in the same units as the viewport.</param>
 /// <param name="BarHeight">Height of ONE letterbox bar.</param>
-public readonly record struct HudLayout(DiagnosticsPlacement Placement, double PillarWidth, double BarHeight);
+public readonly record struct HudLayout(DiagnosticsPlacement Placement, double PillarWidth, double BarHeight)
+{
+    /// <summary>
+    /// How far a sheet in a thin bar reaches up into the picture: what it needs, less the bar it sits in. Zero for
+    /// a bar that holds it, and for anything that is not a sheet.
+    /// </summary>
+    public double SheetRise => Placement == DiagnosticsPlacement.Sheet
+        ? Math.Max(0, HudPlacement.SheetMinimumHeight - BarHeight)
+        : 0;
+}
 
 /// <summary>
 /// Decides where the full instrument panel goes.
@@ -59,6 +71,20 @@ public static class HudPlacement
     public const double SheetMinimumHeight = 200;
 
     /// <summary>
+    /// The thinnest letterbox bar a sheet will still start in, rising into the picture for the rest of its
+    /// height. DRAFT (showcase plan, part 7; owner to judge on a stream).
+    ///
+    /// <para>
+    /// A 16:10 display at 1920×1200 leaves 60 px bars, too thin for the sheet, so the panel fell back to the
+    /// side overlay over a fifth of the picture, top to bottom (visual audit, 2026-10-08, C6). Starting in the bar
+    /// instead covers only the bottom 140 px, and keeps the panel in the dead space it was designed to claim.
+    /// Under 48 px (a 1280×800 handheld's 40) the bar is too thin to be worth starting in and the overlay
+    /// stays.
+    /// </para>
+    /// </summary>
+    public const double SheetThinBarMinimum = 48;
+
+    /// <summary>
     /// Where the panel goes for a given viewport and video size.
     ///
     /// <para>
@@ -94,7 +120,7 @@ public static class HudPlacement
 
         DiagnosticsPlacement placement = pillar >= RailMinimumWidth
             ? DiagnosticsPlacement.Rail
-            : bar >= SheetMinimumHeight
+            : bar >= SheetThinBarMinimum
                 ? DiagnosticsPlacement.Sheet
                 : DiagnosticsPlacement.Overlay;
 

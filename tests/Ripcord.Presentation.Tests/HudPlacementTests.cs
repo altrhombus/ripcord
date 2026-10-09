@@ -129,4 +129,24 @@ public class HudPlacementTests
         // ActualWidth is 0 until the first layout pass, and a page mid-teardown can report worse.
         Assert.Equal(DiagnosticsPlacement.Overlay, For(width, height).Placement);
     }
+
+    /// <summary>
+    /// A 16:10 display leaves bars too thin for the sheet. It still starts in the bar and rises into the picture
+    /// only by the rest of its height, rather than falling back to the side overlay (visual audit, C6; draft).
+    /// </summary>
+    [Theory]
+    [InlineData(1920, 1200, 60)]
+    [InlineData(1680, 1050, 52.5)]
+    public void AThinLetterboxStillTakesTheSheet_RisingOnlyAsFarAsItMust(double width, double height, double bar)
+    {
+        HudLayout layout = For(width, height);
+
+        Assert.Equal(DiagnosticsPlacement.Sheet, layout.Placement);
+        Assert.Equal(bar, layout.BarHeight, precision: 6);
+        Assert.Equal(HudPlacement.SheetMinimumHeight - bar, layout.SheetRise, precision: 6);
+    }
+
+    [Fact]
+    public void ASheetThatFitsItsBar_DoesNotRise()
+        => Assert.Equal(0, For(1920, 1600).SheetRise);
 }
