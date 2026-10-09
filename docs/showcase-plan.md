@@ -101,8 +101,7 @@ disabled, a still mark, and a headline that changes to say nothing new; then a d
   The handshake: the third. The current dash breathes (a slow opacity pulse, about 1.2 s) so a long wait looks
   alive. With animation effects off it's lit and still.
 - **One headline per phase.** "Waking your console…" stays put; it doesn't become "Waiting for the console to
-  wake…" after seven seconds. If the wait runs long, one line is added, once: rest mode can take about twenty
-  seconds.
+  wake…" after seven seconds. If the wait runs long, one line is added, once: a console in rest mode can take a little longer. No figure: a wake over the internet has taken more than forty seconds, and a number the wait overruns is a broken promise (owner, 2026-10-09).
 - **Reconnect** is the same screen over the frozen frame, on the acrylic plate (done 2026-10-09).
 - **Failure:** the mark dims, verdict first, then what to do, then the buttons. No red.
 - **The way out:** B, Esc, or the link. It reads "Back to consoles" while connecting. While reconnecting,

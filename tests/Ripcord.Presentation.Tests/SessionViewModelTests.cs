@@ -981,7 +981,7 @@ public class SessionViewModelTests
 
         Assert.Equal("Waking your console…", vm.State.StatusHeadline);
         Assert.StartsWith(before, vm.State.StatusDetail);
-        Assert.Equal(1, CountOf(vm.State.StatusDetail, "half a minute"));
+        Assert.Equal(1, CountOf(vm.State.StatusDetail, "a little longer"));
     }
 
     private static int CountOf(string text, string part)
